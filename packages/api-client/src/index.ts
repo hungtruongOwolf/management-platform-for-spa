@@ -11,3 +11,7 @@ export type PackagePlan = Schemas["PackagePlanDto"];
 export type ServiceWrite = Schemas["ServiceWrite"];
 export type PlanWrite = Schemas["PlanWrite"];
 export type CategoryCreate = Schemas["CategoryCreate"];
+export type Customer = Schemas["CustomerDto"];
+export type CustomerSummary = Schemas["CustomerSummaryDto"];
+export type CustomerCreate = Schemas["CustomerCreate"];
+export type CustomerUpdate = Schemas["CustomerUpdate"];

@@ -41,6 +41,12 @@ pub enum AppError {
     /// The request conflicts with current state (409), e.g. `package.no_sessions_left`.
     #[error("conflict: {code}")]
     Conflict { code: &'static str },
+    /// Conflict with an existing record the client may open instead (e.g. `customer.phone_taken`).
+    #[error("conflict: {code}")]
+    ConflictWith {
+        code: &'static str,
+        existing_id: uuid::Uuid,
+    },
     #[error("stale version")]
     StaleVersion,
     #[error("bad request: {code}")]
@@ -68,7 +74,7 @@ impl AppError {
             Self::Forbidden { .. } => StatusCode::FORBIDDEN,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Validation(_) | Self::Unprocessable { .. } => StatusCode::UNPROCESSABLE_ENTITY,
-            Self::Conflict { .. } => StatusCode::CONFLICT,
+            Self::Conflict { .. } | Self::ConflictWith { .. } => StatusCode::CONFLICT,
             Self::StaleVersion => StatusCode::PRECONDITION_FAILED,
             Self::BadRequest { .. } => StatusCode::BAD_REQUEST,
             Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
@@ -84,6 +90,7 @@ impl AppError {
             Self::Forbidden { code }
             | Self::Unprocessable { code }
             | Self::Conflict { code }
+            | Self::ConflictWith { code, .. }
             | Self::BadRequest { code } => code,
             Self::NotFound => "not_found",
             Self::Validation(_) => "validation_failed",
@@ -104,6 +111,10 @@ impl AppError {
                 Self::Validation(errors) => Some(errors.clone()),
                 _ => None,
             },
+            existing_id: match self {
+                Self::ConflictWith { existing_id, .. } => Some(*existing_id),
+                _ => None,
+            },
         }
     }
 }
@@ -117,6 +128,8 @@ pub struct Problem {
     pub code: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub errors: Option<Vec<FieldError>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub existing_id: Option<uuid::Uuid>,
 }
 
 impl Problem {
@@ -137,6 +150,7 @@ impl Problem {
             status: status.as_u16(),
             code,
             errors: None,
+            existing_id: None,
         }
     }
 }
@@ -196,6 +210,31 @@ mod tests {
                 .get(header::CONTENT_TYPE)
                 .and_then(|v| v.to_str().ok()),
             Some(PROBLEM_JSON)
+        );
+    }
+
+    #[test]
+    fn conflict_with_points_at_the_existing_record() {
+        let id = uuid::Uuid::from_u128(7);
+        let problem = AppError::ConflictWith {
+            code: "customer.phone_taken",
+            existing_id: id,
+        }
+        .problem();
+        let json = serde_json::to_value(&problem).unwrap_or_default();
+        assert_eq!(
+            (json["status"].clone(), json["code"].clone()),
+            (
+                serde_json::json!(409),
+                serde_json::json!("customer.phone_taken")
+            )
+        );
+        assert_eq!(json["existing_id"], serde_json::json!(id.to_string()));
+        assert!(
+            serde_json::to_value(AppError::NotFound.problem())
+                .unwrap_or_default()
+                .get("existing_id")
+                .is_none()
         );
     }
 

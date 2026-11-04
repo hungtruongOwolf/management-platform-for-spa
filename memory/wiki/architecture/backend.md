@@ -26,7 +26,7 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
 | `auth.forbidden` | 403 | Thiếu permission |
 | `not_found` | 404 | Không tồn tại **hoặc thuộc tenant khác** |
 | `validation_failed` | 422 | Kèm `errors[]` |
-| `customer.phone_taken` | 409 | Kèm `existing_customer_id` |
+| `customer.phone_taken` | 409 | Kèm `existing_id` (ID hồ sơ đã có) |
 | `package.no_sessions_left` / `package.cancelled` | 409 | |
 | `package.expired` | 409 | Gửi kèm `expiry_override_reason` + có permission → cho qua |
 | `payment.amount_mismatch` | 422 | Tổng thanh toán khác số phải trả (R1 luôn thu đủ) |
@@ -56,7 +56,8 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
 | `GET /customers?q=` | Tìm theo SĐT (≥ 3 số) / tên (≥ 2 ký tự, không dấu) (US2) | `customer.read` | — | search |
 | `POST /customers` | Tạo khách (US2) | `customer.write` (+ `health_notes.write` nếu gửi ghi chú) | — | write |
 | `GET /customers/{id}` | Hồ sơ: liệu trình (trạng thái suy ra), tổng nợ; `health_note` chỉ khi có quyền (US2) | `customer.read` | — | read |
-| `PATCH /customers/{id}` | Sửa (If-Match) | `customer.write` | — | write |
+| `PUT /customers/{id}` | Sửa hồ sơ, thay toàn bộ (If-Match); không gồm ghi chú sức khỏe | `customer.write` | — | write |
+| `PUT /customers/{id}/health-note` | Đặt/xóa ghi chú sức khỏe (If-Match) | `customer.health_notes.write` | — | write |
 | `GET /customers/{id}/visits` | Lịch sử buổi | `visit.read` | — | read |
 | `POST /customers/{id}/anonymize` 🔒 | Ẩn danh hóa | `customer.anonymize` | ✓ | write |
 | `GET /customer-packages/{id}` | Chi tiết + lịch sử sử dụng (US7) | `customer.read` | — | read |
@@ -127,7 +128,7 @@ Nhắc nhở (spec #3) sẽ dùng bảng job trên Postgres (`FOR UPDATE SKIP LO
 | Story | AC chính | Endpoint |
 |---|---|---|
 | US1 | 1.1–1.9 | `/services`, `/service-categories`, `/package-plans` |
-| US2 | 2.1–2.7 | `GET/POST/PATCH /customers` |
+| US2 | 2.1–2.7 | `GET/POST /customers`, `GET/PUT /customers/{id}`, `PUT /customers/{id}/health-note` |
 | US3 | 3.1–3.7 | `POST /sales` |
 | US4 | 4.1–4.10, 4.2b/c | `POST/GET/PATCH /visits` |
 | US5 | hoãn | Không có endpoint thu nợ / công nợ ở R1; không có endpoint sửa/xóa payment |

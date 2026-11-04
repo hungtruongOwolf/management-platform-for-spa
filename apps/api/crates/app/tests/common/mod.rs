@@ -21,6 +21,8 @@ pub type TestResult = Result<(), Box<dyn std::error::Error>>;
 pub const ORIGIN: &str = "http://localhost:5173";
 pub const OWNER_PHONE: &str = "0905123456";
 pub const PASSWORD: &str = "mat-khau-cua-chu-spa";
+/// Test-only AES key (32 ASCII bytes, base64).
+pub const TEST_DATA_KEY: &str = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
 
 pub struct Harness {
     pub app: Router,
@@ -32,7 +34,14 @@ pub async fn harness(owner: PgPool) -> Result<Harness, Box<dyn std::error::Error
     create_tenant(&owner, "vpyd", "Viên Phúc Y Đường", "Đông Hà").await?;
     add_member(&owner, "vpyd", OWNER_PHONE, "Chủ Spa", SystemRole::Owner).await?;
     let pool = app_pool(&owner).await?;
-    let app = app::router(AppState { pool }, &HttpPolicy::standard(ORIGIN.to_owned()));
+    let cipher = crm::FieldCipher::from_base64(TEST_DATA_KEY)?;
+    let app = app::router(
+        AppState {
+            pool,
+            cipher: std::sync::Arc::new(cipher),
+        },
+        &HttpPolicy::standard(ORIGIN.to_owned()),
+    );
     Ok(Harness { app, owner })
 }
 

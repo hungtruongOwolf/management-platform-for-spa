@@ -141,3 +141,10 @@ Ops: `ingest`, `query`, `lint`, `record`, `decision`, `skip`.
 - S4: catalog write API (categories/services/plans, PUT + If-Match, audited, no delete), kernel IfMatch/etag, web edit forms + /bang-gia/goi. Owner-only (catalog.manage); manager/foreign tenant refused (tests).
 - Found in real Chrome: signed-in user on /dang-nhap?next=… was sent to "/" — fixed (test red→green).
 - Dev DB now has a test plan "Gội thảo dược 10 buổi + tặng 2 (thử)".
+
+## [2026-11-04] record | S4 merged; S5 customers built
+- S5: migration 0004_crm, crate crm (NFC names, accent-folded search, E.164 phones, encrypted health notes with AAD), routes GET/POST /customers, GET/PUT /customers/{id}, PUT /customers/{id}/health-note; config APP_DATA_KEY.
+- Web: /khach-hang search + create, /khach-hang/:id profile with health warning.
+- 7 Rust E2E (10k-customer search perf, health-note permission mutation-checked) + 33 web tests. Verified in real Chrome.
+- Contract drift from design fixed in backend.md: PUT instead of PATCH, `existing_id`.
+- Dev DB: test customer "Khách Thử Nghiệm".

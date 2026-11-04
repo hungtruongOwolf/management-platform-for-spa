@@ -49,7 +49,15 @@ async fn serve() -> anyhow::Result<()> {
     jobs::spawn_idempotency_purge(pool.clone());
 
     let policy = HttpPolicy::standard(config.public_origin.clone());
-    let app = app::router(AppState { pool }, &policy);
+    let cipher = crm::FieldCipher::from_base64(config.data_key.expose_secret())
+        .map_err(|e| anyhow::anyhow!("APP_DATA_KEY: {e}"))?;
+    let app = app::router(
+        AppState {
+            pool,
+            cipher: std::sync::Arc::new(cipher),
+        },
+        &policy,
+    );
     let listener = tokio::net::TcpListener::bind(config.bind_addr)
         .await
         .with_context(|| format!("cannot bind {}", config.bind_addr))?;
