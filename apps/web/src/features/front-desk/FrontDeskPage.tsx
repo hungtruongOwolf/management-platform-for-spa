@@ -40,8 +40,11 @@ import {
   timeOf,
   todayVisitsQuery,
   visitBody,
+  visitsOfDayQuery,
 } from "./api";
 import { CustomerCard } from "./CustomerCard";
+import { spaToday, voidVisit } from "../corrections/api";
+import { VoidForm } from "../corrections/VoidForm";
 
 // The new-customer form (react-hook-form + zod) is only needed when no match is found, so it is a
 // separate chunk: it stays off the front desk's first paint (frontend.md, perf budget).
@@ -695,13 +698,54 @@ function AddOneOff({
 }
 
 function TodayVisits() {
-  const today = useQuery(todayVisitsQuery);
+  const { data: me } = useSuspenseQuery(meQuery);
+  const queryClient = useQueryClient();
+  const todayIso = spaToday();
+  const [day, setDay] = useState(todayIso);
+  const [voiding, setVoiding] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const isToday = day === todayIso;
+  const today = useQuery(isToday ? todayVisitsQuery : visitsOfDayQuery(day));
+  // UX only: the server decides (403 day.locked for managers, re-auth for owners).
+  const mayVoid =
+    can(me, "record.void_same_day") &&
+    (isToday || can(me, "record.void_closed_day"));
   return (
     <section aria-labelledby="today-title" className={card}>
-      <h2 id="today-title" className="mb-2 font-semibold">
-        Lượt khách hôm nay
-        {today.data ? ` (${String(today.data.length)})` : ""}
-      </h2>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h2 id="today-title" className="font-semibold">
+          {isToday
+            ? "Lượt khách hôm nay"
+            : `Lượt khách ngày ${day.split("-").reverse().join("/")}`}
+          {today.data ? ` (${String(today.data.length)})` : ""}
+        </h2>
+        <label className="flex items-center gap-2 text-sm">
+          Xem ngày
+          <input
+            type="date"
+            value={day}
+            max={todayIso}
+            onChange={(e) => {
+              setDay(e.target.value || todayIso);
+              setVoiding(null);
+            }}
+            className="min-h-11 rounded-[6px] border border-border bg-surface px-2"
+          />
+        </label>
+      </div>
+      {!isToday && can(me, "record.void_same_day") && !mayVoid && (
+        <p className="mb-2 text-sm text-text-muted">
+          Ngày đã chốt: chỉ chủ spa hủy được lượt của ngày này.
+        </p>
+      )}
+      {notice && (
+        <p
+          role="status"
+          className="mb-2 rounded-[10px] bg-primary-soft p-2 text-sm"
+        >
+          {notice}
+        </p>
+      )}
       {today.isPending && (
         <div aria-hidden="true" className="space-y-2">
           <div className="h-10 animate-pulse rounded bg-surface-2" />
@@ -726,14 +770,25 @@ function TodayVisits() {
         </p>
       )}
       {today.data && today.data.length > 0 && (
-        <ul aria-label="Lượt khách hôm nay">
+        <ul
+          aria-label={isToday ? "Lượt khách hôm nay" : "Lượt khách trong ngày"}
+        >
           {today.data.map((v) => (
             <li
               key={v.id}
-              className="flex justify-between gap-2 border-b border-dashed border-border py-2 text-sm last:border-b-0"
+              className="flex flex-wrap justify-between gap-2 border-b border-dashed border-border py-2 text-sm last:border-b-0"
             >
-              <span>
+              <span
+                className={
+                  v.status === "voided" ? "text-text-muted" : undefined
+                }
+              >
                 <strong>{timeOf(v.check_in_at)}</strong> · {v.customer_name}
+                {v.status === "voided" && (
+                  <span className="ml-2 rounded-full bg-danger-soft px-2 text-xs font-semibold text-danger">
+                    Đã hủy
+                  </span>
+                )}
                 <span className="block text-text-muted">
                   {v.lines
                     .map(
@@ -744,10 +799,53 @@ function TodayVisits() {
                   · KTV{" "}
                   {[...new Set(v.lines.map((l) => l.staff_name))].join(", ")}
                 </span>
+                {v.status === "voided" && v.void_reason && (
+                  <span className="block">Lý do hủy: {v.void_reason}</span>
+                )}
               </span>
-              <span className="tabular-nums">
-                {v.total ? formatVnd(v.total) : "—"}
+              <span className="flex items-start gap-2">
+                <span
+                  className={`tabular-nums ${v.status === "voided" ? "text-text-muted line-through" : ""}`}
+                >
+                  {v.total ? formatVnd(v.total) : "—"}
+                </span>
+                {mayVoid && v.status === "completed" && voiding !== v.id && (
+                  <button
+                    type="button"
+                    aria-label={`Hủy lượt ${timeOf(v.check_in_at)} của ${v.customer_name}`}
+                    onClick={() => {
+                      setNotice(null);
+                      setVoiding(v.id);
+                    }}
+                    className="min-h-11 rounded-[10px] border border-border px-3 font-medium text-danger"
+                  >
+                    Hủy
+                  </button>
+                )}
               </span>
+              {voiding === v.id && (
+                <div className="w-full">
+                  <VoidForm
+                    title={`Hủy lượt ${timeOf(v.check_in_at)} của ${v.customer_name}`}
+                    consequence="Buổi đã trừ được cộng lại vào liệu trình; tiền đã thu được ghi bút toán đảo. Lượt vẫn còn trong lịch sử với trạng thái đã hủy."
+                    confirmLabel="Hủy lượt"
+                    run={(reason, key) => voidVisit(v.id, reason, key)}
+                    onCancel={() => {
+                      setVoiding(null);
+                    }}
+                    onDone={(voided) => {
+                      setVoiding(null);
+                      setNotice(`Đã hủy lượt của ${voided.customer_name}.`);
+                      void queryClient.invalidateQueries({
+                        queryKey: ["visits"],
+                      });
+                      void queryClient.invalidateQueries({
+                        queryKey: ["customer-packages"],
+                      });
+                    }}
+                  />
+                </div>
+              )}
             </li>
           ))}
         </ul>

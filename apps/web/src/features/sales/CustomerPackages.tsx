@@ -1,11 +1,16 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { formatVnd } from "@vpyd/ui";
 import { useState } from "react";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
+import { PackageActions } from "../corrections/PackageActions";
 import { STATUS_LABEL, customerPackagesQuery, formatDate } from "./api";
 import { SellPackageDialog } from "./SellPackageDialog";
 
-/** Packages on the customer card: remaining / total sessions, expiry, status; "Bán liệu trình mới" for sellers. */
+/**
+ * Packages on the customer card: remaining / total sessions, expiry, status; "Bán liệu trình mới"
+ * for sellers; lifecycle actions (extend, cancel + refund, void the sale) for those allowed.
+ */
 export function CustomerPackages({ customerId }: { customerId: string }) {
   const { data: me } = useSuspenseQuery(meQuery);
   const packages = useQuery(customerPackagesQuery(customerId));
@@ -91,6 +96,14 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
                     : "Không thời hạn"}
                   {p.gift_note ? ` · Quà: ${p.gift_note}` : ""}
                 </span>
+                {p.status === "cancelled" && p.cancel_reason && (
+                  <span className="block text-sm text-danger">
+                    Đã hủy: {p.cancel_reason}
+                    {p.refund
+                      ? ` · Hoàn ${formatVnd(p.refund.amount)} ${p.refund.method === "cash" ? "tiền mặt" : "chuyển khoản"}`
+                      : ""}
+                  </span>
+                )}
               </div>
               <span className="text-right">
                 <strong>
@@ -101,6 +114,12 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
                   {STATUS_LABEL[p.status]}
                 </span>
               </span>
+              <PackageActions
+                pkg={p}
+                onDone={(message) => {
+                  setSold(message);
+                }}
+              />
             </li>
           ))}
         </ul>

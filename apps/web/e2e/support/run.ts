@@ -60,7 +60,7 @@ function totpAt(key: string, step: number): string {
  * ahead is still valid; beyond that we wait. Never sends a stale code (that would count toward
  * the account lockout).
  */
-async function nextTotpCode(): Promise<string> {
+export async function nextTotpCode(): Promise<string> {
   const run = credentials();
   if (!run.totpKey) throw new Error("owner has no TOTP key yet (setup enrolls it)");
   const now = Math.floor(Date.now() / 30_000);
