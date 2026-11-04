@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { credentials, expectAccessible, signIn } from "../support/run";
+import {
+  credentials,
+  expectAccessible,
+  signIn,
+  submitLogin,
+} from "../support/run";
 
 test.describe("đăng nhập", () => {
   test("login form is accessible", async ({ page }) => {
@@ -35,10 +40,8 @@ test.describe("đăng nhập", () => {
   }) => {
     await page.goto("/khach-hang");
     await expect(page).toHaveURL(/\/dang-nhap\?next=%2Fkhach-hang$/);
-    const { phone, password } = credentials();
-    await page.getByLabel("Số điện thoại").fill(phone);
-    await page.getByLabel("Mật khẩu").fill(password);
-    await page.getByRole("button", { name: "Đăng nhập" }).click();
+    // Owner: password, then the TOTP step, then back to the deep link.
+    await submitLogin(page);
     await expect(page).toHaveURL(/\/khach-hang$/);
     await expect(
       page.getByRole("heading", { name: "Khách hàng", level: 1 }),

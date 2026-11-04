@@ -60,11 +60,23 @@ Quy ước chung cho mọi ticket có endpoint:
     - Test: 62 Rust (11 HTTP E2E auth; mutation lockout ✓) + 13 web. E2E qua Vite proxy ✓.
     - Dữ liệu dev: spa `vien-phuc-y-duong` + tài khoản owner thử `0905000001`.
 
-- [ ] **S2b MFA TOTP cho chủ spa** (size: S)
+- [x] **S2b MFA TOTP cho chủ spa** (size: S) ✅ 2026-11-04
   - **Goal:** chủ spa (và platform admin) bắt buộc TOTP khi đăng nhập (ADR-0004).
   - **Touches:** migration thêm `mfa_secret_ct`, `mfa_enabled`; enroll (QR) + verify; login bước 2; mã khôi phục.
   - **Tests:** sai mã → 401; replay mã cũ → 401; owner chưa bật MFA → bắt enroll.
   - **Depends on:** S2. Làm trước S11 (staging).
+  - **Kết quả:**
+    - Migration `0006_mfa`: `role.requires_mfa` (role là dữ liệu; CHECK không cho bỏ MFA ở role hệ thống `owner`), `user_account.mfa_secret_ct` (AES-256-GCM, AAD gắn với user id), `mfa_enabled_at`, `mfa_last_step` (chống replay), bảng `mfa_recovery_code` (SHA-256(user id ‖ mã), dùng 1 lần), `session.mfa_pending`, hàm `app.user_requires_mfa` (SECURITY DEFINER, giống `tenants_of_user`). Migration thu hồi session cũ của tài khoản bắt buộc MFA.
+    - MFA áp dụng khi user có role `requires_mfa` hoặc role giữ `platform.tenant.manage` ở bất kỳ spa nào, hoặc user đã tự bật MFA.
+    - Luồng: `POST /auth/login` trả `{next: done | mfa_verify | mfa_enroll, me}`. Khi chưa xong MFA, session ở trạng thái **pending** (hạn 10 phút, không có spa, `me = null`): `CurrentSession`/`AuthUser` từ chối với `401 auth.mfa_required | auth.mfa_enrollment_required`; chỉ `/auth/mfa/*` và `/auth/logout` nhận nó. `POST /auth/mfa/verify` (TOTP hoặc mã khôi phục) và `POST /auth/mfa/enroll/confirm` thu hồi session pending và cấp session đầy đủ mới (xoay token). `enroll/start` trả `otpauth_uri` + `manual_key`; đã enroll thì `409`.
+    - TOTP: crate `totp-rs` 6 (MIT), RFC 6238 SHA-1, 6 số, 30 giây, lệch ±1 bước. Mỗi bước thời gian chỉ được chấp nhận 1 lần (`UPDATE … WHERE mfa_last_step < $step`, nguyên tử).
+    - Khóa tài khoản: mã sai tính chung bộ đếm `failed_logins` (tăng bằng SQL, không mất lượt khi gửi song song). Nhập lại đúng mật khẩu **không** reset bộ đếm với tài khoản MFA; chỉ hoàn tất MFA mới reset. Rate limit IP của `/auth/*` áp dụng cho `/auth/mfa/*`.
+    - Reauth: tài khoản đã bật MFA phải gửi thêm `code` (thiếu → `422`, sai → `401 auth.invalid_mfa_code`); lần sai mật khẩu/mã khi reauth cũng tính vào khóa.
+    - `kernel::crypto::FieldCipher` là nguồn duy nhất cho mã hóa trường; `crm::cipher` chỉ còn re-export + `customer_aad` (layout AAD giữ nguyên). Config `APP_DATA_KEY` dùng chung.
+    - CLI `app reset-mfa --phone P` (mất điện thoại; xác minh danh tính trước): xóa secret + mã khôi phục, thu hồi mọi session.
+    - Web: `/xac-thuc` (nhập mã 6 số hoặc mã khôi phục), enroll (QR vẽ SVG tại trình duyệt bằng `uqr` 0.1.3, không gọi host ngoài, CSP giữ nguyên; khóa nhập tay chia nhóm 4), màn hình mã khôi phục hiện 1 lần + nút chép + checkbox "đã lưu". Guard: session pending bị đưa về `/xac-thuc` (chỉ UX).
+    - Test: 11 HTTP E2E MFA + 6 unit `mfa` + 4 unit `kernel::crypto` + 2 config; test auth cũ chuyển sang tài khoản manager (không MFA). Web: 5 test luồng MFA. Mutation check: bỏ điều kiện replay → 2 test đỏ; bỏ chặn session pending → test pending đỏ; reset bộ đếm khi đúng mật khẩu → test lockout đỏ.
+    - **Dev:** owner thử `0905000001` lần đăng nhập đầu sẽ bị bắt enroll: quét QR bằng Google/Microsoft Authenticator (hoặc nhập khóa tay), nhập mã, lưu mã khôi phục. Cần `APP_DATA_KEY` trong `.env` (`openssl rand -base64 32`). Mất app xác thực ở dev: `cargo run --manifest-path apps/api/Cargo.toml -p app -- reset-mfa --phone 0905000001` rồi đăng nhập lại.
 
 - [x] **S3 Tracer bullet: bảng giá (đọc) + seed menu** (size: S) ✅ 2026-11-04
   - **Goal:** quản lý đăng nhập → thấy menu thật, gồm 10 nhóm, 35 dịch vụ và giá Nữ/Nam, trên `/bang-gia`.

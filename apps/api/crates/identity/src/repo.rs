@@ -14,8 +14,10 @@ pub struct AccountRow {
     pub phone: String,
     pub password_hash: String,
     pub active: bool,
-    pub failed_logins: i32,
     pub locked_until: Option<DateTime<Utc>>,
+    /// Encrypted TOTP secret (enrolled, or enrollment started but not confirmed).
+    pub mfa_secret_ct: Option<Vec<u8>>,
+    pub mfa_enabled: bool,
 }
 
 pub async fn account_by_phone(
@@ -23,7 +25,8 @@ pub async fn account_by_phone(
     phone: &PhoneE164,
 ) -> Result<Option<AccountRow>, AppError> {
     let row = sqlx::query!(
-        r#"SELECT id, full_name, phone_e164, password_hash, status, failed_logins, locked_until
+        r#"SELECT id, full_name, phone_e164, password_hash, status, locked_until,
+                  mfa_secret_ct, mfa_enabled_at
            FROM app.user_account WHERE phone_e164 = $1"#,
         phone.as_str()
     )
@@ -35,14 +38,16 @@ pub async fn account_by_phone(
         phone: r.phone_e164,
         password_hash: r.password_hash,
         active: r.status == "active",
-        failed_logins: r.failed_logins,
         locked_until: r.locked_until,
+        mfa_secret_ct: r.mfa_secret_ct,
+        mfa_enabled: r.mfa_enabled_at.is_some(),
     }))
 }
 
 pub async fn account_by_id(pool: &PgPool, id: UserId) -> Result<Option<AccountRow>, AppError> {
     let row = sqlx::query!(
-        r#"SELECT id, full_name, phone_e164, password_hash, status, failed_logins, locked_until
+        r#"SELECT id, full_name, phone_e164, password_hash, status, locked_until,
+                  mfa_secret_ct, mfa_enabled_at
            FROM app.user_account WHERE id = $1"#,
         id.as_uuid()
     )
@@ -54,22 +59,35 @@ pub async fn account_by_id(pool: &PgPool, id: UserId) -> Result<Option<AccountRo
         phone: r.phone_e164,
         password_hash: r.password_hash,
         active: r.status == "active",
-        failed_logins: r.failed_logins,
         locked_until: r.locked_until,
+        mfa_secret_ct: r.mfa_secret_ct,
+        mfa_enabled: r.mfa_enabled_at.is_some(),
     }))
 }
 
-pub async fn record_failed_login(
+/// Counts one failed password or second-factor attempt and returns the new total. The increment
+/// happens in SQL so parallel guesses cannot overwrite each other's count and dodge the lockout.
+pub async fn increment_failed_logins(pool: &PgPool, id: UserId) -> Result<i32, AppError> {
+    let failures = sqlx::query_scalar!(
+        "UPDATE app.user_account SET failed_logins = failed_logins + 1, updated_at = now()
+         WHERE id = $1 RETURNING failed_logins",
+        id.as_uuid()
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(failures)
+}
+
+pub async fn lock_account_until(
     pool: &PgPool,
     id: UserId,
-    failed_logins: i32,
-    locked_until: Option<DateTime<Utc>>,
+    until: DateTime<Utc>,
 ) -> Result<(), AppError> {
     sqlx::query!(
-        "UPDATE app.user_account SET failed_logins = $2, locked_until = $3, updated_at = now() WHERE id = $1",
+        "UPDATE app.user_account SET locked_until = greatest(locked_until, $2), updated_at = now()
+         WHERE id = $1",
         id.as_uuid(),
-        failed_logins,
-        locked_until
+        until
     )
     .execute(pool)
     .await?;
@@ -95,14 +113,16 @@ pub struct NewSession<'a> {
     pub absolute_expires_at: DateTime<Utc>,
     pub ip: Option<std::net::IpAddr>,
     pub user_agent: Option<&'a str>,
+    /// Password accepted, second factor still owed.
+    pub mfa_pending: bool,
 }
 
 pub async fn insert_session(pool: &PgPool, s: NewSession<'_>) -> Result<Uuid, AppError> {
     let id = Uuid::now_v7();
     sqlx::query!(
         r#"INSERT INTO app.session
-             (id, token_hash, user_id, active_tenant_id, idle_expires_at, absolute_expires_at, ip, user_agent)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
+             (id, token_hash, user_id, active_tenant_id, idle_expires_at, absolute_expires_at, ip, user_agent, mfa_pending)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#,
         id,
         &s.token_hash[..],
         s.user_id.as_uuid(),
@@ -111,6 +131,7 @@ pub async fn insert_session(pool: &PgPool, s: NewSession<'_>) -> Result<Uuid, Ap
         s.absolute_expires_at,
         s.ip.map(IpNetwork::from),
         s.user_agent,
+        s.mfa_pending,
     )
     .execute(pool)
     .await?;
@@ -124,6 +145,8 @@ pub struct SessionRow {
     pub last_seen_at: DateTime<Utc>,
     pub absolute_expires_at: DateTime<Utc>,
     pub recent_auth_at: DateTime<Utc>,
+    pub mfa_pending: bool,
+    pub mfa_enrolled: bool,
 }
 
 /// A live session: not revoked, not past either expiry, owner account active.
@@ -132,7 +155,8 @@ pub async fn live_session(
     token_hash: &[u8; 32],
 ) -> Result<Option<SessionRow>, AppError> {
     let row = sqlx::query!(
-        r#"SELECT s.id, s.user_id, s.active_tenant_id, s.last_seen_at, s.absolute_expires_at, s.recent_auth_at
+        r#"SELECT s.id, s.user_id, s.active_tenant_id, s.last_seen_at, s.absolute_expires_at, s.recent_auth_at,
+                  s.mfa_pending, u.mfa_enabled_at IS NOT NULL AS "mfa_enrolled!"
            FROM app.session s JOIN app.user_account u ON u.id = s.user_id
            WHERE s.token_hash = $1 AND s.revoked_at IS NULL
              AND now() < s.idle_expires_at AND now() < s.absolute_expires_at
@@ -148,6 +172,8 @@ pub async fn live_session(
         last_seen_at: r.last_seen_at,
         absolute_expires_at: r.absolute_expires_at,
         recent_auth_at: r.recent_auth_at,
+        mfa_pending: r.mfa_pending,
+        mfa_enrolled: r.mfa_enrolled,
     }))
 }
 
@@ -204,6 +230,112 @@ pub async fn revoke_all_sessions(pool: &PgPool, user: UserId) -> Result<u64, App
     .execute(pool)
     .await?;
     Ok(done.rows_affected())
+}
+
+/// Whether any of the user's active memberships holds a role that requires MFA (migration 0006).
+pub async fn user_requires_mfa(pool: &PgPool, user: UserId) -> Result<bool, AppError> {
+    let required = sqlx::query_scalar!(
+        r#"SELECT app.user_requires_mfa($1) AS "required!""#,
+        user.as_uuid()
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(required)
+}
+
+/// Stores a not-yet-confirmed TOTP secret. Refuses (false) once MFA is enabled: an enrolled
+/// authenticator is only replaced by an operator reset, never by a password-only session.
+pub async fn store_pending_mfa_secret(
+    pool: &PgPool,
+    user: UserId,
+    secret_ct: &[u8],
+) -> Result<bool, AppError> {
+    let done = sqlx::query!(
+        "UPDATE app.user_account SET mfa_secret_ct = $2, updated_at = now()
+         WHERE id = $1 AND mfa_enabled_at IS NULL",
+        user.as_uuid(),
+        secret_ct
+    )
+    .execute(pool)
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
+/// Records `step` as used. False when this or a later step was already accepted (replay).
+/// Comparison and write are one statement, so two concurrent requests cannot both win.
+pub async fn accept_totp_step(
+    conn: impl sqlx::PgExecutor<'_>,
+    user: UserId,
+    step: i64,
+) -> Result<bool, AppError> {
+    let done = sqlx::query!(
+        "UPDATE app.user_account SET mfa_last_step = $2
+         WHERE id = $1 AND (mfa_last_step IS NULL OR mfa_last_step < $2)",
+        user.as_uuid(),
+        step
+    )
+    .execute(conn)
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
+/// Turns MFA on for the exact secret the confirming code was checked against. False if MFA is
+/// already on or the secret was replaced meanwhile (a concurrent enroll/start).
+pub async fn enable_mfa(
+    conn: impl sqlx::PgExecutor<'_>,
+    user: UserId,
+    verified_secret_ct: &[u8],
+) -> Result<bool, AppError> {
+    let done = sqlx::query!(
+        "UPDATE app.user_account SET mfa_enabled_at = now(), updated_at = now()
+         WHERE id = $1 AND mfa_enabled_at IS NULL AND mfa_secret_ct = $2",
+        user.as_uuid(),
+        verified_secret_ct
+    )
+    .execute(conn)
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
+pub async fn replace_recovery_codes(
+    conn: &mut sqlx::PgConnection,
+    user: UserId,
+    hashes: &[[u8; 32]],
+) -> Result<(), AppError> {
+    sqlx::query!(
+        "DELETE FROM app.mfa_recovery_code WHERE user_id = $1",
+        user.as_uuid()
+    )
+    .execute(&mut *conn)
+    .await?;
+    for hash in hashes {
+        sqlx::query!(
+            "INSERT INTO app.mfa_recovery_code (id, user_id, code_hash) VALUES ($1, $2, $3)",
+            Uuid::now_v7(),
+            user.as_uuid(),
+            &hash[..]
+        )
+        .execute(&mut *conn)
+        .await?;
+    }
+    Ok(())
+}
+
+/// Marks a recovery code used. False if it does not exist, belongs to someone else, or was used.
+pub async fn consume_recovery_code(
+    pool: &PgPool,
+    user: UserId,
+    hash: &[u8; 32],
+) -> Result<bool, AppError> {
+    let done = sqlx::query!(
+        "UPDATE app.mfa_recovery_code SET used_at = now()
+         WHERE user_id = $1 AND code_hash = $2 AND used_at IS NULL",
+        user.as_uuid(),
+        &hash[..]
+    )
+    .execute(pool)
+    .await?;
+    Ok(done.rows_affected() == 1)
 }
 
 pub struct TenantRef {

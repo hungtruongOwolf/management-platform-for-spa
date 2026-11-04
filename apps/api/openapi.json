@@ -28,11 +28,11 @@
         },
         "responses": {
           "200": {
-            "description": "Sets the __Host-session cookie",
+            "description": "Sets the __Host-session cookie. `next` = done | mfa_verify | mfa_enroll; until done the session only works on /auth/mfa/* and logout",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Me"
+                  "$ref": "#/components/schemas/LoginResponse"
                 }
               }
             }
@@ -50,6 +50,7 @@
         "tags": [
           "auth"
         ],
+        "summary": "Works for full and pending-MFA sessions alike (a user may abandon the MFA step).",
         "operationId": "logout",
         "responses": {
           "204": {},
@@ -66,6 +67,104 @@
         "responses": {
           "204": {},
           "401": {}
+        }
+      }
+    },
+    "/api/v1/auth/mfa/enroll/confirm": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "mfa_enroll_confirm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaCodeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "MFA enabled; recovery codes are shown this once. New full-session cookie",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaEnrolled"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "auth.invalid_mfa_code"
+          },
+          "409": {
+            "description": "auth.mfa_already_enrolled | auth.mfa_enrollment_not_started | auth.mfa_enrollment_changed | auth.mfa_not_pending"
+          },
+          "429": {}
+        }
+      }
+    },
+    "/api/v1/auth/mfa/enroll/start": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "mfa_enroll_start",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaEnrollment"
+                }
+              }
+            }
+          },
+          "401": {},
+          "409": {
+            "description": "auth.mfa_already_enrolled | auth.mfa_not_pending"
+          },
+          "429": {}
+        }
+      }
+    },
+    "/api/v1/auth/mfa/verify": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "mfa_verify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaCodeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Second factor accepted; the pending session is replaced by a full one (new cookie)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "auth.invalid_mfa_code (wrong, expired, replayed, or account locked) | auth.mfa_enrollment_required | auth.unauthenticated"
+          },
+          "409": {
+            "description": "auth.mfa_not_pending"
+          },
+          "429": {}
         }
       }
     },
@@ -87,7 +186,12 @@
         },
         "responses": {
           "204": {},
-          "401": {}
+          "401": {
+            "description": "auth.invalid_credentials | auth.invalid_mfa_code"
+          },
+          "422": {
+            "description": "`code` required: the account has MFA enabled"
+          }
         }
       }
     },
@@ -1353,6 +1457,37 @@
         },
         "additionalProperties": false
       },
+      "LoginNext": {
+        "type": "string",
+        "description": "What the browser must do after the password step.",
+        "enum": [
+          "done",
+          "mfa_verify",
+          "mfa_enroll"
+        ]
+      },
+      "LoginResponse": {
+        "type": "object",
+        "description": "Body of a successful password step. `me` is only present once fully signed in: a session that\nstill owes a second factor learns nothing about spas or permissions.",
+        "required": [
+          "next"
+        ],
+        "properties": {
+          "me": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Me"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next": {
+            "$ref": "#/components/schemas/LoginNext"
+          }
+        }
+      },
       "Me": {
         "type": "object",
         "description": "Body of `GET /me` and of a successful login.",
@@ -1386,6 +1521,56 @@
           },
           "user": {
             "$ref": "#/components/schemas/UserSummary"
+          }
+        }
+      },
+      "MfaCodeBody": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "6-digit TOTP code, or (for `verify`) one of the recovery codes."
+          }
+        },
+        "additionalProperties": false
+      },
+      "MfaEnrolled": {
+        "type": "object",
+        "description": "Result of confirming enrollment: signed in, plus the recovery codes (returned this once only).",
+        "required": [
+          "me",
+          "recovery_codes"
+        ],
+        "properties": {
+          "me": {
+            "$ref": "#/components/schemas/Me"
+          },
+          "recovery_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MfaEnrollment": {
+        "type": "object",
+        "description": "Enrollment material, shown only to the pending session that started enrollment.",
+        "required": [
+          "otpauth_uri",
+          "manual_key"
+        ],
+        "properties": {
+          "manual_key": {
+            "type": "string",
+            "description": "The same secret in base32, for typing into an authenticator app by hand."
+          },
+          "otpauth_uri": {
+            "type": "string",
+            "description": "`otpauth://totp/...` URI; the client renders it as a QR code."
           }
         }
       },
@@ -1651,6 +1836,13 @@
           "password"
         ],
         "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Current TOTP (or a recovery code); required when the account has MFA enabled."
+          },
           "password": {
             "type": "string"
           }

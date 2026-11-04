@@ -17,7 +17,7 @@ struct Owner {
 async fn owner(pool: PgPool) -> Result<Owner, Box<dyn std::error::Error>> {
     let h = harness(pool).await?;
     seed_menu(&h.owner, "vpyd").await?;
-    let token = session_for(&h.app, OWNER_PHONE).await;
+    let token = session_for(&h, OWNER_PHONE).await;
     Ok(Owner { h, token })
 }
 
@@ -325,7 +325,7 @@ async fn managers_cannot_change_the_price_list(pool: PgPool) -> TestResult {
         SystemRole::Manager,
     )
     .await?;
-    let manager = session_for(&o.h.app, "0912000444").await;
+    let manager = session_for(&o.h, "0912000444").await;
     let thu_gian = o.service("Thư Giãn").await;
     let path = format!("/services/{}", thu_gian["id"].as_str().unwrap_or_default());
     let body = json!({
@@ -370,7 +370,7 @@ async fn another_spa_cannot_edit_this_catalog(pool: PgPool) -> TestResult {
         SystemRole::Owner,
     )
     .await?;
-    let other = session_for(&o.h.app, "0987000555").await;
+    let other = session_for(&o.h, "0987000555").await;
     let thu_gian = o.service("Thư Giãn").await;
     let path = format!("/services/{}", thu_gian["id"].as_str().unwrap_or_default());
     let body = json!({

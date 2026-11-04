@@ -17,6 +17,8 @@ use tracing_subscriber::EnvFilter;
 ///   `app add-user --tenant S --phone P --name N --role owner|manager|technician`
 ///                                      (password from env APP_NEW_USER_PASSWORD, never argv)
 ///   `app add-staff --tenant S --name N --position P`   closer / technician for the pickers
+///   `app reset-mfa --phone P`          lost authenticator: clear TOTP + recovery codes, end
+///                                      sessions; next login re-enrolls (verify identity first)
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Local development convenience: load .env if present. Real deployments set variables in the environment.
@@ -28,12 +30,13 @@ async fn main() -> anyhow::Result<()> {
         Some("add-user") => add_user().await,
         Some("add-staff") => add_staff().await,
         Some("seed-catalog") => seed_catalog().await,
+        Some("reset-mfa") => reset_mfa().await,
         Some("openapi") => {
             print!("{}", app::openapi::json()?);
             Ok(())
         }
         Some(other) => anyhow::bail!(
-            "unknown command {other:?} (expected: serve | migrate | create-tenant | add-user | add-staff | seed-catalog | openapi)"
+            "unknown command {other:?} (expected: serve | migrate | create-tenant | add-user | add-staff | seed-catalog | reset-mfa | openapi)"
         ),
     }
 }
@@ -51,7 +54,7 @@ async fn serve() -> anyhow::Result<()> {
     jobs::spawn_idempotency_purge(pool.clone());
 
     let policy = HttpPolicy::standard(config.public_origin.clone());
-    let cipher = crm::FieldCipher::from_base64(config.data_key.expose_secret())
+    let cipher = kernel::crypto::FieldCipher::from_base64(config.data_key.expose_secret())
         .map_err(|e| anyhow::anyhow!("APP_DATA_KEY: {e}"))?;
     let app = app::router(
         AppState {
@@ -165,6 +168,18 @@ async fn seed_catalog() -> anyhow::Result<()> {
         %tenant,
         "menu seeded"
     );
+    Ok(())
+}
+
+async fn reset_mfa() -> anyhow::Result<()> {
+    init_tracing(Environment::Development);
+    let phone = required_flag("phone")?;
+    let pool = owner_pool().await?;
+    let found = identity::provisioning::reset_mfa(&pool, &phone)
+        .await
+        .map_err(|e| anyhow::anyhow!("reset-mfa failed: {}", e.code()))?;
+    anyhow::ensure!(found, "no account with that phone number");
+    tracing::info!("MFA reset; the next login will ask to enroll an authenticator again");
     Ok(())
 }
 

@@ -24,7 +24,13 @@ Người dùng R1–R3 là nhân sự spa (chủ, quản lý, KTV): vài ngườ
 - **CSRF:** `SameSite=Strict` + kiểm tra header `Origin` trên mọi request ghi.
 - **Chống dò mật khẩu:** rate limit theo IP và theo tài khoản, chậm dần, thông báo lỗi giống nhau.
 - **Tài khoản do chủ spa/quản lý tạo**, kèm link kích hoạt một lần (token 128-bit, hạn 24 giờ, lưu hash) gửi qua Zalo/tin nhắn thủ công. Quên mật khẩu: quản lý/chủ spa tạo link đặt lại, không cần email.
-- **MFA TOTP bắt buộc** cho Chủ spa và Platform admin; tùy chọn cho người khác. *(Hiện thực ở ticket S2b; S2 đã có mật khẩu, khóa tài khoản, session, reauth.)*
+- **MFA TOTP bắt buộc** cho Chủ spa và Platform admin; tùy chọn cho người khác. *(Hiện thực ở S2b.)*
+  - Bắt buộc là **dữ liệu**: `role.requires_mfa` (role hệ thống `owner` luôn true, có CHECK), hoặc role giữ `platform.tenant.manage`; user đã tự bật MFA cũng luôn phải nhập mã.
+  - Đăng nhập 2 bước: mật khẩu đúng → session **pending MFA** (10 phút, chỉ dùng được cho `/auth/mfa/*` và logout) → mã TOTP hoặc mã khôi phục → session đầy đủ mới (xoay token). Owner chưa có MFA bị bắt enroll ngay (QR + khóa nhập tay, xác nhận bằng mã đầu tiên).
+  - TOTP RFC 6238 (SHA-1, 6 số, 30 giây, ±1 bước), mỗi bước chỉ dùng 1 lần. Secret mã hóa AES-256-GCM bằng `APP_DATA_KEY`, AAD gắn user id. 10 mã khôi phục 80-bit, lưu SHA-256, dùng 1 lần, chỉ hiện 1 lần.
+  - Mã sai tính vào cùng bộ đếm khóa tài khoản; mật khẩu đúng không reset bộ đếm khi MFA còn dang dở.
+  - Reauth (🔒) với tài khoản có MFA yêu cầu thêm mã.
+  - Mất thiết bị: operator chạy `app reset-mfa` sau khi xác minh danh tính ngoài hệ thống (TOFU: ai có mật khẩu trước khi owner enroll có thể enroll trước — giảm bằng cách owner enroll ngay khi nhận tài khoản; ở R1 tài khoản do operator tạo).
 - Phân quyền: permission-based, role là dữ liệu ([principles](../architecture/principles.md) #2). Permissions được nạp vào `AuthUser` mỗi request từ session.
 
 ## Consequences

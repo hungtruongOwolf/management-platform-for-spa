@@ -86,7 +86,7 @@ impl Config {
         }
 
         let data_key = required("APP_DATA_KEY")?;
-        if crm::FieldCipher::from_base64(&data_key).is_err() {
+        if kernel::crypto::FieldCipher::from_base64(&data_key).is_err() {
             return Err(ConfigError::Invalid {
                 name: "APP_DATA_KEY",
                 value: "[redacted]".to_owned(),

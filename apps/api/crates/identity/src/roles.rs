@@ -29,6 +29,12 @@ impl SystemRole {
         }
     }
 
+    /// Seed value of `role.requires_mfa` (ADR-0004: owners must use TOTP). The database enforces
+    /// it for the system owner role; other roles may opt in later as data.
+    pub const fn requires_mfa(self) -> bool {
+        matches!(self, Self::Owner)
+    }
+
     pub fn from_key(key: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|r| r.key() == key)
     }
@@ -103,6 +109,13 @@ mod tests {
             technician,
             vec![Permission::CatalogRead, Permission::StaffReadBasic]
         );
+    }
+
+    #[test]
+    fn only_owner_requires_mfa_by_default() {
+        assert!(SystemRole::Owner.requires_mfa());
+        assert!(!SystemRole::Manager.requires_mfa());
+        assert!(!SystemRole::Technician.requires_mfa());
     }
 
     #[test]

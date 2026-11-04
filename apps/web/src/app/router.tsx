@@ -8,7 +8,8 @@ import {
   type RouterHistory,
 } from "@tanstack/react-router";
 import { LoginPage } from "../features/auth/LoginPage";
-import { meQuery } from "../features/auth/session";
+import { MfaPage } from "../features/auth/MfaPage";
+import { authQuery } from "../features/auth/session";
 import { safeNextPath } from "../lib/api";
 import { PlansPage } from "../features/catalog/PlansPage";
 import {
@@ -35,16 +36,45 @@ const loginRoute = createRoute({
       ? { next: safeNextPath(search["next"]) }
       : {},
   beforeLoad: async ({ context, search }) => {
-    const me = await context.queryClient.query({
-      ...meQuery,
+    const auth = await context.queryClient.query({
+      ...authQuery,
       staleTime: "static",
     });
     // Already signed in: honour the (sanitised) destination instead of always going home.
-    if (me) redirect({ href: safeNextPath(search.next), throw: true });
+    if (auth.state === "signed_in")
+      redirect({ href: safeNextPath(search.next), throw: true });
+    if (auth.state !== "anonymous")
+      redirect({ to: "/xac-thuc", search: search.next ? { next: search.next } : {}, throw: true });
   },
   component: function Login() {
     const { next } = loginRoute.useSearch();
     return <LoginPage next={next} />;
+  },
+});
+
+/** Second login step (TOTP / recovery code, or forced enrollment for owners). UX only. */
+const mfaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/xac-thuc",
+  validateSearch: (search: Record<string, unknown>): { next?: string } =>
+    typeof search["next"] === "string"
+      ? { next: safeNextPath(search["next"]) }
+      : {},
+  beforeLoad: async ({ context, search }) => {
+    const auth = await context.queryClient.query({
+      ...authQuery,
+      staleTime: "static",
+    });
+    if (auth.state === "signed_in")
+      redirect({ href: safeNextPath(search.next), throw: true });
+    if (auth.state === "anonymous")
+      redirect({ to: "/dang-nhap", search: search.next ? { next: search.next } : {}, throw: true });
+    return { step: auth.state === "mfa_enroll" ? "mfa_enroll" : "mfa_verify" } as const;
+  },
+  component: function Mfa() {
+    const { next } = mfaRoute.useSearch();
+    const { step } = mfaRoute.useRouteContext();
+    return <MfaPage step={step} next={next} />;
   },
 });
 
@@ -53,13 +83,19 @@ const authedRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "authed",
   beforeLoad: async ({ context, location }) => {
-    const me = await context.queryClient.query({
-      ...meQuery,
+    const auth = await context.queryClient.query({
+      ...authQuery,
       staleTime: "static",
     });
-    if (!me)
+    if (auth.state === "anonymous")
       redirect({
         to: "/dang-nhap",
+        search: { next: location.href },
+        throw: true,
+      });
+    if (auth.state !== "signed_in")
+      redirect({
+        to: "/xac-thuc",
         search: { next: location.href },
         throw: true,
       });
@@ -102,6 +138,7 @@ const customerRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
+  mfaRoute,
   authedRoute.addChildren([
     homeRoute,
     priceListRoute,

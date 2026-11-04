@@ -1,17 +1,21 @@
 //! Auth routes and the extractors every other context uses: `CurrentSession` (logged in) and
 //! `AuthUser` (logged in + active spa + permissions, i.e. a `kernel::Actor`).
 
-use crate::service::{self, ClientMeta, Me, Session};
+use crate::service::{
+    self, ClientMeta, LoginResponse, Me, MfaEnrolled, MfaEnrollment, PendingMfa, Session,
+};
 use axum::extract::{ConnectInfo, FromRef, FromRequestParts, State};
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use kernel::crypto::FieldCipher;
 use kernel::{Actor, AppError, FieldError, TenantId};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
 use utoipa::ToSchema;
 
 /// `__Host-` prefix: Secure, Path=/, no Domain — cannot be set or overwritten by subdomains.
@@ -80,6 +84,26 @@ where
     }
 }
 
+/// A session that passed the password step and still owes its second factor. Only the MFA
+/// endpoints take this extractor; everything else uses `CurrentSession`, which refuses it.
+pub struct PendingMfaSession(pub PendingMfa);
+
+impl<S> FromRequestParts<S> for PendingMfaSession
+where
+    PgPool: FromRef<S>,
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let secret = session_secret(&parts.headers).ok_or(AppError::Unauthenticated)?;
+        let pool = PgPool::from_ref(state);
+        service::resolve_pending(&pool, &secret)
+            .await
+            .map(PendingMfaSession)
+    }
+}
+
 /// A logged-in user acting inside their active spa, with that spa's permissions loaded.
 pub struct AuthUser {
     pub actor: Actor,
@@ -133,6 +157,16 @@ pub struct LoginBody {
 #[serde(deny_unknown_fields)]
 pub struct ReauthBody {
     password: String,
+    /// Current TOTP (or a recovery code); required when the account has MFA enabled.
+    #[serde(default)]
+    code: Option<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MfaCodeBody {
+    /// 6-digit TOTP code, or (for `verify`) one of the recovery codes.
+    code: String,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -142,10 +176,14 @@ pub struct SwitchTenantBody {
     tenant_id: TenantId,
 }
 
-fn with_cookie(status: StatusCode, cookie: &str, body: Option<Me>) -> Result<Response, AppError> {
+fn with_cookie<T: Serialize>(
+    status: StatusCode,
+    cookie: &str,
+    body: Option<T>,
+) -> Result<Response, AppError> {
     let value = HeaderValue::from_str(cookie).map_err(|e| AppError::Internal(e.to_string()))?;
     let mut response = match body {
-        Some(me) => (status, Json(me)).into_response(),
+        Some(body) => (status, Json(body)).into_response(),
         None => status.into_response(),
     };
     response.headers_mut().insert(header::SET_COOKIE, value);
@@ -155,10 +193,11 @@ fn with_cookie(status: StatusCode, cookie: &str, body: Option<Me>) -> Result<Res
     Ok(response)
 }
 
-/// Login/logout/re-auth/switch under `/auth`, plus `GET /me`. Mount under `/api/v1`.
+/// Login/logout/re-auth/switch/MFA under `/auth`, plus `GET /me`. Mount under `/api/v1`.
 pub fn routes<S>() -> (Router<S>, Router<S>)
 where
     PgPool: FromRef<S>,
+    Arc<FieldCipher>: FromRef<S>,
     S: Clone + Send + Sync + 'static,
 {
     let auth = Router::new()
@@ -166,13 +205,16 @@ where
         .route("/auth/logout", post(logout))
         .route("/auth/logout-all", post(logout_all))
         .route("/auth/reauth", post(reauth))
-        .route("/auth/switch-tenant", post(switch_tenant));
+        .route("/auth/switch-tenant", post(switch_tenant))
+        .route("/auth/mfa/verify", post(mfa_verify))
+        .route("/auth/mfa/enroll/start", post(mfa_enroll_start))
+        .route("/auth/mfa/enroll/confirm", post(mfa_enroll_confirm));
     let me_routes = Router::new().route("/me", get(me));
     (auth, me_routes)
 }
 
 #[utoipa::path(post, path = "/api/v1/auth/login", tag = "auth", request_body = LoginBody,
-    responses((status = 200, body = Me, description = "Sets the __Host-session cookie"), (status = 401, description = "auth.invalid_credentials"), (status = 422), (status = 429)))]
+    responses((status = 200, body = LoginResponse, description = "Sets the __Host-session cookie. `next` = done | mfa_verify | mfa_enroll; until done the session only works on /auth/mfa/* and logout"), (status = 401, description = "auth.invalid_credentials"), (status = 422), (status = 429)))]
 pub async fn login(
     State(pool): State<PgPool>,
     headers: HeaderMap,
@@ -186,7 +228,7 @@ pub async fn login(
         )]));
     }
     let previous = session_secret(&headers);
-    let (token, me) = service::login(
+    let (token, outcome) = service::login(
         &pool,
         &body.phone,
         &body.password,
@@ -194,16 +236,71 @@ pub async fn login(
         &meta,
     )
     .await?;
+    with_cookie(
+        StatusCode::OK,
+        &session_cookie(&token.secret),
+        Some(outcome),
+    )
+}
+
+#[utoipa::path(post, path = "/api/v1/auth/mfa/verify", tag = "auth", request_body = MfaCodeBody,
+    responses((status = 200, body = Me, description = "Second factor accepted; the pending session is replaced by a full one (new cookie)"),
+        (status = 401, description = "auth.invalid_mfa_code (wrong, expired, replayed, or account locked) | auth.mfa_enrollment_required | auth.unauthenticated"),
+        (status = 409, description = "auth.mfa_not_pending"), (status = 429)))]
+pub async fn mfa_verify(
+    State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
+    PendingMfaSession(pending): PendingMfaSession,
+    Client(meta): Client,
+    Json(body): Json<MfaCodeBody>,
+) -> Result<Response, AppError> {
+    let (token, me) = service::verify_mfa(&pool, &cipher, &pending, &body.code, &meta).await?;
     with_cookie(StatusCode::OK, &session_cookie(&token.secret), Some(me))
 }
 
-#[utoipa::path(post, path = "/api/v1/auth/logout", tag = "auth", responses((status = 204), (status = 401)))]
-pub async fn logout(
+#[utoipa::path(post, path = "/api/v1/auth/mfa/enroll/start", tag = "auth",
+    responses((status = 200, body = MfaEnrollment), (status = 401),
+        (status = 409, description = "auth.mfa_already_enrolled | auth.mfa_not_pending"), (status = 429)))]
+pub async fn mfa_enroll_start(
     State(pool): State<PgPool>,
-    CurrentSession(session): CurrentSession,
+    State(cipher): State<Arc<FieldCipher>>,
+    PendingMfaSession(pending): PendingMfaSession,
 ) -> Result<Response, AppError> {
-    service::logout(&pool, &session).await?;
-    with_cookie(StatusCode::NO_CONTENT, &clear_session_cookie(), None)
+    let enrollment = service::start_enrollment(&pool, &cipher, &pending).await?;
+    let mut response = Json(enrollment).into_response();
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    Ok(response)
+}
+
+#[utoipa::path(post, path = "/api/v1/auth/mfa/enroll/confirm", tag = "auth", request_body = MfaCodeBody,
+    responses((status = 200, body = MfaEnrolled, description = "MFA enabled; recovery codes are shown this once. New full-session cookie"),
+        (status = 401, description = "auth.invalid_mfa_code"),
+        (status = 409, description = "auth.mfa_already_enrolled | auth.mfa_enrollment_not_started | auth.mfa_enrollment_changed | auth.mfa_not_pending"),
+        (status = 429)))]
+pub async fn mfa_enroll_confirm(
+    State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
+    PendingMfaSession(pending): PendingMfaSession,
+    Client(meta): Client,
+    Json(body): Json<MfaCodeBody>,
+) -> Result<Response, AppError> {
+    let (token, enrolled) =
+        service::confirm_enrollment(&pool, &cipher, &pending, &body.code, &meta).await?;
+    with_cookie(
+        StatusCode::OK,
+        &session_cookie(&token.secret),
+        Some(enrolled),
+    )
+}
+
+/// Works for full and pending-MFA sessions alike (a user may abandon the MFA step).
+#[utoipa::path(post, path = "/api/v1/auth/logout", tag = "auth", responses((status = 204), (status = 401)))]
+pub async fn logout(State(pool): State<PgPool>, headers: HeaderMap) -> Result<Response, AppError> {
+    let secret = session_secret(&headers).ok_or(AppError::Unauthenticated)?;
+    service::logout(&pool, &secret).await?;
+    with_cookie::<()>(StatusCode::NO_CONTENT, &clear_session_cookie(), None)
 }
 
 #[utoipa::path(post, path = "/api/v1/auth/logout-all", tag = "auth", responses((status = 204), (status = 401)))]
@@ -212,16 +309,26 @@ pub async fn logout_all(
     CurrentSession(session): CurrentSession,
 ) -> Result<Response, AppError> {
     service::logout_all(&pool, &session).await?;
-    with_cookie(StatusCode::NO_CONTENT, &clear_session_cookie(), None)
+    with_cookie::<()>(StatusCode::NO_CONTENT, &clear_session_cookie(), None)
 }
 
-#[utoipa::path(post, path = "/api/v1/auth/reauth", tag = "auth", request_body = ReauthBody, responses((status = 204), (status = 401)))]
+#[utoipa::path(post, path = "/api/v1/auth/reauth", tag = "auth", request_body = ReauthBody,
+    responses((status = 204), (status = 401, description = "auth.invalid_credentials | auth.invalid_mfa_code"),
+        (status = 422, description = "`code` required: the account has MFA enabled")))]
 pub async fn reauth(
     State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
     CurrentSession(session): CurrentSession,
     Json(body): Json<ReauthBody>,
 ) -> Result<StatusCode, AppError> {
-    service::reauth(&pool, &session, &body.password).await?;
+    service::reauth(
+        &pool,
+        &cipher,
+        &session,
+        &body.password,
+        body.code.as_deref(),
+    )
+    .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

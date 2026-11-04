@@ -5,7 +5,7 @@ mod common;
 use axum::body::Body;
 use axum::extract::ConnectInfo;
 use axum::http::{Request, StatusCode, header};
-use common::{OWNER_PHONE as PHONE, PASSWORD, TestResult, call, harness, login};
+use common::{Harness, PASSWORD, TestResult, add_member, call, harness, login};
 use identity::SystemRole;
 use identity::provisioning::{NewUser, add_user, create_tenant};
 use serde_json::json;
@@ -13,10 +13,20 @@ use sqlx::PgPool;
 use std::net::SocketAddr;
 use tower::ServiceExt;
 
+/// Session mechanics are exercised with a manager: no second factor, so each login is one call.
+/// MFA flows (owners) live in tests/mfa.rs.
+const PHONE: &str = "0912345678";
+
+async fn staff_harness(owner: PgPool) -> Result<Harness, Box<dyn std::error::Error>> {
+    let h = harness(owner).await?;
+    add_member(&h.owner, "vpyd", PHONE, "Quản lý", SystemRole::Manager).await?;
+    Ok(h)
+}
+
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn login_sets_a_hardened_cookie_and_returns_me(owner: PgPool) -> TestResult {
-    let h = harness(owner).await?;
-    let reply = login(&h.app, "0905.123.456", PASSWORD).await;
+    let h = staff_harness(owner).await?;
+    let reply = login(&h.app, "0912.345.678", PASSWORD).await;
     assert_eq!(reply.status, StatusCode::OK);
     let cookie = reply.cookie().unwrap_or_default();
     for flag in [
@@ -28,13 +38,16 @@ async fn login_sets_a_hardened_cookie_and_returns_me(owner: PgPool) -> TestResul
     ] {
         assert!(cookie.contains(flag), "{flag} missing: {cookie}");
     }
-    assert_eq!(reply.body["user"]["phone"], "0905 123 456");
-    assert_eq!(reply.body["active_tenant"]["name"], "Viên Phúc Y Đường");
-    let perms = reply.body["permissions"]
+    assert_eq!(reply.body["me"]["user"]["phone"], "0912 345 678");
+    assert_eq!(
+        reply.body["me"]["active_tenant"]["name"],
+        "Viên Phúc Y Đường"
+    );
+    let perms = reply.body["me"]["permissions"]
         .as_array()
         .map(Vec::len)
         .unwrap_or(0);
-    assert!(perms > 10, "owner should have many permissions");
+    assert!(perms > 10, "manager should have many permissions");
     assert!(
         !reply.body.to_string().contains("argon2"),
         "hash must never leave the server"
@@ -44,7 +57,7 @@ async fn login_sets_a_hardened_cookie_and_returns_me(owner: PgPool) -> TestResul
 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn wrong_password_and_unknown_phone_are_indistinguishable(owner: PgPool) -> TestResult {
-    let h = harness(owner).await?;
+    let h = staff_harness(owner).await?;
     let wrong = login(&h.app, PHONE, "sai-mat-khau-roi").await;
     let unknown = login(&h.app, "0912888777", PASSWORD).await;
     let malformed = login(&h.app, "not-a-phone", PASSWORD).await;
@@ -59,7 +72,7 @@ async fn wrong_password_and_unknown_phone_are_indistinguishable(owner: PgPool) -
 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn five_failures_lock_the_account_even_for_the_right_password(owner: PgPool) -> TestResult {
-    let h = harness(owner).await?;
+    let h = staff_harness(owner).await?;
     for _ in 0..5 {
         assert_eq!(
             login(&h.app, PHONE, "sai-mat-khau-roi").await.status,
@@ -87,7 +100,7 @@ async fn five_failures_lock_the_account_even_for_the_right_password(owner: PgPoo
 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn me_requires_a_live_session_and_logout_ends_it(owner: PgPool) -> TestResult {
-    let h = harness(owner).await?;
+    let h = staff_harness(owner).await?;
     let anonymous = call(&h.app, "GET", "/me", None, None).await;
     assert_eq!(
         (anonymous.status, anonymous.body["code"].as_str()),
@@ -121,7 +134,7 @@ async fn me_requires_a_live_session_and_logout_ends_it(owner: PgPool) -> TestRes
 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn login_rotates_and_logout_all_revokes_every_device(owner: PgPool) -> TestResult {
-    let h = harness(owner).await?;
+    let h = staff_harness(owner).await?;
     let phone_a = login(&h.app, PHONE, PASSWORD)
         .await
         .session()
@@ -170,7 +183,7 @@ async fn login_rotates_and_logout_all_revokes_every_device(owner: PgPool) -> Tes
 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn idle_and_absolute_expiry_end_the_session(owner: PgPool) -> TestResult {
-    let h = harness(owner).await?;
+    let h = staff_harness(owner).await?;
     let token = login(&h.app, PHONE, PASSWORD)
         .await
         .session()
@@ -199,7 +212,7 @@ async fn idle_and_absolute_expiry_end_the_session(owner: PgPool) -> TestResult {
 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn login_from_a_foreign_origin_is_rejected(owner: PgPool) -> TestResult {
-    let h = harness(owner).await?;
+    let h = staff_harness(owner).await?;
     let mut request = Request::post("/api/v1/auth/login")
         .header(header::ORIGIN, "https://evil.example")
         .header(header::CONTENT_TYPE, "application/json")
@@ -225,7 +238,7 @@ async fn login_from_a_foreign_origin_is_rejected(owner: PgPool) -> TestResult {
 async fn member_of_two_spas_must_choose_and_cannot_switch_to_a_foreign_spa(
     owner: PgPool,
 ) -> TestResult {
-    let h = harness(owner).await?;
+    let h = staff_harness(owner).await?;
     create_tenant(&h.owner, "spa-b", "Spa B", "Cơ sở 1").await?;
     create_tenant(&h.owner, "spa-c", "Spa C", "Cơ sở 1").await?;
     add_user(
@@ -242,11 +255,14 @@ async fn member_of_two_spas_must_choose_and_cannot_switch_to_a_foreign_spa(
 
     let first = login(&h.app, PHONE, PASSWORD).await;
     assert!(
-        first.body["active_tenant"].is_null(),
+        first.body["me"]["active_tenant"].is_null(),
         "two spas → no automatic choice"
     );
-    assert_eq!(first.body["tenants"].as_array().map(Vec::len), Some(2));
-    assert_eq!(first.body["permissions"], json!([]));
+    assert_eq!(
+        first.body["me"]["tenants"].as_array().map(Vec::len),
+        Some(2)
+    );
+    assert_eq!(first.body["me"]["permissions"], json!([]));
     let token = first.session().unwrap_or_default();
 
     let spa_b: String = sqlx::query_scalar("SELECT id::text FROM app.tenant WHERE slug = 'spa-b'")
@@ -291,7 +307,7 @@ async fn member_of_two_spas_must_choose_and_cannot_switch_to_a_foreign_spa(
 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn reauth_checks_the_password(owner: PgPool) -> TestResult {
-    let h = harness(owner).await?;
+    let h = staff_harness(owner).await?;
     let token = login(&h.app, PHONE, PASSWORD)
         .await
         .session()
@@ -319,7 +335,7 @@ async fn reauth_checks_the_password(owner: PgPool) -> TestResult {
 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn disabled_accounts_and_memberships_lose_access(owner: PgPool) -> TestResult {
-    let h = harness(owner).await?;
+    let h = staff_harness(owner).await?;
     let token = login(&h.app, PHONE, PASSWORD)
         .await
         .session()
@@ -348,7 +364,7 @@ async fn disabled_accounts_and_memberships_lose_access(owner: PgPool) -> TestRes
 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn unknown_body_fields_are_rejected(owner: PgPool) -> TestResult {
-    let h = harness(owner).await?;
+    let h = staff_harness(owner).await?;
     let reply = call(
         &h.app,
         "POST",

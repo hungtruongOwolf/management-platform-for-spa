@@ -62,7 +62,7 @@ describe("auth flow", () => {
           password: "mat-khau-dung",
         });
         loggedIn = true;
-        return Response.json(ME);
+        return Response.json({ next: "done", me: ME });
       }
       return new Response(null, { status: 404 });
     });

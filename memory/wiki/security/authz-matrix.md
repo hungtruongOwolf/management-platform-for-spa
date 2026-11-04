@@ -34,7 +34,8 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
 | `support_grant.manage` | ✓ | — | — | — |
 | `platform.tenant.manage` | — | — | — | ✓ |
 
-- 🔒 = yêu cầu **xác thực lại** (nhập mật khẩu trong 5 phút gần nhất, `session.recent_auth_at`).
+- 🔒 = yêu cầu **xác thực lại** (nhập mật khẩu trong 5 phút gần nhất, `session.recent_auth_at`; tài khoản có MFA nhập thêm mã TOTP/khôi phục).
+- **MFA (S2b):** role có `requires_mfa` (Owner mặc định, không tắt được) hoặc giữ `platform.tenant.manage` (PlatformAdmin) phải qua TOTP. Session **pending MFA** không có quyền nào: mọi route dùng `CurrentSession`/`AuthUser` trả `401 auth.mfa_required | auth.mfa_enrollment_required`; chỉ `/auth/mfa/verify`, `/auth/mfa/enroll/start|confirm`, `/auth/logout` nhận nó.
 - **grant** = chỉ khi có `support_grant` còn hiệu lực do chủ spa cấp; mọi truy cập đều audit. Platform admin **không bao giờ** đọc được ghi chú sức khỏe.
 - Technician ở R1-1 không có quyền thao tác quầy. Quyền "xem dữ liệu của chính mình" thuộc R2.
 
@@ -49,3 +50,4 @@ Test 1–2 và cổng CI "route chưa khai báo permission" nằm ở `apps/api/
 4. Platform admin không có grant → `403` trên mọi endpoint dữ liệu tenant; grant hết hạn → `403`.
 5. Thao tác 🔒 khi `recent_auth_at` quá 5 phút → `401` kèm code `auth.reauth_required`.
 6. Manager giảm giá vượt ngưỡng → `403` code `discount.limit_exceeded`.
+7. Session pending MFA gọi `/me` hoặc route nghiệp vụ → `401`; owner chưa enroll → `next = mfa_enroll`; manager → `next = done` (`app/tests/mfa.rs`).

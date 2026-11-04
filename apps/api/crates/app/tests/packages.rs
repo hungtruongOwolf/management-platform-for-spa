@@ -24,7 +24,7 @@ struct Fixture {
 async fn fixture(pool: PgPool) -> Result<Fixture, Box<dyn std::error::Error>> {
     let h = harness(pool).await?;
     seed_menu(&h.owner, "vpyd").await?;
-    let token = session_for(&h.app, OWNER_PHONE).await;
+    let token = session_for(&h, OWNER_PHONE).await;
     let mut ids = Vec::new();
     for (name, phone) in [("Hà", "0905111222"), ("Lan", "0905333444")] {
         let c = call(

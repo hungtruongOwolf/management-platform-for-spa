@@ -29,6 +29,15 @@ pub enum AppError {
     /// Wrong phone or password — deliberately indistinguishable from each other.
     #[error("invalid credentials")]
     InvalidCredentials,
+    /// Password accepted, second factor still owed: the session may only call the MFA endpoints.
+    #[error("second factor required")]
+    MfaRequired,
+    /// Like `MfaRequired`, for an account that must first enrol an authenticator.
+    #[error("second factor enrollment required")]
+    MfaEnrollmentRequired,
+    /// Wrong, expired, or already-used TOTP / recovery code.
+    #[error("invalid second factor")]
+    InvalidMfaCode,
     #[error("forbidden: {code}")]
     Forbidden { code: &'static str },
     #[error("not found")]
@@ -68,9 +77,12 @@ impl AppError {
 
     pub fn status(&self) -> StatusCode {
         match self {
-            Self::Unauthenticated | Self::ReauthRequired | Self::InvalidCredentials => {
-                StatusCode::UNAUTHORIZED
-            }
+            Self::Unauthenticated
+            | Self::ReauthRequired
+            | Self::InvalidCredentials
+            | Self::MfaRequired
+            | Self::MfaEnrollmentRequired
+            | Self::InvalidMfaCode => StatusCode::UNAUTHORIZED,
             Self::Forbidden { .. } => StatusCode::FORBIDDEN,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Validation(_) | Self::Unprocessable { .. } => StatusCode::UNPROCESSABLE_ENTITY,
@@ -87,6 +99,9 @@ impl AppError {
             Self::Unauthenticated => "auth.unauthenticated",
             Self::ReauthRequired => "auth.reauth_required",
             Self::InvalidCredentials => "auth.invalid_credentials",
+            Self::MfaRequired => "auth.mfa_required",
+            Self::MfaEnrollmentRequired => "auth.mfa_enrollment_required",
+            Self::InvalidMfaCode => "auth.invalid_mfa_code",
             Self::Forbidden { code }
             | Self::Unprocessable { code }
             | Self::Conflict { code }

@@ -48,11 +48,12 @@ pub async fn create_tenant(
     for role in SystemRole::ALL {
         let role_id = Uuid::now_v7();
         sqlx::query!(
-            "INSERT INTO app.role (id, tenant_id, key, name, is_system) VALUES ($1, $2, $3, $4, true)",
+            "INSERT INTO app.role (id, tenant_id, key, name, is_system, requires_mfa) VALUES ($1, $2, $3, $4, true, $5)",
             role_id,
             tenant.as_uuid(),
             role.key(),
-            role.display_name()
+            role.display_name(),
+            role.requires_mfa()
         )
         .execute(&mut *tx)
         .await?;
@@ -148,4 +149,35 @@ pub async fn add_user(owner: &PgPool, new: NewUser<'_>) -> Result<UserId, AppErr
     .await?;
     tx.commit().await?;
     Ok(user)
+}
+
+/// Operator action for a lost authenticator: clears the TOTP secret and recovery codes and ends
+/// every session, so the next login goes through enrollment again. Identity must be verified
+/// out of band (in person / known phone) before running it. Returns false for an unknown phone.
+pub async fn reset_mfa(owner: &PgPool, phone: &str) -> Result<bool, AppError> {
+    let phone = PhoneE164::parse(phone)
+        .map_err(|_| AppError::Validation(vec![FieldError::new("phone", "invalid_format")]))?;
+    let mut tx = owner.begin().await?;
+    let Some(user) = sqlx::query_scalar!(
+        "UPDATE app.user_account
+         SET mfa_secret_ct = NULL, mfa_enabled_at = NULL, mfa_last_step = NULL, updated_at = now()
+         WHERE phone_e164 = $1 RETURNING id",
+        phone.as_str()
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        return Ok(false);
+    };
+    sqlx::query!("DELETE FROM app.mfa_recovery_code WHERE user_id = $1", user)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query!(
+        "UPDATE app.session SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL",
+        user
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(true)
 }

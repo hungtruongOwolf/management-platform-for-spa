@@ -16,10 +16,10 @@ pub struct AppState {
     /// Pool connected as `app_rw`; every use case opens a `kernel::TenantTx` from it.
     pub pool: PgPool,
     /// Field encryption for sensitive notes (health).
-    pub cipher: std::sync::Arc<crm::FieldCipher>,
+    pub cipher: std::sync::Arc<kernel::crypto::FieldCipher>,
 }
 
-impl axum::extract::FromRef<AppState> for std::sync::Arc<crm::FieldCipher> {
+impl axum::extract::FromRef<AppState> for std::sync::Arc<kernel::crypto::FieldCipher> {
     fn from_ref(state: &AppState) -> Self {
         state.cipher.clone()
     }
@@ -64,8 +64,10 @@ mod tests {
         // Never connects: the routes under test do not touch the database.
         let pool = PgPool::connect_lazy("postgres://app_rw:x@127.0.0.1:1/none")
             .unwrap_or_else(|e| panic!("{e}"));
-        let cipher = crm::FieldCipher::from_base64("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
-            .unwrap_or_else(|e| panic!("{e}"));
+        let cipher = kernel::crypto::FieldCipher::from_base64(
+            "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
         AppState {
             pool,
             cipher: std::sync::Arc::new(cipher),
