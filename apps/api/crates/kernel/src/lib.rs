@@ -3,6 +3,7 @@
 
 pub mod audit;
 pub mod business_date;
+pub mod crypto;
 pub mod db;
 pub mod error;
 pub mod http;

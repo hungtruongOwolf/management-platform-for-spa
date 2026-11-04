@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT app.user_requires_mfa($1) AS \"required!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "required!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "090c876b66f8ebe88dace18cbadf75f7a8e1923744e70f0af30d93feb875cd3f"
+}

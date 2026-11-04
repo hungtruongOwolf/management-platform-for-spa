@@ -29,6 +29,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Works for full and pending-MFA sessions alike (a user may abandon the MFA step). */
         post: operations["logout"];
         delete?: never;
         options?: never;
@@ -46,6 +47,54 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["logout_all"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/mfa/enroll/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["mfa_enroll_confirm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/mfa/enroll/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["mfa_enroll_start"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/mfa/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["mfa_verify"];
         delete?: never;
         options?: never;
         head?: never;
@@ -466,12 +515,41 @@ export interface components {
             password: string;
             phone: string;
         };
+        /**
+         * @description What the browser must do after the password step.
+         * @enum {string}
+         */
+        LoginNext: "done" | "mfa_verify" | "mfa_enroll";
+        /**
+         * @description Body of a successful password step. `me` is only present once fully signed in: a session that
+         *     still owes a second factor learns nothing about spas or permissions.
+         */
+        LoginResponse: {
+            me?: components["schemas"]["Me"] | null;
+            next: components["schemas"]["LoginNext"];
+        };
         /** @description Body of `GET /me` and of a successful login. */
         Me: {
             active_tenant?: components["schemas"]["TenantSummary"] | null;
             permissions: string[];
             tenants: components["schemas"]["TenantSummary"][];
             user: components["schemas"]["UserSummary"];
+        };
+        MfaCodeBody: {
+            /** @description 6-digit TOTP code, or (for `verify`) one of the recovery codes. */
+            code: string;
+        };
+        /** @description Result of confirming enrollment: signed in, plus the recovery codes (returned this once only). */
+        MfaEnrolled: {
+            me: components["schemas"]["Me"];
+            recovery_codes: string[];
+        };
+        /** @description Enrollment material, shown only to the pending session that started enrollment. */
+        MfaEnrollment: {
+            /** @description The same secret in base32, for typing into an authenticator app by hand. */
+            manual_key: string;
+            /** @description `otpauth://totp/...` URI; the client renders it as a QR code. */
+            otpauth_uri: string;
         };
         /** @enum {string} */
         PackageOriginDto: "sale" | "opening_balance";
@@ -560,6 +638,8 @@ export interface components {
             male?: number | null;
         };
         ReauthBody: {
+            /** @description Current TOTP (or a recovery code); required when the account has MFA enabled. */
+            code?: string | null;
             password: string;
         };
         /**
@@ -733,13 +813,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Sets the __Host-session cookie */
+            /** @description Sets the __Host-session cookie. `next` = done | mfa_verify | mfa_enroll; until done the session only works on /auth/mfa/* and logout */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Me"];
+                    "application/json": components["schemas"]["LoginResponse"];
                 };
             };
             /** @description auth.invalid_credentials */
@@ -809,6 +889,132 @@ export interface operations {
             };
         };
     };
+    mfa_enroll_confirm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MfaCodeBody"];
+            };
+        };
+        responses: {
+            /** @description MFA enabled; recovery codes are shown this once. New full-session cookie */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MfaEnrolled"];
+                };
+            };
+            /** @description auth.invalid_mfa_code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.mfa_already_enrolled | auth.mfa_enrollment_not_started | auth.mfa_enrollment_changed | auth.mfa_not_pending */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mfa_enroll_start: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MfaEnrollment"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.mfa_already_enrolled | auth.mfa_not_pending */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mfa_verify: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MfaCodeBody"];
+            };
+        };
+        responses: {
+            /** @description Second factor accepted; the pending session is replaced by a full one (new cookie) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description auth.invalid_mfa_code (wrong, expired, replayed, or account locked) | auth.mfa_enrollment_required | auth.unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.mfa_not_pending */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     reauth: {
         parameters: {
             query?: never;
@@ -828,7 +1034,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description auth.invalid_credentials | auth.invalid_mfa_code */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `code` required: the account has MFA enabled */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

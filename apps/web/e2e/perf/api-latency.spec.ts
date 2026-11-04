@@ -14,7 +14,7 @@ import {
 } from "@playwright/test";
 import { writeFileSync } from "node:fs";
 import { stack } from "../stack";
-import { credentials } from "../support/run";
+import { apiSignIn } from "../support/run";
 
 const SEEDED_CUSTOMERS = Number(process.env["PERF_CUSTOMERS"] ?? 300);
 const SAMPLES = Number(process.env["PERF_SAMPLES"] ?? 100);
@@ -67,14 +67,21 @@ async function signedIn(): Promise<{ api: APIRequestContext; cookie: string }> {
     baseURL: stack.apiOrigin,
     extraHTTPHeaders: { Origin: stack.webOrigin },
   });
-  const { phone, password } = credentials();
-  const login = await api.post("/api/v1/auth/login", {
-    data: { phone, password },
-    headers: { "X-Forwarded-For": nextIp() },
-  });
-  expect(login.status()).toBe(200);
   // The cookie is `Secure`; pass it explicitly instead of relying on the jar over plain http.
-  const cookie = (login.headers()["set-cookie"] ?? "").split(";")[0] ?? "";
+  const cookie = await apiSignIn(async (path, data, previous) => {
+    const reply = await api.post(path, {
+      data,
+      headers: {
+        "X-Forwarded-For": nextIp(),
+        ...(previous ? { Cookie: previous } : {}),
+      },
+    });
+    return {
+      status: reply.status(),
+      cookie: (reply.headers()["set-cookie"] ?? "").split(";")[0] ?? "",
+      body: (await reply.json()) as unknown,
+    };
+  });
   return { api, cookie };
 }
 

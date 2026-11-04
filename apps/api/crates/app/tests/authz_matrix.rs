@@ -9,7 +9,10 @@ mod common;
 
 use axum::Router;
 use axum::http::StatusCode;
-use common::{OWNER_PHONE, PASSWORD, Reply, TestResult, add_member, call_with_headers, harness};
+use common::{
+    Harness, OWNER_PHONE, PASSWORD, Reply, TestResult, add_member, call_with_headers, code_now,
+    current_code, forget_used_step, harness,
+};
 use identity::SystemRole::{self, Manager, Owner, Technician};
 use identity::provisioning::create_tenant;
 use kernel::Permission as P;
@@ -28,6 +31,9 @@ enum Access {
     Public,
     /// Any signed-in user; no tenant permission involved (`CurrentSession`).
     Session,
+    /// Only a session that passed the password step and still owes its second factor
+    /// (`PendingMfaSession`, S2b). A full session gets 409 `auth.mfa_not_pending`.
+    PendingMfa,
     /// Signed in inside a spa and holding this permission (`AuthUser` + `actor.require`).
     /// `allow` lists the default roles that hold it (authz-matrix.md columns).
     Perm(P, &'static [SystemRole]),
@@ -113,6 +119,14 @@ const ROUTES: &[Route] = &[
         .body(switch_body)
         .consumes_session(),
     route("GET", "/api/v1/me", Access::Session),
+    route("POST", "/api/v1/auth/mfa/verify", Access::PendingMfa).body(mfa_code_body),
+    route("POST", "/api/v1/auth/mfa/enroll/start", Access::PendingMfa),
+    route(
+        "POST",
+        "/api/v1/auth/mfa/enroll/confirm",
+        Access::PendingMfa,
+    )
+    .body(mfa_code_body),
     // catalog
     route(
         "GET",
@@ -242,6 +256,10 @@ fn no_body(_: &Fixture) -> Option<Value> {
 fn reauth_body(_: &Fixture) -> Option<Value> {
     Some(json!({"password": PASSWORD}))
 }
+fn mfa_code_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"code": "000000"}))
+}
+
 fn switch_body(f: &Fixture) -> Option<Value> {
     Some(json!({"tenant_id": f.tenant_id}))
 }
@@ -363,7 +381,8 @@ async fn send_route(
     send(app, route.method, path, session, body, &headers).await
 }
 
-async fn session(app: &Router, phone: &str) -> Result<String, String> {
+/// Password step only. For owners this is a pending-MFA session.
+async fn password_session(app: &Router, phone: &str) -> Result<(String, Reply), String> {
     let ip = next_ip();
     let reply = call_with_headers(
         app,
@@ -374,9 +393,59 @@ async fn session(app: &Router, phone: &str) -> Result<String, String> {
         &[("X-Forwarded-For", &ip)],
     )
     .await;
-    reply
+    let token = reply
         .session()
-        .ok_or_else(|| format!("login {phone} → {} {}", reply.status, reply.body))
+        .ok_or_else(|| format!("login {phone} → {} {}", reply.status, reply.body))?;
+    Ok((token, reply))
+}
+
+/// A full session: owners enroll on their first login and enter a current code afterwards.
+async fn session(h: &Harness, phone: &str) -> Result<String, String> {
+    let (pending, reply) = password_session(&h.app, phone).await?;
+    let done = match reply.body["next"].as_str() {
+        Some("mfa_enroll") => {
+            let start = send(
+                &h.app,
+                "POST",
+                "/auth/mfa/enroll/start",
+                Some(&pending),
+                None,
+                &[],
+            )
+            .await;
+            let key = start.body["manual_key"].as_str().unwrap_or_default();
+            let body = json!({"code": code_now(key)});
+            send(
+                &h.app,
+                "POST",
+                "/auth/mfa/enroll/confirm",
+                Some(&pending),
+                Some(body),
+                &[],
+            )
+            .await
+        }
+        Some("mfa_verify") => {
+            // Many owner logins per test fall inside one 30 s step; replay is tested in mfa.rs.
+            forget_used_step(h, phone)
+                .await
+                .map_err(|e| e.to_string())?;
+            let code = current_code(h, phone).await.map_err(|e| e.to_string())?;
+            let body = json!({"code": code});
+            send(
+                &h.app,
+                "POST",
+                "/auth/mfa/verify",
+                Some(&pending),
+                Some(body),
+                &[],
+            )
+            .await
+        }
+        _ => return Ok(pending),
+    };
+    done.session()
+        .ok_or_else(|| format!("MFA for {phone} → {} {}", done.status, done.body))
 }
 
 async fn created_id(app: &Router, owner: &str, path: &str, body: Value) -> Result<String, String> {
@@ -388,13 +457,13 @@ async fn created_id(app: &Router, owner: &str, path: &str, body: Value) -> Resul
 }
 
 async fn fixture(
-    app: &Router,
-    db: &PgPool,
+    h: &Harness,
     slug: &str,
     owner_phone: &str,
     customer_phone: &'static str,
 ) -> Result<Fixture, Box<dyn std::error::Error>> {
-    let owner = session(app, owner_phone).await?;
+    let (app, db) = (&h.app, &h.owner);
+    let owner = session(h, owner_phone).await?;
     let tenant_id: String = sqlx::query_scalar("SELECT id::text FROM app.tenant WHERE slug = $1")
         .bind(slug)
         .fetch_one(db)
@@ -462,6 +531,7 @@ async fn fixture(
 
 struct World {
     app: Router,
+    h: Harness,
     home: Fixture,
     other: Fixture,
 }
@@ -473,10 +543,11 @@ async fn world(pool: PgPool) -> Result<World, Box<dyn std::error::Error>> {
     add_member(&h.owner, "vpyd", TECHNICIAN_PHONE, "KTV", Technician).await?;
     create_tenant(&h.owner, "other", "Spa khác", "Huế").await?;
     add_member(&h.owner, "other", OTHER_OWNER_PHONE, "Chủ spa khác", Owner).await?;
-    let home = fixture(&h.app, &h.owner, "vpyd", OWNER_PHONE, "0905 777 001").await?;
-    let other = fixture(&h.app, &h.owner, "other", OTHER_OWNER_PHONE, "0905 777 002").await?;
+    let home = fixture(&h, "vpyd", OWNER_PHONE, "0905 777 001").await?;
+    let other = fixture(&h, "other", OTHER_OWNER_PHONE, "0905 777 002").await?;
     Ok(World {
-        app: h.app,
+        app: h.app.clone(),
+        h,
         home,
         other,
     })
@@ -676,15 +747,16 @@ async fn each_role_gets_exactly_what_the_matrix_grants(pool: PgPool) -> TestResu
     let mut failures = Vec::new();
     let mut cells = 0;
     for role in SystemRole::ALL {
-        let mut shared = session(&w.app, phone_of(role)).await?;
+        let mut shared = session(&w.h, phone_of(role)).await?;
         for route in ROUTES {
             let expected_allowed = match route.access {
-                Access::Public => continue,
+                // Pending-MFA routes: `pending_mfa_sessions_reach_only_the_mfa_routes`.
+                Access::Public | Access::PendingMfa => continue,
                 Access::Session => true,
                 Access::Perm(_, allow) => allow.contains(&role),
             };
             let token = if route.consumes_session {
-                session(&w.app, phone_of(role)).await?
+                session(&w.h, phone_of(role)).await?
             } else {
                 shared.clone()
             };
@@ -699,7 +771,7 @@ async fn each_role_gets_exactly_what_the_matrix_grants(pool: PgPool) -> TestResu
             cells += 1;
             if route.consumes_session {
                 // logout-all revokes every session of the user, the shared one included.
-                shared = session(&w.app, phone_of(role)).await?;
+                shared = session(&w.h, phone_of(role)).await?;
             }
             let ok = if expected_allowed {
                 !matches!(
@@ -730,11 +802,65 @@ async fn each_role_gets_exactly_what_the_matrix_grants(pool: PgPool) -> TestResu
     Ok(())
 }
 
+/// authz-matrix test #7 (S2b): a session that only passed the password step reaches nothing but
+/// the MFA routes and logout; a full session cannot use the MFA-step routes.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn pending_mfa_sessions_reach_only_the_mfa_routes(pool: PgPool) -> TestResult {
+    let w = world(pool).await?;
+    let (pending, login) = password_session(&w.app, OWNER_PHONE).await?;
+    assert_eq!(
+        login.body["next"], "mfa_verify",
+        "owner enrolled by the fixture"
+    );
+    let full = session(&w.h, OWNER_PHONE).await?;
+    let mut failures = Vec::new();
+    for route in ROUTES {
+        let path = concrete(route, &w.home);
+        let body = (route.body)(&w.home);
+        match route.access {
+            Access::Public => {}
+            Access::PendingMfa => {
+                let reply = send_route(&w.app, route, &path, Some(&full), body).await;
+                if (reply.status, reply.body["code"].as_str())
+                    != (StatusCode::CONFLICT, Some("auth.mfa_not_pending"))
+                {
+                    failures.push(format!(
+                        "{} with a full session: expected 409 auth.mfa_not_pending, got {} {}",
+                        label(route),
+                        reply.status,
+                        reply.body
+                    ));
+                }
+            }
+            // Logout accepts a pending session by design; checked last (it ends the session).
+            Access::Session if route.path == "/api/v1/auth/logout" => {}
+            Access::Session | Access::Perm(..) => {
+                let reply = send_route(&w.app, route, &path, Some(&pending), body).await;
+                let code = reply.body["code"].as_str().unwrap_or_default();
+                if reply.status != StatusCode::UNAUTHORIZED || !code.starts_with("auth.mfa_") {
+                    failures.push(format!(
+                        "{} with a pending-MFA session: expected 401 auth.mfa_*, got {} {}",
+                        label(route),
+                        reply.status,
+                        reply.body
+                    ));
+                }
+            }
+        }
+    }
+    let out = send(&w.app, "POST", "/auth/logout", Some(&pending), None, &[]).await;
+    if out.status != StatusCode::NO_CONTENT {
+        failures.push(format!("logout of a pending session: got {}", out.status));
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
+}
+
 /// authz-matrix test #2: an id from another spa is indistinguishable from a missing one.
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn ids_from_another_spa_are_not_found(pool: PgPool) -> TestResult {
     let w = world(pool).await?;
-    let intruder = session(&w.app, OTHER_OWNER_PHONE).await?;
+    let intruder = session(&w.h, OTHER_OWNER_PHONE).await?;
     let mut failures = Vec::new();
     let mut swept = 0;
     for route in ROUTES.iter().filter(|r| r.id != Target::None) {

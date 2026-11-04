@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.user_account SET mfa_secret_ct = $2, updated_at = now()\n         WHERE id = $1 AND mfa_enabled_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4bba456f37764fa8a1d141d67b17e1cd0b13795411180f627b9d610b3c487245"
+}

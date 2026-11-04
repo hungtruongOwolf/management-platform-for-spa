@@ -28,7 +28,7 @@ async fn seeded_menu_is_served_with_categories_and_price_variants(owner: PgPool)
         ),
         (10, 35, 1)
     );
-    let token = session_for(&h.app, OWNER_PHONE).await;
+    let token = session_for(&h, OWNER_PHONE).await;
 
     let categories = call(&h.app, "GET", "/service-categories", Some(&token), None).await;
     assert_eq!(categories.status, StatusCode::OK);
@@ -87,7 +87,7 @@ async fn technicians_can_read_the_catalog(owner: PgPool) -> TestResult {
         SystemRole::Technician,
     )
     .await?;
-    let token = session_for(&h.app, "0912000111").await;
+    let token = session_for(&h, "0912000111").await;
     assert_eq!(
         call(&h.app, "GET", "/services", Some(&token), None)
             .await
@@ -118,7 +118,7 @@ async fn anonymous_and_permissionless_users_are_refused(owner: PgPool) -> TestRe
     sqlx::query("DELETE FROM app.role_permission WHERE role_id IN (SELECT id FROM app.role WHERE key = 'technician')")
         .execute(&h.owner)
         .await?;
-    let token = session_for(&h.app, "0912000222").await;
+    let token = session_for(&h, "0912000222").await;
     let reply = call(&h.app, "GET", "/services", Some(&token), None).await;
     assert_eq!(
         (reply.status, reply.body["code"].as_str()),
@@ -140,7 +140,7 @@ async fn another_spa_never_sees_this_menu(owner: PgPool) -> TestResult {
         SystemRole::Owner,
     )
     .await?;
-    let token = session_for(&h.app, "0987000333").await;
+    let token = session_for(&h, "0987000333").await;
 
     let services = call(&h.app, "GET", "/services?active=false", Some(&token), None).await;
     assert_eq!(

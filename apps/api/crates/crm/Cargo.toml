@@ -9,11 +9,8 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-aes-gcm = "0.11.1"
 axum = { version = "0.8.9", default-features = false, features = ["json", "query"] }
-base64 = "0.23.1"
 chrono = "0.4.45"
-getrandom = "0.4.3"
 identity = { version = "0.1.0", path = "../identity" }
 kernel = { version = "0.1.0", path = "../kernel" }
 serde = { version = "1.0.229", features = ["derive"] }

@@ -30,7 +30,8 @@ Thêm endpoint thì làm 3 bước:
        .body(sell_package_body)
        .idempotent(),            // chỉ khi handler đọc Idempotency-Key (helper thêm ở S6)
    ```
-   - `Access::Public` (không cần session), `Access::Session` (đăng nhập là đủ), `Access::Perm(permission, roles)`. `roles` là cột ✓ của authz-matrix: `ALL`, `OWNER_MANAGER`, `OWNER_ONLY`.
+   - `Access::Public` (không cần session), `Access::Session` (đăng nhập là đủ), `Access::Perm(permission, roles)`. `roles` là cột ✓ của authz-matrix: `ALL`, `OWNER_MANAGER`, `OWNER_ONLY`. `Access::PendingMfa` (S2b): chỉ session vừa qua bước mật khẩu và còn nợ MFA (`/auth/mfa/*`); session đầy đủ gọi vào thì `409 auth.mfa_not_pending`.
+   - Helper `session()` trong matrix tự hoàn tất MFA cho owner (enroll lần đầu, sau đó nhập mã hiện tại).
    - `.id(Target::X)` khi path có `{id}`. Loại record mới (ví dụ `Target::CustomerPackage`) thì thêm variant, thêm field vào `Fixture`, rồi tạo record đó trong `fixture()` cho **cả hai** spa.
    - `.body(fn)`: body **hợp lệ** cho spa của người gọi. Body sai thì serde trả 4xx trước khi chạy permission check, và test báo nhầm.
    - `.if_match()` cho PUT có optimistic lock. `.consumes_session()` cho route thu hồi session (logout, switch-tenant).
@@ -39,6 +40,7 @@ Thêm endpoint thì làm 3 bước:
    - `every_non_public_route_rejects_anonymous_and_forged_sessions`: không có cookie, hoặc cookie giả, thì `401`.
    - `each_role_gets_exactly_what_the_matrix_grants`: role không có quyền nhận `403 auth.forbidden`. Role có quyền thì không bị 401/403/5xx.
    - `ids_from_another_spa_are_not_found`: chủ spa B gọi ID của spa A thì `404`. Có control call trên record của chính B để chứng minh 404 đến từ cách ly tenant, không phải do request hỏng.
+   - `pending_mfa_sessions_reach_only_the_mfa_routes`: session pending MFA gọi mọi route khác (trừ logout) thì `401 auth.mfa_*`.
 
 Route 🔒 (re-auth) và rule giảm giá có test riêng trong file test của slice (authz-matrix mục 5–6). Matrix chỉ kiểm cổng permission.
 
@@ -49,7 +51,8 @@ Chưa phủ: role `PlatformAdmin`/support grant (chưa có trong `identity::role
 - Stack: `playwright.config.ts` khởi động API (`cargo run -p app -- serve`, port **8091**) trên DB riêng `vpyd_e2e`, và Vite dev (port **5181**, proxy `/api` → 8091 qua `VPYD_API_ORIGIN`). Hai port này tránh đụng `pnpm dev:*`.
 - Project `setup` (`e2e/setup/provision.setup.ts`) chạy `migrate`, rồi `create-tenant` (slug `e2e-<thời gian>`), `add-user` (owner, SĐT ngẫu nhiên, mật khẩu ngẫu nhiên truyền qua env `APP_NEW_USER_PASSWORD`, không qua argv), rồi `seed-catalog`. Mỗi lần chạy có một spa mới, nên không cần reset DB. Credentials nằm ở `e2e/.auth/run.json`, cookie owner ở `e2e/.auth/owner.json` (đều gitignored). **Không bao giờ hard-code credentials.**
 - Spec mới đặt trong `e2e/specs/*.spec.ts`:
-  - Cần đăng nhập sẵn: `test.use({ storageState: ownerState })`. Test luồng đăng nhập: `signIn(page, path)`.
+  - Cần đăng nhập sẵn: `test.use({ storageState: ownerState })`. Test luồng đăng nhập: `signIn(page, path)`, hoặc `submitLogin(page)` khi form đăng nhập đã ở trên màn hình.
+  - Owner bắt buộc TOTP (S2b). `signIn`/`submitLogin` tự làm bước `/xac-thuc`: lần đầu (trong setup) enroll và lưu `totpKey` vào `run.json`; các lần sau sinh mã RFC 6238 cho bước thời gian chưa dùng (`lastTotpStep`). Server chặn replay, và mã cũ bị tính vào khóa tài khoản, nên helper không bao giờ gửi lại mã cũ (có thể phải chờ tới 30 giây). Gọi API trực tiếp thì dùng `apiSignIn`.
   - Locator theo role/label tiếng Việt (`getByRole("button", { name: "Lưu khách" })`). Không dùng CSS selector: đây cũng là kiểm tra a11y.
   - Dữ liệu unique trong run (`uniquePhone()`), để retry không đụng ràng buộc SĐT duy nhất.
   - Mỗi màn hình mới gọi `await expectAccessible(page, "<tên>")` (axe, WCAG 2.2 AA). Lỗi serious/critical thì fail. Lỗi moderate/minor được đính kèm vào report để triage.

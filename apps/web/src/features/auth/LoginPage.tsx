@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { safeNextPath } from "../../lib/api";
 import { messageFor } from "../../lib/errors";
-import { login, meQuery } from "./session";
+import { login, setAuthState } from "./session";
 
 const schema = z.object({
   phone: z.string().trim().min(9, "Nhập số điện thoại."),
@@ -24,9 +24,14 @@ export function LoginPage({ next }: { next?: string | undefined }) {
   const onSubmit = form.handleSubmit(async ({ phone, password }) => {
     setServerError(null);
     try {
-      const me = await login(phone, password);
-      queryClient.setQueryData(meQuery.queryKey, me);
-      await navigate({ to: safeNextPath(next) });
+      const auth = await login(phone, password);
+      setAuthState(queryClient, auth);
+      if (auth.state === "signed_in") {
+        await navigate({ to: safeNextPath(next) });
+      } else {
+        // Second factor still owed (owners): the server refuses this session everywhere else.
+        await navigate({ to: "/xac-thuc", search: next ? { next } : {} });
+      }
     } catch (error) {
       setServerError(messageFor(error));
       form.resetField("password");

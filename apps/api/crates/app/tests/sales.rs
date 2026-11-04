@@ -40,8 +40,8 @@ async fn shop(pool: PgPool) -> Setup<Shop> {
         SystemRole::Manager,
     )
     .await?;
-    let owner = session_for(&h.app, OWNER_PHONE).await;
-    let manager = session_for(&h.app, MANAGER_PHONE).await;
+    let owner = session_for(&h, OWNER_PHONE).await;
+    let manager = session_for(&h, MANAGER_PHONE).await;
     let services = call(&h.app, "GET", "/services", Some(&owner), None).await;
     let shampoo = services
         .body
@@ -479,7 +479,7 @@ async fn technicians_and_other_spas_are_kept_out(pool: PgPool) -> TestResult {
         SystemRole::Technician,
     )
     .await?;
-    let tech = session_for(&s.h.app, TECH_PHONE).await;
+    let tech = session_for(&s.h, TECH_PHONE).await;
     assert_eq!(
         s.sell(&tech, s.cash(1_500_000)).await.status,
         StatusCode::FORBIDDEN
@@ -513,7 +513,7 @@ async fn technicians_and_other_spas_are_kept_out(pool: PgPool) -> TestResult {
         SystemRole::Owner,
     )
     .await?;
-    let other = session_for(&s.h.app, "0987000999").await;
+    let other = session_for(&s.h, "0987000999").await;
     for path in [
         format!("/sales/{sale_id}"),
         format!("/customer-packages/{package_id}"),

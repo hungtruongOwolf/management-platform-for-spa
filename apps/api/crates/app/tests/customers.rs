@@ -16,7 +16,7 @@ fn ha() -> Value {
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn creates_a_customer_and_finds_her_by_phone_or_accentless_name(pool: PgPool) -> TestResult {
     let h = harness(pool).await?;
-    let owner = session_for(&h.app, OWNER_PHONE).await;
+    let owner = session_for(&h, OWNER_PHONE).await;
     let created = call(&h.app, "POST", "/customers", Some(&owner), Some(ha())).await;
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
     assert_eq!(
@@ -69,7 +69,7 @@ fn urlencode(s: &str) -> String {
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn equivalent_phone_spellings_are_one_customer(pool: PgPool) -> TestResult {
     let h = harness(pool).await?;
-    let owner = session_for(&h.app, OWNER_PHONE).await;
+    let owner = session_for(&h, OWNER_PHONE).await;
     let first = call(&h.app, "POST", "/customers", Some(&owner), Some(ha())).await;
     let id = first.body["id"].clone();
     for phone in ["0905111222", "+84 905 111 222", "0905.111.222"] {
@@ -110,7 +110,7 @@ async fn equivalent_phone_spellings_are_one_customer(pool: PgPool) -> TestResult
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn health_notes_are_encrypted_and_hidden_without_permission(pool: PgPool) -> TestResult {
     let h = harness(pool).await?;
-    let owner = session_for(&h.app, OWNER_PHONE).await;
+    let owner = session_for(&h, OWNER_PHONE).await;
     let created = call(&h.app, "POST", "/customers", Some(&owner), Some(ha())).await;
     let id = created.body["id"].as_str().unwrap_or_default().to_owned();
 
@@ -140,7 +140,7 @@ async fn health_notes_are_encrypted_and_hidden_without_permission(pool: PgPool) 
     sqlx::query("DELETE FROM app.role_permission WHERE permission LIKE 'customer.health_notes.%' AND role_id IN (SELECT id FROM app.role WHERE key = 'manager')")
         .execute(&h.owner)
         .await?;
-    let reception = session_for(&h.app, "0912000777").await;
+    let reception = session_for(&h, "0912000777").await;
     let seen = call(
         &h.app,
         "GET",
@@ -185,7 +185,7 @@ async fn health_notes_are_encrypted_and_hidden_without_permission(pool: PgPool) 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn owner_updates_profile_and_health_note_with_optimistic_locking(pool: PgPool) -> TestResult {
     let h = harness(pool).await?;
-    let owner = session_for(&h.app, OWNER_PHONE).await;
+    let owner = session_for(&h, OWNER_PHONE).await;
     let created = call(&h.app, "POST", "/customers", Some(&owner), Some(ha())).await;
     let id = created.body["id"].as_str().unwrap_or_default().to_owned();
 
@@ -238,7 +238,7 @@ async fn owner_updates_profile_and_health_note_with_optimistic_locking(pool: PgP
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn decomposed_unicode_names_are_stored_composed_and_found(pool: PgPool) -> TestResult {
     let h = harness(pool).await?;
-    let owner = session_for(&h.app, OWNER_PHONE).await;
+    let owner = session_for(&h, OWNER_PHONE).await;
     let decomposed = "Le\u{0302} Thi\u{0323} A\u{0301}nh"; // "Lê Thị Ánh" with combining marks
     let created = call(
         &h.app,
@@ -264,7 +264,7 @@ async fn decomposed_unicode_names_are_stored_composed_and_found(pool: PgPool) ->
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn technicians_and_other_spas_cannot_reach_customers(pool: PgPool) -> TestResult {
     let h = harness(pool).await?;
-    let owner = session_for(&h.app, OWNER_PHONE).await;
+    let owner = session_for(&h, OWNER_PHONE).await;
     let created = call(&h.app, "POST", "/customers", Some(&owner), Some(ha())).await;
     let id = created.body["id"].as_str().unwrap_or_default().to_owned();
 
@@ -276,7 +276,7 @@ async fn technicians_and_other_spas_cannot_reach_customers(pool: PgPool) -> Test
         SystemRole::Technician,
     )
     .await?;
-    let ktv = session_for(&h.app, "0912000888").await;
+    let ktv = session_for(&h, "0912000888").await;
     assert_eq!(
         call(&h.app, "GET", "/customers?q=ha", Some(&ktv), None)
             .await
@@ -299,7 +299,7 @@ async fn technicians_and_other_spas_cannot_reach_customers(pool: PgPool) -> Test
         SystemRole::Owner,
     )
     .await?;
-    let other = session_for(&h.app, "0987000999").await;
+    let other = session_for(&h, "0987000999").await;
     assert_eq!(
         call(
             &h.app,
@@ -344,7 +344,7 @@ async fn search_stays_fast_with_ten_thousand_customers(pool: PgPool) -> TestResu
     sqlx::query("ANALYZE app.customer")
         .execute(&h.owner)
         .await?;
-    let owner = session_for(&h.app, OWNER_PHONE).await;
+    let owner = session_for(&h, OWNER_PHONE).await;
 
     let mut worst = std::time::Duration::ZERO;
     for q in ["0900001234", "khach 777", "00012"] {

@@ -9,11 +9,15 @@ use axum::extract::ConnectInfo;
 use axum::http::{HeaderMap, Request, StatusCode, header};
 use http_body_util::BodyExt;
 use identity::SystemRole;
+use identity::mfa::TotpSecret;
 use identity::provisioning::{NewUser, add_user, create_tenant};
+use kernel::crypto::FieldCipher;
 use kernel::testing::app_pool;
+use kernel::{PhoneE164, UserId};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tower::ServiceExt;
 
 pub type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -27,6 +31,8 @@ pub const TEST_DATA_KEY: &str = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
 pub struct Harness {
     pub app: Router,
     pub owner: PgPool,
+    /// Same key as the app's, so tests can read back an enrolled TOTP secret.
+    pub cipher: Arc<FieldCipher>,
 }
 
 /// Tenant `vpyd` with an owner account (OWNER_PHONE / PASSWORD).
@@ -34,15 +40,15 @@ pub async fn harness(owner: PgPool) -> Result<Harness, Box<dyn std::error::Error
     create_tenant(&owner, "vpyd", "Viên Phúc Y Đường", "Đông Hà").await?;
     add_member(&owner, "vpyd", OWNER_PHONE, "Chủ Spa", SystemRole::Owner).await?;
     let pool = app_pool(&owner).await?;
-    let cipher = crm::FieldCipher::from_base64(TEST_DATA_KEY)?;
+    let cipher = Arc::new(FieldCipher::from_base64(TEST_DATA_KEY)?);
     let app = app::router(
         AppState {
             pool,
-            cipher: std::sync::Arc::new(cipher),
+            cipher: cipher.clone(),
         },
         &HttpPolicy::standard(ORIGIN.to_owned()),
     );
-    Ok(Harness { app, owner })
+    Ok(Harness { app, owner, cipher })
 }
 
 pub async fn add_member(
@@ -154,10 +160,107 @@ pub async fn login(app: &Router, phone: &str, password: &str) -> Reply {
     .await
 }
 
-/// Logs in and returns the session token (empty string if login failed).
-pub async fn session_for(app: &Router, phone: &str) -> String {
-    login(app, phone, PASSWORD)
-        .await
-        .session()
+/// Logs in and, when the account needs MFA (owners), completes it: first login enrolls an
+/// authenticator, later logins verify a current code. Returns the full session token ("" on failure).
+pub async fn session_for(h: &Harness, phone: &str) -> String {
+    let reply = login(&h.app, phone, PASSWORD).await;
+    let token = reply.session().unwrap_or_default();
+    match reply.body["next"].as_str() {
+        Some("mfa_enroll") => enroll(h, &token).await.session().unwrap_or_default(),
+        Some("mfa_verify") => {
+            // Several logins of one owner inside a 30 s step would otherwise be (correctly)
+            // refused as code replays; tests that are not about replay start from a clean slate.
+            let _ = forget_used_step(h, phone).await;
+            let code = current_code(h, phone).await.unwrap_or_default();
+            mfa_verify(h, &token, &code)
+                .await
+                .session()
+                .unwrap_or_default()
+        }
+        _ => token,
+    }
+}
+
+/// Code an authenticator app would show now for `manual_key`.
+pub fn code_now(manual_key: &str) -> String {
+    let now = u64::try_from(unix_now()).unwrap_or_default();
+    TotpSecret::from_base32(manual_key.to_owned())
+        .code_at(now)
         .unwrap_or_default()
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| i64::try_from(d.as_secs()).unwrap_or_default())
+        .unwrap_or_default()
+}
+
+/// enroll/start + enroll/confirm with a valid code; returns the confirm reply.
+pub async fn enroll(h: &Harness, pending: &str) -> Reply {
+    let start = call(
+        &h.app,
+        "POST",
+        "/auth/mfa/enroll/start",
+        Some(pending),
+        None,
+    )
+    .await;
+    let key = start.body["manual_key"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    call(
+        &h.app,
+        "POST",
+        "/auth/mfa/enroll/confirm",
+        Some(pending),
+        Some(json!({"code": code_now(&key)})),
+    )
+    .await
+}
+
+pub async fn mfa_verify(h: &Harness, pending: &str, code: &str) -> Reply {
+    call(
+        &h.app,
+        "POST",
+        "/auth/mfa/verify",
+        Some(pending),
+        Some(json!({"code": code})),
+    )
+    .await
+}
+
+async fn user_id(h: &Harness, phone: &str) -> Result<UserId, Box<dyn std::error::Error>> {
+    let phone = PhoneE164::parse(phone).map_err(|_| "bad phone")?;
+    let id: uuid::Uuid =
+        sqlx::query_scalar("SELECT id FROM app.user_account WHERE phone_e164 = $1")
+            .bind(phone.as_str())
+            .fetch_one(&h.owner)
+            .await?;
+    Ok(UserId::from_uuid(id))
+}
+
+/// The enrolled (or pending) TOTP secret, decrypted the way the server does.
+pub async fn stored_secret(h: &Harness, phone: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let user = user_id(h, phone).await?;
+    let ct: Vec<u8> =
+        sqlx::query_scalar("SELECT mfa_secret_ct FROM app.user_account WHERE id = $1")
+            .bind(user.as_uuid())
+            .fetch_one(&h.owner)
+            .await?;
+    Ok(h.cipher.decrypt(&ct, &identity::mfa::secret_aad(user))?)
+}
+
+pub async fn current_code(h: &Harness, phone: &str) -> Result<String, Box<dyn std::error::Error>> {
+    Ok(code_now(&stored_secret(h, phone).await?))
+}
+
+pub async fn forget_used_step(h: &Harness, phone: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let user = user_id(h, phone).await?;
+    sqlx::query("UPDATE app.user_account SET mfa_last_step = NULL WHERE id = $1")
+        .bind(user.as_uuid())
+        .execute(&h.owner)
+        .await?;
+    Ok(())
 }
