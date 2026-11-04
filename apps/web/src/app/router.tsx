@@ -9,7 +9,6 @@ import {
   type RouterHistory,
 } from "@tanstack/react-router";
 import { LoginPage } from "../features/auth/LoginPage";
-import { MfaPage } from "../features/auth/MfaPage";
 import { authQuery } from "../features/auth/session";
 import { FrontDeskPage } from "../features/front-desk/FrontDeskPage";
 import { safeNextPath } from "../lib/api";
@@ -82,11 +81,10 @@ const mfaRoute = createRoute({
       step: auth.state === "mfa_enroll" ? "mfa_enroll" : "mfa_verify",
     } as const;
   },
-  component: function Mfa() {
-    const { next } = mfaRoute.useSearch();
-    const { step } = mfaRoute.useRouteContext();
-    return <MfaPage step={step} next={next} />;
-  },
+  component: lazyRouteComponent(
+    () => import("../features/auth/MfaPage"),
+    "MfaRoutePage",
+  ),
 });
 
 /** Everything below requires a session. This guard is UX only; the API enforces access. */

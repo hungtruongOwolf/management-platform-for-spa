@@ -15,7 +15,7 @@ import { parseEnv } from "node:util";
 const webRoot = fileURLToPath(new URL("../", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const apiPort = Number(process.env["LHCI_API_PORT"] ?? 8093);
-const webPort = 4173;
+const webPort = Number(process.env["LHCI_WEB_PORT"] ?? 4173);
 const webOrigin = `http://localhost:${String(webPort)}`;
 
 function databaseUrl() {

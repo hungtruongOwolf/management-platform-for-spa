@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useState, type SyntheticEvent, type ReactNode } from "react";
 import { ApiError, safeNextPath } from "../../lib/api";
 import { messageFor } from "../../lib/errors";
@@ -62,6 +62,18 @@ export function MfaPage({ step, next }: { step: MfaStep; next?: string | undefin
   ) : (
     <EnrollStep onDone={finish} onRestart={restart} />
   );
+}
+
+const mfaRouteApi = getRouteApi("/xac-thuc");
+
+/**
+ * The `/xac-thuc` route component, lazy-loaded by the router: only owners reach this step, so the
+ * MFA screens and the QR encoder stay out of the main bundle (frontend.md, perf budget).
+ */
+export function MfaRoutePage() {
+  const { next } = mfaRouteApi.useSearch();
+  const { step } = mfaRouteApi.useRouteContext();
+  return <MfaPage step={step} next={next} />;
 }
 
 interface StepProps {

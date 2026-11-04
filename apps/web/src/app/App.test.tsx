@@ -118,6 +118,52 @@ describe("auth flow", () => {
     );
   });
 
+  it("focuses the first invalid field and clears its error once corrected", async () => {
+    server(() => unauthorized());
+    renderAt("/dang-nhap");
+    const user = userEvent.setup();
+    const phone = await screen.findByLabelText("Số điện thoại");
+    await user.type(phone, "0905123456");
+    await user.click(screen.getByRole("button", { name: "Đăng nhập" }));
+
+    const password = screen.getByLabelText("Mật khẩu");
+    expect(await screen.findByText("Nhập mật khẩu.")).toBeInTheDocument();
+    expect(screen.queryByText("Nhập số điện thoại.")).not.toBeInTheDocument();
+    expect(password).toHaveFocus();
+    expect(password).toHaveAttribute("aria-invalid", "true");
+
+    await user.type(password, "x");
+    expect(screen.queryByText("Nhập mật khẩu.")).not.toBeInTheDocument();
+    expect(password).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("sends the phone without surrounding spaces", async () => {
+    const fetchSpy = server((_method, path) =>
+      path === "/api/v1/auth/login"
+        ? new Response(
+            JSON.stringify({ status: 401, code: "auth.invalid_credentials" }),
+            { status: 401 },
+          )
+        : unauthorized(),
+    );
+    renderAt("/dang-nhap");
+    const user = userEvent.setup();
+    await user.type(
+      await screen.findByLabelText("Số điện thoại"),
+      "  0905123456 ",
+    );
+    await user.type(screen.getByLabelText("Mật khẩu"), "pw");
+    await user.click(screen.getByRole("button", { name: "Đăng nhập" }));
+
+    await screen.findByRole("alert");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/v1/auth/login",
+      expect.objectContaining({
+        body: JSON.stringify({ phone: "0905123456", password: "pw" }),
+      }),
+    );
+  });
+
   it("an already signed-in user opening the login link goes straight to `next`", async () => {
     server((_method, path) => {
       if (path === "/api/v1/me") return Response.json(ME);

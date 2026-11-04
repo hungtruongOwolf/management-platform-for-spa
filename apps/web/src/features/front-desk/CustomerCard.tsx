@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { messageFor } from "../../lib/errors";
 import { GENDER_LABEL, customerQuery } from "../customers/api";
-import { HealthNote } from "../customers/CustomerProfile";
+import { HealthNote } from "../customers/HealthNote";
 import { STATUS_LABEL, customerPackagesQuery, formatDate } from "../sales/api";
 import { byUseOrder, isUsable } from "./api";
 

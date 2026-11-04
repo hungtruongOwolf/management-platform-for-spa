@@ -11,13 +11,19 @@ import {
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import { formatVnd } from "@vpyd/ui";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { ApiError } from "../../lib/api";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
 import { categoriesQuery, servicesQuery } from "../catalog/api";
 import { customerQuery } from "../customers/api";
-import { CustomerForm } from "../customers/CustomerForm";
 import { CustomerSearch } from "../customers/CustomerSearch";
 import { activeStaffQuery, parseAmount } from "../sales/api";
 import {
@@ -36,6 +42,14 @@ import {
   visitBody,
 } from "./api";
 import { CustomerCard } from "./CustomerCard";
+
+// The new-customer form (react-hook-form + zod) is only needed when no match is found, so it is a
+// separate chunk: it stays off the front desk's first paint (frontend.md, perf budget).
+const CustomerForm = lazy(() =>
+  import("../customers/CustomerForm").then((m) => ({
+    default: m.CustomerForm,
+  })),
+);
 
 const field = "min-h-11 rounded-[6px] border border-border bg-surface px-3";
 const card = "rounded-[14px] border border-border bg-surface p-4";
@@ -241,26 +255,34 @@ export function FrontDeskPage() {
           />
           {creating !== null && can(me, "customer.write") && (
             <div className="mt-3">
-              <CustomerForm
-                typed={creating}
-                canWriteHealth={can(me, "customer.health_notes.write")}
-                onSaved={(c) => {
-                  select(summaryOf(c));
-                }}
-                onOpenExisting={(id) => {
-                  void queryClient
-                    .query(customerQuery(id))
-                    .then((c) => {
-                      select(summaryOf(c));
-                    })
-                    .catch((e: unknown) => {
-                      showToast(messageFor(e), true);
-                    });
-                }}
-                onCancel={() => {
-                  setCreating(null);
-                }}
-              />
+              <Suspense
+                fallback={
+                  <p role="status" className="text-text-muted">
+                    Đang mở biểu mẫu…
+                  </p>
+                }
+              >
+                <CustomerForm
+                  typed={creating}
+                  canWriteHealth={can(me, "customer.health_notes.write")}
+                  onSaved={(c) => {
+                    select(summaryOf(c));
+                  }}
+                  onOpenExisting={(id) => {
+                    void queryClient
+                      .query(customerQuery(id))
+                      .then((c) => {
+                        select(summaryOf(c));
+                      })
+                      .catch((e: unknown) => {
+                        showToast(messageFor(e), true);
+                      });
+                  }}
+                  onCancel={() => {
+                    setCreating(null);
+                  }}
+                />
+              </Suspense>
             </div>
           )}
           <p className="mt-2 text-xs text-text-muted">

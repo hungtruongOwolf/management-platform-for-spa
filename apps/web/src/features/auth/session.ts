@@ -1,17 +1,60 @@
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import type { MfaEnrollment } from "@vpyd/api-client";
-import { z } from "zod";
 import { ApiError, api } from "../../lib/api";
 
-const tenantSchema = z.object({ id: z.string(), name: z.string() });
+export interface Tenant {
+  id: string;
+  name: string;
+}
 
-export const meSchema = z.object({
-  user: z.object({ id: z.string(), full_name: z.string(), phone: z.string() }),
-  active_tenant: tenantSchema.nullable(),
-  tenants: z.array(tenantSchema),
-  permissions: z.array(z.string()),
-});
-export type Me = z.infer<typeof meSchema>;
+export interface Me {
+  user: { id: string; full_name: string; phone: string };
+  active_tenant: Tenant | null;
+  tenants: Tenant[];
+  permissions: string[];
+}
+
+// Responses are checked by hand rather than with zod: this module is on every page's critical path,
+// and zod would put ~20 KB gzip in front of the first paint (frontend.md, perf budget). The types
+// come from the API contract; these guards only reject a reply that breaks it.
+
+type Json = Record<string, unknown>;
+
+function contractError(): ApiError {
+  return new ApiError(500, "error");
+}
+
+function obj(value: unknown): Json {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw contractError();
+  return value as Json;
+}
+
+function str(value: unknown): string {
+  if (typeof value !== "string") throw contractError();
+  return value;
+}
+
+function list<T>(value: unknown, item: (v: unknown) => T): T[] {
+  if (!Array.isArray(value)) throw contractError();
+  return value.map(item);
+}
+
+function tenant(value: unknown): Tenant {
+  const t = obj(value);
+  return { id: str(t["id"]), name: str(t["name"]) };
+}
+
+/** Checks a `Me` payload from the API; throws `ApiError(500)` when it does not match the contract. */
+export function parseMe(value: unknown): Me {
+  const me = obj(value);
+  const user = obj(me["user"]);
+  return {
+    user: { id: str(user["id"]), full_name: str(user["full_name"]), phone: str(user["phone"]) },
+    active_tenant: me["active_tenant"] === null ? null : tenant(me["active_tenant"]),
+    tenants: list(me["tenants"], tenant),
+    permissions: list(me["permissions"], str),
+  };
+}
 
 /**
  * Where the browser's session stands. `mfa_*` = password accepted, second factor still owed:
@@ -32,7 +75,7 @@ const MFA_STEP_BY_CODE: Record<string, MfaStep> = {
 
 async function fetchAuthState(): Promise<AuthState> {
   try {
-    return { state: "signed_in", me: meSchema.parse(await api("/me")) };
+    return { state: "signed_in", me: parseMe(await api("/me")) };
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
       const step = MFA_STEP_BY_CODE[error.code];
@@ -57,38 +100,34 @@ export const meQuery = queryOptions({
   select: (auth: AuthState): Me | null => (auth.state === "signed_in" ? auth.me : null),
 });
 
-const loginResponseSchema = z.object({
-  next: z.enum(["done", "mfa_verify", "mfa_enroll"]),
-  me: meSchema.nullable().optional(),
-});
+const LOGIN_NEXT = ["done", "mfa_verify", "mfa_enroll"] as const;
 
 /** Password step. Owners (and anyone with MFA on) come back in an `mfa_*` state. */
 export async function login(phone: string, password: string): Promise<AuthState> {
-  const reply = loginResponseSchema.parse(await api("/auth/login", { method: "POST", body: { phone, password } }));
-  if (reply.next === "done") {
-    if (!reply.me) throw new ApiError(500, "error");
-    return { state: "signed_in", me: reply.me };
+  const reply = obj(await api("/auth/login", { method: "POST", body: { phone, password } }));
+  const next = LOGIN_NEXT.find((n) => n === reply["next"]);
+  if (!next) throw contractError();
+  if (next === "done") {
+    if (reply["me"] === null || reply["me"] === undefined) throw contractError();
+    return { state: "signed_in", me: parseMe(reply["me"]) };
   }
-  return { state: reply.next };
+  return { state: next };
 }
 
 /** Completes a pending login with a TOTP code or a recovery code. */
 export async function verifyMfa(code: string): Promise<Me> {
-  return meSchema.parse(await api("/auth/mfa/verify", { method: "POST", body: { code } }));
+  return parseMe(await api("/auth/mfa/verify", { method: "POST", body: { code } }));
 }
-
-const enrollmentSchema = z.object({ otpauth_uri: z.string(), manual_key: z.string() });
 
 export async function startMfaEnrollment(): Promise<MfaEnrollment> {
-  return enrollmentSchema.parse(await api("/auth/mfa/enroll/start", { method: "POST" }));
+  const reply = obj(await api("/auth/mfa/enroll/start", { method: "POST" }));
+  return { otpauth_uri: str(reply["otpauth_uri"]), manual_key: str(reply["manual_key"]) };
 }
-
-const enrolledSchema = z.object({ me: meSchema, recovery_codes: z.array(z.string()) });
 
 /** Confirms the authenticator; returns the recovery codes, which the server never shows again. */
 export async function confirmMfaEnrollment(code: string): Promise<{ me: Me; recoveryCodes: string[] }> {
-  const reply = enrolledSchema.parse(await api("/auth/mfa/enroll/confirm", { method: "POST", body: { code } }));
-  return { me: reply.me, recoveryCodes: reply.recovery_codes };
+  const reply = obj(await api("/auth/mfa/enroll/confirm", { method: "POST", body: { code } }));
+  return { me: parseMe(reply["me"]), recoveryCodes: list(reply["recovery_codes"], str) };
 }
 
 export function setAuthState(queryClient: QueryClient, auth: AuthState): void {
