@@ -142,6 +142,20 @@ Ops: `ingest`, `query`, `lint`, `record`, `decision`, `skip`.
 - Found in real Chrome: signed-in user on /dang-nhap?next=… was sent to "/" — fixed (test red→green).
 - Dev DB now has a test plan "Gội thảo dược 10 buổi + tặng 2 (thử)".
 
+## [2026-11-04] record | S4 merged; S5 customers built
+- S5: migration 0004_crm, crate crm (NFC names, accent-folded search, E.164 phones, encrypted health notes with AAD), routes GET/POST /customers, GET/PUT /customers/{id}, PUT /customers/{id}/health-note; config APP_DATA_KEY.
+- Web: /khach-hang search + create, /khach-hang/:id profile with health warning.
+- 7 Rust E2E (10k-customer search perf, health-note permission mutation-checked) + 33 web tests. Verified in real Chrome.
+- Contract drift from design fixed in backend.md: PUT instead of PATCH, `existing_id`.
+- Dev DB: test customer "Khách Thử Nghiệm".
+
+## [2026-11-04] ingest | Supabase credits redeemed
+- Source: raw/2026-11-04-em-supabase-credits.md. Org "For my future" (GitHub login). Unblocks part of S11; EM to create the staging project (Singapore, Data API off) and send back the project ref only.
+- Process change: work now runs in parallel sub-agents (S6, S2b, S11 prep, S10 infra), each in its own worktree + dev DB; merges still need EM go-ahead (classifier).
+
+## [2026-11-04] ingest | Supabase staging project created
+- Ref `zyyiukcysjntjgjabiqe`. Region/Data-API setting to be confirmed by EM. DB password was pasted in chat → EM advised to rotate; not recorded anywhere.
+
 ## [2026-11-04] record | S11 prep — deploy artifacts ready, waiting on EM accounts
 - Branch `chore/s11-deploy-prep`. Added:
   - `apps/api/Dockerfile` (cargo-chef, SQLX_OFFLINE, distroless nonroot, busybox-wget HEALTHCHECK) and `infra/Caddy.Dockerfile`. Caddyfile now uses `{$DOMAIN}`, adds COOP/CORP/XFO, `/assets` immutable, SPA fallback, strips client X-Real-IP/Forwarded.

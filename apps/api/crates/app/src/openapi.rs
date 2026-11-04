@@ -22,10 +22,16 @@ use utoipa::OpenApi;
         catalog::http::update_service,
         catalog::http::create_plan,
         catalog::http::update_plan,
+        crm::http::search,
+        crm::http::create,
+        crm::http::read,
+        crm::http::update,
+        crm::http::set_health_note,
     ),
     tags(
         (name = "auth", description = "Đăng nhập, phiên, đổi spa"),
         (name = "catalog", description = "Bảng giá dịch vụ và gói liệu trình"),
+        (name = "customers", description = "Hồ sơ khách hàng"),
     )
 )]
 pub struct ApiDoc;
@@ -59,6 +65,9 @@ mod tests {
             "/api/v1/service-categories/{id}",
             "/api/v1/services/{id}",
             "/api/v1/package-plans/{id}",
+            "/api/v1/customers",
+            "/api/v1/customers/{id}",
+            "/api/v1/customers/{id}/health-note",
         ] {
             assert!(paths.contains(&expected), "{expected} missing from OpenAPI");
         }

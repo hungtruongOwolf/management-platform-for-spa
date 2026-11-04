@@ -95,13 +95,20 @@ Quy ước chung cho mọi ticket có endpoint:
     - **Lỗi tìm ra khi thử trên Chrome:** người đã đăng nhập mở link `/dang-nhap?next=…` bị đưa về `/` thay vì `next`. Đã sửa, có test xác nhận đỏ → xanh.
     - Test: 9 E2E catalog_manage (mutation khóa lạc quan ✓) + 26 web. Đã tạo gói thử trên Chrome thật.
 
-- [ ] **S5 Hồ sơ khách hàng & tìm kiếm** (size: M)
+- [x] **S5 Hồ sơ khách hàng & tìm kiếm** (size: M)
   - **Goal:** tìm khách theo SĐT/tên (không dấu) < 300 ms, tạo khách, xem/sửa hồ sơ; ghi chú sức khỏe mã hóa và chỉ trả về khi có quyền.
   - **Acceptance:** AC2.1–AC2.7.
   - **Touches:** crate `crm` (`customer`, chuẩn hóa SĐT → E.164, `search_text`, GIN trgm, AES-256-GCM cho `health_note`); `GET/POST/PATCH /customers`, `GET /customers/{id}`. Web: ô tìm khách và thẻ khách như prototype, form khách mới, trang `/khach-hang/:id`.
   - **Tests:** "hà" tìm được "Hà"; 3 dạng SĐT là cùng một số; trùng SĐT → 409 kèm `existing_customer_id`; NFC; thiếu `customer.health_notes.read` → response không có key `health_note`; ciphertext trong DB không chứa plaintext; p95 tìm kiếm < 300 ms với 10.000 khách seed; Technician → 403.
   - **Security:** IDOR (ID của tenant khác → 404); key mã hóa lấy từ env (`secrecy`), có phiên bản; audit không chứa plaintext sức khỏe.
   - **Depends on:** S2 (song song với S3/S4)
+  - **Kết quả:**
+    - Migration `0004_crm`, crate `crm`: chuẩn hóa tên NFC + `search_text` bỏ dấu (đ→d), SĐT → E.164, trùng SĐT → `409 customer.phone_taken` kèm `existing_id` (SAVEPOINT bắt `23505`).
+    - Tìm: chữ số → theo SĐT; chữ → theo tên không dấu; rỗng → khách gần đây; quá ngắn → 422.
+    - Ghi chú sức khỏe: AES-256-GCM (AAD = tenant + khách), endpoint riêng `PUT /customers/{id}/health-note`; thiếu quyền đọc → response **không có key** `health_note`; audit không chứa nội dung.
+    - Hợp đồng đổi so với thiết kế: `PUT` thay `PATCH`; field lỗi là `existing_id`.
+    - Web: `/khach-hang` (ô tìm có ↑↓ Enter, khách gần đây, form khách mới điền sẵn từ ô tìm, nút "Mở hồ sơ đó" khi trùng SĐT), `/khach-hang/:id` (cảnh báo sức khỏe, sửa hồ sơ). `CustomerSearch` dùng lại cho S7.
+    - Test: 7 E2E customers (gồm 10.000 khách, mutation lọc quyền ghi chú ✓) + 33 web. Chrome thật: tạo khách, thấy cảnh báo, tìm "khach thu" ra "Khách Thử Nghiệm".
 
 - [ ] **S6 Bán liệu trình** (size: M)
   - **Goal:** bán gói cho khách, ghi người chốt, giảm giá có lý do, thu đủ (TM/CK/kết hợp); liệu trình được tạo với snapshot.

@@ -122,6 +122,213 @@
         }
       }
     },
+    "/api/v1/customers": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "operationId": "search",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "path",
+            "description": "≥ 3 digits of the phone, or ≥ 2 letters of the name (accents optional). Empty = most recent.",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomerSummaryDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "422": {}
+        }
+      },
+      "post": {
+        "tags": [
+          "customers"
+        ],
+        "operationId": "create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerDto"
+                }
+              }
+            }
+          },
+          "403": {},
+          "409": {
+            "description": "customer.phone_taken with existing_id"
+          },
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/customers/{id}": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "operationId": "read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "404": {}
+        }
+      },
+      "put": {
+        "tags": [
+          "customers"
+        ],
+        "operationId": "update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerDto"
+                }
+              }
+            }
+          },
+          "403": {},
+          "404": {},
+          "409": {},
+          "412": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/customers/{id}/health-note": {
+      "put": {
+        "tags": [
+          "customers"
+        ],
+        "operationId": "set_health_note",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HealthNoteWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerDto"
+                }
+              }
+            }
+          },
+          "403": {},
+          "404": {},
+          "412": {},
+          "422": {}
+        }
+      }
+    },
     "/api/v1/me": {
       "get": {
         "tags": [
@@ -508,6 +715,244 @@
           "sort_order": {
             "type": "integer",
             "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CustomerCreate": {
+        "type": "object",
+        "required": [
+          "full_name",
+          "phone"
+        ],
+        "properties": {
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "birth_year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "health_note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Requires `customer.health_notes.write`."
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": "string"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "CustomerDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "full_name",
+          "phone",
+          "phone_e164",
+          "version",
+          "created_at"
+        ],
+        "properties": {
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "birth_year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "health_note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Present only for callers with `customer.health_notes.read`; null = no note."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": "string"
+          },
+          "phone_e164": {
+            "type": "string"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Send back as `If-Match` when updating."
+          }
+        }
+      },
+      "CustomerSummaryDto": {
+        "type": "object",
+        "description": "Search hit for the counter: never contains notes.",
+        "required": [
+          "id",
+          "full_name",
+          "phone"
+        ],
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "phone": {
+            "type": "string",
+            "description": "National display form, e.g. \"0905 123 456\"."
+          }
+        }
+      },
+      "CustomerUpdate": {
+        "type": "object",
+        "required": [
+          "full_name",
+          "phone"
+        ],
+        "properties": {
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "birth_year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": "string"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "GenderDto": {
+        "type": "string",
+        "enum": [
+          "female",
+          "male"
+        ]
+      },
+      "HealthNoteWrite": {
+        "type": "object",
+        "properties": {
+          "health_note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "null or empty clears the note."
           }
         },
         "additionalProperties": false
@@ -946,6 +1391,10 @@
     {
       "name": "catalog",
       "description": "Bảng giá dịch vụ và gói liệu trình"
+    },
+    {
+      "name": "customers",
+      "description": "Hồ sơ khách hàng"
     }
   ]
 }

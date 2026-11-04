@@ -1,0 +1,210 @@
+import { createMemoryHistory } from "@tanstack/react-router";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+import { App } from "../../app/App";
+import { isSearchable } from "./api";
+import { prefillFrom } from "./CustomerForm";
+
+const ALL = [
+  "customer.read",
+  "customer.write",
+  "customer.health_notes.read",
+  "customer.health_notes.write",
+];
+const me = (permissions: string[]) => ({
+  user: { id: "u1", full_name: "Quản lý Ngọc", phone: "0905 123 456" },
+  active_tenant: { id: "t1", name: "Viên Phúc Y Đường" },
+  tenants: [{ id: "t1", name: "Viên Phúc Y Đường" }],
+  permissions,
+});
+const HA = {
+  id: "c1",
+  full_name: "Nguyễn Thị Hà",
+  phone: "0905 111 222",
+  gender: "female",
+};
+const HA_FULL = {
+  ...HA,
+  phone_e164: "+84905111222",
+  birth_year: 1985,
+  address: null,
+  source: null,
+  note: null,
+  health_note: "Huyết áp cao — tránh đá nóng",
+  version: 1,
+  created_at: "2026-11-04T00:00:00Z",
+};
+
+interface Call {
+  method: string;
+  url: string;
+  body: unknown;
+}
+
+function serve(
+  permissions: string[],
+  handle: (c: Call) => Response | undefined = () => undefined,
+) {
+  const calls: Call[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    const call = {
+      method: init?.method ?? "GET",
+      url,
+      body:
+        typeof init?.body === "string"
+          ? (JSON.parse(init.body) as unknown)
+          : undefined,
+    };
+    calls.push(call);
+    const custom = handle(call);
+    if (custom) return Promise.resolve(custom);
+    if (url === "/api/v1/me")
+      return Promise.resolve(Response.json(me(permissions)));
+    if (url === "/api/v1/customers") return Promise.resolve(Response.json([]));
+    if (url.startsWith("/api/v1/customers?q="))
+      return Promise.resolve(Response.json([HA]));
+    if (url === "/api/v1/customers/c1")
+      return Promise.resolve(Response.json(HA_FULL));
+    return Promise.resolve(new Response(null, { status: 404 }));
+  });
+  return calls;
+}
+
+const at = (path: string) =>
+  render(<App history={createMemoryHistory({ initialEntries: [path] })} />);
+
+describe("search rules", () => {
+  it("mirrors the server: ≥ 3 phone digits or ≥ 2 letters", () => {
+    expect(isSearchable("09")).toBe(false);
+    expect(isSearchable("090")).toBe(false); // leading 0 does not count
+    expect(isSearchable("0905")).toBe(true);
+    expect(isSearchable("h")).toBe(false);
+    expect(isSearchable("ha")).toBe(true);
+  });
+
+  it("prefills the new-customer form from what was typed", () => {
+    expect(prefillFrom("0905 111")).toEqual({
+      full_name: "",
+      phone: "0905 111",
+    });
+    expect(prefillFrom("Nguyễn Hà")).toEqual({
+      full_name: "Nguyễn Hà",
+      phone: "",
+    });
+  });
+});
+
+describe("customers page", () => {
+  it("searches without accents and opens the profile with the health warning", async () => {
+    const calls = serve(ALL);
+    at("/khach-hang");
+    const user = userEvent.setup();
+    await user.type(
+      await screen.findByRole("combobox", {
+        name: "Tìm khách theo SĐT hoặc tên",
+      }),
+      "nguyen thi ha",
+    );
+    const option = await screen.findByRole("option", { name: /Nguyễn Thị Hà/ });
+    expect(
+      calls.some((c) => c.url === "/api/v1/customers?q=nguyen%20thi%20ha"),
+    ).toBe(true);
+    await user.click(option);
+    expect(
+      await screen.findByRole("heading", { name: "Nguyễn Thị Hà" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent(
+      "Huyết áp cao — tránh đá nóng",
+    );
+  });
+
+  it("keyboard: arrow + Enter selects a result", async () => {
+    serve(ALL);
+    at("/khach-hang");
+    const user = userEvent.setup();
+    const box = await screen.findByRole("combobox");
+    await user.type(box, "0905");
+    await screen.findByRole("option", { name: /Nguyễn Thị Hà/ });
+    await user.keyboard("{Enter}");
+    expect(
+      await screen.findByRole("heading", { name: "Nguyễn Thị Hà" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows no health section when the API omits the field", async () => {
+    const withoutNote = Object.fromEntries(
+      Object.entries(HA_FULL).filter(([key]) => key !== "health_note"),
+    );
+    serve(["customer.read"], (c) =>
+      c.url === "/api/v1/customers/c1" ? Response.json(withoutNote) : undefined,
+    );
+    at("/khach-hang/c1");
+    expect(
+      await screen.findByRole("heading", { name: "Nguyễn Thị Hà" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Sửa hồ sơ" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("creating a duplicate phone offers to open the existing profile", async () => {
+    const calls = serve(ALL, (c) =>
+      c.method === "POST"
+        ? new Response(
+            JSON.stringify({
+              status: 409,
+              code: "customer.phone_taken",
+              existing_id: "c1",
+            }),
+            { status: 409 },
+          )
+        : undefined,
+    );
+    at("/khach-hang");
+    const user = userEvent.setup();
+    await user.type(await screen.findByRole("combobox"), "0905111222");
+    await user.click(screen.getByRole("button", { name: "+ Khách mới" }));
+    const form = screen.getByRole("form", { name: "Khách mới" });
+    expect(within(form).getByLabelText("Số điện thoại")).toHaveValue(
+      "0905111222",
+    );
+    await user.type(within(form).getByLabelText("Họ tên"), "Hà");
+    await user.click(within(form).getByRole("button", { name: "Lưu khách" }));
+    expect(calls.find((c) => c.method === "POST")?.body).toMatchObject({
+      full_name: "Hà",
+      phone: "0905111222",
+      health_note: null,
+    });
+    await user.click(
+      await within(form).findByRole("button", { name: "Mở hồ sơ đó" }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Nguyễn Thị Hà" }),
+    ).toBeInTheDocument();
+  });
+
+  it("rejects a malformed phone before calling the API", async () => {
+    const calls = serve(ALL);
+    at("/khach-hang");
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: "+ Khách mới" }),
+    );
+    const form = screen.getByRole("form", { name: "Khách mới" });
+    await user.type(within(form).getByLabelText("Họ tên"), "Ai đó");
+    await user.type(within(form).getByLabelText("Số điện thoại"), "12345");
+    await user.click(within(form).getByRole("button", { name: "Lưu khách" }));
+    expect(
+      await within(form).findByText(/Số điện thoại chưa đúng/),
+    ).toBeInTheDocument();
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+  });
+});

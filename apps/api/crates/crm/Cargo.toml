@@ -1,0 +1,25 @@
+[package]
+name = "crm"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+aes-gcm = "0.11.1"
+axum = { version = "0.8.9", default-features = false, features = ["json", "query"] }
+base64 = "0.23.1"
+chrono = "0.4.45"
+getrandom = "0.4.3"
+identity = { version = "0.1.0", path = "../identity" }
+kernel = { version = "0.1.0", path = "../kernel" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres", "uuid", "chrono", "macros"] }
+thiserror = "2.0.21"
+unicode-normalization = "0.1.26"
+utoipa = { version = "6.0.0", features = ["uuid", "chrono"] }
+uuid = "1.29.0"

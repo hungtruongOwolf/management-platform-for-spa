@@ -20,11 +20,18 @@ export function AppShell() {
   return (
     <div className="min-h-dvh bg-bg">
       <header className="flex flex-wrap items-center gap-3 border-b border-border bg-surface px-4 py-2">
-        <span className="font-brand text-xl text-primary">Viên Phúc Y Đường</span>
+        <span className="font-brand text-xl text-primary">
+          Viên Phúc Y Đường
+        </span>
         <nav aria-label="Chính" className="flex gap-1">
           <Link to="/" className={navLink} activeOptions={{ exact: true }}>
             Trang chủ
           </Link>
+          {can(me, "customer.read") && (
+            <Link to="/khach-hang" className={navLink}>
+              Khách hàng
+            </Link>
+          )}
           {can(me, "catalog.read") && (
             <Link to="/bang-gia" className={navLink}>
               Bảng giá
@@ -55,7 +62,9 @@ export function HomePage() {
   return (
     <>
       <h1 className="text-lg font-semibold">Xin chào, {me?.user.full_name}</h1>
-      <p className="text-text-muted">Các màn hình nghiệp vụ sẽ xuất hiện ở đây.</p>
+      <p className="text-text-muted">
+        Các màn hình nghiệp vụ sẽ xuất hiện ở đây.
+      </p>
     </>
   );
 }

@@ -12,6 +12,7 @@ workspace = true
 anyhow = "1.0.104"
 axum = "0.8.9"
 catalog = { version = "0.1.0", path = "../catalog" }
+crm = { version = "0.1.0", path = "../crm" }
 dotenvy = "0.15.7"
 identity = { version = "0.1.0", path = "../identity" }
 kernel = { version = "0.1.0", path = "../kernel" }
@@ -30,6 +31,7 @@ utoipa = { version = "6.0.0", features = ["uuid"] }
 
 [dev-dependencies]
 catalog = { path = "../catalog" }
+crm = { path = "../crm" }
 http-body-util = "0.1.5"
 identity = { path = "../identity" }
 kernel = { path = "../kernel", features = ["testing"] }

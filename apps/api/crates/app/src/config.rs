@@ -19,6 +19,8 @@ pub struct Config {
     pub app_database_url: SecretString,
     /// The only browser origin allowed to send state-changing requests (CSRF defence).
     pub public_origin: String,
+    /// AES-256 key (base64) for field encryption of health notes. Never stored in the database.
+    pub data_key: SecretString,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -83,11 +85,20 @@ impl Config {
             });
         }
 
+        let data_key = required("APP_DATA_KEY")?;
+        if crm::FieldCipher::from_base64(&data_key).is_err() {
+            return Err(ConfigError::Invalid {
+                name: "APP_DATA_KEY",
+                value: "[redacted]".to_owned(),
+            });
+        }
+
         Ok(Self {
             bind_addr,
             environment,
             app_database_url: SecretString::from(app_database_url),
             public_origin,
+            data_key: SecretString::from(data_key),
         })
     }
 }
@@ -98,6 +109,7 @@ mod tests {
     use std::collections::HashMap;
 
     const DB: &str = "postgres://app_rw:pw@127.0.0.1:5432/vpyd";
+    const TEST_KEY: &str = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
 
     fn lookup(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
         let map: HashMap<String, String> = pairs
@@ -112,6 +124,7 @@ mod tests {
             ("APP_BIND_ADDR", "127.0.0.1:8080"),
             ("APP_DATABASE_URL", DB),
             ("APP_PUBLIC_ORIGIN", "http://localhost:5173"),
+            ("APP_DATA_KEY", TEST_KEY),
         ]
     }
 
@@ -159,6 +172,24 @@ mod tests {
             Config::from_lookup(lookup(&bad_env)).err(),
             Some(ConfigError::Invalid {
                 name: "APP_ENV",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn data_key_must_be_a_32_byte_base64_key() {
+        let mut bad = valid();
+        bad.retain(|(k, _)| *k != "APP_DATA_KEY");
+        assert_eq!(
+            Config::from_lookup(lookup(&bad)).err(),
+            Some(ConfigError::Missing("APP_DATA_KEY"))
+        );
+        bad.push(("APP_DATA_KEY", "c2hvcnQ="));
+        assert!(matches!(
+            Config::from_lookup(lookup(&bad)).err(),
+            Some(ConfigError::Invalid {
+                name: "APP_DATA_KEY",
                 ..
             })
         ));
