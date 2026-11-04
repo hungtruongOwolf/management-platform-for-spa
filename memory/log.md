@@ -141,3 +141,13 @@ Ops: `ingest`, `query`, `lint`, `record`, `decision`, `skip`.
 - S4: catalog write API (categories/services/plans, PUT + If-Match, audited, no delete), kernel IfMatch/etag, web edit forms + /bang-gia/goi. Owner-only (catalog.manage); manager/foreign tenant refused (tests).
 - Found in real Chrome: signed-in user on /dang-nhap?next=… was sent to "/" — fixed (test red→green).
 - Dev DB now has a test plan "Gội thảo dược 10 buổi + tặng 2 (thử)".
+
+## [2026-11-04] record | S11 prep — deploy artifacts ready, waiting on EM accounts
+- Branch `chore/s11-deploy-prep`. Added:
+  - `apps/api/Dockerfile` (cargo-chef, SQLX_OFFLINE, distroless nonroot, busybox-wget HEALTHCHECK) and `infra/Caddy.Dockerfile`. Caddyfile now uses `{$DOMAIN}`, adds COOP/CORP/XFO, `/assets` immutable, SPA fallback, strips client X-Real-IP/Forwarded.
+  - `infra/docker-compose.prod.yml`: migrate one-shot with the owner URL, api with only the app_rw URL, caddy, ops/drill profiles, limits, read-only rootfs.
+  - Supporting files: `.env.production.example`, `infra/backup/` (pg_dump → age → R2, systemd timer, restore.sh), `infra/deploy.sh`, CI `images` job, `deploy.yml` (workflow_dispatch → GHCR → SSH), `infra/prodtest/run.sh`.
+- Runbook `wiki/runbooks/staging-setup.md`. EM decisions recorded in ADR-0002/0005 updates: staging Supabase `zyyiukcysjntjgjabiqe` is in a US region with Data API on, so the VPS goes in the same region and access is locked down with REVOKE; production will be a new Singapore project. SQLx connects through the Supavisor session pooler as `app_rw.<ref>`.
+- Verified: `cargo build --release --locked` with SQLX_OFFLINE OK; `pnpm --filter web build` OK (no inline script/style, so the CSP holds); `docker compose config` OK, and the api env contains no owner URL; `sh -n` OK on all scripts.
+- **Not verified:** the image builds and the local prod-like stack. Docker Desktop went read-only and then stopped responding because drive C: was 100% full, and the dev Postgres container must not be restarted. Rerun `sh infra/prodtest/run.sh` once there is space; CI job `images` also builds all three images.
+- Recommended VPS: DigitalOcean Basic 2 GiB, $12, in the datacenter matching the Supabase region (NYC3 or SFO3). Production: SGP1.

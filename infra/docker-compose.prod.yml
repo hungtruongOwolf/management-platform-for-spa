@@ -1,0 +1,173 @@
+# Staging/production stack on the VPS (ADR-0005). The database is Supabase (ADR-0002): no Postgres here.
+#   cd /opt/vpyd
+#   docker compose --env-file .env.production -f infra/docker-compose.prod.yml pull
+#   docker compose --env-file .env.production -f infra/docker-compose.prod.yml up -d      # migrate runs first
+#   docker compose --env-file .env.production -f infra/docker-compose.prod.yml --profile ops run --rm backup
+# Variables are documented in infra/.env.production.example. `--env-file` only feeds interpolation: each
+# container receives exactly the variables listed under its `environment:` (the API never sees the owner URL).
+name: vpyd
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-hardening: &hardening
+  read_only: true
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  tmpfs: ["/tmp:size=16m,mode=1777"]
+
+services:
+  # One-shot: applies migrations as the schema owner, then exits. `api` starts only if it succeeded.
+  migrate:
+    image: ${API_IMAGE:?set API_IMAGE}
+    command: ["migrate"]
+    <<: *hardening
+    restart: "no"
+    environment:
+      DATABASE_URL: ${MIGRATE_DATABASE_URL:?set MIGRATE_DATABASE_URL}
+      RUST_LOG: info
+    volumes:
+      - ${SECRETS_DIR:-../secrets}/supabase-ca.crt:/run/secrets/supabase-ca.crt:ro
+    logging: *logging
+    mem_limit: 256m
+    cpus: 0.5
+
+  api:
+    image: ${API_IMAGE:?set API_IMAGE}
+    command: ["serve"]
+    <<: *hardening
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      APP_BIND_ADDR: 0.0.0.0:8080
+      APP_ENV: ${APP_ENV:-staging}
+      APP_PUBLIC_ORIGIN: ${APP_PUBLIC_ORIGIN:-https://${DOMAIN:?set DOMAIN}}   # override only when serving on a non-443 port
+      APP_DATABASE_URL: ${APP_DATABASE_URL:?set APP_DATABASE_URL}
+      APP_DATA_KEY: ${APP_DATA_KEY:?set APP_DATA_KEY}
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - ${SECRETS_DIR:-../secrets}/supabase-ca.crt:/run/secrets/supabase-ca.crt:ro
+    expose: ["8080"]          # reachable only from caddy on the compose network; no host port
+    networks: [edge]
+    logging: *logging
+    mem_limit: 384m
+    memswap_limit: 384m
+    cpus: 1.0
+    pids_limit: 256
+    stop_grace_period: 20s
+
+  caddy:
+    image: ${WEB_IMAGE:?set WEB_IMAGE}
+    <<: *hardening
+    cap_add: [NET_BIND_SERVICE]
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"   # HTTP/3
+    volumes:
+      - caddy_data:/data              # certificates + ACME account: keep across deploys (rate limits)
+      - caddy_config:/config
+    networks: [edge]
+    logging: *logging
+    mem_limit: 128m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # Nightly by systemd timer (infra/backup/vpyd-backup.timer). Not started by `up`.
+  backup:
+    image: ${BACKUP_IMAGE:?set BACKUP_IMAGE}
+    profiles: ["ops"]
+    <<: *hardening
+    restart: "no"
+    environment:
+      PGHOST: ${BACKUP_PGHOST:?set BACKUP_PGHOST}
+      PGPORT: ${BACKUP_PGPORT:-5432}
+      PGUSER: ${BACKUP_PGUSER:?set BACKUP_PGUSER}
+      PGPASSWORD: ${BACKUP_PGPASSWORD:?set BACKUP_PGPASSWORD}
+      PGDATABASE: ${BACKUP_PGDATABASE:-postgres}
+      PGSSLMODE: ${BACKUP_PGSSLMODE:-verify-full}
+      PGSSLROOTCERT: /run/secrets/supabase-ca.crt
+      AGE_RECIPIENT: ${AGE_RECIPIENT:?set AGE_RECIPIENT}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:?set R2_ACCOUNT_ID}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?set R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?set R2_SECRET_ACCESS_KEY}
+      R2_BUCKET: ${R2_BUCKET:?set R2_BUCKET}
+      BACKUP_PREFIX: ${BACKUP_PREFIX:-staging}
+      BACKUP_REMOTE: ${BACKUP_REMOTE:-}   # tests only: a local path instead of R2
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-}
+      BACKUP_MONTHLY_RETENTION_DAYS: ${BACKUP_MONTHLY_RETENTION_DAYS:-}
+      HEALTHCHECK_PING_URL: ${BACKUP_HEALTHCHECK_PING_URL:-}
+    volumes:
+      - ${SECRETS_DIR:-../secrets}/supabase-ca.crt:/run/secrets/supabase-ca.crt:ro
+    logging: *logging
+    mem_limit: 256m
+    cpus: 0.5
+
+  # --- Restore drill (runbook §Backup). Throwaway Postgres on an internal network, then restore into it.
+  #   docker compose ... --profile drill up -d restore-db
+  #   docker compose ... --profile drill run --rm restore latest
+  #   docker compose ... --profile drill down -v
+  restore-db:
+    image: postgres:17-alpine
+    profiles: ["drill"]
+    environment:
+      POSTGRES_USER: drill
+      POSTGRES_DB: drill
+      POSTGRES_HOST_AUTH_METHOD: trust   # internal-only network, destroyed after the drill
+    volumes:
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro   # creates role app_rw (needed by GRANTs)
+    networks: [drill]
+    tmpfs: ["/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U drill -d drill"]
+      interval: 3s
+      retries: 20
+
+  restore:
+    image: ${BACKUP_IMAGE:?set BACKUP_IMAGE}
+    profiles: ["drill"]
+    entrypoint: ["/usr/local/bin/restore.sh"]
+    <<: *hardening
+    tmpfs: ["/tmp:size=1g,mode=1777"]   # decrypted dump lives here only
+    depends_on:
+      restore-db:
+        condition: service_healthy
+    environment:
+      RESTORE_PGHOST: restore-db
+      RESTORE_PGUSER: drill
+      RESTORE_PGDATABASE: drill
+      AGE_IDENTITY_FILE: /run/secrets/age-identity.txt
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:?set R2_ACCOUNT_ID}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?set R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?set R2_SECRET_ACCESS_KEY}
+      R2_BUCKET: ${R2_BUCKET:?set R2_BUCKET}
+      BACKUP_PREFIX: ${BACKUP_PREFIX:-staging}
+      BACKUP_REMOTE: ${BACKUP_REMOTE:-}
+    volumes:
+      - ${SECRETS_DIR:-../secrets}/age-identity.txt:/run/secrets/age-identity.txt:ro
+    networks: [default, drill]
+
+networks:
+  edge: {}
+  drill:
+    internal: true
+
+volumes:
+  caddy_data:
+  caddy_config:

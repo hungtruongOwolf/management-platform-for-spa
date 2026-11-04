@@ -75,6 +75,40 @@ jobs:
       - run: pnpm --filter web build
       - run: pnpm audit --prod --audit-level high
 
+  images:
+    name: Docker images (build only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Production compose file is valid
+        run: |
+          # Fill every empty variable of the documented example with a dummy value, then let compose parse it.
+          sed -E 's/^([A-Z0-9_]+)=[[:space:]]*(#.*)?$/\1=x/' infra/.env.production.example > /tmp/ci.env
+          docker compose --env-file /tmp/ci.env -f infra/docker-compose.prod.yml --profile ops --profile drill config -q
+      - name: API image
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/api
+          push: false
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+      - name: Web image (Caddy + SPA)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Caddy.Dockerfile
+          push: false
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+      - name: Backup image
+        uses: docker/build-push-action@v6
+        with:
+          context: infra/backup
+          push: false
+          cache-from: type=gha,scope=backup
+          cache-to: type=gha,mode=max,scope=backup
+
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest

@@ -1,0 +1,9 @@
+# Build context for apps/api/Dockerfile: sources, migrations and offline sqlx data only.
+target/
+**/*.rs.bk
+.env
+.env.*
+# The image pins its own toolchain; the dev toolchain file would make rustup download stable + rust-analyzer.
+rust-toolchain.toml
+Dockerfile
+.dockerignore

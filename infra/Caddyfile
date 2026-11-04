@@ -1,24 +1,58 @@
-# Production reverse proxy (deployed in S11). One origin: static SPA + /api proxied to the Rust API.
-# Replace app.example.vn with the real domain; Caddy obtains TLS certificates automatically.
-app.example.vn {
+# Production/staging reverse proxy. One origin: static SPA + /api proxied to the Rust API (ADR-0005).
+# Baked into infra/Caddy.Dockerfile. Environment:
+#   DOMAIN      site address, e.g. staging.example.vn. Caddy obtains and renews TLS certificates automatically
+#               (ACME HTTP-01/TLS-ALPN-01: ports 80 and 443 must be reachable). `localhost` uses Caddy's internal CA.
+#   ACME_EMAIL  contact for certificate expiry notices.
+{
+	email {$ACME_EMAIL}
+	# Admin API stays inside the container (default localhost:2019); never published.
+}
+
+{$DOMAIN} {
 	encode zstd gzip
 
 	header {
+		# Staging domain only for now: add `; preload` once the production apex is stable (ASVS V14).
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"
-		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
-		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests"
 		-Server
+		-Via
 	}
 
 	handle /api/* {
-		reverse_proxy api:8080
+		reverse_proxy api:8080 {
+			# Caddy overwrites X-Forwarded-For with the real peer (no trusted_proxies configured), so the API's
+			# per-IP rate limit and audit IP see the client. Drop the other client-controlled IP headers too.
+			header_up -X-Real-IP
+			header_up -Forwarded
+			header_down -Server
+		}
 	}
 
+	# Vite emits content-hashed files under /assets: cache forever; a missing asset is a real 404 (no fallback).
+	handle /assets/* {
+		root * /srv/web
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# Everything else: static file if it exists, otherwise the SPA shell (client-side routes such as /bang-gia).
+	# Revalidated on every load so a deploy is visible immediately.
 	handle {
 		root * /srv/web
+		header Cache-Control "no-cache"
 		try_files {path} /index.html
 		file_server
+	}
+
+	log {
+		output stdout
+		format json
 	}
 }

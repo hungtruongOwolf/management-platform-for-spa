@@ -26,3 +26,8 @@ Cần chạy Rust API + file tĩnh SPA, gần Supabase Singapore, chi phí thấ
 
 ## Revisit when
 Nhiều spa, cần uptime cao hơn → 2 instance + load balancer (API stateless, session ở DB nên scale ngang được).
+
+## Update 2026-11-04 (S11 prep)
+- Provider khuyến nghị: **DigitalOcean Basic 2 GiB / 1 vCPU ($12/tháng)**, so sánh giá và nguồn ở [runbooks/staging-setup](../runbooks/staging-setup.md) §1. EM chốt khi mua.
+- **Staging** đặt VPS **cùng vùng với project Supabase staging (Mỹ)**, vì đi xuyên Thái Bình Dương mất khoảng 170 ms mỗi query. **Production** vẫn là Singapore (VPS SGP1 + project Supabase mới ở `ap-southeast-1`).
+- Triển khai: image build trên GitHub Actions rồi push lên GHCR; deploy bằng `workflow_dispatch` qua SSH; `migrate` chạy one-shot trước `api`; runtime distroless non-root.

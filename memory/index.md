@@ -28,7 +28,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 ## Decisions (ADR)
 - [_template](wiki/decisions/_template.md) — ADR format
 - [ADR-0001 tech stack](wiki/decisions/ADR-0001-tech-stack.md) — **accepted**: Rust/Axum + Postgres; internal app = Vite React SPA; public site later (Next/Astro); no Redis yet
-- [ADR-0002 database hosting](wiki/decisions/ADR-0002-database-hosting.md) — **accepted (provisional)**: Supabase Pro as plain Postgres, Singapore, with mandatory lockdown
+- [ADR-0002 database hosting](wiki/decisions/ADR-0002-database-hosting.md) — **accepted (provisional)**: Supabase Pro as plain Postgres, Singapore, with mandatory lockdown; staging exception: US region + Data API on, mitigated by REVOKE
 - [ADR-0003 multi-tenancy](wiki/decisions/ADR-0003-multi-tenancy.md) — **accepted**: shared schema + tenant_id + RLS, TenantId newtype
 - [ADR-0004 authentication](wiki/decisions/ADR-0004-authentication.md) — **accepted**: Argon2id + opaque Postgres sessions, __Host- cookie, MFA owner/admin
 - [ADR-0005 compute hosting](wiki/decisions/ADR-0005-compute-hosting.md) — **accepted**: 1 Singapore VPS, Docker Compose + Caddy (provider at /devops)
@@ -40,6 +40,9 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 
 ## Plans
 - [r1-1-front-desk](wiki/plans/r1-1-front-desk.md) — 12 slices S0–S11 (foundation → kernel → auth → tracer bullet catalog → … → staging)
+
+## Runbooks
+- [staging-setup](wiki/runbooks/staging-setup.md) — S11: chọn VPS (giá + nguồn, ghép vùng với Supabase), hardening, Supabase checklist (REVOKE khi Data API bật, pooler session mode), R2 backup + restore drill, deploy/rollback, việc EM cần làm
 
 ## Research
 - [tech-stack](wiki/research/tech-stack.md) — backend & frontend language/framework comparison, recommendation

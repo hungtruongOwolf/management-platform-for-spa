@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+!infra/.env.production.example
+/secrets/
+/.prodtest/
 *.pem
 *.key
 

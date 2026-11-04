@@ -150,6 +150,26 @@ Quy ước chung cho mọi ticket có endpoint:
   - **Tests:** smoke production; thử khôi phục backup; kiểm tra Supabase Data API trả 404/không truy cập được.
   - **Security:** SSH key-only, firewall, secret trong env.
   - **Depends on:** S10 + **EM:** tạo project Supabase (Singapore, Pro), mua VPS + domain.
+  - **Chuẩn bị (xong, 2026-11-04, branch `chore/s11-deploy-prep`):**
+    - Đã sẵn sàng:
+      - `apps/api/Dockerfile`: cargo-chef, `SQLX_OFFLINE`, distroless nonroot, HEALTHCHECK `/api/v1/health`.
+      - `infra/Caddy.Dockerfile` + Caddyfile `{$DOMAIN}`: TLS tự động, CSP/HSTS/COOP/CORP, SPA fallback, `/assets` immutable.
+      - `infra/docker-compose.prod.yml`: `migrate` one-shot bằng owner; `api` chỉ có URL `app_rw`; `caddy`; profile `ops` (backup) và `drill` (restore). Có giới hạn tài nguyên, read-only rootfs, `cap_drop`, log rotation.
+      - `infra/.env.production.example`.
+      - `infra/backup/`: pg_dump → age → R2, systemd timer, `restore.sh`.
+      - `infra/deploy.sh` (deploy/rollback).
+      - CI job `images` (build 3 image + validate compose).
+      - `deploy.yml` (`workflow_dispatch` → GHCR → SSH).
+      - `infra/prodtest/run.sh` (smoke test local).
+      - Runbook [staging-setup](../runbooks/staging-setup.md).
+    - EM đã quyết: staging Supabase `zyyiukcysjntjgjabiqe` ở **Mỹ**, Data API bật → VPS staging phải cùng vùng, giảm thiểu bằng REVOKE. Lead tự bootstrap DB staging. Production sau này là project Singapore mới.
+    - Còn chờ EM (runbook §9):
+      - Mua VPS (DigitalOcean 2 GiB $12, datacenter khớp vùng Supabase) + domain.
+      - R2 bucket + token.
+      - Khóa `age`.
+      - GitHub environment `staging`.
+      - Monitor Better Stack + Healthchecks.io.
+    - Sau đó: deploy, smoke, backup thử, restore drill, rồi tick S11.
 
 ## Kiểm tra độ phủ
 | Spec | Ticket |

@@ -1,0 +1,33 @@
+# Local prod-like smoke test (infra/prodtest/run.sh). Layered on top of docker-compose.prod.yml:
+# a throwaway Postgres 16 stands in for Supabase, and backups go to a local volume instead of R2.
+services:
+  fakedb:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${FAKEDB_PASSWORD:?set FAKEDB_PASSWORD}
+      POSTGRES_DB: vpyd
+    volumes:
+      - ../postgres-init:/docker-entrypoint-initdb.d:ro   # role app_rw, as on Supabase after the runbook SQL
+    tmpfs: ["/var/lib/postgresql/data"]
+    networks: [default, edge]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vpyd"]
+      interval: 2s
+      retries: 30
+
+  migrate:
+    depends_on:
+      fakedb:
+        condition: service_healthy
+
+  backup:
+    volumes:
+      - backups:/work
+
+  restore:
+    volumes:
+      - backups:/work
+
+volumes:
+  backups:
