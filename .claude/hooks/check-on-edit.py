@@ -18,7 +18,10 @@ def main() -> int:
         return 0
     tool_input = payload.get("tool_input") or {}
     path = (tool_input.get("file_path") or "").replace("\\", "/")
-    root = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    # Check the checkout the edited file lives in (an agent worktree under .claude/worktrees/
+    # has its own code, .env and DB), not always the main project dir.
+    marker = next((m for m in ("/apps/api/", "/apps/web/", "/packages/ui/") if m in path), None)
+    root = path[: path.index(marker)] if marker else (os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
     if path.endswith(".rs") and "/apps/api/" in path:
         cmd = ["cargo", "check", "--workspace", "--all-targets", "--quiet", "--message-format", "short"]
