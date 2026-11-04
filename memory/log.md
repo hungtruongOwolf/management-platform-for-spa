@@ -148,3 +148,10 @@ Ops: `ingest`, `query`, `lint`, `record`, `decision`, `skip`.
 - 7 Rust E2E (10k-customer search perf, health-note permission mutation-checked) + 33 web tests. Verified in real Chrome.
 - Contract drift from design fixed in backend.md: PUT instead of PATCH, `existing_id`.
 - Dev DB: test customer "Khách Thử Nghiệm".
+
+## [2026-11-04] ingest | Supabase credits redeemed
+- Source: raw/2026-11-04-em-supabase-credits.md. Org "For my future" (GitHub login). Unblocks part of S11; EM to create the staging project (Singapore, Data API off) and send back the project ref only.
+- Process change: work now runs in parallel sub-agents (S6, S2b, S11 prep, S10 infra), each in its own worktree + dev DB; merges still need EM go-ahead (classifier).
+
+## [2026-11-04] ingest | Supabase staging project created
+- Ref `zyyiukcysjntjgjabiqe`. Region/Data-API setting to be confirmed by EM. DB password was pasted in chat → EM advised to rotate; not recorded anywhere.
