@@ -24,6 +24,8 @@ ignore = true
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Internal workspace crates are referenced by path (no version) and never published.
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"
