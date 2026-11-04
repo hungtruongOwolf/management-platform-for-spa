@@ -5,7 +5,9 @@ import { createAppRouter } from "./router";
 
 export function App({ history }: { history?: RouterHistory }) {
   // One client and router per mounted app, so tests never share cache.
-  const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }));
+  const [queryClient] = useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  );
   const [router] = useState(() => createAppRouter(queryClient, history));
   return (
     <QueryClientProvider client={queryClient}>

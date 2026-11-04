@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.customer SET health_note_ct = $4, version = version + 1, updated_at = now()\n           WHERE tenant_id = $1 AND id = $2 AND version = $3 AND anonymized_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1559d3d9060cd7d2a19d2c668af773b0c254bfa0660e43cce390d2ea77a75437"
+}

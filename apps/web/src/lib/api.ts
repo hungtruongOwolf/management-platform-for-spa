@@ -10,6 +10,8 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     readonly errors: FieldProblem[] = [],
+    /** Id of the record a 409 conflicts with (e.g. the customer who already has this phone). */
+    readonly existingId?: string,
   ) {
     super(`${String(status)} ${code}`);
     this.name = "ApiError";
@@ -24,6 +26,7 @@ export class ApiError extends Error {
 interface Problem {
   code: string;
   errors?: FieldProblem[];
+  existing_id?: string;
 }
 
 function isProblem(value: unknown): value is Problem {
@@ -50,7 +53,7 @@ export async function api(path: string, init: RequestOptions = {}): Promise<unkn
   const text = await response.text();
   const data: unknown = text ? JSON.parse(text) : null;
   if (!response.ok) {
-    if (isProblem(data)) throw new ApiError(response.status, data.code, data.errors ?? []);
+    if (isProblem(data)) throw new ApiError(response.status, data.code, data.errors ?? [], data.existing_id);
     throw new ApiError(response.status, "error");
   }
   return data;

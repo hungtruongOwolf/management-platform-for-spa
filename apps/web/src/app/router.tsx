@@ -1,9 +1,20 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { Outlet, createRootRouteWithContext, createRoute, createRouter, redirect, type RouterHistory } from "@tanstack/react-router";
+import {
+  Outlet,
+  createRootRouteWithContext,
+  createRoute,
+  createRouter,
+  redirect,
+  type RouterHistory,
+} from "@tanstack/react-router";
 import { LoginPage } from "../features/auth/LoginPage";
 import { meQuery } from "../features/auth/session";
 import { safeNextPath } from "../lib/api";
 import { PlansPage } from "../features/catalog/PlansPage";
+import {
+  CustomerPage,
+  CustomersPage,
+} from "../features/customers/CustomersPage";
 import { PriceListPage } from "../features/catalog/PriceListPage";
 import { AppShell, HomePage } from "./AppShell";
 
@@ -20,9 +31,14 @@ const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/dang-nhap",
   validateSearch: (search: Record<string, unknown>): { next?: string } =>
-    typeof search["next"] === "string" ? { next: safeNextPath(search["next"]) } : {},
+    typeof search["next"] === "string"
+      ? { next: safeNextPath(search["next"]) }
+      : {},
   beforeLoad: async ({ context, search }) => {
-    const me = await context.queryClient.query({ ...meQuery, staleTime: "static" });
+    const me = await context.queryClient.query({
+      ...meQuery,
+      staleTime: "static",
+    });
     // Already signed in: honour the (sanitised) destination instead of always going home.
     if (me) redirect({ href: safeNextPath(search.next), throw: true });
   },
@@ -37,8 +53,16 @@ const authedRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "authed",
   beforeLoad: async ({ context, location }) => {
-    const me = await context.queryClient.query({ ...meQuery, staleTime: "static" });
-    if (!me) redirect({ to: "/dang-nhap", search: { next: location.href }, throw: true });
+    const me = await context.queryClient.query({
+      ...meQuery,
+      staleTime: "static",
+    });
+    if (!me)
+      redirect({
+        to: "/dang-nhap",
+        search: { next: location.href },
+        throw: true,
+      });
   },
   component: AppShell,
 });
@@ -61,10 +85,41 @@ const plansRoute = createRoute({
   component: PlansPage,
 });
 
-const routeTree = rootRoute.addChildren([loginRoute, authedRoute.addChildren([homeRoute, priceListRoute, plansRoute])]);
+const customersRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/khach-hang",
+  component: CustomersPage,
+});
 
-export function createAppRouter(queryClient: QueryClient, history?: RouterHistory) {
-  return createRouter({ routeTree, context: { queryClient }, ...(history ? { history } : {}) });
+const customerRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/khach-hang/$customerId",
+  component: function Customer() {
+    const { customerId } = customerRoute.useParams();
+    return <CustomerPage customerId={customerId} />;
+  },
+});
+
+const routeTree = rootRoute.addChildren([
+  loginRoute,
+  authedRoute.addChildren([
+    homeRoute,
+    priceListRoute,
+    plansRoute,
+    customersRoute,
+    customerRoute,
+  ]),
+]);
+
+export function createAppRouter(
+  queryClient: QueryClient,
+  history?: RouterHistory,
+) {
+  return createRouter({
+    routeTree,
+    context: { queryClient },
+    ...(history ? { history } : {}),
+  });
 }
 
 declare module "@tanstack/react-router" {
