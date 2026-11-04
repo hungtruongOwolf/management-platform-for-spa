@@ -16,7 +16,7 @@ Chép nguyên văn từ menu in. Đây là **seed data** cho bảng giá (spec R
 - Nhóm **Dịch vụ bổ sung** = các dịch vụ dùng thêm trong buổi.
 - Tên dịch vụ "Liệu trình giải cảm" có chữ *liệu trình* nhưng là **dịch vụ lẻ**. Trong hệ thống, "liệu trình" là gói nhiều buổi (xem glossary).
 
-## Danh sách (36 dịch vụ)
+## Danh sách (35 dịch vụ, 10 nhóm)
 | Nhóm | Dịch vụ | Phút | Nữ | Nam | ★ | Mô tả / kèm theo |
 |---|---|---|---|---|---|---|
 | Gội đầu dưỡng sinh | Cơ Bản – Dầu thảo dược | 30 | 49.000 | 49.000 | | |
@@ -55,7 +55,9 @@ Chép nguyên văn từ menu in. Đây là **seed data** cho bảng giá (spec R
 | Dịch vụ bổ sung | Giác hơi + Đắp thuốc bắc | theo tư vấn | 100.000 | (chung) | | |
 | Dịch vụ bổ sung | Thải độc đại tràng | theo tư vấn | 149.000 | (chung) | | |
 
-"(chung)" = một giá cho mọi khách (cột Nữ ghi giá đó).
+"(chung)" = một giá cho mọi khách (cột Nữ ghi giá đó). Dịch vụ menu in **cùng giá Nữ và Nam** cũng được lưu thành **một giá chung** (quy tắc của EM: "cái nào không phân thì một giá áp dụng cho cả hai").
+
+> Đính chính 2026-11-04: bản trước ghi "36 dịch vụ / 11 nhóm" là đếm sai; đúng là **35 dịch vụ / 10 nhóm** (phát hiện khi viết test seed ở S3).
 
 ## ⚠️ Cần EM xác nhận
 1. Giá **Ôn ấm tử cung** (menu không ghi giá).

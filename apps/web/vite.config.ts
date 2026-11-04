@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 const uiSrc = fileURLToPath(new URL("../../packages/ui/src", import.meta.url));
+const apiClientSrc = fileURLToPath(new URL("../../packages/api-client/src", import.meta.url));
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -12,6 +13,7 @@ export default defineConfig({
     alias: [
       { find: /^@vpyd\/ui\/tokens\.css$/, replacement: `${uiSrc}/tokens/tokens.css` },
       { find: /^@vpyd\/ui$/, replacement: `${uiSrc}/index.ts` },
+      { find: /^@vpyd\/api-client$/, replacement: `${apiClientSrc}/index.ts` },
     ],
   },
   // Dev: the SPA and API share one origin through this proxy, mirroring production (Caddy).

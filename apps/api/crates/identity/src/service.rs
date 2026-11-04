@@ -9,6 +9,7 @@ use kernel::{Actor, AppError, Permission, PhoneE164, TenantId, TenantTx, UserId}
 use serde::Serialize;
 use sqlx::PgPool;
 use std::net::IpAddr;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 pub const IDLE_TIMEOUT_HOURS: i64 = 12;
@@ -38,25 +39,28 @@ impl Session {
     }
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, ToSchema)]
 pub struct TenantSummary {
+    #[schema(value_type = String, format = Uuid)]
     pub id: TenantId,
     pub name: String,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, ToSchema)]
 pub struct UserSummary {
+    #[schema(value_type = String, format = Uuid)]
     pub id: UserId,
     pub full_name: String,
     pub phone: String,
 }
 
 /// Body of `GET /me` and of a successful login.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, ToSchema)]
 pub struct Me {
     pub user: UserSummary,
     pub active_tenant: Option<TenantSummary>,
     pub tenants: Vec<TenantSummary>,
+    #[schema(value_type = Vec<String>)]
     pub permissions: Vec<&'static str>,
 }
 

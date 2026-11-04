@@ -3,7 +3,8 @@ import { Outlet, createRootRouteWithContext, createRoute, createRouter, redirect
 import { LoginPage } from "../features/auth/LoginPage";
 import { meQuery } from "../features/auth/session";
 import { safeNextPath } from "../lib/api";
-import { AppShell } from "./AppShell";
+import { PriceListPage } from "../features/catalog/PriceListPage";
+import { AppShell, HomePage } from "./AppShell";
 
 interface RouterContext {
   queryClient: QueryClient;
@@ -37,16 +38,22 @@ const authedRoute = createRoute({
     const me = await context.queryClient.query({ ...meQuery, staleTime: "static" });
     if (!me) redirect({ to: "/dang-nhap", search: { next: location.href }, throw: true });
   },
-  component: Outlet,
+  component: AppShell,
 });
 
 const homeRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/",
-  component: AppShell,
+  component: HomePage,
 });
 
-const routeTree = rootRoute.addChildren([loginRoute, authedRoute.addChildren([homeRoute])]);
+const priceListRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/bang-gia",
+  component: PriceListPage,
+});
+
+const routeTree = rootRoute.addChildren([loginRoute, authedRoute.addChildren([homeRoute, priceListRoute])]);
 
 export function createAppRouter(queryClient: QueryClient, history?: RouterHistory) {
   return createRouter({ routeTree, context: { queryClient }, ...(history ? { history } : {}) });

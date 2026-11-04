@@ -10,7 +10,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [paper-books-analysis](wiki/product/paper-books-analysis.md) — 4 paper books today → enter-once event model, auto reminders
 - [compensation-rules](wiki/product/compensation-rules.md) — attendance, evaluation, salary, commission, Tết/loyalty bonus rules + 8 open contradictions
 - [glossary](wiki/product/glossary.md) — ubiquitous language VI ↔ code terms (draft)
-- [service-catalog](wiki/product/service-catalog.md) — real menu: 36 services, 11 categories, female/male pricing (seed data)
+- [service-catalog](wiki/product/service-catalog.md) — real menu: 35 services, 10 categories, female/male pricing (seed data)
 - [personas](wiki/product/personas.md) — operating context (1 branch, 3–8 KTV, manager-cashier) + 5 personas
 - [spec R1-1 front-desk-and-packages](wiki/product/specs/front-desk-and-packages.md) — **approved**: catalog, customers, sell package, record visit, payments/receivables, void, package lifecycle, opening balance
 

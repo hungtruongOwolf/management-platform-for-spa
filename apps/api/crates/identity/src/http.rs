@@ -12,6 +12,7 @@ use kernel::{Actor, AppError, FieldError, TenantId};
 use serde::Deserialize;
 use sqlx::PgPool;
 use std::net::{IpAddr, SocketAddr};
+use utoipa::ToSchema;
 
 /// `__Host-` prefix: Secure, Path=/, no Domain — cannot be set or overwritten by subdomains.
 pub const SESSION_COOKIE: &str = "__Host-session";
@@ -121,22 +122,23 @@ impl<S: Send + Sync> FromRequestParts<S> for Client {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
-struct LoginBody {
+pub struct LoginBody {
     phone: String,
     password: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
-struct ReauthBody {
+pub struct ReauthBody {
     password: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
-struct SwitchTenantBody {
+pub struct SwitchTenantBody {
+    #[schema(value_type = String, format = Uuid)]
     tenant_id: TenantId,
 }
 
@@ -169,7 +171,9 @@ where
     (auth, me_routes)
 }
 
-async fn login(
+#[utoipa::path(post, path = "/api/v1/auth/login", tag = "auth", request_body = LoginBody,
+    responses((status = 200, body = Me, description = "Sets the __Host-session cookie"), (status = 401, description = "auth.invalid_credentials"), (status = 422), (status = 429)))]
+pub async fn login(
     State(pool): State<PgPool>,
     headers: HeaderMap,
     Client(meta): Client,
@@ -193,7 +197,8 @@ async fn login(
     with_cookie(StatusCode::OK, &session_cookie(&token.secret), Some(me))
 }
 
-async fn logout(
+#[utoipa::path(post, path = "/api/v1/auth/logout", tag = "auth", responses((status = 204), (status = 401)))]
+pub async fn logout(
     State(pool): State<PgPool>,
     CurrentSession(session): CurrentSession,
 ) -> Result<Response, AppError> {
@@ -201,7 +206,8 @@ async fn logout(
     with_cookie(StatusCode::NO_CONTENT, &clear_session_cookie(), None)
 }
 
-async fn logout_all(
+#[utoipa::path(post, path = "/api/v1/auth/logout-all", tag = "auth", responses((status = 204), (status = 401)))]
+pub async fn logout_all(
     State(pool): State<PgPool>,
     CurrentSession(session): CurrentSession,
 ) -> Result<Response, AppError> {
@@ -209,7 +215,8 @@ async fn logout_all(
     with_cookie(StatusCode::NO_CONTENT, &clear_session_cookie(), None)
 }
 
-async fn reauth(
+#[utoipa::path(post, path = "/api/v1/auth/reauth", tag = "auth", request_body = ReauthBody, responses((status = 204), (status = 401)))]
+pub async fn reauth(
     State(pool): State<PgPool>,
     CurrentSession(session): CurrentSession,
     Json(body): Json<ReauthBody>,
@@ -218,7 +225,9 @@ async fn reauth(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn switch_tenant(
+#[utoipa::path(post, path = "/api/v1/auth/switch-tenant", tag = "auth", request_body = SwitchTenantBody,
+    responses((status = 200, body = Me), (status = 401), (status = 404)))]
+pub async fn switch_tenant(
     State(pool): State<PgPool>,
     CurrentSession(session): CurrentSession,
     Client(meta): Client,
@@ -228,7 +237,8 @@ async fn switch_tenant(
     with_cookie(StatusCode::OK, &session_cookie(&token.secret), Some(me))
 }
 
-async fn me(
+#[utoipa::path(get, path = "/api/v1/me", tag = "auth", responses((status = 200, body = Me), (status = 401)))]
+pub async fn me(
     State(pool): State<PgPool>,
     CurrentSession(session): CurrentSession,
 ) -> Result<Response, AppError> {

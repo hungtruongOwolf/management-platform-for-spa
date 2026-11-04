@@ -6,7 +6,7 @@ sources: [product/specs/front-desk-and-packages.md, architecture/system.md, arch
 
 # Backend design R1-1
 
-Contract-first: các bảng dưới đây là hợp đồng API. Khi có repo, chúng được hiện thực bằng `utoipa`, sinh ra `apps/api/openapi.yaml` (commit vào repo); client TS sinh từ file đó.
+Contract-first: các bảng dưới đây là hợp đồng API, hiện thực bằng `utoipa` → `apps/api/openapi.json` (lệnh `app openapi`, commit vào repo) → `packages/api-client/src/schema.ts` (openapi-typescript). `pnpm api:gen` sinh lại cả hai; CI fail nếu lệch (S3 ✅).
 
 ## 1. Quy ước API
 - REST + JSON, `snake_case`, prefix `/api/v1`. Tiền là số nguyên VND. Thời gian là ISO 8601 có offset. Ngày nghiệp vụ dạng `YYYY-MM-DD`.

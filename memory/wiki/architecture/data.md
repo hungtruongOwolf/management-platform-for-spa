@@ -121,4 +121,4 @@ Thứ tự ưu tiên đúng như trên. Không cần job cập nhật trạng th
 Thay đổi về sau theo **expand → backfill theo lô → kiểm tra → contract**. Mỗi migration được test trên snapshot giống production.
 
 ## Seed
-Dữ liệu tenant Viên Phúc Y Đường: 1 chi nhánh (Phường Đông Hà), 11 nhóm và 36 dịch vụ từ [service-catalog](../product/service-catalog.md), role hệ thống, tài khoản chủ spa. Giá "Ôn ấm tử cung" và các gói liệu trình: chờ EM.
+Dữ liệu tenant Viên Phúc Y Đường: 1 chi nhánh (Phường Đông Hà), 10 nhóm và 35 dịch vụ từ [service-catalog](../product/service-catalog.md), role hệ thống, tài khoản chủ spa. Giá "Ôn ấm tử cung" và các gói liệu trình: chờ EM.

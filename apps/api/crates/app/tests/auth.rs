@@ -1,121 +1,17 @@
 //! End-to-end auth flows through the real router, middleware and Postgres (as app_rw).
 
-use app::AppState;
-use app::middleware::HttpPolicy;
-use axum::Router;
+mod common;
+
 use axum::body::Body;
 use axum::extract::ConnectInfo;
-use axum::http::{HeaderMap, Request, StatusCode, header};
-use http_body_util::BodyExt;
+use axum::http::{Request, StatusCode, header};
+use common::{OWNER_PHONE as PHONE, PASSWORD, TestResult, call, harness, login};
 use identity::SystemRole;
 use identity::provisioning::{NewUser, add_user, create_tenant};
-use kernel::testing::app_pool;
-use serde_json::{Value, json};
+use serde_json::json;
 use sqlx::PgPool;
 use std::net::SocketAddr;
 use tower::ServiceExt;
-
-type TestResult = Result<(), Box<dyn std::error::Error>>;
-
-const ORIGIN: &str = "http://localhost:5173";
-const PHONE: &str = "0905123456";
-const PASSWORD: &str = "mat-khau-cua-chu-spa";
-
-struct Harness {
-    app: Router,
-    owner: PgPool,
-}
-
-async fn harness(owner: PgPool) -> Result<Harness, Box<dyn std::error::Error>> {
-    create_tenant(&owner, "vpyd", "Viên Phúc Y Đường", "Đông Hà").await?;
-    add_user(
-        &owner,
-        NewUser {
-            tenant_slug: "vpyd",
-            phone: PHONE,
-            full_name: "Chủ Spa",
-            password: PASSWORD,
-            role: SystemRole::Owner,
-        },
-    )
-    .await?;
-    let pool = app_pool(&owner).await?;
-    let app = app::router(AppState { pool }, &HttpPolicy::standard(ORIGIN.to_owned()));
-    Ok(Harness { app, owner })
-}
-
-struct Reply {
-    status: StatusCode,
-    headers: HeaderMap,
-    body: Value,
-}
-
-impl Reply {
-    fn cookie(&self) -> Option<String> {
-        self.headers
-            .get(header::SET_COOKIE)?
-            .to_str()
-            .ok()
-            .map(str::to_owned)
-    }
-    fn session(&self) -> Option<String> {
-        let cookie = self.cookie()?;
-        let value = cookie.split(';').next()?.strip_prefix("__Host-session=")?;
-        (!value.is_empty()).then(|| value.to_owned())
-    }
-}
-
-async fn call(
-    app: &Router,
-    method: &str,
-    path: &str,
-    session: Option<&str>,
-    body: Option<Value>,
-) -> Reply {
-    let mut builder = Request::builder()
-        .method(method)
-        .uri(format!("/api/v1{path}"))
-        .header(header::ORIGIN, ORIGIN)
-        .header(header::CONTENT_TYPE, "application/json");
-    if let Some(s) = session {
-        builder = builder.header(header::COOKIE, format!("__Host-session={s}"));
-    }
-    let body = body
-        .map(|b| Body::from(b.to_string()))
-        .unwrap_or_else(Body::empty);
-    let mut request = builder.body(body).unwrap_or_default();
-    request
-        .extensions_mut()
-        .insert(ConnectInfo(SocketAddr::from(([10, 0, 0, 7], 50_000))));
-    let response = app
-        .clone()
-        .oneshot(request)
-        .await
-        .unwrap_or_else(|never| match never {});
-    let (status, headers) = (response.status(), response.headers().clone());
-    let bytes = response
-        .into_body()
-        .collect()
-        .await
-        .map(|b| b.to_bytes())
-        .unwrap_or_default();
-    Reply {
-        status,
-        headers,
-        body: serde_json::from_slice(&bytes).unwrap_or(Value::Null),
-    }
-}
-
-async fn login(app: &Router, phone: &str, password: &str) -> Reply {
-    call(
-        app,
-        "POST",
-        "/auth/login",
-        None,
-        Some(json!({"phone": phone, "password": password})),
-    )
-    .await
-}
 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn login_sets_a_hardened_cookie_and_returns_me(owner: PgPool) -> TestResult {

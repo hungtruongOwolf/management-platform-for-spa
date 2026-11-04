@@ -3,8 +3,9 @@
   "compilerOptions": {
     "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom", "node"],
     "paths": {
-      "@vpyd/ui": ["../../packages/ui/src/index.ts"]
+      "@vpyd/ui": ["../../packages/ui/src/index.ts"],
+      "@vpyd/api-client": ["../../packages/api-client/src/index.ts"]
     }
   },
-  "include": ["src", "vite.config.ts", "../../packages/ui/src"]
+  "include": ["src", "vite.config.ts", "../../packages/ui/src", "../../packages/api-client/src"]
 }

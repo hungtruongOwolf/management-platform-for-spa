@@ -33,7 +33,7 @@ Single source of truth for code quality. `build` and `pr-review` skills apply ev
 
 ## TypeScript (frontend)
 - `strict: true`, `noUncheckedIndexedAccess: true`. `any` is banned; use `unknown` + narrowing.
-- Validate all external data (API responses, forms, URL params) with `zod` schemas; types are inferred from schemas.
+- API response types come from the generated contract (`@vpyd/api-client`, `pnpm api:gen` after any endpoint/DTO change; CI diffs both files). Validate other untrusted input (forms, URL params, storage) with `zod`.
 - Server state via the framework (Server Components) or TanStack Query; client state minimal and local.
 - Components: one responsibility, props typed, every async UI has loading / empty / error / success states.
 - Styling through design tokens only; raw hex colors and magic pixel values live in the token layer.
