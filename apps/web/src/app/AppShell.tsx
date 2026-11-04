@@ -19,11 +19,16 @@ export function AppShell() {
 
   return (
     <div className="min-h-dvh bg-bg">
-      <header className="flex flex-wrap items-center gap-3 border-b border-border bg-surface px-4 py-2">
-        <span className="font-brand text-xl text-primary">
+      {/* One row at every width (nav scrolls sideways instead of wrapping): the header height
+          never changes when the web font swaps in, so the page below does not shift (CLS). */}
+      <header className="flex items-center gap-3 border-b border-border bg-surface px-4 py-2">
+        <span className="shrink-0 whitespace-nowrap font-brand text-lg text-primary sm:text-xl">
           Viên Phúc Y Đường
         </span>
-        <nav aria-label="Chính" className="flex gap-1">
+        <nav
+          aria-label="Chính"
+          className="flex min-w-0 flex-1 gap-1 overflow-x-auto whitespace-nowrap"
+        >
           <Link to="/" className={navLink} activeOptions={{ exact: true }}>
             Trang chủ
           </Link>
@@ -48,14 +53,13 @@ export function AppShell() {
             </Link>
           )}
         </nav>
-        <span className="flex-1" />
-        <span className="text-sm text-text-muted">
+        <span className="hidden whitespace-nowrap text-sm text-text-muted lg:inline">
           {me?.user.full_name} · {me?.active_tenant?.name ?? "Chưa chọn spa"}
         </span>
         <button
           type="button"
           onClick={() => void lock()}
-          className="min-h-11 rounded-[10px] border border-border px-4 font-medium hover:bg-surface-2"
+          className="min-h-11 shrink-0 whitespace-nowrap rounded-[10px] border border-border px-4 font-medium hover:bg-surface-2"
         >
           Khóa nhanh
         </button>

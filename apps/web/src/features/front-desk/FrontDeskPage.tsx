@@ -179,9 +179,18 @@ export function FrontDeskPage() {
   };
 
   // Keyboard: "/" → search, Ctrl+Enter → save, Esc → drop the selected customer.
+  const dropCustomer = () => {
+    if (!customer) return;
+    setCustomer(null);
+    setLines([]);
+    setCreating(null);
+    searchInput.current?.focus();
+  };
   const saveRef = useRef(save);
+  const dropRef = useRef(dropCustomer);
   useEffect(() => {
     saveRef.current = save;
+    dropRef.current = dropCustomer;
   });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -193,13 +202,7 @@ export function FrontDeskPage() {
         e.preventDefault();
         saveRef.current();
       } else if (e.key === "Escape" && !typing) {
-        setCustomer((c) => {
-          if (c) {
-            setLines([]);
-            setTimeout(() => searchInput.current?.focus(), 0);
-          }
-          return null;
-        });
+        dropRef.current();
       }
     };
     document.addEventListener("keydown", onKey);

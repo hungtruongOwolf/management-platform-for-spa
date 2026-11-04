@@ -114,7 +114,7 @@ export function CustomerCard({
                   <span className="block text-sm text-text-muted">
                     Còn{" "}
                     <strong>
-                      {String(left)}/{String(item.sessions_total)}
+                      {String(Math.max(left, 0))}/{String(item.sessions_total)}
                     </strong>{" "}
                     buổi ·{" "}
                     {p.expires_on

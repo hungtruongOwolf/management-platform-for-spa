@@ -44,6 +44,8 @@ setup("migrate and provision a fresh spa", () => {
     phone: `090${String(randomInt(0, 10_000_000)).padStart(7, "0")}`,
     password: randomBytes(18).toString("base64url"),
     fullName: "Chủ Spa E2E",
+    managerPhone: `091${String(randomInt(0, 10_000_000)).padStart(7, "0")}`,
+    managerPassword: randomBytes(18).toString("base64url"),
   };
 
   cli(["migrate"]);
@@ -71,6 +73,21 @@ setup("migrate and provision a fresh spa", () => {
     {
       APP_NEW_USER_PASSWORD: run.password,
     },
+  );
+  // Front-desk manager: Lighthouse signs in as them to audit /quay (managers have no MFA).
+  cli(
+    [
+      "add-user",
+      "--tenant",
+      run.slug,
+      "--phone",
+      run.managerPhone ?? "",
+      "--name",
+      "Quản lý E2E",
+      "--role",
+      "manager",
+    ],
+    { APP_NEW_USER_PASSWORD: run.managerPassword ?? "" },
   );
   cli(["seed-catalog", "--tenant", run.slug]);
   // Closer for the sell-package flow (sales.spec.ts).

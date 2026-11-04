@@ -29,4 +29,10 @@ export default tseslint.config(
     ...tseslint.configs.disableTypeChecked,
     languageOptions: { globals: { ...globals.node } },
   },
+  {
+    // Plain-JS Node scripts outside any tsconfig (e.g. the Lighthouse runner): no type-aware parsing.
+    files: ["**/*.mjs"],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: { ...tseslint.configs.disableTypeChecked.languageOptions, globals: { ...globals.node } },
+  },
 );

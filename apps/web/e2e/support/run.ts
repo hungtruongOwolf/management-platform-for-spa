@@ -14,6 +14,9 @@ export interface RunCredentials {
   totpKey?: string;
   /** Last TOTP time step used: the server accepts each step once (replay guard). */
   lastTotpStep?: number;
+  /** Manager account (no MFA): used by Lighthouse to audit the front desk `/quay`. */
+  managerPhone?: string;
+  managerPassword?: string;
 }
 
 export function credentials(): RunCredentials {

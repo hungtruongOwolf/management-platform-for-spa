@@ -12,7 +12,7 @@
     "test": "vitest run",
     "e2e": "playwright test",
     "e2e:perf": "playwright test --project=perf",
-    "lhci": "pnpm dlx @lhci/cli@0.15.1 autorun"
+    "lhci": "node lighthouse/run.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
