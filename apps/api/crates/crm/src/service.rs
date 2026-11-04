@@ -324,6 +324,24 @@ pub async fn exists_in(tx: &mut TenantTx, id: Uuid) -> Result<bool, AppError> {
     repo::exists(tx, id).await
 }
 
+/// What another context needs to price and label a visit: name and recorded gender.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CustomerBrief {
+    pub id: Uuid,
+    pub full_name: String,
+    pub gender: Option<Gender>,
+}
+
+/// A live customer of the caller's tenant, read inside the caller's transaction (`None` = not
+/// here, which callers answer with `404`). The caller authorizes.
+pub async fn brief_in(tx: &mut TenantTx, id: Uuid) -> Result<Option<CustomerBrief>, AppError> {
+    Ok(repo::brief(tx, id).await?.map(|r| CustomerBrief {
+        id,
+        gender: r.gender.as_deref().and_then(Gender::parse),
+        full_name: r.full_name,
+    }))
+}
+
 /// AC2.1: ≥ 3 digits → phone substring; ≥ 2 letters → accent-insensitive name; empty → most recent.
 pub async fn search(
     pool: &PgPool,

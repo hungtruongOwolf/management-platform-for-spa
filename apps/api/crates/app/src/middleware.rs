@@ -43,8 +43,11 @@ impl HttpPolicy {
 /// Wraps `router` with request ids, tracing, problem+json for bare errors, timeout,
 /// per-IP rate limiting, a body size cap and the CSRF Origin check (outermost first).
 pub fn apply(router: Router, policy: &HttpPolicy) -> Router {
+    // tower_governor's `per_second(n)` is the *period* between tokens (n seconds), not a rate:
+    // convert the rate into the replenish interval.
+    let replenish_ms = (1000 / policy.rate_per_second.max(1)).max(1);
     let governor = GovernorConfigBuilder::default()
-        .per_second(policy.rate_per_second)
+        .per_millisecond(replenish_ms)
         .burst_size(policy.rate_burst)
         .key_extractor(SmartIpKeyExtractor)
         .finish()

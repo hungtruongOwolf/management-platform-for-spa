@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.visit_line l SET staff_id = $4\n           FROM app.visit_line old\n           WHERE l.tenant_id = $1 AND l.visit_id = $2 AND l.id = $3\n             AND old.tenant_id = l.tenant_id AND old.id = l.id\n           RETURNING old.staff_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "staff_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "staff_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3216c94b31924f476d2d0bc1e2c63e0710543ffdff52143105569a9ed90083d6"
+}

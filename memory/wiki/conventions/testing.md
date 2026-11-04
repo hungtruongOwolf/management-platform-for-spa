@@ -49,7 +49,7 @@ Chưa phủ: role `PlatformAdmin`/support grant (chưa có trong `identity::role
 ## 2. Viết E2E spec
 
 - Stack: `playwright.config.ts` khởi động API (`cargo run -p app -- serve`, port **8091**) trên DB riêng `vpyd_e2e`, và Vite dev (port **5181**, proxy `/api` → 8091 qua `VPYD_API_ORIGIN`). Hai port này tránh đụng `pnpm dev:*`.
-- Project `setup` (`e2e/setup/provision.setup.ts`) chạy `migrate`, rồi `create-tenant` (slug `e2e-<thời gian>`), `add-user` (owner, SĐT ngẫu nhiên, mật khẩu ngẫu nhiên truyền qua env `APP_NEW_USER_PASSWORD`, không qua argv), rồi `seed-catalog`. Mỗi lần chạy có một spa mới, nên không cần reset DB. Credentials nằm ở `e2e/.auth/run.json`, cookie owner ở `e2e/.auth/owner.json` (đều gitignored). **Không bao giờ hard-code credentials.**
+- Project `setup` (`e2e/setup/provision.setup.ts`) chạy `migrate`, rồi `create-tenant` (slug `e2e-<thời gian>`), `add-user` (owner, SĐT ngẫu nhiên, mật khẩu ngẫu nhiên truyền qua env `APP_NEW_USER_PASSWORD`, không qua argv), `add-user` thêm một quản lý (không MFA, cho Lighthouse), rồi `seed-catalog`. Mỗi lần chạy có một spa mới, nên không cần reset DB. Credentials nằm ở `e2e/.auth/run.json`, cookie owner ở `e2e/.auth/owner.json` (đều gitignored). **Không bao giờ hard-code credentials.**
 - Spec mới đặt trong `e2e/specs/*.spec.ts`:
   - Cần đăng nhập sẵn: `test.use({ storageState: ownerState })`. Test luồng đăng nhập: `signIn(page, path)`, hoặc `submitLogin(page)` khi form đăng nhập đã ở trên màn hình.
   - Owner bắt buộc TOTP (S2b). `signIn`/`submitLogin` tự làm bước `/xac-thuc`: lần đầu (trong setup) enroll và lưu `totpKey` vào `run.json`; các lần sau sinh mã RFC 6238 cho bước thời gian chưa dùng (`lastTotpStep`). Server chặn replay, và mã cũ bị tính vào khóa tài khoản, nên helper không bao giờ gửi lại mã cũ (có thể phải chờ tới 30 giây). Gọi API trực tiếp thì dùng `apiSignIn`.
@@ -57,7 +57,7 @@ Chưa phủ: role `PlatformAdmin`/support grant (chưa có trong `identity::role
   - Dữ liệu unique trong run (`uniquePhone()`), để retry không đụng ràng buộc SĐT duy nhất.
   - Mỗi màn hình mới gọi `await expectAccessible(page, "<tên>")` (axe, WCAG 2.2 AA). Lỗi serious/critical thì fail. Lỗi moderate/minor được đính kèm vào report để triage.
 - Chạy 1 worker. Rate limit `/auth/*` là 10 request burst mỗi IP, nên hạn chế đăng nhập qua UI, ưu tiên `storageState`.
-- **Màn quầy `/quay` (S7)**: thêm spec luồng ≤ 4 thao tác, `expectAccessible(page, "quay")`, và thêm URL vào Lighthouse (xem §4).
+- **Màn quầy `/quay` (S7 ✅)**: `e2e/specs/front-desk.spec.ts` chạy luồng nhanh đúng 4 thao tác bằng bàn phím (gõ SĐT + Enter → Enter trên "Trừ 1 buổi" đang focus → chọn KTV → Ctrl+Enter), kiểm tra focus nhảy đúng chỗ ở mỗi bước, axe ở 3 trạng thái (trống, có giỏ, đã lưu).
 
 ## 3. Chạy local
 
@@ -73,7 +73,7 @@ Connection string: `E2E_DATABASE_URL` / `E2E_APP_DATABASE_URL`. Nếu không đ�
 ## 4. Hiệu năng
 
 - `api-latency.spec.ts` seed 300 khách (`PERF_CUSTOMERS`), đo 100 mẫu (`PERF_SAMPLES`) tuần tự cho `GET /customers?q=` (tên không dấu, tên, số), `/customers`, `/service-categories`, `/services`, `/package-plans`. p95 phải < **300 ms** (spec §6, tìm khách; catalog dùng tạm cùng ngân sách). Kết quả nằm ở `test-results/**/api-p95.json` và report. Đây là chỉ báo hồi quy cho query chậm (một client, build debug), **không phải load test**. k6 để S11 trên staging.
-- Lighthouse CI (`apps/web/lighthouserc.json`) chạy trên bản build (`vite preview`), throttling mặc định (mobile, Slow 4G, CPU 4×). Kiểm LCP < 2,5 s, CLS < 0,1, điểm a11y ≥ 0,95. Hiện tại chỉ đo `/dang-nhap`, vì các trang khác cần session. **S7 phải thêm `/quay`** (spec §6 đo LCP ở màn quầy), kèm `puppeteerScript` đăng nhập qua stack E2E.
+- Lighthouse CI (`apps/web/lighthouserc.json`) chạy trên bản build (`vite preview`), throttling mặc định (mobile, Slow 4G, CPU 4×). Kiểm LCP < 2,5 s, CLS < 0,1, điểm a11y ≥ 0,95 cho `/dang-nhap` và `/quay` (S7). `pnpm lhci` gọi `apps/web/lighthouse/run.mjs`: chạy API đã build trên DB E2E (port 8093, `LHCI_API_PORT`) + `vite preview` (port 4173, `LHCI_WEB_PORT`; agent chạy song song thì đổi cả hai) proxy tới nó, đăng nhập bằng tài khoản **quản lý** của lần chạy E2E (`e2e/.auth/run.json`; quản lý không có MFA), rồi chạy `lhci autorun` với cookie đó qua `settings.extraHeaders` trong một file config tạm (không qua argv, xóa sau khi chạy). Vì vậy phải chạy sau `pnpm e2e`. Không dùng `puppeteerScript` (cần cài puppeteer và không qua được TOTP của chủ spa).
 
 ## 5. CI
 

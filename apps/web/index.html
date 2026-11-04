@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Viên Phúc Y Đường</title>
+    <!-- Every route starts by asking who is signed in: fetch it alongside the JS, not after it. -->
+    <link rel="preload" href="/api/v1/me" as="fetch" crossorigin="anonymous" />
   </head>
   <body>
     <div id="root"></div>

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE app.customer_package_item i\n           SET sessions_remaining = i.sessions_remaining - $3, version = i.version + 1\n           FROM app.customer_package p\n           WHERE i.tenant_id = $1 AND i.id = $2\n             AND p.tenant_id = i.tenant_id AND p.id = i.customer_package_id\n             AND p.customer_id = $4 AND p.cancelled_at IS NULL\n             AND ($5 OR p.expires_on IS NULL OR p.expires_on >= $6)\n             AND i.sessions_remaining >= $3\n           RETURNING i.customer_package_id, i.service_id, i.name_snapshot, i.sessions_purchased,\n                     i.sessions_total AS \"sessions_total!\", i.sessions_remaining, i.per_session_value",
+  "query": "UPDATE app.customer_package_item i\n           SET sessions_remaining = i.sessions_remaining - $3, version = i.version + 1\n           FROM app.customer_package p\n           WHERE i.tenant_id = $1 AND i.id = $2\n             AND p.tenant_id = i.tenant_id AND p.id = i.customer_package_id\n             AND p.customer_id = $4 AND p.cancelled_at IS NULL\n             AND ($5 OR p.expires_on IS NULL OR p.expires_on >= $6)\n             AND i.sessions_remaining >= $3\n           RETURNING i.customer_package_id, i.service_id, i.name_snapshot, i.sessions_purchased,\n                     i.sessions_total AS \"sessions_total!\", i.sessions_remaining, i.per_session_value,\n                     p.name_snapshot AS package_name,\n                     (p.expires_on IS NOT NULL AND p.expires_on < $6) AS \"expired!\"",
   "describe": {
     "columns": [
       {
@@ -79,6 +79,23 @@
             "name": "per_session_value"
           }
         }
+      },
+      {
+        "ordinal": 7,
+        "name": "package_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "name_snapshot"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "expired!",
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -98,8 +115,10 @@
       false,
       true,
       false,
-      false
+      false,
+      false,
+      null
     ]
   },
-  "hash": "5202c7c40dd26993ca7c917073e941fc12fa9ab268317c1fdadad71b5ad210b0"
+  "hash": "30cc6e37ed19e7d3c72ca07b188c3c9125449af76220ac5e52e3e90b781c7414"
 }

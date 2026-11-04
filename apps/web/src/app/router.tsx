@@ -4,21 +4,20 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   redirect,
   type RouterHistory,
 } from "@tanstack/react-router";
 import { LoginPage } from "../features/auth/LoginPage";
-import { MfaPage } from "../features/auth/MfaPage";
 import { authQuery } from "../features/auth/session";
+import { FrontDeskPage } from "../features/front-desk/FrontDeskPage";
 import { safeNextPath } from "../lib/api";
-import { PlansPage } from "../features/catalog/PlansPage";
-import {
-  CustomerPage,
-  CustomersPage,
-} from "../features/customers/CustomersPage";
-import { PriceListPage } from "../features/catalog/PriceListPage";
-import { OpeningBalancePage } from "../features/opening-balance/OpeningBalancePage";
 import { AppShell, HomePage } from "./AppShell";
+
+// Other business screens are separate chunks so the first paint does not wait for their code
+// (Lighthouse LCP budget, testing.md §4). The front desk stays in the main bundle: it is the screen
+// kept open all day, and a lazy chunk would add a request after the shell to its LCP.
+const customersModule = () => import("../features/customers/CustomersPage");
 
 interface RouterContext {
   queryClient: QueryClient;
@@ -45,7 +44,11 @@ const loginRoute = createRoute({
     if (auth.state === "signed_in")
       redirect({ href: safeNextPath(search.next), throw: true });
     if (auth.state !== "anonymous")
-      redirect({ to: "/xac-thuc", search: search.next ? { next: search.next } : {}, throw: true });
+      redirect({
+        to: "/xac-thuc",
+        search: search.next ? { next: search.next } : {},
+        throw: true,
+      });
   },
   component: function Login() {
     const { next } = loginRoute.useSearch();
@@ -69,14 +72,19 @@ const mfaRoute = createRoute({
     if (auth.state === "signed_in")
       redirect({ href: safeNextPath(search.next), throw: true });
     if (auth.state === "anonymous")
-      redirect({ to: "/dang-nhap", search: search.next ? { next: search.next } : {}, throw: true });
-    return { step: auth.state === "mfa_enroll" ? "mfa_enroll" : "mfa_verify" } as const;
+      redirect({
+        to: "/dang-nhap",
+        search: search.next ? { next: search.next } : {},
+        throw: true,
+      });
+    return {
+      step: auth.state === "mfa_enroll" ? "mfa_enroll" : "mfa_verify",
+    } as const;
   },
-  component: function Mfa() {
-    const { next } = mfaRoute.useSearch();
-    const { step } = mfaRoute.useRouteContext();
-    return <MfaPage step={step} next={next} />;
-  },
+  component: lazyRouteComponent(
+    () => import("../features/auth/MfaPage"),
+    "MfaRoutePage",
+  ),
 });
 
 /** Everything below requires a session. This guard is UX only; the API enforces access. */
@@ -113,34 +121,47 @@ const homeRoute = createRoute({
 const priceListRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/bang-gia",
-  component: PriceListPage,
+  component: lazyRouteComponent(
+    () => import("../features/catalog/PriceListPage"),
+    "PriceListPage",
+  ),
 });
 
 const plansRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/bang-gia/goi",
-  component: PlansPage,
+  component: lazyRouteComponent(
+    () => import("../features/catalog/PlansPage"),
+    "PlansPage",
+  ),
+});
+
+/** The front desk (S7): the screen the manager-cashier keeps open all day. */
+const frontDeskRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/quay",
+  component: FrontDeskPage,
 });
 
 const customersRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/khach-hang",
-  component: CustomersPage,
+  component: lazyRouteComponent(customersModule, "CustomersPage"),
 });
 
 const customerRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/khach-hang/$customerId",
-  component: function Customer() {
-    const { customerId } = customerRoute.useParams();
-    return <CustomerPage customerId={customerId} />;
-  },
+  component: lazyRouteComponent(customersModule, "CustomerRoutePage"),
 });
 
 const openingBalanceRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/nhap-so-cu",
-  component: OpeningBalancePage,
+  component: lazyRouteComponent(
+    () => import("../features/opening-balance/OpeningBalancePage"),
+    "OpeningBalancePage",
+  ),
 });
 
 const routeTree = rootRoute.addChildren([
@@ -150,6 +171,7 @@ const routeTree = rootRoute.addChildren([
     homeRoute,
     priceListRoute,
     plansRoute,
+    frontDeskRoute,
     customersRoute,
     customerRoute,
     openingBalanceRoute,

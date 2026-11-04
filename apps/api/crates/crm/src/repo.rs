@@ -249,3 +249,20 @@ pub async fn exists(tx: &mut TenantTx, id: Uuid) -> Result<bool, AppError> {
     .await?
     .is_some())
 }
+
+pub struct BriefRow {
+    pub full_name: String,
+    pub gender: Option<String>,
+}
+
+pub async fn brief(tx: &mut TenantTx, id: Uuid) -> Result<Option<BriefRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        BriefRow,
+        "SELECT full_name, gender FROM app.customer WHERE tenant_id = $1 AND id = $2 AND anonymized_at IS NULL",
+        tenant,
+        id
+    )
+    .fetch_optional(tx.conn())
+    .await?)
+}

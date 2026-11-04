@@ -16,6 +16,7 @@ crm = { version = "0.1.0", path = "../crm" }
 dotenvy = "0.15.7"
 identity = { version = "0.1.0", path = "../identity" }
 kernel = { version = "0.1.0", path = "../kernel" }
+operations = { version = "0.1.0", path = "../operations" }
 org = { version = "0.1.0", path = "../org" }
 packages = { version = "0.1.0", path = "../packages" }
 sales = { version = "0.1.0", path = "../sales" }

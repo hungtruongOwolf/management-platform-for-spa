@@ -1,30 +1,62 @@
-import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
+import { useRef, useState, type SyntheticEvent } from "react";
 import { safeNextPath } from "../../lib/api";
 import { messageFor } from "../../lib/errors";
 import { login, setAuthState } from "./session";
 
-const schema = z.object({
-  phone: z.string().trim().min(9, "Nhập số điện thoại."),
-  password: z.string().min(1, "Nhập mật khẩu."),
-});
-type FormValues = z.infer<typeof schema>;
+// The login page is the public entry point, so it stays free of react-hook-form and zod: two
+// fields do not need them, and they would sit on its critical path (frontend.md, perf budget).
+// The server re-validates everything; these checks only spare a round trip.
+
+interface Values {
+  phone: string;
+  password: string;
+}
+
+type Errors = Partial<Record<keyof Values, string>>;
+
+function validate({ phone, password }: Values): Errors {
+  const errors: Errors = {};
+  if (phone.trim().length < 9) errors.phone = "Nhập số điện thoại.";
+  if (password.length < 1) errors.password = "Nhập mật khẩu.";
+  return errors;
+}
 
 export function LoginPage({ next }: { next?: string | undefined }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [values, setValues] = useState<Values>({ phone: "", password: "" });
+  const [errors, setErrors] = useState<Errors>({});
+  const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
-  const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { phone: "", password: "" } });
-  const { errors, isSubmitting } = form.formState;
+  const phoneInput = useRef<HTMLInputElement>(null);
+  const passwordInput = useRef<HTMLInputElement>(null);
 
-  const onSubmit = form.handleSubmit(async ({ phone, password }) => {
+  const change = (field: keyof Values, value: string) => {
+    const nextValues = { ...values, [field]: value };
+    setValues(nextValues);
+    // After the first submit, errors follow the input as it is corrected.
+    if (submitted) setErrors(validate(nextValues));
+  };
+
+  const onSubmit = async (e: SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+    setSubmitted(true);
+    const found = validate(values);
+    setErrors(found);
+    if (found.phone || found.password) {
+      // Like react-hook-form elsewhere: focus the first invalid field.
+      (found.phone ? phoneInput : passwordInput).current?.focus();
+      return;
+    }
+
     setServerError(null);
+    setSubmitting(true);
     try {
-      const auth = await login(phone, password);
+      const auth = await login(values.phone.trim(), values.password);
       setAuthState(queryClient, auth);
       if (auth.state === "signed_in") {
         await navigate({ to: safeNextPath(next) });
@@ -34,9 +66,11 @@ export function LoginPage({ next }: { next?: string | undefined }) {
       }
     } catch (error) {
       setServerError(messageFor(error));
-      form.resetField("password");
+      setValues((v) => ({ ...v, password: "" }));
+    } finally {
+      setSubmitting(false);
     }
-  });
+  };
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-bg p-4">
@@ -58,18 +92,23 @@ export function LoginPage({ next }: { next?: string | undefined }) {
             Số điện thoại
           </label>
           <input
+            ref={phoneInput}
             id="phone"
+            name="phone"
             type="tel"
             inputMode="tel"
             autoComplete="username"
             className="min-h-11 w-full rounded-[6px] border border-border bg-surface px-3"
+            value={values.phone}
+            onChange={(e) => {
+              change("phone", e.target.value);
+            }}
             aria-invalid={errors.phone ? true : undefined}
             aria-describedby={errors.phone ? "phone-error" : undefined}
-            {...form.register("phone")}
           />
           {errors.phone && (
             <p id="phone-error" className="text-sm text-danger">
-              {errors.phone.message}
+              {errors.phone}
             </p>
           )}
         </div>
@@ -79,17 +118,22 @@ export function LoginPage({ next }: { next?: string | undefined }) {
             Mật khẩu
           </label>
           <input
+            ref={passwordInput}
             id="password"
+            name="password"
             type="password"
             autoComplete="current-password"
             className="min-h-11 w-full rounded-[6px] border border-border bg-surface px-3"
+            value={values.password}
+            onChange={(e) => {
+              change("password", e.target.value);
+            }}
             aria-invalid={errors.password ? true : undefined}
             aria-describedby={errors.password ? "password-error" : undefined}
-            {...form.register("password")}
           />
           {errors.password && (
             <p id="password-error" className="text-sm text-danger">
-              {errors.password.message}
+              {errors.password}
             </p>
           )}
         </div>

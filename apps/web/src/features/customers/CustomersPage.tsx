@@ -3,7 +3,7 @@ import {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
@@ -87,6 +87,12 @@ export function CustomersPage() {
       </section>
     </section>
   );
+}
+
+/** Route component for /khach-hang/:customerId (loaded lazily by the router). */
+export function CustomerRoutePage() {
+  const { customerId } = useParams({ from: "/authed/khach-hang/$customerId" });
+  return <CustomerPage customerId={customerId} />;
 }
 
 /** /khach-hang/:customerId — profile with edit. */

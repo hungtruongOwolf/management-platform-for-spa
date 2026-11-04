@@ -49,6 +49,7 @@ enum Target {
     Customer,
     Sale,
     CustomerPackage,
+    Visit,
 }
 
 struct Route {
@@ -250,6 +251,33 @@ const ROUTES: &[Route] = &[
         Access::Perm(P::SaleRead, OWNER_MANAGER),
     )
     .id(Target::Sale),
+    // visits — operations
+    route(
+        "POST",
+        "/api/v1/visits",
+        Access::Perm(P::VisitRecord, OWNER_MANAGER),
+    )
+    .body(visit_body)
+    .idempotent(),
+    route(
+        "GET",
+        "/api/v1/visits",
+        Access::Perm(P::VisitRead, OWNER_MANAGER),
+    ),
+    route(
+        "GET",
+        "/api/v1/visits/{id}",
+        Access::Perm(P::VisitRead, OWNER_MANAGER),
+    )
+    .id(Target::Visit),
+    route(
+        "PATCH",
+        "/api/v1/visits/{id}",
+        Access::Perm(P::VisitRecord, OWNER_MANAGER),
+    )
+    .id(Target::Visit)
+    .body(visit_update_body)
+    .if_match(),
 ];
 
 /// Mounted but deliberately left out of the OpenAPI contract. Must answer without a session.
@@ -297,6 +325,17 @@ fn customer_body(f: &Fixture) -> Option<Value> {
 fn health_note_body(_: &Fixture) -> Option<Value> {
     Some(json!({"health_note": "Dị ứng tinh dầu sả"}))
 }
+/// A one-off line (flat 150.000đ) paid in cash: repeatable without using up package sessions.
+fn visit_body(f: &Fixture) -> Option<Value> {
+    Some(json!({
+        "customer_id": f.customer,
+        "lines": [{"service_id": f.service, "source": "one_off", "staff_id": f.staff}],
+        "payments": [{"method": "cash", "amount": 150_000}]
+    }))
+}
+fn visit_update_body(_: &Fixture) -> Option<Value> {
+    Some(json!({}))
+}
 fn sell_body(f: &Fixture) -> Option<Value> {
     Some(json!({
         "customer_id": f.customer, "closer_staff_id": f.staff,
@@ -328,6 +367,7 @@ struct Fixture {
     staff: String,
     sale: String,
     customer_package: String,
+    visit: String,
 }
 
 impl Fixture {
@@ -340,6 +380,7 @@ impl Fixture {
             Target::Customer => &self.customer,
             Target::Sale => &self.sale,
             Target::CustomerPackage => &self.customer_package,
+            Target::Visit => &self.visit,
         }
     }
 }
@@ -504,6 +545,7 @@ async fn fixture(
             .to_string(),
         sale: String::new(),
         customer_package: String::new(),
+        visit: String::new(),
     };
     f.service = created_id(
         app,
@@ -543,6 +585,19 @@ async fn fixture(
     };
     f.sale = sale.to_owned();
     f.customer_package = package.to_owned();
+    let visit = send(
+        app,
+        "POST",
+        "/visits",
+        Some(&owner),
+        visit_body(&f),
+        &[("Idempotency-Key", &uuid::Uuid::now_v7().to_string())],
+    )
+    .await;
+    f.visit = visit.body["id"]
+        .as_str()
+        .ok_or_else(|| format!("fixture POST /visits → {} {}", visit.status, visit.body))?
+        .to_owned();
     Ok(f)
 }
 

@@ -1,13 +1,14 @@
 //! Sell packages (US3). One transaction creates the sale, its lines, the customer packages with
 //! their items, the payments, the audit entry and the idempotency record — or nothing at all.
+//! Visits (S7) record their one-off services through [`record_service_sale`] in their own transaction.
 
 use crate::domain::{self, DiscountAuthority, DiscountError, PaymentMethod};
 use crate::dto::{
-    PaymentDto, PaymentKindDto, PaymentMethodDto, SaleCreate, SaleDto, SaleLineDto,
+    PaymentCreate, PaymentDto, PaymentKindDto, PaymentMethodDto, SaleCreate, SaleDto, SaleLineDto,
     SaleLineTypeDto, SaleStatusDto,
 };
-use crate::repo::{self, PackageLineInsert, PaymentInsert, SaleInsert};
-use chrono::{Months, NaiveDate};
+use crate::repo::{self, PackageLineInsert, PaymentInsert, SaleInsert, ServiceLineInsert};
+use chrono::{DateTime, Months, NaiveDate, Utc};
 use kernel::audit::{self, AuditEntry};
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx};
@@ -15,7 +16,7 @@ use packages::http::CustomerPackageDto;
 use packages::{NewItem, NewPackage, Origin};
 use serde_json::{Value, json};
 use sqlx::PgPool;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 pub const MAX_LINES: usize = 10;
@@ -24,10 +25,12 @@ const MAX_REASON: usize = 500;
 const MAX_REFERENCE: usize = 200;
 const MAX_GIFT_NOTE: usize = 500;
 
-struct Payment {
-    method: PaymentMethod,
-    amount: Money,
-    reference: Option<String>,
+/// One validated payment of a sale (see [`parse_payments`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Payment {
+    pub method: PaymentMethod,
+    pub amount: Money,
+    pub reference: Option<String>,
 }
 
 struct Line {
@@ -94,12 +97,31 @@ fn parse(input: &SaleCreate) -> Result<Order, AppError> {
         }
     };
 
-    if input.payments.len() > MAX_PAYMENTS {
+    let payments = parse_payments(&input.payments, &mut errors);
+
+    if errors.is_empty() {
+        Ok(Order {
+            customer_id: input.customer_id,
+            closer_staff_id: input.closer_staff_id,
+            lines,
+            discount,
+            discount_reason,
+            payments,
+        })
+    } else {
+        Err(AppError::Validation(errors))
+    }
+}
+
+/// Shape rules for `payments[]` shared by package sales and visits: 0–2 entries, one per method,
+/// each amount > 0, short reference. Problems are appended to `errors`; whether the payments add up
+/// to what is due is checked later, against the server-computed total.
+pub fn parse_payments(input: &[PaymentCreate], errors: &mut Vec<FieldError>) -> Vec<Payment> {
+    if input.len() > MAX_PAYMENTS {
         errors.push(FieldError::new("payments", "count_out_of_range"));
     }
     let mut methods = HashSet::new();
-    let payments = input
-        .payments
+    input
         .iter()
         .enumerate()
         .map(|(i, p)| {
@@ -139,20 +161,7 @@ fn parse(input: &SaleCreate) -> Result<Order, AppError> {
                 reference,
             }
         })
-        .collect();
-
-    if errors.is_empty() {
-        Ok(Order {
-            customer_id: input.customer_id,
-            closer_staff_id: input.closer_staff_id,
-            lines,
-            discount,
-            discount_reason,
-            payments,
-        })
-    } else {
-        Err(AppError::Validation(errors))
-    }
+        .collect()
 }
 
 fn authority(actor: &Actor, cap_pct: u32) -> DiscountAuthority {
@@ -276,7 +285,7 @@ pub async fn create_sale(
             discount_reason: order.discount_reason.as_deref(),
             total: total.as_i64(),
             amount_paid: paid.as_i64(),
-            closer_staff_id: closer.id,
+            closer_staff_id: Some(closer.id),
             created_by: actor.user_id.as_uuid(),
         },
     )
@@ -405,25 +414,7 @@ async fn load(tx: &mut TenantTx, id: Uuid, today: NaiveDate) -> Result<Option<Sa
     let payments = repo::payments(tx, id)
         .await?
         .into_iter()
-        .map(|p| {
-            let method = match PaymentMethod::parse(&p.method) {
-                Some(PaymentMethod::Cash) => PaymentMethodDto::Cash,
-                Some(PaymentMethod::BankTransfer) => PaymentMethodDto::BankTransfer,
-                None => return Err(AppError::Internal(format!("payment method {}", p.method))),
-            };
-            Ok(PaymentDto {
-                id: p.id,
-                kind: if p.kind == "reversal" {
-                    PaymentKindDto::Reversal
-                } else {
-                    PaymentKindDto::Payment
-                },
-                method,
-                amount: p.amount,
-                reference: p.reference,
-                paid_at: p.paid_at,
-            })
-        })
+        .map(|p| payment_dto(p.id, &p.kind, &p.method, p.amount, p.reference, p.paid_at))
         .collect::<Result<Vec<_>, AppError>>()?;
     let customer_packages = packages::service::of_sale(tx, id, today)
         .await?
@@ -464,4 +455,183 @@ pub async fn get_sale(pool: &PgPool, actor: &Actor, id: Uuid) -> Result<SaleDto,
     let sale = load(&mut tx, id, today).await?;
     tx.commit().await?;
     sale.ok_or(AppError::NotFound)
+}
+
+fn payment_dto(
+    id: Uuid,
+    kind: &str,
+    method: &str,
+    amount: i64,
+    reference: Option<String>,
+    paid_at: DateTime<Utc>,
+) -> Result<PaymentDto, AppError> {
+    let method = match PaymentMethod::parse(method) {
+        Some(PaymentMethod::Cash) => PaymentMethodDto::Cash,
+        Some(PaymentMethod::BankTransfer) => PaymentMethodDto::BankTransfer,
+        None => return Err(AppError::Internal(format!("payment method {method}"))),
+    };
+    Ok(PaymentDto {
+        id,
+        kind: if kind == "reversal" {
+            PaymentKindDto::Reversal
+        } else {
+            PaymentKindDto::Payment
+        },
+        method,
+        amount,
+        reference,
+        paid_at,
+    })
+}
+
+// ---------------------------------------------------------------- one-off services (S7 visits)
+
+/// A one-off service line priced by the caller from the catalog, inside the same transaction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceLine {
+    pub service_id: Uuid,
+    /// Service name at this moment (snapshot).
+    pub description: String,
+    pub qty: u32,
+    pub unit_price: Money,
+}
+
+/// A sale of one-off services, e.g. the paid part of a visit. Always collected in full (R1).
+#[derive(Debug, Clone, Copy)]
+pub struct ServiceSale<'a> {
+    pub customer_id: Uuid,
+    pub business_date: NaiveDate,
+    pub branch_id: Uuid,
+    pub lines: &'a [ServiceLine],
+    pub payments: &'a [Payment],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ServiceSaleRecorded {
+    pub sale_id: Uuid,
+    pub total: Money,
+}
+
+/// Records the sale of one-off services inside the caller's transaction: sale, `service` lines,
+/// append-only payments and an audit entry. Payments must add up exactly to the server-computed
+/// total (`422 payment.amount_mismatch`); taking money needs `payment.collect`.
+/// No lines → no sale (`Ok(None)`), and then any payment is a mismatch.
+pub async fn record_service_sale(
+    tx: &mut TenantTx,
+    actor: &Actor,
+    sale: ServiceSale<'_>,
+) -> Result<Option<ServiceSaleRecorded>, AppError> {
+    let paid = Money::sum(sale.payments.iter().map(|p| p.amount)).map_err(money_err)?;
+    let line_totals = sale
+        .lines
+        .iter()
+        .map(|l| l.unit_price.checked_mul(l.qty))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(money_err)?;
+    let total = Money::sum(line_totals.iter().copied()).map_err(money_err)?;
+    if paid != total {
+        return Err(AppError::Unprocessable {
+            code: "payment.amount_mismatch",
+        });
+    }
+    if sale.lines.is_empty() {
+        return Ok(None);
+    }
+    if !sale.payments.is_empty() {
+        actor.require(Permission::PaymentCollect)?;
+    }
+
+    let sale_id = Uuid::now_v7();
+    repo::insert_sale(
+        tx,
+        &SaleInsert {
+            id: sale_id,
+            branch_id: sale.branch_id,
+            customer_id: sale.customer_id,
+            business_date: sale.business_date,
+            subtotal: total.as_i64(),
+            discount_amount: 0,
+            discount_reason: None,
+            total: total.as_i64(),
+            amount_paid: paid.as_i64(),
+            closer_staff_id: None,
+            created_by: actor.user_id.as_uuid(),
+        },
+    )
+    .await?;
+    for (position, (line, line_total)) in (0_i32..).zip(sale.lines.iter().zip(&line_totals)) {
+        repo::insert_service_line(
+            tx,
+            &ServiceLineInsert {
+                sale_id,
+                position,
+                service_id: line.service_id,
+                description: &line.description,
+                qty: i32::try_from(line.qty)
+                    .map_err(|_| AppError::Internal("qty overflow".into()))?,
+                unit_price: line.unit_price.as_i64(),
+                line_total: line_total.as_i64(),
+            },
+        )
+        .await?;
+    }
+    for p in sale.payments {
+        repo::insert_payment(
+            tx,
+            &PaymentInsert {
+                branch_id: sale.branch_id,
+                sale_id,
+                business_date: sale.business_date,
+                method: p.method.as_str(),
+                amount: p.amount.as_i64(),
+                reference: p.reference.as_deref(),
+                created_by: actor.user_id.as_uuid(),
+            },
+        )
+        .await?;
+    }
+    audit::record(
+        tx,
+        actor,
+        AuditEntry {
+            action: "sale.create",
+            entity_type: "sale",
+            entity_id: sale_id,
+            before: None,
+            after: Some(json!({
+                "customer_id": sale.customer_id, "kind": "services",
+                "lines": sale.lines.iter().map(|l| json!({
+                    "service_id": l.service_id, "qty": l.qty, "unit_price": l.unit_price.as_i64(),
+                })).collect::<Vec<_>>(),
+                "total": total.as_i64(),
+                "payments": sale.payments.iter().map(|p| json!({"method": p.method.as_str(), "amount": p.amount.as_i64()})).collect::<Vec<_>>(),
+            })),
+            reason: None,
+        },
+    )
+    .await?;
+    Ok(Some(ServiceSaleRecorded { sale_id, total }))
+}
+
+/// Payments of several sales, read inside the caller's transaction (`sale_id → payments`, oldest
+/// first). The caller authorizes.
+pub async fn payments_of(
+    tx: &mut TenantTx,
+    sale_ids: &[Uuid],
+) -> Result<HashMap<Uuid, Vec<PaymentDto>>, AppError> {
+    let mut out: HashMap<Uuid, Vec<PaymentDto>> = HashMap::new();
+    if sale_ids.is_empty() {
+        return Ok(out);
+    }
+    for p in repo::payments_of(tx, sale_ids).await? {
+        out.entry(p.sale_id).or_default().push(payment_dto(
+            p.id,
+            &p.kind,
+            &p.method,
+            p.amount,
+            p.reference,
+            p.paid_at,
+        )?);
+    }
+    Ok(out)
 }

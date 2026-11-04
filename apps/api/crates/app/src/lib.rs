@@ -43,6 +43,7 @@ pub fn router(state: AppState, policy: &HttpPolicy) -> Router {
         .merge(org::http::routes())
         .merge(packages::http::routes())
         .merge(sales::http::routes())
+        .merge(operations::http::routes())
         .with_state(state);
     middleware::apply(Router::new().nest("/api/v1", api), policy)
 }
@@ -200,5 +201,24 @@ mod tests {
             statuses.contains(&StatusCode::TOO_MANY_REQUESTS),
             "{statuses:?}"
         );
+    }
+
+    /// `rate_per_second` is a rate, not a period: at 10/s a drained bucket has a token again
+    /// after ~100 ms (it used to take 10 s, which throttled a busy front desk to 12 requests/min).
+    #[tokio::test]
+    async fn the_bucket_refills_at_rate_per_second() {
+        let mut p = policy();
+        p.rate_per_second = 10;
+        p.rate_burst = 1;
+        let app = router(lazy_state(), &p);
+        let (first, _, _) = send(app.clone(), get("/api/v1/health")).await;
+        let (drained, _, _) = send(app.clone(), get("/api/v1/health")).await;
+        assert_eq!(
+            (first, drained),
+            (StatusCode::OK, StatusCode::TOO_MANY_REQUESTS)
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        let (refilled, _, _) = send(app, get("/api/v1/health")).await;
+        assert_eq!(refilled, StatusCode::OK);
     }
 }

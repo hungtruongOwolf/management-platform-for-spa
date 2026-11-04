@@ -1,9 +1,8 @@
 {
   "ci": {
     "collect": {
-      "startServerCommand": "pnpm exec vite preview --port 4173 --strictPort",
-      "startServerReadyPattern": "4173",
-      "url": ["http://localhost:4173/dang-nhap"],
+      "anonymousUrls": ["/dang-nhap"],
+      "signedInUrls": ["/quay"],
       "numberOfRuns": 3,
       "settings": {
         "chromeFlags": "--no-sandbox --headless=new"

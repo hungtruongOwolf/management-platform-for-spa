@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.visit\n           SET note_ct = CASE WHEN $4 THEN $5 ELSE note_ct END, version = version + 1, updated_at = now()\n           WHERE tenant_id = $1 AND id = $2 AND version = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8",
+        "Bool",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b0be57805cc3bbee11fda540f73df3c6613be9377b31b5f3fd71b8d57effd859"
+}
