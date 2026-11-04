@@ -135,3 +135,9 @@ Ops: `ingest`, `query`, `lint`, `record`, `decision`, `skip`.
 - S3: migration 0003_catalog, catalog crate (price variants, seed of the printed menu), OpenAPI contract (utoipa 6, 9 endpoints) → generated TS client, web AppShell + /bang-gia. CI now fails if openapi.json or the TS client drift from code.
 - Correction: the menu has 35 services / 10 categories (earlier entries said 36/11 — miscount). Equal female/male menu prices stored as one flat price; Ôn ấm tử cung seeded inactive (no price).
 - Verified in real Chrome: guard → login → back to /bang-gia, dark theme renders, no console errors. Dev tenant catalog seeded.
+
+## [2026-11-04] record | S3 merged; S4 catalog management built
+- PR #3 merged on EM's "tự làm tiếp đi".
+- S4: catalog write API (categories/services/plans, PUT + If-Match, audited, no delete), kernel IfMatch/etag, web edit forms + /bang-gia/goi. Owner-only (catalog.manage); manager/foreign tenant refused (tests).
+- Found in real Chrome: signed-in user on /dang-nhap?next=… was sent to "/" — fixed (test red→green).
+- Dev DB now has a test plan "Gội thảo dược 10 buổi + tặng 2 (thử)".

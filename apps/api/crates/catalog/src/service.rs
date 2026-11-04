@@ -21,7 +21,7 @@ pub async fn services(
 ) -> Result<Vec<ServiceRow>, AppError> {
     actor.require(Permission::CatalogRead)?;
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
-    let rows = repo::services(&mut tx, active_only).await?;
+    let rows = repo::services(&mut tx, active_only, None).await?;
     tx.commit().await?;
     Ok(rows)
 }
@@ -33,7 +33,7 @@ pub async fn package_plans(
 ) -> Result<Vec<PlanRow>, AppError> {
     actor.require(Permission::CatalogRead)?;
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
-    let rows = repo::package_plans(&mut tx, active_only).await?;
+    let rows = repo::package_plans(&mut tx, active_only, None).await?;
     tx.commit().await?;
     Ok(rows)
 }

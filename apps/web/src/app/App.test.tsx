@@ -82,6 +82,16 @@ describe("auth flow", () => {
     expect(fetchSpy).not.toHaveBeenCalledWith("/api/v1/auth/login", expect.anything());
   });
 
+  it("an already signed-in user opening the login link goes straight to `next`", async () => {
+    server((_method, path) => {
+      if (path === "/api/v1/me") return Response.json(ME);
+      if (path === "/api/v1/service-categories" || path === "/api/v1/services") return Response.json([]);
+      return new Response(null, { status: 404 });
+    });
+    renderAt("/dang-nhap?next=%2Fbang-gia");
+    expect(await screen.findByRole("heading", { name: "Bảng giá dịch vụ" })).toBeInTheDocument();
+  });
+
   it("quick lock logs out and returns to the login page", async () => {
     let loggedIn = true;
     const fetchSpy = server((method, path) => {

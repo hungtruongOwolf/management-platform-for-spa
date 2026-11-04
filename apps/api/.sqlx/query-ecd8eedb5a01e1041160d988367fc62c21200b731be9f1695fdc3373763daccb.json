@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM app.service_price WHERE tenant_id = $1 AND service_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ecd8eedb5a01e1041160d988367fc62c21200b731be9f1695fdc3373763daccb"
+}

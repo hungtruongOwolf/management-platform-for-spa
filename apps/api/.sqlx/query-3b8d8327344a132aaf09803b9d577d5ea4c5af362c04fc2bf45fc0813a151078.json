@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM app.package_plan_item WHERE tenant_id = $1 AND plan_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3b8d8327344a132aaf09803b9d577d5ea4c5af362c04fc2bf45fc0813a151078"
+}

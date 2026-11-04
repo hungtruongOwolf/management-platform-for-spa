@@ -1,7 +1,7 @@
 //! Catalog SQL. Every query runs in a `TenantTx` and filters by its tenant explicitly (RLS is layer two).
 
 use crate::domain::{PriceVariant, ServicePrices};
-use kernel::{AppError, Money, TenantTx};
+use kernel::{AppError, FieldError, Money, TenantTx};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -19,6 +19,7 @@ pub struct ServiceRow {
     pub duration_min: Option<i32>,
     pub recommended: bool,
     pub active: bool,
+    pub version: i64,
     pub prices: ServicePrices,
 }
 
@@ -35,8 +36,24 @@ pub struct PlanRow {
     pub validity_months: Option<i32>,
     pub gift_note: Option<String>,
     pub active: bool,
+    pub version: i64,
     pub items: Vec<PlanItemRow>,
 }
+
+/// Maps a unique violation on `name` to a field error (AC1.5), anything else to a database error.
+fn name_taken(error: sqlx::Error) -> AppError {
+    let unique = error
+        .as_database_error()
+        .and_then(sqlx::error::DatabaseError::code)
+        .is_some_and(|c| c == "23505");
+    if unique {
+        AppError::Validation(vec![FieldError::new("name", "taken")])
+    } else {
+        AppError::Database(error)
+    }
+}
+
+// ---------------------------------------------------------------- categories
 
 pub async fn categories(tx: &mut TenantTx) -> Result<Vec<CategoryRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
@@ -56,27 +73,84 @@ pub async fn categories(tx: &mut TenantTx) -> Result<Vec<CategoryRow>, AppError>
         .collect())
 }
 
-pub async fn services(tx: &mut TenantTx, active_only: bool) -> Result<Vec<ServiceRow>, AppError> {
+pub async fn category_exists(tx: &mut TenantTx, id: Uuid) -> Result<bool, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let found = sqlx::query_scalar!(
+        "SELECT 1 AS one FROM app.service_category WHERE tenant_id = $1 AND id = $2",
+        tenant,
+        id
+    )
+    .fetch_optional(tx.conn())
+    .await?;
+    Ok(found.is_some())
+}
+
+pub async fn insert_category(
+    tx: &mut TenantTx,
+    id: Uuid,
+    name: &str,
+    sort_order: Option<i32>,
+) -> Result<CategoryRow, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let row = sqlx::query!(
+        r#"INSERT INTO app.service_category (id, tenant_id, name, sort_order)
+           VALUES ($1, $2, $3, COALESCE($4, (SELECT COALESCE(max(sort_order) + 1, 0) FROM app.service_category WHERE tenant_id = $2)))
+           RETURNING id, name, sort_order"#,
+        id,
+        tenant,
+        name,
+        sort_order
+    )
+    .fetch_one(tx.conn())
+    .await
+    .map_err(name_taken)?;
+    Ok(CategoryRow {
+        id: row.id,
+        name: row.name,
+        sort_order: row.sort_order,
+    })
+}
+
+pub async fn update_category(
+    tx: &mut TenantTx,
+    id: Uuid,
+    name: &str,
+    sort_order: i32,
+) -> Result<Option<CategoryRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let row = sqlx::query!(
+        "UPDATE app.service_category SET name = $3, sort_order = $4 WHERE tenant_id = $1 AND id = $2 RETURNING id, name, sort_order",
+        tenant,
+        id,
+        name,
+        sort_order
+    )
+    .fetch_optional(tx.conn())
+    .await
+    .map_err(name_taken)?;
+    Ok(row.map(|r| CategoryRow {
+        id: r.id,
+        name: r.name,
+        sort_order: r.sort_order,
+    }))
+}
+
+// ---------------------------------------------------------------- services
+
+async fn prices_by_service(
+    tx: &mut TenantTx,
+    only: Option<Uuid>,
+) -> Result<HashMap<Uuid, ServicePrices>, AppError> {
     let tenant = tx.tenant().as_uuid();
     let rows = sqlx::query!(
-        r#"SELECT s.id, s.category_id, s.name, s.description, s.duration_min, s.recommended, s.active
-           FROM app.service s JOIN app.service_category c ON c.tenant_id = s.tenant_id AND c.id = s.category_id
-           WHERE s.tenant_id = $1 AND (NOT $2 OR s.active)
-           ORDER BY c.sort_order, s.sort_order, s.name"#,
+        "SELECT service_id, variant, amount FROM app.service_price WHERE tenant_id = $1 AND ($2::uuid IS NULL OR service_id = $2)",
         tenant,
-        active_only
+        only
     )
     .fetch_all(tx.conn())
     .await?;
-    let price_rows = sqlx::query!(
-        "SELECT service_id, variant, amount FROM app.service_price WHERE tenant_id = $1",
-        tenant
-    )
-    .fetch_all(tx.conn())
-    .await?;
-
     let mut prices: HashMap<Uuid, ServicePrices> = HashMap::new();
-    for p in price_rows {
+    for p in rows {
         let (Some(variant), Ok(amount)) = (PriceVariant::parse(&p.variant), Money::vnd(p.amount))
         else {
             return Err(AppError::Internal(format!(
@@ -86,6 +160,27 @@ pub async fn services(tx: &mut TenantTx, active_only: bool) -> Result<Vec<Servic
         };
         prices.entry(p.service_id).or_default().set(variant, amount);
     }
+    Ok(prices)
+}
+
+pub async fn services(
+    tx: &mut TenantTx,
+    active_only: bool,
+    only: Option<Uuid>,
+) -> Result<Vec<ServiceRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let rows = sqlx::query!(
+        r#"SELECT s.id, s.category_id, s.name, s.description, s.duration_min, s.recommended, s.active, s.version
+           FROM app.service s JOIN app.service_category c ON c.tenant_id = s.tenant_id AND c.id = s.category_id
+           WHERE s.tenant_id = $1 AND (NOT $2 OR s.active) AND ($3::uuid IS NULL OR s.id = $3)
+           ORDER BY c.sort_order, s.sort_order, s.name"#,
+        tenant,
+        active_only,
+        only
+    )
+    .fetch_all(tx.conn())
+    .await?;
+    let mut prices = prices_by_service(tx, only).await?;
     Ok(rows
         .into_iter()
         .map(|r| ServiceRow {
@@ -97,23 +192,154 @@ pub async fn services(tx: &mut TenantTx, active_only: bool) -> Result<Vec<Servic
             duration_min: r.duration_min,
             recommended: r.recommended,
             active: r.active,
+            version: r.version,
         })
         .collect())
 }
 
-pub async fn package_plans(tx: &mut TenantTx, active_only: bool) -> Result<Vec<PlanRow>, AppError> {
+pub async fn service(tx: &mut TenantTx, id: Uuid) -> Result<Option<ServiceRow>, AppError> {
+    Ok(services(tx, false, Some(id)).await?.into_iter().next())
+}
+
+pub struct ServiceFields<'a> {
+    pub category_id: Uuid,
+    pub name: &'a str,
+    pub description: Option<&'a str>,
+    pub duration_min: Option<i32>,
+    pub recommended: bool,
+    pub active: bool,
+}
+
+pub async fn insert_service(
+    tx: &mut TenantTx,
+    id: Uuid,
+    f: &ServiceFields<'_>,
+) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"INSERT INTO app.service (id, tenant_id, category_id, name, description, duration_min, recommended, active, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+                   (SELECT COALESCE(max(sort_order) + 1, 0) FROM app.service WHERE tenant_id = $2 AND category_id = $3))"#,
+        id,
+        tenant,
+        f.category_id,
+        f.name,
+        f.description,
+        f.duration_min,
+        f.recommended,
+        f.active
+    )
+    .execute(tx.conn())
+    .await
+    .map_err(name_taken)?;
+    Ok(())
+}
+
+/// Optimistic update. `Ok(false)` = no row with that id **and** version (caller decides 404 vs 412).
+pub async fn update_service(
+    tx: &mut TenantTx,
+    id: Uuid,
+    expected_version: i64,
+    f: &ServiceFields<'_>,
+) -> Result<bool, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let done = sqlx::query!(
+        r#"UPDATE app.service
+           SET category_id = $4, name = $5, description = $6, duration_min = $7, recommended = $8, active = $9,
+               version = version + 1, updated_at = now()
+           WHERE tenant_id = $1 AND id = $2 AND version = $3"#,
+        tenant,
+        id,
+        expected_version,
+        f.category_id,
+        f.name,
+        f.description,
+        f.duration_min,
+        f.recommended,
+        f.active
+    )
+    .execute(tx.conn())
+    .await
+    .map_err(name_taken)?;
+    Ok(done.rows_affected() == 1)
+}
+
+pub async fn replace_prices(
+    tx: &mut TenantTx,
+    service_id: Uuid,
+    prices: &ServicePrices,
+) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        "DELETE FROM app.service_price WHERE tenant_id = $1 AND service_id = $2",
+        tenant,
+        service_id
+    )
+    .execute(tx.conn())
+    .await?;
+    let variants = [
+        (PriceVariant::All, prices.all),
+        (PriceVariant::Female, prices.female),
+        (PriceVariant::Male, prices.male),
+    ];
+    for (variant, amount) in variants {
+        if let Some(amount) = amount {
+            sqlx::query!(
+                "INSERT INTO app.service_price (tenant_id, service_id, variant, amount) VALUES ($1, $2, $3, $4)",
+                tenant,
+                service_id,
+                variant.as_str(),
+                amount.as_i64()
+            )
+            .execute(tx.conn())
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Activity flag of each listed service in this tenant (missing ids are absent from the map).
+pub async fn service_activity(
+    tx: &mut TenantTx,
+    ids: &[Uuid],
+) -> Result<HashMap<Uuid, bool>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let rows = sqlx::query!(
+        "SELECT id, active FROM app.service WHERE tenant_id = $1 AND id = ANY($2)",
+        tenant,
+        ids
+    )
+    .fetch_all(tx.conn())
+    .await?;
+    Ok(rows.into_iter().map(|r| (r.id, r.active)).collect())
+}
+
+// ---------------------------------------------------------------- package plans
+
+pub async fn package_plans(
+    tx: &mut TenantTx,
+    active_only: bool,
+    only: Option<Uuid>,
+) -> Result<Vec<PlanRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     let plans = sqlx::query!(
-        r#"SELECT id, name, price, validity_months, gift_note, active
-           FROM app.package_plan WHERE tenant_id = $1 AND (NOT $2 OR active) ORDER BY name"#,
+        r#"SELECT id, name, price, validity_months, gift_note, active, version
+           FROM app.package_plan
+           WHERE tenant_id = $1 AND (NOT $2 OR active) AND ($3::uuid IS NULL OR id = $3)
+           ORDER BY name"#,
         tenant,
-        active_only
+        active_only,
+        only
     )
     .fetch_all(tx.conn())
     .await?;
     let items = sqlx::query!(
-        "SELECT plan_id, service_id, sessions, bonus_sessions FROM app.package_plan_item WHERE tenant_id = $1",
-        tenant
+        r#"SELECT i.plan_id, i.service_id, i.sessions, i.bonus_sessions
+           FROM app.package_plan_item i JOIN app.service s ON s.tenant_id = i.tenant_id AND s.id = i.service_id
+           WHERE i.tenant_id = $1 AND ($2::uuid IS NULL OR i.plan_id = $2)
+           ORDER BY s.sort_order, s.name"#,
+        tenant,
+        only
     )
     .fetch_all(tx.conn())
     .await?;
@@ -137,7 +363,127 @@ pub async fn package_plans(tx: &mut TenantTx, active_only: bool) -> Result<Vec<P
                 validity_months: p.validity_months,
                 gift_note: p.gift_note,
                 active: p.active,
+                version: p.version,
             })
         })
         .collect()
+}
+
+pub async fn package_plan(tx: &mut TenantTx, id: Uuid) -> Result<Option<PlanRow>, AppError> {
+    Ok(package_plans(tx, false, Some(id)).await?.into_iter().next())
+}
+
+pub struct PlanFields<'a> {
+    pub name: &'a str,
+    pub price: Money,
+    pub validity_months: Option<i32>,
+    pub gift_note: Option<&'a str>,
+    pub active: bool,
+}
+
+pub async fn insert_plan(tx: &mut TenantTx, id: Uuid, f: &PlanFields<'_>) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"INSERT INTO app.package_plan (id, tenant_id, name, price, validity_months, gift_note, active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
+        id,
+        tenant,
+        f.name,
+        f.price.as_i64(),
+        f.validity_months,
+        f.gift_note,
+        f.active
+    )
+    .execute(tx.conn())
+    .await
+    .map_err(name_taken)?;
+    Ok(())
+}
+
+pub async fn update_plan(
+    tx: &mut TenantTx,
+    id: Uuid,
+    expected_version: i64,
+    f: &PlanFields<'_>,
+) -> Result<bool, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let done = sqlx::query!(
+        r#"UPDATE app.package_plan
+           SET name = $4, price = $5, validity_months = $6, gift_note = $7, active = $8, version = version + 1, updated_at = now()
+           WHERE tenant_id = $1 AND id = $2 AND version = $3"#,
+        tenant,
+        id,
+        expected_version,
+        f.name,
+        f.price.as_i64(),
+        f.validity_months,
+        f.gift_note,
+        f.active
+    )
+    .execute(tx.conn())
+    .await
+    .map_err(name_taken)?;
+    Ok(done.rows_affected() == 1)
+}
+
+pub async fn replace_plan_items(
+    tx: &mut TenantTx,
+    plan_id: Uuid,
+    items: &[PlanItemRow],
+) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        "DELETE FROM app.package_plan_item WHERE tenant_id = $1 AND plan_id = $2",
+        tenant,
+        plan_id
+    )
+    .execute(tx.conn())
+    .await?;
+    for item in items {
+        sqlx::query!(
+            r#"INSERT INTO app.package_plan_item (id, tenant_id, plan_id, service_id, sessions, bonus_sessions)
+               VALUES ($1, $2, $3, $4, $5, $6)"#,
+            Uuid::now_v7(),
+            tenant,
+            plan_id,
+            item.service_id,
+            item.sessions,
+            item.bonus_sessions
+        )
+        .execute(tx.conn())
+        .await?;
+    }
+    Ok(())
+}
+
+/// Distinguishes "gone" (404) from "changed by someone else" (412) after a failed optimistic update.
+pub async fn exists(tx: &mut TenantTx, table: Versioned, id: Uuid) -> Result<bool, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let found = match table {
+        Versioned::Service => {
+            sqlx::query_scalar!(
+                "SELECT 1 AS one FROM app.service WHERE tenant_id = $1 AND id = $2",
+                tenant,
+                id
+            )
+            .fetch_optional(tx.conn())
+            .await?
+        }
+        Versioned::Plan => {
+            sqlx::query_scalar!(
+                "SELECT 1 AS one FROM app.package_plan WHERE tenant_id = $1 AND id = $2",
+                tenant,
+                id
+            )
+            .fetch_optional(tx.conn())
+            .await?
+        }
+    };
+    Ok(found.is_some())
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Versioned {
+    Service,
+    Plan,
 }

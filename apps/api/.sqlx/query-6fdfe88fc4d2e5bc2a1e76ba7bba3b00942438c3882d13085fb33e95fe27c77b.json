@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.service\n           SET category_id = $4, name = $5, description = $6, duration_min = $7, recommended = $8, active = $9,\n               version = version + 1, updated_at = now()\n           WHERE tenant_id = $1 AND id = $2 AND version = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8",
+        "Uuid",
+        "Text",
+        "Text",
+        "Int4",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6fdfe88fc4d2e5bc2a1e76ba7bba3b00942438c3882d13085fb33e95fe27c77b"
+}

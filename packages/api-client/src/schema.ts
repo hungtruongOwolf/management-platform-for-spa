@@ -109,6 +109,22 @@ export interface paths {
         };
         get: operations["list_package_plans"];
         put?: never;
+        post: operations["create_plan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/package-plans/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["update_plan"];
         post?: never;
         delete?: never;
         options?: never;
@@ -125,6 +141,22 @@ export interface paths {
         };
         get: operations["list_categories"];
         put?: never;
+        post: operations["create_category"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/service-categories/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["update_category"];
         post?: never;
         delete?: never;
         options?: never;
@@ -141,6 +173,22 @@ export interface paths {
         };
         get: operations["list_services"];
         put?: never;
+        post: operations["create_service"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/services/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["update_service"];
         post?: never;
         delete?: never;
         options?: never;
@@ -152,6 +200,14 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CategoryCreate: {
+            name: string;
+        };
+        CategoryUpdate: {
+            name: string;
+            /** Format: int32 */
+            sort_order: number;
+        };
         LoginBody: {
             password: string;
             phone: string;
@@ -177,6 +233,11 @@ export interface components {
             price: number;
             /** Format: int32 */
             validity_months?: number | null;
+            /**
+             * Format: int64
+             * @description Send back as `If-Match` when updating.
+             */
+            version: number;
         };
         PackagePlanItemDto: {
             /** Format: int32 */
@@ -185,6 +246,36 @@ export interface components {
             service_id: string;
             /** Format: int32 */
             sessions: number;
+        };
+        PlanItemWrite: {
+            /** Format: int32 */
+            bonus_sessions: number;
+            /** Format: uuid */
+            service_id: string;
+            /** Format: int32 */
+            sessions: number;
+        };
+        PlanWrite: {
+            active: boolean;
+            gift_note?: string | null;
+            items: components["schemas"]["PlanItemWrite"][];
+            name: string;
+            /**
+             * Format: int64
+             * @description đồng
+             */
+            price: number;
+            /** Format: int32 */
+            validity_months?: number | null;
+        };
+        /** @description Prices in đồng: either `all`, or `female` and/or `male` (a missing gender = not offered). */
+        PricesInput: {
+            /** Format: int64 */
+            all?: number | null;
+            /** Format: int64 */
+            female?: number | null;
+            /** Format: int64 */
+            male?: number | null;
         };
         ReauthBody: {
             password: string;
@@ -211,6 +302,11 @@ export interface components {
             name: string;
             prices: components["schemas"]["ServicePrices"];
             recommended: boolean;
+            /**
+             * Format: int64
+             * @description Send back as `If-Match` when updating.
+             */
+            version: number;
         };
         /** @description Validated price set of one service. */
         ServicePrices: {
@@ -220,6 +316,20 @@ export interface components {
             female?: number | null;
             /** Format: int64 */
             male?: number | null;
+        };
+        ServiceWrite: {
+            active: boolean;
+            /** Format: uuid */
+            category_id: string;
+            description?: string | null;
+            /**
+             * Format: int32
+             * @description Minutes; null = "theo tư vấn".
+             */
+            duration_min?: number | null;
+            name: string;
+            prices: components["schemas"]["PricesInput"];
+            recommended: boolean;
         };
         SwitchTenantBody: {
             /** Format: uuid */
@@ -455,6 +565,93 @@ export interface operations {
             };
         };
     };
+    create_plan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanWrite"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackagePlanDto"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_plan: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description version from the last read */
+                "If-Match": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackagePlanDto"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_categories: {
         parameters: {
             query?: never;
@@ -479,6 +676,84 @@ export interface operations {
                 content?: never;
             };
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_category: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceCategoryDto"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_category: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceCategoryDto"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -513,6 +788,94 @@ export interface operations {
                 content?: never;
             };
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_service: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServiceWrite"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceDto"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_service: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description version from the last read */
+                "If-Match": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServiceWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceDto"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description conflict.stale_version */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

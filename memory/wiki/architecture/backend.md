@@ -16,7 +16,7 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
   - Cùng key, cùng body → trả lại response cũ.
   - Cùng key, khác body → `422 idempotency.key_reuse_mismatch`.
   - Request đầu vẫn đang chạy → request trùng **chờ** (khóa PK của Postgres) cho tới khi request đầu commit, rồi replay; nếu request đầu rollback thì request trùng chạy mới. (`409 idempotency.in_progress` chỉ là nhánh phòng thủ.) Hiện thực: `kernel::idempotency` (S1).
-- **Optimistic lock:** `GET` trả về `ETag: "<version>"`. `PATCH` và các thao tác sửa trạng thái nhận `If-Match`. Lệch phiên bản → `412 conflict.stale_version`.
+- **Optimistic lock:** DTO có trường `version`; ghi xong trả về `ETag: "<version>"`. Lệnh sửa (`PUT`, thay toàn bộ bản ghi) bắt buộc `If-Match`: thiếu → `400 precondition.if_match_required`, lệch phiên bản → `412 conflict.stale_version` (S4 ✅).
 - **Rate-limit classes:** `auth` (5/phút/tài khoản, 20/phút/IP) · `search` (120/phút/user) · `write` (60/phút/user) · `read` (300/phút/user). Vượt → `429 rate_limited`.
 
 ## 2. Mã lỗi nghiệp vụ
@@ -49,9 +49,9 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
 | `GET /me` | User, tenant đang dùng, permissions, memberships | đã đăng nhập | — | read |
 | `POST /auth/switch-tenant` | Đổi spa đang làm việc; **xoay token** (đổi quyền); spa không phải thành viên → `404` | membership | — | write |
 | `GET /service-categories` · `GET /services?active=` · `GET /package-plans?active=` | Bảng giá (US1) | `catalog.read` | — | read |
-| `POST /service-categories` · `PATCH /service-categories/{id}` | | `catalog.manage` | — | write |
-| `POST /services` · `PATCH /services/{id}` · `POST /services/{id}/deactivate` | Dịch vụ + `prices[]` (US1) | `catalog.manage` | — | write |
-| `POST /package-plans` · `PATCH /package-plans/{id}` · `POST /package-plans/{id}/deactivate` | Gói (US1) | `catalog.manage` | — | write |
+| `POST /service-categories` · `PUT /service-categories/{id}` | Thêm / đổi tên + thứ tự nhóm (S4 ✅) | `catalog.manage` | — | write |
+| `POST /services` · `PUT /services/{id}` (If-Match) | Dịch vụ + `prices` (all \| female/male). **Ngừng bán = `active:false` trong PUT**, không có endpoint xóa (S4 ✅) | `catalog.manage` | — | write |
+| `POST /package-plans` · `PUT /package-plans/{id}` (If-Match) | Gói: items `service × sessions + bonus` (S4 ✅) | `catalog.manage` | — | write |
 | `GET /staff?status=active` | Picker KTV, người chốt | `staff.read_basic` | — | read |
 | `GET /customers?q=` | Tìm theo SĐT (≥ 3 số) / tên (≥ 2 ký tự, không dấu) (US2) | `customer.read` | — | search |
 | `POST /customers` | Tạo khách (US2) | `customer.write` (+ `health_notes.write` nếu gửi ghi chú) | — | write |
