@@ -13,8 +13,8 @@ use crate::dto::{
 use crate::repo::{self, LineInsert, LineRow, VisitInsert, VisitRow};
 use catalog::{PriceLookupError, PriceVariant};
 use chrono::{DateTime, NaiveDate, Utc};
-use crm::FieldCipher;
 use kernel::audit::{self, AuditEntry, REDACTED};
+use kernel::crypto::FieldCipher;
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx};
 use packages::{Consume, Consumed};
@@ -159,11 +159,7 @@ fn parse(actor: &Actor, input: &VisitCreate) -> Result<Order, AppError> {
 
 /// Associated data for a visit note: a ciphertext copied to another visit or spa fails to decrypt.
 fn visit_aad(tenant: Uuid, visit: Uuid) -> Vec<u8> {
-    let mut aad = Vec::with_capacity(11 + 32);
-    aad.extend_from_slice(b"visit.note:");
-    aad.extend_from_slice(tenant.as_bytes());
-    aad.extend_from_slice(visit.as_bytes());
-    aad
+    kernel::crypto::record_aad("visit.note", &[tenant, visit])
 }
 
 fn encrypt_note(

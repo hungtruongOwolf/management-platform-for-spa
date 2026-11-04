@@ -92,10 +92,7 @@ mod tests {
     fn check_in_defaults_to_now_and_tolerates_small_skew() {
         let now = at(9, 0);
         assert_eq!(check_in_at(None, now, vn(), day()), Ok(now));
-        assert_eq!(
-            check_in_at(Some(at(9, 5)), now, vn(), day()),
-            Ok(at(9, 5))
-        );
+        assert_eq!(check_in_at(Some(at(9, 5)), now, vn(), day()), Ok(at(9, 5)));
         assert_eq!(
             check_in_at(Some(at(8, 10)), now, vn(), day()),
             Ok(at(8, 10))

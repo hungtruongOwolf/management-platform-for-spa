@@ -18,6 +18,7 @@ import {
 } from "../features/customers/CustomersPage";
 import { PriceListPage } from "../features/catalog/PriceListPage";
 import { OpeningBalancePage } from "../features/opening-balance/OpeningBalancePage";
+import { FrontDeskPage } from "../features/front-desk/FrontDeskPage";
 import { AppShell, HomePage } from "./AppShell";
 
 interface RouterContext {
@@ -122,6 +123,13 @@ const plansRoute = createRoute({
   component: PlansPage,
 });
 
+/** The front desk (S7): the screen the manager-cashier keeps open all day. */
+const frontDeskRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/quay",
+  component: FrontDeskPage,
+});
+
 const customersRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/khach-hang",
@@ -150,6 +158,7 @@ const routeTree = rootRoute.addChildren([
     homeRoute,
     priceListRoute,
     plansRoute,
+    frontDeskRoute,
     customersRoute,
     customerRoute,
     openingBalanceRoute,

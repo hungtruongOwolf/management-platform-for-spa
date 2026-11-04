@@ -145,14 +145,12 @@ pub async fn service_snapshot(
     tx: &mut TenantTx,
     id: Uuid,
 ) -> Result<Option<ServiceSnapshot>, AppError> {
-    Ok(repo::lock_service(tx, id)
-        .await?
-        .map(|s| ServiceSnapshot {
-            id: s.id,
-            name: s.name,
-            active: s.active,
-            prices: s.prices,
-        }))
+    Ok(repo::lock_service(tx, id).await?.map(|s| ServiceSnapshot {
+        id: s.id,
+        name: s.name,
+        active: s.active,
+        prices: s.prices,
+    }))
 }
 
 /// One line of a plan as it is sold: the service and its name at this moment.

@@ -389,6 +389,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/visits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_visits"];
+        put?: never;
+        post: operations["create_visit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/visits/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["read_visit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_visit"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -704,6 +736,8 @@ export interface components {
             /** Format: int32 */
             validity_months?: number | null;
         };
+        /** @enum {string} */
+        PriceVariant: "all" | "female" | "male";
         /** @description Prices in đồng: either `all`, or `female` and/or `male` (a missing gender = not offered). */
         PricesInput: {
             /** Format: int64 */
@@ -866,6 +900,137 @@ export interface components {
             /** Format: uuid */
             id: string;
             phone: string;
+        };
+        /**
+         * @description Body of `POST /visits`. No amount is read from the client: unknown fields such as `unit_price`
+         *     or `total` are ignored, one-off prices come from the catalog and the customer's gender.
+         */
+        VisitCreate: {
+            /**
+             * Format: date-time
+             * @description Defaults to now. At most 5 minutes ahead of the server and on today's business day.
+             */
+            check_in_at?: string | null;
+            /** Format: uuid */
+            customer_id: string;
+            /** @description 1–20 service lines. */
+            lines: components["schemas"]["VisitLineCreate"][];
+            /** @description Session note incl. reactions (health data): needs `customer.health_notes.write`. */
+            note?: string | null;
+            /** @description For the one-off lines: 0–2 payments, one per method, summing exactly to their total. */
+            payments?: components["schemas"]["PaymentCreate"][];
+        };
+        VisitDto: {
+            /** Format: date */
+            business_date: string;
+            /** Format: date-time */
+            check_in_at: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            customer_id: string;
+            customer_name: string;
+            /** Format: uuid */
+            id: string;
+            lines: components["schemas"]["VisitLineDto"][];
+            /** @description Present only on a single visit and only for `customer.health_notes.read`; null = no note. */
+            note?: string | null;
+            payments: components["schemas"]["PaymentDto"][];
+            /**
+             * Format: uuid
+             * @description Sale of the one-off lines (none when the visit only used package sessions).
+             */
+            sale_id?: string | null;
+            status: components["schemas"]["VisitStatusDto"];
+            /**
+             * Format: int64
+             * @description Amount collected in this visit (sum of one-off lines).
+             */
+            total: number;
+            /**
+             * Format: int64
+             * @description Send back as `If-Match` when correcting.
+             */
+            version: number;
+        };
+        VisitLineCreate: {
+            /**
+             * Format: uuid
+             * @description `package` lines: the package item to use; omitted = the customer's usable package for this
+             *     service that expires soonest, then the oldest (AC4.3).
+             */
+            customer_package_item_id?: string | null;
+            /** @description `package` lines: use an expired package anyway (needs `package.use_expired_override`, audited). */
+            expiry_override_reason?: string | null;
+            price_variant?: components["schemas"]["PriceVariant"] | null;
+            /**
+             * Format: int32
+             * @description Sessions / times, 1–10 (default 1).
+             */
+            qty?: number | null;
+            /** Format: uuid */
+            service_id: string;
+            source: components["schemas"]["VisitLineSourceDto"];
+            /**
+             * Format: uuid
+             * @description Technician who performed the line (required, must be working here).
+             */
+            staff_id?: string | null;
+        };
+        VisitLineDto: {
+            /** Format: uuid */
+            customer_package_id?: string | null;
+            /** Format: uuid */
+            customer_package_item_id?: string | null;
+            expiry_override_reason?: string | null;
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: int64
+             * @description One-off: qty × unit price (paid now); package: value of the sessions taken (bonus = 0).
+             */
+            line_value: number;
+            package_name?: string | null;
+            price_variant?: components["schemas"]["PriceVariant"] | null;
+            /** Format: int32 */
+            qty: number;
+            /** Format: uuid */
+            service_id: string;
+            /** @description Service name at the visit (snapshot). */
+            service_name: string;
+            /**
+             * Format: int32
+             * @description `package` lines: sessions left on the item right after this visit, of `sessions_total`.
+             */
+            sessions_left_after?: number | null;
+            /** Format: int32 */
+            sessions_total?: number | null;
+            source: components["schemas"]["VisitLineSourceDto"];
+            /** Format: uuid */
+            staff_id: string;
+            staff_name: string;
+            /**
+             * Format: int64
+             * @description One-off: listed price; package: value of one paid session.
+             */
+            unit_price: number;
+        };
+        /** @enum {string} */
+        VisitLineSourceDto: "package" | "one_off";
+        VisitLineUpdate: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            staff_id: string;
+        };
+        /** @enum {string} */
+        VisitStatusDto: "completed" | "voided";
+        /** @description Body of `PATCH /visits/{id}` (with `If-Match`): corrections that do not touch money or sessions. */
+        VisitUpdate: {
+            /** @description Technician corrections, by line id. */
+            lines?: components["schemas"]["VisitLineUpdate"][];
+            /** @description Absent = unchanged, null or empty = cleared. Needs `customer.health_notes.write`. */
+            note?: string | null;
         };
     };
     responses: never;
@@ -2038,6 +2203,210 @@ export interface operations {
                 content?: never;
             };
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_visits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Business day `YYYY-MM-DD`; default today. */
+                date: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitDto"][];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_visit: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description One key per visit being recorded; a retry with the same key replays the first response */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisitCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitDto"];
+                };
+            };
+            /** @description idempotency.key_required / key_invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description customer or service not in this spa */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description package.no_sessions_left / package.expired / package.cancelled */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed, payment.amount_mismatch, staff.inactive, package.item_not_found, price.gender_required, price.variant_not_available, visit.check_in_in_future, visit.check_in_not_today, idempotency.key_reuse_mismatch */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    read_visit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_visit: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisitUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description visit.voided */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

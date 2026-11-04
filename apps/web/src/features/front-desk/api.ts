@@ -60,7 +60,8 @@ export type PriceResult =
 /** Mirrors the server rule (AC4.2b/c): flat price for everyone, otherwise the gender's price. */
 export function priceFor(service: Service, gender: Gender | null): PriceResult {
   const { prices } = service;
-  if (prices.all != null) return { ok: true, price: prices.all, variant: "all" };
+  if (prices.all != null)
+    return { ok: true, price: prices.all, variant: "all" };
   if (prices.female == null && prices.male == null)
     return { ok: false, reason: "no_price" };
   if (!gender) return { ok: false, reason: "need_gender" };
@@ -72,7 +73,10 @@ export function priceFor(service: Service, gender: Gender | null): PriceResult {
 
 /** Sum of the one-off lines: what the customer pays now. */
 export function amountDue(lines: CartLine[]): number {
-  return lines.reduce((sum, l) => sum + (l.source === "one_off" ? l.price : 0), 0);
+  return lines.reduce(
+    (sum, l) => sum + (l.source === "one_off" ? l.price : 0),
+    0,
+  );
 }
 
 /** Usable for a deduction today: not cancelled, not expired, sessions left. */
@@ -95,7 +99,11 @@ export function byUseOrder(packages: CustomerPackage[]): CustomerPackage[] {
   return [...packages].sort((a, b) => {
     if (isUsable(a) !== isUsable(b)) return isUsable(a) ? -1 : 1;
     if (expiry(a) !== expiry(b)) return expiry(a) < expiry(b) ? -1 : 1;
-    return a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0;
+    return a.created_at < b.created_at
+      ? -1
+      : a.created_at > b.created_at
+        ? 1
+        : 0;
   });
 }
 
@@ -103,7 +111,8 @@ export function byUseOrder(packages: CustomerPackage[]): CustomerPackage[] {
 export function staffByUse(staff: Staff[], today: Visit[]): Staff[] {
   const uses = new Map<string, number>();
   for (const v of today)
-    for (const l of v.lines) uses.set(l.staff_id, (uses.get(l.staff_id) ?? 0) + 1);
+    for (const l of v.lines)
+      uses.set(l.staff_id, (uses.get(l.staff_id) ?? 0) + 1);
   return [...staff].sort(
     (a, b) =>
       (uses.get(b.id) ?? 0) - (uses.get(a.id) ?? 0) ||

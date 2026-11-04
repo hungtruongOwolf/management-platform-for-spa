@@ -62,10 +62,19 @@ async fn desk(pool: PgPool) -> Setup<Desk> {
         SystemRole::Manager,
     )
     .await?;
-    add_member(&h.owner, "vpyd", TECH_PHONE, "KTV Mai", SystemRole::Technician).await?;
-    let owner = session_for(&h.app, OWNER_PHONE).await;
-    let manager = session_for(&h.app, MANAGER_PHONE).await;
-    let services = call(&h.app, "GET", "/services", Some(&owner), None).await.body;
+    add_member(
+        &h.owner,
+        "vpyd",
+        TECH_PHONE,
+        "KTV Mai",
+        SystemRole::Technician,
+    )
+    .await?;
+    let owner = session_for(&h, OWNER_PHONE).await;
+    let manager = session_for(&h, MANAGER_PHONE).await;
+    let services = call(&h.app, "GET", "/services", Some(&owner), None)
+        .await
+        .body;
     let shampoo = service_id(&services, "Cơ Bản – Dầu thảo dược");
     let plan = call(
         &h.app,
@@ -201,12 +210,14 @@ impl Desk {
     }
 
     async fn set_remaining(&self, item: &str, n: i32) -> Result<(), sqlx::Error> {
-        sqlx::query("UPDATE app.customer_package_item SET sessions_remaining = $2 WHERE id = $1::uuid")
-            .bind(item)
-            .bind(n)
-            .execute(&self.h.owner)
-            .await
-            .map(|_| ())
+        sqlx::query(
+            "UPDATE app.customer_package_item SET sessions_remaining = $2 WHERE id = $1::uuid",
+        )
+        .bind(item)
+        .bind(n)
+        .execute(&self.h.owner)
+        .await
+        .map(|_| ())
     }
 
     /// Moves a package into the past: started 60 days ago, expires `expires_in_days` from today.
@@ -248,7 +259,10 @@ async fn deducting_one_session_takes_5_of_12_to_4_of_12(pool: PgPool) -> TestRes
     // 7 of 10 paid sessions were already used: this one is the 8th paid session, worth 150.000đ.
     assert_eq!(line["line_value"], 150_000);
     assert_eq!(line["unit_price"], 150_000);
-    assert_eq!((v.body["total"].clone(), v.body["sale_id"].clone()), (json!(0), Value::Null));
+    assert_eq!(
+        (v.body["total"].clone(), v.body["sale_id"].clone()),
+        (json!(0), Value::Null)
+    );
     assert!(v.headers.contains_key("etag"));
     assert_eq!(v.body.get("note"), None);
 
@@ -257,11 +271,18 @@ async fn deducting_one_session_takes_5_of_12_to_4_of_12(pool: PgPool) -> TestRes
     assert_eq!(today.body[0]["id"], v.body["id"]);
     assert_eq!(today.body[0]["customer_name"], "Nguyễn Thị Hà");
     let one = d.get(&format!("/visits/{}", id_of(&v))).await;
-    assert_eq!(one.body["lines"][0]["package_name"], "Gội đầu dưỡng sinh 10 buổi + tặng 2");
+    assert_eq!(
+        one.body["lines"][0]["package_name"],
+        "Gội đầu dưỡng sinh 10 buổi + tặng 2"
+    );
     let packages = d.get(&format!("/customers/{}/packages", d.ha)).await;
     assert_eq!(packages.body[0]["sessions_remaining"], 4);
 
-    assert_eq!(d.count("SELECT count(*) FROM app.payment").await?, 1, "only the package sale");
+    assert_eq!(
+        d.count("SELECT count(*) FROM app.payment").await?,
+        1,
+        "only the package sale"
+    );
     assert_eq!(
         d.count("SELECT count(*) FROM app.audit_log WHERE action = 'visit.create'")
             .await?,
@@ -288,11 +309,17 @@ async fn one_off_service_creates_a_sale_and_payment_tied_to_the_visit(pool: PgPo
     assert_eq!(v.body["payments"][0]["method"], "bank_transfer");
     assert_eq!(v.body["lines"][1]["price_variant"], "all");
     let sale = d
-        .get(&format!("/sales/{}", v.body["sale_id"].as_str().unwrap_or("")))
+        .get(&format!(
+            "/sales/{}",
+            v.body["sale_id"].as_str().unwrap_or("")
+        ))
         .await;
     assert_eq!(sale.status, StatusCode::OK);
     assert_eq!(
-        (sale.body["total"].clone(), sale.body["lines"][0]["line_type"].clone()),
+        (
+            sale.body["total"].clone(),
+            sale.body["lines"][0]["line_type"].clone()
+        ),
         (json!(100_000), json!("service"))
     );
     assert_eq!(sale.body["closer_staff_id"], Value::Null);
@@ -354,7 +381,13 @@ async fn one_off_price_follows_the_customers_gender(pool: PgPool) -> TestResult 
             json!([{"method": "cash", "amount": 349_000}]),
         ))
         .await;
-    assert_eq!(code(&wrong_amount), (StatusCode::UNPROCESSABLE_ENTITY, Some("payment.amount_mismatch")));
+    assert_eq!(
+        code(&wrong_amount),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("payment.amount_mismatch")
+        )
+    );
 
     let conflicting = d
         .record(d.one_off(
@@ -364,8 +397,14 @@ async fn one_off_price_follows_the_customers_gender(pool: PgPool) -> TestResult 
             json!([{"method": "cash", "amount": 349_000}]),
         ))
         .await;
-    assert_eq!(code(&conflicting), (StatusCode::UNPROCESSABLE_ENTITY, Some("validation_failed")));
-    assert_eq!(conflicting.body["errors"][0]["field"], "lines[0].price_variant");
+    assert_eq!(
+        code(&conflicting),
+        (StatusCode::UNPROCESSABLE_ENTITY, Some("validation_failed"))
+    );
+    assert_eq!(
+        conflicting.body["errors"][0]["field"],
+        "lines[0].price_variant"
+    );
     Ok(())
 }
 
@@ -382,7 +421,13 @@ async fn customer_without_gender_needs_a_price_variant_for_gendered_services(
             json!([{"method": "cash", "amount": 399_000}]),
         ))
         .await;
-    assert_eq!(code(&missing), (StatusCode::UNPROCESSABLE_ENTITY, Some("price.gender_required")));
+    assert_eq!(
+        code(&missing),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("price.gender_required")
+        )
+    );
     let chosen = d
         .record(d.one_off(
             &d.khoi,
@@ -400,7 +445,12 @@ async fn customer_without_gender_needs_a_price_variant_for_gendered_services(
             json!([{"method": "cash", "amount": 100_000}]),
         ))
         .await;
-    assert_eq!(flat.status, StatusCode::CREATED, "flat price needs no gender: {}", flat.body);
+    assert_eq!(
+        flat.status,
+        StatusCode::CREATED,
+        "flat price needs no gender: {}",
+        flat.body
+    );
     Ok(())
 }
 
@@ -408,10 +458,11 @@ async fn customer_without_gender_needs_a_price_variant_for_gendered_services(
 async fn female_only_service_for_a_male_customer_is_422(pool: PgPool) -> TestResult {
     let d = desk(pool).await?;
     // The owner prices Ôn ấm tử cung for women only (AC4.2c).
-    let service: Uuid =
-        sqlx::query_scalar("UPDATE app.service SET active = true WHERE name = 'Ôn ấm tử cung' RETURNING id")
-            .fetch_one(&d.h.owner)
-            .await?;
+    let service: Uuid = sqlx::query_scalar(
+        "UPDATE app.service SET active = true WHERE name = 'Ôn ấm tử cung' RETURNING id",
+    )
+    .fetch_one(&d.h.owner)
+    .await?;
     sqlx::query(
         "INSERT INTO app.service_price (tenant_id, service_id, variant, amount)
          SELECT tenant_id, id, 'female', 399000 FROM app.service WHERE id = $1",
@@ -421,11 +472,27 @@ async fn female_only_service_for_a_male_customer_is_422(pool: PgPool) -> TestRes
     .await?;
     let service = service.to_string();
     let male = d
-        .record(d.one_off(&d.duc, &service, json!({}), json!([{"method": "cash", "amount": 399_000}])))
+        .record(d.one_off(
+            &d.duc,
+            &service,
+            json!({}),
+            json!([{"method": "cash", "amount": 399_000}]),
+        ))
         .await;
-    assert_eq!(code(&male), (StatusCode::UNPROCESSABLE_ENTITY, Some("price.variant_not_available")));
+    assert_eq!(
+        code(&male),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("price.variant_not_available")
+        )
+    );
     let female = d
-        .record(d.one_off(&d.ha, &service, json!({}), json!([{"method": "cash", "amount": 399_000}])))
+        .record(d.one_off(
+            &d.ha,
+            &service,
+            json!({}),
+            json!([{"method": "cash", "amount": 399_000}]),
+        ))
         .await;
     assert_eq!(female.status, StatusCode::CREATED, "{}", female.body);
     assert_eq!(d.count("SELECT count(*) FROM app.visit").await?, 1);
@@ -448,18 +515,36 @@ async fn default_package_is_the_one_expiring_soonest(pool: PgPool) -> TestResult
     d.set_expiry(&first, 100).await?;
     let v = d.record(d.deduct(&d.ha, None)).await;
     assert_eq!(v.status, StatusCode::CREATED, "{}", v.body);
-    assert_eq!(v.body["lines"][0]["customer_package_id"].as_str(), Some(second.as_str()));
-    assert_eq!((d.remaining(&second_item).await?, d.remaining(&first_item).await?), (11, 12));
+    assert_eq!(
+        v.body["lines"][0]["customer_package_id"].as_str(),
+        Some(second.as_str())
+    );
+    assert_eq!(
+        (
+            d.remaining(&second_item).await?,
+            d.remaining(&first_item).await?
+        ),
+        (11, 12)
+    );
 
     // Once it is used up, the next one is chosen.
     d.set_remaining(&second_item, 0).await?;
     let next = d.record(d.deduct(&d.ha, None)).await;
-    assert_eq!(next.body["lines"][0]["customer_package_id"].as_str(), Some(first.as_str()));
+    assert_eq!(
+        next.body["lines"][0]["customer_package_id"].as_str(),
+        Some(first.as_str())
+    );
 
     // Nothing usable left → 422; the desk then sells a new package.
     d.set_remaining(&first_item, 0).await?;
     let none = d.record(d.deduct(&d.ha, None)).await;
-    assert_eq!(code(&none), (StatusCode::UNPROCESSABLE_ENTITY, Some("package.item_not_found")));
+    assert_eq!(
+        code(&none),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("package.item_not_found")
+        )
+    );
     Ok(())
 }
 
@@ -469,14 +554,24 @@ async fn exhausted_and_cancelled_packages_are_409(pool: PgPool) -> TestResult {
     let item = d.item_of(&d.ha).await;
     d.set_remaining(&item, 0).await?;
     let empty = d.record(d.deduct(&d.ha, Some(&item))).await;
-    assert_eq!(code(&empty), (StatusCode::CONFLICT, Some("package.no_sessions_left")), "AC4.5");
+    assert_eq!(
+        code(&empty),
+        (StatusCode::CONFLICT, Some("package.no_sessions_left")),
+        "AC4.5"
+    );
 
     d.set_remaining(&item, 3).await?;
-    sqlx::query("UPDATE app.customer_package SET cancelled_at = now(), cancel_reason = 'hoàn tiền'")
-        .execute(&d.h.owner)
-        .await?;
+    sqlx::query(
+        "UPDATE app.customer_package SET cancelled_at = now(), cancel_reason = 'hoàn tiền'",
+    )
+    .execute(&d.h.owner)
+    .await?;
     let cancelled = d.record(d.deduct(&d.ha, Some(&item))).await;
-    assert_eq!(code(&cancelled), (StatusCode::CONFLICT, Some("package.cancelled")), "AC4.10");
+    assert_eq!(
+        code(&cancelled),
+        (StatusCode::CONFLICT, Some("package.cancelled")),
+        "AC4.10"
+    );
     assert_eq!(d.remaining(&item).await?, 3);
     assert_eq!(d.count("SELECT count(*) FROM app.visit").await?, 0);
     Ok(())
@@ -492,16 +587,29 @@ async fn expired_package_needs_a_reason_and_the_override_permission(pool: PgPool
     let item = d.item_of(&d.ha).await;
     d.set_expiry(&package, -1).await?;
     let blocked = d.record(d.deduct(&d.ha, Some(&item))).await;
-    assert_eq!(code(&blocked), (StatusCode::CONFLICT, Some("package.expired")), "AC4.6");
+    assert_eq!(
+        code(&blocked),
+        (StatusCode::CONFLICT, Some("package.expired")),
+        "AC4.6"
+    );
     // The default never picks an expired package.
     let default = d.record(d.deduct(&d.ha, None)).await;
-    assert_eq!(code(&default), (StatusCode::UNPROCESSABLE_ENTITY, Some("package.item_not_found")));
+    assert_eq!(
+        code(&default),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("package.item_not_found")
+        )
+    );
 
     let mut body = d.deduct(&d.ha, Some(&item));
     body["lines"][0]["expiry_override_reason"] = json!("Khách ốm nằm viện 2 tháng");
     let allowed = d.record(body.clone()).await;
     assert_eq!(allowed.status, StatusCode::CREATED, "{}", allowed.body);
-    assert_eq!(allowed.body["lines"][0]["expiry_override_reason"], "Khách ốm nằm viện 2 tháng");
+    assert_eq!(
+        allowed.body["lines"][0]["expiry_override_reason"],
+        "Khách ốm nằm viện 2 tháng"
+    );
     assert_eq!(d.remaining(&item).await?, 11);
     let audited: Option<String> = sqlx::query_scalar(
         "SELECT reason FROM app.audit_log WHERE action = 'customer_package.use_expired_override'",
@@ -532,7 +640,12 @@ async fn expired_package_needs_a_reason_and_the_override_permission(pool: PgPool
     )
     .await;
     assert!(
-        matches!(denied, Err(AppError::Forbidden { code: "auth.forbidden" })),
+        matches!(
+            denied,
+            Err(AppError::Forbidden {
+                code: "auth.forbidden"
+            })
+        ),
         "{denied:?}"
     );
     Ok(())
@@ -547,8 +660,18 @@ async fn two_devices_racing_for_the_last_session_exactly_one_wins(pool: PgPool) 
     let (a, b) = tokio::join!(d.record(body.clone()), d.record(body.clone()));
     let mut statuses = [a.status, b.status];
     statuses.sort();
-    assert_eq!(statuses, [StatusCode::CREATED, StatusCode::CONFLICT], "AC4.7: {} / {}", a.body, b.body);
-    let loser = if a.status == StatusCode::CONFLICT { &a } else { &b };
+    assert_eq!(
+        statuses,
+        [StatusCode::CREATED, StatusCode::CONFLICT],
+        "AC4.7: {} / {}",
+        a.body,
+        b.body
+    );
+    let loser = if a.status == StatusCode::CONFLICT {
+        &a
+    } else {
+        &b
+    };
     assert_eq!(loser.body["code"], "package.no_sessions_left");
     assert_eq!(d.remaining(&item).await?, 0, "never negative");
     assert_eq!(d.count("SELECT count(*) FROM app.visit").await?, 1);
@@ -561,20 +684,43 @@ async fn double_submit_with_the_same_key_records_one_visit(pool: PgPool) -> Test
     let item = d.item_of(&d.ha).await;
     let key = Uuid::now_v7().to_string();
     let body = d.deduct(&d.ha, Some(&item));
-    let (a, b) = tokio::join!(d.post_with_key(&key, body.clone()), d.post_with_key(&key, body.clone()));
-    assert_eq!((a.status, b.status), (StatusCode::CREATED, StatusCode::CREATED), "{} / {}", a.body, b.body);
+    let (a, b) = tokio::join!(
+        d.post_with_key(&key, body.clone()),
+        d.post_with_key(&key, body.clone())
+    );
+    assert_eq!(
+        (a.status, b.status),
+        (StatusCode::CREATED, StatusCode::CREATED),
+        "{} / {}",
+        a.body,
+        b.body
+    );
     assert_eq!(a.body["id"], b.body["id"]);
     let again = d.post_with_key(&key, body).await;
     assert_eq!(again.body["id"], a.body["id"]);
     assert_eq!(d.remaining(&item).await?, 11, "consumed once");
     assert_eq!(d.count("SELECT count(*) FROM app.visit").await?, 1);
 
-    let different = d
-        .post_with_key(&key, d.deduct(&d.duc, None))
-        .await;
-    assert_eq!(code(&different), (StatusCode::UNPROCESSABLE_ENTITY, Some("idempotency.key_reuse_mismatch")));
-    let no_key = call(&d.h.app, "POST", "/visits", Some(&d.manager), Some(d.deduct(&d.ha, None))).await;
-    assert_eq!(code(&no_key), (StatusCode::BAD_REQUEST, Some("idempotency.key_required")));
+    let different = d.post_with_key(&key, d.deduct(&d.duc, None)).await;
+    assert_eq!(
+        code(&different),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("idempotency.key_reuse_mismatch")
+        )
+    );
+    let no_key = call(
+        &d.h.app,
+        "POST",
+        "/visits",
+        Some(&d.manager),
+        Some(d.deduct(&d.ha, None)),
+    )
+    .await;
+    assert_eq!(
+        code(&no_key),
+        (StatusCode::BAD_REQUEST, Some("idempotency.key_required"))
+    );
     Ok(())
 }
 
@@ -585,7 +731,10 @@ async fn technician_must_be_working_and_package_must_be_the_customers(pool: PgPo
     let mut no_tech = d.deduct(&d.ha, Some(&item));
     no_tech["lines"][0]["staff_id"] = Value::Null;
     let missing = d.record(no_tech).await;
-    assert_eq!(code(&missing), (StatusCode::UNPROCESSABLE_ENTITY, Some("validation_failed")));
+    assert_eq!(
+        code(&missing),
+        (StatusCode::UNPROCESSABLE_ENTITY, Some("validation_failed"))
+    );
     assert_eq!(missing.body["errors"][0]["field"], "lines[0].staff_id");
 
     sqlx::query("UPDATE app.staff SET status = 'left', left_on = current_date WHERE id = $1::uuid")
@@ -594,14 +743,26 @@ async fn technician_must_be_working_and_package_must_be_the_customers(pool: PgPo
         .await?;
     let mut left = d.deduct(&d.ha, Some(&item));
     left["lines"][0]["staff_id"] = json!(d.tuan);
-    assert_eq!(code(&d.record(left).await), (StatusCode::UNPROCESSABLE_ENTITY, Some("staff.inactive")));
+    assert_eq!(
+        code(&d.record(left).await),
+        (StatusCode::UNPROCESSABLE_ENTITY, Some("staff.inactive"))
+    );
     let mut stranger = d.deduct(&d.ha, Some(&item));
     stranger["lines"][0]["staff_id"] = json!(Uuid::now_v7());
-    assert_eq!(code(&d.record(stranger).await), (StatusCode::UNPROCESSABLE_ENTITY, Some("staff.inactive")));
+    assert_eq!(
+        code(&d.record(stranger).await),
+        (StatusCode::UNPROCESSABLE_ENTITY, Some("staff.inactive"))
+    );
 
     // Đức tries to use Hà's package (AC4.8).
     let foreign = d.record(d.deduct(&d.duc, Some(&item))).await;
-    assert_eq!(code(&foreign), (StatusCode::UNPROCESSABLE_ENTITY, Some("package.item_not_found")));
+    assert_eq!(
+        code(&foreign),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("package.item_not_found")
+        )
+    );
     // A package item that does not cover the line's service.
     let mut wrong_service = d.deduct(&d.ha, Some(&item));
     wrong_service["lines"][0]["service_id"] = json!(d.gac_hoi);
@@ -615,11 +776,24 @@ async fn technician_must_be_working_and_package_must_be_the_customers(pool: PgPo
 async fn check_in_must_be_now_or_earlier_today(pool: PgPool) -> TestResult {
     let d = desk(pool).await?;
     let mut future = d.deduct(&d.ha, None);
-    future["check_in_at"] = json!((chrono::Utc::now() + chrono::Duration::minutes(30)).to_rfc3339());
-    assert_eq!(code(&d.record(future).await), (StatusCode::UNPROCESSABLE_ENTITY, Some("visit.check_in_in_future")));
+    future["check_in_at"] =
+        json!((chrono::Utc::now() + chrono::Duration::minutes(30)).to_rfc3339());
+    assert_eq!(
+        code(&d.record(future).await),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("visit.check_in_in_future")
+        )
+    );
     let mut old = d.deduct(&d.ha, None);
     old["check_in_at"] = json!((chrono::Utc::now() - chrono::Duration::days(2)).to_rfc3339());
-    assert_eq!(code(&d.record(old).await), (StatusCode::UNPROCESSABLE_ENTITY, Some("visit.check_in_not_today")));
+    assert_eq!(
+        code(&d.record(old).await),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("visit.check_in_not_today")
+        )
+    );
     let mut earlier = d.deduct(&d.ha, None);
     let at = chrono::Utc::now() - chrono::Duration::minutes(1);
     earlier["check_in_at"] = json!(at.to_rfc3339());
@@ -633,9 +807,23 @@ async fn payments_on_a_package_only_visit_are_rejected(pool: PgPool) -> TestResu
     let d = desk(pool).await?;
     let mut body = d.deduct(&d.ha, None);
     body["payments"] = json!([{"method": "cash", "amount": 1}]);
-    assert_eq!(code(&d.record(body).await), (StatusCode::UNPROCESSABLE_ENTITY, Some("payment.amount_mismatch")));
-    let unpaid = d.record(d.one_off(&d.ha, &d.gac_hoi, json!({}), json!([]))).await;
-    assert_eq!(code(&unpaid), (StatusCode::UNPROCESSABLE_ENTITY, Some("payment.amount_mismatch")));
+    assert_eq!(
+        code(&d.record(body).await),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("payment.amount_mismatch")
+        )
+    );
+    let unpaid = d
+        .record(d.one_off(&d.ha, &d.gac_hoi, json!({}), json!([])))
+        .await;
+    assert_eq!(
+        code(&unpaid),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("payment.amount_mismatch")
+        )
+    );
     Ok(())
 }
 
@@ -646,7 +834,11 @@ async fn session_note_is_encrypted_and_only_shown_on_the_visit(pool: PgPool) -> 
     body["note"] = json!("Đỏ da vùng cổ sau buổi");
     let v = d.record(body).await;
     assert_eq!(v.status, StatusCode::CREATED, "{}", v.body);
-    assert_eq!(v.body.get("note"), None, "the stored response never holds the note");
+    assert_eq!(
+        v.body.get("note"),
+        None,
+        "the stored response never holds the note"
+    );
     let one = d.get(&format!("/visits/{}", id_of(&v))).await;
     assert_eq!(one.body["note"], "Đỏ da vùng cổ sau buổi");
     let list = d.get("/visits").await;
@@ -670,7 +862,12 @@ async fn session_note_is_encrypted_and_only_shown_on_the_visit(pool: PgPool) -> 
     let tenant: Uuid = sqlx::query_scalar("SELECT id FROM app.tenant WHERE slug = 'vpyd'")
         .fetch_one(&d.h.owner)
         .await?;
-    let reader = Actor::new(UserId::new(), TenantId::from_uuid(tenant), [Permission::VisitRead], None);
+    let reader = Actor::new(
+        UserId::new(),
+        TenantId::from_uuid(tenant),
+        [Permission::VisitRead],
+        None,
+    );
     let cipher = crm::FieldCipher::from_base64(TEST_DATA_KEY)?;
     let seen = operations::service::get(
         &app_pool(&d.h.owner).await?,
@@ -688,22 +885,41 @@ async fn corrections_change_technician_and_note_with_if_match(pool: PgPool) -> T
     let d = desk(pool).await?;
     let v = d.record(d.deduct(&d.ha, None)).await;
     let id = id_of(&v);
-    let line = v.body["lines"][0]["id"].as_str().unwrap_or_default().to_owned();
+    let line = v.body["lines"][0]["id"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
     let patch = |version: &str, body: Value| {
         let app = d.h.app.clone();
         let manager = d.manager.clone();
         let path = format!("/visits/{id}");
         let header = format!("\"{version}\"");
         async move {
-            call_with_headers(&app, "PATCH", &path, Some(&manager), Some(body), &[("If-Match", &header)]).await
+            call_with_headers(
+                &app,
+                "PATCH",
+                &path,
+                Some(&manager),
+                Some(body),
+                &[("If-Match", &header)],
+            )
+            .await
         }
     };
-    let fixed = patch("1", json!({"lines": [{"id": line, "staff_id": d.tuan}], "note": "Khách thích lực nhẹ"})).await;
+    let fixed = patch(
+        "1",
+        json!({"lines": [{"id": line, "staff_id": d.tuan}], "note": "Khách thích lực nhẹ"}),
+    )
+    .await;
     assert_eq!(fixed.status, StatusCode::OK, "{}", fixed.body);
     assert_eq!(fixed.body["lines"][0]["staff_name"], "KTV Tuấn");
     assert_eq!(fixed.body["note"], "Khách thích lực nhẹ");
     assert_eq!(fixed.body["version"], 2);
-    assert_eq!(d.remaining(&d.item_of(&d.ha).await).await?, 11, "sessions untouched");
+    assert_eq!(
+        d.remaining(&d.item_of(&d.ha).await).await?,
+        11,
+        "sessions untouched"
+    );
 
     let stale = patch("1", json!({"note": null})).await;
     assert_eq!(stale.status, StatusCode::PRECONDITION_FAILED);
@@ -715,11 +931,31 @@ async fn corrections_change_technician_and_note_with_if_match(pool: PgPool) -> T
         .execute(&d.h.owner)
         .await?;
     let gone = patch("3", json!({"lines": [{"id": line, "staff_id": d.lan}]})).await;
-    assert_eq!(code(&gone), (StatusCode::UNPROCESSABLE_ENTITY, Some("staff.inactive")));
-    let unknown_line = patch("3", json!({"lines": [{"id": Uuid::now_v7(), "staff_id": d.tuan}]})).await;
+    assert_eq!(
+        code(&gone),
+        (StatusCode::UNPROCESSABLE_ENTITY, Some("staff.inactive"))
+    );
+    let unknown_line = patch(
+        "3",
+        json!({"lines": [{"id": Uuid::now_v7(), "staff_id": d.tuan}]}),
+    )
+    .await;
     assert_eq!(unknown_line.body["errors"][0]["field"], "lines[0].id");
-    let no_if_match = call(&d.h.app, "PATCH", &format!("/visits/{id}"), Some(&d.manager), Some(json!({}))).await;
-    assert_eq!(code(&no_if_match), (StatusCode::BAD_REQUEST, Some("precondition.if_match_required")));
+    let no_if_match = call(
+        &d.h.app,
+        "PATCH",
+        &format!("/visits/{id}"),
+        Some(&d.manager),
+        Some(json!({})),
+    )
+    .await;
+    assert_eq!(
+        code(&no_if_match),
+        (
+            StatusCode::BAD_REQUEST,
+            Some("precondition.if_match_required")
+        )
+    );
 
     // Yesterday's visit: a manager may no longer correct it.
     sqlx::query("UPDATE app.visit SET business_date = business_date - 1")
@@ -733,7 +969,7 @@ async fn corrections_change_technician_and_note_with_if_match(pool: PgPool) -> T
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn technician_role_cannot_record_or_read_visits(pool: PgPool) -> TestResult {
     let d = desk(pool).await?;
-    let tech = session_for(&d.h.app, TECH_PHONE).await;
+    let tech = session_for(&d.h, TECH_PHONE).await;
     let r = call_with_headers(
         &d.h.app,
         "POST",

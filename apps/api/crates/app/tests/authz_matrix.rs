@@ -259,7 +259,11 @@ const ROUTES: &[Route] = &[
     )
     .body(visit_body)
     .idempotent(),
-    route("GET", "/api/v1/visits", Access::Perm(P::VisitRead, OWNER_MANAGER)),
+    route(
+        "GET",
+        "/api/v1/visits",
+        Access::Perm(P::VisitRead, OWNER_MANAGER),
+    ),
     route(
         "GET",
         "/api/v1/visits/{id}",

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.visit\n             (id, tenant_id, branch_id, customer_id, business_date, check_in_at, note_ct, sale_id, created_by)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Timestamptz",
+        "Bytea",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "34b26cf5bed36697e9494e526eeae48502b97115a356aa4aa93fd51c91bc6aba"
+}

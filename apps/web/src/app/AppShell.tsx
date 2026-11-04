@@ -27,6 +27,11 @@ export function AppShell() {
           <Link to="/" className={navLink} activeOptions={{ exact: true }}>
             Trang chủ
           </Link>
+          {can(me, "visit.record") && (
+            <Link to="/quay" className={navLink}>
+              Quầy
+            </Link>
+          )}
           {can(me, "customer.read") && (
             <Link to="/khach-hang" className={navLink}>
               Khách hàng

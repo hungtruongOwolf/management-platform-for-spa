@@ -23,7 +23,21 @@ const MESSAGES: Record<string, string> = {
   "discount.reason_required": "Giảm giá phải ghi lý do.",
   "discount.limit_exceeded": "Mức giảm vượt quyền của bạn — cần chủ spa duyệt.",
   "staff.inactive":
-    "Người tư vấn chốt không còn làm việc ở spa. Vui lòng chọn người khác.",
+    "Nhân viên được chọn không còn làm việc ở spa. Vui lòng chọn người khác.",
+  "package.no_sessions_left":
+    "Liệu trình vừa hết buổi (có thể vừa được dùng ở máy khác). Đã cập nhật số buổi.",
+  "package.expired":
+    "Liệu trình đã hết hạn. Cần quản lý cho dùng tiếp (ghi lý do).",
+  "package.cancelled": "Liệu trình đã bị hủy, không trừ được.",
+  "package.item_not_found":
+    "Không tìm thấy liệu trình còn dùng được cho dịch vụ này. Gợi ý bán gói mới.",
+  "price.gender_required": "Chọn Nữ hoặc Nam để tính giá dịch vụ lẻ.",
+  "price.variant_not_available":
+    "Dịch vụ này không áp dụng cho giới tính của khách.",
+  "visit.check_in_in_future": "Giờ vào không được ở tương lai.",
+  "visit.check_in_not_today": "Giờ vào phải thuộc ngày hôm nay.",
+  "visit.voided": "Lượt này đã bị hủy, không sửa được.",
+  "day.locked": "Ngày đã chốt, liên hệ chủ spa.",
   "idempotency.key_reuse_mismatch":
     "Hóa đơn này có thể đã được lưu. Vui lòng đóng hộp thoại và kiểm tra lại liệu trình.",
 };

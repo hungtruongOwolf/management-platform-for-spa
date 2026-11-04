@@ -1,0 +1,221 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT l.id, l.visit_id, l.service_id, l.service_name_snapshot, l.source, l.customer_package_id,\n                  l.customer_package_item_id, p.name_snapshot AS \"package_name?\", l.sessions_left_after,\n                  i.sessions_total AS \"sessions_total?\", l.staff_id, s.full_name AS staff_name, l.qty,\n                  l.price_variant, l.unit_price, l.line_value, l.expiry_override_reason\n           FROM app.visit_line l\n           JOIN app.staff s ON s.tenant_id = l.tenant_id AND s.id = l.staff_id\n           LEFT JOIN app.customer_package p ON p.tenant_id = l.tenant_id AND p.id = l.customer_package_id\n           LEFT JOIN app.customer_package_item i ON i.tenant_id = l.tenant_id AND i.id = l.customer_package_item_id\n           WHERE l.tenant_id = $1 AND l.visit_id = ANY($2)\n           ORDER BY l.visit_id, l.position",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "visit_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "visit_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "service_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "service_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "service_name_snapshot",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "service_name_snapshot"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "customer_package_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "customer_package_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "customer_package_item_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "customer_package_item_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "package_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "name_snapshot"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "sessions_left_after",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "sessions_left_after"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "sessions_total?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_item",
+            "name": "sessions_total"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "staff_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "staff_id"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "staff_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.staff",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "qty",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "qty"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "price_variant",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "price_variant"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "unit_price",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "unit_price"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "line_value",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "line_value"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "expiry_override_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "expiry_override_reason"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "11f1860a18f52162950611936e08e608177848d07a3f10ab5b494b0d923fd359"
+}
