@@ -218,11 +218,10 @@ async fn wrong_and_replayed_codes_are_refused(owner: PgPool) -> TestResult {
         (bad.status, bad.body["code"].as_str()),
         (StatusCode::UNAUTHORIZED, Some("auth.invalid_mfa_code"))
     );
-    // The confirming code's time step was already used during enrollment: same code = replay.
-    let replay = mfa_verify(&h, &pending, &code).await;
-    assert_eq!(replay.status, StatusCode::UNAUTHORIZED);
-    assert!(replay.session().is_none());
+    assert!(bad.session().is_none());
 
+    // Start from an unused step so the test does not depend on where the 30 s boundary falls
+    // relative to enrollment; replay is asserted below against a code this test just used.
     forget_used_step(&h, OWNER_PHONE).await?;
     let ok = mfa_verify(&h, &pending, &code).await;
     assert_eq!(ok.status, StatusCode::OK);
@@ -409,15 +408,16 @@ async fn reauth_for_an_mfa_account_needs_a_fresh_code(owner: PgPool) -> TestResu
 
     let missing = reauth(json!({"password": PASSWORD})).await;
     assert_eq!(missing.status, StatusCode::UNPROCESSABLE_ENTITY);
+    // Deterministic regardless of the 30 s boundary: use a fresh step once, then replay it.
+    forget_used_step(&h, OWNER_PHONE).await?;
     let code = current_code(&h, OWNER_PHONE).await?;
+    let ok = reauth(json!({"password": PASSWORD, "code": code})).await;
+    assert_eq!(ok.status, StatusCode::NO_CONTENT);
     let replayed = reauth(json!({"password": PASSWORD, "code": code})).await;
     assert_eq!(
         (replayed.status, replayed.body["code"].as_str()),
         (StatusCode::UNAUTHORIZED, Some("auth.invalid_mfa_code"))
     );
-    forget_used_step(&h, OWNER_PHONE).await?;
-    let ok = reauth(json!({"password": PASSWORD, "code": code})).await;
-    assert_eq!(ok.status, StatusCode::NO_CONTENT);
     Ok(())
 }
 
