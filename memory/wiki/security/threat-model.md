@@ -26,7 +26,7 @@ sources: [architecture/system.md, product/specs/front-desk-and-packages.md]
 | R | Quản lý chối đã hủy hoặc giảm giá | Audit log mọi thao tác tiền/buổi (ai, khi nào, trước/sau, lý do); payment append-only | Mỗi lệnh ghi đều có dòng audit tương ứng |
 | I | IDOR: đổi ID trong URL để xem khách hoặc liệu trình của spa khác (A3) hay ghi chú sức khỏe khi không có quyền (A2) | Query luôn scope theo tenant + RLS; ghi chú sức khỏe bị loại khỏi response nếu thiếu permission; ID là UUIDv7 | Ma trận test: tenant B gọi ID của tenant A → 404; thiếu quyền → không có field `health_note` |
 | I | Lộ thông tin qua lỗi hoặc stack trace | Lỗi dạng problem+json chung chung; chi tiết chỉ nằm trong log | Gây lỗi 500 → response không có stack/SQL |
-| D | Spam request làm chậm hệ thống | Rate limit theo route; giới hạn kích thước body; timeout; phân trang có trần | Vượt ngưỡng → 429 |
+| D | Spam request làm chậm hệ thống | Rate limit theo IP (S1: 5/giây, burst 60) + theo route (S2+); body ≤ 64 KB; timeout 10 giây; phân trang có trần. **Ràng buộc:** IP lấy từ `X-Forwarded-For` (Caddy đặt), nên API **chỉ được nhận traffic từ Caddy**: không publish port API, chỉ lắng nghe trong network nội bộ của Docker | Vượt ngưỡng → 429 |
 | E | Gọi endpoint quản trị bằng tài khoản thường (A2); route guard frontend bị bỏ qua | `can()` ở service layer cho mọi route; route không khai báo permission thì CI fail; endpoint platform admin tách riêng + MFA | Test mỗi route với role không đủ quyền → 403 |
 
 ## TB2: API ↔ Postgres (Supabase)

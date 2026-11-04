@@ -11,6 +11,7 @@ services:
       - "127.0.0.1:5432:5432"                # bound to localhost only
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro   # creates app_rw on first start
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U vpyd -d vpyd"]
       interval: 5s

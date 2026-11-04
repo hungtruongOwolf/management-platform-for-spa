@@ -16,11 +16,29 @@ jobs:
   api:
     name: API (Rust)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vpyd
+          POSTGRES_PASSWORD: vpyd_ci_password
+          POSTGRES_DB: vpyd
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vpyd -d vpyd"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      # Compile-time query checks use the committed .sqlx data; tests use the live server (one fresh DB per test).
+      SQLX_OFFLINE: "true"
+      DATABASE_URL: postgres://vpyd:vpyd_ci_password@localhost:5432/vpyd
+      APP_RW_PASSWORD: app_rw_dev_password
     defaults:
       run:
         working-directory: apps/api
     steps:
       - uses: actions/checkout@v4
+      - name: Create runtime role app_rw
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../../infra/postgres-init/01-roles.sql
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy

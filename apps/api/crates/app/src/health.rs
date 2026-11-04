@@ -9,7 +9,7 @@ struct Health {
     version: &'static str,
 }
 
-pub(crate) fn routes() -> Router {
+pub(crate) fn routes<S: Clone + Send + Sync + 'static>() -> Router<S> {
     Router::new().route("/health", get(health))
 }
 

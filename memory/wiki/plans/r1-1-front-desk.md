@@ -31,13 +31,19 @@ Quy ước chung cho mọi ticket có endpoint:
     - Hook PostToolUse chạy `cargo check` / `tsc` sau mỗi lần Edit (đã pipe-test cả trường hợp lỗi).
     - Plugin LSP cần EM cài bằng `/plugin install` (binary `rust-analyzer` đã cài).
 
-- [ ] **S1 Kernel: tenant, lỗi, audit, idempotency** (size: M)
+- [x] **S1 Kernel: tenant, lỗi, audit, idempotency** (size: M) ✅ 2026-11-04
   - **Goal:** hạ tầng xuyên suốt mà mọi use case dùng chung.
   - **Acceptance:** G3, G4, G5, G6 (spec §3).
   - **Touches:** `kernel`: `TenantId`/`BranchId`/`Money`/`BusinessDate` newtypes, `TenantTx` (`SET LOCAL app.tenant_id`, `statement_timeout`), `AppError → problem+json`, `audit::record`, `idempotency` (bảng + extractor + middleware), `can()` + danh mục permission. `app`: config fail-fast, tracing request-id, timeout, giới hạn body, rate limit, kiểm tra `Origin`. Migrations `0001` (extensions, roles `app_rw`/`app_migrator`, schema `app`), `tenant`, `branch`, `audit_log`, `idempotency_record`, mẫu RLS.
   - **Tests:** unit cho Money/BusinessDate; integration: role `app_rw` **không** đọc được dòng của tenant khác khi `app.tenant_id` khác (RLS hoạt động); idempotency: gửi lặp → cùng response, khác body → 422, song song → 409; lỗi 500 không lộ stack.
   - **Security:** RLS + newtype bắt buộc (ADR-0003); `app_rw` không có `UPDATE/DELETE` trên `audit_log`.
   - **Depends on:** S0
+  - **Kết quả:**
+    - 36 test Rust: 26 trong kernel (9 integration chạy với app_rw/RLS), 10 trong app.
+    - Mutation check: tắt `set_config` → 6/9 test integration đỏ.
+    - Idempotency dựa vào khóa PK của Postgres nên request trùng song song tự chờ rồi replay; không cần trạng thái `in_progress`.
+    - Middleware: request-id, problem+json cho mọi lỗi, timeout 10 giây, body tối đa 64 KB, rate limit theo IP (5/giây, burst 60), kiểm tra Origin cho request ghi.
+    - `app migrate` và job purge chạy mỗi giờ. CI có Postgres service + `SQLX_OFFLINE`.
 
 - [ ] **S2 Đăng nhập & session (tối thiểu cho R1)** (size: M)
   - **Goal:** đăng nhập bằng SĐT + mật khẩu; seed tenant, chủ spa, quản lý bằng CLI. Giao diện quản lý tài khoản thuộc spec #4.

@@ -24,7 +24,9 @@ Single source of truth for code quality. `build` and `pr-review` skills apply ev
 - Layering: `routes/handlers` (HTTP only) → `services` (business rules, authorization) → `repositories` (SQL). Handlers hold no business logic; repositories hold no authorization decisions.
 - Errors: `thiserror` for typed domain/app errors, mapped to HTTP in one `IntoResponse` impl. `anyhow` only in binaries/scripts.
 - Production paths use `?` and typed errors; `unwrap`/`expect` only in tests or with a comment proving it cannot fail.
-- SQL through `sqlx` with bound parameters and compile-time checked queries (`query!`/`query_as!`).
+- SQL through `sqlx` with bound parameters and compile-time checked queries (`query!`/`query_as!`). After adding or changing a query run `pnpm db:prepare` and commit `apps/api/.sqlx` (CI builds with `SQLX_OFFLINE=true`).
+- Every use case runs in one `kernel::TenantTx`; repository functions take `&mut TenantTx` and still filter by `tx.tenant()` explicitly (RLS is the second layer, not the only one).
+- Integration tests use `#[sqlx::test(migrator = "kernel::MIGRATOR")]` and `kernel::testing::app_pool` so they run as `app_rw` with RLS, exactly like production. Security-critical tests are mutation-checked once (break the guard, see red).
 - `#![forbid(unsafe_code)]` in application crates.
 - Async: never block the runtime (`spawn_blocking` for CPU-heavy work such as hashing).
 - Structured logging via `tracing`; secrets wrapped in `secrecy::SecretString`.

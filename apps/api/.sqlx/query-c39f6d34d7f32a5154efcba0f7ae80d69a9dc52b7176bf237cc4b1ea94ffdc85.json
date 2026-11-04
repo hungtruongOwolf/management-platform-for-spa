@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT request_hash, response_status, response_body\n           FROM app.idempotency_record\n           WHERE tenant_id = $1 AND actor_user_id = $2 AND key = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "request_hash",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "app.idempotency_record",
+            "name": "request_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "response_status",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "app.idempotency_record",
+            "name": "response_status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "response_body",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "app.idempotency_record",
+            "name": "response_body"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "c39f6d34d7f32a5154efcba0f7ae80d69a9dc52b7176bf237cc4b1ea94ffdc85"
+}
