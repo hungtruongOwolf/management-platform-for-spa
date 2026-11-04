@@ -40,6 +40,9 @@ pub fn router(state: AppState, policy: &HttpPolicy) -> Router {
         .merge(me)
         .merge(catalog::http::routes())
         .merge(crm::http::routes())
+        .merge(org::http::routes())
+        .merge(packages::http::routes())
+        .merge(sales::http::routes())
         .with_state(state);
     middleware::apply(Router::new().nest("/api/v1", api), policy)
 }

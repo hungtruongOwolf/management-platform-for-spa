@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, name, price, validity_months, gift_note, active, version\n           FROM app.package_plan WHERE tenant_id = $1 AND id = $2 FOR SHARE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.package_plan",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.package_plan",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "price",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.package_plan",
+            "name": "price"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "validity_months",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.package_plan",
+            "name": "validity_months"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "gift_note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.package_plan",
+            "name": "gift_note"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "active",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "app.package_plan",
+            "name": "active"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "version",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.package_plan",
+            "name": "version"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "c9fb45803d71ef8d44afa56e72d803d017e03aa55c463a6d6114d68913d6b1a1"
+}

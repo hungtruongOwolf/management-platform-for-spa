@@ -27,11 +27,19 @@ use utoipa::OpenApi;
         crm::http::read,
         crm::http::update,
         crm::http::set_health_note,
+        org::http::list_staff,
+        packages::http::read_package,
+        packages::http::list_customer_packages,
+        sales::http::create_sale,
+        sales::http::read_sale,
     ),
     tags(
         (name = "auth", description = "Đăng nhập, phiên, đổi spa"),
         (name = "catalog", description = "Bảng giá dịch vụ và gói liệu trình"),
         (name = "customers", description = "Hồ sơ khách hàng"),
+        (name = "staff", description = "Nhân viên (chọn người chốt, KTV)"),
+        (name = "packages", description = "Liệu trình của khách"),
+        (name = "sales", description = "Bán liệu trình, thanh toán"),
     )
 )]
 pub struct ApiDoc;
@@ -68,6 +76,11 @@ mod tests {
             "/api/v1/customers",
             "/api/v1/customers/{id}",
             "/api/v1/customers/{id}/health-note",
+            "/api/v1/staff",
+            "/api/v1/sales",
+            "/api/v1/sales/{id}",
+            "/api/v1/customer-packages/{id}",
+            "/api/v1/customers/{id}/packages",
         ] {
             assert!(paths.contains(&expected), "{expected} missing from OpenAPI");
         }
@@ -79,6 +92,10 @@ mod tests {
             "PackagePlanDto",
             "ServiceWrite",
             "PlanWrite",
+            "SaleCreate",
+            "SaleDto",
+            "CustomerPackageDto",
+            "StaffDto",
         ] {
             assert!(schemas.contains_key(schema), "{schema} missing");
         }

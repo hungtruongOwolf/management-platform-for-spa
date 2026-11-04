@@ -170,3 +170,11 @@ Ops: `ingest`, `query`, `lint`, `record`, `decision`, `skip`.
 - C: filled up (48 leftover Remotion temp bundles, 27.9 GB) → docker Postgres went read-only. EM approved deleting them; then Docker failed with `wsl-bootstrap … running mkfs: exit status 1` (data vhdx still attached in the shared WSL VM) → fixed by `wsl --shutdown` + restart. Dev data intact.
 - PR #7 (S11 deploy prep) merged. Local prod smoke test now passes end to end after fixing the prodtest init-volume path.
 - EM allowed `gh pr merge` in project settings; merges no longer need asking.
+
+## [2026-11-04] record | S6 sell packages built
+- Branch `feat/s6-sell-packages` (rebased on main after #5, #6, #7). Migration `0005_sales_packages`: staff, sale, sale_line, payment, customer_package, customer_package_item; payment/sale_line append-only by grants + trigger.
+- New crates `org` (GET /staff, CLI add-staff), `packages` (GET /customer-packages/{id}, GET /customers/{id}/packages, `create`, `consume_session`), `sales` (POST /sales with Idempotency-Key, GET /sales/{id}). Kernel `tenant::profile` + Money helpers; catalog `plan_snapshot`, crm `exists_in` for cross-context calls inside one TenantTx.
+- per_session_value follows spec D4/AC3.1: price after discount ÷ purchased sessions (10 + 2 at 1.5M → 150.000đ), bonus = 0, purchased sessions consumed first.
+- Tests: 11 sales E2E + 4 packages (incl. last-session race) + 6 web; manager-10% and amount-mismatch guards mutation-checked (red, then restored).
+- Dev note: in agent worktrees the sqlx macros resolved DATABASE_URL to the main `vpyd` DB instead of the worktree `.env`; exporting DATABASE_URL explicitly fixed it.
+- Skipped stage: no separate backend-design pass for S6; contract drift recorded in backend.md/data.md.

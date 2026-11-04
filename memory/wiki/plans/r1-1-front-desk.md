@@ -110,13 +110,22 @@ Quy ước chung cho mọi ticket có endpoint:
     - Web: `/khach-hang` (ô tìm có ↑↓ Enter, khách gần đây, form khách mới điền sẵn từ ô tìm, nút "Mở hồ sơ đó" khi trùng SĐT), `/khach-hang/:id` (cảnh báo sức khỏe, sửa hồ sơ). `CustomerSearch` dùng lại cho S7.
     - Test: 7 E2E customers (gồm 10.000 khách, mutation lọc quyền ghi chú ✓) + 33 web. Chrome thật: tạo khách, thấy cảnh báo, tìm "khach thu" ra "Khách Thử Nghiệm".
 
-- [ ] **S6 Bán liệu trình** (size: M)
+- [x] **S6 Bán liệu trình** (size: M)
   - **Goal:** bán gói cho khách, ghi người chốt, giảm giá có lý do, thu đủ (TM/CK/kết hợp); liệu trình được tạo với snapshot.
   - **Acceptance:** AC3.1–AC3.7; AC1.2 (snapshot).
   - **Touches:** crates `sales` (`sale`, `sale_line`, `payment` append-only), `packages` (`customer_package`, `customer_package_item`, trạng thái suy ra); `POST /sales`, `GET /sales/{id}`, `GET /customer-packages/{id}`; `org` tối thiểu (`staff` + `GET /staff`). Web: hộp thoại "Bán liệu trình mới" trên thẻ khách.
   - **Tests:** gói 10 + tặng 2 giá 1.500.000đ → 12/12 buổi, `per_session_value` = 150.000đ; tổng thanh toán ≠ total → `422 payment.amount_mismatch`; giảm giá thiếu lý do → 422, Manager giảm > 10% → 403; người chốt đã nghỉ việc → 422; bấm Lưu 2 lần (cùng key) → 1 hóa đơn; client gửi giá → bị bỏ qua (server tính); `payment` không UPDATE/DELETE được.
   - **Security:** tính giá phía server; không mass assignment; idempotency; audit.
   - **Depends on:** S4, S5
+  - **Kết quả:**
+    - Migration `0005_sales_packages`: `staff`, `sale`, `sale_line`, `payment`, `customer_package`, `customer_package_item` (FK kép theo tenant, RLS). `payment` và `sale_line` append-only hai lớp: app_rw chỉ có `SELECT, INSERT`, thêm trigger `app.reject_mutation` chặn cả schema owner.
+    - Crate mới: `org` (`GET /staff?status=active|left|all`, CLI `app add-staff`), `packages` (`GET /customer-packages/{id}`, `GET /customers/{id}/packages`, trạng thái suy ra), `sales` (`POST /sales` bắt buộc `Idempotency-Key`, `GET /sales/{id}`). Kernel thêm `tenant::profile` (ngày nghiệp vụ, chi nhánh chính, `manager_discount_max_pct` mặc định 10) và `Money::per_unit / within_percent_of / sum`.
+    - Quy tắc: giá lấy từ catalog trong transaction (khóa `FOR SHARE` gói), field giá client gửi bị bỏ qua; giảm giá cần lý do (`422 discount.reason_required`), Manager > 10% → `403 discount.limit_exceeded`, Owner không giới hạn; tổng payment ≠ total → `422 payment.amount_mismatch`; tối đa 2 payment, mỗi hình thức 1 lần; người chốt nghỉ việc hoặc của spa khác → `422 staff.inactive`. Một transaction tạo sale + lines + package + items + payments + audit + bản ghi idempotency.
+    - `per_session_value` = giá sau giảm ÷ tổng buổi **mua** (D4, làm tròn xuống); buổi tặng = 0. Hóa đơn nhiều gói: giảm giá chia theo tỷ lệ giá, phần dư cho dòng cuối.
+    - API cho ticket sau: `packages::service::consume_session(tx, Consume{..})` cho S7 (update nguyên tử, buổi mua dùng trước buổi tặng, có test 2 thiết bị tranh buổi cuối) và `packages::service::create(tx, actor, NewPackage{origin: OpeningBalance, ..})` cho S9 (không tạo sale/payment, có test).
+    - Web: hồ sơ khách có mục "Liệu trình" (còn X/Y buổi, HSD, trạng thái, nhãn "Nhập từ sổ cũ") và hộp thoại "Bán liệu trình mới" (gói, quà, người chốt, giảm giá + lý do + cảnh báo vượt 10%, TM / CK / kết hợp, một Idempotency-Key cho cả hộp thoại).
+    - Test: 11 E2E sales + 4 packages (mutation guard 10% và amount-mismatch ✓) + 6 web mới (tổng 39).
+    - Lệch so với thiết kế: `staff` chưa liên kết `membership` (chưa cần tới R2); `GET /customers/{id}/packages` là endpoint mới; thêm code `package.item_not_found` (422).
 
 - [ ] **S7 Ghi lượt khách (màn hình quầy)** (size: M)
   - **Goal:** luồng chính: trừ buổi và/hoặc dịch vụ lẻ theo giá giới tính, chọn KTV, thu đủ, lưu ≤ 4 thao tác; danh sách lượt hôm nay.

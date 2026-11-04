@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.tenant_id, b.id FROM app.branch b JOIN app.tenant t ON t.id = b.tenant_id\n           WHERE t.slug = $1 AND b.active ORDER BY b.created_at, b.id LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tenant_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.branch",
+            "name": "tenant_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.branch",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "65d072b335105ebeb57c8b33ca0ef2b6c87c210ef73f9d3765f88ceec60690e4"
+}
