@@ -3,3 +3,5 @@
 *.jpg binary
 *.xlsx binary
 *.docx binary
+# Append-only logs: let git keep both sides when parallel branches append entries.
+memory/log.md merge=union
