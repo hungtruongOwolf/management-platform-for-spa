@@ -178,6 +178,88 @@
           "401": {},
           "403": {}
         }
+      },
+      "post": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "create_plan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackagePlanDto"
+                }
+              }
+            }
+          },
+          "403": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/package-plans/{id}": {
+      "put": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "update_plan",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "version from the last read",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackagePlanDto"
+                }
+              }
+            }
+          },
+          "403": {},
+          "404": {},
+          "412": {},
+          "422": {}
+        }
       }
     },
     "/api/v1/service-categories": {
@@ -201,6 +283,78 @@
           },
           "401": {},
           "403": {}
+        }
+      },
+      "post": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "create_category",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceCategoryDto"
+                }
+              }
+            }
+          },
+          "403": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/service-categories/{id}": {
+      "put": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "update_category",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceCategoryDto"
+                }
+              }
+            }
+          },
+          "403": {},
+          "404": {},
+          "422": {}
         }
       }
     },
@@ -240,11 +394,124 @@
           "401": {},
           "403": {}
         }
+      },
+      "post": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "create_service",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceDto"
+                }
+              }
+            }
+          },
+          "403": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/services/{id}": {
+      "put": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "update_service",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "version from the last read",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceDto"
+                }
+              }
+            }
+          },
+          "403": {},
+          "404": {},
+          "412": {
+            "description": "conflict.stale_version"
+          },
+          "422": {}
+        }
       }
     }
   },
   "components": {
     "schemas": {
+      "CategoryCreate": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CategoryUpdate": {
+        "type": "object",
+        "required": [
+          "name",
+          "sort_order"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
       "LoginBody": {
         "type": "object",
         "required": [
@@ -304,6 +571,7 @@
           "name",
           "price",
           "active",
+          "version",
           "items"
         ],
         "properties": {
@@ -340,6 +608,11 @@
               "null"
             ],
             "format": "int32"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Send back as `If-Match` when updating."
           }
         }
       },
@@ -364,6 +637,99 @@
             "format": "int32"
           }
         }
+      },
+      "PlanItemWrite": {
+        "type": "object",
+        "required": [
+          "service_id",
+          "sessions",
+          "bonus_sessions"
+        ],
+        "properties": {
+          "bonus_sessions": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "service_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sessions": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlanWrite": {
+        "type": "object",
+        "required": [
+          "name",
+          "price",
+          "active",
+          "items"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "gift_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanItemWrite"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "price": {
+            "type": "integer",
+            "format": "int64",
+            "description": "đồng"
+          },
+          "validity_months": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PricesInput": {
+        "type": "object",
+        "description": "Prices in đồng: either `all`, or `female` and/or `male` (a missing gender = not offered).",
+        "properties": {
+          "all": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "female": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "male": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
       },
       "ReauthBody": {
         "type": "object",
@@ -406,6 +772,7 @@
           "name",
           "recommended",
           "active",
+          "version",
           "prices"
         ],
         "properties": {
@@ -442,6 +809,11 @@
           },
           "recommended": {
             "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Send back as `If-Match` when updating."
           }
         }
       },
@@ -471,6 +843,49 @@
             "format": "int64"
           }
         }
+      },
+      "ServiceWrite": {
+        "type": "object",
+        "required": [
+          "category_id",
+          "name",
+          "recommended",
+          "active",
+          "prices"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "category_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration_min": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Minutes; null = \"theo tư vấn\"."
+          },
+          "name": {
+            "type": "string"
+          },
+          "prices": {
+            "$ref": "#/components/schemas/PricesInput"
+          },
+          "recommended": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
       },
       "SwitchTenantBody": {
         "type": "object",

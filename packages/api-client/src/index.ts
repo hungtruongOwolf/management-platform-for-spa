@@ -8,3 +8,6 @@ export type ServiceCategory = Schemas["ServiceCategoryDto"];
 export type Service = Schemas["ServiceDto"];
 export type ServicePrices = Schemas["ServicePrices"];
 export type PackagePlan = Schemas["PackagePlanDto"];
+export type ServiceWrite = Schemas["ServiceWrite"];
+export type PlanWrite = Schemas["PlanWrite"];
+export type CategoryCreate = Schemas["CategoryCreate"];

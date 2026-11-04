@@ -85,6 +85,18 @@ pub async fn call(
     session: Option<&str>,
     body: Option<Value>,
 ) -> Reply {
+    call_with_headers(app, method, path, session, body, &[]).await
+}
+
+/// Like `call`, with extra request headers (e.g. `If-Match`).
+pub async fn call_with_headers(
+    app: &Router,
+    method: &str,
+    path: &str,
+    session: Option<&str>,
+    body: Option<Value>,
+    extra: &[(&str, &str)],
+) -> Reply {
     let mut builder = Request::builder()
         .method(method)
         .uri(format!("/api/v1{path}"))
@@ -92,6 +104,9 @@ pub async fn call(
         .header(header::CONTENT_TYPE, "application/json");
     if let Some(s) = session {
         builder = builder.header(header::COOKIE, format!("__Host-session={s}"));
+    }
+    for (name, value) in extra {
+        builder = builder.header(*name, *value);
     }
     let body = body
         .map(|b| Body::from(b.to_string()))

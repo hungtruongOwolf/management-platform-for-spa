@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id, s.category_id, s.name, s.description, s.duration_min, s.recommended, s.active\n           FROM app.service s JOIN app.service_category c ON c.tenant_id = s.tenant_id AND c.id = s.category_id\n           WHERE s.tenant_id = $1 AND (NOT $2 OR s.active)\n           ORDER BY c.sort_order, s.sort_order, s.name",
+  "query": "SELECT s.id, s.category_id, s.name, s.description, s.duration_min, s.recommended, s.active, s.version\n           FROM app.service s JOIN app.service_category c ON c.tenant_id = s.tenant_id AND c.id = s.category_id\n           WHERE s.tenant_id = $1 AND (NOT $2 OR s.active) AND ($3::uuid IS NULL OR s.id = $3)\n           ORDER BY c.sort_order, s.sort_order, s.name",
   "describe": {
     "columns": [
       {
@@ -79,12 +79,24 @@
             "name": "active"
           }
         }
+      },
+      {
+        "ordinal": 7,
+        "name": "version",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.service",
+            "name": "version"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
         "Uuid",
-        "Bool"
+        "Bool",
+        "Uuid"
       ]
     },
     "nullable": [
@@ -94,8 +106,9 @@
       true,
       true,
       false,
+      false,
       false
     ]
   },
-  "hash": "6abd425a3656cc97c519aa3519b88ad702fe63f402085b7b2acdff322ca0282d"
+  "hash": "bdf68e67b1d7cb79a9372b418ce93172e98947d297d0f024e720fa81f7ad2e02"
 }

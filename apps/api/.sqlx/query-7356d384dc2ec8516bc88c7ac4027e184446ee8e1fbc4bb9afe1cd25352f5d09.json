@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT plan_id, service_id, sessions, bonus_sessions FROM app.package_plan_item WHERE tenant_id = $1",
+  "query": "SELECT i.plan_id, i.service_id, i.sessions, i.bonus_sessions\n           FROM app.package_plan_item i JOIN app.service s ON s.tenant_id = i.tenant_id AND s.id = i.service_id\n           WHERE i.tenant_id = $1 AND ($2::uuid IS NULL OR i.plan_id = $2)\n           ORDER BY s.sort_order, s.name",
   "describe": {
     "columns": [
       {
@@ -50,6 +50,7 @@
     ],
     "parameters": {
       "Left": [
+        "Uuid",
         "Uuid"
       ]
     },
@@ -60,5 +61,5 @@
       false
     ]
   },
-  "hash": "d48b5dac8aa383aedaaac97185e8e3732c0798f8aafe0651ff94405668428740"
+  "hash": "7356d384dc2ec8516bc88c7ac4027e184446ee8e1fbc4bb9afe1cd25352f5d09"
 }

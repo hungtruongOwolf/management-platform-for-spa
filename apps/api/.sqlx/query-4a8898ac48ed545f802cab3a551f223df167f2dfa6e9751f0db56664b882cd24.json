@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.service (id, tenant_id, category_id, name, description, duration_min, recommended, active, sort_order)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8,\n                   (SELECT COALESCE(max(sort_order) + 1, 0) FROM app.service WHERE tenant_id = $2 AND category_id = $3))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Int4",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4a8898ac48ed545f802cab3a551f223df167f2dfa6e9751f0db56664b882cd24"
+}

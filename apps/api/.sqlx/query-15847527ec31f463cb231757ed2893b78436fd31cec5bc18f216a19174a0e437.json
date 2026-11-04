@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, name, price, validity_months, gift_note, active\n           FROM app.package_plan WHERE tenant_id = $1 AND (NOT $2 OR active) ORDER BY name",
+  "query": "SELECT id, name, price, validity_months, gift_note, active, version\n           FROM app.package_plan\n           WHERE tenant_id = $1 AND (NOT $2 OR active) AND ($3::uuid IS NULL OR id = $3)\n           ORDER BY name",
   "describe": {
     "columns": [
       {
@@ -68,12 +68,24 @@
             "name": "active"
           }
         }
+      },
+      {
+        "ordinal": 6,
+        "name": "version",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.package_plan",
+            "name": "version"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
         "Uuid",
-        "Bool"
+        "Bool",
+        "Uuid"
       ]
     },
     "nullable": [
@@ -82,8 +94,9 @@
       false,
       true,
       true,
+      false,
       false
     ]
   },
-  "hash": "662c23aa55dd6145cc9c7ad7e77523a6a7317ebe13084d153e26923c12070527"
+  "hash": "15847527ec31f463cb231757ed2893b78436fd31cec5bc18f216a19174a0e437"
 }

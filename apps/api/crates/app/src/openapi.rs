@@ -16,6 +16,12 @@ use utoipa::OpenApi;
         catalog::http::list_categories,
         catalog::http::list_services,
         catalog::http::list_package_plans,
+        catalog::http::create_category,
+        catalog::http::update_category,
+        catalog::http::create_service,
+        catalog::http::update_service,
+        catalog::http::create_plan,
+        catalog::http::update_plan,
     ),
     tags(
         (name = "auth", description = "Đăng nhập, phiên, đổi spa"),
@@ -50,11 +56,21 @@ mod tests {
             "/api/v1/service-categories",
             "/api/v1/services",
             "/api/v1/package-plans",
+            "/api/v1/service-categories/{id}",
+            "/api/v1/services/{id}",
+            "/api/v1/package-plans/{id}",
         ] {
             assert!(paths.contains(&expected), "{expected} missing from OpenAPI");
         }
         let schemas = doc.components.map(|c| c.schemas).unwrap_or_default();
-        for schema in ["Me", "ServiceDto", "ServicePrices", "PackagePlanDto"] {
+        for schema in [
+            "Me",
+            "ServiceDto",
+            "ServicePrices",
+            "PackagePlanDto",
+            "ServiceWrite",
+            "PlanWrite",
+        ] {
             assert!(schemas.contains_key(schema), "{schema} missing");
         }
     }

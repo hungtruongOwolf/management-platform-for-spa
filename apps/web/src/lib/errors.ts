@@ -7,8 +7,23 @@ const MESSAGES: Record<string, string> = {
   "auth.reauth_required": "Vui lòng nhập lại mật khẩu để tiếp tục.",
   "auth.forbidden": "Bạn không có quyền thực hiện thao tác này.",
   "auth.bad_origin": "Yêu cầu không hợp lệ. Vui lòng tải lại trang.",
+  "conflict.stale_version": "Dữ liệu vừa được người khác sửa. Vui lòng tải lại rồi thử lại.",
+  not_found: "Không tìm thấy dữ liệu (có thể đã bị xóa hoặc đổi).",
   rate_limited: "Bạn thao tác quá nhanh. Vui lòng đợi một lát rồi thử lại.",
-  validation_failed: "Thông tin chưa hợp lệ. Vui lòng kiểm tra lại.",
+  validation_failed: "Thông tin chưa hợp lệ. Vui lòng kiểm tra các ô được đánh dấu.",
+};
+
+/** Messages for field-level validation codes. */
+const FIELD_MESSAGES: Record<string, string> = {
+  required: "Bắt buộc nhập.",
+  taken: "Tên này đã được dùng.",
+  too_long: "Quá dài.",
+  out_of_range: "Giá trị không hợp lệ.",
+  negative: "Không được là số âm.",
+  mixed_variants: "Chọn một giá chung hoặc giá theo giới tính, không chọn cả hai.",
+  duplicate: "Dịch vụ bị trùng trong gói.",
+  inactive: "Dịch vụ này đang ngừng bán.",
+  not_found: "Không còn tồn tại.",
 };
 
 export function messageFor(error: unknown): string {
@@ -16,4 +31,10 @@ export function messageFor(error: unknown): string {
     return MESSAGES[error.code] ?? "Có lỗi xảy ra. Vui lòng thử lại.";
   }
   return "Không kết nối được máy chủ. Vui lòng kiểm tra mạng.";
+}
+
+export function fieldMessage(error: unknown, field: string): string | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  const code = error.fieldCode(field);
+  return code === undefined ? undefined : (FIELD_MESSAGES[code] ?? "Giá trị không hợp lệ.");
 }

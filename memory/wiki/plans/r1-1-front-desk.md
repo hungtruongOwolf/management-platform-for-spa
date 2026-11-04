@@ -81,13 +81,19 @@ Quy ước chung cho mọi ticket có endpoint:
     - Web: AppShell + nav theo quyền, trang `/bang-gia`.
     - Test: 27 test app (5 catalog E2E) + 18 web. Đã kiểm tra trên **Chrome thật**: guard → đăng nhập → quay lại `/bang-gia` theo `next`; giao diện tối hiển thị đúng; console không lỗi.
 
-- [ ] **S4 Quản lý bảng giá & gói liệu trình** (size: M)
+- [x] **S4 Quản lý bảng giá & gói liệu trình** (size: M) ✅ 2026-11-04
   - **Goal:** chủ spa tạo/sửa/ngừng bán dịch vụ, phương án giá và gói (combo, buổi tặng theo dòng, hạn dùng, quà hiện vật).
   - **Acceptance:** AC1.1–AC1.6, AC1.8.
   - **Touches:** `catalog` service + repo; `POST/PATCH /services`, `/deactivate`, `/package-plans`, `/service-categories`; ETag/If-Match. Web: form dịch vụ và form gói (react-hook-form + zod).
   - **Tests:** quy tắc phương án giá (chỉ `all`, hoặc ≥ 1 giới tính) → 422 nếu sai; trùng tên gói đang bán → 422; dịch vụ đã dùng thì không xóa được, chỉ ngừng bán; sửa giá gói không đổi liệu trình đã bán (kiểm tra ở S6); Manager sửa → 403; If-Match lệch → 412.
   - **Security:** chỉ `catalog.manage`; DTO không nhận `tenant_id`/`id`.
   - **Depends on:** S3
+  - **Kết quả:**
+    - API ghi cho nhóm, dịch vụ và gói (`PUT` thay toàn bộ + `If-Match`, audit before/after, không có endpoint xóa).
+    - Quy tắc: dịch vụ đang bán phải có giá; giá chung và giá giới tính không được trộn; gói cần ≥ 1 dịch vụ, không trùng dịch vụ, dịch vụ phải đang bán, buổi tặng theo từng dòng.
+    - Web: form sửa / thêm dịch vụ trên `/bang-gia`, trang `/bang-gia/goi` (tạo / sửa gói combo), thêm nhóm.
+    - **Lỗi tìm ra khi thử trên Chrome:** người đã đăng nhập mở link `/dang-nhap?next=…` bị đưa về `/` thay vì `next`. Đã sửa, có test xác nhận đỏ → xanh.
+    - Test: 9 E2E catalog_manage (mutation khóa lạc quan ✓) + 26 web. Đã tạo gói thử trên Chrome thật.
 
 - [ ] **S5 Hồ sơ khách hàng & tìm kiếm** (size: M)
   - **Goal:** tìm khách theo SĐT/tên (không dấu) < 300 ms, tạo khách, xem/sửa hồ sơ; ghi chú sức khỏe mã hóa và chỉ trả về khi có quyền.

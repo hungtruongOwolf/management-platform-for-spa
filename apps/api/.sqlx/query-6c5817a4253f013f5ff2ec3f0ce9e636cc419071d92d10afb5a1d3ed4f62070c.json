@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.package_plan\n           SET name = $4, price = $5, validity_months = $6, gift_note = $7, active = $8, version = version + 1, updated_at = now()\n           WHERE tenant_id = $1 AND id = $2 AND version = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8",
+        "Text",
+        "Int8",
+        "Int4",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6c5817a4253f013f5ff2ec3f0ce9e636cc419071d92d10afb5a1d3ed4f62070c"
+}
