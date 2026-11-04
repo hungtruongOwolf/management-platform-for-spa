@@ -96,8 +96,8 @@ Thứ tự ưu tiên đúng như trên. Không cần job cập nhật trạng th
 ### operations
 | Bảng | Cột chính | Ràng buộc / index |
 |---|---|---|
-| `visit` | tenant_id, branch_id, customer_id, business_date, check_in_at, note_ct?, status (`completed`/`voided`), void_reason?, voided_at?, voided_by?, sale_id?, version | `CHECK (status <> 'voided' OR void_reason IS NOT NULL)`; index `(tenant_id, branch_id, business_date)`, `(tenant_id, customer_id, check_in_at DESC)` |
-| `visit_line` | tenant_id, visit_id, service_id, service_name_snapshot, source (`package`/`one_off`), customer_package_item_id?, staff_id, qty, price_variant, unit_value, expiry_override_reason? | `CHECK ((source='package') = (customer_package_item_id IS NOT NULL))`; `CHECK (qty > 0)`; index `(tenant_id, visit_id)`, `(tenant_id, staff_id)` |
+| `visit` ✅ 0007 | tenant_id, branch_id, customer_id, business_date, check_in_at, note_ct?, status (`completed`/`voided`), void_reason?, voided_at?, voided_by?, sale_id?, created_by, version. **Không có giờ ra** (EM) | `CHECK (status <> 'voided' OR (void_reason, voided_at, voided_by NOT NULL))`; `UNIQUE(tenant_id, sale_id)` (một sale cho một lượt); index `(tenant_id, branch_id, business_date, check_in_at DESC)`, `(tenant_id, customer_id, check_in_at DESC)`. app_rw: SELECT/INSERT/UPDATE, không DELETE |
+| `visit_line` ✅ 0007 | tenant_id, visit_id, position, service_id, service_name_snapshot, source (`package`/`one_off`), customer_package_id?, customer_package_item_id?, sessions_left_after?, staff_id, qty (1–50), price_variant?, unit_price, line_value, expiry_override_reason? | Một `CHECK` theo `source`: `package` cần package + item + `sessions_left_after`, không có `price_variant`; `one_off` không có package, có `price_variant`, `line_value = qty * unit_price`. `unit_price` = giá niêm yết (lẻ) hoặc `per_session_value` (gói); `line_value` = giá trị buổi thực trừ (tặng = 0) → cơ sở hoa hồng R2. index `(tenant_id, visit_id)`, `(tenant_id, staff_id)` (AC4.4), `(tenant_id, customer_package_item_id)` (lịch sử dùng gói). app_rw: SELECT/INSERT + `UPDATE (staff_id)` (sửa KTV) |
 
 ### sales
 | Bảng | Cột chính | Ràng buộc / index |
@@ -116,7 +116,7 @@ Thứ tự ưu tiên đúng như trên. Không cần job cập nhật trạng th
 | `audit_log` *(append-only)* | tenant_id?, actor_user_id, actor_kind (`user`/`platform_admin`/`system`), action, entity_type, entity_id, before `jsonb`, after `jsonb`, reason?, ip, at | index `(tenant_id, entity_type, entity_id, at)`. Trường sức khỏe ghi `"[redacted]"` |
 
 ## Migrations (forward-only, `sqlx migrate`)
-`0001_kernel` ✅ (pg_trgm, schema `app`, `app.current_tenant()`, tenant, branch, audit_log, idempotency_record, RLS + grants) → `0002_identity_org` → `0003_catalog` → `0004_crm` ✅ → `0005_sales_packages` ✅ (staff, sale, sale_line, payment, customer_package, customer_package_item) → `0006+` (operations ở S7, …). Kế hoạch tách riêng migration RLS/grants ban đầu đã bỏ: mỗi migration tự bật RLS và cấp quyền cho bảng của nó.
+`0001_kernel` ✅ (pg_trgm, schema `app`, `app.current_tenant()`, tenant, branch, audit_log, idempotency_record, RLS + grants) → `0002_identity_org` → `0003_catalog` → `0004_crm` ✅ → `0005_sales_packages` ✅ (staff, sale, sale_line, payment, customer_package, customer_package_item) → `0006_mfa` ✅ (S2b) → `0007_visits` ✅ (S7: visit, visit_line) → `0008` (S9) → …. Kế hoạch tách riêng migration RLS/grants ban đầu đã bỏ: mỗi migration tự bật RLS và cấp quyền cho bảng của nó.
 
 Thay đổi về sau theo **expand → backfill theo lô → kiểm tra → contract**. Mỗi migration được test trên snapshot giống production.
 

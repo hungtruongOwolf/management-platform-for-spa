@@ -36,6 +36,9 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
 | `package.item_not_found` | 422 | Dòng liệu trình không có hoặc của khách khác (AC4.8) |
 | `idempotency.key_reuse_mismatch` | 422 | Cùng `Idempotency-Key`, khác body |
 | `price.variant_not_available` | 422 | Ví dụ dịch vụ chỉ dành cho Nữ chọn cho khách Nam |
+| `price.gender_required` | 422 | Khách chưa có giới tính, dịch vụ có giá Nữ/Nam, không gửi `price_variant` (S7) |
+| `visit.check_in_in_future` / `visit.check_in_not_today` | 422 | Giờ vào > now + 5 phút / khác ngày nghiệp vụ hôm nay (S7) |
+| `visit.voided` | 409 | Sửa lượt đã hủy (S7, phòng cho S8) |
 | `sale.has_used_sessions` | 409 | Hủy hóa đơn gói đã dùng buổi |
 | `refund.exceeds_paid` | 422 | |
 | `day.locked` | 403 | Quản lý sửa ngày đã chốt |
@@ -70,26 +73,29 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
 | `POST /sales` | Bán gói: `lines[{package_plan_id, gift_note?}]` (1–10), `closer_staff_id`, `discount{amount, reason}?`, `payments[{method, amount, reference?}]` (0–2, mỗi hình thức 1 lần). `201` trả `SaleDto` kèm `customer_packages` (US3, S6 ✅) | `package.sell` (+ `sale.discount*`) | ✓ | write |
 | `GET /sales/{id}` | Chi tiết hóa đơn: lines, payments, customer_packages (S6 ✅) | `sale.read` | — | read |
 | `POST /sales/{id}/void` | Hủy hóa đơn + lý do (US6) | `record.void_same_day` / `_closed_day` 🔒 | ✓ | write |
-| `POST /visits` | Ghi lượt: lines, check_in/out, note, discount, payments[] (US4) | `visit.record` (+ `payment.collect`, `sale.discount*`, `package.use_expired_override` khi cần) | ✓ | write |
-| `GET /visits?date=` | Lượt trong ngày (mặc định hôm nay) | `visit.read` | — | read |
-| `GET /visits/{id}` · `PATCH /visits/{id}` | Xem / sửa giờ ra, ghi chú (If-Match) | `visit.read` / `visit.record` | — | read/write |
+| `POST /visits` | Ghi lượt: `lines` (1–20), `check_in_at?`, `note?`, `payments[]` (US4). `201` trả `VisitDto` (không bao giờ có `note`) (S7 ✅) | `visit.record` (+ `payment.collect` khi có tiền, `customer.health_notes.write` khi có ghi chú, `package.use_expired_override` khi có lý do) | ✓ | write |
+| `GET /visits?date=` | Lượt của một ngày nghiệp vụ (mặc định hôm nay), mới nhất trước, kèm lines + payments, **không có ghi chú** (S7 ✅) | `visit.read` | — | read |
+| `GET /visits/{id}` · `PATCH /visits/{id}` | Xem (có `note` nếu có `customer.health_notes.read`, `ETag`) / sửa ghi chú và KTV từng dòng (If-Match; không đụng buổi hay tiền; ngày khác hôm nay → `403 day.locked` trừ khi có `record.void_closed_day`) (S7 ✅) | `visit.read` / `visit.record` (+ `customer.health_notes.write` khi sửa ghi chú) | — | read/write |
 | `POST /visits/{id}/void` | Hủy lượt + lý do (US6) | `record.void_same_day` / `_closed_day` 🔒 | ✓ | write |
 | `POST /support-grants` · `DELETE /support-grants/{id}` | Cấp / thu hồi quyền hỗ trợ | `support_grant.manage` 🔒 | — | write |
 
 **Thân `POST /visits` (rút gọn):**
 ```json
-{ "customer_id": "…", "check_in_at": "2026-11-05T09:12:00+07:00", "check_out_at": null, "note": "…",
+{ "customer_id": "…", "check_in_at": "2026-11-05T09:12:00+07:00", "note": "…",
   "lines": [
-    { "service_id": "…", "source": "package", "customer_package_item_id": "…", "staff_id": "…", "qty": 1 },
-    { "service_id": "…", "source": "one_off", "staff_id": "…", "qty": 1, "price_variant": "male", "expiry_override_reason": null }
+    { "service_id": "…", "source": "package", "customer_package_item_id": "…", "staff_id": "…", "qty": 1,
+      "expiry_override_reason": null },
+    { "service_id": "…", "source": "one_off", "staff_id": "…", "qty": 1, "price_variant": "male" }
   ],
-  "discount": { "amount": 0, "reason": null },
   "payments": [ { "method": "bank_transfer", "amount": 100000, "reference": null } ] }
 ```
-- **Server tự quyết định giá:** `one_off` lấy `service_price` theo `price_variant`. Mặc định là giới tính của khách; khách chưa có giới tính thì bắt buộc gửi `price_variant`. Client **không gửi** đơn giá.
-- `package` lấy `per_session_value` của liệu trình.
+- **Không có giờ ra** và **không có giảm giá** trong lượt ở R1 (EM 2026-11-04; giảm giá dịch vụ lẻ để sau, xem S7 "Kết quả").
+- **Server tự quyết định giá:** `one_off` lấy giá của dịch vụ (khóa `FOR SHARE`) theo giới tính của khách. Khách chưa có giới tính: dịch vụ giá chung thì không cần gì, dịch vụ có giá Nữ/Nam thì bắt buộc gửi `price_variant` (thiếu → `422 price.gender_required`). Khách đã có giới tính mà gửi `price_variant` khác → `422 validation_failed` (`lines[i].price_variant`). Dịch vụ không có giá cho giới tính đó → `422 price.variant_not_available`. Field lạ (`unit_price`, `total`) bị bỏ qua.
+- `package`: `customer_package_item_id` bỏ trống → server chọn gói còn dùng được (chưa hủy, chưa hết hạn, còn buổi) chứa dịch vụ, **hết hạn sớm nhất trước, không thời hạn sau cùng, rồi mua sớm nhất** (AC4.3); không có → `422 package.item_not_found`. Item không chứa `service_id` của dòng → `422 validation_failed` (`not_in_package`). `unit_price` = `per_session_value`, `line_value` = giá trị buổi thực trừ (buổi tặng = 0).
+- Các item được trừ theo thứ tự `item_id` để hai lượt nhiều dòng tranh cùng các item không deadlock. Dòng `one_off` tạo một `sale` (không người chốt, `line_type='service'`) qua `sales::service::record_service_sale` trong cùng transaction; `sum(payments)` phải bằng tổng dòng lẻ (lượt chỉ trừ buổi mà gửi payment → `422 payment.amount_mismatch`).
+- Ghi chú buổi mã hóa AES-256-GCM (`kernel::crypto`, AAD `visit.note` + tenant + visit). Response lưu trong idempotency và audit **không bao giờ** chứa ghi chú.
 - `POST /sales` (S6): field lạ trong body (ví dụ `unit_price`, `total`) bị **bỏ qua**, không báo lỗi; mọi số tiền tính từ catalog. Request hash của idempotency = JSON đã parse rồi serialize lại (key đã sắp xếp), nên khác khoảng trắng hay thứ tự key vẫn là cùng một request.
-- `check_in_at`: không quá 5 phút trong tương lai, và phải thuộc ngày nghiệp vụ hiện tại, trừ khi có quyền void/sửa ngày cũ.
+- `check_in_at` (mặc định = lúc lưu): quá 5 phút trong tương lai → `422 visit.check_in_in_future`; khác ngày nghiệp vụ hiện tại (theo múi giờ của spa) → `422 visit.check_in_not_today`. Ghi lượt cho ngày cũ chưa hỗ trợ (để S8 / sửa ngày đã chốt).
 
 ## 4. Use case & tính toàn vẹn dữ liệu (áp dụng [data-integrity](../../../.claude/skills/backend-design/data-integrity.md))
 Mọi use case chạy trong **một transaction**, mở bởi `kernel::TenantTx`. `TenantTx` chạy `SET LOCAL app.tenant_id` và `SET LOCAL statement_timeout = '5s'`, giữ `actor` và `business_date`, và **không gọi mạng ra ngoài** trong lúc transaction mở.
