@@ -178,3 +178,7 @@ Ops: `ingest`, `query`, `lint`, `record`, `decision`, `skip`.
 - a11y bug found and fixed: inactive services and plans used `opacity-60`, which made axe report a serious color-contrast violation on /bang-gia. They now use `text-text-muted` (plans also get a dashed border).
 - p95 (debug build, 300 customers, 100 samples): every hot read endpoint is ~21–26 ms against a 300 ms budget. Lighthouse on /dang-nhap (mobile, slow 4G): LCP ≈ 2.1 s against a 2.5 s budget, so the margin is small.
 - CI: new `e2e` job (Postgres service, app_rw, Chromium; runs e2e + axe + p95 + lhci; uploads artifacts).
+
+## [2026-11-04] record | CI reliability review
+- EM felt CI fails often. Data: 24 runs → 21 success, 1 cancelled (superseded push), 2 failures — both in S1 while CI was being set up (cargo-deny path/license config, gitleaks permission). Every PR since S2 passed first time. Recent pain was local infra (disk full, Docker mkfs, reboot), plus PR #8 merged before CI started.
+- Fixes: `scripts/merge-when-green.sh` is the only merge path; `pnpm check` now also runs contract-drift + cargo-deny (`scripts/check-extra.mjs`). Rule added to coding-standards Git section.
