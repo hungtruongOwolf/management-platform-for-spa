@@ -4,6 +4,7 @@ pub mod config;
 mod health;
 pub mod jobs;
 pub mod middleware;
+pub mod openapi;
 
 use axum::Router;
 use middleware::HttpPolicy;
@@ -29,6 +30,7 @@ pub fn router(state: AppState, policy: &HttpPolicy) -> Router {
         .merge(health::routes())
         .merge(middleware::with_auth_rate_limit(auth))
         .merge(me)
+        .merge(catalog::http::routes())
         .with_state(state);
     middleware::apply(Router::new().nest("/api/v1", api), policy)
 }

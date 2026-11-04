@@ -66,13 +66,20 @@ Quy ước chung cho mọi ticket có endpoint:
   - **Tests:** sai mã → 401; replay mã cũ → 401; owner chưa bật MFA → bắt enroll.
   - **Depends on:** S2. Làm trước S11 (staging).
 
-- [ ] **S3 Tracer bullet: bảng giá (đọc) + seed menu** (size: S)
-  - **Goal:** quản lý đăng nhập → thấy menu thật, gồm 11 nhóm, 36 dịch vụ và giá Nữ/Nam, trên `/bang-gia`.
+- [x] **S3 Tracer bullet: bảng giá (đọc) + seed menu** (size: S) ✅ 2026-11-04
+  - **Goal:** quản lý đăng nhập → thấy menu thật, gồm 10 nhóm, 35 dịch vụ và giá Nữ/Nam, trên `/bang-gia`.
   - **Acceptance:** AC1.7, AC1.9.
   - **Touches:** crate `catalog` (`service_category`, `service`, `service_price`, `package_plan`, `package_plan_item`); `GET /service-categories|services|package-plans`; seed từ [service-catalog](../product/service-catalog.md). "Ôn ấm tử cung" được seed **ngừng bán** cho tới khi có giá. Web: trang `/bang-gia` chỉ đọc; client sinh từ OpenAPI.
-  - **Tests:** seed đủ 36 dịch vụ; dịch vụ giá chung trả 1 giá, giá theo giới tính trả 2 (hoặc 1 nếu chỉ áp dụng một giới); authz (Technician đọc được, chưa đăng nhập → 401); tenant B không thấy menu của tenant A.
+  - **Tests:** seed đủ 35 dịch vụ; dịch vụ giá chung trả 1 giá, giá theo giới tính trả 2 (hoặc 1 nếu chỉ áp dụng một giới); authz (Technician đọc được, chưa đăng nhập → 401); tenant B không thấy menu của tenant A.
   - **Security:** chỉ đọc; tenant isolation.
   - **Depends on:** S2
+  - **Kết quả:**
+    - Migration `0003_catalog` + crate `catalog`: `ServicePrices` (chung hoặc Nữ/Nam, thiếu một giới = không áp dụng), `price_for(gender)` sẵn cho S7, seed menu bằng `app seed-catalog`.
+    - Dịch vụ menu in cùng giá Nữ = Nam → giá chung. Ôn ấm tử cung seed **ngừng bán, chưa có giá**.
+    - Đính chính số liệu: menu có **35 dịch vụ / 10 nhóm** (wiki cũ ghi 36/11).
+    - **Hợp đồng OpenAPI** (`utoipa` 6 → `apps/api/openapi.json`, 9 endpoint) → `packages/api-client` (openapi-typescript). CI fail nếu spec hoặc client lệch với code.
+    - Web: AppShell + nav theo quyền, trang `/bang-gia`.
+    - Test: 27 test app (5 catalog E2E) + 18 web. Đã kiểm tra trên **Chrome thật**: guard → đăng nhập → quay lại `/bang-gia` theo `next`; giao diện tối hiển thị đúng; console không lỗi.
 
 - [ ] **S4 Quản lý bảng giá & gói liệu trình** (size: M)
   - **Goal:** chủ spa tạo/sửa/ngừng bán dịch vụ, phương án giá và gói (combo, buổi tặng theo dòng, hạn dùng, quà hiện vật).

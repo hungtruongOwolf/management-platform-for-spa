@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT plan_id, service_id, sessions, bonus_sessions FROM app.package_plan_item WHERE tenant_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "plan_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.package_plan_item",
+            "name": "plan_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "service_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.package_plan_item",
+            "name": "service_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "sessions",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.package_plan_item",
+            "name": "sessions"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "bonus_sessions",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.package_plan_item",
+            "name": "bonus_sessions"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "d48b5dac8aa383aedaaac97185e8e3732c0798f8aafe0651ff94405668428740"
+}

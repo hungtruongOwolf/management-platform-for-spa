@@ -54,7 +54,7 @@ Thay **sổ dịch vụ**, **sổ theo dõi liệu trình khách hàng** và ph�
 - AC1.6 (neg): Xóa dịch vụ đã từng được dùng → không cho xóa, chỉ cho ngừng bán.
 - AC1.7: Given dịch vụ "Thư Giãn" giá Nữ 79.000đ / Nam 99.000đ → bảng giá hiển thị cả hai giá; dịch vụ giá chung chỉ hiển thị một giá.
 - AC1.8 (neg): Dịch vụ không có giá nào áp dụng, hoặc giá theo giới tính mà thiếu cả Nữ lẫn Nam → `422`.
-- AC1.9: Seed ban đầu nạp đủ 36 dịch vụ / 11 nhóm từ [service-catalog](../service-catalog.md).
+- AC1.9: Seed ban đầu nạp đủ 35 dịch vụ / 10 nhóm từ [service-catalog](../service-catalog.md).
 
 ### US2: Hồ sơ khách hàng
 *Là quản lý, tôi muốn tìm và tạo hồ sơ khách trong vài giây, thấy ngay liệu trình còn lại, công nợ và lưu ý sức khỏe.*
