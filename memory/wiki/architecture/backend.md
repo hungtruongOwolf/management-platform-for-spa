@@ -42,12 +42,12 @@ Contract-first: các bảng dưới đây là hợp đồng API. Khi có repo, c
 ## 3. Endpoints
 | Method & path | Mục đích (story) | Permission | Idem | Rate |
 |---|---|---|---|---|
-| `POST /auth/login` | Đăng nhập (SĐT, mật khẩu, totp?) → Set-Cookie | công khai | — | auth |
+| `POST /auth/login` | Đăng nhập (SĐT, mật khẩu) → `200` + body `/me` + Set-Cookie; sai SĐT/mật khẩu/khóa/disabled đều → `401 auth.invalid_credentials` (S2 ✅; TOTP ở S2b) | công khai | — | auth (~20/phút/IP + khóa theo tài khoản) |
 | `POST /auth/logout`, `/auth/logout-all` | Đăng xuất | đã đăng nhập | — | write |
 | `POST /auth/reauth` | Nhập lại mật khẩu → `recent_auth_at` | đã đăng nhập | — | auth |
-| `POST /auth/activate` | Kích hoạt / đặt lại mật khẩu bằng token | công khai | — | auth |
+| `POST /auth/activate` | Kích hoạt / đặt lại mật khẩu bằng token (**spec #4**; R1 tạo tài khoản bằng CLI `app add-user`) | công khai | — | auth |
 | `GET /me` | User, tenant đang dùng, permissions, memberships | đã đăng nhập | — | read |
-| `POST /auth/switch-tenant` | Đổi spa đang làm việc | membership | — | write |
+| `POST /auth/switch-tenant` | Đổi spa đang làm việc; **xoay token** (đổi quyền); spa không phải thành viên → `404` | membership | — | write |
 | `GET /service-categories` · `GET /services?active=` · `GET /package-plans?active=` | Bảng giá (US1) | `catalog.read` | — | read |
 | `POST /service-categories` · `PATCH /service-categories/{id}` | | `catalog.manage` | — | write |
 | `POST /services` · `PATCH /services/{id}` · `POST /services/{id}/deactivate` | Dịch vụ + `prices[]` (US1) | `catalog.manage` | — | write |

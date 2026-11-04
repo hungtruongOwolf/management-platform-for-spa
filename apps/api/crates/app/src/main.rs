@@ -8,7 +8,12 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use tracing_subscriber::EnvFilter;
 
-/// `app` serves the API; `app migrate` applies migrations as the schema owner (DATABASE_URL).
+/// Commands:
+///   `app` | `app serve`                serve the API as app_rw (APP_DATABASE_URL)
+///   `app migrate`                      apply migrations as the schema owner (DATABASE_URL)
+///   `app create-tenant --slug S --name N [--branch B]`
+///   `app add-user --tenant S --phone P --name N --role owner|manager|technician`
+///                                      (password from env APP_NEW_USER_PASSWORD, never argv)
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Local development convenience: load .env if present. Real deployments set variables in the environment.
@@ -16,7 +21,11 @@ async fn main() -> anyhow::Result<()> {
     match std::env::args().nth(1).as_deref() {
         None | Some("serve") => serve().await,
         Some("migrate") => migrate().await,
-        Some(other) => anyhow::bail!("unknown command {other:?} (expected: serve | migrate)"),
+        Some("create-tenant") => create_tenant().await,
+        Some("add-user") => add_user().await,
+        Some(other) => anyhow::bail!(
+            "unknown command {other:?} (expected: serve | migrate | create-tenant | add-user)"
+        ),
     }
 }
 
@@ -48,15 +57,71 @@ async fn serve() -> anyhow::Result<()> {
     .context("server error")
 }
 
-async fn migrate() -> anyhow::Result<()> {
-    init_tracing(Environment::Development);
-    let url = std::env::var("DATABASE_URL")
-        .context("DATABASE_URL (schema owner) is required for migrate")?;
-    let pool = PgPoolOptions::new()
+async fn owner_pool() -> anyhow::Result<sqlx::PgPool> {
+    let url = std::env::var("DATABASE_URL").context("DATABASE_URL (schema owner) is required")?;
+    PgPoolOptions::new()
         .max_connections(1)
         .connect(&url)
         .await
-        .context("cannot connect as schema owner")?;
+        .context("cannot connect as schema owner")
+}
+
+/// Reads `--flag value` pairs after the command name.
+fn flag(name: &str) -> Option<String> {
+    let args: Vec<String> = std::env::args().skip(2).collect();
+    args.windows(2)
+        .find(|pair| pair[0] == format!("--{name}"))
+        .map(|pair| pair[1].clone())
+}
+
+fn required_flag(name: &str) -> anyhow::Result<String> {
+    flag(name).with_context(|| format!("--{name} is required"))
+}
+
+async fn create_tenant() -> anyhow::Result<()> {
+    init_tracing(Environment::Development);
+    let (slug, name) = (required_flag("slug")?, required_flag("name")?);
+    let branch = flag("branch").unwrap_or_else(|| "Cơ sở chính".to_owned());
+    let pool = owner_pool().await?;
+    let tenant = identity::provisioning::create_tenant(&pool, &slug, &name, &branch)
+        .await
+        .map_err(|e| anyhow::anyhow!("create-tenant failed: {}", e.code()))?;
+    tracing::info!(%tenant, %slug, "tenant created with system roles");
+    Ok(())
+}
+
+async fn add_user() -> anyhow::Result<()> {
+    init_tracing(Environment::Development);
+    let role_key = required_flag("role")?;
+    let role = identity::SystemRole::from_key(&role_key)
+        .with_context(|| format!("unknown role {role_key:?} (owner | manager | technician)"))?;
+    let password = std::env::var("APP_NEW_USER_PASSWORD")
+        .context("APP_NEW_USER_PASSWORD is required (kept out of argv and shell history)")?;
+    let (tenant, phone, name) = (
+        required_flag("tenant")?,
+        required_flag("phone")?,
+        required_flag("name")?,
+    );
+    let pool = owner_pool().await?;
+    let user = identity::provisioning::add_user(
+        &pool,
+        identity::provisioning::NewUser {
+            tenant_slug: &tenant,
+            phone: &phone,
+            full_name: &name,
+            password: &password,
+            role,
+        },
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("add-user failed: {}", e.code()))?;
+    tracing::info!(%user, %tenant, role = role.key(), "user added");
+    Ok(())
+}
+
+async fn migrate() -> anyhow::Result<()> {
+    init_tracing(Environment::Development);
+    let pool = owner_pool().await?;
     kernel::MIGRATOR
         .run(&pool)
         .await

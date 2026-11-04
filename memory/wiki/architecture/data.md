@@ -53,8 +53,8 @@ erDiagram
 |---|---|---|
 | `tenant` | name, slug, timezone (`Asia/Ho_Chi_Minh`), status, settings `jsonb` (ví dụ `manager_discount_max_pct=10`) | `UNIQUE(slug)`; không RLS (chỉ identity đọc) |
 | `branch` | tenant_id, name, address, active | `UNIQUE(tenant_id, name)` |
-| `user_account` *(toàn cục)* | phone_e164, full_name, password_hash, status (`pending`/`active`/`disabled`), mfa_secret_ct, mfa_enabled, failed_logins, locked_until | `UNIQUE(phone_e164)`. Một người có thể làm ở nhiều spa (qua membership) |
-| `membership` | tenant_id, user_id, staff_id?, status | `UNIQUE(tenant_id, user_id)` |
+| `user_account` *(toàn cục, ✅ 0002)* | phone_e164, full_name, password_hash (`$argon2id$`), status (`active`/`disabled`), failed_logins, locked_until. MFA (mfa_secret_ct, mfa_enabled) thêm ở S2b | `UNIQUE(phone_e164)`. Một người có thể làm ở nhiều spa (qua membership) |
+| `membership` | tenant_id, user_id, status (staff_id thêm khi có bảng `staff`, S6) | `UNIQUE(tenant_id, user_id)`; liệt kê spa của user khi login qua hàm `SECURITY DEFINER` `app.tenants_of_user` (chưa có tenant context) |
 | `role` | tenant_id, key, name, is_system | `UNIQUE(tenant_id, key)`; seed `owner`, `manager`, `technician` |
 | `role_permission` | tenant_id, role_id, permission `text` | PK `(tenant_id, role_id, permission)`; permission phải thuộc danh mục trong code (app kiểm tra khi ghi) |
 | `membership_role` | tenant_id, membership_id, role_id | PK cả ba cột |

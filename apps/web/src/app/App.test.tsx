@@ -1,32 +1,101 @@
+import { createMemoryHistory } from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
-function mockFetch(response: Response | Error) {
-  return vi.spyOn(globalThis, "fetch").mockImplementation(() =>
-    response instanceof Error ? Promise.reject(response) : Promise.resolve(response),
-  );
+const ME = {
+  user: { id: "u1", full_name: "Chủ Spa", phone: "0905 123 456" },
+  active_tenant: { id: "t1", name: "Viên Phúc Y Đường" },
+  tenants: [{ id: "t1", name: "Viên Phúc Y Đường" }],
+  permissions: ["catalog.read"],
+};
+
+type Route = (method: string, path: string, body: unknown) => Response;
+
+function server(route: Route) {
+  return vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+    const path = typeof input === "string" ? input : input instanceof URL ? input.pathname : input.url;
+    const method = init?.method ?? "GET";
+    const body: unknown = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
+    return Promise.resolve(route(method, path, body));
+  });
 }
 
-describe("App shell", () => {
-  it("shows the brand and a connected API status with its version", async () => {
-    const fetchSpy = mockFetch(Response.json({ status: "ok", version: "0.1.0" }));
-    render(<App />);
+const unauthorized = () => new Response(JSON.stringify({ status: 401, code: "auth.unauthenticated" }), { status: 401 });
 
-    expect(screen.getByRole("heading", { name: "Viên Phúc Y Đường" })).toBeInTheDocument();
-    expect(await screen.findByText("API: đã kết nối (v0.1.0)")).toBeInTheDocument();
-    expect(fetchSpy).toHaveBeenCalledWith("/api/v1/health", expect.objectContaining({ credentials: "same-origin" }));
+function renderAt(path: string) {
+  return render(<App history={createMemoryHistory({ initialEntries: [path] })} />);
+}
+
+describe("auth flow", () => {
+  it("sends anonymous visitors to the login page", async () => {
+    server(() => unauthorized());
+    renderAt("/");
+    expect(await screen.findByRole("heading", { name: "Viên Phúc Y Đường" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Đăng nhập" })).toBeInTheDocument();
   });
 
-  it("shows a Vietnamese error when the API is unreachable", async () => {
-    mockFetch(new TypeError("Failed to fetch"));
-    render(<App />);
-    expect(await screen.findByText("API: không kết nối được")).toBeInTheDocument();
+  it("logs in and lands on the signed-in shell", async () => {
+    let loggedIn = false;
+    const fetchSpy = server((method, path, body) => {
+      if (path === "/api/v1/me") return loggedIn ? Response.json(ME) : unauthorized();
+      if (path === "/api/v1/auth/login" && method === "POST") {
+        expect(body).toEqual({ phone: "0905 123 456", password: "mat-khau-dung" });
+        loggedIn = true;
+        return Response.json(ME);
+      }
+      return new Response(null, { status: 404 });
+    });
+    renderAt("/");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText("Số điện thoại"), "0905 123 456");
+    await user.type(screen.getByLabelText("Mật khẩu"), "mat-khau-dung");
+    await user.click(screen.getByRole("button", { name: "Đăng nhập" }));
+
+    expect(await screen.findByText("Xin chào, Chủ Spa")).toBeInTheDocument();
+    expect(fetchSpy).toHaveBeenCalledWith("/api/v1/auth/login", expect.objectContaining({ credentials: "same-origin" }));
   });
 
-  it("treats a non-OK response as disconnected", async () => {
-    mockFetch(new Response("boom", { status: 503 }));
-    render(<App />);
-    expect(await screen.findByText("API: không kết nối được")).toBeInTheDocument();
+  it("shows a Vietnamese error and clears the password on wrong credentials", async () => {
+    server((_method, path) =>
+      path === "/api/v1/auth/login"
+        ? new Response(JSON.stringify({ status: 401, code: "auth.invalid_credentials" }), { status: 401 })
+        : unauthorized(),
+    );
+    renderAt("/dang-nhap");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText("Số điện thoại"), "0905123456");
+    await user.type(screen.getByLabelText("Mật khẩu"), "sai-mat-khau");
+    await user.click(screen.getByRole("button", { name: "Đăng nhập" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Số điện thoại hoặc mật khẩu không đúng.");
+    expect(screen.getByLabelText("Mật khẩu")).toHaveValue("");
+  });
+
+  it("validates empty fields before calling the API", async () => {
+    const fetchSpy = server(() => unauthorized());
+    renderAt("/dang-nhap");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Đăng nhập" }));
+    expect(await screen.findByText("Nhập số điện thoại.")).toBeInTheDocument();
+    expect(fetchSpy).not.toHaveBeenCalledWith("/api/v1/auth/login", expect.anything());
+  });
+
+  it("quick lock logs out and returns to the login page", async () => {
+    let loggedIn = true;
+    const fetchSpy = server((method, path) => {
+      if (path === "/api/v1/me") return loggedIn ? Response.json(ME) : unauthorized();
+      if (path === "/api/v1/auth/logout" && method === "POST") {
+        loggedIn = false;
+        return new Response(null, { status: 204 });
+      }
+      return new Response(null, { status: 404 });
+    });
+    renderAt("/");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Khóa nhanh" }));
+    expect(await screen.findByRole("button", { name: "Đăng nhập" })).toBeInTheDocument();
+    expect(fetchSpy).toHaveBeenCalledWith("/api/v1/auth/logout", expect.objectContaining({ method: "POST" }));
   });
 });

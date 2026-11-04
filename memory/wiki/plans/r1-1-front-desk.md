@@ -45,13 +45,26 @@ Quy ước chung cho mọi ticket có endpoint:
     - Middleware: request-id, problem+json cho mọi lỗi, timeout 10 giây, body tối đa 64 KB, rate limit theo IP (5/giây, burst 60), kiểm tra Origin cho request ghi.
     - `app migrate` và job purge chạy mỗi giờ. CI có Postgres service + `SQLX_OFFLINE`.
 
-- [ ] **S2 Đăng nhập & session (tối thiểu cho R1)** (size: M)
+- [x] **S2 Đăng nhập & session (tối thiểu cho R1)** (size: M) ✅ 2026-11-04
   - **Goal:** đăng nhập bằng SĐT + mật khẩu; seed tenant, chủ spa, quản lý bằng CLI. Giao diện quản lý tài khoản thuộc spec #4.
   - **Acceptance:** G1, G2; ADR-0004.
   - **Touches:** crate `identity` (`user_account`, `membership`, `role`, `role_permission`, `membership_role`, `session`, `auth_token`); endpoints `/auth/login|logout|logout-all|reauth`, `/me`, `/auth/switch-tenant`; CLI `app seed-tenant` (tạo role hệ thống theo [authz-matrix](../security/authz-matrix.md)); web: `/dang-nhap`, `AuthContext`, route guard, xử lý 401/403, nút Khóa nhanh.
   - **Tests:** đăng nhập đúng → cookie `__Host-session` đủ cờ; sai mật khẩu và sai SĐT trả cùng một lỗi; khóa tạm sau N lần sai; session xoay khi đăng nhập; logout-all hủy mọi session; idle/absolute timeout; request ghi với `Origin` lạ → 403; `/me` trả đúng permission theo role; reauth hết hạn → `auth.reauth_required`.
   - **Security:** Argon2id trong `spawn_blocking`; token chỉ lưu dạng hash; rate limit lớp `auth`; MFA TOTP cho owner (có thể tách S2b nếu vượt size).
   - **Depends on:** S1
+  - **Kết quả:**
+    - Migration `0002_identity`: account/session toàn cục, membership/role/permission theo tenant + RLS, hàm `tenants_of_user`.
+    - Crate `identity`: Argon2id, token 256-bit (lưu hash), khóa tăng dần 15 phút → 24 giờ, session idle 12 giờ / absolute 30 ngày, xoay token khi login và khi đổi spa, reauth trong 5 phút, extractor `CurrentSession` / `AuthUser` (→ `Actor`).
+    - CLI `create-tenant`, `add-user` (mật khẩu đọc từ env, không qua argv).
+    - Web: TanStack Router, `/dang-nhap` (zod + react-hook-form), guard (chỉ là UX), `next` chống open redirect, Khóa nhanh.
+    - Test: 62 Rust (11 HTTP E2E auth; mutation lockout ✓) + 13 web. E2E qua Vite proxy ✓.
+    - Dữ liệu dev: spa `vien-phuc-y-duong` + tài khoản owner thử `0905000001`.
+
+- [ ] **S2b MFA TOTP cho chủ spa** (size: S)
+  - **Goal:** chủ spa (và platform admin) bắt buộc TOTP khi đăng nhập (ADR-0004).
+  - **Touches:** migration thêm `mfa_secret_ct`, `mfa_enabled`; enroll (QR) + verify; login bước 2; mã khôi phục.
+  - **Tests:** sai mã → 401; replay mã cũ → 401; owner chưa bật MFA → bắt enroll.
+  - **Depends on:** S2. Làm trước S11 (staging).
 
 - [ ] **S3 Tracer bullet: bảng giá (đọc) + seed menu** (size: S)
   - **Goal:** quản lý đăng nhập → thấy menu thật, gồm 11 nhóm, 36 dịch vụ và giá Nữ/Nam, trên `/bang-gia`.

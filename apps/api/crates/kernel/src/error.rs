@@ -26,6 +26,9 @@ pub enum AppError {
     Unauthenticated,
     #[error("re-authentication required")]
     ReauthRequired,
+    /// Wrong phone or password — deliberately indistinguishable from each other.
+    #[error("invalid credentials")]
+    InvalidCredentials,
     #[error("forbidden: {code}")]
     Forbidden { code: &'static str },
     #[error("not found")]
@@ -59,7 +62,9 @@ impl AppError {
 
     pub fn status(&self) -> StatusCode {
         match self {
-            Self::Unauthenticated | Self::ReauthRequired => StatusCode::UNAUTHORIZED,
+            Self::Unauthenticated | Self::ReauthRequired | Self::InvalidCredentials => {
+                StatusCode::UNAUTHORIZED
+            }
             Self::Forbidden { .. } => StatusCode::FORBIDDEN,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Validation(_) | Self::Unprocessable { .. } => StatusCode::UNPROCESSABLE_ENTITY,
@@ -75,6 +80,7 @@ impl AppError {
         match self {
             Self::Unauthenticated => "auth.unauthenticated",
             Self::ReauthRequired => "auth.reauth_required",
+            Self::InvalidCredentials => "auth.invalid_credentials",
             Self::Forbidden { code }
             | Self::Unprocessable { code }
             | Self::Conflict { code }
@@ -211,5 +217,13 @@ mod tests {
         );
         assert_eq!(AppError::StaleVersion.code(), "conflict.stale_version");
         assert_eq!(AppError::forbidden().code(), "auth.forbidden");
+        assert_eq!(
+            AppError::InvalidCredentials.status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            AppError::InvalidCredentials.code(),
+            "auth.invalid_credentials"
+        );
     }
 }

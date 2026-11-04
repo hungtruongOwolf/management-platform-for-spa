@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.session SET last_seen_at = now(), idle_expires_at = least($2, absolute_expires_at) WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4424c875553fba2651a8aae2674747971a53d7bd006b6fb38bfc14a7a8d30a8b"
+}

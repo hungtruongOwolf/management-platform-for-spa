@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.user_id, s.active_tenant_id, s.last_seen_at, s.absolute_expires_at, s.recent_auth_at\n           FROM app.session s JOIN app.user_account u ON u.id = s.user_id\n           WHERE s.token_hash = $1 AND s.revoked_at IS NULL\n             AND now() < s.idle_expires_at AND now() < s.absolute_expires_at\n             AND u.status = 'active'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.session",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.session",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "active_tenant_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.session",
+            "name": "active_tenant_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "last_seen_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.session",
+            "name": "last_seen_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "absolute_expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.session",
+            "name": "absolute_expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "recent_auth_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.session",
+            "name": "recent_auth_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "331678feea9ab4c9b3dc54a900de3b8a177d0952e5befae8dd93f5ac479f45b1"
+}

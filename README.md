@@ -19,6 +19,9 @@ cp .env.example .env        # rồi chỉnh nếu cần
 pnpm install
 pnpm dev:db                 # Postgres 16 ở 127.0.0.1:5432 (tạo role app_rw ở lần chạy đầu)
 pnpm db:migrate             # áp migration bằng DATABASE_URL (owner)
+# tạo spa + tài khoản (mật khẩu đọc từ env, không lộ trong lịch sử shell):
+cargo run --manifest-path apps/api/Cargo.toml -p app -- create-tenant --slug vien-phuc-y-duong --name "Viên Phúc Y Đường" --branch "Phường Đông Hà"
+APP_NEW_USER_PASSWORD='…' cargo run --manifest-path apps/api/Cargo.toml -p app -- add-user --tenant vien-phuc-y-duong --phone 09xxxxxxxx --name "…" --role owner
 pnpm dev:api                # Rust API ở 127.0.0.1:8080 (tự đọc .env)
 pnpm dev:web                # SPA ở http://localhost:5173, proxy /api → API
 ```

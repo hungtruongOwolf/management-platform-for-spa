@@ -12,6 +12,7 @@ workspace = true
 anyhow = "1.0.104"
 axum = "0.8.9"
 dotenvy = "0.15.7"
+identity = { version = "0.1.0", path = "../identity" }
 kernel = { version = "0.1.0", path = "../kernel" }
 secrecy = "0.10.3"
 serde = { version = "1.0.229", features = ["derive"] }
@@ -27,6 +28,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 
 [dev-dependencies]
 http-body-util = "0.1.5"
+identity = { path = "../identity" }
 kernel = { path = "../kernel", features = ["testing"] }
 tokio = { version = "1.54.1", features = ["macros", "rt"] }
 tower = { version = "0.5.3", features = ["util"] }

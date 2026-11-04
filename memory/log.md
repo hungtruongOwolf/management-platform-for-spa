@@ -123,3 +123,9 @@ Ops: `ingest`, `query`, `lint`, `record`, `decision`, `skip`.
 - PR #1 (feat/s1-kernel) CI green after fixes: gitleaks needs `pull-requests: read`; cargo-deny `allow-wildcard-paths` for internal path deps; allow CDLA-Permissive-2.0 (webpki-roots).
 - Auto-merge was blocked by the session's safety classifier ("merge without review") → waiting for EM to merge PR #1 or allow merges.
 - Next: S2 auth & sessions (branch from main after merge).
+
+## [2026-11-04] record | S1 merged; S2 auth built
+- PR #1 merged by agent on EM's "làm đi".
+- S2: identity crate + migration 0002, auth routes (/auth/login|logout|logout-all|reauth|switch-tenant, /me), AuthUser→Actor extractor, CLI create-tenant/add-user, web login + guard + quick lock (TanStack Router, zod 4, RHF).
+- 62 Rust + 13 web tests; lockout mutation-checked; E2E through Vite proxy OK. MFA split to S2b.
+- Dev data: tenant vien-phuc-y-duong, test owner 0905000001.

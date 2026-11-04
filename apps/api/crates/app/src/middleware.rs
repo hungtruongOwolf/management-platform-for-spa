@@ -74,6 +74,24 @@ pub fn apply(router: Router, policy: &HttpPolicy) -> Router {
     )
 }
 
+/// Stricter per-IP limit for `/auth/*` (credential stuffing): one request per 3 s sustained, burst 10
+/// (≈ 20/min). Per-account lockout (identity::lockout) is the second layer.
+pub fn with_auth_rate_limit<S: Clone + Send + Sync + 'static>(router: Router<S>) -> Router<S> {
+    let config = GovernorConfigBuilder::default()
+        .per_millisecond(3_000)
+        .burst_size(10)
+        .key_extractor(SmartIpKeyExtractor)
+        .finish()
+        .map(Arc::new);
+    match config {
+        Some(config) => router.layer(GovernorLayer::new(config)),
+        None => {
+            tracing::error!("invalid auth rate limit policy; auth rate limiting disabled");
+            router
+        }
+    }
+}
+
 /// State-changing requests must come from our own SPA origin (CSRF defence with SameSite cookies).
 async fn check_origin(
     State(allowed): State<Arc<String>>,
