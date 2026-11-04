@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.membership_role (tenant_id, membership_id, role_id)\n           SELECT $1, $2, id FROM app.role WHERE tenant_id = $1 AND key = $3\n           ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e6ff4c77737ea3d4ed354bed000845beae07b1e761cc466722e18a43cded6aa7"
+}

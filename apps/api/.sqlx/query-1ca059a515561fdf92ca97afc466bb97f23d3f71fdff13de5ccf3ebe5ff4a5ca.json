@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.membership (id, tenant_id, user_id) VALUES ($1, $2, $3)\n           ON CONFLICT (tenant_id, user_id) DO UPDATE SET status = 'active'\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.membership",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1ca059a515561fdf92ca97afc466bb97f23d3f71fdff13de5ccf3ebe5ff4a5ca"
+}

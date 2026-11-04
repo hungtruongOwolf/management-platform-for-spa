@@ -24,7 +24,7 @@ Người dùng R1–R3 là nhân sự spa (chủ, quản lý, KTV): vài ngườ
 - **CSRF:** `SameSite=Strict` + kiểm tra header `Origin` trên mọi request ghi.
 - **Chống dò mật khẩu:** rate limit theo IP và theo tài khoản, chậm dần, thông báo lỗi giống nhau.
 - **Tài khoản do chủ spa/quản lý tạo**, kèm link kích hoạt một lần (token 128-bit, hạn 24 giờ, lưu hash) gửi qua Zalo/tin nhắn thủ công. Quên mật khẩu: quản lý/chủ spa tạo link đặt lại, không cần email.
-- **MFA TOTP bắt buộc** cho Chủ spa và Platform admin; tùy chọn cho người khác.
+- **MFA TOTP bắt buộc** cho Chủ spa và Platform admin; tùy chọn cho người khác. *(Hiện thực ở ticket S2b; S2 đã có mật khẩu, khóa tài khoản, session, reauth.)*
 - Phân quyền: permission-based, role là dữ liệu ([principles](../architecture/principles.md) #2). Permissions được nạp vào `AuthUser` mỗi request từ session.
 
 ## Consequences

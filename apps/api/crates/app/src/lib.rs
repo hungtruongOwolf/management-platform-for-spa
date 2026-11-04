@@ -16,10 +16,19 @@ pub struct AppState {
     pub pool: PgPool,
 }
 
+impl axum::extract::FromRef<AppState> for PgPool {
+    fn from_ref(state: &AppState) -> Self {
+        state.pool.clone()
+    }
+}
+
 /// Builds the full HTTP router with every protection applied. Kept separate from `main` so tests drive it in-process.
 pub fn router(state: AppState, policy: &HttpPolicy) -> Router {
+    let (auth, me) = identity::http::routes::<AppState>();
     let api = Router::<AppState>::new()
         .merge(health::routes())
+        .merge(middleware::with_auth_rate_limit(auth))
+        .merge(me)
         .with_state(state);
     middleware::apply(Router::new().nest("/api/v1", api), policy)
 }
