@@ -177,6 +177,8 @@ Quy ước chung cho mọi ticket có endpoint:
       - GitHub environment `staging`.
       - Monitor Better Stack + Healthchecks.io.
     - Sau đó: deploy, smoke, backup thử, restore drill, rồi tick S11.
+    - **Smoke test local đã chạy (2026-11-04):** `sh infra/prodtest/run.sh` qua hết. Image: api 40 MB, web 59 MB, backup 117 MB. migrate bằng owner OK, API healthy, Caddy phục vụ SPA + proxy `/api`, CSP/HSTS/cache đúng, API không mở cổng ra host, backup → restore drill khôi phục đủ 4 migration. 2 bảng không có RLS là `user_account`, `session` (toàn cục theo ADR-0003/0004, đúng thiết kế).
+    - Lỗi tìm ra khi chạy: file prodtest mount `../postgres-init` nhưng compose tính đường dẫn từ thư mục của file `-f` đầu tiên (`infra/`) → role `app_rw` không được tạo. Đã sửa thành `./postgres-init`.
 
 ## Kiểm tra độ phủ
 | Spec | Ticket |
