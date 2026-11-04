@@ -229,6 +229,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opening-balances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["import_opening_balance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/package-plans": {
         parameters: {
             query?: never;
@@ -550,6 +566,66 @@ export interface components {
             manual_key: string;
             /** @description `otpauth://totp/...` URI; the client renders it as a QR code. */
             otpauth_uri: string;
+        };
+        OpeningBalanceCreate: {
+            customer?: components["schemas"]["CustomerCreate"] | null;
+            /**
+             * Format: uuid
+             * @description An existing customer of this spa. Send exactly one of `customer_id` and `customer`.
+             */
+            customer_id?: string | null;
+            /** @description 1–10 packages. */
+            packages: components["schemas"]["OpeningPackageCreate"][];
+        };
+        OpeningBalanceDto: {
+            /** @description True when `customer` was sent and a new profile was created. */
+            customer_created: boolean;
+            /** Format: uuid */
+            customer_id: string;
+            customer_packages: components["schemas"]["CustomerPackageDto"][];
+        };
+        OpeningItemCreate: {
+            /** Format: uuid */
+            service_id: string;
+            /**
+             * Format: int32
+             * @description Bonus sessions in the original package (default 0).
+             */
+            sessions_bonus?: number;
+            /**
+             * Format: int32
+             * @description Paid sessions in the original package.
+             */
+            sessions_purchased: number;
+            /**
+             * Format: int32
+             * @description Sessions still unused today, ≤ purchased + bonus.
+             */
+            sessions_remaining: number;
+        };
+        OpeningPackageCreate: {
+            /** Format: date */
+            expires_on?: string | null;
+            gift_note?: string | null;
+            items: components["schemas"]["OpeningItemCreate"][];
+            /** @description Package name; defaults to the plan's name. Required without a plan. */
+            name?: string | null;
+            /**
+             * Format: uuid
+             * @description The current plan this old package matches, if any (reference only: items and price are
+             *     what the paper book says).
+             */
+            package_plan_id?: string | null;
+            /**
+             * Format: int64
+             * @description Price the customer originally paid, in đồng (for the per-session value; not revenue).
+             */
+            sold_price: number;
+            /**
+             * Format: date
+             * @description Original registration date (not in the future).
+             */
+            starts_on: string;
         };
         /** @enum {string} */
         PackageOriginDto: "sale" | "opening_balance";
@@ -1410,6 +1486,73 @@ export interface operations {
                 };
             };
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    import_opening_balance: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description One key per import form; a retry with the same key replays the first response */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpeningBalanceCreate"];
+            };
+        };
+        responses: {
+            /** @description Packages created with origin opening_balance; no sale, no payment */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpeningBalanceDto"];
+                };
+            };
+            /** @description idempotency.key_required / key_invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description customer or plan not in this spa */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description customer.phone_taken with existing_id */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed (fields prefixed customer. / packages[j].), idempotency.key_reuse_mismatch */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -42,6 +42,11 @@ const FIELD_MESSAGES: Record<string, string> = {
   not_found: "Không còn tồn tại.",
   exceeds_subtotal: "Lớn hơn số tiền phải trả.",
   must_be_positive: "Phải lớn hơn 0.",
+  exceeds_total: "Số buổi còn lại lớn hơn tổng số buổi.",
+  in_future: "Không được là ngày trong tương lai.",
+  before_start: "Trước ngày bắt đầu.",
+  invalid_format: "Sai định dạng.",
+  invalid: "Giá trị không hợp lệ.",
 };
 
 export function messageFor(error: unknown): string {

@@ -33,6 +33,7 @@ use utoipa::OpenApi;
         org::http::list_staff,
         packages::http::read_package,
         packages::http::list_customer_packages,
+        packages::http::import_opening_balance,
         sales::http::create_sale,
         sales::http::read_sale,
     ),
@@ -41,7 +42,7 @@ use utoipa::OpenApi;
         (name = "catalog", description = "Bảng giá dịch vụ và gói liệu trình"),
         (name = "customers", description = "Hồ sơ khách hàng"),
         (name = "staff", description = "Nhân viên (chọn người chốt, KTV)"),
-        (name = "packages", description = "Liệu trình của khách"),
+        (name = "packages", description = "Liệu trình của khách, nhập từ sổ cũ"),
         (name = "sales", description = "Bán liệu trình, thanh toán"),
     )
 )]
@@ -87,6 +88,7 @@ mod tests {
             "/api/v1/sales/{id}",
             "/api/v1/customer-packages/{id}",
             "/api/v1/customers/{id}/packages",
+            "/api/v1/opening-balances",
         ] {
             assert!(paths.contains(&expected), "{expected} missing from OpenAPI");
         }
@@ -105,6 +107,8 @@ mod tests {
             "SaleDto",
             "CustomerPackageDto",
             "StaffDto",
+            "OpeningBalanceCreate",
+            "OpeningBalanceDto",
         ] {
             assert!(schemas.contains_key(schema), "{schema} missing");
         }

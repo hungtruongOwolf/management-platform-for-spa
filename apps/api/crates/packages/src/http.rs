@@ -1,17 +1,24 @@
-//! Package read endpoints for the customer profile.
+//! Package endpoints: reads for the customer profile, and the opening-balance import (S9).
 
 use crate::domain::PackageStatus;
+use crate::opening_balance::{self, OpeningBalanceCreate, OpeningBalanceDto};
 use crate::service::{self, CustomerPackage, PackageItem};
+use axum::body::Bytes;
 use axum::extract::{FromRef, Path, State};
-use axum::http::{HeaderValue, header};
+use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, NaiveDate, Utc};
+use crm::FieldCipher;
 use identity::AuthUser;
-use kernel::AppError;
+use kernel::http::IdempotencyKey;
+use kernel::idempotency::hash_request;
+use kernel::{AppError, FieldError};
 use serde::Serialize;
+use serde_json::Value;
 use sqlx::PgPool;
+use std::sync::Arc;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -128,15 +135,21 @@ impl From<CustomerPackage> for CustomerPackageDto {
 pub fn routes<S>() -> Router<S>
 where
     PgPool: FromRef<S>,
+    Arc<FieldCipher>: FromRef<S>,
     S: Clone + Send + Sync + 'static,
 {
     Router::new()
         .route("/customer-packages/{id}", get(read_package))
         .route("/customers/{id}/packages", get(list_customer_packages))
+        .route("/opening-balances", post(import_opening_balance))
 }
 
 fn no_store(body: impl Serialize) -> Response {
-    let mut response = Json(body).into_response();
+    no_store_status(StatusCode::OK, body)
+}
+
+fn no_store_status(status: StatusCode, body: impl Serialize) -> Response {
+    let mut response = (status, Json(body)).into_response();
     response
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -167,5 +180,41 @@ pub async fn list_customer_packages(
             .into_iter()
             .map(CustomerPackageDto::from)
             .collect::<Vec<_>>(),
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v1/opening-balances", tag = "packages", request_body = OpeningBalanceCreate,
+    params(("Idempotency-Key" = Uuid, Header, description = "One key per import form; a retry with the same key replays the first response")),
+    responses(
+        (status = 201, body = OpeningBalanceDto, description = "Packages created with origin opening_balance; no sale, no payment"),
+        (status = 400, description = "idempotency.key_required / key_invalid"),
+        (status = 401), (status = 403),
+        (status = 404, description = "customer or plan not in this spa"),
+        (status = 409, description = "customer.phone_taken with existing_id"),
+        (status = 422, description = "validation_failed (fields prefixed customer. / packages[j].), idempotency.key_reuse_mismatch")))]
+pub async fn import_opening_balance(
+    State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
+    user: AuthUser,
+    IdempotencyKey(key): IdempotencyKey,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    let invalid = || AppError::Validation(vec![FieldError::new("body", "invalid")]);
+    let value: Value = serde_json::from_slice(&body).map_err(|_| invalid())?;
+    // Hash the parsed JSON re-serialized (sorted keys), as `POST /sales` does.
+    let canonical = serde_json::to_vec(&value).map_err(|e| AppError::Internal(e.to_string()))?;
+    let input: OpeningBalanceCreate = serde_json::from_value(value).map_err(|_| invalid())?;
+    let (status, body) = opening_balance::import(
+        &pool,
+        &cipher,
+        &user.actor,
+        key,
+        hash_request(&canonical),
+        &input,
+    )
+    .await?;
+    Ok(no_store_status(
+        StatusCode::from_u16(status).unwrap_or(StatusCode::CREATED),
+        body,
     ))
 }

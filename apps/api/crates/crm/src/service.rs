@@ -158,6 +158,25 @@ pub async fn create(
     health_note: Option<&str>,
 ) -> Result<CustomerView, AppError> {
     actor.require(Permission::CustomerWrite)?;
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let view = create_in(&mut tx, cipher, actor, input, health_note).await?;
+    tx.commit().await?;
+    Ok(view)
+}
+
+/// Creates a customer inside the caller's transaction, so another use case can create the
+/// customer and its own records atomically (S9 opening balance). Checks `customer.write` (and
+/// `customer.health_notes.write` when a note is given) itself. A duplicate live phone is
+/// `409 customer.phone_taken` with `existing_id`; field errors name the profile fields
+/// (`full_name`, `phone`, …).
+pub async fn create_in(
+    tx: &mut TenantTx,
+    cipher: &FieldCipher,
+    actor: &Actor,
+    input: ProfileInput,
+    health_note: Option<&str>,
+) -> Result<CustomerView, AppError> {
+    actor.require(Permission::CustomerWrite)?;
     let health_note = clean_health_note(health_note)?;
     if health_note.is_some() {
         actor.require(Permission::CustomerHealthNotesWrite)?;
@@ -169,8 +188,6 @@ pub async fn create(
         .map(|note| cipher.encrypt(note, &customer_aad(actor.tenant_id.as_uuid(), id)))
         .transpose()
         .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let fields = CustomerFields {
         full_name: &c.full_name,
         search_text: &c.search_text,
@@ -181,10 +198,10 @@ pub async fn create(
         source: c.source.as_deref(),
         note: c.note.as_deref(),
     };
-    repo::insert(&mut tx, id, &fields, ct.as_deref()).await?;
-    let row = repo::get(&mut tx, id).await?.ok_or(AppError::NotFound)?;
+    repo::insert(tx, id, &fields, ct.as_deref()).await?;
+    let row = repo::get(tx, id).await?.ok_or(AppError::NotFound)?;
     audit::record(
-        &mut tx,
+        tx,
         actor,
         AuditEntry {
             action: "customer.create",
@@ -196,7 +213,6 @@ pub async fn create(
         },
     )
     .await?;
-    tx.commit().await?;
     view(cipher, actor, row)
 }
 

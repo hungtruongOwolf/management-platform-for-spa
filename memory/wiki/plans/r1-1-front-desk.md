@@ -155,13 +155,22 @@ Quy ước chung cho mọi ticket có endpoint:
   - **Security:** thao tác 🔒 cần reauth; append-only; audit có lý do.
   - **Depends on:** S7
 
-- [ ] **S9 Nhập liệu trình dở dang từ sổ cũ** (size: S)
+- [x] **S9 Nhập liệu trình dở dang từ sổ cũ** (size: S)
   - **Goal:** nhập nhanh khoảng 1–2 phút mỗi khách; không phát sinh doanh thu.
   - **Acceptance:** AC8.1, AC8.3–AC8.5.
   - **Touches:** `POST /opening-balances` (`origin=opening_balance`, không tạo sale hay payment). Web: `/nhap-so-cu` (tạo khách + gói trong một form), nhãn "Nhập từ sổ cũ".
   - **Tests:** còn 4/10 → tạo đúng; còn > tổng → 422; không có payment nào trong ngày nhập; Technician → 403; idempotency.
   - **Security:** permission `opening_balance.import`; audit.
   - **Depends on:** S6
+  - **Kết quả:**
+    - Không cần migration: permission `opening_balance.import` đã có trong `kernel::perm` và seed role (Owner, Manager) từ S2, nên tenant đã tạo cũng có quyền.
+    - `POST /opening-balances` (bắt buộc `Idempotency-Key`), module `packages::opening_balance`. Body: `customer_id` **hoặc** `customer` (hồ sơ khách mới, giống `POST /customers`) + `packages[1..10]` gồm `package_plan_id?`, `name?` (mặc định tên gói), `sold_price`, `starts_on` (không ở tương lai), `expires_on?`, `gift_note?`, `items[{service_id, sessions_purchased, sessions_bonus=0, sessions_remaining}]`. Trả `201 {customer_id, customer_created, customer_packages[]}`.
+    - Một transaction: claim idempotency → tìm hoặc tạo khách → kiểm tra tất cả gói (báo mọi lỗi một lần, field có tiền tố `customer.` / `packages[j].`) → `packages::service::create(origin=OpeningBalance)` → audit `opening_balance.import` + `customer_package.create`. Không tạo `sale`, `sale_line`, `payment`, nên doanh thu và sổ quỹ không bị ảnh hưởng (AC8.1, AC8.3).
+    - Số buổi và giá lấy theo sổ giấy (client gửi), vì đây là dữ liệu lịch sử chứ không phải bán mới; gói trong bảng giá chỉ để tham chiếu và lấy tên mặc định. Dịch vụ phải thuộc spa (`422 …service_id not_found`); khách hoặc gói của spa khác → `404`; trùng SĐT → `409 customer.phone_taken` + `existing_id`.
+    - Hàm public mới (thêm, không phá vỡ): `crm::service::create_in(tx, cipher, actor, input, health_note)` (`create` giờ gọi nó), `catalog::service::service_name(tx, id)`, `packages::service::validate(&NewPackage)`. `packages::http::routes` cần thêm `Arc<FieldCipher>` trong state.
+    - Web `/nhap-so-cu` (menu "Nhập sổ cũ" theo quyền): tìm khách (↑↓ Enter) hoặc "+ Khách mới" ngay trong form; mỗi gói chọn từ bảng giá (kể cả gói ngừng bán) hoặc "Gói khác (nhập tay)" nhiều dịch vụ; kiểm tra còn lại ≤ tổng ngay trên form; "Lưu và nhập tiếp" xóa form, tạo key mới, đưa con trỏ về ô tìm khách; đếm số liệu trình đã nhập; trùng SĐT → nút "Dùng hồ sơ đó". Nhãn "Nhập từ sổ cũ" trên hồ sơ đã có từ S6, nay có test.
+    - Test: 8 E2E API `opening_balances.rs` + 1 dòng `authz_matrix.rs` + 1 unit; 10 web; Playwright `e2e/specs/opening-balance.spec.ts` (axe sạch). Mutation check: bỏ guard còn lại ≤ tổng và cho import ghi một payment → test đỏ, rồi khôi phục.
+    - Chưa làm: "còn nợ" của US8/front-desk-flows (công nợ hoãn ở R1, US5); bộ đếm là theo phiên trình duyệt chứ không phải "hôm nay" từ server.
 
 - [ ] **S10 Hardening & nghiệm thu với quản lý** (size: S)
   - **Goal:** chứng minh spec R1-1 xong.

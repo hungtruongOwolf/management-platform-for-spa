@@ -522,6 +522,62 @@
         }
       }
     },
+    "/api/v1/opening-balances": {
+      "post": {
+        "tags": [
+          "packages"
+        ],
+        "operationId": "import_opening_balance",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per import form; a retry with the same key replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpeningBalanceCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Packages created with origin opening_balance; no sale, no payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpeningBalanceDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required / key_invalid"
+          },
+          "401": {},
+          "403": {},
+          "404": {
+            "description": "customer or plan not in this spa"
+          },
+          "409": {
+            "description": "customer.phone_taken with existing_id"
+          },
+          "422": {
+            "description": "validation_failed (fields prefixed customer. / packages[j].), idempotency.key_reuse_mismatch"
+          }
+        }
+      }
+    },
     "/api/v1/package-plans": {
       "get": {
         "tags": [
@@ -1574,6 +1630,153 @@
           }
         }
       },
+      "OpeningBalanceCreate": {
+        "type": "object",
+        "required": [
+          "packages"
+        ],
+        "properties": {
+          "customer": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CustomerCreate",
+                "description": "A new customer profile, created in the same transaction (needs `customer.write`)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "customer_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "An existing customer of this spa. Send exactly one of `customer_id` and `customer`."
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpeningPackageCreate"
+            },
+            "description": "1–10 packages."
+          }
+        },
+        "additionalProperties": false
+      },
+      "OpeningBalanceDto": {
+        "type": "object",
+        "required": [
+          "customer_id",
+          "customer_created",
+          "customer_packages"
+        ],
+        "properties": {
+          "customer_created": {
+            "type": "boolean",
+            "description": "True when `customer` was sent and a new profile was created."
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "customer_packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomerPackageDto"
+            }
+          }
+        }
+      },
+      "OpeningItemCreate": {
+        "type": "object",
+        "required": [
+          "service_id",
+          "sessions_purchased",
+          "sessions_remaining"
+        ],
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sessions_bonus": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Bonus sessions in the original package (default 0).",
+            "minimum": 0
+          },
+          "sessions_purchased": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Paid sessions in the original package.",
+            "minimum": 0
+          },
+          "sessions_remaining": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Sessions still unused today, ≤ purchased + bonus.",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "OpeningPackageCreate": {
+        "type": "object",
+        "required": [
+          "sold_price",
+          "starts_on",
+          "items"
+        ],
+        "properties": {
+          "expires_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "gift_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpeningItemCreate"
+            }
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Package name; defaults to the plan's name. Required without a plan."
+          },
+          "package_plan_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The current plan this old package matches, if any (reference only: items and price are\nwhat the paper book says)."
+          },
+          "sold_price": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Price the customer originally paid, in đồng (for the per-session value; not revenue)."
+          },
+          "starts_on": {
+            "type": "string",
+            "format": "date",
+            "description": "Original registration date (not in the future)."
+          }
+        },
+        "additionalProperties": false
+      },
       "PackageOriginDto": {
         "type": "string",
         "enum": [
@@ -2321,7 +2524,7 @@
     },
     {
       "name": "packages",
-      "description": "Liệu trình của khách"
+      "description": "Liệu trình của khách, nhập từ sổ cũ"
     },
     {
       "name": "sales",
