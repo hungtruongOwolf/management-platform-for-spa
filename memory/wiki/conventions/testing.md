@@ -78,3 +78,8 @@ Connection string: `E2E_DATABASE_URL` / `E2E_APP_DATABASE_URL`. Nếu không đ�
 ## 5. CI
 
 Job `e2e` trong `.github/workflows/ci.yml` dùng Postgres service `vpyd_e2e` và role `app_rw` từ `infra/postgres-init/01-roles.sql`. Các bước: build API, cài Chromium, chạy `pnpm e2e` (gồm axe + p95), rồi `pnpm lhci`. Khi fail thì upload `playwright-report`, `test-results` và `lighthouse-report`. Khi pass thì upload `perf-report`.
+
+## Gotcha: DB dev cũ hơn `main`
+Khi `main` có migration mới mà DB dev chưa chạy, `pnpm db:migrate` không biên dịch được: macro `query!` kiểm tra SQL với DB còn thiếu bảng. Chạy với `SQLX_OFFLINE=true` để build từ `.sqlx` đã commit:
+`SQLX_OFFLINE=true pnpm db:migrate` (PowerShell: `$env:SQLX_OFFLINE='true'; pnpm db:migrate`).
+Trong worktree của agent, luôn đặt `DATABASE_URL` rõ ràng: `.env` của repo chính nằm ở thư mục cha và có thể bị đọc nhầm.
