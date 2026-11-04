@@ -1336,6 +1336,7 @@ name = "packages"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "catalog",
  "chrono",
  "crm",
  "identity",

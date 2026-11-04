@@ -17,6 +17,7 @@ import {
   CustomersPage,
 } from "../features/customers/CustomersPage";
 import { PriceListPage } from "../features/catalog/PriceListPage";
+import { OpeningBalancePage } from "../features/opening-balance/OpeningBalancePage";
 import { AppShell, HomePage } from "./AppShell";
 
 interface RouterContext {
@@ -136,6 +137,12 @@ const customerRoute = createRoute({
   },
 });
 
+const openingBalanceRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/nhap-so-cu",
+  component: OpeningBalancePage,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   mfaRoute,
@@ -145,6 +152,7 @@ const routeTree = rootRoute.addChildren([
     plansRoute,
     customersRoute,
     customerRoute,
+    openingBalanceRoute,
   ]),
 ]);
 

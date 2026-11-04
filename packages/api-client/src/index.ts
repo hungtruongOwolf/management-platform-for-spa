@@ -25,3 +25,7 @@ export type PaymentCreate = Schemas["PaymentCreate"];
 export type CustomerPackage = Schemas["CustomerPackageDto"];
 export type CustomerPackageItem = Schemas["CustomerPackageItemDto"];
 export type PackageStatus = Schemas["PackageStatusDto"];
+export type OpeningBalanceCreate = Schemas["OpeningBalanceCreate"];
+export type OpeningBalance = Schemas["OpeningBalanceDto"];
+export type OpeningPackageCreate = Schemas["OpeningPackageCreate"];
+export type OpeningItemCreate = Schemas["OpeningItemCreate"];

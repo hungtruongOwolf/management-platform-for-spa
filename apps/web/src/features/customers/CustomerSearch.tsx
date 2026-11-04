@@ -8,9 +8,12 @@ import { GENDER_LABEL, isSearchable, searchQuery } from "./api";
 export function CustomerSearch({
   onSelect,
   onCreate,
+  autoFocus = false,
 }: {
   onSelect: (c: CustomerSummary) => void;
   onCreate: (typed: string) => void;
+  /** Focus the search box on mount (continuous data entry). */
+  autoFocus?: boolean;
 }) {
   const [text, setText] = useState("");
   const [term, setTerm] = useState("");
@@ -59,6 +62,7 @@ export function CustomerSearch({
         id={`${listId}-input`}
         type="search"
         autoComplete="off"
+        autoFocus={autoFocus}
         value={text}
         onChange={(e) => {
           setText(e.target.value);

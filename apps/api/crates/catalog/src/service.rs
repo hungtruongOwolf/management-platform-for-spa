@@ -181,3 +181,9 @@ pub async fn plan_snapshot(tx: &mut TenantTx, id: Uuid) -> Result<Option<PlanSna
         items,
     }))
 }
+
+/// Name of a service of the caller's tenant (active or not), read inside the caller's
+/// transaction for snapshotting (`None` = no such service here). The caller authorizes.
+pub async fn service_name(tx: &mut TenantTx, id: Uuid) -> Result<Option<String>, AppError> {
+    Ok(repo::service(tx, id).await?.map(|s| s.name))
+}

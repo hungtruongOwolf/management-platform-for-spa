@@ -229,6 +229,13 @@ const ROUTES: &[Route] = &[
         Access::Perm(P::CustomerRead, OWNER_MANAGER),
     )
     .id(Target::Customer),
+    route(
+        "POST",
+        "/api/v1/opening-balances",
+        Access::Perm(P::OpeningBalanceImport, OWNER_MANAGER),
+    )
+    .body(opening_balance_body)
+    .idempotent(),
     // sales
     route(
         "POST",
@@ -295,6 +302,16 @@ fn sell_body(f: &Fixture) -> Option<Value> {
         "customer_id": f.customer, "closer_staff_id": f.staff,
         "lines": [{"package_plan_id": f.plan}],
         "payments": [{"method": "cash", "amount": 1_200_000}]
+    }))
+}
+
+fn opening_balance_body(f: &Fixture) -> Option<Value> {
+    Some(json!({
+        "customer_id": f.customer,
+        "packages": [{
+            "name": "Gói 10 buổi (sổ cũ)", "sold_price": 1_200_000, "starts_on": "2026-06-01",
+            "items": [{"service_id": f.service, "sessions_purchased": 10, "sessions_remaining": 4}]
+        }]
     }))
 }
 

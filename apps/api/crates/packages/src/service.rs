@@ -63,7 +63,8 @@ pub struct NewPackage {
 
 const MAX_SESSIONS: u32 = 500;
 
-fn validate(p: &NewPackage) -> Result<(), AppError> {
+/// Shape rules for a new package (also run by [`create`]); field names are relative to the package.
+pub fn validate(p: &NewPackage) -> Result<(), AppError> {
     let mut errors = Vec::new();
     let name_len = p.name.trim().chars().count();
     if name_len == 0 || name_len > 200 {

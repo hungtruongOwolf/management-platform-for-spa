@@ -66,7 +66,7 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
 | `GET /customers/{id}/packages` | Liệu trình của khách, mới nhất trước, còn X/Y buổi (S6 ✅) | `customer.read` | — | read |
 | `POST /customer-packages/{id}/extend` | Gia hạn + lý do (If-Match) (US7) | `package.extend_expiry` | ✓ | write |
 | `POST /customer-packages/{id}/cancel` 🔒 | Hủy + hoàn tiền (US7) | `package.cancel_refund` | ✓ | write |
-| `POST /opening-balances` | Nhập liệu trình dở dang (US8) | `opening_balance.import` | ✓ | write |
+| `POST /opening-balances` | Nhập liệu trình dở dang (US8, S9 ✅): `customer_id` **hoặc** `customer{…như POST /customers}` + `packages[{package_plan_id?, name?, sold_price, starts_on, expires_on?, gift_note?, items[{service_id, sessions_purchased, sessions_bonus?, sessions_remaining}]}]` (1–10). `201 {customer_id, customer_created, customer_packages}`; không sale/payment; lỗi field có tiền tố `customer.` / `packages[j].`; bắt buộc `Idempotency-Key` | `opening_balance.import` (+ `customer.write` khi tạo khách) | ✓ | write |
 | `POST /sales` | Bán gói: `lines[{package_plan_id, gift_note?}]` (1–10), `closer_staff_id`, `discount{amount, reason}?`, `payments[{method, amount, reference?}]` (0–2, mỗi hình thức 1 lần). `201` trả `SaleDto` kèm `customer_packages` (US3, S6 ✅) | `package.sell` (+ `sale.discount*`) | ✓ | write |
 | `GET /sales/{id}` | Chi tiết hóa đơn: lines, payments, customer_packages (S6 ✅) | `sale.read` | — | read |
 | `POST /sales/{id}/void` | Hủy hóa đơn + lý do (US6) | `record.void_same_day` / `_closed_day` 🔒 | ✓ | write |
@@ -101,6 +101,7 @@ Mọi use case chạy trong **một transaction**, mở bởi `kernel::TenantTx`
 | Thu tiền (payments[] trong sale/visit) | R1: `sum(payments) = total`, `amount_paid = total` | Kiểm tra trong service trước khi insert; `CHECK (amount_paid BETWEEN 0 AND total)` vẫn giữ để bật công nợ sau này. Idempotency |
 | Hủy hóa đơn | Payment không bị xóa | Mỗi payment sinh một `reversal` (`UNIQUE reversal_of`); `amount_paid` về 0; `WHERE status='open'` |
 | Bán gói | Snapshot giá / tên / buổi | Transaction duy nhất tạo sale + lines + customer_package + items + payments |
+| Nhập sổ cũ (S9) | `sessions_remaining ≤ purchased + bonus`; không sale, không payment | Transaction duy nhất: khách (tìm hoặc tạo qua `crm::service::create_in`) + các gói `origin=opening_balance` + audit. Idempotency |
 | Hoàn tiền | Tổng hoàn ≤ tổng đã thu của gói | Khóa `customer_package FOR UPDATE`, kiểm tra, insert `refund`, set `cancelled_at`, đưa `sessions_remaining` về 0 |
 | Sửa khách / dịch vụ / gói / gia hạn | | Optimistic lock `version` + `If-Match` → `412` |
 | Tạo khách | SĐT duy nhất trong tenant | Partial `UNIQUE` → `23505` → `409 customer.phone_taken` |

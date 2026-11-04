@@ -32,6 +32,11 @@ export function AppShell() {
               Khách hàng
             </Link>
           )}
+          {can(me, "opening_balance.import") && (
+            <Link to="/nhap-so-cu" className={navLink}>
+              Nhập sổ cũ
+            </Link>
+          )}
           {can(me, "catalog.read") && (
             <Link to="/bang-gia" className={navLink}>
               Bảng giá

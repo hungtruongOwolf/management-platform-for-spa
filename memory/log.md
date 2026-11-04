@@ -195,3 +195,10 @@ Ops: `ingest`, `query`, `lint`, `record`, `decision`, `skip`.
 - Web `/xac-thuc` (code / recovery code), enrollment with a client-side QR (`uqr`), recovery codes shown once. Old auth tests moved to a manager account; 11 new HTTP MFA tests, mutation-checked (replay guard, pending guard, counter reset).
 - Dev: owner `0905000001` enrolls on first login; needs `APP_DATA_KEY` in `.env`.
 - Open: voluntary MFA for other roles (enroll from a full session), regenerating recovery codes, revoking sessions when a role gains `requires_mfa` (role editing is spec #4), audit entries for MFA events (audit_log is tenant-scoped).
+
+## [2026-11-04] record | S9 opening balance (nhập sổ cũ) built
+- Branch `feat/s9-opening-balance` on main. No migration: `opening_balance.import` was already seeded for Owner/Manager since S2.
+- `POST /opening-balances` (Idempotency-Key) in `packages::opening_balance`: existing `customer_id` or a new `customer` profile + 1–10 packages (plan reference or free-form items with sessions left); one TenantTx, packages `origin=opening_balance`, no sale/payment, audit `opening_balance.import`. Field errors prefixed `customer.` / `packages[j].`.
+- New public fns: `crm::service::create_in` (tx variant; `create` delegates), `catalog::service::service_name`, `packages::service::validate`.
+- Web `/nhap-so-cu` + nav "Nhập sổ cũ"; "Lưu và nhập tiếp" resets and refocuses the search. Tests: 8 API + 1 matrix row, 10 web, 2 Playwright (axe clean); remaining ≤ total guard and no-payment assertion mutation-checked.
+- Skipped stage: no separate backend-design pass (contract recorded in backend.md). Deferred: "còn nợ" (receivables, US5 deferred in R1). Dev note: the agent scratchpad is shared between parallel agents — name helper scripts per ticket.
