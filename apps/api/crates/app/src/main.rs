@@ -16,6 +16,7 @@ use tracing_subscriber::EnvFilter;
 ///   `app openapi`                      print the OpenAPI contract (written to apps/api/openapi.json)
 ///   `app add-user --tenant S --phone P --name N --role owner|manager|technician`
 ///                                      (password from env APP_NEW_USER_PASSWORD, never argv)
+///   `app add-staff --tenant S --name N --position P`   closer / technician for the pickers
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Local development convenience: load .env if present. Real deployments set variables in the environment.
@@ -25,13 +26,14 @@ async fn main() -> anyhow::Result<()> {
         Some("migrate") => migrate().await,
         Some("create-tenant") => create_tenant().await,
         Some("add-user") => add_user().await,
+        Some("add-staff") => add_staff().await,
         Some("seed-catalog") => seed_catalog().await,
         Some("openapi") => {
             print!("{}", app::openapi::json()?);
             Ok(())
         }
         Some(other) => anyhow::bail!(
-            "unknown command {other:?} (expected: serve | migrate | create-tenant | add-user | seed-catalog | openapi)"
+            "unknown command {other:?} (expected: serve | migrate | create-tenant | add-user | add-staff | seed-catalog | openapi)"
         ),
     }
 }
@@ -131,6 +133,21 @@ async fn add_user() -> anyhow::Result<()> {
     .await
     .map_err(|e| anyhow::anyhow!("add-user failed: {}", e.code()))?;
     tracing::info!(%user, %tenant, role = role.key(), "user added");
+    Ok(())
+}
+
+async fn add_staff() -> anyhow::Result<()> {
+    init_tracing(Environment::Development);
+    let (tenant, name, position) = (
+        required_flag("tenant")?,
+        required_flag("name")?,
+        required_flag("position")?,
+    );
+    let pool = owner_pool().await?;
+    let staff = org::provisioning::add_staff(&pool, &tenant, &name, &position)
+        .await
+        .map_err(|e| anyhow::anyhow!("add-staff failed: {}", e.code()))?;
+    tracing::info!(%staff, %tenant, "staff added");
     Ok(())
 }
 

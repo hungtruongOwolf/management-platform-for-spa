@@ -16,6 +16,9 @@ crm = { version = "0.1.0", path = "../crm" }
 dotenvy = "0.15.7"
 identity = { version = "0.1.0", path = "../identity" }
 kernel = { version = "0.1.0", path = "../kernel" }
+org = { version = "0.1.0", path = "../org" }
+packages = { version = "0.1.0", path = "../packages" }
+sales = { version = "0.1.0", path = "../sales" }
 secrecy = "0.10.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
@@ -31,9 +34,13 @@ utoipa = { version = "6.0.0", features = ["uuid"] }
 
 [dev-dependencies]
 catalog = { path = "../catalog" }
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
 crm = { path = "../crm" }
 http-body-util = "0.1.5"
 identity = { path = "../identity" }
 kernel = { path = "../kernel", features = ["testing"] }
-tokio = { version = "1.54.1", features = ["macros", "rt"] }
+org = { path = "../org" }
+packages = { path = "../packages" }
+tokio = { version = "1.54.1", features = ["macros", "rt", "time"] }
+uuid = "1.29.0"
 tower = { version = "0.5.3", features = ["util"] }

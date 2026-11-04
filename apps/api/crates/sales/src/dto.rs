@@ -1,0 +1,116 @@
+//! Wire types of the sales API. The stored idempotent response is a `SaleDto`, so a replay is
+//! byte-for-byte what the first request returned.
+
+use chrono::{DateTime, NaiveDate, Utc};
+use packages::http::CustomerPackageDto;
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+use uuid::Uuid;
+
+/// Body of `POST /sales`. Prices are never read from the client: unknown fields such as
+/// `unit_price` or `total` are ignored and every amount is computed from the catalog.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SaleCreate {
+    pub customer_id: Uuid,
+    /// The staff member who closed the sale (must be currently working here).
+    pub closer_staff_id: Uuid,
+    /// 1–10 packages.
+    pub lines: Vec<SaleLineCreate>,
+    pub discount: Option<DiscountCreate>,
+    /// 0–2 payments, one per method, summing exactly to the total (R1 collects in full).
+    pub payments: Vec<PaymentCreate>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SaleLineCreate {
+    pub package_plan_id: Uuid,
+    /// Gift note for this package; omitted = the plan's, empty = none.
+    pub gift_note: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct DiscountCreate {
+    /// đồng, ≤ subtotal.
+    pub amount: i64,
+    /// Required when `amount` > 0.
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PaymentMethodDto {
+    Cash,
+    BankTransfer,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct PaymentCreate {
+    pub method: PaymentMethodDto,
+    /// đồng, > 0.
+    pub amount: i64,
+    pub reference: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SaleStatusDto {
+    Open,
+    Voided,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SaleLineTypeDto {
+    Package,
+    Service,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SaleLineDto {
+    pub id: Uuid,
+    pub line_type: SaleLineTypeDto,
+    pub package_plan_id: Option<Uuid>,
+    pub customer_package_id: Option<Uuid>,
+    pub service_id: Option<Uuid>,
+    pub description: String,
+    pub qty: i32,
+    pub unit_price: i64,
+    pub line_total: i64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PaymentKindDto {
+    Payment,
+    Reversal,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PaymentDto {
+    pub id: Uuid,
+    pub kind: PaymentKindDto,
+    pub method: PaymentMethodDto,
+    pub amount: i64,
+    pub reference: Option<String>,
+    pub paid_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SaleDto {
+    pub id: Uuid,
+    pub customer_id: Uuid,
+    pub business_date: NaiveDate,
+    pub subtotal: i64,
+    pub discount_amount: i64,
+    pub discount_reason: Option<String>,
+    pub total: i64,
+    pub amount_paid: i64,
+    pub status: SaleStatusDto,
+    pub closer_staff_id: Option<Uuid>,
+    pub closer_name: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub lines: Vec<SaleLineDto>,
+    pub payments: Vec<PaymentDto>,
+    /// Packages this sale created.
+    pub customer_packages: Vec<CustomerPackageDto>,
+}

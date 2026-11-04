@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.timezone,\n                  (t.settings ->> 'manager_discount_max_pct') AS manager_discount_max_pct,\n                  (SELECT b.id FROM app.branch b WHERE b.tenant_id = t.id AND b.active\n                   ORDER BY b.created_at, b.id LIMIT 1) AS branch_id\n           FROM app.tenant t WHERE t.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "timezone",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.tenant",
+            "name": "timezone"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "manager_discount_max_pct",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "branch_id",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "6b123cd42551aca0a80681024f1833fd37489eacdcc7f4ca3da316eb1d84135a"
+}

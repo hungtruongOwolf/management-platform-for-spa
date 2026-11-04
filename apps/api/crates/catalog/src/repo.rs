@@ -487,3 +487,52 @@ pub enum Versioned {
     Service,
     Plan,
 }
+
+/// The plan row alone, locked against concurrent edits until the caller's transaction ends.
+pub async fn lock_plan(tx: &mut TenantTx, id: Uuid) -> Result<Option<PlanRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let row = sqlx::query!(
+        r#"SELECT id, name, price, validity_months, gift_note, active, version
+           FROM app.package_plan WHERE tenant_id = $1 AND id = $2 FOR SHARE"#,
+        tenant,
+        id
+    )
+    .fetch_optional(tx.conn())
+    .await?;
+    row.map(|p| {
+        Ok(PlanRow {
+            price: Money::vnd(p.price)
+                .map_err(|_| AppError::Internal(format!("corrupt plan price {}", p.id)))?,
+            items: Vec::new(),
+            id: p.id,
+            name: p.name,
+            validity_months: p.validity_months,
+            gift_note: p.gift_note,
+            active: p.active,
+            version: p.version,
+        })
+    })
+    .transpose()
+}
+
+/// `(service_id, service name, sessions, bonus_sessions)` of each item, in menu order.
+pub async fn plan_items_with_names(
+    tx: &mut TenantTx,
+    plan_id: Uuid,
+) -> Result<Vec<(Uuid, String, i32, i32)>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let rows = sqlx::query!(
+        r#"SELECT i.service_id, s.name, i.sessions, i.bonus_sessions
+           FROM app.package_plan_item i JOIN app.service s ON s.tenant_id = i.tenant_id AND s.id = i.service_id
+           WHERE i.tenant_id = $1 AND i.plan_id = $2
+           ORDER BY s.sort_order, s.name"#,
+        tenant,
+        plan_id
+    )
+    .fetch_all(tx.conn())
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.service_id, r.name, r.sessions, r.bonus_sessions))
+        .collect())
+}

@@ -1,0 +1,161 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.customer_id, s.business_date, s.subtotal, s.discount_amount, s.discount_reason, s.total,\n                  s.amount_paid, s.status, s.closer_staff_id, st.full_name AS \"closer_name?\", s.created_at\n           FROM app.sale s\n           LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id\n           WHERE s.tenant_id = $1 AND s.id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "customer_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "customer_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "business_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "business_date"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "subtotal",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "subtotal"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "discount_amount",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "discount_amount"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "discount_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "discount_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "total",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "total"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "amount_paid",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "amount_paid"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "closer_staff_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "closer_staff_id"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "closer_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.staff",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "764cc5bb4f519591e42117cffc2efa71d2b4f836bcbeda7fc3146bb78b689fe7"
+}

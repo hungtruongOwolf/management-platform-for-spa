@@ -8,6 +8,7 @@ import { useState } from "react";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
 import { GENDER_LABEL, setHealthNote } from "./api";
+import { CustomerPackages } from "../sales/CustomerPackages";
 import { CustomerForm } from "./CustomerForm";
 
 /** Highlighted health warning. Rendered only when the API sent the field (caller has permission). */
@@ -82,7 +83,7 @@ function HealthNoteEditor({
   );
 }
 
-/** Customer card + edit (profile page). Package and visit history join in S6/S7. */
+/** Customer card + edit (profile page) with packages; visit history joins in S7. */
 export function CustomerProfile({
   customer,
   onChanged,
@@ -129,6 +130,7 @@ export function CustomerProfile({
       {customer.address && (
         <p className="text-sm text-text-muted">Địa chỉ: {customer.address}</p>
       )}
+      <CustomerPackages customerId={customer.id} />
       {editing && (
         <div className="mt-3 space-y-3">
           <CustomerForm

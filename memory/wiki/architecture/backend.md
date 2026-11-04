@@ -32,7 +32,9 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
 | `payment.amount_mismatch` | 422 | Tổng thanh toán khác số phải trả (R1 luôn thu đủ) |
 | `discount.reason_required` | 422 | |
 | `discount.limit_exceeded` | 403 | |
-| `staff.inactive` | 422 | |
+| `staff.inactive` | 422 | Người chốt / KTV không tồn tại, đã nghỉ, hoặc thuộc spa khác (S6 ✅) |
+| `package.item_not_found` | 422 | Dòng liệu trình không có hoặc của khách khác (AC4.8) |
+| `idempotency.key_reuse_mismatch` | 422 | Cùng `Idempotency-Key`, khác body |
 | `price.variant_not_available` | 422 | Ví dụ dịch vụ chỉ dành cho Nữ chọn cho khách Nam |
 | `sale.has_used_sessions` | 409 | Hủy hóa đơn gói đã dùng buổi |
 | `refund.exceeds_paid` | 422 | |
@@ -52,7 +54,7 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
 | `POST /service-categories` · `PUT /service-categories/{id}` | Thêm / đổi tên + thứ tự nhóm (S4 ✅) | `catalog.manage` | — | write |
 | `POST /services` · `PUT /services/{id}` (If-Match) | Dịch vụ + `prices` (all \| female/male). **Ngừng bán = `active:false` trong PUT**, không có endpoint xóa (S4 ✅) | `catalog.manage` | — | write |
 | `POST /package-plans` · `PUT /package-plans/{id}` (If-Match) | Gói: items `service × sessions + bonus` (S4 ✅) | `catalog.manage` | — | write |
-| `GET /staff?status=active` | Picker KTV, người chốt | `staff.read_basic` | — | read |
+| `GET /staff?status=active` | Picker KTV, người chốt; `status` = `active` (mặc định), `left` hoặc `all`; chỉ trả tên, chức vụ, trạng thái (S6 ✅) | `staff.read_basic` | — | read |
 | `GET /customers?q=` | Tìm theo SĐT (≥ 3 số) / tên (≥ 2 ký tự, không dấu) (US2) | `customer.read` | — | search |
 | `POST /customers` | Tạo khách (US2) | `customer.write` (+ `health_notes.write` nếu gửi ghi chú) | — | write |
 | `GET /customers/{id}` | Hồ sơ: liệu trình (trạng thái suy ra), tổng nợ; `health_note` chỉ khi có quyền (US2) | `customer.read` | — | read |
@@ -60,12 +62,13 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
 | `PUT /customers/{id}/health-note` | Đặt/xóa ghi chú sức khỏe (If-Match) | `customer.health_notes.write` | — | write |
 | `GET /customers/{id}/visits` | Lịch sử buổi | `visit.read` | — | read |
 | `POST /customers/{id}/anonymize` 🔒 | Ẩn danh hóa | `customer.anonymize` | ✓ | write |
-| `GET /customer-packages/{id}` | Chi tiết + lịch sử sử dụng (US7) | `customer.read` | — | read |
+| `GET /customer-packages/{id}` | Chi tiết + items, trạng thái suy ra (S6 ✅; lịch sử sử dụng thêm ở S7) | `customer.read` | — | read |
+| `GET /customers/{id}/packages` | Liệu trình của khách, mới nhất trước, còn X/Y buổi (S6 ✅) | `customer.read` | — | read |
 | `POST /customer-packages/{id}/extend` | Gia hạn + lý do (If-Match) (US7) | `package.extend_expiry` | ✓ | write |
 | `POST /customer-packages/{id}/cancel` 🔒 | Hủy + hoàn tiền (US7) | `package.cancel_refund` | ✓ | write |
 | `POST /opening-balances` | Nhập liệu trình dở dang (US8) | `opening_balance.import` | ✓ | write |
-| `POST /sales` | Bán gói: lines, closer, discount, payments[] (US3) | `package.sell` (+ `sale.discount*`) | ✓ | write |
-| `GET /sales/{id}` | Chi tiết hóa đơn | `sale.read` | — | read |
+| `POST /sales` | Bán gói: `lines[{package_plan_id, gift_note?}]` (1–10), `closer_staff_id`, `discount{amount, reason}?`, `payments[{method, amount, reference?}]` (0–2, mỗi hình thức 1 lần). `201` trả `SaleDto` kèm `customer_packages` (US3, S6 ✅) | `package.sell` (+ `sale.discount*`) | ✓ | write |
+| `GET /sales/{id}` | Chi tiết hóa đơn: lines, payments, customer_packages (S6 ✅) | `sale.read` | — | read |
 | `POST /sales/{id}/void` | Hủy hóa đơn + lý do (US6) | `record.void_same_day` / `_closed_day` 🔒 | ✓ | write |
 | `POST /visits` | Ghi lượt: lines, check_in/out, note, discount, payments[] (US4) | `visit.record` (+ `payment.collect`, `sale.discount*`, `package.use_expired_override` khi cần) | ✓ | write |
 | `GET /visits?date=` | Lượt trong ngày (mặc định hôm nay) | `visit.read` | — | read |
@@ -85,6 +88,7 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
 ```
 - **Server tự quyết định giá:** `one_off` lấy `service_price` theo `price_variant`. Mặc định là giới tính của khách; khách chưa có giới tính thì bắt buộc gửi `price_variant`. Client **không gửi** đơn giá.
 - `package` lấy `per_session_value` của liệu trình.
+- `POST /sales` (S6): field lạ trong body (ví dụ `unit_price`, `total`) bị **bỏ qua**, không báo lỗi; mọi số tiền tính từ catalog. Request hash của idempotency = JSON đã parse rồi serialize lại (key đã sắp xếp), nên khác khoảng trắng hay thứ tự key vẫn là cùng một request.
 - `check_in_at`: không quá 5 phút trong tương lai, và phải thuộc ngày nghiệp vụ hiện tại, trừ khi có quyền void/sửa ngày cũ.
 
 ## 4. Use case & tính toàn vẹn dữ liệu (áp dụng [data-integrity](../../../.claude/skills/backend-design/data-integrity.md))
