@@ -5,7 +5,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 
 export default tseslint.config(
-  { ignores: ["**/dist/**", "**/node_modules/**", "**/coverage/**", "apps/api/**", "prototypes/**", "memory/**"] },
+  { ignores: ["**/dist/**", "**/node_modules/**", "**/coverage/**", "**/playwright-report/**", "**/test-results/**", "**/lighthouse-report/**", "**/.lighthouseci/**", "apps/api/**", "prototypes/**", "memory/**"] },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
   {

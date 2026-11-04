@@ -170,3 +170,11 @@ Ops: `ingest`, `query`, `lint`, `record`, `decision`, `skip`.
 - C: filled up (48 leftover Remotion temp bundles, 27.9 GB) → docker Postgres went read-only. EM approved deleting them; then Docker failed with `wsl-bootstrap … running mkfs: exit status 1` (data vhdx still attached in the shared WSL VM) → fixed by `wsl --shutdown` + restart. Dev data intact.
 - PR #7 (S11 deploy prep) merged. Local prod smoke test now passes end to end after fixing the prodtest init-volume path.
 - EM allowed `gh pr merge` in project settings; merges no longer need asking.
+
+## [2026-11-04] record | S10 infra — authz matrix gate, Playwright E2E + axe, p95, Lighthouse CI
+- Branch `test/s10-infra`. S10 is not ticked yet: it still needs the S6–S9 rows, `/quay`, and the trial session with the manager. Guide: wiki/conventions/testing.md.
+- `app/tests/authz_matrix.rs` holds one `ROUTES` table that mirrors authz-matrix. The CI gate fails when a route that is mounted in a router or documented in OpenAPI has no row. Tests: anonymous or forged session → 401; role × route → 403 or allowed; foreign-tenant id → 404, with a control call on the caller's own record; rows must match roles.rs. Mutation-checked twice: dropping a row turns the gate red, and removing the `CustomerRead` guard turns the matrix red.
+- Playwright (apps/web/e2e) runs the API on :8091 and Vite on :5181 (`VPYD_API_ORIGIN` proxy hook) against DB `vpyd_e2e`. The setup project provisions a fresh spa per run through the CLI with generated credentials. 10 tests green locally, ~2 min warm.
+- a11y bug found and fixed: inactive services and plans used `opacity-60`, which made axe report a serious color-contrast violation on /bang-gia. They now use `text-text-muted` (plans also get a dashed border).
+- p95 (debug build, 300 customers, 100 samples): every hot read endpoint is ~21–26 ms against a 300 ms budget. Lighthouse on /dang-nhap (mobile, slow 4G): LCP ≈ 2.1 s against a 2.5 s budget, so the margin is small.
+- CI: new `e2e` job (Postgres service, app_rw, Chromium; runs e2e + axe + p95 + lhci; uploads artifacts).

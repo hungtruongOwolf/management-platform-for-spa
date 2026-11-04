@@ -7,5 +7,5 @@
       "@vpyd/api-client": ["../../packages/api-client/src/index.ts"]
     }
   },
-  "include": ["src", "vite.config.ts", "../../packages/ui/src", "../../packages/api-client/src"]
+  "include": ["src", "vite.config.ts", "playwright.config.ts", "../../packages/ui/src", "../../packages/api-client/src"]
 }

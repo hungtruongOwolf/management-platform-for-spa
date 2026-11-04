@@ -109,6 +109,67 @@ jobs:
           cache-from: type=gha,scope=backup
           cache-to: type=gha,mode=max,scope=backup
 
+  e2e:
+    name: E2E + a11y + perf (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vpyd
+          POSTGRES_PASSWORD: vpyd_ci_password
+          POSTGRES_DB: vpyd_e2e
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vpyd -d vpyd_e2e"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      CI: "true"
+      SQLX_OFFLINE: "true"
+      E2E_DATABASE_URL: postgres://vpyd:vpyd_ci_password@localhost:5432/vpyd_e2e
+      E2E_APP_DATABASE_URL: postgres://app_rw:app_rw_dev_password@localhost:5432/vpyd_e2e
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create runtime role app_rw
+        run: psql "$E2E_DATABASE_URL" -v ON_ERROR_STOP=1 -f infra/postgres-init/01-roles.sql
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/api
+          shared-key: e2e
+      - name: Build API
+        run: cargo build --manifest-path apps/api/Cargo.toml -p app
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium
+        run: pnpm --filter web exec playwright install --with-deps chromium
+      - name: E2E, axe and API p95
+        run: pnpm e2e
+      - name: Lighthouse CI (LCP < 2.5 s)
+        run: pnpm lhci
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+            apps/web/lighthouse-report
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: perf-report
+          path: |
+            apps/web/test-results/**/api-p95.json
+            apps/web/lighthouse-report
+          retention-days: 14
+
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest

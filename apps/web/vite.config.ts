@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
@@ -17,16 +17,19 @@ export default defineConfig({
     ],
   },
   // Dev: the SPA and API share one origin through this proxy, mirroring production (Caddy).
+  // VPYD_API_ORIGIN lets the E2E stack run its own API on another port.
   server: {
     port: 5173,
     strictPort: true,
     proxy: {
-      "/api": { target: "http://127.0.0.1:8080", changeOrigin: false },
+      "/api": { target: process.env["VPYD_API_ORIGIN"] ?? "http://127.0.0.1:8080", changeOrigin: false },
     },
   },
   test: {
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
+    // Playwright specs live in e2e/ and run with `pnpm e2e`, not Vitest.
+    exclude: [...configDefaults.exclude, "e2e/**"],
   },
 });
