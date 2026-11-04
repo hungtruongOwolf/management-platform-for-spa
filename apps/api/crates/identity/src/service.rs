@@ -608,5 +608,6 @@ pub async fn actor_for(
         .ok_or(AppError::Forbidden {
             code: "auth.not_a_member",
         })?;
-    Ok(Actor::new(session.user_id, tenant, permissions, ip))
+    Ok(Actor::new(session.user_id, tenant, permissions, ip)
+        .with_recent_auth(session.recently_authenticated(Utc::now())))
 }

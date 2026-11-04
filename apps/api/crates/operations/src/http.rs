@@ -1,4 +1,5 @@
-//! `POST /visits`, `GET /visits?date=`, `GET /visits/{id}`, `PATCH /visits/{id}`.
+//! `POST /visits`, `GET /visits?date=`, `GET /visits/{id}`, `PATCH /visits/{id}`,
+//! `POST /visits/{id}/void`.
 
 use crate::dto::{VisitCreate, VisitDto, VisitListQuery, VisitUpdate};
 use crate::service;
@@ -6,13 +7,14 @@ use axum::body::Bytes;
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use identity::AuthUser;
 use kernel::crypto::FieldCipher;
 use kernel::http::{IdempotencyKey, IfMatch, etag};
-use kernel::idempotency::hash_request;
+use kernel::idempotency::{hash_request, hash_request_on};
 use kernel::{AppError, FieldError};
+use sales::dto::VoidCreate;
 use serde_json::Value;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -27,6 +29,7 @@ where
     Router::new()
         .route("/visits", get(list_visits).post(create_visit))
         .route("/visits/{id}", get(read_visit).patch(update_visit))
+        .route("/visits/{id}/void", post(void_visit))
 }
 
 fn invalid_body() -> AppError {
@@ -118,4 +121,44 @@ pub async fn update_visit(
     let visit = service::update(&pool, &cipher, &user.actor, id, version, &input).await?;
     let version = visit.version;
     Ok(no_store(StatusCode::OK, visit, Some(version)))
+}
+
+#[utoipa::path(post, path = "/api/v1/visits/{id}/void", tag = "visits", request_body = VoidCreate,
+    params(("id" = Uuid, Path),
+        ("Idempotency-Key" = Uuid, Header, description = "One key per void attempt; a retry replays the first response")),
+    responses(
+        (status = 200, body = VisitDto, description = "Voided: sessions given back, one-off payments reversed (AC6.1)"),
+        (status = 400, description = "idempotency.key_required"),
+        (status = 401, description = "auth.reauth_required (owner voiding a closed day)"),
+        (status = 403, description = "auth.forbidden / day.locked (manager, a day before today, AC6.3)"),
+        (status = 404),
+        (status = 409, description = "visit.voided (second void), package.cancelled (its package was cancelled since)"),
+        (status = 422, description = "validation_failed: reason required (AC6.2)")))]
+pub async fn void_visit(
+    State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+    IdempotencyKey(key): IdempotencyKey,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    let value: Value = serde_json::from_slice(&body).map_err(|_| invalid_body())?;
+    let canonical = serde_json::to_vec(&value).map_err(|e| AppError::Internal(e.to_string()))?;
+    let input: VoidCreate = serde_json::from_value(value).map_err(|_| invalid_body())?;
+    let (status, body) = service::void(
+        &pool,
+        &cipher,
+        &user.actor,
+        key,
+        hash_request_on(id, &canonical),
+        id,
+        input.reason.as_deref(),
+    )
+    .await?;
+    let version = body["version"].as_i64();
+    Ok(no_store(
+        StatusCode::from_u16(status).unwrap_or(StatusCode::OK),
+        body,
+        version,
+    ))
 }

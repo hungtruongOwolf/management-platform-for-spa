@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT customer_package_id AS \"customer_package_id!\", customer_package_item_id AS \"customer_package_item_id!\", qty\n           FROM app.visit_line\n           WHERE tenant_id = $1 AND visit_id = $2 AND source = 'package'\n           ORDER BY customer_package_id, customer_package_item_id, position",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "customer_package_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "customer_package_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "customer_package_item_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "customer_package_item_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "qty",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "qty"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "8689452d3a544e7d3c44f668d7092c4170c690a7ed43a07e12dfbfcbebdb8c8d"
+}

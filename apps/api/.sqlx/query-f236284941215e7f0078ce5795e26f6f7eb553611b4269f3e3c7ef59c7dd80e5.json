@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT sale_id, id, kind, method, amount, reference, paid_at\n           FROM app.payment WHERE tenant_id = $1 AND sale_id = ANY($2) ORDER BY paid_at, id",
+  "query": "SELECT sale_id, id, kind, reversal_of, method, amount, reference, paid_at\n           FROM app.payment WHERE tenant_id = $1 AND sale_id = ANY($2) ORDER BY paid_at, id",
   "describe": {
     "columns": [
       {
@@ -38,6 +38,17 @@
       },
       {
         "ordinal": 3,
+        "name": "reversal_of",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.payment",
+            "name": "reversal_of"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
         "name": "method",
         "type_info": "Text",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "amount",
         "type_info": "Int8",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "reference",
         "type_info": "Text",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "paid_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -91,11 +102,12 @@
       false,
       false,
       false,
+      true,
       false,
       false,
       true,
       false
     ]
   },
-  "hash": "ba56a1cccf32ff75bf494b563149e6d5ee3538b5ce108f2885cbc2654a7229ed"
+  "hash": "f236284941215e7f0078ce5795e26f6f7eb553611b4269f3e3c7ef59c7dd80e5"
 }

@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.customer_package_item\n           SET sessions_remaining = sessions_remaining + $3, version = version + 1\n           WHERE tenant_id = $1 AND id = $2 AND sessions_remaining + $3 <= sessions_total\n           RETURNING sessions_remaining, sessions_total AS \"sessions_total!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sessions_remaining",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_item",
+            "name": "sessions_remaining"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "sessions_total!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_item",
+            "name": "sessions_total"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "d056ab9c18af74ac53a2a8bd3ec389e6be65a618ad51a33260a72d0b7ff34cd6"
+}

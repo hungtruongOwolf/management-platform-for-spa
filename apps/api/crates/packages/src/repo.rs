@@ -18,6 +18,7 @@ pub struct PackageRow {
     pub starts_on: NaiveDate,
     pub expires_on: Option<NaiveDate>,
     pub cancelled_at: Option<DateTime<Utc>>,
+    pub cancel_reason: Option<String>,
     pub version: i64,
     pub created_at: DateTime<Utc>,
 }
@@ -119,7 +120,7 @@ pub async fn packages(
         PackageRow,
         r#"SELECT p.id, p.customer_id, p.plan_id, p.name_snapshot, p.gift_note, p.sold_price, p.origin, p.sale_id,
                   p.closer_staff_id, s.full_name AS "closer_name?", p.starts_on, p.expires_on, p.cancelled_at,
-                  p.version, p.created_at
+                  p.cancel_reason, p.version, p.created_at
            FROM app.customer_package p
            LEFT JOIN app.staff s ON s.tenant_id = p.tenant_id AND s.id = p.closer_staff_id
            WHERE p.tenant_id = $1
@@ -248,5 +249,243 @@ pub async fn item_state(tx: &mut TenantTx, item_id: Uuid) -> Result<Option<ItemS
         item_id
     )
     .fetch_optional(tx.conn())
+    .await?)
+}
+
+// ---------------------------------------------------------------- lifecycle (S8)
+
+pub struct LockedPackage {
+    pub customer_id: Uuid,
+    pub sold_price: i64,
+    pub expires_on: Option<NaiveDate>,
+    pub cancelled: bool,
+    pub version: i64,
+}
+
+/// Locks one package for an extension or a cancellation. Lock order everywhere in S8: package
+/// rows (by id) before their item rows, so concurrent lifecycle changes cannot deadlock.
+pub async fn lock_package(tx: &mut TenantTx, id: Uuid) -> Result<Option<LockedPackage>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        LockedPackage,
+        r#"SELECT customer_id, sold_price, expires_on, (cancelled_at IS NOT NULL) AS "cancelled!", version
+           FROM app.customer_package WHERE tenant_id = $1 AND id = $2 FOR UPDATE"#,
+        tenant,
+        id
+    )
+    .fetch_optional(tx.conn())
+    .await?)
+}
+
+pub struct LockedOfSale {
+    pub id: Uuid,
+    pub cancelled: bool,
+}
+
+/// Locks the packages created by one sale, in id order.
+pub async fn lock_packages_of_sale(
+    tx: &mut TenantTx,
+    sale_id: Uuid,
+) -> Result<Vec<LockedOfSale>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        LockedOfSale,
+        r#"SELECT id, (cancelled_at IS NOT NULL) AS "cancelled!"
+           FROM app.customer_package WHERE tenant_id = $1 AND sale_id = $2
+           ORDER BY id FOR UPDATE"#,
+        tenant,
+        sale_id
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+pub struct LockedItem {
+    pub sessions_total: i32,
+    pub sessions_remaining: i32,
+}
+
+/// Locks the items of `package_ids` (after their packages), in id order.
+pub async fn lock_items(
+    tx: &mut TenantTx,
+    package_ids: &[Uuid],
+) -> Result<Vec<LockedItem>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        LockedItem,
+        r#"SELECT sessions_total AS "sessions_total!", sessions_remaining
+           FROM app.customer_package_item WHERE tenant_id = $1 AND customer_package_id = ANY($2)
+           ORDER BY id FOR UPDATE"#,
+        tenant,
+        package_ids
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+/// Cancels a locked package: remaining sessions go to 0 so nothing can be consumed any more
+/// (a concurrent consume re-checks `sessions_remaining >= qty` on the item row and fails).
+pub async fn cancel_package(
+    tx: &mut TenantTx,
+    id: Uuid,
+    reason: &str,
+    by: Uuid,
+) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"UPDATE app.customer_package_item SET sessions_remaining = 0, version = version + 1
+           WHERE tenant_id = $1 AND customer_package_id = $2 AND sessions_remaining > 0"#,
+        tenant,
+        id
+    )
+    .execute(tx.conn())
+    .await?;
+    let done = sqlx::query!(
+        r#"UPDATE app.customer_package
+           SET cancelled_at = now(), cancel_reason = $3, cancelled_by = $4, version = version + 1, updated_at = now()
+           WHERE tenant_id = $1 AND id = $2 AND cancelled_at IS NULL"#,
+        tenant,
+        id,
+        reason,
+        by
+    )
+    .execute(tx.conn())
+    .await?
+    .rows_affected();
+    if done == 1 {
+        Ok(())
+    } else {
+        Err(AppError::Conflict {
+            code: "package.cancelled",
+        })
+    }
+}
+
+/// New expiry for a locked, live package. `false` = the version moved on (412).
+pub async fn set_expiry(
+    tx: &mut TenantTx,
+    id: Uuid,
+    version: i64,
+    expires_on: NaiveDate,
+) -> Result<bool, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query!(
+        r#"UPDATE app.customer_package SET expires_on = $4, version = version + 1, updated_at = now()
+           WHERE tenant_id = $1 AND id = $2 AND version = $3 AND cancelled_at IS NULL"#,
+        tenant,
+        id,
+        version,
+        expires_on
+    )
+    .execute(tx.conn())
+    .await?
+    .rows_affected()
+        == 1)
+}
+
+pub struct ItemPackage {
+    pub customer_package_id: Uuid,
+    pub cancelled: bool,
+}
+
+/// Locks the package an item belongs to (package before item, as everywhere in S8).
+pub async fn lock_package_of_item(
+    tx: &mut TenantTx,
+    item_id: Uuid,
+) -> Result<Option<ItemPackage>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        ItemPackage,
+        r#"SELECT p.id AS customer_package_id, (p.cancelled_at IS NOT NULL) AS "cancelled!"
+           FROM app.customer_package p
+           JOIN app.customer_package_item i ON i.tenant_id = p.tenant_id AND i.customer_package_id = p.id
+           WHERE p.tenant_id = $1 AND i.id = $2
+           FOR UPDATE OF p"#,
+        tenant,
+        item_id
+    )
+    .fetch_optional(tx.conn())
+    .await?)
+}
+
+pub struct RestoredRow {
+    pub sessions_remaining: i32,
+    pub sessions_total: i32,
+}
+
+/// The atomic re-credit: `remaining + qty` only while it stays within the item's total.
+pub async fn restore(
+    tx: &mut TenantTx,
+    item_id: Uuid,
+    qty: i32,
+) -> Result<Option<RestoredRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        RestoredRow,
+        r#"UPDATE app.customer_package_item
+           SET sessions_remaining = sessions_remaining + $3, version = version + 1
+           WHERE tenant_id = $1 AND id = $2 AND sessions_remaining + $3 <= sessions_total
+           RETURNING sessions_remaining, sessions_total AS "sessions_total!""#,
+        tenant,
+        item_id,
+        qty
+    )
+    .fetch_optional(tx.conn())
+    .await?)
+}
+
+pub struct RefundInsert<'a> {
+    pub branch_id: Uuid,
+    pub customer_id: Uuid,
+    pub customer_package_id: Uuid,
+    pub business_date: NaiveDate,
+    pub method: &'a str,
+    pub amount: i64,
+    pub reason: &'a str,
+    pub created_by: Uuid,
+}
+
+pub async fn insert_refund(tx: &mut TenantTx, r: &RefundInsert<'_>) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"INSERT INTO app.refund
+             (id, tenant_id, branch_id, customer_id, customer_package_id, business_date, method, amount, reason,
+              created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
+        Uuid::now_v7(),
+        tenant,
+        r.branch_id,
+        r.customer_id,
+        r.customer_package_id,
+        r.business_date,
+        r.method,
+        r.amount,
+        r.reason,
+        r.created_by
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+pub struct RefundRow {
+    pub id: Uuid,
+    pub customer_package_id: Uuid,
+    pub business_date: NaiveDate,
+    pub method: String,
+    pub amount: i64,
+    pub created_at: DateTime<Utc>,
+}
+
+pub async fn refunds(tx: &mut TenantTx, package_ids: &[Uuid]) -> Result<Vec<RefundRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        RefundRow,
+        r#"SELECT id, customer_package_id, business_date, method, amount, created_at
+           FROM app.refund WHERE tenant_id = $1 AND customer_package_id = ANY($2)"#,
+        tenant,
+        package_ids
+    )
+    .fetch_all(tx.conn())
     .await?)
 }

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.sale\n           SET status = 'voided', amount_paid = 0, void_reason = $3, voided_at = now(), voided_by = $4,\n               version = version + 1\n           WHERE tenant_id = $1 AND id = $2 AND status = 'open'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3fca6316d7bdace2e05ea44038f371d2d4c02fa9f71f9e2cd556e1a60896c656"
+}

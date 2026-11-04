@@ -388,7 +388,11 @@ pub async fn create_sale(
     Ok((201, body))
 }
 
-async fn load(tx: &mut TenantTx, id: Uuid, today: NaiveDate) -> Result<Option<SaleDto>, AppError> {
+pub(crate) async fn load(
+    tx: &mut TenantTx,
+    id: Uuid,
+    today: NaiveDate,
+) -> Result<Option<SaleDto>, AppError> {
     let Some(s) = repo::sale(tx, id).await? else {
         return Ok(None);
     };
@@ -414,7 +418,17 @@ async fn load(tx: &mut TenantTx, id: Uuid, today: NaiveDate) -> Result<Option<Sa
     let payments = repo::payments(tx, id)
         .await?
         .into_iter()
-        .map(|p| payment_dto(p.id, &p.kind, &p.method, p.amount, p.reference, p.paid_at))
+        .map(|p| {
+            payment_dto(
+                p.id,
+                &p.kind,
+                p.reversal_of,
+                &p.method,
+                p.amount,
+                p.reference,
+                p.paid_at,
+            )
+        })
         .collect::<Result<Vec<_>, AppError>>()?;
     let customer_packages = packages::service::of_sale(tx, id, today)
         .await?
@@ -435,6 +449,8 @@ async fn load(tx: &mut TenantTx, id: Uuid, today: NaiveDate) -> Result<Option<Sa
         } else {
             SaleStatusDto::Open
         },
+        void_reason: s.void_reason,
+        voided_at: s.voided_at,
         closer_staff_id: s.closer_staff_id,
         closer_name: s.closer_name,
         created_at: s.created_at,
@@ -460,6 +476,7 @@ pub async fn get_sale(pool: &PgPool, actor: &Actor, id: Uuid) -> Result<SaleDto,
 fn payment_dto(
     id: Uuid,
     kind: &str,
+    reversal_of: Option<Uuid>,
     method: &str,
     amount: i64,
     reference: Option<String>,
@@ -477,6 +494,7 @@ fn payment_dto(
         } else {
             PaymentKindDto::Payment
         },
+        reversal_of,
         method,
         amount,
         reference,
@@ -627,6 +645,7 @@ pub async fn payments_of(
         out.entry(p.sale_id).or_default().push(payment_dto(
             p.id,
             &p.kind,
+            p.reversal_of,
             &p.method,
             p.amount,
             p.reference,

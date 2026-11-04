@@ -543,6 +543,8 @@ async fn load(
                     .sale_id
                     .and_then(|s| payments.remove(&s))
                     .unwrap_or_default(),
+                void_reason: r.void_reason,
+                voided_at: r.voided_at,
                 id: r.id,
                 customer_id: r.customer_id,
                 customer_name: r.customer_name,
@@ -681,4 +683,96 @@ pub async fn update(
         .ok_or_else(|| AppError::Internal("visit vanished".into()))?;
     tx.commit().await?;
     Ok(visit)
+}
+
+/// `POST /visits/{id}/void` (`record.void_same_day`; a closed day needs `record.void_closed_day`
+/// and a recent re-auth; Idempotency-Key): the visit stays in history as `voided` with its reason,
+/// every session it took goes back to its package (AC6.1), and the sale of its one-off lines is
+/// voided with one reversal per payment. One transaction, so either all of it happens or nothing.
+///
+/// Two voids of the same visit serialize on the visit row: the second sees `voided` and gets
+/// `409 visit.voided`, so sessions are never given back twice.
+pub async fn void(
+    pool: &PgPool,
+    cipher: &FieldCipher,
+    actor: &Actor,
+    key: Uuid,
+    request_hash: [u8; 32],
+    id: Uuid,
+    reason: Option<&str>,
+) -> Result<(u16, Value), AppError> {
+    actor.require(Permission::RecordVoidSameDay)?;
+    let reason = kernel::corrections::reason(reason)?;
+
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    if let Claim::Replay { status, body } =
+        idempotency::claim(&mut tx, actor, key, request_hash).await?
+    {
+        tx.commit().await?;
+        return Ok((status, body));
+    }
+    let visit = repo::lock_for_void(&mut tx, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    if visit.status != "completed" {
+        return Err(AppError::Conflict {
+            code: "visit.voided",
+        });
+    }
+    let today = kernel::tenant::profile(&mut tx)
+        .await?
+        .business_date
+        .as_naive();
+    kernel::corrections::authorize_void(actor, visit.business_date, today)?;
+    if !repo::mark_voided(&mut tx, id, &reason, actor.user_id.as_uuid()).await? {
+        return Err(AppError::Conflict {
+            code: "visit.voided",
+        });
+    }
+
+    let mut restored = Vec::new();
+    for line in repo::package_lines(&mut tx, id).await? {
+        let qty = u32::try_from(line.qty).map_err(|_| AppError::Internal("qty".into()))?;
+        let r = packages::lifecycle::restore_sessions(&mut tx, line.customer_package_item_id, qty)
+            .await?;
+        restored.push(json!({
+            "customer_package_id": line.customer_package_id,
+            "customer_package_item_id": line.customer_package_item_id,
+            "qty": line.qty, "sessions_remaining": r.sessions_remaining,
+        }));
+    }
+    let reversals = match visit.sale_id {
+        Some(sale_id) => {
+            sales::voids::void_in(&mut tx, actor, sale_id, &reason, today)
+                .await?
+                .reversals
+        }
+        None => Vec::new(),
+    };
+    audit::record(
+        &mut tx,
+        actor,
+        AuditEntry {
+            action: "visit.void",
+            entity_type: "visit",
+            entity_id: id,
+            before: Some(json!({"status": "completed", "business_date": visit.business_date})),
+            after: Some(json!({
+                "status": "voided", "restored": restored, "sale_id": visit.sale_id,
+                "reversed": reversals.iter().map(|(_, _, amount)| amount).sum::<i64>(),
+            })),
+            reason: Some(&reason),
+        },
+    )
+    .await?;
+
+    // Like `POST /visits`, the stored response never carries the note.
+    let dto = load(&mut tx, cipher, actor, Some(id), None, false)
+        .await?
+        .pop()
+        .ok_or_else(|| AppError::Internal("visit vanished".into()))?;
+    let body = serde_json::to_value(&dto).map_err(|e| AppError::Internal(e.to_string()))?;
+    idempotency::complete(&mut tx, actor, key, 200, &body).await?;
+    tx.commit().await?;
+    Ok((200, body))
 }

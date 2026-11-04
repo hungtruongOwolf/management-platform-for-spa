@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT business_date, status, sale_id FROM app.visit WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "business_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "business_date"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "sale_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "sale_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "2b02f9fc1fa0970a6c4e892c8cb9a723b966c1518ce13d757a694a4f11ca12d0"
+}

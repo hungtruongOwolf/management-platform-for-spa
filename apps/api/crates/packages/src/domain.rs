@@ -31,6 +31,30 @@ impl PackageStatus {
     }
 }
 
+/// How a refund is paid back (the same two ways money comes in).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefundMethod {
+    Cash,
+    BankTransfer,
+}
+
+impl RefundMethod {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Cash => "cash",
+            Self::BankTransfer => "bank_transfer",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "cash" => Some(Self::Cash),
+            "bank_transfer" => Some(Self::BankTransfer),
+            _ => None,
+        }
+    }
+}
+
 /// Value of one purchased session: price after discount ÷ purchased sessions, rounded down.
 /// Bonus sessions are worth 0, so they do not dilute it (D4). A package with no purchased
 /// sessions (e.g. an all-bonus opening balance) is worth 0 per session.

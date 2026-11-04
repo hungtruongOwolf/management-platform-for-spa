@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.customer_package SET expires_on = $4, version = version + 1, updated_at = now()\n           WHERE tenant_id = $1 AND id = $2 AND version = $3 AND cancelled_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8",
+        "Date"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "da1137e893a03f1ec91f3368795ba6764a1ec3b10dd168ab51bc48420cb158a5"
+}

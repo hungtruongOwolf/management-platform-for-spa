@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.payment\n             (id, tenant_id, branch_id, sale_id, business_date, kind, method, amount, reversal_of, created_by)\n           VALUES ($1, $2, $3, $4, $5, 'reversal', $6, $7, $8, $9)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Text",
+        "Int8",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6b072cc1b70c66a9756ede21fc14fdbe2f1c54bc407c5b6b665202e781736546"
+}

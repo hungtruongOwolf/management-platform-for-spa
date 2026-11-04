@@ -259,6 +259,149 @@
         }
       }
     },
+    "/api/v1/customer-packages/{id}/cancel": {
+      "post": {
+        "tags": [
+          "packages"
+        ],
+        "operationId": "cancel_package",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per cancellation; a retry replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PackageCancel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Cancelled, sessions → 0, refund recorded (AC7.2)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerPackageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required"
+          },
+          "401": {
+            "description": "auth.reauth_required: confirm the password (and code) via /auth/reauth first"
+          },
+          "403": {
+            "description": "auth.forbidden (managers, AC7.3)"
+          },
+          "404": {},
+          "409": {
+            "description": "package.cancelled"
+          },
+          "422": {
+            "description": "refund.exceeds_paid (AC7.4), validation_failed: reason / refund_method"
+          }
+        }
+      }
+    },
+    "/api/v1/customer-packages/{id}/extend": {
+      "post": {
+        "tags": [
+          "packages"
+        ],
+        "operationId": "extend_package",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per extension; a retry replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PackageExtend"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "New expiry, audited with the reason (AC7.1)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerPackageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required, precondition.if_match_required"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden (managers, AC7.3)"
+          },
+          "404": {},
+          "409": {
+            "description": "package.cancelled"
+          },
+          "412": {
+            "description": "conflict.stale_version"
+          },
+          "422": {
+            "description": "validation_failed: reason required, expires_on not_later / in_past / package_has_no_expiry"
+          }
+        }
+      }
+    },
     "/api/v1/customers": {
       "get": {
         "tags": [
@@ -785,6 +928,73 @@
         }
       }
     },
+    "/api/v1/sales/{id}/void": {
+      "post": {
+        "tags": [
+          "sales"
+        ],
+        "operationId": "void_sale",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per void attempt; a retry replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Voided: every payment has a reversal, its packages are cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaleDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required"
+          },
+          "401": {
+            "description": "auth.reauth_required (owner voiding a closed day)"
+          },
+          "403": {
+            "description": "auth.forbidden / day.locked (manager, a day before today)"
+          },
+          "404": {},
+          "409": {
+            "description": "sale.voided, sale.has_used_sessions (AC6.4), sale.void_via_visit, package.cancelled"
+          },
+          "422": {
+            "description": "validation_failed: reason required"
+          }
+        }
+      }
+    },
     "/api/v1/service-categories": {
       "get": {
         "tags": [
@@ -1230,6 +1440,73 @@
           "422": {}
         }
       }
+    },
+    "/api/v1/visits/{id}/void": {
+      "post": {
+        "tags": [
+          "visits"
+        ],
+        "operationId": "void_visit",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per void attempt; a retry replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Voided: sessions given back, one-off payments reversed (AC6.1)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required"
+          },
+          "401": {
+            "description": "auth.reauth_required (owner voiding a closed day)"
+          },
+          "403": {
+            "description": "auth.forbidden / day.locked (manager, a day before today, AC6.3)"
+          },
+          "404": {},
+          "409": {
+            "description": "visit.voided (second void), package.cancelled (its package was cancelled since)"
+          },
+          "422": {
+            "description": "validation_failed: reason required (AC6.2)"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1415,6 +1692,20 @@
           "items"
         ],
         "properties": {
+          "cancel_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cancelled_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Set when the package was cancelled (a voided sale or a cancellation with refund)."
+          },
           "closer_name": {
             "type": [
               "string",
@@ -1472,6 +1763,16 @@
               "null"
             ],
             "format": "uuid"
+          },
+          "refund": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RefundDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "sale_id": {
             "type": [
@@ -1958,6 +2259,58 @@
         },
         "additionalProperties": false
       },
+      "PackageCancel": {
+        "type": "object",
+        "description": "Body of `POST /customer-packages/{id}/cancel` 🔒.",
+        "properties": {
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why (required, 1–500 characters); audited."
+          },
+          "refund_amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "đồng paid back now, 0 = no refund. At most what the customer paid for this package\n(`sold_price`), else `422 refund.exceeds_paid`."
+          },
+          "refund_method": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RefundMethodDto",
+                "description": "Required when `refund_amount` > 0."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "PackageExtend": {
+        "type": "object",
+        "description": "Body of `POST /customer-packages/{id}/extend` (with `If-Match`).",
+        "required": [
+          "expires_on"
+        ],
+        "properties": {
+          "expires_on": {
+            "type": "string",
+            "format": "date",
+            "description": "The new last day of validity: later than the current one and not in the past."
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why (required, 1–500 characters); audited."
+          }
+        },
+        "additionalProperties": false
+      },
       "PackageOriginDto": {
         "type": "string",
         "enum": [
@@ -2104,6 +2457,14 @@
               "string",
               "null"
             ]
+          },
+          "reversal_of": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "`reversal` rows: the payment this one cancels (same method and amount)."
           }
         }
       },
@@ -2241,6 +2602,47 @@
         },
         "additionalProperties": false
       },
+      "RefundDto": {
+        "type": "object",
+        "description": "Money paid back when the package was cancelled (US7).",
+        "required": [
+          "id",
+          "amount",
+          "method",
+          "business_date",
+          "created_at"
+        ],
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "đồng."
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Cash-book day of the refund."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "method": {
+            "$ref": "#/components/schemas/RefundMethodDto"
+          }
+        }
+      },
+      "RefundMethodDto": {
+        "type": "string",
+        "enum": [
+          "cash",
+          "bank_transfer"
+        ]
+      },
       "SaleCreate": {
         "type": "object",
         "description": "Body of `POST /sales`. Prices are never read from the client: unknown fields such as\n`unit_price` or `total` are ignored and every amount is computed from the catalog.",
@@ -2375,6 +2777,20 @@
           "total": {
             "type": "integer",
             "format": "int64"
+          },
+          "void_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set when the sale was voided (US6); its payments then each have a `reversal`."
+          },
+          "voided_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
           }
         }
       },
@@ -2813,6 +3229,20 @@
             "type": "integer",
             "format": "int64",
             "description": "Send back as `If-Match` when correcting."
+          },
+          "void_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set when the visit was voided (US6): it stays in history with the reason."
+          },
+          "voided_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
           }
         }
       },
@@ -3028,6 +3458,20 @@
               "null"
             ],
             "description": "Absent = unchanged, null or empty = cleared. Needs `customer.health_notes.write`."
+          }
+        },
+        "additionalProperties": false
+      },
+      "VoidCreate": {
+        "type": "object",
+        "description": "Body of `POST /sales/{id}/void` and `POST /visits/{id}/void`.",
+        "properties": {
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the record is voided (required, 1–500 characters); shown in history and audited."
           }
         },
         "additionalProperties": false

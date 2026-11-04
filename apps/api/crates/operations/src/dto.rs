@@ -126,6 +126,9 @@ pub struct VisitDto {
     pub business_date: NaiveDate,
     pub check_in_at: DateTime<Utc>,
     pub status: VisitStatusDto,
+    /// Set when the visit was voided (US6): it stays in history with the reason.
+    pub void_reason: Option<String>,
+    pub voided_at: Option<DateTime<Utc>>,
     /// Present only on a single visit and only for `customer.health_notes.read`; null = no note.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<String>)]

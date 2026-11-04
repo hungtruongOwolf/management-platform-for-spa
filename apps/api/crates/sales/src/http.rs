@@ -1,7 +1,7 @@
-//! `POST /sales`, `GET /sales/{id}`.
+//! `POST /sales`, `GET /sales/{id}`, `POST /sales/{id}/void`.
 
-use crate::dto::{SaleCreate, SaleDto};
-use crate::service;
+use crate::dto::{SaleCreate, SaleDto, VoidCreate};
+use crate::{service, voids};
 use axum::body::Bytes;
 use axum::extract::{FromRef, Path, State};
 use axum::http::{HeaderValue, StatusCode, header};
@@ -10,7 +10,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use identity::AuthUser;
 use kernel::http::IdempotencyKey;
-use kernel::idempotency::hash_request;
+use kernel::idempotency::{hash_request, hash_request_on};
 use kernel::{AppError, FieldError};
 use serde_json::Value;
 use sqlx::PgPool;
@@ -24,6 +24,7 @@ where
     Router::new()
         .route("/sales", post(create_sale))
         .route("/sales/{id}", get(read_sale))
+        .route("/sales/{id}/void", post(void_sale))
 }
 
 fn invalid_body() -> AppError {
@@ -72,4 +73,40 @@ pub async fn read_sale(
 ) -> Result<Response, AppError> {
     let sale = service::get_sale(&pool, &user.actor, id).await?;
     Ok(no_store(StatusCode::OK, sale))
+}
+
+#[utoipa::path(post, path = "/api/v1/sales/{id}/void", tag = "sales", request_body = VoidCreate,
+    params(("id" = Uuid, Path),
+        ("Idempotency-Key" = Uuid, Header, description = "One key per void attempt; a retry replays the first response")),
+    responses(
+        (status = 200, body = SaleDto, description = "Voided: every payment has a reversal, its packages are cancelled"),
+        (status = 400, description = "idempotency.key_required"),
+        (status = 401, description = "auth.reauth_required (owner voiding a closed day)"),
+        (status = 403, description = "auth.forbidden / day.locked (manager, a day before today)"),
+        (status = 404),
+        (status = 409, description = "sale.voided, sale.has_used_sessions (AC6.4), sale.void_via_visit, package.cancelled"),
+        (status = 422, description = "validation_failed: reason required")))]
+pub async fn void_sale(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+    IdempotencyKey(key): IdempotencyKey,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    let value: Value = serde_json::from_slice(&body).map_err(|_| invalid_body())?;
+    let canonical = serde_json::to_vec(&value).map_err(|e| AppError::Internal(e.to_string()))?;
+    let input: VoidCreate = serde_json::from_value(value).map_err(|_| invalid_body())?;
+    let (status, body) = voids::void_sale(
+        &pool,
+        &user.actor,
+        key,
+        hash_request_on(id, &canonical),
+        id,
+        input.reason.as_deref(),
+    )
+    .await?;
+    Ok(no_store(
+        StatusCode::from_u16(status).unwrap_or(StatusCode::OK),
+        body,
+    ))
 }

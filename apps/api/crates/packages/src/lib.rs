@@ -3,9 +3,11 @@
 
 pub mod domain;
 pub mod http;
+pub mod lifecycle;
 pub mod opening_balance;
 mod repo;
 pub mod service;
 
 pub use domain::PackageStatus;
+pub use lifecycle::Restored;
 pub use service::{Consume, Consumed, CustomerPackage, NewItem, NewPackage, Origin};

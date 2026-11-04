@@ -149,6 +149,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/customer-packages/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancel_package"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/customer-packages/{id}/extend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["extend_package"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/customers": {
         parameters: {
             query?: never;
@@ -309,6 +341,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sales/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["void_sale"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/service-categories": {
         parameters: {
             query?: never;
@@ -421,6 +469,22 @@ export interface paths {
         patch: operations["update_visit"];
         trace?: never;
     };
+    "/api/v1/visits/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["void_visit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -468,6 +532,12 @@ export interface components {
             version: number;
         };
         CustomerPackageDto: {
+            cancel_reason?: string | null;
+            /**
+             * Format: date-time
+             * @description Set when the package was cancelled (a voided sale or a cancellation with refund).
+             */
+            cancelled_at?: string | null;
             closer_name?: string | null;
             /** Format: uuid */
             closer_staff_id?: string | null;
@@ -486,6 +556,7 @@ export interface components {
             origin: components["schemas"]["PackageOriginDto"];
             /** Format: uuid */
             plan_id?: string | null;
+            refund?: components["schemas"]["RefundDto"] | null;
             /** Format: uuid */
             sale_id?: string | null;
             /** Format: int64 */
@@ -659,6 +730,28 @@ export interface components {
              */
             starts_on: string;
         };
+        /** @description Body of `POST /customer-packages/{id}/cancel` 🔒. */
+        PackageCancel: {
+            /** @description Why (required, 1–500 characters); audited. */
+            reason?: string | null;
+            /**
+             * Format: int64
+             * @description đồng paid back now, 0 = no refund. At most what the customer paid for this package
+             *     (`sold_price`), else `422 refund.exceeds_paid`.
+             */
+            refund_amount?: number;
+            refund_method?: components["schemas"]["RefundMethodDto"] | null;
+        };
+        /** @description Body of `POST /customer-packages/{id}/extend` (with `If-Match`). */
+        PackageExtend: {
+            /**
+             * Format: date
+             * @description The new last day of validity: later than the current one and not in the past.
+             */
+            expires_on: string;
+            /** @description Why (required, 1–500 characters); audited. */
+            reason?: string | null;
+        };
         /** @enum {string} */
         PackageOriginDto: "sale" | "opening_balance";
         PackagePlanDto: {
@@ -710,6 +803,11 @@ export interface components {
             /** Format: date-time */
             paid_at: string;
             reference?: string | null;
+            /**
+             * Format: uuid
+             * @description `reversal` rows: the payment this one cancels (same method and amount).
+             */
+            reversal_of?: string | null;
         };
         /** @enum {string} */
         PaymentKindDto: "payment" | "reversal";
@@ -752,6 +850,26 @@ export interface components {
             code?: string | null;
             password: string;
         };
+        /** @description Money paid back when the package was cancelled (US7). */
+        RefundDto: {
+            /**
+             * Format: int64
+             * @description đồng.
+             */
+            amount: number;
+            /**
+             * Format: date
+             * @description Cash-book day of the refund.
+             */
+            business_date: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            method: components["schemas"]["RefundMethodDto"];
+        };
+        /** @enum {string} */
+        RefundMethodDto: "cash" | "bank_transfer";
         /**
          * @description Body of `POST /sales`. Prices are never read from the client: unknown fields such as
          *     `unit_price` or `total` are ignored and every amount is computed from the catalog.
@@ -796,6 +914,10 @@ export interface components {
             subtotal: number;
             /** Format: int64 */
             total: number;
+            /** @description Set when the sale was voided (US6); its payments then each have a `reversal`. */
+            void_reason?: string | null;
+            /** Format: date-time */
+            voided_at?: string | null;
         };
         SaleLineCreate: {
             /** @description Gift note for this package; omitted = the plan's, empty = none. */
@@ -952,6 +1074,10 @@ export interface components {
              * @description Send back as `If-Match` when correcting.
              */
             version: number;
+            /** @description Set when the visit was voided (US6): it stays in history with the reason. */
+            void_reason?: string | null;
+            /** Format: date-time */
+            voided_at?: string | null;
         };
         VisitLineCreate: {
             /**
@@ -1031,6 +1157,11 @@ export interface components {
             lines?: components["schemas"]["VisitLineUpdate"][];
             /** @description Absent = unchanged, null or empty = cleared. Needs `customer.health_notes.write`. */
             note?: string | null;
+        };
+        /** @description Body of `POST /sales/{id}/void` and `POST /visits/{id}/void`. */
+        VoidCreate: {
+            /** @description Why the record is voided (required, 1–500 characters); shown in history and audited. */
+            reason?: string | null;
         };
     };
     responses: never;
@@ -1358,6 +1489,153 @@ export interface operations {
                 content?: never;
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cancel_package: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description One key per cancellation; a retry replays the first response */
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PackageCancel"];
+            };
+        };
+        responses: {
+            /** @description Cancelled, sessions → 0, refund recorded (AC7.2) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerPackageDto"];
+                };
+            };
+            /** @description idempotency.key_required */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.reauth_required: confirm the password (and code) via /auth/reauth first */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden (managers, AC7.3) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description package.cancelled */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description refund.exceeds_paid (AC7.4), validation_failed: reason / refund_method */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    extend_package: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": string;
+                /** @description One key per extension; a retry replays the first response */
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PackageExtend"];
+            };
+        };
+        responses: {
+            /** @description New expiry, audited with the reason (AC7.1) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerPackageDto"];
+                };
+            };
+            /** @description idempotency.key_required, precondition.if_match_required */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden (managers, AC7.3) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description package.cancelled */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description conflict.stale_version */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed: reason required, expires_on not_later / in_past / package_has_no_expiry */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1945,6 +2223,76 @@ export interface operations {
             };
         };
     };
+    void_sale: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description One key per void attempt; a retry replays the first response */
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoidCreate"];
+            };
+        };
+        responses: {
+            /** @description Voided: every payment has a reversal, its packages are cancelled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaleDto"];
+                };
+            };
+            /** @description idempotency.key_required */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.reauth_required (owner voiding a closed day) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked (manager, a day before today) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description sale.voided, sale.has_used_sessions (AC6.4), sale.void_via_visit, package.cancelled */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed: reason required */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_categories: {
         parameters: {
             query?: never;
@@ -2406,6 +2754,76 @@ export interface operations {
                 };
                 content?: never;
             };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    void_visit: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description One key per void attempt; a retry replays the first response */
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoidCreate"];
+            };
+        };
+        responses: {
+            /** @description Voided: sessions given back, one-off payments reversed (AC6.1) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitDto"];
+                };
+            };
+            /** @description idempotency.key_required */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.reauth_required (owner voiding a closed day) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked (manager, a day before today, AC6.3) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description visit.voided (second void), package.cancelled (its package was cancelled since) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed: reason required (AC6.2) */
             422: {
                 headers: {
                     [name: string]: unknown;
