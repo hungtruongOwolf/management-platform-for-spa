@@ -1,0 +1,20 @@
+# Local development services. Start: pnpm dev:db   (docker compose -f infra/docker-compose.dev.yml up -d)
+name: vpyd-dev
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vpyd
+      POSTGRES_PASSWORD: vpyd_dev_password   # dev only; production secrets live in the VPS env
+      POSTGRES_DB: vpyd
+    ports:
+      - "127.0.0.1:5432:5432"                # bound to localhost only
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vpyd -d vpyd"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+volumes:
+  pgdata:

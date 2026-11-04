@@ -1,0 +1,42 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "{ echo '## Project memory (auto-loaded by SessionStart hook)'; cat \"$CLAUDE_PROJECT_DIR/memory/index.md\"; echo; echo '## Recent log'; tail -n 20 \"$CLAUDE_PROJECT_DIR/memory/log.md\"; } 2>/dev/null || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "echo 'Team routing: before acting, pick the project skill(s) from CLAUDE.md > Team workflow that fit this request and invoke them; apply secure for auth/data/payments/uploads/media; finish meaningful work with memory record. Research queries in English (+Chinese), reason in English, reply in Vietnamese.'",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "python -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/check-on-edit.py\"",
+            "timeout": 200,
+            "statusMessage": "Compile check after edit"
+          }
+        ]
+      }
+    ]
+  }
+}

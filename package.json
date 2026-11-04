@@ -1,0 +1,30 @@
+{
+  "name": "vien-phuc-y-duong",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.29.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev:db": "docker compose -f infra/docker-compose.dev.yml up -d --wait",
+    "dev:api": "cargo run --manifest-path apps/api/Cargo.toml -p app",
+    "dev:web": "pnpm --filter web dev",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "build": "pnpm -r build",
+    "check:api": "cargo fmt --manifest-path apps/api/Cargo.toml --all --check && cargo clippy --manifest-path apps/api/Cargo.toml --all-targets -- -D warnings && cargo test --manifest-path apps/api/Cargo.toml --workspace",
+    "check": "pnpm check:api && pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "prettier": "^3.9.10",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.1.0"
+  }
+}

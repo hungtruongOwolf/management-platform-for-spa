@@ -1,0 +1,44 @@
+---
+title: Coding standards
+updated: 2026-11-04
+sources: []
+---
+
+# Coding standards
+
+Single source of truth for code quality. `build` and `pr-review` skills apply every rule here. Change a rule here, not in the skills.
+
+## Universal
+- **Names reveal intent.** A reader understands a function from its name and signature without opening it.
+- **Deep modules**: small interface, substantial behaviour behind it. Split by responsibility, not by line count.
+- **Make illegal states unrepresentable** with types (enums/sum types, newtypes like `UserId`, `Email`, `Money`).
+- **Validate at the boundary, trust inside.** Parse untrusted input into typed domain values once, at the edge (HTTP handler, queue consumer, form).
+- **Errors are values.** Handle or propagate every error explicitly; user-facing messages are generic, logs are detailed (without secrets/PII).
+- **Comments explain why**, never restate what the code does.
+- Delete dead code; git remembers it.
+- Config from environment, validated at startup; the app refuses to boot with invalid config.
+- Every behaviour change ships with a test; every bug fix ships with a test that was red before the fix.
+
+## Rust (backend)
+- `cargo fmt` + `cargo clippy --all-targets -- -D warnings` clean.
+- Layering: `routes/handlers` (HTTP only) → `services` (business rules, authorization) → `repositories` (SQL). Handlers hold no business logic; repositories hold no authorization decisions.
+- Errors: `thiserror` for typed domain/app errors, mapped to HTTP in one `IntoResponse` impl. `anyhow` only in binaries/scripts.
+- Production paths use `?` and typed errors; `unwrap`/`expect` only in tests or with a comment proving it cannot fail.
+- SQL through `sqlx` with bound parameters and compile-time checked queries (`query!`/`query_as!`).
+- `#![forbid(unsafe_code)]` in application crates.
+- Async: never block the runtime (`spawn_blocking` for CPU-heavy work such as hashing).
+- Structured logging via `tracing`; secrets wrapped in `secrecy::SecretString`.
+
+## TypeScript (frontend)
+- `strict: true`, `noUncheckedIndexedAccess: true`. `any` is banned; use `unknown` + narrowing.
+- Validate all external data (API responses, forms, URL params) with `zod` schemas; types are inferred from schemas.
+- Server state via the framework (Server Components) or TanStack Query; client state minimal and local.
+- Components: one responsibility, props typed, every async UI has loading / empty / error / success states.
+- Styling through design tokens only; raw hex colors and magic pixel values live in the token layer.
+- ESLint + Prettier + `tsc --noEmit` clean.
+- Accessibility: semantic HTML first, keyboard reachable, visible focus, `prefers-reduced-motion` respected.
+
+## Git
+- Branch per slice: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`.
+- Conventional Commits: `feat(api): add booking endpoint`.
+- Small PRs (one slice), description links the spec/plan page in `memory/wiki/`.

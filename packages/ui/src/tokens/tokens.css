@@ -1,0 +1,98 @@
+/* Design tokens — single source: memory/wiki/design/design-system.md. Components use tokens, never raw hex. */
+:root {
+  --bg: #faf7f2;
+  --surface: #ffffff;
+  --surface-2: #f3ede4;
+  --border: #e4dad0;
+  --text: #2a1f1d;
+  --text-muted: #6b5e5a;
+  --primary: #7a1f2b;
+  --primary-hover: #64161f;
+  --on-primary: #ffffff;
+  --primary-soft: #f6e7e9;
+  --accent: #b8862b;
+  --accent-text: #8a6418;
+  --danger: #b42318;
+  --danger-soft: #fdecea;
+  --warning-bg: #fff4e0;
+  --warning-text: #7a4a00;
+  --warning-border: #e9b75a;
+  --success: #1e6b3a;
+  --success-soft: #e7f4ec;
+  --focus: #b8862b;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --shadow-1: 0 1px 2px rgb(42 31 29 / 0.06), 0 1px 3px rgb(42 31 29 / 0.08);
+  --shadow-2: 0 8px 24px rgb(42 31 29 / 0.14);
+
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --font-ui: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-brand: "Lora", Georgia, serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #171112;
+    --surface: #221a1b;
+    --surface-2: #2c2223;
+    --border: #3d3132;
+    --text: #f3ece8;
+    --text-muted: #b8a9a4;
+    --primary: #e8a0a8;
+    --primary-hover: #f2b9bf;
+    --on-primary: #2a0e12;
+    --primary-soft: #3a2427;
+    --accent: #e2b95a;
+    --accent-text: #e2b95a;
+    --danger: #ff8a80;
+    --danger-soft: #3a1e1c;
+    --warning-bg: #3a2a10;
+    --warning-text: #f5d08a;
+    --warning-border: #8a6418;
+    --success: #7fd3a0;
+    --success-soft: #16301f;
+    --focus: #e2b95a;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #171112;
+  --surface: #221a1b;
+  --surface-2: #2c2223;
+  --border: #3d3132;
+  --text: #f3ece8;
+  --text-muted: #b8a9a4;
+  --primary: #e8a0a8;
+  --primary-hover: #f2b9bf;
+  --on-primary: #2a0e12;
+  --primary-soft: #3a2427;
+  --accent: #e2b95a;
+  --accent-text: #e2b95a;
+  --danger: #ff8a80;
+  --danger-soft: #3a1e1c;
+  --warning-bg: #3a2a10;
+  --warning-text: #f5d08a;
+  --warning-border: #8a6418;
+  --success: #7fd3a0;
+  --success-soft: #16301f;
+  --focus: #e2b95a;
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

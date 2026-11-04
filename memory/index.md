@@ -1,0 +1,50 @@
+# Wiki Index
+
+Catalog of every page in `wiki/`. One line per page: link — what it answers. Keep in sync on every ingest/record.
+
+## Overview
+- [overview](wiki/overview.md) — what the project is, current stage, open questions
+
+## Product
+- [vision](wiki/product/vision.md) — vision, access channels (web/PWA, native-app-ready), release scope R1–R3
+- [paper-books-analysis](wiki/product/paper-books-analysis.md) — 4 paper books today → enter-once event model, auto reminders
+- [compensation-rules](wiki/product/compensation-rules.md) — attendance, evaluation, salary, commission, Tết/loyalty bonus rules + 8 open contradictions
+- [glossary](wiki/product/glossary.md) — ubiquitous language VI ↔ code terms (draft)
+- [service-catalog](wiki/product/service-catalog.md) — real menu: 36 services, 11 categories, female/male pricing (seed data)
+- [personas](wiki/product/personas.md) — operating context (1 branch, 3–8 KTV, manager-cashier) + 5 personas
+- [spec R1-1 front-desk-and-packages](wiki/product/specs/front-desk-and-packages.md) — **approved**: catalog, customers, sell package, record visit, payments/receivables, void, package lifecycle, opening balance
+
+## Design
+- [design-system](wiki/design/design-system.md) — "Trà thất yên tĩnh" direction: tokens light/dark, fonts Be Vietnam Pro + Lora, components, motion
+- [front-desk-flows](wiki/design/front-desk-flows.md) — screen flows US2–US8, ≤4-action fast path, all states
+
+## Architecture
+- [system](wiki/architecture/system.md) — R1 architecture: quality ranking, C4 diagrams, trust boundaries, data flows, failure modes, cost
+- [frontend](wiki/architecture/frontend.md) — SPA routes, data fetching, auth/permission-aware UI, PWA, folder layout
+- [backend](wiki/architecture/backend.md) — R1-1 API contract (endpoints, errors, idempotency, ETag), use cases + integrity strategies, layering, jobs, AC trace
+- [data](wiki/architecture/data.md) — R1-1 Postgres schema + ER, tenant FKs, RLS, constraints, indexes, migrations, seed
+- [principles](wiki/architecture/principles.md) — extensibility rules: modular monolith, permissions-as-data, tenant/branch, versioned policies, pure calculators
+
+## Decisions (ADR)
+- [_template](wiki/decisions/_template.md) — ADR format
+- [ADR-0001 tech stack](wiki/decisions/ADR-0001-tech-stack.md) — **accepted**: Rust/Axum + Postgres; internal app = Vite React SPA; public site later (Next/Astro); no Redis yet
+- [ADR-0002 database hosting](wiki/decisions/ADR-0002-database-hosting.md) — **accepted (provisional)**: Supabase Pro as plain Postgres, Singapore, with mandatory lockdown
+- [ADR-0003 multi-tenancy](wiki/decisions/ADR-0003-multi-tenancy.md) — **accepted**: shared schema + tenant_id + RLS, TenantId newtype
+- [ADR-0004 authentication](wiki/decisions/ADR-0004-authentication.md) — **accepted**: Argon2id + opaque Postgres sessions, __Host- cookie, MFA owner/admin
+- [ADR-0005 compute hosting](wiki/decisions/ADR-0005-compute-hosting.md) — **accepted**: 1 Singapore VPS, Docker Compose + Caddy (provider at /devops)
+- [ADR-0006 repo & module layout](wiki/decisions/ADR-0006-repo-and-module-layout.md) — **accepted**: monorepo, Cargo workspace crate per bounded context
+
+## Security
+- [authz-matrix](wiki/security/authz-matrix.md) — R1-1 permissions × roles, re-auth, support grants, mandatory authz tests
+- [threat-model](wiki/security/threat-model.md) — STRIDE per trust boundary for R1, with tests
+
+## Plans
+- [r1-1-front-desk](wiki/plans/r1-1-front-desk.md) — 12 slices S0–S11 (foundation → kernel → auth → tracer bullet catalog → … → staging)
+
+## Research
+- [tech-stack](wiki/research/tech-stack.md) — backend & frontend language/framework comparison, recommendation
+- [code-intelligence](wiki/research/code-intelligence.md) — LSP/Serena/code-graph tools for agent impact analysis
+- [hosting-storage](wiki/research/hosting-storage.md) — where to store DB, files, video long-term; Supabase deal math; costs; VN cross-border data law
+
+## Conventions
+- [coding-standards](wiki/conventions/coding-standards.md) — clean-code rules for Rust & TypeScript, git conventions

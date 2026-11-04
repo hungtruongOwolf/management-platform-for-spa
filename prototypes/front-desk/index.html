@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Màn hình quầy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Lora:wght@600&display=swap&subset=vietnamese" rel="stylesheet">
+<style>
+:root{
+  --bg:#FAF7F2; --surface:#FFFFFF; --surface-2:#F3EDE4; --border:#E4DAD0;
+  --text:#2A1F1D; --text-muted:#6B5E5A;
+  --primary:#7A1F2B; --primary-hover:#64161F; --on-primary:#FFFFFF; --primary-soft:#F6E7E9;
+  --accent:#B8862B; --accent-text:#8A6418;
+  --danger:#B42318; --danger-soft:#FDECEA;
+  --warning-bg:#FFF4E0; --warning-text:#7A4A00; --warning-border:#E9B75A;
+  --success:#1E6B3A; --success-soft:#E7F4EC;
+  --focus:#B8862B;
+  --radius-sm:6px; --radius-md:10px; --radius-lg:14px;
+  --shadow-1:0 1px 2px rgba(42,31,29,.06),0 1px 3px rgba(42,31,29,.08);
+  --shadow-2:0 8px 24px rgba(42,31,29,.14);
+  --dur-fast:120ms; --dur-base:200ms; --ease-out:cubic-bezier(.2,.8,.2,1);
+  --font-ui:"Be Vietnam Pro",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-brand:"Lora",Georgia,serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#171112; --surface:#221A1B; --surface-2:#2C2223; --border:#3D3132;
+    --text:#F3ECE8; --text-muted:#B8A9A4;
+    --primary:#E8A0A8; --primary-hover:#F2B9BF; --on-primary:#2A0E12; --primary-soft:#3A2427;
+    --accent:#E2B95A; --accent-text:#E2B95A;
+    --danger:#FF8A80; --danger-soft:#3A1E1C;
+    --warning-bg:#3A2A10; --warning-text:#F5D08A; --warning-border:#8A6418;
+    --success:#7FD3A0; --success-soft:#16301F;
+    --focus:#E2B95A; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#171112; --surface:#221A1B; --surface-2:#2C2223; --border:#3D3132;
+  --text:#F3ECE8; --text-muted:#B8A9A4;
+  --primary:#E8A0A8; --primary-hover:#F2B9BF; --on-primary:#2A0E12; --primary-soft:#3A2427;
+  --accent:#E2B95A; --accent-text:#E2B95A;
+  --danger:#FF8A80; --danger-soft:#3A1E1C;
+  --warning-bg:#3A2A10; --warning-text:#F5D08A; --warning-border:#8A6418;
+  --success:#7FD3A0; --success-soft:#16301F;
+  --focus:#E2B95A; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size:15px;line-height:1.5}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.proto-banner{background:var(--accent);color:#2A1F1D;text-align:center;font-size:13px;font-weight:600;padding:4px 16px}
+header.top{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border)}
+.brand{font-family:var(--font-brand);font-size:20px;color:var(--primary);display:flex;align-items:center;gap:8px}
+.brand .dot{width:26px;height:26px;border-radius:50%;background:radial-gradient(circle,#F4C430 0,#B8862B 70%);display:inline-block}
+header.top .spacer{flex:1}
+.who{font-size:13px;color:var(--text-muted)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);cursor:pointer;font-weight:500;transition:background var(--dur-fast) var(--ease-out),border-color var(--dur-fast)}
+.btn:hover{background:var(--surface-2)}
+.btn-primary{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
+.btn-primary:hover{background:var(--primary-hover)}
+.btn-sm{min-height:36px;padding:0 12px;font-size:14px}
+.btn[aria-disabled="true"]{opacity:.55;cursor:not-allowed}
+.btn.is-on{background:var(--primary-soft);border-color:var(--primary);color:var(--primary);font-weight:600}
+main.layout{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:16px;padding:16px;max-width:1280px;margin:0 auto}
+@media (max-width:900px){main.layout{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-1);padding:16px}
+.card h2{font-size:16px;margin:0 0 12px;font-weight:600}
+.searchbox{position:relative}
+.searchbox input{width:100%;min-height:52px;padding:0 16px;font-size:18px;border:2px solid var(--border);border-radius:var(--radius-md);background:var(--surface)}
+.searchbox input:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 3px var(--primary-soft)}
+.hint{font-size:12px;color:var(--text-muted);margin-top:6px}
+.results{list-style:none;margin:8px 0 0;padding:0;border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden}
+.results li{padding:10px 14px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid var(--border)}
+.results li:last-child{border-bottom:0}
+.results li[aria-selected="true"],.results li:hover{background:var(--primary-soft)}
+.results .meta{color:var(--text-muted);font-size:13px}
+.empty{color:var(--text-muted);padding:16px;text-align:center}
+.cust-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap}
+.cust-name{font-size:20px;font-weight:700}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;background:var(--surface-2);color:var(--text-muted)}
+.badge-debt{background:var(--danger-soft);color:var(--danger)}
+.badge-ok{background:var(--success-soft);color:var(--success)}
+.health{margin:12px 0;padding:10px 12px;border-radius:var(--radius-md);background:var(--warning-bg);color:var(--warning-text);border:1px solid var(--warning-border);font-weight:500}
+.health strong{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.pkgs{display:grid;gap:8px;margin-top:8px}
+.pkg{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-md);flex-wrap:wrap}
+.pkg .name{font-weight:600}
+.pkg .sub{font-size:13px;color:var(--text-muted)}
+.pkg.exhausted{background:var(--surface-2)}
+.err-inline{color:var(--danger);font-size:13px;font-weight:500}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+select,input[type=number],input[type=text],input[type=tel]{min-height:44px;padding:0 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface)}
+select.invalid{border-color:var(--danger);box-shadow:0 0 0 2px var(--danger-soft)}
+.cart{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.cart li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 10px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-md)}
+.cart .src{font-size:12px;color:var(--text-muted)}
+.cart .price{font-weight:600;text-align:right}
+.cart .line-actions{grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.total{display:flex;justify-content:space-between;font-size:18px;font-weight:700;margin:12px 0}
+.money{font-variant-numeric:tabular-nums}
+.methods{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.save{width:100%;min-height:52px;font-size:17px;margin-top:12px}
+.today{list-style:none;margin:0;padding:0}
+.today li{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px dashed var(--border);font-size:14px}
+.today li:last-child{border-bottom:0}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);opacity:0;background:var(--text);color:var(--bg);padding:12px 18px;border-radius:var(--radius-md);box-shadow:var(--shadow-2);max-width:calc(100% - 32px);transition:opacity var(--dur-base) var(--ease-out),transform var(--dur-base) var(--ease-out);pointer-events:none;z-index:10}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.error{background:var(--danger);color:#fff}
+.newcust{display:grid;gap:8px;margin-top:10px;padding:12px;border:1px dashed var(--border);border-radius:var(--radius-md)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+kbd{font-family:inherit;font-size:12px;border:1px solid var(--border);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--surface-2)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="proto-banner" role="note">PROTOTYPE · dữ liệu giả lập, không lưu thật · Spec R1-1</div>
+<header class="top">
+  <div class="brand"><span class="dot" aria-hidden="true"></span>Viên Phúc Y Đường</div>
+  <span class="spacer"></span>
+  <span class="who">Quản lý: Ngọc · Chi nhánh Đông Hà</span>
+  <button class="btn btn-sm" id="themeBtn" type="button" aria-label="Đổi giao diện sáng/tối">◐</button>
+</header>
+
+<main class="layout">
+  <section aria-labelledby="h-left" style="display:grid;gap:16px;align-content:start">
+    <div class="card">
+      <h2 id="h-left">Tìm khách</h2>
+      <div class="searchbox">
+        <label for="q" class="sr">Tìm theo số điện thoại hoặc tên</label>
+        <input id="q" type="search" autocomplete="off" placeholder="Nhập SĐT hoặc tên khách…" aria-controls="results" aria-autocomplete="list">
+      </div>
+      <div class="hint">Gõ ≥ 3 số hoặc ≥ 2 chữ (không cần dấu). <kbd>↑</kbd><kbd>↓</kbd> chọn, <kbd>Enter</kbd> mở, <kbd>/</kbd> về ô tìm, <kbd>Ctrl</kbd>+<kbd>Enter</kbd> lưu.</div>
+      <div id="resultsWrap"></div>
+    </div>
+    <div class="card" id="customerCard" aria-live="polite"></div>
+  </section>
+
+  <section aria-labelledby="h-right" style="display:grid;gap:16px;align-content:start">
+    <div class="card">
+      <h2 id="h-right">Lượt khách đang ghi</h2>
+      <div id="cart"></div>
+      <div id="addon"></div>
+      <div id="payment"></div>
+    </div>
+    <div class="card">
+      <h2>Lượt khách hôm nay</h2>
+      <ul class="today" id="today"></ul>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+/* ---------- Mock data (from service-catalog.md) ---------- */
+const SERVICES = [
+  {id:"s1", cat:"Gội đầu dưỡng sinh", name:"Cơ Bản – Dầu thảo dược", min:30, prices:{all:49000}},
+  {id:"s2", cat:"Gội đầu dưỡng sinh", name:"Thư Giãn", min:45, prices:{female:79000, male:99000}},
+  {id:"s3", cat:"Gội đầu dưỡng sinh", name:"Chuyên Sâu Đặc Biệt", min:60, prices:{female:149000, male:199000}, star:true},
+  {id:"s4", cat:"Chăm sóc cổ vai gáy", name:"An Kiên Lạc", min:70, prices:{female:249000, male:299000}},
+  {id:"s5", cat:"Chăm sóc cổ vai gáy", name:"Đại Thông Lạc", min:90, prices:{female:349000, male:399000}, star:true},
+  {id:"s6", cat:"Dưỡng sinh chuyên biệt", name:"Ôn ấm tử cung (giá minh họa)", min:120, prices:{female:399000, male:null}, star:true},
+  {id:"s7", cat:"Chăm sóc chân", name:"Xông chân thảo dược + Massage chân", min:45, prices:{all:149000}, star:true},
+  {id:"s8", cat:"Dịch vụ bổ sung", name:"Mặt nạ thuốc bắc", min:null, prices:{all:50000}},
+  {id:"s9", cat:"Dịch vụ bổ sung", name:"Tẩy tế bào chết da đầu", min:null, prices:{all:20000}},
+  {id:"s10", cat:"Dịch vụ bổ sung", name:"Giác hơi + Đắp thuốc bắc", min:null, prices:{all:100000}}
+];
+const STAFF = [
+  {id:"t1", name:"Lan"}, {id:"t2", name:"Hoa"}, {id:"t3", name:"Mai"}, {id:"t4", name:"Tuấn"}, {id:"t5", name:"Hương"}
+];
+const CUSTOMERS = [
+  {id:"c1", name:"Nguyễn Thị Hà", phone:"0905123456", gender:"female", debt:0,
+   health:"Huyết áp cao — tránh đá nóng, lực nhẹ vùng cổ.",
+   pkgs:[{id:"p1", serviceId:"s3", name:"Chuyên Sâu Đặc Biệt 10 + tặng 2", total:12, remaining:5, expires:"30/04/2027", debt:0}]},
+  {id:"c2", name:"Trần Văn Đức", phone:"0912888777", gender:"male", debt:0, health:"",
+   pkgs:[{id:"p2", serviceId:"s5", name:"Đại Thông Lạc 5 buổi", total:5, remaining:0, expires:"15/12/2026", debt:0}]},
+  {id:"c3", name:"Lê Thị Ánh", phone:"0987654321", gender:"female", debt:0, health:"",
+   pkgs:[{id:"p3", serviceId:"s7", name:"Xông chân 10 buổi", total:10, remaining:3, expires:"", debt:0},
+         {id:"p4", serviceId:"s4", name:"An Kiên Lạc 6 buổi", total:6, remaining:6, expires:"31/03/2027", debt:0}]},
+  {id:"c4", name:"Phạm Minh Khôi", phone:"0938111222", gender:null, debt:0, health:"", pkgs:[]},
+  {id:"c5", name:"Hoàng Thị Thu Hằng", phone:"0977333444", gender:"female", debt:0, health:"", pkgs:[]}
+];
+const TODAY = [
+  {time:"08:40", customer:"Lê Thị Ánh", items:"Xông chân (trừ buổi)", staff:"Hoa", amount:0},
+  {time:"09:15", customer:"Hoàng Thị Thu Hằng", items:"Thư Giãn", staff:"Lan", amount:79000}
+];
+const staffUse = {t1:5, t2:3, t3:1, t4:0, t5:2};
+
+/* ---------- State ---------- */
+const S = {query:"", results:[], active:0, selected:null, cart:[], method:"cash", amount:null, addonGender:null, showNew:false, seq:0, attempted:false};
+
+/* ---------- Helpers ---------- */
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const vnd = (n) => new Intl.NumberFormat("vi-VN").format(n) + "đ";
+const fold = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase().trim();
+const phoneNorm = (s) => { let d = s.replace(/\D/g, ""); if (d.startsWith("84")) d = "0" + d.slice(2); return d; };
+const svc = (id) => SERVICES.find(s => s.id === id);
+const staffName = (id) => (STAFF.find(t => t.id === id) || {}).name || "";
+const genderLabel = (g) => g === "female" ? "Nữ" : g === "male" ? "Nam" : "Chưa rõ giới tính";
+function priceFor(service, gender){
+  if (service.prices.all != null) return {ok:true, price:service.prices.all};
+  if (!gender) return {ok:false, reason:"need-gender"};
+  const p = service.prices[gender];
+  if (p == null) return {ok:false, reason:"na"};
+  return {ok:true, price:p};
+}
+function inCartCount(pkgId){ return S.cart.filter(l => l.pkgId === pkgId).length; }
+function due(){ return S.cart.reduce((a, l) => a + (l.source === "oneoff" ? l.price : 0), 0); }
+
+let toastTimer;
+function toast(msg, isError){
+  const t = $("toast"); t.textContent = msg; t.className = "toast show" + (isError ? " error" : "");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.className = "toast"; }, 3200);
+}
+
+/* ---------- Search ---------- */
+function runSearch(q){
+  S.query = q; S.active = 0;
+  const digits = phoneNorm(q); const f = fold(q);
+  const isPhone = digits.length >= 3 && digits.length >= q.replace(/\s|\./g, "").length - 1;
+  if (isPhone) S.results = CUSTOMERS.filter(c => c.phone.includes(digits));
+  else if (f.length >= 2) S.results = CUSTOMERS.filter(c => fold(c.name).includes(f));
+  else S.results = [];
+  renderResults();
+}
+function renderResults(){
+  const w = $("resultsWrap"); const q = S.query.trim();
+  if (!q) { w.innerHTML = ""; return; }
+  let html = "";
+  if (S.results.length) {
+    html += '<ul class="results" id="results" role="listbox" aria-label="Kết quả tìm khách">';
+    S.results.forEach((c, i) => {
+      const remaining = c.pkgs.reduce((a, p) => a + p.remaining, 0);
+      html += `<li role="option" id="opt-${esc(c.id)}" data-id="${esc(c.id)}" aria-selected="${i === S.active}">
+        <span><strong>${esc(c.name)}</strong><br><span class="meta">${esc(c.phone)} · ${esc(genderLabel(c.gender))}</span></span>
+        <span class="meta">${c.pkgs.length ? esc(c.pkgs.length + " liệu trình · " + remaining + " buổi") : "Chưa có liệu trình"}</span></li>`;
+    });
+    html += "</ul>";
+  } else {
+    html += '<div class="empty">Không tìm thấy khách nào.</div>';
+  }
+  html += '<div class="row" style="margin-top:8px"><button class="btn btn-sm" type="button" id="newBtn">+ Khách mới</button></div>';
+  if (S.showNew) {
+    const pre = phoneNorm(q).length >= 3 ? phoneNorm(q) : "";
+    const preName = pre ? "" : q;
+    html += `<form class="newcust" id="newForm" novalidate>
+      <label>Họ tên <input type="text" id="nName" required value="${esc(preName)}"></label>
+      <label>Số điện thoại <input type="tel" id="nPhone" required value="${esc(pre)}"></label>
+      <div class="row" role="radiogroup" aria-label="Giới tính">
+        <label><input type="radio" name="nG" value="female"> Nữ</label>
+        <label><input type="radio" name="nG" value="male"> Nam</label>
+      </div>
+      <div class="err-inline" id="nErr" role="alert"></div>
+      <div class="row"><button class="btn btn-primary btn-sm" type="submit">Lưu khách & chọn</button></div>
+    </form>`;
+  }
+  w.innerHTML = html;
+  w.querySelectorAll(".results li").forEach(li => li.addEventListener("click", () => selectCustomer(li.dataset.id)));
+  $("newBtn").addEventListener("click", () => { S.showNew = !S.showNew; renderResults(); if (S.showNew) $("nName").focus(); });
+  const form = $("newForm");
+  if (form) form.addEventListener("submit", (e) => { e.preventDefault(); createCustomer(); });
+}
+function createCustomer(){
+  const name = $("nName").value.trim().normalize("NFC");
+  const phone = phoneNorm($("nPhone").value);
+  const g = (document.querySelector('input[name="nG"]:checked') || {}).value || null;
+  const err = $("nErr");
+  if (!name) { err.textContent = "Vui lòng nhập họ tên."; return; }
+  if (!/^0\d{9}$/.test(phone)) { err.textContent = "Số điện thoại chưa đúng (10 số, bắt đầu bằng 0)."; return; }
+  const dup = CUSTOMERS.find(c => c.phone === phone);
+  if (dup) { err.innerHTML = `SĐT đã có: <a href="#" id="dupLink">${esc(dup.name)}</a>`; $("dupLink").addEventListener("click", (e) => { e.preventDefault(); selectCustomer(dup.id); }); return; }
+  const c = {id:"c" + (CUSTOMERS.length + 1) + "_" + Date.now(), name, phone, gender:g, debt:0, health:"", pkgs:[]};
+  CUSTOMERS.push(c); S.showNew = false; selectCustomer(c.id); toast("Đã tạo khách mới: " + name);
+}
+function selectCustomer(id){
+  S.selected = CUSTOMERS.find(c => c.id === id) || null;
+  S.cart = []; S.amount = null; S.method = "cash"; S.attempted = false;
+  S.addonGender = S.selected ? S.selected.gender : null;
+  S.query = ""; S.results = []; $("q").value = ""; S.showNew = false;
+  renderResults(); renderAll();
+  const firstBtn = document.querySelector(".pkg .deduct:not([aria-disabled='true'])");
+  (firstBtn || $("addonSel") || $("q")).focus();
+}
+
+/* ---------- Customer card ---------- */
+function renderCustomer(){
+  const el = $("customerCard"); const c = S.selected;
+  if (!c) { el.innerHTML = '<div class="empty">Chưa chọn khách. Tìm khách ở ô phía trên để bắt đầu một lượt.</div>'; return; }
+  const pkgDebt = c.pkgs.reduce((a, p) => a + p.debt, 0); const totalDebt = pkgDebt + c.debt;
+  let html = `<div class="cust-head"><div><div class="cust-name">${esc(c.name)}</div>
+    <div class="meta" style="color:var(--text-muted)">${esc(c.phone)} · ${esc(genderLabel(c.gender))}</div></div>
+    </div>`;
+  if (c.health) html += `<div class="health" role="note"><strong>⚠ Lưu ý sức khỏe</strong>${esc(c.health)}</div>`;
+  html += '<h2 style="margin-top:12px">Liệu trình</h2>';
+  if (!c.pkgs.length) html += '<div class="empty">Khách chưa có liệu trình nào.</div>';
+  html += '<div class="pkgs">';
+  c.pkgs.forEach(p => {
+    const left = p.remaining - inCartCount(p.id);
+    const exhausted = left <= 0;
+    html += `<div class="pkg ${exhausted ? "exhausted" : ""}">
+      <div><div class="name">${esc(p.name)}</div>
+      <div class="sub">Còn <strong>${left}/${p.total}</strong> buổi${p.expires ? " · HSD " + esc(p.expires) : " · Không thời hạn"}${p.debt ? ` · <span class="err-inline">nợ ${vnd(p.debt)}</span>` : ""}</div>
+      ${exhausted && p.remaining === 0 ? '<div class="err-inline">Đã hết buổi. Gợi ý: tư vấn gia hạn / bán gói mới.</div>' : ""}</div>
+      <button class="btn btn-sm deduct" type="button" data-pkg="${esc(p.id)}" aria-disabled="${exhausted}">Trừ 1 buổi</button></div>`;
+  });
+  html += "</div>";
+  html += '<div class="row" style="margin-top:12px"><button class="btn btn-sm" type="button" aria-disabled="true" title="Chưa có trong prototype">+ Bán liệu trình mới</button></div>';
+  el.innerHTML = html;
+  el.querySelectorAll(".deduct").forEach(b => b.addEventListener("click", () => deduct(b.dataset.pkg)));
+}
+function deduct(pkgId){
+  const p = S.selected.pkgs.find(x => x.id === pkgId);
+  if (p.remaining - inCartCount(pkgId) <= 0) {
+    toast(p.remaining === 0 ? "Liệu trình đã hết buổi. Không thể trừ thêm, gợi ý bán gói mới." : "Đã trừ hết số buổi còn lại trong lượt này.", true);
+    return;
+  }
+  S.cart.push({key:++S.seq, serviceId:p.serviceId, source:"package", pkgId, staffId:"", price:0});
+  renderAll(); focusLastStaff();
+}
+
+/* ---------- Add-on ---------- */
+function renderAddon(){
+  const el = $("addon");
+  if (!S.selected) { el.innerHTML = ""; return; }
+  const needGender = !S.selected.gender;
+  let opts = ""; let lastCat = "";
+  SERVICES.forEach(s => {
+    if (s.cat !== lastCat) { if (lastCat) opts += "</optgroup>"; opts += `<optgroup label="${esc(s.cat)}">`; lastCat = s.cat; }
+    const pr = s.prices.all != null ? vnd(s.prices.all) : `Nữ ${s.prices.female != null ? vnd(s.prices.female) : "—"} / Nam ${s.prices.male != null ? vnd(s.prices.male) : "—"}`;
+    opts += `<option value="${esc(s.id)}">${s.star ? "★ " : ""}${esc(s.name)} · ${esc(pr)}</option>`;
+  });
+  opts += "</optgroup>";
+  el.innerHTML = `<h2 style="margin-top:16px">Thêm dịch vụ lẻ / dùng thêm</h2>
+    <div class="row">
+      <label class="sr" for="addonSel">Dịch vụ</label>
+      <select id="addonSel" style="flex:1;min-width:220px"><option value="">Chọn dịch vụ…</option>${opts}</select>
+      ${needGender ? `<span role="radiogroup" aria-label="Giới tính để tính giá" class="row">
+        <button type="button" class="btn btn-sm ${S.addonGender === "female" ? "is-on" : ""}" data-g="female" aria-pressed="${S.addonGender === "female"}">Nữ</button>
+        <button type="button" class="btn btn-sm ${S.addonGender === "male" ? "is-on" : ""}" data-g="male" aria-pressed="${S.addonGender === "male"}">Nam</button></span>` : ""}
+      <button class="btn btn-sm" type="button" id="addonBtn">Thêm</button>
+    </div>
+    ${needGender ? '<div class="hint">Khách chưa có giới tính: chọn Nữ/Nam để tính giá.</div>' : ""}`;
+  el.querySelectorAll("[data-g]").forEach(b => b.addEventListener("click", () => { S.addonGender = b.dataset.g; renderAddon(); }));
+  $("addonBtn").addEventListener("click", addAddon);
+}
+function addAddon(){
+  const id = $("addonSel").value;
+  if (!id) { toast("Chọn một dịch vụ trước.", true); $("addonSel").focus(); return; }
+  const s = svc(id); const r = priceFor(s, S.addonGender);
+  if (!r.ok && r.reason === "need-gender") { toast("Chọn Nữ hoặc Nam để tính giá dịch vụ này.", true); return; }
+  if (!r.ok && r.reason === "na") { toast(`"${s.name}" không áp dụng cho khách ${genderLabel(S.addonGender)}.`, true); return; }
+  S.cart.push({key:++S.seq, serviceId:id, source:"oneoff", pkgId:null, staffId:"", price:r.price});
+  S.amount = null; renderAll(); focusLastStaff();
+}
+
+/* ---------- Cart & payment ---------- */
+function staffOptions(sel){
+  return [...STAFF].sort((a, b) => (staffUse[b.id] || 0) - (staffUse[a.id] || 0))
+    .map(t => `<option value="${esc(t.id)}" ${t.id === sel ? "selected" : ""}>${esc(t.name)}</option>`).join("");
+}
+function renderCart(){
+  const el = $("cart");
+  if (!S.selected) { el.innerHTML = '<div class="empty">Chọn khách để bắt đầu ghi lượt.</div>'; return; }
+  if (!S.cart.length) { el.innerHTML = '<div class="empty">Chưa có dịch vụ. Bấm "Trừ 1 buổi" ở liệu trình hoặc thêm dịch vụ lẻ.</div>'; return; }
+  let html = '<ul class="cart">';
+  S.cart.forEach(l => {
+    const s = svc(l.serviceId);
+    const invalid = S.attempted && !l.staffId;
+    html += `<li><div><div><strong>${esc(s.name)}</strong></div>
+      <div class="src">${l.source === "package" ? "Trừ liệu trình" : "Dịch vụ lẻ"}${s.min ? " · " + s.min + " phút" : ""}</div></div>
+      <div class="price money">${l.source === "package" ? "—" : vnd(l.price)}</div>
+      <div class="line-actions">
+        <label for="st-${l.key}">KTV</label>
+        <select id="st-${l.key}" data-key="${l.key}" class="staffSel ${invalid ? "invalid" : ""}" aria-invalid="${invalid}" aria-required="true">
+          <option value="">Chọn KTV…</option>${staffOptions(l.staffId)}</select>
+        ${invalid ? '<span class="err-inline">Cần chọn KTV</span>' : ""}
+        <span style="flex:1"></span>
+        <button class="btn btn-sm rm" type="button" data-key="${l.key}" aria-label="Bỏ dòng ${esc(s.name)}">Bỏ</button>
+      </div></li>`;
+  });
+  html += "</ul>";
+  el.innerHTML = html;
+  el.querySelectorAll(".staffSel").forEach(x => x.addEventListener("change", () => { const l = S.cart.find(c => c.key == x.dataset.key); l.staffId = x.value; renderCart(); renderPayment(); }));
+  el.querySelectorAll(".rm").forEach(b => b.addEventListener("click", () => { S.cart = S.cart.filter(c => c.key != b.dataset.key); S.amount = null; renderAll(); }));
+}
+function focusLastStaff(){ const sels = document.querySelectorAll(".staffSel"); if (sels.length) sels[sels.length - 1].focus(); }
+function renderPayment(){
+  const el = $("payment");
+  if (!S.selected || !S.cart.length) { el.innerHTML = ""; return; }
+  const d = due();
+  if (S.amount == null) S.amount = d;
+  let html = `<div class="total"><span>Phải trả</span><span class="money">${vnd(d)}</span></div>`;
+  if (d > 0) {
+    html += `<div class="methods" role="radiogroup" aria-label="Hình thức thanh toán">
+      ${[["cash","Tiền mặt"],["transfer","Chuyển khoản"]].map(([k, v]) => `<button type="button" class="btn ${S.method === k ? "is-on" : ""}" data-m="${k}" aria-pressed="${S.method === k}">${v}</button>`).join("")}
+    </div>`;
+    html += `<div class="hint" style="margin-top:8px">Thu đủ ${vnd(d)} bằng ${S.method === "cash" ? "tiền mặt" : "chuyển khoản"}.</div>`;
+  } else {
+    html += '<div class="hint">Lượt này chỉ trừ buổi liệu trình, không phát sinh tiền.</div>';
+  }
+  html += `<button class="btn btn-primary save" type="button" id="saveBtn">Lưu lượt khách</button>`;
+  el.innerHTML = html;
+  el.querySelectorAll("[data-m]").forEach(b => b.addEventListener("click", () => { S.method = b.dataset.m; if (S.method !== "debt") S.amount = d; renderPayment(); }));
+  const amt = $("amt");
+  if (amt) amt.addEventListener("input", () => {
+    S.amount = Math.max(0, Math.round(Number(amt.value) || 0));
+    const h = $("amtHint"); h.textContent = S.amount > d ? "Không thu quá số phải trả" : (S.amount < d ? "Còn lại " + vnd(d - S.amount) + " sẽ ghi nợ" : "");
+    h.style.color = S.amount > d ? "var(--danger)" : "";
+  });
+  $("saveBtn").addEventListener("click", save);
+}
+function save(){
+  if (!S.selected || !S.cart.length) return;
+  S.attempted = true;
+  if (S.cart.some(l => !l.staffId)) { renderCart(); renderPayment(); toast("Mỗi dịch vụ cần chọn KTV thực hiện.", true); focusFirstInvalid(); return; }
+  const d = due(); const paid = d;
+  if (paid > d) { toast("Số tiền thu vượt quá số phải trả.", true); return; }
+  const c = S.selected; const msgs = [];
+  S.cart.filter(l => l.source === "package").forEach(l => { const p = c.pkgs.find(x => x.id === l.pkgId); p.remaining -= 1; });
+  c.pkgs.forEach(p => { const n = S.cart.filter(l => l.pkgId === p.id).length; if (n) msgs.push(`${p.name}: còn ${p.remaining}/${p.total}`); });
+  if (d - paid > 0) { c.debt += d - paid; msgs.push("ghi nợ " + vnd(d - paid)); }
+  S.cart.forEach(l => { staffUse[l.staffId] = (staffUse[l.staffId] || 0) + 1; });
+  const now = new Date();
+  TODAY.unshift({time:String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0"), customer:c.name,
+    items:S.cart.map(l => svc(l.serviceId).name + (l.source === "package" ? " (trừ buổi)" : "")).join(", "),
+    staff:[...new Set(S.cart.map(l => staffName(l.staffId)))].join(", "), amount:paid});
+  toast("Đã lưu lượt của " + c.name + (msgs.length ? " · " + msgs.join(" · ") : ""));
+  S.selected = null; S.cart = []; S.amount = null; S.attempted = false;
+  renderAll(); $("q").focus();
+}
+function focusFirstInvalid(){ const x = document.querySelector(".staffSel.invalid"); if (x) x.focus(); }
+
+/* ---------- Today ---------- */
+function renderToday(){
+  const el = $("today");
+  if (!TODAY.length) { el.innerHTML = '<li class="empty">Chưa có khách nào hôm nay.</li>'; return; }
+  el.innerHTML = TODAY.map(v => `<li><span><strong>${esc(v.time)}</strong> · ${esc(v.customer)}<br><span style="color:var(--text-muted)">${esc(v.items)} · KTV ${esc(v.staff)}</span></span><span class="money">${v.amount ? vnd(v.amount) : "—"}</span></li>`).join("");
+}
+function renderAll(){ renderCustomer(); renderCart(); renderAddon(); renderPayment(); renderToday(); }
+
+/* ---------- Keyboard & wiring ---------- */
+$("q").addEventListener("input", (e) => runSearch(e.target.value));
+$("q").addEventListener("keydown", (e) => {
+  if (!S.results.length) return;
+  if (e.key === "ArrowDown") { e.preventDefault(); S.active = (S.active + 1) % S.results.length; renderResults(); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); S.active = (S.active - 1 + S.results.length) % S.results.length; renderResults(); }
+  else if (e.key === "Enter") { e.preventDefault(); selectCustomer(S.results[S.active].id); }
+});
+document.addEventListener("keydown", (e) => {
+  const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName);
+  if (e.key === "/" && !typing) { e.preventDefault(); $("q").focus(); }
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
+  if (e.key === "Escape" && S.selected && !typing) { S.selected = null; S.cart = []; renderAll(); $("q").focus(); }
+});
+$("themeBtn").addEventListener("click", () => {
+  const root = document.documentElement;
+  const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  root.dataset.theme = dark ? "light" : "dark";
+});
+renderAll();
+$("q").focus();
+</script>
+</body>
+</html>
