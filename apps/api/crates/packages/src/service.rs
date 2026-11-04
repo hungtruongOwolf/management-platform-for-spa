@@ -2,7 +2,8 @@
 //!
 //! - [`create`]: a package with its items, from a sale (S6) or from the old paper books (S9,
 //!   `Origin::OpeningBalance`, no sale and no payment);
-//! - [`consume_session`]: take sessions from one item atomically (S7 visits).
+//! - [`consume_session`]: take sessions from one item atomically (S7 visits);
+//! - [`default_item`]: which item a visit uses when none was picked (S7, AC4.3).
 //!
 //! Both run inside the caller's `TenantTx` and leave authorization to the caller.
 
@@ -216,6 +217,11 @@ pub struct Consumed {
     pub sessions_remaining: i32,
     /// Value of the sessions taken: paid sessions at `per_session_value`, bonus ones at 0.
     pub value: Money,
+    pub per_session_value: Money,
+    /// Package name (snapshot), for receipts and toasts.
+    pub package_name: String,
+    /// The package was past its expiry and went through only because `allow_expired` was set.
+    pub used_expired: bool,
 }
 
 /// Takes `qty` sessions from one item in a single atomic `UPDATE … WHERE remaining >= qty`
@@ -252,6 +258,9 @@ pub async fn consume_session(tx: &mut TenantTx, c: Consume) -> Result<Consumed, 
                 used_before,
                 c.qty,
             ),
+            per_session_value: per_session,
+            package_name: row.package_name,
+            used_expired: row.expired,
         });
     }
     let code = match repo::item_state(tx, c.item_id).await? {
@@ -269,6 +278,19 @@ pub async fn consume_session(tx: &mut TenantTx, c: Consume) -> Result<Consumed, 
             code: "package.item_not_found",
         },
     })
+}
+
+/// The item a visit uses when the front desk did not pick a package (AC4.3): among the
+/// customer's usable packages containing `service_id`, the one expiring soonest, then the oldest.
+/// `None` = no usable package (all exhausted, expired or cancelled — pick one explicitly to get
+/// the precise 409, or to use an expired one with an override). Runs in the caller's transaction.
+pub async fn default_item(
+    tx: &mut TenantTx,
+    customer_id: Uuid,
+    service_id: Uuid,
+    today: NaiveDate,
+) -> Result<Option<Uuid>, AppError> {
+    repo::default_item(tx, customer_id, service_id, today).await
 }
 
 // ---------------------------------------------------------------- read side

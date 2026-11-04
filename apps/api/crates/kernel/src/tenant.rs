@@ -12,6 +12,8 @@ pub const DEFAULT_MANAGER_DISCOUNT_MAX_PCT: u32 = 10;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TenantProfile {
     pub business_date: BusinessDate,
+    /// The spa's time zone: which business day an instant (e.g. a visit's check-in) belongs to.
+    pub timezone: chrono_tz::Tz,
     /// Branch new records belong to. R1 spas have one branch; per-user branch scope comes with spec #4.
     pub branch: BranchId,
     /// Highest discount, in percent of the subtotal, allowed without `sale.discount_unlimited`.
@@ -40,6 +42,7 @@ pub async fn profile(tx: &mut TenantTx) -> Result<TenantProfile, AppError> {
         .ok_or_else(|| AppError::Internal(format!("tenant {tenant} has no active branch")))?;
     Ok(TenantProfile {
         business_date: BusinessDate::today(tz),
+        timezone: tz,
         branch,
         manager_discount_max_pct: parse_pct(row.manager_discount_max_pct.as_deref()),
     })

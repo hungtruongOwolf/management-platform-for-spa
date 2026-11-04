@@ -130,6 +130,31 @@ pub async fn seed_menu(owner: &PgPool, tenant_slug: &str) -> Result<SeedReport, 
     Ok(report)
 }
 
+/// A service as a one-off visit line charges it: name and prices at this moment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceSnapshot {
+    pub id: Uuid,
+    pub name: String,
+    pub active: bool,
+    pub prices: crate::domain::ServicePrices,
+}
+
+/// Reads a service of the caller's tenant inside the caller's transaction (`None` = no such
+/// service here), locked `FOR SHARE` against a concurrent price edit. The caller authorizes.
+pub async fn service_snapshot(
+    tx: &mut TenantTx,
+    id: Uuid,
+) -> Result<Option<ServiceSnapshot>, AppError> {
+    Ok(repo::lock_service(tx, id)
+        .await?
+        .map(|s| ServiceSnapshot {
+            id: s.id,
+            name: s.name,
+            active: s.active,
+            prices: s.prices,
+        }))
+}
+
 /// One line of a plan as it is sold: the service and its name at this moment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlanItemSnapshot {

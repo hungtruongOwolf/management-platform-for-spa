@@ -14,7 +14,7 @@ pub struct SaleInsert<'a> {
     pub discount_reason: Option<&'a str>,
     pub total: i64,
     pub amount_paid: i64,
-    pub closer_staff_id: Uuid,
+    pub closer_staff_id: Option<Uuid>,
     pub created_by: Uuid,
 }
 
@@ -74,6 +74,67 @@ pub async fn insert_package_line(
     .execute(tx.conn())
     .await?;
     Ok(())
+}
+
+pub struct ServiceLineInsert<'a> {
+    pub sale_id: Uuid,
+    pub position: i32,
+    pub service_id: Uuid,
+    pub description: &'a str,
+    pub qty: i32,
+    pub unit_price: i64,
+    pub line_total: i64,
+}
+
+pub async fn insert_service_line(
+    tx: &mut TenantTx,
+    l: &ServiceLineInsert<'_>,
+) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"INSERT INTO app.sale_line
+             (id, tenant_id, sale_id, line_type, service_id, description_snapshot, qty, unit_price, line_total, position)
+           VALUES ($1, $2, $3, 'service', $4, $5, $6, $7, $8, $9)"#,
+        Uuid::now_v7(),
+        tenant,
+        l.sale_id,
+        l.service_id,
+        l.description,
+        l.qty,
+        l.unit_price,
+        l.line_total,
+        l.position
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+pub struct SalePaymentRow {
+    pub sale_id: Uuid,
+    pub id: Uuid,
+    pub kind: String,
+    pub method: String,
+    pub amount: i64,
+    pub reference: Option<String>,
+    pub paid_at: DateTime<Utc>,
+}
+
+/// Payments of several sales in one query (read models such as the day's visit list).
+pub async fn payments_of(
+    tx: &mut TenantTx,
+    sale_ids: &[Uuid],
+) -> Result<Vec<SalePaymentRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        SalePaymentRow,
+        r#"SELECT sale_id, id, kind, method, amount, reference, paid_at
+           FROM app.payment WHERE tenant_id = $1 AND sale_id = ANY($2) ORDER BY paid_at, id"#,
+        tenant,
+        sale_ids
+    )
+    .fetch_all(tx.conn())
+    .await?)
 }
 
 pub struct PaymentInsert<'a> {

@@ -8,11 +8,14 @@ import { GENDER_LABEL, isSearchable, searchQuery } from "./api";
 export function CustomerSearch({
   onSelect,
   onCreate,
+  inputRef,
   autoFocus = false,
 }: {
   onSelect: (c: CustomerSummary) => void;
   onCreate: (typed: string) => void;
-  /** Focus the search box on mount (continuous data entry). */
+  /** Lets a screen move focus back to the search box (front desk: after saving, on "/"). */
+  inputRef?: React.Ref<HTMLInputElement>;
+  /** Focus the search box on mount (continuous data entry, front desk). */
   autoFocus?: boolean;
 }) {
   const [text, setText] = useState("");
@@ -60,6 +63,7 @@ export function CustomerSearch({
       </label>
       <input
         id={`${listId}-input`}
+        ref={inputRef}
         type="search"
         autoComplete="off"
         autoFocus={autoFocus}

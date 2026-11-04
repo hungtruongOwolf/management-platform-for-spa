@@ -36,6 +36,10 @@ use utoipa::OpenApi;
         packages::http::import_opening_balance,
         sales::http::create_sale,
         sales::http::read_sale,
+        operations::http::create_visit,
+        operations::http::list_visits,
+        operations::http::read_visit,
+        operations::http::update_visit,
     ),
     tags(
         (name = "auth", description = "Đăng nhập, phiên, đổi spa"),
@@ -44,6 +48,7 @@ use utoipa::OpenApi;
         (name = "staff", description = "Nhân viên (chọn người chốt, KTV)"),
         (name = "packages", description = "Liệu trình của khách, nhập từ sổ cũ"),
         (name = "sales", description = "Bán liệu trình, thanh toán"),
+        (name = "visits", description = "Ghi lượt khách tại quầy"),
     )
 )]
 pub struct ApiDoc;
@@ -89,6 +94,8 @@ mod tests {
             "/api/v1/customer-packages/{id}",
             "/api/v1/customers/{id}/packages",
             "/api/v1/opening-balances",
+            "/api/v1/visits",
+            "/api/v1/visits/{id}",
         ] {
             assert!(paths.contains(&expected), "{expected} missing from OpenAPI");
         }
@@ -109,6 +116,9 @@ mod tests {
             "StaffDto",
             "OpeningBalanceCreate",
             "OpeningBalanceDto",
+            "VisitCreate",
+            "VisitDto",
+            "VisitUpdate",
         ] {
             assert!(schemas.contains_key(schema), "{schema} missing");
         }

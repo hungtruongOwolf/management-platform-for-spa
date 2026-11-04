@@ -80,6 +80,7 @@ dependencies = [
  "http-body-util",
  "identity",
  "kernel",
+ "operations",
  "org",
  "packages",
  "sales",
@@ -1317,6 +1318,27 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "operations"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "catalog",
+ "chrono",
+ "chrono-tz",
+ "crm",
+ "identity",
+ "kernel",
+ "org",
+ "packages",
+ "sales",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "utoipa",
+ "uuid",
+]
 
 [[package]]
 name = "org"

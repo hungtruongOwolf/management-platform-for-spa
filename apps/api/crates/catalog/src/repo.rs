@@ -488,6 +488,23 @@ pub enum Versioned {
     Plan,
 }
 
+/// One service with its prices, the service row locked `FOR SHARE` so a concurrent price edit
+/// (which updates the row's version) waits until the caller's transaction ends.
+pub async fn lock_service(tx: &mut TenantTx, id: Uuid) -> Result<Option<ServiceRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let locked = sqlx::query_scalar!(
+        "SELECT id FROM app.service WHERE tenant_id = $1 AND id = $2 FOR SHARE",
+        tenant,
+        id
+    )
+    .fetch_optional(tx.conn())
+    .await?;
+    match locked {
+        Some(_) => service(tx, id).await,
+        None => Ok(None),
+    }
+}
+
 /// The plan row alone, locked against concurrent edits until the caller's transaction ends.
 pub async fn lock_plan(tx: &mut TenantTx, id: Uuid) -> Result<Option<PlanRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
