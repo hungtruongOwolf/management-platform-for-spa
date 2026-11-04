@@ -103,7 +103,7 @@ export function PriceListPage() {
               {items.map((service) => (
                 <li key={service.id} className="py-2">
                   <div
-                    className={`flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 ${service.active ? "" : "opacity-60"}`}
+                    className={`flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 ${service.active ? "" : "text-text-muted"}`}
                   >
                     <div className="min-w-0">
                       <p className="font-semibold">

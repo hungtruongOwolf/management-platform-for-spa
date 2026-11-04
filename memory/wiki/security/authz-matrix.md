@@ -42,6 +42,7 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
 Danh sách đầy đủ ở [backend](../architecture/backend.md) §3 (cột "Permission"). CI fail nếu có route chưa khai báo permission (trừ `/auth/*` công khai và `/health`).
 
 ## Test bắt buộc
+Test 1–2 và cổng CI "route chưa khai báo permission" nằm ở `apps/api/crates/app/tests/authz_matrix.rs`: bảng `ROUTES` phải khớp bảng trên. Cách thêm dòng xem [testing](../conventions/testing.md).
 1. Mỗi endpoint × mỗi role: role không có permission → `403`.
 2. Mỗi endpoint đọc hoặc ghi theo ID: dùng ID của **tenant khác** → `404`.
 3. `GET /customers/{id}` khi thiếu `customer.health_notes.read` → response **không có** key `health_note`.

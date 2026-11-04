@@ -149,6 +149,12 @@ Quy ước chung cho mọi ticket có endpoint:
   - **Tests:** như trên + `/qa` tìm khoảng trống (Unicode, múi giờ, gửi đôi).
   - **Security:** chạy `secure` trên toàn bộ diff R1-1; `/pr-review` cuối cùng.
   - **Depends on:** S7, S8, S9
+  - **Hạ tầng test (xong, 2026-11-04, branch `test/s10-infra`):** cách dùng xem [testing](../conventions/testing.md).
+    - `apps/api/crates/app/tests/authz_matrix.rs` có một bảng `ROUTES`. CI fail khi route có trong router hoặc OpenAPI mà thiếu dòng trong bảng. Test chạy: 401 khi ẩn danh hoặc cookie giả; role × route → 403/allowed; ID của spa khác → 404; cột role phải khớp `roles.rs`.
+    - Playwright `apps/web/e2e/`: stack riêng (API :8091 + Vite :5181, DB `vpyd_e2e`), setup project provision qua CLI. Spec phủ login → bảng giá, guard `next`, `next` ngoài site, tạo khách → tìm không dấu → cảnh báo sức khỏe, và axe trên login/bảng giá/khách hàng/hồ sơ.
+    - Perf: p95 `/customers?q=` và catalog < 300 ms. `lighthouserc.json` (LCP < 2,5 s) hiện chỉ đo `/dang-nhap`.
+    - CI: job `e2e`.
+    - **Còn lại cho S10:** thêm dòng matrix cho route S6–S9; thêm `/quay` vào Lighthouse (S7); test role PlatformAdmin/support grant khi có role; `/qa` tìm khoảng trống; buổi dùng thử với quản lý.
 
 - [ ] **S11 Staging trên VPS** (size: S)
   - **Goal:** chạy thật trên VPS Singapore + Supabase để quản lý dùng thử bằng dữ liệu giả.

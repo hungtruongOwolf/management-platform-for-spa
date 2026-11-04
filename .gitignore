@@ -19,6 +19,10 @@ coverage/
 .vite/
 playwright-report/
 test-results/
+lighthouse-report/
+.lighthouseci/
+# E2E run credentials and signed-in browser state (generated per run)
+apps/web/e2e/.auth/
 
 # Local Claude settings & scratch
 .claude/settings.local.json
