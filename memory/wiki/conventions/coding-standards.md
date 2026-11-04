@@ -44,3 +44,6 @@ Single source of truth for code quality. `build` and `pr-review` skills apply ev
 - Branch per slice: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`.
 - Conventional Commits: `feat(api): add booking endpoint`.
 - Small PRs (one slice), description links the spec/plan page in `memory/wiki/`.
+- Trước khi push: `pnpm check` (fmt, clippy, test, lint, typecheck, unit test, contract OpenAPI/TS khớp code, cargo-deny nếu đã cài).
+- **Merge chỉ qua `bash scripts/merge-when-green.sh <pr>`**: chờ check xuất hiện, chờ chạy xong, chỉ merge khi mọi check pass. Không gọi `gh pr merge` trực tiếp (repo private gói Free không có branch protection; PR #8 từng bị merge trước khi CI chạy).
+- Không force-push (bị chặn). Cần thay lịch sử sau rebase → push sang branch mới `…-v2`, mở PR mới, đóng PR cũ.
