@@ -301,6 +301,13 @@ pub async fn set_health_note(
     view(cipher, actor, row)
 }
 
+/// Whether a live (not anonymised) customer with this id exists in the caller's tenant, checked
+/// inside the caller's transaction. Other contexts use it to answer `404` for foreign ids.
+/// The caller authorizes.
+pub async fn exists_in(tx: &mut TenantTx, id: Uuid) -> Result<bool, AppError> {
+    repo::exists(tx, id).await
+}
+
 /// AC2.1: ≥ 3 digits → phone substring; ≥ 2 letters → accent-insensitive name; empty → most recent.
 pub async fn search(
     pool: &PgPool,

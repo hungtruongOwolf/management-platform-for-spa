@@ -41,6 +41,8 @@ enum Target {
     Service,
     Plan,
     Customer,
+    Sale,
+    CustomerPackage,
 }
 
 struct Route {
@@ -94,7 +96,6 @@ impl Route {
         self.consumes_session = true;
         self
     }
-    #[allow(dead_code)] // first used by S6 (sell package)
     const fn idempotent(mut self) -> Self {
         self.idempotent = true;
         self
@@ -199,6 +200,35 @@ const ROUTES: &[Route] = &[
     .id(Target::Customer)
     .body(health_note_body)
     .if_match(),
+    // staff — org
+    route("GET", "/api/v1/staff", Access::Perm(P::StaffReadBasic, ALL)),
+    // packages
+    route(
+        "GET",
+        "/api/v1/customer-packages/{id}",
+        Access::Perm(P::CustomerRead, OWNER_MANAGER),
+    )
+    .id(Target::CustomerPackage),
+    route(
+        "GET",
+        "/api/v1/customers/{id}/packages",
+        Access::Perm(P::CustomerRead, OWNER_MANAGER),
+    )
+    .id(Target::Customer),
+    // sales
+    route(
+        "POST",
+        "/api/v1/sales",
+        Access::Perm(P::PackageSell, OWNER_MANAGER),
+    )
+    .body(sell_body)
+    .idempotent(),
+    route(
+        "GET",
+        "/api/v1/sales/{id}",
+        Access::Perm(P::SaleRead, OWNER_MANAGER),
+    )
+    .id(Target::Sale),
 ];
 
 /// Mounted but deliberately left out of the OpenAPI contract. Must answer without a session.
@@ -242,6 +272,13 @@ fn customer_body(f: &Fixture) -> Option<Value> {
 fn health_note_body(_: &Fixture) -> Option<Value> {
     Some(json!({"health_note": "Dị ứng tinh dầu sả"}))
 }
+fn sell_body(f: &Fixture) -> Option<Value> {
+    Some(json!({
+        "customer_id": f.customer, "closer_staff_id": f.staff,
+        "lines": [{"package_plan_id": f.plan}],
+        "payments": [{"method": "cash", "amount": 1_200_000}]
+    }))
+}
 
 // --------------------------------------------------------------------------------- fixtures
 
@@ -253,6 +290,9 @@ struct Fixture {
     plan: String,
     customer: String,
     customer_phone: &'static str,
+    staff: String,
+    sale: String,
+    customer_package: String,
 }
 
 impl Fixture {
@@ -263,6 +303,8 @@ impl Fixture {
             Target::Service => &self.service,
             Target::Plan => &self.plan,
             Target::Customer => &self.customer,
+            Target::Sale => &self.sale,
+            Target::CustomerPackage => &self.customer_package,
         }
     }
 }
@@ -371,6 +413,11 @@ async fn fixture(
         plan: String::new(),
         customer: String::new(),
         customer_phone,
+        staff: org::provisioning::add_staff(db, slug, "KTV Lan", "Kỹ thuật viên")
+            .await?
+            .to_string(),
+        sale: String::new(),
+        customer_package: String::new(),
     };
     f.service = created_id(
         app,
@@ -393,6 +440,23 @@ async fn fixture(
         customer_body(&f).unwrap_or_default(),
     )
     .await?;
+    let sold = send(
+        app,
+        "POST",
+        "/sales",
+        Some(&owner),
+        sell_body(&f),
+        &[("Idempotency-Key", &uuid::Uuid::now_v7().to_string())],
+    )
+    .await;
+    let (Some(sale), Some(package)) = (
+        sold.body["id"].as_str(),
+        sold.body["customer_packages"][0]["id"].as_str(),
+    ) else {
+        return Err(format!("fixture POST /sales → {} {}", sold.status, sold.body).into());
+    };
+    f.sale = sale.to_owned();
+    f.customer_package = package.to_owned();
     Ok(f)
 }
 

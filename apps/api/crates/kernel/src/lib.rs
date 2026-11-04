@@ -11,6 +11,7 @@ pub mod ids;
 pub mod money;
 pub mod permission;
 pub mod phone;
+pub mod tenant;
 #[cfg(feature = "testing")]
 pub mod testing;
 
@@ -21,6 +22,7 @@ pub use ids::{BranchId, TenantId, UserId};
 pub use money::Money;
 pub use permission::{Actor, Permission};
 pub use phone::PhoneE164;
+pub use tenant::TenantProfile;
 
 /// Embedded migrations, shared by the `app migrate` command and integration tests.
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");

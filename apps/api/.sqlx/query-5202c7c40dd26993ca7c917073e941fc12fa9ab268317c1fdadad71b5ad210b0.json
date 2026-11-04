@@ -1,0 +1,105 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.customer_package_item i\n           SET sessions_remaining = i.sessions_remaining - $3, version = i.version + 1\n           FROM app.customer_package p\n           WHERE i.tenant_id = $1 AND i.id = $2\n             AND p.tenant_id = i.tenant_id AND p.id = i.customer_package_id\n             AND p.customer_id = $4 AND p.cancelled_at IS NULL\n             AND ($5 OR p.expires_on IS NULL OR p.expires_on >= $6)\n             AND i.sessions_remaining >= $3\n           RETURNING i.customer_package_id, i.service_id, i.name_snapshot, i.sessions_purchased,\n                     i.sessions_total AS \"sessions_total!\", i.sessions_remaining, i.per_session_value",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "customer_package_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_item",
+            "name": "customer_package_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "service_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_item",
+            "name": "service_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "name_snapshot",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_item",
+            "name": "name_snapshot"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "sessions_purchased",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_item",
+            "name": "sessions_purchased"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "sessions_total!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_item",
+            "name": "sessions_total"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "sessions_remaining",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_item",
+            "name": "sessions_remaining"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "per_session_value",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_item",
+            "name": "per_session_value"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int4",
+        "Uuid",
+        "Bool",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "5202c7c40dd26993ca7c917073e941fc12fa9ab268317c1fdadad71b5ad210b0"
+}

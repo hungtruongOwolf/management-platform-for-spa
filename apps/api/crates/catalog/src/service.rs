@@ -129,3 +129,55 @@ pub async fn seed_menu(owner: &PgPool, tenant_slug: &str) -> Result<SeedReport, 
     tx.commit().await?;
     Ok(report)
 }
+
+/// One line of a plan as it is sold: the service and its name at this moment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlanItemSnapshot {
+    pub service_id: Uuid,
+    pub service_name: String,
+    pub sessions: i32,
+    pub bonus_sessions: i32,
+}
+
+/// A package plan with everything a sale must copy (AC1.2): later catalog edits never reach
+/// packages already sold.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlanSnapshot {
+    pub id: Uuid,
+    pub name: String,
+    pub price: kernel::Money,
+    pub validity_months: Option<i32>,
+    pub gift_note: Option<String>,
+    pub active: bool,
+    pub items: Vec<PlanItemSnapshot>,
+}
+
+/// Reads a plan of the caller's tenant inside the caller's transaction (`None` = no such plan here).
+/// Locks the plan row `FOR SHARE` so a concurrent price edit waits until the sale commits.
+/// The caller authorizes (e.g. `package.sell`); catalog read access is not required to sell.
+pub async fn plan_snapshot(tx: &mut TenantTx, id: Uuid) -> Result<Option<PlanSnapshot>, AppError> {
+    let Some(plan) = repo::lock_plan(tx, id).await? else {
+        return Ok(None);
+    };
+    let items = repo::plan_items_with_names(tx, id)
+        .await?
+        .into_iter()
+        .map(
+            |(service_id, service_name, sessions, bonus_sessions)| PlanItemSnapshot {
+                service_id,
+                service_name,
+                sessions,
+                bonus_sessions,
+            },
+        )
+        .collect();
+    Ok(Some(PlanSnapshot {
+        id: plan.id,
+        name: plan.name,
+        price: plan.price,
+        validity_months: plan.validity_months,
+        gift_note: plan.gift_note,
+        active: plan.active,
+        items,
+    }))
+}

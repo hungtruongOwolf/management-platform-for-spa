@@ -122,6 +122,39 @@
         }
       }
     },
+    "/api/v1/customer-packages/{id}": {
+      "get": {
+        "tags": [
+          "packages"
+        ],
+        "operationId": "read_package",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerPackageDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "404": {}
+        }
+      }
+    },
     "/api/v1/customers": {
       "get": {
         "tags": [
@@ -329,6 +362,42 @@
         }
       }
     },
+    "/api/v1/customers/{id}/packages": {
+      "get": {
+        "tags": [
+          "packages"
+        ],
+        "operationId": "list_customer_packages",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomerPackageDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "404": {}
+        }
+      }
+    },
     "/api/v1/me": {
       "get": {
         "tags": [
@@ -466,6 +535,93 @@
           "404": {},
           "412": {},
           "422": {}
+        }
+      }
+    },
+    "/api/v1/sales": {
+      "post": {
+        "tags": [
+          "sales"
+        ],
+        "operationId": "create_sale",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per sale attempt; a retry with the same key replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaleCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaleDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required / key_invalid"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden / discount.limit_exceeded"
+          },
+          "404": {
+            "description": "customer or plan not in this spa"
+          },
+          "422": {
+            "description": "validation_failed, payment.amount_mismatch, discount.reason_required, staff.inactive, idempotency.key_reuse_mismatch"
+          }
+        }
+      }
+    },
+    "/api/v1/sales/{id}": {
+      "get": {
+        "tags": [
+          "sales"
+        ],
+        "operationId": "read_sale",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaleDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "404": {}
         }
       }
     },
@@ -686,6 +842,53 @@
           "422": {}
         }
       }
+    },
+    "/api/v1/staff": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "list_staff",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "path",
+            "description": "Default `active` (pickers only offer people still working here).",
+            "required": true,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "left",
+                    "all"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StaffDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {}
+        }
+      }
     }
   },
   "components": {
@@ -854,6 +1057,163 @@
           }
         }
       },
+      "CustomerPackageDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "customer_id",
+          "name",
+          "sold_price",
+          "origin",
+          "starts_on",
+          "status",
+          "sessions_total",
+          "sessions_remaining",
+          "version",
+          "created_at",
+          "items"
+        ],
+        "properties": {
+          "closer_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "closer_staff_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expires_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "gift_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomerPackageItemDto"
+            }
+          },
+          "name": {
+            "type": "string",
+            "description": "Plan name when sold (snapshot)."
+          },
+          "origin": {
+            "$ref": "#/components/schemas/PackageOriginDto"
+          },
+          "plan_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "sale_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "sessions_remaining": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sessions_total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sold_price": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Price paid after discount, in đồng."
+          },
+          "starts_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PackageStatusDto",
+            "description": "Derived on read: cancelled → exhausted → expired → active."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "CustomerPackageItemDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "service_id",
+          "name",
+          "sessions_purchased",
+          "sessions_bonus",
+          "sessions_total",
+          "sessions_remaining",
+          "per_session_value"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "Service name when sold (snapshot)."
+          },
+          "per_session_value": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Value of one purchased session in đồng (bonus sessions are worth 0)."
+          },
+          "service_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sessions_bonus": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sessions_purchased": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sessions_remaining": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sessions_total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "CustomerSummaryDto": {
         "type": "object",
         "description": "Search hit for the counter: never contains notes.",
@@ -937,6 +1297,26 @@
         },
         "additionalProperties": false
       },
+      "DiscountCreate": {
+        "type": "object",
+        "required": [
+          "amount"
+        ],
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "đồng, ≤ subtotal."
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required when `amount` > 0."
+          }
+        }
+      },
       "GenderDto": {
         "type": "string",
         "enum": [
@@ -1008,6 +1388,13 @@
             "$ref": "#/components/schemas/UserSummary"
           }
         }
+      },
+      "PackageOriginDto": {
+        "type": "string",
+        "enum": [
+          "sale",
+          "opening_balance"
+        ]
       },
       "PackagePlanDto": {
         "type": "object",
@@ -1082,6 +1469,88 @@
             "format": "int32"
           }
         }
+      },
+      "PackageStatusDto": {
+        "type": "string",
+        "enum": [
+          "active",
+          "expired",
+          "exhausted",
+          "cancelled"
+        ]
+      },
+      "PaymentCreate": {
+        "type": "object",
+        "required": [
+          "method",
+          "amount"
+        ],
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "đồng, > 0."
+          },
+          "method": {
+            "$ref": "#/components/schemas/PaymentMethodDto"
+          },
+          "reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PaymentDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "method",
+          "amount",
+          "paid_at"
+        ],
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/PaymentKindDto"
+          },
+          "method": {
+            "$ref": "#/components/schemas/PaymentMethodDto"
+          },
+          "paid_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PaymentKindDto": {
+        "type": "string",
+        "enum": [
+          "payment",
+          "reversal"
+        ]
+      },
+      "PaymentMethodDto": {
+        "type": "string",
+        "enum": [
+          "cash",
+          "bank_transfer"
+        ]
       },
       "PlanItemWrite": {
         "type": "object",
@@ -1187,6 +1656,232 @@
           }
         },
         "additionalProperties": false
+      },
+      "SaleCreate": {
+        "type": "object",
+        "description": "Body of `POST /sales`. Prices are never read from the client: unknown fields such as\n`unit_price` or `total` are ignored and every amount is computed from the catalog.",
+        "required": [
+          "customer_id",
+          "closer_staff_id",
+          "lines",
+          "payments"
+        ],
+        "properties": {
+          "closer_staff_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The staff member who closed the sale (must be currently working here)."
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "discount": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DiscountCreate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SaleLineCreate"
+            },
+            "description": "1–10 packages."
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentCreate"
+            },
+            "description": "0–2 payments, one per method, summing exactly to the total (R1 collects in full)."
+          }
+        }
+      },
+      "SaleDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "customer_id",
+          "business_date",
+          "subtotal",
+          "discount_amount",
+          "total",
+          "amount_paid",
+          "status",
+          "created_at",
+          "lines",
+          "payments",
+          "customer_packages"
+        ],
+        "properties": {
+          "amount_paid": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "closer_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "closer_staff_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "customer_packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomerPackageDto"
+            },
+            "description": "Packages this sale created."
+          },
+          "discount_amount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "discount_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SaleLineDto"
+            }
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentDto"
+            }
+          },
+          "status": {
+            "$ref": "#/components/schemas/SaleStatusDto"
+          },
+          "subtotal": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "SaleLineCreate": {
+        "type": "object",
+        "required": [
+          "package_plan_id"
+        ],
+        "properties": {
+          "gift_note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Gift note for this package; omitted = the plan's, empty = none."
+          },
+          "package_plan_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "SaleLineDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "line_type",
+          "description",
+          "qty",
+          "unit_price",
+          "line_total"
+        ],
+        "properties": {
+          "customer_package_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "line_total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "line_type": {
+            "$ref": "#/components/schemas/SaleLineTypeDto"
+          },
+          "package_plan_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "service_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "unit_price": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "SaleLineTypeDto": {
+        "type": "string",
+        "enum": [
+          "package",
+          "service"
+        ]
+      },
+      "SaleStatusDto": {
+        "type": "string",
+        "enum": [
+          "open",
+          "voided"
+        ]
       },
       "ServiceCategoryDto": {
         "type": "object",
@@ -1332,6 +2027,38 @@
         },
         "additionalProperties": false
       },
+      "StaffDto": {
+        "type": "object",
+        "description": "Basic staff card: no phone or personal data (`staff.read_basic`).",
+        "required": [
+          "id",
+          "full_name",
+          "position",
+          "status"
+        ],
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "position": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StaffStatusDto"
+          }
+        }
+      },
+      "StaffStatusDto": {
+        "type": "string",
+        "enum": [
+          "active",
+          "left"
+        ]
+      },
       "SwitchTenantBody": {
         "type": "object",
         "required": [
@@ -1395,6 +2122,18 @@
     {
       "name": "customers",
       "description": "Hồ sơ khách hàng"
+    },
+    {
+      "name": "staff",
+      "description": "Nhân viên (chọn người chốt, KTV)"
+    },
+    {
+      "name": "packages",
+      "description": "Liệu trình của khách"
+    },
+    {
+      "name": "sales",
+      "description": "Bán liệu trình, thanh toán"
     }
   ]
 }

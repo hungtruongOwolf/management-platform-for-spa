@@ -54,6 +54,24 @@ impl Money {
             .map(Self)
             .ok_or(MoneyError::Overflow)
     }
+
+    /// Share of one unit when split over `units`, rounded down (the remainder stays with the whole).
+    /// `None` when `units` is zero.
+    pub fn per_unit(self, units: u32) -> Option<Self> {
+        (units > 0).then(|| Self(self.0 / i64::from(units)))
+    }
+
+    /// Whether `self` is at most `pct` percent of `whole` (exact integer arithmetic, no rounding).
+    pub fn within_percent_of(self, whole: Self, pct: u32) -> bool {
+        i128::from(self.0) * 100 <= i128::from(whole.0) * i128::from(pct)
+    }
+
+    /// Sum of amounts; `Overflow` instead of wrapping.
+    pub fn sum<I: IntoIterator<Item = Self>>(amounts: I) -> Result<Self, MoneyError> {
+        amounts
+            .into_iter()
+            .try_fold(Self::ZERO, |acc, m| acc.checked_add(m))
+    }
 }
 
 impl TryFrom<i64> for Money {
@@ -90,6 +108,42 @@ mod tests {
             Money::vnd(i64::MAX).unwrap_or_default().checked_add(b),
             Err(MoneyError::Overflow)
         );
+    }
+
+    #[test]
+    fn per_unit_rounds_down_and_rejects_zero_units() {
+        let price = Money::vnd(1_500_000).unwrap_or_default();
+        assert_eq!(price.per_unit(10).map(Money::as_i64), Some(150_000));
+        assert_eq!(
+            Money::vnd(1_000_000)
+                .unwrap_or_default()
+                .per_unit(3)
+                .map(Money::as_i64),
+            Some(333_333)
+        );
+        assert_eq!(price.per_unit(0), None);
+    }
+
+    #[test]
+    fn percent_bound_is_exact() {
+        let whole = Money::vnd(1_500_000).unwrap_or_default();
+        let ten_pct = Money::vnd(150_000).unwrap_or_default();
+        let over = Money::vnd(150_001).unwrap_or_default();
+        assert!(ten_pct.within_percent_of(whole, 10));
+        assert!(!over.within_percent_of(whole, 10));
+        assert!(
+            Money::vnd(i64::MAX)
+                .unwrap_or_default()
+                .within_percent_of(Money::vnd(i64::MAX).unwrap_or_default(), 100)
+        );
+    }
+
+    #[test]
+    fn sum_is_checked() {
+        let parts = [500_000, 1_000_000].map(|v| Money::vnd(v).unwrap_or_default());
+        assert_eq!(Money::sum(parts).map(Money::as_i64), Ok(1_500_000));
+        let huge = [i64::MAX, 1].map(|v| Money::vnd(v).unwrap_or_default());
+        assert_eq!(Money::sum(huge), Err(MoneyError::Overflow));
     }
 
     #[test]

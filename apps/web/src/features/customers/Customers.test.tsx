@@ -72,6 +72,8 @@ function serve(
       return Promise.resolve(Response.json([HA]));
     if (url === "/api/v1/customers/c1")
       return Promise.resolve(Response.json(HA_FULL));
+    if (url === "/api/v1/customers/c1/packages")
+      return Promise.resolve(Response.json([]));
     return Promise.resolve(new Response(null, { status: 404 }));
   });
   return calls;

@@ -84,6 +84,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/customer-packages/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["read_package"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/customers": {
         parameters: {
             query?: never;
@@ -132,6 +148,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/customers/{id}/packages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_customer_packages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me": {
         parameters: {
             query?: never;
@@ -173,6 +205,38 @@ export interface paths {
         };
         get?: never;
         put: operations["update_plan"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sales": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_sale"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sales/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["read_sale"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -244,6 +308,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/staff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_staff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -290,6 +370,64 @@ export interface components {
              */
             version: number;
         };
+        CustomerPackageDto: {
+            closer_name?: string | null;
+            /** Format: uuid */
+            closer_staff_id?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            customer_id: string;
+            /** Format: date */
+            expires_on?: string | null;
+            gift_note?: string | null;
+            /** Format: uuid */
+            id: string;
+            items: components["schemas"]["CustomerPackageItemDto"][];
+            /** @description Plan name when sold (snapshot). */
+            name: string;
+            origin: components["schemas"]["PackageOriginDto"];
+            /** Format: uuid */
+            plan_id?: string | null;
+            /** Format: uuid */
+            sale_id?: string | null;
+            /** Format: int64 */
+            sessions_remaining: number;
+            /** Format: int64 */
+            sessions_total: number;
+            /**
+             * Format: int64
+             * @description Price paid after discount, in đồng.
+             */
+            sold_price: number;
+            /** Format: date */
+            starts_on: string;
+            /** @description Derived on read: cancelled → exhausted → expired → active. */
+            status: components["schemas"]["PackageStatusDto"];
+            /** Format: int64 */
+            version: number;
+        };
+        CustomerPackageItemDto: {
+            /** Format: uuid */
+            id: string;
+            /** @description Service name when sold (snapshot). */
+            name: string;
+            /**
+             * Format: int64
+             * @description Value of one purchased session in đồng (bonus sessions are worth 0).
+             */
+            per_session_value: number;
+            /** Format: uuid */
+            service_id: string;
+            /** Format: int32 */
+            sessions_bonus: number;
+            /** Format: int32 */
+            sessions_purchased: number;
+            /** Format: int32 */
+            sessions_remaining: number;
+            /** Format: int32 */
+            sessions_total: number;
+        };
         /** @description Search hit for the counter: never contains notes. */
         CustomerSummaryDto: {
             full_name: string;
@@ -309,6 +447,15 @@ export interface components {
             phone: string;
             source?: string | null;
         };
+        DiscountCreate: {
+            /**
+             * Format: int64
+             * @description đồng, ≤ subtotal.
+             */
+            amount: number;
+            /** @description Required when `amount` > 0. */
+            reason?: string | null;
+        };
         /** @enum {string} */
         GenderDto: "female" | "male";
         HealthNoteWrite: {
@@ -326,6 +473,8 @@ export interface components {
             tenants: components["schemas"]["TenantSummary"][];
             user: components["schemas"]["UserSummary"];
         };
+        /** @enum {string} */
+        PackageOriginDto: "sale" | "opening_balance";
         PackagePlanDto: {
             active: boolean;
             gift_note?: string | null;
@@ -354,6 +503,32 @@ export interface components {
             /** Format: int32 */
             sessions: number;
         };
+        /** @enum {string} */
+        PackageStatusDto: "active" | "expired" | "exhausted" | "cancelled";
+        PaymentCreate: {
+            /**
+             * Format: int64
+             * @description đồng, > 0.
+             */
+            amount: number;
+            method: components["schemas"]["PaymentMethodDto"];
+            reference?: string | null;
+        };
+        PaymentDto: {
+            /** Format: int64 */
+            amount: number;
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["PaymentKindDto"];
+            method: components["schemas"]["PaymentMethodDto"];
+            /** Format: date-time */
+            paid_at: string;
+            reference?: string | null;
+        };
+        /** @enum {string} */
+        PaymentKindDto: "payment" | "reversal";
+        /** @enum {string} */
+        PaymentMethodDto: "cash" | "bank_transfer";
         PlanItemWrite: {
             /** Format: int32 */
             bonus_sessions: number;
@@ -387,6 +562,79 @@ export interface components {
         ReauthBody: {
             password: string;
         };
+        /**
+         * @description Body of `POST /sales`. Prices are never read from the client: unknown fields such as
+         *     `unit_price` or `total` are ignored and every amount is computed from the catalog.
+         */
+        SaleCreate: {
+            /**
+             * Format: uuid
+             * @description The staff member who closed the sale (must be currently working here).
+             */
+            closer_staff_id: string;
+            /** Format: uuid */
+            customer_id: string;
+            discount?: components["schemas"]["DiscountCreate"] | null;
+            /** @description 1–10 packages. */
+            lines: components["schemas"]["SaleLineCreate"][];
+            /** @description 0–2 payments, one per method, summing exactly to the total (R1 collects in full). */
+            payments: components["schemas"]["PaymentCreate"][];
+        };
+        SaleDto: {
+            /** Format: int64 */
+            amount_paid: number;
+            /** Format: date */
+            business_date: string;
+            closer_name?: string | null;
+            /** Format: uuid */
+            closer_staff_id?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            customer_id: string;
+            /** @description Packages this sale created. */
+            customer_packages: components["schemas"]["CustomerPackageDto"][];
+            /** Format: int64 */
+            discount_amount: number;
+            discount_reason?: string | null;
+            /** Format: uuid */
+            id: string;
+            lines: components["schemas"]["SaleLineDto"][];
+            payments: components["schemas"]["PaymentDto"][];
+            status: components["schemas"]["SaleStatusDto"];
+            /** Format: int64 */
+            subtotal: number;
+            /** Format: int64 */
+            total: number;
+        };
+        SaleLineCreate: {
+            /** @description Gift note for this package; omitted = the plan's, empty = none. */
+            gift_note?: string | null;
+            /** Format: uuid */
+            package_plan_id: string;
+        };
+        SaleLineDto: {
+            /** Format: uuid */
+            customer_package_id?: string | null;
+            description: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            line_total: number;
+            line_type: components["schemas"]["SaleLineTypeDto"];
+            /** Format: uuid */
+            package_plan_id?: string | null;
+            /** Format: int32 */
+            qty: number;
+            /** Format: uuid */
+            service_id?: string | null;
+            /** Format: int64 */
+            unit_price: number;
+        };
+        /** @enum {string} */
+        SaleLineTypeDto: "package" | "service";
+        /** @enum {string} */
+        SaleStatusDto: "open" | "voided";
         ServiceCategoryDto: {
             /** Format: uuid */
             id: string;
@@ -438,6 +686,16 @@ export interface components {
             prices: components["schemas"]["PricesInput"];
             recommended: boolean;
         };
+        /** @description Basic staff card: no phone or personal data (`staff.read_basic`). */
+        StaffDto: {
+            full_name: string;
+            /** Format: uuid */
+            id: string;
+            position: string;
+            status: components["schemas"]["StaffStatusDto"];
+        };
+        /** @enum {string} */
+        StaffStatusDto: "active" | "left";
         SwitchTenantBody: {
             /** Format: uuid */
             tenant_id: string;
@@ -600,6 +858,45 @@ export interface operations {
                 };
             };
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    read_package: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerPackageDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -842,6 +1139,45 @@ export interface operations {
             };
         };
     };
+    list_customer_packages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerPackageDto"][];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     me: {
         parameters: {
             query?: never;
@@ -981,6 +1317,105 @@ export interface operations {
                 content?: never;
             };
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_sale: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description One key per sale attempt; a retry with the same key replays the first response */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaleCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaleDto"];
+                };
+            };
+            /** @description idempotency.key_required / key_invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / discount.limit_exceeded */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description customer or plan not in this spa */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed, payment.amount_mismatch, discount.reason_required, staff.inactive, idempotency.key_reuse_mismatch */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    read_sale: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaleDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1212,6 +1647,40 @@ export interface operations {
                 content?: never;
             };
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_staff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Default `active` (pickers only offer people still working here). */
+                status: ("active" | "left" | "all") | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffDto"][];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

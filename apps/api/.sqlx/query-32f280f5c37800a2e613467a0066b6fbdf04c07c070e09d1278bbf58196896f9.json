@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.customer_package_item\n             (id, tenant_id, customer_package_id, service_id, name_snapshot, sessions_purchased, sessions_bonus,\n              sessions_remaining, per_session_value)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "32f280f5c37800a2e613467a0066b6fbdf04c07c070e09d1278bbf58196896f9"
+}

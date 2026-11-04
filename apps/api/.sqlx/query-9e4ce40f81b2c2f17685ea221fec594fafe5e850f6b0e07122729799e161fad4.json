@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.customer_id, (p.cancelled_at IS NOT NULL) AS \"cancelled!\", p.expires_on\n           FROM app.customer_package_item i\n           JOIN app.customer_package p ON p.tenant_id = i.tenant_id AND p.id = i.customer_package_id\n           WHERE i.tenant_id = $1 AND i.id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "customer_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "customer_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "cancelled!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "expires_on",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "expires_on"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      true
+    ]
+  },
+  "hash": "9e4ce40f81b2c2f17685ea221fec594fafe5e850f6b0e07122729799e161fad4"
+}
