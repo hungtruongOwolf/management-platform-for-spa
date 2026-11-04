@@ -15,7 +15,7 @@ Contract-first: các bảng dưới đây là hợp đồng API. Khi có repo, c
 - **Idempotency:** mọi `POST` có tạo tiền hoặc trừ buổi bắt buộc header `Idempotency-Key` (UUID). Thiếu key → `400 idempotency.key_required`.
   - Cùng key, cùng body → trả lại response cũ.
   - Cùng key, khác body → `422 idempotency.key_reuse_mismatch`.
-  - Request đầu vẫn đang chạy → `409 idempotency.in_progress`.
+  - Request đầu vẫn đang chạy → request trùng **chờ** (khóa PK của Postgres) cho tới khi request đầu commit, rồi replay; nếu request đầu rollback thì request trùng chạy mới. (`409 idempotency.in_progress` chỉ là nhánh phòng thủ.) Hiện thực: `kernel::idempotency` (S1).
 - **Optimistic lock:** `GET` trả về `ETag: "<version>"`. `PATCH` và các thao tác sửa trạng thái nhận `If-Match`. Lệch phiên bản → `412 conflict.stale_version`.
 - **Rate-limit classes:** `auth` (5/phút/tài khoản, 20/phút/IP) · `search` (120/phút/user) · `write` (60/phút/user) · `read` (300/phút/user). Vượt → `429 rate_limited`.
 

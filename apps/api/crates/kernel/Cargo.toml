@@ -1,0 +1,29 @@
+[package]
+name = "kernel"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# Test helpers (app_rw pool, tenant seeding) for this and other crates' integration tests.
+testing = []
+
+[dependencies]
+axum = { version = "0.8.9", default-features = false, features = ["json"] }
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock", "serde"] }
+chrono-tz = "0.10.4"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "postgres", "uuid", "chrono", "json", "macros", "migrate", "ipnetwork"] }
+thiserror = "2.0.21"
+tracing = "0.1.44"
+uuid = { version = "1.29.0", features = ["v7", "serde"] }
+
+[dev-dependencies]
+kernel = { path = ".", features = ["testing"] }
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread"] }

@@ -15,6 +15,7 @@ allow = [
   "Unicode-3.0",
   "Zlib",
   "CC0-1.0",
+  "CDLA-Permissive-2.0",   # webpki-roots (Mozilla CA bundle, via sqlx TLS)
 ]
 confidence-threshold = 0.9
 
@@ -24,6 +25,8 @@ ignore = true
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Internal workspace crates are referenced by path (no version) and never published.
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"

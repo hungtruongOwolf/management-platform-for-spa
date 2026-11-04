@@ -8,6 +8,7 @@ sources: [product/specs/front-desk-and-packages.md, architecture/system.md, deci
 
 ## Quy ước chung
 - **PK:** `id uuid` dạng UUIDv7, sinh trong app. Bảng của tenant có `tenant_id uuid NOT NULL` và `UNIQUE (tenant_id, id)`. **FK luôn kép** `(tenant_id, x_id) → x(tenant_id, id)`, nên không thể trỏ chéo sang spa khác.
+- **Role:** `app_rw` là role cấp cluster, **không** tạo trong migration (`infra/postgres-init/01-roles.sql` cho dev/CI; tạo tay một lần trên Supabase ở S11). App runtime kết nối bằng `APP_DATABASE_URL` (app_rw). Migration, compile-time check của sqlx và test dùng `DATABASE_URL` (owner).
 - **RLS** bật trên mọi bảng tenant: `USING (tenant_id = current_setting('app.tenant_id', true)::uuid)`, `WITH CHECK` giống hệt. Role `app_rw` không phải owner bảng, không có `BYPASSRLS`.
 - **Cột chung:** `created_at timestamptz NOT NULL DEFAULT now()`, `created_by uuid` (user). Bảng có thể bị sửa thêm `updated_at` và `version bigint NOT NULL DEFAULT 1` (optimistic lock, API dùng `If-Match`).
 - **Tiền:** `bigint` đồng VND, `CHECK (>= 0)`. **Thời gian:** `timestamptz`. **Ngày nghiệp vụ** `business_date date` do server tính theo `tenant.timezone`, không bao giờ nhận từ client.
@@ -111,11 +112,11 @@ Thứ tự ưu tiên đúng như trên. Không cần job cập nhật trạng th
 ### kernel
 | Bảng | Cột chính | Ràng buộc / index |
 |---|---|---|
-| `idempotency_record` | tenant_id, actor_user_id, key, request_hash, status (`in_progress`/`done`), response_status, response_body `jsonb`, created_at | PK `(tenant_id, actor_user_id, key)`; job dọn bản ghi > 48 giờ |
+| `idempotency_record` | tenant_id, actor_user_id, key, request_hash, response_status, response_body `jsonb`, created_at | PK `(tenant_id, actor_user_id, key)`; claim + complete trong **cùng transaction** với use case; job dọn > 48 giờ qua hàm `SECURITY DEFINER` `app.purge_idempotency_records` (app_rw không cần BYPASSRLS) |
 | `audit_log` *(append-only)* | tenant_id?, actor_user_id, actor_kind (`user`/`platform_admin`/`system`), action, entity_type, entity_id, before `jsonb`, after `jsonb`, reason?, ip, at | index `(tenant_id, entity_type, entity_id, at)`. Trường sức khỏe ghi `"[redacted]"` |
 
 ## Migrations (forward-only, `sqlx migrate`)
-`0001_extensions` (pg_trgm, roles `app_rw` / `app_migrator`, schema `app`) → `0002_identity_org` → `0003_catalog` → `0004_crm` → `0005_packages` → `0006_operations_sales` → `0007_kernel_audit_idempotency` → `0008_rls_policies_and_grants` → `0009_seed_system_roles_fn` (hàm tạo role mặc định khi tạo tenant).
+`0001_kernel` ✅ (pg_trgm, schema `app`, `app.current_tenant()`, tenant, branch, audit_log, idempotency_record, RLS + grants) → `0002_identity_org` → `0003_catalog` → `0004_crm` → `0005_packages` → `0006_operations_sales` → `0007_kernel_audit_idempotency` → `0008_rls_policies_and_grants` → `0009_seed_system_roles_fn` (hàm tạo role mặc định khi tạo tenant).
 
 Thay đổi về sau theo **expand → backfill theo lô → kiểm tra → contract**. Mỗi migration được test trên snapshot giống production.
 

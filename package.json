@@ -8,6 +8,8 @@
   },
   "scripts": {
     "dev:db": "docker compose -f infra/docker-compose.dev.yml up -d --wait",
+    "db:migrate": "cargo run --manifest-path apps/api/Cargo.toml -p app -- migrate",
+    "db:prepare": "cd apps/api && cargo sqlx prepare --workspace -- --all-targets",
     "dev:api": "cargo run --manifest-path apps/api/Cargo.toml -p app",
     "dev:web": "pnpm --filter web dev",
     "lint": "pnpm -r lint",
