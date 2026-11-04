@@ -124,7 +124,7 @@ Quy ước chung cho mọi ticket có endpoint:
     - `per_session_value` = giá sau giảm ÷ tổng buổi **mua** (D4, làm tròn xuống); buổi tặng = 0. Hóa đơn nhiều gói: giảm giá chia theo tỷ lệ giá, phần dư cho dòng cuối.
     - API cho ticket sau: `packages::service::consume_session(tx, Consume{..})` cho S7 (update nguyên tử, buổi mua dùng trước buổi tặng, có test 2 thiết bị tranh buổi cuối) và `packages::service::create(tx, actor, NewPackage{origin: OpeningBalance, ..})` cho S9 (không tạo sale/payment, có test).
     - Web: hồ sơ khách có mục "Liệu trình" (còn X/Y buổi, HSD, trạng thái, nhãn "Nhập từ sổ cũ") và hộp thoại "Bán liệu trình mới" (gói, quà, người chốt, giảm giá + lý do + cảnh báo vượt 10%, TM / CK / kết hợp, một Idempotency-Key cho cả hộp thoại).
-    - Test: 11 E2E sales + 4 packages (mutation guard 10% và amount-mismatch ✓) + 6 web mới (tổng 39).
+    - Test: 11 E2E sales + 4 packages (mutation guard 10% và amount-mismatch ✓) + 6 web mới (tổng 39); 5 dòng mới trong `authz_matrix.rs` (Target `Sale`, `CustomerPackage`); Playwright `e2e/specs/sales.spec.ts` (bán gói TM + CK, axe sạch), setup E2E thêm `add-staff`.
     - Lệch so với thiết kế: `staff` chưa liên kết `membership` (chưa cần tới R2); `GET /customers/{id}/packages` là endpoint mới; thêm code `package.item_not_found` (422).
 
 - [ ] **S7 Ghi lượt khách (màn hình quầy)** (size: M)

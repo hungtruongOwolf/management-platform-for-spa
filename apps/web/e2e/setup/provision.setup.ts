@@ -73,6 +73,16 @@ setup("migrate and provision a fresh spa", () => {
     },
   );
   cli(["seed-catalog", "--tenant", run.slug]);
+  // Closer for the sell-package flow (sales.spec.ts).
+  cli([
+    "add-staff",
+    "--tenant",
+    run.slug,
+    "--name",
+    "KTV E2E",
+    "--position",
+    "Kỹ thuật viên",
+  ]);
 
   mkdirSync(dirname(runFile), { recursive: true });
   writeFileSync(runFile, JSON.stringify(run, null, 2));
