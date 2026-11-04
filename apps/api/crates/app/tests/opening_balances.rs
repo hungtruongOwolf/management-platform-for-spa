@@ -56,8 +56,8 @@ async fn shop(pool: PgPool) -> Setup<Shop> {
         SystemRole::Manager,
     )
     .await?;
-    let owner = session_for(&h.app, OWNER_PHONE).await;
-    let manager = session_for(&h.app, MANAGER_PHONE).await;
+    let owner = session_for(&h, OWNER_PHONE).await;
+    let manager = session_for(&h, MANAGER_PHONE).await;
     let services = call(&h.app, "GET", "/services", Some(&owner), None).await;
     let shampoo = service_id(&services, "Cơ Bản – Dầu thảo dược");
     let massage = services
@@ -366,6 +366,18 @@ async fn every_bad_field_is_reported_at_once(pool: PgPool) -> TestResult {
         field_codes(&s.import(&s.manager, none).await),
         [("packages".to_owned(), "count_out_of_range".to_owned())]
     );
+    let mut too_many_items = s.four_of_ten();
+    too_many_items["packages"][0]["items"] = json!(vec![
+        json!({"service_id": s.shampoo, "sessions_purchased": 1, "sessions_remaining": 1});
+        21
+    ]);
+    assert_eq!(
+        field_codes(&s.import(&s.manager, too_many_items).await),
+        [(
+            "packages[0].items".to_owned(),
+            "count_out_of_range".to_owned()
+        )]
+    );
     let mut bad_profile = s.four_of_ten();
     bad_profile["customer_id"] = Value::Null;
     bad_profile["customer"] = json!({"full_name": "", "phone": "123"});
@@ -393,7 +405,7 @@ async fn technician_cannot_import(pool: PgPool) -> TestResult {
         SystemRole::Technician,
     )
     .await?;
-    let tech = session_for(&s.h.app, TECH_PHONE).await;
+    let tech = session_for(&s.h, TECH_PHONE).await;
     let denied = s.import(&tech, s.four_of_ten()).await;
     assert_eq!(
         code(&denied),
@@ -468,7 +480,7 @@ async fn another_spas_customer_or_plan_is_not_found(pool: PgPool) -> TestResult 
         SystemRole::Owner,
     )
     .await?;
-    let intruder = session_for(&s.h.app, OTHER_OWNER_PHONE).await;
+    let intruder = session_for(&s.h, OTHER_OWNER_PHONE).await;
 
     // The intruder names our customer: indistinguishable from a missing one.
     let foreign = s.import(&intruder, s.four_of_ten()).await;

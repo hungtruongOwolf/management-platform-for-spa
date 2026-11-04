@@ -19,7 +19,8 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 pub const MAX_PACKAGES: usize = 10;
-/// Ten billion đồng: far above any real package, low enough to catch a typo'd extra zeros run.
+pub const MAX_ITEMS: usize = 20;
+/// Ten billion đồng: far above any real package, low enough to catch a run of typo'd zeros.
 const MAX_SOLD_PRICE: i64 = 10_000_000_000;
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -135,6 +136,13 @@ async fn build(
     };
     if p.starts_on > today {
         errors.push(FieldError::new("starts_on", "in_future"));
+    }
+    // Bounds the catalog lookups below (one per item); real packages have a handful of services.
+    if p.items.len() > MAX_ITEMS {
+        return Err(AppError::Validation(vec![FieldError::new(
+            "items",
+            "count_out_of_range",
+        )]));
     }
     let mut items = Vec::with_capacity(p.items.len());
     for (i, item) in p.items.iter().enumerate() {
