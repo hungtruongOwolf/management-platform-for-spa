@@ -1,0 +1,99 @@
+name: Deploy (staging)
+
+# Manual only. Builds the three images from the selected ref, pushes them to GHCR (private), then deploys over SSH.
+# Secrets live in the GitHub environment `staging` (Settings > Environments), never in git:
+#   STAGING_SSH_HOST         VPS IP or hostname
+#   STAGING_SSH_KEY          private key of a deploy-only SSH key (ed25519) for user `deploy`
+#   STAGING_SSH_KNOWN_HOSTS  output of `ssh-keyscan -t ed25519 <host>` checked against the VPS console
+# Application secrets stay in /opt/vpyd/.env.production on the server (runbook: memory/wiki/runbooks/staging-setup.md).
+on:
+  workflow_dispatch:
+    inputs:
+      rollback:
+        description: "Redeploy the previous tag instead of building this ref"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io/hungtruongowolf
+
+jobs:
+  build:
+    if: ${{ !inputs.rollback }}
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: tag
+        run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: apps/api
+          push: true
+          tags: ${{ env.REGISTRY }}/vpyd-api:${{ steps.tag.outputs.tag }}
+          cache-from: type=gha,scope=api
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Caddy.Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/vpyd-web:${{ steps.tag.outputs.tag }}
+          cache-from: type=gha,scope=web
+      - uses: docker/build-push-action@v6
+        with:
+          context: infra/backup
+          push: true
+          tags: ${{ env.REGISTRY }}/vpyd-backup:${{ steps.tag.outputs.tag }}
+          cache-from: type=gha,scope=backup
+
+  deploy:
+    needs: build
+    if: ${{ always() && (needs.build.result == 'success' || inputs.rollback) }}
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: SSH setup (pinned host key, no TOFU)
+        env:
+          SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Sync stack definition
+        env:
+          HOST: ${{ secrets.STAGING_SSH_HOST }}
+        run: |
+          tar -cf - infra/docker-compose.prod.yml infra/deploy.sh infra/postgres-init infra/backup \
+            | ssh -o StrictHostKeyChecking=yes "deploy@$HOST" 'tar -xf - -C /opt/vpyd && chmod +x /opt/vpyd/infra/deploy.sh'
+      - name: Deploy
+        env:
+          HOST: ${{ secrets.STAGING_SSH_HOST }}
+          TAG: ${{ needs.build.outputs.tag }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+          ROLLBACK: ${{ inputs.rollback }}
+        run: |
+          if [ "$ROLLBACK" = "true" ]; then target="--rollback"; else target="$TAG"; fi
+          # Short-lived job token for the pull only; logged out again so nothing long-lived stays on the VPS.
+          printf '%s' "$GHCR_TOKEN" | ssh -o StrictHostKeyChecking=yes "deploy@$HOST" \
+            "docker login ghcr.io -u '$ACTOR' --password-stdin >/dev/null && /opt/vpyd/infra/deploy.sh $target; rc=\$?; docker logout ghcr.io >/dev/null; exit \$rc"
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519

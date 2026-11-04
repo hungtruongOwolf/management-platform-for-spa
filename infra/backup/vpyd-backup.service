@@ -1,0 +1,15 @@
+# Install: sudo cp infra/backup/vpyd-backup.{service,timer} /etc/systemd/system/
+#          sudo systemctl daemon-reload && sudo systemctl enable --now vpyd-backup.timer
+# Run now: sudo systemctl start vpyd-backup.service ; logs: journalctl -u vpyd-backup.service
+[Unit]
+Description=Viên Phúc Y Đường nightly encrypted pg_dump to Cloudflare R2
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+WorkingDirectory=/opt/vpyd
+ExecStart=/usr/bin/docker compose --env-file /opt/vpyd/.env.production -f /opt/vpyd/infra/docker-compose.prod.yml --profile ops run --rm backup
+TimeoutStartSec=30min
+Nice=10

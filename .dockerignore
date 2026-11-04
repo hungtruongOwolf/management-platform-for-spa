@@ -1,0 +1,17 @@
+# Build context for infra/Caddy.Dockerfile (repo root): only what the web build needs.
+.git
+**/node_modules
+**/dist
+**/coverage
+**/.vite
+apps/api
+memory
+prototypes
+docs for reference
+.claude
+.github
+.env
+.env.*
+!.env.example
+**/*.pem
+**/*.key

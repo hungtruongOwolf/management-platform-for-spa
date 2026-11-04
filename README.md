@@ -8,7 +8,8 @@ apps/api/        Rust (Axum) — Cargo workspace, mỗi bounded context một cr
 apps/web/        React + Vite SPA (app nội bộ)
 packages/ui/     design tokens + components dùng chung
 packages/api-client/  TS client sinh từ OpenAPI (từ S3)
-infra/           docker-compose (dev), Caddyfile (production)
+infra/           docker-compose dev + prod, Caddyfile/Caddy.Dockerfile, backup/, deploy.sh, prodtest/
+                 (staging runbook: memory/wiki/runbooks/staging-setup.md)
 prototypes/      prototype HTML, không phải code production
 ```
 
