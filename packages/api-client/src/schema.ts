@@ -2722,6 +2722,7 @@ export interface operations {
                     "application/json": components["schemas"]["VisitDto"];
                 };
             };
+            /** @description auth.reauth_required (owner correcting a closed day) */
             401: {
                 headers: {
                     [name: string]: unknown;

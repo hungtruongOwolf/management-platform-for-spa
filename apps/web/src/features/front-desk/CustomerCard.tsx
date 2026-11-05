@@ -111,6 +111,11 @@ export function CustomerCard({
               >
                 <div>
                   <span className="font-semibold">{label}</span>
+                  {p.origin === "opening_balance" && (
+                    <span className="ml-2 rounded-full bg-surface-2 px-2 text-xs">
+                      Nhập từ sổ cũ
+                    </span>
+                  )}
                   <span className="block text-sm text-text-muted">
                     Còn{" "}
                     <strong>

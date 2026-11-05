@@ -68,6 +68,18 @@ pub enum AppError {
     Internal(String),
 }
 
+/// SQLSTATEs where Postgres refuses a client-supplied text value as such: U+0000 or a character
+/// the database encoding cannot hold (`22021`, `22P05`). JSON can carry an escaped NUL, Postgres
+/// `text` cannot store it; that is bad input (`422`), not a server fault.
+const UNSTORABLE_TEXT: [&str; 2] = ["22021", "22P05"];
+
+fn is_unstorable_text(error: &sqlx::Error) -> bool {
+    error
+        .as_database_error()
+        .and_then(|e| e.code())
+        .is_some_and(|code| UNSTORABLE_TEXT.contains(&code.as_ref()))
+}
+
 impl AppError {
     pub const fn forbidden() -> Self {
         Self::Forbidden {
@@ -90,6 +102,7 @@ impl AppError {
             Self::StaleVersion => StatusCode::PRECONDITION_FAILED,
             Self::BadRequest { .. } => StatusCode::BAD_REQUEST,
             Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
+            Self::Database(e) if is_unstorable_text(e) => StatusCode::UNPROCESSABLE_ENTITY,
             Self::Database(_) | Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -111,6 +124,7 @@ impl AppError {
             Self::Validation(_) => "validation_failed",
             Self::StaleVersion => "conflict.stale_version",
             Self::RateLimited => "rate_limited",
+            Self::Database(e) if is_unstorable_text(e) => "validation_failed",
             Self::Database(_) | Self::Internal(_) => "internal_error",
         }
     }
@@ -124,6 +138,10 @@ impl AppError {
             code: self.code(),
             errors: match self {
                 Self::Validation(errors) => Some(errors.clone()),
+                // The database cannot say which field; `body` tells the client to check its text.
+                Self::Database(e) if is_unstorable_text(e) => {
+                    Some(vec![FieldError::new("body", "invalid_character")])
+                }
                 _ => None,
             },
             existing_id: match self {
@@ -186,6 +204,9 @@ impl IntoResponse for Problem {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         match &self {
+            Self::Database(error) if is_unstorable_text(error) => {
+                tracing::warn!(%error, "rejected unstorable text");
+            }
             Self::Database(error) => tracing::error!(%error, "database error"),
             Self::Internal(message) => tracing::error!(%message, "internal error"),
             _ => {}
