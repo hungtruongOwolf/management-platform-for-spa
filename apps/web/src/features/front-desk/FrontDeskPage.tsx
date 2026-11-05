@@ -43,8 +43,14 @@ import {
   visitsOfDayQuery,
 } from "./api";
 import { CustomerCard } from "./CustomerCard";
-import { spaToday, voidVisit } from "../corrections/api";
-import { VoidForm } from "../corrections/VoidForm";
+import { spaToday } from "../corrections/api";
+
+// The void form (and the re-auth dialog behind it) only opens on demand: its own chunk.
+const VoidVisitForm = lazy(() =>
+  import("../corrections/VoidVisitForm").then((m) => ({
+    default: m.VoidVisitForm,
+  })),
+);
 
 // The new-customer form (react-hook-form + zod) is only needed when no match is found, so it is a
 // separate chunk: it stays off the front desk's first paint (frontend.md, perf budget).
@@ -776,75 +782,80 @@ function TodayVisits() {
           {today.data.map((v) => (
             <li
               key={v.id}
-              className="flex flex-wrap justify-between gap-2 border-b border-dashed border-border py-2 text-sm last:border-b-0"
+              className="border-b border-dashed border-border py-2 text-sm last:border-b-0"
             >
-              <span
-                className={
-                  v.status === "voided" ? "text-text-muted" : undefined
-                }
-              >
-                <strong>{timeOf(v.check_in_at)}</strong> · {v.customer_name}
-                {v.status === "voided" && (
-                  <span className="ml-2 rounded-full bg-danger-soft px-2 text-xs font-semibold text-danger">
-                    Đã hủy
-                  </span>
-                )}
-                <span className="block text-text-muted">
-                  {v.lines
-                    .map(
-                      (l) =>
-                        `${l.service_name}${l.source === "package" ? " (trừ buổi)" : ""}`,
-                    )
-                    .join(", ")}{" "}
-                  · KTV{" "}
-                  {[...new Set(v.lines.map((l) => l.staff_name))].join(", ")}
-                </span>
-                {v.status === "voided" && v.void_reason && (
-                  <span className="block">Lý do hủy: {v.void_reason}</span>
-                )}
-              </span>
-              <span className="flex items-start gap-2">
+              <div className="flex justify-between gap-2">
                 <span
-                  className={`tabular-nums ${v.status === "voided" ? "text-text-muted line-through" : ""}`}
+                  className={`min-w-0 ${v.status === "voided" ? "text-text-muted" : ""}`}
                 >
-                  {v.total ? formatVnd(v.total) : "—"}
+                  <strong>{timeOf(v.check_in_at)}</strong> · {v.customer_name}
+                  {v.status === "voided" && (
+                    <span className="ml-2 rounded-full bg-danger-soft px-2 text-xs font-semibold text-danger">
+                      Đã hủy
+                    </span>
+                  )}
+                  <span className="block text-text-muted">
+                    {v.lines
+                      .map(
+                        (l) =>
+                          `${l.service_name}${l.source === "package" ? " (trừ buổi)" : ""}`,
+                      )
+                      .join(", ")}{" "}
+                    · KTV{" "}
+                    {[...new Set(v.lines.map((l) => l.staff_name))].join(", ")}
+                  </span>
+                  {v.status === "voided" && v.void_reason && (
+                    <span className="block">Lý do hủy: {v.void_reason}</span>
+                  )}
                 </span>
-                {mayVoid && v.status === "completed" && voiding !== v.id && (
-                  <button
-                    type="button"
-                    aria-label={`Hủy lượt ${timeOf(v.check_in_at)} của ${v.customer_name}`}
-                    onClick={() => {
-                      setNotice(null);
-                      setVoiding(v.id);
-                    }}
-                    className="min-h-11 rounded-[10px] border border-border px-3 font-medium text-danger"
+                <span className="flex shrink-0 items-start gap-2">
+                  <span
+                    className={`tabular-nums ${v.status === "voided" ? "text-text-muted line-through" : ""}`}
                   >
-                    Hủy
-                  </button>
-                )}
-              </span>
+                    {v.total ? formatVnd(v.total) : "—"}
+                  </span>
+                  {mayVoid && v.status === "completed" && voiding !== v.id && (
+                    <button
+                      type="button"
+                      aria-label={`Hủy lượt ${timeOf(v.check_in_at)} của ${v.customer_name}`}
+                      onClick={() => {
+                        setNotice(null);
+                        setVoiding(v.id);
+                      }}
+                      className="min-h-11 rounded-[10px] border border-border px-3 font-medium text-danger"
+                    >
+                      Hủy
+                    </button>
+                  )}
+                </span>
+              </div>
               {voiding === v.id && (
-                <div className="w-full">
-                  <VoidForm
-                    title={`Hủy lượt ${timeOf(v.check_in_at)} của ${v.customer_name}`}
-                    consequence="Buổi đã trừ được cộng lại vào liệu trình; tiền đã thu được ghi bút toán đảo. Lượt vẫn còn trong lịch sử với trạng thái đã hủy."
-                    confirmLabel="Hủy lượt"
-                    run={(reason, key) => voidVisit(v.id, reason, key)}
-                    onCancel={() => {
-                      setVoiding(null);
-                    }}
-                    onDone={(voided) => {
-                      setVoiding(null);
-                      setNotice(`Đã hủy lượt của ${voided.customer_name}.`);
-                      void queryClient.invalidateQueries({
-                        queryKey: ["visits"],
-                      });
-                      void queryClient.invalidateQueries({
-                        queryKey: ["customer-packages"],
-                      });
-                    }}
-                  />
-                </div>
+                <Suspense
+                  fallback={
+                    <p role="status" className="w-full text-text-muted">
+                      Đang mở…
+                    </p>
+                  }
+                >
+                  <div className="w-full">
+                    <VoidVisitForm
+                      visit={v}
+                      onCancel={() => {
+                        setVoiding(null);
+                      }}
+                      onDone={(voided) => {
+                        setVoiding(null);
+                        setNotice(`Đã hủy lượt của ${voided.customer_name}.`);
+                        void queryClient.invalidateQueries({
+                          queryKey: ["visits"],
+                        });
+                        void queryClient.invalidateQueries({
+                          queryKey: ["customer-packages"],
+                        });
+                      }}
+                    />
+                  </div>
+                </Suspense>
               )}
             </li>
           ))}

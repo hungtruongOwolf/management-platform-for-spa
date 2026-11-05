@@ -280,7 +280,7 @@ describe("package actions on the customer profile", () => {
     const user = userEvent.setup();
     at("/khach-hang/c1");
     await user.click(await screen.findByRole("button", { name: "Gia hạn" }));
-    const dialog = screen.getByRole("dialog", { name: /Gia hạn/ });
+    const dialog = await screen.findByRole("dialog", { name: /Gia hạn/ });
     await user.click(within(dialog).getByRole("button", { name: "+2 tháng" }));
     await user.click(within(dialog).getByRole("button", { name: "Gia hạn" }));
     expect(within(dialog).getByText("Bắt buộc ghi lý do.")).toBeInTheDocument();
@@ -339,7 +339,9 @@ describe("package actions on the customer profile", () => {
     await user.click(
       await screen.findByRole("button", { name: "Hủy liệu trình + hoàn tiền" }),
     );
-    const dialog = screen.getByRole("dialog", { name: /Hủy liệu trình/ });
+    const dialog = await screen.findByRole("dialog", {
+      name: /Hủy liệu trình/,
+    });
     const amount = within(dialog).getByLabelText(/Số tiền hoàn/);
     await user.type(amount, "1.600.000");
     expect(
@@ -397,7 +399,9 @@ describe("package actions on the customer profile", () => {
     await user.click(
       await screen.findByRole("button", { name: "Hủy hóa đơn bán gói" }),
     );
-    const dialog = screen.getByRole("dialog", { name: /Hủy hóa đơn bán/ });
+    const dialog = await screen.findByRole("dialog", {
+      name: /Hủy hóa đơn bán/,
+    });
     await user.type(within(dialog).getByLabelText("Lý do hủy"), "Bán nhầm gói");
     await user.click(
       within(dialog).getByRole("button", { name: "Hủy hóa đơn" }),
@@ -440,7 +444,7 @@ describe("voids in the /quay visit list", () => {
         name: /Hủy lượt .* của Nguyễn Thị Hà/,
       }),
     );
-    const dialog = screen.getByRole("dialog", { name: /Hủy lượt/ });
+    const dialog = await screen.findByRole("dialog", { name: /Hủy lượt/ });
     await waitFor(() => {
       expect(within(dialog).getByLabelText("Lý do hủy")).toHaveFocus();
     });

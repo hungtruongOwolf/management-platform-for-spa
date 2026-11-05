@@ -1,11 +1,17 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { formatVnd } from "@vpyd/ui";
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
-import { PackageActions } from "../corrections/PackageActions";
 import { STATUS_LABEL, customerPackagesQuery, formatDate } from "./api";
 import { SellPackageDialog } from "./SellPackageDialog";
+
+// Lifecycle forms (extend, cancel + refund, sale void, re-auth) load only for users who can act.
+const PackageActions = lazy(() =>
+  import("../corrections/PackageActions").then((m) => ({
+    default: m.PackageActions,
+  })),
+);
 
 /**
  * Packages on the customer card: remaining / total sessions, expiry, status; "Bán liệu trình mới"
@@ -16,6 +22,10 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
   const packages = useQuery(customerPackagesQuery(customerId));
   const [selling, setSelling] = useState(false);
   const [sold, setSold] = useState<string | null>(null);
+  const canAct =
+    can(me, "package.extend_expiry") ||
+    can(me, "package.cancel_refund") ||
+    can(me, "record.void_same_day");
 
   return (
     <section aria-labelledby="packages-title" className="mt-4 space-y-2">
@@ -114,12 +124,16 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
                   {STATUS_LABEL[p.status]}
                 </span>
               </span>
-              <PackageActions
-                pkg={p}
-                onDone={(message) => {
-                  setSold(message);
-                }}
-              />
+              {canAct && (
+                <Suspense fallback={null}>
+                  <PackageActions
+                    pkg={p}
+                    onDone={(message) => {
+                      setSold(message);
+                    }}
+                  />
+                </Suspense>
+              )}
             </li>
           ))}
         </ul>
