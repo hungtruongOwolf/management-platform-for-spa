@@ -53,7 +53,11 @@ ON CONFLICT DO NOTHING;
 -- cancel. Existing opening balances start at 0 (who typed them is not provable). No default:
 -- every insert states its cap.
 ALTER TABLE app.customer_package ADD COLUMN refund_cap bigint;
+-- The backfill must also reach cancelled packages, which customer_package_cancelled_is_final
+-- (0009) protects from any UPDATE: lift that guard for this one statement only.
+ALTER TABLE app.customer_package DISABLE TRIGGER customer_package_cancelled_is_final;
 UPDATE app.customer_package SET refund_cap = CASE WHEN origin = 'sale' THEN sold_price ELSE 0 END;
+ALTER TABLE app.customer_package ENABLE TRIGGER customer_package_cancelled_is_final;
 ALTER TABLE app.customer_package
   ALTER COLUMN refund_cap SET NOT NULL,
   ADD CONSTRAINT customer_package_refund_cap_range CHECK (refund_cap BETWEEN 0 AND sold_price),
