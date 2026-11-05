@@ -160,7 +160,7 @@ fn field_codes(reply: &Reply) -> Vec<(String, String)> {
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn four_of_ten_left_is_imported_without_any_sale_or_payment(pool: PgPool) -> TestResult {
     let s = shop(pool).await?;
-    let imported = s.import(&s.manager, s.four_of_ten()).await;
+    let imported = s.import(&s.owner, s.four_of_ten()).await;
     assert_eq!(imported.status, StatusCode::CREATED, "{}", imported.body);
     assert_eq!(imported.body["customer_id"], json!(s.customer));
     assert_eq!(imported.body["customer_created"], false);
@@ -169,18 +169,12 @@ async fn four_of_ten_left_is_imported_without_any_sale_or_payment(pool: PgPool) 
         (
             package["sessions_remaining"].clone(),
             package["sessions_total"].clone(),
-            package["origin"].clone(),
+            package.get("origin").cloned(),
             package["sale_id"].clone(),
             package["status"].clone(),
         ),
-        (
-            json!(4),
-            json!(10),
-            json!("opening_balance"),
-            Value::Null,
-            json!("active")
-        ),
-        "AC8.1: còn 4/10, đánh dấu opening_balance"
+        (json!(4), json!(10), None, Value::Null, json!("active")),
+        "AC8.1: còn 4/10; no paper-book flag in the DTO (spec management-views §7)"
     );
     assert_eq!(package["items"][0]["per_session_value"], 150_000);
     assert_eq!(package["items"][0]["name"], "Cơ Bản – Dầu thảo dược");
@@ -191,16 +185,18 @@ async fn four_of_ten_left_is_imported_without_any_sale_or_payment(pool: PgPool) 
         assert_eq!(s.count(table).await?, 0, "{table} must stay empty");
     }
 
-    // AC8.5: the profile list shows the origin, so the web can label it "Nhập từ sổ cũ".
+    // EM 2026-11-05 (spec management-views §7): a migrated package looks like any other one;
+    // the only trace is that it has no sale to void.
     let listed = call(
         &s.h.app,
         "GET",
         &format!("/customers/{}/packages", s.customer),
-        Some(&s.manager),
+        Some(&s.owner),
         None,
     )
     .await;
-    assert_eq!(listed.body[0]["origin"], "opening_balance");
+    assert!(listed.body[0].get("origin").is_none(), "{}", listed.body);
+    assert_eq!(listed.body[0]["sale_id"], Value::Null);
     assert_eq!(listed.body[0]["sessions_remaining"], 4);
 
     let audit: Vec<String> = sqlx::query_scalar(
@@ -282,7 +278,7 @@ async fn more_left_than_total_is_422_and_nothing_is_written(pool: PgPool) -> Tes
     body["customer_id"] = Value::Null;
     body["customer"] = json!({"full_name": "Lê Thị Cúc", "phone": "0935000111"});
     body["packages"][0]["items"][0]["sessions_remaining"] = json!(11);
-    let rejected = s.import(&s.manager, body).await;
+    let rejected = s.import(&s.owner, body).await;
     assert_eq!(
         code(&rejected),
         (StatusCode::UNPROCESSABLE_ENTITY, Some("validation_failed"))
@@ -305,7 +301,7 @@ async fn more_left_than_total_is_422_and_nothing_is_written(pool: PgPool) -> Tes
     // Exactly the total is fine (an untouched package carried over).
     let mut full = s.four_of_ten();
     full["packages"][0]["items"][0]["sessions_remaining"] = json!(10);
-    assert_eq!(s.import(&s.manager, full).await.status, StatusCode::CREATED);
+    assert_eq!(s.import(&s.owner, full).await.status, StatusCode::CREATED);
     Ok(())
 }
 
@@ -314,7 +310,7 @@ async fn every_bad_field_is_reported_at_once(pool: PgPool) -> TestResult {
     let s = shop(pool).await?;
     let rejected = s
         .import(
-            &s.manager,
+            &s.owner,
             json!({
                 "customer_id": s.customer,
                 "packages": [
@@ -354,7 +350,7 @@ async fn every_bad_field_is_reported_at_once(pool: PgPool) -> TestResult {
         json!({"customer_id": s.customer, "customer": {"full_name": "X", "phone": "0935000111"},
                "packages": s.four_of_ten()["packages"].clone()}),
     ] {
-        let reply = s.import(&s.manager, body).await;
+        let reply = s.import(&s.owner, body).await;
         assert_eq!(
             field_codes(&reply),
             [("customer_id".to_owned(), "exactly_one".to_owned())]
@@ -363,7 +359,7 @@ async fn every_bad_field_is_reported_at_once(pool: PgPool) -> TestResult {
     let mut none = s.four_of_ten();
     none["packages"] = json!([]);
     assert_eq!(
-        field_codes(&s.import(&s.manager, none).await),
+        field_codes(&s.import(&s.owner, none).await),
         [("packages".to_owned(), "count_out_of_range".to_owned())]
     );
     let mut too_many_items = s.four_of_ten();
@@ -372,7 +368,7 @@ async fn every_bad_field_is_reported_at_once(pool: PgPool) -> TestResult {
         21
     ]);
     assert_eq!(
-        field_codes(&s.import(&s.manager, too_many_items).await),
+        field_codes(&s.import(&s.owner, too_many_items).await),
         [(
             "packages[0].items".to_owned(),
             "count_out_of_range".to_owned()
@@ -381,7 +377,7 @@ async fn every_bad_field_is_reported_at_once(pool: PgPool) -> TestResult {
     let mut bad_profile = s.four_of_ten();
     bad_profile["customer_id"] = Value::Null;
     bad_profile["customer"] = json!({"full_name": "", "phone": "123"});
-    let mut profile_fields = field_codes(&s.import(&s.manager, bad_profile).await);
+    let mut profile_fields = field_codes(&s.import(&s.owner, bad_profile).await);
     profile_fields.sort();
     assert_eq!(
         profile_fields,
@@ -419,8 +415,8 @@ async fn technician_cannot_import(pool: PgPool) -> TestResult {
 async fn double_submit_with_one_key_imports_once(pool: PgPool) -> TestResult {
     let s = shop(pool).await?;
     let key = Uuid::now_v7().to_string();
-    let first = s.post(&s.manager, &key, s.four_of_ten()).await;
-    let second = s.post(&s.manager, &key, s.four_of_ten()).await;
+    let first = s.post(&s.owner, &key, s.four_of_ten()).await;
+    let second = s.post(&s.owner, &key, s.four_of_ten()).await;
     assert_eq!(first.status, StatusCode::CREATED, "{}", first.body);
     assert_eq!(second.status, StatusCode::CREATED);
     assert_eq!(first.body, second.body, "replayed, not re-imported");
@@ -428,7 +424,7 @@ async fn double_submit_with_one_key_imports_once(pool: PgPool) -> TestResult {
 
     let mut changed = s.four_of_ten();
     changed["packages"][0]["items"][0]["sessions_remaining"] = json!(3);
-    let reused = s.post(&s.manager, &key, changed).await;
+    let reused = s.post(&s.owner, &key, changed).await;
     assert_eq!(
         code(&reused),
         (
@@ -440,7 +436,7 @@ async fn double_submit_with_one_key_imports_once(pool: PgPool) -> TestResult {
         &s.h.app,
         "POST",
         "/opening-balances",
-        Some(&s.manager),
+        Some(&s.owner),
         Some(s.four_of_ten()),
     )
     .await;
@@ -458,7 +454,7 @@ async fn duplicate_phone_points_at_the_existing_profile(pool: PgPool) -> TestRes
     let mut body = s.four_of_ten();
     body["customer_id"] = Value::Null;
     body["customer"] = json!({"full_name": "Hà trùng số", "phone": "0905 111 222"});
-    let taken = s.import(&s.manager, body).await;
+    let taken = s.import(&s.owner, body).await;
     assert_eq!(
         code(&taken),
         (StatusCode::CONFLICT, Some("customer.phone_taken"))
@@ -489,10 +485,7 @@ async fn another_spas_customer_or_plan_is_not_found(pool: PgPool) -> TestResult 
     // Our manager names an unknown plan.
     let mut body = s.four_of_ten();
     body["packages"][0]["package_plan_id"] = json!(Uuid::now_v7());
-    assert_eq!(
-        s.import(&s.manager, body).await.status,
-        StatusCode::NOT_FOUND
-    );
+    assert_eq!(s.import(&s.owner, body).await.status, StatusCode::NOT_FOUND);
     assert_eq!(s.count("customer_package").await?, 0);
     Ok(())
 }
@@ -520,20 +513,21 @@ impl Shop {
     }
 }
 
-/// AC8.6–8.7: no "open import today" switch. Whoever holds `opening_balance.import` imports, on
-/// today's business day; the owner is not asked for the password again.
+/// AC8.6–8.7: no "open import today" switch; the import lands on today's business day and the
+/// owner is not asked for the password again. Since 0013 the manager may not import at all: the
+/// paper books are an operator migration (spec management-views §7).
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
-async fn anyone_who_may_import_imports_today_without_a_window_or_reauth(
-    pool: PgPool,
-) -> TestResult {
+async fn only_the_owner_imports_today_without_a_window_or_reauth(pool: PgPool) -> TestResult {
     let s = shop(pool).await?;
     let by_manager = s.import(&s.manager, s.four_of_ten()).await;
     assert_eq!(
-        by_manager.status,
-        StatusCode::CREATED,
+        code(&by_manager),
+        (StatusCode::FORBIDDEN, Some("auth.forbidden")),
         "{}",
         by_manager.body
     );
+    let first = s.import(&s.owner, s.four_of_ten()).await;
+    assert_eq!(first.status, StatusCode::CREATED, "{}", first.body);
 
     s.exec("UPDATE app.session SET recent_auth_at = now() - interval '2 days'")
         .await?;
@@ -573,7 +567,7 @@ async fn anyone_who_may_import_imports_today_without_a_window_or_reauth(
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn an_opening_balance_refund_is_capped_by_its_book_price(pool: PgPool) -> TestResult {
     let s = shop(pool).await?;
-    let imported = s.import(&s.manager, s.four_of_ten()).await;
+    let imported = s.import(&s.owner, s.four_of_ten()).await;
     let package = imported.body["customer_packages"][0].clone();
     assert!(package.get("refund_cap").is_none(), "{package}");
     let id = package["id"].as_str().unwrap_or_default().to_owned();

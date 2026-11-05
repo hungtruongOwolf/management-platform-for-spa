@@ -1,7 +1,7 @@
 ---
 title: Backend design (R1-1)
 updated: 2026-11-05
-sources: [product/specs/front-desk-and-packages.md, architecture/system.md, architecture/data.md, security/authz-matrix.md]
+sources: [product/specs/front-desk-and-packages.md, product/specs/management-views.md, architecture/system.md, architecture/data.md, security/authz-matrix.md]
 ---
 
 # Backend design R1-1
@@ -72,7 +72,7 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
 | `GET /customers/{id}/packages` | Liệu trình của khách, mới nhất trước, còn X/Y buổi (S6 ✅) | `customer.read` | — | read |
 | `POST /customer-packages/{id}/extend` | Gia hạn (US7, S8 ✅): `{expires_on, reason}` + If-Match. Hạn mới phải sau hạn hiện tại và không ở quá khứ (`422 expires_on not_later / in_past / package_has_no_expiry`); gói đã hủy → `409 package.cancelled`. `200 CustomerPackageDto` + `ETag`; audit before/after + lý do | `package.extend_expiry` | ✓ | write |
 | `POST /customer-packages/{id}/cancel` | Hủy + hoàn tiền (US7, S8 ✅): `{reason, refund_amount (0 = không hoàn), refund_method?}`. Buổi còn lại → 0, `cancelled`; hoàn > `sold_price` → `422 refund.exceeds_paid` (gói sổ cũ cũng vậy, AC8.8); tạo một dòng `refund` (sổ quỹ hôm nay). `200 CustomerPackageDto` (có `cancel_reason`, `refund`). Không reauth (EM 2026-11-05) | `package.cancel_refund` | ✓ | write |
-| `POST /opening-balances` | Nhập liệu trình dở dang (US8, S9 ✅): `customer_id` **hoặc** `customer{…như POST /customers}` + `packages[{package_plan_id?, name?, sold_price, starts_on, expires_on?, gift_note?, items[{service_id, sessions_purchased, sessions_bonus?, sessions_remaining}]}]` (1–10). `201 {customer_id, customer_created, customer_packages}`; không sale/payment; lỗi field có tiền tố `customer.` / `packages[j].`; bắt buộc `Idempotency-Key` | `opening_balance.import` (+ `customer.write` khi tạo khách) | ✓ | write |
+| `POST /opening-balances` | **Tạm thời, chỉ chủ spa** (R1-2 §7: team migrate bằng `app import-paper-book`; xóa route khi web bỏ màn `/nhap-so-cu`). Nhập liệu trình dở dang (US8, S9 ✅): `customer_id` **hoặc** `customer{…như POST /customers}` + `packages[{package_plan_id?, name?, sold_price, starts_on, expires_on?, gift_note?, items[{service_id, sessions_purchased, sessions_bonus?, sessions_remaining}]}]` (1–10). `201 {customer_id, customer_created, customer_packages}`; không sale/payment; lỗi field có tiền tố `customer.` / `packages[j].`; bắt buộc `Idempotency-Key` | `opening_balance.import` (chỉ Owner từ 0013; + `customer.write` khi tạo khách) | ✓ | write |
 | `POST /sales` | Bán gói: `lines[{package_plan_id, gift_note?}]` (1–10), `closer_staff_id`, `discount{amount, reason}?`, `payments[{method, amount, reference?}]` (0–2, mỗi hình thức 1 lần). `201` trả `SaleDto` kèm `customer_packages` (US3, S6 ✅) | `package.sell` (+ `sale.discount*`) | ✓ | write |
 | `GET /sales/{id}` | Chi tiết hóa đơn: lines, payments, customer_packages (S6 ✅) | `sale.read` | — | read |
 | `POST /sales/{id}/void` | Hủy hóa đơn bán gói + `{reason}` (US6, S8 ✅): mỗi payment một `reversal`, `amount_paid` → 0, các gói của hóa đơn → `cancelled` (buổi → 0). Gói đã dùng buổi → `409 sale.has_used_sessions`; gói đã hủy/hoàn tiền → `409 package.cancelled`; hóa đơn dịch vụ lẻ của lượt → `409 sale.void_via_visit`; hủy lần 2 → `409 sale.voided`. `200 SaleDto` (`void_reason`, `voided_at`) | `record.void_same_day`; ngày trước hôm nay: `record.void_closed_day` (thiếu → `403 day.locked`) | ✓ | write |
@@ -81,6 +81,24 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
 | `GET /visits/{id}` · `PATCH /visits/{id}` | Xem (có `note` nếu có `customer.health_notes.read`, `ETag`) / sửa ghi chú và KTV từng dòng (If-Match; không đụng buổi hay tiền; ngày đã chốt theo đúng quy tắc của hủy: Manager → `403 day.locked`, Owner (`record.void_closed_day`) → được, không reauth) (S7 ✅) | `visit.read` / `visit.record` (+ `customer.health_notes.write` khi sửa ghi chú) | — | read/write |
 | `POST /visits/{id}/void` | Hủy lượt + `{reason}` (US6, S8 ✅): lượt → `voided` (giữ trong lịch sử, `void_reason`, `voided_at`), buổi đã trừ được cộng lại, sale dịch vụ lẻ của lượt bị hủy bằng reversal. Hủy lần 2 → `409 visit.voided`; gói đã bị hủy từ lúc đó → `409 package.cancelled`; thiếu lý do → `422`. `200 VisitDto` (không có `note`) | `record.void_same_day`; ngày trước hôm nay: `record.void_closed_day` (thiếu → `403 day.locked`) | ✓ | write |
 | `POST /support-grants` · `DELETE /support-grants/{id}` | Cấp / thu hồi quyền hỗ trợ | `support_grant.manage` 🔒 | — | write |
+
+### 3b. Xem lại & theo dõi (R1-2, crate `reporting`, [spec](../product/specs/management-views.md))
+Chỉ đọc, `GET`, `Cache-Control: no-store`, rate class `read`. Query param nào cũng có mặc định, nên thiếu param không bao giờ thành 400 trước khi kiểm quyền. Danh sách: cursor mờ (base64url của khóa sắp xếp), `limit` 1–100 (mặc định 20); cursor sửa tay → `422 cursor invalid`. Trường tiền là `Option` và **vắng hẳn** khi thiếu `report.revenue.read`.
+
+| Method & path | Trả về (schema) | Permission |
+|---|---|---|
+| `GET /reports/daily?date=` | `DailyReport {date, counts: DayCounts{customers, visits, voided_visits, sessions_used, one_off_services, packages_sold}, revenue?: Revenue{collected, collected_by_kind, voids, voids_by_kind, refunds, net, net_by_kind}, technicians[]{staff_id, name, visits, sessions_used, one_off_services}, compare{yesterday, same_weekday_last_week: DayHeadline{date, customers, visits, sessions_used, packages_sold, net_revenue?}}}`. `MethodSplit = {cash, bank_transfer, total}`, `KindSplit = {package, one_off}` | `report.read` (+ `report.revenue.read` cho tiền) |
+| `GET /reports/range?from=&to=&granularity=` | `RangeReport {from, to, granularity: day/week/month, totals: DayCounts (customers = khác nhau trên cả khoảng), revenue?, series[]{start, end, counts, revenue?} (đủ mọi kỳ, kỳ rỗng = 0, tuần ISO bắt đầu thứ Hai), top_services[10]{service_id, name, sessions_used, one_off_services, one_off_revenue?}, top_packages[10]{plan_id, name, sold, revenue?}}`. Mặc định 7 ngày; tối đa 366 ngày (`422 to range_too_long`); `from > to` → `422 from after_to` | `report.read` |
+| `GET /reports/ledger?from=&to=&cursor=&limit=` | `LedgerPage {from, to, rows[]{id, entry: sale/void/refund, business_date, at, customer_id, customer_name, kind: package/one_off, one_off?, package?, bank_transfer, cash, unpaid, note?, voided}, days[]{date, bank_transfer, cash, unpaid, total, entries} (mọi ngày của khoảng, không chỉ trang), next_cursor}`. Thứ tự sổ: ngày rồi thứ tự ghi (UUIDv7). Mặc định hôm nay; tối đa 92 ngày | `report.revenue.read` |
+| `GET /customers/{id}/history?cursor=&limit=` | `HistoryPage {customer_id, events[]{kind: visit/purchase/visit_voided/purchase_voided/package_cancelled, at, business_date, visit?{id, voided, check_in_at, lines[]{service_name, source, customer_package_id?, package_name?, qty, sessions_left_after?, staff_id, staff_name, amount}, paid, void_reason?, voided_at?}, purchase?{sale_id, voided, lines[]{description, qty, line_total, customer_package_id?}, subtotal, discount_amount, discount_reason?, total, paid, closer_name?, void_reason?, voided_at?}, void?{id, reason, reversed, sessions_restored}, cancellation?{customer_package_id, package_name, reason, refund?{amount, method, business_date}}}, next_cursor}`. Ngày mới nhất trước | `customer.read` + `visit.read` + `sale.read` |
+| `GET /customers/{id}/summary` | `CustomerStats {customer_id, first_visit_on?, last_visit_on?, days_since_last_visit?, visit_count, voided_visit_count, sessions_used, paid, voided, refunded, net_spent, packages{active, expired, exhausted, cancelled}, sessions_remaining}` | `customer.read` + `visit.read` + `sale.read` |
+| `GET /customer-packages/{id}/usage` | `PackageUsage {package: CustomerPackageDto, uses[]{visit_id, visit_line_id, business_date, check_in_at, item_id, service_name, qty, sessions_left_after?, staff_id, staff_name, voided}}` (cũ → mới, như trang sổ liệu trình) | `customer.read` + `visit.read` |
+| `GET /packages?status=&expiring_within_days=&q=&cursor=&limit=` | `PackageOverviewPage {items[]{id, customer_id, customer_name, customer_phone, name, status, sessions_total, sessions_remaining, starts_on, expires_on?, days_to_expiry?, last_used_on?, cancelled_at?}, counts{active, expiring_soon, expired, exhausted, cancelled}, expiring_within_days, next_cursor}`. Không có `expiring_within_days`: mới nhất trước; có: chỉ gói active hết hạn ≤ hôm nay + N, gần nhất trước | `customer.read` |
+| `GET /customers/inactive?days=&scope=&cursor=&limit=` | `InactivePage {days, items[]{customer_id, full_name, phone, last_visit_on?, last_seen_on, days_absent, active_packages, sessions_remaining}, next_cursor}`; vắng lâu nhất trước; mặc định 30 ngày, `scope=with_sessions` (mặc định) hoặc `all` | `customer.read` + `visit.read` |
+
+**Quy tắc tiền** (spec §3): thu = `payment.kind='payment'`; hủy = `reversal`, ghi vào ngày hủy; hoàn = `refund`; net = thu − hủy − hoàn; loại = hóa đơn có dòng `package` hay không. Số đếm theo trạng thái hiện tại (lượt/hóa đơn đã hủy không đếm). `CustomerPackageDto` **không còn `origin`** (R1-2 §7); gói từ sổ giấy chỉ khác ở `sale_id = null`.
+
+**Hiệu năng** (`app/tests/reports_bench.rs`, `--ignored`; 3 năm ≈ 44.000 lượt, 30.800 hóa đơn; build debug, 1 client, p95 ms): daily 41 · range 7 ngày 41 · range 1 năm theo tháng 150 · ledger 1 ngày 19 · ledger 92 ngày 59 · history 31 · summary 16 · usage 16 · packages 40 · expiring 26 · `q` 16 · inactive 35. Ngân sách 300 ms. Lần đo đầu, range 1 năm là 396 ms vì tiền được tổng hợp qua view `revenue_book` (mỗi hóa đơn một string_agg mô tả rồi bỏ đi), nên đổi sang tổng hợp thẳng từ `payment` + tập hóa đơn có dòng gói.
 
 **Thân `POST /visits` (rút gọn):**
 ```json
@@ -129,7 +147,7 @@ http (Axum route, DTO, extractor AuthUser/TenantCtx/IdempotencyKey/IfMatch)
         └─▶ repo (SQL qua sqlx::query!, nhận &mut TenantTx + TenantId)
 domain: kiểu dữ liệu & bất biến thuần (Money, PhoneE164, SessionCount, PriceVariant, PackageStatus::derive)
 ```
-- **Đồ thị phụ thuộc crate:** `operations → {packages, sales, catalog, crm}` (chỉ qua `service` API, truyền chung `&mut TenantTx`) · `sales → {catalog, crm}` · `packages → {catalog, crm}` · mọi crate → `kernel`. Không vòng; `ledger` (spec #2) chỉ **đọc** `sales`.
+- **Đồ thị phụ thuộc crate:** `reporting → {packages, crm}` (chỉ đọc; SQL thẳng trên các bảng sổ, như một read model) · `operations → {packages, sales, catalog, crm}` (chỉ qua `service` API, truyền chung `&mut TenantTx`) · `sales → {catalog, crm}` · `packages → {catalog, crm}` · mọi crate → `kernel`. Không vòng; `ledger` (spec #2) chỉ **đọc** `sales`.
 - **Cross-cutting ở `app`:** config (validate khi khởi động, fail-fast), middleware tower (tracing request-id, timeout 10 giây, giới hạn body 64 KB, rate limit, kiểm tra `Origin` cho request ghi), error mapping `AppError → problem+json` tại một chỗ, header bảo mật do Caddy đặt.
 - **Tiện ích domain:** chuẩn hóa SĐT VN → E.164 (`phonenumber`); tạo `search_text` (NFC → lowercase → bỏ dấu → `đ→d`); mã hóa field AES-256-GCM (`aes-gcm`, key qua `secrecy`).
 
@@ -151,6 +169,7 @@ Chạy trên máy vận hành, không có route HTTP nào tương ứng. Mật k
 | `app add-user --tenant S --phone P --name N --role owner\|manager\|technician` | Thêm người vào spa, mật khẩu từ `APP_NEW_USER_PASSWORD` | owner |
 | `app add-staff --tenant S --name N --position P` | Thêm nhân viên cho picker KTV / người chốt | owner |
 | `app seed-catalog --tenant S` | Nạp menu in (35 dịch vụ / 10 nhóm) | owner |
+| `app import-paper-book --tenant S --file F.csv [--dry-run]` | Migrate sổ liệu trình giấy một lần (R1-2 §7, cột CSV ở spec). Đi qua `packages::opening_balance::import` với quyền của chủ spa; gói đã có (cùng khách, tên, ngày bắt đầu, không hóa đơn) bị bỏ qua nên chạy lại an toàn; file lỗi ở bất kỳ dòng nào (cột, số, ngày, tên dịch vụ) → không ghi gì | owner + app_rw + `APP_DATA_KEY` |
 | `app seed-demo --tenant S [--force-again]` | Dữ liệu demo cho staging/buổi dùng thử, xem [runbook](../runbooks/vercel-staging.md#dữ-liệu-demo) | owner + app_rw + `APP_DATA_KEY` + `APP_NEW_USER_PASSWORD` |
 | `app reset-mfa --phone P` / `app unlock --phone P` | Mất authenticator / gỡ khóa đăng nhập (xác minh người trước) | owner |
 | `app openapi` | In contract ra stdout | — |
@@ -167,7 +186,8 @@ Chạy trên máy vận hành, không có route HTTP nào tương ứng. Mật k
 | US5 | hoãn | Không có endpoint thu nợ / công nợ ở R1; không có endpoint sửa/xóa payment |
 | US6 | 6.1–6.4 | `POST /visits/{id}/void`, `POST /sales/{id}/void` (S8 ✅) |
 | US7 | 7.1–7.4 | `/customer-packages/{id}/extend`, `/cancel` (S8 ✅) |
-| US8 | 8.1, 8.3–8.8 | `POST /opening-balances` (tạo `customer_package` với `origin=opening_balance`, không có sale hay payment; báo cáo lọc theo origin) |
+| US8 | 8.1, 8.3–8.8 | `POST /opening-balances` (tạm, chỉ Owner) + `app import-paper-book` (tạo `customer_package` với `origin=opening_balance` trong DB, không có sale hay payment; DTO không lộ `origin`) |
+| R1-2 US1–US5 | [management-views](../product/specs/management-views.md) | §3b |
 | G1–G6 | | Middleware + extractor + `kernel` |
 
 ## 8. Áp dụng `secure` (tóm tắt)

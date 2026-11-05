@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT date_trunc($3, v.business_date::timestamp)::date AS \"bucket!\",\n                      count(*) FILTER (WHERE v.status = 'completed') AS \"visits!\",\n                      count(DISTINCT v.customer_id) FILTER (WHERE v.status = 'completed') AS \"customers!\",\n                      count(*) FILTER (WHERE v.status = 'voided') AS \"voided!\"\n               FROM app.visit v\n               WHERE v.tenant_id = $1 AND v.business_date = ANY($2)\n               GROUP BY 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bucket!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "visits!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "customers!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "voided!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "DateArray",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "cfa7d4001cc793aa7fc48e918eb4248329b9ad99885cf594691290c3ede0352a"
+}

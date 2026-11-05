@@ -12,7 +12,8 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [glossary](wiki/product/glossary.md) — ubiquitous language VI ↔ code terms (draft)
 - [service-catalog](wiki/product/service-catalog.md) — real menu: 35 services, 10 categories, female/male pricing (seed data)
 - [personas](wiki/product/personas.md) — operating context (1 branch, 3–8 KTV, manager-cashier) + 5 personas
-- [spec R1-1 front-desk-and-packages](wiki/product/specs/front-desk-and-packages.md) — **approved**: catalog, customers, sell package, record visit, payments/receivables, void, package lifecycle, opening balance
+- [spec R1-1 front-desk-and-packages](wiki/product/specs/front-desk-and-packages.md) — **approved**: catalog, customers, sell package, record visit, payments/receivables, void, package lifecycle, opening balance (AC8.5 dropped 2026-11-05)
+- [spec R1-2 management-views](wiki/product/specs/management-views.md) — **draft**: dashboard Hôm nay, range report, revenue book, customer history/summary/package page, packages overview, re-engagement; no "sổ cũ" in product (CLI import); thu chi later; open Q1–Q4
 
 ## Design
 - [design-system](wiki/design/design-system.md) — "Trà thất Đông y" palette (nâu đỏ/vàng/trắng/kem): tokens + contrast table (auto-tested), logo thật (trace từ PNG), app shell (sidebar/top bar/tab bar/palette), component classes, motion budget, before/after
@@ -21,8 +22,8 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 ## Architecture
 - [system](wiki/architecture/system.md) — R1 architecture: quality ranking, C4 diagrams, trust boundaries, data flows, failure modes, cost
 - [frontend](wiki/architecture/frontend.md) — SPA routes (incl. management views + data flag), data fetching, perf budget (single startup chunk), auth/permission-aware UI, PWA, folder layout
-- [backend](wiki/architecture/backend.md) — R1-1 API contract (endpoints, errors, idempotency, ETag), use cases + integrity strategies, layering, jobs, AC trace
-- [data](wiki/architecture/data.md) — R1-1 Postgres schema + ER, tenant FKs, RLS, constraints, indexes, migrations, seed
+- [backend](wiki/architecture/backend.md) — R1-1 API contract + §3b R1-2 report endpoints (shapes, money rules, p95 bench) (endpoints, errors, idempotency, ETag), use cases + integrity strategies, layering, jobs, AC trace
+- [data](wiki/architecture/data.md) — R1-1 Postgres schema + R1-2 read models (0013: package_status, revenue_book, day indexes) + ER, tenant FKs, RLS, constraints, indexes, migrations, seed
 - [principles](wiki/architecture/principles.md) — extensibility rules: modular monolith, permissions-as-data, tenant/branch, versioned policies, pure calculators
 
 ## Decisions (ADR)
@@ -35,11 +36,12 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [ADR-0006 repo & module layout](wiki/decisions/ADR-0006-repo-and-module-layout.md) — **accepted**: monorepo, Cargo workspace crate per bounded context
 
 ## Security
-- [authz-matrix](wiki/security/authz-matrix.md) — R1-1 permissions × roles, re-auth, support grants, mandatory authz tests
+- [authz-matrix](wiki/security/authz-matrix.md) — R1-1 + R1-2 (report.read, report.revenue.read) permissions × roles, re-auth, support grants, mandatory authz tests
 - [threat-model](wiki/security/threat-model.md) — STRIDE per trust boundary for R1, with tests
 
 ## Plans
 - [r1-1-front-desk](wiki/plans/r1-1-front-desk.md) — 12 slices S0–S11 (foundation → kernel → auth → tracer bullet catalog → … → staging); S10 block holds the AC → test coverage table
+- [r1-2-management-views](wiki/plans/r1-2-management-views.md) — M1–M10: backend contract/migration/CLI/tests done; UI screens, drop /nhap-so-cu, then delete POST /opening-balances
 - [r1-1-trial-session](wiki/plans/r1-1-trial-session.md) — S10 buổi dùng thử với quản lý: setup máy dev, 15 nhiệm vụ quầy, bấm giờ (< 30 s/lượt), phiếu góp ý
 
 ## Runbooks

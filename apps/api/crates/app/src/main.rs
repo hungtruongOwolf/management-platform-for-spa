@@ -24,6 +24,10 @@ use tracing_subscriber::EnvFilter;
 ///                                      fill a spa with demo data (staff, a manager login 0905000002
 ///                                      whose password comes from APP_NEW_USER_PASSWORD, customers,
 ///                                      sales, three weeks of visits); refuses a spa that has it
+///   `app import-paper-book --tenant S --file F.csv [--dry-run]`
+///                                      one-off migration of the paper package books (columns in
+///                                      memory/wiki/product/specs/management-views.md §7); acts as
+///                                      the spa's owner, skips packages already imported
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Local development convenience: load .env if present. Real deployments set variables in the environment.
@@ -38,12 +42,13 @@ async fn main() -> anyhow::Result<()> {
         Some("reset-mfa") => reset_mfa().await,
         Some("unlock") => unlock().await,
         Some("seed-demo") => seed_demo().await,
+        Some("import-paper-book") => import_paper_book().await,
         Some("openapi") => {
             print!("{}", app::openapi::json()?);
             Ok(())
         }
         Some(other) => anyhow::bail!(
-            "unknown command {other:?} (expected: serve | migrate | create-tenant | add-user | add-staff | seed-catalog | reset-mfa | unlock | seed-demo | openapi)"
+            "unknown command {other:?} (expected: serve | migrate | create-tenant | add-user | add-staff | seed-catalog | reset-mfa | unlock | seed-demo | import-paper-book | openapi)"
         ),
     }
 }
@@ -255,6 +260,41 @@ async fn seed_demo() -> anyhow::Result<()> {
     )
     .await?;
     tracing::info!(%tenant, ?report, "demo data seeded; manager login {}", app::demo::MANAGER_PHONE);
+    Ok(())
+}
+
+async fn import_paper_book() -> anyhow::Result<()> {
+    init_tracing(Environment::Development);
+    let (tenant, file) = (required_flag("tenant")?, required_flag("file")?);
+    let csv = std::fs::read_to_string(&file).with_context(|| format!("cannot read {file}"))?;
+    let data_key = std::env::var("APP_DATA_KEY")
+        .context("APP_DATA_KEY is required: new customers go through the API's use case")?;
+    let cipher = kernel::crypto::FieldCipher::from_base64(&data_key)
+        .map_err(|e| anyhow::anyhow!("APP_DATA_KEY: {e}"))?;
+    let owner = owner_pool().await?;
+    let app_url = std::env::var("APP_DATABASE_URL")
+        .context("APP_DATABASE_URL (app_rw) is required: the import goes through the use case")?;
+    let app = PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&app_url)
+        .await
+        .context("cannot connect as app_rw")?;
+    app::db_guard::check_runtime_role(&app)
+        .await
+        .context("APP_DATABASE_URL must be the app_rw role (RLS applies)")?;
+    let dry_run = switch("dry-run");
+    let report = app::paper_book::import(
+        &owner,
+        &app,
+        &cipher,
+        &app::paper_book::ImportOptions {
+            tenant_slug: &tenant,
+            csv: &csv,
+            dry_run,
+        },
+    )
+    .await?;
+    tracing::info!(%tenant, dry_run, ?report, "paper-book import finished");
     Ok(())
 }
 

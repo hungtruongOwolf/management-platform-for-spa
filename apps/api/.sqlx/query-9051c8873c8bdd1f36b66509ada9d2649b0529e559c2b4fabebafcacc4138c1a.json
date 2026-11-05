@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.business_date AS \"date!\",\n                  coalesce(sum(b.bank_transfer), 0)::bigint AS \"bank_transfer!\",\n                  coalesce(sum(b.cash), 0)::bigint AS \"cash!\",\n                  coalesce(sum(b.unpaid), 0)::bigint AS \"unpaid!\",\n                  count(*) AS \"entries!\"\n           FROM app.revenue_book b\n           WHERE b.tenant_id = $1 AND b.business_date BETWEEN $2 AND $3\n           GROUP BY b.business_date\n           ORDER BY b.business_date",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "date!",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "app.revenue_book",
+            "name": "business_date"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "bank_transfer!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "cash!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "unpaid!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "entries!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      true,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "9051c8873c8bdd1f36b66509ada9d2649b0529e559c2b4fabebafcacc4138c1a"
+}

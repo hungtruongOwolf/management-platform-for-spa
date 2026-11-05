@@ -1,0 +1,86 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH last_visit AS (\n             SELECT v.customer_id, max(v.business_date) AS last_on\n             FROM app.visit v\n             WHERE v.tenant_id = $1 AND v.status = 'completed'\n             GROUP BY v.customer_id\n           ), pk AS (\n             SELECT ps.customer_id,\n                    count(*) FILTER (WHERE app.package_status(ps.cancelled_at, ps.sessions_remaining, ps.expires_on, $2) = 'active') AS active,\n                    coalesce(sum(ps.sessions_remaining) FILTER (WHERE app.package_status(ps.cancelled_at, ps.sessions_remaining, ps.expires_on, $2) = 'active'), 0)::bigint AS remaining,\n                    max(ps.starts_on) AS last_start\n             FROM app.customer_package_state ps\n             WHERE ps.tenant_id = $1\n             GROUP BY ps.customer_id\n           ), cand AS (\n             SELECT c.id, c.full_name, c.phone_e164, lv.last_on,\n                    coalesce(lv.last_on, pk.last_start) AS last_seen,\n                    coalesce(pk.active, 0) AS active, coalesce(pk.remaining, 0) AS remaining\n             FROM app.customer c\n             LEFT JOIN last_visit lv ON lv.customer_id = c.id\n             LEFT JOIN pk ON pk.customer_id = c.id\n             WHERE c.tenant_id = $1 AND c.anonymized_at IS NULL\n           )\n           SELECT id AS \"id!\", full_name AS \"full_name!\", phone_e164 AS \"phone!\", last_on,\n                  last_seen AS \"last_seen!\", active AS \"active!\", remaining AS \"remaining!\"\n           FROM cand\n           WHERE last_seen IS NOT NULL AND last_seen <= $2 - $3::int\n             AND (NOT $4::bool OR remaining > 0)\n             AND ($5::date IS NULL OR (last_seen, id) > ($5, $6))\n           ORDER BY last_seen, id\n           LIMIT $7",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.customer",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "full_name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "phone!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer",
+            "name": "phone_e164"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "last_on",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "last_seen!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "active!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "remaining!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Int4",
+        "Bool",
+        "Date",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "1b23a9b043e2df2f2b8c8524341b1d1668256a954b72a48c66d1b95dec607e5c"
+}

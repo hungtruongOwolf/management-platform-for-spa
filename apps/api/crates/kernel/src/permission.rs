@@ -53,6 +53,8 @@ permissions! {
     SaleDiscountUnlimited => "sale.discount_unlimited",
     RecordVoidSameDay => "record.void_same_day",
     RecordVoidClosedDay => "record.void_closed_day",
+    ReportRead => "report.read",
+    ReportRevenueRead => "report.revenue.read",
     AuditRead => "audit.read",
     SupportGrantManage => "support_grant.manage",
     PlatformTenantManage => "platform.tenant.manage",

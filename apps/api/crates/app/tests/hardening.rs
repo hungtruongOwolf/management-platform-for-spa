@@ -897,7 +897,7 @@ async fn every_catalog_and_profile_write_is_audited(pool: PgPool) -> TestResult 
     assert!(note.status.is_success(), "{} {}", note.status, note.body);
     let imported = s
         .post(
-            &s.manager,
+            &s.owner,
             "/opening-balances",
             json!({"customer_id": s.ha, "packages": [{
                 "name": "Gói sổ cũ", "sold_price": 1_500_000, "starts_on": "2026-06-01",

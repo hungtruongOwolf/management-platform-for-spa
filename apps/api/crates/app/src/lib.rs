@@ -7,6 +7,7 @@ mod health;
 pub mod jobs;
 pub mod middleware;
 pub mod openapi;
+pub mod paper_book;
 
 use axum::Router;
 use middleware::HttpPolicy;
@@ -46,6 +47,7 @@ pub fn router(state: AppState, policy: &HttpPolicy) -> Router {
         .merge(packages::http::routes())
         .merge(sales::http::routes())
         .merge(operations::http::routes())
+        .merge(reporting::http::routes())
         .with_state(state);
     middleware::apply(Router::new().nest("/api/v1", api), policy)
 }
