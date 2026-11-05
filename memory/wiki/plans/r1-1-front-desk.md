@@ -209,6 +209,78 @@ Quy ước chung cho mọi ticket có endpoint:
     - Perf: p95 `/customers?q=` và catalog < 300 ms. `lighthouserc.json` (LCP < 2,5 s) hiện chỉ đo `/dang-nhap`.
     - CI: job `e2e`.
     - **Còn lại cho S10:** (matrix đã có dòng cho mọi route S6–S9) `PATCH /visits/{id}` ngày cũ cần reauth như hủy; `/quay` đã có trong Lighthouse (S7); test role PlatformAdmin/support grant khi có role; `/qa` tìm khoảng trống; buổi dùng thử với quản lý.
+  - **Kết quả hardening (2026-11-04, branch `test/s10-hardening`; ticket chưa tick, chờ buổi dùng thử [r1-1-trial-session](r1-1-trial-session.md)):**
+    - **Lỗi tìm ra và đã sửa** (mỗi lỗi có test hoặc số đo đỏ trước khi sửa):
+      1. **[high] Deadlock → 500** khi ghi lượt trừ buổi **song song** với hủy hóa đơn bán gói, hủy lượt, hoặc chủ spa hủy liệu trình trên cùng gói. Ghi lượt khóa `customer_package_item` trước, rồi FK `visit_line → customer_package` lấy `FOR KEY SHARE` trên gói; hủy thì khóa gói `FOR UPDATE` rồi mới tới item → 40P01. Sửa: `packages::service::lock_for_consumption` khóa `FOR SHARE` các gói (theo id) trước khi trừ buổi, nên thứ tự khóa luôn là gói → item. Test `hardening.rs::voiding_a_package_sale_while_a_visit_uses_it_leaves_one_consistent_outcome` (5 vòng hủy hóa đơn + 5 vòng hủy liệu trình, đúng một bên thắng, không 5xx).
+      2. **[medium] `PATCH /visits/{id}` ngày đã chốt** không đòi reauth (Owner sửa KTV/ghi chú ngày cũ không cần nhập lại mật khẩu). Sửa: `kernel::corrections::authorize_closed_day` dùng chung với `authorize_void`. Test `voids.rs::correcting_a_closed_day_visit_follows_the_void_rule`.
+      3. **[medium] Ký tự NUL (`\u0000`) trong JSON → 500** ở mọi field text (tên khách, tên dịch vụ, lý do, ô tìm). Postgres `text` không chứa được NUL. Sửa ở một chỗ: `AppError::Database` với SQLSTATE `22021`/`22P05` → `422 validation_failed` (`body: invalid_character`), log mức warn. Test `nul_characters_are_rejected_as_422_not_500`.
+      4. **[low] Giá trong bảng giá không có trần** (G6 "vượt giới hạn → 422"): giá dịch vụ / giá gói `i64::MAX` được lưu. Sửa: `Money::MAX_INPUT` = 10 tỷ đồng (đã dùng cho giá sổ cũ ở S9), `prices`/`price` vượt → `422 out_of_range`. Test `catalog_amounts_above_the_limit_are_422`.
+      5. **[low] Ô tìm khách không giới hạn độ dài** → giới hạn 100 ký tự, `422 q:too_long`. Test `search_queries_are_bounded`.
+      6. **[low] AC8.5** nhãn "Nhập từ sổ cũ" chỉ có ở hồ sơ, thiếu trên thẻ khách ở `/quay`. Đã thêm + test web (mutation ✓).
+      7. **[perf] CLS `/quay` 0,156 (> 0,1) vào ngày đông khách** (104 lượt, do perf spec mới tạo): lần tải đầu, web font swap làm chữ xuống dòng khác và đẩy cả trang. Sửa: `@font-face` fallback khớp số đo (`size-adjust`…) trong `packages/ui/src/tokens/tokens.css` → CLS 0,013 với cùng dữ liệu. Quy tắc ở [frontend](../architecture/frontend.md) "Perf budget".
+      8. **[test] E2E reauth không tất định**: `voids.spec.ts` giờ làm cũ `recent_auth_at` của chủ spa qua `e2e/support/db.ts` (client `postgres`, chỉ DB E2E) nên hộp thoại xác nhận lại mật khẩu luôn hiện.
+    - **Test mới** `apps/api/crates/app/tests/hardening.rs`: Unicode (NFD → NFC, tìm "Đặng"/"đặng"/"ĐẶNG"/"dang"/chuỗi NFD, emoji, giới hạn 200 *ký tự* với chữ 3 byte, tên toàn khoảng trắng Unicode), ranh giới ngày nghiệp vụ (00:00:00 giờ VN = 17:00 UTC hôm trước vẫn là hôm nay; 23:59:59 hôm trước → `422 visit.check_in_not_today`; payment ghi đúng ngày VN), tiền (trần 10 tỷ, overflow 2 payment `i64::MAX` → 422, `per_session_value` 1.000.000 ÷ 3 = 333.333 làm tròn xuống, gói 0đ không thu tiền, chủ spa giảm 100%, giảm > giá → 422), đồng thời (hủy hóa đơn/hủy gói vs ghi lượt; 2 PATCH cùng version → 200 + 412), gửi đôi ở route không có Idempotency-Key (khách: khóa tự nhiên SĐT → 201 + 409 kèm `existing_id`; dịch vụ: tên duy nhất → đúng 1 bản ghi), body hỏng (`{`, `[]`, sai kiểu) trên 15 route ghi → 4xx `application/problem+json` có `code`, G5 audit cho 9 action chưa có test audit (+ ghi chú sức khỏe không lọt vào audit).
+    - **Authz matrix:** đủ 37 route của `ApiDoc` có dòng trong `ROUTES` (cổng CI `every_mounted_route_has_a_matrix_row`); mọi ô role × route (Owner/Manager/Technician) được chạy trong `each_role_gets_exactly_what_the_matrix_grants`. **PlatformAdmin / support grant: ngoài phạm vi R1-1** (không có role, bảng hay route trong code), ghi ở [authz-matrix](../security/authz-matrix.md).
+    - **A11y:** axe giờ chạy trên mọi màn hình: thêm `e2e/specs/a11y.spec.ts` (trang chủ, `/bang-gia/goi` + form gói, form dịch vụ) và axe ở bước MFA (`/xac-thuc` enroll/verify) trong `signIn`. Luồng nhanh bàn phím `/quay` đã có (S7, `front-desk.spec.ts`).
+    - **Perf:** `e2e/perf/api-latency.spec.ts` thêm test thứ hai: `POST /sales`, `POST /visits` (trừ buổi + dịch vụ lẻ), `POST /opening-balances` (ngân sách 500 ms p95, spec §6 "lưu lượt") và `GET /visits` (ngày > 100 lượt), `GET /customers/{id}`, `/customers/{id}/packages` (> 200 gói), `GET /sales/{id}`, `GET /staff` (300 ms). p95 (local, API debug, 1 client): tìm khách 14 ms, catalog 13–16 ms, `POST /sales` 41, `POST /visits` 37, `POST /opening-balances` 24, `GET /visits` (104 lượt) 38, hồ sơ 13, liệu trình của khách (> 200 gói) 34. Lighthouse: `/dang-nhap` LCP ~1,9–2,1 s, `/quay` ~2,5 s (máy đang tải nặng vì nhiều agent chạy song song), CLS ≤ 0,013; `pnpm lhci` xanh. Chi tiết: log 2026-11-04 "S10 hardening".
+    - **Độ phủ AC** (Rust = `apps/api/crates/app/tests/<file>::<test>`, web = Vitest, E2E = Playwright `e2e/specs`):
+
+      | AC | Test |
+      |---|---|
+      | G1 401 | `authz_matrix::every_non_public_route_rejects_anonymous_and_forged_sessions` |
+      | G2 403 | `authz_matrix::each_role_gets_exactly_what_the_matrix_grants` |
+      | G3 404 tenant khác | `authz_matrix::ids_from_another_spa_are_not_found` |
+      | G4 idempotency | `sales::saving_twice_with_one_key_creates_one_sale`, `visits::double_submit_with_the_same_key_records_one_visit`, `voids::a_visit_is_voided_once` (retry), `opening_balances::double_submit_with_one_key_imports_once`, kernel idempotency tests; route không có key: `hardening::double_submits_of_natural_key_writes_create_one_record` |
+      | G5 audit | test audit theo slice (sale/visit/void/extend/cancel/customer.create/plan_create/opening) + `hardening::every_catalog_and_profile_write_is_audited` |
+      | G6 tiền | `kernel::money` unit, `sales::payments_must_add_up_to_the_total_exactly`, `hardening::catalog_amounts_above_the_limit_are_422`, `hardening::per_session_value_rounds_down_and_free_packages_take_no_payment` |
+      | AC1.1 | `catalog_manage::owner_creates_a_package_plan_visible_at_the_counter` |
+      | AC1.2 | `sales::later_plan_edits_do_not_change_sold_packages` |
+      | AC1.3 | `catalog_manage::deactivated_services_leave_the_menu_but_are_never_deleted`, `sales::inactive_plans_and_unknown_customers_cannot_be_sold` |
+      | AC1.4 | `catalog_manage::managers_cannot_change_the_price_list` |
+      | AC1.5 | `catalog_manage::invalid_plans_are_rejected_with_field_errors` |
+      | AC1.6 | `catalog_manage::deactivated_services_leave_the_menu_but_are_never_deleted` (không có route xóa) |
+      | AC1.7 | `catalog::seeded_menu_is_served_with_categories_and_price_variants`, web `PriceListPage.test` |
+      | AC1.8 | `catalog_manage::price_variant_rules_are_enforced`, `activating_the_unpriced_service_requires_its_price` |
+      | AC1.9 | `catalog::seeded_menu_is_served_with_categories_and_price_variants` |
+      | AC2.1 | `customers::creates_a_customer_and_finds_her_by_phone_or_accentless_name`, `customers::search_stays_fast_with_ten_thousand_customers`, E2E perf p95 |
+      | AC2.2 | web `Customers.test`, `FrontDesk.test` (tạo khách inline), E2E `customers.spec` |
+      | AC2.3 | `customers::equivalent_phone_spellings_are_one_customer`, `kernel::phone` unit |
+      | AC2.4 | `customers::equivalent_phone_spellings_are_one_customer`, `hardening::double_submits_of_natural_key_writes_create_one_record` |
+      | AC2.5 | `customers::equivalent_phone_spellings_are_one_customer` (sai định dạng → 422) |
+      | AC2.6 | `customers::health_notes_are_encrypted_and_hidden_without_permission`, `visits::session_note_is_encrypted_and_only_shown_on_the_visit` |
+      | AC2.7 | `customers::decomposed_unicode_names_are_stored_composed_and_found`, `hardening::names_from_any_keyboard_are_stored_nfc_and_found_with_or_without_accents` |
+      | AC3.1 | `sales::ten_plus_two_at_1_5m_gives_12_sessions_worth_150k_each` |
+      | AC3.2 | `sales::mixed_cash_and_transfer_is_two_payments` |
+      | AC3.3, AC3.4 | `sales::payments_must_add_up_to_the_total_exactly` |
+      | AC3.5 | `sales::discounts_need_a_reason_and_managers_stop_at_ten_percent` |
+      | AC3.6 | `sales::the_closer_must_be_working_here` |
+      | AC3.7 | `sales::saving_twice_with_one_key_creates_one_sale`, E2E `sales.spec` |
+      | AC4.1 | `visits::deducting_one_session_takes_5_of_12_to_4_of_12`, E2E `front-desk.spec` |
+      | AC4.2 | `visits::one_off_service_creates_a_sale_and_payment_tied_to_the_visit` |
+      | AC4.2b | `visits::one_off_price_follows_the_customers_gender`, `customer_without_gender_needs_a_price_variant_for_gendered_services`, web `FrontDesk.test` |
+      | AC4.2c | `visits::female_only_service_for_a_male_customer_is_422` |
+      | AC4.3 | `visits::default_package_is_the_one_expiring_soonest`, web `FrontDesk.test` |
+      | AC4.4 | `visits::one_off_service_creates_a_sale_and_payment_tied_to_the_visit` (2 dòng cùng KTV = 1 khách) |
+      | AC4.5, AC4.10 | `visits::exhausted_and_cancelled_packages_are_409` |
+      | AC4.6 | `visits::expired_package_needs_a_reason_and_the_override_permission`, `packages::expired_packages_need_an_override` |
+      | AC4.7 | `visits::two_devices_racing_for_the_last_session_exactly_one_wins`, `packages::two_devices_racing_…`, `hardening::voiding_a_package_sale_while_a_visit_uses_it_…` |
+      | AC4.8 | `visits::technician_must_be_working_and_package_must_be_the_customers` |
+      | AC6.1 | `voids::voiding_a_visit_gives_sessions_back_and_reverses_its_payment`, E2E `voids.spec` |
+      | AC6.2 | `voids::a_void_needs_a_reason` |
+      | AC6.3 | `voids::closed_days_are_locked_for_managers_and_need_reauth_for_owners`, `voids::correcting_a_closed_day_visit_follows_the_void_rule`, `kernel::corrections` unit |
+      | AC6.4 | `voids::a_package_sale_with_used_sessions_cannot_be_voided` |
+      | AC7.1 | `voids::owner_extends_an_expired_package_with_a_reason` |
+      | AC7.2 | `voids::owner_cancels_a_package_with_a_refund`, E2E `voids.spec` (reauth tất định) |
+      | AC7.3 | `authz_matrix` (extend/cancel OWNER_ONLY), `voids::owner_extends_…` |
+      | AC7.4 | `voids::refund_is_capped_by_what_was_paid_after_discount` |
+      | AC8.1 | `opening_balances::four_of_ten_left_is_imported_without_any_sale_or_payment`, `packages::opening_balance_creates_a_package_without_money` |
+      | AC8.3 | như AC8.1 (không có `sale`/`payment` nên báo cáo/sổ quỹ không thấy; báo cáo thuộc spec #2/#3) |
+      | AC8.4 | `opening_balances::more_left_than_total_is_422_and_nothing_is_written` |
+      | AC8.5 | web `Sales.test` (hồ sơ), `FrontDesk.test` "labels a package imported from the paper books" (quầy, S10), E2E `opening-balance.spec` |
+      | §6 perf | `e2e/perf/api-latency.spec.ts` (2 test), `customers::search_stays_fast_with_ten_thousand_customers`, `pnpm lhci` (`/dang-nhap`, `/quay`) |
+      | §6 a11y | axe trong mọi spec E2E + `a11y.spec.ts`; bàn phím `front-desk.spec.ts`; Lighthouse a11y ≥ 0,95 |
+
+    - **Còn mở (không phải lỗi, để EM quyết):** lịch sử buổi làm trên hồ sơ khách (US2 "Màn hình hồ sơ", `GET /customers/{id}/visits` hoãn từ S7) chưa có; báo cáo "số khách của KTV trong ngày" (AC4.4) mới chỉ là dữ liệu; `GET /visits` không phân trang (một ngày của một spa nhỏ, chấp nhận được); NUL bị chặn ở tầng DB nên lỗi trả về field `body` chứ không chỉ đúng field.
 
 - [ ] **S11 Staging trên VPS** (size: S)
   - **Goal:** chạy thật trên VPS Singapore + Supabase để quản lý dùng thử bằng dữ liệu giả.
