@@ -77,6 +77,14 @@ export const STATUS_LABEL: Record<CustomerPackage["status"], string> = {
   cancelled: "Đã hủy",
 };
 
+/** Badge colours per status (design-system.md "Badge"): active reads calm, the rest warn. */
+export const STATUS_BADGE: Record<CustomerPackage["status"], string> = {
+  active: "bg-success-soft text-success",
+  expired: "bg-warning-bg text-warning-text",
+  exhausted: "bg-surface-2 text-text-muted",
+  cancelled: "bg-danger-soft text-danger",
+};
+
 /** Digits only ("1.500.000" → 1500000); NaN when there are none. */
 export function parseAmount(text: string): number {
   const digits = text.replace(/[.\s,đ]/g, "");

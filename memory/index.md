@@ -15,7 +15,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [spec R1-1 front-desk-and-packages](wiki/product/specs/front-desk-and-packages.md) — **approved**: catalog, customers, sell package, record visit, payments/receivables, void, package lifecycle, opening balance
 
 ## Design
-- [design-system](wiki/design/design-system.md) — "Trà thất yên tĩnh" direction: tokens light/dark, fonts Be Vietnam Pro + Lora, components, motion
+- [design-system](wiki/design/design-system.md) — "Trà thất Đông y" brand palette (nâu đỏ/vàng/trắng/kem): tokens light/dark + contrast table (auto-tested), BrandMark, element polish, fonts, components, motion, before/after
 - [front-desk-flows](wiki/design/front-desk-flows.md) — screen flows US2–US8, ≤4-action fast path, all states
 
 ## Architecture

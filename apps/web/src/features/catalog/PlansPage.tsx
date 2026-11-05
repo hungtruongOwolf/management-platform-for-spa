@@ -66,7 +66,7 @@ export function PlansPage() {
         {plans.data.map((plan) => (
           <li
             key={plan.id}
-            className={`rounded-[14px] border border-border bg-surface p-4 ${plan.active ? "" : "border-dashed text-text-muted"}`}
+            className={`rounded-[14px] border border-border bg-surface p-4 shadow-card ${plan.active ? "" : "border-dashed text-text-muted"}`}
           >
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <div>

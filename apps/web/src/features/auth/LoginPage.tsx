@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useRef, useState, type SyntheticEvent } from "react";
 import { safeNextPath } from "../../lib/api";
 import { messageFor } from "../../lib/errors";
+import { AuthFrame, bandTitle } from "./AuthFrame";
 import { login, setAuthState } from "./session";
 
 // The login page is the public entry point, so it stays free of react-hook-form and zod: two
@@ -73,19 +74,20 @@ export function LoginPage({ next }: { next?: string | undefined }) {
   };
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-bg p-4">
+    <AuthFrame
+      brand={
+        <h1 id="login-title" className={bandTitle}>
+          Viên Phúc Y Đường
+        </h1>
+      }
+    >
       <form
         onSubmit={(e) => void onSubmit(e)}
         noValidate
-        className="w-full max-w-sm space-y-4 rounded-[14px] border border-border bg-surface p-6 shadow-[var(--shadow-1)]"
+        className="space-y-4 p-6"
         aria-labelledby="login-title"
       >
-        <div className="text-center">
-          <h1 id="login-title" className="font-brand text-2xl text-primary">
-            Viên Phúc Y Đường
-          </h1>
-          <p className="mt-1 text-sm text-text-muted">Đăng nhập để vào hệ thống</p>
-        </div>
+        <p className="text-center text-sm text-text-muted">Đăng nhập để vào hệ thống</p>
 
         <div className="space-y-1">
           <label htmlFor="phone" className="block text-sm font-semibold">
@@ -152,6 +154,6 @@ export function LoginPage({ next }: { next?: string | undefined }) {
           {isSubmitting ? "Đang đăng nhập…" : "Đăng nhập"}
         </button>
       </form>
-    </main>
+    </AuthFrame>
   );
 }

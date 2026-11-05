@@ -83,11 +83,11 @@ export function CustomerProfile({
   return (
     <article
       aria-labelledby="customer-name"
-      className="rounded-[14px] border border-border bg-surface p-4 shadow-[var(--shadow-1)]"
+      className="rounded-[14px] border border-border bg-surface p-4 shadow-card"
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h1 id="customer-name" className="text-xl font-bold">
+          <h1 id="customer-name" className="font-brand text-2xl text-primary">
             {customer.full_name}
           </h1>
           <p className="text-text-muted">

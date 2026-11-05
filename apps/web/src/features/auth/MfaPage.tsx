@@ -3,6 +3,7 @@ import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useState, type SyntheticEvent, type ReactNode } from "react";
 import { ApiError, safeNextPath } from "../../lib/api";
 import { messageFor } from "../../lib/errors";
+import { AuthFrame, bandTitle } from "./AuthFrame";
 import { QrCode } from "./QrCode";
 import { confirmMfaEnrollment, logout, setAuthState, startMfaEnrollment, verifyMfa, type Me, type MfaStep } from "./session";
 
@@ -13,20 +14,17 @@ const linkButton = "text-sm font-medium text-primary underline-offset-2 hover:un
 
 function Card({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-bg p-4">
-      <section
-        aria-labelledby="mfa-title"
-        className="w-full max-w-sm space-y-4 rounded-[14px] border border-border bg-surface p-6 shadow-[var(--shadow-1)]"
-      >
+    <AuthFrame brand={<p className={bandTitle}>Viên Phúc Y Đường</p>}>
+      <section aria-labelledby="mfa-title" className="space-y-4 p-6">
         <div className="text-center">
-          <h1 id="mfa-title" className="font-brand text-2xl text-primary">
+          <h1 id="mfa-title" className="font-brand text-xl text-primary">
             {title}
           </h1>
           <p className="mt-1 text-sm text-text-muted">{subtitle}</p>
         </div>
         {children}
       </section>
-    </main>
+    </AuthFrame>
   );
 }
 

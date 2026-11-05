@@ -1,38 +1,77 @@
 ---
 title: Design system — internal app (R1)
-updated: 2026-11-04
-sources: ["docs for reference/logo Viên phúc y đường transparent.png", "docs for reference/Menu mặt trước - mới.png", product/personas.md]
+updated: 2026-11-05
+sources: ["docs for reference/logo Viên phúc y đường transparent.png", "docs for reference/Menu mặt trước - mới.png", product/personas.md, raw/2026-11-05-em-brand-colors-and-demo-data.md]
 ---
 
 # Design system: app nội bộ
 
-## Hướng thiết kế (đề xuất; EM có thể chỉnh)
-**"Trà thất yên tĩnh"** (tiệm trà tĩnh lặng): nền sáng ấm như giấy dó, chữ nâu đậm, **màu đỏ đô** của thương hiệu dùng cho hành động chính, **vàng kim** chỉ dùng làm điểm nhấn (viền focus, dấu ★, logo).
-- **Lý do:** quản lý dùng app 8–10 giờ mỗi ngày, cần dịu mắt và dễ đọc số tiền. Nền đỏ đô và chữ vàng của menu in quá nặng cho màn hình dùng cả ngày, nên phong cách đó dành cho **site công khai** sau này. App nội bộ giữ nhận diện bằng màu chủ đạo, font serif ở tiêu đề thương hiệu và logo.
-- Tính từ định hướng: ấm áp, điềm tĩnh, chuyên nghiệp, rõ ràng, nhanh.
+## Hướng thiết kế: "Trà thất Đông y" (2026-11-05, thay "Trà thất yên tĩnh")
+EM thấy UI cũ "hơi xấu" và giao việc phối 4 màu đặc trưng của spa: **nâu đỏ, vàng, trắng, kem**, sao cho "sinh động và tinh tế" ([raw](../../raw/2026-11-05-em-brand-colors-and-demo-data.md)). Hướng mới lấy cảm hứng trực tiếp từ menu in: **khung app (header, dải đầu trang đăng nhập, khung chào ở trang chủ) dùng nền nâu đỏ đậm + chữ kem + vàng kim**, còn **vùng làm việc** giữ nền kem + card trắng để đọc số tiền cả ngày không mỏi mắt.
+- **Quy tắc 70 / 20 / 10:** kem + trắng ~70% (nền, card), nâu đỏ ~20% (header, nút chính, tiêu đề), vàng ~10% (viền focus, gạch chân mục nav đang chọn, thanh số buổi, ★, logo, đường kẻ). Vàng **không** dùng làm nền lớn, cũng không dùng cho chữ nhỏ trên nền sáng (chỉ dùng `accent-text`).
+- Tính từ định hướng: ấm áp, sang, điềm tĩnh, rõ ràng, nhanh. "Sinh động" đến từ khung nâu đỏ có gradient nhẹ, ánh sơn mài trên nút chính, viền vàng và micro-motion, **không** từ nhiều màu.
+- Lý do giữ vùng làm việc sáng: quản lý dùng app 8–10 giờ/ngày; nền đỏ đô toàn trang như menu in quá nặng (giữ cho site công khai sau này).
 
 ## Màu (semantic tokens)
-Mọi màu đều qua token; component không dùng mã hex trực tiếp. Độ tương phản đo trên `surface`/`bg` tương ứng.
+Mọi màu đều qua token (`packages/ui/src/tokens/tokens.css`), component không dùng hex trực tiếp. **`packages/ui/src/tokens/contrast.test.ts` đọc chính file tokens và kiểm mọi cặp chữ/UI theo WCAG AA (chữ 4.5:1, UI 3:1) ở cả light và dark**, đồng thời kiểm 2 khối dark (media query và `data-theme="dark"`) giống hệt nhau. Sửa token mà vỡ tương phản thì CI fail.
 
-| Token | Light | Dark | Dùng cho | Tương phản |
+| Token | Light | Dark | Dùng cho | Tương phản (light / dark) |
 |---|---|---|---|---|
-| `bg` | `#FAF7F2` | `#171112` | nền trang | |
-| `surface` | `#FFFFFF` | `#221A1B` | card, input | |
-| `surface-2` | `#F3EDE4` | `#2C2223` | hover, vùng phụ | |
-| `border` | `#E4DAD0` | `#3D3132` | viền | (trang trí) |
-| `text` | `#2A1F1D` | `#F3ECE8` | chữ chính | ≈ 15:1 / 16:1 |
-| `text-muted` | `#6B5E5A` | `#B8A9A4` | chữ phụ | ≈ 6.2:1 / 8:1 |
-| `primary` | `#7A1F2B` | `#E8A0A8` | nút chính, link, focus input | ≈ 10:1 / 9:1 |
-| `on-primary` | `#FFFFFF` | `#2A0E12` | chữ trên nút chính | ≈ 10:1 |
-| `primary-soft` | `#F6E7E9` | `#3A2427` | nền mục đang chọn | |
-| `accent` | `#B8862B` | `#E2B95A` | vòng focus, ★, trang trí; **không dùng cho chữ nhỏ ở light** | 3.2:1 (chỉ UI ≥ 3:1) |
-| `accent-text` | `#8A6418` | `#E2B95A` | chữ màu vàng kim | ≈ 5.4:1 / 10:1 |
-| `danger` / `danger-soft` | `#B42318` / `#FDECEA` | `#FF8A80` / `#3A1E1C` | lỗi, công nợ | ≈ 6.6:1 |
-| `warning-bg` / `warning-text` / `warning-border` | `#FFF4E0` / `#7A4A00` / `#E9B75A` | `#3A2A10` / `#F5D08A` / `#8A6418` | **lưu ý sức khỏe**, cảnh báo | ≈ 7:1 |
-| `success` / `success-soft` | `#1E6B3A` / `#E7F4EC` | `#7FD3A0` / `#16301F` | thành công, "không nợ" | ≈ 6.5:1 |
-| `focus` | `#B8862B` | `#E2B95A` | outline 3px | ≥ 3:1 với nền |
+| `bg` | `#FAF4E8` kem | `#18110F` | nền trang (+ `--texture` chấm vàng mờ 22px) | |
+| `surface` | `#FFFFFF` trắng | `#221815` | card, input | |
+| `surface-2` | `#F5EBDA` kem đậm | `#2D211D` | hover, vùng phụ, skeleton | |
+| `border` | `#E6D6BD` | `#453530` | viền card (trang trí) | |
+| `border-strong` | `#9C8670` | `#7D675C` | **viền input/select/textarea** (WCAG 1.4.11) | 3.47 / 3.28 |
+| `text` | `#2B1B17` | `#F6EDE1` | chữ chính | 15.1 / 16.1 |
+| `text-muted` | `#6D5A50` | `#C4B2A3` | chữ phụ (kể cả trên `surface-2`) | 5.5 / 7.6 (tệ nhất) |
+| `primary` | `#7A2620` nâu đỏ | `#E8A592` | nút chính, link, tiêu đề trang | 9.0 trên kem / 9.1 |
+| `primary-hover` | `#5F1C17` | `#F2BFAE` | hover nút chính | |
+| `on-primary` | `#FFFFFF` | `#2A0F0B` | chữ trên nút chính | 9.9 / 8.7 |
+| `primary-soft` | `#F6E4DC` | `#3B2420` | nền mục chọn, gợi ý tìm kiếm | primary trên nó 8.0 / 7.0 |
+| `accent` | `#B07D24` vàng kim | `#E0B456` | vòng focus, viền trái gói, thanh buổi, ★ | 3.3 trên kem (chỉ UI) / 9.6 |
+| `accent-text` | `#8A6114` | `#E6C06A` | **chữ màu vàng** (badge "Nhập từ sổ cũ", "★ Khuyên dùng") | 4.9 trên `accent-soft` / 8.0 |
+| `accent-soft` | `#FBF0D6` | `#3A2A12` | nền badge vàng, avatar chữ cái, `::selection` | |
+| `danger` / `danger-soft` | `#B3261E` / `#FCEBE7` | `#FF8F80` / `#3B1D19` | lỗi, công nợ, huỷ | 5.7 / 6.9 |
+| `warning-bg` / `-text` / `-border` | `#FFF3DA` / `#7A4A00` / `#DDAE52` | `#3A2A12` / `#F2CF8A` / `#8A6418` | **lưu ý sức khỏe**, hết hạn | 6.8 / 9.3 |
+| `success` / `success-soft` | `#2D6A3E` / `#E8F3E9` | `#8BD3A0` / `#17301F` | "Đang dùng", không nợ | 5.7 / 8.1 |
+| `info` / `info-soft` | `#2F5B78` / `#E7F0F6` | `#9CC8E6` / `#172A38` | thông tin trung tính (dự phòng) | 6.3 / 8.3 |
+| `focus` | `#B07D24` | `#E0B456` | outline 3px | ≥ 3.3 |
+| `chrome-bg` → `chrome-bg-2` | `#5A1D18` → `#74271F` | `#2B1310` → `#3A1915` | gradient header, dải login, khung chào | |
+| `chrome-text` | `#FBF1E1` | `#F6EDE1` | chữ trên khung nâu đỏ | 9.2 / 13.6 (tệ nhất) |
+| `chrome-text-muted` | `#E6CDB4` | `#D9C2AD` | nav chưa chọn, ngày, tên user | 6.7 / 9.2 |
+| `chrome-accent` | `#E3B455` | `#E3B455` | wordmark, logo, gạch chân nav, viền dưới header, **focus ring trong khung** | 5.3 / 8.2 |
 
-Dark mode theo `prefers-color-scheme`, có thể ghi đè bằng `data-theme="light|dark"` (người dùng tự chọn, lưu ở localStorage).
+Ghi chú:
+- **Vàng trên trắng/kem không đạt 4.5:1** (`#B07D24` chỉ 3.3–3.6), nên chữ vàng luôn dùng `accent-text` (`#8A6114`), còn `accent` chỉ cho viền, thanh, icon.
+- Trong khung nâu đỏ, focus ring đổi sang `chrome-accent` (đặt `--focus` cục bộ) vì vàng thường chỉ ~2.7:1 trên nâu đỏ.
+- Toast lỗi ở dark: chữ `surface` trên `danger` (7.85), sửa lỗi cũ chữ trắng trên `#FF8A80` (~2:1).
+- Dark mode theo `prefers-color-scheme`, có thể ghi đè bằng `data-theme="light|dark"`.
+
+## Thương hiệu trong app
+- **BrandMark** (`apps/web/src/app/BrandMark.tsx`): SVG inline, vòng tròn đôi + hoa sen 5 cánh + đế, vẽ bằng `currentColor` (thường là `chrome-accent`), `aria-hidden`. Không request ngoài (CSP `'self'`). Dùng ở header (32px), dải login/MFA (56px), watermark khung chào trang chủ (opacity 20%), empty state quầy.
+- **Wordmark** "Viên Phúc Y Đường": Lora 600 vàng kim trên nâu đỏ. Trên điện thoại header chỉ hiện logo, tên vẫn có cho screen reader.
+- **Tagline** "Hồi sinh sức khỏe và sắc đẹp" (từ logo): chữ hoa giãn 0.18em ở dải login, chữ thường ở khung chào.
+- **AuthFrame** (`features/auth/AuthFrame.tsx`): khung chung cho đăng nhập và MFA, dải nâu đỏ + logo + đường kẻ vàng gradient.
+
+## Element polish toàn app (`apps/web/src/styles.css`)
+Một lớp CSS **không nằm trong layer** (thắng utility) cho vài thuộc tính, để mọi màn hình (kể cả màn chỉ dùng utility như `/nhap-so-cu`) cùng một kiểu:
+- input/select/textarea: viền `border-strong`, hover `text-muted`, focus viền `primary` + quầng 3px `primary` 14%, `aria-invalid` → viền `danger`, disabled → `surface-2`. Checkbox/radio `accent-color: primary`.
+- button/a: transition màu/viền/bóng/transform 120ms; nhấn → dịch 1px.
+- `button.bg-primary` / `a.bg-primary`: "ánh sơn mài" (gradient trắng 10% → 0) + `shadow-primary`.
+- Utility mới: `shadow-card` (= `shadow-1`), `shadow-float` (= `shadow-2`), màu `chrome`, `chrome-text(-muted)`, `chrome-accent`, `accent-soft`, `info(-soft)`, `border-strong`.
+
+
+## Trước / sau (ảnh chụp 1280×800 và 390×844, light + dark)
+| Màn | Trước | Sau |
+|---|---|---|
+| `/dang-nhap`, `/xac-thuc` | card trắng trơn giữa nền kem, tên spa chữ đỏ | dải nâu đỏ gradient với logo sen vàng, wordmark vàng, tagline; đường kẻ vàng; nút chính ánh sơn mài |
+| Header | nền trắng, tên spa đỏ, mục chọn nền hồng nhạt | nền nâu đỏ gradient, viền dưới vàng, logo + wordmark vàng, mục chọn gạch chân vàng, "Khóa nhanh" viền kem |
+| Trang chủ | 1 dòng "Xin chào" + câu "Các màn hình nghiệp vụ sẽ xuất hiện ở đây." | khung chào nâu đỏ (ngày, tên, spa, watermark sen) + 4 ô lối tắt theo quyền (Ghi lượt khách, Hồ sơ khách, Chuyển sổ giấy, Dịch vụ & gói) |
+| `/quay` | **tràn ngang 48px** khi có giỏ (select dịch vụ lẻ rộng theo option dài nhất), card phẳng | hết tràn; card có bóng ấm; gói có viền trái vàng + thanh số buổi (đỏ khi ≤ 2); tên khách Lora nâu đỏ; badge trạng thái theo màu; toast nâu đỏ viền vàng trượt lên |
+| Khách hàng | danh sách chữ trơn | avatar chữ cái (chữ cái tên, nền vàng nhạt), dòng cao 56px, card bo 14px có bóng |
+| Hồ sơ khách | tên đậm thường, trạng thái chữ xám | tên Lora nâu đỏ; "Đang dùng" badge xanh, "Hết hạn" vàng, "Đã hủy" đỏ; "Nhập từ sổ cũ" badge vàng |
+| Input mọi màn | viền `#E4DAD0` (~1.3:1, khó thấy) | viền `border-strong` 3.47:1, focus có quầng |
+| Dark | nâu tím lạnh | nâu trà ấm, khung nâu đỏ sậm, vàng giữ nguyên |
 
 ## Chữ
 - **UI:** *Be Vietnam Pro* (400/500/600/700). Font này thiết kế cho tiếng Việt nên dấu chồng (ệ, ở, ữ) không bị cắt. Dự phòng: `system-ui, Segoe UI, Roboto`.
