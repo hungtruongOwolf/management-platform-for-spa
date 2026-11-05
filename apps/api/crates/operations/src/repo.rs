@@ -88,6 +88,7 @@ pub struct VisitRow {
     pub id: Uuid,
     pub customer_id: Uuid,
     pub customer_name: String,
+    pub customer_gender: Option<String>,
     pub business_date: NaiveDate,
     pub check_in_at: DateTime<Utc>,
     pub note_ct: Option<Vec<u8>>,
@@ -108,7 +109,7 @@ pub async fn visits(
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         VisitRow,
-        r#"SELECT v.id, v.customer_id, c.full_name AS customer_name, v.business_date, v.check_in_at, v.note_ct,
+        r#"SELECT v.id, v.customer_id, c.full_name AS customer_name, c.gender AS customer_gender, v.business_date, v.check_in_at, v.note_ct,
                   v.status, v.void_reason, v.voided_at, v.sale_id, v.version, v.created_at
            FROM app.visit v
            JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id

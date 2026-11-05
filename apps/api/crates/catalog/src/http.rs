@@ -61,6 +61,7 @@ pub struct PackagePlanDto {
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct ActiveFilter {
     /// Only items currently on sale (default true).

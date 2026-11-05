@@ -65,6 +65,7 @@ use utoipa::OpenApi;
         reporting::dto::HistoryKind,
         reporting::dto::CustomerKindFilter,
         reporting::dto::FollowUpFilter,
+        reporting::dto::InactiveSort,
     )),
     tags(
         (name = "auth", description = "Đăng nhập, phiên, đổi spa"),
@@ -180,5 +181,32 @@ mod tests {
         ] {
             assert!(schemas.contains_key(schema), "{schema} missing");
         }
+    }
+
+    /// Only `{…}` segments are path parameters; a query struct derived without
+    /// `#[into_params(parameter_in = Query)]` is silently documented as a path parameter and the
+    /// generated client then builds the wrong URL (`/customers/phone-check?phone=` was one).
+    #[test]
+    fn non_path_parameters_are_documented_as_query() -> Result<(), serde_json::Error> {
+        let doc = serde_json::to_value(ApiDoc::openapi())?;
+        let paths = doc["paths"].as_object().cloned().unwrap_or_default();
+        for (path, item) in paths {
+            for (method, op) in item.as_object().cloned().unwrap_or_default() {
+                for p in op["parameters"].as_array().cloned().unwrap_or_default() {
+                    let name = p["name"].as_str().unwrap_or_default();
+                    let in_path = path.contains(&format!("{{{name}}}"));
+                    let location = p["in"].as_str().unwrap_or_default();
+                    if location == "header" {
+                        continue;
+                    }
+                    assert_eq!(
+                        location,
+                        if in_path { "path" } else { "query" },
+                        "{method} {path} parameter {name}"
+                    );
+                }
+            }
+        }
+        Ok(())
     }
 }

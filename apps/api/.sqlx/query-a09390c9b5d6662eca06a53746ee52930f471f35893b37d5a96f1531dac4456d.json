@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT b.id AS \"id!\", b.seq AS \"seq!\", b.entry AS \"entry!\",\n                  b.business_date AS \"business_date!\", b.at AS \"at!\",\n                  b.customer_id AS \"customer_id!\", c.full_name, b.sale_kind AS \"sale_kind!\",\n                  b.one_off, b.package, b.bank_transfer AS \"bank_transfer!\", b.cash AS \"cash!\",\n                  b.unpaid AS \"unpaid!\", b.note, b.voided AS \"voided!\"\n           FROM app.revenue_book b\n           JOIN app.customer c ON c.tenant_id = b.tenant_id AND c.id = b.customer_id\n           WHERE b.tenant_id = $1 AND b.business_date BETWEEN $2 AND $3\n             AND ($4::date IS NULL OR (b.business_date, b.seq) > ($4, $5))\n           ORDER BY b.business_date, b.seq\n           LIMIT $6",
+  "query": "SELECT b.id AS \"id!\", b.seq AS \"seq!\", b.entry AS \"entry!\",\n                  b.business_date AS \"business_date!\", b.at AS \"at!\",\n                  b.customer_id AS \"customer_id!\", c.full_name, c.gender, b.sale_kind AS \"sale_kind!\",\n                  b.one_off, b.package, b.bank_transfer AS \"bank_transfer!\", b.cash AS \"cash!\",\n                  b.unpaid AS \"unpaid!\", b.note, b.voided AS \"voided!\"\n           FROM app.revenue_book b\n           JOIN app.customer c ON c.tenant_id = b.tenant_id AND c.id = b.customer_id\n           WHERE b.tenant_id = $1 AND b.business_date BETWEEN $2 AND $3\n             AND ($4::date IS NULL OR (b.business_date, b.seq) > ($4, $5))\n           ORDER BY b.business_date, b.seq\n           LIMIT $6",
   "describe": {
     "columns": [
       {
@@ -82,6 +82,17 @@
       },
       {
         "ordinal": 7,
+        "name": "gender",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer",
+            "name": "gender"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
         "name": "sale_kind!",
         "type_info": "Text",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "one_off",
         "type_info": "Text",
         "origin": {
@@ -103,7 +114,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "package",
         "type_info": "Text",
         "origin": {
@@ -114,7 +125,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "bank_transfer!",
         "type_info": "Int8",
         "origin": {
@@ -125,7 +136,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "cash!",
         "type_info": "Int8",
         "origin": {
@@ -136,7 +147,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "unpaid!",
         "type_info": "Int8",
         "origin": {
@@ -147,7 +158,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "note",
         "type_info": "Text",
         "origin": {
@@ -158,7 +169,7 @@
         }
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "voided!",
         "type_info": "Bool",
         "origin": {
@@ -194,8 +205,9 @@
       true,
       true,
       true,
+      true,
       true
     ]
   },
-  "hash": "221c69ee3747d74984baae76509c9fae731fe0f42711d98854783f1311698f4c"
+  "hash": "a09390c9b5d6662eca06a53746ee52930f471f35893b37d5a96f1531dac4456d"
 }

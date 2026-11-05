@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT v.id, v.customer_id, c.full_name AS customer_name, v.business_date, v.check_in_at, v.note_ct,\n                  v.status, v.void_reason, v.voided_at, v.sale_id, v.version, v.created_at\n           FROM app.visit v\n           JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id\n           WHERE v.tenant_id = $1\n             AND ($2::uuid IS NULL OR v.id = $2)\n             AND ($3::date IS NULL OR v.business_date = $3)\n           ORDER BY v.check_in_at DESC, v.id DESC\n           LIMIT 500",
+  "query": "SELECT v.id, v.customer_id, c.full_name AS customer_name, c.gender AS customer_gender, v.business_date, v.check_in_at, v.note_ct,\n                  v.status, v.void_reason, v.voided_at, v.sale_id, v.version, v.created_at\n           FROM app.visit v\n           JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id\n           WHERE v.tenant_id = $1\n             AND ($2::uuid IS NULL OR v.id = $2)\n             AND ($3::date IS NULL OR v.business_date = $3)\n           ORDER BY v.check_in_at DESC, v.id DESC\n           LIMIT 500",
   "describe": {
     "columns": [
       {
@@ -38,6 +38,17 @@
       },
       {
         "ordinal": 3,
+        "name": "customer_gender",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer",
+            "name": "gender"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
         "name": "business_date",
         "type_info": "Date",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "check_in_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "note_ct",
         "type_info": "Bytea",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "status",
         "type_info": "Text",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "void_reason",
         "type_info": "Text",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "voided_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -103,7 +114,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "sale_id",
         "type_info": "Uuid",
         "origin": {
@@ -114,7 +125,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "version",
         "type_info": "Int8",
         "origin": {
@@ -125,7 +136,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -147,6 +158,7 @@
       false,
       false,
       false,
+      true,
       false,
       false,
       true,
@@ -158,5 +170,5 @@
       false
     ]
   },
-  "hash": "6fd1e57f9a75c69fdbbb3dfd31de198c5b4cba3917ee8dd78208255368a68a0d"
+  "hash": "62b55193d48093cfdb3d1805b4956bb080b73d7899b264c56060042f36f34330"
 }
