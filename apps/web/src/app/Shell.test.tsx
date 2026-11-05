@@ -111,7 +111,7 @@ describe("command palette", () => {
     serve(["catalog.read"]);
     const user = userEvent.setup();
     at("/");
-    await user.click(await screen.findByRole("button", { name: /Tìm khách hoặc mở màn hình/ }));
+    await user.click(await screen.findByRole("button", { name: /Tìm khách, mở màn hình/ }));
     const box = await screen.findByRole("combobox", { name: "Tìm khách hoặc màn hình" });
     await user.type(box, "goi ban");
     const screens = await screen.findByRole("group", { name: "Màn hình" });

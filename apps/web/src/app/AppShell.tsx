@@ -177,7 +177,7 @@ export function AppShell() {
               setPalette(true);
             }}
             className="search-trigger"
-            aria-label="Tìm khách hoặc mở màn hình (Ctrl+K)"
+            aria-keyshortcuts="Control+K"
             aria-haspopup="dialog"
           >
             <Icon name="search" className="size-[18px]" />
