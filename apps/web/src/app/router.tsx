@@ -10,9 +10,12 @@ import {
 } from "@tanstack/react-router";
 import { LoginPage } from "../features/auth/LoginPage";
 import { authQuery } from "../features/auth/session";
+import { customersSearch } from "../features/customers/search";
 import { FrontDeskPage } from "../features/front-desk/FrontDeskPage";
+import { inactiveSearch, packagesSearch, reportsSearch } from "../features/reports/search";
 import { safeNextPath } from "../lib/api";
 import { AppShell } from "./AppShell";
+import { recordLocation } from "./trail";
 
 // Other business screens are separate chunks so the first paint does not wait for their code
 // (Lighthouse LCP budget, testing.md §4). The front desk stays in the main bundle: it is the screen
@@ -137,22 +140,31 @@ const homeRoute = createRoute({
   component: lazyRouteComponent(() => import("./HomePage"), "HomePage"),
 });
 
-/** Management views (app/features.ts): each page renders nothing useful unless the flag is on. */
+/*
+ * List screens keep their state (filters, search, date) in the URL through a schema
+ * (lib/searchState.ts): `validateSearch` drops bad and default values, and Back, reload or a shared
+ * link reopen the list exactly as it was.
+ */
+
+/** Management views (report.read; the API enforces it). */
 const reportsRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/bao-cao",
+  validateSearch: reportsSearch.validate,
   component: lazyRouteComponent(reportsPage, "ReportsPage"),
 });
 
 const packagesRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/goi-lieu-trinh",
+  validateSearch: packagesSearch.validate,
   component: lazyRouteComponent(packagesPage, "PackagesOverviewPage"),
 });
 
 const inactiveRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/khach-lau-khong-quay-lai",
+  validateSearch: inactiveSearch.validate,
   component: lazyRouteComponent(inactivePage, "InactiveCustomersPage"),
 });
 
@@ -190,6 +202,7 @@ const frontDeskRoute = createRoute({
 const customersRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/khach-hang",
+  validateSearch: customersSearch.validate,
   component: lazyRouteComponent(customersModule, "CustomersPage"),
 });
 
@@ -220,12 +233,19 @@ export function createAppRouter(
   queryClient: QueryClient,
   history?: RouterHistory,
 ) {
-  return createRouter({
+  const router = createRouter({
     routeTree,
     context: { queryClient },
     defaultPendingComponent: PageSkeleton,
+    // Back/Forward land where the user was on a list, not at its top.
+    scrollRestoration: true,
     ...(history ? { history } : {}),
   });
+  // The trail behind every back control (app/trail.ts).
+  router.subscribe("onResolved", ({ toLocation }) => {
+    recordLocation(toLocation.state.__TSR_index, toLocation.href, toLocation.pathname);
+  });
+  return router;
 }
 
 declare module "@tanstack/react-router" {

@@ -34,6 +34,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [ADR-0004 authentication](wiki/decisions/ADR-0004-authentication.md) — **accepted**: Argon2id + opaque Postgres sessions, __Host- cookie, MFA owner/admin; re-auth only for account-security actions (2026-11-05)
 - [ADR-0005 compute hosting](wiki/decisions/ADR-0005-compute-hosting.md) — **accepted**: 1 Singapore VPS, Docker Compose + Caddy (provider at /devops)
 - [ADR-0006 repo & module layout](wiki/decisions/ADR-0006-repo-and-module-layout.md) — **accepted**: monorepo, Cargo workspace crate per bounded context
+- [ADR-0007 navigation & URL state](wiki/decisions/ADR-0007-navigation-and-url-state.md) — **accepted**: breadcrumb = cây, nút quay lại = lịch sử có tên đích (fallback về cha), trạng thái danh sách trên URL (`useSearchState`)
 
 ## Security
 - [authz-matrix](wiki/security/authz-matrix.md) — R1-1 + R1-2 (report.read, report.revenue.read) permissions × roles, re-auth, support grants, mandatory authz tests

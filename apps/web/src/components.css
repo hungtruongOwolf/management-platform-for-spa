@@ -11,26 +11,20 @@
   --topbar-h: 64px;
 }
 
-/* --- Brand: the real logo as CSS masks, coloured by currentColor ----------------------------- */
-.brand-mark,
-.brand-wordmark,
-.brand-emblem {
+/* --- Brand: the WHOLE real logo as one CSS mask (never split into parts, EM round 3) ----------
+ * Colour: --brand-ink (maroon on cream, gold in dark mode), gold on the maroon chrome. Size it by
+ * width only; the aspect ratio is the logo's own. */
+.brand-logo {
   display: inline-block;
   flex-shrink: 0;
-  background-color: currentColor;
-  -webkit-mask: var(--brand-src) center / contain no-repeat;
-  mask: var(--brand-src) center / contain no-repeat;
-}
-.brand-mark {
-  --brand-src: url("./assets/brand/mark.svg");
-  aspect-ratio: 805 / 820;
-}
-.brand-wordmark {
-  --brand-src: url("./assets/brand/wordmark.svg");
-}
-.brand-emblem {
-  --brand-src: url("./assets/brand/emblem.svg");
   aspect-ratio: 923 / 943;
+  background-color: var(--brand-ink);
+  -webkit-mask: url("./assets/brand/emblem.svg") center / contain no-repeat;
+  mask: url("./assets/brand/emblem.svg") center / contain no-repeat;
+}
+.chrome .brand-logo,
+.brand-logo.text-chrome-accent {
+  background-color: var(--chrome-accent);
 }
 
 .icon {
@@ -92,7 +86,7 @@
     overflow-y: auto;
   }
   /* Icon rail on tablets (and when folded): labels stay for screen readers. */
-  .sidebar :is(.nav-label, .sidebar-wordmark, .nav-group-label) {
+  .sidebar :is(.nav-label, .nav-group-label) {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -115,30 +109,31 @@
     height: auto;
     clip-path: none;
   }
-  .sidebar:not([data-collapsed]) .sidebar-wordmark {
-    position: static;
-    clip-path: none;
+  .sidebar:not([data-collapsed]) .sidebar-logo {
+    width: 104px;
   }
   .sidebar:not([data-collapsed]) :is(.nav-item, .sidebar-toggle) {
     justify-content: flex-start;
   }
   .sidebar:not([data-collapsed]) .sidebar-brand {
-    justify-content: flex-start;
-    padding-inline: 6px;
+    padding-block: 4px 14px;
   }
 }
 
+/* The whole logo, centred: 52px in the icon rail, 104px in the open sidebar (its lettering and
+ * tagline stay whole at every size; the link's label carries the name). */
 .sidebar-brand {
   display: flex;
-  min-height: 60px;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  gap: 10px;
   margin-bottom: 4px;
-  padding-bottom: 14px;
+  padding-bottom: 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--chrome-accent) 30%, transparent);
   border-radius: 0;
-  color: var(--chrome-accent);
+}
+.sidebar-logo {
+  width: 52px;
 }
 .sidebar-nav {
   display: grid;
@@ -286,10 +281,118 @@ kbd {
   font-size: 11px;
   font-weight: 600;
 }
-.user-chip {
-  display: inline-flex;
+/* Account menu: initial (+ name and role from 1024px) → panel with spa, theme, lock, sign out. */
+.user-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+.user-button {
+  display: flex;
+  min-width: 44px;
+  min-height: 44px;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--text);
+  text-align: left;
+}
+.user-button:hover,
+.user-button[aria-expanded="true"] {
+  border-color: var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+}
+.user-button-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.user-button-chevron {
+  display: none;
+  color: var(--text-muted);
+}
+@media (min-width: 1024px) {
+  .user-button {
+    padding-right: 10px;
+  }
+  .user-button-text {
+    position: static;
+    display: grid;
+    width: auto;
+    max-width: 160px;
+    height: auto;
+    clip-path: none;
+    font-size: 14px;
+    line-height: 18px;
+  }
+  .user-button-chevron {
+    display: block;
+  }
+}
+.user-panel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  width: min(320px, calc(100vw - 24px));
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  animation: pop-in var(--dur-base) var(--ease-out);
+}
+.user-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 4px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.user-panel-section {
+  display: grid;
+  gap: 6px;
+  padding: 0 4px;
+}
+.user-panel-section .segmented {
+  flex-wrap: nowrap;
+}
+.user-panel-section .segmented > button {
+  flex: 1;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 6px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.user-panel-actions {
+  display: grid;
+  gap: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.menu-item {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  text-align: left;
+}
+.menu-item:hover {
+  background: var(--surface-2);
+}
+.menu-item .icon {
+  color: var(--primary);
 }
 .avatar {
   display: inline-grid;
@@ -408,6 +511,15 @@ dialog::backdrop {
 .palette-option[aria-selected="true"] {
   background: var(--primary-soft);
   color: var(--primary);
+}
+
+/* --- Fields under their label ------------------------------------------------------------------
+ * 6px between a visible label and its field, whether the label wraps the field or precedes it, so
+ * the field's 2px focus ring (styles.css) never touches the label text. Inline (flex) labels keep
+ * their row alignment. Zero specificity: a margin utility on the field still wins. */
+:where(label:not(.sr-only)) + :where(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select, textarea),
+:where(label:not(.flex, .inline-flex, .sr-only)) > :where(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select, textarea) {
+  margin-top: 6px;
 }
 
 /* --- Stacks: one spacing scale through `gap` (layout audit 2026-11-05) -------------------------
@@ -585,6 +697,191 @@ dialog::backdrop {
   font-variant-numeric: tabular-nums;
 }
 
+/* --- Page header: breadcrumbs + back, title, actions (app/PageHeader.tsx) --------------------- */
+.page-header {
+  display: grid;
+  gap: 6px;
+}
+.page-header-nav {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+}
+.back-link {
+  position: relative;
+  display: inline-flex;
+  min-height: 36px;
+  max-width: 100%;
+  align-items: center;
+  gap: 4px;
+  margin-left: -8px;
+  padding: 0 10px 0 6px;
+  border-radius: 999px;
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.back-link:hover {
+  background: var(--primary-soft);
+}
+/* 36px tall, but the hit area reaches 44px (WCAG 2.5.8) without pushing the title down. */
+.back-link::after {
+  position: absolute;
+  inset: -4px 0;
+  content: "";
+}
+.breadcrumbs {
+  display: none;
+  min-width: 0;
+  font-size: 14px;
+}
+@media (min-width: 640px) {
+  .breadcrumbs {
+    display: block;
+  }
+  .back-link-parent {
+    display: none;
+  }
+}
+.breadcrumbs ol {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  color: var(--text-muted);
+}
+.breadcrumbs li {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+}
+.breadcrumbs li + li::before {
+  margin: 0 8px;
+  color: var(--border-strong);
+  content: "›";
+}
+.breadcrumbs a {
+  display: inline-block;
+  padding: 4px 0;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+}
+.breadcrumbs a:hover {
+  color: var(--primary);
+  text-decoration-color: currentColor;
+}
+.breadcrumbs [aria-current="page"] {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.page-header-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+.page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* --- Customer name + gender marker (app/CustomerName.tsx) ------------------------------------- */
+.customer-name {
+  display: inline-flex;
+  max-width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  vertical-align: middle;
+}
+.customer-name-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.gender-chip {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.gender-chip[data-gender="female"] {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.gender-chip[data-gender="male"] {
+  background: var(--info-soft);
+  color: var(--info);
+}
+.gender-chip[data-gender="unknown"] {
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+/* In a big heading the chip stays small and sits on the text's middle. */
+.page-title .gender-chip,
+h1 .gender-chip,
+h2 .gender-chip {
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* --- Stat tiles (size scale, design-system.md "Kích thước") ----------------------------------- */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 12px;
+}
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+}
+.stat-value {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 32px;
+}
+
+/* --- Home welcome band ------------------------------------------------------------------------ */
+.welcome {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
+}
+.welcome-logo {
+  width: 64px;
+}
+@media (min-width: 640px) {
+  .welcome {
+    gap: 24px;
+    padding: 20px 28px;
+  }
+  .welcome-logo {
+    width: 88px;
+  }
+}
+
 /* --- Skeletons: a sheen slides across (transform only); replaces spinners and pulses ---------- */
 .skeleton {
   position: relative;
@@ -646,6 +943,13 @@ dialog::backdrop {
 }
 .data-table tbody tr:last-child td {
   border-bottom: 0;
+}
+/* Phones: cells keep one line and the card scrolls sideways (.table-wrap), instead of a name or a
+ * package breaking into one word per line. */
+@media (max-width: 639px) {
+  .data-table :is(th, td) {
+    white-space: nowrap;
+  }
 }
 .data-table .num {
   font-variant-numeric: tabular-nums;

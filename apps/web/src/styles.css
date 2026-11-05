@@ -52,9 +52,29 @@ body {
   color: var(--text);
 }
 
+/*
+ * Focus rings never cover neighbouring content (EM 2026-11-05 round 3: the ring on the customer
+ * search hid the label above it). Three cases, all gold (`--focus`, ≥ 3:1 on every surface,
+ * contrast.test.ts):
+ * - default (buttons, links): 3px, 2px outside — 5px in all, and controls keep ≥ 8px apart;
+ * - text fields: 2px hugging the border (offset 0), no halo, and the field sits 6px below its label
+ *   (components.css), so 4px stay clear;
+ * - controls packed edge to edge (nav, tabs, segmented, menu and listbox rows): the ring is drawn
+ *   inside the control.
+ * e2e/specs/layout.spec.ts checks that no ring overlaps another element's text.
+ */
 :focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
+}
+:is(.nav-item, .sidebar-toggle, .tab, .segmented > button, .menu-item, .palette-option, [role="option"], .chart-col):focus-visible {
+  outline-offset: -3px;
+}
+/* Text links inside a line (a customer's name above their phone): a slimmer, closer ring. */
+a:not([class]):focus-visible,
+a.font-semibold:focus-visible {
+  outline-width: 2px;
+  outline-offset: 1px;
 }
 
 /*
@@ -80,15 +100,21 @@ input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]):foc
 select:focus,
 textarea:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+  box-shadow: none;
+}
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]):focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 0;
 }
 /* After the hover/focus rules with equal specificity, so an invalid field stays red. */
 [aria-invalid="true"]:is(input, select, textarea),
 [aria-invalid="true"]:is(input, select, textarea):is(:hover, :focus) {
   border-color: var(--danger);
 }
-[aria-invalid="true"]:is(input, select, textarea):focus {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 16%, transparent);
+[aria-invalid="true"]:is(input, select, textarea):focus-visible {
+  outline-color: var(--danger);
 }
 input:disabled,
 select:disabled,

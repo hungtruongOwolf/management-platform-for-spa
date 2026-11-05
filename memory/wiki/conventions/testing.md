@@ -59,6 +59,9 @@ Chưa phủ: role `PlatformAdmin`/support grant (chưa có trong `identity::role
 - Chạy 1 worker. Rate limit `/auth/*` là 10 request burst mỗi IP, nên hạn chế đăng nhập qua UI, ưu tiên `storageState`.
 - **Màn quầy `/quay` (S7 ✅)**: `e2e/specs/front-desk.spec.ts` chạy luồng nhanh đúng 4 thao tác bằng bàn phím (gõ SĐT + Enter → Enter trên "Trừ 1 buổi" đang focus → chọn KTV → Ctrl+Enter), kiểm tra focus nhảy đúng chỗ ở mỗi bước, axe ở 3 trạng thái (trống, có giỏ, đã lưu).
 
+- **Layout / responsive (`layout.spec.ts`, vòng 3):** helper `e2e/support/responsive.ts` (`sidewaysOverflow`, `overlappingSiblings`, `clippedText`, `focusRingsOverText`). Mọi màn + một hồ sơ khách tên dài được quét 320 → 1920px (bước 80) và 640×400 (= 1280×800 zoom 200 %). Thêm màn mới: thêm một dòng vào `SCREENS`. Chồng lấn hợp lệ (trang trí) thì dùng `position: absolute` hoặc pseudo-element, đừng nới helper.
+- **Agent chạy song song:** đặt `E2E_API_PORT`, `E2E_WEB_PORT` và `E2E_DATABASE_URL`/`E2E_APP_DATABASE_URL` riêng (DB riêng, ví dụ `vpyd_shell3_e2e`), nếu không `reuseExistingServer` sẽ dùng nhầm server của agent khác. Dừng API dev đang chạy từ cùng `target/debug/app.exe` trước khi chạy e2e (Windows khóa file, cargo không link lại được).
+
 ## 3. Chạy local
 
 Một lần đầu:
