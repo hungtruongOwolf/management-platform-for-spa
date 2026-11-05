@@ -124,10 +124,10 @@ R1 coi mọi giao dịch là **thu đủ ngay**: không có ghi nợ, thu nợ h
 - AC8.3: Báo cáo doanh thu và sổ quỹ **không** tính các khoản opening balance là doanh thu mới.
 - AC8.4 (neg): Số buổi còn lại > tổng số buổi → `422`.
 - AC8.5: Bản ghi opening balance hiển thị nhãn "Nhập từ sổ cũ" ở mọi nơi.
-- **Quyết định EM 2026-11-05 (security review M2, nguồn `raw/2026-11-05-em-opening-balance-same-day.md`):** "thông tin làm ngày hôm đó chỉ nên nhập làm trong ngày thôi".
-  - AC8.6: Chủ spa bật **"Mở nhập sổ cũ hôm nay"** (`PUT /opening-balances/window {open: true}`, quyền `opening_balance.manage_window`, chỉ Owner) → mở cho **ngày kinh doanh hôm nay** theo múi giờ spa (Asia/Ho_Chi_Minh); qua 0 giờ là tự đóng. `{open: false}` đóng ngay. Mỗi lần mở/đóng ghi audit.
-  - AC8.7: Ngày đã mở → người có `opening_balance.import` nhập được như cũ. Ngày chưa mở → quản lý nhận `403 opening_balance.closed` (web hiện giải thích thay cho form); chủ spa vẫn nhập được nhưng là thao tác 🔒 (`401 auth.reauth_required` → nhập lại mật khẩu + mã).
-  - AC8.8: Giá trong sổ (`sold_price`) chỉ là **trần hoàn tiền** khi người nhập có quyền hoàn tiền (`package.cancel_refund`, tức chủ spa). Quản lý nhập → trần = 0; khi hủy + hoàn, chủ spa phải tích "Đã đối chiếu giá trong sổ" (`confirm_book_price: true`, ghi audit) thì trần mới thành `sold_price`; thiếu → `422 refund.book_price_unconfirmed`. Hủy vẫn là 🔒 Owner như AC7.2. DB giữ trần bằng cột `customer_package.refund_cap` + trigger `refund_within_paid` (hoàn ≤ least(sold_price, refund_cap)).
+- **Quyết định EM 2026-11-05 (thay bản M2 của PR #23; nguồn `raw/2026-11-05-em-opening-balance-same-day.md` và `raw/2026-11-05-em-simplify-owner-and-opening-balance.md`):** "nếu trong ngày thì cứ nhập thôi còn nếu quá ngày thì không được chỉnh sửa hay nhập thông tin của ngày đó hoặc các ngày trước nữa … cái đấy tự động"; "nếu account là chủ spa thì cứ allow hết"; trần hoàn tiền riêng cho sổ cũ "tính sau".
+  - AC8.6: Không có công tắc "mở nhập sổ cũ". Người có `opening_balance.import` (chủ spa, quản lý) nhập được bất cứ lúc nào; gói nhập luôn ghi vào **ngày kinh doanh hôm nay** (múi giờ spa, Asia/Ho_Chi_Minh).
+  - AC8.7: Sửa / hủy bản ghi của một ngày đã qua theo quy tắc ngày đã chốt (AC6.3): qua 0 giờ là tự khóa với quản lý (`403 day.locked`); chủ spa làm được và **không** phải nhập lại mật khẩu.
+  - AC8.8: Hoàn tiền khi hủy gói sổ cũ ≤ giá ghi trong sổ (`sold_price`), giống gói bán (AC7.4: vượt → `422 refund.exceeds_paid`); chỉ chủ spa hủy + hoàn (AC7.3). Trần hoàn riêng cho gói sổ cũ do quản lý nhập: **để sau**.
 
 ## 4. UX notes
 - **Màn hình quầy** (tablet/laptop ưu tiên, dùng được trên điện thoại):

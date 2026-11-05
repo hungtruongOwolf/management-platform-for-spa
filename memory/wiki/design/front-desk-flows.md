@@ -73,10 +73,10 @@ States: validation inline; thu > phải trả → lỗi tại ô tiền; lưu tr
 ## US6: Hủy / sửa sai
 - Danh sách "Lượt khách hôm nay" → mở chi tiết → **Hủy lượt** → ReasonDialog (bắt buộc lý do) → lượt hiển thị gạch ngang + nhãn "Đã hủy: <lý do>", buổi đã trừ được cộng lại, toast xác nhận.
 - Hóa đơn bán gói chưa dùng buổi nào → **Hủy hóa đơn**; đã dùng → nút bị khóa, tooltip "Đã dùng buổi, dùng Hủy liệu trình (chủ spa)".
-- Ngày đã chốt → nút Hủy chỉ hiện với chủ spa (yêu cầu nhập lại mật khẩu); Quản lý thấy "Ngày đã chốt, liên hệ chủ spa".
+- Ngày đã chốt → nút Hủy chỉ hiện với chủ spa (không hỏi lại mật khẩu, EM 2026-11-05); Quản lý thấy "Ngày đã chốt, liên hệ chủ spa".
 
 ## US7: Vòng đời liệu trình (chủ spa)
-- PackageRow → menu ⋯ → **Gia hạn** (chọn số tháng + lý do) / **Hủy & hoàn tiền** (số tiền ≤ đã trả, hình thức, lý do; nhập lại mật khẩu).
+- PackageRow → menu ⋯ → **Gia hạn** (chọn số tháng + lý do) / **Hủy & hoàn tiền** (số tiền ≤ đã trả, hình thức, lý do).
 - Quản lý không thấy các mục này (UX); server vẫn trả `403` nếu gọi thẳng.
 
 ## US8: Nhập liệu trình dở dang (`/nhap-so-cu`)
