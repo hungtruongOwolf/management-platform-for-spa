@@ -120,7 +120,7 @@ describe("customers page", () => {
     ).toBe(true);
     await user.click(option);
     expect(
-      await screen.findByRole("heading", { name: "Nguyễn Thị Hà" }),
+      await screen.findByRole("heading", { name: /^Nguyễn Thị Hà/ }),
     ).toBeInTheDocument();
     expect(screen.getByRole("note")).toHaveTextContent(
       "Huyết áp cao — tránh đá nóng",
@@ -136,7 +136,7 @@ describe("customers page", () => {
     await screen.findByRole("option", { name: /Nguyễn Thị Hà/ });
     await user.keyboard("{Enter}");
     expect(
-      await screen.findByRole("heading", { name: "Nguyễn Thị Hà" }),
+      await screen.findByRole("heading", { name: /^Nguyễn Thị Hà/ }),
     ).toBeInTheDocument();
   });
 
@@ -149,7 +149,7 @@ describe("customers page", () => {
     );
     at("/khach-hang/c1");
     expect(
-      await screen.findByRole("heading", { name: "Nguyễn Thị Hà" }),
+      await screen.findByRole("heading", { name: /^Nguyễn Thị Hà/ }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("note")).not.toBeInTheDocument();
     expect(
@@ -189,7 +189,7 @@ describe("customers page", () => {
       await within(form).findByRole("button", { name: "Mở hồ sơ đó" }),
     );
     expect(
-      await screen.findByRole("heading", { name: "Nguyễn Thị Hà" }),
+      await screen.findByRole("heading", { name: /^Nguyễn Thị Hà/ }),
     ).toBeInTheDocument();
   });
 

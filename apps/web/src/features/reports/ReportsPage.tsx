@@ -1,6 +1,7 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { useState } from "react";
 import { Icon } from "../../app/Icon";
+import { useSearchState } from "../../lib/searchState";
 import { spaToday } from "../corrections/api";
 import {
   addDays,
@@ -13,6 +14,7 @@ import {
 } from "./api";
 import { BarChart, SplitBar } from "./charts";
 import type { DailyReport, RangeReport } from "./contract";
+import { reportsSearch } from "./search";
 import {
   CountUp,
   Delta,
@@ -44,7 +46,13 @@ export function ReportsPage() {
 
 function ReportsPageBody() {
   const today = spaToday();
-  const [date, setDate] = useState(today);
+  // The chosen day lives in the URL ("" = today), so Back from a customer returns to the same day.
+  const [search, setSearch] = useSearchState(reportsSearch);
+  const date = search.date && search.date <= today ? search.date : today;
+  const setDate = (next: string | ((d: string) => string)) => {
+    const value = typeof next === "function" ? next(date) : next;
+    setSearch({ date: value >= today ? "" : value });
+  };
   const daily = useQuery(dailyReportQuery(date));
   const range = useQuery(rangeReportQuery(addDays(date, -6), date));
 

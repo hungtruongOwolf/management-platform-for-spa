@@ -143,17 +143,8 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => 
   );
 }
 
-export function PageHeader({ eyebrow, title, children }: { eyebrow: string; title: string; children?: ReactNode }) {
-  return (
-    <header className="flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <p className="eyebrow">{eyebrow}</p>
-        <h1 className="page-title">{title}</h1>
-      </div>
-      {children}
-    </header>
-  );
-}
+/** The app-wide page header (breadcrumbs, back, title, actions): app/PageHeader.tsx. */
+export { PageHeader } from "../../app/PageHeader";
 
 /** UX gate of the management screens (the API answers 403 by itself). */
 export function ManagementOnly({ children }: { children: ReactNode }) {

@@ -23,14 +23,12 @@ export function CustomerName({ name, gender, showUnknown = false, className = ""
       <span className="customer-name-text">{name}</span>
       {label ? (
         <span className="gender-chip" data-gender={gender}>
-          <span className="sr-only">, </span>
-          {label}
+          <span className="sr-only">,</span> {label}
         </span>
       ) : (
         showUnknown && (
           <span className="gender-chip" data-gender="unknown">
-            <span className="sr-only">, giới tính </span>
-            Chưa rõ
+            <span className="sr-only">, giới tính</span> Chưa rõ
           </span>
         )
       )}

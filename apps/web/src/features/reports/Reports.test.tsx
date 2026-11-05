@@ -129,7 +129,7 @@ describe("customer history", () => {
   it("is not shown without report.read", async () => {
     serveManagement({ permissions: ["customer.read"] });
     at("/khach-hang/c1");
-    expect(await screen.findByRole("heading", { level: 1, name: "Nguyễn Thị Hà" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: /^Nguyễn Thị Hà/ })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Lịch sử sử dụng" })).not.toBeInTheDocument();
   });
 });

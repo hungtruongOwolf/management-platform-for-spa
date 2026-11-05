@@ -9,6 +9,7 @@ import { fold } from "./CommandPalette";
 import { canSeeManagement } from "./features";
 import { navFor, tabsFor } from "./nav";
 import { applyTheme, readSidebarCollapsed, readTheme, saveSidebarCollapsed } from "./prefs";
+import { roleLabel } from "./UserMenu";
 
 const me = (permissions: string[]): Me => ({
   user: { id: "u1", full_name: "Nguyễn Thị Thu Hà", phone: "0905 123 456" },
@@ -144,10 +145,27 @@ describe("app shell", () => {
     expect(screen.queryByRole("navigation", { name: "Tất cả màn hình" })).not.toBeInTheDocument();
   });
 
-  it("keeps the quick lock one tap away", async () => {
+  it("account menu: who is signed in, theme, quick lock and sign out; Esc closes it", async () => {
     serve(MANAGER);
+    const user = userEvent.setup();
     at("/");
-    expect(await screen.findByRole("button", { name: "Khóa nhanh" })).toBeInTheDocument();
+    const button = await screen.findByRole("button", { name: "Tài khoản: Quản lý Hà, Quản lý" });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    await user.click(button);
+    const panel = screen.getByRole("group", { name: "Tài khoản" });
+    expect(within(panel).getByText("Quản lý · Viên Phúc Y Đường")).toBeInTheDocument();
+    expect(within(panel).getByRole("group", { name: "Chế độ màu" })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: /^Khóa nhanh/ })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "Đăng xuất" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("group", { name: "Tài khoản" })).not.toBeInTheDocument();
+    expect(button).toHaveFocus();
+  });
+
+  it("names the role from the permissions (display only)", () => {
+    expect(roleLabel(me(["catalog.manage", "visit.record"]))).toBe("Chủ spa");
+    expect(roleLabel(me(MANAGER))).toBe("Quản lý");
+    expect(roleLabel(me(["catalog.read"]))).toBe("Kỹ thuật viên");
   });
 });
 

@@ -1,7 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
+import { CustomerName } from "../../app/CustomerName";
+import { useSearchState } from "../../lib/searchState";
 import { longDay, packagesOverviewQuery, relativeDay, type PackageFilter } from "./api";
+import { packagesSearch } from "./search";
 import type { PackageOverviewRow, PackageStatus } from "./contract";
 import { EmptyState, ErrorState, ManagementOnly, PageHeader, RowsSkeleton } from "./ui";
 
@@ -18,12 +21,22 @@ export function displayPhone(phone: string): string {
   return m ? `0${m[1] ?? ""} ${m[2] ?? ""} ${m[3] ?? ""}` : phone;
 }
 
-/** Customer name linking to the profile, phone below. */
-export function CustomerCell({ id, name, phone }: { id: string; name: string; phone: string }): ReactNode {
+/** Customer name (+ gender, when the row has it) linking to the profile, phone below. */
+export function CustomerCell({
+  id,
+  name,
+  phone,
+  gender,
+}: {
+  id: string;
+  name: string;
+  phone: string;
+  gender?: string | null;
+}): ReactNode {
   return (
     <>
       <Link to="/khach-hang/$customerId" params={{ customerId: id }} className="font-semibold text-primary hover:underline">
-        {name}
+        <CustomerName name={name} gender={gender} />
       </Link>
       <span className="block text-xs text-text-muted tabular">{displayPhone(phone)}</span>
     </>
@@ -57,7 +70,7 @@ export function PackagesOverviewPage() {
 }
 
 function PackagesOverviewPageBody() {
-  const [filter, setFilter] = useState<PackageFilter>("expiring");
+  const [{ status: filter }, setSearch] = useSearchState(packagesSearch);
   const page = useQuery(packagesOverviewQuery(filter));
   const counts = page.data?.counts;
   const filters: [PackageFilter, string, number | undefined][] = [
@@ -79,7 +92,7 @@ function PackagesOverviewPageBody() {
             type="button"
             aria-pressed={filter === f}
             onClick={() => {
-              setFilter(f);
+              setSearch({ status: f });
             }}
           >
             {label}

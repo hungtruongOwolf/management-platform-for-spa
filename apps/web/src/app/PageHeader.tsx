@@ -79,7 +79,7 @@ export function PageHeader({ title, label, eyebrow, breadcrumbs = [], back, titl
             >
               <Icon name="chevron-left" className="size-4" />
               <span className="truncate">
-                <span className="sr-only">Quay lại </span>
+                <span className="sr-only">Quay lại</span>{" "}
                 {backLabel ?? "Trang trước"}
               </span>
             </a>

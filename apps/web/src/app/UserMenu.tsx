@@ -66,7 +66,7 @@ export function UserMenu({
       className="user-menu"
       // Tabbing out of the panel closes it, like a native menu.
       onBlur={(e) => {
-        if (open && !e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
+        if (open && !e.currentTarget.contains(e.relatedTarget)) setOpen(false);
       }}
     >
       <button
@@ -84,9 +84,9 @@ export function UserMenu({
         </span>
         {/* Visible from 1024px; below that it stays as the button's name for screen readers. */}
         <span className="user-button-text">
-          <span className="sr-only">Tài khoản: </span>
+          <span className="sr-only">Tài khoản:</span>{" "}
           <span className="truncate font-semibold">{name}</span>
-          <span className="sr-only">, </span>
+          <span className="sr-only">,</span>{" "}
           <span className="truncate text-xs text-text-muted">{role}</span>
         </span>
         <Icon name="chevron-down" className="user-button-chevron size-4" />

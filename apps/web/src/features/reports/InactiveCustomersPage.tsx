@@ -1,12 +1,12 @@
 import type { InactiveScope } from "@vpyd/api-client";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useSearchState } from "../../lib/searchState";
 import { inactiveCustomersQuery, relativeDay } from "./api";
 import { CustomerCell } from "./PackagesOverviewPage";
+import { THRESHOLDS, inactiveSearch } from "./search";
 import { EmptyState, ErrorState, ManagementOnly, PageHeader, RowsSkeleton } from "./ui";
 
-/** Absence thresholds offered (EM 2026-11-05: 7 days is the default). */
-export const THRESHOLDS = [7, 14, 30] as const;
+export { THRESHOLDS };
 
 const SCOPES: [InactiveScope, string][] = [
   ["with_sessions", "Còn buổi trong gói"],
@@ -23,8 +23,7 @@ export function InactiveCustomersPage() {
 }
 
 function InactiveCustomersPageBody() {
-  const [days, setDays] = useState<number>(THRESHOLDS[0]);
-  const [scope, setScope] = useState<InactiveScope>("with_sessions");
+  const [{ days, scope }, setSearch] = useSearchState(inactiveSearch);
   const page = useInfiniteQuery(inactiveCustomersQuery(days, scope));
   const items = page.data?.pages.flatMap((p) => p.items) ?? [];
 
@@ -42,7 +41,7 @@ function InactiveCustomersPageBody() {
               type="button"
               aria-pressed={days === d}
               onClick={() => {
-                setDays(d);
+                setSearch({ days: d });
               }}
             >
               ≥ {d} ngày
@@ -56,7 +55,7 @@ function InactiveCustomersPageBody() {
               type="button"
               aria-pressed={scope === s}
               onClick={() => {
-                setScope(s);
+                setSearch({ scope: s });
               }}
             >
               {label}
