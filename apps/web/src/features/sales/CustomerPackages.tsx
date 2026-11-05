@@ -33,7 +33,7 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
     can(me, "record.void_same_day");
 
   return (
-    <section aria-labelledby="packages-title" className="mt-4 space-y-2">
+    <section aria-labelledby="packages-title" className="mt-4 grid content-start gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="packages-title" className="font-semibold">
           Liệu trình
@@ -98,11 +98,6 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
             >
               <div>
                 <span className="font-semibold">{p.name}</span>
-                {p.origin === "opening_balance" && (
-                  <span className="ml-2 rounded-full bg-accent-soft px-2 text-xs font-semibold text-accent-text">
-                    Nhập từ sổ cũ
-                  </span>
-                )}
                 <span className="block text-sm text-text-muted">
                   {p.items.length > 1 &&
                     `${p.items.map((i) => `${i.name} ${String(i.sessions_remaining)}/${String(i.sessions_total)}`).join(" · ")} · `}
@@ -126,7 +121,7 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
                   buổi
                 </strong>
                 <span
-                  className={`mt-0.5 inline-block rounded-full px-2 text-xs font-semibold ${STATUS_BADGE[p.status]}`}
+                  className={`badge ml-2 align-middle ${STATUS_BADGE[p.status]}`}
                 >
                   {STATUS_LABEL[p.status]}
                 </span>

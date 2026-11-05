@@ -22,7 +22,7 @@ test.describe("đăng nhập", () => {
     ).toBeVisible();
     await page
       .getByRole("navigation", { name: "Chính" })
-      .getByRole("link", { name: "Bảng giá" })
+      .getByRole("link", { name: "Dịch vụ" })
       .click();
     await expect(page).toHaveURL(/\/bang-gia$/);
     await expect(

@@ -57,13 +57,15 @@ impl SystemRole {
                 P::CustomerHealthNotesWrite,
                 P::PackageSell,
                 P::PackageUseExpiredOverride,
-                P::OpeningBalanceImport,
                 P::VisitRecord,
                 P::VisitRead,
                 P::PaymentCollect,
                 P::SaleRead,
                 P::SaleDiscount,
                 P::RecordVoidSameDay,
+                P::ReportRead,
+                // Default on: the manager is also the cashier (spec management-views, open question Q1).
+                P::ReportRevenueRead,
             ],
             Self::Technician => vec![P::CatalogRead, P::StaffReadBasic],
         }
@@ -95,6 +97,8 @@ mod tests {
             Permission::RecordVoidClosedDay,
             Permission::AuditRead,
             Permission::SupportGrantManage,
+            // Paper-book import is an operator migration, not a front-desk task (0013).
+            Permission::OpeningBalanceImport,
         ] {
             assert!(!manager.contains(&owner_only), "{owner_only:?}");
         }

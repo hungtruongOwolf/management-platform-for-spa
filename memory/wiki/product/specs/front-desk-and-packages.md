@@ -123,7 +123,7 @@ R1 coi mọi giao dịch là **thu đủ ngay**: không có ghi nợ, thu nợ h
 - AC8.1: Given liệu trình 10 buổi đã dùng 6, giá 1.500.000đ, còn nợ 0 → tạo CustomerPackage "còn 4/10", đánh dấu `opening_balance`, **không** tạo doanh thu hay Payment trong ngày nhập.
 - AC8.3: Báo cáo doanh thu và sổ quỹ **không** tính các khoản opening balance là doanh thu mới.
 - AC8.4 (neg): Số buổi còn lại > tổng số buổi → `422`.
-- AC8.5: Bản ghi opening balance hiển thị nhãn "Nhập từ sổ cũ" ở mọi nơi.
+- ~~AC8.5: Bản ghi opening balance hiển thị nhãn "Nhập từ sổ cũ" ở mọi nơi.~~ **Bỏ** (EM 2026-11-05, [management-views §7](management-views.md)): gói chuyển từ sổ giấy trông như mọi gói khác; nhập sổ giấy là migration của team (`app import-paper-book`), quản lý không còn `opening_balance.import`.
 - **Quyết định EM 2026-11-05 (thay bản M2 của PR #23; nguồn `raw/2026-11-05-em-opening-balance-same-day.md` và `raw/2026-11-05-em-simplify-owner-and-opening-balance.md`):** "nếu trong ngày thì cứ nhập thôi còn nếu quá ngày thì không được chỉnh sửa hay nhập thông tin của ngày đó hoặc các ngày trước nữa … cái đấy tự động"; "nếu account là chủ spa thì cứ allow hết"; trần hoàn tiền riêng cho sổ cũ "tính sau".
   - AC8.6: Không có công tắc "mở nhập sổ cũ". Người có `opening_balance.import` (chủ spa, quản lý) nhập được bất cứ lúc nào; gói nhập luôn ghi vào **ngày kinh doanh hôm nay** (múi giờ spa, Asia/Ho_Chi_Minh).
   - AC8.7: Sửa / hủy bản ghi của một ngày đã qua theo quy tắc ngày đã chốt (AC6.3): qua 0 giờ là tự khóa với quản lý (`403 day.locked`); chủ spa làm được và **không** phải nhập lại mật khẩu.

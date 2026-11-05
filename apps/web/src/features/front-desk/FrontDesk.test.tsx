@@ -69,7 +69,6 @@ function pkg(
     name: `Gói ${id}`,
     gift_note: null,
     sold_price: 1_500_000,
-    origin: "sale",
     sale_id: "sale1",
     closer_staff_id: "st1",
     closer_name: "KTV Lan",
@@ -253,6 +252,7 @@ function serve(
   permissions: string[],
   onVisit: () => Response = () => Response.json(VISIT, { status: 201 }),
   packages: CustomerPackage[] = [pkg("cp1")],
+  dayVisits: Visit[] = [],
 ) {
   const calls: Call[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
@@ -294,7 +294,8 @@ function serve(
     if (url === "/api/v1/services") return json([DAI_THONG_LAC, GAC_HOI]);
     if (url === "/api/v1/service-categories")
       return json([{ id: "cat1", name: "Cổ vai gáy", sort_order: 0 }]);
-    if (url === "/api/v1/visits" && call.method === "GET") return json([]);
+    if (url === "/api/v1/visits" && call.method === "GET")
+      return json(dayVisits);
     if (url === "/api/v1/visits" && call.method === "POST")
       return Promise.resolve(onVisit());
     return Promise.resolve(new Response(null, { status: 404 }));
@@ -375,6 +376,35 @@ describe("/quay", () => {
     });
   });
 
+  it("renders the latest 30 visits of a busy day, the rest on request", async () => {
+    const many = Array.from({ length: 65 }, (_, i) => ({
+      ...VISIT,
+      id: `v${String(i)}`,
+      customer_name: `Khách ${String(i)}`,
+    }));
+    serve(MANAGER, undefined, undefined, many);
+    const user = userEvent.setup();
+    at("/quay");
+    const list = await screen.findByRole("list", {
+      name: "Lượt khách hôm nay",
+    });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(30);
+    expect(
+      screen.getByRole("heading", { name: /Lượt khách hôm nay \(65\)/ }),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Xem thêm (35 lượt nữa)" }),
+    );
+    expect(within(list).getAllByRole("listitem")).toHaveLength(60);
+    await user.click(
+      screen.getByRole("button", { name: "Xem thêm (5 lượt nữa)" }),
+    );
+    expect(within(list).getAllByRole("listitem")).toHaveLength(65);
+    expect(
+      screen.queryByRole("button", { name: /Xem thêm/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it("will not save a line without a technician", async () => {
     const calls = serve(MANAGER);
     const user = userEvent.setup();
@@ -450,11 +480,8 @@ describe("/quay", () => {
     ).toBeInTheDocument();
   });
 
-  it("labels a package imported from the paper books on the customer card (AC8.5)", async () => {
-    serve(MANAGER, undefined, [
-      pkg("cp1"),
-      pkg("cp2", { origin: "opening_balance", sale_id: null }),
-    ]);
+  it("shows a package migrated from the paper books like any other (EM 2026-11-05)", async () => {
+    serve(MANAGER, undefined, [pkg("cp1"), pkg("cp2", { sale_id: null })]);
     const user = userEvent.setup();
     at("/quay");
     const search = await screen.findByRole("combobox", {
@@ -469,14 +496,21 @@ describe("/quay", () => {
     const rows = within(list).getAllByRole("listitem");
     const imported = rows.find((li) => li.textContent.includes("Gói cp2"));
     const sold = rows.find((li) => li.textContent.includes("Gói cp1"));
-    expect(imported).toHaveTextContent("Nhập từ sổ cũ");
-    expect(sold).not.toHaveTextContent("Nhập từ sổ cũ");
+    // No "sổ cũ" label: the migration is a one-time data fill, not a kind of package.
+    expect(imported).toBeDefined();
+    expect(sold).toBeDefined();
+    expect(list).not.toHaveTextContent(/sổ cũ/i);
+    expect(
+      within(imported as HTMLElement).getByRole("button", {
+        name: /Trừ 1 buổi/,
+      }),
+    ).toBeInTheDocument();
   });
 
   it("hides the Quầy entry without visit.record", async () => {
     serve(["catalog.read"]);
     at("/");
     await screen.findByRole("navigation", { name: "Chính" });
-    expect(screen.queryByRole("link", { name: "Quầy" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Ghi lượt khách" })).toBeNull();
   });
 });

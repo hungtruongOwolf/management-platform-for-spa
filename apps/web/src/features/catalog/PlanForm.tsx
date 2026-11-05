@@ -155,7 +155,7 @@ export function PlanForm({
         />
       </label>
 
-      <fieldset className="space-y-2 sm:col-span-2">
+      <fieldset className="grid content-start gap-2 sm:col-span-2">
         <legend className="text-sm font-semibold">Dịch vụ trong gói</legend>
         {items.fields.map((field, index) => (
           <div

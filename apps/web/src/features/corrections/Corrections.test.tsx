@@ -65,7 +65,6 @@ function pkg(
     name: "Gội đầu 10 + tặng 2",
     gift_note: null,
     sold_price: 1_500_000,
-    origin: "sale",
     sale_id: "sale1",
     closer_staff_id: "st1",
     closer_name: "KTV Lan",

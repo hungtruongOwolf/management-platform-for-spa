@@ -16,6 +16,16 @@ export default defineConfig({
       { find: /^@vpyd\/api-client$/, replacement: `${apiClientSrc}/index.ts` },
     ],
   },
+  build: {
+    rolldownOptions: {
+      output: {
+        // Everything the first screen needs in one chunk: left alone, the bundler splits modules
+        // shared with lazy screens into ~10 small preloaded chunks, and each one gzips on its own
+        // (≈ +2 KB on the startup budget, frontend.md "Perf budget"). Lazy screens stay separate.
+        codeSplitting: { groups: [{ name: "app", tags: ["$initial"] }] },
+      },
+    },
+  },
   // Dev: the SPA and API share one origin through this proxy, mirroring production (Caddy).
   // VPYD_API_ORIGIN lets the E2E stack run its own API on another port.
   server: {

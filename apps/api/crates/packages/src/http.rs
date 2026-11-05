@@ -1,4 +1,5 @@
-//! Package endpoints: reads for the customer profile, and the opening-balance import (S9).
+//! Package endpoints: reads for the customer profile, expiry/cancel, and the transitional
+//! owner-only paper-book import (the team migrates with `app import-paper-book`).
 
 use crate::domain::{PackageStatus, RefundMethod};
 use crate::lifecycle::{self, PackageCancel, PackageExtend};
@@ -41,13 +42,6 @@ impl From<PackageStatus> for PackageStatusDto {
             PackageStatus::Cancelled => Self::Cancelled,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, ToSchema, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum PackageOriginDto {
-    Sale,
-    OpeningBalance,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -132,7 +126,8 @@ pub struct CustomerPackageDto {
     pub gift_note: Option<String>,
     /// Price paid after discount, in đồng.
     pub sold_price: i64,
-    pub origin: PackageOriginDto,
+    /// The sale it was sold in. `null` for a package migrated from the paper books, which
+    /// otherwise looks like any other package (EM 2026-11-05: no "sổ cũ" label in the product).
     pub sale_id: Option<Uuid>,
     pub closer_staff_id: Option<Uuid>,
     pub closer_name: Option<String>,
@@ -160,11 +155,6 @@ impl From<CustomerPackage> for CustomerPackageDto {
             name: p.name,
             gift_note: p.gift_note,
             sold_price: p.sold_price.as_i64(),
-            origin: if p.origin == "opening_balance" {
-                PackageOriginDto::OpeningBalance
-            } else {
-                PackageOriginDto::Sale
-            },
             sale_id: p.sale_id,
             closer_staff_id: p.closer_staff_id,
             closer_name: p.closer_name,
@@ -239,7 +229,7 @@ pub async fn list_customer_packages(
 #[utoipa::path(post, path = "/api/v1/opening-balances", tag = "packages", request_body = OpeningBalanceCreate,
     params(("Idempotency-Key" = Uuid, Header, description = "One key per import form; a retry with the same key replays the first response")),
     responses(
-        (status = 201, body = OpeningBalanceDto, description = "Packages created with origin opening_balance; no sale, no payment"),
+        (status = 201, body = OpeningBalanceDto, description = "Packages created without a sale or payment. Deprecated: owner-only until the import screen is gone; the team migrates with `app import-paper-book`"),
         (status = 400, description = "idempotency.key_required / key_invalid"),
         (status = 401), (status = 403),
         (status = 404, description = "customer or plan not in this spa"),

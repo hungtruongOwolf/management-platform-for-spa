@@ -15,7 +15,7 @@ const linkButton = "text-sm font-medium text-primary underline-offset-2 hover:un
 function Card({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
     <AuthFrame brand={<p className={bandTitle}>Viên Phúc Y Đường</p>}>
-      <section aria-labelledby="mfa-title" className="space-y-4 p-6">
+      <section aria-labelledby="mfa-title" className="grid content-start gap-4 p-6 sm:p-10">
         <div className="text-center">
           <h1 id="mfa-title" className="font-brand text-xl text-primary">
             {title}
@@ -110,7 +110,7 @@ function VerifyStep({ onDone, onRestart }: StepProps) {
   return (
     <Card title="Xác thực hai bước" subtitle="Mở ứng dụng xác thực trên điện thoại và nhập mã đang hiển thị.">
       <form onSubmit={(e) => void submit(e)} noValidate className="space-y-4">
-        <div className="space-y-1">
+        <div className="grid content-start gap-1">
           <label htmlFor="mfa-code" className="block text-sm font-semibold">
             {useRecovery ? "Mã khôi phục" : "Mã xác thực (6 số)"}
           </label>
@@ -223,21 +223,21 @@ function EnrollStep({ onDone, onRestart }: StepProps) {
         </p>
       ) : (
         <>
-          <ol className="list-decimal space-y-1 pl-5 text-sm">
+          <ol className="list-decimal grid content-start gap-1 pl-5 text-sm">
             <li>Mở ứng dụng xác thực, chọn thêm tài khoản, quét mã QR.</li>
             <li>Nhập mã 6 số ứng dụng hiển thị.</li>
           </ol>
           <div className="flex justify-center">
             <QrCode value={enrollment.data.otpauth_uri} label="Mã QR để thêm tài khoản vào ứng dụng xác thực" />
           </div>
-          <div className="space-y-1">
+          <div className="grid content-start gap-1">
             <p className="text-sm font-semibold">Không quét được? Nhập khóa này:</p>
             <code data-testid="manual-key" className="block rounded-[6px] bg-surface-2 p-2 text-center font-mono text-sm break-all">
               {formatKey(enrollment.data.manual_key)}
             </code>
           </div>
           <form onSubmit={(e) => void submit(e)} noValidate className="space-y-4">
-            <div className="space-y-1">
+            <div className="grid content-start gap-1">
               <label htmlFor="enroll-code" className="block text-sm font-semibold">
                 Mã xác thực (6 số)
               </label>

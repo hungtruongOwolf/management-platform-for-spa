@@ -1,0 +1,230 @@
+//! Perf budget of the management views (spec management-views §6: p95 read < 300 ms) on three
+//! years of one busy spa: ~44.000 visits, ~31.000 sales, 3.000 customers, 3.300 packages.
+//! Ignored by default (seeding takes a while); run by hand:
+//!   cargo test -p app --test reports_bench -- --ignored --nocapture
+//! It prints p50/p95 per endpoint and EXPLAIN (ANALYZE) of the heaviest queries.
+
+mod common;
+
+use axum::http::StatusCode;
+use common::{OWNER_PHONE, TestResult, call, call_with_headers, harness, session_for};
+use serde_json::json;
+use sqlx::PgPool;
+use std::time::Instant;
+
+const DAYS: i32 = 1100;
+const SAMPLES: usize = 20;
+const BUDGET_MS: u128 = 300;
+
+/// Bulk rows straight into the tables (owner pool), shaped like the use cases write them.
+const SEED: &str = r#"
+CREATE TEMP TABLE b_ctx AS
+SELECT t.id AS tenant, br.id AS branch, s.id AS service, p.id AS plan, st.id AS staff,
+       (SELECT m.user_id FROM app.membership m WHERE m.tenant_id = t.id LIMIT 1) AS usr
+FROM app.tenant t
+JOIN app.branch br ON br.tenant_id = t.id
+JOIN app.service s ON s.tenant_id = t.id
+JOIN app.package_plan p ON p.tenant_id = t.id
+JOIN app.staff st ON st.tenant_id = t.id
+WHERE t.slug = 'vpyd' LIMIT 1;
+
+CREATE TEMP TABLE b_c AS
+SELECT g AS n, gen_random_uuid() AS id FROM generate_series(1, 3000) g;
+INSERT INTO app.customer (id, tenant_id, full_name, search_text, phone_e164)
+SELECT c.id, x.tenant, 'Khách ' || c.n, 'khach ' || c.n, '+8491' || lpad(c.n::text, 7, '0')
+FROM b_c c, b_ctx x;
+
+-- 3 package sales a day.
+CREATE TEMP TABLE b_ps AS
+SELECT row_number() OVER () AS n, gen_random_uuid() AS sale, gen_random_uuid() AS pkg,
+       gen_random_uuid() AS item, d::date AS day, c.id AS customer
+FROM generate_series(current_date - $DAYS, current_date, interval '1 day') d
+CROSS JOIN generate_series(1, 3) k
+JOIN b_c c ON c.n = 1 + abs(hashtext(d::text || k)) % 3000;
+INSERT INTO app.sale (id, tenant_id, branch_id, customer_id, business_date, subtotal, total, amount_paid, closer_staff_id, created_by, created_at)
+SELECT p.sale, x.tenant, x.branch, p.customer, p.day, 1200000, 1200000, 1200000, x.staff, x.usr, p.day + time '09:00'
+FROM b_ps p, b_ctx x;
+INSERT INTO app.customer_package (id, tenant_id, customer_id, plan_id, name_snapshot, sold_price, origin, sale_id, closer_staff_id, starts_on, created_by, created_at)
+SELECT p.pkg, x.tenant, p.customer, x.plan, 'Gói 10 buổi', 1200000, 'sale', p.sale, x.staff, p.day, x.usr, p.day + time '09:00'
+FROM b_ps p, b_ctx x;
+INSERT INTO app.sale_line (id, tenant_id, sale_id, line_type, package_plan_id, customer_package_id, description_snapshot, qty, unit_price, line_total, position)
+SELECT gen_random_uuid(), x.tenant, p.sale, 'package', x.plan, p.pkg, 'Gói 10 buổi', 1, 1200000, 1200000, 0
+FROM b_ps p, b_ctx x;
+INSERT INTO app.customer_package_item (id, tenant_id, customer_package_id, service_id, name_snapshot, sessions_purchased, sessions_remaining, per_session_value)
+SELECT p.item, x.tenant, p.pkg, x.service, 'Gội đầu', 10, 5, 120000 FROM b_ps p, b_ctx x;
+INSERT INTO app.payment (id, tenant_id, branch_id, sale_id, business_date, method, amount, created_by, paid_at)
+SELECT gen_random_uuid(), x.tenant, x.branch, p.sale, p.day, 'bank_transfer', 1200000, x.usr, p.day + time '09:00'
+FROM b_ps p, b_ctx x;
+-- Every 10th package cancelled with a refund.
+INSERT INTO app.refund (id, tenant_id, branch_id, customer_id, customer_package_id, business_date, method, amount, reason, created_by)
+SELECT gen_random_uuid(), x.tenant, x.branch, p.customer, p.pkg, p.day, 'cash', 100000, 'Khách chuyển nhà', x.usr
+FROM b_ps p, b_ctx x WHERE p.n % 10 = 0;
+
+-- 25 one-off visits a day, each with its own sale; 15 package visits.
+CREATE TEMP TABLE b_v AS
+SELECT gen_random_uuid() AS visit, gen_random_uuid() AS sale, d::date AS day, k,
+       c.id AS customer, d::date + time '08:00' + k * interval '15 minutes' AS at
+FROM generate_series(current_date - $DAYS, current_date, interval '1 day') d
+CROSS JOIN generate_series(1, 25) k
+JOIN b_c c ON c.n = 1 + abs(hashtext(d::text || 'v' || k)) % 3000;
+INSERT INTO app.sale (id, tenant_id, branch_id, customer_id, business_date, subtotal, total, amount_paid, created_by, created_at)
+SELECT v.sale, x.tenant, x.branch, v.customer, v.day, 150000, 150000, 150000, x.usr, v.at FROM b_v v, b_ctx x;
+INSERT INTO app.sale_line (id, tenant_id, sale_id, line_type, service_id, description_snapshot, qty, unit_price, line_total, position)
+SELECT gen_random_uuid(), x.tenant, v.sale, 'service', x.service, 'Gội đầu', 1, 150000, 150000, 0 FROM b_v v, b_ctx x;
+INSERT INTO app.payment (id, tenant_id, branch_id, sale_id, business_date, method, amount, created_by, paid_at)
+SELECT gen_random_uuid(), x.tenant, x.branch, v.sale, v.day, 'cash', 150000, x.usr, v.at FROM b_v v, b_ctx x;
+INSERT INTO app.visit (id, tenant_id, branch_id, customer_id, business_date, check_in_at, sale_id, created_by)
+SELECT v.visit, x.tenant, x.branch, v.customer, v.day, v.at, v.sale, x.usr FROM b_v v, b_ctx x;
+INSERT INTO app.visit_line (id, tenant_id, visit_id, position, service_id, service_name_snapshot, source, staff_id, qty, price_variant, unit_price, line_value)
+SELECT gen_random_uuid(), x.tenant, v.visit, 0, x.service, 'Gội đầu', 'one_off', x.staff, 1, 'all', 150000, 150000
+FROM b_v v, b_ctx x;
+
+CREATE TEMP TABLE b_pv AS
+SELECT gen_random_uuid() AS visit, d::date AS day, p.customer, p.pkg, p.item,
+       d::date + time '13:00' + k * interval '10 minutes' AS at
+FROM generate_series(current_date - $DAYS, current_date, interval '1 day') d
+CROSS JOIN generate_series(1, 15) k
+JOIN b_ps p ON p.n = 1 + abs(hashtext(d::text || 'p' || k)) % (SELECT count(*) FROM b_ps);
+INSERT INTO app.visit (id, tenant_id, branch_id, customer_id, business_date, check_in_at, created_by)
+SELECT v.visit, x.tenant, x.branch, v.customer, v.day, v.at, x.usr FROM b_pv v, b_ctx x;
+INSERT INTO app.visit_line (id, tenant_id, visit_id, position, service_id, service_name_snapshot, source, customer_package_id, customer_package_item_id, sessions_left_after, staff_id, qty, unit_price, line_value)
+SELECT gen_random_uuid(), x.tenant, v.visit, 0, x.service, 'Gội đầu', 'package', v.pkg, v.item, 5, x.staff, 1, 120000, 120000
+FROM b_pv v, b_ctx x;
+ANALYZE;
+"#;
+
+fn p(samples: &mut [u128], q: f64) -> u128 {
+    samples.sort_unstable();
+    let i = ((samples.len() as f64 - 1.0) * q).round() as usize;
+    samples.get(i).copied().unwrap_or_default()
+}
+
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+#[ignore = "perf bench: seeds three years of data; run with --ignored"]
+async fn three_years_of_books_read_within_budget(pool: PgPool) -> TestResult {
+    let h = harness(pool).await?;
+    let owner = session_for(&h, OWNER_PHONE).await;
+    org::provisioning::add_staff(&h.owner, "vpyd", "KTV Lan", "Kỹ thuật viên").await?;
+    let category = call(
+        &h.app,
+        "POST",
+        "/service-categories",
+        Some(&owner),
+        Some(json!({"name": "Dưỡng sinh"})),
+    )
+    .await;
+    let service = call(&h.app, "POST", "/services", Some(&owner), Some(json!({
+        "category_id": category.body["id"], "name": "Gội đầu", "description": null, "duration_min": 60,
+        "recommended": false, "active": true, "prices": {"all": 150_000}
+    }))).await;
+    call(&h.app, "POST", "/package-plans", Some(&owner), Some(json!({
+        "name": "Gói 10 buổi", "price": 1_200_000, "validity_months": null, "gift_note": null,
+        "active": true, "items": [{"service_id": service.body["id"], "sessions": 10, "bonus_sessions": 0}]
+    }))).await;
+
+    let started = Instant::now();
+    sqlx::raw_sql(sqlx::AssertSqlSafe(
+        SEED.replace("$DAYS", &DAYS.to_string()),
+    ))
+    .execute(&h.owner)
+    .await?;
+    let visits: i64 = sqlx::query_scalar("SELECT count(*) FROM app.visit")
+        .fetch_one(&h.owner)
+        .await?;
+    let sales: i64 = sqlx::query_scalar("SELECT count(*) FROM app.sale")
+        .fetch_one(&h.owner)
+        .await?;
+    println!(
+        "seeded {visits} visits, {sales} sales in {:?}",
+        started.elapsed()
+    );
+    let customer: String = sqlx::query_scalar(
+        "SELECT customer_id::text FROM app.visit GROUP BY customer_id ORDER BY count(*) DESC LIMIT 1",
+    )
+    .fetch_one(&h.owner)
+    .await?;
+    let package: String = sqlx::query_scalar(
+        "SELECT customer_package_id::text FROM app.visit_line WHERE customer_package_id IS NOT NULL
+         GROUP BY 1 ORDER BY count(*) DESC LIMIT 1",
+    )
+    .fetch_one(&h.owner)
+    .await?;
+
+    let paths = [
+        "/reports/daily".to_owned(),
+        "/reports/range?granularity=day".to_owned(),
+        "/reports/range?from=2025-11-06&to=2026-11-05&granularity=month".to_owned(),
+        "/reports/ledger?limit=100".to_owned(),
+        "/reports/ledger?from=2026-08-06&to=2026-11-05&limit=100".to_owned(),
+        format!("/customers/{customer}/history?limit=50"),
+        format!("/customers/{customer}/summary"),
+        format!("/customer-packages/{package}/usage"),
+        "/packages?limit=50".to_owned(),
+        "/packages?expiring_within_days=30&limit=50".to_owned(),
+        "/packages?q=khach%2012&limit=50".to_owned(),
+        "/customers/inactive?days=30&limit=50".to_owned(),
+        "/customers/inactive?days=30&scope=all&limit=50".to_owned(),
+    ];
+    let mut over = Vec::new();
+    let mut n = 0_u32;
+    for path in &paths {
+        let mut ms = Vec::with_capacity(SAMPLES);
+        for _ in 0..SAMPLES {
+            let t = Instant::now();
+            // A fresh client IP per request: the per-IP rate limit is not what is measured.
+            n += 1;
+            let ip = format!("10.9.{}.{}", n / 250, n % 250);
+            let reply = call_with_headers(
+                &h.app,
+                "GET",
+                path,
+                Some(&owner),
+                None,
+                &[("X-Forwarded-For", &ip)],
+            )
+            .await;
+            ms.push(t.elapsed().as_millis());
+            assert_eq!(reply.status, StatusCode::OK, "{path}: {}", reply.body);
+        }
+        let (p50, p95) = (p(&mut ms, 0.5), p(&mut ms, 0.95));
+        println!("p50 {p50:>4} ms  p95 {p95:>4} ms  {path}");
+        if p95 >= BUDGET_MS {
+            over.push(format!("{path}: p95 {p95} ms"));
+        }
+    }
+
+    let mut tx = h.owner.begin().await?;
+    for (label, sql) in [
+        (
+            "daily money",
+            "EXPLAIN (ANALYZE, BUFFERS) SELECT b.entry, b.sale_kind, sum(b.cash) FROM app.revenue_book b WHERE b.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND b.business_date = ANY(ARRAY[current_date, current_date - 1, current_date - 7]) GROUP BY 1, 2",
+        ),
+        (
+            "ledger days 92",
+            "EXPLAIN (ANALYZE, BUFFERS) SELECT b.business_date, sum(b.cash) FROM app.revenue_book b WHERE b.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND b.business_date BETWEEN current_date - 91 AND current_date GROUP BY 1",
+        ),
+        (
+            "visits of a day",
+            "EXPLAIN (ANALYZE, BUFFERS) SELECT count(*) FROM app.visit v WHERE v.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND v.business_date = ANY(ARRAY[current_date])",
+        ),
+    ] {
+        let plan: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(sql.to_owned()))
+            .fetch_all(&mut *tx)
+            .await?;
+        println!("--- {label}\n{}", plan.join("\n"));
+    }
+    tx.rollback().await?;
+    // Which indexes the reads above actually used (0013 adds the *_tenant_day_* ones).
+    let used: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT indexrelname::text, idx_scan FROM pg_stat_user_indexes
+         WHERE schemaname = 'app' AND relname IN ('payment', 'sale', 'visit', 'refund', 'visit_line', 'customer_package')
+         ORDER BY relname, indexrelname",
+    )
+    .fetch_all(&h.owner)
+    .await?;
+    for (index, scans) in used {
+        println!("index {index}: {scans} scans");
+    }
+    assert!(over.is_empty(), "over the {BUDGET_MS} ms budget: {over:?}");
+    Ok(())
+}

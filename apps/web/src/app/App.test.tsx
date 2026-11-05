@@ -220,8 +220,9 @@ describe("home page", () => {
       "/quay",
       "/khach-hang",
       "/bang-gia",
+      "/bang-gia/goi",
     ]);
-    // No opening-balance permission, so no paper-book shortcut (UX only; the server decides).
+    // Paper-book data goes through the operator CLI (EM 2026-11-05): never a shortcut.
     expect(
       within(shortcuts).queryByRole("link", { name: /Chuyển sổ giấy/ }),
     ).toBeNull();

@@ -19,6 +19,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useAfterFirstPaint } from "../../lib/afterFirstPaint";
 import { ApiError } from "../../lib/api";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
@@ -95,7 +96,11 @@ export function FrontDeskPage() {
   const { data: me } = useSuspenseQuery(meQuery);
   const queryClient = useQueryClient();
   const staff = useQuery(activeStaffQuery);
-  const today = useQuery(todayVisitsQuery);
+  // Secondary to the search box: fetched just after the first paint (see useAfterFirstPaint).
+  const today = useQuery({
+    ...todayVisitsQuery,
+    enabled: useAfterFirstPaint(),
+  });
 
   const [customer, setCustomer] = useState<CustomerSummary | null>(null);
   const [creating, setCreating] = useState<string | null>(null);
@@ -327,7 +332,7 @@ export function FrontDeskPage() {
           />
         ) : (
           <p className={`${card} text-center text-text-muted`}>
-            <BrandMark className="mx-auto mb-2 size-10 text-accent opacity-70" />
+            <BrandMark className="mx-auto mb-2 block size-10 text-accent opacity-70" />
             Chưa chọn khách. Tìm khách ở ô phía trên để bắt đầu một lượt.
           </p>
         )}
@@ -457,7 +462,7 @@ export function FrontDeskPage() {
           )}
 
           {customer && lines.length > 0 && (
-            <div className="mt-4 space-y-3">
+            <div className="mt-4 grid content-start gap-3">
               <p
                 className="flex justify-between text-lg font-bold"
                 aria-live="polite"
@@ -466,7 +471,7 @@ export function FrontDeskPage() {
                 <span className="tabular-nums">{formatVnd(due)}</span>
               </p>
               {due > 0 ? (
-                <fieldset className="space-y-2">
+                <fieldset className="grid content-start gap-2">
                   <legend className="text-sm font-semibold">
                     Thanh toán (thu đủ)
                   </legend>
@@ -564,7 +569,7 @@ export function FrontDeskPage() {
       <div
         role="status"
         aria-live="polite"
-        className={`pointer-events-none fixed bottom-6 left-1/2 z-10 max-w-[calc(100%-32px)] -translate-x-1/2 rounded-[10px] border-l-4 px-4 py-3 shadow-float transition-[opacity,translate] duration-200 ease-[var(--ease-out)] motion-reduce:transition-none ${toast ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"} ${toast?.error ? "border-danger-soft bg-danger text-surface" : "border-chrome-accent bg-chrome text-chrome-text"}`}
+        className={`pointer-events-none fixed bottom-[calc(var(--tabbar-h,0px)+24px)] left-1/2 z-30 max-w-[calc(100%-32px)] -translate-x-1/2 rounded-[10px] border-l-4 px-4 py-3 shadow-float transition-[opacity,translate] duration-200 ease-[var(--ease-out)] motion-reduce:transition-none ${toast ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"} ${toast?.error ? "border-danger-soft bg-danger text-surface" : "border-chrome-accent bg-chrome text-chrome-text"}`}
       >
         {toast?.text}
       </div>
@@ -683,7 +688,7 @@ function AddOneOff({
                 onClick={() => {
                   setChosenGender(g);
                 }}
-                className="min-h-11 rounded-[10px] border border-border px-3 aria-pressed:border-primary aria-pressed:bg-primary-soft aria-pressed:font-semibold aria-pressed:text-primary"
+                className="min-h-11 rounded-[10px] border border-border px-3 aria-pressed:border-primary aria-pressed:bg-primary-soft aria-pressed:text-primary"
               >
                 {label}
               </button>
@@ -707,6 +712,10 @@ function AddOneOff({
   );
 }
 
+/** A busy day holds a hundred visits; the latest come first, the rest on request. Keeps the screen
+ * that stays open all day light to render (Lighthouse LCP/TBT budget, testing.md §4). */
+const VISITS_PAGE = 30;
+
 function TodayVisits() {
   const { data: me } = useSuspenseQuery(meQuery);
   const queryClient = useQueryClient();
@@ -714,8 +723,13 @@ function TodayVisits() {
   const [day, setDay] = useState(todayIso);
   const [voiding, setVoiding] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [shown, setShown] = useState(VISITS_PAGE);
   const isToday = day === todayIso;
-  const today = useQuery(isToday ? todayVisitsQuery : visitsOfDayQuery(day));
+  const painted = useAfterFirstPaint();
+  const today = useQuery({
+    ...(isToday ? todayVisitsQuery : visitsOfDayQuery(day)),
+    enabled: painted,
+  });
   // UX only: the server decides (403 day.locked for managers; owners may).
   const mayVoid =
     can(me, "record.void_same_day") &&
@@ -738,6 +752,7 @@ function TodayVisits() {
             onChange={(e) => {
               setDay(e.target.value || todayIso);
               setVoiding(null);
+              setShown(VISITS_PAGE);
             }}
             className="min-h-11 rounded-[6px] border border-border bg-surface px-2"
           />
@@ -757,9 +772,9 @@ function TodayVisits() {
         </p>
       )}
       {today.isPending && (
-        <div aria-hidden="true" className="space-y-2">
-          <div className="h-10 animate-pulse rounded bg-surface-2" />
-          <div className="h-10 animate-pulse rounded bg-surface-2" />
+        <div aria-hidden="true" className="grid content-start gap-2">
+          <div className="h-10 skeleton" />
+          <div className="h-10 skeleton" />
         </div>
       )}
       {today.isError && (
@@ -783,7 +798,7 @@ function TodayVisits() {
         <ul
           aria-label={isToday ? "Lượt khách hôm nay" : "Lượt khách trong ngày"}
         >
-          {today.data.map((v) => (
+          {today.data.slice(0, shown).map((v) => (
             <li
               key={v.id}
               className="border-b border-dashed border-border py-2 text-sm last:border-b-0"
@@ -794,7 +809,7 @@ function TodayVisits() {
                 >
                   <strong>{timeOf(v.check_in_at)}</strong> · {v.customer_name}
                   {v.status === "voided" && (
-                    <span className="ml-2 rounded-full bg-danger-soft px-2 text-xs font-semibold text-danger">
+                    <span className="badge badge-danger ml-2 align-middle">
                       Đã hủy
                     </span>
                   )}
@@ -864,6 +879,17 @@ function TodayVisits() {
             </li>
           ))}
         </ul>
+      )}
+      {today.data && today.data.length > shown && (
+        <button
+          type="button"
+          onClick={() => {
+            setShown((n) => n + VISITS_PAGE);
+          }}
+          className="mt-2 min-h-11 w-full rounded-[10px] border border-border px-4 font-medium hover:bg-surface-2"
+        >
+          Xem thêm ({today.data.length - shown} lượt nữa)
+        </button>
       )}
     </section>
   );

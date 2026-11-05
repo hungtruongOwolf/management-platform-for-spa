@@ -1,6 +1,6 @@
 ---
 title: Frontend architecture (internal app)
-updated: 2026-11-04
+updated: 2026-11-05
 sources: [decisions/ADR-0001-tech-stack.md, decisions/ADR-0004-authentication.md, design/design-system.md, design/front-desk-flows.md]
 ---
 
@@ -15,13 +15,26 @@ Stack ([ADR-0001](../decisions/ADR-0001-tech-stack.md)): TypeScript strict · Re
 | `/quay` | Màn hình quầy (mặc định của Quản lý) | `visit.record` | R1 |
 | `/khach-hang`, `/khach-hang/:id` | Danh sách / hồ sơ khách | `customer.read` | R1 |
 | ~~`/cong-no`~~ | Công nợ: **hoãn** (EM 2026-11-04, R1 thu đủ) | — | sau |
-| `/nhap-so-cu` | Nhập liệu trình dở dang | `opening_balance.import` | R1 |
+| `/` | Tổng quan: chào, "Hôm nay", lối tắt (lazy) | session | R1 |
+| ~~`/nhap-so-cu`~~ | **Đã xóa** (EM 2026-11-05): dữ liệu sổ giấy nhập qua CLI `app import-paper-book`; `POST /opening-balances` chỉ chủ spa | — | — |
+| `/bao-cao` | Báo cáo / Tổng quan hôm nay: thẻ số, 7 ngày, cơ cấu tiền, KTV, dịch vụ dùng nhiều | `report.read` (tiền: `report.revenue.read`) | R1 |
+| `/goi-lieu-trinh` | Theo dõi gói của khách (lọc sắp hết hạn / đang dùng / hết hạn / hết buổi / đã hủy) | `report.read` | R1 |
+| `/khach-lau-khong-quay-lai` | Khách lâu không quay lại: ngưỡng 7/14/30 ngày, phạm vi còn buổi / mọi khách, phân trang | `report.read` | R1 |
+| `/cai-dat` | Giao diện (theo thiết bị / sáng / tối) + tài khoản | session | R1 |
 | `/bang-gia`, `/bang-gia/goi` | Dịch vụ, gói | `catalog.read` (sửa: `catalog.manage`) | R1 |
 | `/so-quy` | Sổ quỹ, chốt quỹ | spec #2 | R1 |
-| `/tong-quan` | Dashboard chủ spa | spec #3 | R1 |
 | `/cai-dat/nhan-vien`, `/cai-dat/vai-tro` | Tài khoản, vai trò | spec #4 | R1 |
 | `/toi` | Trang của KTV (lịch, số khách, phiếu lương) | self | R2/R3 |
 URL tiếng Việt không dấu, ổn định để deep link (principle #10). Mọi route ngoài auth đều cần session.
+
+## Màn quản lý (2026-11-05)
+Nối thật với API của branch `feat/management-views` (PR #28, kiểu ở `packages/api-client`: `DailyReport`, `RangeReport`, `HistoryPage`, `CustomerStats`, `PackageOverviewPage`, `InactivePage`).
+- `features/reports/api.ts`: mọi màn chỉ dùng query option ở đây. `features/reports/contract.ts` chỉ re-export từ `@vpyd/api-client`.
+- Quyền UX: `canSeeManagement(me)` = `report.read` (`app/features.ts`). Trường tiền (`revenue`, `net_revenue`, `one_off_revenue`, …) chỉ có khi có `report.revenue.read`; không có thì màn **không render** chỗ tiền (không hiện 0đ). Test `Entitlement.test.tsx`.
+- Query keys: `['reports','daily',date]` (30 s), `['reports','range',from,to]` (60 s), `['customers','history',id]`, `['customers','summary',id]`, `['packages','overview',filter]`, `['customers','inactive',days,scope]` (infinite, cursor). Ghi lượt / bán gói nên invalidate `['reports']` + `['customers','history',id]` (việc tiếp theo).
+- `/khach-lau-khong-quay-lai` (EM 2026-11-05): `GET /customers/inactive?days=7|14|30&scope=with_sessions|all&limit=20&cursor=…`, mặc định 7 ngày; "Xem thêm" theo `next_cursor`.
+- Chưa dùng: `/reports/ledger` (sổ doanh thu), `/customer-packages/{id}/usage` (trang sổ liệu trình). Để màn sau.
+- Test: `features/reports/fixtures.ts` + `testServer.ts` giả API theo đúng contract (chỉ test import, không vào bundle).
 
 ## Rendering & data
 - **SPA tĩnh**, Caddy trả `index.html` cho mọi route không phải `/api/*`. Code-split theo route (`lazy`).
@@ -48,7 +61,9 @@ Lighthouse CI chặn merge khi LCP > 2,5 s (mobile, Slow 4G, CPU 4×, `/dang-nha
 - **Font:** chỉ subset `latin` + `vietnamese`, chỉ woff2, `font-display: swap`, khai báo tay ở `src/fonts.css` (CSS của @fontsource có `latin-ext`, mà unicode-range của nó trùng chữ Việt nên trình duyệt tải thêm 4 file). Lần tải đầu (chưa có cache) font được tải **sau màn hình đầu tiên** (`app/fonts.ts`, 500 ms sau `onRendered`), text hiện bằng font hệ thống trước. Sau khi tải xong, cờ `localStorage` `vpyd.fonts-cached` cho các lần sau tải font ngay lúc khởi động (từ cache, không nháy font). Không preload font; không thêm weight mới nếu chưa đo lại LCP.
 - **Font fallback khớp số đo (S10):** `packages/ui/src/tokens/tokens.css` khai báo `"Be Vietnam Pro Fallback"` (Arial / Liberation Sans, 400 và 600) và `"Lora Fallback"` (Georgia Bold) với `size-adjust` / `ascent-override` / `descent-override` đo trong Chromium, đứng ngay sau web font trong `--font-ui` / `--font-brand`. Lý do: lần tải đầu, lúc web font swap vào, dòng chữ xuống hàng khác đi và đẩy cả trang; với danh sách lượt dài (ngày đông khách, 100 lượt) CLS `/quay` lên 0,156 (> 0,1). Thêm weight hoặc đổi font thì đo lại (Chromium, canvas `measureText` trên một đoạn chữ Việt của giao diện: `size-adjust` = độ rộng web font ÷ độ rộng font local; ascent/descent của web font ÷ `size-adjust`) rồi sửa số.
 - **`/api/v1/me` được preload** trong `index.html` (`<link rel="preload" as="fetch" crossorigin="anonymous">`), chạy song song với JS thay vì sau JS. `api()` phải giữ request GET `/me` khớp với preload (không thêm header, `credentials: same-origin`), nếu không trình duyệt sẽ gọi hai lần.
-- Ngân sách JS critical path: ≤ 125 KB gzip (hiện ~123 KB sau brand redesign 2026-11-05: `index` 109.2 + `errors` 8.6 + `useBaseQuery` 5.3). Kiểm bằng `vite build` (bảng gzip) trước khi thêm dependency vào bundle chính.
+- Ngân sách JS critical path: ≤ 125 KB gzip. **Một chunk khởi động** (2026-11-05): `vite.config.ts` `build.rolldownOptions.output.codeSplitting.groups = [{ name: "app", tags: ["$initial"] }]` gom mọi module của màn đầu vào `index-*.js`. Không có nó, khi thêm màn lazy dùng chung module, rolldown tách ~10 chunk nhỏ được preload, mỗi chunk gzip riêng nên tốn thêm ~2 KB. Số đo (gzip -9 tổng entry + modulepreload): trước UI overhaul 121.6 KB (3 file), sau **120.1 KB (1 file)** dù thêm sidebar/top bar/tab bar/drawer/theme. Kiểm bằng `vite build` rồi cộng entry + mọi `modulepreload` trong `dist/index.html`.
+- **Không đưa vào bundle chính:** trang chủ (lazy từ 2026-11-05), command palette (`React.lazy`, chỉ khi mở), mọi màn quản lý + chart (hand-rolled HTML, ~3 KB trong chunk `ReportsPage`). Icon: 1 sprite SVG file (`assets/icons.svg?no-inline`, `<use href>`), không thư viện icon. Logo: CSS mask từ file SVG, không inline vào JS. Chuỗi class dài viết thành class CSS (`components.css`) vì chuỗi trong JSX nằm trong JS.
+- Emblem lớn (11.8 KB gzip) chỉ ở `/dang-nhap` và `/xac-thuc`, dạng CSS mask (không phải ứng viên LCP); shell và `/quay` chỉ dùng mark (2.5 KB) + wordmark (3.8 KB).
 - Đo trước/sau bằng `pnpm lhci` trên cùng một máy; local chậm hơn CI khoảng 0,3–0,4 s. Kết quả 2026-11-04: [log](../../log.md).
 
 ## Auth & permission-aware UI
@@ -62,7 +77,7 @@ Lighthouse CI chặn merge khi LCP > 2,5 s (mobile, Slow 4G, CPU 4×, `/dang-nha
 Chỉ tiếng Việt ở R1, nhưng mọi chuỗi đi qua `t('key')` (ví dụ `i18next`, resource `vi.json`) để thêm ngôn ngữ sau mà không sửa component. Định dạng tiền/ngày qua helper `formatVnd`, `formatDate` trong `packages/ui`.
 
 ## PWA
-`vite-plugin-pwa`: manifest (tên, icon từ logo, `display: standalone`, theme color = `primary`); service worker **chỉ precache app shell và font**, `/api/*` luôn `NetworkOnly` (không offline, theo EM). Có prompt "Có phiên bản mới, tải lại".
+Icon đã có (`public/favicon.svg`, `favicon-32.png`, `apple-touch-icon.png`, `icons/icon-192|512|maskable-512.png`, sinh từ logo thật bằng `scripts/brand/build_logo_assets.py`) và `public/manifest.webmanifest`. Sau này `vite-plugin-pwa`: manifest (tên, icon từ logo, `display: standalone`, theme color = `primary`); service worker **chỉ precache app shell và font**, `/api/*` luôn `NetworkOnly` (không offline, theo EM). Có prompt "Có phiên bản mới, tải lại".
 
 ## Error handling
 - Error boundary theo route: ErrorState + "Tải lại"; báo lỗi (Sentry, đã lọc PII) ở `/devops`.

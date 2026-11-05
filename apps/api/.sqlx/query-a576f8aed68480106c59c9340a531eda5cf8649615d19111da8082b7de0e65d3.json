@@ -1,0 +1,169 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ps.id AS \"id!\", ps.customer_id AS \"customer_id!\", c.full_name, c.phone_e164,\n                      ps.name_snapshot AS \"name!\",\n                      app.package_status(ps.cancelled_at, ps.sessions_remaining, ps.expires_on, $2) AS \"status!\",\n                      ps.sessions_total AS \"sessions_total!\", ps.sessions_remaining AS \"sessions_remaining!\",\n                      ps.starts_on AS \"starts_on!\", ps.expires_on, ps.cancelled_at, ps.created_at AS \"created_at!\",\n                      (SELECT max(v.business_date) FROM app.visit_line l\n                       JOIN app.visit v ON v.tenant_id = l.tenant_id AND v.id = l.visit_id\n                       WHERE l.tenant_id = ps.tenant_id AND l.customer_package_id = ps.id\n                         AND v.status = 'completed') AS last_used_on\n               FROM app.customer_package_state ps\n               JOIN app.customer c ON c.tenant_id = ps.tenant_id AND c.id = ps.customer_id\n               WHERE ps.tenant_id = $1 AND c.anonymized_at IS NULL\n                 AND ($3::text IS NULL OR c.search_text LIKE $3)\n                 AND ($4::text IS NULL OR c.phone_e164 LIKE $4)\n                 AND ($5::text IS NULL\n                      OR app.package_status(ps.cancelled_at, ps.sessions_remaining, ps.expires_on, $2) = $5)\n                 AND ($6::timestamptz IS NULL OR (ps.created_at, ps.id) < ($6, $7))\n               ORDER BY ps.created_at DESC, ps.id DESC\n               LIMIT $8",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_state",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "customer_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_state",
+            "name": "customer_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "full_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "phone_e164",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer",
+            "name": "phone_e164"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_state",
+            "name": "name_snapshot"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "status!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "sessions_total!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_state",
+            "name": "sessions_total"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "sessions_remaining!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_state",
+            "name": "sessions_remaining"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "starts_on!",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_state",
+            "name": "starts_on"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "expires_on",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_state",
+            "name": "expires_on"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "cancelled_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_state",
+            "name": "cancelled_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_state",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "last_used_on",
+        "type_info": "Date",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      false,
+      false,
+      true,
+      null,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "a576f8aed68480106c59c9340a531eda5cf8649615d19111da8082b7de0e65d3"
+}

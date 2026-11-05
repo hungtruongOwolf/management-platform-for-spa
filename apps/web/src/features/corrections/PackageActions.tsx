@@ -44,7 +44,6 @@ export function PackageActions({
   const canCancel = can(me, "package.cancel_refund");
   const canVoidSale =
     can(me, "record.void_same_day") &&
-    pkg.origin === "sale" &&
     pkg.sale_id != null &&
     isUnused(pkg);
   if (!canExtend && !canCancel && !canVoidSale) return null;

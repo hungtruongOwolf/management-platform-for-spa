@@ -84,12 +84,15 @@ export function LoginPage({ next }: { next?: string | undefined }) {
       <form
         onSubmit={(e) => void onSubmit(e)}
         noValidate
-        className="space-y-4 p-6"
+        className="space-y-4 p-6 sm:p-10"
         aria-labelledby="login-title"
       >
-        <p className="text-center text-sm text-text-muted">Đăng nhập để vào hệ thống</p>
+        <div className="mb-2">
+          <p className="font-brand text-2xl text-primary">Đăng nhập</p>
+          <p className="text-sm text-text-muted">Dùng số điện thoại và mật khẩu spa đã cấp.</p>
+        </div>
 
-        <div className="space-y-1">
+        <div className="grid content-start gap-1">
           <label htmlFor="phone" className="block text-sm font-semibold">
             Số điện thoại
           </label>
@@ -115,7 +118,7 @@ export function LoginPage({ next }: { next?: string | undefined }) {
           )}
         </div>
 
-        <div className="space-y-1">
+        <div className="grid content-start gap-1">
           <label htmlFor="password" className="block text-sm font-semibold">
             Mật khẩu
           </label>
@@ -149,7 +152,7 @@ export function LoginPage({ next }: { next?: string | undefined }) {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="min-h-12 w-full rounded-[10px] bg-primary font-semibold text-on-primary hover:bg-primary-hover disabled:opacity-60"
+          className="btn btn-primary min-h-12 w-full"
         >
           {isSubmitting ? "Đang đăng nhập…" : "Đăng nhập"}
         </button>

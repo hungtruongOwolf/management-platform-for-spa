@@ -399,6 +399,41 @@
         }
       }
     },
+    "/api/v1/customer-packages/{id}/usage": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "package_usage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageUsage"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs customer.read + visit.read"
+          },
+          "404": {}
+        }
+      }
+    },
     "/api/v1/customers": {
       "get": {
         "tags": [
@@ -467,6 +502,72 @@
             "description": "customer.phone_taken with existing_id"
           },
           "422": {}
+        }
+      }
+    },
+    "/api/v1/customers/inactive": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "inactive_customers",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "description": "Not seen for at least this many days (1–365, default 7).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/InactiveScope"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1–100, default 20.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InactivePage"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs customer.read + visit.read"
+          },
+          "422": {
+            "description": "validation_failed: days out_of_range, cursor invalid, limit out_of_range"
+          }
         }
       }
     },
@@ -606,6 +707,63 @@
         }
       }
     },
+    "/api/v1/customers/{id}/history": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "customer_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1–100, default 20.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryPage"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs customer.read + visit.read + sale.read"
+          },
+          "404": {},
+          "422": {
+            "description": "validation_failed: cursor invalid, limit out_of_range"
+          }
+        }
+      }
+    },
     "/api/v1/customers/{id}/packages": {
       "get": {
         "tags": [
@@ -638,6 +796,41 @@
           },
           "401": {},
           "403": {},
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/customers/{id}/summary": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "customer_summary",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerStats"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs customer.read + visit.read + sale.read"
+          },
           "404": {}
         }
       }
@@ -692,7 +885,7 @@
         },
         "responses": {
           "201": {
-            "description": "Packages created with origin opening_balance; no sale, no payment",
+            "description": "Packages created without a sale or payment. Deprecated: owner-only until the import screen is gone; the team migrates with `app import-paper-book`",
             "content": {
               "application/json": {
                 "schema": {
@@ -835,6 +1028,246 @@
           "404": {},
           "412": {},
           "422": {}
+        }
+      }
+    },
+    "/api/v1/packages": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "list_packages",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Derived status; default all.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/PackageStatusFilter"
+            }
+          },
+          {
+            "name": "expiring_within_days",
+            "in": "query",
+            "description": "1–365. Set: only active packages expiring within that many days, soonest first.\nAlso the window of `counts.expiring_soon` (default 30).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Customer name (accent-insensitive, ≥ 2 characters) or phone digits (≥ 3).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1–100, default 20.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageOverviewPage"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: no customer.read"
+          },
+          "422": {
+            "description": "validation_failed: q too_short / too_long, expiring_within_days out_of_range, cursor invalid, limit out_of_range"
+          }
+        }
+      }
+    },
+    "/api/v1/reports/daily": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "daily_report",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "description": "Business day `YYYY-MM-DD` (spa time zone); default today.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Counts; `revenue` and `net_revenue` only with report.revenue.read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyReport"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: no report.read"
+          },
+          "422": {
+            "description": "validation_failed: date out_of_range"
+          }
+        }
+      }
+    },
+    "/api/v1/reports/ledger": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "ledger",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Default today.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Default `from`; at most 92 days after `from`.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1–100, default 20.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerPage"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: no report.revenue.read"
+          },
+          "422": {
+            "description": "validation_failed: from after_to, to range_too_long (> 92 days), cursor invalid, limit out_of_range"
+          }
+        }
+      }
+    },
+    "/api/v1/reports/range": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "range_report",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "First business day; default `to` − 6 days.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Last business day (inclusive); default today. At most 366 days after `from`.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "granularity",
+            "in": "query",
+            "description": "Bucket size of `series`; default `day`.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Granularity"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Money fields only with report.revenue.read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RangeReport"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: no report.read"
+          },
+          "422": {
+            "description": "validation_failed: from after_to, to range_too_long (> 366 days)"
+          }
         }
       }
     },
@@ -1672,7 +2105,6 @@
           "customer_id",
           "name",
           "sold_price",
-          "origin",
           "starts_on",
           "status",
           "sessions_total",
@@ -1744,9 +2176,6 @@
             "type": "string",
             "description": "Plan name when sold (snapshot)."
           },
-          "origin": {
-            "$ref": "#/components/schemas/PackageOriginDto"
-          },
           "plan_id": {
             "type": [
               "string",
@@ -1769,7 +2198,8 @@
               "string",
               "null"
             ],
-            "format": "uuid"
+            "format": "uuid",
+            "description": "The sale it was sold in. `null` for a package migrated from the paper books, which\notherwise looks like any other package (EM 2026-11-05: no \"sổ cũ\" label in the product)."
           },
           "sessions_remaining": {
             "type": "integer",
@@ -1843,6 +2273,89 @@
           "sessions_total": {
             "type": "integer",
             "format": "int32"
+          }
+        }
+      },
+      "CustomerStats": {
+        "type": "object",
+        "description": "`GET /customers/{id}/summary`.",
+        "required": [
+          "customer_id",
+          "visit_count",
+          "voided_visit_count",
+          "sessions_used",
+          "paid",
+          "voided",
+          "refunded",
+          "net_spent",
+          "packages",
+          "sessions_remaining"
+        ],
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "days_since_last_visit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Days from the last completed visit to today."
+          },
+          "first_visit_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "last_visit_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "net_spent": {
+            "type": "integer",
+            "format": "int64",
+            "description": "paid − voided − refunded."
+          },
+          "packages": {
+            "$ref": "#/components/schemas/PackageCounts"
+          },
+          "paid": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Money received from this customer (before voids and refunds)."
+          },
+          "refunded": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sessions_remaining": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Remaining sessions across active packages."
+          },
+          "sessions_used": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "visit_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Completed visits."
+          },
+          "voided": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "voided_visit_count": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -1929,6 +2442,145 @@
         },
         "additionalProperties": false
       },
+      "DailyReport": {
+        "type": "object",
+        "description": "`GET /reports/daily`.",
+        "required": [
+          "date",
+          "counts",
+          "technicians",
+          "compare"
+        ],
+        "properties": {
+          "compare": {
+            "$ref": "#/components/schemas/DayComparison"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/DayCounts"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "revenue": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Revenue",
+                "description": "Only with `report.revenue.read`; absent otherwise."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "technicians": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TechnicianDay"
+            },
+            "description": "Technicians who worked that day, most visits first."
+          }
+        }
+      },
+      "DayComparison": {
+        "type": "object",
+        "required": [
+          "yesterday",
+          "same_weekday_last_week"
+        ],
+        "properties": {
+          "same_weekday_last_week": {
+            "$ref": "#/components/schemas/DayHeadline"
+          },
+          "yesterday": {
+            "$ref": "#/components/schemas/DayHeadline"
+          }
+        }
+      },
+      "DayCounts": {
+        "type": "object",
+        "description": "Operational counts (no money): visible with `report.read`.",
+        "required": [
+          "customers",
+          "visits",
+          "voided_visits",
+          "sessions_used",
+          "one_off_services",
+          "packages_sold"
+        ],
+        "properties": {
+          "customers": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Distinct customers with at least one completed visit."
+          },
+          "one_off_services": {
+            "type": "integer",
+            "format": "int64",
+            "description": "One-off services performed in completed visits."
+          },
+          "packages_sold": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Packages sold in sales that are not voided."
+          },
+          "sessions_used": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Package sessions taken by completed visits."
+          },
+          "visits": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Completed visits (voided ones are in `voided_visits`)."
+          },
+          "voided_visits": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "DayHeadline": {
+        "type": "object",
+        "description": "The headline numbers of another day, for \"so với hôm qua / cùng thứ tuần trước\".",
+        "required": [
+          "date",
+          "customers",
+          "visits",
+          "sessions_used",
+          "packages_sold"
+        ],
+        "properties": {
+          "customers": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "net_revenue": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "`revenue.net.total` of that day; only with `report.revenue.read`."
+          },
+          "packages_sold": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sessions_used": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "visits": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "DiscountCreate": {
         "type": "object",
         "required": [
@@ -1956,6 +2608,14 @@
           "male"
         ]
       },
+      "Granularity": {
+        "type": "string",
+        "enum": [
+          "day",
+          "week",
+          "month"
+        ]
+      },
       "HealthNoteWrite": {
         "type": "object",
         "properties": {
@@ -1968,6 +2628,660 @@
           }
         },
         "additionalProperties": false
+      },
+      "HistoryCancellation": {
+        "type": "object",
+        "required": [
+          "customer_package_id",
+          "package_name",
+          "reason"
+        ],
+        "properties": {
+          "customer_package_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "package_name": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "refund": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/HistoryRefund"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HistoryEvent": {
+        "type": "object",
+        "description": "One entry of a customer's timeline; exactly one of the detail fields is set, per `kind`.",
+        "required": [
+          "kind",
+          "at",
+          "business_date"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "cancellation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/HistoryCancellation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/HistoryKind"
+          },
+          "purchase": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/HistoryPurchase"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "visit": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/HistoryVisit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "void": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/HistoryVoid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HistoryKind": {
+        "type": "string",
+        "enum": [
+          "visit",
+          "purchase",
+          "visit_voided",
+          "purchase_voided",
+          "package_cancelled"
+        ]
+      },
+      "HistoryPage": {
+        "type": "object",
+        "description": "`GET /customers/{id}/history`: newest first.",
+        "required": [
+          "customer_id",
+          "events"
+        ],
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoryEvent"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "HistoryPurchase": {
+        "type": "object",
+        "required": [
+          "sale_id",
+          "voided",
+          "lines",
+          "subtotal",
+          "discount_amount",
+          "total",
+          "paid"
+        ],
+        "properties": {
+          "closer_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "discount_amount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "discount_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoryPurchaseLine"
+            }
+          },
+          "paid": {
+            "$ref": "#/components/schemas/MethodSplit",
+            "description": "Money received (before any void)."
+          },
+          "sale_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "subtotal": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "void_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "voided": {
+            "type": "boolean"
+          },
+          "voided_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "HistoryPurchaseLine": {
+        "type": "object",
+        "required": [
+          "description",
+          "qty",
+          "line_total"
+        ],
+        "properties": {
+          "customer_package_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string"
+          },
+          "line_total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "HistoryRefund": {
+        "type": "object",
+        "required": [
+          "amount",
+          "method",
+          "business_date"
+        ],
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "method": {
+            "type": "string"
+          }
+        }
+      },
+      "HistoryVisit": {
+        "type": "object",
+        "required": [
+          "id",
+          "voided",
+          "check_in_at",
+          "lines",
+          "paid"
+        ],
+        "properties": {
+          "check_in_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoryVisitLine"
+            }
+          },
+          "paid": {
+            "$ref": "#/components/schemas/MethodSplit",
+            "description": "Money received for the one-off lines (before any void)."
+          },
+          "void_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "voided": {
+            "type": "boolean"
+          },
+          "voided_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "HistoryVisitLine": {
+        "type": "object",
+        "required": [
+          "service_name",
+          "source",
+          "qty",
+          "staff_id",
+          "staff_name",
+          "amount"
+        ],
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Price of a one-off line (0 for a package session)."
+          },
+          "customer_package_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The package the session came from (`source = package`)."
+          },
+          "package_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "service_name": {
+            "type": "string"
+          },
+          "sessions_left_after": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Sessions left in that package item right after this visit."
+          },
+          "source": {
+            "$ref": "#/components/schemas/LineSource"
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "staff_name": {
+            "type": "string"
+          }
+        }
+      },
+      "HistoryVoid": {
+        "type": "object",
+        "required": [
+          "id",
+          "reason",
+          "reversed",
+          "sessions_restored"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The voided visit or sale."
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reversed": {
+            "$ref": "#/components/schemas/MethodSplit",
+            "description": "Money given back by reversal (positive amounts)."
+          },
+          "sessions_restored": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Package sessions put back (visit voids)."
+          }
+        }
+      },
+      "InactiveCustomer": {
+        "type": "object",
+        "required": [
+          "customer_id",
+          "full_name",
+          "phone",
+          "last_seen_on",
+          "days_absent",
+          "active_packages",
+          "sessions_remaining"
+        ],
+        "properties": {
+          "active_packages": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "days_absent": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "last_seen_on": {
+            "type": "string",
+            "format": "date",
+            "description": "Last completed visit, or the latest package start when the customer never came."
+          },
+          "last_visit_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "sessions_remaining": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "InactivePage": {
+        "type": "object",
+        "description": "`GET /customers/inactive`: longest absence first.",
+        "required": [
+          "days",
+          "items"
+        ],
+        "properties": {
+          "days": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InactiveCustomer"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "InactiveScope": {
+        "type": "string",
+        "enum": [
+          "with_sessions",
+          "all"
+        ]
+      },
+      "KindSplit": {
+        "type": "object",
+        "description": "One amount split like the paper revenue book: package sales vs one-off services.",
+        "required": [
+          "package",
+          "one_off"
+        ],
+        "properties": {
+          "one_off": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "package": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "LedgerDay": {
+        "type": "object",
+        "description": "Daily subtotal of the book, for every day of the range (not only the current page).",
+        "required": [
+          "date",
+          "bank_transfer",
+          "cash",
+          "unpaid",
+          "total",
+          "entries"
+        ],
+        "properties": {
+          "bank_transfer": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cash": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "entries": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "bank_transfer + cash: equals `revenue.net.total` of `GET /reports/daily`."
+          },
+          "unpaid": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "LedgerEntry": {
+        "type": "string",
+        "enum": [
+          "sale",
+          "void",
+          "refund"
+        ]
+      },
+      "LedgerPage": {
+        "type": "object",
+        "description": "`GET /reports/ledger`.",
+        "required": [
+          "from",
+          "to",
+          "rows",
+          "days"
+        ],
+        "properties": {
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LedgerDay"
+            },
+            "description": "Days of the range that have entries, in order."
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` for the next rows; `null` on the last page."
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LedgerRow"
+            },
+            "description": "Book order: day, then time."
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
+      "LedgerRow": {
+        "type": "object",
+        "description": "One line of the \"sổ theo dõi doanh thu hằng ngày\". Outgoing money is negative.",
+        "required": [
+          "id",
+          "entry",
+          "business_date",
+          "at",
+          "customer_id",
+          "customer_name",
+          "kind",
+          "bank_transfer",
+          "cash",
+          "unpaid",
+          "voided"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "bank_transfer": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "cash": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "customer_name": {
+            "type": "string"
+          },
+          "entry": {
+            "$ref": "#/components/schemas/LedgerEntry"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The sale id (`sale`, `void`) or the refund id (`refund`)."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SaleKind"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Discount reason, void reason or refund reason."
+          },
+          "one_off": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "\"Dịch vụ 1 lần\" column: the one-off services, comma-separated."
+          },
+          "package": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "\"Liệu trình\" column: the packages, comma-separated."
+          },
+          "unpaid": {
+            "type": "integer",
+            "format": "int64",
+            "description": "\"Chưa thanh toán\": total − received (always 0 in R1, which collects in full)."
+          },
+          "voided": {
+            "type": "boolean",
+            "description": "The sale was voided later (its `void` row may be on another day)."
+          }
+        }
+      },
+      "LineSource": {
+        "type": "string",
+        "enum": [
+          "package",
+          "one_off"
+        ]
       },
       "LoginBody": {
         "type": "object",
@@ -2049,6 +3363,30 @@
           },
           "user": {
             "$ref": "#/components/schemas/UserSummary"
+          }
+        }
+      },
+      "MethodSplit": {
+        "type": "object",
+        "description": "One amount split by how the money moved.",
+        "required": [
+          "cash",
+          "bank_transfer",
+          "total"
+        ],
+        "properties": {
+          "bank_transfer": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cash": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "cash + bank_transfer."
           }
         }
       },
@@ -2279,6 +3617,33 @@
         },
         "additionalProperties": false
       },
+      "PackageCounts": {
+        "type": "object",
+        "required": [
+          "active",
+          "expired",
+          "exhausted",
+          "cancelled"
+        ],
+        "properties": {
+          "active": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cancelled": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "exhausted": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expired": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "PackageExtend": {
         "type": "object",
         "description": "Body of `POST /customer-packages/{id}/extend` (with `If-Match`).",
@@ -2301,12 +3666,149 @@
         },
         "additionalProperties": false
       },
-      "PackageOriginDto": {
-        "type": "string",
-        "enum": [
-          "sale",
-          "opening_balance"
-        ]
+      "PackageOverviewCounts": {
+        "type": "object",
+        "required": [
+          "active",
+          "expiring_soon",
+          "expired",
+          "exhausted",
+          "cancelled"
+        ],
+        "properties": {
+          "active": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cancelled": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "exhausted": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expired": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expiring_soon": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Active packages expiring within `expiring_within_days` (default 30)."
+          }
+        }
+      },
+      "PackageOverviewPage": {
+        "type": "object",
+        "description": "`GET /packages`.",
+        "required": [
+          "items",
+          "counts",
+          "expiring_within_days"
+        ],
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/PackageOverviewCounts",
+            "description": "Over the whole spa (or the `q` match), ignoring `status` and the cursor."
+          },
+          "expiring_within_days": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The window `counts.expiring_soon` used.",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PackageOverviewRow"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PackageOverviewRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "customer_id",
+          "customer_name",
+          "customer_phone",
+          "name",
+          "status",
+          "sessions_total",
+          "sessions_remaining",
+          "starts_on"
+        ],
+        "properties": {
+          "cancelled_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "customer_name": {
+            "type": "string"
+          },
+          "customer_phone": {
+            "type": "string"
+          },
+          "days_to_expiry": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Days from today to `expires_on` (negative once expired)."
+          },
+          "expires_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_used_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Last completed visit that used this package."
+          },
+          "name": {
+            "type": "string"
+          },
+          "sessions_remaining": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sessions_total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "starts_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PackageStatusDto"
+          }
+        }
       },
       "PackagePlanDto": {
         "type": "object",
@@ -2390,6 +3892,97 @@
           "exhausted",
           "cancelled"
         ]
+      },
+      "PackageStatusFilter": {
+        "type": "string",
+        "enum": [
+          "active",
+          "expired",
+          "exhausted",
+          "cancelled"
+        ]
+      },
+      "PackageUsage": {
+        "type": "object",
+        "description": "`GET /customer-packages/{id}/usage`: one page of the paper \"sổ theo dõi liệu trình\".",
+        "required": [
+          "package",
+          "uses"
+        ],
+        "properties": {
+          "package": {
+            "$ref": "#/components/schemas/CustomerPackageDto"
+          },
+          "uses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PackageUse"
+            },
+            "description": "Oldest first, like the paper page (STT 1, 2, 3…)."
+          }
+        }
+      },
+      "PackageUse": {
+        "type": "object",
+        "required": [
+          "visit_id",
+          "visit_line_id",
+          "business_date",
+          "check_in_at",
+          "item_id",
+          "service_name",
+          "qty",
+          "staff_id",
+          "staff_name",
+          "voided"
+        ],
+        "properties": {
+          "business_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "check_in_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "service_name": {
+            "type": "string"
+          },
+          "sessions_left_after": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "staff_name": {
+            "type": "string"
+          },
+          "visit_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "visit_line_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "voided": {
+            "type": "boolean",
+            "description": "The visit was voided and its sessions were put back."
+          }
+        }
       },
       "PaymentCreate": {
         "type": "object",
@@ -2573,6 +4166,101 @@
         },
         "additionalProperties": false
       },
+      "RangeBucket": {
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "counts"
+        ],
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/DayCounts",
+            "description": "`customers` = distinct customers inside this bucket."
+          },
+          "end": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day of the bucket (clipped to `to`)."
+          },
+          "revenue": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Revenue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start": {
+            "type": "string",
+            "format": "date",
+            "description": "First day of the bucket (clipped to `from`)."
+          }
+        }
+      },
+      "RangeReport": {
+        "type": "object",
+        "description": "`GET /reports/range`.",
+        "required": [
+          "from",
+          "to",
+          "granularity",
+          "totals",
+          "series",
+          "top_services",
+          "top_packages"
+        ],
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "granularity": {
+            "$ref": "#/components/schemas/Granularity"
+          },
+          "revenue": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Revenue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RangeBucket"
+            },
+            "description": "Every bucket of the range in order, empty ones included (continuous charts)."
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "top_packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TopPackage"
+            },
+            "description": "Top 10 by packages sold."
+          },
+          "top_services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TopService"
+            },
+            "description": "Top 10 by sessions used + one-off services."
+          },
+          "totals": {
+            "$ref": "#/components/schemas/DayCounts",
+            "description": "Whole range; `customers` = distinct customers over the range."
+          }
+        }
+      },
       "ReauthBody": {
         "type": "object",
         "required": [
@@ -2632,6 +4320,46 @@
           "cash",
           "bank_transfer"
         ]
+      },
+      "Revenue": {
+        "type": "object",
+        "description": "Money of a day or a period, cash basis, from the append-only `payment` and `refund` rows.\nA void never deletes the original payment: it adds a reversal on the day of the void, so a\nsale voided the next day still counts on its own day and shows as a void on the next.",
+        "required": [
+          "collected",
+          "collected_by_kind",
+          "voids",
+          "voids_by_kind",
+          "refunds",
+          "net",
+          "net_by_kind"
+        ],
+        "properties": {
+          "collected": {
+            "$ref": "#/components/schemas/MethodSplit",
+            "description": "Money received (`payment.kind = 'payment'`), discounts already taken off."
+          },
+          "collected_by_kind": {
+            "$ref": "#/components/schemas/KindSplit"
+          },
+          "net": {
+            "$ref": "#/components/schemas/MethodSplit",
+            "description": "collected − voids − refunds."
+          },
+          "net_by_kind": {
+            "$ref": "#/components/schemas/KindSplit"
+          },
+          "refunds": {
+            "$ref": "#/components/schemas/MethodSplit",
+            "description": "Money paid back when a package was cancelled (always a package)."
+          },
+          "voids": {
+            "$ref": "#/components/schemas/MethodSplit",
+            "description": "Reversals of voided sales, booked on the day of the void."
+          },
+          "voids_by_kind": {
+            "$ref": "#/components/schemas/KindSplit"
+          }
+        }
       },
       "SaleCreate": {
         "type": "object",
@@ -2783,6 +4511,13 @@
             "format": "date-time"
           }
         }
+      },
+      "SaleKind": {
+        "type": "string",
+        "enum": [
+          "package",
+          "one_off"
+        ]
       },
       "SaleLineCreate": {
         "type": "object",
@@ -3062,6 +4797,38 @@
         },
         "additionalProperties": false
       },
+      "TechnicianDay": {
+        "type": "object",
+        "required": [
+          "staff_id",
+          "name",
+          "visits",
+          "sessions_used",
+          "one_off_services"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "one_off_services": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sessions_used": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "visits": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Completed visits in which this technician did at least one line."
+          }
+        }
+      },
       "TenantSummary": {
         "type": "object",
         "required": [
@@ -3075,6 +4842,72 @@
           },
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "TopPackage": {
+        "type": "object",
+        "required": [
+          "name",
+          "sold"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "plan_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "revenue": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Sum of their prices after discount; only with `report.revenue.read`."
+          },
+          "sold": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Packages sold in sales that are not voided."
+          }
+        }
+      },
+      "TopService": {
+        "type": "object",
+        "required": [
+          "service_id",
+          "name",
+          "sessions_used",
+          "one_off_services"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "one_off_revenue": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "List price of the one-off services; only with `report.revenue.read`."
+          },
+          "one_off_services": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "service_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sessions_used": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -3487,7 +5320,7 @@
     },
     {
       "name": "packages",
-      "description": "Liệu trình của khách, nhập từ sổ cũ"
+      "description": "Liệu trình của khách"
     },
     {
       "name": "sales",
@@ -3496,6 +5329,10 @@
     {
       "name": "visits",
       "description": "Ghi lượt khách tại quầy"
+    },
+    {
+      "name": "reports",
+      "description": "Xem lại và theo dõi: hôm nay, theo khoảng ngày, sổ doanh thu, lịch sử khách, liệu trình"
     }
   ]
 }
