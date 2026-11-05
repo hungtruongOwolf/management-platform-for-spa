@@ -6,16 +6,18 @@
 use crate::cursor;
 use crate::dto::{
     DailyReport, DayComparison, DayCounts, DayHeadline, Granularity, LedgerDay, LedgerEntry,
-    LedgerPage, LedgerRow, RangeBucket, RangeReport, Revenue, SaleKind, TechnicianDay, TopPackage,
-    TopService,
+    LedgerPage, LedgerRow, RangeBucket, RangePreset, RangeQuery, RangeReport, Revenue, SaleKind,
+    TechnicianDay, TopPackage, TopService,
 };
-use chrono::{Datelike, Days, NaiveDate};
+use chrono::{Datelike, Days, Months, NaiveDate};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use sqlx::PgPool;
 use std::collections::HashMap;
 
-/// Longest `GET /reports/range` window: a full (leap) year.
+/// Longest `GET /reports/range` window by day or week: a full (leap) year.
 pub const MAX_RANGE_DAYS: u64 = 366;
+/// Longest window by month or year: five (leap) years. Few buckets, one range scan.
+pub const MAX_LONG_RANGE_DAYS: u64 = 5 * 366;
 /// Longest `GET /reports/ledger` window: a quarter.
 pub const MAX_LEDGER_DAYS: u64 = 92;
 const TOP: i64 = 10;
@@ -35,7 +37,46 @@ fn bucket_of(d: NaiveDate, g: Granularity) -> NaiveDate {
         Granularity::Day => d,
         Granularity::Week => d - Days::new(u64::from(d.weekday().num_days_from_monday())),
         Granularity::Month => d.with_day(1).unwrap_or(d),
+        Granularity::Year => d.with_ordinal(1).unwrap_or(d),
     }
+}
+
+const fn max_days(g: Granularity) -> u64 {
+    match g {
+        Granularity::Day | Granularity::Week => MAX_RANGE_DAYS,
+        Granularity::Month | Granularity::Year => MAX_LONG_RANGE_DAYS,
+    }
+}
+
+fn first_of_month(d: NaiveDate) -> NaiveDate {
+    d.with_day(1).unwrap_or(d)
+}
+
+/// `[from, to]` and the default granularity of a preset, relative to the spa's `today`.
+fn preset_window(
+    preset: RangePreset,
+    today: NaiveDate,
+) -> Result<(NaiveDate, NaiveDate, Granularity), AppError> {
+    let bad = || field("preset", "out_of_range");
+    let months_back = |n: u32| {
+        first_of_month(today)
+            .checked_sub_months(Months::new(n))
+            .ok_or_else(bad)
+    };
+    let jan_first = |year: i32| NaiveDate::from_ymd_opt(year, 1, 1).ok_or_else(bad);
+    Ok(match preset {
+        RangePreset::Last7Days => (minus_days(today, 6)?, today, Granularity::Day),
+        RangePreset::Last30Days => (minus_days(today, 29)?, today, Granularity::Day),
+        RangePreset::ThisMonth => (first_of_month(today), today, Granularity::Day),
+        RangePreset::LastMonth => {
+            let start = months_back(1)?;
+            let end = first_of_month(today).pred_opt().ok_or_else(bad)?;
+            (start, end, Granularity::Day)
+        }
+        RangePreset::ThisYear => (jan_first(today.year())?, today, Granularity::Month),
+        RangePreset::Last12Months => (months_back(11)?, today, Granularity::Month),
+        RangePreset::Last5Years => (jan_first(today.year() - 4)?, today, Granularity::Year),
+    })
 }
 
 /// Every day from `from` to `to` inclusive.
@@ -51,10 +92,13 @@ struct Books {
 }
 
 impl Books {
-    /// Reads the books for `dates`, grouped by `granularity`. Money only when `with_money`.
+    /// Reads the books of `from..=to` (only the days in `only`, when given), grouped by
+    /// `granularity`. Money only when `with_money`. A range is a range scan on the day indexes,
+    /// so a five-year report never ships 1 800 dates to the database.
     async fn read(
         tx: &mut TenantTx,
-        dates: &[NaiveDate],
+        (from, to): (NaiveDate, NaiveDate),
+        only: Option<&[NaiveDate]>,
         granularity: Granularity,
         with_money: bool,
     ) -> Result<Self, AppError> {
@@ -68,11 +112,13 @@ impl Books {
                       count(DISTINCT v.customer_id) FILTER (WHERE v.status = 'completed') AS "customers!",
                       count(*) FILTER (WHERE v.status = 'voided') AS "voided!"
                FROM app.visit v
-               WHERE v.tenant_id = $1 AND v.business_date = ANY($2)
+               WHERE v.tenant_id = $1 AND v.business_date BETWEEN $2 AND $4 AND ($5::date[] IS NULL OR v.business_date = ANY($5))
                GROUP BY 1"#,
             tenant,
-            dates,
-            unit
+            from,
+            unit,
+            to,
+            only
         )
         .fetch_all(tx.conn())
         .await?
@@ -89,11 +135,13 @@ impl Books {
                       coalesce(sum(l.qty) FILTER (WHERE l.source = 'one_off'), 0)::bigint AS "one_off!"
                FROM app.visit v
                JOIN app.visit_line l ON l.tenant_id = v.tenant_id AND l.visit_id = v.id
-               WHERE v.tenant_id = $1 AND v.business_date = ANY($2) AND v.status = 'completed'
+               WHERE v.tenant_id = $1 AND v.business_date BETWEEN $2 AND $4 AND ($5::date[] IS NULL OR v.business_date = ANY($5)) AND v.status = 'completed'
                GROUP BY 1"#,
             tenant,
-            dates,
-            unit
+            from,
+            unit,
+            to,
+            only
         )
         .fetch_all(tx.conn())
         .await?
@@ -108,11 +156,13 @@ impl Books {
                       count(*) AS "sold!"
                FROM app.sale s
                JOIN app.customer_package cp ON cp.tenant_id = s.tenant_id AND cp.sale_id = s.id
-               WHERE s.tenant_id = $1 AND s.business_date = ANY($2) AND s.status = 'open'
+               WHERE s.tenant_id = $1 AND s.business_date BETWEEN $2 AND $4 AND ($5::date[] IS NULL OR s.business_date = ANY($5)) AND s.status = 'open'
                GROUP BY 1"#,
             tenant,
-            dates,
-            unit
+            from,
+            unit,
+            to,
+            only
         )
         .fetch_all(tx.conn())
         .await?
@@ -133,17 +183,19 @@ impl Books {
                    LEFT JOIN (SELECT DISTINCT sl.sale_id FROM app.sale_line sl
                               WHERE sl.tenant_id = $1 AND sl.line_type = 'package') pk
                      ON pk.sale_id = p.sale_id
-                   WHERE p.tenant_id = $1 AND p.business_date = ANY($2)
+                   WHERE p.tenant_id = $1 AND p.business_date BETWEEN $2 AND $4 AND ($5::date[] IS NULL OR p.business_date = ANY($5))
                    GROUP BY 1, 2, 3, 4
                    UNION ALL
                    SELECT date_trunc($3, r.business_date::timestamp)::date, 'refund', r.method,
                           'package', sum(r.amount)::bigint
                    FROM app.refund r
-                   WHERE r.tenant_id = $1 AND r.business_date = ANY($2)
+                   WHERE r.tenant_id = $1 AND r.business_date BETWEEN $2 AND $4 AND ($5::date[] IS NULL OR r.business_date = ANY($5))
                    GROUP BY 1, 2, 3, 4"#,
                 tenant,
-                dates,
-                unit
+                from,
+                unit,
+                to,
+                only
             )
             .fetch_all(tx.conn())
             .await?
@@ -209,7 +261,8 @@ pub async fn daily(
     let (yesterday, last_week) = (minus_days(date, 1)?, minus_days(date, 7)?);
     let books = Books::read(
         &mut tx,
-        &[date, yesterday, last_week],
+        (last_week, date),
+        Some(&[date, yesterday, last_week]),
         Granularity::Day,
         with_money,
     )
@@ -268,22 +321,40 @@ fn window(
     Ok((from, to))
 }
 
-/// `GET /reports/range?from=&to=&granularity=` (`report.read`; money with `report.revenue.read`).
+/// The period and granularity a range query asks for: a preset (its default granularity unless
+/// one is given) or `from` / `to` (default the last 7 days, by day). Bounded per granularity.
+fn range_window(
+    query: &RangeQuery,
+    today: NaiveDate,
+) -> Result<(NaiveDate, NaiveDate, Granularity), AppError> {
+    let (from, to, granularity) = match query.preset {
+        Some(_) if query.from.is_some() || query.to.is_some() => {
+            return Err(field("preset", "conflicts_with_range"));
+        }
+        Some(preset) => {
+            let (from, to, default) = preset_window(preset, today)?;
+            (Some(from), Some(to), query.granularity.unwrap_or(default))
+        }
+        None => (query.from, query.to, query.granularity.unwrap_or_default()),
+    };
+    let (from, to) = window(from, to, today, 7, max_days(granularity))?;
+    Ok((from, to, granularity))
+}
+
+/// `GET /reports/range?from=&to=&granularity=&preset=` (`report.read`; money with
+/// `report.revenue.read`).
 pub async fn range(
     pool: &PgPool,
     actor: &Actor,
-    from: Option<NaiveDate>,
-    to: Option<NaiveDate>,
-    granularity: Option<Granularity>,
+    query: &RangeQuery,
 ) -> Result<RangeReport, AppError> {
     actor.require(Permission::ReportRead)?;
     let with_money = actor.can(Permission::ReportRevenueRead);
-    let granularity = granularity.unwrap_or_default();
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let today = today(&mut tx).await?;
-    let (from, to) = window(from, to, today, 7, MAX_RANGE_DAYS)?;
+    let (from, to, granularity) = range_window(query, today)?;
     let all_days = days(from, to);
-    let books = Books::read(&mut tx, &all_days, granularity, with_money).await?;
+    let books = Books::read(&mut tx, (from, to), None, granularity, with_money).await?;
     let tenant = tx.tenant().as_uuid();
 
     let customers = sqlx::query_scalar!(
@@ -297,15 +368,16 @@ pub async fn range(
     .await?;
 
     let top_services = sqlx::query!(
-        r#"SELECT l.service_id, s.name,
+        r#"SELECT l.service_id, s.name, sc.name AS category_name,
                   coalesce(sum(l.qty) FILTER (WHERE l.source = 'package'), 0)::bigint AS "sessions!",
                   coalesce(sum(l.qty) FILTER (WHERE l.source = 'one_off'), 0)::bigint AS "one_off!",
                   coalesce(sum(l.line_value) FILTER (WHERE l.source = 'one_off'), 0)::bigint AS "one_off_revenue!"
            FROM app.visit v
            JOIN app.visit_line l ON l.tenant_id = v.tenant_id AND l.visit_id = v.id
            JOIN app.service s ON s.tenant_id = l.tenant_id AND s.id = l.service_id
+           JOIN app.service_category sc ON sc.tenant_id = s.tenant_id AND sc.id = s.category_id
            WHERE v.tenant_id = $1 AND v.business_date BETWEEN $2 AND $3 AND v.status = 'completed'
-           GROUP BY l.service_id, s.name
+           GROUP BY l.service_id, s.name, sc.name
            ORDER BY sum(l.qty) DESC, s.name, l.service_id
            LIMIT $4"#,
         tenant,
@@ -319,6 +391,7 @@ pub async fn range(
     .map(|r| TopService {
         service_id: r.service_id,
         name: r.name,
+        category_name: r.category_name,
         sessions_used: r.sessions,
         one_off_services: r.one_off,
         one_off_revenue: with_money.then_some(r.one_off_revenue),
@@ -375,6 +448,7 @@ pub async fn range(
                 end,
                 counts,
                 revenue: with_money.then_some(revenue),
+                net_revenue: with_money.then_some(revenue.net.total),
             }
         })
         .collect();
@@ -383,6 +457,7 @@ pub async fn range(
         from,
         to,
         granularity,
+        preset: query.preset,
         totals,
         revenue: with_money.then_some(total_money),
         series,

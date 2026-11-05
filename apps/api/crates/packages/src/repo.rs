@@ -28,6 +28,7 @@ pub struct ItemRow {
     pub customer_package_id: Uuid,
     pub service_id: Uuid,
     pub name_snapshot: String,
+    pub category_name: String,
     pub sessions_purchased: i32,
     pub sessions_bonus: i32,
     pub sessions_total: i32,
@@ -142,11 +143,14 @@ pub async fn items(tx: &mut TenantTx, package_ids: &[Uuid]) -> Result<Vec<ItemRo
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         ItemRow,
-        r#"SELECT id, customer_package_id, service_id, name_snapshot, sessions_purchased, sessions_bonus,
-                  sessions_total AS "sessions_total!", sessions_remaining, per_session_value
-           FROM app.customer_package_item
-           WHERE tenant_id = $1 AND customer_package_id = ANY($2)
-           ORDER BY customer_package_id, id"#,
+        r#"SELECT i.id, i.customer_package_id, i.service_id, i.name_snapshot, sc.name AS category_name,
+                  i.sessions_purchased, i.sessions_bonus, i.sessions_total AS "sessions_total!",
+                  i.sessions_remaining, i.per_session_value
+           FROM app.customer_package_item i
+           JOIN app.service sv ON sv.tenant_id = i.tenant_id AND sv.id = i.service_id
+           JOIN app.service_category sc ON sc.tenant_id = sv.tenant_id AND sc.id = sv.category_id
+           WHERE i.tenant_id = $1 AND i.customer_package_id = ANY($2)
+           ORDER BY i.customer_package_id, i.id"#,
         tenant,
         package_ids
     )

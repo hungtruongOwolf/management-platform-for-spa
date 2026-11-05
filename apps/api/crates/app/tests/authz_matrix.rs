@@ -215,6 +215,25 @@ const ROUTES: &[Route] = &[
     .id(Target::Customer)
     .body(health_note_body)
     .if_match(),
+    route(
+        "GET",
+        "/api/v1/customers/phone-check",
+        Access::Perm(P::CustomerRead, OWNER_MANAGER),
+    ),
+    route(
+        "POST",
+        "/api/v1/customers/{id}/follow-ups",
+        Access::Perm(P::CustomerFollowUp, OWNER_MANAGER),
+    )
+    .id(Target::Customer)
+    .body(follow_up_body)
+    .idempotent(),
+    route(
+        "GET",
+        "/api/v1/customers/{id}/follow-ups",
+        Access::Perm(P::CustomerRead, OWNER_MANAGER),
+    )
+    .id(Target::Customer),
     // staff — org
     route("GET", "/api/v1/staff", Access::Perm(P::StaffReadBasic, ALL)),
     // packages
@@ -404,6 +423,9 @@ fn customer_body(f: &Fixture) -> Option<Value> {
 }
 fn health_note_body(_: &Fixture) -> Option<Value> {
     Some(json!({"health_note": "Dị ứng tinh dầu sả"}))
+}
+fn follow_up_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"channel": "phone", "outcome": "no_answer"}))
 }
 /// A one-off line (flat 150.000đ) paid in cash: repeatable without using up package sessions.
 fn visit_body(f: &Fixture) -> Option<Value> {

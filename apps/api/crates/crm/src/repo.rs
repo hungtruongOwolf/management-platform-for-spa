@@ -1,6 +1,6 @@
 //! Customer SQL. Every query is tenant-scoped explicitly; RLS is the second layer.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use kernel::{AppError, TenantTx};
 use uuid::Uuid;
 
@@ -264,5 +264,108 @@ pub async fn brief(tx: &mut TenantTx, id: Uuid) -> Result<Option<BriefRow>, AppE
         id
     )
     .fetch_optional(tx.conn())
+    .await?)
+}
+
+/// The live customer holding this phone in the caller's tenant (duplicate check while typing).
+pub async fn phone_holder(
+    tx: &mut TenantTx,
+    phone_e164: &str,
+) -> Result<Option<(Uuid, String)>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query!(
+        "SELECT id, full_name FROM app.customer WHERE tenant_id = $1 AND phone_e164 = $2 AND anonymized_at IS NULL",
+        tenant,
+        phone_e164
+    )
+    .fetch_optional(tx.conn())
+    .await?
+    .map(|r| (r.id, r.full_name)))
+}
+
+// ------------------------------------------------------------------------------ follow-ups
+
+pub struct FollowUpInsert<'a> {
+    pub id: Uuid,
+    pub customer_id: Uuid,
+    pub contacted_on: NaiveDate,
+    pub channel: &'a str,
+    pub outcome: &'a str,
+    pub note: Option<&'a str>,
+    pub next_follow_up_on: Option<NaiveDate>,
+    pub created_by: Uuid,
+}
+
+pub struct FollowUpRow {
+    pub id: Uuid,
+    pub customer_id: Uuid,
+    pub contacted_on: NaiveDate,
+    pub channel: String,
+    pub outcome: String,
+    pub note: Option<String>,
+    pub next_follow_up_on: Option<NaiveDate>,
+    pub created_by: Uuid,
+    pub by_name: String,
+    pub created_at: DateTime<Utc>,
+}
+
+pub async fn insert_follow_up(tx: &mut TenantTx, f: &FollowUpInsert<'_>) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"INSERT INTO app.customer_follow_up
+             (id, tenant_id, customer_id, contacted_on, channel, outcome, note, next_follow_up_on, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#,
+        f.id,
+        tenant,
+        f.customer_id,
+        f.contacted_on,
+        f.channel,
+        f.outcome,
+        f.note,
+        f.next_follow_up_on,
+        f.created_by
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+pub async fn follow_up(tx: &mut TenantTx, id: Uuid) -> Result<Option<FollowUpRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        FollowUpRow,
+        r#"SELECT f.id, f.customer_id, f.contacted_on, f.channel, f.outcome, f.note,
+                  f.next_follow_up_on, f.created_by, u.full_name AS by_name, f.created_at
+           FROM app.customer_follow_up f
+           JOIN app.user_account u ON u.id = f.created_by
+           WHERE f.tenant_id = $1 AND f.id = $2"#,
+        tenant,
+        id
+    )
+    .fetch_optional(tx.conn())
+    .await?)
+}
+
+/// A customer's follow-ups, newest contact first (then newest recorded).
+pub async fn follow_ups(
+    tx: &mut TenantTx,
+    customer_id: Uuid,
+    limit: i64,
+) -> Result<Vec<FollowUpRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        FollowUpRow,
+        r#"SELECT f.id, f.customer_id, f.contacted_on, f.channel, f.outcome, f.note,
+                  f.next_follow_up_on, f.created_by, u.full_name AS by_name, f.created_at
+           FROM app.customer_follow_up f
+           JOIN app.user_account u ON u.id = f.created_by
+           WHERE f.tenant_id = $1 AND f.customer_id = $2
+           ORDER BY f.contacted_on DESC, f.created_at DESC, f.id DESC
+           LIMIT $3"#,
+        tenant,
+        customer_id,
+        limit
+    )
+    .fetch_all(tx.conn())
     .await?)
 }

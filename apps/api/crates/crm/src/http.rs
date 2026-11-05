@@ -1,16 +1,19 @@
 //! Customer endpoints (US2). The cipher reaches handlers through state (`Arc<FieldCipher>: FromRef<S>`).
 
 use crate::cipher::FieldCipher;
+use crate::follow_up::{self, Channel, FollowUp, FollowUpInput, Outcome};
 use crate::repo::SummaryRow;
-use crate::service::{self, CustomerView, Gender, ProfileInput};
+use crate::service::{self, CustomerView, Gender, PhoneCheck, ProfileInput};
+use axum::body::Bytes;
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, put};
 use axum::{Json, Router};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use identity::AuthUser;
-use kernel::http::{IfMatch, etag};
+use kernel::http::{IdempotencyKey, IfMatch, etag};
+use kernel::idempotency::hash_route;
 use kernel::{AppError, PhoneE164};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -18,7 +21,7 @@ use std::sync::Arc;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum GenderDto {
     Female,
@@ -34,7 +37,8 @@ impl From<GenderDto> for Gender {
     }
 }
 
-fn gender_dto(value: Option<&str>) -> Option<GenderDto> {
+/// The stored `customer.gender` text as the API shows it.
+pub fn gender_dto(value: Option<&str>) -> Option<GenderDto> {
     Gender::parse(value?).map(|g| match g {
         Gender::Female => GenderDto::Female,
         Gender::Male => GenderDto::Male,
@@ -148,6 +152,173 @@ pub struct SearchQuery {
     pub q: Option<String>,
 }
 
+#[derive(Debug, Deserialize, IntoParams)]
+#[serde(deny_unknown_fields)]
+pub struct PhoneCheckQuery {
+    /// The number as typed (any spacing, 0… or +84…). Normalised like `POST /customers`.
+    pub phone: Option<String>,
+}
+
+/// `GET /customers/phone-check`. `taken` → `existing_id` + `full_name` name the profile to open
+/// instead of creating a duplicate (create would answer `409 customer.phone_taken`).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PhoneCheckDto {
+    /// The input is a complete, valid phone number (false while still typing).
+    pub valid: bool,
+    pub taken: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub existing_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub full_name: Option<String>,
+}
+
+impl From<PhoneCheck> for PhoneCheckDto {
+    fn from(c: PhoneCheck) -> Self {
+        match c {
+            PhoneCheck::Invalid => Self {
+                valid: false,
+                taken: false,
+                existing_id: None,
+                full_name: None,
+            },
+            PhoneCheck::Free => Self {
+                valid: true,
+                taken: false,
+                existing_id: None,
+                full_name: None,
+            },
+            PhoneCheck::Taken { id, full_name } => Self {
+                valid: true,
+                taken: true,
+                existing_id: Some(id),
+                full_name: Some(full_name),
+            },
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------ follow-ups
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FollowUpChannelDto {
+    Phone,
+    Zalo,
+    InPerson,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FollowUpOutcomeDto {
+    /// Reached; will come.
+    WillCome,
+    /// Reached; not interested.
+    NotInterested,
+    NoAnswer,
+    Other,
+}
+
+impl From<FollowUpChannelDto> for Channel {
+    fn from(c: FollowUpChannelDto) -> Self {
+        match c {
+            FollowUpChannelDto::Phone => Self::Phone,
+            FollowUpChannelDto::Zalo => Self::Zalo,
+            FollowUpChannelDto::InPerson => Self::InPerson,
+            FollowUpChannelDto::Other => Self::Other,
+        }
+    }
+}
+
+impl From<Channel> for FollowUpChannelDto {
+    fn from(c: Channel) -> Self {
+        match c {
+            Channel::Phone => Self::Phone,
+            Channel::Zalo => Self::Zalo,
+            Channel::InPerson => Self::InPerson,
+            Channel::Other => Self::Other,
+        }
+    }
+}
+
+impl From<FollowUpOutcomeDto> for Outcome {
+    fn from(o: FollowUpOutcomeDto) -> Self {
+        match o {
+            FollowUpOutcomeDto::WillCome => Self::WillCome,
+            FollowUpOutcomeDto::NotInterested => Self::NotInterested,
+            FollowUpOutcomeDto::NoAnswer => Self::NoAnswer,
+            FollowUpOutcomeDto::Other => Self::Other,
+        }
+    }
+}
+
+impl From<Outcome> for FollowUpOutcomeDto {
+    fn from(o: Outcome) -> Self {
+        match o {
+            Outcome::WillCome => Self::WillCome,
+            Outcome::NotInterested => Self::NotInterested,
+            Outcome::NoAnswer => Self::NoAnswer,
+            Outcome::Other => Self::Other,
+        }
+    }
+}
+
+/// Body of `POST /customers/{id}/follow-ups`. The recorder is the signed-in user.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FollowUpCreate {
+    /// Day of the contact; default today (spa time zone). Not in the future, at most 30 days back.
+    pub contacted_on: Option<NaiveDate>,
+    pub channel: FollowUpChannelDto,
+    pub outcome: FollowUpOutcomeDto,
+    /// ≤ 500 characters. A contact note, not a health note.
+    pub note: Option<String>,
+    /// When to try again (≥ `contacted_on`, ≤ 365 days after it). Omitted: `no_answer` → contact
+    /// day + 3; other outcomes → none.
+    pub next_follow_up_on: Option<NaiveDate>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct FollowUpDto {
+    pub id: Uuid,
+    pub customer_id: Uuid,
+    pub contacted_on: NaiveDate,
+    pub channel: FollowUpChannelDto,
+    pub outcome: FollowUpOutcomeDto,
+    pub note: Option<String>,
+    pub next_follow_up_on: Option<NaiveDate>,
+    /// The user who recorded it.
+    pub by_user_id: Uuid,
+    pub by_name: String,
+    pub created_at: DateTime<Utc>,
+}
+
+impl From<FollowUp> for FollowUpDto {
+    fn from(f: FollowUp) -> Self {
+        Self {
+            id: f.id,
+            customer_id: f.customer_id,
+            contacted_on: f.contacted_on,
+            channel: f.channel.into(),
+            outcome: f.outcome.into(),
+            note: f.note,
+            next_follow_up_on: f.next_follow_up_on,
+            by_user_id: f.by_user_id,
+            by_name: f.by_name,
+            created_at: f.created_at,
+        }
+    }
+}
+
+/// `GET /customers/{id}/follow-ups`: newest contact first.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct FollowUpList {
+    /// At most 100.
+    pub items: Vec<FollowUpDto>,
+    /// More than 100 exist (only the newest are listed).
+    pub has_more: bool,
+}
+
 fn profile(
     full_name: String,
     phone: String,
@@ -187,8 +358,92 @@ where
 {
     Router::new()
         .route("/customers", get(search).post(create))
+        .route("/customers/phone-check", get(phone_check))
         .route("/customers/{id}", get(read).put(update))
         .route("/customers/{id}/health-note", put(set_health_note))
+        .route(
+            "/customers/{id}/follow-ups",
+            get(list_follow_ups).post(record_follow_up),
+        )
+}
+
+fn no_store(status: StatusCode, body: impl Serialize) -> Response {
+    let mut response = (status, Json(body)).into_response();
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    response
+}
+
+#[utoipa::path(get, path = "/api/v1/customers/phone-check", tag = "customers", params(PhoneCheckQuery),
+    responses(
+        (status = 200, body = PhoneCheckDto, description = "valid=false while the number is incomplete; taken → existing_id + full_name"),
+        (status = 401), (status = 403, description = "auth.forbidden: no customer.read"),
+        (status = 422, description = "validation_failed: phone too_long")))]
+pub async fn phone_check(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Query(query): Query<PhoneCheckQuery>,
+) -> Result<Response, AppError> {
+    let check = service::phone_check(&pool, &user.actor, query.phone.as_deref()).await?;
+    Ok(no_store(StatusCode::OK, PhoneCheckDto::from(check)))
+}
+
+#[utoipa::path(post, path = "/api/v1/customers/{id}/follow-ups", tag = "customers", request_body = FollowUpCreate,
+    params(("id" = Uuid, Path),
+        ("Idempotency-Key" = Uuid, Header, description = "One key per follow-up form; a retry replays the first response")),
+    responses(
+        (status = 201, body = FollowUpDto, description = "Recorded (append-only), audited as customer.follow_up"),
+        (status = 400, description = "idempotency.key_required / key_invalid"),
+        (status = 401), (status = 403, description = "auth.forbidden: no customer.follow_up"), (status = 404),
+        (status = 422, description = "validation_failed: contacted_on in_future / too_old, next_follow_up_on before_contact / too_far, note too_long, body invalid; idempotency.key_reuse_mismatch")))]
+pub async fn record_follow_up(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+    IdempotencyKey(key): IdempotencyKey,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    let invalid = || AppError::Validation(vec![kernel::FieldError::new("body", "invalid")]);
+    // Hash the re-serialised JSON, so whitespace or key order never makes a retry a mismatch.
+    let value: serde_json::Value = serde_json::from_slice(&body).map_err(|_| invalid())?;
+    let canonical = serde_json::to_vec(&value).map_err(|e| AppError::Internal(e.to_string()))?;
+    let b: FollowUpCreate = serde_json::from_value(value).map_err(|_| invalid())?;
+    let hash = hash_route("POST", "/customers/{id}/follow-ups", Some(id), &canonical);
+    let input = FollowUpInput {
+        contacted_on: b.contacted_on,
+        channel: b.channel.into(),
+        outcome: b.outcome.into(),
+        note: b.note,
+        next_follow_up_on: b.next_follow_up_on,
+    };
+    let (status, body) = follow_up::record(&pool, &user.actor, key, hash, id, &input, |f| {
+        serde_json::to_value(FollowUpDto::from(f)).map_err(|e| AppError::Internal(e.to_string()))
+    })
+    .await?;
+    let status = StatusCode::from_u16(status).unwrap_or(StatusCode::CREATED);
+    Ok(no_store(status, body))
+}
+
+#[utoipa::path(get, path = "/api/v1/customers/{id}/follow-ups", tag = "customers",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 200, body = FollowUpList),
+        (status = 401), (status = 403, description = "auth.forbidden: no customer.read"), (status = 404)))]
+pub async fn list_follow_ups(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let (items, has_more) = follow_up::list(&pool, &user.actor, id).await?;
+    Ok(no_store(
+        StatusCode::OK,
+        FollowUpList {
+            items: items.into_iter().map(Into::into).collect(),
+            has_more,
+        },
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v1/customers", tag = "customers", params(SearchQuery),

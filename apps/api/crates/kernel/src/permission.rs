@@ -40,6 +40,7 @@ permissions! {
     CustomerHealthNotesRead => "customer.health_notes.read",
     CustomerHealthNotesWrite => "customer.health_notes.write",
     CustomerAnonymize => "customer.anonymize",
+    CustomerFollowUp => "customer.follow_up",
     PackageSell => "package.sell",
     PackageExtendExpiry => "package.extend_expiry",
     PackageCancelRefund => "package.cancel_refund",

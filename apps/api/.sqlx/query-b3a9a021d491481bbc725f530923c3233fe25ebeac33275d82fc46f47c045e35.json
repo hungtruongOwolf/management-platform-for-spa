@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT l.id, l.visit_id, l.service_id, l.service_name_snapshot, l.source, l.customer_package_id,\n                  l.customer_package_item_id, p.name_snapshot AS \"package_name?\", l.sessions_left_after,\n                  i.sessions_total AS \"sessions_total?\", l.staff_id, s.full_name AS staff_name, l.qty,\n                  l.price_variant, l.unit_price, l.line_value, l.expiry_override_reason\n           FROM app.visit_line l\n           JOIN app.staff s ON s.tenant_id = l.tenant_id AND s.id = l.staff_id\n           LEFT JOIN app.customer_package p ON p.tenant_id = l.tenant_id AND p.id = l.customer_package_id\n           LEFT JOIN app.customer_package_item i ON i.tenant_id = l.tenant_id AND i.id = l.customer_package_item_id\n           WHERE l.tenant_id = $1 AND l.visit_id = ANY($2)\n           ORDER BY l.visit_id, l.position",
+  "query": "SELECT l.id, l.visit_id, l.service_id, l.service_name_snapshot, sc.name AS category_name,\n                  l.source, l.customer_package_id,\n                  l.customer_package_item_id, p.name_snapshot AS \"package_name?\", l.sessions_left_after,\n                  i.sessions_total AS \"sessions_total?\", l.staff_id, s.full_name AS staff_name, l.qty,\n                  l.price_variant, l.unit_price, l.line_value, l.expiry_override_reason\n           FROM app.visit_line l\n           JOIN app.staff s ON s.tenant_id = l.tenant_id AND s.id = l.staff_id\n           JOIN app.service sv ON sv.tenant_id = l.tenant_id AND sv.id = l.service_id\n           JOIN app.service_category sc ON sc.tenant_id = sv.tenant_id AND sc.id = sv.category_id\n           LEFT JOIN app.customer_package p ON p.tenant_id = l.tenant_id AND p.id = l.customer_package_id\n           LEFT JOIN app.customer_package_item i ON i.tenant_id = l.tenant_id AND i.id = l.customer_package_item_id\n           WHERE l.tenant_id = $1 AND l.visit_id = ANY($2)\n           ORDER BY l.visit_id, l.position",
   "describe": {
     "columns": [
       {
@@ -49,6 +49,17 @@
       },
       {
         "ordinal": 4,
+        "name": "category_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.service_category",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
         "name": "source",
         "type_info": "Text",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "customer_package_id",
         "type_info": "Uuid",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "customer_package_item_id",
         "type_info": "Uuid",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "package_name?",
         "type_info": "Text",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "sessions_left_after",
         "type_info": "Int4",
         "origin": {
@@ -103,7 +114,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "sessions_total?",
         "type_info": "Int4",
         "origin": {
@@ -114,7 +125,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "staff_id",
         "type_info": "Uuid",
         "origin": {
@@ -125,7 +136,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "staff_name",
         "type_info": "Text",
         "origin": {
@@ -136,7 +147,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "qty",
         "type_info": "Int4",
         "origin": {
@@ -147,7 +158,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "price_variant",
         "type_info": "Text",
         "origin": {
@@ -158,7 +169,7 @@
         }
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "unit_price",
         "type_info": "Int8",
         "origin": {
@@ -169,7 +180,7 @@
         }
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "line_value",
         "type_info": "Int8",
         "origin": {
@@ -180,7 +191,7 @@
         }
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "expiry_override_reason",
         "type_info": "Text",
         "origin": {
@@ -203,6 +214,7 @@
       false,
       false,
       false,
+      false,
       true,
       true,
       true,
@@ -217,5 +229,5 @@
       true
     ]
   },
-  "hash": "11f1860a18f52162950611936e08e608177848d07a3f10ab5b494b0d923fd359"
+  "hash": "b3a9a021d491481bbc725f530923c3233fe25ebeac33275d82fc46f47c045e35"
 }

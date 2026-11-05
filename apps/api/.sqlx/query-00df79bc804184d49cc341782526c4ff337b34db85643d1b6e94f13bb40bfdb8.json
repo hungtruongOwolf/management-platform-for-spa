@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.customer_follow_up\n             (id, tenant_id, customer_id, contacted_on, channel, outcome, note, next_follow_up_on, created_by)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Text",
+        "Text",
+        "Text",
+        "Date",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "00df79bc804184d49cc341782526c4ff337b34db85643d1b6e94f13bb40bfdb8"
+}

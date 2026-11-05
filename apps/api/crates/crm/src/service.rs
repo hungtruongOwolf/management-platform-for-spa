@@ -344,6 +344,43 @@ pub async fn brief_in(tx: &mut TenantTx, id: Uuid) -> Result<Option<CustomerBrie
     }))
 }
 
+/// Result of a duplicate-phone check while the number is typed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PhoneCheck {
+    /// Not (yet) a valid Vietnamese mobile/landline number: nothing to look up.
+    Invalid,
+    Free,
+    Taken { id: Uuid, full_name: String },
+}
+
+/// `GET /customers/phone-check?phone=` (`customer.read`): whether a live customer of the caller's
+/// spa already has this number, normalised exactly like create (`PhoneE164::parse`). A partial
+/// number answers `Invalid` instead of an error so the form can call it on every keystroke.
+/// Reveals no more than `GET /customers?q=<digits>` already does to the same caller.
+pub async fn phone_check(
+    pool: &PgPool,
+    actor: &Actor,
+    phone: Option<&str>,
+) -> Result<PhoneCheck, AppError> {
+    actor.require(Permission::CustomerRead)?;
+    let raw = phone.map(str::trim).unwrap_or_default();
+    if raw.chars().count() > MAX_QUERY_CHARS {
+        return Err(AppError::Validation(vec![FieldError::new(
+            "phone", "too_long",
+        )]));
+    }
+    let Ok(phone) = PhoneE164::parse(raw) else {
+        return Ok(PhoneCheck::Invalid);
+    };
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let holder = repo::phone_holder(&mut tx, phone.as_str()).await?;
+    tx.commit().await?;
+    Ok(match holder {
+        Some((id, full_name)) => PhoneCheck::Taken { id, full_name },
+        None => PhoneCheck::Free,
+    })
+}
+
 /// AC2.1: ≥ 3 digits → phone substring; ≥ 2 letters → accent-insensitive name; empty → most recent.
 pub async fn search(
     pool: &PgPool,

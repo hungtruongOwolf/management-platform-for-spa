@@ -146,6 +146,7 @@ pub struct LineRow {
     pub visit_id: Uuid,
     pub service_id: Uuid,
     pub service_name_snapshot: String,
+    pub category_name: String,
     pub source: String,
     pub customer_package_id: Option<Uuid>,
     pub customer_package_item_id: Option<Uuid>,
@@ -165,12 +166,15 @@ pub async fn lines(tx: &mut TenantTx, visit_ids: &[Uuid]) -> Result<Vec<LineRow>
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         LineRow,
-        r#"SELECT l.id, l.visit_id, l.service_id, l.service_name_snapshot, l.source, l.customer_package_id,
+        r#"SELECT l.id, l.visit_id, l.service_id, l.service_name_snapshot, sc.name AS category_name,
+                  l.source, l.customer_package_id,
                   l.customer_package_item_id, p.name_snapshot AS "package_name?", l.sessions_left_after,
                   i.sessions_total AS "sessions_total?", l.staff_id, s.full_name AS staff_name, l.qty,
                   l.price_variant, l.unit_price, l.line_value, l.expiry_override_reason
            FROM app.visit_line l
            JOIN app.staff s ON s.tenant_id = l.tenant_id AND s.id = l.staff_id
+           JOIN app.service sv ON sv.tenant_id = l.tenant_id AND sv.id = l.service_id
+           JOIN app.service_category sc ON sc.tenant_id = sv.tenant_id AND sc.id = sv.category_id
            LEFT JOIN app.customer_package p ON p.tenant_id = l.tenant_id AND p.id = l.customer_package_id
            LEFT JOIN app.customer_package_item i ON i.tenant_id = l.tenant_id AND i.id = l.customer_package_item_id
            WHERE l.tenant_id = $1 AND l.visit_id = ANY($2)

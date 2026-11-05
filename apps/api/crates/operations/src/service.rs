@@ -503,6 +503,7 @@ fn line_dto(l: LineRow) -> Result<VisitLineDto, AppError> {
         id: l.id,
         service_id: l.service_id,
         service_name: l.service_name_snapshot,
+        category_name: l.category_name,
         customer_package_id: l.customer_package_id,
         customer_package_item_id: l.customer_package_item_id,
         package_name: l.package_name,

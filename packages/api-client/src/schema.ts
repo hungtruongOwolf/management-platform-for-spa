@@ -229,6 +229,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/customers/phone-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["phone_check"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/customers/{id}": {
         parameters: {
             query?: never;
@@ -239,6 +255,22 @@ export interface paths {
         get: operations["read"];
         put: operations["update"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/customers/{id}/follow-ups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_follow_ups"];
+        put?: never;
+        post: operations["record_follow_up"];
         delete?: never;
         options?: never;
         head?: never;
@@ -659,6 +691,16 @@ export interface components {
              */
             version: number;
         };
+        /**
+         * @description What kind of customer a re-engagement row is.
+         * @enum {string}
+         */
+        CustomerKind: "package" | "one_off";
+        /**
+         * @description `GET /customers/inactive?kind=`.
+         * @enum {string}
+         */
+        CustomerKindFilter: "all" | "package" | "one_off";
         CustomerPackageDto: {
             cancel_reason?: string | null;
             /**
@@ -707,6 +749,8 @@ export interface components {
             version: number;
         };
         CustomerPackageItemDto: {
+            /** @description Current catalog category of the service (e.g. "Chăm sóc cổ vai gáy"). */
+            category_name: string;
             /** Format: uuid */
             id: string;
             /** @description Service name when sold (snapshot). */
@@ -861,9 +905,65 @@ export interface components {
             reason?: string | null;
         };
         /** @enum {string} */
+        FollowUpChannelDto: "phone" | "zalo" | "in_person" | "other";
+        /** @description Body of `POST /customers/{id}/follow-ups`. The recorder is the signed-in user. */
+        FollowUpCreate: {
+            channel: components["schemas"]["FollowUpChannelDto"];
+            /**
+             * Format: date
+             * @description Day of the contact; default today (spa time zone). Not in the future, at most 30 days back.
+             */
+            contacted_on?: string | null;
+            /**
+             * Format: date
+             * @description When to try again (≥ `contacted_on`, ≤ 365 days after it). Omitted: `no_answer` → contact
+             *     day + 3; other outcomes → none.
+             */
+            next_follow_up_on?: string | null;
+            /** @description ≤ 500 characters. A contact note, not a health note. */
+            note?: string | null;
+            outcome: components["schemas"]["FollowUpOutcomeDto"];
+        };
+        FollowUpDto: {
+            by_name: string;
+            /**
+             * Format: uuid
+             * @description The user who recorded it.
+             */
+            by_user_id: string;
+            channel: components["schemas"]["FollowUpChannelDto"];
+            /** Format: date */
+            contacted_on: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            customer_id: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: date */
+            next_follow_up_on?: string | null;
+            note?: string | null;
+            outcome: components["schemas"]["FollowUpOutcomeDto"];
+        };
+        /**
+         * @description `GET /customers/inactive?follow_up=`, judged on the follow-ups of the current absence
+         *     (recorded on or after `last_seen_on`; a visit since then starts a new absence).
+         * @enum {string}
+         */
+        FollowUpFilter: "all" | "due" | "not_contacted" | "scheduled";
+        /** @description `GET /customers/{id}/follow-ups`: newest contact first. */
+        FollowUpList: {
+            /** @description More than 100 exist (only the newest are listed). */
+            has_more: boolean;
+            /** @description At most 100. */
+            items: components["schemas"]["FollowUpDto"][];
+        };
+        /** @enum {string} */
+        FollowUpOutcomeDto: "will_come" | "not_interested" | "no_answer" | "other";
+        /** @enum {string} */
         GenderDto: "female" | "male";
         /** @enum {string} */
-        Granularity: "day" | "week" | "month";
+        Granularity: "day" | "week" | "month" | "year";
         HealthNoteWrite: {
             /** @description null or empty clears the note. */
             health_note?: string | null;
@@ -950,6 +1050,8 @@ export interface components {
              * @description Price of a one-off line (0 for a package session).
              */
             amount: number;
+            /** @description Current catalog category of the service. */
+            category_name: string;
             /**
              * Format: uuid
              * @description The package the session came from (`source = package`).
@@ -992,13 +1094,21 @@ export interface components {
             /** Format: int64 */
             days_absent: number;
             full_name: string;
+            gender?: components["schemas"]["GenderDto"] | null;
+            kind: components["schemas"]["CustomerKind"];
+            last_follow_up?: components["schemas"]["LastFollowUp"] | null;
             /**
              * Format: date
-             * @description Last completed visit, or the latest package start when the customer never came.
+             * @description Latest of: last completed visit, last sale not voided, last package start.
              */
             last_seen_on: string;
             /** Format: date */
             last_visit_on?: string | null;
+            /**
+             * Format: date
+             * @description The date that follow-up planned for the next try (`null` = none planned).
+             */
+            next_follow_up_on?: string | null;
             phone: string;
             /** Format: int64 */
             sessions_remaining: number;
@@ -1018,6 +1128,15 @@ export interface components {
             one_off: number;
             /** Format: int64 */
             package: number;
+        };
+        /** @description The latest follow-up of the current absence. */
+        LastFollowUp: {
+            /** @description Name of the user who recorded it. */
+            by: string;
+            channel: components["schemas"]["FollowUpChannelDto"];
+            /** Format: date */
+            on: string;
+            outcome: components["schemas"]["FollowUpOutcomeDto"];
         };
         /** @description Daily subtotal of the book, for every day of the range (not only the current page). */
         LedgerDay: {
@@ -1262,6 +1381,7 @@ export interface components {
         PackageOverviewRow: {
             /** Format: date-time */
             cancelled_at?: string | null;
+            customer_gender?: components["schemas"]["GenderDto"] | null;
             /** Format: uuid */
             customer_id: string;
             customer_name: string;
@@ -1330,6 +1450,8 @@ export interface components {
         PackageUse: {
             /** Format: date */
             business_date: string;
+            /** @description Current catalog category of the service. */
+            category_name: string;
             /** Format: date-time */
             check_in_at: string;
             /** Format: uuid */
@@ -1378,6 +1500,18 @@ export interface components {
         PaymentKindDto: "payment" | "reversal";
         /** @enum {string} */
         PaymentMethodDto: "cash" | "bank_transfer";
+        /**
+         * @description `GET /customers/phone-check`. `taken` → `existing_id` + `full_name` name the profile to open
+         *     instead of creating a duplicate (create would answer `409 customer.phone_taken`).
+         */
+        PhoneCheckDto: {
+            /** Format: uuid */
+            existing_id?: string | null;
+            full_name?: string | null;
+            taken: boolean;
+            /** @description The input is a complete, valid phone number (false while still typing). */
+            valid: boolean;
+        };
         PlanItemWrite: {
             /** Format: int32 */
             bonus_sessions: number;
@@ -1418,6 +1552,11 @@ export interface components {
              * @description Last day of the bucket (clipped to `to`).
              */
             end: string;
+            /**
+             * Format: int64
+             * @description `revenue.net.total`, flat for line charts; only with `report.revenue.read`.
+             */
+            net_revenue?: number | null;
             revenue?: components["schemas"]["Revenue"] | null;
             /**
              * Format: date
@@ -1425,11 +1564,18 @@ export interface components {
              */
             start: string;
         };
+        /**
+         * @description Ready-made periods, computed on the server from the spa's own "today" (its time zone), so
+         *     every device agrees on what "this month" is. Each has a default granularity.
+         * @enum {string}
+         */
+        RangePreset: "last7_days" | "last30_days" | "this_month" | "last_month" | "this_year" | "last12_months" | "last5_years";
         /** @description `GET /reports/range`. */
         RangeReport: {
             /** Format: date */
             from: string;
             granularity: components["schemas"]["Granularity"];
+            preset?: components["schemas"]["RangePreset"] | null;
             revenue?: components["schemas"]["Revenue"] | null;
             /** @description Every bucket of the range in order, empty ones included (continuous charts). */
             series: components["schemas"]["RangeBucket"][];
@@ -1664,6 +1810,8 @@ export interface components {
             sold: number;
         };
         TopService: {
+            /** @description Current catalog category of the service (e.g. "Gội đầu dưỡng sinh"). */
+            category_name: string;
             name: string;
             /**
              * Format: int64
@@ -1764,6 +1912,8 @@ export interface components {
             staff_id?: string | null;
         };
         VisitLineDto: {
+            /** @description Current catalog category of the service (e.g. "Gội đầu dưỡng sinh"). */
+            category_name: string;
             /** Format: uuid */
             customer_package_id?: string | null;
             /** Format: uuid */
@@ -2423,7 +2573,14 @@ export interface operations {
             query?: {
                 /** @description Not seen for at least this many days (1–365, default 7). */
                 days?: number;
+                /** @description Default `all`. */
                 scope?: components["schemas"]["InactiveScope"];
+                /** @description Default `all`. */
+                kind?: components["schemas"]["CustomerKindFilter"];
+                /** @description Default `all`. */
+                follow_up?: components["schemas"]["FollowUpFilter"];
+                /** @description Customer name (accent-insensitive, ≥ 2 characters) or phone digits (≥ 3). */
+                q?: string;
                 cursor?: string;
                 /** @description 1–100, default 20. */
                 limit?: number;
@@ -2455,7 +2612,50 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description validation_failed: days out_of_range, cursor invalid, limit out_of_range */
+            /** @description validation_failed: days out_of_range, q too_short / too_long, cursor invalid, limit out_of_range */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    phone_check: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The number as typed (any spacing, 0… or +84…). Normalised like `POST /customers`. */
+                phone: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description valid=false while the number is incomplete; taken → existing_id + full_name */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhoneCheckDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: no customer.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed: phone too_long */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2560,6 +2760,108 @@ export interface operations {
             };
         };
     };
+    list_follow_ups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FollowUpList"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: no customer.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    record_follow_up: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description One key per follow-up form; a retry replays the first response */
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FollowUpCreate"];
+            };
+        };
+        responses: {
+            /** @description Recorded (append-only), audited as customer.follow_up */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FollowUpDto"];
+                };
+            };
+            /** @description idempotency.key_required / key_invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: no customer.follow_up */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed: contacted_on in_future / too_old, next_follow_up_on before_contact / too_far, note too_long, body invalid; idempotency.key_reuse_mismatch */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     set_health_note: {
         parameters: {
             query?: never;
@@ -2614,6 +2916,14 @@ export interface operations {
     customer_history: {
         parameters: {
             query?: {
+                /** @description Service, category, package or staff name (accent-insensitive, 2–100 characters). */
+                q?: string;
+                /** @description Only events of this kind. */
+                kind?: components["schemas"]["HistoryKind"];
+                /** @description First business day of the event (inclusive). */
+                from?: string;
+                /** @description Last business day of the event (inclusive). */
+                to?: string;
                 cursor?: string;
                 /** @description 1–100, default 20. */
                 limit?: number;
@@ -2653,7 +2963,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description validation_failed: cursor invalid, limit out_of_range */
+            /** @description validation_failed: q too_short / too_long, from after_to, cursor invalid, limit out_of_range */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2964,7 +3274,7 @@ export interface operations {
                  *     Also the window of `counts.expiring_soon` (default 30).
                  */
                 expiring_within_days?: number;
-                /** @description Customer name (accent-insensitive, ≥ 2 characters) or phone digits (≥ 3). */
+                /** @description Customer name or package name (accent-insensitive, ≥ 2 characters), or phone digits (≥ 3). */
                 q?: string;
                 cursor?: string;
                 /** @description 1–100, default 20. */
@@ -3099,12 +3409,17 @@ export interface operations {
     range_report: {
         parameters: {
             query?: {
-                /** @description First business day; default `to` − 6 days. */
+                /** @description First business day; default `to` − 6 days. Not with `preset`. */
                 from?: string;
-                /** @description Last business day (inclusive); default today. At most 366 days after `from`. */
+                /**
+                 * @description Last business day (inclusive); default today. Not with `preset`. Span: at most 366 days
+                 *     for `day` / `week`, at most 1830 days (5 years) for `month` / `year`.
+                 */
                 to?: string;
-                /** @description Bucket size of `series`; default `day`. */
+                /** @description Bucket size of `series`; default `day`, or the preset's default. */
                 granularity?: components["schemas"]["Granularity"];
+                /** @description A ready-made period instead of `from` / `to`. */
+                preset?: components["schemas"]["RangePreset"];
             };
             header?: never;
             path?: never;
@@ -3134,7 +3449,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description validation_failed: from after_to, to range_too_long (> 366 days) */
+            /** @description validation_failed: from after_to, to range_too_long (> 366 days by day/week, > 1830 days by month/year), preset conflicts_with_range */
             422: {
                 headers: {
                     [name: string]: unknown;
