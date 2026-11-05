@@ -181,6 +181,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/customer-packages/{id}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["package_usage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/customers": {
         parameters: {
             query?: never;
@@ -191,6 +207,22 @@ export interface paths {
         get: operations["search"];
         put?: never;
         post: operations["create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/customers/inactive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["inactive_customers"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -229,6 +261,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/customers/{id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["customer_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/customers/{id}/packages": {
         parameters: {
             query?: never;
@@ -237,6 +285,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["list_customer_packages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/customers/{id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["customer_summary"];
         put?: never;
         post?: never;
         delete?: never;
@@ -302,6 +366,70 @@ export interface paths {
         };
         get?: never;
         put: operations["update_plan"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/packages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_packages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/daily": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["daily_report"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/ledger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ledger"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/range": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["range_report"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -553,11 +681,14 @@ export interface components {
             items: components["schemas"]["CustomerPackageItemDto"][];
             /** @description Plan name when sold (snapshot). */
             name: string;
-            origin: components["schemas"]["PackageOriginDto"];
             /** Format: uuid */
             plan_id?: string | null;
             refund?: components["schemas"]["RefundDto"] | null;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description The sale it was sold in. `null` for a package migrated from the paper books, which
+             *     otherwise looks like any other package (EM 2026-11-05: no "sổ cũ" label in the product).
+             */
             sale_id?: string | null;
             /** Format: int64 */
             sessions_remaining: number;
@@ -596,6 +727,49 @@ export interface components {
             /** Format: int32 */
             sessions_total: number;
         };
+        /** @description `GET /customers/{id}/summary`. */
+        CustomerStats: {
+            /** Format: uuid */
+            customer_id: string;
+            /**
+             * Format: int64
+             * @description Days from the last completed visit to today.
+             */
+            days_since_last_visit?: number | null;
+            /** Format: date */
+            first_visit_on?: string | null;
+            /** Format: date */
+            last_visit_on?: string | null;
+            /**
+             * Format: int64
+             * @description paid − voided − refunded.
+             */
+            net_spent: number;
+            packages: components["schemas"]["PackageCounts"];
+            /**
+             * Format: int64
+             * @description Money received from this customer (before voids and refunds).
+             */
+            paid: number;
+            /** Format: int64 */
+            refunded: number;
+            /**
+             * Format: int64
+             * @description Remaining sessions across active packages.
+             */
+            sessions_remaining: number;
+            /** Format: int64 */
+            sessions_used: number;
+            /**
+             * Format: int64
+             * @description Completed visits.
+             */
+            visit_count: number;
+            /** Format: int64 */
+            voided: number;
+            /** Format: int64 */
+            voided_visit_count: number;
+        };
         /** @description Search hit for the counter: never contains notes. */
         CustomerSummaryDto: {
             full_name: string;
@@ -615,6 +789,68 @@ export interface components {
             phone: string;
             source?: string | null;
         };
+        /** @description `GET /reports/daily`. */
+        DailyReport: {
+            compare: components["schemas"]["DayComparison"];
+            counts: components["schemas"]["DayCounts"];
+            /** Format: date */
+            date: string;
+            revenue?: components["schemas"]["Revenue"] | null;
+            /** @description Technicians who worked that day, most visits first. */
+            technicians: components["schemas"]["TechnicianDay"][];
+        };
+        DayComparison: {
+            same_weekday_last_week: components["schemas"]["DayHeadline"];
+            yesterday: components["schemas"]["DayHeadline"];
+        };
+        /** @description Operational counts (no money): visible with `report.read`. */
+        DayCounts: {
+            /**
+             * Format: int64
+             * @description Distinct customers with at least one completed visit.
+             */
+            customers: number;
+            /**
+             * Format: int64
+             * @description One-off services performed in completed visits.
+             */
+            one_off_services: number;
+            /**
+             * Format: int64
+             * @description Packages sold in sales that are not voided.
+             */
+            packages_sold: number;
+            /**
+             * Format: int64
+             * @description Package sessions taken by completed visits.
+             */
+            sessions_used: number;
+            /**
+             * Format: int64
+             * @description Completed visits (voided ones are in `voided_visits`).
+             */
+            visits: number;
+            /** Format: int64 */
+            voided_visits: number;
+        };
+        /** @description The headline numbers of another day, for "so với hôm qua / cùng thứ tuần trước". */
+        DayHeadline: {
+            /** Format: int64 */
+            customers: number;
+            /** Format: date */
+            date: string;
+            /**
+             * Format: int64
+             * @description `revenue.net.total` of that day; only with `report.revenue.read`.
+             */
+            net_revenue?: number | null;
+            /** Format: int64 */
+            packages_sold: number;
+            /** Format: int64 */
+            sessions_used: number;
+            /** Format: int64 */
+            visits: number;
+        };
         DiscountCreate: {
             /**
              * Format: int64
@@ -626,10 +862,232 @@ export interface components {
         };
         /** @enum {string} */
         GenderDto: "female" | "male";
+        /** @enum {string} */
+        Granularity: "day" | "week" | "month";
         HealthNoteWrite: {
             /** @description null or empty clears the note. */
             health_note?: string | null;
         };
+        HistoryCancellation: {
+            /** Format: uuid */
+            customer_package_id: string;
+            package_name: string;
+            reason: string;
+            refund?: components["schemas"]["HistoryRefund"] | null;
+        };
+        /** @description One entry of a customer's timeline; exactly one of the detail fields is set, per `kind`. */
+        HistoryEvent: {
+            /** Format: date-time */
+            at: string;
+            /** Format: date */
+            business_date: string;
+            cancellation?: components["schemas"]["HistoryCancellation"] | null;
+            kind: components["schemas"]["HistoryKind"];
+            purchase?: components["schemas"]["HistoryPurchase"] | null;
+            visit?: components["schemas"]["HistoryVisit"] | null;
+            void?: components["schemas"]["HistoryVoid"] | null;
+        };
+        /** @enum {string} */
+        HistoryKind: "visit" | "purchase" | "visit_voided" | "purchase_voided" | "package_cancelled";
+        /** @description `GET /customers/{id}/history`: newest first. */
+        HistoryPage: {
+            /** Format: uuid */
+            customer_id: string;
+            events: components["schemas"]["HistoryEvent"][];
+            next_cursor?: string | null;
+        };
+        HistoryPurchase: {
+            closer_name?: string | null;
+            /** Format: int64 */
+            discount_amount: number;
+            discount_reason?: string | null;
+            lines: components["schemas"]["HistoryPurchaseLine"][];
+            /** @description Money received (before any void). */
+            paid: components["schemas"]["MethodSplit"];
+            /** Format: uuid */
+            sale_id: string;
+            /** Format: int64 */
+            subtotal: number;
+            /** Format: int64 */
+            total: number;
+            void_reason?: string | null;
+            voided: boolean;
+            /** Format: date-time */
+            voided_at?: string | null;
+        };
+        HistoryPurchaseLine: {
+            /** Format: uuid */
+            customer_package_id?: string | null;
+            description: string;
+            /** Format: int64 */
+            line_total: number;
+            /** Format: int32 */
+            qty: number;
+        };
+        HistoryRefund: {
+            /** Format: int64 */
+            amount: number;
+            /** Format: date */
+            business_date: string;
+            method: string;
+        };
+        HistoryVisit: {
+            /** Format: date-time */
+            check_in_at: string;
+            /** Format: uuid */
+            id: string;
+            lines: components["schemas"]["HistoryVisitLine"][];
+            /** @description Money received for the one-off lines (before any void). */
+            paid: components["schemas"]["MethodSplit"];
+            void_reason?: string | null;
+            voided: boolean;
+            /** Format: date-time */
+            voided_at?: string | null;
+        };
+        HistoryVisitLine: {
+            /**
+             * Format: int64
+             * @description Price of a one-off line (0 for a package session).
+             */
+            amount: number;
+            /**
+             * Format: uuid
+             * @description The package the session came from (`source = package`).
+             */
+            customer_package_id?: string | null;
+            package_name?: string | null;
+            /** Format: int32 */
+            qty: number;
+            service_name: string;
+            /**
+             * Format: int32
+             * @description Sessions left in that package item right after this visit.
+             */
+            sessions_left_after?: number | null;
+            source: components["schemas"]["LineSource"];
+            /** Format: uuid */
+            staff_id: string;
+            staff_name: string;
+        };
+        HistoryVoid: {
+            /**
+             * Format: uuid
+             * @description The voided visit or sale.
+             */
+            id: string;
+            reason: string;
+            /** @description Money given back by reversal (positive amounts). */
+            reversed: components["schemas"]["MethodSplit"];
+            /**
+             * Format: int64
+             * @description Package sessions put back (visit voids).
+             */
+            sessions_restored: number;
+        };
+        InactiveCustomer: {
+            /** Format: int64 */
+            active_packages: number;
+            /** Format: uuid */
+            customer_id: string;
+            /** Format: int64 */
+            days_absent: number;
+            full_name: string;
+            /**
+             * Format: date
+             * @description Last completed visit, or the latest package start when the customer never came.
+             */
+            last_seen_on: string;
+            /** Format: date */
+            last_visit_on?: string | null;
+            phone: string;
+            /** Format: int64 */
+            sessions_remaining: number;
+        };
+        /** @description `GET /customers/inactive`: longest absence first. */
+        InactivePage: {
+            /** Format: int32 */
+            days: number;
+            items: components["schemas"]["InactiveCustomer"][];
+            next_cursor?: string | null;
+        };
+        /** @enum {string} */
+        InactiveScope: "with_sessions" | "all";
+        /** @description One amount split like the paper revenue book: package sales vs one-off services. */
+        KindSplit: {
+            /** Format: int64 */
+            one_off: number;
+            /** Format: int64 */
+            package: number;
+        };
+        /** @description Daily subtotal of the book, for every day of the range (not only the current page). */
+        LedgerDay: {
+            /** Format: int64 */
+            bank_transfer: number;
+            /** Format: int64 */
+            cash: number;
+            /** Format: date */
+            date: string;
+            /** Format: int64 */
+            entries: number;
+            /**
+             * Format: int64
+             * @description bank_transfer + cash: equals `revenue.net.total` of `GET /reports/daily`.
+             */
+            total: number;
+            /** Format: int64 */
+            unpaid: number;
+        };
+        /** @enum {string} */
+        LedgerEntry: "sale" | "void" | "refund";
+        /** @description `GET /reports/ledger`. */
+        LedgerPage: {
+            /** @description Days of the range that have entries, in order. */
+            days: components["schemas"]["LedgerDay"][];
+            /** Format: date */
+            from: string;
+            /** @description Pass as `cursor` for the next rows; `null` on the last page. */
+            next_cursor?: string | null;
+            /** @description Book order: day, then time. */
+            rows: components["schemas"]["LedgerRow"][];
+            /** Format: date */
+            to: string;
+        };
+        /** @description One line of the "sổ theo dõi doanh thu hằng ngày". Outgoing money is negative. */
+        LedgerRow: {
+            /** Format: date-time */
+            at: string;
+            /** Format: int64 */
+            bank_transfer: number;
+            /** Format: date */
+            business_date: string;
+            /** Format: int64 */
+            cash: number;
+            /** Format: uuid */
+            customer_id: string;
+            customer_name: string;
+            entry: components["schemas"]["LedgerEntry"];
+            /**
+             * Format: uuid
+             * @description The sale id (`sale`, `void`) or the refund id (`refund`).
+             */
+            id: string;
+            kind: components["schemas"]["SaleKind"];
+            /** @description Discount reason, void reason or refund reason. */
+            note?: string | null;
+            /** @description "Dịch vụ 1 lần" column: the one-off services, comma-separated. */
+            one_off?: string | null;
+            /** @description "Liệu trình" column: the packages, comma-separated. */
+            package?: string | null;
+            /**
+             * Format: int64
+             * @description "Chưa thanh toán": total − received (always 0 in R1, which collects in full).
+             */
+            unpaid: number;
+            /** @description The sale was voided later (its `void` row may be on another day). */
+            voided: boolean;
+        };
+        /** @enum {string} */
+        LineSource: "package" | "one_off";
         LoginBody: {
             password: string;
             phone: string;
@@ -653,6 +1111,18 @@ export interface components {
             permissions: string[];
             tenants: components["schemas"]["TenantSummary"][];
             user: components["schemas"]["UserSummary"];
+        };
+        /** @description One amount split by how the money moved. */
+        MethodSplit: {
+            /** Format: int64 */
+            bank_transfer: number;
+            /** Format: int64 */
+            cash: number;
+            /**
+             * Format: int64
+             * @description cash + bank_transfer.
+             */
+            total: number;
         };
         MfaCodeBody: {
             /** @description 6-digit TOTP code, or (for `verify`) one of the recovery codes. */
@@ -742,6 +1212,16 @@ export interface components {
             refund_amount?: number;
             refund_method?: components["schemas"]["RefundMethodDto"] | null;
         };
+        PackageCounts: {
+            /** Format: int64 */
+            active: number;
+            /** Format: int64 */
+            cancelled: number;
+            /** Format: int64 */
+            exhausted: number;
+            /** Format: int64 */
+            expired: number;
+        };
         /** @description Body of `POST /customer-packages/{id}/extend` (with `If-Match`). */
         PackageExtend: {
             /**
@@ -752,8 +1232,63 @@ export interface components {
             /** @description Why (required, 1–500 characters); audited. */
             reason?: string | null;
         };
-        /** @enum {string} */
-        PackageOriginDto: "sale" | "opening_balance";
+        PackageOverviewCounts: {
+            /** Format: int64 */
+            active: number;
+            /** Format: int64 */
+            cancelled: number;
+            /** Format: int64 */
+            exhausted: number;
+            /** Format: int64 */
+            expired: number;
+            /**
+             * Format: int64
+             * @description Active packages expiring within `expiring_within_days` (default 30).
+             */
+            expiring_soon: number;
+        };
+        /** @description `GET /packages`. */
+        PackageOverviewPage: {
+            /** @description Over the whole spa (or the `q` match), ignoring `status` and the cursor. */
+            counts: components["schemas"]["PackageOverviewCounts"];
+            /**
+             * Format: int32
+             * @description The window `counts.expiring_soon` used.
+             */
+            expiring_within_days: number;
+            items: components["schemas"]["PackageOverviewRow"][];
+            next_cursor?: string | null;
+        };
+        PackageOverviewRow: {
+            /** Format: date-time */
+            cancelled_at?: string | null;
+            /** Format: uuid */
+            customer_id: string;
+            customer_name: string;
+            customer_phone: string;
+            /**
+             * Format: int64
+             * @description Days from today to `expires_on` (negative once expired).
+             */
+            days_to_expiry?: number | null;
+            /** Format: date */
+            expires_on?: string | null;
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: date
+             * @description Last completed visit that used this package.
+             */
+            last_used_on?: string | null;
+            name: string;
+            /** Format: int64 */
+            sessions_remaining: number;
+            /** Format: int64 */
+            sessions_total: number;
+            /** Format: date */
+            starts_on: string;
+            status: components["schemas"]["PackageStatusDto"];
+        };
         PackagePlanDto: {
             active: boolean;
             gift_note?: string | null;
@@ -784,6 +1319,36 @@ export interface components {
         };
         /** @enum {string} */
         PackageStatusDto: "active" | "expired" | "exhausted" | "cancelled";
+        /** @enum {string} */
+        PackageStatusFilter: "active" | "expired" | "exhausted" | "cancelled";
+        /** @description `GET /customer-packages/{id}/usage`: one page of the paper "sổ theo dõi liệu trình". */
+        PackageUsage: {
+            package: components["schemas"]["CustomerPackageDto"];
+            /** @description Oldest first, like the paper page (STT 1, 2, 3…). */
+            uses: components["schemas"]["PackageUse"][];
+        };
+        PackageUse: {
+            /** Format: date */
+            business_date: string;
+            /** Format: date-time */
+            check_in_at: string;
+            /** Format: uuid */
+            item_id: string;
+            /** Format: int32 */
+            qty: number;
+            service_name: string;
+            /** Format: int32 */
+            sessions_left_after?: number | null;
+            /** Format: uuid */
+            staff_id: string;
+            staff_name: string;
+            /** Format: uuid */
+            visit_id: string;
+            /** Format: uuid */
+            visit_line_id: string;
+            /** @description The visit was voided and its sessions were put back. */
+            voided: boolean;
+        };
         PaymentCreate: {
             /**
              * Format: int64
@@ -845,6 +1410,38 @@ export interface components {
             /** Format: int64 */
             male?: number | null;
         };
+        RangeBucket: {
+            /** @description `customers` = distinct customers inside this bucket. */
+            counts: components["schemas"]["DayCounts"];
+            /**
+             * Format: date
+             * @description Last day of the bucket (clipped to `to`).
+             */
+            end: string;
+            revenue?: components["schemas"]["Revenue"] | null;
+            /**
+             * Format: date
+             * @description First day of the bucket (clipped to `from`).
+             */
+            start: string;
+        };
+        /** @description `GET /reports/range`. */
+        RangeReport: {
+            /** Format: date */
+            from: string;
+            granularity: components["schemas"]["Granularity"];
+            revenue?: components["schemas"]["Revenue"] | null;
+            /** @description Every bucket of the range in order, empty ones included (continuous charts). */
+            series: components["schemas"]["RangeBucket"][];
+            /** Format: date */
+            to: string;
+            /** @description Top 10 by packages sold. */
+            top_packages: components["schemas"]["TopPackage"][];
+            /** @description Top 10 by sessions used + one-off services. */
+            top_services: components["schemas"]["TopService"][];
+            /** @description Whole range; `customers` = distinct customers over the range. */
+            totals: components["schemas"]["DayCounts"];
+        };
         ReauthBody: {
             /** @description Current TOTP (or a recovery code); required when the account has MFA enabled. */
             code?: string | null;
@@ -870,6 +1467,24 @@ export interface components {
         };
         /** @enum {string} */
         RefundMethodDto: "cash" | "bank_transfer";
+        /**
+         * @description Money of a day or a period, cash basis, from the append-only `payment` and `refund` rows.
+         *     A void never deletes the original payment: it adds a reversal on the day of the void, so a
+         *     sale voided the next day still counts on its own day and shows as a void on the next.
+         */
+        Revenue: {
+            /** @description Money received (`payment.kind = 'payment'`), discounts already taken off. */
+            collected: components["schemas"]["MethodSplit"];
+            collected_by_kind: components["schemas"]["KindSplit"];
+            /** @description collected − voids − refunds. */
+            net: components["schemas"]["MethodSplit"];
+            net_by_kind: components["schemas"]["KindSplit"];
+            /** @description Money paid back when a package was cancelled (always a package). */
+            refunds: components["schemas"]["MethodSplit"];
+            /** @description Reversals of voided sales, booked on the day of the void. */
+            voids: components["schemas"]["MethodSplit"];
+            voids_by_kind: components["schemas"]["KindSplit"];
+        };
         /**
          * @description Body of `POST /sales`. Prices are never read from the client: unknown fields such as
          *     `unit_price` or `total` are ignored and every amount is computed from the catalog.
@@ -919,6 +1534,8 @@ export interface components {
             /** Format: date-time */
             voided_at?: string | null;
         };
+        /** @enum {string} */
+        SaleKind: "package" | "one_off";
         SaleLineCreate: {
             /** @description Gift note for this package; omitted = the plan's, empty = none. */
             gift_note?: string | null;
@@ -1012,10 +1629,53 @@ export interface components {
             /** Format: uuid */
             tenant_id: string;
         };
+        TechnicianDay: {
+            name: string;
+            /** Format: int64 */
+            one_off_services: number;
+            /** Format: int64 */
+            sessions_used: number;
+            /** Format: uuid */
+            staff_id: string;
+            /**
+             * Format: int64
+             * @description Completed visits in which this technician did at least one line.
+             */
+            visits: number;
+        };
         TenantSummary: {
             /** Format: uuid */
             id: string;
             name: string;
+        };
+        TopPackage: {
+            name: string;
+            /** Format: uuid */
+            plan_id?: string | null;
+            /**
+             * Format: int64
+             * @description Sum of their prices after discount; only with `report.revenue.read`.
+             */
+            revenue?: number | null;
+            /**
+             * Format: int64
+             * @description Packages sold in sales that are not voided.
+             */
+            sold: number;
+        };
+        TopService: {
+            name: string;
+            /**
+             * Format: int64
+             * @description List price of the one-off services; only with `report.revenue.read`.
+             */
+            one_off_revenue?: number | null;
+            /** Format: int64 */
+            one_off_services: number;
+            /** Format: uuid */
+            service_id: string;
+            /** Format: int64 */
+            sessions_used: number;
         };
         UserSummary: {
             full_name: string;
@@ -1636,6 +2296,46 @@ export interface operations {
             };
         };
     };
+    package_usage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackageUsage"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: needs customer.read + visit.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     search: {
         parameters: {
             query?: never;
@@ -1710,6 +2410,52 @@ export interface operations {
                 };
                 content?: never;
             };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    inactive_customers: {
+        parameters: {
+            query?: {
+                /** @description Not seen for at least this many days (1–365, default 30). */
+                days?: number;
+                scope?: components["schemas"]["InactiveScope"];
+                cursor?: string;
+                /** @description 1–100, default 20. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InactivePage"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: needs customer.read + visit.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed: days out_of_range, cursor invalid, limit out_of_range */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -1865,6 +2611,57 @@ export interface operations {
             };
         };
     };
+    customer_history: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                /** @description 1–100, default 20. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryPage"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: needs customer.read + visit.read + sale.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed: cursor invalid, limit out_of_range */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_customer_packages: {
         parameters: {
             query?: never;
@@ -1890,6 +2687,46 @@ export interface operations {
                 };
                 content?: never;
             };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    customer_summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerStats"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: needs customer.read + visit.read + sale.read */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1945,7 +2782,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Packages created with origin opening_balance; no sale, no payment */
+            /** @description Packages created without a sale or payment. Deprecated: owner-only until the import screen is gone; the team migrates with `app import-paper-book` */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -2109,6 +2946,195 @@ export interface operations {
                 };
                 content?: never;
             };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_packages: {
+        parameters: {
+            query?: {
+                /** @description Derived status; default all. */
+                status?: components["schemas"]["PackageStatusFilter"];
+                /**
+                 * @description 1–365. Set: only active packages expiring within that many days, soonest first.
+                 *     Also the window of `counts.expiring_soon` (default 30).
+                 */
+                expiring_within_days?: number;
+                /** @description Customer name (accent-insensitive, ≥ 2 characters) or phone digits (≥ 3). */
+                q?: string;
+                cursor?: string;
+                /** @description 1–100, default 20. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackageOverviewPage"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: no customer.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed: q too_short / too_long, expiring_within_days out_of_range, cursor invalid, limit out_of_range */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    daily_report: {
+        parameters: {
+            query?: {
+                /** @description Business day `YYYY-MM-DD` (spa time zone); default today. */
+                date?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Counts; `revenue` and `net_revenue` only with report.revenue.read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyReport"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: no report.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed: date out_of_range */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ledger: {
+        parameters: {
+            query?: {
+                /** @description Default today. */
+                from?: string;
+                /** @description Default `from`; at most 92 days after `from`. */
+                to?: string;
+                cursor?: string;
+                /** @description 1–100, default 20. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LedgerPage"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: no report.revenue.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed: from after_to, to range_too_long (> 92 days), cursor invalid, limit out_of_range */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    range_report: {
+        parameters: {
+            query?: {
+                /** @description First business day; default `to` − 6 days. */
+                from?: string;
+                /** @description Last business day (inclusive); default today. At most 366 days after `from`. */
+                to?: string;
+                /** @description Bucket size of `series`; default `day`. */
+                granularity?: components["schemas"]["Granularity"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Money fields only with report.revenue.read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RangeReport"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: no report.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed: from after_to, to range_too_long (> 366 days) */
             422: {
                 headers: {
                     [name: string]: unknown;

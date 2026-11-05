@@ -44,15 +44,26 @@ use utoipa::OpenApi;
         operations::http::read_visit,
         operations::http::update_visit,
         operations::http::void_visit,
+        reporting::http::daily_report,
+        reporting::http::range_report,
+        reporting::http::ledger,
+        reporting::http::inactive_customers,
+        reporting::http::customer_history,
+        reporting::http::customer_summary,
+        reporting::http::package_usage,
+        reporting::http::list_packages,
     ),
+    // Enums used only as query parameters are not reached from any body, so register them.
+    components(schemas(reporting::dto::PackageStatusFilter, reporting::dto::InactiveScope, reporting::dto::Granularity)),
     tags(
         (name = "auth", description = "Đăng nhập, phiên, đổi spa"),
         (name = "catalog", description = "Bảng giá dịch vụ và gói liệu trình"),
         (name = "customers", description = "Hồ sơ khách hàng"),
         (name = "staff", description = "Nhân viên (chọn người chốt, KTV)"),
-        (name = "packages", description = "Liệu trình của khách, nhập từ sổ cũ"),
+        (name = "packages", description = "Liệu trình của khách"),
         (name = "sales", description = "Bán liệu trình, thanh toán"),
         (name = "visits", description = "Ghi lượt khách tại quầy"),
+        (name = "reports", description = "Xem lại và theo dõi: hôm nay, theo khoảng ngày, sổ doanh thu, lịch sử khách, liệu trình"),
     )
 )]
 pub struct ApiDoc;
@@ -104,6 +115,14 @@ mod tests {
             "/api/v1/sales/{id}/void",
             "/api/v1/customer-packages/{id}/extend",
             "/api/v1/customer-packages/{id}/cancel",
+            "/api/v1/reports/daily",
+            "/api/v1/reports/range",
+            "/api/v1/reports/ledger",
+            "/api/v1/customers/inactive",
+            "/api/v1/customers/{id}/history",
+            "/api/v1/customers/{id}/summary",
+            "/api/v1/customer-packages/{id}/usage",
+            "/api/v1/packages",
         ] {
             assert!(paths.contains(&expected), "{expected} missing from OpenAPI");
         }
@@ -131,6 +150,14 @@ mod tests {
             "PackageExtend",
             "PackageCancel",
             "RefundDto",
+            "DailyReport",
+            "RangeReport",
+            "LedgerPage",
+            "HistoryPage",
+            "CustomerStats",
+            "PackageUsage",
+            "PackageOverviewPage",
+            "InactivePage",
         ] {
             assert!(schemas.contains_key(schema), "{schema} missing");
         }
