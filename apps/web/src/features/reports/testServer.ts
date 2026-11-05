@@ -1,3 +1,4 @@
+import type { FollowUp, FollowUpCreate, InactiveCustomer } from "@vpyd/api-client";
 import { vi } from "vitest";
 import { spaToday } from "../corrections/api";
 import type { PackageFilter } from "./api";
@@ -10,6 +11,8 @@ export interface FakeOptions {
   withoutRevenue?: boolean;
   /** Reply of `GET /customers?q=` (customer search). */
   searchHits?: unknown[];
+  /** Numbers `GET /customers/phone-check` reports as taken (digits only), with the owner's name. */
+  takenPhones?: Record<string, { id: string; name: string }>;
 }
 
 export const ME = (permissions: string[]) => ({
@@ -19,63 +22,134 @@ export const ME = (permissions: string[]) => ({
   permissions,
 });
 
-function route(url: URL, { permissions, withoutRevenue = false, searchHits = [] }: FakeOptions): unknown {
+/** Per-spy state: follow-ups recorded during the test. */
+interface State {
+  followUps: FollowUp[];
+}
+
+/** Same rule as the server (overview.rs): due = never contacted, or the planned day has come. */
+function matchesFollowUp(c: InactiveCustomer, filter: string, today: string): boolean {
+  if (filter === "not_contacted") return !c.last_follow_up;
+  if (filter === "due") return !c.last_follow_up || (c.next_follow_up_on != null && c.next_follow_up_on <= today);
+  if (filter === "scheduled") return c.next_follow_up_on != null && c.next_follow_up_on > today;
+  return true;
+}
+
+function route(method: string, url: URL, body: unknown, options: FakeOptions, state: State): { status: number; json: unknown } {
+  const { permissions, withoutRevenue = false, searchHits = [], takenPhones = {} } = options;
+  const ok = (json: unknown) => ({ status: 200, json });
   const q = url.searchParams;
   const p = url.pathname.replace(/^\/api\/v1/, "");
-  if (p === "/me") return ME(permissions);
-  if (p === "/customers" && q.has("q")) return searchHits;
+  const today = spaToday();
+  if (p === "/me") return ok(ME(permissions));
+  if (p === "/customers" && q.has("q")) return ok(searchHits);
+  if (p === "/customers/phone-check") {
+    const digits = (q.get("phone") ?? "").replace(/\D/g, "").replace(/^84/, "0");
+    const valid = /^0[35789]\d{8}$/.test(digits);
+    const hit = valid ? takenPhones[digits] : undefined;
+    return ok({ valid, taken: hit !== undefined, existing_id: hit?.id ?? null, full_name: hit?.name ?? null });
+  }
   if (p === "/reports/daily") {
-    const d = mockDaily(q.get("date") ?? spaToday());
+    const d = mockDaily(q.get("date") ?? today);
     if (withoutRevenue) {
       delete d.revenue;
       delete d.compare.yesterday.net_revenue;
       delete d.compare.same_weekday_last_week.net_revenue;
     }
-    return d;
+    return ok(d);
   }
   if (p === "/reports/range") {
     const g = q.get("granularity");
-    const r = mockRange(q.get("from") ?? spaToday(), q.get("to") ?? spaToday(), g === "week" || g === "month" ? g : "day");
+    const r = mockRange(q.get("from") ?? today, q.get("to") ?? today, g === "week" || g === "month" || g === "year" ? g : "day");
     if (withoutRevenue) {
       delete r.revenue;
       for (const b of r.series) delete b.revenue;
       for (const s of r.top_services) delete s.one_off_revenue;
       for (const s of r.top_packages) delete s.revenue;
     }
-    return r;
+    return ok(r);
   }
   if (p === "/reports/ledger") {
-    return mockLedger(q.get("from") ?? spaToday(), q.get("to") ?? spaToday());
+    if (withoutRevenue) return { status: 403, json: { type: "about:blank", title: "Forbidden", status: 403, code: "auth.forbidden" } };
+    return ok(mockLedger(q.get("from") ?? today, q.get("to") ?? today));
+  }
+  if (p === "/customers/inactive") {
+    const page = mockInactive(today, Number(q.get("days") ?? "7"), state.followUps);
+    const kind = q.get("kind");
+    const term = (q.get("q") ?? "").toLowerCase();
+    const items = page.items
+      .filter((c) => matchesFollowUp(c, q.get("follow_up") ?? "all", today))
+      .filter((c) => !kind || c.kind === kind)
+      .filter((c) => q.get("scope") !== "with_sessions" || c.sessions_remaining > 0)
+      .filter((c) => !term || c.full_name.toLowerCase().includes(term) || c.phone.includes(term));
+    // Two pages: the first half, then the rest behind a cursor.
+    const half = Math.ceil(items.length / 2);
+    return ok(
+      q.get("cursor")
+        ? { ...page, items: items.slice(half), next_cursor: null }
+        : { ...page, items: items.slice(0, half), next_cursor: items.length > half ? "page-2" : null },
+    );
+  }
+  const followUps = /^\/customers\/([^/]+)\/follow-ups$/.exec(p);
+  if (followUps) {
+    const customerId = followUps[1] ?? "";
+    if (method === "POST") {
+      const b = body as FollowUpCreate;
+      const saved: FollowUp = {
+        id: `fu-${String(state.followUps.length + 1)}`,
+        customer_id: customerId,
+        contacted_on: b.contacted_on ?? today,
+        channel: b.channel,
+        outcome: b.outcome,
+        note: b.note ?? null,
+        next_follow_up_on: b.next_follow_up_on ?? null,
+        by_user_id: "u1",
+        by_name: "Quản lý Hà",
+        created_at: new Date().toISOString(),
+      };
+      state.followUps.unshift(saved);
+      return { status: 201, json: saved };
+    }
+    return ok({ items: state.followUps.filter((f) => f.customer_id === customerId), has_more: false });
   }
   // Any customer id (lists link to mock-customer-N): one profile, so a test can click through.
   const profile = /^\/customers\/(?!inactive$)([^/]+)(\/history|\/summary)?$/.exec(p);
   if (profile) {
     const id = profile[1] ?? "c1";
-    if (profile[2] === "/history") return mockHistory(id, spaToday());
-    if (profile[2] === "/summary") return mockCustomerStats(id, mockHistory(id, spaToday()));
-    return { id, full_name: "Nguyễn Thị Hà", phone: "0905 111 222", gender: "female", version: 1 };
+    if (profile[2] === "/history") {
+      const page = mockHistory(id, today);
+      const term = (q.get("q") ?? "").toLowerCase();
+      const kind = q.get("kind");
+      const events = page.events
+        .filter((e) => !kind || e.kind === kind)
+        .filter((e) => !q.get("from") || e.business_date >= (q.get("from") ?? ""))
+        .filter((e) => !q.get("to") || e.business_date <= (q.get("to") ?? ""))
+        .filter(
+          (e) =>
+            !term ||
+            (e.visit?.lines ?? []).some((l) => `${l.service_name} ${l.category_name} ${l.staff_name} ${l.package_name ?? ""}`.toLowerCase().includes(term)) ||
+            (e.purchase?.lines ?? []).some((l) => l.description.toLowerCase().includes(term)),
+        );
+      return ok({ ...page, events });
+    }
+    if (profile[2] === "/summary") return ok(mockCustomerStats(id, mockHistory(id, today)));
+    return ok({ id, full_name: "Nguyễn Thị Hà", phone: "0905 111 222", gender: "female", version: 1 });
   }
   if (p === "/packages") {
-    const filter: PackageFilter = q.get("expiring_within_days")
-      ? "expiring"
-      : ((q.get("status") as PackageFilter | null) ?? "all");
-    return mockPackages(spaToday(), filter, q.get("q") ?? "");
+    const filter: PackageFilter = q.get("expiring_within_days") ? "expiring" : ((q.get("status") as PackageFilter | null) ?? "all");
+    return ok(mockPackages(today, filter, q.get("q") ?? ""));
   }
-  if (p === "/customers/inactive") {
-    const page = mockInactive(spaToday(), Number(q.get("days") ?? "7"));
-    // Two pages: the first half, then the rest behind a cursor.
-    const half = Math.ceil(page.items.length / 2);
-    return q.get("cursor")
-      ? { ...page, items: page.items.slice(half), next_cursor: null }
-      : { ...page, items: page.items.slice(0, half), next_cursor: "page-2" };
-  }
-  return [];
+  return ok([]);
 }
 
-/** Replaces `fetch`; returns the spy so a test can inspect the requests. */
+/** Replaces `fetch`; returns the spy so a test can inspect the requests (URL and init). */
 export function serveManagement(options: FakeOptions) {
-  return vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+  const state: State = { followUps: [] };
+  return vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
     const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    return Promise.resolve(Response.json(route(new URL(raw, "http://app.test"), options)));
+    const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+    const body: unknown = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
+    const { status, json } = route(method.toUpperCase(), new URL(raw, "http://app.test"), body, options, state);
+    return Promise.resolve(Response.json(json, { status, headers: status >= 400 ? { "content-type": "application/problem+json" } : {} }));
   });
 }

@@ -18,6 +18,7 @@ import type {
   RangeReport,
   Revenue,
 } from "./contract";
+import type { FollowUp, InactiveCustomer } from "@vpyd/api-client";
 
 function rng(seedText: string): () => number {
   let h = 2166136261;
@@ -162,6 +163,7 @@ function addCounts(a: DayCounts, b: DayCounts): DayCounts {
 
 /** First day of the bucket holding `d` (ISO week from Monday, calendar month). */
 function bucketStart(d: string, granularity: RangeReport["granularity"]): string {
+  if (granularity === "year") return `${d.slice(0, 4)}-01-01`;
   if (granularity === "month") return `${d.slice(0, 7)}-01`;
   if (granularity === "week") {
     const wd = (new Date(`${d}T00:00:00Z`).getUTCDay() + 6) % 7;
@@ -363,23 +365,42 @@ export function mockPackages(today: string, status: PackageStatus | "expiring" |
   };
 }
 
-export function mockInactive(today: string, days: number): InactivePage {
+/**
+ * `GET /customers/inactive` before filtering: a third one-off customers, one contacted and due
+ * again today, one with a call planned in 5 days; `recorded` (newest first) overrides the seed.
+ */
+export function mockInactive(today: string, days: number, recorded: FollowUp[] = []): InactivePage {
   const r = rng(`inactive-${String(days)}`);
-  const items = CUSTOMERS.map(([full_name, phone], i) => {
+  const items: InactiveCustomer[] = CUSTOMERS.map(([full_name, phone], i) => {
     const absent = days + int(r, 0, 60);
     const last = addDays(today, -absent);
+    const customer_id = `mock-customer-${String(i)}`;
+    const mine = recorded.find((f) => f.customer_id === customer_id);
+    const seeded =
+      i === 1
+        ? { on: addDays(today, -3), channel: "phone" as const, outcome: "no_answer" as const, by: "Quản lý Hà", next: today }
+        : i === 2
+          ? { on: addDays(today, -1), channel: "zalo" as const, outcome: "will_come" as const, by: "Quản lý Hà", next: addDays(today, 5) }
+          : null;
+    const f = mine
+      ? { on: mine.contacted_on, channel: mine.channel, outcome: mine.outcome, by: mine.by_name, next: mine.next_follow_up_on ?? null }
+      : seeded;
+    const oneOff = i % 3 === 0;
     return {
-      customer_id: `mock-customer-${String(i)}`,
+      customer_id,
       full_name,
       phone,
-      kind: i % 3 === 0 ? ("one_off" as const) : ("package" as const),
+      gender: i % 4 === 1 ? ("male" as const) : ("female" as const),
+      kind: oneOff ? ("one_off" as const) : ("package" as const),
       last_visit_on: last,
       last_seen_on: last,
       days_absent: absent,
-      active_packages: int(r, 1, 2),
-      sessions_remaining: int(r, 1, 9),
+      active_packages: oneOff ? 0 : int(r, 1, 2),
+      sessions_remaining: oneOff ? 0 : int(r, 1, 9),
+      last_follow_up: f ? { on: f.on, channel: f.channel, outcome: f.outcome, by: f.by } : null,
+      next_follow_up_on: f?.next ?? null,
     };
-  }).sort((a, b) => b.days_absent - a.days_absent);
+  }).sort((x, y) => y.days_absent - x.days_absent);
   return { days, items, next_cursor: null };
 }
 
