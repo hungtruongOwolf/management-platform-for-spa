@@ -1,0 +1,20 @@
+# CLI uploads (vercel deploy) send only what the two services build from. Secrets never leave the machine.
+.env
+.env.*
+!.env.example
+**/*.pem
+**/*.key
+.git
+.claude
+memory
+prototypes
+docs for reference
+**/node_modules
+**/dist
+**/coverage
+**/.vite
+apps/api/target
+apps/web/e2e/.results
+apps/web/playwright-report
+apps/web/test-results
+apps/web/.lighthouseci
