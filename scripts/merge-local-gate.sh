@@ -8,6 +8,9 @@
 # The temporary worktree lives on the scratch/temp drive (not the exFAT project drive). Secrets come
 # from the repo's .env (dev database for the sqlx tests); nothing is printed.
 set -euo pipefail
+# The repo sits on exFAT, which records no file ownership; git's safe.directory check would refuse
+# the temp worktree. Trust it for this process only (no global config change).
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'
 pr="${1:?usage: merge-local-gate.sh <pr-number> [--e2e]}"
 e2e="${2:-}"
 repo_root=$(git rev-parse --show-toplevel)
