@@ -1,4 +1,40 @@
 /* Design tokens — single source: memory/wiki/design/design-system.md. Components use tokens, never raw hex. */
+
+/*
+ * Metric-matched fallbacks (frontend.md "Perf budget"). On a cold load text first paints in a local
+ * font and the web fonts swap in later; without these the swap re-wraps lines and shifts the page
+ * (CLS 0.156 on /quay with a busy day list). Local files only, no download. Overrides measured in
+ * Chromium on Vietnamese UI text: size-adjust = web-font width / local width, then ascent/descent of
+ * the web font divided by size-adjust.
+ */
+@font-face {
+  font-family: "Be Vietnam Pro Fallback";
+  font-weight: 400;
+  src: local("Arial"), local("ArialMT"), local("Liberation Sans");
+  size-adjust: 106.5%;
+  ascent-override: 93.9%;
+  descent-override: 25.35%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: "Be Vietnam Pro Fallback";
+  font-weight: 600;
+  src: local("Arial Bold"), local("Arial-BoldMT"), local("Liberation Sans Bold");
+  size-adjust: 102.42%;
+  ascent-override: 97.64%;
+  descent-override: 26.36%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: "Lora Fallback";
+  font-weight: 600;
+  src: local("Georgia Bold"), local("Georgia-Bold");
+  size-adjust: 91.86%;
+  ascent-override: 109.95%;
+  descent-override: 29.39%;
+  line-gap-override: 0%;
+}
+
 :root {
   --bg: #faf7f2;
   --surface: #ffffff;
@@ -33,8 +69,9 @@
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
 
-  --font-ui: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-brand: "Lora", Georgia, serif;
+  --font-ui: "Be Vietnam Pro", "Be Vietnam Pro Fallback", system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
+  --font-brand: "Lora", "Lora Fallback", Georgia, serif;
   color-scheme: light;
 }
 
