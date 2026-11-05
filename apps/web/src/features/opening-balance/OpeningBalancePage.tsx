@@ -54,8 +54,9 @@ const Err = ({ children }: { children: string | undefined }) =>
  */
 export function OpeningBalancePage() {
   const { data: me } = useSuspenseQuery(meQuery);
-  // UX only: the server answers 403 to anyone without the permission.
-  if (!can(me, "opening_balance.import")) {
+  // UX only: the server answers 403 to anyone without the permission. Owners only while the import
+  // waits for its operator CLI (EM 2026-11-05); `package.cancel_refund` is the owner's mark.
+  if (!can(me, "opening_balance.import") || !can(me, "package.cancel_refund")) {
     return (
       <p role="alert" className="text-danger">
         Bạn không có quyền nhập liệu trình từ sổ cũ.

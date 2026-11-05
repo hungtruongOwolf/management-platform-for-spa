@@ -15,7 +15,7 @@ const linkButton = "text-sm font-medium text-primary underline-offset-2 hover:un
 function Card({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
     <AuthFrame brand={<p className={bandTitle}>Viên Phúc Y Đường</p>}>
-      <section aria-labelledby="mfa-title" className="space-y-4 p-6">
+      <section aria-labelledby="mfa-title" className="space-y-4 p-6 sm:p-10">
         <div className="text-center">
           <h1 id="mfa-title" className="font-brand text-xl text-primary">
             {title}

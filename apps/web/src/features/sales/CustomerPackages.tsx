@@ -98,11 +98,6 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
             >
               <div>
                 <span className="font-semibold">{p.name}</span>
-                {p.origin === "opening_balance" && (
-                  <span className="ml-2 rounded-full bg-accent-soft px-2 text-xs font-semibold text-accent-text">
-                    Nhập từ sổ cũ
-                  </span>
-                )}
                 <span className="block text-sm text-text-muted">
                   {p.items.length > 1 &&
                     `${p.items.map((i) => `${i.name} ${String(i.sessions_remaining)}/${String(i.sessions_total)}`).join(" · ")} · `}

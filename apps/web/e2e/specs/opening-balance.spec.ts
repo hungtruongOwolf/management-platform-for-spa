@@ -5,12 +5,14 @@ import { expectAccessible, uniquePhone } from "../support/run";
 test.use({ storageState: ownerState });
 
 test.describe("nhập liệu trình từ sổ cũ (US8)", () => {
-  test("new customer + free-form package 4 left of 10 → labelled on the profile, no revenue", async ({
+  test("new customer + free-form package 4 left of 10 → a plain package on the profile, no revenue", async ({
     page,
   }) => {
+    // EM 2026-11-05: no navigation entry any more; the owner opens the page by URL until the import
+    // moves to an operator CLI.
     await page.goto("/");
-    await page.getByRole("link", { name: "Nhập sổ cũ" }).click();
-    await expect(page).toHaveURL(/\/nhap-so-cu$/);
+    await expect(page.getByRole("link", { name: /sổ cũ|sổ giấy/i })).toHaveCount(0);
+    await page.goto("/nhap-so-cu");
     await expect(
       page.getByText("Không tính vào doanh thu hôm nay."),
     ).toBeVisible();
@@ -50,7 +52,8 @@ test.describe("nhập liệu trình từ sổ cũ (US8)", () => {
     await expect(page).toHaveURL(/\/khach-hang\/[0-9a-f-]{36}$/);
     const list = page.getByRole("list", { name: "Liệu trình của khách" });
     await expect(list).toContainText("Gội đầu 10 buổi (sổ cũ)");
-    await expect(list).toContainText("Nhập từ sổ cũ");
+    // Migrated packages look like any other package (EM 2026-11-05).
+    await expect(list).not.toContainText("Nhập từ sổ cũ");
     await expect(list).toContainText("còn 4/10 buổi");
   });
 

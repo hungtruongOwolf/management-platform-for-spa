@@ -220,6 +220,7 @@ describe("home page", () => {
       "/quay",
       "/khach-hang",
       "/bang-gia",
+      "/bang-gia/goi",
     ]);
     // No opening-balance permission, so no paper-book shortcut (UX only; the server decides).
     expect(

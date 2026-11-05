@@ -18,6 +18,8 @@ const MANAGER = [
   "opening_balance.import",
   "catalog.read",
 ];
+// The page is the owner's only while the import moves to an operator CLI (EM 2026-11-05).
+const OWNER = [...MANAGER, "package.cancel_refund"];
 const me = (permissions: string[]) => ({
   user: { id: "u1", full_name: "Quản lý Ngọc", phone: "0905 123 456" },
   active_tenant: { id: "t1", name: "Viên Phúc Y Đường" },
@@ -242,7 +244,7 @@ describe("/nhap-so-cu", () => {
   }
 
   it("imports 4 left of a plan once even on a double click, then clears for the next customer", async () => {
-    const calls = serve(MANAGER);
+    const calls = serve(OWNER);
     const { user, form } = await pickCustomerAndPlan();
     expect(
       screen.getByText("Không tính vào doanh thu hôm nay."),
@@ -293,7 +295,7 @@ describe("/nhap-so-cu", () => {
   });
 
   it("'Lưu và nhập tiếp' puts the cursor back in the customer search", async () => {
-    serve(MANAGER);
+    serve(OWNER);
     const { user, form } = await pickCustomerAndPlan();
     await user.type(within(form).getByLabelText("Còn lại"), "4");
     await user.type(
@@ -312,7 +314,7 @@ describe("/nhap-so-cu", () => {
   });
 
   it("blocks more left than total before sending", async () => {
-    const calls = serve(MANAGER);
+    const calls = serve(OWNER);
     const { user, form } = await pickCustomerAndPlan();
     await user.type(within(form).getByLabelText("Còn lại"), "13");
     await user.type(
@@ -330,7 +332,7 @@ describe("/nhap-so-cu", () => {
 
   it("creates a new customer in the same form and offers the existing profile on a duplicate phone", async () => {
     const calls = serve(
-      MANAGER,
+      OWNER,
       () =>
         new Response(
           JSON.stringify({
@@ -385,34 +387,39 @@ describe("/nhap-so-cu", () => {
     ).toBeInTheDocument();
   });
 
-  it("is in the menu only for people who may import", async () => {
+  it("tells anyone without the permission that they may not import", async () => {
     serve(["customer.read", "catalog.read"]);
     at("/nhap-so-cu");
     expect(
       await screen.findByText("Bạn không có quyền nhập liệu trình từ sổ cũ."),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: "Nhập sổ cũ" }),
-    ).not.toBeInTheDocument();
   });
 
-  it("shows the menu entry to managers", async () => {
+  it("is reachable by URL for the owner only, never from the navigation (EM 2026-11-05)", async () => {
     serve(MANAGER);
-    at("/");
+    at("/nhap-so-cu");
     expect(
-      await screen.findByRole("link", { name: "Nhập sổ cũ" }),
+      await screen.findByText("Bạn không có quyền nhập liệu trình từ sổ cũ."),
     ).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /sổ cũ|sổ giấy/i })).not.toBeInTheDocument();
+  });
+
+  it("has no navigation entry or shortcut, even for the owner", async () => {
+    serve(OWNER);
+    at("/");
+    await screen.findByRole("navigation", { name: "Lối tắt" });
+    expect(screen.queryByRole("link", { name: /sổ cũ|sổ giấy/i })).not.toBeInTheDocument();
   });
 });
 
 describe("customer profile", () => {
-  it("labels imported packages 'Nhập từ sổ cũ' (AC8.5)", async () => {
+  it("shows migrated packages like any other, without a 'sổ cũ' label (EM 2026-11-05)", async () => {
     serve(MANAGER);
     at("/khach-hang/c1");
     const list = await screen.findByRole("list", {
       name: "Liệu trình của khách",
     });
-    expect(within(list).getByText("Nhập từ sổ cũ")).toBeInTheDocument();
     expect(within(list).getByText("còn 2/5 buổi")).toBeInTheDocument();
+    expect(list).not.toHaveTextContent(/sổ cũ/i);
   });
 });

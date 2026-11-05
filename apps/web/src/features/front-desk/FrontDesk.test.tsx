@@ -450,7 +450,7 @@ describe("/quay", () => {
     ).toBeInTheDocument();
   });
 
-  it("labels a package imported from the paper books on the customer card (AC8.5)", async () => {
+  it("shows a package migrated from the paper books like any other (EM 2026-11-05)", async () => {
     serve(MANAGER, undefined, [
       pkg("cp1"),
       pkg("cp2", { origin: "opening_balance", sale_id: null }),
@@ -469,14 +469,17 @@ describe("/quay", () => {
     const rows = within(list).getAllByRole("listitem");
     const imported = rows.find((li) => li.textContent.includes("Gói cp2"));
     const sold = rows.find((li) => li.textContent.includes("Gói cp1"));
-    expect(imported).toHaveTextContent("Nhập từ sổ cũ");
-    expect(sold).not.toHaveTextContent("Nhập từ sổ cũ");
+    // No "sổ cũ" label: the migration is a one-time data fill, not a kind of package.
+    expect(imported).toBeDefined();
+    expect(sold).toBeDefined();
+    expect(list).not.toHaveTextContent(/sổ cũ/i);
+    expect(within(imported as HTMLElement).getByRole("button", { name: /Trừ 1 buổi/ })).toBeInTheDocument();
   });
 
   it("hides the Quầy entry without visit.record", async () => {
     serve(["catalog.read"]);
     at("/");
     await screen.findByRole("navigation", { name: "Chính" });
-    expect(screen.queryByRole("link", { name: "Quầy" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Ghi lượt khách" })).toBeNull();
   });
 });

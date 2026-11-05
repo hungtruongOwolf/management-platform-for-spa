@@ -12,12 +12,31 @@ import { LoginPage } from "../features/auth/LoginPage";
 import { authQuery } from "../features/auth/session";
 import { FrontDeskPage } from "../features/front-desk/FrontDeskPage";
 import { safeNextPath } from "../lib/api";
-import { AppShell, HomePage } from "./AppShell";
+import { AppShell } from "./AppShell";
 
 // Other business screens are separate chunks so the first paint does not wait for their code
 // (Lighthouse LCP budget, testing.md §4). The front desk stays in the main bundle: it is the screen
 // kept open all day, and a lazy chunk would add a request after the shell to its LCP.
 const customersModule = () => import("../features/customers/CustomersPage");
+const reportsPage = () => import("../features/reports/ReportsPage");
+const packagesPage = () => import("../features/reports/PackagesOverviewPage");
+const inactivePage = () => import("../features/reports/InactiveCustomersPage");
+
+/** Shown while a lazy screen's chunk loads (after the router's pending delay): no spinner. */
+function PageSkeleton() {
+  return (
+    <div role="status" aria-label="Đang tải màn hình" className="space-y-4">
+      <div className="skeleton h-4 w-24" />
+      <div className="skeleton h-8 w-64" />
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="skeleton h-28" />
+        <div className="skeleton h-28" />
+        <div className="skeleton h-28" />
+      </div>
+      <div className="skeleton h-64" />
+    </div>
+  );
+}
 
 interface RouterContext {
   queryClient: QueryClient;
@@ -115,7 +134,32 @@ const authedRoute = createRoute({
 const homeRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/",
-  component: HomePage,
+  component: lazyRouteComponent(() => import("./HomePage"), "HomePage"),
+});
+
+/** Management views (app/features.ts): each page renders nothing useful unless the flag is on. */
+const reportsRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/bao-cao",
+  component: lazyRouteComponent(reportsPage, "ReportsPage"),
+});
+
+const packagesRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/goi-lieu-trinh",
+  component: lazyRouteComponent(packagesPage, "PackagesOverviewPage"),
+});
+
+const inactiveRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/nhac-khach",
+  component: lazyRouteComponent(inactivePage, "InactiveCustomersPage"),
+});
+
+const settingsRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/cai-dat",
+  component: lazyRouteComponent(() => import("./SettingsPage"), "SettingsPage"),
 });
 
 const priceListRoute = createRoute({
@@ -155,6 +199,10 @@ const customerRoute = createRoute({
   component: lazyRouteComponent(customersModule, "CustomerRoutePage"),
 });
 
+/**
+ * Paper-book import (US8). No longer in the navigation (EM 2026-11-05: the migration is a one-time
+ * data fill moving to an operator CLI); reachable by URL for the owner until a follow-up deletes it.
+ */
 const openingBalanceRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/nhap-so-cu",
@@ -175,6 +223,10 @@ const routeTree = rootRoute.addChildren([
     customersRoute,
     customerRoute,
     openingBalanceRoute,
+    reportsRoute,
+    packagesRoute,
+    inactiveRoute,
+    settingsRoute,
   ]),
 ]);
 
@@ -185,6 +237,7 @@ export function createAppRouter(
   return createRouter({
     routeTree,
     context: { queryClient },
+    defaultPendingComponent: PageSkeleton,
     ...(history ? { history } : {}),
   });
 }

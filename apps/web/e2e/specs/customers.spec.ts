@@ -34,7 +34,7 @@ test.describe("khách hàng (US2)", () => {
     );
     await expectAccessible(page, "customer-profile");
 
-    await page.getByRole("link", { name: "← Danh sách khách" }).click();
+    await page.getByRole("link", { name: "Danh sách khách" }).click();
     const search = page.getByRole("combobox", {
       name: "Tìm khách theo SĐT hoặc tên",
     });
@@ -60,7 +60,7 @@ test.describe("khách hàng (US2)", () => {
     await expect(page).toHaveURL(/\/khach-hang\/[0-9a-f-]{36}$/);
     await expect(page.getByRole("note")).toHaveCount(0);
 
-    await page.getByRole("link", { name: "← Danh sách khách" }).click();
+    await page.getByRole("link", { name: "Danh sách khách" }).click();
     await page
       .getByRole("combobox", { name: "Tìm khách theo SĐT hoặc tên" })
       .fill(phone.slice(-6));

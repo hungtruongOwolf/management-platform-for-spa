@@ -11,6 +11,8 @@ import { GENDER_LABEL, customerQuery, recentQuery } from "./api";
 import { CustomerForm } from "./CustomerForm";
 import { CustomerProfile } from "./CustomerProfile";
 import { CustomerSearch } from "./CustomerSearch";
+import { Icon } from "../../app/Icon";
+import { CustomerHistory } from "../reports/CustomerHistory";
 
 /** /khach-hang — find or register a customer. */
 export function CustomersPage() {
@@ -26,10 +28,13 @@ export function CustomersPage() {
 
   return (
     <section aria-labelledby="customers-title" className="space-y-4">
-      <h1 id="customers-title" className="font-brand text-2xl text-primary">
-        Khách hàng
-      </h1>
-      <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
+      <div>
+        <p className="eyebrow">Hồ sơ khách</p>
+        <h1 id="customers-title" className="page-title">
+          Khách hàng
+        </h1>
+      </div>
+      <div className="card p-4">
         <CustomerSearch
           onSelect={(c) => {
             open(c.id);
@@ -64,6 +69,13 @@ export function CustomersPage() {
             {messageFor(recent.error)}
           </p>
         )}
+        {recent.isPending && (
+          <div role="status" aria-label="Đang tải khách gần đây" className="card space-y-2 p-3">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="skeleton h-12" />
+            ))}
+          </div>
+        )}
         {recent.data?.length === 0 && (
           <p className="text-text-muted">Chưa có khách nào.</p>
         )}
@@ -73,19 +85,19 @@ export function CustomersPage() {
               <Link
                 to="/khach-hang/$customerId"
                 params={{ customerId: c.id }}
-                className="flex min-h-14 items-center justify-between gap-2 px-3 py-2 hover:bg-surface-2"
+                className="flex min-h-14 items-center justify-between gap-2 px-4 py-2 hover:bg-surface-2"
               >
                 <span className="flex min-w-0 items-center gap-3">
                   {/* Given name's initial (Vietnamese names end with it), decorative. */}
                   <span
                     aria-hidden="true"
-                    className="grid size-9 shrink-0 place-items-center rounded-full bg-accent-soft font-brand text-accent-text"
+                    className="avatar"
                   >
                     {c.full_name.trim().split(/\s+/).at(-1)?.charAt(0).toUpperCase()}
                   </span>
                   <span className="font-semibold">{c.full_name}</span>
                 </span>
-                <span className="text-sm text-text-muted">
+                <span className="text-sm text-text-muted tabular">
                   {c.phone}
                   {c.gender ? ` · ${GENDER_LABEL[c.gender] ?? ""}` : ""}
                 </span>
@@ -104,15 +116,17 @@ export function CustomerRoutePage() {
   return <CustomerPage customerId={customerId} />;
 }
 
-/** /khach-hang/:customerId — profile with edit. */
+/** /khach-hang/:customerId — profile with edit, and the usage history beside it. */
 export function CustomerPage({ customerId }: { customerId: string }) {
   const queryClient = useQueryClient();
+  const { data: me } = useSuspenseQuery(meQuery);
   const customer = useQuery(customerQuery(customerId));
   if (customer.isPending)
     return (
-      <p role="status" className="text-text-muted">
-        Đang tải hồ sơ…
-      </p>
+      <div role="status" aria-label="Đang tải hồ sơ…" className="space-y-3">
+        <div className="skeleton h-5 w-36" />
+        <div className="skeleton h-48" />
+      </div>
     );
   if (customer.isError) {
     return (
@@ -123,15 +137,18 @@ export function CustomerPage({ customerId }: { customerId: string }) {
   }
   return (
     <div className="space-y-3">
-      <Link to="/khach-hang" className="text-sm text-text-muted underline">
-        ← Danh sách khách
+      <Link to="/khach-hang" className="inline-flex min-h-11 items-center gap-1 text-sm text-text-muted hover:text-primary">
+        <Icon name="chevron-left" className="size-4" /> Danh sách khách
       </Link>
-      <CustomerProfile
-        customer={customer.data}
-        onChanged={(c) => {
-          queryClient.setQueryData(customerQuery(customerId).queryKey, c);
-        }}
-      />
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <CustomerProfile
+          customer={customer.data}
+          onChanged={(c) => {
+            queryClient.setQueryData(customerQuery(customerId).queryKey, c);
+          }}
+        />
+        <CustomerHistory customerId={customerId} me={me} />
+      </div>
     </div>
   );
 }

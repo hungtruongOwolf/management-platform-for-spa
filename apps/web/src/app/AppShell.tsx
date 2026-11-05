@@ -1,82 +1,16 @@
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { Link, Outlet, useNavigate } from "@tanstack/react-router";
-import { can, logout, meQuery } from "../features/auth/session";
-import { BrandMark } from "./BrandMark";
+import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from "react";
+import { logout, meQuery } from "../features/auth/session";
+import { BrandMark, BrandWordmark } from "./BrandMark";
+import { Icon } from "./Icon";
+import { navFor, tabsFor, type NavGroup } from "./nav";
+import { readSidebarCollapsed, saveSidebarCollapsed } from "./prefs";
 
-// Cream text on the maroon chrome; the current screen gets a gold underline.
-const navLink =
-  "inline-flex min-h-11 items-center rounded-[10px] px-3 font-medium text-chrome-text-muted hover:bg-[var(--chrome-hover)] hover:text-chrome-text [&.active]:bg-[var(--chrome-hover)] [&.active]:text-chrome-text [&.active]:shadow-[inset_0_-2px_0_var(--chrome-accent)]";
+// Opens on Ctrl/⌘+K or the search button only: its own chunk, off the startup path.
+const CommandPalette = lazy(() => import("./CommandPalette"));
 
-/** Signed-in frame: header, navigation (shown by permission — UX only), and the current screen. */
-export function AppShell() {
-  const { data: me } = useSuspenseQuery(meQuery);
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
-
-  // "Khóa nhanh": leave the counter safely in one tap.
-  const lock = async () => {
-    await logout(queryClient);
-    await navigate({ to: "/dang-nhap" });
-  };
-
-  return (
-    <div className="min-h-dvh">
-      {/* One row at every width (nav scrolls sideways instead of wrapping): the header height
-          never changes when the web font swaps in, so the page below does not shift (CLS).
-          The focus ring switches to the bright gold: the standard one is too dark on maroon. */}
-      <header className="flex items-center gap-3 border-b-2 border-chrome-accent/70 bg-chrome bg-[linear-gradient(90deg,var(--chrome-bg),var(--chrome-bg-2))] px-4 py-2 text-chrome-text [--focus:var(--chrome-accent)]">
-        <span className="flex shrink-0 items-center gap-2 whitespace-nowrap font-brand text-lg text-chrome-accent sm:text-xl">
-          <BrandMark className="size-8 shrink-0" />
-          {/* Phones: the mark alone, the name stays for screen readers. */}
-          <span className="max-sm:sr-only">Viên Phúc Y Đường</span>
-        </span>
-        <nav
-          aria-label="Chính"
-          className="flex min-w-0 flex-1 gap-1 overflow-x-auto whitespace-nowrap"
-        >
-          <Link to="/" className={navLink} activeOptions={{ exact: true }}>
-            Trang chủ
-          </Link>
-          {can(me, "visit.record") && (
-            <Link to="/quay" className={navLink}>
-              Quầy
-            </Link>
-          )}
-          {can(me, "customer.read") && (
-            <Link to="/khach-hang" className={navLink}>
-              Khách hàng
-            </Link>
-          )}
-          {can(me, "opening_balance.import") && (
-            <Link to="/nhap-so-cu" className={navLink}>
-              Nhập sổ cũ
-            </Link>
-          )}
-          {can(me, "catalog.read") && (
-            <Link to="/bang-gia" className={navLink}>
-              Bảng giá
-            </Link>
-          )}
-        </nav>
-        <span className="hidden whitespace-nowrap text-sm text-chrome-text-muted lg:inline">
-          {me?.user.full_name} · {me?.active_tenant?.name ?? "Chưa chọn spa"}
-        </span>
-        <button
-          type="button"
-          onClick={() => void lock()}
-          className="min-h-11 shrink-0 whitespace-nowrap rounded-[10px] border border-chrome-text-muted/50 px-4 font-medium text-chrome-text hover:border-chrome-accent hover:bg-[var(--chrome-hover)]"
-        >
-          Khóa nhanh
-        </button>
-      </header>
-      <main className="mx-auto max-w-6xl p-4 sm:px-6">
-        <Outlet />
-      </main>
-    </div>
-  );
-}
-
-const today = new Intl.DateTimeFormat("vi-VN", {
+const longDate = new Intl.DateTimeFormat("vi-VN", {
   weekday: "long",
   day: "numeric",
   month: "numeric",
@@ -84,61 +18,261 @@ const today = new Intl.DateTimeFormat("vi-VN", {
   timeZone: "Asia/Ho_Chi_Minh",
 });
 
-const tile =
-  "group flex min-h-24 flex-col justify-between gap-2 rounded-[14px] border border-border bg-surface p-4 shadow-card hover:-translate-y-0.5 hover:border-accent hover:shadow-float";
+/** Given name's initial: Vietnamese names end with it. */
+export function initialOf(name: string): string {
+  return name.trim().split(/\s+/).at(-1)?.charAt(0).toUpperCase() ?? "";
+}
 
-export function HomePage() {
-  const { data: me } = useSuspenseQuery(meQuery);
+function NavLinks({ groups, onNavigate }: { groups: NavGroup[]; onNavigate?: () => void }) {
   return (
-    <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-[14px] bg-chrome bg-[linear-gradient(120deg,var(--chrome-bg),var(--chrome-bg-2))] p-6 text-chrome-text shadow-float sm:p-8">
-        <BrandMark className="pointer-events-none absolute -right-6 -bottom-10 size-48 text-chrome-accent opacity-20" />
-        <p className="text-sm text-chrome-text-muted first-letter:uppercase">
-          {today.format(new Date())}
-        </p>
-        <h1 className="mt-1 font-brand text-2xl text-chrome-text sm:text-3xl">
-          Xin chào, {me?.user.full_name}
-        </h1>
-        <p className="mt-2 text-chrome-text-muted">
-          {me?.active_tenant?.name ?? "Chưa chọn spa"} · Hồi sinh sức khỏe và sắc
-          đẹp
-        </p>
-      </section>
+    <>
+      {groups.map((g) => (
+        <div key={g.label} role="group" aria-labelledby={`nav-${g.label}`} className="nav-group">
+          <p id={`nav-${g.label}`} className="nav-group-label">
+            {g.label}
+          </p>
+          {g.items.map((item) => (
+            <Link
+              key={item.to}
+              to={item.to}
+              activeOptions={{ exact: item.exact ?? false }}
+              className="nav-item"
+              title={item.label}
+              {...(onNavigate ? { onClick: onNavigate } : {})}
+            >
+              <Icon name={item.icon} />
+              <span className="nav-label">{item.label}</span>
+            </Link>
+          ))}
+        </div>
+      ))}
+    </>
+  );
+}
 
-      <nav aria-label="Lối tắt" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {can(me, "visit.record") && (
-          <Link to="/quay" className={tile}>
-            <span className="font-semibold text-primary">Ghi lượt khách</span>
-            <span className="text-sm text-text-muted">
-              Tìm khách, trừ buổi, thu tiền
-            </span>
+/** `<dialog>` driven by React state: the browser gives focus trapping, Esc and the backdrop. */
+export function Modal({
+  open,
+  onClose,
+  className,
+  label,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  className: string;
+  label: string;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = ref.current;
+    if (!d) return;
+    if (open && !d.open) {
+      if (typeof d.showModal === "function") d.showModal();
+      else d.setAttribute("open", "");
+    } else if (!open && d.open) {
+      if (typeof d.close === "function") d.close();
+      else d.removeAttribute("open");
+    }
+  }, [open]);
+  return (
+    <dialog
+      ref={ref}
+      aria-label={label}
+      className={className}
+      onClose={onClose}
+      // A click on the backdrop lands on the dialog element itself.
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      {open && children}
+    </dialog>
+  );
+}
+
+/**
+ * Signed-in frame. Desktop/tablet: a maroon sidebar (logo, grouped nav, collapsible on ≥ 1024px,
+ * an icon rail below that) and a top bar (date, search / command palette, user, quick lock).
+ * Phones: a top bar and a bottom tab bar with a "Thêm" drawer. Nav is filtered by permission (UX
+ * only — the API decides).
+ */
+export function AppShell() {
+  const { data: me } = useSuspenseQuery(meQuery);
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const groups = navFor(me);
+  const tabs = tabsFor(groups);
+  const [collapsed, setCollapsed] = useState(readSidebarCollapsed);
+  const [palette, setPalette] = useState(false);
+  const [drawer, setDrawer] = useState(false);
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  // Screens slide in after a navigation, never on the first paint (that would delay LCP).
+  const [firstPath] = useState(pathname);
+  const [navigated, setNavigated] = useState(false);
+  if (!navigated && pathname !== firstPath) setNavigated(true);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPalette(true);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
+  // "Khóa nhanh": leave the counter safely in one tap.
+  const lock = async () => {
+    await logout(queryClient);
+    await navigate({ to: "/dang-nhap" });
+  };
+
+  const toggleSidebar = () => {
+    setCollapsed((c) => {
+      saveSidebarCollapsed(!c);
+      return !c;
+    });
+  };
+
+  return (
+    <div className="shell">
+      {/* The focus ring switches to the bright gold: the standard one is too dark on maroon. */}
+      <aside className="sidebar chrome" data-collapsed={collapsed || undefined}>
+        <Link to="/" className="sidebar-brand" aria-label="Viên Phúc Y Đường, về trang tổng quan">
+          <BrandMark className="size-10 shrink-0" />
+          <BrandWordmark className="sidebar-wordmark h-9 w-[70px]" />
+        </Link>
+        <nav aria-label="Chính" className="sidebar-nav">
+          <NavLinks groups={groups} />
+        </nav>
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          className="sidebar-toggle"
+          aria-label={collapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
+          aria-pressed={collapsed}
+        >
+          <Icon name={collapsed ? "chevron-right" : "chevron-left"} />
+          <span className="nav-label">Thu gọn</span>
+        </button>
+      </aside>
+
+      <div className="shell-main">
+        <header className="topbar">
+          <Link to="/" className="topbar-brand" aria-label="Viên Phúc Y Đường, về trang tổng quan">
+            <BrandMark className="size-8 text-primary" />
           </Link>
-        )}
-        {can(me, "customer.read") && (
-          <Link to="/khach-hang" className={tile}>
-            <span className="font-semibold text-primary">Hồ sơ khách</span>
-            <span className="text-sm text-text-muted">
-              Liệu trình, lịch sử, lưu ý sức khỏe
+          <p className="hidden text-sm text-text-muted first-letter:uppercase md:block">
+            {longDate.format(new Date())}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setPalette(true);
+            }}
+            className="search-trigger"
+            aria-label="Tìm khách hoặc mở màn hình (Ctrl+K)"
+            aria-haspopup="dialog"
+          >
+            <Icon name="search" className="size-[18px]" />
+            <span className="max-sm:sr-only">Tìm khách, mở màn hình…</span>
+            <kbd className="ml-auto max-md:hidden">Ctrl K</kbd>
+          </button>
+          <span className="user-chip">
+            <span aria-hidden="true" className="avatar">
+              {initialOf(me?.user.full_name ?? "")}
             </span>
-          </Link>
-        )}
-        {can(me, "opening_balance.import") && (
-          <Link to="/nhap-so-cu" className={tile}>
-            <span className="font-semibold text-primary">Chuyển sổ giấy</span>
-            <span className="text-sm text-text-muted">
-              Đưa liệu trình đang dùng từ sổ vào máy
+            <span className="leading-tight max-xl:hidden">
+              <span className="block text-sm font-semibold">{me?.user.full_name}</span>
+              <span className="block text-xs text-text-muted">
+                {me?.active_tenant?.name ?? "Chưa chọn spa"}
+              </span>
             </span>
+          </span>
+          <button type="button" onClick={() => void lock()} className="btn btn-secondary shrink-0" aria-label="Khóa nhanh">
+            <Icon name="lock" className="size-[18px]" />
+            <span className="max-sm:hidden">Khóa nhanh</span>
+          </button>
+        </header>
+
+        <main id="main" className="shell-content">
+          <div key={pathname} className={navigated ? "page-enter" : undefined}>
+            <Outlet />
+          </div>
+        </main>
+      </div>
+
+      <nav aria-label="Thanh điều hướng" className="tabbar chrome">
+        {tabs.map((t) => (
+          <Link key={t.to} to={t.to} activeOptions={{ exact: t.exact ?? false }} className="tab">
+            <Icon name={t.icon} />
+            <span>{t.to === "/" ? "Trang chủ" : t.label.replace("Ghi lượt khách", "Quầy").replace("Hồ sơ khách", "Khách")}</span>
           </Link>
-        )}
-        {can(me, "catalog.read") && (
-          <Link to="/bang-gia" className={tile}>
-            <span className="font-semibold text-primary">Dịch vụ &amp; gói</span>
-            <span className="text-sm text-text-muted">
-              Menu, giá Nữ/Nam, gói liệu trình
-            </span>
-          </Link>
-        )}
+        ))}
+        <button
+          type="button"
+          className="tab"
+          aria-haspopup="dialog"
+          aria-label="Thêm màn hình"
+          onClick={() => {
+            setDrawer(true);
+          }}
+        >
+          <Icon name="more" />
+          <span>Thêm</span>
+        </button>
       </nav>
+
+      <Modal
+        open={drawer}
+        onClose={() => {
+          setDrawer(false);
+        }}
+        className="drawer chrome"
+        label="Điều hướng"
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <span className="flex items-center gap-2">
+            <BrandMark className="size-10" />
+            <BrandWordmark className="h-9 w-[70px]" />
+          </span>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Đóng"
+            onClick={() => {
+              setDrawer(false);
+            }}
+          >
+            <Icon name="x" />
+          </button>
+        </div>
+        <nav aria-label="Tất cả màn hình">
+          <NavLinks
+            groups={groups}
+            onNavigate={() => {
+              setDrawer(false);
+            }}
+          />
+        </nav>
+      </Modal>
+
+      {palette && (
+        <Suspense fallback={null}>
+          <CommandPalette
+            groups={groups}
+            onClose={() => {
+              setPalette(false);
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

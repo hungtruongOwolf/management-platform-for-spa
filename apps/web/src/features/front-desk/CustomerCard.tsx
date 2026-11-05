@@ -76,8 +76,8 @@ export function CustomerCard({
       <h3 className="mt-3 font-semibold">Liệu trình</h3>
       {packages.isPending && (
         <div aria-hidden="true" className="mt-2 space-y-2">
-          <div className="h-14 animate-pulse rounded-[10px] bg-surface-2" />
-          <div className="h-14 animate-pulse rounded-[10px] bg-surface-2" />
+          <div className="h-14 skeleton" />
+          <div className="h-14 skeleton" />
         </div>
       )}
       {packages.isError && (
@@ -116,11 +116,6 @@ export function CustomerCard({
               >
                 <div>
                   <span className="font-semibold">{label}</span>
-                  {p.origin === "opening_balance" && (
-                    <span className="ml-2 rounded-full bg-accent-soft px-2 text-xs font-semibold text-accent-text">
-                      Nhập từ sổ cũ
-                    </span>
-                  )}
                   {/* Sessions left as a gold bar: readable at a glance; the numbers below say it. */}
                   <span
                     aria-hidden="true"

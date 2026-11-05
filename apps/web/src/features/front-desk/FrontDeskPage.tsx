@@ -564,7 +564,7 @@ export function FrontDeskPage() {
       <div
         role="status"
         aria-live="polite"
-        className={`pointer-events-none fixed bottom-6 left-1/2 z-10 max-w-[calc(100%-32px)] -translate-x-1/2 rounded-[10px] border-l-4 px-4 py-3 shadow-float transition-[opacity,translate] duration-200 ease-[var(--ease-out)] motion-reduce:transition-none ${toast ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"} ${toast?.error ? "border-danger-soft bg-danger text-surface" : "border-chrome-accent bg-chrome text-chrome-text"}`}
+        className={`pointer-events-none fixed bottom-[calc(var(--tabbar-h,0px)+24px)] left-1/2 z-30 max-w-[calc(100%-32px)] -translate-x-1/2 rounded-[10px] border-l-4 px-4 py-3 shadow-float transition-[opacity,translate] duration-200 ease-[var(--ease-out)] motion-reduce:transition-none ${toast ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"} ${toast?.error ? "border-danger-soft bg-danger text-surface" : "border-chrome-accent bg-chrome text-chrome-text"}`}
       >
         {toast?.text}
       </div>
@@ -758,8 +758,8 @@ function TodayVisits() {
       )}
       {today.isPending && (
         <div aria-hidden="true" className="space-y-2">
-          <div className="h-10 animate-pulse rounded bg-surface-2" />
-          <div className="h-10 animate-pulse rounded bg-surface-2" />
+          <div className="h-10 skeleton" />
+          <div className="h-10 skeleton" />
         </div>
       )}
       {today.isError && (
