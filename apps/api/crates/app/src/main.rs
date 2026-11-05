@@ -20,6 +20,10 @@ use tracing_subscriber::EnvFilter;
 ///   `app reset-mfa --phone P`          lost authenticator: clear TOTP + recovery codes, end
 ///                                      sessions; next login re-enrolls (verify identity first)
 ///   `app unlock --phone P`             clear a login lockout (verify identity first)
+///   `app seed-demo --tenant S [--force-again]`
+///                                      fill a spa with demo data (staff, a manager login 0905000002
+///                                      whose password comes from APP_NEW_USER_PASSWORD, customers,
+///                                      sales, three weeks of visits); refuses a spa that has it
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Local development convenience: load .env if present. Real deployments set variables in the environment.
@@ -33,12 +37,13 @@ async fn main() -> anyhow::Result<()> {
         Some("seed-catalog") => seed_catalog().await,
         Some("reset-mfa") => reset_mfa().await,
         Some("unlock") => unlock().await,
+        Some("seed-demo") => seed_demo().await,
         Some("openapi") => {
             print!("{}", app::openapi::json()?);
             Ok(())
         }
         Some(other) => anyhow::bail!(
-            "unknown command {other:?} (expected: serve | migrate | create-tenant | add-user | add-staff | seed-catalog | reset-mfa | unlock | openapi)"
+            "unknown command {other:?} (expected: serve | migrate | create-tenant | add-user | add-staff | seed-catalog | reset-mfa | unlock | seed-demo | openapi)"
         ),
     }
 }
@@ -108,6 +113,11 @@ fn flag(name: &str) -> Option<String> {
 
 fn required_flag(name: &str) -> anyhow::Result<String> {
     flag(name).with_context(|| format!("--{name} is required"))
+}
+
+/// A bare `--switch` after the command name.
+fn switch(name: &str) -> bool {
+    std::env::args().skip(2).any(|a| a == format!("--{name}"))
 }
 
 async fn create_tenant() -> anyhow::Result<()> {
@@ -204,6 +214,47 @@ async fn unlock() -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("unlock failed: {}", e.code()))?;
     anyhow::ensure!(found, "no account with that phone number");
     tracing::info!("login lockout cleared");
+    Ok(())
+}
+
+async fn seed_demo() -> anyhow::Result<()> {
+    init_tracing(Environment::Development);
+    // Invented customers and money must never mix with a real spa's books.
+    anyhow::ensure!(
+        std::env::var("APP_ENV").as_deref() != Ok("production"),
+        "seed-demo refuses APP_ENV=production: demo data is for development and staging only"
+    );
+    let tenant = required_flag("tenant")?;
+    let password = std::env::var("APP_NEW_USER_PASSWORD").context(
+        "APP_NEW_USER_PASSWORD is required: the demo manager's password (kept out of argv)",
+    )?;
+    let data_key = std::env::var("APP_DATA_KEY")
+        .context("APP_DATA_KEY is required: health notes are encrypted with the API's key")?;
+    let cipher = kernel::crypto::FieldCipher::from_base64(&data_key)
+        .map_err(|e| anyhow::anyhow!("APP_DATA_KEY: {e}"))?;
+    let owner = owner_pool().await?;
+    let app_url = std::env::var("APP_DATABASE_URL")
+        .context("APP_DATABASE_URL (app_rw) is required: demo data goes through the use cases")?;
+    let app = PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&app_url)
+        .await
+        .context("cannot connect as app_rw")?;
+    app::db_guard::check_runtime_role(&app)
+        .await
+        .context("APP_DATABASE_URL must be the app_rw role (RLS applies)")?;
+    let report = app::demo::seed(
+        &owner,
+        &app,
+        &cipher,
+        &app::demo::DemoOptions {
+            tenant_slug: &tenant,
+            manager_password: &password,
+            force_again: switch("force-again"),
+        },
+    )
+    .await?;
+    tracing::info!(%tenant, ?report, "demo data seeded; manager login {}", app::demo::MANAGER_PHONE);
     Ok(())
 }
 

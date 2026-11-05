@@ -627,7 +627,10 @@ async fn build_me(
     })
 }
 
-async fn tenant_permissions(
+/// Permissions of `user` in `tenant` from their roles; `None` = not an active member of an active
+/// spa. Requests get them through [`actor_for`]; operator tooling (`app seed-demo`) acts as a
+/// named member with exactly these, so audit and permission checks stay truthful.
+pub async fn tenant_permissions(
     pool: &PgPool,
     user: UserId,
     tenant: TenantId,
