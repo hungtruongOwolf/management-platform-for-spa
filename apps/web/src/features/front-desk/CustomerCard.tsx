@@ -72,7 +72,7 @@ export function CustomerCard({
       <p className="text-sm text-text-muted tabular">{summary.phone}</p>
       {customer.data && <HealthNote customer={customer.data} />}
 
-      <h3 className="mt-3 font-semibold">Liệu trình</h3>
+      <h3 className="mt-3 font-semibold">Gói liệu trình</h3>
       {packages.isPending && (
         <div aria-hidden="true" className="mt-2 grid content-start gap-2">
           <div className="h-14 skeleton" />

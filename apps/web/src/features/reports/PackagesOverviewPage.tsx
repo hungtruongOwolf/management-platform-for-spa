@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 import { CustomerName } from "../../app/CustomerName";
 import { NO_EXPIRY } from "../../lib/names";
 import { useSearchState } from "../../lib/searchState";
-import { FilterBar, SearchField } from "./filters";
+import { ResponsiveTable } from "../../components/ResponsiveTable";
+import { SearchField } from "./filters";
 import { packagesSearch } from "./search";
 import { longDay, packagesOverviewQuery, relativeDay, type PackageFilter } from "./api";
 import type { PackageOverviewRow, PackageStatus } from "./contract";
@@ -87,18 +88,17 @@ function PackagesOverviewPageBody() {
 
   return (
     <section className="grid content-start gap-5">
-      <PageHeader eyebrow="Gói liệu trình" title="Theo dõi gói của khách" />
-      <FilterBar label="Tìm và lọc gói">
+      <PageHeader eyebrow="Gói liệu trình" title="Gói liệu trình của khách" />
+      <div role="search" aria-label="Tìm và lọc gói" className="grid content-start gap-3">
         <SearchField
           label="Tìm theo tên khách, tên gói hoặc số điện thoại"
-          placeholder="Tên khách, tên gói, số điện thoại…"
+          placeholder="Tên khách, tên gói, SĐT…"
           value={q}
           onCommit={(next) => {
             patch({ q: next });
           }}
         />
-      </FilterBar>
-      <div className="segmented" role="group" aria-label="Lọc theo trạng thái">
+        <div className="segmented chip-row" role="group" aria-label="Lọc theo trạng thái">
         {filters.map(([f, label, n]) => (
           <button
             key={f}
@@ -112,8 +112,9 @@ function PackagesOverviewPageBody() {
             {n !== undefined && <span className="rounded-full bg-surface-2 px-2 text-xs tabular">{n}</span>}
           </button>
         ))}
+        </div>
       </div>
-      <div className={`card overflow-hidden ${page.isPlaceholderData ? "is-refreshing" : ""}`}>
+      <div className={`card rt-host overflow-hidden ${page.isPlaceholderData ? "is-refreshing" : ""}`}>
         {page.isError && (
           <div className="p-4">
             <ErrorState error={page.error} onRetry={() => void page.refetch()} />
@@ -124,48 +125,47 @@ function PackagesOverviewPageBody() {
           <EmptyState title="Không có gói nào">{q ? `Không thấy gói nào khớp “${q}”. Thử tên khác hoặc chọn “Tất cả”.` : "Thử chọn một trạng thái khác."}</EmptyState>
         )}
         {items.length > 0 && (
-          <div className="table-wrap" tabIndex={0} role="region" aria-label="Danh sách gói liệu trình">
-            <table className="data-table">
-              <caption className="sr-only">Gói liệu trình của khách</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Khách</th>
-                  <th scope="col">Gói</th>
-                  <th scope="col" className="num">
-                    Còn
-                  </th>
-                  <th scope="col">Hạn dùng</th>
-                  <th scope="col">Dùng gần nhất</th>
-                  <th scope="col">Trạng thái</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((p) => {
-                  const [label, tone] = STATUS[p.status];
+          <ResponsiveTable
+            caption="Gói liệu trình của khách"
+            rows={items}
+            rowKey={(p) => p.id}
+            stretchLink
+            cardsBelow={768}
+            columns={[
+              {
+                id: "customer",
+                header: "Khách",
+                card: "title",
+                cell: (p) => <CustomerCell id={p.customer_id} name={p.customer_name} phone={p.customer_phone} gender={p.customer_gender ?? null} />,
+              },
+              { id: "plan", header: "Gói", card: "subtitle", cell: (p) => p.name },
+              { id: "left", header: "Còn", numeric: true, card: "aside", cell: (p) => <Remaining p={p} /> },
+              {
+                id: "expiry",
+                header: "Hạn dùng",
+                className: "tabular",
+                cell: (p) => {
                   const soon = p.status === "active" && p.expires_on != null && p.days_to_expiry != null && p.days_to_expiry <= 30;
                   return (
-                    <tr key={p.id}>
-                      <td>
-                        <CustomerCell id={p.customer_id} name={p.customer_name} phone={p.customer_phone} gender={p.customer_gender ?? null} />
-                      </td>
-                      <td>{p.name}</td>
-                      <td className="num">
-                        <Remaining p={p} />
-                      </td>
-                      <td className="tabular">
-                        {p.expires_on ? longDay(p.expires_on) : <span className="badge badge-muted">{NO_EXPIRY}</span>}
-                        {soon && <span className="block text-xs font-semibold text-warning-text">còn {p.days_to_expiry} ngày</span>}
-                      </td>
-                      <td className="text-text-muted">{p.last_used_on ? relativeDay(p.last_used_on) : "Chưa dùng"}</td>
-                      <td>
-                        <span className={`badge ${tone}`}>{label}</span>
-                      </td>
-                    </tr>
+                    <>
+                      {p.expires_on ? longDay(p.expires_on) : <span className="badge badge-muted">{NO_EXPIRY}</span>}
+                      {soon && <span className="block text-xs font-semibold text-warning-text">còn {p.days_to_expiry} ngày</span>}
+                    </>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
+                },
+              },
+              { id: "used", header: "Dùng gần nhất", className: "text-text-muted", cell: (p) => (p.last_used_on ? relativeDay(p.last_used_on) : "Chưa dùng") },
+              {
+                id: "status",
+                header: "Trạng thái",
+                card: "aside",
+                cell: (p) => {
+                  const [label, tone] = STATUS[p.status];
+                  return <span className={`badge ${tone}`}>{label}</span>;
+                },
+              },
+            ]}
+          />
         )}
       </div>
       {page.hasNextPage && (

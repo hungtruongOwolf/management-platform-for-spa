@@ -94,7 +94,7 @@ test.describe("khách lâu không quay lại + chăm sóc lại (EM round 3)", (
     await absentCustomer(page, name, phone);
 
     await page.goto(`/khach-lau-khong-quay-lai?q=${encodeURIComponent(phone)}`);
-    const table = page.getByRole("table", { name: "Khách lâu không quay lại" });
+    const table = page.getByRole("table", { name: "Khách lâu chưa quay lại" });
     await expect(table.getByRole("link", { name: nameWithGender(name) })).toBeVisible();
     await expect(table.getByText("Khách lẻ")).toBeVisible();
     await expect(table.getByText("Chưa liên hệ").filter({ visible: true })).toBeVisible();

@@ -521,6 +521,112 @@ dialog::backdrop {
 :where(label:not(.flex, .inline-flex, .sr-only)) > :where(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select, textarea) {
   margin-top: 6px;
 }
+/* A label that wraps its field stacks the field under the text (EM round 4: "Nhóm dịch vụ mới"
+ * sat beside a narrower field, baseline-misaligned). Its width utility (w-64, w-full) still wins. */
+:where(label:not(.flex, .inline-flex, .sr-only)) > :where(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select, textarea) {
+  display: block;
+}
+
+/* --- Form field: label on top, field, hint/error under it (one style for every form) --------- */
+.field {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.field > :is(input, select, textarea) {
+  margin-top: 0;
+}
+.field-hint {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+/* --- Health note callout (customers/HealthNote.tsx) ------------------------------------------ */
+.health-note {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-md);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  font-weight: 500;
+}
+.health-note-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* --- Card heading: icon + title left, one action right (every card on the profile, reports) -- */
+.card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 26px;
+}
+
+/* --- Label/value list (contact details): labels in one column, values aligned ------------------ */
+.detail-list {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+}
+.detail-row {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 12px;
+}
+.detail-row dt {
+  color: var(--text-muted);
+}
+.detail-row dd {
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Package row (profile): name + status, then sessions · expiry · gift, then actions -------- */
+.package-row {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+}
+.package-row-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.package-row-head > .badge {
+  flex-shrink: 0;
+}
+.package-row-meta {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.package-row-meta strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Timeline month heading: sentence case, gold rule (not an all-caps eyebrow) --------------- */
+.timeline-month {
+  margin: 8px 0 4px;
+  color: var(--accent-text);
+  font-size: 13px;
+  font-weight: 600;
+}
 
 /* --- Stacks: one spacing scale through `gap` (layout audit 2026-11-05) -------------------------
  * Containers stack with `grid gap-*` instead of child margins. In a grid every child stretches to
@@ -923,11 +1029,11 @@ h2 .gender-chip {
   border-bottom: 1px solid var(--border-strong);
   background: var(--surface-2);
   color: var(--text-muted);
-  font-size: 12px;
+  /* Sentence case like every other label (design-system § Chữ trên giao diện): ALL-CAPS is only
+   * for the small eyebrows. */
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.04em;
   text-align: left;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 .data-table td {
@@ -1101,11 +1207,18 @@ h2 .gender-chip {
 .line-tooltip.is-left {
   transform: translateX(calc(-100% - 12px));
 }
+/* One line per series, whatever the room left near the plot edge (EM round 4: "30 ngày qua" broke
+ * onto three lines). The box sizes to its content, not to the space right of its anchor. */
+.line-tooltip {
+  width: max-content;
+  max-width: none;
+}
 .line-tip-row {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
+  white-space: nowrap;
 }
 .line-xaxis {
   position: relative;
@@ -1277,12 +1390,21 @@ h2 .gender-chip {
 .search-field-clear:hover {
   color: var(--text);
 }
+/* Same label style as `.field` (one label style in the app). */
 .filter-select,
 .filter-field {
   display: grid;
-  gap: 4px;
-  color: var(--text-muted);
-  font-size: 12px;
+  align-content: start;
+  gap: 6px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+}
+.filter-select > select,
+.filter-field > :is(input, select, textarea),
+.filter-field > .date-field > input {
+  margin-top: 0;
+  font-weight: 400;
 }
 .filter-select select,
 .filter-field :is(input, select, textarea) {

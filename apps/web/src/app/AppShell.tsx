@@ -2,6 +2,7 @@ import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from "react";
 import { logout, meQuery } from "../features/auth/session";
+import { longDate } from "../lib/format";
 import { BrandLogo } from "./BrandLogo";
 import { Icon } from "./Icon";
 import { navFor, tabsFor, type NavGroup } from "./nav";
@@ -11,14 +12,6 @@ import { UserMenu } from "./UserMenu";
 
 // Opens on Ctrl/⌘+K or the search button only: its own chunk, off the startup path.
 const CommandPalette = lazy(() => import("./CommandPalette"));
-
-const longDate = new Intl.DateTimeFormat("vi-VN", {
-  weekday: "long",
-  day: "numeric",
-  month: "numeric",
-  year: "numeric",
-  timeZone: "Asia/Ho_Chi_Minh",
-});
 
 function NavLinks({ groups, onNavigate }: { groups: NavGroup[]; onNavigate?: () => void }) {
   return (
@@ -171,8 +164,8 @@ export function AppShell() {
           <Link to="/" className="topbar-brand" aria-label="Viên Phúc Y Đường, về trang tổng quan">
             <BrandLogo className="w-12" />
           </Link>
-          <p className="hidden text-sm text-text-muted first-letter:uppercase md:block">
-            {longDate.format(new Date())}
+          <p className="hidden text-sm text-text-muted tabular md:block">
+            {longDate(new Date())}
           </p>
           <button
             type="button"
@@ -204,7 +197,7 @@ export function AppShell() {
         {tabs.map((t) => (
           <Link key={t.to} to={t.to} activeOptions={{ exact: t.exact ?? false }} className="tab">
             <Icon name={t.icon} />
-            <span>{t.to === "/" ? "Trang chủ" : t.label.replace("Ghi lượt khách", "Quầy").replace("Hồ sơ khách", "Khách")}</span>
+            <span>{t.short ?? t.label}</span>
           </Link>
         ))}
         <button

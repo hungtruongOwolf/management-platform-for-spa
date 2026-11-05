@@ -209,8 +209,8 @@ describe("owner edits the price list", () => {
     );
     at("/bang-gia/goi");
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "+ Tạo gói" }));
-    const form = screen.getByRole("form", { name: "Tạo gói liệu trình" });
+    await user.click(await screen.findByRole("button", { name: "+ Tạo mẫu gói" }));
+    const form = screen.getByRole("form", { name: "Tạo mẫu gói liệu trình" });
     await user.type(within(form).getByLabelText("Tên gói"), "Gội 10 + tặng 2");
     await user.type(within(form).getByLabelText("Giá gói (đ)"), "1500000");
     await user.selectOptions(within(form).getByLabelText("Dịch vụ 1"), "s2");

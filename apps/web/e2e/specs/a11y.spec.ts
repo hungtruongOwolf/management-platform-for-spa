@@ -20,12 +20,12 @@ test("home", async ({ page }) => {
 test("package plans and the plan form", async ({ page }) => {
   await page.goto("/bang-gia/goi");
   await expect(
-    page.getByRole("heading", { name: "Gói liệu trình" }),
+    page.getByRole("heading", { name: "Mẫu gói liệu trình" }),
   ).toBeVisible();
   await expectAccessible(page, "plans");
-  await page.getByRole("button", { name: "+ Tạo gói" }).click();
+  await page.getByRole("button", { name: "+ Tạo mẫu gói" }).click();
   await expect(
-    page.getByRole("form", { name: "Tạo gói liệu trình" }),
+    page.getByRole("form", { name: "Tạo mẫu gói liệu trình" }),
   ).toBeVisible();
   await expectAccessible(page, "plan-form");
 });

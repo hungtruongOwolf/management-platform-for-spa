@@ -1,11 +1,14 @@
 import { useQuery, useSuspenseQuery, type UseQueryResult } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { Icon } from "../../app/Icon";
+import { DateField } from "../../components/DateField";
+import { ResponsiveTable } from "../../components/ResponsiveTable";
+import { dayLabel } from "../../lib/format";
 import { serviceLabel } from "../../lib/names";
 import { useSearchState } from "../../lib/searchState";
 import { can, meQuery } from "../auth/session";
 import { spaToday } from "../corrections/api";
-import { compactVnd, longDay, rangeReportQuery, shortDay, weekdayOf } from "./api";
+import { compactVnd, rangeReportQuery, shortDay } from "./api";
 import { SplitBar } from "./charts";
 import type { RangeBucket, RangeReport, Revenue } from "./contract";
 import { LedgerTab } from "./LedgerTab";
@@ -131,7 +134,7 @@ function PeriodPicker({
   };
   return (
     <div className="card grid content-start gap-3 p-4">
-      <div className="segmented" role="group" aria-label="Khoảng thời gian">
+      <div className="segmented chip-row" role="group" aria-label="Khoảng thời gian">
         {PRESETS.map((p) => (
           <button
             key={p}
@@ -149,28 +152,22 @@ function PeriodPicker({
       </div>
       {period.preset === "custom" && (
         <div className="filter-bar">
-          <label className="filter-field">
-            Từ ngày
-            <input
-              type="date"
-              value={draft.from}
-              max={today}
-              onChange={(e) => {
-                change({ ...draft, from: e.target.value });
-              }}
-            />
-          </label>
-          <label className="filter-field">
-            Đến ngày
-            <input
-              type="date"
-              value={draft.to}
-              max={today}
-              onChange={(e) => {
-                change({ ...draft, to: e.target.value });
-              }}
-            />
-          </label>
+          <DateField
+            label="Từ ngày"
+            value={draft.from}
+            max={today}
+            onChange={(from) => {
+              change({ ...draft, from });
+            }}
+          />
+          <DateField
+            label="Đến ngày"
+            value={draft.to}
+            max={today}
+            onChange={(to) => {
+              change({ ...draft, to });
+            }}
+          />
           {error && (
             <p role="alert" className="pb-3 text-sm text-danger">
               {error}
@@ -191,7 +188,7 @@ function PeriodPicker({
 }
 
 function bucketTitle(b: RangeBucket, bucket: Bucket): string {
-  if (bucket === "day") return `${weekdayOf(b.start)} ${longDay(b.start)}`;
+  if (bucket === "day") return dayLabel(b.start);
   if (bucket === "week") return `Tuần ${shortDay(b.start)} – ${shortDay(b.end)}`;
   if (bucket === "month") return `Tháng ${String(Number(b.start.slice(5, 7)))}/${b.start.slice(0, 4)}`;
   return `Năm ${b.start.slice(0, 4)}`;
@@ -247,7 +244,7 @@ function Kpis({ range, previous, compareLabel }: { range: RangeReport; previous:
       <StatCard label="Buổi liệu trình đã trừ" icon="package" foot={delta(c.sessions_used, p?.sessions_used)}>
         <CountUp value={c.sessions_used} />
       </StatCard>
-      <StatCard label="Gói bán ra" icon="layers" foot={delta(c.packages_sold, p?.packages_sold)}>
+      <StatCard label="Gói liệu trình bán ra" icon="layers" foot={delta(c.packages_sold, p?.packages_sold)}>
         <CountUp value={c.packages_sold} />
       </StatCard>
     </>
@@ -383,72 +380,31 @@ function Breakdown({ range, bucket }: { range: RangeReport; bucket: Bucket }) {
       <h2 id="breakdown-title" className="flex items-center gap-2 px-4 pt-4 pb-3 font-semibold">
         <Icon name="menu-book" className="size-5 text-accent" /> Chi tiết theo {PERIOD_COLUMN[bucket].toLowerCase()}
       </h2>
-      <div className="table-wrap" tabIndex={0} role="region" aria-labelledby="breakdown-title">
-        <table className="data-table">
-          <caption className="sr-only">Chi tiết theo {PERIOD_COLUMN[bucket].toLowerCase()}, mới nhất trước</caption>
-          <thead>
-            <tr>
-              <th scope="col">{PERIOD_COLUMN[bucket]}</th>
-              <th scope="col" className="num">
-                Khách
-              </th>
-              <th scope="col" className="num">
-                Lượt
-              </th>
-              <th scope="col" className="num">
-                Buổi LT
-              </th>
-              <th scope="col" className="num">
-                DV lẻ
-              </th>
-              <th scope="col" className="num">
-                Gói bán
-              </th>
-              {withMoney && (
-                <>
-                  <th scope="col" className="num">
-                    Tiền mặt
-                  </th>
-                  <th scope="col" className="num">
-                    Chuyển khoản
-                  </th>
-                  <th scope="col" className="num">
-                    Liệu trình
-                  </th>
-                  <th scope="col" className="num">
-                    Dịch vụ lẻ
-                  </th>
-                  <th scope="col" className="num">
-                    Thực thu
-                  </th>
-                </>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((b) => (
-              <tr key={b.start}>
-                <th scope="row" className="font-medium whitespace-nowrap">
-                  {bucketTitle(b, bucket)}
-                </th>
-                <td className="num">{b.counts.customers}</td>
-                <td className="num">{b.counts.visits}</td>
-                <td className="num">{b.counts.sessions_used}</td>
-                <td className="num">{b.counts.one_off_services}</td>
-                <td className="num">{b.counts.packages_sold}</td>
-                {withMoney && (
-                  <>
-                    <td className="num">{cell(b.revenue?.net.cash)}</td>
-                    <td className="num">{cell(b.revenue?.net.bank_transfer)}</td>
-                    <td className="num">{cell(b.revenue?.net_by_kind.package)}</td>
-                    <td className="num">{cell(b.revenue?.net_by_kind.one_off)}</td>
-                    <td className="num font-semibold">{cell(b.revenue?.net.total)}</td>
-                  </>
-                )}
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
+      <ResponsiveTable
+        caption={`Chi tiết theo ${PERIOD_COLUMN[bucket].toLowerCase()}, mới nhất trước`}
+        rows={rows}
+        rowKey={(b) => b.start}
+        cardsBelow={768}
+        className="rt-pad"
+        columns={[
+          { id: "period", header: PERIOD_COLUMN[bucket], card: "title", rowHeader: true, className: "font-medium whitespace-nowrap", cell: (b) => bucketTitle(b, bucket) },
+          { id: "customers", header: "Khách", numeric: true, cell: (b) => b.counts.customers },
+          { id: "visits", header: "Lượt", numeric: true, cell: (b) => b.counts.visits },
+          { id: "sessions", header: "Buổi LT", cardLabel: "Buổi liệu trình", numeric: true, cell: (b) => b.counts.sessions_used },
+          { id: "oneoff", header: "DV lẻ", cardLabel: "Dịch vụ lẻ", numeric: true, cell: (b) => b.counts.one_off_services },
+          { id: "sold", header: "Gói LT bán", cardLabel: "Gói liệu trình bán", numeric: true, cell: (b) => b.counts.packages_sold },
+          ...(withMoney
+            ? [
+                { id: "cash", header: "Tiền mặt", numeric: true, cell: (b: RangeBucket) => cell(b.revenue?.net.cash) },
+                { id: "bank", header: "Chuyển khoản", numeric: true, cell: (b: RangeBucket) => cell(b.revenue?.net.bank_transfer) },
+                { id: "pkg", header: "Liệu trình", cardLabel: "Thu bán gói", numeric: true, cell: (b: RangeBucket) => cell(b.revenue?.net_by_kind.package) },
+                { id: "one", header: "Dịch vụ lẻ", cardLabel: "Thu dịch vụ lẻ", numeric: true, cell: (b: RangeBucket) => cell(b.revenue?.net_by_kind.one_off) },
+                { id: "net", header: "Thực thu", numeric: true, card: "aside" as const, className: "font-semibold", cell: (b: RangeBucket) => cell(b.revenue?.net.total) },
+              ]
+            : []),
+        ]}
+        footer={{
+          table: (
             <tr className="ledger-day">
               <th scope="row">Cả kỳ</th>
               <td className="num">{range.totals.customers}</td>
@@ -466,9 +422,17 @@ function Breakdown({ range, bucket }: { range: RangeReport; bucket: Bucket }) {
                 </>
               )}
             </tr>
-          </tfoot>
-        </table>
-      </div>
+          ),
+          cards: (
+            <p className="rt-card ledger-day flex justify-between font-semibold">
+              <span>Cả kỳ</span>
+              <span className="tabular">
+                {range.revenue ? money(range.revenue.net.total) : `${String(range.totals.visits)} lượt`}
+              </span>
+            </p>
+          ),
+        }}
+      />
     </section>
   );
 }
@@ -555,7 +519,7 @@ function TopServices({ range, label }: { range: RangeReport | undefined; label: 
 
 function TopPackages({ range, label }: { range: RangeReport | undefined; label: string }) {
   return (
-    <CardList title={`Gói bán chạy · ${label}`} icon="package">
+    <CardList title={`Mẫu gói bán chạy · ${label}`} icon="package">
       {!range ? (
         <RowsSkeleton rows={4} />
       ) : range.top_packages.length === 0 ? (

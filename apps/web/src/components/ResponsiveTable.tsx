@@ -11,6 +11,8 @@ export type CardSlot =
   | "aside"
   /** A "label: value" row in the card body (the default). */
   | "field"
+  /** Buttons at the foot of the card, right-aligned (call, "Đã liên hệ", "Sửa"). */
+  | "actions"
   /** Desktop only (details the card already says another way). */
   | "hidden";
 
@@ -26,6 +28,10 @@ export interface Column<T> {
   cardLabel?: ReactNode;
   /** Extra class on the desktop cell. */
   className?: string;
+  /** The desktop cell is the row's header (`<th scope="row">`), e.g. the day of a daily table. */
+  rowHeader?: boolean;
+  /** Leave this field out of a card when it has nothing to say (a table keeps its "—"). */
+  cardOmit?: (row: T) => boolean;
 }
 
 export interface ResponsiveTableProps<T> {
@@ -65,7 +71,8 @@ export function ResponsiveTable<T>({
   const cards = useMediaQuery(`(max-width: ${String(cardsBelow - 0.02)}px)`);
   if (!cards) {
     return (
-      <div className={`table-wrap ${className}`}>
+      // The wrapper scrolls (sticky header, long lists): focusable and named so keyboards can too.
+      <div className={`table-wrap ${className}`} tabIndex={0} role="region" aria-label={caption}>
         <table className="data-table">
           <caption className="sr-only">{caption}</caption>
           <thead>
@@ -80,11 +87,18 @@ export function ResponsiveTable<T>({
           <tbody>
             {rows.map((row) => (
               <tr key={rowKey(row)} className={rowClassName?.(row)}>
-                {columns.map((c) => (
-                  <td key={c.id} className={[c.numeric ? "num" : "", c.className ?? ""].join(" ").trim() || undefined}>
-                    {c.cell(row)}
-                  </td>
-                ))}
+                {columns.map((c) => {
+                  const cls = [c.numeric ? "num" : "", c.className ?? ""].join(" ").trim() || undefined;
+                  return c.rowHeader ? (
+                    <th key={c.id} scope="row" className={cls}>
+                      {c.cell(row)}
+                    </th>
+                  ) : (
+                    <td key={c.id} className={cls}>
+                      {c.cell(row)}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
@@ -95,7 +109,7 @@ export function ResponsiveTable<T>({
   }
 
   const slot = (s: CardSlot) => columns.filter((c) => (c.card ?? "field") === s);
-  const [title, subtitle, aside, fields] = [slot("title"), slot("subtitle"), slot("aside"), slot("field")];
+  const [title, subtitle, aside, fields, actions] = [slot("title"), slot("subtitle"), slot("aside"), slot("field"), slot("actions")];
   return (
     <div className={`rt-cards-wrap ${className}`}>
       <ul aria-label={caption} className={`rt-cards ${stretchLink ? "rt-stretch" : ""}`}>
@@ -126,13 +140,20 @@ export function ResponsiveTable<T>({
             </div>
             {fields.length > 0 && (
               <dl className="rt-card-fields">
-                {fields.map((c) => (
+                {fields.filter((c) => !c.cardOmit?.(row)).map((c) => (
                   <div key={c.id}>
                     <dt>{c.cardLabel ?? c.header}</dt>
                     <dd className={c.numeric ? "tabular" : undefined}>{c.cell(row)}</dd>
                   </div>
                 ))}
               </dl>
+            )}
+            {actions.length > 0 && (
+              <div className="rt-card-actions">
+                {actions.map((c) => (
+                  <span key={c.id}>{c.cell(row)}</span>
+                ))}
+              </div>
             )}
           </li>
         ))}

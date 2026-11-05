@@ -6,7 +6,8 @@ import {
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import { formatVnd } from "@vpyd/ui";
-import { useId, useState } from "react";
+import { useState } from "react";
+import { StickyActions } from "../../components/StickyActions";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
 import { plansQuery } from "../catalog/api";
@@ -42,7 +43,6 @@ export function SellPackageDialog({
   onDone: (sale: Sale) => void;
   onCancel: () => void;
 }) {
-  const titleId = useId();
   const queryClient = useQueryClient();
   const { data: me } = useSuspenseQuery(meQuery);
   const plans = useQuery(plansQuery(false));
@@ -119,15 +119,8 @@ export function SellPackageDialog({
     ) : null;
 
   return (
-    <section
-      role="dialog"
-      aria-modal="false"
-      aria-labelledby={titleId}
-      className="mt-3 grid content-start gap-3 rounded-[10px] border border-primary bg-primary-soft/40 p-3"
-    >
-      <h2 id={titleId} className="font-semibold">
-        Bán liệu trình mới
-      </h2>
+    // Hosted by a BottomSheet (CustomerPackages): the sheet is the dialog and carries the title.
+    <div className="grid content-start gap-3">
       {(plans.isError || staff.isError) && (
         <p role="alert" className="text-danger">
           {messageFor(plans.error ?? staff.error)}
@@ -135,7 +128,7 @@ export function SellPackageDialog({
       )}
       <form
         noValidate
-        aria-label="Bán liệu trình mới"
+        aria-label="Bán gói liệu trình"
         onSubmit={(e) => {
           e.preventDefault();
           setTouched(true);
@@ -304,23 +297,15 @@ export function SellPackageDialog({
               : ""}
           </p>
         )}
-        <div className="flex gap-2 sm:col-span-2">
-          <button
-            type="submit"
-            disabled={mutation.isPending}
-            className="min-h-11 rounded-[10px] bg-primary px-4 font-semibold text-on-primary disabled:opacity-60"
-          >
-            {mutation.isPending ? "Đang lưu…" : "Lưu & thu tiền"}
-          </button>
-          <button
-            type="button"
-            onClick={onCancel}
-            className="min-h-11 rounded-[10px] border border-border px-4"
-          >
+        <StickyActions className="sm:col-span-2">
+          <button type="button" onClick={onCancel} className="btn btn-secondary">
             Hủy
           </button>
-        </div>
+          <button type="submit" disabled={mutation.isPending} className="btn btn-primary">
+            {mutation.isPending ? "Đang lưu…" : "Lưu & thu tiền"}
+          </button>
+        </StickyActions>
       </form>
-    </section>
+    </div>
   );
 }

@@ -1,6 +1,8 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { formatVnd } from "@vpyd/ui";
 import { Suspense, lazy, useState } from "react";
+import { Icon } from "../../app/Icon";
+import { BottomSheet } from "../../components/BottomSheet";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
 import {
@@ -20,7 +22,7 @@ const PackageActions = lazy(() =>
 );
 
 /**
- * Packages on the customer card: remaining / total sessions, expiry, status; "Bán liệu trình mới"
+ * Packages on the customer card: remaining / total sessions, expiry, status; "Bán gói liệu trình"
  * for sellers; lifecycle actions (extend, cancel + refund, void the sale) for those allowed.
  */
 export function CustomerPackages({ customerId }: { customerId: string }) {
@@ -34,10 +36,10 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
     can(me, "record.void_same_day");
 
   return (
-    <section aria-labelledby="packages-title" className="mt-4 grid content-start gap-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="packages-title" className="font-semibold">
-          Liệu trình
+    <section aria-labelledby="packages-title" className="card grid content-start gap-3 p-4">
+      <div className="card-head">
+        <h2 id="packages-title" className="card-title">
+          <Icon name="package" className="size-5 text-accent" /> Gói liệu trình
         </h2>
         {can(me, "package.sell") && !selling && (
           <button
@@ -46,9 +48,9 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
               setSold(null);
               setSelling(true);
             }}
-            className="min-h-11 rounded-[10px] bg-primary px-4 font-semibold text-on-primary"
+            className="btn btn-primary"
           >
-            + Bán liệu trình mới
+            <Icon name="plus" className="size-4" /> Bán gói liệu trình
           </button>
         )}
       </div>
@@ -57,7 +59,14 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
           {sold}
         </p>
       )}
-      {selling && (
+      <BottomSheet
+        open={selling}
+        onClose={() => {
+          setSelling(false);
+        }}
+        title="Bán gói liệu trình"
+        wide
+      >
         <SellPackageDialog
           customerId={customerId}
           onCancel={() => {
@@ -73,10 +82,10 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
             );
           }}
         />
-      )}
+      </BottomSheet>
       {packages.isPending && (
         <p role="status" className="text-text-muted">
-          Đang tải liệu trình…
+          Đang tải gói liệu trình…
         </p>
       )}
       {packages.isError && (
@@ -85,46 +94,40 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
         </p>
       )}
       {packages.data?.length === 0 && (
-        <p className="text-text-muted">Chưa có liệu trình nào.</p>
+        <p className="text-sm text-text-muted">Chưa có gói liệu trình nào.</p>
       )}
       {packages.data && packages.data.length > 0 && (
         <ul
-          aria-label="Liệu trình của khách"
+          aria-label="Gói liệu trình của khách"
           className="divide-y divide-border rounded-[10px] border border-border"
         >
           {packages.data.map((p) => (
-            <li
-              key={p.id}
-              className="flex flex-wrap items-baseline justify-between gap-2 px-3 py-2"
-            >
-              <div>
+            <li key={p.id} className="package-row">
+              <div className="package-row-head">
                 <span className="font-semibold">{p.name}</span>
-                <span className="block text-sm text-text-muted">
-                  {p.items.length > 1 &&
-                    `${p.items.map((i) => `${serviceLabel(i.name, i.category_name)} ${String(i.sessions_remaining)}/${String(i.sessions_total)}`).join(" · ")} · `}
-                  {expiryText(p.expires_on, formatDate)}
-                  {p.gift_note ? ` · Quà: ${p.gift_note}` : ""}
-                </span>
-                {p.status === "cancelled" && p.cancel_reason && (
-                  <span className="block text-sm text-danger">
-                    Đã hủy: {p.cancel_reason}
-                    {p.refund
-                      ? ` · Hoàn ${formatVnd(p.refund.amount)} ${p.refund.method === "cash" ? "tiền mặt" : "chuyển khoản"}`
-                      : ""}
-                  </span>
-                )}
+                <span className={`badge ${STATUS_BADGE[p.status]}`}>{STATUS_LABEL[p.status]}</span>
               </div>
-              <span className="text-right">
+              <p className="package-row-meta">
                 <strong>
-                  còn {String(p.sessions_remaining)}/{String(p.sessions_total)}{" "}
-                  buổi
+                  Còn {String(p.sessions_remaining)}/{String(p.sessions_total)} buổi
                 </strong>
-                <span
-                  className={`badge ml-2 align-middle ${STATUS_BADGE[p.status]}`}
-                >
-                  {STATUS_LABEL[p.status]}
-                </span>
-              </span>
+                {" · "}
+                {expiryText(p.expires_on, formatDate)}
+                {p.gift_note ? ` · Quà: ${p.gift_note}` : ""}
+              </p>
+              {p.items.length > 1 && (
+                <p className="package-row-meta">
+                  {p.items.map((i) => `${serviceLabel(i.name, i.category_name)} ${String(i.sessions_remaining)}/${String(i.sessions_total)}`).join(" · ")}
+                </p>
+              )}
+              {p.status === "cancelled" && p.cancel_reason && (
+                <p className="text-sm text-danger">
+                  Đã hủy: {p.cancel_reason}
+                  {p.refund
+                    ? ` · Hoàn ${formatVnd(p.refund.amount)} ${p.refund.method === "cash" ? "tiền mặt" : "chuyển khoản"}`
+                    : ""}
+                </p>
+              )}
               {canAct && (
                 <Suspense fallback={null}>
                   <PackageActions

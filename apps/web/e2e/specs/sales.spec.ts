@@ -44,10 +44,10 @@ test.describe("bán liệu trình (US3)", () => {
     await form.getByLabel("Số điện thoại").fill(uniquePhone());
     await form.getByRole("button", { name: "Lưu khách" }).click();
     await expect(page).toHaveURL(/\/khach-hang\/[0-9a-f-]{36}$/);
-    await expect(page.getByText("Chưa có liệu trình nào.")).toBeVisible();
+    await expect(page.getByText("Chưa có gói liệu trình nào.")).toBeVisible();
 
-    await page.getByRole("button", { name: "+ Bán liệu trình mới" }).click();
-    const dialog = page.getByRole("dialog", { name: "Bán liệu trình mới" });
+    await page.getByRole("button", { name: "Bán gói liệu trình" }).click();
+    const dialog = page.getByRole("dialog", { name: "Bán gói liệu trình" });
     await dialog.getByLabel("Gói liệu trình").selectOption(planId);
     await expect(dialog.getByLabel("Quà tặng hiện vật")).toHaveValue(
       "Tặng dầu gội",
@@ -65,7 +65,7 @@ test.describe("bán liệu trình (US3)", () => {
 
     await dialog.getByRole("button", { name: "Lưu & thu tiền" }).dblclick();
     await expect(page.getByRole("status")).toContainText("còn 12/12 buổi");
-    const list = page.getByRole("list", { name: "Liệu trình của khách" });
+    const list = page.getByRole("list", { name: "Gói liệu trình của khách" });
     await expect(list.getByRole("listitem")).toHaveCount(1);
     await expect(list).toContainText("còn 12/12 buổi");
     await expect(list).toContainText("Đang dùng");
