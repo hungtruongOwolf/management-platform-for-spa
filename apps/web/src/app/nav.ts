@@ -38,6 +38,7 @@ export function navFor(me: Me | null): NavGroup[] {
     ],
     ["Gói liệu trình", [mgmt && { to: "/goi-lieu-trinh", label: "Theo dõi gói", icon: "package" }]],
     ["Báo cáo", [mgmt && { to: "/bao-cao", label: "Kinh doanh", icon: "chart" }]],
+    ["Nhân viên", [staffItem(me)]],
     [
       "Danh mục",
       [
@@ -52,6 +53,13 @@ export function navFor(me: Me | null): NavGroup[] {
     .filter((g) => g.items.length > 0);
 }
 
+/** Staff management for those who keep the books; "my month" for everyone else linked to a profile. */
+function staffItem(me: Me | null): NavItem | false {
+  const manages = ["attendance.record", "evaluation.record", "payroll.read", "staff.manage"].some((p) => can(me, p));
+  if (manages) return { to: "/nhan-vien", label: "Nhân viên", icon: "id-card" };
+  return can(me, "staff.read_own") && { to: "/nhan-vien", label: "Công và lương của tôi", icon: "id-card" };
+}
+
 /**
  * Short names of the screens, for a back control whose destination has no PageHeader title (the
  * front desk, home). Paths not listed fall back to the nearest listed parent.
@@ -63,6 +71,7 @@ const SCREEN_LABELS: Record<string, string> = {
   "/khach-lau-khong-quay-lai": "Lâu không quay lại",
   "/goi-lieu-trinh": "Theo dõi gói",
   "/bao-cao": "Báo cáo",
+  "/nhan-vien": "Nhân viên",
   "/bang-gia": "Dịch vụ",
   "/bang-gia/goi": "Gói bán",
   "/cai-dat": "Cài đặt",
@@ -79,6 +88,7 @@ export function screenLabel(pathname: string): string {
 /** Phone tab bar: the four most used screens; everything else sits in the "Thêm" drawer. */
 export function tabsFor(groups: NavGroup[]): NavItem[] {
   const all = groups.flatMap((g) => g.items);
-  const wanted = ["/", "/quay", "/khach-hang", "/bao-cao"];
-  return wanted.flatMap((to) => all.filter((i) => i.to === to));
+  // "/nhan-vien" only fills a free slot (technicians: Tổng quan + their own month).
+  const wanted = ["/", "/quay", "/khach-hang", "/bao-cao", "/nhan-vien"];
+  return wanted.flatMap((to) => all.filter((i) => i.to === to)).slice(0, 4);
 }

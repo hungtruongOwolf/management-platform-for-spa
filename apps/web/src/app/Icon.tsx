@@ -34,6 +34,7 @@ export type IconName =
   | "arrow-right"
   | "history"
   | "wallet"
+  | "id-card"
   | "sparkle"
   | "leaf"
   | "phone";

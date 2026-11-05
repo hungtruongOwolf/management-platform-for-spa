@@ -13,6 +13,7 @@ import { authQuery } from "../features/auth/session";
 import { customersSearch, historySearch } from "../features/customers/search";
 import { FrontDeskPage } from "../features/front-desk/FrontDeskPage";
 import { inactiveSearch, packagesSearch, reportsSearch } from "../features/reports/search";
+import { staffSearch } from "../features/staff/search";
 import { safeNextPath } from "../lib/api";
 import { AppShell } from "./AppShell";
 import { recordLocation } from "./trail";
@@ -24,6 +25,7 @@ const customersModule = () => import("../features/customers/CustomersPage");
 const reportsPage = () => import("../features/reports/ReportsPage");
 const packagesPage = () => import("../features/reports/PackagesOverviewPage");
 const inactivePage = () => import("../features/reports/InactiveCustomersPage");
+const staffPage = () => import("../features/staff/StaffPage");
 
 /** Shown while a lazy screen's chunk loads (after the router's pending delay): no spinner. */
 function PageSkeleton() {
@@ -168,6 +170,14 @@ const inactiveRoute = createRoute({
   component: lazyRouteComponent(inactivePage, "InactiveCustomersPage"),
 });
 
+/** Staff management (spec staff-management); each tab's API enforces its own permission. */
+const staffRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/nhan-vien",
+  validateSearch: staffSearch.validate,
+  component: lazyRouteComponent(staffPage, "StaffPage"),
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/cai-dat",
@@ -226,6 +236,7 @@ const routeTree = rootRoute.addChildren([
     reportsRoute,
     packagesRoute,
     inactiveRoute,
+    staffRoute,
     settingsRoute,
   ]),
 ]);
