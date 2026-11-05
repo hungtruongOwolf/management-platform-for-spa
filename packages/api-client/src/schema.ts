@@ -2421,7 +2421,7 @@ export interface operations {
     inactive_customers: {
         parameters: {
             query?: {
-                /** @description Not seen for at least this many days (1–365, default 30). */
+                /** @description Not seen for at least this many days (1–365, default 7). */
                 days?: number;
                 scope?: components["schemas"]["InactiveScope"];
                 cursor?: string;

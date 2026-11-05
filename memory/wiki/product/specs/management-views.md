@@ -90,7 +90,7 @@ Thiếu `report.revenue.read` thì response **không chứa** các trường ti�
 *Là quản lý, tôi muốn xem các liệu trình đang chạy, sắp hết hạn, đã hết buổi, đã hủy; và danh sách khách còn buổi mà lâu không quay lại, để gọi điện mời.*
 - AC5.1 `GET /packages`: lọc `status` (active / expired / exhausted / cancelled, trạng thái suy ra như R1-1), tìm `q` theo tên (không dấu) hoặc SĐT, mới nhất trước. `counts` đếm cả spa (theo `q`), không phụ thuộc trang.
 - AC5.2 Sắp hết hạn: `expiring_within_days=N` (1–365, mặc định cửa sổ đếm 30) → chỉ gói **active** có hạn ≤ hôm nay + N, hạn gần nhất trước, kèm `days_to_expiry`, `last_used_on`.
-- AC5.3 `GET /customers/inactive?days=N` (mặc định 30): khách **còn buổi** trên gói đang dùng mà lần đến gần nhất (hoặc ngày bắt đầu gói nếu chưa đến lần nào) cách hôm nay ≥ N ngày; vắng lâu nhất trước; kèm số buổi còn lại. `scope=all`: mọi khách đã từng đến/mua.
+- AC5.3 `GET /customers/inactive?days=N` (mặc định 7, EM 2026-11-05): khách **còn buổi** trên gói đang dùng mà lần đến gần nhất (hoặc ngày bắt đầu gói nếu chưa đến lần nào) cách hôm nay ≥ N ngày; vắng lâu nhất trước; kèm số buổi còn lại. `scope=all`: mọi khách đã từng đến/mua.
 - AC5.4 (neg): `days` hoặc `expiring_within_days` ngoài 1–365 → `422`; `q` 1 ký tự → `422 too_short`. KTV → `403`.
 
 ### US6 (để sau, R1-3): Sổ thu chi
@@ -149,7 +149,8 @@ EM: dữ liệu sổ giấy là **migration một lần** do team tự điền s
 - Nhắc tự động (spec #3); US5 chỉ là danh sách để xem.
 
 ## 9. Open questions (EM, trước khi chốt R1-2)
-- **Q1:** Quản lý có được xem tiền (`report.revenue.read`) mặc định không? Đề xuất: **có** (quản lý là thu ngân). Nếu không: quản lý vẫn thấy số đếm, không thấy khối tiền và sổ doanh thu.
-- **Q2:** "Khách lâu không quay lại" mặc định 30 ngày có hợp không (paper-books-analysis gợi ý 7 hoặc 14)? Chủ spa sẽ chỉnh được ở spec #3.
-- **Q3:** Doanh thu theo tiền thực thu (khoản hủy ghi vào ngày hủy, như sổ giấy) hay theo ngày phát sinh (hủy thì trừ ngược về ngày bán)? Đề xuất: thực thu, vì khớp với tiền trong két mỗi ngày.
-- **Q4:** Có cần giới hạn quản lý chỉ xem báo cáo N ngày gần đây không? Đề xuất: không.
+- **Đã chốt (EM 2026-11-05, [raw](../../../raw/2026-11-05-em-management-decisions-ui-layout.md)):**
+  - Q1: quản lý **được** xem tiền (`report.revenue.read`); chỉnh sau được.
+  - Q2: "lâu không quay lại" mặc định **7 ngày**, kèm màn hình riêng xem cả danh sách khách quá hạn.
+  - Q3: tiền thực thu, khoản hủy ghi vào **ngày hủy**.
+  - Q4: tạm thời **không giới hạn** số ngày quản lý được xem.

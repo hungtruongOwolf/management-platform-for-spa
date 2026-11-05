@@ -15,7 +15,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 pub const DEFAULT_EXPIRING_DAYS: u32 = 30;
-pub const DEFAULT_INACTIVE_DAYS: u32 = 30;
+pub const DEFAULT_INACTIVE_DAYS: u32 = 7;
 const MAX_DAYS: u32 = 365;
 const MAX_QUERY_CHARS: usize = 100;
 
