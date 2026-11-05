@@ -28,5 +28,11 @@ if echo "$results" | grep -qvE ': (pass|skipping)$'; then
   echo "PR #$pr: not all checks passed — not merging"
   exit 1
 fi
-gh pr merge "$pr" --squash --delete-branch
+# Delete the head branch through the API, not `--delete-branch`: that flag also checks out the base
+# branch locally, which fails when `main` is checked out in another worktree and then skips the
+# remote delete too (stale branches piled up on GitHub, 2026-11-05).
+head=$(gh pr view "$pr" --json headRefName -q .headRefName)
+gh pr merge "$pr" --squash
+repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+gh api -X DELETE "repos/$repo/git/refs/heads/$head" >/dev/null 2>&1   && echo "deleted remote branch $head" || echo "note: remote branch $head not deleted"
 echo "PR #$pr merged"
