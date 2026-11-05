@@ -90,7 +90,7 @@ Một lớp CSS **không nằm trong layer** (thắng utility) cho vài thuộc 
 
 
 ## Trước / sau
-Ảnh 1280×800 và 390×844, light + dark, dữ liệu `app seed-demo`: thư mục scratchpad `ui2-shots/before` và `ui2-shots/after` (đính kèm PR #28).
+Ảnh 1280×800 và 390×844, light + dark, dữ liệu `app seed-demo`: thư mục scratchpad của agent `ui2-shots/before`, `ui2-shots/after` và `ui2-shots/after-widths` (360/768/1280/1440) (PR #29). CI đính kèm ảnh từng màn × bề rộng vào report của `layout.spec.ts`.
 
 **UI overhaul (2026-11-05, sau PR #27):**
 | Màn | Trước (#27) | Sau |
