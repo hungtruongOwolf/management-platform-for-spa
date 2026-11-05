@@ -1,7 +1,7 @@
 import { vi } from "vitest";
 import { spaToday } from "../corrections/api";
 import type { PackageFilter } from "./api";
-import { mockCustomerStats, mockDaily, mockHistory, mockInactive, mockPackages, mockRange } from "./fixtures";
+import { mockCustomerStats, mockDaily, mockHistory, mockInactive, mockLedger, mockPackages, mockRange } from "./fixtures";
 
 /** Test-only fake of the API for the management views, contract-shaped (fixtures.ts). */
 export interface FakeOptions {
@@ -34,9 +34,18 @@ function route(url: URL, { permissions, withoutRevenue = false, searchHits = [] 
     return d;
   }
   if (p === "/reports/range") {
-    const r = mockRange(q.get("from") ?? spaToday(), q.get("to") ?? spaToday());
-    if (withoutRevenue) for (const b of r.series) delete b.revenue;
+    const g = q.get("granularity");
+    const r = mockRange(q.get("from") ?? spaToday(), q.get("to") ?? spaToday(), g === "week" || g === "month" ? g : "day");
+    if (withoutRevenue) {
+      delete r.revenue;
+      for (const b of r.series) delete b.revenue;
+      for (const s of r.top_services) delete s.one_off_revenue;
+      for (const s of r.top_packages) delete s.revenue;
+    }
     return r;
+  }
+  if (p === "/reports/ledger") {
+    return mockLedger(q.get("from") ?? spaToday(), q.get("to") ?? spaToday());
   }
   if (p === "/customers/c1")
     return { id: "c1", full_name: "Nguyễn Thị Hà", phone: "0905 111 222", gender: "female", version: 1 };
@@ -46,7 +55,7 @@ function route(url: URL, { permissions, withoutRevenue = false, searchHits = [] 
     const filter: PackageFilter = q.get("expiring_within_days")
       ? "expiring"
       : ((q.get("status") as PackageFilter | null) ?? "all");
-    return mockPackages(spaToday(), filter);
+    return mockPackages(spaToday(), filter, q.get("q") ?? "");
   }
   if (p === "/customers/inactive") {
     const page = mockInactive(spaToday(), Number(q.get("days") ?? "7"));
