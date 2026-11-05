@@ -13,7 +13,7 @@ function e164(phone: string): string {
 
 /**
  * Makes every live session of the account behave as if its password was last confirmed
- * `minutes` ago, so the next 🔒 action deterministically asks for re-auth (window: 5 minutes).
+ * `minutes` ago (outside the 5-minute re-auth window), e.g. to prove an action does not ask.
  */
 export async function ageRecentAuth(
   phone: string,

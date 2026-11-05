@@ -49,7 +49,6 @@ const PACKAGE = {
   name: "Gội đầu 10 + tặng 2",
   gift_note: "Tặng dầu gội",
   sold_price: 1_500_000,
-  refund_cap: 1_500_000,
   origin: "sale",
   sale_id: "sale1",
   closer_staff_id: "st1",

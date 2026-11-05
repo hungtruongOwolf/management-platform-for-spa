@@ -13,7 +13,7 @@ import {
   spaToday,
   voidSale,
 } from "./api";
-import { useGuardedAction } from "./useGuardedAction";
+import { useFormAction } from "./useFormAction";
 import { VoidForm } from "./VoidForm";
 
 const input =
@@ -26,7 +26,7 @@ type Open = "extend" | "cancel" | "void" | null;
 /**
  * Lifecycle actions on one package of the customer profile (US6, US7), shown only to the roles
  * that hold the permission (UX only — the server re-checks): extend (owner), cancel with refund
- * (owner, 🔒), void the sale that created it while unused (manager or owner).
+ * (owner), void the sale that created it while unused (manager or owner).
  */
 export function PackageActions({
   pkg,
@@ -159,7 +159,7 @@ function ExtendForm({
   const [expiresOn, setExpiresOn] = useState(() => addMonths(base, 1));
   const [reason, setReason] = useState("");
   const [touched, setTouched] = useState(false);
-  const action = useGuardedAction({
+  const action = useFormAction({
     run: () =>
       extendPackage(
         pkg,
@@ -280,7 +280,6 @@ function ExtendForm({
           </button>
         </div>
       </form>
-      {action.reauth}
     </section>
   );
 }
@@ -301,12 +300,8 @@ function CancelForm({
   const [method, setMethod] = useState<"cash" | "bank_transfer">("cash");
   const [reason, setReason] = useState("");
   const [touched, setTouched] = useState(false);
-  const [bookConfirmed, setBookConfirmed] = useState(false);
   const amount = amountText.trim() === "" ? 0 : parseAmount(amountText);
-  // A paper-book price typed by a manager is not a refund cap until the owner checks the book.
-  const needsBookCheck =
-    pkg.origin === "opening_balance" && amount > pkg.refund_cap;
-  const action = useGuardedAction({
+  const action = useFormAction({
     run: () =>
       cancelPackage(
         pkg.id,
@@ -315,9 +310,6 @@ function CancelForm({
               reason: reason.trim(),
               refund_amount: amount,
               refund_method: method,
-              ...(needsBookCheck && bookConfirmed
-                ? { confirm_book_price: true }
-                : {}),
             }
           : { reason: reason.trim(), refund_amount: 0 },
         idempotencyKey,
@@ -381,18 +373,6 @@ function CancelForm({
         {amountProblem && (
           <p className="text-sm text-danger">{amountProblem}</p>
         )}
-        {amount > 0 && needsBookCheck && (
-          <label className="flex min-h-11 items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={bookConfirmed}
-              onChange={(e) => {
-                setBookConfirmed(e.target.checked);
-              }}
-            />
-            Đã đối chiếu giá trong sổ ({formatVnd(pkg.sold_price)})
-          </label>
-        )}
         {amount > 0 && (
           <fieldset className="flex flex-wrap gap-3">
             <legend className="text-sm font-medium">Hoàn bằng</legend>
@@ -454,7 +434,6 @@ function CancelForm({
           </button>
         </div>
       </form>
-      {action.reauth}
     </section>
   );
 }

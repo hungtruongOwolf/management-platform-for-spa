@@ -6,7 +6,7 @@ import { can, meQuery } from "../auth/session";
 import { STATUS_LABEL, customerPackagesQuery, formatDate } from "./api";
 import { SellPackageDialog } from "./SellPackageDialog";
 
-// Lifecycle forms (extend, cancel + refund, sale void, re-auth) load only for users who can act.
+// Lifecycle forms (extend, cancel + refund, sale void) load only for users who can act.
 const PackageActions = lazy(() =>
   import("../corrections/PackageActions").then((m) => ({
     default: m.PackageActions,
