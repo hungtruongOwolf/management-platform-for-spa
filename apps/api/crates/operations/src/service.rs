@@ -253,7 +253,6 @@ pub(crate) async fn record_in(
     order: Order,
     now: DateTime<Utc>,
 ) -> Result<Uuid, AppError> {
-    let mut tx = tx;
     let tenant = kernel::tenant::profile_as_of(tx, now).await?;
     let recorded_on = tenant.business_date.as_naive();
     let service = domain::service_time(
@@ -267,14 +266,14 @@ pub(crate) async fn record_in(
     let check_in_at = service.at;
     // Everything below belongs to the day of the service: package expiry, the sale, payments.
     let today = service.business_date;
-    let customer = crm::service::brief_in(&mut tx, order.customer_id)
+    let customer = crm::service::brief_in(tx, order.customer_id)
         .await?
         .ok_or(AppError::NotFound)?;
 
     let mut verified = HashSet::new();
     for line in &order.lines {
         if verified.insert(line.staff_id) {
-            org::service::require_active(&mut tx, line.staff_id).await?;
+            org::service::require_active(tx, line.staff_id).await?;
         }
     }
 
@@ -283,7 +282,7 @@ pub(crate) async fn record_in(
     for (i, line) in order.lines.iter().enumerate() {
         priced.push(match line.source {
             Source::OneOff => {
-                let service = catalog::service::service_snapshot(&mut tx, line.service_id)
+                let service = catalog::service::service_snapshot(tx, line.service_id)
                     .await?
                     .ok_or(AppError::NotFound)?;
                 if !service.active {
@@ -309,16 +308,13 @@ pub(crate) async fn record_in(
             Source::Package => {
                 let item_id = match line.item_id {
                     Some(id) => id,
-                    None => packages::service::default_item(
-                        &mut tx,
-                        customer.id,
-                        line.service_id,
-                        today,
-                    )
-                    .await?
-                    .ok_or(AppError::Unprocessable {
-                        code: "package.item_not_found",
-                    })?,
+                    None => {
+                        packages::service::default_item(tx, customer.id, line.service_id, today)
+                            .await?
+                            .ok_or(AppError::Unprocessable {
+                                code: "package.item_not_found",
+                            })?
+                    }
                 };
                 Priced::Package { item_id }
             }
@@ -339,13 +335,13 @@ pub(crate) async fn record_in(
     // Packages before items, as voids and cancellations lock them (no deadlock with either).
     let items: Vec<Uuid> = package_lines.iter().map(|(_, item)| *item).collect();
     if !items.is_empty() {
-        packages::service::lock_for_consumption(&mut tx, &items).await?;
+        packages::service::lock_for_consumption(tx, &items).await?;
     }
     let mut consumed: HashMap<usize, Consumed> = HashMap::new();
     for (i, item_id) in package_lines {
         let line = &order.lines[i];
         let c = packages::service::consume_session(
-            &mut tx,
+            tx,
             Consume {
                 item_id,
                 customer_id: customer.id,
@@ -379,7 +375,7 @@ pub(crate) async fn record_in(
         .collect();
     let branch = tenant.branch.as_uuid();
     let sale = sales::service::record_service_sale(
-        &mut tx,
+        tx,
         actor,
         ServiceSale {
             customer_id: customer.id,
@@ -400,9 +396,9 @@ pub(crate) async fn record_in(
         .into_iter();
 
     let visit_id = Uuid::now_v7();
-    let note_ct = encrypt_note(cipher, &tx, visit_id, order.note.as_deref())?;
+    let note_ct = encrypt_note(cipher, tx, visit_id, order.note.as_deref())?;
     repo::insert_visit(
-        &mut tx,
+        tx,
         &VisitInsert {
             id: visit_id,
             branch_id: branch,
@@ -483,10 +479,10 @@ pub(crate) async fn record_in(
             "unit_price": insert.unit_price, "line_value": insert.line_value,
             "discount_amount": insert.discount_amount,
         }));
-        repo::insert_line(&mut tx, &insert).await?;
+        repo::insert_line(tx, &insert).await?;
     }
     audit::record(
-        &mut tx,
+        tx,
         actor,
         AuditEntry {
             action: "visit.create",
@@ -508,7 +504,7 @@ pub(crate) async fn record_in(
     .await?;
     for (package_id, item_id, reason) in overrides {
         audit::record(
-            &mut tx,
+            tx,
             actor,
             AuditEntry {
                 action: "customer_package.use_expired_override",

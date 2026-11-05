@@ -15,9 +15,11 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [spec R1-1 front-desk-and-packages](wiki/product/specs/front-desk-and-packages.md) — **approved**: catalog, customers, sell package, record visit, payments/receivables, void, package lifecycle, opening balance (AC8.5 dropped 2026-11-05)
 - [spec R1-2 management-views](wiki/product/specs/management-views.md) — **draft**: dashboard Hôm nay, range report, revenue book, customer history/summary/package page, packages overview, re-engagement; no "sổ cũ" in product (CLI import); thu chi later; open Q1–Q4; **vòng 3**: follow-up khách vắng (US5b, `customer.follow_up`), phạm vi khách lẻ + liệu trình, tìm lịch sử/gói, check trùng SĐT, preset báo cáo + theo năm, `category_name`
 
+- [spec R1-3 appointments](wiki/product/specs/appointments.md) — **draft (vòng 4)**: lịch hẹn booked → arrived → done (= lượt khách qua đúng use case), no-show/hủy; chặn trùng KTV + sức chứa theo ô 15 phút; giờ làm + nhập bù của chủ spa (`visit.backdate`); giảm giá dịch vụ lẻ trong lượt (D10); đồng hồ đếm ngược; câu hỏi EM Q1–Q8
+
 ## Design
 - [design-system](wiki/design/design-system.md) — "Trà thất Đông y" palette (nâu đỏ/vàng/trắng/kem): tokens + contrast table (auto-tested), logo thật (trace từ PNG), app shell (sidebar/top bar/tab bar/palette), component classes, motion budget, before/after
-- [front-desk-flows](wiki/design/front-desk-flows.md) — screen flows US2–US8, ≤4-action fast path, all states
+- [front-desk-flows](wiki/design/front-desk-flows.md) — screen flows US2–US8, ≤4-action fast path, all states; vòng 4: tab Lịch hẹn (ngày/tuần/danh sách, sheet, màu trạng thái), giờ làm/nhập bù, giảm giá, lượt hôm nay mở inline
 
 ## Architecture
 - [system](wiki/architecture/system.md) — R1 architecture: quality ranking, C4 diagrams, trust boundaries, data flows, failure modes, cost

@@ -169,7 +169,7 @@ R1 coi mọi giao dịch là **thu đủ ngay**: không có ghi nợ, thu nợ h
 - **Thiết bị:** desktop, laptop, tablet, điện thoại (responsive); Chrome, Safari, Edge bản mới.
 
 ## 7. Out of scope (spec này)
-Sổ quỹ & chốt quỹ (spec #2; spec này chỉ phát sinh Payment/Refund cho sổ quỹ dùng) · nhắc nhở & báo cáo (spec #3) · màn hình phân quyền & tài khoản (spec #4) · lịch hẹn (R3) · bán sản phẩm (sau này) · in hóa đơn / gửi Zalo · thanh toán online, thẻ, ví · tích điểm, voucher · nhiều KTV cho một dòng dịch vụ · dùng chung liệu trình giữa nhiều khách **[D5]** · tính hoa hồng (R2; spec này chỉ lưu dữ liệu đầu vào).
+Sổ quỹ & chốt quỹ (spec #2; spec này chỉ phát sinh Payment/Refund cho sổ quỹ dùng) · nhắc nhở & báo cáo (spec #3) · màn hình phân quyền & tài khoản (spec #4) · lịch hẹn (đã kéo lên vòng 4: [spec R1-3 appointments](appointments.md); cùng spec đó thêm giờ làm + nhập bù của chủ spa và giảm giá dịch vụ lẻ trong lượt) · bán sản phẩm (sau này) · in hóa đơn / gửi Zalo · thanh toán online, thẻ, ví · tích điểm, voucher · nhiều KTV cho một dòng dịch vụ · dùng chung liệu trình giữa nhiều khách **[D5]** · tính hoa hồng (R2; spec này chỉ lưu dữ liệu đầu vào).
 
 ## 8. Mặc định chờ EM xác nhận
 | # | Câu hỏi | Mặc định đề xuất |

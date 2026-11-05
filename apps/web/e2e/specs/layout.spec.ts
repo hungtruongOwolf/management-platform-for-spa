@@ -17,6 +17,7 @@ test.use({ storageState: ownerState, reducedMotion: "reduce" });
 const SCREENS: [string, string][] = [
   ["tong-quan", "/"],
   ["quay", "/quay"],
+  ["quay-lich", "/quay?view=lich"],
   ["khach-hang", "/khach-hang"],
   ["bao-cao", "/bao-cao"],
   ["goi-lieu-trinh", "/goi-lieu-trinh"],

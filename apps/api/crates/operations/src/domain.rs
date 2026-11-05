@@ -190,7 +190,10 @@ mod tests {
     fn skew_past_midnight_stays_on_today() {
         let now = vn_at(2026, 11, 5, 23, 58);
         let t = service_time(Some(vn_at(2026, 11, 6, 0, 2)), now, vn(), day(), false);
-        assert_eq!(t.map(|t| (t.business_date, t.backdated)), Ok((day(), false)));
+        assert_eq!(
+            t.map(|t| (t.business_date, t.backdated)),
+            Ok((day(), false))
+        );
     }
 
     #[test]

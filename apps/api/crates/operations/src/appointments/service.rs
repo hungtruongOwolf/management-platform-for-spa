@@ -129,7 +129,8 @@ fn place(
     staff_id: Option<Uuid>,
 ) -> Result<Placement, AppError> {
     let (ends_at, business_date) =
-        domain::place(starts_at, minutes, spa.profile.timezone, spa.settings).map_err(slot_error)?;
+        domain::place(starts_at, minutes, spa.profile.timezone, spa.settings)
+            .map_err(slot_error)?;
     Ok(Placement {
         business_date,
         starts_at,
@@ -180,7 +181,10 @@ async fn resolve_services(
     ids.iter()
         .enumerate()
         .map(|(i, id)| {
-            let s = found.iter().find(|s| s.id == *id).ok_or(AppError::NotFound)?;
+            let s = found
+                .iter()
+                .find(|s| s.id == *id)
+                .ok_or(AppError::NotFound)?;
             if !s.active {
                 return Err(invalid(format!("service_ids[{i}]"), "inactive"));
             }
@@ -203,7 +207,10 @@ fn parse_status(s: &str) -> Result<Status, AppError> {
     Status::parse(s).ok_or_else(|| AppError::Internal(format!("appointment status {s}")))
 }
 
-fn dto(r: AppointmentRow, services: Vec<AppointmentServiceDto>) -> Result<AppointmentDto, AppError> {
+fn dto(
+    r: AppointmentRow,
+    services: Vec<AppointmentServiceDto>,
+) -> Result<AppointmentDto, AppError> {
     let status = parse_status(&r.status)?;
     let paid = r.sale_total.unwrap_or(0);
     let payment_state = match status {
@@ -422,8 +429,9 @@ pub async fn book(
     };
     let services = resolve_services(&mut tx, &input.service_ids).await?;
     let durations: Vec<Option<i32>> = services.iter().map(|s| s.2).collect();
-    let minutes = domain::duration_minutes(&durations, input.duration_min, spa.settings.slot_minutes)
-        .map_err(slot_error)?;
+    let minutes =
+        domain::duration_minutes(&durations, input.duration_min, spa.settings.slot_minutes)
+            .map_err(slot_error)?;
     let p = place(&spa, input.starts_at, minutes, input.staff_id)?;
     check_day(actor, &spa, p.business_date)?;
     check_fits(&mut tx, &spa, &p, None).await?;
@@ -536,10 +544,12 @@ pub async fn update(
             .map_err(|_| AppError::Internal("appointment duration".into()))?,
         (requested, Some(s)) => {
             let d: Vec<Option<i32>> = s.iter().map(|x| x.2).collect();
-            domain::duration_minutes(&d, requested, spa.settings.slot_minutes).map_err(slot_error)?
+            domain::duration_minutes(&d, requested, spa.settings.slot_minutes)
+                .map_err(slot_error)?
         }
-        (Some(m), None) => domain::duration_minutes(&[], Some(m), spa.settings.slot_minutes)
-            .map_err(slot_error)?,
+        (Some(m), None) => {
+            domain::duration_minutes(&[], Some(m), spa.settings.slot_minutes).map_err(slot_error)?
+        }
     };
     let p = place(
         &spa,
@@ -753,15 +763,11 @@ pub async fn complete(
     })?;
     visit.customer_id = customer_id;
     if visit.check_in_at.is_none() {
-        visit.check_in_at = Some(
-            current
-                .arrived_at
-                .unwrap_or(if current.starts_at <= now {
-                    current.starts_at
-                } else {
-                    now
-                }),
-        );
+        visit.check_in_at = Some(current.arrived_at.unwrap_or(if current.starts_at <= now {
+            current.starts_at
+        } else {
+            now
+        }));
     }
     let order = crate::service::parse(actor, &visit)?;
     let visit_id = crate::service::record_in(&mut tx, cipher, actor, order, now).await?;

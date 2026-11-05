@@ -603,8 +603,10 @@ pub fn discount_amount(subtotal: Money, ask: DiscountAsk) -> Result<Money, AppEr
         DiscountAsk::Amount(m) => Ok(m),
         DiscountAsk::Percent(p) => {
             let v = i128::from(subtotal.as_i64()) * i128::from(p) / 100;
-            Money::vnd(i64::try_from(v).map_err(|_| money_err(kernel::money::MoneyError::Overflow))?)
-                .map_err(money_err)
+            Money::vnd(
+                i64::try_from(v).map_err(|_| money_err(kernel::money::MoneyError::Overflow))?,
+            )
+            .map_err(money_err)
         }
     }
 }

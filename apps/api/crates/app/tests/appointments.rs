@@ -201,7 +201,10 @@ async fn bookings_respect_technicians_capacity_and_the_grid(pool: PgPool) -> Tes
 
     // AC9.2: Lan is busy until 11:30, free from then on.
     let busy = s.book_ha(&s.manager, &at(1, "11:00"), Some(&s.lan)).await;
-    assert_eq!(code(&busy), (StatusCode::CONFLICT, Some("appointment.staff_busy")));
+    assert_eq!(
+        code(&busy),
+        (StatusCode::CONFLICT, Some("appointment.staff_busy"))
+    );
     assert_eq!(busy.body["existing_id"], first.body["id"]);
     let later = s.book_ha(&s.manager, &at(1, "11:30"), Some(&s.lan)).await;
     assert_eq!(later.status, StatusCode::CREATED, "{}", later.body);
@@ -222,19 +225,31 @@ async fn bookings_respect_technicians_capacity_and_the_grid(pool: PgPool) -> Tes
     let second = s.book_ha(&s.manager, &at(1, "10:30"), None).await;
     assert_eq!(second.status, StatusCode::CREATED, "{}", second.body);
     let full = s.book_ha(&s.manager, &at(1, "11:00"), None).await;
-    assert_eq!(code(&full), (StatusCode::CONFLICT, Some("appointment.slot_full")));
+    assert_eq!(
+        code(&full),
+        (StatusCode::CONFLICT, Some("appointment.slot_full"))
+    );
     // Tuấn is a technician too, but the spa as a whole is full at 11:00.
     let full_tuan = s.book_ha(&s.manager, &at(1, "11:15"), Some(&s.tuan)).await;
-    assert_eq!(code(&full_tuan), (StatusCode::CONFLICT, Some("appointment.slot_full")));
+    assert_eq!(
+        code(&full_tuan),
+        (StatusCode::CONFLICT, Some("appointment.slot_full"))
+    );
 
     // AC9.4: on the 15-minute grid, inside 09:00–21:00.
     let off_grid = s.book_ha(&s.manager, &at(1, "13:07"), None).await;
-    assert_eq!(code(&off_grid), (StatusCode::UNPROCESSABLE_ENTITY, Some("validation_failed")));
+    assert_eq!(
+        code(&off_grid),
+        (StatusCode::UNPROCESSABLE_ENTITY, Some("validation_failed"))
+    );
     for early_or_late in ["08:30", "20:00"] {
         let r = s.book_ha(&s.manager, &at(1, early_or_late), None).await;
         assert_eq!(
             code(&r),
-            (StatusCode::UNPROCESSABLE_ENTITY, Some("appointment.outside_opening_hours")),
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Some("appointment.outside_opening_hours")
+            ),
             "{early_or_late}"
         );
     }
@@ -249,7 +264,10 @@ async fn bookings_respect_technicians_capacity_and_the_grid(pool: PgPool) -> Tes
                    "service_ids": [s.shampoo], "starts_at": at(2, "10:00")}),
         )
         .await;
-    assert_eq!(code(&taken), (StatusCode::CONFLICT, Some("customer.phone_taken")));
+    assert_eq!(
+        code(&taken),
+        (StatusCode::CONFLICT, Some("customer.phone_taken"))
+    );
     assert_eq!(taken.body["existing_id"], json!(s.duc));
     let guest = s
         .book(
@@ -274,7 +292,13 @@ async fn two_racing_bookings_of_one_technician_cannot_both_win(pool: PgPool) -> 
     );
     let mut statuses = [a.status, b.status];
     statuses.sort();
-    assert_eq!(statuses, [StatusCode::CREATED, StatusCode::CONFLICT], "{} / {}", a.body, b.body);
+    assert_eq!(
+        statuses,
+        [StatusCode::CREATED, StatusCode::CONFLICT],
+        "{} / {}",
+        a.body,
+        b.body
+    );
     Ok(())
 }
 
@@ -309,23 +333,55 @@ async fn an_appointment_becomes_a_visit_through_the_visit_rules(pool: PgPool) ->
     let k = key();
     let path = format!("/appointments/{id}/complete");
     let headers = [("idempotency-key", k.as_str())];
-    let done = call_with_headers(&s.h.app, "POST", &path, Some(&s.manager), Some(cart.clone()), &headers).await;
+    let done = call_with_headers(
+        &s.h.app,
+        "POST",
+        &path,
+        Some(&s.manager),
+        Some(cart.clone()),
+        &headers,
+    )
+    .await;
     assert_eq!(done.status, StatusCode::OK, "{}", done.body);
     assert_eq!(done.body["appointment"]["status"], "done");
     assert_eq!(done.body["appointment"]["payment_state"], "no_charge");
-    assert_eq!(done.body["appointment"]["visit_id"], done.body["visit"]["id"]);
+    assert_eq!(
+        done.body["appointment"]["visit_id"],
+        done.body["visit"]["id"]
+    );
     assert_eq!(done.body["visit"]["lines"][0]["sessions_left_after"], 11);
     // The visit happened when the customer arrived, not when it was typed.
-    assert_eq!(done.body["visit"]["check_in_at"], arrived.body["arrived_at"]);
+    assert_eq!(
+        done.body["visit"]["check_in_at"],
+        arrived.body["arrived_at"]
+    );
 
     // Replay: same answer, no second session taken.
-    let replay = call_with_headers(&s.h.app, "POST", &path, Some(&s.manager), Some(cart.clone()), &headers).await;
+    let replay = call_with_headers(
+        &s.h.app,
+        "POST",
+        &path,
+        Some(&s.manager),
+        Some(cart.clone()),
+        &headers,
+    )
+    .await;
     assert_eq!(replay.body, done.body);
-    let packages = call(&s.h.app, "GET", &format!("/customers/{}/packages", s.ha), Some(&s.manager), None).await;
+    let packages = call(
+        &s.h.app,
+        "GET",
+        &format!("/customers/{}/packages", s.ha),
+        Some(&s.manager),
+        None,
+    )
+    .await;
     assert_eq!(packages.body[0]["items"][0]["sessions_remaining"], 11);
     // AC9.6: done is final.
     let again = s.post(&s.manager, &path, cart).await;
-    assert_eq!(code(&again), (StatusCode::CONFLICT, Some("appointment.closed")));
+    assert_eq!(
+        code(&again),
+        (StatusCode::CONFLICT, Some("appointment.closed"))
+    );
 
     // A paid one-off appointment shows its payment.
     let paid = s.book_ha(&s.manager, &at(0, "02:00"), Some(&s.tuan)).await;
@@ -354,10 +410,19 @@ async fn an_appointment_becomes_a_visit_through_the_visit_rules(pool: PgPool) ->
     let body = json!({"lines": [{"service_id": s.dai_thong_lac, "source": "one_off", "staff_id": s.lan,
                                  "price_variant": "female"}],
                       "payments": [{"method": "cash", "amount": 349_000}]});
-    let early = s.post(&s.manager, &format!("/appointments/{gid}/complete"), body.clone()).await;
+    let early = s
+        .post(
+            &s.manager,
+            &format!("/appointments/{gid}/complete"),
+            body.clone(),
+        )
+        .await;
     assert_eq!(
         code(&early),
-        (StatusCode::UNPROCESSABLE_ENTITY, Some("appointment.customer_required"))
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("appointment.customer_required")
+        )
     );
     let mai = call(
         &s.h.app,
@@ -380,7 +445,9 @@ async fn an_appointment_becomes_a_visit_through_the_visit_rules(pool: PgPool) ->
     assert_eq!(linked.body["is_guest"], false);
     let mut body = body;
     body["lines"][0]["price_variant"] = Value::Null;
-    let done = s.post(&s.manager, &format!("/appointments/{gid}/complete"), body).await;
+    let done = s
+        .post(&s.manager, &format!("/appointments/{gid}/complete"), body)
+        .await;
     assert_eq!(done.status, StatusCode::OK, "{}", done.body);
     Ok(())
 }
@@ -410,7 +477,10 @@ async fn cancel_and_no_show_need_a_reason_and_free_the_slot(pool: PgPool) -> Tes
     .await;
     assert_eq!(
         code(&early),
-        (StatusCode::UNPROCESSABLE_ENTITY, Some("appointment.not_started"))
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("appointment.not_started")
+        )
     );
     let cancelled = call(
         &s.h.app,
@@ -437,7 +507,10 @@ async fn cancel_and_no_show_need_a_reason_and_free_the_slot(pool: PgPool) -> Tes
     .await;
     assert_eq!(
         code(&arrive),
-        (StatusCode::UNPROCESSABLE_ENTITY, Some("appointment.not_today"))
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("appointment.not_today")
+        )
     );
 
     // Audit: who, what, why.
@@ -461,17 +534,32 @@ async fn past_days_are_locked_for_managers_and_open_to_the_owner(pool: PgPool) -
     let id = id_of(&owner);
     for (path, body) in [
         (format!("/appointments/{id}/cancel"), json!({"reason": "x"})),
-        (format!("/appointments/{id}/no-show"), json!({"reason": "x"})),
+        (
+            format!("/appointments/{id}/no-show"),
+            json!({"reason": "x"}),
+        ),
     ] {
         let r = call(&s.h.app, "POST", &path, Some(&s.manager), Some(body)).await;
-        assert_eq!(code(&r), (StatusCode::FORBIDDEN, Some("day.locked")), "{path}");
+        assert_eq!(
+            code(&r),
+            (StatusCode::FORBIDDEN, Some("day.locked")),
+            "{path}"
+        );
     }
     let complete = json!({"lines": [{"service_id": s.dai_thong_lac, "source": "one_off", "staff_id": s.lan}],
                           "payments": [{"method": "cash", "amount": 349_000}]});
-    let r = s.post(&s.manager, &format!("/appointments/{id}/complete"), complete.clone()).await;
+    let r = s
+        .post(
+            &s.manager,
+            &format!("/appointments/{id}/complete"),
+            complete.clone(),
+        )
+        .await;
     assert_eq!(code(&r), (StatusCode::FORBIDDEN, Some("day.locked")));
     // The owner completes it: the visit lands on yesterday, at the booked time.
-    let done = s.post(&s.owner, &format!("/appointments/{id}/complete"), complete).await;
+    let done = s
+        .post(&s.owner, &format!("/appointments/{id}/complete"), complete)
+        .await;
     assert_eq!(done.status, StatusCode::OK, "{}", done.body);
     let yesterday = (spa_today() - Duration::days(1)).to_string();
     assert_eq!(done.body["visit"]["business_date"], json!(yesterday));
@@ -497,7 +585,10 @@ async fn the_owner_back_dates_visits_onto_the_day_of_the_service(pool: PgPool) -
     let manager = s.post(&s.manager, "/visits", body(&yesterday_at)).await;
     assert_eq!(
         code(&manager),
-        (StatusCode::UNPROCESSABLE_ENTITY, Some("visit.check_in_not_today"))
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("visit.check_in_not_today")
+        )
     );
     let owner = s.post(&s.owner, "/visits", body(&yesterday_at)).await;
     assert_eq!(owner.status, StatusCode::CREATED, "{}", owner.body);
@@ -511,7 +602,14 @@ async fn the_owner_back_dates_visits_onto_the_day_of_the_service(pool: PgPool) -
     .await?;
     assert_eq!(sale_day.0.to_string(), yesterday);
     assert_eq!(sale_day.1.to_string(), yesterday);
-    let report = call(&s.h.app, "GET", &format!("/reports/daily?date={yesterday}"), Some(&s.owner), None).await;
+    let report = call(
+        &s.h.app,
+        "GET",
+        &format!("/reports/daily?date={yesterday}"),
+        Some(&s.owner),
+        None,
+    )
+    .await;
     assert_eq!(report.body["counts"]["visits"], 1, "{}", report.body);
     let audit: Value = sqlx::query_scalar(
         "SELECT after FROM app.audit_log WHERE action = 'visit.create' AND entity_id = $1",
@@ -525,7 +623,10 @@ async fn the_owner_back_dates_visits_onto_the_day_of_the_service(pool: PgPool) -
     let too_old = s.post(&s.owner, "/visits", body(&at(-400, "10:00"))).await;
     assert_eq!(
         code(&too_old),
-        (StatusCode::UNPROCESSABLE_ENTITY, Some("visit.check_in_too_old"))
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("visit.check_in_too_old")
+        )
     );
     Ok(())
 }
@@ -551,7 +652,16 @@ async fn visit_discounts_follow_the_package_sale_rules(pool: PgPool) -> TestResu
 
     // AC8.1: the manager's 10% is computed by the server and reaches lines, sale and payment.
     let ten = subtotal / 10;
-    let ok = s.post(&s.manager, "/visits", body(json!({"percent": 10, "reason": "Khách quen"}), subtotal - ten)).await;
+    let ok = s
+        .post(
+            &s.manager,
+            "/visits",
+            body(
+                json!({"percent": 10, "reason": "Khách quen"}),
+                subtotal - ten,
+            ),
+        )
+        .await;
     assert_eq!(ok.status, StatusCode::CREATED, "{}", ok.body);
     assert_eq!(ok.body["subtotal"], subtotal);
     assert_eq!(ok.body["discount_amount"], ten);
@@ -562,18 +672,61 @@ async fn visit_discounts_follow_the_package_sale_rules(pool: PgPool) -> TestResu
         .map(|l| l.iter().filter_map(|x| x["discount_amount"].as_i64()).sum())
         .unwrap_or_default();
     assert_eq!(shares, ten);
-    let sale = call(&s.h.app, "GET", &format!("/sales/{}", ok.body["sale_id"].as_str().unwrap_or_default()), Some(&s.manager), None).await;
-    assert_eq!((sale.body["discount_amount"].as_i64(), sale.body["total"].as_i64()), (Some(ten), Some(subtotal - ten)));
+    let sale = call(
+        &s.h.app,
+        "GET",
+        &format!("/sales/{}", ok.body["sale_id"].as_str().unwrap_or_default()),
+        Some(&s.manager),
+        None,
+    )
+    .await;
+    assert_eq!(
+        (
+            sale.body["discount_amount"].as_i64(),
+            sale.body["total"].as_i64()
+        ),
+        (Some(ten), Some(subtotal - ten))
+    );
 
     // Paying the listed price after a discount is a mismatch: the server's total wins.
-    let mismatch = s.post(&s.manager, "/visits", body(json!({"amount": 10_000, "reason": "x"}), subtotal)).await;
-    assert_eq!(code(&mismatch), (StatusCode::UNPROCESSABLE_ENTITY, Some("payment.amount_mismatch")));
+    let mismatch = s
+        .post(
+            &s.manager,
+            "/visits",
+            body(json!({"amount": 10_000, "reason": "x"}), subtotal),
+        )
+        .await;
+    assert_eq!(
+        code(&mismatch),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("payment.amount_mismatch")
+        )
+    );
 
     let over = subtotal * 11 / 100;
-    let capped = s.post(&s.manager, "/visits", body(json!({"amount": over, "reason": "x"}), subtotal - over)).await;
-    assert_eq!(code(&capped), (StatusCode::FORBIDDEN, Some("discount.limit_exceeded")));
+    let capped = s
+        .post(
+            &s.manager,
+            "/visits",
+            body(json!({"amount": over, "reason": "x"}), subtotal - over),
+        )
+        .await;
+    assert_eq!(
+        code(&capped),
+        (StatusCode::FORBIDDEN, Some("discount.limit_exceeded"))
+    );
     let half = subtotal / 2;
-    let owner = s.post(&s.owner, "/visits", body(json!({"percent": 50, "reason": "Chủ spa tặng"}), subtotal - half)).await;
+    let owner = s
+        .post(
+            &s.owner,
+            "/visits",
+            body(
+                json!({"percent": 50, "reason": "Chủ spa tặng"}),
+                subtotal - half,
+            ),
+        )
+        .await;
     assert_eq!(owner.status, StatusCode::CREATED, "{}", owner.body);
 
     // AC8.2
@@ -583,8 +736,15 @@ async fn visit_discounts_follow_the_package_sale_rules(pool: PgPool) -> TestResu
         json!({"percent": 0, "reason": "x"}),
         json!({"reason": "x"}),
     ] {
-        let r = s.post(&s.manager, "/visits", body(bad.clone(), subtotal)).await;
-        assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{bad}: {}", r.body);
+        let r = s
+            .post(&s.manager, "/visits", body(bad.clone(), subtotal))
+            .await;
+        assert_eq!(
+            r.status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{bad}: {}",
+            r.body
+        );
     }
     // Nothing to discount on a package-only visit.
     let package_only = s

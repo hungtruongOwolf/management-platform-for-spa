@@ -97,7 +97,7 @@ impl CalendarSettings {
             .and_then(|v| u32::try_from(v).ok())
             .filter(|v| [5, 10, 15, 20, 30, 60].contains(v))
             .unwrap_or(d.slot_minutes);
-        let on_grid = |t: NaiveTime| (t.hour() * 60 + t.minute()) % slot == 0;
+        let on_grid = |t: NaiveTime| (t.hour() * 60 + t.minute()).is_multiple_of(slot);
         if on_grid(open) && on_grid(close) {
             Self {
                 open,
@@ -130,7 +130,7 @@ pub fn duration_minutes(
     let slot = slot.max(1);
     let minutes = match requested {
         Some(m) => {
-            if m % slot != 0 {
+            if !m.is_multiple_of(slot) {
                 return Err(SlotError::BadDuration);
             }
             m
@@ -164,7 +164,7 @@ pub fn place(
     let start = local.time();
     if start.second() != 0
         || start.nanosecond() != 0
-        || (start.hour() * 60 + start.minute()) % settings.slot_minutes.max(1) != 0
+        || !(start.hour() * 60 + start.minute()).is_multiple_of(settings.slot_minutes.max(1))
     {
         return Err(SlotError::NotOnSlot);
     }
@@ -182,7 +182,11 @@ pub fn place(
 
 /// Largest number of `others` running at the same instant inside `[from, to)`. Intervals are
 /// half-open, so a booking ending at 11:00 and one starting at 11:00 do not overlap.
-pub fn peak_overlap(others: &[(DateTime<Utc>, DateTime<Utc>)], from: DateTime<Utc>, to: DateTime<Utc>) -> usize {
+pub fn peak_overlap(
+    others: &[(DateTime<Utc>, DateTime<Utc>)],
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+) -> usize {
     // The count only rises at a start, so checking every start inside the window (and the window
     // start itself) finds the peak.
     let mut probes: Vec<DateTime<Utc>> = vec![from];
@@ -231,7 +235,10 @@ mod tests {
             Some(&json!({"open": "08:30", "close": "22:00"})),
             Some(&json!(30)),
         );
-        assert_eq!((s.open, s.close, s.slot_minutes), (hm(8, 30), hm(22, 0), 30));
+        assert_eq!(
+            (s.open, s.close, s.slot_minutes),
+            (hm(8, 30), hm(22, 0), 30)
+        );
         // Malformed or off-grid values fall back.
         for (o, sl) in [
             (json!({"open": "x", "close": "22:00"}), json!(15)),
@@ -279,7 +286,11 @@ mod tests {
 
     #[test]
     fn peak_overlap_counts_simultaneous_bookings_half_open() {
-        let others = [(at(10, 0), at(11, 0)), (at(10, 30), at(11, 30)), (at(11, 0), at(12, 0))];
+        let others = [
+            (at(10, 0), at(11, 0)),
+            (at(10, 30), at(11, 30)),
+            (at(11, 0), at(12, 0)),
+        ];
         assert_eq!(peak_overlap(&others, at(10, 0), at(12, 0)), 2);
         assert_eq!(peak_overlap(&others, at(9, 0), at(10, 0)), 0);
         assert_eq!(peak_overlap(&others, at(11, 30), at(12, 0)), 1);
