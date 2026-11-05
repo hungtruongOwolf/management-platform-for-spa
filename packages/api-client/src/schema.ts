@@ -3946,6 +3946,11 @@ export interface operations {
             query?: {
                 /** @description Business day `YYYY-MM-DD`; default today. */
                 date?: string;
+                /**
+                 * @description Only the newest N visits of the day (1–500); default all. The front desk asks for one more
+                 *     than it shows to know whether "Xem tất cả" is needed, keeping a busy day's first paint light.
+                 */
+                limit?: number;
             };
             header?: never;
             path?: never;

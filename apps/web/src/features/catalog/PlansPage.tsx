@@ -86,7 +86,7 @@ export function PlansPage() {
                   {" · "}
                   {plan.validity_months
                     ? `Hạn ${String(plan.validity_months)} tháng`
-                    : "Không thời hạn"}
+                    : "Không hạn"}
                   {plan.gift_note ? ` · Quà: ${plan.gift_note}` : ""}
                 </p>
               </div>

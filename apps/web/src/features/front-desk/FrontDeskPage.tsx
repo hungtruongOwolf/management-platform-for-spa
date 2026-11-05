@@ -5,6 +5,7 @@ import type {
   Visit,
 } from "@vpyd/api-client";
 import {
+  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
@@ -21,6 +22,9 @@ import {
 } from "react";
 import { useAfterFirstPaint } from "../../lib/afterFirstPaint";
 import { ApiError } from "../../lib/api";
+import { invalidateManagementViews } from "../../lib/invalidate";
+import { serviceLabel } from "../../lib/names";
+import { CustomerName } from "../../app/CustomerName";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
 import { categoriesQuery, servicesQuery } from "../catalog/api";
@@ -39,7 +43,9 @@ import {
   savedSummary,
   staffByUse,
   timeOf,
+  todayAllVisitsQuery,
   todayVisitsQuery,
+  VISITS_PAGE,
   visitBody,
   visitsOfDayQuery,
 } from "./api";
@@ -162,6 +168,7 @@ export function FrontDeskPage() {
       await queryClient.invalidateQueries({
         queryKey: ["customer-packages", visit.customer_id],
       });
+      void invalidateManagementViews(queryClient, visit.customer_id);
       showToast(savedSummary(visit));
       resetVisit();
     },
@@ -323,6 +330,7 @@ export function FrontDeskPage() {
                 source: "package",
                 serviceId: item.service_id,
                 serviceName: item.name,
+                categoryName: item.category_name,
                 itemId: item.id,
                 packageName: pkg.name,
                 staffId: "",
@@ -363,7 +371,9 @@ export function FrontDeskPage() {
                     className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-[10px] border border-border px-3 py-2"
                   >
                     <div>
-                      <strong>{l.serviceName}</strong>
+                      <strong>
+                        {serviceLabel(l.serviceName, l.categoryName)}
+                      </strong>
                       <span className="block text-xs text-text-muted">
                         {l.source === "package"
                           ? `Trừ liệu trình · ${l.packageName}${l.expiryOverrideReason ? " · cho dùng tiếp" : ""}`
@@ -444,12 +454,13 @@ export function FrontDeskPage() {
           {customer && (
             <AddOneOff
               customer={customer}
-              onAdd={(service, priceVariant, price) => {
+              onAdd={(service, priceVariant, price, categoryName) => {
                 addLine({
                   key: nextKey.current++,
                   source: "one_off",
                   serviceId: service.id,
                   serviceName: service.name,
+                  ...(categoryName ? { categoryName } : {}),
                   priceVariant,
                   price,
                   staffId: "",
@@ -584,7 +595,12 @@ function AddOneOff({
   onProblem,
 }: {
   customer: CustomerSummary;
-  onAdd: (service: Service, priceVariant: Gender | null, price: number) => void;
+  onAdd: (
+    service: Service,
+    priceVariant: Gender | null,
+    price: number,
+    categoryName: string | undefined,
+  ) => void;
   onProblem: (message: string) => void;
 }) {
   const services = useQuery(servicesQuery(false));
@@ -622,6 +638,7 @@ function AddOneOff({
       service,
       known ? null : r.variant === "all" ? null : r.variant,
       r.price,
+      categories.data?.find((c) => c.id === service.category_id)?.name,
     );
     setServiceId("");
   };
@@ -712,10 +729,6 @@ function AddOneOff({
   );
 }
 
-/** A busy day holds a hundred visits; the latest come first, the rest on request. Keeps the screen
- * that stays open all day light to render (Lighthouse LCP/TBT budget, testing.md §4). */
-const VISITS_PAGE = 30;
-
 function TodayVisits() {
   const { data: me } = useSuspenseQuery(meQuery);
   const queryClient = useQueryClient();
@@ -723,13 +736,24 @@ function TodayVisits() {
   const [day, setDay] = useState(todayIso);
   const [voiding, setVoiding] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // A busy day holds a hundred visits: the newest VISITS_PAGE first; "Xem tất cả" loads the day,
+  // then shows it VISITS_PAGE at a time.
+  const [all, setAll] = useState(false);
   const [shown, setShown] = useState(VISITS_PAGE);
   const isToday = day === todayIso;
   const painted = useAfterFirstPaint();
   const today = useQuery({
-    ...(isToday ? todayVisitsQuery : visitsOfDayQuery(day)),
+    ...(isToday
+      ? all
+        ? todayAllVisitsQuery
+        : todayVisitsQuery
+      : visitsOfDayQuery(day, all)),
     enabled: painted,
+    placeholderData: keepPreviousData,
   });
+  const list = today.data ?? [];
+  const hasMore = !all && list.length > VISITS_PAGE;
+  const visible = list.slice(0, all ? shown : VISITS_PAGE);
   // UX only: the server decides (403 day.locked for managers; owners may).
   const mayVoid =
     can(me, "record.void_same_day") &&
@@ -741,7 +765,9 @@ function TodayVisits() {
           {isToday
             ? "Lượt khách hôm nay"
             : `Lượt khách ngày ${day.split("-").reverse().join("/")}`}
-          {today.data ? ` (${String(today.data.length)})` : ""}
+          {today.data
+            ? ` (${hasMore ? `${String(VISITS_PAGE)}+` : String(list.length)})`
+            : ""}
         </h2>
         <label className="flex items-center gap-2 text-sm">
           Xem ngày
@@ -752,6 +778,7 @@ function TodayVisits() {
             onChange={(e) => {
               setDay(e.target.value || todayIso);
               setVoiding(null);
+              setAll(false);
               setShown(VISITS_PAGE);
             }}
             className="min-h-11 rounded-[6px] border border-border bg-surface px-2"
@@ -798,7 +825,7 @@ function TodayVisits() {
         <ul
           aria-label={isToday ? "Lượt khách hôm nay" : "Lượt khách trong ngày"}
         >
-          {today.data.slice(0, shown).map((v) => (
+          {visible.map((v) => (
             <li
               key={v.id}
               className="border-b border-dashed border-border py-2 text-sm last:border-b-0"
@@ -807,7 +834,11 @@ function TodayVisits() {
                 <span
                   className={`min-w-0 ${v.status === "voided" ? "text-text-muted" : ""}`}
                 >
-                  <strong>{timeOf(v.check_in_at)}</strong> · {v.customer_name}
+                  <strong>{timeOf(v.check_in_at)}</strong> ·{" "}
+                  <CustomerName
+                    name={v.customer_name}
+                    gender={v.customer_gender}
+                  />
                   {v.status === "voided" && (
                     <span className="badge badge-danger ml-2 align-middle">
                       Đã hủy
@@ -817,7 +848,7 @@ function TodayVisits() {
                     {v.lines
                       .map(
                         (l) =>
-                          `${l.service_name}${l.source === "package" ? " (trừ buổi)" : ""}`,
+                          `${serviceLabel(l.service_name, l.category_name)}${l.source === "package" ? " (trừ buổi)" : ""}`,
                       )
                       .join(", ")}{" "}
                     · KTV{" "}
@@ -871,6 +902,10 @@ function TodayVisits() {
                         void queryClient.invalidateQueries({
                           queryKey: ["customer-packages"],
                         });
+                        void invalidateManagementViews(
+                          queryClient,
+                          voided.customer_id,
+                        );
                       }}
                     />
                   </div>
@@ -880,7 +915,19 @@ function TodayVisits() {
           ))}
         </ul>
       )}
-      {today.data && today.data.length > shown && (
+      {hasMore && (
+        <button
+          type="button"
+          onClick={() => {
+            setAll(true);
+            setShown(VISITS_PAGE * 2);
+          }}
+          className="mt-2 min-h-11 w-full rounded-[10px] border border-border px-4 font-medium hover:bg-surface-2"
+        >
+          Xem tất cả lượt trong ngày
+        </button>
+      )}
+      {all && list.length > shown && (
         <button
           type="button"
           onClick={() => {
@@ -888,7 +935,7 @@ function TodayVisits() {
           }}
           className="mt-2 min-h-11 w-full rounded-[10px] border border-border px-4 font-medium hover:bg-surface-2"
         >
-          Xem thêm ({today.data.length - shown} lượt nữa)
+          Xem thêm ({list.length - shown} lượt nữa)
         </button>
       )}
     </section>

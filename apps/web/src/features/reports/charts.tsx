@@ -1,52 +1,7 @@
 /**
- * Hand-rolled charts: HTML bars sized in %, no chart library (the reports chunk stays a few KB).
- * One hue (maroon) for the series and gold for the highlighted bar; values are always available as
- * text, so the chart is a list for screen readers rather than a picture.
+ * Hand-rolled part-to-whole bar (no chart library; the trend is LineChart.tsx). Every value is also
+ * in the legend as text, and the bar's accessible name lists them.
  */
-
-export interface Bar {
-  key: string;
-  label: string;
-  sub?: string;
-  value: number;
-}
-
-export function BarChart({
-  bars,
-  format,
-  highlight,
-  label,
-}: {
-  bars: Bar[];
-  format: (n: number) => string;
-  highlight?: string;
-  label: string;
-}) {
-  const max = Math.max(1, ...bars.map((b) => b.value));
-  return (
-    <figure className="m-0">
-      <ol aria-label={label} className="chart-bars">
-        {bars.map((b, i) => (
-          <li key={b.key} className="chart-col" tabIndex={0} aria-label={`${b.sub ?? ""} ${b.label}: ${format(b.value)}`}>
-            <span className="chart-value tabular" aria-hidden="true">
-              {format(b.value)}
-            </span>
-            <span aria-hidden="true" className="chart-plot">
-              <span
-                className={`chart-bar ${b.key === highlight ? "is-highlight" : ""}`}
-                style={{ height: `${String(Math.max(2, (b.value / max) * 100))}%`, animationDelay: `${String(i * 40)}ms` }}
-              />
-            </span>
-            <span className="chart-label" aria-hidden="true">
-              <span className="block font-semibold">{b.sub}</span>
-              {b.label}
-            </span>
-          </li>
-        ))}
-      </ol>
-    </figure>
-  );
-}
 
 export interface Part {
   label: string;

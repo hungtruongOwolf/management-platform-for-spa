@@ -296,8 +296,10 @@ function serve(
     if (url === "/api/v1/services") return json([DAI_THONG_LAC, GAC_HOI]);
     if (url === "/api/v1/service-categories")
       return json([{ id: "cat1", name: "Cổ vai gáy", sort_order: 0 }]);
-    if (url === "/api/v1/visits" && call.method === "GET")
-      return json(dayVisits);
+    if (url.startsWith("/api/v1/visits") && call.method === "GET") {
+      const limit = new URL(url, "http://x").searchParams.get("limit");
+      return json(limit ? dayVisits.slice(0, Number(limit)) : dayVisits);
+    }
     if (url === "/api/v1/visits" && call.method === "POST")
       return Promise.resolve(onVisit());
     return Promise.resolve(new Response(null, { status: 404 }));
@@ -384,20 +386,31 @@ describe("/quay", () => {
       id: `v${String(i)}`,
       customer_name: `Khách ${String(i)}`,
     }));
-    serve(MANAGER, undefined, undefined, many);
+    const calls = serve(MANAGER, undefined, undefined, many);
     const user = userEvent.setup();
     at("/quay");
     const list = await screen.findByRole("list", {
       name: "Lượt khách hôm nay",
     });
     expect(within(list).getAllByRole("listitem")).toHaveLength(30);
+    // Only the newest 31 are fetched first: one more than shown says the day has more.
+    expect(
+      calls.some(
+        (c) => c.method === "GET" && c.url === "/api/v1/visits?limit=31",
+      ),
+    ).toBe(true);
+    expect(
+      screen.getByRole("heading", { name: /Lượt khách hôm nay \(30\+\)/ }),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Xem tất cả lượt trong ngày" }),
+    );
+    await waitFor(() => {
+      expect(within(list).getAllByRole("listitem")).toHaveLength(60);
+    });
     expect(
       screen.getByRole("heading", { name: /Lượt khách hôm nay \(65\)/ }),
     ).toBeInTheDocument();
-    await user.click(
-      screen.getByRole("button", { name: "Xem thêm (35 lượt nữa)" }),
-    );
-    expect(within(list).getAllByRole("listitem")).toHaveLength(60);
     await user.click(
       screen.getByRole("button", { name: "Xem thêm (5 lượt nữa)" }),
     );

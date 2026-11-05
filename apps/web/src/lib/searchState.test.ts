@@ -39,11 +39,12 @@ describe("search schemas", () => {
   });
 
   it("the app's screens declare their list state", () => {
-    expect(packagesSearch.defaults).toEqual({ status: "expiring" });
+    expect(packagesSearch.defaults).toEqual({ status: "expiring", q: "" });
     expect(packagesSearch.validate({ status: "cancelled" })).toEqual({ status: "cancelled" });
-    expect(inactiveSearch.defaults).toEqual({ days: 7, scope: "with_sessions" });
-    expect(inactiveSearch.validate({ days: "30", scope: "all" })).toEqual({ days: 30, scope: "all" });
-    expect(reportsSearch.validate({ date: "not-a-date" })).toEqual({});
+    // Every customer, "Cần liên hệ" first (EM round 3 items 4 and 16).
+    expect(inactiveSearch.defaults).toEqual({ days: 7, scope: "all", kind: "all", follow: "due", q: "" });
+    expect(inactiveSearch.validate({ days: "30", scope: "with_sessions", follow: "not_contacted" })).toEqual({ days: 30, scope: "with_sessions" });
+    expect(reportsSearch.validate({ period: "5y", from: "not-a-date" })).toEqual({});
     expect(customersSearch.validate({ q: "Hà" })).toEqual({ q: "Hà" });
   });
 });

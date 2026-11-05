@@ -88,7 +88,21 @@ pub async fn list_visits(
     user: AuthUser,
     Query(query): Query<VisitListQuery>,
 ) -> Result<Response, AppError> {
-    let visits = service::for_day(&pool, &cipher, &user.actor, query.date).await?;
+    let limit = match query.limit {
+        None => None,
+        Some(n) if (1..=crate::dto::VISIT_LIST_MAX_LIMIT).contains(&n) => Some(n as usize),
+        Some(_) => {
+            return Err(AppError::Validation(vec![FieldError::new(
+                "limit",
+                "out_of_range",
+            )]));
+        }
+    };
+    let mut visits = service::for_day(&pool, &cipher, &user.actor, query.date).await?;
+    // Newest first (repo orders by check_in_at DESC), so truncating keeps the latest visits.
+    if let Some(n) = limit {
+        visits.truncate(n);
+    }
     Ok(no_store(StatusCode::OK, visits, None))
 }
 

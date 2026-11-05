@@ -15,6 +15,7 @@ import {
 } from "./api";
 import { useFormAction } from "./useFormAction";
 import { VoidForm } from "./VoidForm";
+import { invalidateManagementViews } from "../../lib/invalidate";
 
 const input =
   "min-h-11 w-full rounded-[6px] border border-border bg-surface px-3";
@@ -52,6 +53,7 @@ export function PackageActions({
     setOpen(null);
     void queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
     void queryClient.invalidateQueries({ queryKey: ["visits"] });
+    void invalidateManagementViews(queryClient, pkg.customer_id);
     onDone(message);
   };
 
@@ -194,7 +196,7 @@ function ExtendForm({
       </h3>
       <p className="text-sm text-text-muted">
         Hạn hiện tại:{" "}
-        {pkg.expires_on ? formatDate(pkg.expires_on) : "không thời hạn"} · còn{" "}
+        {pkg.expires_on ? formatDate(pkg.expires_on) : "không hạn"} · còn{" "}
         {String(pkg.sessions_remaining)}/{String(pkg.sessions_total)} buổi
       </p>
       <form

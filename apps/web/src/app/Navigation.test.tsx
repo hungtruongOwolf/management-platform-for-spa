@@ -55,12 +55,12 @@ describe("navigation model (EM round 3: always a way back)", () => {
     const history = at("/khach-lau-khong-quay-lai");
     await screen.findByRole("table", { name: "Khách lâu không quay lại" });
     const entries = history.length;
-    await user.click(screen.getByRole("button", { name: "≥ 30 ngày" }));
-    await user.click(screen.getByRole("button", { name: "Mọi khách đã từng đến" }));
+    await user.selectOptions(screen.getByLabelText("Vắng từ"), "30");
+    await user.selectOptions(screen.getByLabelText("Phạm vi"), "with_sessions");
     expect(history.location.search).toContain("days=30");
-    expect(history.location.search).toContain("scope=all");
+    expect(history.location.search).toContain("scope=with_sessions");
     expect(history.length).toBe(entries);
-    await user.click(screen.getByRole("button", { name: "≥ 7 ngày" }));
+    await user.selectOptions(screen.getByLabelText("Vắng từ"), "7");
     expect(history.location.search).not.toContain("days=");
   });
 

@@ -21,7 +21,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 
 ## Architecture
 - [system](wiki/architecture/system.md) — R1 architecture: quality ranking, C4 diagrams, trust boundaries, data flows, failure modes, cost
-- [frontend](wiki/architecture/frontend.md) — SPA routes (incl. management views + data flag), data fetching, perf budget (single startup chunk), auth/permission-aware UI, PWA, folder layout
+- [frontend](wiki/architecture/frontend.md) — SPA routes, data fetching, perf budget (single startup chunk), auth/permission-aware UI, PWA, folder layout; management screens: report periods + ledger, follow-ups, search/filter analysis per page, query keys + invalidation
 - [backend](wiki/architecture/backend.md) — R1-1 API contract + §3b R1-2 report endpoints (shapes, money rules, p95 bench) (endpoints, errors, idempotency, ETag), use cases + integrity strategies, layering, jobs, AC trace
 - [data](wiki/architecture/data.md) — R1-1 Postgres schema + R1-2 read models (0013: package_status, revenue_book, day indexes) + 0014 customer_follow_up, search_fold + ER, tenant FKs, RLS, constraints, indexes, migrations, seed
 - [principles](wiki/architecture/principles.md) — extensibility rules: modular monolith, permissions-as-data, tenant/branch, versioned policies, pure calculators

@@ -1,10 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { CustomerName } from "../../app/CustomerName";
+import { NO_EXPIRY } from "../../lib/names";
 import { useSearchState } from "../../lib/searchState";
-import { longDay, packagesOverviewQuery, relativeDay, type PackageFilter } from "./api";
+import { FilterBar, SearchField } from "./filters";
 import { packagesSearch } from "./search";
+import { longDay, packagesOverviewQuery, relativeDay, type PackageFilter } from "./api";
 import type { PackageOverviewRow, PackageStatus } from "./contract";
 import { EmptyState, ErrorState, ManagementOnly, PageHeader, RowsSkeleton } from "./ui";
 
@@ -21,7 +23,7 @@ export function displayPhone(phone: string): string {
   return m ? `0${m[1] ?? ""} ${m[2] ?? ""} ${m[3] ?? ""}` : phone;
 }
 
-/** Customer name (+ gender, when the row has it) linking to the profile, phone below. */
+/** Customer name linking to the profile with the gender beside it (EM round 3), phone below. */
 export function CustomerCell({
   id,
   name,
@@ -30,7 +32,7 @@ export function CustomerCell({
 }: {
   id: string;
   name: string;
-  phone: string;
+  phone?: string;
   gender?: string | null;
 }): ReactNode {
   return (
@@ -38,7 +40,7 @@ export function CustomerCell({
       <Link to="/khach-hang/$customerId" params={{ customerId: id }} className="font-semibold text-primary hover:underline">
         <CustomerName name={name} gender={gender} />
       </Link>
-      <span className="mt-1 block text-xs text-text-muted tabular">{displayPhone(phone)}</span>
+      {phone && <span className="mt-1 block text-xs text-text-muted tabular">{displayPhone(phone)}</span>}
     </>
   );
 }
@@ -70,9 +72,10 @@ export function PackagesOverviewPage() {
 }
 
 function PackagesOverviewPageBody() {
-  const [{ status: filter }, setSearch] = useSearchState(packagesSearch);
-  const page = useQuery(packagesOverviewQuery(filter));
-  const counts = page.data?.counts;
+  const [{ status: filter, q }, patch] = useSearchState(packagesSearch);
+  const page = useInfiniteQuery(packagesOverviewQuery(filter, q));
+  const counts = page.data?.pages[0]?.counts;
+  const items = page.data?.pages.flatMap((p) => p.items) ?? [];
   const filters: [PackageFilter, string, number | undefined][] = [
     ["expiring", "Sắp hết hạn", counts?.expiring_soon],
     ["active", "Đang dùng", counts?.active],
@@ -85,6 +88,16 @@ function PackagesOverviewPageBody() {
   return (
     <section className="grid content-start gap-5">
       <PageHeader eyebrow="Gói liệu trình" title="Theo dõi gói của khách" />
+      <FilterBar label="Tìm và lọc gói">
+        <SearchField
+          label="Tìm theo tên khách, tên gói hoặc số điện thoại"
+          placeholder="Tên khách, tên gói, số điện thoại…"
+          value={q}
+          onCommit={(next) => {
+            patch({ q: next });
+          }}
+        />
+      </FilterBar>
       <div className="segmented" role="group" aria-label="Lọc theo trạng thái">
         {filters.map(([f, label, n]) => (
           <button
@@ -92,7 +105,7 @@ function PackagesOverviewPageBody() {
             type="button"
             aria-pressed={filter === f}
             onClick={() => {
-              setSearch({ status: f });
+              patch({ status: f });
             }}
           >
             {label}
@@ -100,16 +113,18 @@ function PackagesOverviewPageBody() {
           </button>
         ))}
       </div>
-      <div className="card overflow-hidden">
+      <div className={`card overflow-hidden ${page.isPlaceholderData ? "is-refreshing" : ""}`}>
         {page.isError && (
           <div className="p-4">
             <ErrorState error={page.error} onRetry={() => void page.refetch()} />
           </div>
         )}
         {page.isPending && <RowsSkeleton rows={6} />}
-        {page.data?.items.length === 0 && <EmptyState title="Không có gói nào">Thử chọn một trạng thái khác.</EmptyState>}
-        {page.data && page.data.items.length > 0 && (
-          <div className="table-wrap">
+        {page.isSuccess && items.length === 0 && (
+          <EmptyState title="Không có gói nào">{q ? `Không thấy gói nào khớp “${q}”. Thử tên khác hoặc chọn “Tất cả”.` : "Thử chọn một trạng thái khác."}</EmptyState>
+        )}
+        {items.length > 0 && (
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="Danh sách gói liệu trình">
             <table className="data-table">
               <caption className="sr-only">Gói liệu trình của khách</caption>
               <thead>
@@ -125,20 +140,20 @@ function PackagesOverviewPageBody() {
                 </tr>
               </thead>
               <tbody>
-                {page.data.items.map((p) => {
+                {items.map((p) => {
                   const [label, tone] = STATUS[p.status];
-                  const soon = p.status === "active" && p.days_to_expiry != null && p.days_to_expiry <= 30;
+                  const soon = p.status === "active" && p.expires_on != null && p.days_to_expiry != null && p.days_to_expiry <= 30;
                   return (
                     <tr key={p.id}>
                       <td>
-                        <CustomerCell id={p.customer_id} name={p.customer_name} phone={p.customer_phone} />
+                        <CustomerCell id={p.customer_id} name={p.customer_name} phone={p.customer_phone} gender={p.customer_gender ?? null} />
                       </td>
                       <td>{p.name}</td>
                       <td className="num">
                         <Remaining p={p} />
                       </td>
                       <td className="tabular">
-                        {p.expires_on ? longDay(p.expires_on) : "Không hạn"}
+                        {p.expires_on ? longDay(p.expires_on) : <span className="badge badge-muted">{NO_EXPIRY}</span>}
                         {soon && <span className="block text-xs font-semibold text-warning-text">còn {p.days_to_expiry} ngày</span>}
                       </td>
                       <td className="text-text-muted">{p.last_used_on ? relativeDay(p.last_used_on) : "Chưa dùng"}</td>
@@ -153,6 +168,14 @@ function PackagesOverviewPageBody() {
           </div>
         )}
       </div>
+      {page.hasNextPage && (
+        <div className="flex justify-center">
+          <button type="button" className="btn btn-secondary min-w-40" disabled={page.isFetchingNextPage} onClick={() => void page.fetchNextPage()}>
+            {page.isFetchingNextPage ? "Đang tải…" : "Xem thêm"}
+          </button>
+        </div>
+      )}
     </section>
   );
 }
+
