@@ -52,7 +52,10 @@ import {
   visitBody,
 } from "./api";
 import { CustomerCard } from "./CustomerCard";
-import { DayCountdown } from "./DayCountdown";
+// The countdown ticks from just after the first paint (own chunk; its box is reserved meanwhile).
+const DayCountdown = lazy(() =>
+  import("./DayCountdown").then((m) => ({ default: m.DayCountdown })),
+);
 import { frontDeskSearch } from "./search";
 import { spaToday } from "../corrections/api";
 
@@ -389,7 +392,11 @@ export function FrontDeskPage() {
             </button>
           )}
         </div>
-        <DayCountdown owner={mayBackdate} />
+        <Suspense
+          fallback={<span aria-hidden="true" className="block h-10 w-64" />}
+        >
+          <DayCountdown owner={mayBackdate} />
+        </Suspense>
       </div>
 
       {search.view === "lich" && can(me, "appointment.manage") ? (
