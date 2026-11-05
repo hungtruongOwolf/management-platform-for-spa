@@ -30,6 +30,7 @@ import { can, meQuery } from "../auth/session";
 import { categoriesQuery, servicesQuery } from "../catalog/api";
 import { customerQuery } from "../customers/api";
 import { CustomerSearch } from "../customers/CustomerSearch";
+import { StickyActions } from "../../components/StickyActions";
 import { completeAppointment } from "../appointments/complete";
 import { activeStaffQuery, exceedsCap, parseAmount } from "../sales/api";
 import {
@@ -450,7 +451,7 @@ export function FrontDeskPage() {
                     </Suspense>
                   </div>
                 )}
-                <p className="mt-2 text-xs text-text-muted">
+                <p className="mt-2 hidden text-xs text-text-muted sm:block">
                   <kbd>↑</kbd> <kbd>↓</kbd> chọn, <kbd>Enter</kbd> mở,{" "}
                   <kbd>/</kbd> về ô tìm, <kbd>Ctrl</kbd>+<kbd>Enter</kbd> lưu,{" "}
                   <kbd>Esc</kbd> bỏ khách.
@@ -766,14 +767,16 @@ export function FrontDeskPage() {
                         Chưa lưu được. Bấm Lưu để thử lại (không bị ghi đôi).
                       </p>
                     )}
-                  <button
-                    type="button"
-                    onClick={save}
-                    disabled={mutation.isPending}
-                    className="min-h-13 w-full rounded-[10px] bg-primary text-lg font-semibold text-on-primary disabled:opacity-60"
-                  >
-                    {mutation.isPending ? "Đang lưu…" : "Lưu lượt khách"}
-                  </button>
+                  <StickyActions label="Lưu lượt">
+                    <button
+                      type="button"
+                      onClick={save}
+                      disabled={mutation.isPending}
+                      className="min-h-13 w-full rounded-[10px] bg-primary text-lg font-semibold text-on-primary disabled:opacity-60"
+                    >
+                      {mutation.isPending ? "Đang lưu…" : "Lưu lượt khách"}
+                    </button>
+                  </StickyActions>
                 </div>
               )}
             </section>
