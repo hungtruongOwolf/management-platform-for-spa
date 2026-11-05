@@ -142,9 +142,9 @@ async function openDialog() {
   const user = userEvent.setup();
   at("/khach-hang/c1");
   await user.click(
-    await screen.findByRole("button", { name: "+ Bán liệu trình mới" }),
+    await screen.findByRole("button", { name: "Bán gói liệu trình" }),
   );
-  const dialog = screen.getByRole("dialog", { name: "Bán liệu trình mới" });
+  const dialog = screen.getByRole("dialog", { name: "Bán gói liệu trình" });
   await within(dialog).findByRole("option", {
     name: /Gội đầu 10 \+ tặng 2 — 1\.500\.000/,
   });
@@ -179,7 +179,7 @@ describe("sell package dialog", () => {
     const calls = serve(MANAGER);
     const { user, dialog } = await openDialog();
     expect(
-      await screen.findByText("Chưa có liệu trình nào."),
+      await screen.findByText("Chưa có gói liệu trình nào."),
     ).toBeInTheDocument();
     const [planSelect, closerSelect] = within(dialog).getAllByRole("combobox");
     if (!planSelect || !closerSelect) throw new Error("selects missing");
@@ -211,9 +211,9 @@ describe("sell package dialog", () => {
       "còn 12/12 buổi",
     );
     const list = await screen.findByRole("list", {
-      name: "Liệu trình của khách",
+      name: "Gói liệu trình của khách",
     });
-    expect(within(list).getByText("còn 12/12 buổi")).toBeInTheDocument();
+    expect(within(list).getByText("Còn 12/12 buổi")).toBeInTheDocument();
     expect(within(list).getByText(/HSD 04\/05\/2027/)).toBeInTheDocument();
   });
 
@@ -291,10 +291,10 @@ describe("sell package dialog", () => {
       await screen.findByRole("heading", { name: /^Nguyễn Thị Hà/ }),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText("Chưa có liệu trình nào."),
+      await screen.findByText("Chưa có gói liệu trình nào."),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "+ Bán liệu trình mới" }),
+      screen.queryByRole("button", { name: "Bán gói liệu trình" }),
     ).not.toBeInTheDocument();
   });
 });

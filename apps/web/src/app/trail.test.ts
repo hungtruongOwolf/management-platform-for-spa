@@ -11,12 +11,12 @@ afterEach(() => {
 describe("navigation trail", () => {
   it("names the previous screen, with its list state, for the back control", () => {
     recordLocation(0, "/goi-lieu-trinh?status=cancelled", "/goi-lieu-trinh");
-    setTitle(0, "/goi-lieu-trinh?status=cancelled", "/goi-lieu-trinh", "Theo dõi gói của khách");
+    setTitle(0, "/goi-lieu-trinh?status=cancelled", "/goi-lieu-trinh", "Gói liệu trình của khách");
     recordLocation(1, "/khach-hang/c1", "/khach-hang/c1");
     expect(previousEntry(1, "/khach-hang/c1")).toEqual({
       href: "/goi-lieu-trinh?status=cancelled",
       pathname: "/goi-lieu-trinh",
-      title: "Theo dõi gói của khách",
+      title: "Gói liệu trình của khách",
     });
   });
 

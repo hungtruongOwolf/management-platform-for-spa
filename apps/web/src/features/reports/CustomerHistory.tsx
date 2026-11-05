@@ -3,6 +3,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { canSeeManagement } from "../../app/features";
 import { Icon, type IconName } from "../../app/Icon";
+import { monthLabel } from "../../lib/format";
 import { serviceLabel } from "../../lib/names";
 import { useSearchState } from "../../lib/searchState";
 import { can, type Me } from "../auth/session";
@@ -10,13 +11,15 @@ import { spaToday } from "../corrections/api";
 import { CHANNEL_LABEL, OUTCOME_LABEL, followUpsQuery } from "../customers/followUps";
 import { FollowUpForm } from "../customers/FollowUpForm";
 import { HISTORY_KINDS, historySearch } from "../customers/search";
+import { customerPackagesQuery } from "../sales/api";
 import { customerHistoryQuery, customerStatsQuery, relativeDay } from "./api";
 import type { HistoryEvent } from "./contract";
-import { FilterBar, FilterSelect, SearchField } from "./filters";
+import { BottomSheet } from "../../components/BottomSheet";
+import { DateField } from "../../components/DateField";
+import { FilterSelect, ResponsiveFilters, SearchField } from "./filters";
 import { EmptyState, ErrorState, RowsSkeleton, money } from "./ui";
 
 const time = new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Ho_Chi_Minh" });
-const month = new Intl.DateTimeFormat("vi-VN", { month: "long", year: "numeric", timeZone: "UTC" });
 
 const KIND: Record<HistoryKind, [string, IconName, string]> = {
   visit: ["Lượt khách", "desk", "bg-primary"],
@@ -38,8 +41,21 @@ function Fact({ label, value, hint }: { label: string; value: string; hint?: str
   );
 }
 
+/**
+ * "Đã chi" counts money taken through the app only. A package carried over from the paper books
+ * (no sale) was paid before the app, so the figure would read as "0đ" for a long-time customer
+ * (EM round 4): say what it covers instead of a bare zero.
+ */
+function spentHint(refunded: number, carriedOver: boolean): string | undefined {
+  const parts = [refunded ? `đã hoàn ${money(refunded)}` : "", carriedOver ? "chưa gồm tiền gói trả trước khi dùng app" : ""].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
 function Summary({ customerId }: { customerId: string }) {
   const stats = useQuery(customerStatsQuery(customerId));
+  // Same query (and cache entry) as the packages card: no extra request.
+  const packages = useQuery(customerPackagesQuery(customerId));
+  const carriedOver = packages.data?.some((p) => !p.sale_id) ?? false;
   if (stats.isPending)
     return (
       <div role="status" aria-label="Đang tải tóm tắt" className="grid grid-cols-2 gap-3">
@@ -59,7 +75,7 @@ function Summary({ customerId }: { customerId: string }) {
       />
       <Fact label="Số lượt" value={String(s.visit_count)} hint={s.first_visit_on ? `từ ${relativeDay(s.first_visit_on)}` : undefined} />
       <Fact label="Buổi còn lại" value={String(s.sessions_remaining)} hint={`${String(s.packages.active)} gói đang dùng`} />
-      <Fact label="Đã chi" value={money(s.net_spent)} hint={s.refunded ? `đã hoàn ${money(s.refunded)}` : undefined} />
+      <Fact label="Đã chi qua app" value={money(s.net_spent)} hint={spentHint(s.refunded, carriedOver)} />
     </dl>
   );
 }
@@ -113,17 +129,27 @@ function EventBody({ e }: { e: HistoryEvent }) {
 function HistoryFilters() {
   const [s, set] = useSearchState(historySearch);
   const today = spaToday();
+  const active = [s.hkind, s.hfrom, s.hto].filter(Boolean).length;
+  const reset = () => {
+    set({ hq: "", hkind: "", hfrom: "", hto: "" });
+  };
   return (
-    <FilterBar label="Tìm trong lịch sử">
-      <SearchField
-        label="Tìm dịch vụ, gói hoặc kỹ thuật viên"
-        placeholder="Dịch vụ, gói, KTV…"
-        className="basis-full"
-        value={s.hq}
-        onCommit={(hq) => {
-          set({ hq });
-        }}
-      />
+    <ResponsiveFilters
+      label="Lọc lịch sử"
+      activeCount={active}
+      onReset={reset}
+      search={
+        <SearchField
+          label="Tìm dịch vụ, gói hoặc kỹ thuật viên"
+          placeholder="Dịch vụ, KTV…"
+          className="basis-full"
+          value={s.hq}
+          onCommit={(hq) => {
+            set({ hq });
+          }}
+        />
+      }
+    >
       <FilterSelect
         label="Loại"
         value={s.hkind}
@@ -132,41 +158,29 @@ function HistoryFilters() {
           set({ hkind });
         }}
       />
-      <label className="filter-field">
-        Từ ngày
-        <input
-          type="date"
-          value={s.hfrom}
-          max={s.hto || today}
-          onChange={(e) => {
-            set({ hfrom: e.target.value });
-          }}
-        />
-      </label>
-      <label className="filter-field">
-        Đến ngày
-        <input
-          type="date"
-          value={s.hto}
-          min={s.hfrom || undefined}
-          max={today}
-          onChange={(e) => {
-            set({ hto: e.target.value });
-          }}
-        />
-      </label>
-      {(s.hq || s.hkind || s.hfrom || s.hto) && (
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => {
-            set({ hq: "", hkind: "", hfrom: "", hto: "" });
-          }}
-        >
+      <DateField
+        label="Từ ngày"
+        value={s.hfrom}
+        max={s.hto || today}
+        onChange={(hfrom) => {
+          set({ hfrom });
+        }}
+      />
+      <DateField
+        label="Đến ngày"
+        value={s.hto}
+        min={s.hfrom || undefined}
+        max={today}
+        onChange={(hto) => {
+          set({ hto });
+        }}
+      />
+      {(s.hq || active > 0) && (
+        <button type="button" className="btn btn-secondary max-sm:hidden" onClick={reset}>
           Xóa bộ lọc
         </button>
       )}
-    </FilterBar>
+    </ResponsiveFilters>
   );
 }
 
@@ -186,7 +200,7 @@ function Timeline({ customerId }: { customerId: string }) {
     ) : (
       <EmptyState title="Chưa có lịch sử">Lượt khách và gói đã mua sẽ hiện ở đây.</EmptyState>
     );
-  const monthOf = (e: HistoryEvent) => month.format(new Date(`${e.business_date}T00:00:00Z`));
+  const monthOf = (e: HistoryEvent) => monthLabel(e.business_date);
   return (
     <div className={`grid content-start gap-3 ${history.isPlaceholderData ? "is-refreshing" : ""}`}>
       <ol className="timeline" aria-label="Lịch sử sử dụng">
@@ -198,7 +212,7 @@ function Timeline({ customerId }: { customerId: string }) {
           const voided = e.kind.endsWith("_voided");
           return (
             <li key={`${e.at}-${String(i)}`} className="relative">
-              {heading && <p className="mt-2 mb-1 eyebrow first-letter:uppercase">{heading}</p>}
+              {heading && <p className="timeline-month">{heading}</p>}
               <div className={`relative rounded-[10px] border border-border p-3 ${voided ? "bg-surface-2 text-text-muted" : "bg-surface"}`}>
                 <span aria-hidden="true" className={`timeline-dot ${dot} text-on-primary`}>
                   <Icon name={icon} className="size-2.5" />
@@ -232,11 +246,11 @@ function FollowUps({ customerId, customerName, canRecord }: { customerId: string
   const next = list.data?.items[0]?.next_follow_up_on;
   return (
     <section aria-labelledby="follow-title" className="card grid content-start gap-3 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="follow-title" className="flex items-center gap-2 text-lg font-semibold">
+      <div className="card-head">
+        <h2 id="follow-title" className="card-title">
           <Icon name="phone" className="size-5 text-accent" /> Chăm sóc lại
         </h2>
-        {canRecord && !open && (
+        {canRecord && (
           <button
             type="button"
             className="btn btn-secondary"
@@ -253,7 +267,14 @@ function FollowUps({ customerId, customerName, canRecord }: { customerId: string
           {next <= today ? "Đến hạn liên hệ" : "Hẹn liên hệ lại"} {relativeDay(next)}
         </p>
       )}
-      {open && (
+      <BottomSheet
+        open={open}
+        onClose={() => {
+          setOpen(false);
+        }}
+        title="Ghi lần liên hệ"
+        description={customerName}
+      >
         <FollowUpForm
           customerId={customerId}
           customerName={customerName}
@@ -264,7 +285,7 @@ function FollowUps({ customerId, customerName, canRecord }: { customerId: string
             setOpen(false);
           }}
         />
-      )}
+      </BottomSheet>
       {list.isPending && <RowsSkeleton rows={2} />}
       {list.isError && <ErrorState error={list.error} onRetry={() => void list.refetch()} />}
       {list.data && list.data.items.length === 0 && <p className="text-sm text-text-muted">Chưa liên hệ lần nào.</p>}
@@ -306,7 +327,7 @@ export function CustomerHistory({ customerId, customerName = "", me }: { custome
     <div className="grid content-start gap-4">
       <FollowUps customerId={customerId} customerName={customerName} canRecord={can(me, "customer.follow_up")} />
       <section aria-labelledby="history-title" className="card grid content-start gap-4 p-4">
-        <h2 id="history-title" className="flex items-center gap-2 text-lg font-semibold">
+        <h2 id="history-title" className="card-title">
           <Icon name="history" className="size-5 text-accent" /> Lịch sử sử dụng
         </h2>
         <Summary customerId={customerId} />

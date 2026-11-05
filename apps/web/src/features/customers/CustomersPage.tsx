@@ -35,7 +35,7 @@ export function CustomersPage() {
 
   return (
     <section aria-labelledby="customers-title" className="grid content-start gap-4">
-      <PageHeader eyebrow="Hồ sơ khách" title="Khách hàng" titleId="customers-title" />
+      <PageHeader eyebrow="Khách hàng" title="Danh sách khách hàng" titleId="customers-title" />
       <div className="card p-4">
         <CustomerSearch
           query={search.q}
@@ -101,9 +101,13 @@ export function CustomersPage() {
                   >
                     {c.full_name.trim().split(/\s+/).at(-1)?.charAt(0).toUpperCase()}
                   </span>
-                  <CustomerName name={c.full_name} gender={c.gender} className="font-semibold" />
+                  {/* Phones: the number goes under the name, so a long name keeps its chip on one line. */}
+                  <span className="grid min-w-0">
+                    <CustomerName name={c.full_name} gender={c.gender} className="font-semibold" />
+                    <span className="text-sm text-text-muted tabular sm:hidden">{c.phone}</span>
+                  </span>
                 </span>
-                <span className="shrink-0 text-sm whitespace-nowrap text-text-muted tabular">{c.phone}</span>
+                <span className="shrink-0 text-sm whitespace-nowrap text-text-muted tabular max-sm:hidden">{c.phone}</span>
               </Link>
             </li>
           ))}
@@ -135,7 +139,7 @@ export function CustomerPage({ customerId }: { customerId: string }) {
   if (customer.isError) {
     return (
       <div className="grid content-start gap-4">
-        <PageHeader breadcrumbs={[CUSTOMERS]} title="Hồ sơ khách" />
+        <PageHeader breadcrumbs={[CUSTOMERS]} title="Hồ sơ khách hàng" />
         <p role="alert" className="rounded-[10px] bg-danger-soft p-3 text-danger">
           {messageFor(customer.error)}
         </p>
