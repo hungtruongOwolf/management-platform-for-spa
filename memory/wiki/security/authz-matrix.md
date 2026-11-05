@@ -18,6 +18,7 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
 | `customer.read` / `customer.write` | ✓ | ✓ | — | grant (read) |
 | `customer.health_notes.read` / `.write` | ✓ | ✓ | — | — |
 | `customer.anonymize` 🔒 | ✓ | — | — | — |
+| `customer.follow_up` (vòng 3, migration 0014: ghi lần gọi lại khách vắng) | ✓ | ✓ | — | — |
 | `package.sell` | ✓ | ✓ | — | — |
 | `package.extend_expiry` | ✓ | — | — | — |
 | `package.cancel_refund` | ✓ | — | — | — |
@@ -46,6 +47,10 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
   - `GET /customers/{id}/history`, `/customers/{id}/summary` cần `customer.read` + `visit.read` + `sale.read`; `GET /customer-packages/{id}/usage`, `/customers/inactive` cần `customer.read` + `visit.read`; `GET /packages` cần `customer.read`. Matrix kiểm permission đầu tiên (các permission kèm theo có cùng người giữ mặc định).
   - Không bao giờ có ghi chú sức khỏe / ghi chú buổi trong các response này.
   - Test: `app/tests/reports.rs::money_is_only_sent_to_holders_of_report_revenue_read` (tắt quyền tiền của quản lý → không còn key tiền nào; KTV 403; ẩn danh 401; chủ spa khác chỉ thấy sổ trống của mình, ID khách → 404). Đã mutation-check: bỏ cổng quyền tiền → test đỏ.
+- **Vòng 3 (EM 2026-11-05, [spec](../product/specs/management-views.md) "Bổ sung vòng 3", migration 0014):**
+  - `POST /customers/{id}/follow-ups` cần `customer.follow_up` + Idempotency-Key; người ghi lấy từ session (`created_by` = user, body có field lạ → `422`); bảng `customer_follow_up` chỉ thêm (trigger `reject_mutation`, app_rw chỉ `SELECT, INSERT`) + RLS tenant; audit `customer.follow_up` ghi `has_note`, không chép ghi chú. `GET /customers/{id}/follow-ups` cần `customer.read`. Khách spa khác → `404`.
+  - `GET /customers/phone-check?phone=` cần `customer.read`; chỉ tra trong tenant của session (lọc tường minh + RLS); trả tên + id như `GET /customers?q=<số>` đã trả cho cùng người, nên không mở thêm bề mặt dò số. Chi phí: 1 lookup trên unique index; rate limit chung theo IP (5/s, burst 60). Số điện thoại nằm trong query string như `GET /customers?q=` (log truy cập không ghi query; xem threat-model).
+  - Test: `app/tests/follow_ups.rs` (quyền chủ/quản lý/KTV/ẩn danh/spa khác, idempotency, append-only + RLS dưới app_rw), `authz_matrix.rs` (+3 dòng).
 - **Nhập sổ giấy (EM 2026-11-05, R1-2 §7):** quản lý mất `opening_balance.import` (migration 0013 xóa khỏi role hệ thống `manager`; `SystemRole::default_permissions` cũng vậy). `POST /opening-balances` còn tạm cho chủ spa tới khi web xóa màn `/nhap-so-cu`; team migrate bằng `app import-paper-book` (CLI, đi qua đúng use case với quyền của chủ spa). Test: `opening_balances.rs::only_the_owner_imports_today_without_a_window_or_reauth`, `paper_book.rs`.
 - **Spa bị tạm ngưng (M3):** `tenant.status = 'suspended'` → không cấp permission nào, kể cả cho session đang mở: route nghiệp vụ trả `403 auth.not_a_member` (cùng mã với membership bị tắt), `/me` trả `active_tenant: null`, `permissions: []`. Yêu cầu MFA **không** mất theo spa bị ngưng (migration 0011). Test: `app/tests/auth.rs::suspending_a_spa_cuts_off_its_open_sessions`.
 - **switch-tenant không phải re-auth (H1):** session mới sau `POST /auth/switch-tenant` giữ nguyên `recent_auth_at` và `absolute_expires_at` của session cũ (`app/tests/auth.rs::a_rotated_session_needs_a_real_reauth` kiểm trên session đã resolve, đúng cái guard 🔒 đọc; `auth.rs::switch_tenant_keeps_absolute_expiry_and_reauth_time`). Vẫn quan trọng: hạn tuyệt đối không được kéo dài, và guard 🔒 của thao tác bảo mật tài khoản dựa vào `recent_auth_at`.

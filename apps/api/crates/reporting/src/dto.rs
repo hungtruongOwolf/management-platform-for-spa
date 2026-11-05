@@ -267,9 +267,9 @@ pub enum RangePreset {
     /// 1st of the month 11 months ago → today: 12 calendar months (by month).
     #[serde(rename = "last_12_months")]
     Last12Months,
-    /// 1 January four years ago → today: 5 calendar years (by year).
-    #[serde(rename = "last_5_years")]
-    Last5Years,
+    /// 1 January last year → today: this and last calendar year (by month; `year` compares the two).
+    #[serde(rename = "last_2_years")]
+    Last2Years,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
@@ -340,7 +340,7 @@ pub struct RangeQuery {
     /// First business day; default `to` − 6 days. Not with `preset`.
     pub from: Option<NaiveDate>,
     /// Last business day (inclusive); default today. Not with `preset`. Span: at most 366 days
-    /// for `day` / `week`, at most 1830 days (5 years) for `month` / `year`.
+    /// for `day` / `week`, at most 732 days (2 years) for `month` / `year`.
     pub to: Option<NaiveDate>,
     /// Bucket size of `series`; default `day`, or the preset's default.
     pub granularity: Option<Granularity>,

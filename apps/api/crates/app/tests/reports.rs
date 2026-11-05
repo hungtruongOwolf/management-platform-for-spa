@@ -1202,7 +1202,10 @@ async fn customers_who_stopped_coming_are_listed_longest_absence_first(pool: PgP
 
     // Default scope is `all` since EM round 3; this asks for the package-only view.
     let list = s
-        .get(&s.manager, "/customers/inactive?days=30&scope=with_sessions")
+        .get(
+            &s.manager,
+            "/customers/inactive?days=30&scope=with_sessions",
+        )
         .await;
     assert_eq!(list.status, StatusCode::OK, "{}", list.body);
     let rows: Vec<(Value, Value, Value, Value)> = list.body["items"]

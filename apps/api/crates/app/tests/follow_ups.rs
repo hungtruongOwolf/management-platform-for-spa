@@ -277,8 +277,12 @@ impl Spa {
     }
 
     async fn follow_up(&self, customer: Uuid, body: Value) -> Reply {
-        self.post(&self.manager, &format!("/customers/{customer}/follow-ups"), body)
-            .await
+        self.post(
+            &self.manager,
+            &format!("/customers/{customer}/follow-ups"),
+            body,
+        )
+        .await
     }
 
     async fn other_spa_owner(&self) -> Setup<String> {
@@ -333,7 +337,14 @@ async fn a_follow_up_is_recorded_once_by_the_session_user(pool: PgPool) -> TestR
         )
         .await;
     assert_eq!(reuse.body["code"], "idempotency.key_reuse_mismatch");
-    let no_key = call(&s.h.app, "POST", &path, Some(&s.manager), Some(body.clone())).await;
+    let no_key = call(
+        &s.h.app,
+        "POST",
+        &path,
+        Some(&s.manager),
+        Some(body.clone()),
+    )
+    .await;
     assert_eq!(no_key.status, StatusCode::BAD_REQUEST);
 
     // The recorder comes from the session; a body cannot name one.
@@ -391,7 +402,9 @@ async fn a_follow_up_is_recorded_once_by_the_session_user(pool: PgPool) -> TestR
         assert_eq!(r.body["errors"][0]["field"], field, "{}", r.body);
         assert_eq!(r.body["errors"][0]["code"], code, "{}", r.body);
     }
-    let sms = s.follow_up(ha, json!({"channel": "sms", "outcome": "other"})).await;
+    let sms = s
+        .follow_up(ha, json!({"channel": "sms", "outcome": "other"}))
+        .await;
     assert_eq!(sms.status, StatusCode::UNPROCESSABLE_ENTITY);
 
     // Newest first; three recorded (the replay and the rejects added nothing).
@@ -486,23 +499,47 @@ async fn inactive_covers_one_off_and_package_customers(pool: PgPool) -> TestResu
     let back = |n: i64| day - Duration::days(n);
 
     let one_off = s.customer("Phạm Thị Lẻ", "0905111001").await;
-    s.visit(one_off, s.service, s.staff, true, Some(ict(back(10), 10, 0)))
-        .await?;
+    s.visit(
+        one_off,
+        s.service,
+        s.staff,
+        true,
+        Some(ict(back(10), 10, 0)),
+    )
+    .await?;
     let with_sessions = s.customer("Trần Gói Còn", "0905111002").await;
     s.sell_at(with_sessions, ict(back(20), 9, 0)).await?;
-    s.visit(with_sessions, s.service, s.staff, false, Some(ict(back(9), 9, 0)))
-        .await?;
+    s.visit(
+        with_sessions,
+        s.service,
+        s.staff,
+        false,
+        Some(ict(back(9), 9, 0)),
+    )
+    .await?;
     let used_up = s.customer("Lê Gói Hết", "0905111003").await;
     s.import(used_up, back(30), None, 0).await;
     let boundary = s.customer("Khách đúng 7 ngày", "0905111004").await;
-    s.visit(boundary, s.service, s.staff, true, Some(ict(back(7), 23, 59)))
-        .await?;
+    s.visit(
+        boundary,
+        s.service,
+        s.staff,
+        true,
+        Some(ict(back(7), 23, 59)),
+    )
+    .await?;
     let recent = s.customer("Khách 6 ngày", "0905111005").await;
     s.visit(recent, s.service, s.staff, true, Some(ict(back(6), 0, 1)))
         .await?;
     let bought_recently = s.customer("Khách mới mua", "0905111006").await;
-    s.visit(bought_recently, s.service, s.staff, true, Some(ict(back(40), 9, 0)))
-        .await?;
+    s.visit(
+        bought_recently,
+        s.service,
+        s.staff,
+        true,
+        Some(ict(back(40), 9, 0)),
+    )
+    .await?;
     s.sell_at(bought_recently, ict(back(2), 9, 0)).await?;
     s.customer("Khách chưa đến", "0905111007").await;
 
@@ -533,7 +570,10 @@ async fn inactive_covers_one_off_and_package_customers(pool: PgPool) -> TestResu
     assert_eq!(row("Lê Gói Hết")["last_seen_on"], json!(back(30)));
     assert_eq!(row("Lê Gói Hết")["active_packages"], 0);
     assert_eq!(row("Khách đúng 7 ngày")["days_absent"], 7);
-    assert_eq!(all.body["items"][0]["full_name"], "Lê Gói Hết", "longest first");
+    assert_eq!(
+        all.body["items"][0]["full_name"], "Lê Gói Hết",
+        "longest first"
+    );
 
     let packages = s.get(&s.manager, "/customers/inactive?kind=package").await;
     assert_eq!(
@@ -548,7 +588,10 @@ async fn inactive_covers_one_off_and_package_customers(pool: PgPool) -> TestResu
     let sessions = s
         .get(&s.manager, "/customers/inactive?scope=with_sessions")
         .await;
-    assert_eq!(names(&sessions, "items", "full_name"), set(&["Trần Gói Còn"]));
+    assert_eq!(
+        names(&sessions, "items", "full_name"),
+        set(&["Trần Gói Còn"])
+    );
     let by_name = s.get(&s.manager, "/customers/inactive?q=pham%20thi").await;
     assert_eq!(names(&by_name, "items", "full_name"), set(&["Phạm Thị Lẻ"]));
     let by_phone = s.get(&s.manager, "/customers/inactive?q=111003").await;
@@ -590,8 +633,10 @@ async fn the_follow_up_filter_tells_who_to_call_today(pool: PgPool) -> TestResul
         ids.push(c);
     }
     let ok = |r: Reply| assert_eq!(r.status, StatusCode::CREATED, "{}", r.body);
-    ok(s.follow_up(ids[0], json!({"channel": "phone", "outcome": "no_answer"}))
-        .await);
+    ok(
+        s.follow_up(ids[0], json!({"channel": "phone", "outcome": "no_answer"}))
+            .await,
+    );
     ok(s.follow_up(
         ids[1],
         json!({"channel": "phone", "outcome": "will_come", "contacted_on": day - Duration::days(2),
@@ -604,8 +649,11 @@ async fn the_follow_up_filter_tells_who_to_call_today(pool: PgPool) -> TestResul
         json!({"channel": "phone", "outcome": "not_interested", "contacted_on": day - Duration::days(12)}),
     )
     .await);
-    ok(s.follow_up(ids[4], json!({"channel": "zalo", "outcome": "not_interested"}))
-        .await);
+    ok(s.follow_up(
+        ids[4],
+        json!({"channel": "zalo", "outcome": "not_interested"}),
+    )
+    .await);
 
     let all = inactive(&s, "follow_up=all").await;
     assert_eq!(names(&all, "items", "full_name").len(), 5);
@@ -614,16 +662,28 @@ async fn the_follow_up_filter_tells_who_to_call_today(pool: PgPool) -> TestResul
         set(&["B đến hạn", "C chưa gọi", "D gọi trước lần đến"])
     );
     assert_eq!(
-        names(&inactive(&s, "follow_up=not_contacted").await, "items", "full_name"),
+        names(
+            &inactive(&s, "follow_up=not_contacted").await,
+            "items",
+            "full_name"
+        ),
         set(&["C chưa gọi", "D gọi trước lần đến"])
     );
     assert_eq!(
-        names(&inactive(&s, "follow_up=scheduled").await, "items", "full_name"),
+        names(
+            &inactive(&s, "follow_up=scheduled").await,
+            "items",
+            "full_name"
+        ),
         set(&["A hẹn gọi lại"])
     );
     let a = all.body["items"]
         .as_array()
-        .and_then(|a| a.iter().find(|r| r["full_name"] == "A hẹn gọi lại").cloned())
+        .and_then(|a| {
+            a.iter()
+                .find(|r| r["full_name"] == "A hẹn gọi lại")
+                .cloned()
+        })
         .unwrap_or(Value::Null);
     assert_eq!(
         a["last_follow_up"],
@@ -632,7 +692,11 @@ async fn the_follow_up_filter_tells_who_to_call_today(pool: PgPool) -> TestResul
     assert_eq!(a["next_follow_up_on"], json!(day + Duration::days(3)));
     let d = all.body["items"]
         .as_array()
-        .and_then(|a| a.iter().find(|r| r["full_name"] == "D gọi trước lần đến").cloned())
+        .and_then(|a| {
+            a.iter()
+                .find(|r| r["full_name"] == "D gọi trước lần đến")
+                .cloned()
+        })
         .unwrap_or(Value::Null);
     assert_eq!(d["last_follow_up"], Value::Null);
     assert_eq!(d["next_follow_up_on"], Value::Null);
@@ -649,11 +713,18 @@ async fn the_follow_up_filter_tells_who_to_call_today(pool: PgPool) -> TestResul
             })
             .unwrap_or_default()
     };
-    assert_eq!(order(&inactive(&s, "sort=due").await), ["C", "D", "B", "A", "E"]);
+    assert_eq!(
+        order(&inactive(&s, "sort=due").await),
+        ["C", "D", "B", "A", "E"]
+    );
     assert_eq!(order(&inactive(&s, "follow_up=due").await), ["C", "D", "B"]);
     assert_eq!(order(&inactive(&s, "follow_up=scheduled").await), ["A"]);
     let absent = order(&inactive(&s, "").await);
-    assert_eq!(absent.last().map(String::as_str), Some("D"), "absence order by default");
+    assert_eq!(
+        absent.last().map(String::as_str),
+        Some("D"),
+        "absence order by default"
+    );
     let due_by_absence: Vec<String> = absent
         .iter()
         .filter(|n| ["B", "C", "D"].contains(&n.as_str()))
@@ -699,7 +770,10 @@ async fn phone_check_finds_duplicates_like_create_does(pool: PgPool) -> TestResu
         let r = s
             .get(
                 &s.manager,
-                &format!("/customers/phone-check?phone={}", typed.replace('+', "%2B").replace(' ', "%20")),
+                &format!(
+                    "/customers/phone-check?phone={}",
+                    typed.replace('+', "%2B").replace(' ', "%20")
+                ),
             )
             .await;
         assert_eq!(r.status, StatusCode::OK, "{}", r.body);
@@ -709,7 +783,9 @@ async fn phone_check_finds_duplicates_like_create_does(pool: PgPool) -> TestResu
             "{typed}"
         );
     }
-    let free = s.get(&s.manager, "/customers/phone-check?phone=0905999888").await;
+    let free = s
+        .get(&s.manager, "/customers/phone-check?phone=0905999888")
+        .await;
     assert_eq!(free.body, json!({"valid": true, "taken": false}));
     let partial = s.get(&s.manager, "/customers/phone-check?phone=0905").await;
     assert_eq!(partial.body, json!({"valid": false, "taken": false}));
@@ -753,25 +829,44 @@ async fn history_filters_by_text_kind_and_day(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
     let day = today();
     let ha = s.customer("Nguyễn Thị Hà", "0905111001").await;
-    s.visit(ha, s.service, s.staff, true, Some(ict(day - Duration::days(2), 10, 0)))
-        .await?;
+    s.visit(
+        ha,
+        s.service,
+        s.staff,
+        true,
+        Some(ict(day - Duration::days(2), 10, 0)),
+    )
+    .await?;
     s.visit(ha, s.neck, s.staff_b, true, None).await?;
-    let sale = s.post(&s.owner, "/sales", json!({
-        "customer_id": ha, "closer_staff_id": s.staff,
-        "lines": [{"package_plan_id": s.plan}],
-        "payments": [{"method": "cash", "amount": PLAN_PRICE}]
-    })).await;
+    let sale = s
+        .post(
+            &s.owner,
+            "/sales",
+            json!({
+                "customer_id": ha, "closer_staff_id": s.staff,
+                "lines": [{"package_plan_id": s.plan}],
+                "payments": [{"method": "cash", "amount": PLAN_PRICE}]
+            }),
+        )
+        .await;
     assert_eq!(sale.status, StatusCode::CREATED, "{}", sale.body);
 
     let kinds = |r: &Reply| -> Vec<String> {
         r.body["events"]
             .as_array()
-            .map(|a| a.iter().filter_map(|e| e["kind"].as_str().map(str::to_owned)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|e| e["kind"].as_str().map(str::to_owned))
+                    .collect()
+            })
             .unwrap_or_default()
     };
     let base = format!("/customers/{ha}/history");
     let all = s.get(&s.manager, &base).await;
-    assert_eq!(kinds(&all), ["purchase", "visit", "visit"]);
+    // Same-day order mixes the API and database clocks (backend §3b), so compare as a set here.
+    let mut every = kinds(&all);
+    every.sort();
+    assert_eq!(every, ["purchase", "visit", "visit"]);
     let first_line = |r: &Reply| r.body["events"][0]["visit"]["lines"][0].clone();
 
     let herbal = s.get(&s.manager, &format!("{base}?q=thao%20duoc")).await;
@@ -788,14 +883,22 @@ async fn history_filters_by_text_kind_and_day(pool: PgPool) -> TestResult {
     let package = s.get(&s.manager, &format!("{base}?q=goi%2010")).await;
     assert_eq!(kinds(&package), ["purchase"]);
     let closer = s.get(&s.manager, &format!("{base}?q=ktv%20lan")).await;
-    assert_eq!(kinds(&closer), ["purchase", "visit"], "closer and technician");
+    assert_eq!(
+        kinds(&closer),
+        ["purchase", "visit"],
+        "closer and technician"
+    );
 
     let purchases = s.get(&s.manager, &format!("{base}?kind=purchase")).await;
     assert_eq!(kinds(&purchases), ["purchase"]);
     let d2 = day - Duration::days(2);
-    let that_day = s.get(&s.manager, &format!("{base}?from={d2}&to={d2}")).await;
+    let that_day = s
+        .get(&s.manager, &format!("{base}?from={d2}&to={d2}"))
+        .await;
     assert_eq!(kinds(&that_day), ["visit"]);
-    let since = s.get(&s.manager, &format!("{base}?from={day}&kind=visit")).await;
+    let since = s
+        .get(&s.manager, &format!("{base}?from={day}&kind=visit"))
+        .await;
     assert_eq!(kinds(&since), ["visit"]);
     for bad in [
         format!("{base}?from={day}&to={d2}"),
@@ -822,11 +925,21 @@ async fn packages_without_expiry_never_expire(pool: PgPool) -> TestResult {
     let old = s.customer("Khách gói cũ", "0905111001").await;
     let unlimited = s.import(old, day - Duration::days(3 * 365), None, 5).await;
     let soon = s.customer("Khách sắp hết hạn", "0905111002").await;
-    s.import(soon, day - Duration::days(30), Some(day + Duration::days(5)), 5)
-        .await;
+    s.import(
+        soon,
+        day - Duration::days(30),
+        Some(day + Duration::days(5)),
+        5,
+    )
+    .await;
     let gone = s.customer("Khách hết hạn", "0905111003").await;
-    s.import(gone, day - Duration::days(400), Some(day - Duration::days(1)), 5)
-        .await;
+    s.import(
+        gone,
+        day - Duration::days(400),
+        Some(day - Duration::days(1)),
+        5,
+    )
+    .await;
     let sold = s.customer("Khách mua gói", "0905111004").await;
     s.sell_at(sold, ict(day, 9, 0)).await?;
 
@@ -836,14 +949,19 @@ async fn packages_without_expiry_never_expire(pool: PgPool) -> TestResult {
         overview.body["counts"],
         json!({"active": 3, "expiring_soon": 1, "expired": 1, "exhausted": 0, "cancelled": 0})
     );
-    let widest = s.get(&s.manager, "/packages?expiring_within_days=365").await;
+    let widest = s
+        .get(&s.manager, "/packages?expiring_within_days=365")
+        .await;
     assert_eq!(
         names(&widest, "items", "customer_name"),
         set(&["Khách sắp hết hạn"])
     );
     assert_eq!(widest.body["counts"]["expiring_soon"], 1);
     let expired = s.get(&s.manager, "/packages?status=expired").await;
-    assert_eq!(names(&expired, "items", "customer_name"), set(&["Khách hết hạn"]));
+    assert_eq!(
+        names(&expired, "items", "customer_name"),
+        set(&["Khách hết hạn"])
+    );
     let active = s.get(&s.manager, "/packages?status=active").await;
     assert_eq!(
         names(&active, "items", "customer_name"),
@@ -851,7 +969,11 @@ async fn packages_without_expiry_never_expire(pool: PgPool) -> TestResult {
     );
     let row = active.body["items"]
         .as_array()
-        .and_then(|a| a.iter().find(|r| r["customer_name"] == "Khách gói cũ").cloned())
+        .and_then(|a| {
+            a.iter()
+                .find(|r| r["customer_name"] == "Khách gói cũ")
+                .cloned()
+        })
         .unwrap_or(Value::Null);
     assert_eq!(
         (row["expires_on"].clone(), row["days_to_expiry"].clone()),
@@ -862,14 +984,20 @@ async fn packages_without_expiry_never_expire(pool: PgPool) -> TestResult {
         .get(&s.manager, &format!("/customer-packages/{unlimited}"))
         .await;
     assert_eq!(package.body["status"], "active");
-    assert_eq!(package.body["items"][0]["category_name"], "Gội đầu dưỡng sinh");
+    assert_eq!(
+        package.body["items"][0]["category_name"],
+        "Gội đầu dưỡng sinh"
+    );
 
     // q also searches the package name (accent-insensitive), besides customer name and phone.
     let paper = s.get(&s.manager, "/packages?q=so%20giay").await;
     assert_eq!(names(&paper, "items", "customer_name").len(), 3);
     assert_eq!(paper.body["counts"]["active"], 2, "counts follow q");
     let plan = s.get(&s.manager, "/packages?q=GOI%2010").await;
-    assert_eq!(names(&plan, "items", "customer_name"), set(&["Khách mua gói"]));
+    assert_eq!(
+        names(&plan, "items", "customer_name"),
+        set(&["Khách mua gói"])
+    );
     let by_customer = s.get(&s.manager, "/packages?q=het%20han").await;
     assert_eq!(
         names(&by_customer, "items", "customer_name"),
@@ -890,7 +1018,7 @@ async fn range_presets_cover_week_month_year_and_years(pool: PgPool) -> TestResu
     let day = today();
     let ha = s.customer("Nguyễn Thị Hà", "0905111001").await;
     s.visit(ha, s.service, s.staff, true, None).await?;
-    let long_ago = day - Duration::days(400);
+    let long_ago = day - Duration::days(300);
     s.visit(ha, s.neck, s.staff, true, Some(ict(long_ago, 10, 0)))
         .await?;
 
@@ -903,7 +1031,13 @@ async fn range_presets_cover_week_month_year_and_years(pool: PgPool) -> TestResu
         .unwrap_or_default();
     for (preset, from, to, granularity, buckets) in [
         ("last_7_days", day - Duration::days(6), day, "day", Some(7)),
-        ("last_30_days", day - Duration::days(29), day, "day", Some(30)),
+        (
+            "last_30_days",
+            day - Duration::days(29),
+            day,
+            "day",
+            Some(30),
+        ),
         ("this_month", first_of_month(day), day, "day", None),
         (
             "last_month",
@@ -912,9 +1046,15 @@ async fn range_presets_cover_week_month_year_and_years(pool: PgPool) -> TestResu
             "day",
             None,
         ),
-        ("this_year", jan(day.year()), day, "month", Some(day.month() as usize)),
+        (
+            "this_year",
+            jan(day.year()),
+            day,
+            "month",
+            Some(day.month() as usize),
+        ),
         ("last_12_months", twelve, day, "month", Some(12)),
-        ("last_5_years", jan(day.year() - 4), day, "year", Some(5)),
+        ("last_2_years", jan(day.year() - 1), day, "month", None),
     ] {
         let r = s
             .get(&s.owner, &format!("/reports/range?preset={preset}"))
@@ -931,15 +1071,28 @@ async fn range_presets_cover_week_month_year_and_years(pool: PgPool) -> TestResu
             "{preset}"
         );
         if let Some(n) = buckets {
-            assert_eq!(r.body["series"].as_array().map(Vec::len), Some(n), "{preset}");
+            assert_eq!(
+                r.body["series"].as_array().map(Vec::len),
+                Some(n),
+                "{preset}"
+            );
         }
     }
 
-    // Five years by year: both visits, each in its own year; every point has what a line
-    // chart needs (customers, visits, net revenue).
-    let years = s.get(&s.owner, "/reports/range?preset=last_5_years").await;
+    // Two years by year: both visits; every point has what a line chart needs (customers,
+    // visits, net revenue).
+    let years = s
+        .get(
+            &s.owner,
+            "/reports/range?preset=last_2_years&granularity=year",
+        )
+        .await;
+    assert_eq!(years.body["series"].as_array().map(Vec::len), Some(2));
     let series = years.body["series"].as_array().cloned().unwrap_or_default();
-    let visits: i64 = series.iter().filter_map(|b| b["counts"]["visits"].as_i64()).sum();
+    let visits: i64 = series
+        .iter()
+        .filter_map(|b| b["counts"]["visits"].as_i64())
+        .sum();
     assert_eq!(visits, 2);
     assert_eq!(years.body["totals"]["visits"], 2);
     for b in &series {
@@ -951,7 +1104,11 @@ async fn range_presets_cover_week_month_year_and_years(pool: PgPool) -> TestResu
     assert!(this_year["counts"]["visits"].as_i64() >= Some(1));
     let top: BTreeSet<String> = years.body["top_services"]
         .as_array()
-        .map(|a| a.iter().filter_map(|t| t["category_name"].as_str().map(str::to_owned)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|t| t["category_name"].as_str().map(str::to_owned))
+                .collect()
+        })
         .unwrap_or_default();
     assert_eq!(top, set(&["Gội đầu dưỡng sinh", "Chăm sóc cổ vai gáy"]));
     assert_eq!(
@@ -961,21 +1118,33 @@ async fn range_presets_cover_week_month_year_and_years(pool: PgPool) -> TestResu
         "per technician over the whole range"
     );
     let week = s.get(&s.owner, "/reports/range?preset=last_7_days").await;
-    assert_eq!(week.body["technicians"][0]["visits"], 1, "only inside the range");
+    assert_eq!(
+        week.body["technicians"][0]["visits"], 1,
+        "only inside the range"
+    );
 
     // Granularity overrides the preset's default; spans are bounded per granularity.
     let by_week = s
-        .get(&s.owner, "/reports/range?preset=last_30_days&granularity=week")
+        .get(
+            &s.owner,
+            "/reports/range?preset=last_30_days&granularity=week",
+        )
         .await;
     assert_eq!(by_week.body["granularity"], "week");
-    let from = day - Duration::days(1000);
+    let from = day - Duration::days(700);
     let months = s
-        .get(&s.owner, &format!("/reports/range?from={from}&to={day}&granularity=month"))
+        .get(
+            &s.owner,
+            &format!("/reports/range?from={from}&to={day}&granularity=month"),
+        )
         .await;
     assert_eq!(months.status, StatusCode::OK, "{}", months.body);
     for bad in [
         format!("/reports/range?from={from}&to={day}&granularity=day"),
-        format!("/reports/range?from={}&to={day}&granularity=year", day - Duration::days(1830)),
+        format!(
+            "/reports/range?from={}&to={day}&granularity=year",
+            day - Duration::days(732)
+        ),
         format!("/reports/range?preset=this_month&from={day}"),
         "/reports/range?preset=forever".to_owned(),
     ] {
@@ -983,7 +1152,10 @@ async fn range_presets_cover_week_month_year_and_years(pool: PgPool) -> TestResu
         assert!(r.status.is_client_error(), "{bad}: {}", r.body);
     }
     let conflict = s
-        .get(&s.owner, &format!("/reports/range?preset=this_month&to={day}"))
+        .get(
+            &s.owner,
+            &format!("/reports/range?preset=this_month&to={day}"),
+        )
         .await;
     assert_eq!(conflict.body["errors"][0]["code"], "conflicts_with_range");
     Ok(())
@@ -996,11 +1168,17 @@ async fn range_presets_cover_week_month_year_and_years(pool: PgPool) -> TestResu
 async fn service_names_come_with_their_category(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
     let ha = s.customer("Nguyễn Thị Hà", "0905111001").await;
-    let sale = s.post(&s.owner, "/sales", json!({
-        "customer_id": ha, "closer_staff_id": s.staff,
-        "lines": [{"package_plan_id": s.plan}],
-        "payments": [{"method": "cash", "amount": PLAN_PRICE}]
-    })).await;
+    let sale = s
+        .post(
+            &s.owner,
+            "/sales",
+            json!({
+                "customer_id": ha, "closer_staff_id": s.staff,
+                "lines": [{"package_plan_id": s.plan}],
+                "payments": [{"method": "cash", "amount": PLAN_PRICE}]
+            }),
+        )
+        .await;
     let package = sale.body["customer_packages"][0]["id"]
         .as_str()
         .unwrap_or_default()
@@ -1013,22 +1191,26 @@ async fn service_names_come_with_their_category(pool: PgPool) -> TestResult {
     assert_eq!(visit["lines"][0]["category_name"], "Gội đầu dưỡng sinh");
     let today_list = s.get(&s.manager, "/visits").await;
     assert_eq!(
-        today_list.body[0]["lines"][0]["category_name"],
-        "Gội đầu dưỡng sinh",
+        today_list.body[0]["lines"][0]["category_name"], "Gội đầu dưỡng sinh",
         "{}",
         today_list.body
     );
     assert_eq!(today_list.body[0]["customer_gender"], "female");
     let ledger = s.get(&s.owner, "/reports/ledger").await;
-    assert_eq!(ledger.body["rows"][0]["customer_gender"], "female", "{}", ledger.body);
+    assert_eq!(
+        ledger.body["rows"][0]["customer_gender"], "female",
+        "{}",
+        ledger.body
+    );
     let usage = s
         .get(&s.manager, &format!("/customer-packages/{package}/usage"))
         .await;
     assert_eq!(usage.body["uses"][0]["category_name"], "Gội đầu dưỡng sinh");
-    let packages = s.get(&s.manager, &format!("/customers/{ha}/packages")).await;
+    let packages = s
+        .get(&s.manager, &format!("/customers/{ha}/packages"))
+        .await;
     assert_eq!(
-        packages.body[0]["items"][0]["category_name"],
-        "Gội đầu dưỡng sinh",
+        packages.body[0]["items"][0]["category_name"], "Gội đầu dưỡng sinh",
         "{}",
         packages.body
     );

@@ -1575,7 +1575,7 @@ export interface components {
          *     every device agrees on what "this month" is. Each has a default granularity.
          * @enum {string}
          */
-        RangePreset: "last_7_days" | "last_30_days" | "this_month" | "last_month" | "this_year" | "last_12_months" | "last_5_years";
+        RangePreset: "last_7_days" | "last_30_days" | "this_month" | "last_month" | "this_year" | "last_12_months" | "last_2_years";
         /** @description `GET /reports/range`. */
         RangeReport: {
             /** Format: date */
@@ -3427,7 +3427,7 @@ export interface operations {
                 from?: string;
                 /**
                  * @description Last business day (inclusive); default today. Not with `preset`. Span: at most 366 days
-                 *     for `day` / `week`, at most 1830 days (5 years) for `month` / `year`.
+                 *     for `day` / `week`, at most 732 days (2 years) for `month` / `year`.
                  */
                 to?: string;
                 /** @description Bucket size of `series`; default `day`, or the preset's default. */
@@ -3463,7 +3463,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description validation_failed: from after_to, to range_too_long (> 366 days by day/week, > 1830 days by month/year), preset conflicts_with_range */
+            /** @description validation_failed: from after_to, to range_too_long (> 366 days by day/week, > 732 days by month/year), preset conflicts_with_range */
             422: {
                 headers: {
                     [name: string]: unknown;

@@ -5,8 +5,8 @@
 use crate::cursor;
 use crate::dto::{
     CustomerKind, CustomerKindFilter, FollowUpFilter, InactiveCustomer, InactivePage,
-    InactiveQuery, InactiveScope, InactiveSort, LastFollowUp, PackageOverviewCounts, PackageOverviewPage,
-    PackageOverviewRow, PackageStatusFilter, PackagesQuery,
+    InactiveQuery, InactiveScope, InactiveSort, LastFollowUp, PackageOverviewCounts,
+    PackageOverviewPage, PackageOverviewRow, PackageStatusFilter, PackagesQuery,
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use crm::follow_up::{Channel, Outcome};
@@ -427,16 +427,13 @@ pub async fn inactive(
     let page = usize::try_from(limit).unwrap_or(usize::MAX);
     let more = rows.len() > page;
     rows.truncate(page);
-    let next_cursor = more
-        .then(|| rows.last())
-        .flatten()
-        .map(|r| {
-            cursor::encode(&[
-                r.due_key.to_string(),
-                r.last_seen.to_string(),
-                r.id.to_string(),
-            ])
-        });
+    let next_cursor = more.then(|| rows.last()).flatten().map(|r| {
+        cursor::encode(&[
+            r.due_key.to_string(),
+            r.last_seen.to_string(),
+            r.id.to_string(),
+        ])
+    });
     let mut items = Vec::with_capacity(rows.len());
     for r in rows {
         let last_follow_up = match (r.f_on, r.f_channel, r.f_outcome, r.f_by) {
