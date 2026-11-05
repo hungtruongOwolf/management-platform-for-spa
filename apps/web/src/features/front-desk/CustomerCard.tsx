@@ -8,7 +8,12 @@ import { useEffect, useRef, useState } from "react";
 import { messageFor } from "../../lib/errors";
 import { GENDER_LABEL, customerQuery } from "../customers/api";
 import { HealthNote } from "../customers/HealthNote";
-import { STATUS_LABEL, customerPackagesQuery, formatDate } from "../sales/api";
+import {
+  STATUS_BADGE,
+  STATUS_LABEL,
+  customerPackagesQuery,
+  formatDate,
+} from "../sales/api";
 import { byUseOrder, isUsable } from "./api";
 
 export interface Deduction {
@@ -57,9 +62,9 @@ export function CustomerCard({
   return (
     <section
       aria-labelledby="customer-card-title"
-      className="rounded-[14px] border border-border bg-surface p-4"
+      className="rounded-[14px] border border-border bg-surface p-4 shadow-card"
     >
-      <h2 id="customer-card-title" className="text-xl font-bold">
+      <h2 id="customer-card-title" className="font-brand text-xl text-primary">
         {summary.full_name}
       </h2>
       <p className="text-sm text-text-muted">
@@ -107,15 +112,27 @@ export function CustomerCard({
             return (
               <li
                 key={item.id}
-                className={`flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-border px-3 py-2 ${blocked ? "bg-surface-2" : ""}`}
+                className={`flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-border border-l-4 px-3 py-2 ${blocked ? "border-l-border bg-surface-2" : "border-l-accent"}`}
               >
                 <div>
                   <span className="font-semibold">{label}</span>
                   {p.origin === "opening_balance" && (
-                    <span className="ml-2 rounded-full bg-surface-2 px-2 text-xs">
+                    <span className="ml-2 rounded-full bg-accent-soft px-2 text-xs font-semibold text-accent-text">
                       Nhập từ sổ cũ
                     </span>
                   )}
+                  {/* Sessions left as a gold bar: readable at a glance; the numbers below say it. */}
+                  <span
+                    aria-hidden="true"
+                    className="mt-1 block h-1.5 w-40 max-w-full overflow-hidden rounded-full bg-surface-2"
+                  >
+                    <span
+                      className={`block h-full rounded-full ${left <= 2 ? "bg-danger" : "bg-accent"}`}
+                      style={{
+                        width: `${String(Math.round((Math.max(left, 0) / Math.max(item.sessions_total, 1)) * 100))}%`,
+                      }}
+                    />
+                  </span>
                   <span className="block text-sm text-text-muted">
                     Còn{" "}
                     <strong>
@@ -126,7 +143,9 @@ export function CustomerCard({
                       ? `HSD ${formatDate(p.expires_on)}`
                       : "Không thời hạn"}
                     {p.status !== "active" && (
-                      <span className="ml-2 rounded-full bg-danger-soft px-2 text-xs font-semibold text-danger">
+                      <span
+                        className={`ml-2 rounded-full px-2 text-xs font-semibold ${STATUS_BADGE[p.status]}`}
+                      >
                         {STATUS_LABEL[p.status]}
                       </span>
                     )}
@@ -168,7 +187,7 @@ export function CustomerCard({
                     }
                     onDeduct({ pkg: p, item });
                   }}
-                  className="min-h-11 rounded-[10px] border border-primary px-4 font-semibold text-primary aria-disabled:cursor-not-allowed aria-disabled:opacity-55"
+                  className="min-h-11 rounded-[10px] border border-primary bg-surface px-4 font-semibold text-primary not-aria-disabled:hover:bg-primary-soft aria-disabled:cursor-not-allowed aria-disabled:opacity-55"
                 >
                   Trừ 1 buổi
                 </button>

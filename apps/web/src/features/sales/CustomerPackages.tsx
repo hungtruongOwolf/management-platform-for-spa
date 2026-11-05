@@ -3,7 +3,12 @@ import { formatVnd } from "@vpyd/ui";
 import { Suspense, lazy, useState } from "react";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
-import { STATUS_LABEL, customerPackagesQuery, formatDate } from "./api";
+import {
+  STATUS_BADGE,
+  STATUS_LABEL,
+  customerPackagesQuery,
+  formatDate,
+} from "./api";
 import { SellPackageDialog } from "./SellPackageDialog";
 
 // Lifecycle forms (extend, cancel + refund, sale void, re-auth) load only for users who can act.
@@ -94,7 +99,7 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
               <div>
                 <span className="font-semibold">{p.name}</span>
                 {p.origin === "opening_balance" && (
-                  <span className="ml-2 rounded-full bg-surface-2 px-2 text-xs">
+                  <span className="ml-2 rounded-full bg-accent-soft px-2 text-xs font-semibold text-accent-text">
                     Nhập từ sổ cũ
                   </span>
                 )}
@@ -120,7 +125,9 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
                   còn {String(p.sessions_remaining)}/{String(p.sessions_total)}{" "}
                   buổi
                 </strong>
-                <span className="block text-xs text-text-muted">
+                <span
+                  className={`mt-0.5 inline-block rounded-full px-2 text-xs font-semibold ${STATUS_BADGE[p.status]}`}
+                >
                   {STATUS_LABEL[p.status]}
                 </span>
               </span>

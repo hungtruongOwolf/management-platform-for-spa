@@ -68,7 +68,7 @@ export function PriceListPage() {
           <section
             key={category.id}
             aria-labelledby={`cat-${category.id}`}
-            className="rounded-[14px] border border-border bg-surface p-4 shadow-[var(--shadow-1)]"
+            className="rounded-[14px] border border-border bg-surface p-4 shadow-card"
           >
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 id={`cat-${category.id}`} className="text-lg font-semibold">

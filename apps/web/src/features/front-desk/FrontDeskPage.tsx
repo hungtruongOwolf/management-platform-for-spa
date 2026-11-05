@@ -42,6 +42,7 @@ import {
   visitBody,
   visitsOfDayQuery,
 } from "./api";
+import { BrandMark } from "../../app/BrandMark";
 import { CustomerCard } from "./CustomerCard";
 import { spaToday } from "../corrections/api";
 
@@ -61,7 +62,7 @@ const CustomerForm = lazy(() =>
 );
 
 const field = "min-h-11 rounded-[6px] border border-border bg-surface px-3";
-const card = "rounded-[14px] border border-border bg-surface p-4";
+const card = "rounded-[14px] border border-border bg-surface p-4 shadow-card";
 
 interface Toast {
   text: string;
@@ -251,7 +252,7 @@ export function FrontDeskPage() {
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
       <h1 className="sr-only">Màn hình quầy</h1>
-      <div className="grid content-start gap-4">
+      <div className="grid min-w-0 content-start gap-4">
         <section aria-label="Tìm khách" className={card}>
           <CustomerSearch
             key={searchGeneration}
@@ -326,12 +327,13 @@ export function FrontDeskPage() {
           />
         ) : (
           <p className={`${card} text-center text-text-muted`}>
+            <BrandMark className="mx-auto mb-2 size-10 text-accent opacity-70" />
             Chưa chọn khách. Tìm khách ở ô phía trên để bắt đầu một lượt.
           </p>
         )}
       </div>
 
-      <div className="grid content-start gap-4">
+      <div className="grid min-w-0 content-start gap-4">
         <section aria-labelledby="cart-title" className={card}>
           <h2 id="cart-title" className="mb-3 font-semibold">
             Lượt khách đang ghi
@@ -562,7 +564,7 @@ export function FrontDeskPage() {
       <div
         role="status"
         aria-live="polite"
-        className={`pointer-events-none fixed bottom-6 left-1/2 z-10 max-w-[calc(100%-32px)] -translate-x-1/2 rounded-[10px] px-4 py-3 shadow-lg transition-opacity motion-reduce:transition-none ${toast ? "opacity-100" : "opacity-0"} ${toast?.error ? "bg-danger text-white" : "bg-text text-bg"}`}
+        className={`pointer-events-none fixed bottom-6 left-1/2 z-10 max-w-[calc(100%-32px)] -translate-x-1/2 rounded-[10px] border-l-4 px-4 py-3 shadow-float transition-[opacity,translate] duration-200 ease-[var(--ease-out)] motion-reduce:transition-none ${toast ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"} ${toast?.error ? "border-danger-soft bg-danger text-surface" : "border-chrome-accent bg-chrome text-chrome-text"}`}
       >
         {toast?.text}
       </div>
@@ -642,7 +644,9 @@ function AddOneOff({
           onChange={(e) => {
             setServiceId(e.target.value);
           }}
-          className={`${field} min-w-56 flex-1`}
+          // A definite width: a select's intrinsic width is its longest option, which would
+          // otherwise widen the whole column past the viewport.
+          className={`${field} w-56 min-w-56 flex-1`}
         >
           <option value="">
             {services.isPending ? "Đang tải bảng giá…" : "Chọn dịch vụ…"}

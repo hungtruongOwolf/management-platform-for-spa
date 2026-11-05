@@ -7,6 +7,7 @@
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-text: var(--text);
   --color-text-muted: var(--text-muted);
   --color-primary: var(--primary);
@@ -15,6 +16,7 @@
   --color-primary-soft: var(--primary-soft);
   --color-accent: var(--accent);
   --color-accent-text: var(--accent-text);
+  --color-accent-soft: var(--accent-soft);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --color-warning-bg: var(--warning-bg);
@@ -22,17 +24,99 @@
   --color-warning-border: var(--warning-border);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-chrome: var(--chrome-bg);
+  --color-chrome-text: var(--chrome-text);
+  --color-chrome-text-muted: var(--chrome-text-muted);
+  --color-chrome-accent: var(--chrome-accent);
+  --shadow-card: var(--shadow-1);
+  --shadow-float: var(--shadow-2);
   --font-sans: var(--font-ui);
   --font-brand: var(--font-brand);
 }
 
 body {
-  background: var(--bg);
+  background-color: var(--bg);
+  background-image: var(--texture);
+  background-size: 22px 22px;
   color: var(--text);
   font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--text);
 }
 
 :focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
+}
+
+/*
+ * Element polish, applied app-wide so every screen (including ones styled only with utilities)
+ * shares one look. Unlayered on purpose: these few properties win over utility classes.
+ */
+
+/* Fields: a visible boundary (WCAG 1.4.11, 3:1), warm hover, maroon focus with a soft halo. */
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]),
+select,
+textarea {
+  border-color: var(--border-strong);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]):hover,
+select:hover,
+textarea:hover {
+  border-color: var(--text-muted);
+}
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]):focus,
+select:focus,
+textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+/* After the hover/focus rules with equal specificity, so an invalid field stays red. */
+[aria-invalid="true"]:is(input, select, textarea),
+[aria-invalid="true"]:is(input, select, textarea):is(:hover, :focus) {
+  border-color: var(--danger);
+}
+[aria-invalid="true"]:is(input, select, textarea):focus {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 16%, transparent);
+}
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background-color: var(--surface-2);
+}
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--primary);
+}
+
+/* Buttons: quick colour feedback and a 1px press. */
+button,
+a {
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+button:not(:disabled, [aria-disabled="true"]):active {
+  transform: translateY(1px);
+}
+
+/* Primary actions: a lacquer sheen on the maroon, like the gloss of a lacquered tea tray. */
+:is(button, a).bg-primary {
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.1), rgb(255 255 255 / 0) 60%);
+  box-shadow: var(--shadow-primary);
+}
+:is(button, a).bg-primary:not(:disabled, [aria-disabled="true"]):hover {
+  background-color: var(--primary-hover);
 }

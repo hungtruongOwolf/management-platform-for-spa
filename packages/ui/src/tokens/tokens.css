@@ -35,33 +35,53 @@
   line-gap-override: 0%;
 }
 
+/*
+ * Palette "Trà thất Đông y": the spa's own colours — nâu đỏ (reddish-brown maroon), vàng (gold),
+ * trắng (white), kem (cream). Maroon carries actions and the app chrome; gold is a highlight only
+ * (focus ring, ★, dividers, brand mark) and never small text on light surfaces (use accent-text);
+ * cream is the page, white the cards. contrast.test.ts checks every text/UI pair against WCAG AA.
+ */
 :root {
-  --bg: #faf7f2;
+  --bg: #faf4e8;
   --surface: #ffffff;
-  --surface-2: #f3ede4;
-  --border: #e4dad0;
-  --text: #2a1f1d;
-  --text-muted: #6b5e5a;
-  --primary: #7a1f2b;
-  --primary-hover: #64161f;
+  --surface-2: #f5ebda;
+  --border: #e6d6bd;
+  --border-strong: #9c8670;
+  --text: #2b1b17;
+  --text-muted: #6d5a50;
+  --primary: #7a2620;
+  --primary-hover: #5f1c17;
   --on-primary: #ffffff;
-  --primary-soft: #f6e7e9;
-  --accent: #b8862b;
-  --accent-text: #8a6418;
-  --danger: #b42318;
-  --danger-soft: #fdecea;
-  --warning-bg: #fff4e0;
+  --primary-soft: #f6e4dc;
+  --accent: #b07d24;
+  --accent-text: #8a6114;
+  --accent-soft: #fbf0d6;
+  --danger: #b3261e;
+  --danger-soft: #fcebe7;
+  --warning-bg: #fff3da;
   --warning-text: #7a4a00;
-  --warning-border: #e9b75a;
-  --success: #1e6b3a;
-  --success-soft: #e7f4ec;
-  --focus: #b8862b;
+  --warning-border: #ddae52;
+  --success: #2d6a3e;
+  --success-soft: #e8f3e9;
+  --info: #2f5b78;
+  --info-soft: #e7f0f6;
+  --focus: #b07d24;
+  /* App chrome (header, login band): deep maroon, cream text, bright gold accents. */
+  --chrome-bg: #5a1d18;
+  --chrome-bg-2: #74271f;
+  --chrome-text: #fbf1e1;
+  --chrome-text-muted: #e6cdb4;
+  --chrome-accent: #e3b455;
+  --chrome-hover: rgb(251 241 225 / 0.1);
+  --shadow-1: 0 1px 2px rgb(90 29 24 / 0.05), 0 2px 8px rgb(90 29 24 / 0.06);
+  --shadow-2: 0 12px 32px rgb(90 29 24 / 0.16), 0 2px 6px rgb(90 29 24 / 0.08);
+  --shadow-primary: inset 0 1px 0 rgb(255 255 255 / 0.14), 0 2px 6px rgb(90 29 24 / 0.22);
+  /* Faint gold dot grid on the cream page (like giấy dó): texture only, never content. */
+  --texture: radial-gradient(circle at 1px 1px, rgb(176 125 36 / 0.1) 1px, transparent 0);
 
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
-  --shadow-1: 0 1px 2px rgb(42 31 29 / 0.06), 0 1px 3px rgb(42 31 29 / 0.08);
-  --shadow-2: 0 8px 24px rgb(42 31 29 / 0.14);
 
   --dur-fast: 120ms;
   --dur-base: 200ms;
@@ -77,51 +97,80 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #171112;
-    --surface: #221a1b;
-    --surface-2: #2c2223;
-    --border: #3d3132;
-    --text: #f3ece8;
-    --text-muted: #b8a9a4;
-    --primary: #e8a0a8;
-    --primary-hover: #f2b9bf;
-    --on-primary: #2a0e12;
-    --primary-soft: #3a2427;
-    --accent: #e2b95a;
-    --accent-text: #e2b95a;
-    --danger: #ff8a80;
-    --danger-soft: #3a1e1c;
-    --warning-bg: #3a2a10;
-    --warning-text: #f5d08a;
+    --bg: #18110f;
+    --surface: #221815;
+    --surface-2: #2d211d;
+    --border: #453530;
+    --border-strong: #7d675c;
+    --text: #f6ede1;
+    --text-muted: #c4b2a3;
+    --primary: #e8a592;
+    --primary-hover: #f2bfae;
+    --on-primary: #2a0f0b;
+    --primary-soft: #3b2420;
+    --accent: #e0b456;
+    --accent-text: #e6c06a;
+    --accent-soft: #3a2a12;
+    --danger: #ff8f80;
+    --danger-soft: #3b1d19;
+    --warning-bg: #3a2a12;
+    --warning-text: #f2cf8a;
     --warning-border: #8a6418;
-    --success: #7fd3a0;
-    --success-soft: #16301f;
-    --focus: #e2b95a;
+    --success: #8bd3a0;
+    --success-soft: #17301f;
+    --info: #9cc8e6;
+    --info-soft: #172a38;
+    --focus: #e0b456;
+    --chrome-bg: #2b1310;
+    --chrome-bg-2: #3a1915;
+    --chrome-text: #f6ede1;
+    --chrome-text-muted: #d9c2ad;
+    --chrome-accent: #e3b455;
+    --chrome-hover: rgb(246 237 225 / 0.08);
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 8px rgb(0 0 0 / 0.25);
+    --shadow-2: 0 12px 32px rgb(0 0 0 / 0.5);
+    --shadow-primary: 0 2px 6px rgb(0 0 0 / 0.35);
+    --texture: radial-gradient(circle at 1px 1px, rgb(224 180 86 / 0.06) 1px, transparent 0);
     color-scheme: dark;
   }
 }
 
+/* Same values as the block above (manual dark choice); contrast.test.ts keeps them identical. */
 :root[data-theme="dark"] {
-  --bg: #171112;
-  --surface: #221a1b;
-  --surface-2: #2c2223;
-  --border: #3d3132;
-  --text: #f3ece8;
-  --text-muted: #b8a9a4;
-  --primary: #e8a0a8;
-  --primary-hover: #f2b9bf;
-  --on-primary: #2a0e12;
-  --primary-soft: #3a2427;
-  --accent: #e2b95a;
-  --accent-text: #e2b95a;
-  --danger: #ff8a80;
-  --danger-soft: #3a1e1c;
-  --warning-bg: #3a2a10;
-  --warning-text: #f5d08a;
+  --bg: #18110f;
+  --surface: #221815;
+  --surface-2: #2d211d;
+  --border: #453530;
+  --border-strong: #7d675c;
+  --text: #f6ede1;
+  --text-muted: #c4b2a3;
+  --primary: #e8a592;
+  --primary-hover: #f2bfae;
+  --on-primary: #2a0f0b;
+  --primary-soft: #3b2420;
+  --accent: #e0b456;
+  --accent-text: #e6c06a;
+  --accent-soft: #3a2a12;
+  --danger: #ff8f80;
+  --danger-soft: #3b1d19;
+  --warning-bg: #3a2a12;
+  --warning-text: #f2cf8a;
   --warning-border: #8a6418;
-  --success: #7fd3a0;
-  --success-soft: #16301f;
-  --focus: #e2b95a;
+  --success: #8bd3a0;
+  --success-soft: #17301f;
+  --info: #9cc8e6;
+  --info-soft: #172a38;
+  --focus: #e0b456;
+  --chrome-bg: #2b1310;
+  --chrome-bg-2: #3a1915;
+  --chrome-text: #f6ede1;
+  --chrome-text-muted: #d9c2ad;
+  --chrome-accent: #e3b455;
+  --chrome-hover: rgb(246 237 225 / 0.08);
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 8px rgb(0 0 0 / 0.25);
+  --shadow-2: 0 12px 32px rgb(0 0 0 / 0.5);
+  --shadow-primary: 0 2px 6px rgb(0 0 0 / 0.35);
+  --texture: radial-gradient(circle at 1px 1px, rgb(224 180 86 / 0.06) 1px, transparent 0);
   color-scheme: dark;
 }
 

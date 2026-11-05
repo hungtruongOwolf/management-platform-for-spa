@@ -80,6 +80,15 @@ test.describe("màn hình quầy (US4)", () => {
     const tech = page.getByRole("combobox", { name: "KTV" });
     await expect(tech).toBeFocused();
     await expect(page.getByText("11/12")).toBeVisible();
+    // The one-off service picker once widened the cart column past the viewport (long options).
+    expect(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+      ),
+      "no horizontal scroll with a line in the cart",
+    ).toBe(true);
     await expectAccessible(page, "quay-cart");
 
     // 3. Pick the technician.

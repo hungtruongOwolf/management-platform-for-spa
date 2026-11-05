@@ -29,7 +29,7 @@ export function CustomersPage() {
       <h1 id="customers-title" className="font-brand text-2xl text-primary">
         Khách hàng
       </h1>
-      <div className="rounded-[14px] border border-border bg-surface p-4">
+      <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
         <CustomerSearch
           onSelect={(c) => {
             open(c.id);
@@ -67,15 +67,24 @@ export function CustomersPage() {
         {recent.data?.length === 0 && (
           <p className="text-text-muted">Chưa có khách nào.</p>
         )}
-        <ul className="divide-y divide-border rounded-[10px] border border-border bg-surface">
+        <ul className="divide-y divide-border overflow-hidden rounded-[14px] border border-border bg-surface shadow-card">
           {recent.data?.map((c) => (
             <li key={c.id}>
               <Link
                 to="/khach-hang/$customerId"
                 params={{ customerId: c.id }}
-                className="flex min-h-11 justify-between gap-2 px-3 py-2 hover:bg-surface-2"
+                className="flex min-h-14 items-center justify-between gap-2 px-3 py-2 hover:bg-surface-2"
               >
-                <span className="font-semibold">{c.full_name}</span>
+                <span className="flex min-w-0 items-center gap-3">
+                  {/* Given name's initial (Vietnamese names end with it), decorative. */}
+                  <span
+                    aria-hidden="true"
+                    className="grid size-9 shrink-0 place-items-center rounded-full bg-accent-soft font-brand text-accent-text"
+                  >
+                    {c.full_name.trim().split(/\s+/).at(-1)?.charAt(0).toUpperCase()}
+                  </span>
+                  <span className="font-semibold">{c.full_name}</span>
+                </span>
                 <span className="text-sm text-text-muted">
                   {c.phone}
                   {c.gender ? ` · ${GENDER_LABEL[c.gender] ?? ""}` : ""}

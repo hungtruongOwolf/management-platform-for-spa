@@ -1,5 +1,5 @@
 import { createMemoryHistory } from "@tanstack/react-router";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -198,5 +198,35 @@ describe("auth flow", () => {
       "/api/v1/auth/logout",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+});
+
+describe("home page", () => {
+  it("offers a shortcut only to the screens the user's permissions open", async () => {
+    server((_method, path) =>
+      path === "/api/v1/me"
+        ? Response.json({
+            ...ME,
+            permissions: ["catalog.read", "customer.read", "visit.record"],
+          })
+        : new Response(null, { status: 404 }),
+    );
+    renderAt("/");
+    const shortcuts = await screen.findByRole("navigation", {
+      name: "Lối tắt",
+    });
+    const links = within(shortcuts).getAllByRole("link");
+    expect(links.map((l) => l.getAttribute("href"))).toEqual([
+      "/quay",
+      "/khach-hang",
+      "/bang-gia",
+    ]);
+    // No opening-balance permission, so no paper-book shortcut (UX only; the server decides).
+    expect(
+      within(shortcuts).queryByRole("link", { name: /Chuyển sổ giấy/ }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Xin chào, Chủ Spa" }),
+    ).toBeInTheDocument();
   });
 });
