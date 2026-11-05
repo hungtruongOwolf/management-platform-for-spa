@@ -2,7 +2,10 @@
 
 use crate::domain::{PackageStatus, RefundMethod};
 use crate::lifecycle::{self, PackageCancel, PackageExtend};
-use crate::opening_balance::{self, OpeningBalanceCreate, OpeningBalanceDto};
+use crate::opening_balance::{
+    self, OpeningBalanceCreate, OpeningBalanceDto, OpeningBalanceWindowDto,
+    OpeningBalanceWindowUpdate,
+};
 use crate::service::{self, CustomerPackage, PackageItem, Refund};
 use axum::body::Bytes;
 use axum::extract::{FromRef, Path, State};
@@ -132,6 +135,9 @@ pub struct CustomerPackageDto {
     pub gift_note: Option<String>,
     /// Price paid after discount, in đồng.
     pub sold_price: i64,
+    /// Most that may be refunded on cancel. Equals `sold_price` for a sale; 0 for an opening
+    /// balance a manager entered, until the owner confirms the book price (AC8.8).
+    pub refund_cap: i64,
     pub origin: PackageOriginDto,
     pub sale_id: Option<Uuid>,
     pub closer_staff_id: Option<Uuid>,
@@ -160,6 +166,7 @@ impl From<CustomerPackage> for CustomerPackageDto {
             name: p.name,
             gift_note: p.gift_note,
             sold_price: p.sold_price.as_i64(),
+            refund_cap: p.refund_cap.as_i64(),
             origin: if p.origin == "opening_balance" {
                 PackageOriginDto::OpeningBalance
             } else {
@@ -195,6 +202,10 @@ where
         .route("/customer-packages/{id}/cancel", post(cancel_package))
         .route("/customers/{id}/packages", get(list_customer_packages))
         .route("/opening-balances", post(import_opening_balance))
+        .route(
+            "/opening-balances/window",
+            get(read_opening_window).put(set_opening_window),
+        )
 }
 
 fn no_store(body: impl Serialize) -> Response {
@@ -326,7 +337,7 @@ pub async fn extend_package(
         (status = 401, description = "auth.reauth_required: confirm the password (and code) via /auth/reauth first"),
         (status = 403, description = "auth.forbidden (managers, AC7.3)"), (status = 404),
         (status = 409, description = "package.cancelled"),
-        (status = 422, description = "refund.exceeds_paid (AC7.4), validation_failed: reason / refund_method")))]
+        (status = 422, description = "refund.exceeds_paid (AC7.4), refund.book_price_unconfirmed (opening balance entered by a manager: send confirm_book_price, AC8.8), validation_failed: reason / refund_method")))]
 pub async fn cancel_package(
     State(pool): State<PgPool>,
     user: AuthUser,
@@ -337,4 +348,33 @@ pub async fn cancel_package(
     let (input, hash): (PackageCancel, _) = canonical("/customer-packages/{id}/cancel", id, &body)?;
     let (_, body) = lifecycle::cancel(&pool, &user.actor, key, hash, id, &input).await?;
     Ok(with_etag(body))
+}
+
+#[utoipa::path(get, path = "/api/v1/opening-balances/window", tag = "packages",
+    responses(
+        (status = 200, body = OpeningBalanceWindowDto, description = "Whether paper-book import is open today (AC8.6)"),
+        (status = 401), (status = 403)))]
+pub async fn read_opening_window(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+) -> Result<Response, AppError> {
+    Ok(no_store(opening_balance::window(&pool, &user.actor).await?))
+}
+
+#[utoipa::path(put, path = "/api/v1/opening-balances/window", tag = "packages",
+    request_body = OpeningBalanceWindowUpdate,
+    responses(
+        (status = 200, body = OpeningBalanceWindowDto, description = "Opened for today's business day, or closed (AC8.6); audited"),
+        (status = 401), (status = 403, description = "auth.forbidden: owner only (opening_balance.manage_window)"),
+        (status = 422, description = "validation_failed")))]
+pub async fn set_opening_window(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    let input: OpeningBalanceWindowUpdate = serde_json::from_slice(&body)
+        .map_err(|_| AppError::Validation(vec![FieldError::new("body", "invalid")]))?;
+    Ok(no_store(
+        opening_balance::set_window(&pool, &user.actor, &input).await?,
+    ))
 }

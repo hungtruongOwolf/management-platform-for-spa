@@ -314,6 +314,8 @@ pub async fn create_sale(
                 })
             })
             .collect::<Result<Vec<_>, AppError>>()?;
+        // Collected in full (R1), so what was paid is also the refund cap.
+        let paid = plan.price.checked_sub(share).map_err(money_err)?;
         let package = packages::service::create(
             &mut tx,
             actor,
@@ -325,7 +327,8 @@ pub async fn create_sale(
                     .gift_note
                     .clone()
                     .unwrap_or_else(|| plan.gift_note.clone()),
-                sold_price: plan.price.checked_sub(share).map_err(money_err)?,
+                sold_price: paid,
+                refund_cap: paid,
                 origin: Origin::Sale {
                     sale_id,
                     closer_staff_id: closer.id,

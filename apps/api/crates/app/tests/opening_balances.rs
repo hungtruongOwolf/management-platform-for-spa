@@ -5,8 +5,8 @@ mod common;
 use axum::http::StatusCode;
 use catalog::service::seed_menu;
 use common::{
-    Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
-    session_for,
+    Harness, OWNER_PHONE, PASSWORD, Reply, TestResult, add_member, call, call_with_headers,
+    current_code, forget_used_step, harness, session_for,
 };
 use identity::SystemRole;
 use identity::provisioning::create_tenant;
@@ -88,6 +88,16 @@ async fn shop(pool: PgPool) -> Setup<Shop> {
         Some(json!({"full_name": "Nguyễn Thị Hà", "phone": "0905111222", "gender": "female"})),
     )
     .await;
+    // Import is open only on a day the owner opened (M2, AC8.6): open today.
+    let window = call(
+        &h.app,
+        "PUT",
+        "/opening-balances/window",
+        Some(&owner),
+        Some(json!({"open": true})),
+    )
+    .await;
+    assert_eq!(window.status, StatusCode::OK, "{}", window.body);
     Ok(Shop {
         owner,
         manager,
@@ -494,5 +504,192 @@ async fn another_spas_customer_or_plan_is_not_found(pool: PgPool) -> TestResult 
         StatusCode::NOT_FOUND
     );
     assert_eq!(s.count("customer_package").await?, 0);
+    Ok(())
+}
+
+// ------------------------------------------- M2: same-day import window + refund cap (AC8.6–8.8)
+
+impl Shop {
+    async fn window(&self, session: &str, open: bool) -> Reply {
+        call(
+            &self.h.app,
+            "PUT",
+            "/opening-balances/window",
+            Some(session),
+            Some(json!({"open": open})),
+        )
+        .await
+    }
+
+    async fn window_status(&self, session: &str) -> Reply {
+        call(
+            &self.h.app,
+            "GET",
+            "/opening-balances/window",
+            Some(session),
+            None,
+        )
+        .await
+    }
+
+    async fn exec(&self, sql: &str) -> Result<(), sqlx::Error> {
+        sqlx::query(sqlx::AssertSqlSafe(sql.to_owned()))
+            .execute(&self.h.owner)
+            .await
+            .map(|_| ())
+    }
+
+    async fn cancel(&self, package: &str, body: Value) -> Reply {
+        call_with_headers(
+            &self.h.app,
+            "POST",
+            &format!("/customer-packages/{package}/cancel"),
+            Some(&self.owner),
+            Some(body),
+            &[("idempotency-key", &Uuid::now_v7().to_string())],
+        )
+        .await
+    }
+}
+
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn managers_import_only_on_a_day_the_owner_opened(pool: PgPool) -> TestResult {
+    let s = shop(pool).await?;
+    let status = s.window_status(&s.manager).await;
+    assert_eq!(status.body["open_today"], true, "{}", status.body);
+
+    assert_eq!(s.window(&s.owner, false).await.status, StatusCode::OK);
+    let closed = s.import(&s.manager, s.four_of_ten()).await;
+    assert_eq!(
+        code(&closed),
+        (StatusCode::FORBIDDEN, Some("opening_balance.closed")),
+        "AC8.7: a day the owner did not open"
+    );
+    assert_eq!(
+        code(&s.window(&s.manager, true).await),
+        (StatusCode::FORBIDDEN, Some("auth.forbidden")),
+        "only the owner opens the window"
+    );
+
+    assert_eq!(s.window(&s.owner, true).await.body["open_today"], true);
+    let open = s.import(&s.manager, s.four_of_ten()).await;
+    assert_eq!(open.status, StatusCode::CREATED, "{}", open.body);
+
+    // Opened yesterday = closed today: the window lapses at midnight with no job to run.
+    s.exec("UPDATE app.opening_balance_window SET open_on = open_on - 1")
+        .await?;
+    let next_day = s.import(&s.manager, s.four_of_ten()).await;
+    assert_eq!(
+        code(&next_day),
+        (StatusCode::FORBIDDEN, Some("opening_balance.closed"))
+    );
+    assert_eq!(s.window_status(&s.manager).await.body["open_today"], false);
+    assert_eq!(s.count("customer_package").await?, 1);
+
+    let audit: Vec<String> = sqlx::query_scalar(
+        "SELECT action FROM app.audit_log WHERE action LIKE 'opening_balance.window%' ORDER BY at, id",
+    )
+    .fetch_all(&s.h.owner)
+    .await?;
+    assert_eq!(
+        audit,
+        [
+            "opening_balance.window_open",
+            "opening_balance.window_close",
+            "opening_balance.window_open"
+        ]
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_owner_imports_on_a_closed_day_only_after_reauth(pool: PgPool) -> TestResult {
+    let s = shop(pool).await?;
+    assert_eq!(s.window(&s.owner, false).await.status, StatusCode::OK);
+    s.exec("UPDATE app.session SET recent_auth_at = now() - interval '10 minutes'")
+        .await?;
+    let stale = s.import(&s.owner, s.four_of_ten()).await;
+    assert_eq!(
+        code(&stale),
+        (StatusCode::UNAUTHORIZED, Some("auth.reauth_required")),
+        "🔒 on a closed day"
+    );
+    assert_eq!(s.count("customer_package").await?, 0);
+
+    forget_used_step(&s.h, OWNER_PHONE).await?;
+    let totp = current_code(&s.h, OWNER_PHONE).await?;
+    let reauth = call(
+        &s.h.app,
+        "POST",
+        "/auth/reauth",
+        Some(&s.owner),
+        Some(json!({"password": PASSWORD, "code": totp})),
+    )
+    .await;
+    assert_eq!(reauth.status, StatusCode::NO_CONTENT);
+    let fresh = s.import(&s.owner, s.four_of_ten()).await;
+    assert_eq!(fresh.status, StatusCode::CREATED, "{}", fresh.body);
+    Ok(())
+}
+
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_book_price_typed_by_a_manager_is_no_refund_cap_until_the_owner_confirms(
+    pool: PgPool,
+) -> TestResult {
+    let s = shop(pool).await?;
+    let by_manager = s.import(&s.manager, s.four_of_ten()).await;
+    let by_owner = s.import(&s.owner, s.four_of_ten()).await;
+    let manager_pkg = by_manager.body["customer_packages"][0].clone();
+    let owner_pkg = by_owner.body["customer_packages"][0].clone();
+    assert_eq!(manager_pkg["refund_cap"], 0, "AC8.8: {}", by_manager.body);
+    assert_eq!(owner_pkg["refund_cap"], 1_500_000);
+    let manager_id = manager_pkg["id"].as_str().unwrap_or_default().to_owned();
+    let owner_id = owner_pkg["id"].as_str().unwrap_or_default().to_owned();
+    let refund = |confirm: bool| {
+        json!({"reason": "Khách chuyển nhà", "refund_amount": 300_000, "refund_method": "cash",
+               "confirm_book_price": confirm})
+    };
+
+    // The database refuses a refund above the cap even if the service check were bypassed.
+    let bypass = s
+        .exec(&format!(
+            "INSERT INTO app.refund (id, tenant_id, branch_id, customer_id, customer_package_id,
+                                     business_date, method, amount, reason, created_by)
+             SELECT gen_random_uuid(), p.tenant_id, b.id, p.customer_id, p.id, current_date, 'cash',
+                    1, 'x', p.created_by
+             FROM app.customer_package p JOIN app.branch b ON b.tenant_id = p.tenant_id
+             WHERE p.id = '{manager_id}'"
+        ))
+        .await;
+    assert!(
+        bypass.is_err(),
+        "trigger refund_within_paid uses refund_cap"
+    );
+
+    let unconfirmed = s.cancel(&manager_id, refund(false)).await;
+    assert_eq!(
+        code(&unconfirmed),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("refund.book_price_unconfirmed")
+        )
+    );
+    let confirmed = s.cancel(&manager_id, refund(true)).await;
+    assert_eq!(confirmed.status, StatusCode::OK, "{}", confirmed.body);
+    assert_eq!(confirmed.body["refund"]["amount"], 300_000);
+    assert_eq!(confirmed.body["refund_cap"], 1_500_000);
+    let audited: Value = sqlx::query_scalar(
+        "SELECT after FROM app.audit_log
+         WHERE action = 'customer_package.cancel' AND entity_id = $1::uuid",
+    )
+    .bind(&manager_id)
+    .fetch_one(&s.h.owner)
+    .await?;
+    assert_eq!(audited["book_price_confirmed"], true);
+
+    // The owner typed this one: the book price already caps the refund.
+    let owner_cancel = s.cancel(&owner_id, refund(false)).await;
+    assert_eq!(owner_cancel.status, StatusCode::OK, "{}", owner_cancel.body);
+    assert_eq!(s.count("refund").await?, 2);
     Ok(())
 }

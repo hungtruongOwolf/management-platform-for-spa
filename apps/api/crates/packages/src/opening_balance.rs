@@ -4,12 +4,14 @@
 //! (AC8.1, AC8.3).
 
 use crate::http::CustomerPackageDto;
+use crate::repo;
 use crate::service::{self, NewItem, NewPackage, Origin};
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Utc};
 use crm::FieldCipher;
 use crm::http::CustomerCreate;
 use crm::service::ProfileInput;
 use kernel::audit::{self, AuditEntry};
+use kernel::business_date::BusinessDate;
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx};
 use serde::{Deserialize, Serialize};
@@ -107,6 +109,7 @@ async fn build(
     customer_id: Uuid,
     p: &OpeningPackageCreate,
     today: NaiveDate,
+    book_price_trusted: bool,
 ) -> Result<NewPackage, AppError> {
     let mut errors = Vec::new();
     let plan = match p.package_plan_id {
@@ -169,6 +172,11 @@ async fn build(
         name,
         gift_note: trimmed(p.gift_note.as_ref()),
         sold_price,
+        refund_cap: if book_price_trusted {
+            sold_price
+        } else {
+            Money::ZERO
+        },
         origin: Origin::OpeningBalance,
         starts_on: p.starts_on,
         expires_on: p.expires_on,
@@ -225,10 +233,21 @@ pub async fn import(
         tx.commit().await?;
         return Ok((status, body));
     }
-    let today = kernel::tenant::profile(&mut tx)
-        .await?
-        .business_date
-        .as_naive();
+    let tenant = kernel::tenant::profile(&mut tx).await?;
+    let today = tenant.business_date.as_naive();
+    let window = repo::opening_window(&mut tx).await?.map(|w| w.open_on);
+    if !window_open(window, tenant.business_date) {
+        // "Data of a day is entered that day" (EM decision M2, spec AC8.7): on a day the owner
+        // did not open, only the owner imports, and only with a fresh password confirmation.
+        if !actor.can(Permission::OpeningBalanceManageWindow) {
+            return Err(AppError::Forbidden {
+                code: "opening_balance.closed",
+            });
+        }
+        actor.require_recent_auth()?;
+    }
+    // The paper-book price becomes a refund cap only when typed by someone who may refund.
+    let book_price_trusted = actor.can(Permission::PackageCancelRefund);
 
     let (customer_id, customer_created) = match (&input.customer_id, &input.customer) {
         (Some(id), _) => {
@@ -256,7 +275,7 @@ pub async fn import(
     let mut built = Vec::with_capacity(input.packages.len());
     let mut errors = Vec::new();
     for (j, p) in input.packages.iter().enumerate() {
-        match build(&mut tx, customer_id, p, today).await {
+        match build(&mut tx, customer_id, p, today, book_price_trusted).await {
             Ok(package) => built.push(package),
             Err(e) => match prefixed(&format!("packages[{j}]."), e) {
                 AppError::Validation(more) => errors.extend(more),
@@ -303,9 +322,122 @@ pub async fn import(
     Ok((201, body))
 }
 
+// ---------------------------------------------------------------- import window (M2, AC8.6)
+
+/// Import is open when the owner opened it for exactly today's business day. A window opened
+/// yesterday is closed: it lapses at midnight in the spa's time zone, with no job to run.
+pub fn window_open(open_on: Option<NaiveDate>, today: BusinessDate) -> bool {
+    open_on == Some(today.as_naive())
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OpeningBalanceWindowUpdate {
+    /// true = open paper-book import for today's business day; false = close it now.
+    pub open: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct OpeningBalanceWindowDto {
+    /// Today's business day in the spa's time zone.
+    pub business_date: NaiveDate,
+    /// True when managers may import today.
+    pub open_today: bool,
+    /// The day the window was last opened for, if any (it may be a past day: then it is closed).
+    pub open_on: Option<NaiveDate>,
+    pub opened_at: Option<DateTime<Utc>>,
+}
+
+fn window_dto(row: Option<repo::WindowRow>, today: BusinessDate) -> OpeningBalanceWindowDto {
+    let open_on = row.as_ref().map(|w| w.open_on);
+    OpeningBalanceWindowDto {
+        business_date: today.as_naive(),
+        open_today: window_open(open_on, today),
+        open_on,
+        opened_at: row.map(|w| w.opened_at),
+    }
+}
+
+/// `GET /opening-balances/window` (`opening_balance.import`): whether import is open today.
+pub async fn window(pool: &PgPool, actor: &Actor) -> Result<OpeningBalanceWindowDto, AppError> {
+    if !actor.can(Permission::OpeningBalanceImport)
+        && !actor.can(Permission::OpeningBalanceManageWindow)
+    {
+        return Err(AppError::forbidden());
+    }
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let today = kernel::tenant::profile(&mut tx).await?.business_date;
+    let row = repo::opening_window(&mut tx).await?;
+    tx.commit().await?;
+    Ok(window_dto(row, today))
+}
+
+/// `PUT /opening-balances/window` (`opening_balance.manage_window`, owner): opens import for
+/// today's business day, or closes it. Audited either way.
+pub async fn set_window(
+    pool: &PgPool,
+    actor: &Actor,
+    input: &OpeningBalanceWindowUpdate,
+) -> Result<OpeningBalanceWindowDto, AppError> {
+    actor.require(Permission::OpeningBalanceManageWindow)?;
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let today = kernel::tenant::profile(&mut tx).await?.business_date;
+    let before = repo::opening_window(&mut tx).await?.map(|w| w.open_on);
+    if input.open {
+        repo::open_window(&mut tx, today.as_naive(), actor.user_id.as_uuid()).await?;
+    } else {
+        repo::close_window(&mut tx).await?;
+    }
+    audit::record(
+        &mut tx,
+        actor,
+        AuditEntry {
+            action: if input.open {
+                "opening_balance.window_open"
+            } else {
+                "opening_balance.window_close"
+            },
+            entity_type: "tenant",
+            entity_id: actor.tenant_id.as_uuid(),
+            before: Some(json!({ "open_on": before })),
+            after: Some(json!({ "open_on": input.open.then(|| today.as_naive()) })),
+            reason: None,
+        },
+    )
+    .await?;
+    let row = repo::opening_window(&mut tx).await?;
+    tx.commit().await?;
+    Ok(window_dto(row, today))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_window_closes_at_midnight_in_the_spa_time_zone() {
+        let Ok(tz) = BusinessDate::parse_tz("Asia/Ho_Chi_Minh") else {
+            panic!("known zone");
+        };
+        let opened = NaiveDate::from_ymd_opt(2026, 11, 4);
+        let at = |rfc3339: &str| {
+            DateTime::parse_from_rfc3339(rfc3339)
+                .map(|t| BusinessDate::of_instant(t.with_timezone(&Utc), tz))
+                .ok()
+        };
+        // 23:59:59 in Vietnam is 16:59:59 UTC: still the day it was opened for.
+        let last_second = at("2026-11-04T16:59:59Z");
+        let midnight = at("2026-11-04T17:00:00Z");
+        assert!(last_second.is_some_and(|d| window_open(opened, d)));
+        assert!(
+            midnight.is_some_and(|d| !window_open(opened, d)),
+            "lapses at 00:00 ICT"
+        );
+        assert!(
+            last_second.is_some_and(|d| !window_open(None, d)),
+            "never opened"
+        );
+    }
 
     #[test]
     fn prefixes_only_field_errors() {

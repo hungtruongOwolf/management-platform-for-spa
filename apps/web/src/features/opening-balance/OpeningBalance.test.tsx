@@ -72,6 +72,7 @@ const OPENING_PACKAGE = {
   name: "Combo cũ",
   gift_note: null,
   sold_price: 500_000,
+  refund_cap: 0,
   origin: "opening_balance",
   sale_id: null,
   closer_staff_id: null,
@@ -93,11 +94,20 @@ interface Call {
   key: string | undefined;
 }
 
+const windowState = (open: boolean) => ({
+  business_date: "2026-11-05",
+  open_today: open,
+  open_on: open ? "2026-11-05" : null,
+  opened_at: open ? "2026-11-05T01:00:00Z" : null,
+});
+
 function serve(
   permissions: string[],
   onImport: () => Response = () => Response.json(IMPORTED, { status: 201 }),
+  { windowOpen = true }: { windowOpen?: boolean } = {},
 ) {
   const calls: Call[] = [];
+  let open = windowOpen;
   vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
     const url =
       typeof input === "string"
@@ -124,6 +134,10 @@ function serve(
       return Promise.resolve(Response.json([SERVICE]));
     if (url.startsWith("/api/v1/customers?q="))
       return Promise.resolve(Response.json([HA]));
+    if (url === "/api/v1/opening-balances/window") {
+      if (call.method === "PUT") open = (call.body as { open: boolean }).open;
+      return Promise.resolve(Response.json(windowState(open)));
+    }
     if (url === "/api/v1/opening-balances" && call.method === "POST")
       return Promise.resolve(onImport());
     if (url === "/api/v1/customers/c1")
@@ -394,6 +408,41 @@ describe("/nhap-so-cu", () => {
     expect(
       screen.queryByRole("link", { name: "Nhập sổ cũ" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("tells managers the import is closed on a day the owner did not open (AC8.7)", async () => {
+    serve(MANAGER, undefined, { windowOpen: false });
+    at("/nhap-so-cu");
+    expect(
+      await screen.findByText(/Hôm nay chưa mở nhập sổ cũ/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("form", { name: "Nhập liệu trình từ sổ cũ" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+  });
+
+  it("lets the owner open today's import with one toggle (AC8.6)", async () => {
+    const calls = serve(
+      [...MANAGER, "opening_balance.manage_window"],
+      undefined,
+      { windowOpen: false },
+    );
+    const user = userEvent.setup();
+    at("/nhap-so-cu");
+    const toggle = await screen.findByRole("switch", {
+      name: "Mở nhập sổ cũ hôm nay",
+    });
+    expect(toggle).not.toBeChecked();
+    // Closed day: the owner still sees the form (saving asks for the password again).
+    expect(
+      screen.getByRole("form", { name: "Nhập liệu trình từ sổ cũ" }),
+    ).toBeInTheDocument();
+    await user.click(toggle);
+    expect(await screen.findByRole("switch", { checked: true })).toBeInTheDocument();
+    expect(
+      calls.find((c) => c.method === "PUT")?.body,
+    ).toEqual({ open: true });
   });
 
   it("shows the menu entry to managers", async () => {
