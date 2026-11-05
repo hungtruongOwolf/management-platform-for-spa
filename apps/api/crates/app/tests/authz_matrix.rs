@@ -50,6 +50,7 @@ enum Target {
     Sale,
     CustomerPackage,
     Visit,
+    Staff,
 }
 
 struct Route {
@@ -236,6 +237,112 @@ const ROUTES: &[Route] = &[
     .id(Target::Customer),
     // staff — org
     route("GET", "/api/v1/staff", Access::Perm(P::StaffReadBasic, ALL)),
+    route("POST", "/api/v1/staff", Access::Perm(P::StaffManage, OWNER_ONLY)).body(staff_body),
+    route(
+        "GET",
+        "/api/v1/staff/profiles",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    ),
+    route(
+        "GET",
+        "/api/v1/staff/accounts",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    ),
+    route(
+        "GET",
+        "/api/v1/staff/{id}",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    )
+    .id(Target::Staff),
+    route(
+        "PUT",
+        "/api/v1/staff/{id}",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    )
+    .id(Target::Staff)
+    .body(staff_body)
+    .if_match(),
+    // Also needs payroll.read (same default holder).
+    route(
+        "PUT",
+        "/api/v1/staff/{id}/pay",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    )
+    .id(Target::Staff)
+    .body(pay_body),
+    // staff management — hr
+    route(
+        "GET",
+        "/api/v1/attendance",
+        Access::Perm(P::AttendanceRecord, OWNER_MANAGER),
+    ),
+    route(
+        "PUT",
+        "/api/v1/attendance",
+        Access::Perm(P::AttendanceRecord, OWNER_MANAGER),
+    )
+    .body(attendance_body),
+    route(
+        "GET",
+        "/api/v1/daily-reviews",
+        Access::Perm(P::EvaluationRecord, OWNER_MANAGER),
+    ),
+    route(
+        "PUT",
+        "/api/v1/daily-reviews",
+        Access::Perm(P::EvaluationRecord, OWNER_MANAGER),
+    )
+    .body(daily_review_body),
+    route(
+        "GET",
+        "/api/v1/evaluations",
+        Access::Perm(P::EvaluationRecord, OWNER_MANAGER),
+    ),
+    route(
+        "PUT",
+        "/api/v1/evaluations",
+        Access::Perm(P::EvaluationRecord, OWNER_MANAGER),
+    )
+    .body(evaluation_body),
+    route(
+        "GET",
+        "/api/v1/adjustments",
+        Access::Perm(P::EvaluationRecord, OWNER_MANAGER),
+    ),
+    route(
+        "POST",
+        "/api/v1/adjustments",
+        Access::Perm(P::EvaluationRecord, OWNER_MANAGER),
+    )
+    .body(adjustment_body)
+    .idempotent(),
+    route("GET", "/api/v1/payroll", Access::Perm(P::PayrollRead, OWNER_ONLY)),
+    route(
+        "GET",
+        "/api/v1/payroll/payslips/{id}",
+        Access::Perm(P::PayrollRead, OWNER_ONLY),
+    )
+    .id(Target::Staff),
+    // Last month still has unrecorded days in the fixture: the owner gets 422, never a close.
+    route(
+        "POST",
+        "/api/v1/payroll/close",
+        Access::Perm(P::PayrollClose, OWNER_ONLY),
+    )
+    .body(payroll_close_body)
+    .idempotent(),
+    route(
+        "GET",
+        "/api/v1/payroll/rules",
+        Access::Perm(P::PayrollRead, OWNER_ONLY),
+    ),
+    route(
+        "PUT",
+        "/api/v1/payroll/rules",
+        Access::Perm(P::PayrollClose, OWNER_ONLY),
+    )
+    .body(payroll_rules_body),
+    route("GET", "/api/v1/me/staff", Access::Perm(P::StaffReadOwn, ALL)),
     // packages
     route(
         "GET",
@@ -424,6 +531,53 @@ fn customer_body(f: &Fixture) -> Option<Value> {
 fn health_note_body(_: &Fixture) -> Option<Value> {
     Some(json!({"health_note": "Dị ứng tinh dầu sả"}))
 }
+fn staff_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"full_name": "KTV Hoa", "position": "Kỹ thuật viên"}))
+}
+fn pay_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"base_salary": 5_000_000, "commission_rate_bp": 500}))
+}
+/// Yesterday in the spa's time zone (UTC+7): recorded days are never in the future.
+fn yesterday() -> String {
+    (chrono::Utc::now() + chrono::Duration::hours(7) - chrono::Duration::days(1))
+        .date_naive()
+        .to_string()
+}
+fn attendance_body(f: &Fixture) -> Option<Value> {
+    Some(json!({"entries": [{"staff_id": f.staff, "date": yesterday(), "status": "present",
+                              "check_in": "09:05"}]}))
+}
+fn daily_review_body(f: &Fixture) -> Option<Value> {
+    Some(json!({"entries": [{"staff_id": f.staff, "date": yesterday(), "compliments": 1}]}))
+}
+fn evaluation_body(f: &Fixture) -> Option<Value> {
+    let criteria: Vec<Value> = [
+        "technique",
+        "attitude",
+        "customer_feedback",
+        "diligence",
+        "hygiene",
+        "learning",
+    ]
+    .iter()
+    .map(|k| json!({"key": k, "level": "m1"}))
+    .collect();
+    Some(json!({"staff_id": f.staff, "month": &yesterday()[..7], "criteria": criteria}))
+}
+fn adjustment_body(f: &Fixture) -> Option<Value> {
+    Some(json!({"staff_id": f.staff, "kind": "bonus", "amount": 100_000, "reason": "Khách khen"}))
+}
+fn last_month() -> String {
+    let today = (chrono::Utc::now() + chrono::Duration::hours(7)).date_naive();
+    let first = today - chrono::Duration::days(i64::from(chrono::Datelike::day(&today)));
+    first.format("%Y-%m").to_string()
+}
+fn payroll_close_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"month": last_month()}))
+}
+fn payroll_rules_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"late_grace_minutes": 5}))
+}
 fn follow_up_body(_: &Fixture) -> Option<Value> {
     Some(json!({"channel": "phone", "outcome": "no_answer"}))
 }
@@ -492,6 +646,7 @@ impl Fixture {
             Target::Sale => &self.sale,
             Target::CustomerPackage => &self.customer_package,
             Target::Visit => &self.visit,
+            Target::Staff => &self.staff,
         }
     }
 }

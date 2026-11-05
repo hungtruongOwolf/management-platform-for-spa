@@ -1,0 +1,567 @@
+//! HR SQL. Every query filters by `tx.tenant()` explicitly; RLS is the second layer.
+
+use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+use kernel::{AppError, TenantTx};
+use serde_json::Value;
+use uuid::Uuid;
+
+// ----------------------------------------------------------------------------------- rules
+
+pub async fn rules(tx: &mut TenantTx) -> Result<Option<(Value, i64)>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query!(
+        "SELECT rules, version FROM app.payroll_rules WHERE tenant_id = $1",
+        tenant
+    )
+    .fetch_optional(tx.conn())
+    .await?
+    .map(|r| (r.rules, r.version)))
+}
+
+pub async fn put_rules(tx: &mut TenantTx, rules: &Value, by: Uuid) -> Result<i64, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_scalar!(
+        r#"INSERT INTO app.payroll_rules (tenant_id, rules, updated_by) VALUES ($1, $2, $3)
+           ON CONFLICT (tenant_id) DO UPDATE SET rules = EXCLUDED.rules,
+             updated_by = EXCLUDED.updated_by, version = app.payroll_rules.version + 1,
+             updated_at = now()
+           RETURNING version"#,
+        tenant,
+        rules,
+        by
+    )
+    .fetch_one(tx.conn())
+    .await?)
+}
+
+// ---------------------------------------------------------------------------------- periods
+
+pub struct PeriodRow {
+    pub status: String,
+    pub closed_at: Option<DateTime<Utc>>,
+    pub closed_by_name: Option<String>,
+}
+
+pub async fn period(tx: &mut TenantTx, period: NaiveDate) -> Result<Option<PeriodRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        PeriodRow,
+        r#"SELECT p.status, p.closed_at, u.full_name AS "closed_by_name?"
+           FROM app.payroll_period p LEFT JOIN app.user_account u ON u.id = p.closed_by
+           WHERE p.tenant_id = $1 AND p.period = $2"#,
+        tenant,
+        period
+    )
+    .fetch_optional(tx.conn())
+    .await?)
+}
+
+/// Creates the month's row if missing and locks it: `FOR SHARE` for writers of the month's
+/// records (many at once), `FOR UPDATE` for the close (exclusive). Returns the status.
+pub async fn lock_period(
+    tx: &mut TenantTx,
+    period: NaiveDate,
+    exclusive: bool,
+) -> Result<String, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"INSERT INTO app.payroll_period (tenant_id, period) VALUES ($1, $2)
+           ON CONFLICT (tenant_id, period) DO NOTHING"#,
+        tenant,
+        period
+    )
+    .execute(tx.conn())
+    .await?;
+    let status = if exclusive {
+        sqlx::query_scalar!(
+            "SELECT status FROM app.payroll_period WHERE tenant_id = $1 AND period = $2 FOR UPDATE",
+            tenant,
+            period
+        )
+        .fetch_one(tx.conn())
+        .await?
+    } else {
+        sqlx::query_scalar!(
+            "SELECT status FROM app.payroll_period WHERE tenant_id = $1 AND period = $2 FOR SHARE",
+            tenant,
+            period
+        )
+        .fetch_one(tx.conn())
+        .await?
+    };
+    Ok(status)
+}
+
+pub async fn close_period(tx: &mut TenantTx, period: NaiveDate, by: Uuid) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"UPDATE app.payroll_period SET status = 'closed', closed_at = now(), closed_by = $3
+           WHERE tenant_id = $1 AND period = $2 AND status = 'open'"#,
+        tenant,
+        period,
+        by
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+// ------------------------------------------------------------------------------- attendance
+
+#[derive(Debug, Clone)]
+pub struct AttendanceRow {
+    pub staff_id: Uuid,
+    pub work_date: NaiveDate,
+    pub status: String,
+    pub check_in: Option<NaiveTime>,
+    pub check_out: Option<NaiveTime>,
+    pub late_minutes: i32,
+    pub note: Option<String>,
+}
+
+pub async fn attendance_between(
+    tx: &mut TenantTx,
+    from: NaiveDate,
+    to: NaiveDate,
+    staff: Option<Uuid>,
+) -> Result<Vec<AttendanceRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        AttendanceRow,
+        r#"SELECT staff_id, work_date, status, check_in, check_out, late_minutes, note
+           FROM app.attendance_day
+           WHERE tenant_id = $1 AND work_date BETWEEN $2 AND $3
+             AND ($4::uuid IS NULL OR staff_id = $4)
+           ORDER BY staff_id, work_date"#,
+        tenant,
+        from,
+        to,
+        staff
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+pub async fn attendance_day(
+    tx: &mut TenantTx,
+    staff: Uuid,
+    day: NaiveDate,
+) -> Result<Option<AttendanceRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        AttendanceRow,
+        r#"SELECT staff_id, work_date, status, check_in, check_out, late_minutes, note
+           FROM app.attendance_day WHERE tenant_id = $1 AND staff_id = $2 AND work_date = $3"#,
+        tenant,
+        staff,
+        day
+    )
+    .fetch_optional(tx.conn())
+    .await?)
+}
+
+pub async fn upsert_attendance(
+    tx: &mut TenantTx,
+    row: &AttendanceRow,
+    by: Uuid,
+) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"INSERT INTO app.attendance_day
+             (tenant_id, staff_id, work_date, status, check_in, check_out, late_minutes, note, recorded_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           ON CONFLICT (tenant_id, staff_id, work_date) DO UPDATE SET
+             status = EXCLUDED.status, check_in = EXCLUDED.check_in, check_out = EXCLUDED.check_out,
+             late_minutes = EXCLUDED.late_minutes, note = EXCLUDED.note,
+             recorded_by = EXCLUDED.recorded_by, updated_at = now()"#,
+        tenant,
+        row.staff_id,
+        row.work_date,
+        row.status,
+        row.check_in,
+        row.check_out,
+        row.late_minutes,
+        row.note,
+        by
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+pub async fn delete_attendance(
+    tx: &mut TenantTx,
+    staff: Uuid,
+    day: NaiveDate,
+) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        "DELETE FROM app.attendance_day WHERE tenant_id = $1 AND staff_id = $2 AND work_date = $3",
+        tenant,
+        staff,
+        day
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+// ----------------------------------------------------------------------------- daily review
+
+#[derive(Debug, Clone)]
+pub struct ReviewRow {
+    pub staff_id: Uuid,
+    pub work_date: NaiveDate,
+    pub compliments: i32,
+    pub complaints: i32,
+    pub note: Option<String>,
+}
+
+pub async fn reviews_between(
+    tx: &mut TenantTx,
+    from: NaiveDate,
+    to: NaiveDate,
+    staff: Option<Uuid>,
+) -> Result<Vec<ReviewRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        ReviewRow,
+        r#"SELECT staff_id, work_date, compliments, complaints, note
+           FROM app.staff_daily_review
+           WHERE tenant_id = $1 AND work_date BETWEEN $2 AND $3
+             AND ($4::uuid IS NULL OR staff_id = $4)
+           ORDER BY staff_id, work_date"#,
+        tenant,
+        from,
+        to,
+        staff
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+pub async fn review_day(
+    tx: &mut TenantTx,
+    staff: Uuid,
+    day: NaiveDate,
+) -> Result<Option<ReviewRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        ReviewRow,
+        r#"SELECT staff_id, work_date, compliments, complaints, note
+           FROM app.staff_daily_review WHERE tenant_id = $1 AND staff_id = $2 AND work_date = $3"#,
+        tenant,
+        staff,
+        day
+    )
+    .fetch_optional(tx.conn())
+    .await?)
+}
+
+pub async fn upsert_review(tx: &mut TenantTx, row: &ReviewRow, by: Uuid) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"INSERT INTO app.staff_daily_review
+             (tenant_id, staff_id, work_date, compliments, complaints, note, recorded_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (tenant_id, staff_id, work_date) DO UPDATE SET
+             compliments = EXCLUDED.compliments, complaints = EXCLUDED.complaints,
+             note = EXCLUDED.note, recorded_by = EXCLUDED.recorded_by, updated_at = now()"#,
+        tenant,
+        row.staff_id,
+        row.work_date,
+        row.compliments,
+        row.complaints,
+        row.note,
+        by
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+pub async fn delete_review(tx: &mut TenantTx, staff: Uuid, day: NaiveDate) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        "DELETE FROM app.staff_daily_review WHERE tenant_id = $1 AND staff_id = $2 AND work_date = $3",
+        tenant,
+        staff,
+        day
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+// ------------------------------------------------------------------------------ evaluations
+
+#[derive(Debug, Clone)]
+pub struct EvaluationRow {
+    pub staff_id: Uuid,
+    pub criteria: Value,
+    pub serious_issue: bool,
+    pub total_points: i32,
+    pub result_level: String,
+    pub coaching_plan: Option<String>,
+    pub comment: Option<String>,
+    pub by_name: String,
+    pub updated_at: DateTime<Utc>,
+    pub version: i64,
+}
+
+pub async fn evaluations(
+    tx: &mut TenantTx,
+    month: NaiveDate,
+    staff: Option<Uuid>,
+) -> Result<Vec<EvaluationRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        EvaluationRow,
+        r#"SELECT e.staff_id, e.criteria, e.serious_issue, e.total_points, e.result_level,
+                  e.coaching_plan, e.comment, u.full_name AS by_name, e.updated_at, e.version
+           FROM app.staff_evaluation e JOIN app.user_account u ON u.id = e.recorded_by
+           WHERE e.tenant_id = $1 AND e.work_date = $2 AND ($3::uuid IS NULL OR e.staff_id = $3)"#,
+        tenant,
+        month,
+        staff
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+pub struct EvaluationWrite<'a> {
+    pub staff_id: Uuid,
+    pub month: NaiveDate,
+    pub criteria: &'a Value,
+    pub serious_issue: bool,
+    pub total_points: i32,
+    pub result_level: &'a str,
+    pub coaching_plan: Option<&'a str>,
+    pub comment: Option<&'a str>,
+}
+
+pub async fn upsert_evaluation(
+    tx: &mut TenantTx,
+    w: &EvaluationWrite<'_>,
+    by: Uuid,
+) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"INSERT INTO app.staff_evaluation
+             (tenant_id, staff_id, work_date, criteria, serious_issue, total_points, result_level,
+              coaching_plan, comment, recorded_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           ON CONFLICT (tenant_id, staff_id, work_date) DO UPDATE SET
+             criteria = EXCLUDED.criteria, serious_issue = EXCLUDED.serious_issue,
+             total_points = EXCLUDED.total_points, result_level = EXCLUDED.result_level,
+             coaching_plan = EXCLUDED.coaching_plan, comment = EXCLUDED.comment,
+             recorded_by = EXCLUDED.recorded_by, version = app.staff_evaluation.version + 1,
+             updated_at = now()"#,
+        tenant,
+        w.staff_id,
+        w.month,
+        w.criteria,
+        w.serious_issue,
+        w.total_points,
+        w.result_level,
+        w.coaching_plan,
+        w.comment,
+        by
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+// ------------------------------------------------------------------------------ adjustments
+
+#[derive(Debug, Clone)]
+pub struct AdjustmentRow {
+    pub id: Uuid,
+    pub staff_id: Uuid,
+    pub work_date: NaiveDate,
+    pub kind: String,
+    pub amount: Option<i64>,
+    pub points: Option<i32>,
+    pub reason: String,
+    pub corrects_period: Option<NaiveDate>,
+    pub by_name: String,
+    pub created_at: DateTime<Utc>,
+}
+
+pub async fn adjustments_between(
+    tx: &mut TenantTx,
+    from: NaiveDate,
+    to: NaiveDate,
+    staff: Option<Uuid>,
+) -> Result<Vec<AdjustmentRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        AdjustmentRow,
+        r#"SELECT a.id, a.staff_id, a.work_date, a.kind, a.amount, a.points, a.reason,
+                  a.corrects_period, u.full_name AS by_name, a.created_at
+           FROM app.staff_adjustment a JOIN app.user_account u ON u.id = a.created_by
+           WHERE a.tenant_id = $1 AND a.work_date BETWEEN $2 AND $3
+             AND ($4::uuid IS NULL OR a.staff_id = $4)
+           ORDER BY a.work_date DESC, a.created_at DESC"#,
+        tenant,
+        from,
+        to,
+        staff
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+pub async fn adjustment(tx: &mut TenantTx, id: Uuid) -> Result<Option<AdjustmentRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        AdjustmentRow,
+        r#"SELECT a.id, a.staff_id, a.work_date, a.kind, a.amount, a.points, a.reason,
+                  a.corrects_period, u.full_name AS by_name, a.created_at
+           FROM app.staff_adjustment a JOIN app.user_account u ON u.id = a.created_by
+           WHERE a.tenant_id = $1 AND a.id = $2"#,
+        tenant,
+        id
+    )
+    .fetch_optional(tx.conn())
+    .await?)
+}
+
+pub struct AdjustmentInsert<'a> {
+    pub id: Uuid,
+    pub staff_id: Uuid,
+    pub work_date: NaiveDate,
+    pub kind: &'a str,
+    pub amount: Option<i64>,
+    pub points: Option<i32>,
+    pub reason: &'a str,
+    pub corrects_period: Option<NaiveDate>,
+    pub created_by: Uuid,
+}
+
+pub async fn insert_adjustment(tx: &mut TenantTx, a: &AdjustmentInsert<'_>) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"INSERT INTO app.staff_adjustment
+             (id, tenant_id, staff_id, work_date, kind, amount, points, reason, corrects_period, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
+        a.id,
+        tenant,
+        a.staff_id,
+        a.work_date,
+        a.kind,
+        a.amount,
+        a.points,
+        a.reason,
+        a.corrects_period,
+        a.created_by
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+// ------------------------------------------------------------------------ commission inputs
+
+pub struct CommissionRow {
+    pub staff_id: Uuid,
+    pub service_name: String,
+    pub source: String,
+    pub qty: i64,
+    pub value: i64,
+    pub full_value: i64,
+}
+
+/// Services performed in completed (not voided) visits of the period, per technician and service.
+pub async fn commission_lines(
+    tx: &mut TenantTx,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<Vec<CommissionRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        CommissionRow,
+        r#"SELECT vl.staff_id, vl.service_name_snapshot AS service_name, vl.source,
+                  SUM(vl.qty)::bigint AS "qty!", SUM(vl.line_value)::bigint AS "value!",
+                  SUM(vl.qty::bigint * vl.unit_price)::bigint AS "full_value!"
+           FROM app.visit_line vl
+           JOIN app.visit v ON v.tenant_id = vl.tenant_id AND v.id = vl.visit_id
+           WHERE vl.tenant_id = $1 AND v.status = 'completed'
+             AND v.business_date BETWEEN $2 AND $3
+           GROUP BY vl.staff_id, vl.service_name_snapshot, vl.source
+           ORDER BY vl.staff_id, SUM(vl.line_value) DESC, vl.service_name_snapshot"#,
+        tenant,
+        from,
+        to
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+/// Σ total of package sales (not voided) closed by each person in the period.
+pub async fn closing_bases(
+    tx: &mut TenantTx,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<Vec<(Uuid, i64)>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query!(
+        r#"SELECT s.closer_staff_id AS "staff_id!", SUM(s.total)::bigint AS "total!"
+           FROM app.sale s
+           WHERE s.tenant_id = $1 AND s.status = 'open' AND s.closer_staff_id IS NOT NULL
+             AND s.business_date BETWEEN $2 AND $3
+           GROUP BY s.closer_staff_id"#,
+        tenant,
+        from,
+        to
+    )
+    .fetch_all(tx.conn())
+    .await?
+    .into_iter()
+    .map(|r| (r.staff_id, r.total))
+    .collect())
+}
+
+// --------------------------------------------------------------------------------- payslips
+
+pub async fn payslips(
+    tx: &mut TenantTx,
+    period: NaiveDate,
+    staff: Option<Uuid>,
+) -> Result<Vec<Value>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_scalar!(
+        r#"SELECT p.detail FROM app.payslip p JOIN app.staff s ON s.tenant_id = p.tenant_id AND s.id = p.staff_id
+           WHERE p.tenant_id = $1 AND p.period = $2 AND ($3::uuid IS NULL OR p.staff_id = $3)
+           ORDER BY s.full_name"#,
+        tenant,
+        period,
+        staff
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+pub async fn insert_payslip(
+    tx: &mut TenantTx,
+    period: NaiveDate,
+    staff: Uuid,
+    net_pay: i64,
+    detail: &Value,
+) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"INSERT INTO app.payslip (id, tenant_id, period, staff_id, net_pay, detail)
+           VALUES ($1, $2, $3, $4, $5, $6)"#,
+        Uuid::now_v7(),
+        tenant,
+        period,
+        staff,
+        net_pay,
+        detail
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}

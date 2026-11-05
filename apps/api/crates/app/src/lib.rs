@@ -44,6 +44,7 @@ pub fn router(state: AppState, policy: &HttpPolicy) -> Router {
         .merge(catalog::http::routes())
         .merge(crm::http::routes())
         .merge(org::http::routes())
+        .merge(hr::http::routes())
         .merge(packages::http::routes())
         .merge(sales::http::routes())
         .merge(operations::http::routes())
