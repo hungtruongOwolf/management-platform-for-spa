@@ -7,7 +7,7 @@ import {
 import { useState } from "react";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
-import { GENDER_LABEL, setHealthNote } from "./api";
+import { setHealthNote } from "./api";
 import { CustomerPackages } from "../sales/CustomerPackages";
 import { CustomerForm } from "./CustomerForm";
 import { HealthNote } from "./HealthNote";
@@ -83,21 +83,14 @@ export function CustomerProfile({
   return (
     <article
       aria-labelledby="customer-name"
-      className="rounded-[14px] border border-border bg-surface p-4 shadow-card"
+      className="grid content-start gap-3 rounded-[14px] border border-border bg-surface p-4 shadow-card"
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h1 id="customer-name" className="font-brand text-2xl text-primary">
-            {customer.full_name}
-          </h1>
-          <p className="text-text-muted">
-            {customer.phone} ·{" "}
-            {customer.gender
-              ? GENDER_LABEL[customer.gender]
-              : "Chưa rõ giới tính"}
-            {customer.birth_year ? ` · ${String(customer.birth_year)}` : ""}
-          </p>
-        </div>
+        {/* Name and gender are the page title (PageHeader); the card starts with the contact line. */}
+        <p className="text-text-muted tabular">
+          {customer.phone}
+          {customer.birth_year ? ` · sinh năm ${String(customer.birth_year)}` : ""}
+        </p>
         {canWrite && !editing && (
           <button
             type="button"

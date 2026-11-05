@@ -1,8 +1,9 @@
 import type { CustomerSummary } from "@vpyd/api-client";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useState } from "react";
+import { CustomerName } from "../../app/CustomerName";
 import { messageFor } from "../../lib/errors";
-import { GENDER_LABEL, isSearchable, searchQuery } from "./api";
+import { isSearchable, searchQuery } from "./api";
 
 /** Debounced phone/name search with keyboard selection. Reused by the front desk (S7). */
 export function CustomerSearch({
@@ -10,6 +11,8 @@ export function CustomerSearch({
   onCreate,
   inputRef,
   autoFocus = false,
+  query = "",
+  onQueryChange,
 }: {
   onSelect: (c: CustomerSummary) => void;
   onCreate: (typed: string) => void;
@@ -17,9 +20,13 @@ export function CustomerSearch({
   inputRef?: React.Ref<HTMLInputElement>;
   /** Focus the search box on mount (continuous data entry, front desk). */
   autoFocus?: boolean;
+  /** Text to start from (the URL's `q` on /khach-hang, so Back shows the same hits). */
+  query?: string;
+  /** Called with the settled (debounced) text, e.g. to keep it in the URL. */
+  onQueryChange?: (q: string) => void;
 }) {
-  const [text, setText] = useState("");
-  const [term, setTerm] = useState("");
+  const [text, setText] = useState(query);
+  const [term, setTerm] = useState(query);
   const [active, setActive] = useState(0);
   const listId = useId();
 
@@ -27,10 +34,13 @@ export function CustomerSearch({
     const t = setTimeout(() => {
       setTerm(text);
       setActive(0);
+      onQueryChange?.(text);
     }, 250);
     return () => {
       clearTimeout(t);
     };
+    // onQueryChange is a callback prop: a new identity each render must not restart the debounce.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text]);
 
   const searchable = isSearchable(term);
@@ -108,11 +118,8 @@ export function CustomerSearch({
                   }}
                   className="flex cursor-pointer justify-between gap-2 px-3 py-2 aria-selected:bg-primary-soft hover:bg-primary-soft"
                 >
-                  <span className="font-semibold">{c.full_name}</span>
-                  <span className="text-sm text-text-muted">
-                    {c.phone}
-                    {c.gender ? ` · ${GENDER_LABEL[c.gender] ?? ""}` : ""}
-                  </span>
+                  <CustomerName name={c.full_name} gender={c.gender} className="font-semibold" />
+                  <span className="text-sm text-text-muted tabular">{c.phone}</span>
                 </li>
               ))}
             </ul>

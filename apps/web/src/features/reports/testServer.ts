@@ -38,10 +38,14 @@ function route(url: URL, { permissions, withoutRevenue = false, searchHits = [] 
     if (withoutRevenue) for (const b of r.series) delete b.revenue;
     return r;
   }
-  if (p === "/customers/c1")
-    return { id: "c1", full_name: "Nguyễn Thị Hà", phone: "0905 111 222", gender: "female", version: 1 };
-  if (p === "/customers/c1/history") return mockHistory("c1", spaToday());
-  if (p === "/customers/c1/summary") return mockCustomerStats("c1", mockHistory("c1", spaToday()));
+  // Any customer id (lists link to mock-customer-N): one profile, so a test can click through.
+  const profile = /^\/customers\/(?!inactive$)([^/]+)(\/history|\/summary)?$/.exec(p);
+  if (profile) {
+    const id = profile[1] ?? "c1";
+    if (profile[2] === "/history") return mockHistory(id, spaToday());
+    if (profile[2] === "/summary") return mockCustomerStats(id, mockHistory(id, spaToday()));
+    return { id, full_name: "Nguyễn Thị Hà", phone: "0905 111 222", gender: "female", version: 1 };
+  }
   if (p === "/packages") {
     const filter: PackageFilter = q.get("expiring_within_days")
       ? "expiring"

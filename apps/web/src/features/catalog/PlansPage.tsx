@@ -2,6 +2,7 @@ import type { PackagePlan } from "@vpyd/api-client";
 import { formatVnd } from "@vpyd/ui";
 import { useQueries, useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { PageHeader } from "../../app/PageHeader";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
 import { plansQuery, servicesQuery } from "./api";
@@ -35,10 +36,7 @@ export function PlansPage() {
 
   return (
     <section aria-labelledby="plans-title" className="grid content-start gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 id="plans-title" className="font-brand text-2xl text-primary">
-          Gói liệu trình
-        </h1>
+      <PageHeader eyebrow="Danh mục" title="Gói liệu trình" titleId="plans-title">
         {canManage && editing === null && (
           <button
             type="button"
@@ -50,7 +48,7 @@ export function PlansPage() {
             + Tạo gói
           </button>
         )}
-      </div>
+      </PageHeader>
       {editing && editing.plan === undefined && (
         <PlanForm
           services={services.data}

@@ -2,10 +2,12 @@ import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from "react";
 import { logout, meQuery } from "../features/auth/session";
-import { BrandMark, BrandWordmark } from "./BrandMark";
+import { BrandLogo } from "./BrandLogo";
 import { Icon } from "./Icon";
 import { navFor, tabsFor, type NavGroup } from "./nav";
 import { readSidebarCollapsed, saveSidebarCollapsed } from "./prefs";
+import { resetTrail } from "./trail";
+import { UserMenu } from "./UserMenu";
 
 // Opens on Ctrl/⌘+K or the search button only: its own chunk, off the startup path.
 const CommandPalette = lazy(() => import("./CommandPalette"));
@@ -17,11 +19,6 @@ const longDate = new Intl.DateTimeFormat("vi-VN", {
   year: "numeric",
   timeZone: "Asia/Ho_Chi_Minh",
 });
-
-/** Given name's initial: Vietnamese names end with it. */
-export function initialOf(name: string): string {
-  return name.trim().split(/\s+/).at(-1)?.charAt(0).toUpperCase() ?? "";
-}
 
 function NavLinks({ groups, onNavigate }: { groups: NavGroup[]; onNavigate?: () => void }) {
   return (
@@ -93,8 +90,8 @@ export function Modal({
 }
 
 /**
- * Signed-in frame. Desktop/tablet: a maroon sidebar (logo, grouped nav, collapsible on ≥ 1024px,
- * an icon rail below that) and a top bar (date, search / command palette, user, quick lock).
+ * Signed-in frame. Desktop/tablet: a maroon sidebar (the whole logo, grouped nav, collapsible on
+ * ≥ 1024px, an icon rail below that) and a top bar (date, search / command palette, account menu).
  * Phones: a top bar and a bottom tab bar with a "Thêm" drawer. Nav is filtered by permission (UX
  * only — the API decides).
  */
@@ -108,6 +105,7 @@ export function AppShell() {
   const [palette, setPalette] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const href = useRouterState({ select: (s) => s.location.href });
 
   // Screens slide in after a navigation, never on the first paint (that would delay LCP).
   const [firstPath] = useState(pathname);
@@ -127,9 +125,15 @@ export function AppShell() {
     };
   }, []);
 
-  // "Khóa nhanh": leave the counter safely in one tap.
+  // "Khóa nhanh": leave the counter safely; signing in again comes back to this screen.
   const lock = async () => {
     await logout(queryClient);
+    await navigate({ to: "/dang-nhap", search: { next: href } });
+  };
+  // "Đăng xuất": a clean end of the shift, the next person starts from home with no trail.
+  const signOut = async () => {
+    await logout(queryClient);
+    resetTrail();
     await navigate({ to: "/dang-nhap" });
   };
 
@@ -145,8 +149,7 @@ export function AppShell() {
       {/* The focus ring switches to the bright gold: the standard one is too dark on maroon. */}
       <aside className="sidebar chrome" data-collapsed={collapsed || undefined}>
         <Link to="/" className="sidebar-brand" aria-label="Viên Phúc Y Đường, về trang tổng quan">
-          <BrandMark className="size-10 shrink-0" />
-          <BrandWordmark className="sidebar-wordmark h-9 w-[70px]" />
+          <BrandLogo className="sidebar-logo" />
         </Link>
         <nav aria-label="Chính" className="sidebar-nav">
           <NavLinks groups={groups} />
@@ -166,7 +169,7 @@ export function AppShell() {
       <div className="shell-main">
         <header className="topbar">
           <Link to="/" className="topbar-brand" aria-label="Viên Phúc Y Đường, về trang tổng quan">
-            <BrandMark className="size-8 text-primary" />
+            <BrandLogo className="w-12" />
           </Link>
           <p className="hidden text-sm text-text-muted first-letter:uppercase md:block">
             {longDate.format(new Date())}
@@ -187,21 +190,7 @@ export function AppShell() {
             </span>
             <kbd className="ml-auto max-md:hidden">Ctrl K</kbd>
           </button>
-          <span className="user-chip">
-            <span aria-hidden="true" className="avatar">
-              {initialOf(me?.user.full_name ?? "")}
-            </span>
-            <span className="leading-tight max-xl:hidden">
-              <span className="block text-sm font-semibold">{me?.user.full_name}</span>
-              <span className="block text-xs text-text-muted">
-                {me?.active_tenant?.name ?? "Chưa chọn spa"}
-              </span>
-            </span>
-          </span>
-          <button type="button" onClick={() => void lock()} className="btn btn-secondary shrink-0" aria-label="Khóa nhanh">
-            <Icon name="lock" className="size-[18px]" />
-            <span className="max-sm:hidden">Khóa nhanh</span>
-          </button>
+          <UserMenu me={me} onLock={() => void lock()} onLogout={() => void signOut()} />
         </header>
 
         <main id="main" className="shell-content">
@@ -241,10 +230,7 @@ export function AppShell() {
         label="Điều hướng"
       >
         <div className="mb-4 flex items-center justify-between">
-          <span className="flex items-center gap-2">
-            <BrandMark className="size-10" />
-            <BrandWordmark className="h-9 w-[70px]" />
-          </span>
+          <BrandLogo className="w-24 text-chrome-accent" />
           <button
             type="button"
             className="icon-btn"

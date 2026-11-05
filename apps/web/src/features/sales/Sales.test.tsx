@@ -288,7 +288,7 @@ describe("sell package dialog", () => {
     serve(["customer.read"]);
     at("/khach-hang/c1");
     expect(
-      await screen.findByRole("heading", { name: "Nguyễn Thị Hà" }),
+      await screen.findByRole("heading", { name: /^Nguyễn Thị Hà/ }),
     ).toBeInTheDocument();
     expect(
       await screen.findByText("Chưa có liệu trình nào."),
