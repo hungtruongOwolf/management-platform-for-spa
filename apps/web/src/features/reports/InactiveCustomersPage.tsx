@@ -67,7 +67,7 @@ function InactiveCustomersPageBody() {
     <section className="grid content-start gap-5">
       <PageHeader eyebrow="Khách hàng" title="Khách lâu không quay lại" />
       <p className="max-w-2xl text-text-muted">
-        Khách liệu trình và khách lẻ chưa quay lại từ {filter.days} ngày trở lên, vắng lâu nhất ở trên. Gọi nhắc lịch rồi bấm “Đã liên hệ” để biết khi nào gọi lại.
+        Khách liệu trình và khách lẻ chưa quay lại từ {filter.days} ngày trở lên. “Cần liên hệ” xếp người chưa gọi và người đến hạn gọi lại lên trước; gọi xong bấm “Đã liên hệ” để hẹn lần sau.
       </p>
       <FilterBar label="Tìm và lọc khách">
         <SearchField

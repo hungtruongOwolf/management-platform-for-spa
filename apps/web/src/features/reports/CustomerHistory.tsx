@@ -118,6 +118,7 @@ function HistoryFilters() {
       <SearchField
         label="Tìm dịch vụ, gói hoặc kỹ thuật viên"
         placeholder="Dịch vụ, gói, KTV…"
+        className="basis-full"
         value={s.hq}
         onCommit={(hq) => {
           set({ hq });

@@ -1234,6 +1234,7 @@ h2 .gender-chip {
 .search-field input {
   width: 100%;
   min-height: 44px;
+  border: 1px solid var(--border-strong);
   padding: 0 40px;
   border-radius: 10px;
   background: var(--surface);
@@ -1267,13 +1268,18 @@ h2 .gender-chip {
   font-size: 12px;
 }
 .filter-select select,
-.filter-field input {
+.filter-field :is(input, select, textarea) {
+  border: 1px solid var(--border-strong);
   min-height: 44px;
   padding: 0 10px;
   border-radius: 10px;
   background: var(--surface);
   color: var(--text);
   font-size: 14px;
+}
+.filter-field textarea {
+  min-height: 64px;
+  padding: 8px 10px;
 }
 
 /* --- Form dialog (follow-up "Đã liên hệ"): centred card, full-width sheet on phones ----------- */

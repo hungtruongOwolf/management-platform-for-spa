@@ -13,8 +13,8 @@ import {
   invalidateAfterFollowUp,
 } from "./followUps";
 
-const dm = new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", timeZone: "UTC" });
-const shortDate = (iso: string) => dm.format(new Date(`${iso}T00:00:00Z`));
+/** "08/11" (vi-VN Intl would print "08-11"). */
+const shortDate = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
 /** The suggested next try for an outcome, counted from the contact day. */
 export function suggestedNextTry(outcome: FollowUpOutcome, contactedOn: string): string | null {
@@ -106,7 +106,6 @@ export function FollowUpForm({
             onChange={(e) => {
               setChannel(e.target.value as FollowUpChannel);
             }}
-            className="min-h-11 rounded-[10px] bg-surface px-3 text-sm text-text"
           >
             {(Object.keys(CHANNEL_LABEL) as FollowUpChannel[]).map((c) => (
               <option key={c} value={c}>
@@ -145,7 +144,6 @@ export function FollowUpForm({
           onChange={(e) => {
             setNote(e.target.value);
           }}
-          className="min-h-16 rounded-[10px] bg-surface px-3 py-2 text-sm text-text"
         />
       </label>
       <div className="grid gap-2">
