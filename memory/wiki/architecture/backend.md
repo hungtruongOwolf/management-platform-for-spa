@@ -185,7 +185,7 @@ Chạy trên máy vận hành, không có route HTTP nào tương ứng. Mật k
 | `app add-user --tenant S --phone P --name N --role owner\|manager\|technician` | Thêm người vào spa, mật khẩu từ `APP_NEW_USER_PASSWORD` | owner |
 | `app add-staff --tenant S --name N --position P` | Thêm nhân viên cho picker KTV / người chốt | owner |
 | `app seed-catalog --tenant S` | Nạp menu in (35 dịch vụ / 10 nhóm) | owner |
-| `app import-paper-book --tenant S --file F.csv [--dry-run]` | Migrate sổ liệu trình giấy một lần (R1-2 §7, cột CSV ở spec). Đi qua `packages::opening_balance::import` với quyền của chủ spa; gói đã có (cùng khách, tên, ngày bắt đầu, không hóa đơn) bị bỏ qua nên chạy lại an toàn; file lỗi ở bất kỳ dòng nào (cột, số, ngày, tên dịch vụ) → không ghi gì | owner + app_rw + `APP_DATA_KEY` |
+| `app import-paper-book --tenant S --file F.csv [--dry-run]` | Migrate sổ liệu trình giấy một lần (R1-2 §7, cột CSV ở spec, gồm `paid_amount`/`paid_on`/`method`: tiền sổ giấy ghi thành hóa đơn vào ngày trên sổ, 0018). Đi qua `sales::paper::import_opening_balance` với quyền của chủ spa; gói đã nhập mà chưa có tiền thì lần chạy sau ghi tiền một lần (`sales::paper::book`); gói đã có (cùng khách, tên, ngày bắt đầu, không hóa đơn) bị bỏ qua nên chạy lại an toàn; file lỗi ở bất kỳ dòng nào (cột, số, ngày, tên dịch vụ) → không ghi gì | owner + app_rw + `APP_DATA_KEY` |
 | `app seed-demo --tenant S [--force-again]` | Dữ liệu demo cho staging/buổi dùng thử, xem [runbook](../runbooks/vercel-staging.md#dữ-liệu-demo) | owner + app_rw + `APP_DATA_KEY` + `APP_NEW_USER_PASSWORD` |
 | `app reset-mfa --phone P` / `app unlock --phone P` | Mất authenticator / gỡ khóa đăng nhập (xác minh người trước) | owner |
 | `app openapi` | In contract ra stdout | — |

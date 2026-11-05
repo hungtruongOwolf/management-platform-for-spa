@@ -42,7 +42,7 @@ Thiếu `report.revenue.read` thì response **không chứa** các trường ti�
 - Mỗi khoản chia theo **hình thức** (tiền mặt / chuyển khoản) và **loại** (liệu trình / dịch vụ 1 lần), đúng các cột của sổ doanh thu.
 - **Ngày nghiệp vụ** theo múi giờ của spa (Asia/Ho_Chi_Minh): 23:59 thuộc hôm nay, 00:00 thuộc hôm sau.
 - **Số đếm** (lượt, buổi, gói bán) tính theo **trạng thái hiện tại**: lượt/hóa đơn đã hủy không được đếm (số lượt hủy hiện riêng).
-- Liệu trình chuyển từ sổ giấy không có hóa đơn, nên không bao giờ là doanh thu.
+- Tiền khách đã trả trên sổ giấy **là doanh thu** như mọi khoản khác (EM 2026-11-05, [raw](../../../raw/2026-11-05-em-carried-over-is-revenue.md): app chỉ lưu dữ liệu tiền, không xác nhận): lúc migrate, mỗi gói có tiền đã trả được ghi thành một hóa đơn + thanh toán **vào đúng ngày trên sổ** (`paid_on`). Gói sổ giấy không có tiền thì không có hóa đơn.
 
 ### US1: Dashboard "Hôm nay" (cho một ngày bất kỳ)
 *Là chủ spa / quản lý, tôi muốn mở một màn hình là thấy ngay hôm nay (hoặc một ngày tôi chọn) có bao nhiêu khách, thu bao nhiêu, ai làm bao nhiêu, so với hôm qua và cùng thứ tuần trước.*
@@ -84,7 +84,7 @@ Thiếu `report.revenue.read` thì response **không chứa** các trường ti�
 - AC4.2 Trang liệu trình (`GET /customer-packages/{id}/usage`): thông tin gói (tổng/còn lại, hạn, quà tặng, trạng thái) + **mỗi lần dùng** (STT theo thứ tự cũ → mới: ngày, giờ, dịch vụ, số buổi, còn lại sau, KTV, đã hủy hay chưa). Đây là một trang của sổ giấy.
 - AC4.3 Tóm tắt (`GET /customers/{id}/summary`): lần đến đầu, lần đến gần nhất, số ngày từ lần gần nhất, số lượt (hoàn tất / đã hủy), số buổi đã dùng, tiền đã trả / đã đảo / đã hoàn / **thực chi**, số gói theo trạng thái, số buổi còn lại của các gói đang dùng.
 - AC4.4 (neg): Khách của spa khác → `404`. Thiếu một trong `customer.read`, `visit.read`, `sale.read` → `403`. Cursor sửa tay → `422`.
-- AC4.5: Gói chuyển từ sổ giấy hiện như mọi gói khác (không nhãn riêng); timeline không có sự kiện "mua" cho nó vì không có hóa đơn.
+- AC4.5: Gói chuyển từ sổ giấy hiện như mọi gói khác (không nhãn riêng). Nếu sổ có ghi tiền đã trả, timeline có sự kiện "mua" vào ngày trên sổ (hóa đơn của khoản tiền đó); không có tiền thì không có sự kiện "mua".
 
 ### US5: Tổng quan liệu trình & khách cần chăm sóc lại
 *Là quản lý, tôi muốn xem các liệu trình đang chạy, sắp hết hạn, đã hết buổi, đã hủy; và danh sách khách còn buổi mà lâu không quay lại, để gọi điện mời.*
@@ -151,7 +151,7 @@ Dữ liệu cá nhân trong response: tên + SĐT khách (đã có ở `customer
 
 ## 7. Bỏ khái niệm "sổ cũ" (quyết định EM 2026-11-05)
 EM: dữ liệu sổ giấy là **migration một lần** do team tự điền sau, không cần phân biệt sổ cũ / sổ mới.
-- **API:** `CustomerPackageDto` bỏ trường `origin`. Gói chuyển từ sổ giấy giống hệt gói khác; chỉ khác là `sale_id = null` (không có hóa đơn để hủy). Bảng vẫn giữ cột `origin` để báo cáo tiền không bao giờ tính nó là doanh thu.
+- **API:** `CustomerPackageDto` bỏ trường `origin`. Gói chuyển từ sổ giấy giống hệt gói khác; có tiền đã trả thì `sale_id` trỏ tới hóa đơn của khoản tiền đó, không có thì `sale_id = null`. Bảng vẫn giữ cột `origin`; hóa đơn sổ giấy có `sale.source = paper_book` (không bao giờ có trong API) để audit và để chạy lại không ghi trùng.
 - **Nhập sổ giấy chỉ dành cho người vận hành.** Hai lựa chọn: (a) lệnh CLI `app import-paper-book --tenant <slug> --file <csv>`; (b) giữ `POST /opening-balances` chỉ cho chủ spa.
   **Khuyến nghị và đã làm: (a) CLI.** Lý do: việc này là chuyển dữ liệu một lần của team, không phải thao tác của spa; CLI không có bề mặt HTTP để tấn công, chạy trên máy vận hành, đọc file CSV mà team đã soát lại, có `--dry-run`, chạy lại không nhập trùng. HTTP route vẫn còn **tạm thời** và chỉ chủ spa có quyền (migration 0013 bỏ quyền của quản lý), vì màn `/nhap-so-cu` của web vẫn gọi nó cho tới khi agent UI xóa màn đó; sau đó xóa route (ticket theo dõi trong plan).
 - **CSV** (UTF-8, dòng đầu là header, mỗi dòng = một dịch vụ trong một gói; các dòng cùng `phone` + `package_name` + `starts_on` gộp thành một gói):
@@ -170,8 +170,11 @@ EM: dữ liệu sổ giấy là **migration một lần** do team tự điền s
 | `sessions_purchased` | ✓ | Số buổi mua |
 | `sessions_bonus` | | Số buổi tặng (mặc định 0) |
 | `sessions_remaining` | ✓ | Số buổi còn lại hôm nay |
+| `paid_amount` | | Tiền khách đã trả cho gói trên sổ (đồng, trống = 0). > 0 → ghi thành hóa đơn + thanh toán, là doanh thu của ngày `paid_on` |
+| `paid_on` | khi `paid_amount` > 0 | Ngày trả tiền trên sổ `YYYY-MM-DD` (không sau hôm nay) |
+| `method` | | `cash` (mặc định) / `transfer` (= `bank_transfer`) |
 
-  Lệnh đi qua đúng use case `packages::opening_balance::import` với quyền của chủ spa (validate, audit, không tạo hóa đơn/thanh toán). Gói đã có (cùng khách, cùng tên, cùng ngày bắt đầu) được bỏ qua, nên chạy lại an toàn.
+  Lệnh đi qua `sales::paper::import_opening_balance` với quyền của chủ spa: use case nhập sổ (`packages::opening_balance::import_in`: validate, audit) rồi, trong cùng transaction, ghi tiền đã trả của từng gói thành hóa đơn `source = paper_book` (một dòng gói, một thanh toán, `business_date = paid_on`, audit `sale.paper_book`). Ghi lùi ngày được vì đây là việc của chủ spa (quyền `opening_balance.import`); ngày tương lai bị từ chối. Mỗi gói gắn tối đa **một** hóa đơn (trigger 0018), nên chạy lại không ghi trùng. Gói đã nhập trước đây mà chưa có tiền: chạy lại file có `paid_amount`/`paid_on` thì tiền được ghi **một lần** (đếm ở `payments_booked`). Các dòng cùng gói lặp lại cùng `paid_amount`/`paid_on`/`method` hoặc để trống ở dòng sau; khác nhau → lỗi, không ghi gì. Hủy hóa đơn sổ giấy (sửa số tiền nhập nhầm) đảo tiền vào ngày hủy như mọi hóa đơn, gói sổ giấy vẫn giữ nguyên. `POST /opening-balances` (chỉ chủ spa) nhận cùng các trường `paid_amount`, `paid_on`, `method` trên mỗi gói (một lần gửi = một lần nhập, chống trùng bằng Idempotency-Key).
 - **Web:** bỏ menu/màn `/nhap-so-cu`, nhãn "Nhập từ sổ cũ", ô trang chủ (agent UI). `PackageActions` dùng `sale_id != null` thay cho `origin === "sale"`.
 
 ## 8. Out of scope
