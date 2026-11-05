@@ -169,7 +169,7 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     ).toHaveCount(0);
     const row = packages.getByRole("listitem").first();
     await expect(row).toContainText("Đã hủy: Khách chuyển nhà");
-    await expect(row).toContainText("còn 0/12 buổi");
+    await expect(row).toContainText("Còn 0/12 buổi");
     await expect(row.getByRole("button")).toHaveCount(0);
   });
 });

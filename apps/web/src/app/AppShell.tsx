@@ -1,6 +1,7 @@
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from "react";
+import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
+import { useModalDialog } from "../components/BottomSheet";
 import { logout, meQuery } from "../features/auth/session";
 import { longDate } from "../lib/format";
 import { BrandLogo } from "./BrandLogo";
@@ -54,18 +55,7 @@ export function Modal({
   label: string;
   children: ReactNode;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const d = ref.current;
-    if (!d) return;
-    if (open && !d.open) {
-      if (typeof d.showModal === "function") d.showModal();
-      else d.setAttribute("open", "");
-    } else if (!open && d.open) {
-      if (typeof d.close === "function") d.close();
-      else d.removeAttribute("open");
-    }
-  }, [open]);
+  const ref = useModalDialog(open);
   return (
     <dialog
       ref={ref}

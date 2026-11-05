@@ -48,7 +48,7 @@ test.describe("bán liệu trình (US3)", () => {
 
     await page.getByRole("button", { name: "Bán gói liệu trình" }).click();
     const dialog = page.getByRole("dialog", { name: "Bán gói liệu trình" });
-    await dialog.getByLabel("Gói liệu trình").selectOption(planId);
+    await dialog.getByRole("combobox", { name: "Gói liệu trình", exact: true }).selectOption(planId);
     await expect(dialog.getByLabel("Quà tặng hiện vật")).toHaveValue(
       "Tặng dầu gội",
     );
@@ -67,7 +67,7 @@ test.describe("bán liệu trình (US3)", () => {
     await expect(page.getByRole("status")).toContainText("còn 12/12 buổi");
     const list = page.getByRole("list", { name: "Gói liệu trình của khách" });
     await expect(list.getByRole("listitem")).toHaveCount(1);
-    await expect(list).toContainText("còn 12/12 buổi");
+    await expect(list).toContainText("Còn 12/12 buổi");
     await expect(list).toContainText("Đang dùng");
   });
 });

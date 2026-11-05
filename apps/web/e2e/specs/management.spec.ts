@@ -102,7 +102,7 @@ test.describe("khách lâu không quay lại + chăm sóc lại (EM round 3)", (
 
     await table.getByRole("button", { name: `Đã liên hệ với ${name}` }).filter({ visible: true }).click();
     const form = page.getByRole("form", { name: `Ghi lần liên hệ với ${name}` });
-    await expect(form.getByLabel("Ngày liên hệ")).toBeVisible();
+    await expect(form.getByLabel("Ngày liên hệ", { exact: true })).toBeVisible();
     await form.getByLabel("Hẹn sẽ quay lại").check();
     await form.getByLabel(/Ghi chú/).fill("Hẹn cuối tuần");
     await expectAccessible(page, "follow-up-form");

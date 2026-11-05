@@ -64,11 +64,12 @@ EM vòng 3 ([raw](../../raw/2026-11-05-em-ui-review-round3.md)): "logo bị sai 
 | Empty state, quầy chưa chọn khách | 56px |
 | Đăng nhập / MFA | 144px (điện thoại) / 240px |
 | Favicon, apple-touch, PWA 192/512/maskable | toàn bộ logo vàng trên nền nâu đỏ `#5A1D18` (maskable: logo trong 62% giữa) |
+| Tab trình duyệt (vòng 4) | `favicon.ico` (16/32/48) + `favicon.svg` + `favicon-32.png` + `favicon-16.png`, link có `?v=4` (trình duyệt cache favicon rất lâu: lý do EM vẫn thấy icon cũ). Logo **lấp gần kín ô** (lề 8%, trước 16%; góc bo 12%, trước 20%) và **nét được làm dày** trước khi thu nhỏ (max filter 15/11/9 px nguồn cho 16/32/48; SVG thêm stroke 9) vì nét gốc ~4px nguồn tan vào nền ở 16px. Vẫn là toàn bộ logo, không bỏ phần nào |
 
 - **Câu hỏi cho EM (vẫn mở):** file gốc vector (AI/SVG/PDF)? Bản trace từ PNG 1024² nét tới ~600px.
 
 ## App shell (2026-11-05, vòng 3)
-- **Desktop/tablet (≥ 768px):** sidebar nâu đỏ (`.sidebar.chrome`) sticky cao 100dvh: logo nguyên vẹn → nav nhóm theo sổ giấy: **Quầy** (Tổng quan, Ghi lượt khách) · **Khách hàng** (Hồ sơ khách, Lâu chưa quay lại) · **Gói liệu trình** (Theo dõi gói) · **Báo cáo** (Hôm nay) · **Danh mục** (Dịch vụ, Gói bán) · **Cài đặt**. Mục đang chọn: nền gradient vàng nhạt + thanh vàng 3px bên trái + icon vàng. Mục được chọn theo **URL** (Link fuzzy match): trang chi tiết sáng mục của section nó thuộc về (hồ sơ khách → "Hồ sơ khách", dù mở từ "Theo dõi gói"). ≥ 1024px rộng 248px, thu gọn được (`localStorage vpyd.sidebar`); 768–1023px là rail icon 76px.
+- **Desktop/tablet (≥ 768px):** sidebar nâu đỏ (`.sidebar.chrome`) sticky cao 100dvh: logo nguyên vẹn → nav nhóm theo sổ giấy (tên chốt vòng 4, [glossary](../product/glossary.md#tên-màn-hình-và-điều-hướng-em-vòng-4-mục-7-2026-11-05)): **Quầy** (Tổng quan, Ghi lượt khách) · **Khách hàng** (Danh sách khách hàng, Khách lâu chưa quay lại) · **Gói liệu trình** (Gói liệu trình của khách) · **Báo cáo** (Báo cáo kinh doanh) · **Danh mục** (Bảng giá dịch vụ, Mẫu gói liệu trình) · **Cài đặt**. Mục nav = tiêu đề h1 của màn; tab bar điện thoại dùng `NavItem.short`. Mục đang chọn: nền gradient vàng nhạt + thanh vàng 3px bên trái + icon vàng. Mục được chọn theo **URL** (Link fuzzy match): trang chi tiết sáng mục của section nó thuộc về (hồ sơ khách → "Hồ sơ khách", dù mở từ "Theo dõi gói"). ≥ 1024px rộng 248px, thu gọn được (`localStorage vpyd.sidebar`); 768–1023px là rail icon 76px.
 - **Top bar** (sticky 64px): ngày (md+), ô **Tìm khách, mở màn hình… Ctrl K** (command palette), **menu tài khoản**.
 - **Menu tài khoản** (`app/UserMenu.tsx`, thay chip avatar + tên cũ mà EM chê "chưa ổn"): nút tròn chữ cái đầu tên (điện thoại/tablet chỉ avatar 44px; ≥ 1024px thêm tên + vai trò, rộng tối đa 160px, cắt "…", mũi tên ▾). Bấm mở panel 320px: avatar + tên + **vai trò · spa**; **Giao diện** (Theo máy / Sáng / Tối, dùng chung một store với `/cai-dat`); **Khóa nhanh** (đăng xuất, đăng nhập lại quay về đúng màn đang mở: `/dang-nhap?next=…`); **Đăng xuất** (đăng xuất, xóa trail, về trang chủ sau khi đăng nhập). Đóng bằng Esc (focus về nút), bấm ra ngoài, Tab ra ngoài. Vai trò ("Chủ spa / Quản lý / Kỹ thuật viên") suy từ permission chỉ để **hiển thị**; `/me` chưa có trường role (câu hỏi cho backend).
 - **Điện thoại (< 768px):** top bar có logo; **tab bar** nâu đỏ cố định đáy: Trang chủ · Quầy · Khách · Hôm nay · Thêm (drawer `<dialog>` với toàn bộ nav). Nội dung chừa `--tabbar-h` (68px).
@@ -150,7 +151,9 @@ Audit lại từng component; số trong ngoặc là trước → sau khi đổi
 | **Ô số (StatCard)** | padding 14×16, nhãn 14px + icon tròn 28px, số 24/32px; **không min-height** (152px → ~92px), lưới `stat-grid` `auto-fit minmax(180px,1fr)` gap 12 |
 | Khung chào trang chủ | padding 16×20 / 20×28, logo 64/88px, h1 24/28px (py 32–40 + h1 36px → gọn ~120px) |
 | Ô lối tắt | min-height 72px (88 → 72), icon khung 40px (48 → 40), gap 12 |
-| Bảng | ô 12×14px (dòng ~48px), header 12px chữ hoa |
+| Bảng | ô 12×14px (dòng ~48px), header 13px sentence case (vòng 4; trước 12px chữ hoa) |
+| Top app bar điện thoại | 56px + `safe-area-inset-top` (≥ 768px: 64px) |
+| Bottom sheet | điện thoại: rộng 100%, cao ≤ 92dvh, bo 16 trên, grabber 36×4; ≥ 640px: 560 / 760px giữa màn |
 | Empty state | padding 32px dọc (40 → 32), logo 56px |
 | Dialog / panel | panel tài khoản 320px; palette 640px; drawer 320px (≤ 86vw) |
 | Avatar | 36px (top bar, danh sách), 44px (panel tài khoản), 56px (cài đặt) |
@@ -235,9 +238,19 @@ Một lớp CSS **không nằm trong layer** (thắng utility) cho vài thuộc 
 - `prefers-reduced-motion: reduce` → tắt mọi transition/animation (tokens.css), `CountUp` hiện ngay giá trị cuối.
 - `prefers-reduced-motion: reduce` → tắt mọi transition/animation, chỉ đổi trạng thái tức thì.
 
+## Chữ trên giao diện: viết hoa, viết thường (EM vòng 4 mục 4)
+EM: "check kĩ mấy cái viết hoa viết thường định dạng mọi thứ lại cho tôi". **Một quy tắc cho mọi chuỗi giao diện:**
+1. **Sentence case** (chỉ viết hoa chữ đầu + tên riêng) cho: tiêu đề trang, tiêu đề card, nhãn ô nhập, nút, tab, mục nav, tiêu đề cột bảng, badge, thông báo. Ví dụ: "Bán gói liệu trình", "Lưu ý sức khỏe", "Hẹn liên hệ lại", "Còn 2/12 buổi" (không "Bán Gói", không "còn 2/12 buổi" ở đầu câu).
+2. **CHỮ HOA chỉ cho hai loại nhãn nhỏ:** eyebrow phía trên h1 (`.eyebrow`, 12px, giãn 0.14em) và nhãn nhóm của sidebar (`.nav-group-label`, 11px). Chữ hoa là do CSS (`text-transform`), chuỗi gốc vẫn sentence case (screen reader không đánh vần). Bảng **không** còn tiêu đề cột chữ hoa (trước: 12px uppercase).
+3. **Tên riêng giữ nguyên cách viết của menu in:** tên dịch vụ ("Thư Giãn", "An Kiên Lạc", "Thân Tâm An Định"), tên gói theo menu, tên người, tên spa. Không tự đổi hoa/thường dữ liệu người dùng nhập.
+4. Viết tắt chỉ khi chật và đã quen: "SĐT", "KTV", "HSD", "CK", "DV lẻ", "Buổi LT" (tiêu đề cột bảng; thẻ điện thoại dùng tên đầy đủ qua `cardLabel`).
+5. Dấu: "…" (một ký tự) cho placeholder và "Đang tải…"; " · " ngăn các mẩu thông tin cùng dòng; "–" cho khoảng ngày; "×" cho số buổi ("Thư Giãn × 10").
+6. Không viết hoa sau dấu "·" trừ tên riêng; nhóm thời gian là "Tháng 11/2026" (không "THÁNG 11 NĂM 2026").
+
 ## Định dạng
-- Tiền: `Intl.NumberFormat('vi-VN')` + `đ`, không khoảng trắng → `1.500.000đ`. Ô nhập tiền nhận số nguyên, bước 1.000.
-- Ngày `dd/mm/yyyy`, giờ `HH:mm` (24h), múi giờ `Asia/Ho_Chi_Minh`. "Hôm nay"/"Hôm qua" cho ngày gần.
+- Tiền: `Intl.NumberFormat('vi-VN')` + `đ`, không khoảng trắng → `1.500.000đ`. Ô nhập tiền nhận số nguyên, bước 1.000. Trục biểu đồ rút gọn: `1,2 tr` · `850 k`.
+- **Ngày luôn `dd/mm/yyyy` có số 0 đầu** (`05/11/2026`), giờ `HH:mm` (24h), múi giờ `Asia/Ho_Chi_Minh`. Thứ viết bằng số như sổ giấy: **"Thứ 5, 05/11/2026"**, **"Chủ nhật, 08/11/2026"** (`lib/format.ts` `dayLabel`, `longDate`) ở top bar, khung chào, bảng chi tiết theo ngày, sổ doanh thu, tooltip biểu đồ. "Hôm nay"/"Hôm qua" cho ngày gần. Nhóm tháng: "Tháng 11/2026" (`monthLabel`).
+- **Ô nhập ngày = `DateField`**, không dùng `<input type="date">` hiển thị trực tiếp: Chrome tiếng Anh hiện `mm/dd/yyyy` (ảnh EM vòng 4). `DateField` là ô chữ `dd/mm/yyyy` (gõ "05112026" tự chèn "/"), nút lịch mở picker gốc; giá trị trong code/URL vẫn ISO `yyyy-mm-dd`. Màn `/quay` (appointments agent) còn một ô "Xem ngày" gốc: đã báo agent đó dùng `DateField`.
 - SĐT hiển thị `0905 123 456`; lưu chuẩn E.164 ở backend.
 - Giới tính: `Nữ` / `Nam` / `Chưa rõ`.
 
@@ -264,8 +277,12 @@ Primitives dựng trên shadcn/ui (Radix) trong `packages/ui`, theme bằng toke
 | Input, NumberInput (tiền), PhoneInput, Textarea, Select, Combobox (chọn KTV, dịch vụ) | error: viền `danger` + thông báo bên dưới, `aria-invalid`, `aria-describedby` |
 | SearchBox + Listbox (tìm khách) | điều hướng ↑/↓/Enter, `role=listbox/option`, debounce 150ms, state đang tìm / không thấy / lỗi |
 | Card, Badge (`debt`, `ok`, `muted`, `star`) | |
-| **HealthNote** callout | luôn dùng `warning-*`, icon ⚠, tiêu đề "Lưu ý sức khỏe"; không render gì khi API không trả field |
-| **PackageRow** | tên, `còn X/Y buổi`, HSD; states: active, sắp hết (≤ 2 buổi: thanh đỏ), hết buổi, hết hạn, đã hủy. Gói chuyển từ sổ giấy **không** có nhãn riêng |
+| **HealthNote** callout (`.health-note`) | luôn dùng `warning-*`, icon ⚠, tiêu đề "Lưu ý sức khỏe" **sentence case** 13px (vòng 4, trước: chữ hoa); không render gì khi API không trả field |
+| **PackageRow** (`.package-row`, hồ sơ khách) | dòng 1: tên gói ← → badge trạng thái; dòng 2: **"Còn X/Y buổi"** đậm · HSD · Quà; dòng 3 (combo): từng dịch vụ X/Y; rồi nút Gia hạn / Hủy gói và hoàn tiền. Vị trí cố định mọi gói (vòng 4: trước "còn 1/10 buổi" + badge nhảy chỗ theo độ dài tên). Gói chuyển từ sổ giấy **không** có nhãn riêng |
+| **Card heading** (`.card-head` + `.card-title`) | icon vàng 20px + tiêu đề 18/26 600 bên trái, một nút bên phải; mọi card hồ sơ khách (Thông tin khách, Gói liệu trình, Chăm sóc lại, Lịch sử sử dụng) |
+| **Detail list** (`.detail-list`) | cặp nhãn–giá trị 2 cột (nhãn 112px muted), thay chuỗi "0399 … · sinh năm 1968" |
+| **Field** (`.field`) | nhãn 14px 500 trên, ô dưới cách 6px; `.filter-field`/`.filter-select` cùng kiểu (trước: 12px muted, lệch với form). Nhãn bọc ô nhập luôn xếp ô xuống dưới (rule chung, sửa "Nhóm dịch vụ mới") |
+| **"Đã chi qua app"** (tóm tắt lịch sử) | tiền thu qua app (đã trừ hủy/hoàn). Khách có gói chuyển từ sổ giấy (`sale_id = null`) thì chú thích "chưa gồm tiền gói trả trước khi dùng app" (vòng 4: "Đã chi 0đ" gây hiểu nhầm) |
 | **CartLine** | dịch vụ, nguồn (trừ liệu trình / dịch vụ lẻ), KTV (bắt buộc), giá, bỏ dòng |
 | **MoneySummary** | phải trả, đã trả; số `tabular-nums` |
 | **StatCard** (`features/reports/ui.tsx`) | nhãn + icon tròn vàng 28px, số 24px đếm lên, không min-height, chân: `Delta` (▲/▼ % so với hôm qua, màu + chữ); bản `accent` nâu đỏ cho "Thực thu"; loading: `StatSkeleton` |

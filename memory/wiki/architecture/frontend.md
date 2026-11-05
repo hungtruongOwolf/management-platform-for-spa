@@ -18,10 +18,10 @@ Stack ([ADR-0001](../decisions/ADR-0001-tech-stack.md)): TypeScript strict · Re
 | `/` | Tổng quan: chào, "Hôm nay", lối tắt (lazy) | session | R1 |
 | ~~`/nhap-so-cu`~~ | **Đã xóa** (EM 2026-11-05): dữ liệu sổ giấy nhập qua CLI `app import-paper-book`; `POST /opening-balances` chỉ chủ spa | — | — |
 | `/bao-cao?tab=&period=&from=&to=&metric=` | Báo cáo theo kỳ (Hôm nay … 12 tháng, Tùy chọn), so với kỳ trước, xu hướng dạng line, chi tiết theo ngày/tuần/tháng, KTV, top dịch vụ/gói; tab **Sổ doanh thu** | `report.read` (tiền + sổ: `report.revenue.read`) | R1 |
-| `/goi-lieu-trinh?status=&q=` | Theo dõi gói của khách: tìm (tên khách, tên gói, SĐT) + lọc trạng thái; gói không hạn hiện "Không hạn" | `report.read` | R1 |
+| `/goi-lieu-trinh?status=&q=` | Gói liệu trình của khách: tìm (tên khách, tên gói, SĐT) + lọc trạng thái; gói không hạn hiện "Không hạn" | `report.read` | R1 |
 | `/khach-lau-khong-quay-lai?follow=&days=&kind=&scope=&q=` | Khách liệu trình + khách lẻ lâu không quay lại: 3 tab Cần liên hệ / Đã hẹn / Tất cả, tìm, ngưỡng 7–90 ngày, loại khách, phạm vi; "Đã liên hệ" ghi follow-up | `report.read` (ghi: `customer.follow_up`) | R1 |
 | `/cai-dat` | Giao diện (theo thiết bị / sáng / tối) + tài khoản | session | R1 |
-| `/bang-gia`, `/bang-gia/goi` | Dịch vụ, gói | `catalog.read` (sửa: `catalog.manage`) | R1 |
+| `/bang-gia`, `/bang-gia/goi` | Bảng giá dịch vụ, Mẫu gói liệu trình (tên: [glossary](../product/glossary.md#tên-màn-hình-và-điều-hướng-em-vòng-4-mục-7-2026-11-05)) | `catalog.read` (sửa: `catalog.manage`) | R1 |
 | `/so-quy` | Sổ quỹ, chốt quỹ | spec #2 | R1 |
 | `/cai-dat/nhan-vien`, `/cai-dat/vai-tro` | Tài khoản, vai trò | spec #4 | R1 |
 | `/toi` | Trang của KTV (lịch, số khách, phiếu lương) | self | R2/R3 |
@@ -58,6 +58,13 @@ Kiểu từ `packages/api-client` (contract r3b của `feat/followup-and-reports
   - follow-up → `['customers','inactive']` + follow-ups + summary của khách đó;
   - ghi / hủy lượt, bán gói, hủy / gia hạn gói → `lib/invalidate.ts` `invalidateManagementViews`: `['reports']`, `['packages','overview']`, `['customers','inactive']`, history + summary của khách. Chỉ đánh dấu stale; trên `/quay` không có query nào trong số này đang mount nên không tốn request ở lần vẽ đầu.
 - **Test:** `fixtures.ts` + `testServer.ts` giả API đúng contract, gồm follow-up GET/POST giữ trong bộ nhớ, lọc và sắp xếp như server, phone-check. E2E `e2e/specs/management.spec.ts` dùng `support/db.ts` `backdateCustomer` để có khách vắng 20 ngày.
+
+## Mobile (vòng 4, EM mục 3)
+- Layout điện thoại quyết định bằng `matchMedia` (`usePhone()`, < 640px; bảng rộng 6+ cột: `cardsBelow={768}`) chứ không bằng CSS ẩn/hiện: chỉ **một** bản (bảng hoặc thẻ) nằm trong DOM và cây a11y, test jsdom (không có `matchMedia`) luôn thấy bản desktop. Đổi kích thước cửa sổ đổi ngay (listener `change`).
+- Thẻ dùng chung định nghĩa cột với bảng (`Column.card` = title / subtitle / aside / field / actions / hidden), nên thêm cột là thêm cả hai.
+- Form và bộ lọc mở trong `BottomSheet` (`<dialog>` + `showModal()`): focus trap, Esc, backdrop của trình duyệt; state vẫn ở chỗ cũ (URL cho bộ lọc, `useState` cho form). `SellPackageDialog`, `CustomerForm` (sửa hồ sơ), `FollowUpForm` đều nằm trong sheet.
+- `index.html` có `viewport-fit=cover`; top bar, tab bar, sheet footer cộng `env(safe-area-inset-*)`.
+- Ngân sách: các component này ~1,5 KB gzip, phần lớn nằm trong chunk lazy của màn quản lý; số đo ở § Perf budget.
 
 ## Rendering & data
 - **SPA tĩnh**, Caddy trả `index.html` cho mọi route không phải `/api/*`. Code-split theo route (`lazy`).
@@ -131,6 +138,8 @@ CSP nonce-based do Caddy/API cấp (không `unsafe-inline` script); không `dang
 apps/web/
   src/
     app/            # router, providers (Query, Auth, Theme), AppShell, error boundary
+    components/     # shared UI patterns (vòng 4): ResponsiveTable, BottomSheet, StickyActions, DateField, usePhone
+                    # (CSS in src/mobile.css; API in design-system § Mobile patterns)
     routes/         # file-based routes (TanStack Router): quay/, khach-hang/, cong-no/, nhap-so-cu/, bang-gia/, ...
     features/       # theo bounded context, khớp với crate backend
       customers/  packages/  visits/  sales/  catalog/  auth/

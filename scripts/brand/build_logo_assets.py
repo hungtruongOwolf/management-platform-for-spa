@@ -45,7 +45,7 @@ ICON_VERSION = 4
 # Stroke growth (source px, odd) per icon size: enough to survive downsampling, not enough to blob.
 GROW = {16: 15, 32: 11, 48: 9, 180: 5}
 # SVG favicon stroke (source px): Chrome rasterises it at 16/32 px in the tab.
-SVG_STROKE = 12
+SVG_STROKE = 9
 
 
 def num(v):
@@ -136,14 +136,15 @@ def main():
     w, h, d = write_svg("emblem.svg", ink, 6)
 
     # Favicon: the whole logo in gold on a rounded maroon tile (colours baked in: a favicon cannot use tokens).
-    # 4 % margin (was 16 %): at 16 px every pixel of the tile counts.
-    side = max(w, h) * 1.04
+    # 8 % margin (was 16 %) and a 12 % corner (was 20 %): at 16 px every pixel counts, and the
+    # curved tagline reaches the bottom corners.
+    side = max(w, h) * 1.08
     fav = (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {s} {s}">'
         '<rect width="{s}" height="{s}" rx="{r}" fill="#5a1d18"/>'
         '<path fill="#e3b455" stroke="#e3b455" stroke-width="{sw}" stroke-linejoin="round" '
         'transform="translate({tx} {ty})" d="{d}"/></svg>\n'
-    ).format(s=num(side), r=num(side * 0.2), sw=SVG_STROKE, tx=num((side - w) / 2), ty=num((side - h) / 2), d=d)
+    ).format(s=num(side), r=num(side * 0.12), sw=SVG_STROKE, tx=num((side - w) / 2), ty=num((side - h) / 2), d=d)
     with open(os.path.join(PUBLIC, "favicon.svg"), "w", encoding="utf-8", newline="\n") as fh:
         fh.write(fav)
     print("favicon.svg", os.path.getsize(os.path.join(PUBLIC, "favicon.svg")))
@@ -154,10 +155,10 @@ def main():
     # Maskable: launchers crop to a circle of 80% diameter, so the art stays inside ~62%.
     png_icon(logo, 512, 0.62, 0, "icons/icon-maskable-512.png")
     png_icon(logo, 180, 0.78, 0, "apple-touch-icon.png")
-    png_icon(logo, 32, 0.98, 0.18, "favicon-32.png")
-    png_icon(logo, 16, 1.0, 0.18, "favicon-16.png")
+    png_icon(logo, 32, 0.96, 0.12, "favicon-32.png")
+    png_icon(logo, 16, 1.0, 0.12, "favicon-16.png")
     # favicon.ico: what Windows, bookmarks and old tabs ask for at /favicon.ico (16, 32, 48 inside).
-    icons = [tile(logo, n, 0.98, 0.18) for n in (16, 32, 48)]
+    icons = [tile(logo, n, 0.96, 0.12) for n in (16, 32, 48)]
     ico = os.path.join(PUBLIC, "favicon.ico")
     icons[2].save(ico, format="ICO", sizes=[(16, 16), (32, 32), (48, 48)], append_images=icons[:2])
     print("favicon.ico", os.path.getsize(ico))

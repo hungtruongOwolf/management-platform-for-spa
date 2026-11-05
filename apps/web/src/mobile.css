@@ -225,6 +225,12 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+/* Forms that are framed when inline (dashed box) sit bare in a sheet: the sheet is the frame. */
+.sheet-body > form {
+  padding: 0;
+  border: 0;
+  background: none;
+}
 .sheet-footer {
   display: flex;
   justify-content: flex-end;
