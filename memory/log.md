@@ -330,3 +330,4 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - 8 mâu thuẫn: #2, #3, #4, #7 là quy tắc của spa (`PUT /payroll/rules`); #5, #8 nhập theo từng người; #1, #6 chỉ ghi mặc định (chưa tính chi trả theo mốc, chưa có quy tắc ngày lễ).
 - Tests: `hr` unit 19 (bộ tính lương theo ô Excel), `staff.rs` 6 (lương chỉ cho payroll.read, KTV chỉ của mình, spa khác, khóa tháng + trigger + audit, hoa hồng khớp visit, quy tắc), `demo_seed.rs` (hoa hồng seed khớp visit 2 tháng, KTV đăng nhập), matrix +20 route; vitest `Staff.test.tsx` 5; e2e `staff.spec.ts` 2.
 - UI `/nhan-vien`: nav "Nhân viên" (KTV: "Công và lương của tôi"), icon `id-card` mới. Startup gzip -9 +0.8 KB (123.8/125).
+- PR #37 (chưa merge). Kiểm tra local: check:api 309 test, web 153, ui 81, e2e 35/35, contract khớp.
