@@ -252,6 +252,7 @@ interface Call {
 function serve(
   permissions: string[],
   onVisit: () => Response = () => Response.json(VISIT, { status: 201 }),
+  packages: CustomerPackage[] = [pkg("cp1")],
 ) {
   const calls: Call[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
@@ -287,7 +288,7 @@ function serve(
         version: 1,
         created_at: "2026-11-01T00:00:00Z",
       });
-    if (url === "/api/v1/customers/c1/packages") return json([pkg("cp1")]);
+    if (url === "/api/v1/customers/c1/packages") return json(packages);
     if (url === "/api/v1/staff")
       return json([staff("st1", "KTV Lan"), staff("st2", "KTV Hoa")]);
     if (url === "/api/v1/services") return json([DAI_THONG_LAC, GAC_HOI]);
@@ -447,6 +448,29 @@ describe("/quay", () => {
     expect(
       screen.getByRole("list", { name: "Dịch vụ trong lượt" }),
     ).toBeInTheDocument();
+  });
+
+  it("labels a package imported from the paper books on the customer card (AC8.5)", async () => {
+    serve(MANAGER, undefined, [
+      pkg("cp1"),
+      pkg("cp2", { origin: "opening_balance", sale_id: null }),
+    ]);
+    const user = userEvent.setup();
+    at("/quay");
+    const search = await screen.findByRole("combobox", {
+      name: "Tìm khách theo SĐT hoặc tên",
+    });
+    await user.type(search, "0905111");
+    await screen.findByRole("option", { name: /Nguyễn Thị Hà/ });
+    await user.keyboard("{Enter}");
+    const list = await screen.findByRole("list", {
+      name: "Liệu trình của khách",
+    });
+    const rows = within(list).getAllByRole("listitem");
+    const imported = rows.find((li) => li.textContent.includes("Gói cp2"));
+    const sold = rows.find((li) => li.textContent.includes("Gói cp1"));
+    expect(imported).toHaveTextContent("Nhập từ sổ cũ");
+    expect(sold).not.toHaveTextContent("Nhập từ sổ cũ");
   });
 
   it("hides the Quầy entry without visit.record", async () => {
