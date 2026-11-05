@@ -1428,7 +1428,9 @@
               }
             }
           },
-          "401": {},
+          "401": {
+            "description": "auth.reauth_required (owner correcting a closed day)"
+          },
           "403": {
             "description": "auth.forbidden / day.locked"
           },

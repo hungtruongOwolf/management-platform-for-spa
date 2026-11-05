@@ -107,7 +107,8 @@ pub async fn read_visit(
 
 #[utoipa::path(patch, path = "/api/v1/visits/{id}", tag = "visits", request_body = VisitUpdate,
     params(("id" = Uuid, Path), ("If-Match" = String, Header)),
-    responses((status = 200, body = VisitDto), (status = 401),
+    responses((status = 200, body = VisitDto),
+        (status = 401, description = "auth.reauth_required (owner correcting a closed day)"),
         (status = 403, description = "auth.forbidden / day.locked"), (status = 404),
         (status = 409, description = "visit.voided"), (status = 412), (status = 422)))]
 pub async fn update_visit(
