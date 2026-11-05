@@ -10,7 +10,7 @@ describe("/bao-cao without revenue in the reply", () => {
   it("shows counts only: no money KPI, chart metric, breakdown columns, mix card or ledger tab", async () => {
     serveManagement({ permissions: ["report.read"], withoutRevenue: true });
     render(<App history={createMemoryHistory({ initialEntries: ["/bao-cao"] })} />);
-    expect(await screen.findByText("Gói bán ra", { selector: "p" })).toBeInTheDocument();
+    expect(await screen.findByText("Gói liệu trình bán ra", { selector: "p" })).toBeInTheDocument();
     // The URL default metric is money; without it the chart falls back to visits.
     expect(await screen.findByRole("img", { name: /^Lượt khách theo ngày/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Thực thu" })).not.toBeInTheDocument();

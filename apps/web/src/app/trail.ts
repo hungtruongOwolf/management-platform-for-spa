@@ -1,6 +1,6 @@
 /**
  * The in-app navigation trail (design-system.md "Điều hướng"): which screen the user came from, under
- * what title, so a detail page's back control can say "‹ Theo dõi gói" and return there with its
+ * what title, so a detail page's back control can say "‹ Gói liệu trình của khách" and return there with its
  * filters and scroll intact.
  *
  * Keyed by the browser history index TanStack Router keeps in `history.state.__TSR_index`: Back and

@@ -7,24 +7,18 @@ import { CountUp, StatCard, StatSkeleton, money } from "../features/reports/ui";
 import { BrandLogo } from "./BrandLogo";
 import { canSeeManagement } from "./features";
 import { Icon } from "./Icon";
+import { longDate } from "../lib/format";
 import { navFor } from "./nav";
 
-const longDate = new Intl.DateTimeFormat("vi-VN", {
-  weekday: "long",
-  day: "numeric",
-  month: "numeric",
-  year: "numeric",
-  timeZone: "Asia/Ho_Chi_Minh",
-});
 
 const HINTS: Record<string, string> = {
   "/quay": "Tìm khách, trừ buổi, thu tiền",
-  "/khach-hang": "Liệu trình, lịch sử, lưu ý sức khỏe",
+  "/khach-hang": "Tìm khách, hồ sơ, gói liệu trình, lịch sử",
   "/khach-lau-khong-quay-lai": "Khách vắng từ 7 ngày, cần gọi nhắc",
-  "/goi-lieu-trinh": "Gói sắp hết hạn, hết buổi",
-  "/bao-cao": "Khách, lượt, thực thu trong ngày",
-  "/bang-gia": "Menu, giá Nữ/Nam",
-  "/bang-gia/goi": "Các gói liệu trình đang bán",
+  "/goi-lieu-trinh": "Gói sắp hết hạn, hết buổi, đã hủy",
+  "/bao-cao": "Thực thu, khách, lượt theo kỳ; sổ doanh thu",
+  "/bang-gia": "Dịch vụ theo nhóm, giá Nữ/Nam",
+  "/bang-gia/goi": "Số buổi, giá, quà tặng, hạn dùng của từng gói",
 };
 
 function Today() {
@@ -74,7 +68,7 @@ export function HomePage() {
       <section className="welcome chrome ornament [--ornament:var(--chrome-accent)]">
         <BrandLogo className="welcome-logo" />
         <div className="min-w-0">
-          <p className="text-sm text-chrome-text-muted first-letter:uppercase">{longDate.format(new Date())}</p>
+          <p className="text-sm text-chrome-text-muted tabular">{longDate(new Date())}</p>
           <h1 className="mt-0.5 font-brand text-2xl text-chrome-text sm:text-[28px] sm:leading-9">Xin chào, {me?.user.full_name}</h1>
           <p className="mt-1 text-sm text-chrome-text-muted">{me?.active_tenant?.name ?? "Chưa chọn spa"}</p>
         </div>

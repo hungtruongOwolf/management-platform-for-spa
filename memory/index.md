@@ -9,14 +9,14 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [vision](wiki/product/vision.md) — vision, access channels (web/PWA, native-app-ready), release scope R1–R3
 - [paper-books-analysis](wiki/product/paper-books-analysis.md) — 4 paper books today → enter-once event model, auto reminders
 - [compensation-rules](wiki/product/compensation-rules.md) — attendance, evaluation, salary, commission, Tết/loyalty bonus rules + 8 open contradictions
-- [glossary](wiki/product/glossary.md) — ubiquitous language VI ↔ code terms (draft)
+- [glossary](wiki/product/glossary.md) — ubiquitous language VI ↔ code terms (draft); **tên màn hình/nav chốt vòng 4** (Mẫu gói liệu trình, Gói liệu trình của khách, Báo cáo kinh doanh…)
 - [service-catalog](wiki/product/service-catalog.md) — real menu: 35 services, 10 categories, female/male pricing (seed data)
 - [personas](wiki/product/personas.md) — operating context (1 branch, 3–8 KTV, manager-cashier) + 5 personas
 - [spec R1-1 front-desk-and-packages](wiki/product/specs/front-desk-and-packages.md) — **approved**: catalog, customers, sell package, record visit, payments/receivables, void, package lifecycle, opening balance (AC8.5 dropped 2026-11-05)
 - [spec R1-2 management-views](wiki/product/specs/management-views.md) — **draft**: dashboard Hôm nay, range report, revenue book, customer history/summary/package page, packages overview, re-engagement; no "sổ cũ" in product (CLI import); thu chi later; open Q1–Q4; **vòng 3**: follow-up khách vắng (US5b, `customer.follow_up`), phạm vi khách lẻ + liệu trình, tìm lịch sử/gói, check trùng SĐT, preset báo cáo + theo năm, `category_name`
 
 ## Design
-- [design-system](wiki/design/design-system.md) — "Trà thất Đông y" palette (nâu đỏ/vàng/trắng/kem): tokens + contrast table (auto-tested), logo thật (trace từ PNG), app shell (sidebar/top bar/tab bar/palette), component classes, motion budget, before/after
+- [design-system](wiki/design/design-system.md) — "Trà thất Đông y" palette (nâu đỏ/vàng/trắng/kem): tokens + contrast table (auto-tested), logo thật (trace từ PNG), app shell (sidebar/top bar/tab bar/palette), component classes, motion budget, before/after; vòng 4: **quy tắc viết hoa/định dạng ngày**, **mobile patterns + API** (`ResponsiveTable`, `BottomSheet`, `StickyActions`, `ResponsiveFilters`, `DateField`), favicon tab
 - [front-desk-flows](wiki/design/front-desk-flows.md) — screen flows US2–US8, ≤4-action fast path, all states
 
 ## Architecture

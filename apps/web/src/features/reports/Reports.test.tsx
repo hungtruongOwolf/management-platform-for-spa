@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { App } from "../../app/App";
+import { isoToDmy } from "../../components/DateField";
 import { spaToday } from "../corrections/api";
 import { addDays, compactVnd, packagesPath, relativeDay } from "./api";
 import { niceTicks } from "./LineChart";
@@ -64,7 +65,7 @@ describe("/bao-cao", () => {
     // 7 days + header + the "Cả kỳ" footer.
     expect(within(table).getAllByRole("row")).toHaveLength(9);
     expect(screen.getAllByText(/so với 7 ngày trước đó/).length).toBeGreaterThan(0);
-    expect(screen.getByRole("region", { name: /Gói bán chạy/ })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /Mẫu gói bán chạy/ })).toBeInTheDocument();
     expect(urls(spy)).toContain(`/api/v1/reports/range?from=${addDays(today, -6)}&to=${today}&granularity=day`);
     expect(urls(spy)).toContain(`/api/v1/reports/range?from=${addDays(today, -13)}&to=${addDays(today, -7)}&granularity=day`);
   });
@@ -88,7 +89,8 @@ describe("/bao-cao", () => {
     await user.click(screen.getByRole("button", { name: "Tùy chọn" }));
     const from = screen.getByLabelText("Từ ngày");
     await user.clear(from);
-    await user.type(from, addDays(today, -2));
+    // The field is dd/mm/yyyy text whatever the browser locale (DateField); Enter commits it.
+    await user.type(from, `${isoToDmy(addDays(today, -2))}{Enter}`);
     await waitFor(() => {
       expect(search()).toMatchObject({ period: "custom", from: addDays(today, -2), to: today });
     });
@@ -202,9 +204,9 @@ describe("management lists", () => {
     const spy = serveManagement({ permissions: [...MANAGER, "customer.follow_up"] });
     const user = userEvent.setup();
     const { search } = at("/khach-lau-khong-quay-lai");
-    expect(await screen.findByRole("heading", { level: 1, name: "Khách lâu không quay lại" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Khách lâu chưa quay lại" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cần liên hệ" })).toHaveAttribute("aria-pressed", "true");
-    const table = await screen.findByRole("table", { name: "Khách lâu không quay lại" });
+    const table = await screen.findByRole("table", { name: "Khách lâu chưa quay lại" });
     expect(urls(spy)).toContain("/api/v1/customers/inactive?days=7&follow_up=due&limit=20");
     // Both kinds of customer, each named with gender (EM round 3 items 4 and 7).
     expect(within(table).getAllByText("Khách lẻ").length).toBeGreaterThan(0);
@@ -217,7 +219,7 @@ describe("management lists", () => {
     });
     // The seeded customer called 3 days ago with no answer is due again today.
     // (The badge is in the row twice: its column from 640px, and inside the first cell on phones.)
-    expect((await within(screen.getByRole("table", { name: "Khách lâu không quay lại" })).findAllByText(/Đến hạn/)).length).toBeGreaterThan(0);
+    expect((await within(screen.getByRole("table", { name: "Khách lâu chưa quay lại" })).findAllByText(/Đến hạn/)).length).toBeGreaterThan(0);
 
     expect(screen.getAllByRole("button", { name: /^(Cần liên hệ|Đã hẹn|Tất cả)$/ })).toHaveLength(3);
     expect(screen.queryByRole("button", { name: "Chưa liên hệ" })).not.toBeInTheDocument();
@@ -229,7 +231,7 @@ describe("management lists", () => {
     await waitFor(() => {
       expect(urls(spy)).toContain("/api/v1/customers/inactive?days=7&kind=package&follow_up=scheduled&limit=20");
     });
-    const scheduled = await screen.findByRole("table", { name: "Khách lâu không quay lại" });
+    const scheduled = await screen.findByRole("table", { name: "Khách lâu chưa quay lại" });
     await waitFor(() => {
       expect(within(scheduled).getAllByRole("row")).toHaveLength(2);
     });
@@ -239,7 +241,7 @@ describe("management lists", () => {
   it("lists every overdue customer longest absence first under “Tất cả”", async () => {
     serveManagement({ permissions: MANAGER });
     at("/khach-lau-khong-quay-lai?follow=all");
-    const table = await screen.findByRole("table", { name: "Khách lâu không quay lại" });
+    const table = await screen.findByRole("table", { name: "Khách lâu chưa quay lại" });
     const days = within(table)
       .getAllByRole("row")
       .slice(1)
@@ -252,14 +254,14 @@ describe("management lists", () => {
     const spy = serveManagement({ permissions: [...MANAGER, "customer.follow_up"] });
     const user = userEvent.setup();
     at("/khach-lau-khong-quay-lai");
-    const table = await screen.findByRole("table", { name: "Khách lâu không quay lại" });
+    const table = await screen.findByRole("table", { name: "Khách lâu chưa quay lại" });
     const [first] = within(table).getAllByRole("button", { name: /^Đã liên hệ với / });
     const name = (first?.getAttribute("aria-label") ?? "").replace("Đã liên hệ với ", "");
     await user.click(first as HTMLElement);
     const form = await screen.findByRole("form", { name: /^Ghi lần liên hệ với / });
-    expect(within(form).getByLabelText("Ngày liên hệ")).toHaveValue(spaToday());
+    expect(within(form).getByLabelText("Ngày liên hệ")).toHaveValue(isoToDmy(spaToday()));
     // "Không nghe máy" is the default outcome: try again in 3 days (the server's rule too).
-    expect(within(form).getByLabelText("Hẹn liên hệ lại")).toHaveValue(addDays(spaToday(), 3));
+    expect(within(form).getByLabelText("Hẹn liên hệ lại")).toHaveValue(isoToDmy(addDays(spaToday(), 3)));
     // Each outcome pre-fills its rule before saving (lead decision): other → empty, not interested → hint.
     await user.click(within(form).getByLabelText("Khác"));
     expect(within(form).getByLabelText("Hẹn liên hệ lại")).toHaveValue("");
@@ -267,7 +269,7 @@ describe("management lists", () => {
     expect(within(form).getByLabelText("Hẹn liên hệ lại")).toHaveValue("");
     expect(within(form).getByText("Không nhắc lại trong 90 ngày.")).toBeInTheDocument();
     await user.click(within(form).getByLabelText("Hẹn sẽ quay lại"));
-    expect(within(form).getByLabelText("Hẹn liên hệ lại")).toHaveValue(addDays(spaToday(), 7));
+    expect(within(form).getByLabelText("Hẹn liên hệ lại")).toHaveValue(isoToDmy(addDays(spaToday(), 7)));
     await user.selectOptions(within(form).getByLabelText("Cách liên hệ"), "zalo");
     await user.type(within(form).getByLabelText(/Ghi chú/), "Hẹn thứ bảy");
     await user.click(within(form).getByRole("button", { name: "Lưu lần liên hệ" }));
@@ -287,7 +289,7 @@ describe("management lists", () => {
     });
     // The list was invalidated: planned in 7 days, the customer left "Cần liên hệ".
     await waitFor(() => {
-      expect(within(screen.getByRole("table", { name: "Khách lâu không quay lại" })).queryByRole("button", { name: `Đã liên hệ với ${name}` })).not.toBeInTheDocument();
+      expect(within(screen.getByRole("table", { name: "Khách lâu chưa quay lại" })).queryByRole("button", { name: `Đã liên hệ với ${name}` })).not.toBeInTheDocument();
     });
     expect(screen.getByRole("status", { name: "" })).toHaveTextContent(/Đã ghi liên hệ với .*, hẹn lại/);
   });
@@ -295,7 +297,7 @@ describe("management lists", () => {
   it("hides “Đã liên hệ” without customer.follow_up (the API decides)", async () => {
     serveManagement({ permissions: MANAGER });
     at("/khach-lau-khong-quay-lai");
-    const table = await screen.findByRole("table", { name: "Khách lâu không quay lại" });
+    const table = await screen.findByRole("table", { name: "Khách lâu chưa quay lại" });
     expect(within(table).queryByRole("button", { name: /^Đã liên hệ/ })).not.toBeInTheDocument();
     expect(within(table).getAllByRole("link", { name: /^Gọi / }).length).toBeGreaterThan(0);
   });
