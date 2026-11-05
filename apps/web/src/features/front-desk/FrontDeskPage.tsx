@@ -707,6 +707,10 @@ function AddOneOff({
   );
 }
 
+/** A busy day holds a hundred visits; the latest come first, the rest on request. Keeps the screen
+ * that stays open all day light to render (Lighthouse LCP/TBT budget, testing.md §4). */
+const VISITS_PAGE = 30;
+
 function TodayVisits() {
   const { data: me } = useSuspenseQuery(meQuery);
   const queryClient = useQueryClient();
@@ -714,6 +718,7 @@ function TodayVisits() {
   const [day, setDay] = useState(todayIso);
   const [voiding, setVoiding] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [shown, setShown] = useState(VISITS_PAGE);
   const isToday = day === todayIso;
   const today = useQuery(isToday ? todayVisitsQuery : visitsOfDayQuery(day));
   // UX only: the server decides (403 day.locked for managers; owners may).
@@ -738,6 +743,7 @@ function TodayVisits() {
             onChange={(e) => {
               setDay(e.target.value || todayIso);
               setVoiding(null);
+              setShown(VISITS_PAGE);
             }}
             className="min-h-11 rounded-[6px] border border-border bg-surface px-2"
           />
@@ -783,7 +789,7 @@ function TodayVisits() {
         <ul
           aria-label={isToday ? "Lượt khách hôm nay" : "Lượt khách trong ngày"}
         >
-          {today.data.map((v) => (
+          {today.data.slice(0, shown).map((v) => (
             <li
               key={v.id}
               className="border-b border-dashed border-border py-2 text-sm last:border-b-0"
@@ -864,6 +870,17 @@ function TodayVisits() {
             </li>
           ))}
         </ul>
+      )}
+      {today.data && today.data.length > shown && (
+        <button
+          type="button"
+          onClick={() => {
+            setShown((n) => n + VISITS_PAGE);
+          }}
+          className="mt-2 min-h-11 w-full rounded-[10px] border border-border px-4 font-medium hover:bg-surface-2"
+        >
+          Xem thêm ({today.data.length - shown} lượt nữa)
+        </button>
       )}
     </section>
   );
