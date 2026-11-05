@@ -36,16 +36,16 @@ export function PlansPage() {
 
   return (
     <section aria-labelledby="plans-title" className="grid content-start gap-4">
-      <PageHeader eyebrow="Danh mục" title="Gói liệu trình" titleId="plans-title">
+      <PageHeader eyebrow="Danh mục" title="Mẫu gói liệu trình" titleId="plans-title">
         {canManage && editing === null && (
           <button
             type="button"
             onClick={() => {
               setEditing({});
             }}
-            className="min-h-11 rounded-[10px] bg-primary px-4 font-semibold text-on-primary"
+            className="btn btn-primary"
           >
-            + Tạo gói
+            + Tạo mẫu gói
           </button>
         )}
       </PageHeader>
@@ -58,7 +58,7 @@ export function PlansPage() {
         />
       )}
       {plans.data.length === 0 && (
-        <p className="text-text-muted">Chưa có gói liệu trình nào.</p>
+        <p className="text-text-muted">Chưa có mẫu gói liệu trình nào.</p>
       )}
       <ul className="grid content-start gap-2">
         {plans.data.map((plan) => (
@@ -90,7 +90,7 @@ export function PlansPage() {
                   {plan.gift_note ? ` · Quà: ${plan.gift_note}` : ""}
                 </p>
               </div>
-              <p className="flex items-center gap-3">
+              <p className="catalog-price flex items-center gap-3">
                 <span className="font-semibold tabular-nums">
                   {formatVnd(plan.price)}
                 </span>
@@ -100,8 +100,8 @@ export function PlansPage() {
                     onClick={() => {
                       setEditing({ plan });
                     }}
-                    aria-label={`Sửa gói ${plan.name}`}
-                    className="min-h-11 rounded-[10px] border border-border px-3 text-sm hover:bg-surface-2"
+                    aria-label={`Sửa mẫu gói ${plan.name}`}
+                    className="btn btn-secondary"
                   >
                     Sửa
                   </button>

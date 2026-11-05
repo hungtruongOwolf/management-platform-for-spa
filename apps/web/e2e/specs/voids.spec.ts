@@ -135,7 +135,7 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
       "Võ Thị Gia Hạn",
     );
     await page.goto(`/khach-hang/${customerId}`);
-    const packages = page.getByRole("list", { name: "Liệu trình của khách" });
+    const packages = page.getByRole("list", { name: "Gói liệu trình của khách" });
 
     await packages.getByRole("button", { name: "Gia hạn" }).click();
     const extend = page.getByRole("dialog", { name: /Gia hạn/ });
@@ -148,9 +148,9 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     ).toBeVisible();
 
     await packages
-      .getByRole("button", { name: "Hủy liệu trình + hoàn tiền" })
+      .getByRole("button", { name: "Hủy gói và hoàn tiền" })
       .click();
-    const cancel = page.getByRole("dialog", { name: /Hủy liệu trình/ });
+    const cancel = page.getByRole("dialog", { name: /Hủy gói/ });
     await cancel.getByLabel(/Số tiền hoàn/).fill("300.000");
     await cancel.getByLabel("Lý do hủy").fill("Khách chuyển nhà");
     await expectAccessible(page, "profile-cancel");
@@ -169,7 +169,7 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     ).toHaveCount(0);
     const row = packages.getByRole("listitem").first();
     await expect(row).toContainText("Đã hủy: Khách chuyển nhà");
-    await expect(row).toContainText("còn 0/12 buổi");
+    await expect(row).toContainText("Còn 0/12 buổi");
     await expect(row.getByRole("button")).toHaveCount(0);
   });
 });

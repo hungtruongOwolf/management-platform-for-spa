@@ -9,7 +9,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [vision](wiki/product/vision.md) — vision, access channels (web/PWA, native-app-ready), release scope R1–R3
 - [paper-books-analysis](wiki/product/paper-books-analysis.md) — 4 paper books today → enter-once event model, auto reminders
 - [compensation-rules](wiki/product/compensation-rules.md) — attendance, evaluation, salary, commission, Tết/loyalty bonus rules + 8 open contradictions
-- [glossary](wiki/product/glossary.md) — ubiquitous language VI ↔ code terms (draft)
+- [glossary](wiki/product/glossary.md) — ubiquitous language VI ↔ code terms (draft); **tên màn hình/nav chốt vòng 4** (Mẫu gói liệu trình, Gói liệu trình của khách, Báo cáo kinh doanh…)
 - [service-catalog](wiki/product/service-catalog.md) — real menu: 35 services, 10 categories, female/male pricing (seed data)
 - [personas](wiki/product/personas.md) — operating context (1 branch, 3–8 KTV, manager-cashier) + 5 personas
 - [spec R1-1 front-desk-and-packages](wiki/product/specs/front-desk-and-packages.md) — **approved**: catalog, customers, sell package, record visit, payments/receivables, void, package lifecycle, opening balance (AC8.5 dropped 2026-11-05)
@@ -18,8 +18,8 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [spec R1-3 appointments](wiki/product/specs/appointments.md) — **draft (vòng 4)**: lịch hẹn booked → arrived → done (= lượt khách qua đúng use case), no-show/hủy; chặn trùng KTV + sức chứa theo ô 15 phút; giờ làm + nhập bù của chủ spa (`visit.backdate`); giảm giá dịch vụ lẻ trong lượt (D10); đồng hồ đếm ngược; câu hỏi EM Q1–Q8
 
 ## Design
-- [design-system](wiki/design/design-system.md) — "Trà thất Đông y" palette (nâu đỏ/vàng/trắng/kem): tokens + contrast table (auto-tested), logo thật (trace từ PNG), app shell (sidebar/top bar/tab bar/palette), component classes, motion budget, before/after
 - [front-desk-flows](wiki/design/front-desk-flows.md) — screen flows US2–US8, ≤4-action fast path, all states; vòng 4: tab Lịch hẹn (ngày/tuần/danh sách, sheet, màu trạng thái), giờ làm/nhập bù, giảm giá, lượt hôm nay mở inline
+- [design-system](wiki/design/design-system.md) — "Trà thất Đông y" palette (nâu đỏ/vàng/trắng/kem): tokens + contrast table (auto-tested), logo thật (trace từ PNG), app shell (sidebar/top bar/tab bar/palette), component classes, motion budget, before/after; vòng 4: **quy tắc viết hoa/định dạng ngày**, **mobile patterns + API** (`ResponsiveTable`, `BottomSheet`, `StickyActions`, `ResponsiveFilters`, `DateField`), favicon tab
 
 ## Architecture
 - [system](wiki/architecture/system.md) — R1 architecture: quality ranking, C4 diagrams, trust boundaries, data flows, failure modes, cost

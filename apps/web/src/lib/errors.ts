@@ -53,7 +53,7 @@ const MESSAGES: Record<string, string> = {
   "day.locked": "Ngày đã chốt, liên hệ chủ spa.",
   "sale.voided": "Hóa đơn này đã được hủy trước đó.",
   "sale.has_used_sessions":
-    'Liệu trình đã dùng buổi nên không hủy hóa đơn được. Hãy dùng "Hủy liệu trình + hoàn tiền".',
+    'Gói đã dùng buổi nên không hủy hóa đơn được. Hãy dùng "Hủy gói và hoàn tiền".',
   "sale.void_via_visit": "Hóa đơn dịch vụ lẻ được hủy cùng lượt khách.",
   "refund.exceeds_paid": "Số tiền hoàn lớn hơn số khách đã trả cho liệu trình.",
   "package.restore_exceeds_total":

@@ -60,6 +60,6 @@ EM: "đặt lại các tên cho đúng đừng ghi là gói bán hay theo dõi g
 | `/bang-gia` | Danh mục | Bảng giá dịch vụ | — | nav "Dịch vụ" |
 | `/bang-gia/goi` | Danh mục | Mẫu gói liệu trình | — | nav "Gói bán", h1 "Gói liệu trình" |
 | `/cai-dat` | Cài đặt | Giao diện & tài khoản | — | — |
-| `/nhan-vien` (staff agent) | Nhân viên | do staff agent đặt, theo cùng quy tắc | — | — |
+| `/nhan-vien` (staff agent, PR #37) | Nhân viên | quản lý: do staff agent đặt; KTV (không quyền quản lý): "Công và lương của tôi" | **Công lương** (KTV) | — |
 
 Nút và chữ liên quan: "+ Tạo mẫu gói" (không "+ Tạo gói"), "Bán gói liệu trình" (không "Bán liệu trình mới"), thẻ trên hồ sơ "Gói liệu trình", báo cáo "Gói liệu trình bán ra" / "Mẫu gói bán chạy".

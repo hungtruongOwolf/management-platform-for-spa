@@ -4,7 +4,10 @@ import type { IconName } from "./Icon";
 
 export interface NavItem {
   to: string;
+  /** Nav item = page title (glossary § Tên màn hình). */
   label: string;
+  /** One-line name for the phone tab bar (≤ 10 characters). */
+  short?: string;
   icon: IconName;
   /** Only this exact path marks the item active (e.g. "/" would otherwise match everything). */
   exact?: boolean;
@@ -25,24 +28,24 @@ export function navFor(me: Me | null): NavGroup[] {
     [
       "Quầy",
       [
-        { to: "/", label: "Tổng quan", icon: "home", exact: true },
-        can(me, "visit.record") && { to: "/quay", label: "Ghi lượt khách", icon: "desk" },
+        { to: "/", label: "Tổng quan", short: "Trang chủ", icon: "home", exact: true },
+        can(me, "visit.record") && { to: "/quay", label: "Ghi lượt khách", short: "Quầy", icon: "desk" },
       ],
     ],
     [
       "Khách hàng",
       [
-        can(me, "customer.read") && { to: "/khach-hang", label: "Hồ sơ khách", icon: "users" },
-        mgmt && { to: "/khach-lau-khong-quay-lai", label: "Lâu không quay lại", icon: "user-clock" },
+        can(me, "customer.read") && { to: "/khach-hang", label: "Danh sách khách hàng", short: "Khách", icon: "users" },
+        mgmt && { to: "/khach-lau-khong-quay-lai", label: "Khách lâu chưa quay lại", icon: "user-clock" },
       ],
     ],
-    ["Gói liệu trình", [mgmt && { to: "/goi-lieu-trinh", label: "Theo dõi gói", icon: "package" }]],
-    ["Báo cáo", [mgmt && { to: "/bao-cao", label: "Kinh doanh", icon: "chart" }]],
+    ["Gói liệu trình", [mgmt && { to: "/goi-lieu-trinh", label: "Gói liệu trình của khách", icon: "package" }]],
+    ["Báo cáo", [mgmt && { to: "/bao-cao", label: "Báo cáo kinh doanh", short: "Báo cáo", icon: "chart" }]],
     [
       "Danh mục",
       [
-        can(me, "catalog.read") && { to: "/bang-gia", label: "Dịch vụ", icon: "menu-book", exact: true },
-        can(me, "catalog.read") && { to: "/bang-gia/goi", label: "Gói bán", icon: "layers" },
+        can(me, "catalog.read") && { to: "/bang-gia", label: "Bảng giá dịch vụ", icon: "menu-book", exact: true },
+        can(me, "catalog.read") && { to: "/bang-gia/goi", label: "Mẫu gói liệu trình", icon: "layers" },
       ],
     ],
     ["Cài đặt", [{ to: "/cai-dat", label: "Giao diện & tài khoản", icon: "settings" }]],
@@ -60,11 +63,11 @@ const SCREEN_LABELS: Record<string, string> = {
   "/": "Tổng quan",
   "/quay": "Quầy",
   "/khach-hang": "Khách hàng",
-  "/khach-lau-khong-quay-lai": "Lâu không quay lại",
-  "/goi-lieu-trinh": "Theo dõi gói",
-  "/bao-cao": "Báo cáo",
-  "/bang-gia": "Dịch vụ",
-  "/bang-gia/goi": "Gói bán",
+  "/khach-lau-khong-quay-lai": "Khách lâu chưa quay lại",
+  "/goi-lieu-trinh": "Gói liệu trình của khách",
+  "/bao-cao": "Báo cáo kinh doanh",
+  "/bang-gia": "Bảng giá dịch vụ",
+  "/bang-gia/goi": "Mẫu gói liệu trình",
   "/cai-dat": "Cài đặt",
 };
 

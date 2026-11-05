@@ -90,7 +90,7 @@ export function CustomerSearch({
         aria-activedescendant={
           hits[active] ? `${listId}-${hits[active].id}` : undefined
         }
-        placeholder="Gõ ≥ 3 số hoặc ≥ 2 chữ (không cần dấu)…"
+        placeholder="Tên hoặc SĐT, không cần dấu"
         className="min-h-13 w-full rounded-[10px] border-2 border-border bg-surface px-4 text-lg focus:border-primary"
       />
       {searchable && results.isError && (

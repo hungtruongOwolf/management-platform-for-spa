@@ -1,22 +1,8 @@
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useId, useRef, type ReactNode } from "react";
 import { Icon } from "../app/Icon";
+import { useModalDialog } from "./useModalDialog";
 
-/** Opens/closes a `<dialog>` with `showModal()` (focus trap, Esc, backdrop from the browser). */
-export function useModalDialog(open: boolean) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const d = ref.current;
-    if (!d) return;
-    if (open && !d.open) {
-      if (typeof d.showModal === "function") d.showModal();
-      else d.setAttribute("open", "");
-    } else if (!open && d.open) {
-      if (typeof d.close === "function") d.close();
-      else d.removeAttribute("open");
-    }
-  }, [open]);
-  return ref;
-}
+export { useModalDialog };
 
 /** Drag distance (px) on the handle/header that dismisses the sheet. */
 const DISMISS_DRAG = 96;

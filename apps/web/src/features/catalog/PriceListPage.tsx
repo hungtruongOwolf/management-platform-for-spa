@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { Icon } from "../../app/Icon";
 import { PageHeader } from "../../app/PageHeader";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
@@ -47,7 +48,7 @@ export function PriceListPage() {
     <section aria-labelledby="price-list-title" className="grid content-start gap-6">
       <PageHeader eyebrow="Danh mục" title="Bảng giá dịch vụ" titleId="price-list-title">
         <Link to="/bang-gia/goi" className="btn btn-secondary">
-          Gói liệu trình
+          Mẫu gói liệu trình
         </Link>
       </PageHeader>
       {services.data.length === 0 && !canManage && (
@@ -78,7 +79,7 @@ export function PriceListPage() {
                       categoryId: category.id,
                     });
                   }}
-                  className="min-h-11 rounded-[10px] border border-border px-3 text-sm font-medium hover:bg-surface-2"
+                  className="btn btn-secondary"
                 >
                   + Thêm dịch vụ
                 </button>
@@ -122,7 +123,7 @@ export function PriceListPage() {
                         {service.description ? ` · ${service.description}` : ""}
                       </p>
                     </div>
-                    <p className="flex flex-wrap items-center gap-x-4 gap-y-1 tabular-nums">
+                    <p className="catalog-price flex flex-wrap items-center gap-x-4 gap-y-1 tabular-nums">
                       {describePrices(service.prices).map((line) => (
                         <span key={line.label ?? "all"}>
                           {line.label && (
@@ -140,7 +141,7 @@ export function PriceListPage() {
                             setEditing({ kind: "service", service });
                           }}
                           aria-label={`Sửa ${service.name}`}
-                          className="min-h-11 rounded-[10px] border border-border px-3 text-sm hover:bg-surface-2"
+                          className="btn btn-secondary"
                         >
                           Sửa
                         </button>
@@ -185,30 +186,32 @@ function NewCategory() {
         e.preventDefault();
         if (name.trim()) mutation.mutate();
       }}
-      className="flex flex-wrap items-end gap-2"
+      className="card grid content-start gap-3 p-4"
       aria-label="Thêm nhóm dịch vụ"
     >
-      <label className="block">
-        <span className="text-sm font-semibold">Nhóm dịch vụ mới</span>
+      {/* Label above the field, the button on the field's row (EM round 4: label and input sat
+          side by side on different baselines). */}
+      <label htmlFor="new-category" className="text-sm font-semibold">
+        Nhóm dịch vụ mới
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
         <input
+          id="new-category"
           value={name}
+          placeholder="Ví dụ: Chăm sóc tay chân"
           onChange={(e) => {
             setName(e.target.value);
           }}
-          className="min-h-11 w-64 rounded-[6px] border border-border bg-surface px-3"
+          className="mt-0 min-h-11 w-full max-w-sm min-w-0 flex-1 rounded-[6px] border border-border bg-surface px-3"
         />
-      </label>
-      <button
-        type="submit"
-        disabled={mutation.isPending}
-        className="min-h-11 rounded-[10px] border border-border px-4 font-medium hover:bg-surface-2"
-      >
-        + Thêm nhóm
-      </button>
+        <button type="submit" disabled={mutation.isPending} className="btn btn-secondary">
+          <Icon name="plus" className="size-4" /> Thêm nhóm
+        </button>
+      </div>
       {mutation.isError && (
-        <span role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-sm text-danger">
           {messageFor(mutation.error)}
-        </span>
+        </p>
       )}
     </form>
   );

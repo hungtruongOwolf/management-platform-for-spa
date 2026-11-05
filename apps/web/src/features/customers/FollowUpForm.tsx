@@ -1,6 +1,8 @@
 import type { FollowUp, FollowUpChannel, FollowUpOutcome } from "@vpyd/api-client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
+import { DateField } from "../../components/DateField";
+import { StickyActions } from "../../components/StickyActions";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { spaToday } from "../corrections/api";
 import { shiftDays } from "../reports/period";
@@ -85,21 +87,18 @@ export function FollowUpForm({
       }}
     >
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="filter-field">
-          Ngày liên hệ
-          <input
-            type="date"
-            required
+        <div className="grid content-start gap-1">
+          <DateField
+            label="Ngày liên hệ"
             value={contactedOn}
             min={minDay}
             max={today}
-            onChange={(e) => {
-              setContactedOn(e.target.value || today);
+            onChange={(iso) => {
+              setContactedOn(iso || today);
             }}
-            aria-invalid={err("contacted_on") ? true : undefined}
           />
           {err("contacted_on") && <span className="text-sm text-danger">{err("contacted_on")}</span>}
-        </label>
+        </div>
         <label className="filter-field">
           Cách liên hệ
           <select
@@ -117,7 +116,7 @@ export function FollowUpForm({
         </label>
       </div>
       <fieldset className="grid gap-2">
-        <legend className="mb-1 text-xs text-text-muted">Kết quả</legend>
+        <legend className="mb-1 text-sm font-medium">Kết quả</legend>
         <div className="grid gap-2 sm:grid-cols-2">
           {(Object.keys(OUTCOME_LABEL) as FollowUpOutcome[]).map((o) => (
             <label key={o} className="choice">
@@ -148,20 +147,17 @@ export function FollowUpForm({
         />
       </label>
       <div className="grid gap-2">
-        <label className="filter-field">
-          Hẹn liên hệ lại
-          <input
-            type="date"
-            value={next}
-            min={contactedOn}
-            max={shiftDays(contactedOn, 365)}
-            aria-describedby={`${id}-next-hint`}
-            aria-invalid={nextTooEarly || err("next_follow_up_on") ? true : undefined}
-            onChange={(e) => {
-              setNextChoice(e.target.value);
-            }}
-          />
-        </label>
+        <DateField
+          label="Hẹn liên hệ lại"
+          value={next}
+          min={contactedOn}
+          max={shiftDays(contactedOn, 365)}
+          describedBy={`${id}-next-hint`}
+          invalid={nextTooEarly || Boolean(err("next_follow_up_on"))}
+          onChange={(iso) => {
+            setNextChoice(iso);
+          }}
+        />
         <p id={`${id}-next-hint`} className="flex flex-wrap items-center gap-2 text-sm text-text-muted">
           {nextTooEarly ? (
             <span className="text-danger">Ngày hẹn lại phải từ ngày liên hệ trở đi.</span>
@@ -202,14 +198,14 @@ export function FollowUpForm({
           {messageFor(mutation.error)}
         </p>
       )}
-      <div className="flex flex-wrap gap-2">
-        <button type="submit" className="btn btn-primary" disabled={mutation.isPending || nextTooEarly}>
-          {mutation.isPending ? "Đang lưu…" : "Lưu lần liên hệ"}
-        </button>
+      <StickyActions>
         <button type="button" className="btn btn-secondary" onClick={onCancel}>
           Hủy
         </button>
-      </div>
+        <button type="submit" className="btn btn-primary" disabled={mutation.isPending || nextTooEarly}>
+          {mutation.isPending ? "Đang lưu…" : "Lưu lần liên hệ"}
+        </button>
+      </StickyActions>
     </form>
   );
 }

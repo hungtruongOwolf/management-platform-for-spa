@@ -231,7 +231,7 @@ describe("package actions on the customer profile", () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Gia hạn" })).toBeNull();
     expect(
-      screen.queryByRole("button", { name: "Hủy liệu trình + hoàn tiền" }),
+      screen.queryByRole("button", { name: "Hủy gói và hoàn tiền" }),
     ).toBeNull();
   });
 
@@ -330,10 +330,10 @@ describe("package actions on the customer profile", () => {
     const user = userEvent.setup();
     at("/khach-hang/c1");
     await user.click(
-      await screen.findByRole("button", { name: "Hủy liệu trình + hoàn tiền" }),
+      await screen.findByRole("button", { name: "Hủy gói và hoàn tiền" }),
     );
     const dialog = await screen.findByRole("dialog", {
-      name: /Hủy liệu trình/,
+      name: /Hủy gói/,
     });
     const amount = within(dialog).getByLabelText(/Số tiền hoàn/);
     await user.type(amount, "1.600.000");
@@ -387,7 +387,7 @@ describe("package actions on the customer profile", () => {
       within(dialog).getByRole("button", { name: "Hủy hóa đơn" }),
     );
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-      "Hủy liệu trình + hoàn tiền",
+      "Hủy gói và hoàn tiền",
     );
   });
 });

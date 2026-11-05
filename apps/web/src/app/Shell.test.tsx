@@ -129,10 +129,10 @@ describe("command palette", () => {
     at("/");
     await user.click(await screen.findByRole("button", { name: /Tìm khách, mở màn hình/ }));
     const box = await screen.findByRole("combobox", { name: "Tìm khách hoặc màn hình" });
-    await user.type(box, "goi ban");
+    await user.type(box, "mau goi");
     const screens = await screen.findByRole("group", { name: "Màn hình" });
     expect(within(screens).getAllByRole("option").map((o) => o.textContent)).toEqual([
-      expect.stringContaining("Gói bán"),
+      expect.stringContaining("Mẫu gói liệu trình"),
     ]);
     await user.clear(box);
     await user.type(box, "quay");
@@ -156,7 +156,7 @@ describe("app shell", () => {
     at("/");
     await user.click(await screen.findByRole("button", { name: "Thêm màn hình" }));
     const all = await screen.findByRole("navigation", { name: "Tất cả màn hình" });
-    await user.click(within(all).getByRole("link", { name: "Dịch vụ" }));
+    await user.click(within(all).getByRole("link", { name: "Bảng giá dịch vụ" }));
     expect(screen.queryByRole("navigation", { name: "Tất cả màn hình" })).not.toBeInTheDocument();
   });
 

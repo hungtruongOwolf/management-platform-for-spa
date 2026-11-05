@@ -1,6 +1,8 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Fragment } from "react";
-import { longDay, ledgerQuery, weekdayOf } from "./api";
+import { usePhone } from "../../components/useMediaQuery";
+import { dayLabel } from "../../lib/format";
+import { ledgerQuery } from "./api";
 import type { LedgerDay, LedgerRow } from "./contract";
 import { CustomerCell } from "./PackagesOverviewPage";
 import { daysBetween, type Period } from "./period";
@@ -20,6 +22,7 @@ const ENTRY_LABEL: Record<LedgerRow["entry"], string> = { sale: "", void: "Hủy
  * is struck through. Needs `report.revenue.read` (the tab is hidden otherwise; the API says 403).
  */
 export function LedgerTab({ period }: { period: Period }) {
+  const phone = usePhone();
   const tooLong = daysBetween(period.from, period.to) > LEDGER_MAX_DAYS;
   const page = useInfiniteQuery({ ...ledgerQuery(period.from, period.to), enabled: !tooLong });
   if (tooLong) {
@@ -48,9 +51,11 @@ export function LedgerTab({ period }: { period: Period }) {
         <Figure label="Chuyển khoản" value={money(sum.bank)} />
         <Figure label="Tổng thực thu" value={money(sum.total)} strong />
       </dl>
-      <div className="card overflow-hidden">
+      <div className="card rt-host overflow-hidden">
         {rows.length === 0 ? (
           <EmptyState title="Chưa có giao dịch nào">Hóa đơn, khoản hủy và hoàn tiền trong kỳ sẽ hiện ở đây.</EmptyState>
+        ) : phone ? (
+          <LedgerCards rows={rows} dayOf={dayOf} />
         ) : (
           <div className="table-wrap" tabIndex={0} role="region" aria-label="Sổ doanh thu (cuộn ngang để xem đủ cột)">
             <table className="data-table">
@@ -117,7 +122,7 @@ function DayRow({ date, day }: { date: string; day: LedgerDay | undefined }) {
   return (
     <tr className="ledger-day">
       <th scope="rowgroup" colSpan={4} className="text-left">
-        {weekdayOf(date)} {longDay(date)}
+        {dayLabel(date)}
         {day && <span className="ml-2 text-xs font-normal text-text-muted">{day.entries} giao dịch</span>}
       </th>
       <td className="num">{day ? money(day.bank_transfer) : ""}</td>
@@ -125,6 +130,88 @@ function DayRow({ date, day }: { date: string; day: LedgerDay | undefined }) {
       <td className="num">{day?.unpaid ? money(day.unpaid) : ""}</td>
       <td className="num">{day ? <span>Cộng {money(day.total)}</span> : ""}</td>
     </tr>
+  );
+}
+
+/**
+ * Phones: the same book as day groups of cards (customer, time, amount; services and the split
+ * below), never a sideways-scrolling 8-column table (design-system § Mobile patterns).
+ */
+function LedgerCards({ rows, dayOf }: { rows: LedgerRow[]; dayOf: Map<string, LedgerDay> }) {
+  return (
+    <div className="rt-cards-wrap">
+      {rows.map((r, i) => {
+        const startsDay = rows[i - 1]?.business_date !== r.business_date;
+        const day = dayOf.get(r.business_date);
+        const amount = r.cash + r.bank_transfer;
+        const tone = r.entry === "sale" ? (r.voided ? "ledger-voided" : "") : "ledger-negative";
+        return (
+          <Fragment key={`${r.entry}-${r.id}`}>
+            {startsDay && (
+              <h3 className="rt-card ledger-day flex flex-wrap justify-between gap-2 font-semibold">
+                <span>{dayLabel(r.business_date)}</span>
+                {day && (
+                  <span className="tabular">
+                    Cộng {money(day.total)} <span className="text-xs font-normal text-text-muted">· {day.entries} giao dịch</span>
+                  </span>
+                )}
+              </h3>
+            )}
+            <article className={`rt-card ${tone}`}>
+              <div className="rt-card-head">
+                <div className="rt-card-title">
+                  <CustomerCell id={r.customer_id} name={r.customer_name} gender={r.customer_gender ?? null} />
+                  <span className="rt-card-sub tabular">
+                    {time.format(new Date(r.at))}
+                    {r.entry !== "sale" && ` · ${ENTRY_LABEL[r.entry]}`}
+                    {r.voided && " · đã hủy sau đó"}
+                  </span>
+                </div>
+                <span className="rt-card-aside tabular">{amount ? money(amount) : ""}</span>
+              </div>
+              <dl className="rt-card-fields">
+                {r.one_off && (
+                  <div>
+                    <dt>Dịch vụ 1 lần</dt>
+                    <dd>{r.one_off}</dd>
+                  </div>
+                )}
+                {r.package && (
+                  <div>
+                    <dt>Liệu trình</dt>
+                    <dd>{r.package}</dd>
+                  </div>
+                )}
+                {amount !== 0 && (
+                  <div>
+                    <dt>Hình thức</dt>
+                    <dd className="tabular">
+                      {r.cash !== 0 && r.bank_transfer !== 0
+                        ? `Tiền mặt ${money(r.cash)} · CK ${money(r.bank_transfer)}`
+                        : r.cash !== 0
+                          ? "Tiền mặt"
+                          : "Chuyển khoản"}
+                    </dd>
+                  </div>
+                )}
+                {r.unpaid ? (
+                  <div>
+                    <dt>Chưa thanh toán</dt>
+                    <dd className="tabular">{money(r.unpaid)}</dd>
+                  </div>
+                ) : null}
+                {r.note && (
+                  <div>
+                    <dt>Ghi chú</dt>
+                    <dd>{r.note}</dd>
+                  </div>
+                )}
+              </dl>
+            </article>
+          </Fragment>
+        );
+      })}
+    </div>
   );
 }
 
