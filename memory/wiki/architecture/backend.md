@@ -106,7 +106,7 @@ Chỉ đọc, `GET`, `Cache-Control: no-store`, rate class `read`. Query param n
 | `GET /customers/inactive` | thêm `kind`, `follow_up`, `sort=due\|absent`, `q`; `scope` mặc định `all`; item thêm `gender`, `kind`, `last_follow_up {on, channel, outcome, by}`, `next_follow_up_on`; "lần gần nhất" = max(lượt, hóa đơn chưa hủy, ngày bắt đầu gói); cursor 3 phần (khóa hạn, last_seen, id) | như cũ |
 | `GET /customers/{id}/history` | thêm `q`, `kind`, `from`, `to` (lọc trong SQL qua `app.search_fold`) | như cũ |
 | `GET /packages` | `q` khớp cả tên gói; row thêm `customer_gender` | như cũ |
-| `GET /reports/range` | `preset`, `granularity=year`, giới hạn 366 ngày (day/week) / 1830 ngày (month/year); bucket thêm `net_revenue`; report thêm `preset`, `technicians[]`; đọc sổ bằng `BETWEEN` (không gửi mảng ngày) | như cũ |
+| `GET /reports/range` | `preset` (`last_7_days`, `last_30_days`, `this_month`, `last_month`, `this_year`, `last_12_months`, `last_2_years`), `granularity=year`, giới hạn 366 ngày (day/week) / 732 ngày (month/year); bucket thêm `net_revenue`; report thêm `preset`, `technicians[]`; đọc sổ bằng `BETWEEN` (không gửi mảng ngày) | như cũ |
 | `GET /reports/ledger` | row thêm `customer_gender` | như cũ |
 | DTO có tên dịch vụ | `category_name` (danh mục hiện tại): `VisitLineDto`, `HistoryVisitLine`, `PackageUse`, `CustomerPackageItemDto`, `TopService`. `VisitDto.customer_gender` | — |
 
@@ -114,7 +114,7 @@ OpenAPI: struct query (`SearchQuery`, `ActiveFilter`, `VisitListQuery`, `StaffQu
 
 **Quy tắc tiền** (spec §3): thu = `payment.kind='payment'`; hủy = `reversal`, ghi vào ngày hủy; hoàn = `refund`; net = thu − hủy − hoàn; loại = hóa đơn có dòng `package` hay không. Số đếm theo trạng thái hiện tại (lượt/hóa đơn đã hủy không đếm). `CustomerPackageDto` **không còn `origin`** (R1-2 §7); gói từ sổ giấy chỉ khác ở `sale_id = null`.
 
-**Hiệu năng** (`app/tests/reports_bench.rs`, `--ignored`; 3 năm ≈ 44.000 lượt, 30.800 hóa đơn; build debug, 1 client, p95 ms): daily 41 · range 7 ngày 41 · range 1 năm theo tháng 150 · ledger 1 ngày 19 · ledger 92 ngày 59 · history 31 · summary 16 · usage 16 · packages 40 · expiring 26 · `q` 16 · inactive 35. Ngân sách 300 ms. Lần đo đầu, range 1 năm là 396 ms vì tiền được tổng hợp qua view `revenue_book` (mỗi hóa đơn một string_agg mô tả rồi bỏ đi), nên đổi sang tổng hợp thẳng từ `payment` + tập hóa đơn có dòng gói.
+**Hiệu năng** (`app/tests/reports_bench.rs`, `--ignored`; 3 năm ≈ 44.000 lượt, 30.800 hóa đơn; build debug, 1 client, p95 ms): daily 41 · range 7 ngày 41 · range 1 năm theo tháng 150 · ledger 1 ngày 19 · ledger 92 ngày 59 · history 31 · summary 16 · usage 16 · packages 40 · expiring 26 · `q` 16 · inactive 35. Ngân sách 300 ms. Vòng 3 (cùng bench): range 1 năm theo tháng **120** · `last_12_months` 133 · `last_2_years` 224 · 2 năm theo năm 237 · history `q` 23 · history `kind+from/to` 22 · inactive `follow_up=due` 60 · inactive `q+kind` 51 · phone-check 9. Mọi số đếm phía lượt (theo kỳ, theo dịch vụ, theo KTV, khách khác nhau) lấy từ **một** CTE `MATERIALIZED` trên visit ⋈ visit_line (đọc bảng gốc + RLS một lần; trước đó 5 lần quét, 1 năm 250 ms, 3 năm 690 ms). 3 năm vẫn ~380 ms nên tháng/năm giới hạn 2 năm. Lần đo đầu, range 1 năm là 396 ms vì tiền được tổng hợp qua view `revenue_book` (mỗi hóa đơn một string_agg mô tả rồi bỏ đi), nên đổi sang tổng hợp thẳng từ `payment` + tập hóa đơn có dòng gói.
 
 **Thân `POST /visits` (rút gọn):**
 ```json
