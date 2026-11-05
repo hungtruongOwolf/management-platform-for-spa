@@ -1,0 +1,249 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id, a.status, a.business_date, a.starts_at, a.ends_at, a.customer_id,\n                  coalesce(c.full_name, a.guest_name) AS \"customer_name!\",\n                  coalesce(c.phone_e164, a.guest_phone) AS \"customer_phone!\",\n                  c.gender AS \"customer_gender?\", a.staff_id, st.full_name AS \"staff_name?\",\n                  a.note, a.status_reason, a.arrived_at, a.closed_at, a.visit_id,\n                  v.status AS \"visit_status?\", s.total AS \"sale_total?\", a.version, a.created_at\n           FROM app.appointment a\n           LEFT JOIN app.customer c ON c.tenant_id = a.tenant_id AND c.id = a.customer_id\n           LEFT JOIN app.staff st ON st.tenant_id = a.tenant_id AND st.id = a.staff_id\n           LEFT JOIN app.visit v ON v.tenant_id = a.tenant_id AND v.id = a.visit_id\n           LEFT JOIN app.sale s ON s.tenant_id = v.tenant_id AND s.id = v.sale_id\n           WHERE a.tenant_id = $1\n             AND ($2::uuid IS NULL OR a.id = $2)\n             AND ($3::date IS NULL OR a.business_date BETWEEN $3 AND $4)\n           ORDER BY a.starts_at, a.id\n           LIMIT 2000",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "business_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "business_date"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "starts_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "starts_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "ends_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "ends_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "customer_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "customer_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "customer_name!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "customer_phone!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "customer_gender?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer",
+            "name": "gender"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "staff_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "staff_id"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "staff_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.staff",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "note"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "status_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "status_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "arrived_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "arrived_at"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "closed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "closed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "visit_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "visit_id"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "visit_status?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "sale_total?",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "total"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "version",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "version"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      null,
+      null,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "5c393179706277b004f84c9b69e333ff8e434f58e508192df5df57b68591a181"
+}

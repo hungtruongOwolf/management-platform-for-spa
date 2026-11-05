@@ -18,7 +18,7 @@ use kernel::crypto::FieldCipher;
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx};
 use packages::{Consume, Consumed};
-use sales::service::{Payment, ServiceLine, ServiceSale};
+use sales::service::{Payment, ServiceDiscount, ServiceLine, ServiceSale};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
@@ -55,12 +55,13 @@ struct LineOrder {
 }
 
 /// The request after shape validation; nothing is checked against the database yet.
-struct Order {
+pub(crate) struct Order {
     customer_id: Uuid,
     check_in_at: Option<DateTime<Utc>>,
     note: Option<String>,
     lines: Vec<LineOrder>,
     payments: Vec<Payment>,
+    discount: Option<ServiceDiscount>,
 }
 
 fn trimmed(s: Option<&String>) -> Option<String> {
@@ -77,7 +78,8 @@ fn clean_note(note: Option<&String>) -> Result<Option<String>, AppError> {
     Ok(note)
 }
 
-fn parse(actor: &Actor, input: &VisitCreate) -> Result<Order, AppError> {
+/// Shape validation of a visit and the permissions its content needs (note, expiry override).
+pub(crate) fn parse(actor: &Actor, input: &VisitCreate) -> Result<Order, AppError> {
     let mut errors = Vec::new();
     if input.lines.is_empty() || input.lines.len() > MAX_LINES {
         errors.push(FieldError::new("lines", "count_out_of_range"));
@@ -139,6 +141,10 @@ fn parse(actor: &Actor, input: &VisitCreate) -> Result<Order, AppError> {
         Err(e) => return Err(e),
     };
     let payments = sales::service::parse_payments(&input.payments, &mut errors);
+    let discount = input
+        .discount
+        .as_ref()
+        .and_then(|d| sales::service::parse_service_discount(d, &mut errors));
     if !errors.is_empty() {
         return Err(AppError::Validation(errors));
     }
@@ -154,6 +160,7 @@ fn parse(actor: &Actor, input: &VisitCreate) -> Result<Order, AppError> {
         note,
         lines,
         payments,
+        discount,
     })
 }
 
@@ -227,17 +234,39 @@ pub async fn record_as_of(
         tx.commit().await?;
         return Ok((status, body));
     }
-    let tenant = kernel::tenant::profile_as_of(&mut tx, now).await?;
-    let today = tenant.business_date.as_naive();
-    let check_in_at =
-        domain::check_in_at(order.check_in_at, now, tenant.timezone, today).map_err(|e| {
-            AppError::Unprocessable {
-                code: match e {
-                    CheckInError::InFuture => "visit.check_in_in_future",
-                    CheckInError::NotToday => "visit.check_in_not_today",
-                },
-            }
-        })?;
+    let visit_id = record_in(&mut tx, cipher, actor, order, now).await?;
+    // The stored response never carries the note: the idempotency table is not encrypted.
+    let dto = load_one(&mut tx, cipher, actor, visit_id, false).await?;
+    let body = serde_json::to_value(&dto).map_err(|e| AppError::Internal(e.to_string()))?;
+    idempotency::complete(&mut tx, actor, key, 201, &body).await?;
+    tx.commit().await?;
+    Ok((201, body))
+}
+
+/// The body of `POST /visits` inside the caller's transaction (the caller holds `visit.record`
+/// and has claimed its idempotency key). Also how a booked appointment becomes a visit: the same
+/// rules, nothing copied. Returns the new visit's id.
+pub(crate) async fn record_in(
+    tx: &mut TenantTx,
+    cipher: &FieldCipher,
+    actor: &Actor,
+    order: Order,
+    now: DateTime<Utc>,
+) -> Result<Uuid, AppError> {
+    let mut tx = tx;
+    let tenant = kernel::tenant::profile_as_of(tx, now).await?;
+    let recorded_on = tenant.business_date.as_naive();
+    let service = domain::service_time(
+        order.check_in_at,
+        now,
+        tenant.timezone,
+        recorded_on,
+        actor.can(Permission::VisitBackdate),
+    )
+    .map_err(|e: CheckInError| AppError::Unprocessable { code: e.code() })?;
+    let check_in_at = service.at;
+    // Everything below belongs to the day of the service: package expiry, the sale, payments.
+    let today = service.business_date;
     let customer = crm::service::brief_in(&mut tx, order.customer_id)
         .await?
         .ok_or(AppError::NotFound)?;
@@ -358,9 +387,17 @@ pub async fn record_as_of(
             branch_id: branch,
             lines: &service_lines,
             payments: &order.payments,
+            discount: order.discount.as_ref(),
+            manager_discount_max_pct: tenant.manager_discount_max_pct,
         },
     )
     .await?;
+    // Discount share of each one-off line, in line order (same order as `service_lines`).
+    let mut shares = sale
+        .as_ref()
+        .map(|s| s.line_discounts.clone())
+        .unwrap_or_default()
+        .into_iter();
 
     let visit_id = Uuid::now_v7();
     let note_ct = encrypt_note(cipher, &tx, visit_id, order.note.as_deref())?;
@@ -373,7 +410,7 @@ pub async fn record_as_of(
             business_date: today,
             check_in_at,
             note_ct: note_ct.as_deref(),
-            sale_id: sale.map(|s| s.sale_id),
+            sale_id: sale.as_ref().map(|s| s.sale_id),
             created_by: actor.user_id.as_uuid(),
         },
     )
@@ -387,25 +424,30 @@ pub async fn record_as_of(
                 name,
                 variant,
                 unit_price,
-            } => LineInsert {
-                visit_id,
-                position,
-                service_id: line.service_id,
-                service_name: name,
-                source: Source::OneOff.as_str(),
-                customer_package_id: None,
-                customer_package_item_id: None,
-                sessions_left_after: None,
-                staff_id: line.staff_id,
-                qty,
-                price_variant: Some(variant.as_str()),
-                unit_price: unit_price.as_i64(),
-                line_value: unit_price
-                    .checked_mul(line.qty)
-                    .map_err(|_| AppError::Internal("line value overflow".into()))?
-                    .as_i64(),
-                expiry_override_reason: None,
-            },
+            } => {
+                let share = shares.next().unwrap_or(Money::ZERO);
+                LineInsert {
+                    visit_id,
+                    position,
+                    service_id: line.service_id,
+                    service_name: name,
+                    source: Source::OneOff.as_str(),
+                    customer_package_id: None,
+                    customer_package_item_id: None,
+                    sessions_left_after: None,
+                    staff_id: line.staff_id,
+                    qty,
+                    price_variant: Some(variant.as_str()),
+                    unit_price: unit_price.as_i64(),
+                    line_value: unit_price
+                        .checked_mul(line.qty)
+                        .and_then(|v| v.checked_sub(share))
+                        .map_err(|_| AppError::Internal("line value overflow".into()))?
+                        .as_i64(),
+                    expiry_override_reason: None,
+                    discount_amount: share.as_i64(),
+                }
+            }
             Priced::Package { item_id } => {
                 let c = consumed
                     .get(&i)
@@ -430,6 +472,7 @@ pub async fn record_as_of(
                     unit_price: c.per_session_value.as_i64(),
                     line_value: c.value.as_i64(),
                     expiry_override_reason: reason,
+                    discount_amount: 0,
                 }
             }
         };
@@ -438,6 +481,7 @@ pub async fn record_as_of(
             "customer_package_item_id": insert.customer_package_item_id, "staff_id": insert.staff_id,
             "qty": insert.qty, "price_variant": insert.price_variant,
             "unit_price": insert.unit_price, "line_value": insert.line_value,
+            "discount_amount": insert.discount_amount,
         }));
         repo::insert_line(&mut tx, &insert).await?;
     }
@@ -451,10 +495,14 @@ pub async fn record_as_of(
             before: None,
             after: Some(json!({
                 "customer_id": customer.id, "check_in_at": check_in_at,
-                "sale_id": sale.map(|s| s.sale_id), "total": sale.map_or(0, |s| s.total.as_i64()),
+                "business_date": today, "backdated": service.backdated, "recorded_on": recorded_on,
+                "sale_id": sale.as_ref().map(|s| s.sale_id),
+                "subtotal": sale.as_ref().map_or(0, |s| s.subtotal.as_i64()),
+                "discount_amount": sale.as_ref().map_or(0, |s| s.discount.as_i64()),
+                "total": sale.as_ref().map_or(0, |s| s.total.as_i64()),
                 "note": order.note.as_ref().map(|_| REDACTED), "lines": audit_lines,
             })),
-            reason: None,
+            reason: order.discount.as_ref().map(|d| d.reason.as_str()),
         },
     )
     .await?;
@@ -473,16 +521,21 @@ pub async fn record_as_of(
         )
         .await?;
     }
+    Ok(visit_id)
+}
 
-    // The stored response never carries the note: the idempotency table is not encrypted.
-    let dto = load(&mut tx, cipher, actor, Some(visit_id), None, false)
+/// One visit read inside the caller's transaction (it must exist).
+pub(crate) async fn load_one(
+    tx: &mut TenantTx,
+    cipher: &FieldCipher,
+    actor: &Actor,
+    id: Uuid,
+    with_note: bool,
+) -> Result<VisitDto, AppError> {
+    load(tx, cipher, actor, Some(id), None, with_note)
         .await?
         .pop()
-        .ok_or_else(|| AppError::Internal("visit vanished".into()))?;
-    let body = serde_json::to_value(&dto).map_err(|e| AppError::Internal(e.to_string()))?;
-    idempotency::complete(&mut tx, actor, key, 201, &body).await?;
-    tx.commit().await?;
-    Ok((201, body))
+        .ok_or_else(|| AppError::Internal("visit vanished".into()))
 }
 
 fn price_variant(v: Option<&str>) -> Result<Option<PriceVariant>, AppError> {
@@ -513,6 +566,7 @@ fn line_dto(l: LineRow) -> Result<VisitLineDto, AppError> {
         staff_name: l.staff_name,
         qty: l.qty,
         unit_price: l.unit_price,
+        discount_amount: l.discount_amount,
         line_value: l.line_value,
         expiry_override_reason: l.expiry_override_reason,
     })
@@ -541,11 +595,12 @@ async fn load(
     rows.into_iter()
         .map(|r| {
             let lines = lines.remove(&r.id).unwrap_or_default();
-            let total = lines
+            let total: i64 = lines
                 .iter()
                 .filter(|l| l.source == VisitLineSourceDto::OneOff)
                 .map(|l| l.line_value)
                 .sum();
+            let discount_amount = r.discount_amount.unwrap_or(0);
             let note = if read_note {
                 Some(
                     r.note_ct
@@ -577,6 +632,9 @@ async fn load(
                 check_in_at: r.check_in_at,
                 note,
                 sale_id: r.sale_id,
+                subtotal: total + discount_amount,
+                discount_amount,
+                discount_reason: r.discount_reason,
                 total,
                 lines,
                 version: r.version,

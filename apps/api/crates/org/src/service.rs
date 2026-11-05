@@ -62,6 +62,16 @@ pub async fn list(
     rows.into_iter().map(Staff::try_from).collect()
 }
 
+/// Active staff of the caller's tenant, inside the caller's transaction (same rows as
+/// `GET /staff`). The caller authorizes.
+pub async fn active_in(tx: &mut TenantTx) -> Result<Vec<Staff>, AppError> {
+    repo::list(tx, Some(StaffStatus::Active.as_str()))
+        .await?
+        .into_iter()
+        .map(Staff::try_from)
+        .collect()
+}
+
 /// A staff member verified to be currently working at this spa.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActiveStaff {

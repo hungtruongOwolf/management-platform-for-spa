@@ -61,6 +61,8 @@ impl SystemRole {
                 P::PackageUseExpiredOverride,
                 P::VisitRecord,
                 P::VisitRead,
+                // Bookings are the front desk's job (EM review round 4, spec appointments.md).
+                P::AppointmentManage,
                 P::PaymentCollect,
                 P::SaleRead,
                 P::SaleDiscount,
@@ -103,6 +105,8 @@ mod tests {
             Permission::OpeningBalanceImport,
             // 3–5 year reports: rare, slow, owner only (EM Q5, 2026-11-05).
             Permission::ReportLongRange,
+            // Entering a past day's visits: owner only (EM round 4 item 5).
+            Permission::VisitBackdate,
         ] {
             assert!(!manager.contains(&owner_only), "{owner_only:?}");
         }
@@ -115,6 +119,8 @@ mod tests {
         assert!(!technician.contains(&Permission::CustomerHealthNotesRead));
         // EM Q7 (2026-11-05): technicians do not manage customers, so never follow up.
         assert!(!technician.contains(&Permission::CustomerFollowUp));
+        // No user <-> staff link yet, so "own schedule only" is not safe: no appointments at all.
+        assert!(!technician.contains(&Permission::AppointmentManage));
         assert_eq!(
             technician,
             vec![Permission::CatalogRead, Permission::StaffReadBasic]

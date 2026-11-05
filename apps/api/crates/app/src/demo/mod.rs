@@ -809,6 +809,7 @@ impl Spa<'_> {
         let input = VisitCreate {
             customer_id,
             check_in_at: None,
+            discount: None,
             note,
             lines: wire,
             payments: self.payments(total),

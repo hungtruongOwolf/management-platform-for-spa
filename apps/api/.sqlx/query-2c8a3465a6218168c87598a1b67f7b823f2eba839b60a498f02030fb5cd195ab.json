@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.appointment\n           SET business_date = $4, starts_at = $5, ends_at = $6, staff_id = $7, note = $8,\n               customer_id = coalesce($9, customer_id),\n               guest_name = CASE WHEN $9::uuid IS NULL THEN guest_name END,\n               guest_phone = CASE WHEN $9::uuid IS NULL THEN guest_phone END,\n               version = version + 1, updated_at = now()\n           WHERE tenant_id = $1 AND id = $2 AND version = $3 AND status IN ('booked', 'arrived')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8",
+        "Date",
+        "Timestamptz",
+        "Timestamptz",
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2c8a3465a6218168c87598a1b67f7b823f2eba839b60a498f02030fb5cd195ab"
+}
