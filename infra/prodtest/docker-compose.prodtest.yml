@@ -21,6 +21,12 @@ services:
       fakedb:
         condition: service_healthy
 
+  api:
+    environment:
+      # The stand-in DB has no TLS. Staging-only exemption from the verify-full startup check
+      # (app::config::INSECURE_DB_TLS_FLAG); never set it in .env.production.
+      APP_DB_INSECURE_TLS_FOR_LOCAL_TEST: "true"
+
   backup:
     volumes:
       - backups:/work
