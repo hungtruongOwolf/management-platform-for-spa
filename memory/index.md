@@ -39,7 +39,8 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [threat-model](wiki/security/threat-model.md) — STRIDE per trust boundary for R1, with tests
 
 ## Plans
-- [r1-1-front-desk](wiki/plans/r1-1-front-desk.md) — 12 slices S0–S11 (foundation → kernel → auth → tracer bullet catalog → … → staging)
+- [r1-1-front-desk](wiki/plans/r1-1-front-desk.md) — 12 slices S0–S11 (foundation → kernel → auth → tracer bullet catalog → … → staging); S10 block holds the AC → test coverage table
+- [r1-1-trial-session](wiki/plans/r1-1-trial-session.md) — S10 buổi dùng thử với quản lý: setup máy dev, 15 nhiệm vụ quầy, bấm giờ (< 30 s/lượt), phiếu góp ý
 
 ## Runbooks
 - [staging-setup](wiki/runbooks/staging-setup.md) — S11: chọn VPS (giá + nguồn, ghép vùng với Supabase), hardening, Supabase checklist (REVOKE khi Data API bật, pooler session mode), R2 backup + restore drill, deploy/rollback, việc EM cần làm

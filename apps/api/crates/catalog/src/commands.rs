@@ -130,6 +130,14 @@ fn validate_service(input: &ServiceInput) -> Result<(String, Option<String>), Ap
             errors.push(FieldError::new("prices", "mixed_variants"))
         }
     }
+    let prices = &input.prices;
+    if [prices.all, prices.female, prices.male]
+        .into_iter()
+        .flatten()
+        .any(|p| !p.is_enterable())
+    {
+        errors.push(FieldError::new("prices", "out_of_range"));
+    }
     fail_if_any(errors)?;
     Ok((name, clean_optional(input.description.as_deref())))
 }
@@ -266,6 +274,9 @@ async fn validate_plan(
 ) -> Result<(String, Option<String>), AppError> {
     let mut errors = Vec::new();
     let name = clean_name(&input.name, "name", &mut errors);
+    if !input.price.is_enterable() {
+        errors.push(FieldError::new("price", "out_of_range"));
+    }
     if input
         .validity_months
         .is_some_and(|m| !(1..=120).contains(&m))

@@ -66,6 +66,8 @@ export function CustomerSearch({
         ref={inputRef}
         type="search"
         autoComplete="off"
+        // Mirrors the server's bound on `q` (crm::service::MAX_QUERY_CHARS).
+        maxLength={100}
         autoFocus={autoFocus}
         value={text}
         onChange={(e) => {

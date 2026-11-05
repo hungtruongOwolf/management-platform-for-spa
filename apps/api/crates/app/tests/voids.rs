@@ -491,6 +491,71 @@ async fn same_day_voids_need_no_reauth(pool: PgPool) -> TestResult {
     Ok(())
 }
 
+/// S10: correcting a closed day's visit (`PATCH /visits/{id}`) follows the same 🔒 rule as voiding
+/// it: managers get `403 day.locked`, owners must have re-entered their password recently.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn correcting_a_closed_day_visit_follows_the_void_rule(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let sold = s.sell().await?;
+    let visit = str_of(&s.visit(&sold.item, false).await.body["id"]);
+    s.exec("UPDATE app.visit SET business_date = business_date - 1")
+        .await?;
+    let patch = |who: String| {
+        let app = s.h.app.clone();
+        let path = format!("/visits/{visit}");
+        async move {
+            call_with_headers(
+                &app,
+                "PATCH",
+                &path,
+                Some(&who),
+                Some(json!({"note": "Khách thích lực nhẹ"})),
+                &[("If-Match", "\"1\"")],
+            )
+            .await
+        }
+    };
+
+    let manager = patch(s.manager.clone()).await;
+    assert_eq!(code(&manager), (StatusCode::FORBIDDEN, Some("day.locked")));
+
+    s.age_reauth().await?;
+    let stale = patch(s.owner.clone()).await;
+    assert_eq!(
+        code(&stale),
+        (StatusCode::UNAUTHORIZED, Some("auth.reauth_required")),
+        "{}",
+        stale.body
+    );
+    assert_eq!(
+        s.count("SELECT count(*) FROM app.audit_log WHERE action = 'visit.update'")
+            .await?,
+        0,
+        "nothing changed yet"
+    );
+
+    let reauth = s.owner_reauth().await?;
+    assert_eq!(reauth.status, StatusCode::NO_CONTENT, "{}", reauth.body);
+    let owner = patch(s.owner.clone()).await;
+    assert_eq!(owner.status, StatusCode::OK, "{}", owner.body);
+    assert_eq!(owner.body["version"], 2);
+
+    // Today's visits need no re-auth, as for voids.
+    let today = str_of(&s.visit(&sold.item, false).await.body["id"]);
+    s.age_reauth().await?;
+    let same_day = call_with_headers(
+        &s.h.app,
+        "PATCH",
+        &format!("/visits/{today}"),
+        Some(&s.owner),
+        Some(json!({"note": null})),
+        &[("If-Match", "\"1\"")],
+    )
+    .await;
+    assert_eq!(same_day.status, StatusCode::OK, "{}", same_day.body);
+    Ok(())
+}
+
 // --------------------------------------------------------------------------- sales (US6)
 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]

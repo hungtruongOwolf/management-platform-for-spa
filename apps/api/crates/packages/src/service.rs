@@ -236,6 +236,13 @@ pub struct Consumed {
 /// Errors: unknown item / other customer's item → `422 package.item_not_found` (AC4.8);
 /// cancelled → `409 package.cancelled`; expired without override → `409 package.expired`;
 /// not enough sessions → `409 package.no_sessions_left`; `qty` 0 → 422.
+/// Call once, before the first `consume_session` of a transaction, with every item it will
+/// consume: share-locks their packages in id order (lock order package → item, like voids and
+/// cancellations), so consuming never deadlocks with a concurrent void or cancel of the package.
+pub async fn lock_for_consumption(tx: &mut TenantTx, item_ids: &[Uuid]) -> Result<(), AppError> {
+    repo::share_lock_packages_of_items(tx, item_ids).await
+}
+
 pub async fn consume_session(tx: &mut TenantTx, c: Consume) -> Result<Consumed, AppError> {
     if c.qty == 0 || c.qty > MAX_SESSIONS {
         return Err(AppError::Validation(vec![FieldError::new(

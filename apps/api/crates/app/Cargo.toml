@@ -37,6 +37,7 @@ utoipa = { version = "6.0.0", features = ["uuid"] }
 [dev-dependencies]
 catalog = { path = "../catalog" }
 chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
+chrono-tz = "0.10.4"
 crm = { path = "../crm" }
 http-body-util = "0.1.5"
 identity = { path = "../identity" }

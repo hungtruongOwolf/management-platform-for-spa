@@ -20,6 +20,19 @@ pub fn authorize_void(
     today: NaiveDate,
 ) -> Result<(), AppError> {
     actor.require(Permission::RecordVoidSameDay)?;
+    authorize_closed_day(actor, record_day, today)
+}
+
+/// The 🔒 closed-day rule alone, for every change of a recorded day (voids and corrections such as
+/// `PATCH /visits/{id}`); the caller checks its own base permission first.
+/// - `record_day` is today → allowed;
+/// - closed day without `record.void_closed_day` → `403 day.locked`;
+/// - closed day with it → `401 auth.reauth_required` unless re-authenticated within the window.
+pub fn authorize_closed_day(
+    actor: &Actor,
+    record_day: NaiveDate,
+    today: NaiveDate,
+) -> Result<(), AppError> {
     if record_day >= today {
         return Ok(());
     }

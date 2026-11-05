@@ -77,6 +77,7 @@ async function completeMfa(page: Page): Promise<void> {
   const enroll = page.getByRole("heading", { name: "Thiết lập xác thực hai bước" });
   const verify = page.getByRole("heading", { name: "Xác thực hai bước" });
   await expect(enroll.or(verify)).toBeVisible();
+  await expectAccessible(page, (await enroll.isVisible()) ? "mfa-enroll" : "mfa-verify");
   if (await enroll.isVisible()) {
     const key = (await page.getByTestId("manual-key").textContent())?.replace(/\s/g, "") ?? "";
     saveCredentials({ ...credentials(), totpKey: key });

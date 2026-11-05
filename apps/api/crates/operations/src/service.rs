@@ -289,6 +289,11 @@ pub async fn record(
         })
         .collect();
     package_lines.sort_by_key(|(i, item)| (*item, *i));
+    // Packages before items, as voids and cancellations lock them (no deadlock with either).
+    let items: Vec<Uuid> = package_lines.iter().map(|(_, item)| *item).collect();
+    if !items.is_empty() {
+        packages::service::lock_for_consumption(&mut tx, &items).await?;
+    }
     let mut consumed: HashMap<usize, Consumed> = HashMap::new();
     for (i, item_id) in package_lines {
         let line = &order.lines[i];
@@ -601,7 +606,7 @@ pub async fn for_day(
 
 /// `PATCH /visits/{id}` (`visit.record`, If-Match): correct the note or a line's technician.
 /// Sessions and money are never touched here (voids are S8). Only today's visits, unless the
-/// caller may correct closed days (`record.void_closed_day`).
+/// caller may correct closed days (`record.void_closed_day`) and re-authenticated recently (🔒).
 pub async fn update(
     pool: &PgPool,
     cipher: &FieldCipher,
@@ -639,9 +644,8 @@ pub async fn update(
         .await?
         .business_date
         .as_naive();
-    if business_date != today && !actor.can(Permission::RecordVoidClosedDay) {
-        return Err(AppError::Forbidden { code: "day.locked" });
-    }
+    // Same 🔒 rule as voids: a closed day needs `record.void_closed_day` and a recent re-auth.
+    kernel::corrections::authorize_closed_day(actor, business_date, today)?;
     if current != version {
         return Err(AppError::StaleVersion);
     }
