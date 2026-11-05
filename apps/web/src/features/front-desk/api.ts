@@ -11,19 +11,38 @@ import { api } from "../../lib/api";
 
 export type Gender = "female" | "male";
 
-/** Today's visits (business day of the spa, decided by the server). */
+/** Visits the day list shows before "Xem tất cả". */
+export const VISITS_PAGE = 30;
+/** Asked for: one more than shown tells whether the day has more (no count header needed). */
+const VISITS_PEEK = VISITS_PAGE + 1;
+
+/**
+ * Today's newest visits (business day of the spa, decided by the server). A busy day's full list
+ * is large; the peek keeps /quay's first screen light (Lighthouse LCP budget, testing.md §4).
+ */
 export const todayVisitsQuery = queryOptions({
   queryKey: ["visits", "today"],
+  queryFn: async () =>
+    (await api(`/visits?limit=${String(VISITS_PEEK)}`)) as Visit[],
+  staleTime: 15_000,
+});
+
+/** Every visit of today, once the user asks for all of them. */
+export const todayAllVisitsQuery = queryOptions({
+  queryKey: ["visits", "today", "all"],
   queryFn: async () => (await api("/visits")) as Visit[],
   staleTime: 15_000,
 });
 
 /** Visits of one business day ("YYYY-MM-DD"), e.g. to void a record of an earlier day. */
-export function visitsOfDayQuery(date: string) {
+export function visitsOfDayQuery(date: string, all = false) {
+  const day = `date=${encodeURIComponent(date)}`;
   return queryOptions({
-    queryKey: ["visits", date],
+    queryKey: ["visits", date, all ? "all" : "peek"],
     queryFn: async () =>
-      (await api(`/visits?date=${encodeURIComponent(date)}`)) as Visit[],
+      (await api(
+        all ? `/visits?${day}` : `/visits?${day}&limit=${String(VISITS_PEEK)}`,
+      )) as Visit[],
     staleTime: 15_000,
   });
 }
@@ -47,6 +66,8 @@ export type CartLine =
       source: "package";
       serviceId: string;
       serviceName: string;
+      /** Menu category shown before the name ("Thư Giãn · Gội đầu dưỡng sinh"). */
+      categoryName?: string;
       itemId: string;
       packageName: string;
       staffId: string;
@@ -57,6 +78,7 @@ export type CartLine =
       source: "one_off";
       serviceId: string;
       serviceName: string;
+      categoryName?: string;
       /** Only sent when the customer has no recorded gender. */
       priceVariant: Gender | null;
       price: number;

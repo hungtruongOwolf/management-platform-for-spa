@@ -85,7 +85,13 @@ pub struct VisitLineUpdate {
 pub struct VisitListQuery {
     /// Business day `YYYY-MM-DD`; default today.
     pub date: Option<NaiveDate>,
+    /// Only the newest N visits of the day (1–500); default all. The front desk asks for one more
+    /// than it shows to know whether "Xem tất cả" is needed, keeping a busy day's first paint light.
+    pub limit: Option<u32>,
 }
+
+/// Upper bound of `VisitListQuery::limit`.
+pub const VISIT_LIST_MAX_LIMIT: u32 = 500;
 
 #[derive(Debug, Clone, Copy, Serialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]

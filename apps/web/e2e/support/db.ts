@@ -35,3 +35,26 @@ export async function ageRecentAuth(
     await sql.end();
   }
 }
+
+/**
+ * Moves a customer's visits and sales `days` back, so the customer counts as "lâu không quay lại"
+ * without waiting (US5). Only completed visits and open sales: voided rows are final (0009).
+ */
+export async function backdateCustomer(customerId: string, days: number): Promise<void> {
+  const sql = postgres(stack.ownerDatabaseUrl(), {
+    max: 1,
+    onnotice: () => undefined,
+  });
+  try {
+    const visits = await sql`
+      UPDATE app.visit SET business_date = business_date - ${days}::int
+       WHERE customer_id = ${customerId} AND status = 'completed'
+      RETURNING id`;
+    if (visits.length === 0) throw new Error(`no visit to backdate for ${customerId}`);
+    await sql`
+      UPDATE app.sale SET business_date = business_date - ${days}::int
+       WHERE customer_id = ${customerId} AND status = 'open'`;
+  } finally {
+    await sql.end();
+  }
+}

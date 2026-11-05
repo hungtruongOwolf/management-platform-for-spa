@@ -193,6 +193,51 @@ describe("customers page", () => {
     ).toBeInTheDocument();
   });
 
+  it("warns about a duplicate phone while typing, before submit, with one debounced check", async () => {
+    const calls = serve(ALL, (c) =>
+      c.url.startsWith("/api/v1/customers/phone-check")
+        ? Response.json({ valid: true, taken: true, existing_id: "c1", full_name: "Nguyễn Thị Hà" })
+        : undefined,
+    );
+    at("/khach-hang");
+    const user = userEvent.setup();
+    await user.type(await screen.findByRole("combobox"), "Hà");
+    await user.click(screen.getByRole("button", { name: "+ Khách mới" }));
+    const form = screen.getByRole("form", { name: "Khách mới" });
+    await user.type(within(form).getByLabelText("Số điện thoại"), "0905 111 222");
+    const notice = await within(form).findByText(/Số này đã có hồ sơ:/, {}, { timeout: 3000 });
+    expect(notice).toHaveTextContent("Số này đã có hồ sơ: Nguyễn Thị Hà");
+    const checks = calls.filter((c) => c.url.startsWith("/api/v1/customers/phone-check"));
+    expect(checks.map((c) => c.url)).toEqual(["/api/v1/customers/phone-check?phone=0905111222"]);
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+    await user.click(within(form).getByRole("button", { name: "Mở hồ sơ" }));
+    expect(await screen.findByRole("heading", { name: /^Nguyễn Thị Hà/ })).toBeInTheDocument();
+  });
+
+  it("does not check an incomplete number, nor flag a customer's own number when editing", async () => {
+    const calls = serve(ALL, (c) =>
+      c.url.startsWith("/api/v1/customers/phone-check")
+        ? Response.json({ valid: true, taken: true, existing_id: "c1", full_name: "Nguyễn Thị Hà" })
+        : c.url === "/api/v1/customers/c1"
+          ? Response.json(HA_FULL)
+          : undefined,
+    );
+    at("/khach-hang/c1");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Sửa hồ sơ" }));
+    const form = screen.getByRole("form", { name: "Sửa hồ sơ khách" });
+    const phone = within(form).getByLabelText("Số điện thoại");
+    await user.clear(phone);
+    await user.type(phone, "0905 111");
+    await new Promise((r) => setTimeout(r, 600));
+    expect(calls.some((c) => c.url.includes("phone-check?phone=0905111&") || c.url.endsWith("phone-check?phone=0905111"))).toBe(false);
+    await user.type(phone, " 222");
+    await new Promise((r) => setTimeout(r, 600));
+    expect(calls.some((c) => c.url.endsWith("phone-check?phone=0905111222"))).toBe(true);
+    // The number belongs to the profile being edited: no warning.
+    expect(within(form).queryByText(/Số này đã có hồ sơ/)).not.toBeInTheDocument();
+  });
+
   it("rejects a malformed phone before calling the API", async () => {
     const calls = serve(ALL);
     at("/khach-hang");

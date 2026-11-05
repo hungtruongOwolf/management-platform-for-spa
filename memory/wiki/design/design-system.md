@@ -191,7 +191,7 @@ Một lớp CSS **không nằm trong layer** (thắng utility) cho vài thuộc 
 | Thanh mục nav | `scaleY` 0→1, `dur-base` | |
 | Card bấm được | `.card-link`: nhấc 2px + `shadow-2` khi hover | không đổi layout |
 | Đếm số | `CountUp` 700 ms ease-out (rAF), số `tabular-nums` nên không xô chữ | screen reader đọc giá trị cuối |
-| Biểu đồ | cột mọc `scaleY` lệch nhau 40 ms; split bar `scaleX` | |
+| Biểu đồ | đường hiện dần (opacity); split bar `scaleX` | |
 | Skeleton | `.skeleton::after` vệt sáng `translateX` 1.4 s | thay spinner và `animate-pulse` |
 | Drawer / palette | trượt từ trái / pop-in 8px + scale .98 | |
 - `prefers-reduced-motion: reduce` → tắt mọi transition/animation (tokens.css), `CountUp` hiện ngay giá trị cuối.
@@ -231,7 +231,11 @@ Primitives dựng trên shadcn/ui (Radix) trong `packages/ui`, theme bằng toke
 | **CartLine** | dịch vụ, nguồn (trừ liệu trình / dịch vụ lẻ), KTV (bắt buộc), giá, bỏ dòng |
 | **MoneySummary** | phải trả, đã trả; số `tabular-nums` |
 | **StatCard** (`features/reports/ui.tsx`) | nhãn + icon tròn vàng 28px, số 24px đếm lên, không min-height, chân: `Delta` (▲/▼ % so với hôm qua, màu + chữ); bản `accent` nâu đỏ cho "Thực thu"; loading: `StatSkeleton` |
-| **BarChart / SplitBar** (`features/reports/charts.tsx`) | cột HTML theo %, 1 màu nâu đỏ, cột được chọn màu vàng; nhãn giá trị khi hover/focus (cột cuối luôn hiện); là `<ol>` có `aria-label` từng cột; không thư viện chart |
+| **LineChart** (`features/reports/LineChart.tsx`) | SVG tự viết (không thư viện): 1 trục, đường 2px nâu đỏ + vùng 10% cho kỳ này, đường xám `border-strong` cho kỳ trước (dạng emphasis, đã chạy validator dataviz cả light/dark); lưới hairline; nhãn giá trị chỉ ở điểm cuối; crosshair + tooltip (giá trị đậm trước, tên sau, line key) khi rê chuột và khi focus ← → Home End; nhãn trục X ≤ 7 (≤ 4 dưới 640px); `role="img"` + bảng chi tiết bên dưới là bản thay thế; đổi kỳ: khung cũ mờ (`.is-refreshing`) |
+| **SplitBar** (`features/reports/charts.tsx`) | thanh chia phần (tiền mặt/CK, gói/lẻ) + chú thích có số và % |
+| **FilterBar / SearchField / FilterSelect** (`features/reports/filters.tsx`) | một hàng lọc phía trên nội dung, xuống dòng trên điện thoại; ô tìm có icon, nút xóa, debounce 300 ms, ≥ 2 ký tự; select native có nhãn; mọi ô viền `border-strong` |
+| **FollowUpForm** + `.form-dialog` + `.choice` | dialog giữa màn (điện thoại: gần full); kết quả là hàng radio 44px, mục chọn = nền `primary-soft` + vạch vàng trong (không đổi chữ đậm) |
+| **Tabs** (`.tabs`) | `role=tablist`, tab chọn = gạch chân vàng 3px `inset box-shadow` |
 | **Timeline** (lịch sử khách) | đường dọc gradient vàng, chấm theo loại (lượt nâu đỏ, mua gói vàng, hủy xám/đỏ), nhóm theo tháng |
 | EmptyState (logo nguyên vẹn 56px + câu hướng dẫn), ErrorState ("Thử lại") | |
 | Dialog / Sheet (điện thoại) | `<dialog>` + `showModal()` (`Modal` trong AppShell): focus trap, Esc, backdrop |

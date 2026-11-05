@@ -10,7 +10,7 @@ import {
 } from "@tanstack/react-router";
 import { LoginPage } from "../features/auth/LoginPage";
 import { authQuery } from "../features/auth/session";
-import { customersSearch } from "../features/customers/search";
+import { customersSearch, historySearch } from "../features/customers/search";
 import { FrontDeskPage } from "../features/front-desk/FrontDeskPage";
 import { inactiveSearch, packagesSearch, reportsSearch } from "../features/reports/search";
 import { safeNextPath } from "../lib/api";
@@ -209,6 +209,7 @@ const customersRoute = createRoute({
 const customerRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/khach-hang/$customerId",
+  validateSearch: historySearch.validate,
   component: lazyRouteComponent(customersModule, "CustomerRoutePage"),
 });
 

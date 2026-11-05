@@ -1,11 +1,12 @@
 import type { Customer } from "@vpyd/api-client";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { ApiError } from "../../lib/api";
 import { fieldMessage, messageFor } from "../../lib/errors";
-import { createCustomer, updateCustomer } from "./api";
+import { PHONE_CHECK_DEBOUNCE_MS, createCustomer, phoneCheckQuery, phoneDigits, updateCustomer } from "./api";
 
 const schema = z.object({
   full_name: z.string().trim().min(1, "Nhập họ tên."),
@@ -31,6 +32,28 @@ const schema = z.object({
   health_note: z.string(),
 });
 type Values = z.infer<typeof schema>;
+
+/**
+ * The profile that already owns the number being typed, if any (debounced `GET
+ * /customers/phone-check`). The customer being edited does not count as a duplicate of itself.
+ * The 409 on submit stays the authority: this only warns earlier.
+ */
+function usePhoneDuplicate(typed: string, ownId: string | undefined): { id: string; name: string } | null {
+  const [digits, setDigits] = useState(() => phoneDigits(typed));
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDigits(phoneDigits(typed));
+    }, PHONE_CHECK_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(t);
+    };
+  }, [typed]);
+  const check = useQuery(phoneCheckQuery(digits));
+  // The answer belongs to the number on screen only once the debounce caught up with it.
+  if (digits !== phoneDigits(typed) || !check.data?.taken || !check.data.existing_id) return null;
+  if (check.data.existing_id === ownId) return null;
+  return { id: check.data.existing_id, name: check.data.full_name ?? "khách khác" };
+}
 
 /** Prefill from what the receptionist typed in search: digits → phone, otherwise → name. */
 export function prefillFrom(
@@ -104,6 +127,7 @@ export function CustomerForm({
     },
   });
   const { errors } = form.formState;
+  const duplicate = usePhoneDuplicate(useWatch({ control: form.control, name: "phone" }), customer?.id);
   const existingId =
     mutation.error instanceof ApiError &&
     mutation.error.code === "customer.phone_taken"
@@ -129,18 +153,42 @@ export function CustomerForm({
             fieldMessage(mutation.error, "full_name")}
         </span>
       </label>
-      <label className="block">
-        <span className="text-sm font-semibold">Số điện thoại</span>
-        <input
-          className={input}
-          type="tel"
-          inputMode="tel"
-          {...form.register("phone")}
-        />
-        <span className="text-sm text-danger">
-          {errors.phone?.message ?? fieldMessage(mutation.error, "phone")}
-        </span>
-      </label>
+      <div className="grid content-start">
+        <label className="block">
+          <span className="text-sm font-semibold">Số điện thoại</span>
+          <input
+            className={input}
+            type="tel"
+            inputMode="tel"
+            aria-describedby="phone-duplicate"
+            {...form.register("phone")}
+          />
+          <span className="text-sm text-danger">
+            {errors.phone?.message ?? fieldMessage(mutation.error, "phone")}
+          </span>
+        </label>
+        {/* Polite live region: announced once the check answers, before the user submits. */}
+        <p id="phone-duplicate" aria-live="polite" className="text-sm">
+          {duplicate && !existingId && (
+            <span className="mt-1 flex flex-wrap items-center gap-x-2 rounded-[10px] bg-warning-bg px-3 py-2 text-warning-text">
+              <span>
+                Số này đã có hồ sơ: <strong>{duplicate.name}</strong>
+              </span>
+              {onOpenExisting && (
+                <button
+                  type="button"
+                  className="min-h-11 font-semibold underline"
+                  onClick={() => {
+                    onOpenExisting(duplicate.id);
+                  }}
+                >
+                  Mở hồ sơ
+                </button>
+              )}
+            </span>
+          )}
+        </p>
+      </div>
       <fieldset>
         <legend className="text-sm font-semibold">
           Giới tính (để tính giá)

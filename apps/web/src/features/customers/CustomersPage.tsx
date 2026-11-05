@@ -158,7 +158,7 @@ export function CustomerPage({ customerId }: { customerId: string }) {
             queryClient.setQueryData(customerQuery(customerId).queryKey, c);
           }}
         />
-        <CustomerHistory customerId={customerId} me={me} />
+        <CustomerHistory customerId={customerId} customerName={c.full_name} me={me} />
       </div>
     </div>
   );

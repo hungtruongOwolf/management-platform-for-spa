@@ -986,3 +986,35 @@ async fn technician_role_cannot_record_or_read_visits(pool: PgPool) -> TestResul
     assert_eq!(list.status, StatusCode::FORBIDDEN);
     Ok(())
 }
+
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn day_list_can_be_limited_to_the_newest_visits(pool: PgPool) -> TestResult {
+    let d = desk(pool).await?;
+    for _ in 0..3 {
+        let v = d.record(d.deduct(&d.ha, None)).await;
+        assert_eq!(v.status, StatusCode::CREATED, "{}", v.body);
+    }
+    let all = d.get("/visits").await;
+    assert_eq!(all.body.as_array().map(Vec::len), Some(3));
+    let two = d.get("/visits?limit=2").await;
+    assert_eq!(two.status, StatusCode::OK, "{}", two.body);
+    let got: Vec<Value> = two.body.as_array().cloned().unwrap_or_default();
+    assert_eq!(got.len(), 2);
+    // Same order as the full list: newest first, so the cut keeps the latest visits.
+    assert_eq!(
+        (got[0]["id"].clone(), got[1]["id"].clone()),
+        (all.body[0]["id"].clone(), all.body[1]["id"].clone())
+    );
+    let more = d.get("/visits?limit=500").await;
+    assert_eq!(more.body.as_array().map(Vec::len), Some(3));
+    for bad in ["/visits?limit=0", "/visits?limit=501"] {
+        let r = d.get(bad).await;
+        assert_eq!(
+            r.status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{bad}: {}",
+            r.body
+        );
+    }
+    Ok(())
+}

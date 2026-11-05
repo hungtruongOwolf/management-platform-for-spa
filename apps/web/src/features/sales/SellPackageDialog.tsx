@@ -18,6 +18,7 @@ import {
   parseAmount,
   paymentsFor,
 } from "./api";
+import { invalidateManagementViews } from "../../lib/invalidate";
 
 const input =
   "min-h-11 w-full rounded-[6px] border border-border bg-surface px-3";
@@ -107,6 +108,7 @@ export function SellPackageDialog({
       await queryClient.invalidateQueries({
         queryKey: ["customer-packages", customerId],
       });
+      void invalidateManagementViews(queryClient, customerId);
       onDone(sale);
     },
   });

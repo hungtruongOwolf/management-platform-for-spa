@@ -43,16 +43,18 @@ export function CountUp({ value, format = (n) => n.toLocaleString("vi-VN") }: { 
 export const money = (n: number) => formatVnd(n);
 
 /** Change against a reference day: ▲ 12% / ▼ 3% / = ; colour carries tone, the text carries meaning. */
-export function Delta({ now, before, label }: { now: number; before: number; label: string }) {
-  if (before === 0 && now === 0) return <span className="text-xs text-text-muted">= {label}</span>;
+export function Delta({ now, before, label, onChrome = false }: { now: number; before: number; label: string; onChrome?: boolean }) {
+  const muted = onChrome ? "text-chrome-text-muted" : "text-text-muted";
+  if (before === 0 && now === 0) return <span className={`text-xs ${muted}`}>= {label}</span>;
   const pct = before === 0 ? 100 : Math.round(((now - before) / before) * 100);
   const up = pct > 0;
-  const tone = pct === 0 ? "text-text-muted" : up ? "text-success" : "text-danger";
+  // On the maroon card green/red fail contrast: the arrow and sign carry the direction there.
+  const tone = pct === 0 ? muted : onChrome ? "text-chrome-accent" : up ? "text-success" : "text-danger";
   return (
-    <span className={`inline-flex items-center gap-1 text-xs font-semibold ${tone}`}>
+    <span className={`inline-flex flex-wrap items-center gap-1 text-xs font-semibold ${tone}`}>
       {pct !== 0 && <Icon name={up ? "arrow-up" : "arrow-down"} className="size-3.5" />}
       {pct === 0 ? "=" : `${up ? "+" : ""}${String(pct)}%`}
-      <span className="font-normal text-text-muted">{label}</span>
+      <span className={`font-normal ${muted}`}>{label}</span>
     </span>
   );
 }

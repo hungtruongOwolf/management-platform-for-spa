@@ -10,6 +10,7 @@ import {
   formatDate,
 } from "./api";
 import { SellPackageDialog } from "./SellPackageDialog";
+import { expiryText, serviceLabel } from "../../lib/names";
 
 // Lifecycle forms (extend, cancel + refund, sale void) load only for users who can act.
 const PackageActions = lazy(() =>
@@ -100,10 +101,8 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
                 <span className="font-semibold">{p.name}</span>
                 <span className="block text-sm text-text-muted">
                   {p.items.length > 1 &&
-                    `${p.items.map((i) => `${i.name} ${String(i.sessions_remaining)}/${String(i.sessions_total)}`).join(" · ")} · `}
-                  {p.expires_on
-                    ? `HSD ${formatDate(p.expires_on)}`
-                    : "Không thời hạn"}
+                    `${p.items.map((i) => `${serviceLabel(i.name, i.category_name)} ${String(i.sessions_remaining)}/${String(i.sessions_total)}`).join(" · ")} · `}
+                  {expiryText(p.expires_on, formatDate)}
                   {p.gift_note ? ` · Quà: ${p.gift_note}` : ""}
                 </span>
                 {p.status === "cancelled" && p.cancel_reason && (
