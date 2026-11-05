@@ -23,7 +23,7 @@ export function DayCountdown({ owner }: { owner: boolean }) {
       <span>
         Còn{" "}
         <strong
-          className={`tabular-nums ${left < 3_600_000 && !owner ? "text-danger" : ""}`}
+          className={`inline-block w-[4.6em] text-center tabular-nums ${left < 3_600_000 && !owner ? "text-danger" : ""}`}
           // Announcing every second would drown a screen reader: the text is read on focus/visit.
           aria-live="off"
         >

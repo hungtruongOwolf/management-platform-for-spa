@@ -60,6 +60,8 @@ pub struct DemoReport {
     pub voided_sales: usize,
     pub voided_visits: usize,
     pub cancelled_with_refund: usize,
+    /// Bookings for the next two days (round 4 calendar), one of them for a newcomer.
+    pub appointments: usize,
 }
 
 /// Seeds the demo spa. `owner` is the schema-owner pool (provisioning, as the other CLI commands);
@@ -132,6 +134,7 @@ pub async fn seed(
     spa.import_paper_books(run).await?;
     spa.back_fill_history().await?;
     spa.run_today().await?;
+    spa.book_upcoming().await?;
     spa.cancel_one_with_refund().await?;
     Ok(spa.report)
 }
@@ -925,6 +928,59 @@ impl Spa<'_> {
                 ExpiredOverride => self.expired_override(at).await?,
                 WrongSaleVoided(customer) => self.wrong_sale_voided(customer, at).await?,
                 WrongVisitVoided => self.wrong_visit_voided(at).await?,
+            }
+        }
+        Ok(())
+    }
+
+    /// A calendar worth looking at: bookings tomorrow and the day after, through the appointments
+    /// use case (grid, overlap and capacity rules apply), half with a technician, one newcomer.
+    async fn book_upcoming(&mut self) -> anyhow::Result<()> {
+        const SLOTS: &[(i64, u32, bool)] = &[
+            (1, 9 * 60, true),
+            (1, 9 * 60 + 30, false),
+            (1, 10 * 60 + 30, true),
+            (1, 13 * 60, false),
+            (1, 14 * 60 + 30, true),
+            (1, 16 * 60, true),
+            (2, 9 * 60, true),
+            (2, 15 * 60, false),
+        ];
+        for (n, &(days, minutes, with_staff)) in SLOTS.iter().enumerate() {
+            let day = self.today + chrono::Duration::days(days);
+            let name = *self.rng.pick(data::ONE_OFF_SERVICES).context("services")?;
+            let staff = with_staff.then(|| self.technician());
+            let who = if n == 3 {
+                json!({"guest": {"full_name": "Chị Ngọc Anh (khách mới)", "phone": format!("0399{:06}", 990_000 + self.report.run)}})
+            } else {
+                let c = self.rng.below(self.customers.len());
+                json!({"customer_id": self.customers[c].id})
+            };
+            let mut body = json!({
+                "service_ids": [self.catalog.service(name)?],
+                "staff_id": staff,
+                "starts_at": self.at(day, minutes)?,
+                "note": if n == 0 { Some("Khách hẹn qua Zalo") } else { None },
+            });
+            if let (Some(b), Some(w)) = (body.as_object_mut(), who.as_object()) {
+                b.extend(w.clone());
+            }
+            let input: operations::appointments::dto::AppointmentCreate =
+                serde_json::from_value(body).context("appointment body")?;
+            let (key, hash) = idempotency();
+            match operations::appointments::service::book(
+                self.app,
+                &self.manager,
+                key,
+                hash,
+                &input,
+            )
+            .await
+            {
+                Ok(_) => self.report.appointments += 1,
+                // A technician picked twice for overlapping slots: the rule worked, skip it.
+                Err(AppError::Conflict { .. } | AppError::ConflictWith { .. }) => {}
+                Err(e) => return Err(fail("book an appointment")(e)),
             }
         }
         Ok(())

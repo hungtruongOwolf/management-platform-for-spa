@@ -140,7 +140,6 @@ export function TodayVisits() {
             setAll(false);
             setShown(VISITS_PAGE);
           }}
-          className="flex items-center gap-2 text-sm"
         />
       </div>
       {!isToday && can(me, "record.void_same_day") && !mayVoid && (

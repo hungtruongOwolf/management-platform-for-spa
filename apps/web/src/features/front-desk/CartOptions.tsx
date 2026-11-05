@@ -63,7 +63,6 @@ export function ServiceTime({
             onChange={(iso) => {
               onDay(iso || today);
             }}
-            className="grid gap-1 text-sm"
           />
         )}
         <label className="grid gap-1 text-sm">
@@ -153,7 +152,7 @@ export function DiscountField({
             className={`${field} w-32`}
           />
         </label>
-        <label className="grid min-w-0 flex-1 gap-1 text-sm">
+        <label className="grid w-full min-w-0 basis-full gap-1 text-sm">
           <span>Lý do (bắt buộc)</span>
           <input
             value={draft.reason}

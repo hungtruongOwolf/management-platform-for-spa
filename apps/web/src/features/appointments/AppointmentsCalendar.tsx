@@ -436,7 +436,12 @@ function DayGrid({
           className="cal-head cal-corner"
           style={{ gridColumn: 1, gridRow: 1 }}
         >
-          <span className="text-xs text-text-muted">Giờ · trống</span>
+          <span
+            className="text-xs text-text-muted"
+            title="Giờ và số chỗ còn trống"
+          >
+            Giờ
+          </span>
         </div>
         {laid.map((g) => (
           <div
@@ -1309,7 +1314,6 @@ function BookingSheet({
             onChange={(iso) => {
               if (iso) setDay(iso);
             }}
-            className="grid gap-1 text-sm"
           />
           <label className="grid gap-1 text-sm">
             <span>Giờ bắt đầu</span>

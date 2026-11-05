@@ -4,6 +4,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../../app/App";
+import { spaToday } from "../corrections/api";
 import {
   amountDue,
   byUseOrder,
@@ -107,7 +108,8 @@ const VISIT: Visit = {
   id: "v1",
   customer_id: "c1",
   customer_name: "Nguyễn Thị Hà",
-  business_date: "2026-11-05",
+  // Today on the spa clock: an earlier day would read as an owner back-dated entry.
+  business_date: spaToday(),
   check_in_at: "2026-11-05T02:12:00Z",
   status: "completed",
   sale_id: null,
