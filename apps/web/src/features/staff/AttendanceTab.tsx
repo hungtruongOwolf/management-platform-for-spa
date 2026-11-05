@@ -218,7 +218,7 @@ function DayList({
                       type="button"
                       aria-pressed={cell?.status === st}
                       title={STATUS_LABEL[st]}
-                      aria-label={STATUS_LABEL[st]}
+                      aria-label={`${STATUS_CODE[st]} ${STATUS_LABEL[st]}`}
                       disabled={closed || future || busy}
                       onClick={() => {
                         onStatus(s, st);

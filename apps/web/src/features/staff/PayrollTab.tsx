@@ -230,7 +230,10 @@ export function PayslipView({ slip, closed }: { slip: Payslip; closed: boolean }
 function PayslipSheet({ slip, closed, onClose }: { slip: Payslip; closed: boolean; onClose: () => void }) {
   return (
     <BottomSheet open wide onClose={onClose} title={`Phiếu lương ${slip.full_name}`} description={slip.position}>
-      <PayslipView slip={slip} closed={closed} />
+      {/* A read-only sheet has no control to tab to: the region itself takes focus so keyboard users can scroll it. */}
+      <div tabIndex={0} role="region" aria-label={`Chi tiết phiếu lương ${slip.full_name}`}>
+        <PayslipView slip={slip} closed={closed} />
+      </div>
     </BottomSheet>
   );
 }

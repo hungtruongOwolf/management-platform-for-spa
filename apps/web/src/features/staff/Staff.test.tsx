@@ -159,7 +159,7 @@ describe("/nhan-vien", () => {
     expect(within(lan.closest("li") ?? document.body).getByText(/muộn 12 phút/)).toBeInTheDocument();
 
     const mai = within(screen.getByText("Trần Thị Mai").closest("li") ?? document.body);
-    await userEvent.click(mai.getByRole("button", { name: "Nghỉ có phép (P)" }));
+    await userEvent.click(mai.getByRole("button", { name: "P Nghỉ có phép (P)" }));
     await waitFor(() => {
       expect(requests(spy).some((r) => r.method === "PUT")).toBe(true);
     });
