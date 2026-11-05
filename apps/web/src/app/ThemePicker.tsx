@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useSyncExternalStore } from "react";
 import { Icon, type IconName } from "./Icon";
-import { applyTheme, readTheme, type Theme } from "./prefs";
+import { applyTheme, readTheme, subscribeTheme, type Theme } from "./prefs";
 
 const THEMES: [Theme, string, IconName][] = [
   ["system", "Theo máy", "monitor"],
@@ -8,9 +8,12 @@ const THEMES: [Theme, string, IconName][] = [
   ["dark", "Tối", "moon"],
 ];
 
-/** Light / dark / follow the device, remembered on this device (prefs.ts). */
+/**
+ * Light / dark / follow the device, remembered on this device (prefs.ts). No local copy of the
+ * value: two pickers on screen (account menu + settings) never disagree.
+ */
 export function ThemePicker({ className = "" }: { className?: string }) {
-  const [theme, setTheme] = useState<Theme>(readTheme);
+  const theme = useSyncExternalStore(subscribeTheme, readTheme);
   return (
     <div className={`segmented ${className}`} role="group" aria-label="Chế độ màu">
       {THEMES.map(([t, label, icon]) => (
@@ -20,7 +23,6 @@ export function ThemePicker({ className = "" }: { className?: string }) {
           aria-pressed={theme === t}
           onClick={() => {
             applyTheme(t);
-            setTheme(t);
           }}
         >
           <Icon name={icon} className="size-[18px]" />

@@ -83,7 +83,7 @@ export function CustomerProfile({
   return (
     <article
       aria-labelledby="customer-name"
-      className="rounded-[14px] border border-border bg-surface p-4 shadow-card"
+      className="grid content-start gap-3 rounded-[14px] border border-border bg-surface p-4 shadow-card"
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         {/* Name and gender are the page title (PageHeader); the card starts with the contact line. */}

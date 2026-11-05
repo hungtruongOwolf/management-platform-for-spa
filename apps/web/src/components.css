@@ -130,7 +130,7 @@
   margin-bottom: 4px;
   padding-bottom: 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--chrome-accent) 30%, transparent);
-  border-radius: var(--radius-md);
+  border-radius: 0;
 }
 .sidebar-logo {
   width: 52px;
@@ -361,10 +361,16 @@ kbd {
   gap: 6px;
   padding: 0 4px;
 }
+.user-panel-section .segmented {
+  flex-wrap: nowrap;
+}
 .user-panel-section .segmented > button {
   flex: 1;
   justify-content: center;
-  padding: 0 8px;
+  gap: 6px;
+  padding: 0 6px;
+  font-size: 13px;
+  white-space: nowrap;
 }
 .user-panel-actions {
   display: grid;
@@ -729,11 +735,14 @@ dialog::backdrop {
 .breadcrumbs {
   display: none;
   min-width: 0;
-  font-size: 13px;
+  font-size: 14px;
 }
 @media (min-width: 640px) {
   .breadcrumbs {
     display: block;
+  }
+  .back-link-parent {
+    display: none;
   }
 }
 .breadcrumbs ol {
@@ -754,7 +763,8 @@ dialog::backdrop {
   content: "›";
 }
 .breadcrumbs a {
-  padding: 2px 0;
+  display: inline-block;
+  padding: 4px 0;
   color: var(--text-muted);
   text-decoration: underline;
   text-decoration-color: transparent;
@@ -933,6 +943,13 @@ h2 .gender-chip {
 }
 .data-table tbody tr:last-child td {
   border-bottom: 0;
+}
+/* Phones: cells keep one line and the card scrolls sideways (.table-wrap), instead of a name or a
+ * package breaking into one word per line. */
+@media (max-width: 639px) {
+  .data-table :is(th, td) {
+    white-space: nowrap;
+  }
 }
 .data-table .num {
   font-variant-numeric: tabular-nums;

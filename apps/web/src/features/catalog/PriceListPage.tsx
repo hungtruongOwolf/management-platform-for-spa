@@ -122,7 +122,7 @@ export function PriceListPage() {
                         {service.description ? ` · ${service.description}` : ""}
                       </p>
                     </div>
-                    <p className="flex items-center gap-4 tabular-nums">
+                    <p className="flex flex-wrap items-center gap-x-4 gap-y-1 tabular-nums">
                       {describePrices(service.prices).map((line) => (
                         <span key={line.label ?? "all"}>
                           {line.label && (

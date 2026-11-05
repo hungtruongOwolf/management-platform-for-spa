@@ -57,6 +57,8 @@ export function PageHeader({ title, label, eyebrow, breadcrumbs = [], back, titl
   const crumbHref = (c: Crumb) => lastHrefFor(c.to, index) ?? c.to;
   const backHref = prev?.href ?? (parent ? crumbHref(parent) : undefined);
   const backLabel = prev ? (prev.title ?? screenLabel(prev.pathname)) : parent?.label;
+  // Back to the parent says the same as the breadcrumbs: from 640px only the breadcrumbs show.
+  const backIsParent = parent !== undefined && (!prev || prev.pathname === parent.to);
 
   const go = (e: MouseEvent, target: string, useHistory: boolean) => {
     if (!plainClick(e)) return;
@@ -72,7 +74,7 @@ export function PageHeader({ title, label, eyebrow, breadcrumbs = [], back, titl
           {showBack && backHref && (
             <a
               href={backHref}
-              className="back-link"
+              className={backIsParent ? "back-link back-link-parent" : "back-link"}
               onClick={(e) => {
                 go(e, backHref, prev !== undefined);
               }}

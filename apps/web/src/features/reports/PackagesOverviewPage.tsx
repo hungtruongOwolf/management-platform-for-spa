@@ -38,7 +38,7 @@ export function CustomerCell({
       <Link to="/khach-hang/$customerId" params={{ customerId: id }} className="font-semibold text-primary hover:underline">
         <CustomerName name={name} gender={gender} />
       </Link>
-      <span className="block text-xs text-text-muted tabular">{displayPhone(phone)}</span>
+      <span className="mt-1 block text-xs text-text-muted tabular">{displayPhone(phone)}</span>
     </>
   );
 }

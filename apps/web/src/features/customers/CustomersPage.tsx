@@ -103,7 +103,7 @@ export function CustomersPage() {
                   </span>
                   <CustomerName name={c.full_name} gender={c.gender} className="font-semibold" />
                 </span>
-                <span className="text-sm text-text-muted tabular">{c.phone}</span>
+                <span className="shrink-0 text-sm whitespace-nowrap text-text-muted tabular">{c.phone}</span>
               </Link>
             </li>
           ))}

@@ -9,6 +9,7 @@ import { fold } from "./CommandPalette";
 import { canSeeManagement } from "./features";
 import { navFor, tabsFor } from "./nav";
 import { applyTheme, readSidebarCollapsed, readTheme, saveSidebarCollapsed } from "./prefs";
+import { ThemePicker } from "./ThemePicker";
 import { roleLabel } from "./UserMenu";
 
 const me = (permissions: string[]): Me => ({
@@ -85,6 +86,20 @@ describe("device preferences", () => {
       saveSidebarCollapsed(true);
     }).not.toThrow();
     expect(readSidebarCollapsed()).toBe(false);
+  });
+});
+
+describe("theme pickers", () => {
+  it("share one value: choosing in the account menu updates every picker on screen", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <ThemePicker />
+        <ThemePicker />
+      </>,
+    );
+    await user.click(screen.getAllByRole("button", { name: "Tối" })[0] as HTMLElement);
+    for (const b of screen.getAllByRole("button", { name: "Tối" })) expect(b).toHaveAttribute("aria-pressed", "true");
   });
 });
 
