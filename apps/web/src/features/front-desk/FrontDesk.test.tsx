@@ -111,6 +111,9 @@ const VISIT: Visit = {
   check_in_at: "2026-11-05T02:12:00Z",
   status: "completed",
   sale_id: null,
+  subtotal: 0,
+  discount_amount: 0,
+  discount_reason: null,
   total: 0,
   payments: [],
   version: 1,
@@ -133,6 +136,7 @@ const VISIT: Visit = {
       price_variant: null,
       unit_price: 150_000,
       line_value: 150_000,
+      discount_amount: 0,
       expiry_override_reason: null,
     },
   ],
@@ -520,6 +524,63 @@ describe("/quay", () => {
         name: /Trừ 1 buổi/,
       }),
     ).toBeInTheDocument();
+  });
+
+  it("discounts the one-off lines by % and collects the discounted total (AC8.1)", async () => {
+    const calls = serve([...MANAGER, "sale.discount"]);
+    const user = userEvent.setup();
+    at("/quay");
+    await user.type(
+      await screen.findByRole("combobox", { name: "Tìm khách theo SĐT hoặc tên" }),
+      "ha",
+    );
+    await user.click(await screen.findByRole("option", { name: /Nguyễn Thị Hà/ }));
+    // Picked customer's basics sit right under the name (EM round 4 item 6).
+    const picked = await screen.findByRole("region", { name: /Nguyễn Thị Hà/ });
+    expect(within(picked).getByText(/0905 111 222/)).toBeInTheDocument();
+    expect(await within(picked).findByText(/1 gói liệu trình đang dùng, còn 5 buổi/)).toBeInTheDocument();
+    await screen.findByRole("option", { name: /Đại Thông Lạc/ });
+    await user.selectOptions(screen.getByLabelText("Dịch vụ lẻ"), "s5");
+    await user.click(screen.getByRole("button", { name: "Thêm" }));
+    await user.selectOptions(await screen.findByRole("combobox", { name: "KTV" }), "st1");
+    await user.click(screen.getByRole("button", { name: "+ Giảm giá dịch vụ lẻ" }));
+    await user.type(screen.getByLabelText("Mức giảm (%)"), "10");
+    await user.type(screen.getByLabelText("Lý do (bắt buộc)"), "Khách quen");
+    expect(screen.getByText("Giảm 34.900đ")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Lưu lượt khách" }));
+    const post = await waitFor(() => {
+      const p = calls.find((c) => c.method === "POST");
+      if (!p) throw new Error("no POST yet");
+      return p;
+    });
+    expect(post.body).toMatchObject({
+      discount: { percent: 10, amount: null, reason: "Khách quen" },
+      payments: [{ method: "cash", amount: 314_100 }],
+    });
+  });
+
+  it("opens a visit row inline with its payment and a link to the profile (AC6.1)", async () => {
+    serve(MANAGER, undefined, [pkg("cp1")], [VISIT]);
+    const user = userEvent.setup();
+    at("/quay");
+    const list = await screen.findByRole("list", { name: "Lượt khách hôm nay" });
+    const row = await within(list).findByRole("button", { expanded: false });
+    await user.click(row);
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    expect(within(list).getByText("Trừ liệu trình, không phát sinh tiền", { selector: "p" })).toBeInTheDocument();
+    expect(within(list).getByRole("link", { name: "Mở hồ sơ khách" })).toHaveAttribute(
+      "href",
+      "/khach-hang/c1",
+    );
+    expect(await within(list).findByText(/SĐT 0905 111 222/)).toBeInTheDocument();
+  });
+
+  it("shows the live countdown to the spa's midnight and the appointments tab", async () => {
+    serve([...MANAGER, "appointment.manage"]);
+    at("/quay");
+    expect(await screen.findByText(/để nhập số liệu hôm nay/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Lịch hẹn" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Ghi lượt khách" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("hides the Quầy entry without visit.record", async () => {
