@@ -32,4 +32,6 @@
   <symbol id="wallet" viewBox="0 0 24 24"><path d="M4 7.5h14.5a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5.5A1.5 1.5 0 0 1 4 18.5V6a2 2 0 0 1 2-2h10"/><path d="M16 14h1.5"/></symbol>
   <symbol id="sparkle" viewBox="0 0 24 24"><path d="M12 3c.6 4.6 2.4 6.4 7 7-4.6.6-6.4 2.4-7 7-.6-4.6-2.4-6.4-7-7 4.6-.6 6.4-2.4 7-7Z"/></symbol>
   <symbol id="leaf" viewBox="0 0 24 24"><path d="M5 19C5 10 10 5 20 4c-1 10-6 15-15 15Z"/><path d="M5 19 13 11"/></symbol>
+  <symbol id="chevron-down" viewBox="0 0 24 24"><path d="m6 9.5 6 6 6-6"/></symbol>
+  <symbol id="logout" viewBox="0 0 24 24"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M10 16.5 5.5 12 10 7.5"/><path d="M5.5 12H15"/></symbol>
 </svg>

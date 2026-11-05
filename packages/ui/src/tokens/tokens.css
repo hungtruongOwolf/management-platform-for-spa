@@ -66,6 +66,8 @@
   --info: #2f5b78;
   --info-soft: #e7f0f6;
   --focus: #b07d24;
+  /* The whole logo on light surfaces: maroon, like the printed menu. Its script lettering counts as text. */
+  --brand-ink: #7a2620;
   /* App chrome (header, login band): deep maroon, cream text, bright gold accents. */
   --chrome-bg: #5a1d18;
   --chrome-bg-2: #74271f;
@@ -121,6 +123,7 @@
     --info: #9cc8e6;
     --info-soft: #172a38;
     --focus: #e0b456;
+  --brand-ink: #e0b456;
     --chrome-bg: #2b1310;
     --chrome-bg-2: #3a1915;
     --chrome-text: #f6ede1;
@@ -161,6 +164,7 @@
   --info: #9cc8e6;
   --info-soft: #172a38;
   --focus: #e0b456;
+  --brand-ink: #e0b456;
   --chrome-bg: #2b1310;
   --chrome-bg-2: #3a1915;
   --chrome-text: #f6ede1;

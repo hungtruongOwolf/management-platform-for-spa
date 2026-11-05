@@ -15,6 +15,8 @@ export type IconName =
   | "lock"
   | "chevron-left"
   | "chevron-right"
+  | "chevron-down"
+  | "logout"
   | "sidebar"
   | "more"
   | "calendar"

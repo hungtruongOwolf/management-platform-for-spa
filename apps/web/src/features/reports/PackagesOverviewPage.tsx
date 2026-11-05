@@ -1,9 +1,11 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { CustomerName } from "../../app/CustomerName";
 import { NO_EXPIRY } from "../../lib/names";
+import { useSearchState } from "../../lib/searchState";
 import { FilterBar, SearchField } from "./filters";
-import { parsePackagesSearch } from "./search";
+import { packagesSearch } from "./search";
 import { longDay, packagesOverviewQuery, relativeDay, type PackageFilter } from "./api";
 import type { PackageOverviewRow, PackageStatus } from "./contract";
 import { EmptyState, ErrorState, ManagementOnly, PageHeader, RowsSkeleton } from "./ui";
@@ -21,8 +23,6 @@ export function displayPhone(phone: string): string {
   return m ? `0${m[1] ?? ""} ${m[2] ?? ""} ${m[3] ?? ""}` : phone;
 }
 
-const GENDER_SHORT: Record<string, string> = { female: "Nữ", male: "Nam" };
-
 /** Customer name linking to the profile with the gender beside it (EM round 3), phone below. */
 export function CustomerCell({
   id,
@@ -35,13 +35,11 @@ export function CustomerCell({
   phone?: string;
   gender?: string | null;
 }): ReactNode {
-  const g = gender ? GENDER_SHORT[gender] : undefined;
   return (
     <>
       <Link to="/khach-hang/$customerId" params={{ customerId: id }} className="font-semibold text-primary hover:underline">
-        {name}
+        <CustomerName name={name} gender={gender} />
       </Link>
-      {g && <span className="ml-1.5 text-xs font-medium text-text-muted">· {g}</span>}
       {phone && <span className="block text-xs text-text-muted tabular">{displayPhone(phone)}</span>}
     </>
   );
@@ -74,13 +72,8 @@ export function PackagesOverviewPage() {
 }
 
 function PackagesOverviewPageBody() {
-  const search = useSearch({ from: "/authed/goi-lieu-trinh" });
-  const navigate = useNavigate({ from: "/goi-lieu-trinh" });
-  const filter: PackageFilter = search.status ?? "expiring";
-  const q = search.q ?? "";
+  const [{ status: filter, q }, patch] = useSearchState(packagesSearch);
   const page = useInfiniteQuery(packagesOverviewQuery(filter, q));
-  const patch = (p: Record<string, string | undefined>) =>
-    void navigate({ search: (prev) => parsePackagesSearch({ ...prev, ...p }), replace: true });
   const counts = page.data?.pages[0]?.counts;
   const items = page.data?.pages.flatMap((p) => p.items) ?? [];
   const filters: [PackageFilter, string, number | undefined][] = [
@@ -97,11 +90,11 @@ function PackagesOverviewPageBody() {
       <PageHeader eyebrow="Gói liệu trình" title="Theo dõi gói của khách" />
       <FilterBar label="Tìm và lọc gói">
         <SearchField
-          label="Tìm theo tên khách hoặc số điện thoại"
-          placeholder="Tên khách, số điện thoại…"
+          label="Tìm theo tên khách, tên gói hoặc số điện thoại"
+          placeholder="Tên khách, tên gói, số điện thoại…"
           value={q}
           onCommit={(next) => {
-            patch({ q: next || undefined });
+            patch({ q: next });
           }}
         />
       </FilterBar>
@@ -153,7 +146,7 @@ function PackagesOverviewPageBody() {
                   return (
                     <tr key={p.id}>
                       <td>
-                        <CustomerCell id={p.customer_id} name={p.customer_name} phone={p.customer_phone} {...genderOf(p)} />
+                        <CustomerCell id={p.customer_id} name={p.customer_name} phone={p.customer_phone} gender={p.customer_gender ?? null} />
                       </td>
                       <td>{p.name}</td>
                       <td className="num">
@@ -186,8 +179,3 @@ function PackagesOverviewPageBody() {
   );
 }
 
-/** Customer gender on a row, when the contract carries it (adapter until every DTO has it). */
-export function genderOf(row: object): { gender?: string | null } {
-  const g = (row as { customer_gender?: string | null; gender?: string | null }).customer_gender ?? (row as { gender?: string | null }).gender;
-  return g === undefined ? {} : { gender: g };
-}

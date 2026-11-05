@@ -1,9 +1,9 @@
 import type { FollowUpFilter, InactiveCustomer } from "@vpyd/api-client";
 import { useInfiniteQuery, useSuspenseQuery } from "@tanstack/react-query";
-import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
 import { Modal } from "../../app/AppShell";
 import { Icon } from "../../app/Icon";
+import { useSearchState } from "../../lib/searchState";
 import { can, meQuery } from "../auth/session";
 import { spaToday } from "../corrections/api";
 import { CHANNEL_LABEL, OUTCOME_LABEL } from "../customers/followUps";
@@ -11,7 +11,7 @@ import { FollowUpForm } from "../customers/FollowUpForm";
 import { inactiveCustomersQuery, relativeDay, shortDay, type InactiveFilter } from "./api";
 import { FilterBar, FilterSelect, SearchField } from "./filters";
 import { CustomerCell } from "./PackagesOverviewPage";
-import { INACTIVE_THRESHOLDS, parseInactiveSearch } from "./search";
+import { THRESHOLDS, inactiveSearch } from "./search";
 import { EmptyState, ErrorState, ManagementOnly, PageHeader, RowsSkeleton } from "./ui";
 
 const FOLLOW_UPS: [FollowUpFilter, string][] = [
@@ -55,17 +55,8 @@ export function InactiveCustomersPage() {
 
 function InactiveCustomersPageBody() {
   const { data: me } = useSuspenseQuery(meQuery);
-  const search = useSearch({ from: "/authed/khach-lau-khong-quay-lai" });
-  const navigate = useNavigate({ from: "/khach-lau-khong-quay-lai" });
-  const filter: InactiveFilter = {
-    days: search.days ?? 7,
-    scope: search.scope ?? "all",
-    kind: search.kind ?? "all",
-    followUp: search.follow ?? "due",
-    q: search.q ?? "",
-  };
-  const patch = (p: Record<string, string | number | undefined>) =>
-    void navigate({ search: (prev) => parseInactiveSearch({ ...prev, ...p }), replace: true });
+  const [search, patch] = useSearchState(inactiveSearch);
+  const filter: InactiveFilter = { days: search.days, scope: search.scope, kind: search.kind, followUp: search.follow, q: search.q };
   const page = useInfiniteQuery(inactiveCustomersQuery(filter));
   const items = page.data?.pages.flatMap((p) => p.items) ?? [];
   const canFollowUp = can(me, "customer.follow_up");
@@ -84,15 +75,15 @@ function InactiveCustomersPageBody() {
           placeholder="Tên khách, số điện thoại…"
           value={filter.q}
           onCommit={(q) => {
-            patch({ q: q || undefined });
+            patch({ q });
           }}
         />
         <FilterSelect
           label="Vắng từ"
           value={String(filter.days)}
-          options={INACTIVE_THRESHOLDS.map((d) => [String(d), `${String(d)} ngày`] as const)}
+          options={THRESHOLDS.map((d) => [String(d), `${String(d)} ngày`] as const)}
           onChange={(d) => {
-            patch({ days: Number(d) });
+            patch({ days: Number(d) as (typeof THRESHOLDS)[number] });
           }}
         />
         <FilterSelect
@@ -100,7 +91,7 @@ function InactiveCustomersPageBody() {
           value={filter.kind}
           options={KINDS}
           onChange={(kind) => {
-            patch({ kind: kind === "all" ? undefined : kind });
+            patch({ kind });
           }}
         />
         <FilterSelect
@@ -108,7 +99,7 @@ function InactiveCustomersPageBody() {
           value={filter.scope}
           options={SCOPES}
           onChange={(scope) => {
-            patch({ scope: scope === "all" ? undefined : scope });
+            patch({ scope });
           }}
         />
       </FilterBar>

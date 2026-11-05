@@ -3,7 +3,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 import { canSeeManagement } from "../../app/features";
 import { meQuery } from "../auth/session";
-import { BrandMark } from "../../app/BrandMark";
+import { BrandLogo } from "../../app/BrandLogo";
 import { Icon, type IconName } from "../../app/Icon";
 import { messageFor } from "../../lib/errors";
 
@@ -73,19 +73,19 @@ export function StatCard({
   accent?: boolean;
 }) {
   return (
-    <div className={`card flex min-h-[152px] flex-col gap-2 p-4 ${accent ? "border-transparent bg-chrome bg-[linear-gradient(135deg,var(--chrome-bg-2),var(--chrome-bg))] text-chrome-text" : ""}`}>
+    <div className={`card stat-card ${accent ? "border-transparent bg-chrome bg-[linear-gradient(135deg,var(--chrome-bg-2),var(--chrome-bg))] text-chrome-text" : ""}`}>
       <p className={`flex items-center gap-2 text-sm font-medium ${accent ? "text-chrome-text-muted" : "text-text-muted"}`}>
         <span
           aria-hidden="true"
-          className={`grid size-8 place-items-center rounded-full ${accent ? "bg-[var(--chrome-hover)] text-chrome-accent" : "bg-accent-soft text-accent-text"}`}
+          className={`grid size-7 place-items-center rounded-full ${accent ? "bg-[var(--chrome-hover)] text-chrome-accent" : "bg-accent-soft text-accent-text"}`}
         >
-          <Icon name={icon} className="size-[18px]" />
+          <Icon name={icon} className="size-4" />
         </span>
         {label}
       </p>
-      <p className={`tabular text-[28px] leading-9 font-semibold ${accent ? "font-brand text-chrome-accent" : "text-text"}`}>{children}</p>
-      {/* Reserved line: cards in a row stay the same height with or without a footnote. */}
-      <div className="mt-auto min-h-5">{foot}</div>
+      <p className={`stat-value tabular ${accent ? "font-brand text-chrome-accent" : "text-text"}`}>{children}</p>
+      {/* Cards in a row stretch to the tallest (grid), so a footnote only takes space where it exists. */}
+      {foot !== undefined && <div className="mt-auto">{foot}</div>}
     </div>
   );
 }
@@ -95,10 +95,9 @@ export function StatSkeleton({ count = 4 }: { count?: number }) {
   return (
     <>
       {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="card flex min-h-[152px] flex-col gap-3 p-4" {...(i === 0 ? { role: "status", "aria-label": "Đang tải số liệu" } : {})}>
-          <div className="skeleton h-8 w-32" />
-          <div className="skeleton h-9 w-24" />
-          <div className="skeleton h-4 w-28" />
+        <div key={i} className="card stat-card" {...(i === 0 ? { role: "status", "aria-label": "Đang tải số liệu" } : {})}>
+          <div className="skeleton h-7 w-32" />
+          <div className="skeleton h-8 w-24" />
         </div>
       ))}
     </>
@@ -126,8 +125,8 @@ export function Loading({ label, children }: { label: string; children: ReactNod
 
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
-      <BrandMark className="mb-1 size-14 text-accent opacity-60" />
+    <div className="flex flex-col items-center gap-2 px-6 py-8 text-center">
+      <BrandLogo className="mb-1 w-14 opacity-80" />
       <p className="font-brand text-lg text-primary">{title}</p>
       {children && <p className="max-w-sm text-sm text-text-muted">{children}</p>}
     </div>
@@ -146,17 +145,8 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => 
   );
 }
 
-export function PageHeader({ eyebrow, title, children }: { eyebrow: string; title: string; children?: ReactNode }) {
-  return (
-    <header className="flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <p className="eyebrow">{eyebrow}</p>
-        <h1 className="page-title">{title}</h1>
-      </div>
-      {children}
-    </header>
-  );
-}
+/** The app-wide page header (breadcrumbs, back, title, actions): app/PageHeader.tsx. */
+export { PageHeader } from "../../app/PageHeader";
 
 /** UX gate of the management screens (the API answers 403 by itself). */
 export function ManagementOnly({ children }: { children: ReactNode }) {

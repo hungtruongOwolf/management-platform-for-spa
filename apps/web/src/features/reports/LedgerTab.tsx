@@ -83,7 +83,7 @@ export function LedgerTab({ period }: { period: Period }) {
                       <tr className={r.entry === "sale" ? (r.voided ? "ledger-voided" : "") : "ledger-negative"}>
                         <td className="tabular">{time.format(new Date(r.at))}</td>
                         <td>
-                          <CustomerCell id={r.customer_id} name={r.customer_name} {...customerGender(r)} />
+                          <CustomerCell id={r.customer_id} name={r.customer_name} gender={customerGender(r)} />
                           {r.entry !== "sale" && <span className="badge badge-danger mt-1">{ENTRY_LABEL[r.entry]}</span>}
                           {r.voided && <span className="sr-only"> (đã hủy sau đó)</span>}
                         </td>
@@ -114,9 +114,8 @@ export function LedgerTab({ period }: { period: Period }) {
 }
 
 /** Gender of the row's customer, when the contract carries it (adapter for older replies). */
-function customerGender(r: LedgerRow): { gender?: string | null } {
-  const g = (r as LedgerRow & { customer_gender?: string | null }).customer_gender;
-  return g === undefined ? {} : { gender: g };
+function customerGender(r: LedgerRow): string | null {
+  return (r as LedgerRow & { customer_gender?: string | null }).customer_gender ?? null;
 }
 
 function DayRow({ date, day }: { date: string; day: LedgerDay | undefined }) {

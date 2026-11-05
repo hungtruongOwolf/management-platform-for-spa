@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { PageHeader } from "../../app/PageHeader";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
 import { categoriesQuery, createCategory, servicesQuery } from "./api";
@@ -44,17 +45,11 @@ export function PriceListPage() {
 
   return (
     <section aria-labelledby="price-list-title" className="grid content-start gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 id="price-list-title" className="font-brand text-2xl text-primary">
-          Bảng giá dịch vụ
-        </h1>
-        <Link
-          to="/bang-gia/goi"
-          className="inline-flex min-h-11 items-center rounded-[10px] border border-border px-4 font-medium hover:bg-surface-2"
-        >
+      <PageHeader eyebrow="Danh mục" title="Bảng giá dịch vụ" titleId="price-list-title">
+        <Link to="/bang-gia/goi" className="btn btn-secondary">
           Gói liệu trình
         </Link>
-      </div>
+      </PageHeader>
       {services.data.length === 0 && !canManage && (
         <p className="text-text-muted">Chưa có dịch vụ nào trong bảng giá.</p>
       )}

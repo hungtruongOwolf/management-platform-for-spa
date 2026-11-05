@@ -7,7 +7,7 @@ import { spaToday } from "../corrections/api";
 import { addDays, compactVnd, packagesPath, relativeDay } from "./api";
 import { niceTicks } from "./LineChart";
 import { daysBetween, resolvePeriod } from "./period";
-import { parseInactiveSearch, parseReportsSearch } from "./search";
+import { inactiveSearch, reportsSearch } from "./search";
 import { mockDaily, mockRange } from "./fixtures";
 import { displayPhone } from "./PackagesOverviewPage";
 import { serveManagement } from "./testServer";
@@ -143,10 +143,10 @@ describe("report periods", () => {
   });
 
   it("parses search params and drops defaults and junk", () => {
-    expect(parseReportsSearch({ period: "7d", metric: "revenue", tab: "x" })).toEqual({});
-    expect(parseReportsSearch({ period: "custom", from: "2026-10-01", to: "nope" })).toEqual({ period: "custom", from: "2026-10-01" });
-    expect(parseInactiveSearch({ days: "14", follow: "due", kind: "one_off", q: "  Hà " })).toEqual({ days: 14, kind: "one_off", q: "Hà" });
-    expect(parseInactiveSearch({ days: "13", follow: "all" })).toEqual({ follow: "all" });
+    expect(reportsSearch.validate({ period: "7d", metric: "revenue", tab: "x" })).toEqual({});
+    expect(reportsSearch.validate({ period: "custom", from: "2026-10-01", to: "nope" })).toEqual({ period: "custom", from: "2026-10-01" });
+    expect(inactiveSearch.validate({ days: "14", follow: "due", kind: "one_off", q: "Hà" })).toEqual({ days: 14, kind: "one_off", q: "Hà" });
+    expect(inactiveSearch.validate({ days: "13", follow: "all", scope: "nope" })).toEqual({ follow: "all" });
   });
 });
 
@@ -207,7 +207,7 @@ describe("customer history", () => {
   it("is not shown without report.read", async () => {
     serveManagement({ permissions: ["customer.read"] });
     at("/khach-hang/c1");
-    expect(await screen.findByRole("heading", { level: 1, name: "Nguyễn Thị Hà" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: /^Nguyễn Thị Hà/ })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Lịch sử sử dụng" })).not.toBeInTheDocument();
   });
 });

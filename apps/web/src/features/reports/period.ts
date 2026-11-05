@@ -4,8 +4,9 @@
  * period of the same length the KPI row compares against. Pure, so it is unit tested.
  */
 
-export const PRESETS = ["today", "7d", "30d", "this_month", "last_month", "this_year", "12m", "custom"] as const;
-export type Preset = (typeof PRESETS)[number];
+import { PRESETS, type Preset } from "./search";
+
+export { PRESETS, type Preset };
 
 export type Bucket = "day" | "week" | "month" | "year";
 

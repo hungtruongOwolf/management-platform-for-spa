@@ -1,21 +1,32 @@
-import { useQuery } from "@tanstack/react-query";
+import type { HistoryKind } from "@vpyd/api-client";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { canSeeManagement } from "../../app/features";
 import { Icon, type IconName } from "../../app/Icon";
-import type { Me } from "../auth/session";
+import { serviceLabel } from "../../lib/names";
+import { useSearchState } from "../../lib/searchState";
+import { can, type Me } from "../auth/session";
+import { spaToday } from "../corrections/api";
+import { CHANNEL_LABEL, OUTCOME_LABEL, followUpsQuery } from "../customers/followUps";
+import { FollowUpForm } from "../customers/FollowUpForm";
+import { HISTORY_KINDS, historySearch } from "../customers/search";
 import { customerHistoryQuery, customerStatsQuery, relativeDay } from "./api";
 import type { HistoryEvent } from "./contract";
+import { FilterBar, FilterSelect, SearchField } from "./filters";
 import { EmptyState, ErrorState, RowsSkeleton, money } from "./ui";
 
 const time = new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Ho_Chi_Minh" });
 const month = new Intl.DateTimeFormat("vi-VN", { month: "long", year: "numeric", timeZone: "UTC" });
 
-const KIND: Record<HistoryEvent["kind"], [string, IconName, string]> = {
+const KIND: Record<HistoryKind, [string, IconName, string]> = {
   visit: ["Lượt khách", "desk", "bg-primary"],
   purchase: ["Mua gói liệu trình", "package", "bg-accent"],
   visit_voided: ["Lượt đã hủy", "x", "bg-border-strong"],
   purchase_voided: ["Hóa đơn đã hủy", "x", "bg-border-strong"],
   package_cancelled: ["Hủy gói", "alert", "bg-danger"],
 };
+
+const KIND_OPTIONS: readonly (readonly [HistoryKind | "", string])[] = [["", "Mọi loại"], ...HISTORY_KINDS.map((k) => [k, KIND[k][0]] as const)];
 
 function Fact({ label, value, hint }: { label: string; value: string; hint?: string | undefined }) {
   return (
@@ -60,7 +71,7 @@ function EventBody({ e }: { e: HistoryEvent }) {
         {e.visit.lines.map((l, i) => (
           <li key={i} className="flex flex-wrap justify-between gap-x-3">
             <span>
-              {l.service_name}
+              {serviceLabel(l.service_name, l.category_name)}
               <span className="text-text-muted">
                 {l.source === "package" ? ` · trừ buổi${l.sessions_left_after != null ? `, còn ${String(l.sessions_left_after)}` : ""}` : " · dịch vụ lẻ"} · KTV {l.staff_name}
               </span>
@@ -98,57 +109,209 @@ function EventBody({ e }: { e: HistoryEvent }) {
   return e.void ? <p className="mt-1 text-sm text-text-muted">{e.void.reason}</p> : null;
 }
 
+/** Search, kind and dates over the history (EM round 3 item 6), kept in the profile's URL. */
+function HistoryFilters() {
+  const [s, set] = useSearchState(historySearch);
+  const today = spaToday();
+  return (
+    <FilterBar label="Tìm trong lịch sử">
+      <SearchField
+        label="Tìm dịch vụ, gói hoặc kỹ thuật viên"
+        placeholder="Dịch vụ, gói, KTV…"
+        value={s.hq}
+        onCommit={(hq) => {
+          set({ hq });
+        }}
+      />
+      <FilterSelect
+        label="Loại"
+        value={s.hkind}
+        options={KIND_OPTIONS}
+        onChange={(hkind) => {
+          set({ hkind });
+        }}
+      />
+      <label className="filter-field">
+        Từ ngày
+        <input
+          type="date"
+          value={s.hfrom}
+          max={s.hto || today}
+          onChange={(e) => {
+            set({ hfrom: e.target.value });
+          }}
+        />
+      </label>
+      <label className="filter-field">
+        Đến ngày
+        <input
+          type="date"
+          value={s.hto}
+          min={s.hfrom || undefined}
+          max={today}
+          onChange={(e) => {
+            set({ hto: e.target.value });
+          }}
+        />
+      </label>
+      {(s.hq || s.hkind || s.hfrom || s.hto) && (
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => {
+            set({ hq: "", hkind: "", hfrom: "", hto: "" });
+          }}
+        >
+          Xóa bộ lọc
+        </button>
+      )}
+    </FilterBar>
+  );
+}
+
 function Timeline({ customerId }: { customerId: string }) {
-  const history = useQuery(customerHistoryQuery(customerId));
+  const [s] = useSearchState(historySearch);
+  const filtered = Boolean(s.hq || s.hkind || s.hfrom || s.hto);
+  // A reversed range is not sent (the API would answer 422); the inputs' min/max make it rare.
+  const range = s.hfrom && s.hto && s.hfrom > s.hto ? {} : { from: s.hfrom || undefined, to: s.hto || undefined };
+  const q = s.hq.trim();
+  const history = useInfiniteQuery(customerHistoryQuery(customerId, { q: q.length >= 2 ? q : undefined, kind: s.hkind || undefined, ...range }));
   if (history.isPending) return <RowsSkeleton rows={4} />;
   if (history.isError) return <ErrorState error={history.error} onRetry={() => void history.refetch()} />;
-  if (history.data.events.length === 0)
-    return <EmptyState title="Chưa có lịch sử">Lượt khách và gói đã mua sẽ hiện ở đây.</EmptyState>;
+  const events = history.data.pages.flatMap((p) => p.events);
+  if (events.length === 0)
+    return filtered ? (
+      <EmptyState title="Không thấy mục nào">Thử bỏ bớt bộ lọc hoặc tìm bằng tên khác.</EmptyState>
+    ) : (
+      <EmptyState title="Chưa có lịch sử">Lượt khách và gói đã mua sẽ hiện ở đây.</EmptyState>
+    );
   const monthOf = (e: HistoryEvent) => month.format(new Date(`${e.business_date}T00:00:00Z`));
-  const events = history.data.events;
   return (
-    <ol className="timeline" aria-label="Lịch sử sử dụng">
-      {events.map((e, i) => {
-        const m = monthOf(e);
-        const prev = events[i - 1];
-        const heading = !prev || monthOf(prev) !== m ? m : null;
-        const [label, icon, dot] = KIND[e.kind];
-        const voided = e.kind.endsWith("_voided");
-        return (
-          <li key={`${e.at}-${String(i)}`} className="relative">
-            {heading && <p className="mt-2 mb-1 eyebrow first-letter:uppercase">{heading}</p>}
-            <div className={`relative rounded-[10px] border border-border p-3 ${voided ? "bg-surface-2 text-text-muted" : "bg-surface"}`}>
-              <span aria-hidden="true" className={`timeline-dot ${dot} text-on-primary`}>
-                <Icon name={icon} className="size-2.5" />
-              </span>
-              <p className="flex flex-wrap items-baseline justify-between gap-2">
-                <span className={`font-semibold ${voided ? "line-through" : ""}`}>{label}</span>
-                <span className="text-xs text-text-muted tabular">
-                  {relativeDay(e.business_date)} · {time.format(new Date(e.at))}
+    <div className={`grid content-start gap-3 ${history.isPlaceholderData ? "is-refreshing" : ""}`}>
+      <ol className="timeline" aria-label="Lịch sử sử dụng">
+        {events.map((e, i) => {
+          const m = monthOf(e);
+          const prev = events[i - 1];
+          const heading = !prev || monthOf(prev) !== m ? m : null;
+          const [label, icon, dot] = KIND[e.kind];
+          const voided = e.kind.endsWith("_voided");
+          return (
+            <li key={`${e.at}-${String(i)}`} className="relative">
+              {heading && <p className="mt-2 mb-1 eyebrow first-letter:uppercase">{heading}</p>}
+              <div className={`relative rounded-[10px] border border-border p-3 ${voided ? "bg-surface-2 text-text-muted" : "bg-surface"}`}>
+                <span aria-hidden="true" className={`timeline-dot ${dot} text-on-primary`}>
+                  <Icon name={icon} className="size-2.5" />
                 </span>
-              </p>
-              <EventBody e={e} />
-            </div>
-          </li>
-        );
-      })}
-    </ol>
+                <p className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className={`font-semibold ${voided ? "line-through" : ""}`}>{label}</span>
+                  <span className="text-xs text-text-muted tabular">
+                    {relativeDay(e.business_date)} · {time.format(new Date(e.at))}
+                  </span>
+                </p>
+                <EventBody e={e} />
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      {history.hasNextPage && (
+        <button type="button" className="btn btn-secondary justify-self-center" disabled={history.isFetchingNextPage} onClick={() => void history.fetchNextPage()}>
+          {history.isFetchingNextPage ? "Đang tải…" : "Xem thêm lịch sử"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** "Chăm sóc lại": every contact with this customer (newest first) and "Ghi lần liên hệ". */
+function FollowUps({ customerId, customerName, canRecord }: { customerId: string; customerName: string; canRecord: boolean }) {
+  const list = useQuery(followUpsQuery(customerId));
+  const [open, setOpen] = useState(false);
+  const today = spaToday();
+  const next = list.data?.items[0]?.next_follow_up_on;
+  return (
+    <section aria-labelledby="follow-title" className="card grid content-start gap-3 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="follow-title" className="flex items-center gap-2 text-lg font-semibold">
+          <Icon name="phone" className="size-5 text-accent" /> Chăm sóc lại
+        </h2>
+        {canRecord && !open && (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => {
+              setOpen(true);
+            }}
+          >
+            <Icon name="plus" className="size-4" /> Ghi lần liên hệ
+          </button>
+        )}
+      </div>
+      {next && (
+        <p className={`badge justify-self-start ${next <= today ? "badge-danger" : "badge-ok"}`}>
+          {next <= today ? "Đến hạn liên hệ" : "Hẹn liên hệ lại"} {relativeDay(next)}
+        </p>
+      )}
+      {open && (
+        <FollowUpForm
+          customerId={customerId}
+          customerName={customerName}
+          onDone={() => {
+            setOpen(false);
+          }}
+          onCancel={() => {
+            setOpen(false);
+          }}
+        />
+      )}
+      {list.isPending && <RowsSkeleton rows={2} />}
+      {list.isError && <ErrorState error={list.error} onRetry={() => void list.refetch()} />}
+      {list.data && list.data.items.length === 0 && <p className="text-sm text-text-muted">Chưa liên hệ lần nào.</p>}
+      {list.data && list.data.items.length > 0 && (
+        <ol className="timeline" aria-label="Các lần liên hệ">
+          {list.data.items.map((f) => (
+            <li key={f.id} className="relative">
+              <div className="relative rounded-[10px] border border-border bg-surface p-3">
+                <span aria-hidden="true" className="timeline-dot bg-accent text-on-primary">
+                  <Icon name="phone" className="size-2.5" />
+                </span>
+                <p className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="font-semibold">{OUTCOME_LABEL[f.outcome]}</span>
+                  <span className="text-xs text-text-muted tabular">{relativeDay(f.contacted_on)}</span>
+                </p>
+                <p className="text-sm text-text-muted">
+                  {CHANNEL_LABEL[f.channel]} · {f.by_name}
+                  {f.next_follow_up_on && ` · hẹn lại ${relativeDay(f.next_follow_up_on)}`}
+                </p>
+                {f.note && <p className="mt-1 text-sm">{f.note}</p>}
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+      {list.data?.has_more && <p className="text-xs text-text-muted">Chỉ hiện 100 lần gần nhất.</p>}
+    </section>
   );
 }
 
 /**
- * Customer profile: summary numbers and the usage timeline (visits, purchases, voids,
- * cancellations), newest first. Shown only where the management views exist (app/features.ts).
+ * Customer profile, management side: the follow-up log, then the usage history (summary numbers,
+ * a searchable timeline of visits, purchases, voids and cancellations, newest first). Shown only
+ * where the management views exist (app/features.ts); the API decides each part.
  */
-export function CustomerHistory({ customerId, me }: { customerId: string; me: Me | null }) {
+export function CustomerHistory({ customerId, customerName = "", me }: { customerId: string; customerName?: string; me: Me | null }) {
   if (!canSeeManagement(me)) return null;
   return (
-    <section aria-labelledby="history-title" className="card grid content-start gap-4 p-4">
-      <h2 id="history-title" className="flex items-center gap-2 text-lg font-semibold">
-        <Icon name="history" className="size-5 text-accent" /> Lịch sử sử dụng
-      </h2>
-      <Summary customerId={customerId} />
-      <Timeline customerId={customerId} />
-    </section>
+    <div className="grid content-start gap-4">
+      <FollowUps customerId={customerId} customerName={customerName} canRecord={can(me, "customer.follow_up")} />
+      <section aria-labelledby="history-title" className="card grid content-start gap-4 p-4">
+        <h2 id="history-title" className="flex items-center gap-2 text-lg font-semibold">
+          <Icon name="history" className="size-5 text-accent" /> Lịch sử sử dụng
+        </h2>
+        <Summary customerId={customerId} />
+        <HistoryFilters />
+        <Timeline customerId={customerId} />
+      </section>
+    </div>
   );
 }

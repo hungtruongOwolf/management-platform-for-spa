@@ -1,8 +1,8 @@
 import { useQuery, useSuspenseQuery, type UseQueryResult } from "@tanstack/react-query";
-import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 import { Icon } from "../../app/Icon";
 import { serviceLabel } from "../../lib/names";
+import { useSearchState } from "../../lib/searchState";
 import { can, meQuery } from "../auth/session";
 import { spaToday } from "../corrections/api";
 import { compactVnd, dailyReportQuery, longDay, rangeReportQuery, shortDay, weekdayOf } from "./api";
@@ -22,10 +22,10 @@ import {
   type Period,
   type Preset,
 } from "./period";
-import { parseReportsSearch, type ReportsSearch } from "./search";
+import { reportsSearch, type ReportMetric } from "./search";
 import { CountUp, Delta, EmptyState, ErrorState, Loading, ManagementOnly, PageHeader, RowsSkeleton, StatCard, StatSkeleton, money } from "./ui";
 
-type Metric = NonNullable<ReportsSearch["metric"]> | "revenue";
+type Metric = ReportMetric;
 
 /**
  * /bao-cao: a period (preset or custom, in the URL) → headline numbers against the previous period
@@ -43,14 +43,11 @@ export function ReportsPage() {
 
 function ReportsPageBody() {
   const { data: me } = useSuspenseQuery(meQuery);
-  const search = useSearch({ from: "/authed/bao-cao" });
-  const navigate = useNavigate({ from: "/bao-cao" });
+  const [search, patch] = useSearchState(reportsSearch);
   const today = spaToday();
-  const period = resolvePeriod(search.period ?? "7d", today, { ...(search.from ? { from: search.from } : {}), ...(search.to ? { to: search.to } : {}) });
+  const period = resolvePeriod(search.period, today, { from: search.from, to: search.to });
   const canLedger = can(me, "report.revenue.read");
   const tab = search.tab === "ledger" && canLedger ? "ledger" : "overview";
-  const patch = (p: Partial<Record<keyof ReportsSearch, string | undefined>>) =>
-    void navigate({ search: (prev) => parseReportsSearch({ ...prev, ...p }), replace: true });
 
   return (
     <section className="grid content-start gap-5">
@@ -71,7 +68,7 @@ function ReportsPageBody() {
               aria-selected={tab === t}
               aria-controls="report-panel"
               onClick={() => {
-                patch({ tab: t === "ledger" ? "ledger" : undefined });
+                patch({ tab: t });
               }}
             >
               {label}
@@ -83,7 +80,7 @@ function ReportsPageBody() {
         period={period}
         today={today}
         onPreset={(p) => {
-          patch(p === "custom" ? { period: p, from: period.from, to: period.to } : { period: p, from: undefined, to: undefined });
+          patch(p === "custom" ? { period: p, from: period.from, to: period.to } : { period: p, from: "", to: "" });
         }}
         onCustom={(from, to) => {
           patch({ period: "custom", from, to });
@@ -95,7 +92,7 @@ function ReportsPageBody() {
         ) : (
           <Overview
             period={period}
-            metric={search.metric ?? "revenue"}
+            metric={search.metric}
             onMetric={(m) => {
               patch({ metric: m });
             }}

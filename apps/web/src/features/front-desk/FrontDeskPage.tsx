@@ -43,7 +43,7 @@ import {
   visitBody,
   visitsOfDayQuery,
 } from "./api";
-import { BrandMark } from "../../app/BrandMark";
+import { BrandLogo } from "../../app/BrandLogo";
 import { CustomerCard } from "./CustomerCard";
 import { spaToday } from "../corrections/api";
 
@@ -332,7 +332,7 @@ export function FrontDeskPage() {
           />
         ) : (
           <p className={`${card} text-center text-text-muted`}>
-            <BrandMark className="mx-auto mb-2 block size-10 text-accent opacity-70" />
+            <BrandLogo className="mx-auto mb-2 block w-14 opacity-80" />
             Chưa chọn khách. Tìm khách ở ô phía trên để bắt đầu một lượt.
           </p>
         )}
