@@ -1,6 +1,6 @@
 """Builds the web logo assets from the spa's real logo.
 
-    pip install pillow numpy potracer
+    pip install pillow numpy scipy potracer
     python scripts/brand/build_logo_assets.py
 
 Source: `docs for reference/logo Viên phúc y đường transparent.png` (1024², not in git). The artwork
@@ -11,14 +11,18 @@ parts): lotus, ring, script wordmark, yin-yang with leaves and the curved taglin
 
 - apps/web/src/assets/brand/emblem.svg — the whole logo, black, used as a CSS mask so the app
   recolours it with tokens (gold on the maroon chrome, maroon on cream).
-- apps/web/public/ favicon.svg, favicon.ico (16/32/48), favicon-16.png, favicon-32.png,
-  apple-touch-icon.png, icons/icon-*.png — the whole logo in gold on the chrome maroon.
+- apps/web/public/ apple-touch-icon.png, icons/icon-*.png (PWA) — the whole logo in gold on the
+  chrome maroon.
+- apps/web/public/ favicon.svg, favicon.ico (16/32/48), favicon-16.png, favicon-32.png — the
+  browser tab only: the simplified MARK, ring + lotus (EM 2026-11-05, round-4 answers: "dùng bản rút
+  gọn (hoa sen + vòng tròn) chỉ cho icon tab, còn mọi chỗ khác giữ logo đầy đủ"). The two parts are
+  the logo's own traced components (the largest = ring, the next = lotus); the lotus is scaled
+  and centred in the ring so it reads at 16 px. Nothing is redrawn.
 
-Tab-size legibility (EM round 4 item 9): the line art is ~4 source px thick, so at 16-48 px it fades
-into the maroon. Small icons fill the tile almost edge to edge and thicken the strokes first (a max
-filter on the alpha in the PNGs, a same-colour stroke in the SVG). Nothing is removed or redrawn:
-the whole logo stays, only bolder. Bump ICON_VERSION when the art changes: browsers cache favicons
-hard, and index.html links them with `?v=ICON_VERSION`.
+Tab-size legibility: the line art is ~4 source px thick, so at 16-48 px it fades into the maroon.
+Small icons fill the tile almost edge to edge and thicken the strokes first (a max filter on the
+alpha in the PNGs, a same-colour stroke in the SVG). Bump ICON_VERSION when the art changes:
+browsers cache favicons hard, and index.html links them with `?v=ICON_VERSION`.
 """
 
 import os
@@ -27,6 +31,7 @@ import sys
 import numpy as np
 import potrace
 from PIL import Image, ImageDraw, ImageFilter
+from scipy import ndimage
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 LOGO = os.path.join("docs for reference", "logo Viên phúc y đường transparent.png")
@@ -41,11 +46,15 @@ PUBLIC = os.path.join(ROOT, "apps", "web", "public")
 MAROON = (0x5A, 0x1D, 0x18)  # tokens.css --chrome-bg (light)
 GOLD = (0xE3, 0xB4, 0x55)  # tokens.css --chrome-accent
 # Cache-busting version in apps/web/index.html icon links (`?v=`); bump when the art changes.
-ICON_VERSION = 4
+ICON_VERSION = 5
 # Stroke growth (source px, odd) per icon size: enough to survive downsampling, not enough to blob.
-GROW = {16: 15, 32: 11, 48: 9, 180: 5}
+GROW = {180: 5}
+# Same for the tab mark (its source is the ~800 px ring, so it shrinks more than the logo).
+MARK_GROW = {16: 31, 32: 21, 48: 15}
+# Lotus size inside the ring, relative to its size in the logo.
+MARK_LOTUS_SCALE = 1.55
 # SVG favicon stroke (source px): Chrome rasterises it at 16/32 px in the tab.
-SVG_STROKE = 9
+SVG_STROKE = 14
 
 
 def num(v):
@@ -101,9 +110,27 @@ def square(alpha):
     return Image.fromarray(sq, "L")
 
 
-def tile(logo, size, logo_frac, radius_frac):
-    """The logo in gold on a maroon (optionally rounded) square, strokes grown for small sizes."""
-    grow = GROW.get(size, 1)
+def mark(ink):
+    """Ring + lotus of the logo on a square canvas, the lotus scaled and centred in the ring."""
+    lab, n = ndimage.label(ink)
+    areas = ndimage.sum(ink, lab, range(1, n + 1))
+    ring_id, lotus_id = (np.argsort(-areas) + 1)[:2]
+    ring, lotus = lab == ring_id, lab == lotus_id
+    ys, xs = np.nonzero(ring)
+    side = int(max(ys.max() - ys.min(), xs.max() - xs.min())) + 1
+    out = Image.new("L", (side, side), 0)
+    out.paste(Image.fromarray((ring[ys.min() : ys.min() + side, xs.min() : xs.min() + side] * 255).astype(np.uint8)), (0, 0))
+    ly, lx = np.nonzero(lotus)
+    petals = Image.fromarray((lotus[ly.min() : ly.max() + 1, lx.min() : lx.max() + 1] * 255).astype(np.uint8))
+    petals = petals.resize((int(petals.width * MARK_LOTUS_SCALE), int(petals.height * MARK_LOTUS_SCALE)), Image.LANCZOS)
+    out.paste(petals, ((side - petals.width) // 2, (side - petals.height) // 2), petals)
+    # A clear border, so the tracer (and its bbox padding) never starts at a negative index.
+    return np.pad(np.array(out) > 127, 8)
+
+
+def tile(logo, size, logo_frac, radius_frac, grow_by=None):
+    """The art in gold on a maroon (optionally rounded) square, strokes grown for small sizes."""
+    grow = (grow_by or GROW).get(size, 1)
     if grow > 1:
         logo = logo.filter(ImageFilter.MaxFilter(grow))
     img = Image.new("RGBA", (size, size), MAROON + (255,))
@@ -118,8 +145,8 @@ def tile(logo, size, logo_frac, radius_frac):
     return img
 
 
-def png_icon(logo, size, logo_frac, radius_frac, name):
-    img = tile(logo, size, logo_frac, radius_frac)
+def png_icon(logo, size, logo_frac, radius_frac, name, grow_by=None):
+    img = tile(logo, size, logo_frac, radius_frac, grow_by)
     path = os.path.join(PUBLIC, name)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     # A small palette: flat two-colour art, ~10x smaller than RGBA.
@@ -133,18 +160,19 @@ def main():
     os.makedirs(SVG_OUT, exist_ok=True)
     os.makedirs(PUBLIC, exist_ok=True)
 
-    w, h, d = write_svg("emblem.svg", ink, 6)
+    write_svg("emblem.svg", ink, 6)
 
-    # Favicon: the whole logo in gold on a rounded maroon tile (colours baked in: a favicon cannot use tokens).
-    # 8 % margin (was 16 %) and a 12 % corner (was 20 %): at 16 px every pixel counts, and the
-    # curved tagline reaches the bottom corners.
-    side = max(w, h) * 1.08
+    # Tab favicon: the ring + lotus mark in gold on a rounded maroon tile (colours baked in: a
+    # favicon cannot use tokens), 6 % margin.
+    tab = mark(ink)
+    w, h, d = to_svg(tab, bbox(tab, 2))
+    side = max(w, h) * 1.06
     fav = (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {s} {s}">'
         '<rect width="{s}" height="{s}" rx="{r}" fill="#5a1d18"/>'
         '<path fill="#e3b455" stroke="#e3b455" stroke-width="{sw}" stroke-linejoin="round" '
         'transform="translate({tx} {ty})" d="{d}"/></svg>\n'
-    ).format(s=num(side), r=num(side * 0.12), sw=SVG_STROKE, tx=num((side - w) / 2), ty=num((side - h) / 2), d=d)
+    ).format(s=num(side), r=num(side * 0.18), sw=SVG_STROKE, tx=num((side - w) / 2), ty=num((side - h) / 2), d=d)
     with open(os.path.join(PUBLIC, "favicon.svg"), "w", encoding="utf-8", newline="\n") as fh:
         fh.write(fav)
     print("favicon.svg", os.path.getsize(os.path.join(PUBLIC, "favicon.svg")))
@@ -155,10 +183,11 @@ def main():
     # Maskable: launchers crop to a circle of 80% diameter, so the art stays inside ~62%.
     png_icon(logo, 512, 0.62, 0, "icons/icon-maskable-512.png")
     png_icon(logo, 180, 0.78, 0, "apple-touch-icon.png")
-    png_icon(logo, 32, 0.96, 0.12, "favicon-32.png")
-    png_icon(logo, 16, 1.0, 0.12, "favicon-16.png")
+    tab_img = Image.fromarray((tab * 255).astype(np.uint8))
+    png_icon(tab_img, 32, 0.94, 0.18, "favicon-32.png", MARK_GROW)
+    png_icon(tab_img, 16, 0.94, 0.18, "favicon-16.png", MARK_GROW)
     # favicon.ico: what Windows, bookmarks and old tabs ask for at /favicon.ico (16, 32, 48 inside).
-    icons = [tile(logo, n, 0.96, 0.12) for n in (16, 32, 48)]
+    icons = [tile(tab_img, n, 0.94, 0.18, MARK_GROW) for n in (16, 32, 48)]
     ico = os.path.join(PUBLIC, "favicon.ico")
     icons[2].save(ico, format="ICO", sizes=[(16, 16), (32, 32), (48, 48)], append_images=icons[:2])
     print("favicon.ico", os.path.getsize(ico))

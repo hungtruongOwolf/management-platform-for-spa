@@ -11,7 +11,6 @@ import { spaToday } from "../corrections/api";
 import { CHANNEL_LABEL, OUTCOME_LABEL, followUpsQuery } from "../customers/followUps";
 import { FollowUpForm } from "../customers/FollowUpForm";
 import { HISTORY_KINDS, historySearch } from "../customers/search";
-import { customerPackagesQuery } from "../sales/api";
 import { customerHistoryQuery, customerStatsQuery, relativeDay } from "./api";
 import type { HistoryEvent } from "./contract";
 import { BottomSheet } from "../../components/BottomSheet";
@@ -41,21 +40,8 @@ function Fact({ label, value, hint }: { label: string; value: string; hint?: str
   );
 }
 
-/**
- * "Đã chi" counts money taken through the app only. A package carried over from the paper books
- * (no sale) was paid before the app, so the figure would read as "0đ" for a long-time customer
- * (EM round 4): say what it covers instead of a bare zero.
- */
-function spentHint(refunded: number, carriedOver: boolean): string | undefined {
-  const parts = [refunded ? `đã hoàn ${money(refunded)}` : "", carriedOver ? "chưa gồm tiền gói trả trước khi dùng app" : ""].filter(Boolean);
-  return parts.length > 0 ? parts.join(" · ") : undefined;
-}
-
 function Summary({ customerId }: { customerId: string }) {
   const stats = useQuery(customerStatsQuery(customerId));
-  // Same query (and cache entry) as the packages card: no extra request.
-  const packages = useQuery(customerPackagesQuery(customerId));
-  const carriedOver = packages.data?.some((p) => !p.sale_id) ?? false;
   if (stats.isPending)
     return (
       <div role="status" aria-label="Đang tải tóm tắt" className="grid grid-cols-2 gap-3">
@@ -75,7 +61,8 @@ function Summary({ customerId }: { customerId: string }) {
       />
       <Fact label="Số lượt" value={String(s.visit_count)} hint={s.first_visit_on ? `từ ${relativeDay(s.first_visit_on)}` : undefined} />
       <Fact label="Buổi còn lại" value={String(s.sessions_remaining)} hint={`${String(s.packages.active)} gói đang dùng`} />
-      <Fact label="Đã chi qua app" value={money(s.net_spent)} hint={spentHint(s.refunded, carriedOver)} />
+      {/* One number: migrated paper-book purchases are booked as ordinary sales (EM round-4 answers). */}
+      <Fact label="Đã chi" value={money(s.net_spent)} hint={s.refunded ? `đã hoàn ${money(s.refunded)}` : undefined} />
     </dl>
   );
 }

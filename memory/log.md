@@ -347,3 +347,9 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - **Perf:** JS khởi động gzip -9 `main` 120.1 → **120.2 KB** (ngân sách 125); CSS 11.9 → 13.1 KB. Lighthouse: xem PR.
 - **Tests:** vitest web 148 (mới `components/Mobile.test.tsx`: bảng ↔ thẻ, sheet, sticky, DateField parse/format/range, filter sheet) + ui/contrast 81; e2e `layout.spec.ts` thêm màn sổ doanh thu, ảnh 400px, test điện thoại (tab bar 5 đích, filter sheet dính đáy, không bảng ở màn quản lý, control ≥ 44px). Ảnh trước/sau 360/390/768/1280/1440 light/dark: scratchpad `r4-polish/before`, `r4-polish/after`, trạng thái tương tác `r4-polish/states`.
 - Giao cho agent lịch hẹn (`/quay`): ô "Xem ngày" → `DateField`; hàng gợi ý phím tắt vô nghĩa trên điện thoại; giỏ lượt → `StickyActions`.
+## [2026-11-05] ingest + record | EM trả lời câu hỏi PR #39: favicon mark, "Đã chi" một số, tên theo menu
+- Sources: [raw/2026-11-05-em-answers-round4-polish.md](raw/2026-11-05-em-answers-round4-polish.md), [raw/2026-11-05-em-carried-over-is-revenue.md](raw/2026-11-05-em-carried-over-is-revenue.md). Branch `feat/favicon-mark-paid-ui` từ `origin/main` + merge `feat/ui-polish-mobile` (PR #39 còn ở local gate lúc bắt đầu; merge commit, không rebase).
+- **Favicon tab:** mark rút gọn vòng + sen (2 component lớn nhất của logo trace, sen 1,55× giữa vòng), nét làm dày cho 16/32/48, `ICON_VERSION` 4 → 5 (`?v=5` mọi link + manifest). PWA/apple-touch giữ logo đầy đủ. Test mới `app/icons.test.ts`: mọi link icon có mặt và cùng version với script.
+- **"Đã chi":** một con số `net_spent`, bỏ chú thích "chưa gồm tiền gói trả trước khi dùng app" và không tách giấy/app; backend ghi gói sổ giấy thành hóa đơn thường theo ngày gốc (không đánh dấu gói chuyển từ sổ giấy ở UI).
+- **Viết hoa:** design-system quy tắc 3 ghi rõ tên dịch vụ/gói giữ cách viết của menu in (EM: "như trên menu nhé").
+- Tab bar "Lịch hẹn" thay "Trang chủ": agent lịch hẹn làm.
