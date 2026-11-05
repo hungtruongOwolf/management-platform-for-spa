@@ -10,9 +10,10 @@
 #   R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET
 #   BACKUP_PREFIX            folder inside the bucket, e.g. "staging" (default)
 #   BACKUP_REMOTE            override the rclone destination (e.g. a local path for tests); default "r2:$R2_BUCKET"
-# Retention (optional; prefer R2 lifecycle rules + bucket lock, see runbook):
-#   BACKUP_RETENTION_DAYS    delete daily/ objects older than N days
-#   BACKUP_MONTHLY_RETENTION_DAYS  delete monthly/ objects older than N days
+# Retention is NOT done here (security review L7): R2 has no write-only token, so the VPS credential
+# could also delete. Backups are protected by R2 bucket lock rules (daily/, monthly/ cannot be deleted
+# or overwritten before their retention ends) and expired by R2 lifecycle rules, both set in the
+# Cloudflare dashboard by the EM; nothing on the VPS ever deletes a finished backup. See runbook.
 # Monitoring (optional):
 #   HEALTHCHECK_PING_URL     dead-man's switch (healthchecks.io); "/fail" is appended on failure
 set -eu
@@ -59,6 +60,9 @@ export PGCONNECT_TIMEOUT="${PGCONNECT_TIMEOUT:-15}"
 
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 name="vpyd-${PREFIX}-${stamp}.dump.age"
+# Stream into incoming/ (not locked; a lifecycle rule clears it after a day), then server-side copy
+# to daily/ only once the whole pipeline succeeded: a locked prefix must never hold a truncated dump.
+incoming="${BACKUP_REMOTE}/${PREFIX}/incoming/${name}"
 daily="${BACKUP_REMOTE}/${PREFIX}/daily/${name}"
 
 ping /start
@@ -68,26 +72,21 @@ log "dumping ${PGDATABASE} on ${PGHOST} -> ${PREFIX}/daily/${name}"
 # (auth, storage, realtime, ...) are not ours and are excluded by not being selected.
 if ! pg_dump --format=custom --compress=6 --no-password --schema=app --schema=public \
      | age --encrypt --recipient "$AGE_RECIPIENT" \
-     | rclone rcat --s3-no-check-bucket "$daily"; then
-  rclone deletefile "$daily" >/dev/null 2>&1 || true   # never leave a truncated backup that looks valid
+     | rclone rcat --s3-no-check-bucket "$incoming"; then
+  rclone deletefile "$incoming" >/dev/null 2>&1 || true   # incoming/ only: a failed dump is never promoted
   fail "dump/encrypt/upload pipeline failed"
 fi
 
-size="$(rclone size --json "$daily" | sed -n 's/.*"bytes":\([0-9]*\).*/\1/p')"
+size="$(rclone size --json "$incoming" | sed -n 's/.*"bytes":\([0-9]*\).*/\1/p')"
 [ "${size:-0}" -gt 1024 ] || fail "uploaded object is suspiciously small (${size:-0} bytes)"
+rclone copyto "$incoming" "$daily" || fail "promoting the upload to daily/ failed"
+rclone deletefile "$incoming" >/dev/null 2>&1 || log "warning: incoming/ cleanup failed (the lifecycle rule removes it)"
 log "uploaded ${size} bytes"
 
 # First backup of each month is also kept as a monthly copy (longer retention).
 if [ "$(date -u +%d)" = "01" ]; then
   rclone copyto "$daily" "${BACKUP_REMOTE}/${PREFIX}/monthly/${name}" || fail "monthly copy failed"
   log "monthly copy written"
-fi
-
-if [ -n "${BACKUP_RETENTION_DAYS:-}" ]; then
-  rclone delete --min-age "${BACKUP_RETENTION_DAYS}d" "${BACKUP_REMOTE}/${PREFIX}/daily/" || log "warning: daily prune failed"
-fi
-if [ -n "${BACKUP_MONTHLY_RETENTION_DAYS:-}" ]; then
-  rclone delete --min-age "${BACKUP_MONTHLY_RETENTION_DAYS}d" "${BACKUP_REMOTE}/${PREFIX}/monthly/" || log "warning: monthly prune failed"
 fi
 
 ping ""
