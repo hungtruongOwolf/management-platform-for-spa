@@ -11,6 +11,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 pub const SEARCH_LIMIT: i64 = 20;
+/// Longest search query: a full name or a phone number fits many times over.
+pub const MAX_QUERY_CHARS: usize = 100;
 const MAX_HEALTH_NOTE: usize = 2000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -350,6 +352,9 @@ pub async fn search(
 ) -> Result<Vec<SummaryRow>, AppError> {
     actor.require(Permission::CustomerRead)?;
     let query = query.map(str::trim).unwrap_or_default();
+    if query.chars().count() > MAX_QUERY_CHARS {
+        return Err(AppError::Validation(vec![FieldError::new("q", "too_long")]));
+    }
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let rows = if query.is_empty() {
         repo::recent(&mut tx, SEARCH_LIMIT).await?

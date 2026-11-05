@@ -19,6 +19,15 @@ pub enum MoneyError {
 
 impl Money {
     pub const ZERO: Self = Self(0);
+    /// Largest single amount a client may enter (a price, a sold price): ten billion dong, far
+    /// above any real service or package, low enough to catch a run of mistyped zeros and to keep
+    /// sums of a few lines far from `i64` overflow (G6: over the limit is a `422`).
+    pub const MAX_INPUT: Self = Self(10_000_000_000);
+
+    /// Whether this amount is one a client may enter (`<= MAX_INPUT`).
+    pub fn is_enterable(self) -> bool {
+        self <= Self::MAX_INPUT
+    }
 
     pub fn vnd(amount: i64) -> Result<Self, MoneyError> {
         if amount < 0 {
@@ -90,6 +99,13 @@ impl From<Money> for i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn enterable_amounts_stop_at_ten_billion() {
+        assert!(Money::ZERO.is_enterable());
+        assert!(Money::MAX_INPUT.is_enterable());
+        assert!(!Money(10_000_000_001).is_enterable());
+    }
 
     #[test]
     fn rejects_negative_amounts() {

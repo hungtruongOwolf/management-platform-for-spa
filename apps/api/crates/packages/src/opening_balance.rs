@@ -20,8 +20,6 @@ use uuid::Uuid;
 
 pub const MAX_PACKAGES: usize = 10;
 pub const MAX_ITEMS: usize = 20;
-/// Ten billion đồng: far above any real package, low enough to catch a run of typo'd zeros.
-const MAX_SOLD_PRICE: i64 = 10_000_000_000;
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -124,7 +122,7 @@ async fn build(
             String::new()
         });
     let sold_price = match Money::vnd(p.sold_price) {
-        Ok(m) if p.sold_price <= MAX_SOLD_PRICE => m,
+        Ok(m) if m.is_enterable() => m,
         Ok(_) => {
             errors.push(FieldError::new("sold_price", "out_of_range"));
             Money::ZERO
