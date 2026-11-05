@@ -121,7 +121,7 @@ export function SellPackageDialog({
       role="dialog"
       aria-modal="false"
       aria-labelledby={titleId}
-      className="mt-3 space-y-3 rounded-[10px] border border-primary bg-primary-soft/40 p-3"
+      className="mt-3 grid content-start gap-3 rounded-[10px] border border-primary bg-primary-soft/40 p-3"
     >
       <h2 id={titleId} className="font-semibold">
         Bán liệu trình mới
@@ -241,7 +241,7 @@ export function SellPackageDialog({
           </>
         )}
 
-        <fieldset className="space-y-2 sm:col-span-2">
+        <fieldset className="grid content-start gap-2 sm:col-span-2">
           <legend className="text-sm font-semibold">Thanh toán (thu đủ)</legend>
           <div className="flex flex-wrap gap-3">
             {(

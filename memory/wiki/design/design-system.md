@@ -70,7 +70,16 @@ EM: "logo dùng cho đúng chúng ta đã có logo rồi" ([raw](../../raw/2026-
 - **Điện thoại (< 768px):** top bar có mark; **tab bar** nâu đỏ cố định đáy: Trang chủ · Quầy · Khách · Hôm nay (nếu có quyền) · Thêm (mở **drawer** `<dialog>` trượt từ trái với toàn bộ nav). Nội dung chừa `--tabbar-h` (68px) ở đáy; toast quầy nổi trên tab bar.
 - **Command palette** (`app/CommandPalette.tsx`, chunk lazy chỉ tải khi mở): `<dialog>` modal (focus trap, Esc, backdrop do trình duyệt lo). Gõ tên/SĐT → khách (dùng `GET /customers?q=`, chỉ khi có `customer.read`) + màn hình (so khớp không dấu: "goi ban" → "Gói bán"). ↑↓ Enter. Không đụng phím tắt quầy (`/`, `Ctrl+Enter`, `Esc`).
 - Nav lấy từ một model (`app/nav.ts` `navFor(me)`) cho sidebar, drawer, tab bar, palette, lối tắt trang chủ. Lọc theo permission (UX; server quyết định).
-- **Không còn "sổ cũ" trong UI** (EM 2026-11-05): không mục nav, không ô trang chủ, không badge "Nhập từ sổ cũ"; gói chuyển từ sổ giấy hiển thị như mọi gói. `/nhap-so-cu` chỉ mở bằng URL cho chủ spa (cần `opening_balance.import` + `package.cancel_refund`) tới khi import chuyển sang CLI vận hành.
+- **Không còn "sổ cũ" trong UI** (EM 2026-11-05): không mục nav, không ô trang chủ, không badge "Nhập từ sổ cũ"; gói chuyển từ sổ giấy hiển thị như mọi gói. Màn `/nhap-so-cu` đã xóa; dữ liệu sổ giấy nhập bằng CLI `app import-paper-book`.
+
+## Quy tắc layout (audit 2026-11-05)
+EM: "mấy ô cách sắp xếp nó bị khó nhìn không đồng đều chỗ to, chỗ nhỏ, chỗ thì bị dính vào nhau chỗ thì khi bấm ra hiệu ứng ảnh hưởng luôn các phần khác".
+- **Một thang khoảng cách** (4px: 8/12/16/20/24) và **`gap` thay margin**: mọi khối xếp dọc là `grid gap-*` (không còn `space-y-*` ở container). `.grid` mặc định 1 cột `minmax(0,1fr)` để chữ không xuống dòng (truncate) không đẩy trang rộng ra; nút/link/segmented/badge trong grid giữ bề rộng của nó (`justify-self: start`), muốn full thì `w-full`.
+- **Ô cùng hàng cao bằng nhau:** grid `align-items: stretch`; StatCard `min-h-[152px]` có dòng chân dành sẵn (`mt-auto min-h-5`) dù có hay không có ghi chú; ô lối tắt `min-h-[88px]`.
+- **Hiệu ứng hover/nhấn chỉ dùng `transform` / `opacity` / `box-shadow` / `outline` / màu.** Không đổi width, height, padding, margin, border-width hay **font-weight** khi tương tác (đã bỏ chữ đậm ở nút segmented và nút Nữ/Nam đang chọn: thay bằng gạch chân vàng `inset box-shadow`).
+- Badge luôn `white-space: nowrap` + cách chữ bên cạnh `ml-2`; bảng cuộn trong card (`.table-wrap`, header dính mép card).
+- Panel mở ra (form hủy, thao tác gói) nằm ngay dưới dòng đã bấm: chỉ đẩy phần bên dưới, không đẩy phần ngang hàng.
+- **Kiểm tự động:** `e2e/specs/layout.spec.ts` (+ `e2e/support/layout.ts`): mỗi màn, lấy mẫu ≤ 12 control, đo box mọi phần tử trước/sau hover và nhấn (mousedown, kéo ra ngoài, nhả), lỗi nếu phần tử nào ngoài control đổi vị trí/kích thước; và không cuộn ngang ở 360/768/1280/1440, đính kèm ảnh từng màn × bề rộng vào report.
 
 ## Element polish toàn app (`apps/web/src/styles.css`)
 Một lớp CSS **không nằm trong layer** (thắng utility) cho vài thuộc tính, để mọi màn hình (kể cả màn chỉ dùng utility như `/nhap-so-cu`) cùng một kiểu:
@@ -89,7 +98,7 @@ Một lớp CSS **không nằm trong layer** (thắng utility) cho vài thuộc 
 | Khung app | header nâu đỏ 1 hàng, nav chữ cuộn ngang, logo sen tự vẽ | sidebar nhóm + icon + thanh vàng mục chọn, top bar có tìm nhanh Ctrl K, tab bar + drawer trên điện thoại, logo thật |
 | Đăng nhập | card hẹp, dải nâu đỏ + sen tự vẽ | 2 cột: emblem thật trên panel nâu đỏ có hoa văn góc, form rộng |
 | Trang chủ | khung chào + 4 ô chữ | khung chào hoa văn góc + watermark mark, "Hôm nay" (thực thu, khách, buổi) đếm số, lối tắt có icon + nâng nhẹ khi hover |
-| Mới | — | `/bao-cao`, `/goi-lieu-trinh`, `/nhac-khach`, lịch sử trên hồ sơ khách, `/cai-dat` |
+| Mới | — | `/bao-cao`, `/goi-lieu-trinh`, `/khach-lau-khong-quay-lai`, lịch sử trên hồ sơ khách, `/cai-dat` |
 | Tải dữ liệu | chữ "Đang tải…" / nhấp nháy | skeleton có vệt sáng chạy (transform) |
 
 **Brand redesign (PR #27):**
@@ -178,7 +187,7 @@ Primitives dựng trên shadcn/ui (Radix) trong `packages/ui`, theme bằng toke
 | **StatCard** (`features/reports/ui.tsx`) | nhãn + icon tròn vàng, số 28px đếm lên, chân: `Delta` (▲/▼ % so với hôm qua, màu + chữ); bản `accent` nâu đỏ cho "Thực thu"; loading: `StatSkeleton` |
 | **BarChart / SplitBar** (`features/reports/charts.tsx`) | cột HTML theo %, 1 màu nâu đỏ, cột được chọn màu vàng; nhãn giá trị khi hover/focus (cột cuối luôn hiện); là `<ol>` có `aria-label` từng cột; không thư viện chart |
 | **Timeline** (lịch sử khách) | đường dọc gradient vàng, chấm theo loại (lượt nâu đỏ, mua gói vàng, hủy xám/đỏ), nhóm theo tháng |
-| EmptyState (mark logo mờ + câu hướng dẫn), ErrorState ("Thử lại"), MockBanner ("Dữ liệu mẫu…", viền đứt vàng) | |
+| EmptyState (mark logo mờ + câu hướng dẫn), ErrorState ("Thử lại") | |
 | Dialog / Sheet (điện thoại) | `<dialog>` + `showModal()` (`Modal` trong AppShell): focus trap, Esc, backdrop |
 | ReasonDialog | bắt buộc nhập lý do (hủy, giảm giá, cho dùng gói hết hạn) |
 | Toast | `role=status`; lỗi dùng `role=alert`; 3–4 giây; không che nút Lưu; nổi trên tab bar điện thoại |

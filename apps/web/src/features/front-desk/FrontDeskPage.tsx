@@ -327,7 +327,7 @@ export function FrontDeskPage() {
           />
         ) : (
           <p className={`${card} text-center text-text-muted`}>
-            <BrandMark className="mx-auto mb-2 size-10 text-accent opacity-70" />
+            <BrandMark className="mx-auto mb-2 block size-10 text-accent opacity-70" />
             Chưa chọn khách. Tìm khách ở ô phía trên để bắt đầu một lượt.
           </p>
         )}
@@ -457,7 +457,7 @@ export function FrontDeskPage() {
           )}
 
           {customer && lines.length > 0 && (
-            <div className="mt-4 space-y-3">
+            <div className="mt-4 grid content-start gap-3">
               <p
                 className="flex justify-between text-lg font-bold"
                 aria-live="polite"
@@ -466,7 +466,7 @@ export function FrontDeskPage() {
                 <span className="tabular-nums">{formatVnd(due)}</span>
               </p>
               {due > 0 ? (
-                <fieldset className="space-y-2">
+                <fieldset className="grid content-start gap-2">
                   <legend className="text-sm font-semibold">
                     Thanh toán (thu đủ)
                   </legend>
@@ -683,7 +683,7 @@ function AddOneOff({
                 onClick={() => {
                   setChosenGender(g);
                 }}
-                className="min-h-11 rounded-[10px] border border-border px-3 aria-pressed:border-primary aria-pressed:bg-primary-soft aria-pressed:font-semibold aria-pressed:text-primary"
+                className="min-h-11 rounded-[10px] border border-border px-3 aria-pressed:border-primary aria-pressed:bg-primary-soft aria-pressed:text-primary"
               >
                 {label}
               </button>
@@ -757,7 +757,7 @@ function TodayVisits() {
         </p>
       )}
       {today.isPending && (
-        <div aria-hidden="true" className="space-y-2">
+        <div aria-hidden="true" className="grid content-start gap-2">
           <div className="h-10 skeleton" />
           <div className="h-10 skeleton" />
         </div>
@@ -794,7 +794,7 @@ function TodayVisits() {
                 >
                   <strong>{timeOf(v.check_in_at)}</strong> · {v.customer_name}
                   {v.status === "voided" && (
-                    <span className="ml-2 rounded-full bg-danger-soft px-2 text-xs font-semibold text-danger">
+                    <span className="badge badge-danger ml-2 align-middle">
                       Đã hủy
                     </span>
                   )}

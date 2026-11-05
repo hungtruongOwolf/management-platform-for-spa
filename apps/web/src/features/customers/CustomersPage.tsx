@@ -27,7 +27,7 @@ export function CustomersPage() {
     });
 
   return (
-    <section aria-labelledby="customers-title" className="space-y-4">
+    <section aria-labelledby="customers-title" className="grid content-start gap-4">
       <div>
         <p className="eyebrow">Hồ sơ khách</p>
         <h1 id="customers-title" className="page-title">
@@ -70,7 +70,7 @@ export function CustomersPage() {
           </p>
         )}
         {recent.isPending && (
-          <div role="status" aria-label="Đang tải khách gần đây" className="card space-y-2 p-3">
+          <div role="status" aria-label="Đang tải khách gần đây" className="card grid content-start gap-2 p-3">
             {[0, 1, 2, 3].map((i) => (
               <div key={i} className="skeleton h-12" />
             ))}
@@ -123,7 +123,7 @@ export function CustomerPage({ customerId }: { customerId: string }) {
   const customer = useQuery(customerQuery(customerId));
   if (customer.isPending)
     return (
-      <div role="status" aria-label="Đang tải hồ sơ…" className="space-y-3">
+      <div role="status" aria-label="Đang tải hồ sơ…" className="grid content-start gap-3">
         <div className="skeleton h-5 w-36" />
         <div className="skeleton h-48" />
       </div>
@@ -136,7 +136,7 @@ export function CustomerPage({ customerId }: { customerId: string }) {
     );
   }
   return (
-    <div className="space-y-3">
+    <div className="grid content-start gap-3">
       <Link to="/khach-hang" className="inline-flex min-h-11 items-center gap-1 text-sm text-text-muted hover:text-primary">
         <Icon name="chevron-left" className="size-4" /> Danh sách khách
       </Link>

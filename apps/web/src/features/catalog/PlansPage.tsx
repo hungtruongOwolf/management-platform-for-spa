@@ -34,7 +34,7 @@ export function PlansPage() {
   const serviceName = new Map(services.data.map((s) => [s.id, s.name]));
 
   return (
-    <section aria-labelledby="plans-title" className="space-y-4">
+    <section aria-labelledby="plans-title" className="grid content-start gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 id="plans-title" className="font-brand text-2xl text-primary">
           Gói liệu trình
@@ -62,7 +62,7 @@ export function PlansPage() {
       {plans.data.length === 0 && (
         <p className="text-text-muted">Chưa có gói liệu trình nào.</p>
       )}
-      <ul className="space-y-2">
+      <ul className="grid content-start gap-2">
         {plans.data.map((plan) => (
           <li
             key={plan.id}

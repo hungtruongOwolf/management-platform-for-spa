@@ -75,7 +75,7 @@ export function CustomerCard({
 
       <h3 className="mt-3 font-semibold">Liệu trình</h3>
       {packages.isPending && (
-        <div aria-hidden="true" className="mt-2 space-y-2">
+        <div aria-hidden="true" className="mt-2 grid content-start gap-2">
           <div className="h-14 skeleton" />
           <div className="h-14 skeleton" />
         </div>
@@ -139,7 +139,7 @@ export function CustomerCard({
                       : "Không thời hạn"}
                     {p.status !== "active" && (
                       <span
-                        className={`ml-2 rounded-full px-2 text-xs font-semibold ${STATUS_BADGE[p.status]}`}
+                        className={`badge ml-2 align-middle ${STATUS_BADGE[p.status]}`}
                       >
                         {STATUS_LABEL[p.status]}
                       </span>
@@ -195,7 +195,7 @@ export function CustomerCard({
       {overriding && (
         <form
           aria-label="Cho dùng tiếp liệu trình hết hạn"
-          className="mt-3 space-y-2 rounded-[10px] border border-warning-border bg-warning-bg p-3 text-warning-text"
+          className="mt-3 grid content-start gap-2 rounded-[10px] border border-warning-border bg-warning-bg p-3 text-warning-text"
           onSubmit={(e) => {
             e.preventDefault();
             if (reason.trim() === "") return;

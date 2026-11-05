@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
-import { isMock, longDay, packagesOverviewQuery, relativeDay, type PackageFilter } from "./api";
+import { longDay, packagesOverviewQuery, relativeDay, type PackageFilter } from "./api";
 import type { PackageOverviewRow, PackageStatus } from "./contract";
-import { EmptyState, ErrorState, ManagementOnly, MockBanner, PageHeader, RowsSkeleton } from "./ui";
+import { EmptyState, ErrorState, ManagementOnly, PageHeader, RowsSkeleton } from "./ui";
 
 const STATUS: Record<PackageStatus, [string, string]> = {
   active: ["Đang dùng", "badge-ok"],
@@ -12,18 +12,20 @@ const STATUS: Record<PackageStatus, [string, string]> = {
   cancelled: ["Đã hủy", "badge-danger"],
 };
 
-/** Customer name: a link to the profile, except for the mock's invented customers. */
+/** "+84905123456" → "0905 123 456" (design-system.md "Định dạng"); other shapes stay as they are. */
+export function displayPhone(phone: string): string {
+  const m = /^\+84(\d{3})(\d{3})(\d{3})$/.exec(phone);
+  return m ? `0${m[1] ?? ""} ${m[2] ?? ""} ${m[3] ?? ""}` : phone;
+}
+
+/** Customer name linking to the profile, phone below. */
 export function CustomerCell({ id, name, phone }: { id: string; name: string; phone: string }): ReactNode {
   return (
     <>
-      {isMock ? (
-        <span className="font-semibold">{name}</span>
-      ) : (
-        <Link to="/khach-hang/$customerId" params={{ customerId: id }} className="font-semibold text-primary hover:underline">
-          {name}
-        </Link>
-      )}
-      <span className="block text-xs text-text-muted tabular">{phone}</span>
+      <Link to="/khach-hang/$customerId" params={{ customerId: id }} className="font-semibold text-primary hover:underline">
+        {name}
+      </Link>
+      <span className="block text-xs text-text-muted tabular">{displayPhone(phone)}</span>
     </>
   );
 }
@@ -68,9 +70,8 @@ function PackagesOverviewPageBody() {
   ];
 
   return (
-    <section className="space-y-5">
+    <section className="grid content-start gap-5">
       <PageHeader eyebrow="Gói liệu trình" title="Theo dõi gói của khách" />
-      <MockBanner />
       <div className="segmented" role="group" aria-label="Lọc theo trạng thái">
         {filters.map(([f, label, n]) => (
           <button
@@ -95,7 +96,7 @@ function PackagesOverviewPageBody() {
         {page.isPending && <RowsSkeleton rows={6} />}
         {page.data?.items.length === 0 && <EmptyState title="Không có gói nào">Thử chọn một trạng thái khác.</EmptyState>}
         {page.data && page.data.items.length > 0 && (
-          <div className="overflow-x-auto">
+          <div className="table-wrap">
             <table className="data-table">
               <caption className="sr-only">Gói liệu trình của khách</caption>
               <thead>
@@ -113,7 +114,7 @@ function PackagesOverviewPageBody() {
               <tbody>
                 {page.data.items.map((p) => {
                   const [label, tone] = STATUS[p.status];
-                  const soon = p.status === "active" && p.days_to_expiry !== null && p.days_to_expiry <= 30;
+                  const soon = p.status === "active" && p.days_to_expiry != null && p.days_to_expiry <= 30;
                   return (
                     <tr key={p.id}>
                       <td>

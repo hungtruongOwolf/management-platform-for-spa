@@ -1,7 +1,7 @@
 /**
- * TODO(management-views): typed sample data for the management views until the API lands. Same
- * shapes as the contract, deterministic per date / customer (a seeded PRNG), so screenshots and
- * tests are stable. Only reachable when MANAGEMENT_DATA = "mock" (never in a production build).
+ * Contract-shaped sample data for tests (and nothing else: no app module imports this file, so it
+ * never ships). Deterministic per date / customer through a seeded PRNG, consistent with the
+ * contract's own sums (net = collected − voids − refunds, technicians add up to visits).
  */
 import type {
   CustomerStats,

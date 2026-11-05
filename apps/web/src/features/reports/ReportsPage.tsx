@@ -20,7 +20,6 @@ import {
   ErrorState,
   Loading,
   ManagementOnly,
-  MockBanner,
   PageHeader,
   RowsSkeleton,
   StatCard,
@@ -50,7 +49,7 @@ function ReportsPageBody() {
   const range = useQuery(rangeReportQuery(addDays(date, -6), date));
 
   return (
-    <section className="space-y-6">
+    <section className="grid content-start gap-6">
       <PageHeader eyebrow="Báo cáo" title={date === today ? "Tổng quan hôm nay" : `Tổng quan ${relativeDay(date, today).toLowerCase()}`}>
         <div className="flex items-center gap-2" role="group" aria-label="Chọn ngày">
           <button
@@ -100,7 +99,6 @@ function ReportsPageBody() {
           )}
         </div>
       </PageHeader>
-      <MockBanner />
 
       {daily.isError ? (
         <ErrorState error={daily.error} onRetry={() => void daily.refetch()} />
@@ -220,7 +218,7 @@ function MoneyMix({ report, pending }: { report: DailyReport | undefined; pendin
       </h2>
       {pending && (
         <Loading label="Đang tải cơ cấu">
-          <div className="space-y-3">
+          <div className="grid content-start gap-3">
             <div className="skeleton h-3" />
             <div className="skeleton h-16" />
             <div className="skeleton h-3" />
@@ -229,7 +227,7 @@ function MoneyMix({ report, pending }: { report: DailyReport | undefined; pendin
         </Loading>
       )}
       {report && report.revenue && (
-        <div className="space-y-6">
+        <div className="grid content-start gap-6">
           <SplitBar
             label="Theo hình thức"
             format={money}
@@ -275,7 +273,7 @@ function Technicians({ report }: { report: DailyReport }) {
   }
   const max = Math.max(...report.technicians.map((t) => t.visits));
   return (
-    <div className="overflow-x-auto">
+    <div className="table-wrap">
       <table className="data-table">
         <thead>
           <tr>
@@ -325,7 +323,7 @@ function TopServices({ range }: { range: RangeReport | undefined }) {
       ) : range.top_services.length === 0 ? (
         <p className="text-sm text-text-muted">Chưa có dịch vụ nào trong 7 ngày.</p>
       ) : (
-        <ol className="space-y-2">
+        <ol className="grid content-start gap-2">
           {range.top_services.slice(0, 5).map((s, i) => (
             <li key={s.service_id} className="flex items-center gap-3">
               <span aria-hidden="true" className="grid size-7 place-items-center rounded-full bg-accent-soft text-xs font-semibold text-accent-text">

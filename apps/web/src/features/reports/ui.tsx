@@ -6,7 +6,6 @@ import { meQuery } from "../auth/session";
 import { BrandMark } from "../../app/BrandMark";
 import { Icon, type IconName } from "../../app/Icon";
 import { messageFor } from "../../lib/errors";
-import { isMock } from "./api";
 
 function prefersReducedMotion(): boolean {
   return typeof window.matchMedia !== "function" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -72,7 +71,7 @@ export function StatCard({
   accent?: boolean;
 }) {
   return (
-    <div className={`card card-link flex flex-col gap-2 p-4 ${accent ? "ornament [--ornament:var(--chrome-accent)] border-transparent bg-chrome bg-[linear-gradient(135deg,var(--chrome-bg-2),var(--chrome-bg))] text-chrome-text" : ""}`}>
+    <div className={`card flex min-h-[152px] flex-col gap-2 p-4 ${accent ? "border-transparent bg-chrome bg-[linear-gradient(135deg,var(--chrome-bg-2),var(--chrome-bg))] text-chrome-text" : ""}`}>
       <p className={`flex items-center gap-2 text-sm font-medium ${accent ? "text-chrome-text-muted" : "text-text-muted"}`}>
         <span
           aria-hidden="true"
@@ -83,7 +82,8 @@ export function StatCard({
         {label}
       </p>
       <p className={`tabular text-[28px] leading-9 font-semibold ${accent ? "font-brand text-chrome-accent" : "text-text"}`}>{children}</p>
-      {foot && <div className="min-h-5">{foot}</div>}
+      {/* Reserved line: cards in a row stay the same height with or without a footnote. */}
+      <div className="mt-auto min-h-5">{foot}</div>
     </div>
   );
 }
@@ -93,7 +93,7 @@ export function StatSkeleton({ count = 4 }: { count?: number }) {
   return (
     <>
       {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="card flex flex-col gap-3 p-4" {...(i === 0 ? { role: "status", "aria-label": "Đang tải số liệu" } : {})}>
+        <div key={i} className="card flex min-h-[152px] flex-col gap-3 p-4" {...(i === 0 ? { role: "status", "aria-label": "Đang tải số liệu" } : {})}>
           <div className="skeleton h-8 w-32" />
           <div className="skeleton h-9 w-24" />
           <div className="skeleton h-4 w-28" />
@@ -105,7 +105,7 @@ export function StatSkeleton({ count = 4 }: { count?: number }) {
 
 export function RowsSkeleton({ rows = 5 }: { rows?: number }) {
   return (
-    <div role="status" aria-label="Đang tải" className="space-y-3 p-4">
+    <div role="status" aria-label="Đang tải" className="grid content-start gap-3 p-4">
       {Array.from({ length: rows }, (_, i) => (
         <div key={i} className="skeleton h-10" />
       ))}
@@ -141,17 +141,6 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => 
         Thử lại
       </button>
     </div>
-  );
-}
-
-/** TODO(management-views): disappears with the mock. Says plainly that the numbers are invented. */
-export function MockBanner() {
-  if (!isMock) return null;
-  return (
-    <p className="flex items-center gap-2 rounded-[10px] border border-dashed border-warning-border bg-warning-bg px-3 py-2 text-sm text-warning-text">
-      <Icon name="sparkle" className="size-4" />
-      Dữ liệu mẫu để duyệt giao diện. Số liệu thật sẽ hiện khi API báo cáo được bật.
-    </p>
   );
 }
 

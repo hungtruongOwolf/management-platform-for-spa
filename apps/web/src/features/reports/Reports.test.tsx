@@ -1,35 +1,18 @@
 import { createMemoryHistory } from "@tanstack/react-router";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { App } from "../../app/App";
-import { addDays, compactVnd, dailyReportQuery, relativeDay } from "./api";
-import { mockDaily, mockRange } from "./mock";
+import { addDays, compactVnd, packagesPath, relativeDay } from "./api";
+import { mockDaily, mockRange } from "./fixtures";
+import { displayPhone } from "./PackagesOverviewPage";
+import { serveManagement } from "./testServer";
 
-// Management views run on the typed mock in tests (app/features.ts: dev/test → "mock").
-const MANAGER = ["visit.record", "customer.read", "catalog.read", "sale.read"];
-
-function serve(permissions: string[]) {
-  return vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    if (url === "/api/v1/me")
-      return Promise.resolve(
-        Response.json({
-          user: { id: "u1", full_name: "Quản lý Hà", phone: "0905 123 456" },
-          active_tenant: { id: "t1", name: "Viên Phúc Y Đường" },
-          tenants: [{ id: "t1", name: "Viên Phúc Y Đường" }],
-          permissions,
-        }),
-      );
-    if (url === "/api/v1/customers/c1")
-      return Promise.resolve(
-        Response.json({ id: "c1", full_name: "Nguyễn Thị Hà", phone: "0905 111 222", gender: "female", version: 1 }),
-      );
-    return Promise.resolve(Response.json([]));
-  });
-}
+const MANAGER = ["visit.record", "customer.read", "catalog.read", "report.read", "report.revenue.read"];
 
 const at = (path: string) => render(<App history={createMemoryHistory({ initialEntries: [path] })} />);
+const urls = (spy: ReturnType<typeof serveManagement>) =>
+  spy.mock.calls.map(([input]) => (typeof input === "string" ? input : input instanceof URL ? input.href : input.url));
 
 describe("formatting helpers", () => {
   it("names recent days and compacts money for chart labels", () => {
@@ -39,9 +22,13 @@ describe("formatting helpers", () => {
     expect(compactVnd(3_250_000)).toBe("3,3 tr");
     expect(compactVnd(850_000)).toBe("850 k");
     expect(addDays("2026-03-01", -1)).toBe("2026-02-28");
+    expect(packagesPath("expiring")).toBe("/packages?expiring_within_days=30&limit=50");
+    expect(packagesPath("cancelled")).toBe("/packages?status=cancelled&limit=50");
+    expect(displayPhone("+84399000024")).toBe("0399 000 024");
+    expect(displayPhone("0905 111 222")).toBe("0905 111 222");
   });
 
-  it("keeps the mock consistent with the contract's own sums", () => {
+  it("keeps the test fixtures consistent with the contract's own sums", () => {
     const d = mockDaily("2026-11-05");
     const rev = d.revenue;
     expect(rev).toBeDefined();
@@ -51,30 +38,24 @@ describe("formatting helpers", () => {
     expect(d.technicians.reduce((s, t) => s + t.visits, 0)).toBe(d.counts.visits);
     expect(mockRange("2026-10-30", "2026-11-05").series).toHaveLength(7);
   });
-
-  it("asks the API for the day when the real source is on", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(mockDaily("2026-11-05")));
-    const opts = dailyReportQuery("2026-11-05", "api");
-    await opts.queryFn?.({} as never);
-    expect(fetchSpy).toHaveBeenCalledWith("/api/v1/reports/daily?date=2026-11-05", expect.anything());
-  });
 });
 
 describe("/bao-cao", () => {
-  it("shows today's numbers, the 7-day chart and each technician", async () => {
-    serve(MANAGER);
+  it("asks the API for the day and the last 7 days, then shows numbers, chart and technicians", async () => {
+    const spy = serveManagement({ permissions: MANAGER });
     at("/bao-cao");
     expect(await screen.findByRole("heading", { level: 1, name: "Tổng quan hôm nay" })).toBeInTheDocument();
-    expect(screen.getByText(/Dữ liệu mẫu/)).toBeInTheDocument();
     expect(await screen.findByText("Thực thu", { selector: "p" })).toBeInTheDocument();
     const chart = await screen.findByRole("list", { name: "Thực thu theo ngày" });
     expect(within(chart).getAllByRole("listitem")).toHaveLength(7);
     const table = await screen.findByRole("table");
     expect(within(table).getAllByRole("row").length).toBeGreaterThan(1);
+    expect(urls(spy).some((u) => u.startsWith("/api/v1/reports/daily?date="))).toBe(true);
+    expect(urls(spy).some((u) => /\/api\/v1\/reports\/range\?from=.*&to=.*&granularity=day/.test(u))).toBe(true);
   });
 
   it("steps to the previous day and back to today", async () => {
-    serve(MANAGER);
+    serveManagement({ permissions: MANAGER });
     const user = userEvent.setup();
     at("/bao-cao");
     await user.click(await screen.findByRole("button", { name: "Ngày trước" }));
@@ -84,17 +65,16 @@ describe("/bao-cao", () => {
     expect(screen.getByRole("button", { name: "Ngày sau" })).toBeDisabled();
   });
 
-  it("is closed to users without the permission (UX gate; the API decides)", async () => {
-    serve(["catalog.read"]);
+  it("is closed to users without report.read (UX gate; the API decides)", async () => {
+    serveManagement({ permissions: ["catalog.read", "sale.read"] });
     at("/bao-cao");
     expect(await screen.findByText("Màn hình này chưa mở cho tài khoản của bạn.")).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Hôm nay" })).not.toBeInTheDocument();
   });
 });
 
 describe("management lists", () => {
   it("filters packages by status", async () => {
-    serve(MANAGER);
+    const spy = serveManagement({ permissions: MANAGER });
     const user = userEvent.setup();
     at("/goi-lieu-trinh");
     const table = await screen.findByRole("table", { name: "Gói liệu trình của khách" });
@@ -102,24 +82,41 @@ describe("management lists", () => {
     await user.click(screen.getByRole("button", { name: /Đã hủy/ }));
     const filtered = await screen.findByRole("table", { name: "Gói liệu trình của khách" });
     for (const row of within(filtered).getAllByRole("row").slice(1)) expect(row).toHaveTextContent("Đã hủy");
+    expect(urls(spy)).toContain("/api/v1/packages?status=cancelled&limit=50");
   });
 
-  it("lists absent customers, longest first", async () => {
-    serve(MANAGER);
-    at("/nhac-khach");
-    const table = await screen.findByRole("table", { name: "Khách lâu chưa quay lại" });
+  it("lists overdue customers from 7 days by default, longest first, with paging, threshold and scope", async () => {
+    const spy = serveManagement({ permissions: MANAGER });
+    const user = userEvent.setup();
+    at("/khach-lau-khong-quay-lai");
+    expect(await screen.findByRole("heading", { level: 1, name: "Khách lâu không quay lại" })).toBeInTheDocument();
+    const table = await screen.findByRole("table", { name: "Khách lâu không quay lại" });
+    const firstPage = within(table).getAllByRole("row").length - 1;
     const days = within(table)
       .getAllByRole("row")
       .slice(1)
-      .map((r) => Number(/(\d+) ngày/.exec(r.textContent)?.[1]));
+      .map((r) => Number(/(\d+) ngày/.exec(within(r).getAllByRole("cell")[1]?.textContent ?? "")?.[1]));
     expect(days).toEqual([...days].sort((a, b) => b - a));
-    expect(days.every((d) => d >= 30)).toBe(true);
+    expect(days.every((d) => d >= 7)).toBe(true);
+    expect(within(table).getAllByRole("link")[0]).toHaveAttribute("href", expect.stringMatching(/^\/khach-hang\//));
+    expect(urls(spy)).toContain("/api/v1/customers/inactive?days=7&scope=with_sessions&limit=20");
+
+    await user.click(screen.getByRole("button", { name: "Xem thêm" }));
+    await screen.findByRole("table", { name: "Khách lâu không quay lại" });
+    expect(await screen.findAllByRole("row")).toHaveLength(firstPage * 2 + 1);
+    expect(urls(spy)).toContain("/api/v1/customers/inactive?days=7&scope=with_sessions&limit=20&cursor=page-2");
+    expect(screen.queryByRole("button", { name: "Xem thêm" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "≥ 30 ngày" }));
+    await user.click(screen.getByRole("button", { name: "Mọi khách đã từng đến" }));
+    await screen.findByRole("table", { name: "Khách lâu không quay lại" });
+    expect(urls(spy)).toContain("/api/v1/customers/inactive?days=30&scope=all&limit=20");
   });
 });
 
 describe("customer history", () => {
   it("shows the summary and the usage timeline on the profile", async () => {
-    serve(MANAGER);
+    serveManagement({ permissions: MANAGER });
     at("/khach-hang/c1");
     const section = await screen.findByRole("region", { name: "Lịch sử sử dụng" });
     expect(await within(section).findByText("Buổi còn lại")).toBeInTheDocument();
@@ -129,8 +126,8 @@ describe("customer history", () => {
     expect(within(timeline).getByText(/Lý do hủy/)).toBeInTheDocument();
   });
 
-  it("is not shown without the management permission", async () => {
-    serve(["customer.read"]);
+  it("is not shown without report.read", async () => {
+    serveManagement({ permissions: ["customer.read"] });
     at("/khach-hang/c1");
     expect(await screen.findByRole("heading", { level: 1, name: "Nguyễn Thị Hà" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Lịch sử sử dụng" })).not.toBeInTheDocument();

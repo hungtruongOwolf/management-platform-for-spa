@@ -1,5 +1,5 @@
-import { queryOptions } from "@tanstack/react-query";
-import { MANAGEMENT_DATA, type ManagementData } from "../../app/features";
+import type { InactiveScope } from "@vpyd/api-client";
+import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { spaToday } from "../corrections/api";
 import type {
@@ -12,20 +12,7 @@ import type {
   RangeReport,
 } from "./contract";
 
-/**
- * Data source of the management views: the API, or the typed mock behind the feature flag
- * (app/features.ts). Screens only ever see these query options, so switching to the real API is a
- * flag flip. The mock is a separate chunk, only downloaded when the flag is "mock".
- */
-async function fetchOr<T>(path: string, mock: (m: typeof import("./mock")) => T, data: ManagementData): Promise<T> {
-  if (data === "api") return (await api(path)) as T;
-  const m = await import("./mock");
-  // A short wait so the skeletons are visible in the mock, like a real request.
-  await new Promise((r) => setTimeout(r, import.meta.env.MODE === "test" ? 0 : 350));
-  return mock(m);
-}
-
-export const isMock = MANAGEMENT_DATA === "mock";
+/** Query options of the management views; screens only ever use these (frontend.md). */
 
 export function addDays(iso: string, days: number): string {
   const d = new Date(`${iso}T00:00:00Z`);
@@ -33,60 +20,63 @@ export function addDays(iso: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function dailyReportQuery(date: string, data: ManagementData = MANAGEMENT_DATA) {
+export function dailyReportQuery(date: string) {
   return queryOptions({
     queryKey: ["reports", "daily", date],
-    queryFn: () => fetchOr<DailyReport>(`/reports/daily?date=${date}`, (m) => m.mockDaily(date), data),
+    queryFn: async () => (await api(`/reports/daily?date=${date}`)) as DailyReport,
     staleTime: 30_000,
   });
 }
 
-export function rangeReportQuery(from: string, to: string, data: ManagementData = MANAGEMENT_DATA) {
+export function rangeReportQuery(from: string, to: string) {
   return queryOptions({
     queryKey: ["reports", "range", from, to],
-    queryFn: () =>
-      fetchOr<RangeReport>(`/reports/range?from=${from}&to=${to}&granularity=day`, (m) => m.mockRange(from, to), data),
+    queryFn: async () => (await api(`/reports/range?from=${from}&to=${to}&granularity=day`)) as RangeReport,
     staleTime: 60_000,
   });
 }
 
-export function customerHistoryQuery(id: string, data: ManagementData = MANAGEMENT_DATA) {
+export function customerHistoryQuery(id: string) {
   return queryOptions({
     queryKey: ["customers", "history", id],
-    queryFn: () =>
-      fetchOr<HistoryPage>(`/customers/${id}/history?limit=20`, (m) => m.mockHistory(id, spaToday()), data),
+    queryFn: async () => (await api(`/customers/${id}/history?limit=20`)) as HistoryPage,
   });
 }
 
-export function customerStatsQuery(id: string, data: ManagementData = MANAGEMENT_DATA) {
+export function customerStatsQuery(id: string) {
   return queryOptions({
     queryKey: ["customers", "summary", id],
-    queryFn: () =>
-      fetchOr<CustomerStats>(
-        `/customers/${id}/summary`,
-        (m) => m.mockCustomerStats(id, m.mockHistory(id, spaToday())),
-        data,
-      ),
+    queryFn: async () => (await api(`/customers/${id}/summary`)) as CustomerStats,
   });
 }
 
 export type PackageFilter = PackageStatus | "expiring" | "all";
 
-export function packagesOverviewQuery(filter: PackageFilter, data: ManagementData = MANAGEMENT_DATA) {
-  const qs =
-    filter === "all" ? "" : filter === "expiring" ? "?expiring_within_days=30" : `?status=${filter}`;
+/** Query string of `GET /packages` for a filter chip. */
+export function packagesPath(filter: PackageFilter): string {
+  if (filter === "all") return "/packages?limit=50";
+  if (filter === "expiring") return "/packages?expiring_within_days=30&limit=50";
+  return `/packages?status=${filter}&limit=50`;
+}
+
+export function packagesOverviewQuery(filter: PackageFilter) {
   return queryOptions({
     queryKey: ["packages", "overview", filter],
-    queryFn: () => fetchOr<PackageOverviewPage>(`/packages${qs}`, (m) => m.mockPackages(spaToday(), filter), data),
+    queryFn: async () => (await api(packagesPath(filter))) as PackageOverviewPage,
     staleTime: 30_000,
   });
 }
 
-export function inactiveCustomersQuery(days: number, data: ManagementData = MANAGEMENT_DATA) {
-  return queryOptions({
-    queryKey: ["customers", "inactive", days],
-    queryFn: () =>
-      fetchOr<InactivePage>(`/customers/inactive?days=${String(days)}`, (m) => m.mockInactive(spaToday(), days), data),
+/** `GET /customers/inactive`, 20 a page; `next_cursor` drives "Xem thêm". */
+export function inactiveCustomersQuery(days: number, scope: InactiveScope = "with_sessions") {
+  return infiniteQueryOptions({
+    queryKey: ["customers", "inactive", days, scope],
+    queryFn: async ({ pageParam }) =>
+      (await api(
+        `/customers/inactive?days=${String(days)}&scope=${scope}&limit=20${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ""}`,
+      )) as InactivePage,
+    initialPageParam: "",
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
     staleTime: 60_000,
   });
 }

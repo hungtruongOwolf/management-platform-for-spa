@@ -4,7 +4,7 @@ import { Icon, type IconName } from "../../app/Icon";
 import type { Me } from "../auth/session";
 import { customerHistoryQuery, customerStatsQuery, relativeDay } from "./api";
 import type { HistoryEvent } from "./contract";
-import { EmptyState, ErrorState, MockBanner, RowsSkeleton, money } from "./ui";
+import { EmptyState, ErrorState, RowsSkeleton, money } from "./ui";
 
 const time = new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Ho_Chi_Minh" });
 const month = new Intl.DateTimeFormat("vi-VN", { month: "long", year: "numeric", timeZone: "UTC" });
@@ -31,7 +31,7 @@ function Summary({ customerId }: { customerId: string }) {
   const stats = useQuery(customerStatsQuery(customerId));
   if (stats.isPending)
     return (
-      <div role="status" aria-label="Đang tải tóm tắt" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div role="status" aria-label="Đang tải tóm tắt" className="grid grid-cols-2 gap-3">
         {[0, 1, 2, 3].map((i) => (
           <div key={i} className="skeleton h-[72px]" />
         ))}
@@ -40,11 +40,11 @@ function Summary({ customerId }: { customerId: string }) {
   if (stats.isError) return <ErrorState error={stats.error} onRetry={() => void stats.refetch()} />;
   const s = stats.data;
   return (
-    <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <dl className="grid grid-cols-2 gap-3">
       <Fact
         label="Lần gần nhất"
         value={s.last_visit_on ? relativeDay(s.last_visit_on) : "Chưa đến"}
-        hint={s.days_since_last_visit !== null && s.days_since_last_visit > 1 ? `${String(s.days_since_last_visit)} ngày trước` : undefined}
+        hint={s.days_since_last_visit != null && s.days_since_last_visit > 1 ? `${String(s.days_since_last_visit)} ngày trước` : undefined}
       />
       <Fact label="Số lượt" value={String(s.visit_count)} hint={s.first_visit_on ? `từ ${relativeDay(s.first_visit_on)}` : undefined} />
       <Fact label="Buổi còn lại" value={String(s.sessions_remaining)} hint={`${String(s.packages.active)} gói đang dùng`} />
@@ -56,13 +56,13 @@ function Summary({ customerId }: { customerId: string }) {
 function EventBody({ e }: { e: HistoryEvent }) {
   if (e.visit) {
     return (
-      <ul className="mt-1 space-y-1 text-sm">
+      <ul className="mt-1 grid content-start gap-1 text-sm">
         {e.visit.lines.map((l, i) => (
           <li key={i} className="flex flex-wrap justify-between gap-x-3">
             <span>
               {l.service_name}
               <span className="text-text-muted">
-                {l.source === "package" ? ` · trừ buổi${l.sessions_left_after !== null ? `, còn ${String(l.sessions_left_after)}` : ""}` : " · dịch vụ lẻ"} · KTV {l.staff_name}
+                {l.source === "package" ? ` · trừ buổi${l.sessions_left_after != null ? `, còn ${String(l.sessions_left_after)}` : ""}` : " · dịch vụ lẻ"} · KTV {l.staff_name}
               </span>
             </span>
             {l.amount > 0 && <span className="tabular">{money(l.amount)}</span>}
@@ -143,11 +143,10 @@ function Timeline({ customerId }: { customerId: string }) {
 export function CustomerHistory({ customerId, me }: { customerId: string; me: Me | null }) {
   if (!canSeeManagement(me)) return null;
   return (
-    <section aria-labelledby="history-title" className="card space-y-4 p-4">
+    <section aria-labelledby="history-title" className="card grid content-start gap-4 p-4">
       <h2 id="history-title" className="flex items-center gap-2 text-lg font-semibold">
         <Icon name="history" className="size-5 text-accent" /> Lịch sử sử dụng
       </h2>
-      <MockBanner />
       <Summary customerId={customerId} />
       <Timeline customerId={customerId} />
     </section>

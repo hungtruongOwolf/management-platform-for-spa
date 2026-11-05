@@ -92,7 +92,7 @@ export function LoginPage({ next }: { next?: string | undefined }) {
           <p className="text-sm text-text-muted">Dùng số điện thoại và mật khẩu spa đã cấp.</p>
         </div>
 
-        <div className="space-y-1">
+        <div className="grid content-start gap-1">
           <label htmlFor="phone" className="block text-sm font-semibold">
             Số điện thoại
           </label>
@@ -118,7 +118,7 @@ export function LoginPage({ next }: { next?: string | undefined }) {
           )}
         </div>
 
-        <div className="space-y-1">
+        <div className="grid content-start gap-1">
           <label htmlFor="password" className="block text-sm font-semibold">
             Mật khẩu
           </label>

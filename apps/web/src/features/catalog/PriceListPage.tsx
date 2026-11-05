@@ -43,7 +43,7 @@ export function PriceListPage() {
   }
 
   return (
-    <section aria-labelledby="price-list-title" className="space-y-6">
+    <section aria-labelledby="price-list-title" className="grid content-start gap-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 id="price-list-title" className="font-brand text-2xl text-primary">
           Bảng giá dịch vụ

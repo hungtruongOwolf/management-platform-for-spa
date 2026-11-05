@@ -33,7 +33,7 @@ export function navFor(me: Me | null): NavGroup[] {
       "Khách hàng",
       [
         can(me, "customer.read") && { to: "/khach-hang", label: "Hồ sơ khách", icon: "users" },
-        mgmt && { to: "/nhac-khach", label: "Lâu chưa quay lại", icon: "user-clock" },
+        mgmt && { to: "/khach-lau-khong-quay-lai", label: "Lâu không quay lại", icon: "user-clock" },
       ],
     ],
     ["Gói liệu trình", [mgmt && { to: "/goi-lieu-trinh", label: "Theo dõi gói", icon: "package" }]],

@@ -20,7 +20,7 @@ const longDate = new Intl.DateTimeFormat("vi-VN", {
 const HINTS: Record<string, string> = {
   "/quay": "Tìm khách, trừ buổi, thu tiền",
   "/khach-hang": "Liệu trình, lịch sử, lưu ý sức khỏe",
-  "/nhac-khach": "Khách còn buổi nhưng chưa quay lại",
+  "/khach-lau-khong-quay-lai": "Khách vắng từ 7 ngày, cần gọi nhắc",
   "/goi-lieu-trinh": "Gói sắp hết hạn, hết buổi",
   "/bao-cao": "Khách, lượt, thực thu trong ngày",
   "/bang-gia": "Menu, giá Nữ/Nam",
@@ -30,7 +30,7 @@ const HINTS: Record<string, string> = {
 function Today() {
   const daily = useQuery(dailyReportQuery(spaToday()));
   return (
-    <section aria-labelledby="today-title" className="space-y-3">
+    <section aria-labelledby="today-title" className="grid content-start gap-3">
       <div className="flex items-center justify-between gap-2">
         <h2 id="today-title" className="text-lg font-semibold">
           Hôm nay
@@ -69,7 +69,7 @@ export function HomePage() {
     .flatMap((g) => g.items)
     .filter((i) => i.to in HINTS);
   return (
-    <div className="space-y-8">
+    <div className="grid content-start gap-8">
       <section className="chrome ornament [--ornament:var(--chrome-accent)] relative overflow-hidden rounded-[18px] px-6 py-8 shadow-float sm:px-10 sm:py-10">
         <BrandMark className="pointer-events-none absolute -right-8 -bottom-12 size-64 text-chrome-accent opacity-[0.14]" />
         <p className="text-sm text-chrome-text-muted first-letter:uppercase">{longDate.format(new Date())}</p>
@@ -81,13 +81,13 @@ export function HomePage() {
 
       {canSeeManagement(me) && <Today />}
 
-      <section aria-labelledby="shortcuts-title" className="space-y-3">
+      <section aria-labelledby="shortcuts-title" className="grid content-start gap-3">
         <h2 id="shortcuts-title" className="text-lg font-semibold">
           Lối tắt
         </h2>
         <nav aria-label="Lối tắt" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {shortcuts.map((s) => (
-            <Link key={s.to} to={s.to} className="card card-link group flex items-center gap-4 p-4">
+            <Link key={s.to} to={s.to} className="card card-link group flex min-h-[88px] items-center gap-4 p-4">
               <span aria-hidden="true" className="grid size-12 shrink-0 place-items-center rounded-[12px] bg-primary-soft text-primary">
                 <Icon name={s.icon} className="size-6" />
               </span>

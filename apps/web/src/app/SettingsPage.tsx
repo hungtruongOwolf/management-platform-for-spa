@@ -16,13 +16,13 @@ export function SettingsPage() {
   const { data: me } = useSuspenseQuery(meQuery);
   const [theme, setTheme] = useState<Theme>(readTheme);
   return (
-    <section className="max-w-3xl space-y-6">
+    <section className="max-w-3xl grid content-start gap-6">
       <div>
         <p className="eyebrow">Cài đặt</p>
         <h1 className="page-title">Giao diện &amp; tài khoản</h1>
       </div>
 
-      <section aria-labelledby="theme-title" className="card space-y-3 p-5">
+      <section aria-labelledby="theme-title" className="card grid content-start gap-3 p-5">
         <h2 id="theme-title" className="font-semibold">
           Giao diện
         </h2>

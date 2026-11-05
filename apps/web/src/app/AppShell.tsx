@@ -181,7 +181,10 @@ export function AppShell() {
             aria-haspopup="dialog"
           >
             <Icon name="search" className="size-[18px]" />
-            <span className="max-sm:sr-only">Tìm khách, mở màn hình…</span>
+            <span className="truncate">
+              <span className="sm:hidden">Tìm nhanh…</span>
+              <span className="max-sm:hidden">Tìm khách, mở màn hình…</span>
+            </span>
             <kbd className="ml-auto max-md:hidden">Ctrl K</kbd>
           </button>
           <span className="user-chip">

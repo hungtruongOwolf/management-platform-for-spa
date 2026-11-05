@@ -117,7 +117,7 @@ export function CustomerProfile({
       )}
       <CustomerPackages customerId={customer.id} />
       {editing && (
-        <div className="mt-3 space-y-3">
+        <div className="mt-3 grid content-start gap-3">
           <CustomerForm
             customer={customer}
             canWriteHealth={false}

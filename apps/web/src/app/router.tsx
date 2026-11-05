@@ -25,7 +25,7 @@ const inactivePage = () => import("../features/reports/InactiveCustomersPage");
 /** Shown while a lazy screen's chunk loads (after the router's pending delay): no spinner. */
 function PageSkeleton() {
   return (
-    <div role="status" aria-label="Đang tải màn hình" className="space-y-4">
+    <div role="status" aria-label="Đang tải màn hình" className="grid content-start gap-4">
       <div className="skeleton h-4 w-24" />
       <div className="skeleton h-8 w-64" />
       <div className="grid gap-4 sm:grid-cols-3">
@@ -152,7 +152,7 @@ const packagesRoute = createRoute({
 
 const inactiveRoute = createRoute({
   getParentRoute: () => authedRoute,
-  path: "/nhac-khach",
+  path: "/khach-lau-khong-quay-lai",
   component: lazyRouteComponent(inactivePage, "InactiveCustomersPage"),
 });
 
@@ -199,19 +199,6 @@ const customerRoute = createRoute({
   component: lazyRouteComponent(customersModule, "CustomerRoutePage"),
 });
 
-/**
- * Paper-book import (US8). No longer in the navigation (EM 2026-11-05: the migration is a one-time
- * data fill moving to an operator CLI); reachable by URL for the owner until a follow-up deletes it.
- */
-const openingBalanceRoute = createRoute({
-  getParentRoute: () => authedRoute,
-  path: "/nhap-so-cu",
-  component: lazyRouteComponent(
-    () => import("../features/opening-balance/OpeningBalancePage"),
-    "OpeningBalancePage",
-  ),
-});
-
 const routeTree = rootRoute.addChildren([
   loginRoute,
   mfaRoute,
@@ -222,7 +209,6 @@ const routeTree = rootRoute.addChildren([
     frontDeskRoute,
     customersRoute,
     customerRoute,
-    openingBalanceRoute,
     reportsRoute,
     packagesRoute,
     inactiveRoute,

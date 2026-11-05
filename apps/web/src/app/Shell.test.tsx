@@ -3,9 +3,10 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Me } from "../features/auth/session";
+import { serveManagement } from "../features/reports/testServer";
 import { App } from "./App";
 import { fold } from "./CommandPalette";
-import { canSeeManagement, managementDataFrom } from "./features";
+import { canSeeManagement } from "./features";
 import { navFor, tabsFor } from "./nav";
 import { applyTheme, readSidebarCollapsed, readTheme, saveSidebarCollapsed } from "./prefs";
 
@@ -15,16 +16,10 @@ const me = (permissions: string[]): Me => ({
   tenants: [{ id: "t1", name: "Viên Phúc Y Đường" }],
   permissions,
 });
-const MANAGER = ["visit.record", "customer.read", "catalog.read", "sale.read"];
+const MANAGER = ["visit.record", "customer.read", "catalog.read", "report.read"];
 
-function serve(permissions: string[], customers: unknown[] = []) {
-  return vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    if (url === "/api/v1/me") return Promise.resolve(Response.json(me(permissions)));
-    if (url.startsWith("/api/v1/customers?q=")) return Promise.resolve(Response.json(customers));
-    return Promise.resolve(Response.json([]));
-  });
-}
+// The shell's home page asks the management API for today's numbers: use the contract-shaped fake.
+const serve = (permissions: string[], searchHits: unknown[] = []) => serveManagement({ permissions, searchHits });
 
 const at = (path: string) => render(<App history={createMemoryHistory({ initialEntries: [path] })} />);
 
@@ -58,20 +53,11 @@ describe("navigation model", () => {
   });
 });
 
-describe("management views flag", () => {
-  it("is off in production builds unless asked for, mock in development", () => {
-    expect(managementDataFrom(undefined, false)).toBe("off");
-    expect(managementDataFrom(undefined, true)).toBe("mock");
-    expect(managementDataFrom("api", true)).toBe("api");
-    expect(managementDataFrom("nonsense", false)).toBe("off");
-  });
-
-  it("gates on report.read with the real API and on sale.read with the mock", () => {
-    expect(canSeeManagement(me(["sale.read"]), "off")).toBe(false);
-    expect(canSeeManagement(me(["sale.read"]), "mock")).toBe(true);
-    expect(canSeeManagement(me(["sale.read"]), "api")).toBe(false);
-    expect(canSeeManagement(me(["report.read"]), "api")).toBe(true);
-    expect(canSeeManagement(null, "mock")).toBe(false);
+describe("management views gate", () => {
+  it("opens with the API's report.read only", () => {
+    expect(canSeeManagement(me(["report.read"]))).toBe(true);
+    expect(canSeeManagement(me(["sale.read", "report.revenue.read"]))).toBe(false);
+    expect(canSeeManagement(null)).toBe(false);
   });
 });
 

@@ -69,7 +69,6 @@ function pkg(
     name: `Gói ${id}`,
     gift_note: null,
     sold_price: 1_500_000,
-    origin: "sale",
     sale_id: "sale1",
     closer_staff_id: "st1",
     closer_name: "KTV Lan",
@@ -453,7 +452,7 @@ describe("/quay", () => {
   it("shows a package migrated from the paper books like any other (EM 2026-11-05)", async () => {
     serve(MANAGER, undefined, [
       pkg("cp1"),
-      pkg("cp2", { origin: "opening_balance", sale_id: null }),
+      pkg("cp2", { sale_id: null }),
     ]);
     const user = userEvent.setup();
     at("/quay");

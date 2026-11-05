@@ -33,7 +33,7 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
     can(me, "record.void_same_day");
 
   return (
-    <section aria-labelledby="packages-title" className="mt-4 space-y-2">
+    <section aria-labelledby="packages-title" className="mt-4 grid content-start gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="packages-title" className="font-semibold">
           Liệu trình
@@ -121,7 +121,7 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
                   buổi
                 </strong>
                 <span
-                  className={`mt-0.5 inline-block rounded-full px-2 text-xs font-semibold ${STATUS_BADGE[p.status]}`}
+                  className={`badge ml-2 align-middle ${STATUS_BADGE[p.status]}`}
                 >
                   {STATUS_LABEL[p.status]}
                 </span>
