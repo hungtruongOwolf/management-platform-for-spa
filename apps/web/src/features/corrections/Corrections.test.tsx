@@ -106,6 +106,9 @@ function visit(extra: Partial<Visit> = {}): Visit {
     void_reason: null,
     voided_at: null,
     sale_id: null,
+    subtotal: 0,
+    discount_amount: 0,
+    discount_reason: null,
     total: 0,
     payments: [],
     version: 1,
@@ -128,6 +131,7 @@ function visit(extra: Partial<Visit> = {}): Visit {
         price_variant: null,
         unit_price: 150_000,
         line_value: 150_000,
+        discount_amount: 0,
         expiry_override_reason: null,
       },
     ],
@@ -450,9 +454,10 @@ describe("voids in the /quay visit list", () => {
     serve(MANAGER);
     at("/quay");
     await screen.findByRole("list", { name: "Lượt khách hôm nay" });
-    fireEvent.change(screen.getByLabelText("Xem ngày"), {
-      target: { value: "2026-11-01" },
-    });
+    // DateField: always dd/mm/yyyy (round 4), committed on blur.
+    const dayField = screen.getByLabelText("Xem ngày");
+    fireEvent.change(dayField, { target: { value: "01/11/2026" } });
+    fireEvent.blur(dayField);
     expect(
       await screen.findByText(
         "Ngày đã chốt: chỉ chủ spa hủy được lượt của ngày này.",

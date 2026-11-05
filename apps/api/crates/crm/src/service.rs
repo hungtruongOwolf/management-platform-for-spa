@@ -344,6 +344,15 @@ pub async fn brief_in(tx: &mut TenantTx, id: Uuid) -> Result<Option<CustomerBrie
     }))
 }
 
+/// The live customer holding `phone` in the caller's tenant, inside the caller's transaction
+/// (e.g. a booking for a "newcomer" who already has a record). The caller authorizes.
+pub async fn phone_holder_in(
+    tx: &mut TenantTx,
+    phone: &PhoneE164,
+) -> Result<Option<(Uuid, String)>, AppError> {
+    repo::phone_holder(tx, phone.as_str()).await
+}
+
 /// Result of a duplicate-phone check while the number is typed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PhoneCheck {

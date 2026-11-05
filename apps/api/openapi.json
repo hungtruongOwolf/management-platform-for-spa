@@ -10,6 +10,409 @@
     "version": "1"
   },
   "paths": {
+    "/api/v1/appointments": {
+      "get": {
+        "tags": [
+          "appointments"
+        ],
+        "operationId": "calendar",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "First business day `YYYY-MM-DD`; default today.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Last business day (inclusive); default `from`. At most 14 days.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "422": {
+            "description": "to before_from / range_too_long (max 14 days)"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "appointments"
+        ],
+        "operationId": "book",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per booking; a retry replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppointmentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentDto"
+                }
+              }
+            }
+          },
+          "400": {},
+          "401": {},
+          "403": {
+            "description": "auth.forbidden / day.locked (a past day, non-owner)"
+          },
+          "404": {
+            "description": "customer or service not in this spa"
+          },
+          "409": {
+            "description": "appointment.staff_busy (existing_id = the overlapping appointment), appointment.slot_full, customer.phone_taken (newcomer's phone already has a record: existing_id)"
+          },
+          "422": {
+            "description": "validation_failed (starts_at not_on_slot / too_far, duration_min out_of_range, guest.*), appointment.outside_opening_hours, staff.inactive"
+          }
+        }
+      }
+    },
+    "/api/v1/appointments/{id}": {
+      "get": {
+        "tags": [
+          "appointments"
+        ],
+        "operationId": "read_appointment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "404": {}
+        }
+      },
+      "patch": {
+        "tags": [
+          "appointments"
+        ],
+        "operationId": "update_appointment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppointmentUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden / day.locked"
+          },
+          "404": {},
+          "409": {
+            "description": "appointment.closed, appointment.staff_busy, appointment.slot_full"
+          },
+          "412": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/appointments/{id}/arrive": {
+      "post": {
+        "tags": [
+          "appointments"
+        ],
+        "operationId": "arrive",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppointmentArrive"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden / day.locked"
+          },
+          "404": {},
+          "409": {
+            "description": "appointment.closed / already_arrived / staff_busy / slot_full"
+          },
+          "422": {
+            "description": "appointment.not_today, staff.inactive"
+          }
+        }
+      }
+    },
+    "/api/v1/appointments/{id}/cancel": {
+      "post": {
+        "tags": [
+          "appointments"
+        ],
+        "operationId": "cancel",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppointmentClose"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden / day.locked"
+          },
+          "404": {},
+          "409": {
+            "description": "appointment.closed"
+          },
+          "422": {
+            "description": "reason required"
+          }
+        }
+      }
+    },
+    "/api/v1/appointments/{id}/complete": {
+      "post": {
+        "tags": [
+          "appointments"
+        ],
+        "operationId": "complete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per completion; a retry replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppointmentComplete"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentCompleted"
+                }
+              }
+            }
+          },
+          "400": {},
+          "401": {},
+          "403": {
+            "description": "auth.forbidden / day.locked / discount.limit_exceeded"
+          },
+          "404": {},
+          "409": {
+            "description": "appointment.closed, package.no_sessions_left / expired / cancelled"
+          },
+          "422": {
+            "description": "appointment.customer_required, and every 422 of POST /visits"
+          }
+        }
+      }
+    },
+    "/api/v1/appointments/{id}/no-show": {
+      "post": {
+        "tags": [
+          "appointments"
+        ],
+        "operationId": "no_show",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppointmentClose"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden / day.locked"
+          },
+          "404": {},
+          "409": {
+            "description": "appointment.closed / already_arrived"
+          },
+          "422": {
+            "description": "reason required, appointment.not_started"
+          }
+        }
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "tags": [
@@ -2143,6 +2546,476 @@
   },
   "components": {
     "schemas": {
+      "AppointmentArrive": {
+        "type": "object",
+        "description": "Body of `POST /appointments/{id}/arrive`.",
+        "required": [
+          "staff_id"
+        ],
+        "properties": {
+          "staff_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The technician serving the customer (required)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "AppointmentClose": {
+        "type": "object",
+        "description": "Body of `POST /appointments/{id}/cancel` and `/no-show`.",
+        "properties": {
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required, 1–500 characters."
+          }
+        },
+        "additionalProperties": false
+      },
+      "AppointmentComplete": {
+        "type": "object",
+        "description": "Body of `POST /appointments/{id}/complete`: the visit, exactly as `POST /visits` minus the\ncustomer (the appointment's). Same rules: server prices, full payment, discount (D10).",
+        "required": [
+          "lines"
+        ],
+        "properties": {
+          "check_in_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the service happened. Default: arrival time, else the booked start if already\npast, else now. Same day rules as `POST /visits` (owner may back-date)."
+          },
+          "discount": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ServiceDiscountCreate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VisitLineCreate"
+            }
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentCreate"
+            }
+          }
+        }
+      },
+      "AppointmentCompleted": {
+        "type": "object",
+        "description": "`POST /appointments/{id}/complete`.",
+        "required": [
+          "appointment",
+          "visit"
+        ],
+        "properties": {
+          "appointment": {
+            "$ref": "#/components/schemas/AppointmentDto"
+          },
+          "visit": {
+            "$ref": "#/components/schemas/VisitDto"
+          }
+        }
+      },
+      "AppointmentCreate": {
+        "type": "object",
+        "description": "Body of `POST /appointments`. Exactly one of `customer_id` / `guest`.",
+        "required": [
+          "service_ids",
+          "starts_at"
+        ],
+        "properties": {
+          "customer_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "duration_min": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Default: the services' durations (empty = 60) rounded up to the slot. 1 slot – 480.",
+            "minimum": 0
+          },
+          "guest": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GuestCreate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Booking note, ≤ 500 characters. Not for health data."
+          },
+          "service_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "1–5 services, in the order they will be done."
+          },
+          "staff_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Preferred technician (optional while booked)."
+          },
+          "starts_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "On the spa's slot grid, inside opening hours; today up to 90 days ahead (past days: owner)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "AppointmentDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "business_date",
+          "starts_at",
+          "ends_at",
+          "duration_min",
+          "customer_name",
+          "customer_phone",
+          "is_guest",
+          "services",
+          "payment_state",
+          "paid_amount",
+          "version",
+          "created_at"
+        ],
+        "properties": {
+          "arrived_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "closed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "customer_gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "customer_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Null for a newcomer not yet linked to a customer record."
+          },
+          "customer_name": {
+            "type": "string",
+            "description": "The customer's name, or the newcomer's."
+          },
+          "customer_phone": {
+            "type": "string",
+            "description": "E.164."
+          },
+          "duration_min": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ends_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "is_guest": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paid_amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Collected by the visit (after discount); 0 until done."
+          },
+          "payment_state": {
+            "$ref": "#/components/schemas/PaymentStateDto"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppointmentServiceDto"
+            }
+          },
+          "staff_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "staff_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "starts_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AppointmentStatusDto"
+          },
+          "status_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why it was cancelled / missed."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Send back as `If-Match` when editing."
+          },
+          "visit_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "AppointmentServiceDto": {
+        "type": "object",
+        "required": [
+          "service_id",
+          "service_name",
+          "category_name"
+        ],
+        "properties": {
+          "category_name": {
+            "type": "string"
+          },
+          "duration_min": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Current catalog duration; null = \"theo tư vấn\"."
+          },
+          "service_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "service_name": {
+            "type": "string"
+          }
+        }
+      },
+      "AppointmentStatusDto": {
+        "type": "string",
+        "enum": [
+          "booked",
+          "arrived",
+          "done",
+          "no_show",
+          "cancelled"
+        ]
+      },
+      "AppointmentUpdate": {
+        "type": "object",
+        "description": "Body of `PATCH /appointments/{id}` (If-Match): reschedule or edit an open appointment.",
+        "properties": {
+          "customer_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Link a newcomer to the customer record created for them (replaces the guest name/phone)."
+          },
+          "duration_min": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "service_ids": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "staff_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Absent = unchanged, null = no preferred technician (not allowed once arrived)."
+          },
+          "starts_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CalendarDto": {
+        "type": "object",
+        "description": "`GET /appointments`: the spa's grid and its appointments over `from..=to`.",
+        "required": [
+          "from",
+          "to",
+          "today",
+          "opens_at",
+          "closes_at",
+          "slot_minutes",
+          "time_zone",
+          "technicians",
+          "capacity",
+          "appointments"
+        ],
+        "properties": {
+          "appointments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppointmentDto"
+            },
+            "description": "Every status, earliest first."
+          },
+          "capacity": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "closes_at": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "opens_at": {
+            "type": "string",
+            "description": "\"HH:MM\", spa time."
+          },
+          "slot_minutes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "technicians": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalendarTechnician"
+            },
+            "description": "Columns of the day view; their count is the spa's capacity per instant."
+          },
+          "time_zone": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "today": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
+      "CalendarTechnician": {
+        "type": "object",
+        "required": [
+          "id",
+          "full_name"
+        ],
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "CategoryCreate": {
         "type": "object",
         "required": [
@@ -3011,6 +3884,23 @@
           "month",
           "year"
         ]
+      },
+      "GuestCreate": {
+        "type": "object",
+        "description": "A newcomer known only by name and phone until they arrive.",
+        "required": [
+          "full_name",
+          "phone"
+        ],
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "HealthNoteWrite": {
         "type": "object",
@@ -4566,6 +5456,17 @@
           "bank_transfer"
         ]
       },
+      "PaymentStateDto": {
+        "type": "string",
+        "description": "\"Đã thanh toán chưa\": R1 collects in full when the visit is recorded.",
+        "enum": [
+          "unpaid",
+          "paid",
+          "no_charge",
+          "voided",
+          "none"
+        ]
+      },
       "PhoneCheckDto": {
         "type": "object",
         "description": "`GET /customers/phone-check`. `taken` → `existing_id` + `full_name` name the profile to open\ninstead of creating a duplicate (create would answer `409 customer.phone_taken`).",
@@ -5202,6 +6103,37 @@
           }
         }
       },
+      "ServiceDiscountCreate": {
+        "type": "object",
+        "description": "Discount on the one-off lines of a visit (spec appointments.md §5): **either** `percent` or\n`amount`, never both. The server computes the amount (`percent` → floor of subtotal × % / 100).",
+        "properties": {
+          "amount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "đồng, 1 ≤ amount ≤ subtotal of the one-off lines."
+          },
+          "percent": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "1–100.",
+            "minimum": 0
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required (1–500 characters)."
+          }
+        },
+        "additionalProperties": false
+      },
       "ServiceDto": {
         "type": "object",
         "required": [
@@ -5560,11 +6492,22 @@
               "null"
             ],
             "format": "date-time",
-            "description": "Defaults to now. At most 5 minutes ahead of the server and on today's business day."
+            "description": "When the service happened (giờ làm), not when it is typed. Defaults to now. At most\n5 minutes ahead of the server and on today's business day; with `visit.backdate` (owner)\nup to 366 days back, and the visit, its sale and payments then belong to that day."
           },
           "customer_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "discount": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ServiceDiscountCreate",
+                "description": "Discount on the one-off lines (D10: `sale.discount` up to the spa's cap,\n`sale.discount_unlimited` beyond; reason required)."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "lines": {
             "type": "array",
@@ -5598,6 +6541,8 @@
           "business_date",
           "check_in_at",
           "status",
+          "subtotal",
+          "discount_amount",
           "total",
           "payments",
           "lines",
@@ -5607,11 +6552,13 @@
         "properties": {
           "business_date": {
             "type": "string",
-            "format": "date"
+            "format": "date",
+            "description": "Business day of the service (`check_in_at`), which may be before `created_at` when the\nowner entered it late."
           },
           "check_in_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "When the service happened (giờ làm)."
           },
           "created_at": {
             "type": "string",
@@ -5633,6 +6580,16 @@
           },
           "customer_name": {
             "type": "string"
+          },
+          "discount_amount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "discount_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "id": {
             "type": "string",
@@ -5668,10 +6625,15 @@
           "status": {
             "$ref": "#/components/schemas/VisitStatusDto"
           },
+          "subtotal": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Sum of the one-off lines before discount."
+          },
           "total": {
             "type": "integer",
             "format": "int64",
-            "description": "Amount collected in this visit (sum of one-off lines)."
+            "description": "Amount collected in this visit (one-off lines after discount)."
           },
           "version": {
             "type": "integer",
@@ -5765,6 +6727,7 @@
           "staff_name",
           "qty",
           "unit_price",
+          "discount_amount",
           "line_value"
         ],
         "properties": {
@@ -5786,6 +6749,11 @@
             ],
             "format": "uuid"
           },
+          "discount_amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "One-off: this line's share of the visit discount (0 for package lines)."
+          },
           "expiry_override_reason": {
             "type": [
               "string",
@@ -5799,7 +6767,7 @@
           "line_value": {
             "type": "integer",
             "format": "int64",
-            "description": "One-off: qty × unit price (paid now); package: value of the sessions taken (bonus = 0)."
+            "description": "One-off: qty × unit price − discount share (paid now); package: value of the sessions\ntaken (bonus = 0)."
           },
           "package_name": {
             "type": [
@@ -5959,6 +6927,10 @@
     {
       "name": "visits",
       "description": "Ghi lượt khách tại quầy"
+    },
+    {
+      "name": "appointments",
+      "description": "Lịch hẹn: đặt lịch, khách đến, hoàn tất thành lượt khách"
     },
     {
       "name": "reports",

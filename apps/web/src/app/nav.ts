@@ -11,7 +11,24 @@ export interface NavItem {
   icon: IconName;
   /** Only this exact path marks the item active (e.g. "/" would otherwise match everything). */
   exact?: boolean;
+  /**
+   * A tab inside a screen (e.g. `/quay?view=lich`). With `search`, the item is active only when
+   * the URL carries exactly these values; `undefined` means "the key is absent" (the default tab).
+   */
+  search?: Record<string, string | undefined>;
 }
+
+/** Stable id of an item (path + its search), for keys and the command palette. */
+export function navKey(item: NavItem): string {
+  const params = Object.entries(item.search ?? {}).filter(
+    (e): e is [string, string] => e[1] !== undefined,
+  );
+  return params.length
+    ? `${item.to}?${new URLSearchParams(params).toString()}`
+    : item.to;
+}
+
+const APPOINTMENTS = "/quay?view=lich";
 
 export interface NavGroup {
   label: string;
@@ -28,30 +45,96 @@ export function navFor(me: Me | null): NavGroup[] {
     [
       "Quầy",
       [
-        { to: "/", label: "Tổng quan", short: "Trang chủ", icon: "home", exact: true },
-        can(me, "visit.record") && { to: "/quay", label: "Ghi lượt khách", short: "Quầy", icon: "desk" },
+        {
+          to: "/",
+          label: "Tổng quan",
+          short: "Trang chủ",
+          icon: "home",
+          exact: true,
+        },
+        can(me, "visit.record") && {
+          to: "/quay",
+          label: "Ghi lượt khách",
+          short: "Quầy",
+          icon: "desk",
+          // Not active on the appointments tab of the same screen.
+          ...(can(me, "appointment.manage")
+            ? { search: { view: undefined } }
+            : {}),
+        },
+        can(me, "visit.record") &&
+          can(me, "appointment.manage") && {
+            to: "/quay",
+            search: { view: "lich" },
+            label: "Lịch hẹn",
+            short: "Lịch hẹn",
+            icon: "calendar",
+          },
       ],
     ],
     [
       "Khách hàng",
       [
-        can(me, "customer.read") && { to: "/khach-hang", label: "Danh sách khách hàng", short: "Khách", icon: "users" },
-        mgmt && { to: "/khach-lau-khong-quay-lai", label: "Khách lâu chưa quay lại", icon: "user-clock" },
+        can(me, "customer.read") && {
+          to: "/khach-hang",
+          label: "Danh sách khách hàng",
+          short: "Khách",
+          icon: "users",
+        },
+        mgmt && {
+          to: "/khach-lau-khong-quay-lai",
+          label: "Khách lâu chưa quay lại",
+          icon: "user-clock",
+        },
       ],
     ],
-    ["Gói liệu trình", [mgmt && { to: "/goi-lieu-trinh", label: "Gói liệu trình của khách", icon: "package" }]],
-    ["Báo cáo", [mgmt && { to: "/bao-cao", label: "Báo cáo kinh doanh", short: "Báo cáo", icon: "chart" }]],
+    [
+      "Gói liệu trình",
+      [
+        mgmt && {
+          to: "/goi-lieu-trinh",
+          label: "Gói liệu trình của khách",
+          icon: "package",
+        },
+      ],
+    ],
+    [
+      "Báo cáo",
+      [
+        mgmt && {
+          to: "/bao-cao",
+          label: "Báo cáo kinh doanh",
+          short: "Báo cáo",
+          icon: "chart",
+        },
+      ],
+    ],
     [
       "Danh mục",
       [
-        can(me, "catalog.read") && { to: "/bang-gia", label: "Bảng giá dịch vụ", icon: "menu-book", exact: true },
-        can(me, "catalog.read") && { to: "/bang-gia/goi", label: "Mẫu gói liệu trình", icon: "layers" },
+        can(me, "catalog.read") && {
+          to: "/bang-gia",
+          label: "Bảng giá dịch vụ",
+          icon: "menu-book",
+          exact: true,
+        },
+        can(me, "catalog.read") && {
+          to: "/bang-gia/goi",
+          label: "Mẫu gói liệu trình",
+          icon: "layers",
+        },
       ],
     ],
-    ["Cài đặt", [{ to: "/cai-dat", label: "Giao diện & tài khoản", icon: "settings" }]],
+    [
+      "Cài đặt",
+      [{ to: "/cai-dat", label: "Giao diện & tài khoản", icon: "settings" }],
+    ],
   ];
   return groups
-    .map(([label, items]) => ({ label, items: items.filter((i): i is NavItem => i !== false) }))
+    .map(([label, items]) => ({
+      label,
+      items: items.filter((i): i is NavItem => i !== false),
+    }))
     .filter((g) => g.items.length > 0);
 }
 
@@ -72,16 +155,26 @@ const SCREEN_LABELS: Record<string, string> = {
 };
 
 export function screenLabel(pathname: string): string {
-  for (let p = pathname; p.length > 0; p = p.slice(0, Math.max(0, p.lastIndexOf("/")))) {
+  for (
+    let p = pathname;
+    p.length > 0;
+    p = p.slice(0, Math.max(0, p.lastIndexOf("/")))
+  ) {
     const label = SCREEN_LABELS[p];
     if (label) return label;
   }
   return "Tổng quan";
 }
 
-/** Phone tab bar: the four most used screens; everything else sits in the "Thêm" drawer. */
+/**
+ * Phone tab bar: the four most used screens; everything else sits in the "Thêm" drawer. With
+ * appointments, "Lịch hẹn" takes the home tab's place (EM decision, round 4); home stays in "Thêm".
+ */
 export function tabsFor(groups: NavGroup[]): NavItem[] {
   const all = groups.flatMap((g) => g.items);
-  const wanted = ["/", "/quay", "/khach-hang", "/bao-cao"];
-  return wanted.flatMap((to) => all.filter((i) => i.to === to));
+  const first = all.some((i) => navKey(i) === APPOINTMENTS)
+    ? APPOINTMENTS
+    : "/";
+  const wanted = [first, "/quay", "/khach-hang", "/bao-cao"];
+  return wanted.flatMap((key) => all.filter((i) => navKey(i) === key));
 }

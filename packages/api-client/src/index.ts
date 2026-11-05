@@ -75,3 +75,14 @@ export type FollowUpList = Schemas["FollowUpList"];
 export type PhoneCheck = Schemas["PhoneCheckDto"];
 export type SuggestedNextOn = Schemas["SuggestedNextOn"];
 export type Gender = Schemas["GenderDto"];
+// Round 4: appointments, visit discounts (spec appointments.md).
+export type ServiceDiscountCreate = Schemas["ServiceDiscountCreate"];
+export type Appointment = Schemas["AppointmentDto"];
+export type AppointmentStatus = Schemas["AppointmentStatusDto"];
+export type AppointmentCreate = Schemas["AppointmentCreate"];
+export type AppointmentUpdate = Schemas["AppointmentUpdate"];
+export type AppointmentComplete = Schemas["AppointmentComplete"];
+export type AppointmentCompleted = Schemas["AppointmentCompleted"];
+export type AppointmentPaymentState = Schemas["PaymentStateDto"];
+export type Calendar = Schemas["CalendarDto"];
+export type CalendarTechnician = Schemas["CalendarTechnician"];

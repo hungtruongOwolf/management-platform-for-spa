@@ -4,6 +4,102 @@
  */
 
 export interface paths {
+    "/api/v1/appointments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["calendar"];
+        put?: never;
+        post: operations["book"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/appointments/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["read_appointment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_appointment"];
+        trace?: never;
+    };
+    "/api/v1/appointments/{id}/arrive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["arrive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/appointments/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/appointments/{id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["complete"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/appointments/{id}/no-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["no_show"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -649,6 +745,173 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description Body of `POST /appointments/{id}/arrive`. */
+        AppointmentArrive: {
+            /**
+             * Format: uuid
+             * @description The technician serving the customer (required).
+             */
+            staff_id: string;
+        };
+        /** @description Body of `POST /appointments/{id}/cancel` and `/no-show`. */
+        AppointmentClose: {
+            /** @description Required, 1–500 characters. */
+            reason?: string | null;
+        };
+        /**
+         * @description Body of `POST /appointments/{id}/complete`: the visit, exactly as `POST /visits` minus the
+         *     customer (the appointment's). Same rules: server prices, full payment, discount (D10).
+         */
+        AppointmentComplete: {
+            /**
+             * Format: date-time
+             * @description When the service happened. Default: arrival time, else the booked start if already
+             *     past, else now. Same day rules as `POST /visits` (owner may back-date).
+             */
+            check_in_at?: string | null;
+            discount?: components["schemas"]["ServiceDiscountCreate"] | null;
+            lines: components["schemas"]["VisitLineCreate"][];
+            note?: string | null;
+            payments?: components["schemas"]["PaymentCreate"][];
+        };
+        /** @description `POST /appointments/{id}/complete`. */
+        AppointmentCompleted: {
+            appointment: components["schemas"]["AppointmentDto"];
+            visit: components["schemas"]["VisitDto"];
+        };
+        /** @description Body of `POST /appointments`. Exactly one of `customer_id` / `guest`. */
+        AppointmentCreate: {
+            /** Format: uuid */
+            customer_id?: string | null;
+            /**
+             * Format: int32
+             * @description Default: the services' durations (empty = 60) rounded up to the slot. 1 slot – 480.
+             */
+            duration_min?: number | null;
+            guest?: components["schemas"]["GuestCreate"] | null;
+            /** @description Booking note, ≤ 500 characters. Not for health data. */
+            note?: string | null;
+            /** @description 1–5 services, in the order they will be done. */
+            service_ids: string[];
+            /**
+             * Format: uuid
+             * @description Preferred technician (optional while booked).
+             */
+            staff_id?: string | null;
+            /**
+             * Format: date-time
+             * @description On the spa's slot grid, inside opening hours; today up to 90 days ahead (past days: owner).
+             */
+            starts_at: string;
+        };
+        AppointmentDto: {
+            /** Format: date-time */
+            arrived_at?: string | null;
+            /** Format: date */
+            business_date: string;
+            /** Format: date-time */
+            closed_at?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            customer_gender?: components["schemas"]["GenderDto"] | null;
+            /**
+             * Format: uuid
+             * @description Null for a newcomer not yet linked to a customer record.
+             */
+            customer_id?: string | null;
+            /** @description The customer's name, or the newcomer's. */
+            customer_name: string;
+            /** @description E.164. */
+            customer_phone: string;
+            /** Format: int64 */
+            duration_min: number;
+            /** Format: date-time */
+            ends_at: string;
+            /** Format: uuid */
+            id: string;
+            is_guest: boolean;
+            note?: string | null;
+            /**
+             * Format: int64
+             * @description Collected by the visit (after discount); 0 until done.
+             */
+            paid_amount: number;
+            payment_state: components["schemas"]["PaymentStateDto"];
+            services: components["schemas"]["AppointmentServiceDto"][];
+            /** Format: uuid */
+            staff_id?: string | null;
+            staff_name?: string | null;
+            /** Format: date-time */
+            starts_at: string;
+            status: components["schemas"]["AppointmentStatusDto"];
+            /** @description Why it was cancelled / missed. */
+            status_reason?: string | null;
+            /**
+             * Format: int64
+             * @description Send back as `If-Match` when editing.
+             */
+            version: number;
+            /** Format: uuid */
+            visit_id?: string | null;
+        };
+        AppointmentServiceDto: {
+            category_name: string;
+            /**
+             * Format: int32
+             * @description Current catalog duration; null = "theo tư vấn".
+             */
+            duration_min?: number | null;
+            /** Format: uuid */
+            service_id: string;
+            service_name: string;
+        };
+        /** @enum {string} */
+        AppointmentStatusDto: "booked" | "arrived" | "done" | "no_show" | "cancelled";
+        /** @description Body of `PATCH /appointments/{id}` (If-Match): reschedule or edit an open appointment. */
+        AppointmentUpdate: {
+            /**
+             * Format: uuid
+             * @description Link a newcomer to the customer record created for them (replaces the guest name/phone).
+             */
+            customer_id?: string | null;
+            /** Format: int32 */
+            duration_min?: number | null;
+            note?: string | null;
+            service_ids?: string[] | null;
+            /**
+             * Format: uuid
+             * @description Absent = unchanged, null = no preferred technician (not allowed once arrived).
+             */
+            staff_id?: string | null;
+            /** Format: date-time */
+            starts_at?: string | null;
+        };
+        /** @description `GET /appointments`: the spa's grid and its appointments over `from..=to`. */
+        CalendarDto: {
+            /** @description Every status, earliest first. */
+            appointments: components["schemas"]["AppointmentDto"][];
+            /** Format: int32 */
+            capacity: number;
+            closes_at: string;
+            /** Format: date */
+            from: string;
+            /** @description "HH:MM", spa time. */
+            opens_at: string;
+            /** Format: int32 */
+            slot_minutes: number;
+            /** @description Columns of the day view; their count is the spa's capacity per instant. */
+            technicians: components["schemas"]["CalendarTechnician"][];
+            time_zone: string;
+            /** Format: date */
+            to: string;
+            /** Format: date */
+            today: string;
+        };
+        CalendarTechnician: {
+            full_name: string;
+            /** Format: uuid */
+            id: string;
+        };
         CategoryCreate: {
             name: string;
         };
@@ -975,6 +1238,11 @@ export interface components {
         GenderDto: "female" | "male";
         /** @enum {string} */
         Granularity: "day" | "week" | "month" | "year";
+        /** @description A newcomer known only by name and phone until they arrive. */
+        GuestCreate: {
+            full_name: string;
+            phone: string;
+        };
         HealthNoteWrite: {
             /** @description null or empty clears the note. */
             health_note?: string | null;
@@ -1525,6 +1793,11 @@ export interface components {
         /** @enum {string} */
         PaymentMethodDto: "cash" | "bank_transfer";
         /**
+         * @description "Đã thanh toán chưa": R1 collects in full when the visit is recorded.
+         * @enum {string}
+         */
+        PaymentStateDto: "unpaid" | "paid" | "no_charge" | "voided" | "none";
+        /**
          * @description `GET /customers/phone-check`. `taken` → `existing_id` + `full_name` name the profile to open
          *     instead of creating a duplicate (create would answer `409 customer.phone_taken`).
          */
@@ -1746,6 +2019,24 @@ export interface components {
             /** Format: int32 */
             sort_order: number;
         };
+        /**
+         * @description Discount on the one-off lines of a visit (spec appointments.md §5): **either** `percent` or
+         *     `amount`, never both. The server computes the amount (`percent` → floor of subtotal × % / 100).
+         */
+        ServiceDiscountCreate: {
+            /**
+             * Format: int64
+             * @description đồng, 1 ≤ amount ≤ subtotal of the one-off lines.
+             */
+            amount?: number | null;
+            /**
+             * Format: int32
+             * @description 1–100.
+             */
+            percent?: number | null;
+            /** @description Required (1–500 characters). */
+            reason?: string | null;
+        };
         ServiceDto: {
             active: boolean;
             /** Format: uuid */
@@ -1890,11 +2181,14 @@ export interface components {
         VisitCreate: {
             /**
              * Format: date-time
-             * @description Defaults to now. At most 5 minutes ahead of the server and on today's business day.
+             * @description When the service happened (giờ làm), not when it is typed. Defaults to now. At most
+             *     5 minutes ahead of the server and on today's business day; with `visit.backdate` (owner)
+             *     up to 366 days back, and the visit, its sale and payments then belong to that day.
              */
             check_in_at?: string | null;
             /** Format: uuid */
             customer_id: string;
+            discount?: components["schemas"]["ServiceDiscountCreate"] | null;
             /** @description 1–20 service lines. */
             lines: components["schemas"]["VisitLineCreate"][];
             /** @description Session note incl. reactions (health data): needs `customer.health_notes.write`. */
@@ -1903,9 +2197,16 @@ export interface components {
             payments?: components["schemas"]["PaymentCreate"][];
         };
         VisitDto: {
-            /** Format: date */
+            /**
+             * Format: date
+             * @description Business day of the service (`check_in_at`), which may be before `created_at` when the
+             *     owner entered it late.
+             */
             business_date: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description When the service happened (giờ làm).
+             */
             check_in_at: string;
             /** Format: date-time */
             created_at: string;
@@ -1913,6 +2214,9 @@ export interface components {
             /** Format: uuid */
             customer_id: string;
             customer_name: string;
+            /** Format: int64 */
+            discount_amount: number;
+            discount_reason?: string | null;
             /** Format: uuid */
             id: string;
             lines: components["schemas"]["VisitLineDto"][];
@@ -1927,7 +2231,12 @@ export interface components {
             status: components["schemas"]["VisitStatusDto"];
             /**
              * Format: int64
-             * @description Amount collected in this visit (sum of one-off lines).
+             * @description Sum of the one-off lines before discount.
+             */
+            subtotal: number;
+            /**
+             * Format: int64
+             * @description Amount collected in this visit (one-off lines after discount).
              */
             total: number;
             /**
@@ -1971,12 +2280,18 @@ export interface components {
             customer_package_id?: string | null;
             /** Format: uuid */
             customer_package_item_id?: string | null;
+            /**
+             * Format: int64
+             * @description One-off: this line's share of the visit discount (0 for package lines).
+             */
+            discount_amount: number;
             expiry_override_reason?: string | null;
             /** Format: uuid */
             id: string;
             /**
              * Format: int64
-             * @description One-off: qty × unit price (paid now); package: value of the sessions taken (bonus = 0).
+             * @description One-off: qty × unit price − discount share (paid now); package: value of the sessions
+             *     taken (bonus = 0).
              */
             line_value: number;
             package_name?: string | null;
@@ -2035,6 +2350,460 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    calendar: {
+        parameters: {
+            query?: {
+                /** @description First business day `YYYY-MM-DD`; default today. */
+                from?: string;
+                /** @description Last business day (inclusive); default `from`. At most 14 days. */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description to before_from / range_too_long (max 14 days) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    book: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description One key per booking; a retry replays the first response */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppointmentCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentDto"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked (a past day, non-owner) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description customer or service not in this spa */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.staff_busy (existing_id = the overlapping appointment), appointment.slot_full, customer.phone_taken (newcomer's phone already has a record: existing_id) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed (starts_at not_on_slot / too_far, duration_min out_of_range, guest.*), appointment.outside_opening_hours, staff.inactive */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    read_appointment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_appointment: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppointmentUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.closed, appointment.staff_busy, appointment.slot_full */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    arrive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppointmentArrive"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.closed / already_arrived / staff_busy / slot_full */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.not_today, staff.inactive */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppointmentClose"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.closed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description reason required */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    complete: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description One key per completion; a retry replays the first response */
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppointmentComplete"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentCompleted"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked / discount.limit_exceeded */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.closed, package.no_sessions_left / expired / cancelled */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.customer_required, and every 422 of POST /visits */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    no_show: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppointmentClose"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.closed / already_arrived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description reason required, appointment.not_started */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     login: {
         parameters: {
             query?: never;

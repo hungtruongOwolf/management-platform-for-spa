@@ -11,6 +11,7 @@ import {
 import { LoginPage } from "../features/auth/LoginPage";
 import { authQuery } from "../features/auth/session";
 import { customersSearch, historySearch } from "../features/customers/search";
+import { frontDeskSearch } from "../features/front-desk/search";
 import { FrontDeskPage } from "../features/front-desk/FrontDeskPage";
 import { inactiveSearch, packagesSearch, reportsSearch } from "../features/reports/search";
 import { safeNextPath } from "../lib/api";
@@ -196,6 +197,7 @@ const plansRoute = createRoute({
 const frontDeskRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/quay",
+  validateSearch: frontDeskSearch.validate,
   component: FrontDeskPage,
 });
 

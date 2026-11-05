@@ -7,7 +7,7 @@ import { serveManagement } from "../features/reports/testServer";
 import { App } from "./App";
 import { fold } from "./CommandPalette";
 import { canSeeManagement } from "./features";
-import { navFor, tabsFor } from "./nav";
+import { navFor, navKey, tabsFor } from "./nav";
 import { applyTheme, readSidebarCollapsed, readTheme, saveSidebarCollapsed } from "./prefs";
 import { ThemePicker } from "./ThemePicker";
 import { roleLabel } from "./UserMenu";
@@ -52,6 +52,14 @@ describe("navigation model", () => {
   it("keeps the phone tab bar to the four main screens", () => {
     expect(tabsFor(navFor(me(MANAGER))).map((t) => t.to)).toEqual(["/", "/quay", "/khach-hang", "/bao-cao"]);
     expect(tabsFor(navFor(me(["catalog.read"]))).map((t) => t.to)).toEqual(["/"]);
+  });
+
+  it("puts Lịch hẹn in place of home on the tab bar for whoever books appointments (EM round 4)", () => {
+    const tabs = tabsFor(navFor(me([...MANAGER, "appointment.manage"])));
+    expect(tabs.map(navKey)).toEqual(["/quay?view=lich", "/quay", "/khach-hang", "/bao-cao"]);
+    expect(tabs.map((t) => t.short)).toEqual(["Lịch hẹn", "Quầy", "Khách", "Báo cáo"]);
+    // The record tab is only active without `view`, so the two never light up together.
+    expect(tabs[1]?.search).toEqual({ view: undefined });
   });
 });
 

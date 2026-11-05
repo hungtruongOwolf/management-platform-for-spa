@@ -24,7 +24,12 @@ Code, DB và API dùng đúng tên tiếng Anh ở cột 2; giao diện dùng ti
 | Gói liệu trình của khách (nói gọn: gói liệu trình) | `CustomerPackage` | Gói khách đã mua: số buổi còn lại, hạn, trạng thái. **Không** gọi là "theo dõi gói" |
 | Lượt phục vụ / Buổi | `Visit` | Một lần khách đến: giờ vào/ra, các dịch vụ, KTV |
 | Dịch vụ dùng thêm | `Visit add-on` | Dịch vụ lẻ phát sinh trong một buổi |
-| Lịch hẹn | `Appointment` | Hẹn trước một buổi |
+| Lịch hẹn | `Appointment` | Hẹn trước một buổi: Đã đặt (`booked`) → Đã đến (`arrived`) → Hoàn tất (`done`, thành một lượt khách); hoặc Không đến (`no_show`) / Đã hủy (`cancelled`) kèm lý do ([spec](specs/appointments.md)) |
+| Khách vãng lai | walk-in | Khách đến không hẹn trước: ghi thẳng lượt khách, không qua lịch |
+| Khách mới (trong lịch hẹn) | `guest` | Người hẹn chỉ có tên + SĐT, chưa có hồ sơ; tạo hồ sơ khi đến |
+| Giờ làm | `visit.check_in_at` | Lúc dịch vụ được làm (khác lúc ghi `created_at`); quyết định ngày nghiệp vụ của lượt |
+| Nhập bù | back-dating (`visit.backdate`) | Chủ spa ghi lượt của ngày đã qua; mọi số liệu về đúng ngày làm |
+| Sức chứa / chỗ trống | capacity | Số KTV đang làm trừ số lịch đang mở trong cùng khung giờ |
 | Hóa đơn | `Sale` | Bán dịch vụ lẻ / liệu trình / sản phẩm |
 | Thanh toán | `Payment` | TM (`cash`) hoặc CK (`bank_transfer`); cho phép nhiều lần |
 | Công nợ / Chưa thanh toán | `Receivable` | Phần hóa đơn chưa trả |
@@ -46,7 +51,8 @@ EM: "đặt lại các tên cho đúng đừng ghi là gói bán hay theo dõi g
 | Route | Nhóm nav | Mục nav = tiêu đề trang (h1) | Nhãn ngắn (tab bar) | Trước đây |
 |---|---|---|---|---|
 | `/` | Quầy | Tổng quan | Trang chủ | — |
-| `/quay` | Quầy | Ghi lượt khách | Quầy | — (appointments agent có thể đổi khi thêm lịch hẹn) |
+| `/quay` | Quầy | Ghi lượt khách | Quầy | — |
+| `/quay?view=lich` (tab thứ hai của màn quầy) | Quầy | Lịch hẹn | Lịch hẹn (**thay "Trang chủ"** trên tab bar khi có `appointment.manage`, EM vòng 4; Tổng quan vào "Thêm") | — |
 | `/khach-hang` | Khách hàng | Danh sách khách hàng (h1 "Khách hàng") | Khách | nav "Hồ sơ khách" |
 | `/khach-hang/:id` | Khách hàng | tên khách; breadcrumb `Khách hàng › Tên` | — | — |
 | `/khach-lau-khong-quay-lai` | Khách hàng | Khách lâu chưa quay lại | — | "Lâu không quay lại" / "Khách lâu không quay lại" |

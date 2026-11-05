@@ -48,6 +48,8 @@ async fn a_fresh_spa_gets_demo_data_on_every_screen_once(pool: PgPool) -> TestRe
         report.visits
     );
     assert!((8..=15).contains(&report.visits_today), "{report:?}");
+    // Round 4: the calendar has bookings ahead (a picked technician may already be busy: skipped).
+    assert!((5..=8).contains(&report.appointments), "{report:?}");
     assert_eq!(
         (
             report.voided_sales,

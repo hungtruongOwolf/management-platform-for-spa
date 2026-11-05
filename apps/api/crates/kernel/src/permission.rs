@@ -48,6 +48,8 @@ permissions! {
     OpeningBalanceImport => "opening_balance.import",
     VisitRecord => "visit.record",
     VisitRead => "visit.read",
+    VisitBackdate => "visit.backdate",
+    AppointmentManage => "appointment.manage",
     PaymentCollect => "payment.collect",
     SaleRead => "sale.read",
     SaleDiscount => "sale.discount",

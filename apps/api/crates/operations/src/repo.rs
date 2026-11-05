@@ -52,6 +52,7 @@ pub struct LineInsert<'a> {
     pub unit_price: i64,
     pub line_value: i64,
     pub expiry_override_reason: Option<&'a str>,
+    pub discount_amount: i64,
 }
 
 pub async fn insert_line(tx: &mut TenantTx, l: &LineInsert<'_>) -> Result<(), AppError> {
@@ -60,8 +61,8 @@ pub async fn insert_line(tx: &mut TenantTx, l: &LineInsert<'_>) -> Result<(), Ap
         r#"INSERT INTO app.visit_line
              (id, tenant_id, visit_id, position, service_id, service_name_snapshot, source, customer_package_id,
               customer_package_item_id, sessions_left_after, staff_id, qty, price_variant, unit_price, line_value,
-              expiry_override_reason)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)"#,
+              expiry_override_reason, discount_amount)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)"#,
         Uuid::now_v7(),
         tenant,
         l.visit_id,
@@ -77,7 +78,8 @@ pub async fn insert_line(tx: &mut TenantTx, l: &LineInsert<'_>) -> Result<(), Ap
         l.price_variant,
         l.unit_price,
         l.line_value,
-        l.expiry_override_reason
+        l.expiry_override_reason,
+        l.discount_amount
     )
     .execute(tx.conn())
     .await?;
@@ -96,6 +98,8 @@ pub struct VisitRow {
     pub void_reason: Option<String>,
     pub voided_at: Option<DateTime<Utc>>,
     pub sale_id: Option<Uuid>,
+    pub discount_amount: Option<i64>,
+    pub discount_reason: Option<String>,
     pub version: i64,
     pub created_at: DateTime<Utc>,
 }
@@ -110,9 +114,12 @@ pub async fn visits(
     Ok(sqlx::query_as!(
         VisitRow,
         r#"SELECT v.id, v.customer_id, c.full_name AS customer_name, c.gender AS customer_gender, v.business_date, v.check_in_at, v.note_ct,
-                  v.status, v.void_reason, v.voided_at, v.sale_id, v.version, v.created_at
+                  v.status, v.void_reason, v.voided_at, v.sale_id,
+                  s.discount_amount AS "discount_amount?", s.discount_reason AS "discount_reason?",
+                  v.version, v.created_at
            FROM app.visit v
            JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id
+           LEFT JOIN app.sale s ON s.tenant_id = v.tenant_id AND s.id = v.sale_id
            WHERE v.tenant_id = $1
              AND ($2::uuid IS NULL OR v.id = $2)
              AND ($3::date IS NULL OR v.business_date = $3)
@@ -160,6 +167,7 @@ pub struct LineRow {
     pub price_variant: Option<String>,
     pub unit_price: i64,
     pub line_value: i64,
+    pub discount_amount: i64,
     pub expiry_override_reason: Option<String>,
 }
 
@@ -171,7 +179,7 @@ pub async fn lines(tx: &mut TenantTx, visit_ids: &[Uuid]) -> Result<Vec<LineRow>
                   l.source, l.customer_package_id,
                   l.customer_package_item_id, p.name_snapshot AS "package_name?", l.sessions_left_after,
                   i.sessions_total AS "sessions_total?", l.staff_id, s.full_name AS staff_name, l.qty,
-                  l.price_variant, l.unit_price, l.line_value, l.expiry_override_reason
+                  l.price_variant, l.unit_price, l.line_value, l.discount_amount, l.expiry_override_reason
            FROM app.visit_line l
            JOIN app.staff s ON s.tenant_id = l.tenant_id AND s.id = l.staff_id
            JOIN app.service sv ON sv.tenant_id = l.tenant_id AND sv.id = l.service_id

@@ -25,8 +25,10 @@ export interface Deduction {
 }
 
 /**
- * The selected customer: health warning, packages in the order they should be used, and one
- * "Trừ 1 buổi" per package item. Remaining counts already subtract what is in the cart.
+ * The selected customer, inline right under the search box it was picked in (EM round 4 item 6):
+ * name, phone, gender, health warning, a one-line summary of active packages, then the packages in
+ * the order they should be used with one "Trừ 1 buổi" per item. Remaining counts already subtract
+ * what is in the cart.
  */
 export function CustomerCard({
   summary,
@@ -35,6 +37,7 @@ export function CustomerCard({
   focusFirst,
   onDeduct,
   onBlocked,
+  onClear,
 }: {
   summary: CustomerSummary;
   inCart: (itemId: string) => number;
@@ -43,6 +46,8 @@ export function CustomerCard({
   focusFirst: boolean;
   onDeduct: (d: Deduction) => void;
   onBlocked: (message: string) => void;
+  /** "Đổi khách" (same as Esc). */
+  onClear?: () => void;
 }) {
   const customer = useQuery(customerQuery(summary.id));
   const packages = useQuery(customerPackagesQuery(summary.id));
@@ -60,16 +65,48 @@ export function CustomerCard({
     .flatMap((p) => p.items)
     .find((i) => i.sessions_remaining - inCart(i.id) > 0)?.id;
   const gender = customer.data?.gender ?? summary.gender;
+  const active = ordered.filter(isUsable);
+  const sessionsLeft = active.reduce((n, p) => n + p.sessions_remaining, 0);
 
   return (
     <section
       aria-labelledby="customer-card-title"
-      className="rounded-[14px] border border-border bg-surface p-4 shadow-card"
+      className="border-t border-border pt-3"
     >
-      <h2 id="customer-card-title" className="font-brand text-xl text-primary">
-        <CustomerName name={summary.full_name} gender={gender} showUnknown />
-      </h2>
-      <p className="text-sm text-text-muted tabular">{summary.phone}</p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h2
+            id="customer-card-title"
+            className="font-brand text-xl text-primary"
+          >
+            <CustomerName
+              name={summary.full_name}
+              gender={gender}
+              showUnknown
+            />
+          </h2>
+          <p className="text-sm text-text-muted">
+            <span className="tabular">{summary.phone}</span>
+            {packages.isSuccess && (
+              <>
+                {" · "}
+                {active.length > 0
+                  ? `${String(active.length)} gói liệu trình đang dùng, còn ${String(sessionsLeft)} buổi`
+                  : "Chưa có gói liệu trình đang dùng"}
+              </>
+            )}
+          </p>
+        </div>
+        {onClear && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="min-h-11 rounded-[10px] border border-border px-3 text-sm"
+          >
+            Đổi khách
+          </button>
+        )}
+      </div>
       {customer.data && <HealthNote customer={customer.data} />}
 
       <h3 className="mt-3 font-semibold">Gói liệu trình</h3>

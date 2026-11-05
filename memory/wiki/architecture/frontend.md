@@ -12,7 +12,7 @@ Stack ([ADR-0001](../decisions/ADR-0001-tech-stack.md)): TypeScript strict · Re
 | Route | Màn hình | Permission (UX gate) | Đợt |
 |---|---|---|---|
 | `/dang-nhap`, `/kich-hoat/:token`, `/dat-lai-mat-khau/:token` | Auth | public | R1 |
-| `/quay` | Màn hình quầy (mặc định của Quản lý) | `visit.record` | R1 |
+| `/quay?view=&ngay=&kieu=` | Màn hình quầy (mặc định của Quản lý): tab **Ghi lượt khách** (mặc định) / **Lịch hẹn** (`view=lich`, `ngay` = ngày, `kieu` = `ngay`/`tuan`/`ds`; `features/front-desk/search.ts`) | `visit.record` (tab lịch: `appointment.manage`) | R1 (lịch: vòng 4) |
 | `/khach-hang?q=`, `/khach-hang/:id?hq=&hkind=&hfrom=&hto=` | Danh sách / hồ sơ khách (breadcrumb `Khách hàng › Tên`) | `customer.read` | R1 |
 | ~~`/cong-no`~~ | Công nợ: **hoãn** (EM 2026-11-04, R1 thu đủ) | — | sau |
 | `/` | Tổng quan: chào, "Hôm nay", lối tắt (lazy) | session | R1 |
@@ -109,6 +109,7 @@ Lighthouse CI chặn merge khi LCP > 2,5 s (mobile, Slow 4G, CPU 4×, `/dang-nha
 - Logo: **một** file `emblem.svg` (11.3 KB gzip, logo nguyên vẹn, EM vòng 3) dạng CSS mask ở mọi nơi (đăng nhập, shell, empty state); không phải ứng viên LCP, không chặn render, cache vĩnh viễn và dùng chung từ màn đăng nhập. Thay cho mark (2.4) + wordmark (3.7) của #29: +5.2 KB ảnh, 0 KB JS.
 - **Số đo vòng 4 (polish + mobile, 2026-11-05):** JS khởi động `main` 120.1 → **120.2 KB** (component mobile nằm trong chunk lazy; `useModalDialog` module riêng để drawer không kéo sheet vào bundle khởi động); CSS 11.9 → 13.1 KB. Lighthouse local: `/dang-nhap` 2.0–2.2 s; `/quay` 2.72 s (main cùng máy 2.47–3.88 s, máy local chậm hơn CI).
 - **Số đo vòng 3 (shell, 2026-11-05):** critical JS gzip -9 `main` 117.5 KB → `feat/ui-shell-r3` **119.2 KB** (+1.7: PageHeader, trail, searchState, UserMenu, ThemePicker, CustomerName); CSS 10.5 → 11.2 KB gzip.
+- **Vòng 4 (lịch hẹn, `feat/appointments-front-desk`):** baseline (main + `feat/ui-polish-mobile`) **123.0 KB** gzip -9 → **124.7 KB** (+1.7: tab, đồng hồ đếm ngược, giỏ từ lịch hẹn, giờ làm/giảm giá wiring, thông tin khách inline). Giữ dưới 125 KB bằng cách tách: lịch (`AppointmentsCalendar`, 7.4 KB gz + CSS 1.3 KB, chỉ tải khi mở tab), `TodayVisits` (2.6 KB gz) và `CartOptions` (giờ làm + giảm giá, 1.4 KB gz) là chunk lazy **prefetch ngay sau lần vẽ đầu** (`useAfterFirstPaint`), `front-desk/prefill.ts` (giỏ điền sẵn từ lịch hẹn) nằm trong chunk lịch, `appointments/complete.ts` tách khỏi `appointments/api.ts` để helper của lịch không vào bundle khởi động. Lần đo đầu (chưa tách) là 127.9 KB.
 - Đo trước/sau bằng `pnpm lhci` trên cùng một máy; local chậm hơn CI khoảng 0,3–0,4 s. Kết quả 2026-11-04: [log](../../log.md).
 
 ## Auth & permission-aware UI

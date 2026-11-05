@@ -50,6 +50,7 @@ enum Target {
     Sale,
     CustomerPackage,
     Visit,
+    Appointment,
 }
 
 struct Route {
@@ -332,6 +333,63 @@ const ROUTES: &[Route] = &[
     .id(Target::Visit)
     .body(void_body)
     .idempotent(),
+    // appointments — operations (spec appointments.md)
+    route(
+        "GET",
+        "/api/v1/appointments",
+        Access::Perm(P::AppointmentManage, OWNER_MANAGER),
+    ),
+    route(
+        "POST",
+        "/api/v1/appointments",
+        Access::Perm(P::AppointmentManage, OWNER_MANAGER),
+    )
+    .body(appointment_body)
+    .idempotent(),
+    route(
+        "GET",
+        "/api/v1/appointments/{id}",
+        Access::Perm(P::AppointmentManage, OWNER_MANAGER),
+    )
+    .id(Target::Appointment),
+    route(
+        "PATCH",
+        "/api/v1/appointments/{id}",
+        Access::Perm(P::AppointmentManage, OWNER_MANAGER),
+    )
+    .id(Target::Appointment)
+    .body(visit_update_body)
+    .if_match(),
+    route(
+        "POST",
+        "/api/v1/appointments/{id}/arrive",
+        Access::Perm(P::AppointmentManage, OWNER_MANAGER),
+    )
+    .id(Target::Appointment)
+    .body(arrive_body),
+    // Also needs visit.record (same default holders).
+    route(
+        "POST",
+        "/api/v1/appointments/{id}/complete",
+        Access::Perm(P::AppointmentManage, OWNER_MANAGER),
+    )
+    .id(Target::Appointment)
+    .body(complete_body)
+    .idempotent(),
+    route(
+        "POST",
+        "/api/v1/appointments/{id}/cancel",
+        Access::Perm(P::AppointmentManage, OWNER_MANAGER),
+    )
+    .id(Target::Appointment)
+    .body(void_body),
+    route(
+        "POST",
+        "/api/v1/appointments/{id}/no-show",
+        Access::Perm(P::AppointmentManage, OWNER_MANAGER),
+    )
+    .id(Target::Appointment)
+    .body(void_body),
     // management views — reporting (read-only)
     route(
         "GET",
@@ -435,6 +493,27 @@ fn visit_body(f: &Fixture) -> Option<Value> {
         "payments": [{"method": "cash", "amount": 150_000}]
     }))
 }
+/// Tomorrow 10:00 in the spa (always inside the default 09:00–21:00 hours, whenever the test runs).
+fn tomorrow_at_ten() -> String {
+    let vn = chrono::FixedOffset::east_opt(7 * 3600).unwrap_or_else(|| panic!("offset"));
+    let day = chrono::Utc::now().with_timezone(&vn).date_naive() + chrono::Duration::days(1);
+    format!("{day}T10:00:00+07:00")
+}
+fn appointment_body(f: &Fixture) -> Option<Value> {
+    Some(json!({
+        "customer_id": f.customer, "service_ids": [f.service], "staff_id": f.staff,
+        "starts_at": tomorrow_at_ten(),
+    }))
+}
+fn arrive_body(f: &Fixture) -> Option<Value> {
+    Some(json!({"staff_id": f.staff}))
+}
+fn complete_body(f: &Fixture) -> Option<Value> {
+    Some(json!({
+        "lines": [{"service_id": f.service, "source": "one_off", "staff_id": f.staff}],
+        "payments": [{"method": "cash", "amount": 150_000}]
+    }))
+}
 fn visit_update_body(_: &Fixture) -> Option<Value> {
     Some(json!({}))
 }
@@ -479,6 +558,7 @@ struct Fixture {
     sale: String,
     customer_package: String,
     visit: String,
+    appointment: String,
 }
 
 impl Fixture {
@@ -492,6 +572,7 @@ impl Fixture {
             Target::Sale => &self.sale,
             Target::CustomerPackage => &self.customer_package,
             Target::Visit => &self.visit,
+            Target::Appointment => &self.appointment,
         }
     }
 }
@@ -657,6 +738,7 @@ async fn fixture(
         sale: String::new(),
         customer_package: String::new(),
         visit: String::new(),
+        appointment: String::new(),
     };
     f.service = created_id(
         app,
@@ -708,6 +790,24 @@ async fn fixture(
     f.visit = visit.body["id"]
         .as_str()
         .ok_or_else(|| format!("fixture POST /visits → {} {}", visit.status, visit.body))?
+        .to_owned();
+    let booked = send(
+        app,
+        "POST",
+        "/appointments",
+        Some(&owner),
+        appointment_body(&f),
+        &[("Idempotency-Key", &uuid::Uuid::now_v7().to_string())],
+    )
+    .await;
+    f.appointment = booked.body["id"]
+        .as_str()
+        .ok_or_else(|| {
+            format!(
+                "fixture POST /appointments → {} {}",
+                booked.status, booked.body
+            )
+        })?
         .to_owned();
     Ok(f)
 }
