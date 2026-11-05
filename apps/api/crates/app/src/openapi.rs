@@ -30,6 +30,9 @@ use utoipa::OpenApi;
         crm::http::read,
         crm::http::update,
         crm::http::set_health_note,
+        crm::http::phone_check,
+        crm::http::record_follow_up,
+        crm::http::list_follow_ups,
         org::http::list_staff,
         packages::http::read_package,
         packages::http::list_customer_packages,
@@ -54,7 +57,15 @@ use utoipa::OpenApi;
         reporting::http::list_packages,
     ),
     // Enums used only as query parameters are not reached from any body, so register them.
-    components(schemas(reporting::dto::PackageStatusFilter, reporting::dto::InactiveScope, reporting::dto::Granularity)),
+    components(schemas(
+        reporting::dto::PackageStatusFilter,
+        reporting::dto::InactiveScope,
+        reporting::dto::Granularity,
+        reporting::dto::RangePreset,
+        reporting::dto::HistoryKind,
+        reporting::dto::CustomerKindFilter,
+        reporting::dto::FollowUpFilter,
+    )),
     tags(
         (name = "auth", description = "Đăng nhập, phiên, đổi spa"),
         (name = "catalog", description = "Bảng giá dịch vụ và gói liệu trình"),
@@ -103,6 +114,8 @@ mod tests {
             "/api/v1/customers",
             "/api/v1/customers/{id}",
             "/api/v1/customers/{id}/health-note",
+            "/api/v1/customers/phone-check",
+            "/api/v1/customers/{id}/follow-ups",
             "/api/v1/staff",
             "/api/v1/sales",
             "/api/v1/sales/{id}",
@@ -158,6 +171,12 @@ mod tests {
             "PackageUsage",
             "PackageOverviewPage",
             "InactivePage",
+            "PhoneCheckDto",
+            "FollowUpCreate",
+            "FollowUpDto",
+            "FollowUpList",
+            "RangePreset",
+            "FollowUpFilter",
         ] {
             assert!(schemas.contains_key(schema), "{schema} missing");
         }

@@ -5,14 +5,22 @@
 use crate::cursor;
 use crate::dto::{
     CustomerStats, HistoryCancellation, HistoryEvent, HistoryKind, HistoryPage, HistoryPurchase,
-    HistoryPurchaseLine, HistoryRefund, HistoryVisit, HistoryVisitLine, HistoryVoid, LineSource,
-    MethodSplit, PackageCounts, PackageUsage, PackageUse,
+    HistoryPurchaseLine, HistoryQuery, HistoryRefund, HistoryVisit, HistoryVisitLine, HistoryVoid,
+    LineSource, MethodSplit, PackageCounts, PackageUsage, PackageUse,
 };
-use kernel::{Actor, AppError, Permission, TenantTx};
+use crm::text::{like_escape, search_key};
+use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use packages::http::CustomerPackageDto;
 use sqlx::PgPool;
 use std::collections::HashMap;
 use uuid::Uuid;
+
+/// Longest search text (existing rule for every `q`).
+const MAX_QUERY_CHARS: usize = 100;
+
+fn field(name: &'static str, code: &'static str) -> AppError {
+    AppError::Validation(vec![FieldError::new(name, code)])
+}
 
 /// The timeline shows money and sessions, so it needs the profile, the visits and the sales.
 fn require_history(actor: &Actor) -> Result<(), AppError> {
@@ -72,11 +80,13 @@ async fn visits(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Visits, AppError> {
     let mut lines: HashMap<Uuid, Vec<HistoryVisitLine>> = HashMap::new();
     let mut sessions: HashMap<Uuid, i64> = HashMap::new();
     for l in sqlx::query!(
-        r#"SELECT l.visit_id, l.service_name_snapshot, l.source, l.customer_package_id,
-                  cp.name_snapshot AS "package_name?", l.qty, l.sessions_left_after, l.staff_id,
-                  st.full_name AS staff_name, l.line_value
+        r#"SELECT l.visit_id, l.service_name_snapshot, sc.name AS category_name, l.source,
+                  l.customer_package_id, cp.name_snapshot AS "package_name?", l.qty,
+                  l.sessions_left_after, l.staff_id, st.full_name AS staff_name, l.line_value
            FROM app.visit_line l
            JOIN app.staff st ON st.tenant_id = l.tenant_id AND st.id = l.staff_id
+           JOIN app.service sv ON sv.tenant_id = l.tenant_id AND sv.id = l.service_id
+           JOIN app.service_category sc ON sc.tenant_id = sv.tenant_id AND sc.id = sv.category_id
            LEFT JOIN app.customer_package cp
              ON cp.tenant_id = l.tenant_id AND cp.id = l.customer_package_id
            WHERE l.tenant_id = $1 AND l.visit_id = ANY($2)
@@ -95,6 +105,7 @@ async fn visits(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Visits, AppError> {
         };
         lines.entry(l.visit_id).or_default().push(HistoryVisitLine {
             service_name: l.service_name_snapshot,
+            category_name: l.category_name,
             source,
             customer_package_id: l.customer_package_id,
             package_name: l.package_name,
@@ -263,20 +274,57 @@ fn kind(s: &str) -> Result<HistoryKind, AppError> {
     })
 }
 
-/// `GET /customers/{id}/history?cursor=&limit=` (`customer.read` + `visit.read` + `sale.read`):
-/// newest business day first, then newest first within the day (a back-dated record keeps its
-/// day even though its `created_at` is when it was typed). Visits carry their one-off payment (the visit's own sale is not a separate
-/// purchase); a void is its own event at the moment it happened.
+/// `q` of the history search → a `LIKE` pattern over accent-folded names (`app.search_fold`).
+fn text_filter(q: Option<&str>) -> Result<Option<String>, AppError> {
+    let q = q.map(str::trim).unwrap_or_default();
+    if q.is_empty() {
+        return Ok(None);
+    }
+    if q.chars().count() > MAX_QUERY_CHARS {
+        return Err(field("q", "too_long"));
+    }
+    let key = search_key(q);
+    if key.chars().count() < 2 {
+        return Err(field("q", "too_short"));
+    }
+    Ok(Some(format!("%{}%", like_escape(&key))))
+}
+
+fn kind_sql(kind: HistoryKind) -> &'static str {
+    match kind {
+        HistoryKind::Visit => "visit",
+        HistoryKind::VisitVoided => "visit_voided",
+        HistoryKind::Purchase => "purchase",
+        HistoryKind::PurchaseVoided => "purchase_voided",
+        HistoryKind::PackageCancelled => "package_cancelled",
+    }
+}
+
+/// `GET /customers/{id}/history?q=&kind=&from=&to=&cursor=&limit=` (`customer.read` +
+/// `visit.read` + `sale.read`): newest business day first, then newest first within the day (a
+/// back-dated record keeps its day even though its `created_at` is when it was typed). Visits
+/// carry their one-off payment (the visit's own sale is not a separate purchase); a void is its
+/// own event at the moment it happened.
+///
+/// Filters: `kind`; `from` / `to` on the event's business day; `q` (accent-insensitive) matches a
+/// visit by its services, their categories, packages and technicians, a purchase by its lines
+/// and closer, a cancellation by its package name.
 pub async fn history(
     pool: &PgPool,
     actor: &Actor,
     customer_id: Uuid,
-    after: Option<&str>,
-    limit: Option<u32>,
+    query: &HistoryQuery,
 ) -> Result<HistoryPage, AppError> {
     require_history(actor)?;
-    let limit = cursor::limit(limit)?;
-    let after = match after {
+    let limit = cursor::limit(query.limit)?;
+    let pattern = text_filter(query.q.as_deref())?;
+    if let (Some(from), Some(to)) = (query.from, query.to)
+        && from > to
+    {
+        return Err(field("from", "after_to"));
+    }
+    let only_kind = query.kind.map(kind_sql);
+    let after = match query.cursor.as_deref() {
         Some(raw) => {
             let p = cursor::decode(raw, 4)?;
             Some((
@@ -323,7 +371,36 @@ pub async fn history(
            SELECT kind AS "kind!", rank AS "rank!", at AS "at!", business_date AS "business_date!",
                   id AS "id!"
            FROM ev
-           WHERE $4::date IS NULL OR (business_date, at, rank, id) < ($4, $5, $6, $7)
+           WHERE ($4::date IS NULL OR (business_date, at, rank, id) < ($4, $5, $6, $7))
+             AND ($9::text IS NULL OR kind = $9)
+             AND ($10::date IS NULL OR business_date >= $10)
+             AND ($11::date IS NULL OR business_date <= $11)
+             AND ($12::text IS NULL OR CASE
+                   WHEN kind IN ('visit', 'visit_voided') THEN EXISTS (
+                     SELECT 1 FROM app.visit_line l
+                     JOIN app.staff st ON st.tenant_id = l.tenant_id AND st.id = l.staff_id
+                     JOIN app.service sv ON sv.tenant_id = l.tenant_id AND sv.id = l.service_id
+                     JOIN app.service_category sc ON sc.tenant_id = sv.tenant_id AND sc.id = sv.category_id
+                     LEFT JOIN app.customer_package cp
+                       ON cp.tenant_id = l.tenant_id AND cp.id = l.customer_package_id
+                     WHERE l.tenant_id = $1 AND l.visit_id = ev.id
+                       AND (app.search_fold(l.service_name_snapshot) LIKE $12
+                            OR app.search_fold(sc.name) LIKE $12
+                            OR app.search_fold(st.full_name) LIKE $12
+                            OR app.search_fold(cp.name_snapshot) LIKE $12))
+                   WHEN kind IN ('purchase', 'purchase_voided') THEN EXISTS (
+                     SELECT 1 FROM app.sale_line sl
+                     WHERE sl.tenant_id = $1 AND sl.sale_id = ev.id
+                       AND app.search_fold(sl.description_snapshot) LIKE $12)
+                     OR EXISTS (
+                     SELECT 1 FROM app.sale s
+                     JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id
+                     WHERE s.tenant_id = $1 AND s.id = ev.id AND app.search_fold(st.full_name) LIKE $12)
+                   ELSE EXISTS (
+                     SELECT 1 FROM app.customer_package cp
+                     WHERE cp.tenant_id = $1 AND cp.id = ev.id
+                       AND app.search_fold(cp.name_snapshot) LIKE $12)
+                 END)
            ORDER BY business_date DESC, at DESC, rank DESC, id DESC
            LIMIT $8"#,
         tenant,
@@ -333,7 +410,11 @@ pub async fn history(
         a_at,
         a_rank,
         a_id,
-        limit + 1
+        limit + 1,
+        only_kind,
+        query.from,
+        query.to,
+        pattern
     )
     .fetch_all(tx.conn())
     .await?;
@@ -528,11 +609,13 @@ pub async fn package_usage(
         PackageUse,
         r#"SELECT v.id AS visit_id, l.id AS visit_line_id, v.business_date, v.check_in_at,
                   l.customer_package_item_id AS "item_id!", l.service_name_snapshot AS service_name,
-                  l.qty, l.sessions_left_after, l.staff_id, st.full_name AS staff_name,
-                  v.status = 'voided' AS "voided!"
+                  sc.name AS category_name, l.qty, l.sessions_left_after, l.staff_id,
+                  st.full_name AS staff_name, v.status = 'voided' AS "voided!"
            FROM app.visit_line l
            JOIN app.visit v ON v.tenant_id = l.tenant_id AND v.id = l.visit_id
            JOIN app.staff st ON st.tenant_id = l.tenant_id AND st.id = l.staff_id
+           JOIN app.service sv ON sv.tenant_id = l.tenant_id AND sv.id = l.service_id
+           JOIN app.service_category sc ON sc.tenant_id = sv.tenant_id AND sc.id = sv.category_id
            WHERE l.tenant_id = $1 AND l.customer_package_id = $2
            ORDER BY v.check_in_at, l.position"#,
         tenant,

@@ -526,9 +526,37 @@
           {
             "name": "scope",
             "in": "query",
+            "description": "Default `all`.",
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/InactiveScope"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "Default `all`.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/CustomerKindFilter"
+            }
+          },
+          {
+            "name": "follow_up",
+            "in": "query",
+            "description": "Default `all`.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/FollowUpFilter"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Customer name (accent-insensitive, ≥ 2 characters) or phone digits (≥ 3).",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           },
           {
@@ -566,7 +594,48 @@
             "description": "auth.forbidden: needs customer.read + visit.read"
           },
           "422": {
-            "description": "validation_failed: days out_of_range, cursor invalid, limit out_of_range"
+            "description": "validation_failed: days out_of_range, q too_short / too_long, cursor invalid, limit out_of_range"
+          }
+        }
+      }
+    },
+    "/api/v1/customers/phone-check": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "operationId": "phone_check",
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "path",
+            "description": "The number as typed (any spacing, 0… or +84…). Normalised like `POST /customers`.",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "valid=false while the number is incomplete; taken → existing_id + full_name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneCheckDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: no customer.read"
+          },
+          "422": {
+            "description": "validation_failed: phone too_long"
           }
         }
       }
@@ -655,6 +724,101 @@
         }
       }
     },
+    "/api/v1/customers/{id}/follow-ups": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "operationId": "list_follow_ups",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FollowUpList"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: no customer.read"
+          },
+          "404": {}
+        }
+      },
+      "post": {
+        "tags": [
+          "customers"
+        ],
+        "operationId": "record_follow_up",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per follow-up form; a retry replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FollowUpCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Recorded (append-only), audited as customer.follow_up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FollowUpDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required / key_invalid"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: no customer.follow_up"
+          },
+          "404": {},
+          "422": {
+            "description": "validation_failed: contacted_on in_future / too_old, next_follow_up_on before_contact / too_far, note too_long, body invalid; idempotency.key_reuse_mismatch"
+          }
+        }
+      }
+    },
     "/api/v1/customers/{id}/health-note": {
       "put": {
         "tags": [
@@ -724,6 +888,44 @@
             }
           },
           {
+            "name": "q",
+            "in": "query",
+            "description": "Service, category, package or staff name (accent-insensitive, 2–100 characters).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "Only events of this kind.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/HistoryKind"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "First business day of the event (inclusive).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Last business day of the event (inclusive).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
             "name": "cursor",
             "in": "query",
             "required": false,
@@ -759,7 +961,7 @@
           },
           "404": {},
           "422": {
-            "description": "validation_failed: cursor invalid, limit out_of_range"
+            "description": "validation_failed: q too_short / too_long, from after_to, cursor invalid, limit out_of_range"
           }
         }
       }
@@ -1061,7 +1263,7 @@
           {
             "name": "q",
             "in": "query",
-            "description": "Customer name (accent-insensitive, ≥ 2 characters) or phone digits (≥ 3).",
+            "description": "Customer name or package name (accent-insensitive, ≥ 2 characters), or phone digits (≥ 3).",
             "required": false,
             "schema": {
               "type": "string"
@@ -1223,7 +1425,7 @@
           {
             "name": "from",
             "in": "query",
-            "description": "First business day; default `to` − 6 days.",
+            "description": "First business day; default `to` − 6 days. Not with `preset`.",
             "required": false,
             "schema": {
               "type": "string",
@@ -1233,7 +1435,7 @@
           {
             "name": "to",
             "in": "query",
-            "description": "Last business day (inclusive); default today. At most 366 days after `from`.",
+            "description": "Last business day (inclusive); default today. Not with `preset`. Span: at most 366 days\nfor `day` / `week`, at most 1830 days (5 years) for `month` / `year`.",
             "required": false,
             "schema": {
               "type": "string",
@@ -1243,10 +1445,19 @@
           {
             "name": "granularity",
             "in": "query",
-            "description": "Bucket size of `series`; default `day`.",
+            "description": "Bucket size of `series`; default `day`, or the preset's default.",
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/Granularity"
+            }
+          },
+          {
+            "name": "preset",
+            "in": "query",
+            "description": "A ready-made period instead of `from` / `to`.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/RangePreset"
             }
           }
         ],
@@ -1266,7 +1477,7 @@
             "description": "auth.forbidden: no report.read"
           },
           "422": {
-            "description": "validation_failed: from after_to, to range_too_long (> 366 days)"
+            "description": "validation_failed: from after_to, to range_too_long (> 366 days by day/week, > 1830 days by month/year), preset conflicts_with_range"
           }
         }
       }
@@ -2098,6 +2309,23 @@
           }
         }
       },
+      "CustomerKind": {
+        "type": "string",
+        "description": "What kind of customer a re-engagement row is.",
+        "enum": [
+          "package",
+          "one_off"
+        ]
+      },
+      "CustomerKindFilter": {
+        "type": "string",
+        "description": "`GET /customers/inactive?kind=`.",
+        "enum": [
+          "all",
+          "package",
+          "one_off"
+        ]
+      },
       "CustomerPackageDto": {
         "type": "object",
         "required": [
@@ -2234,6 +2462,7 @@
           "id",
           "service_id",
           "name",
+          "category_name",
           "sessions_purchased",
           "sessions_bonus",
           "sessions_total",
@@ -2241,6 +2470,10 @@
           "per_session_value"
         ],
         "properties": {
+          "category_name": {
+            "type": "string",
+            "description": "Current catalog category of the service (e.g. \"Chăm sóc cổ vai gáy\")."
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -2601,6 +2834,153 @@
           }
         }
       },
+      "FollowUpChannelDto": {
+        "type": "string",
+        "enum": [
+          "phone",
+          "zalo",
+          "in_person",
+          "other"
+        ]
+      },
+      "FollowUpCreate": {
+        "type": "object",
+        "description": "Body of `POST /customers/{id}/follow-ups`. The recorder is the signed-in user.",
+        "required": [
+          "channel",
+          "outcome"
+        ],
+        "properties": {
+          "channel": {
+            "$ref": "#/components/schemas/FollowUpChannelDto"
+          },
+          "contacted_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Day of the contact; default today (spa time zone). Not in the future, at most 30 days back."
+          },
+          "next_follow_up_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "When to try again (≥ `contacted_on`, ≤ 365 days after it). Omitted: `no_answer` → contact\nday + 3; other outcomes → none."
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "≤ 500 characters. A contact note, not a health note."
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/FollowUpOutcomeDto"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FollowUpDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "customer_id",
+          "contacted_on",
+          "channel",
+          "outcome",
+          "by_user_id",
+          "by_name",
+          "created_at"
+        ],
+        "properties": {
+          "by_name": {
+            "type": "string"
+          },
+          "by_user_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The user who recorded it."
+          },
+          "channel": {
+            "$ref": "#/components/schemas/FollowUpChannelDto"
+          },
+          "contacted_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "next_follow_up_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/FollowUpOutcomeDto"
+          }
+        }
+      },
+      "FollowUpFilter": {
+        "type": "string",
+        "description": "`GET /customers/inactive?follow_up=`, judged on the follow-ups of the current absence\n(recorded on or after `last_seen_on`; a visit since then starts a new absence).",
+        "enum": [
+          "all",
+          "due",
+          "not_contacted",
+          "scheduled"
+        ]
+      },
+      "FollowUpList": {
+        "type": "object",
+        "description": "`GET /customers/{id}/follow-ups`: newest contact first.",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean",
+            "description": "More than 100 exist (only the newest are listed)."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FollowUpDto"
+            },
+            "description": "At most 100."
+          }
+        }
+      },
+      "FollowUpOutcomeDto": {
+        "type": "string",
+        "enum": [
+          "will_come",
+          "not_interested",
+          "no_answer",
+          "other"
+        ]
+      },
       "GenderDto": {
         "type": "string",
         "enum": [
@@ -2613,7 +2993,8 @@
         "enum": [
           "day",
           "week",
-          "month"
+          "month",
+          "year"
         ]
       },
       "HealthNoteWrite": {
@@ -2924,6 +3305,7 @@
         "type": "object",
         "required": [
           "service_name",
+          "category_name",
           "source",
           "qty",
           "staff_id",
@@ -2935,6 +3317,10 @@
             "type": "integer",
             "format": "int64",
             "description": "Price of a one-off line (0 for a package session)."
+          },
+          "category_name": {
+            "type": "string",
+            "description": "Current catalog category of the service."
           },
           "customer_package_id": {
             "type": [
@@ -3011,6 +3397,7 @@
           "customer_id",
           "full_name",
           "phone",
+          "kind",
           "last_seen_on",
           "days_absent",
           "active_packages",
@@ -3032,10 +3419,34 @@
           "full_name": {
             "type": "string"
           },
+          "gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CustomerKind"
+          },
+          "last_follow_up": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LastFollowUp",
+                "description": "Latest follow-up since `last_seen_on`; `null` = not contacted in this absence."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "last_seen_on": {
             "type": "string",
             "format": "date",
-            "description": "Last completed visit, or the latest package start when the customer never came."
+            "description": "Latest of: last completed visit, last sale not voided, last package start."
           },
           "last_visit_on": {
             "type": [
@@ -3043,6 +3454,14 @@
               "null"
             ],
             "format": "date"
+          },
+          "next_follow_up_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "The date that follow-up planned for the next try (`null` = none planned)."
           },
           "phone": {
             "type": "string"
@@ -3102,6 +3521,32 @@
           "package": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "LastFollowUp": {
+        "type": "object",
+        "description": "The latest follow-up of the current absence.",
+        "required": [
+          "on",
+          "channel",
+          "outcome",
+          "by"
+        ],
+        "properties": {
+          "by": {
+            "type": "string",
+            "description": "Name of the user who recorded it."
+          },
+          "channel": {
+            "$ref": "#/components/schemas/FollowUpChannelDto"
+          },
+          "on": {
+            "type": "string",
+            "format": "date"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/FollowUpOutcomeDto"
           }
         }
       },
@@ -3753,6 +4198,16 @@
             ],
             "format": "date-time"
           },
+          "customer_gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "customer_id": {
             "type": "string",
             "format": "uuid"
@@ -3931,6 +4386,7 @@
           "check_in_at",
           "item_id",
           "service_name",
+          "category_name",
           "qty",
           "staff_id",
           "staff_name",
@@ -3940,6 +4396,10 @@
           "business_date": {
             "type": "string",
             "format": "date"
+          },
+          "category_name": {
+            "type": "string",
+            "description": "Current catalog category of the service."
           },
           "check_in_at": {
             "type": "string",
@@ -4065,6 +4525,36 @@
           "bank_transfer"
         ]
       },
+      "PhoneCheckDto": {
+        "type": "object",
+        "description": "`GET /customers/phone-check`. `taken` → `existing_id` + `full_name` name the profile to open\ninstead of creating a duplicate (create would answer `409 customer.phone_taken`).",
+        "required": [
+          "valid",
+          "taken"
+        ],
+        "properties": {
+          "existing_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "full_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "taken": {
+            "type": "boolean"
+          },
+          "valid": {
+            "type": "boolean",
+            "description": "The input is a complete, valid phone number (false while still typing)."
+          }
+        }
+      },
       "PlanItemWrite": {
         "type": "object",
         "required": [
@@ -4183,6 +4673,14 @@
             "format": "date",
             "description": "Last day of the bucket (clipped to `to`)."
           },
+          "net_revenue": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "`revenue.net.total`, flat for line charts; only with `report.revenue.read`."
+          },
           "revenue": {
             "oneOf": [
               {
@@ -4199,6 +4697,19 @@
             "description": "First day of the bucket (clipped to `from`)."
           }
         }
+      },
+      "RangePreset": {
+        "type": "string",
+        "description": "Ready-made periods, computed on the server from the spa's own \"today\" (its time zone), so\nevery device agrees on what \"this month\" is. Each has a default granularity.",
+        "enum": [
+          "last7_days",
+          "last30_days",
+          "this_month",
+          "last_month",
+          "this_year",
+          "last12_months",
+          "last5_years"
+        ]
       },
       "RangeReport": {
         "type": "object",
@@ -4219,6 +4730,17 @@
           },
           "granularity": {
             "$ref": "#/components/schemas/Granularity"
+          },
+          "preset": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RangePreset",
+                "description": "The preset the range came from, if any."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "revenue": {
             "oneOf": [
@@ -4882,10 +5404,15 @@
         "required": [
           "service_id",
           "name",
+          "category_name",
           "sessions_used",
           "one_off_services"
         ],
         "properties": {
+          "category_name": {
+            "type": "string",
+            "description": "Current catalog category of the service (e.g. \"Gội đầu dưỡng sinh\")."
+          },
           "name": {
             "type": "string"
           },
@@ -5134,6 +5661,7 @@
           "id",
           "service_id",
           "service_name",
+          "category_name",
           "source",
           "staff_id",
           "staff_name",
@@ -5142,6 +5670,10 @@
           "line_value"
         ],
         "properties": {
+          "category_name": {
+            "type": "string",
+            "description": "Current catalog category of the service (e.g. \"Gội đầu dưỡng sinh\")."
+          },
           "customer_package_id": {
             "type": [
               "string",

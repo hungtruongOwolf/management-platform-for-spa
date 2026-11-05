@@ -99,6 +99,8 @@ pub struct VisitLineDto {
     pub service_id: Uuid,
     /// Service name at the visit (snapshot).
     pub service_name: String,
+    /// Current catalog category of the service (e.g. "Gội đầu dưỡng sinh").
+    pub category_name: String,
     pub source: VisitLineSourceDto,
     pub customer_package_id: Option<Uuid>,
     pub customer_package_item_id: Option<Uuid>,
