@@ -121,7 +121,7 @@ function PeriodPicker({
     setDraft(next);
     if (!next.from || !next.to) return;
     const problem =
-      next.from > next.to ? "Ngày bắt đầu phải trước ngày kết thúc." : daysBetween(next.from, next.to) > MAX_RANGE_DAYS ? "Chọn tối đa 5 năm." : null;
+      next.from > next.to ? "Ngày bắt đầu phải trước ngày kết thúc." : daysBetween(next.from, next.to) > MAX_RANGE_DAYS ? "Chọn tối đa 2 năm." : null;
     if (problem) {
       setError(problem);
       return;
@@ -539,7 +539,7 @@ function TopServices({ range, label }: { range: RangeReport | undefined; label: 
             <li key={s.service_id} className="flex items-center gap-3">
               <Rank i={i} />
               <span className="min-w-0 flex-1">
-                <span className="block truncate">{serviceLabel(s.name, s.category_name)}</span>
+                <span className="block">{serviceLabel(s.name, s.category_name)}</span>
                 {s.one_off_revenue != null && s.one_off_revenue > 0 && (
                   <span className="block text-xs text-text-muted tabular">lẻ {money(s.one_off_revenue)}</span>
                 )}
@@ -566,7 +566,7 @@ function TopPackages({ range, label }: { range: RangeReport | undefined; label: 
             <li key={p.plan_id ?? p.name} className="flex items-center gap-3">
               <Rank i={i} />
               <span className="min-w-0 flex-1">
-                <span className="block truncate">{p.name}</span>
+                <span className="block">{p.name}</span>
                 {p.revenue != null && <span className="block text-xs text-text-muted tabular">{money(p.revenue)}</span>}
               </span>
               <span className="text-sm font-semibold whitespace-nowrap tabular">{p.sold} gói</span>

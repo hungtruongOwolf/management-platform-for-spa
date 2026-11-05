@@ -76,8 +76,9 @@ export function LineChart({
         y,
       )
     : "";
-  // Thin the axis labels so they never collide: at most ~7 across.
+  // Thin the axis labels so they never collide: at most ~7 across, ~4 on a phone.
   const every = Math.max(1, Math.ceil(n / 7));
+  const everyNarrow = Math.max(1, Math.ceil(n / 4));
   const last = points.at(-1);
   const point = active !== null ? points[active] : undefined;
 
@@ -191,7 +192,11 @@ export function LineChart({
         <ol className="line-xaxis" aria-hidden="true">
           {points.map((p, i) =>
             i % every === 0 || i === n - 1 ? (
-              <li key={p.key} style={{ left: `${String(pct(i))}%` }} className={i === 0 ? "is-first" : i === n - 1 ? "is-last" : ""}>
+              <li
+                key={p.key}
+                style={{ left: `${String(pct(i))}%` }}
+                className={`${i === 0 ? "is-first" : i === n - 1 ? "is-last" : ""} ${i % everyNarrow === 0 || i === n - 1 ? "" : "is-minor"}`}
+              >
                 {p.label}
               </li>
             ) : null,

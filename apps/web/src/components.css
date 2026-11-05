@@ -1109,6 +1109,23 @@ h2 .gender-chip {
 .line-xaxis li.is-last {
   transform: translateX(-100%);
 }
+@media (max-width: 639px) {
+  .line-xaxis li.is-minor {
+    display: none;
+  }
+}
+/* Row headers in a table body (report breakdown) read as data, not as the sticky column header. */
+.data-table tbody th,
+.data-table tfoot th {
+  position: static;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  letter-spacing: 0;
+  text-transform: none;
+}
 /* Refetch keeps the frame (dataviz): previous render, dimmed, no skeleton flash. */
 .is-refreshing {
   opacity: 0.55;

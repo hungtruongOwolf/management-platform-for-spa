@@ -35,10 +35,10 @@ export const PRESET_LABEL: Record<Preset, string> = {
 };
 
 /**
- * Longest custom range: `/reports/range` serves 366 days after `from` by day or week, and 5 years
- * (1830 days) by month or year; `bucketFor` never picks day/week past a quarter.
+ * Longest custom range: `/reports/range` serves 366 days by day or week and 732 days (2 years) by
+ * month or year (longer: 422 `range_too_long`); `bucketFor` never picks day/week past a quarter.
  */
-export const MAX_RANGE_DAYS = 1831;
+export const MAX_RANGE_DAYS = 732;
 
 const DAY_MS = 86_400_000;
 
@@ -89,8 +89,9 @@ export function bucketFor(days: number): Bucket {
   return "year";
 }
 
-const dm = new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", timeZone: "UTC" });
-const dmy = new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
+/** "30/10" and "30/10/2026": written by hand, because vi-VN Intl prints day+month as "30-10". */
+const dm = { format: (d: Date) => `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}` };
+const dmy = { format: (d: Date) => `${dm.format(d)}/${String(d.getUTCFullYear())}` };
 
 /** "01/10 – 15/10/2026", or "05/11/2026" for one day. */
 export function rangeLabel(from: string, to: string): string {

@@ -157,7 +157,8 @@ export function inactiveCustomersQuery(f: InactiveFilter) {
   });
 }
 
-const dayMonth = new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", timeZone: "UTC" });
+/** vi-VN Intl prints day+month as "05-11"; the app writes "05/11" (design-system.md "Định dạng"). */
+const dayMonth = { format: (d: Date) => `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}` };
 const fullDate = new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
 const weekday = new Intl.DateTimeFormat("vi-VN", { weekday: "short", timeZone: "UTC" });
 

@@ -37,7 +37,7 @@ export function navFor(me: Me | null): NavGroup[] {
       ],
     ],
     ["Gói liệu trình", [mgmt && { to: "/goi-lieu-trinh", label: "Theo dõi gói", icon: "package" }]],
-    ["Báo cáo", [mgmt && { to: "/bao-cao", label: "Hôm nay", icon: "chart" }]],
+    ["Báo cáo", [mgmt && { to: "/bao-cao", label: "Kinh doanh", icon: "chart" }]],
     [
       "Danh mục",
       [

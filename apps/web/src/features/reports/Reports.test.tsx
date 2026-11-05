@@ -6,7 +6,7 @@ import { App } from "../../app/App";
 import { spaToday } from "../corrections/api";
 import { addDays, compactVnd, packagesPath, relativeDay } from "./api";
 import { niceTicks } from "./LineChart";
-import { daysBetween, resolvePeriod } from "./period";
+import { daysBetween, rangeLabel, resolvePeriod } from "./period";
 import { inactiveSearch, reportsSearch } from "./search";
 import { mockDaily, mockRange } from "./fixtures";
 import { displayPhone } from "./PackagesOverviewPage";
@@ -139,6 +139,8 @@ describe("report periods", () => {
     // A broken or future custom range falls back to 7 days instead of breaking the screen.
     expect(resolvePeriod("custom", "2026-11-05", { from: "2026-11-09", to: "2026-11-01" })).toMatchObject({ from: "2026-10-30", to: "2026-11-05" });
     expect(daysBetween("2026-01-01", "2026-12-31")).toBe(365);
+    expect(rangeLabel("2026-10-30", "2026-11-05")).toBe("30/10 – 05/11/2026");
+    expect(rangeLabel("2025-12-30", "2026-01-02")).toBe("30/12/2025 – 02/01/2026");
     expect(niceTicks(7_300_000)).toEqual([0, 2_500_000, 5_000_000, 7_500_000]);
   });
 

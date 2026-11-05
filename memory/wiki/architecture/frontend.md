@@ -1,7 +1,7 @@
 ---
 title: Frontend architecture (internal app)
 updated: 2026-11-05
-sources: [decisions/ADR-0001-tech-stack.md, decisions/ADR-0004-authentication.md, design/design-system.md, design/front-desk-flows.md]
+sources: [raw/2026-11-05-em-ui-review-round3.md, decisions/ADR-0001-tech-stack.md, decisions/ADR-0004-authentication.md, design/design-system.md, design/front-desk-flows.md]
 ---
 
 # Kiến trúc frontend: app nội bộ
@@ -17,9 +17,9 @@ Stack ([ADR-0001](../decisions/ADR-0001-tech-stack.md)): TypeScript strict · Re
 | ~~`/cong-no`~~ | Công nợ: **hoãn** (EM 2026-11-04, R1 thu đủ) | — | sau |
 | `/` | Tổng quan: chào, "Hôm nay", lối tắt (lazy) | session | R1 |
 | ~~`/nhap-so-cu`~~ | **Đã xóa** (EM 2026-11-05): dữ liệu sổ giấy nhập qua CLI `app import-paper-book`; `POST /opening-balances` chỉ chủ spa | — | — |
-| `/bao-cao` | Báo cáo / Tổng quan hôm nay: thẻ số, 7 ngày, cơ cấu tiền, KTV, dịch vụ dùng nhiều | `report.read` (tiền: `report.revenue.read`) | R1 |
-| `/goi-lieu-trinh` | Theo dõi gói của khách (lọc sắp hết hạn / đang dùng / hết hạn / hết buổi / đã hủy) | `report.read` | R1 |
-| `/khach-lau-khong-quay-lai` | Khách lâu không quay lại: ngưỡng 7/14/30 ngày, phạm vi còn buổi / mọi khách, phân trang | `report.read` | R1 |
+| `/bao-cao` | Báo cáo theo kỳ (Hôm nay … 12 tháng, Tùy chọn), so với kỳ trước, xu hướng dạng line, chi tiết theo ngày/tuần/tháng, KTV, top dịch vụ/gói; tab **Sổ doanh thu** | `report.read` (tiền + sổ: `report.revenue.read`) | R1 |
+| `/goi-lieu-trinh` | Theo dõi gói của khách: tìm (tên khách, tên gói, SĐT) + lọc trạng thái; gói không hạn hiện "Không hạn" | `report.read` | R1 |
+| `/khach-lau-khong-quay-lai` | Khách liệu trình + khách lẻ lâu không quay lại: tìm, ngưỡng 7–90 ngày, loại khách, phạm vi, tình trạng liên hệ; "Đã liên hệ" ghi follow-up | `report.read` (ghi: `customer.follow_up`) | R1 |
 | `/cai-dat` | Giao diện (theo thiết bị / sáng / tối) + tài khoản | session | R1 |
 | `/bang-gia`, `/bang-gia/goi` | Dịch vụ, gói | `catalog.read` (sửa: `catalog.manage`) | R1 |
 | `/so-quy` | Sổ quỹ, chốt quỹ | spec #2 | R1 |
@@ -27,14 +27,37 @@ Stack ([ADR-0001](../decisions/ADR-0001-tech-stack.md)): TypeScript strict · Re
 | `/toi` | Trang của KTV (lịch, số khách, phiếu lương) | self | R2/R3 |
 URL tiếng Việt không dấu, ổn định để deep link (principle #10). Mọi route ngoài auth đều cần session.
 
-## Màn quản lý (2026-11-05)
-Nối thật với API của branch `feat/management-views` (PR #28, kiểu ở `packages/api-client`: `DailyReport`, `RangeReport`, `HistoryPage`, `CustomerStats`, `PackageOverviewPage`, `InactivePage`).
-- `features/reports/api.ts`: mọi màn chỉ dùng query option ở đây. `features/reports/contract.ts` chỉ re-export từ `@vpyd/api-client`.
-- Quyền UX: `canSeeManagement(me)` = `report.read` (`app/features.ts`). Trường tiền (`revenue`, `net_revenue`, `one_off_revenue`, …) chỉ có khi có `report.revenue.read`; không có thì màn **không render** chỗ tiền (không hiện 0đ). Test `Entitlement.test.tsx`.
-- Query keys: `['reports','daily',date]` (30 s), `['reports','range',from,to]` (60 s), `['customers','history',id]`, `['customers','summary',id]`, `['packages','overview',filter]`, `['customers','inactive',days,scope]` (infinite, cursor). Ghi lượt / bán gói nên invalidate `['reports']` + `['customers','history',id]` (việc tiếp theo).
-- `/khach-lau-khong-quay-lai` (EM 2026-11-05): `GET /customers/inactive?days=7|14|30&scope=with_sessions|all&limit=20&cursor=…`, mặc định 7 ngày; "Xem thêm" theo `next_cursor`.
-- Chưa dùng: `/reports/ledger` (sổ doanh thu), `/customer-packages/{id}/usage` (trang sổ liệu trình). Để màn sau.
-- Test: `features/reports/fixtures.ts` + `testServer.ts` giả API theo đúng contract (chỉ test import, không vào bundle).
+## Màn quản lý (2026-11-05, cập nhật vòng 3)
+Kiểu từ `packages/api-client` (contract r3b của `feat/followup-and-reports-api`). Mọi màn chỉ dùng query option trong `features/reports/api.ts` (follow-up: `features/customers/followUps.ts`); `features/reports/contract.ts` chỉ re-export.
+- **Quyền UX:** `canSeeManagement(me)` = `report.read`. Trường tiền chỉ có khi có `report.revenue.read`; thiếu thì màn **không render** chỗ tiền: không thẻ "Thực thu", không chỉ số "Thực thu" trên biểu đồ, không cột tiền trong bảng chi tiết, không thẻ cơ cấu, không tab "Sổ doanh thu" (kể cả khi URL có `tab=ledger`). Test `Entitlement.test.tsx`. Nút "Đã liên hệ" / "Ghi lần liên hệ" chỉ hiện khi có `customer.follow_up`.
+- **Báo cáo `/bao-cao`** (EM vòng 3 mục 2):
+  - Kỳ: Hôm nay · 7 ngày · 30 ngày · Tháng này · Tháng trước · Năm nay · 12 tháng · Tùy chọn (từ–đến, tối đa 2 năm = 732 ngày, giới hạn của API). `features/reports/period.ts` (thuần, có unit test) tính `from/to`, bucket (≤ 31 ngày: ngày; ≤ 92: tuần; ≤ 2 năm: tháng; hơn: năm) và **kỳ trước cùng độ dài** (Tháng này ↔ cùng kỳ tháng trước; Năm nay ↔ cùng kỳ năm trước; còn lại: dịch lùi đúng số ngày). Client tự tính `from/to` thay vì gửi `preset`, để kỳ so sánh luôn khớp.
+  - Hàng KPI (thực thu, khách, lượt, buổi, gói bán) có `Delta` so với kỳ trước (2 request `/reports/range` song song).
+  - Biểu đồ xu hướng: **line chart SVG tự viết** (`LineChart.tsx`, không thư viện): một trục; kỳ này là đường nâu đỏ + vùng 10%, kỳ trước đường xám (dạng *emphasis* của skill dataviz; validator: tách CVD ΔE 23, tương phản ≥ 3:1 ở cả light/dark; check band/chroma chỉ áp dụng cho bảng màu categorical). Đổi chỉ số Thực thu / Khách / Lượt bằng segmented (không dual-axis). Crosshair + tooltip khi rê chuột và khi focus (← → Home End); bảng "Chi tiết theo ngày/tuần/tháng" chính là bảng thay thế cho screen reader.
+  - Đổi kỳ giữ khung cũ mờ đi (`placeholderData: keepPreviousData` + `.is-refreshing`), không nháy skeleton.
+  - Tab **Sổ doanh thu**: `GET /reports/ledger` (100 dòng/trang, "Xem thêm"), cột như sổ giấy, mỗi ngày một dòng cộng từ `days[]`, dòng hủy/hoàn đỏ + badge, dòng gốc đã hủy gạch ngang. Kỳ > 93 ngày: không gọi API, hướng dẫn chọn kỳ ngắn hơn.
+- **URL state** (`lib/searchState.ts` của shell; schema ở `features/reports/search.ts`, `features/customers/search.ts`): mặc định không lên URL; filter `replace` (không đầy lịch sử Back).
+
+| Màn | Cần tìm / lọc? | Có gì (URL key) |
+|---|---|---|
+| `/bao-cao` | kỳ + tab + chỉ số | `tab`, `period`, `from`, `to` (chỉ khi `custom`), `metric` |
+| `/goi-lieu-trinh` | **có**: nhiều gói, quản lý tìm theo khách hoặc tên gói khi khách gọi tới | ô tìm `q` (tên khách, tên gói, SĐT; debounce 300 ms, ≥ 2 ký tự), `status` |
+| `/khach-lau-khong-quay-lai` | **có**: danh sách gọi điện hằng ngày | `q`, `days` 7/14/30/60/90, `kind` (mọi khách / liệu trình / khách lẻ), `scope` (mọi khách / chỉ còn buổi), `follow` (Cần liên hệ (mặc định) / Chưa liên hệ / Đã hẹn / Tất cả). Server sắp theo ngày hẹn khi lọc "Cần liên hệ"/"Đã hẹn", còn lại theo số ngày vắng |
+| Hồ sơ khách (lịch sử) | **có** khi khách nhiều năm (EM mục 6) | `hq` (dịch vụ, danh mục, gói, KTV), `hkind` (loại sự kiện), `hfrom`/`hto`; "Xóa bộ lọc"; timeline phân trang "Xem thêm lịch sử" |
+| `/khach-hang` | có sẵn (shell): `q` | — |
+| `/bang-gia`, `/bang-gia/goi` | **chưa cần**: 35 dịch vụ / 10 danh mục và ~5 gói vừa một màn, đã nhóm theo danh mục; quầy chọn dịch vụ qua `<select>` nhóm theo danh mục. Thêm ô lọc khi menu > ~80 dịch vụ | — |
+| `/quay` | tìm khách đã có; danh sách lượt hôm nay phân trang 30 | — |
+
+- **Follow-up** (EM mục 16): `FollowUpForm` (state thường, không RHF): ngày liên hệ (mặc định hôm nay, lùi tối đa 30 ngày), cách liên hệ, kết quả, ghi chú ≤ 500, **hẹn lại** điền sẵn gợi ý (Không nghe máy +3 ngày như server; Hẹn sẽ quay lại / Khác +7; Chưa có nhu cầu: không hẹn), sửa hoặc "Không hẹn" được. Mở bằng `<dialog>` trên danh sách vắng, inline trên hồ sơ (thẻ "Chăm sóc lại" có timeline các lần liên hệ). `POST` có `Idempotency-Key` sinh lúc mở form.
+- **SĐT trùng khi gõ** (EM mục 13): `CustomerForm` gọi `GET /customers/phone-check?phone=` sau 400 ms ngừng gõ, chỉ khi số đủ 10 chữ số; hiện "Số này đã có hồ sơ: <tên> — Mở hồ sơ" (vùng `aria-live`) trước khi bấm Lưu; khi sửa hồ sơ không báo trùng với chính nó. 409 `customer.phone_taken` lúc lưu vẫn là chốt chặn cuối (giữ nguyên).
+- **Giới tính cạnh tên** (mục 7): `app/CustomerName` ở bảng gói, danh sách vắng, sổ doanh thu, thẻ khách ở quầy (có "Chưa rõ"), lượt hôm nay, tiêu đề hồ sơ.
+- **Danh mục trước tên dịch vụ** (mục 15): `lib/names.ts` `serviceLabel(name, category_name)` → "Gội đầu dưỡng sinh · Gội đầu thảo dược": giỏ ở quầy, lượt hôm nay, lịch sử, mục trong gói (thẻ quầy + hồ sơ), top dịch vụ. Picker ở quầy đã nhóm theo danh mục (`<optgroup>`).
+- **Gói không hạn** (mục 3): `expires_on = null` → "Không hạn" mọi nơi (`expiryText`, `NO_EXPIRY`); server: `package_status` không bao giờ trả `expired` khi hạn null, và lọc "Sắp hết hạn" loại hạn null. Có test fixture gói không hạn.
+- **Query keys:** `['reports','range',from,to,granularity]` (60 s, giữ dữ liệu cũ khi đổi kỳ), `['reports','ledger',from,to]` (infinite), `['packages','overview',status,q]` (infinite), `['customers','inactive',days,scope,kind,follow,q]` (infinite), `['customers','history',id,q,kind,from,to]` (infinite), `['customers','summary',id]`, `['customers','follow-ups',id]`, `['customers','phone-check',digits]` (30 s).
+- **Invalidation:**
+  - follow-up → `['customers','inactive']` + follow-ups + summary của khách đó;
+  - ghi / hủy lượt, bán gói, hủy / gia hạn gói → `lib/invalidate.ts` `invalidateManagementViews`: `['reports']`, `['packages','overview']`, `['customers','inactive']`, history + summary của khách. Chỉ đánh dấu stale; trên `/quay` không có query nào trong số này đang mount nên không tốn request ở lần vẽ đầu.
+- **Test:** `fixtures.ts` + `testServer.ts` giả API đúng contract, gồm follow-up GET/POST giữ trong bộ nhớ, lọc và sắp xếp như server, phone-check. E2E `e2e/specs/management.spec.ts` dùng `support/db.ts` `backdateCustomer` để có khách vắng 20 ngày.
 
 ## Rendering & data
 - **SPA tĩnh**, Caddy trả `index.html` cho mọi route không phải `/api/*`. Code-split theo route (`lazy`).
