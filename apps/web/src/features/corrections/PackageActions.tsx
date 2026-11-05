@@ -2,6 +2,7 @@ import type { CustomerPackage } from "@vpyd/api-client";
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { formatVnd } from "@vpyd/ui";
 import { useEffect, useId, useRef, useState } from "react";
+import { DateField } from "../../components/DateField";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
 import { formatDate, parseAmount } from "../sales/api";
@@ -80,7 +81,7 @@ export function PackageActions({
                 setOpen("cancel");
               }}
             >
-              Hủy liệu trình + hoàn tiền
+              Hủy gói và hoàn tiền
             </button>
           )}
           {canVoidSale && (
@@ -152,7 +153,7 @@ function ExtendForm({
   onCancel: () => void;
 }) {
   const titleId = useId();
-  const dateRef = useRef<HTMLInputElement>(null);
+  const dateRef = useRef<HTMLDivElement>(null);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const today = spaToday();
   const base =
@@ -170,7 +171,7 @@ function ExtendForm({
     onSuccess: onDone,
   });
   useEffect(() => {
-    dateRef.current?.focus();
+    dateRef.current?.querySelector<HTMLInputElement>("input[type=text]")?.focus();
   }, []);
 
   const reasonProblem =
@@ -212,20 +213,17 @@ function ExtendForm({
         }}
         className="space-y-2"
       >
-        <label className="block">
-          <span className="text-sm font-medium">Hạn mới</span>
-          <input
-            ref={dateRef}
-            type="date"
+        <div ref={dateRef}>
+          <DateField
+            label="Hạn mới"
             value={expiresOn}
             min={today}
-            onChange={(e) => {
-              setExpiresOn(e.target.value);
+            invalid={Boolean(dateProblem)}
+            onChange={(iso) => {
+              if (iso) setExpiresOn(iso);
             }}
-            aria-invalid={dateProblem ? true : undefined}
-            className={input}
           />
-        </label>
+        </div>
         <div
           className="flex flex-wrap gap-2"
           aria-label="Gia hạn nhanh"
@@ -341,7 +339,7 @@ function CancelForm({
       className="mt-2 space-y-2 rounded-[10px] border border-danger/50 bg-surface p-3"
     >
       <h3 id={titleId} className="font-semibold">
-        Hủy liệu trình "{pkg.name}"
+        Hủy gói "{pkg.name}"
       </h3>
       <p className="text-sm text-text-muted">
         Còn {String(pkg.sessions_remaining)}/{String(pkg.sessions_total)} buổi
@@ -428,7 +426,7 @@ function CancelForm({
               ? "Đang hủy…"
               : amount > 0
                 ? `Hủy và hoàn ${formatVnd(amount)}`
-                : "Hủy liệu trình"}
+                : "Hủy gói"}
           </button>
           <button type="button" onClick={onCancel} className={secondary}>
             Thôi

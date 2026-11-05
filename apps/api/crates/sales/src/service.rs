@@ -534,6 +534,83 @@ pub struct ServiceLine {
     pub unit_price: Money,
 }
 
+/// How a one-off discount was asked for; the amount is always computed here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiscountAsk {
+    /// 1–100 % of the subtotal, rounded down to the đồng.
+    Percent(u32),
+    Amount(Money),
+}
+
+/// A validated discount request on one-off services (shape only; limits are checked against the
+/// subtotal and the caller's authority in [`record_service_sale`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceDiscount {
+    pub ask: DiscountAsk,
+    pub reason: String,
+}
+
+/// Shape rules for a visit's `discount`: exactly one of `percent` / `amount`, a reason (D10).
+/// Problems are appended to `errors` with the `discount.` prefix.
+pub fn parse_service_discount(
+    input: &crate::dto::ServiceDiscountCreate,
+    errors: &mut Vec<FieldError>,
+) -> Option<ServiceDiscount> {
+    let ask = match (input.percent, input.amount) {
+        (Some(p), None) if (1..=100).contains(&p) => Some(DiscountAsk::Percent(p)),
+        (Some(_), None) => {
+            errors.push(FieldError::new("discount.percent", "out_of_range"));
+            None
+        }
+        (None, Some(a)) => match Money::vnd(a) {
+            Ok(m) if m > Money::ZERO => Some(DiscountAsk::Amount(m)),
+            _ => {
+                errors.push(FieldError::new("discount.amount", "must_be_positive"));
+                None
+            }
+        },
+        (Some(_), Some(_)) => {
+            errors.push(FieldError::new("discount", "percent_or_amount"));
+            None
+        }
+        (None, None) => {
+            errors.push(FieldError::new("discount", "required"));
+            None
+        }
+    };
+    let reason = trimmed(input.reason.as_ref());
+    if reason
+        .as_ref()
+        .is_some_and(|r| r.chars().count() > MAX_REASON)
+    {
+        errors.push(FieldError::new("discount.reason", "too_long"));
+    }
+    let ask = ask?;
+    match reason {
+        Some(reason) => Some(ServiceDiscount { ask, reason }),
+        None => {
+            // Same code as a package sale without a reason (AC3.5).
+            errors.push(FieldError::new("discount.reason", "required"));
+            None
+        }
+    }
+}
+
+/// The amount of `ask` on `subtotal`: a percent rounds down, so a manager at the cap is never
+/// pushed one đồng over it.
+pub fn discount_amount(subtotal: Money, ask: DiscountAsk) -> Result<Money, AppError> {
+    match ask {
+        DiscountAsk::Amount(m) => Ok(m),
+        DiscountAsk::Percent(p) => {
+            let v = i128::from(subtotal.as_i64()) * i128::from(p) / 100;
+            Money::vnd(
+                i64::try_from(v).map_err(|_| money_err(kernel::money::MoneyError::Overflow))?,
+            )
+            .map_err(money_err)
+        }
+    }
+}
+
 /// A sale of one-off services, e.g. the paid part of a visit. Always collected in full (R1).
 #[derive(Debug, Clone, Copy)]
 pub struct ServiceSale<'a> {
@@ -542,18 +619,27 @@ pub struct ServiceSale<'a> {
     pub branch_id: Uuid,
     pub lines: &'a [ServiceLine],
     pub payments: &'a [Payment],
+    pub discount: Option<&'a ServiceDiscount>,
+    /// The spa's cap for callers without `sale.discount_unlimited` (`TenantProfile`).
+    pub manager_discount_max_pct: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServiceSaleRecorded {
     pub sale_id: Uuid,
+    pub subtotal: Money,
+    pub discount: Money,
     pub total: Money,
+    /// Each line's share of the discount, in the order of `ServiceSale::lines`; sums to `discount`.
+    pub line_discounts: Vec<Money>,
 }
 
 /// Records the sale of one-off services inside the caller's transaction: sale, `service` lines,
-/// append-only payments and an audit entry. Payments must add up exactly to the server-computed
-/// total (`422 payment.amount_mismatch`); taking money needs `payment.collect`.
-/// No lines → no sale (`Ok(None)`), and then any payment is a mismatch.
+/// append-only payments and an audit entry. An optional discount follows D10 like a package sale
+/// (`sale.discount` up to the spa's cap, `sale.discount_unlimited` beyond, reason required).
+/// Payments must add up exactly to the server-computed total after discount
+/// (`422 payment.amount_mismatch`); taking money needs `payment.collect`.
+/// No lines → no sale (`Ok(None)`), and then any payment or discount is rejected.
 pub async fn record_service_sale(
     tx: &mut TenantTx,
     actor: &Actor,
@@ -566,7 +652,32 @@ pub async fn record_service_sale(
         .map(|l| l.unit_price.checked_mul(l.qty))
         .collect::<Result<Vec<_>, _>>()
         .map_err(money_err)?;
-    let total = Money::sum(line_totals.iter().copied()).map_err(money_err)?;
+    let subtotal = Money::sum(line_totals.iter().copied()).map_err(money_err)?;
+    let discount = match sale.discount {
+        None => Money::ZERO,
+        Some(d) => {
+            let amount = discount_amount(subtotal, d.ask)?;
+            if amount > subtotal || amount == Money::ZERO {
+                return Err(AppError::Validation(vec![FieldError::new(
+                    "discount.amount",
+                    "exceeds_subtotal",
+                )]));
+            }
+            domain::check_discount(
+                subtotal,
+                amount,
+                authority(actor, sale.manager_discount_max_pct),
+            )
+            .map_err(|e| match e {
+                DiscountError::NotAllowed => AppError::forbidden(),
+                DiscountError::LimitExceeded => AppError::Forbidden {
+                    code: "discount.limit_exceeded",
+                },
+            })?;
+            amount
+        }
+    };
+    let total = subtotal.checked_sub(discount).map_err(money_err)?;
     if paid != total {
         return Err(AppError::Unprocessable {
             code: "payment.amount_mismatch",
@@ -587,9 +698,9 @@ pub async fn record_service_sale(
             branch_id: sale.branch_id,
             customer_id: sale.customer_id,
             business_date: sale.business_date,
-            subtotal: total.as_i64(),
-            discount_amount: 0,
-            discount_reason: None,
+            subtotal: subtotal.as_i64(),
+            discount_amount: discount.as_i64(),
+            discount_reason: sale.discount.map(|d| d.reason.as_str()),
             total: total.as_i64(),
             amount_paid: paid.as_i64(),
             closer_staff_id: None,
@@ -641,14 +752,21 @@ pub async fn record_service_sale(
                 "lines": sale.lines.iter().map(|l| json!({
                     "service_id": l.service_id, "qty": l.qty, "unit_price": l.unit_price.as_i64(),
                 })).collect::<Vec<_>>(),
+                "subtotal": subtotal.as_i64(), "discount_amount": discount.as_i64(),
                 "total": total.as_i64(),
                 "payments": sale.payments.iter().map(|p| json!({"method": p.method.as_str(), "amount": p.amount.as_i64()})).collect::<Vec<_>>(),
             })),
-            reason: None,
+            reason: sale.discount.map(|d| d.reason.as_str()),
         },
     )
     .await?;
-    Ok(Some(ServiceSaleRecorded { sale_id, total }))
+    Ok(Some(ServiceSaleRecorded {
+        sale_id,
+        subtotal,
+        discount,
+        total,
+        line_discounts: domain::allocate_discount(&line_totals, discount),
+    }))
 }
 
 /// Payments of several sales, read inside the caller's transaction (`sale_id → payments`, oldest

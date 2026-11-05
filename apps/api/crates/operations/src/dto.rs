@@ -13,8 +13,13 @@ use uuid::Uuid;
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct VisitCreate {
     pub customer_id: Uuid,
-    /// Defaults to now. At most 5 minutes ahead of the server and on today's business day.
+    /// When the service happened (giờ làm), not when it is typed. Defaults to now. At most
+    /// 5 minutes ahead of the server and on today's business day; with `visit.backdate` (owner)
+    /// up to 366 days back, and the visit, its sale and payments then belong to that day.
     pub check_in_at: Option<DateTime<Utc>>,
+    /// Discount on the one-off lines (D10: `sale.discount` up to the spa's cap,
+    /// `sale.discount_unlimited` beyond; reason required).
+    pub discount: Option<sales::dto::ServiceDiscountCreate>,
     /// Session note incl. reactions (health data): needs `customer.health_notes.write`.
     pub note: Option<String>,
     /// 1–20 service lines.
@@ -122,7 +127,10 @@ pub struct VisitLineDto {
     pub price_variant: Option<PriceVariant>,
     /// One-off: listed price; package: value of one paid session.
     pub unit_price: i64,
-    /// One-off: qty × unit price (paid now); package: value of the sessions taken (bonus = 0).
+    /// One-off: this line's share of the visit discount (0 for package lines).
+    pub discount_amount: i64,
+    /// One-off: qty × unit price − discount share (paid now); package: value of the sessions
+    /// taken (bonus = 0).
     pub line_value: i64,
     pub expiry_override_reason: Option<String>,
 }
@@ -133,7 +141,10 @@ pub struct VisitDto {
     pub customer_id: Uuid,
     pub customer_name: String,
     pub customer_gender: Option<crm::http::GenderDto>,
+    /// Business day of the service (`check_in_at`), which may be before `created_at` when the
+    /// owner entered it late.
     pub business_date: NaiveDate,
+    /// When the service happened (giờ làm).
     pub check_in_at: DateTime<Utc>,
     pub status: VisitStatusDto,
     /// Set when the visit was voided (US6): it stays in history with the reason.
@@ -145,7 +156,11 @@ pub struct VisitDto {
     pub note: Option<Option<String>>,
     /// Sale of the one-off lines (none when the visit only used package sessions).
     pub sale_id: Option<Uuid>,
-    /// Amount collected in this visit (sum of one-off lines).
+    /// Sum of the one-off lines before discount.
+    pub subtotal: i64,
+    pub discount_amount: i64,
+    pub discount_reason: Option<String>,
+    /// Amount collected in this visit (one-off lines after discount).
     pub total: i64,
     pub payments: Vec<PaymentDto>,
     pub lines: Vec<VisitLineDto>,

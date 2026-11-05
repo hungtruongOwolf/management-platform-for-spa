@@ -4,10 +4,69 @@
  * primary action stays under the thumb. Components: src/components/. Same layer as components.css.
  */
 
+/* --- Phone shell: 56px top app bar (M3 small top app bar), notch-safe edges ------------------ */
+@media (max-width: 767.98px) {
+  :root {
+    --topbar-h: 56px;
+  }
+  /* index.html sets viewport-fit=cover, so the bars pad themselves out of the notch/home bar. */
+  .topbar {
+    height: calc(var(--topbar-h) + env(safe-area-inset-top));
+    padding-top: env(safe-area-inset-top);
+    padding-inline: max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right));
+    gap: 8px;
+  }
+  .shell-content {
+    padding-top: 16px;
+    padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
+  }
+}
+
+/* --- Phone KPI grid: two per row, the money card (first, accent) across both ------------------ */
+@media (max-width: 639.98px) {
+  .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .stat-grid > .stat-card.bg-chrome {
+    grid-column: 1 / -1;
+  }
+}
+
+/* --- Catalog rows: name block, then prices + "Sửa" on their own line on phones -------------- */
+@media (max-width: 639.98px) {
+  .catalog-price {
+    width: 100%;
+  }
+  .catalog-price > button {
+    margin-left: auto;
+  }
+}
+
 /* --- ResponsiveTable cards ---------------------------------------------------------------- */
+/* A card that hosts a table drops its own frame when the table became cards (no card in card). */
+.rt-host:has(> .rt-cards-wrap) {
+  overflow: visible;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
 .rt-cards {
   display: grid;
   gap: 8px;
+}
+/* Tablets (wide tables become cards below 1024px): two columns of cards, not one stretched one. */
+@media (min-width: 640px) {
+  .rt-cards {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+}
+.rt-cards-wrap {
+  display: grid;
+  gap: 8px;
+}
+/* Cards inside a padded-less card (report tables): keep the card's inner gutter. */
+.rt-pad.rt-cards-wrap {
+  padding: 0 12px 12px;
 }
 .rt-card {
   position: relative;
@@ -60,6 +119,13 @@
   display: flex;
   justify-content: space-between;
   gap: 12px;
+}
+.rt-card-actions,
+.rt-card-actions > span {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 .rt-card-fields dt {
   flex-shrink: 0;
@@ -164,6 +230,12 @@
   padding: 8px 20px 20px;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+/* Forms that are framed when inline (dashed box) sit bare in a sheet: the sheet is the frame. */
+.sheet-body > form {
+  padding: 0;
+  border: 0;
+  background: none;
 }
 .sheet-footer {
   display: flex;
@@ -304,7 +376,7 @@
   padding-right: 44px;
   font-variant-numeric: tabular-nums;
 }
-.date-field-btn {
+.date-field > .date-field-btn {
   position: absolute;
   right: 2px;
   display: grid;
@@ -319,12 +391,13 @@
 }
 /* The native input only hosts the picker: rendered (showPicker needs a box) but invisible and out
  * of the tab order. */
-.date-field-picker {
+.date-field > .date-field-picker {
   position: absolute;
   right: 0;
   bottom: 0;
   width: 1px;
   height: 1px;
+  min-height: 0;
   border: 0;
   padding: 0;
   opacity: 0;
@@ -333,13 +406,14 @@
 
 /* --- Chip row: many options in one scrollable line on phones (period, status tabs) ---------- */
 @media (max-width: 639.98px) {
+  /* One line that scrolls sideways inside its own box (the page never does); the selected chip
+   * is scrolled into view by the browser on focus. */
   .chip-row {
     display: flex;
-    max-width: calc(100% + 32px);
+    max-width: 100%;
     flex-wrap: nowrap;
-    margin-inline: -16px;
-    padding-inline: 16px;
     overflow-x: auto;
+    overscroll-behavior-x: contain;
     scrollbar-width: none;
   }
   .chip-row > * {

@@ -29,6 +29,8 @@ export function DateField({
   onChange,
   min,
   max,
+  describedBy,
+  invalid: invalidFromForm = false,
   className = "filter-field",
 }: {
   label: string;
@@ -37,6 +39,10 @@ export function DateField({
   onChange: (iso: string) => void;
   min?: string | undefined;
   max?: string | undefined;
+  /** Id of a hint under the field (read with it). */
+  describedBy?: string;
+  /** The form knows the value is wrong (e.g. a server error). */
+  invalid?: boolean;
   className?: string;
 }) {
   const id = useId();
@@ -80,8 +86,8 @@ export function DateField({
           placeholder="dd/mm/yyyy"
           maxLength={10}
           value={draft}
-          aria-invalid={invalid || undefined}
-          aria-describedby={invalid ? `${id}-err` : undefined}
+          aria-invalid={invalid || invalidFromForm || undefined}
+          aria-describedby={[invalid ? `${id}-err` : "", describedBy ?? ""].filter(Boolean).join(" ") || undefined}
           onChange={(e) => {
             // Typing digits gets the slashes inserted ("05112026" → "05/11/2026"); deleting, or
             // typing one's own separators ("5/1/2026"), is left as typed.

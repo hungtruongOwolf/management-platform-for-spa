@@ -67,6 +67,14 @@ use utoipa::OpenApi;
         operations::http::read_visit,
         operations::http::update_visit,
         operations::http::void_visit,
+        operations::appointments::http::calendar,
+        operations::appointments::http::book,
+        operations::appointments::http::read_appointment,
+        operations::appointments::http::update_appointment,
+        operations::appointments::http::arrive,
+        operations::appointments::http::complete,
+        operations::appointments::http::cancel,
+        operations::appointments::http::no_show,
         reporting::http::daily_report,
         reporting::http::range_report,
         reporting::http::ledger,
@@ -95,6 +103,7 @@ use utoipa::OpenApi;
         (name = "packages", description = "Liệu trình của khách"),
         (name = "sales", description = "Bán liệu trình, thanh toán"),
         (name = "visits", description = "Ghi lượt khách tại quầy"),
+        (name = "appointments", description = "Lịch hẹn: đặt lịch, khách đến, hoàn tất thành lượt khách"),
         (name = "reports", description = "Xem lại và theo dõi: hôm nay, theo khoảng ngày, sổ doanh thu, lịch sử khách, liệu trình"),
     )
 )]

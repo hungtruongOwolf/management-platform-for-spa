@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM app.appointment_service WHERE tenant_id = $1 AND appointment_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "14a19f7b94cb2d646672f2278f007f48de791109aec0b698f7132c52e570d0a2"
+}

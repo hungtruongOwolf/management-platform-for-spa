@@ -1,10 +1,29 @@
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Link,
+  Outlet,
+  useNavigate,
+  useRouterState,
+} from "@tanstack/react-router";
+import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
+import { useModalDialog } from "../components/useModalDialog";
 import { logout, meQuery } from "../features/auth/session";
+import { longDate } from "../lib/format";
 import { BrandLogo } from "./BrandLogo";
 import { Icon } from "./Icon";
-import { navFor, tabsFor, type NavGroup } from "./nav";
+import { navFor, navKey, tabsFor, type NavGroup, type NavItem } from "./nav";
+
+/** A tab inside a screen links with its search and is active only on exactly that search. */
+function linkSearch(item: NavItem) {
+  return item.search ? { search: item.search as never } : {};
+}
+function activeFor(item: NavItem) {
+  return {
+    exact: item.exact ?? false,
+    includeSearch: item.search !== undefined,
+    explicitUndefined: true,
+  };
+}
 import { readSidebarCollapsed, saveSidebarCollapsed } from "./prefs";
 import { resetTrail } from "./trail";
 import { UserMenu } from "./UserMenu";
@@ -12,27 +31,31 @@ import { UserMenu } from "./UserMenu";
 // Opens on Ctrl/⌘+K or the search button only: its own chunk, off the startup path.
 const CommandPalette = lazy(() => import("./CommandPalette"));
 
-const longDate = new Intl.DateTimeFormat("vi-VN", {
-  weekday: "long",
-  day: "numeric",
-  month: "numeric",
-  year: "numeric",
-  timeZone: "Asia/Ho_Chi_Minh",
-});
-
-function NavLinks({ groups, onNavigate }: { groups: NavGroup[]; onNavigate?: () => void }) {
+function NavLinks({
+  groups,
+  onNavigate,
+}: {
+  groups: NavGroup[];
+  onNavigate?: () => void;
+}) {
   return (
     <>
       {groups.map((g) => (
-        <div key={g.label} role="group" aria-labelledby={`nav-${g.label}`} className="nav-group">
+        <div
+          key={g.label}
+          role="group"
+          aria-labelledby={`nav-${g.label}`}
+          className="nav-group"
+        >
           <p id={`nav-${g.label}`} className="nav-group-label">
             {g.label}
           </p>
           {g.items.map((item) => (
             <Link
-              key={item.to}
+              key={navKey(item)}
               to={item.to}
-              activeOptions={{ exact: item.exact ?? false }}
+              {...linkSearch(item)}
+              activeOptions={activeFor(item)}
               className="nav-item"
               title={item.label}
               {...(onNavigate ? { onClick: onNavigate } : {})}
@@ -61,18 +84,7 @@ export function Modal({
   label: string;
   children: ReactNode;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const d = ref.current;
-    if (!d) return;
-    if (open && !d.open) {
-      if (typeof d.showModal === "function") d.showModal();
-      else d.setAttribute("open", "");
-    } else if (!open && d.open) {
-      if (typeof d.close === "function") d.close();
-      else d.removeAttribute("open");
-    }
-  }, [open]);
+  const ref = useModalDialog(open);
   return (
     <dialog
       ref={ref}
@@ -148,7 +160,11 @@ export function AppShell() {
     <div className="shell">
       {/* The focus ring switches to the bright gold: the standard one is too dark on maroon. */}
       <aside className="sidebar chrome" data-collapsed={collapsed || undefined}>
-        <Link to="/" className="sidebar-brand" aria-label="Viên Phúc Y Đường, về trang tổng quan">
+        <Link
+          to="/"
+          className="sidebar-brand"
+          aria-label="Viên Phúc Y Đường, về trang tổng quan"
+        >
           <BrandLogo className="sidebar-logo" />
         </Link>
         <nav aria-label="Chính" className="sidebar-nav">
@@ -168,11 +184,15 @@ export function AppShell() {
 
       <div className="shell-main">
         <header className="topbar">
-          <Link to="/" className="topbar-brand" aria-label="Viên Phúc Y Đường, về trang tổng quan">
+          <Link
+            to="/"
+            className="topbar-brand"
+            aria-label="Viên Phúc Y Đường, về trang tổng quan"
+          >
             <BrandLogo className="w-12" />
           </Link>
-          <p className="hidden text-sm text-text-muted first-letter:uppercase md:block">
-            {longDate.format(new Date())}
+          <p className="hidden text-sm text-text-muted tabular md:block">
+            {longDate(new Date())}
           </p>
           <button
             type="button"
@@ -190,7 +210,11 @@ export function AppShell() {
             </span>
             <kbd className="ml-auto max-md:hidden">Ctrl K</kbd>
           </button>
-          <UserMenu me={me} onLock={() => void lock()} onLogout={() => void signOut()} />
+          <UserMenu
+            me={me}
+            onLock={() => void lock()}
+            onLogout={() => void signOut()}
+          />
         </header>
 
         <main id="main" className="shell-content">
@@ -202,9 +226,15 @@ export function AppShell() {
 
       <nav aria-label="Thanh điều hướng" className="tabbar chrome">
         {tabs.map((t) => (
-          <Link key={t.to} to={t.to} activeOptions={{ exact: t.exact ?? false }} className="tab">
+          <Link
+            key={navKey(t)}
+            to={t.to}
+            {...linkSearch(t)}
+            activeOptions={activeFor(t)}
+            className="tab"
+          >
             <Icon name={t.icon} />
-            <span>{t.to === "/" ? "Trang chủ" : t.label.replace("Ghi lượt khách", "Quầy").replace("Hồ sơ khách", "Khách")}</span>
+            <span>{t.short ?? t.label}</span>
           </Link>
         ))}
         <button

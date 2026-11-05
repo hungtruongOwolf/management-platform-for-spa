@@ -9,30 +9,67 @@ use kernel::BusinessDate;
 /// Clock skew tolerated between the counter's device and the server.
 pub const FUTURE_TOLERANCE_MINUTES: i64 = 5;
 
+/// How far back the owner may enter a visit (spec appointments.md §3).
+pub const MAX_BACKDATE_DAYS: i64 = 366;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CheckInError {
     /// More than the tolerance ahead of the server clock (`422 visit.check_in_in_future`).
     InFuture,
-    /// On another business day than today (`422 visit.check_in_not_today`): back-dating is a
-    /// correction of a closed day (S8), not a visit.
+    /// On an earlier business day, without `visit.backdate` (`422 visit.check_in_not_today`).
     NotToday,
+    /// Earlier than [`MAX_BACKDATE_DAYS`] before today (`422 visit.check_in_too_old`).
+    TooOld,
 }
 
-/// The check-in instant to record: `requested`, or `now` when the desk sent none.
-pub fn check_in_at(
+/// When the service happened (`visit.check_in_at`) and the business day it belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ServiceTime {
+    pub at: DateTime<Utc>,
+    pub business_date: NaiveDate,
+    /// On a day before today: entered late by the owner.
+    pub backdated: bool,
+}
+
+/// The service instant to record: `requested`, or `now` when the desk sent none. Today only,
+/// unless the caller may back-date (`visit.backdate`, the owner), then up to a year back.
+pub fn service_time(
     requested: Option<DateTime<Utc>>,
     now: DateTime<Utc>,
     tz: Tz,
     today: NaiveDate,
-) -> Result<DateTime<Utc>, CheckInError> {
+    may_backdate: bool,
+) -> Result<ServiceTime, CheckInError> {
     let at = requested.unwrap_or(now);
     if at > now + Duration::minutes(FUTURE_TOLERANCE_MINUTES) {
         return Err(CheckInError::InFuture);
     }
-    if BusinessDate::of_instant(at, tz).as_naive() != today {
-        return Err(CheckInError::NotToday);
+    let day = BusinessDate::of_instant(at, tz).as_naive();
+    // A few minutes of skew past midnight still belongs to today.
+    let business_date = day.min(today);
+    if business_date < today {
+        if !may_backdate {
+            return Err(CheckInError::NotToday);
+        }
+        if (today - business_date).num_days() > MAX_BACKDATE_DAYS {
+            return Err(CheckInError::TooOld);
+        }
     }
-    Ok(at)
+    Ok(ServiceTime {
+        at,
+        business_date,
+        backdated: business_date < today,
+    })
+}
+
+impl CheckInError {
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::InFuture => "visit.check_in_in_future",
+            Self::NotToday => "visit.check_in_not_today",
+            Self::TooOld => "visit.check_in_too_old",
+        }
+    }
 }
 
 /// The requested `price_variant` contradicts the customer's recorded gender.
@@ -88,32 +125,74 @@ mod tests {
         NaiveDate::from_ymd_opt(2026, 11, 5).unwrap_or_default()
     }
 
+    fn check_in_at(
+        requested: Option<DateTime<Utc>>,
+        now: DateTime<Utc>,
+        may_backdate: bool,
+    ) -> Result<DateTime<Utc>, CheckInError> {
+        service_time(requested, now, vn(), day(), may_backdate).map(|t| t.at)
+    }
+
+    fn vn_at(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> DateTime<Utc> {
+        vn().with_ymd_and_hms(y, mo, d, h, mi, 0)
+            .single()
+            .map(|t| t.with_timezone(&Utc))
+            .unwrap_or_default()
+    }
+
     #[test]
     fn check_in_defaults_to_now_and_tolerates_small_skew() {
         let now = at(9, 0);
-        assert_eq!(check_in_at(None, now, vn(), day()), Ok(now));
-        assert_eq!(check_in_at(Some(at(9, 5)), now, vn(), day()), Ok(at(9, 5)));
-        assert_eq!(
-            check_in_at(Some(at(8, 10)), now, vn(), day()),
-            Ok(at(8, 10))
-        );
+        assert_eq!(check_in_at(None, now, false), Ok(now));
+        assert_eq!(check_in_at(Some(at(9, 5)), now, false), Ok(at(9, 5)));
+        assert_eq!(check_in_at(Some(at(8, 10)), now, false), Ok(at(8, 10)));
     }
 
     #[test]
     fn check_in_in_the_future_or_on_another_day_is_rejected() {
         let now = at(9, 0);
         assert_eq!(
-            check_in_at(Some(at(9, 6)), now, vn(), day()),
+            check_in_at(Some(at(9, 6)), now, false),
             Err(CheckInError::InFuture)
         );
-        let yesterday_evening = vn()
-            .with_ymd_and_hms(2026, 11, 4, 23, 59, 0)
-            .single()
-            .map(|t| t.with_timezone(&Utc))
-            .unwrap_or_default();
+        let yesterday_evening = vn_at(2026, 11, 4, 23, 59);
         assert_eq!(
-            check_in_at(Some(yesterday_evening), now, vn(), day()),
+            check_in_at(Some(yesterday_evening), now, false),
             Err(CheckInError::NotToday)
+        );
+    }
+
+    #[test]
+    fn the_owner_back_dates_up_to_a_year_onto_the_day_of_the_service() {
+        let now = at(9, 0);
+        let t = service_time(Some(vn_at(2026, 11, 4, 18, 30)), now, vn(), day(), true);
+        assert_eq!(
+            t,
+            Ok(ServiceTime {
+                at: vn_at(2026, 11, 4, 18, 30),
+                business_date: NaiveDate::from_ymd_opt(2026, 11, 4).unwrap_or_default(),
+                backdated: true,
+            })
+        );
+        assert!(service_time(Some(vn_at(2025, 11, 5, 9, 0)), now, vn(), day(), true).is_ok());
+        assert_eq!(
+            check_in_at(Some(vn_at(2025, 11, 3, 9, 0)), now, true),
+            Err(CheckInError::TooOld)
+        );
+        // Back-dating never opens the future.
+        assert_eq!(
+            check_in_at(Some(at(10, 0)), now, true),
+            Err(CheckInError::InFuture)
+        );
+    }
+
+    #[test]
+    fn skew_past_midnight_stays_on_today() {
+        let now = vn_at(2026, 11, 5, 23, 58);
+        let t = service_time(Some(vn_at(2026, 11, 6, 0, 2)), now, vn(), day(), false);
+        assert_eq!(
+            t.map(|t| (t.business_date, t.backdated)),
+            Ok((day(), false))
         );
     }
 

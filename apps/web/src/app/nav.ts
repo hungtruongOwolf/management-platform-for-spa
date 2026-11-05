@@ -4,11 +4,31 @@ import type { IconName } from "./Icon";
 
 export interface NavItem {
   to: string;
+  /** Nav item = page title (glossary § Tên màn hình). */
   label: string;
+  /** One-line name for the phone tab bar (≤ 10 characters). */
+  short?: string;
   icon: IconName;
   /** Only this exact path marks the item active (e.g. "/" would otherwise match everything). */
   exact?: boolean;
+  /**
+   * A tab inside a screen (e.g. `/quay?view=lich`). With `search`, the item is active only when
+   * the URL carries exactly these values; `undefined` means "the key is absent" (the default tab).
+   */
+  search?: Record<string, string | undefined>;
 }
+
+/** Stable id of an item (path + its search), for keys and the command palette. */
+export function navKey(item: NavItem): string {
+  const params = Object.entries(item.search ?? {}).filter(
+    (e): e is [string, string] => e[1] !== undefined,
+  );
+  return params.length
+    ? `${item.to}?${new URLSearchParams(params).toString()}`
+    : item.to;
+}
+
+const APPOINTMENTS = "/quay?view=lich";
 
 export interface NavGroup {
   label: string;
@@ -25,31 +45,97 @@ export function navFor(me: Me | null): NavGroup[] {
     [
       "Quầy",
       [
-        { to: "/", label: "Tổng quan", icon: "home", exact: true },
-        can(me, "visit.record") && { to: "/quay", label: "Ghi lượt khách", icon: "desk" },
+        {
+          to: "/",
+          label: "Tổng quan",
+          short: "Trang chủ",
+          icon: "home",
+          exact: true,
+        },
+        can(me, "visit.record") && {
+          to: "/quay",
+          label: "Ghi lượt khách",
+          short: "Quầy",
+          icon: "desk",
+          // Not active on the appointments tab of the same screen.
+          ...(can(me, "appointment.manage")
+            ? { search: { view: undefined } }
+            : {}),
+        },
+        can(me, "visit.record") &&
+          can(me, "appointment.manage") && {
+            to: "/quay",
+            search: { view: "lich" },
+            label: "Lịch hẹn",
+            short: "Lịch hẹn",
+            icon: "calendar",
+          },
       ],
     ],
     [
       "Khách hàng",
       [
-        can(me, "customer.read") && { to: "/khach-hang", label: "Hồ sơ khách", icon: "users" },
-        mgmt && { to: "/khach-lau-khong-quay-lai", label: "Lâu không quay lại", icon: "user-clock" },
+        can(me, "customer.read") && {
+          to: "/khach-hang",
+          label: "Danh sách khách hàng",
+          short: "Khách",
+          icon: "users",
+        },
+        mgmt && {
+          to: "/khach-lau-khong-quay-lai",
+          label: "Khách lâu chưa quay lại",
+          icon: "user-clock",
+        },
       ],
     ],
-    ["Gói liệu trình", [mgmt && { to: "/goi-lieu-trinh", label: "Theo dõi gói", icon: "package" }]],
-    ["Báo cáo", [mgmt && { to: "/bao-cao", label: "Kinh doanh", icon: "chart" }]],
+    [
+      "Gói liệu trình",
+      [
+        mgmt && {
+          to: "/goi-lieu-trinh",
+          label: "Gói liệu trình của khách",
+          icon: "package",
+        },
+      ],
+    ],
+    [
+      "Báo cáo",
+      [
+        mgmt && {
+          to: "/bao-cao",
+          label: "Báo cáo kinh doanh",
+          short: "Báo cáo",
+          icon: "chart",
+        },
+      ],
+    ],
     ["Nhân viên", [staffItem(me)]],
     [
       "Danh mục",
       [
-        can(me, "catalog.read") && { to: "/bang-gia", label: "Dịch vụ", icon: "menu-book", exact: true },
-        can(me, "catalog.read") && { to: "/bang-gia/goi", label: "Gói bán", icon: "layers" },
+        can(me, "catalog.read") && {
+          to: "/bang-gia",
+          label: "Bảng giá dịch vụ",
+          icon: "menu-book",
+          exact: true,
+        },
+        can(me, "catalog.read") && {
+          to: "/bang-gia/goi",
+          label: "Mẫu gói liệu trình",
+          icon: "layers",
+        },
       ],
     ],
-    ["Cài đặt", [{ to: "/cai-dat", label: "Giao diện & tài khoản", icon: "settings" }]],
+    [
+      "Cài đặt",
+      [{ to: "/cai-dat", label: "Giao diện & tài khoản", icon: "settings" }],
+    ],
   ];
   return groups
-    .map(([label, items]) => ({ label, items: items.filter((i): i is NavItem => i !== false) }))
+    .map(([label, items]) => ({
+      label,
+      items: items.filter((i): i is NavItem => i !== false),
+    }))
     .filter((g) => g.items.length > 0);
 }
 
@@ -57,7 +143,7 @@ export function navFor(me: Me | null): NavGroup[] {
 function staffItem(me: Me | null): NavItem | false {
   const manages = ["attendance.record", "evaluation.record", "payroll.read", "staff.manage"].some((p) => can(me, p));
   if (manages) return { to: "/nhan-vien", label: "Nhân viên", icon: "id-card" };
-  return can(me, "staff.read_own") && { to: "/nhan-vien", label: "Công và lương của tôi", icon: "id-card" };
+  return can(me, "staff.read_own") && { to: "/nhan-vien", label: "Công và lương của tôi", short: "Công lương", icon: "id-card" };
 }
 
 /**
@@ -68,27 +154,37 @@ const SCREEN_LABELS: Record<string, string> = {
   "/": "Tổng quan",
   "/quay": "Quầy",
   "/khach-hang": "Khách hàng",
-  "/khach-lau-khong-quay-lai": "Lâu không quay lại",
-  "/goi-lieu-trinh": "Theo dõi gói",
-  "/bao-cao": "Báo cáo",
+  "/khach-lau-khong-quay-lai": "Khách lâu chưa quay lại",
+  "/goi-lieu-trinh": "Gói liệu trình của khách",
+  "/bao-cao": "Báo cáo kinh doanh",
+  "/bang-gia": "Bảng giá dịch vụ",
+  "/bang-gia/goi": "Mẫu gói liệu trình",
   "/nhan-vien": "Nhân viên",
-  "/bang-gia": "Dịch vụ",
-  "/bang-gia/goi": "Gói bán",
   "/cai-dat": "Cài đặt",
 };
 
 export function screenLabel(pathname: string): string {
-  for (let p = pathname; p.length > 0; p = p.slice(0, Math.max(0, p.lastIndexOf("/")))) {
+  for (
+    let p = pathname;
+    p.length > 0;
+    p = p.slice(0, Math.max(0, p.lastIndexOf("/")))
+  ) {
     const label = SCREEN_LABELS[p];
     if (label) return label;
   }
   return "Tổng quan";
 }
 
-/** Phone tab bar: the four most used screens; everything else sits in the "Thêm" drawer. */
+/**
+ * Phone tab bar: the four most used screens; everything else sits in the "Thêm" drawer. With
+ * appointments, "Lịch hẹn" takes the home tab's place (EM decision, round 4); home stays in "Thêm".
+ */
 export function tabsFor(groups: NavGroup[]): NavItem[] {
   const all = groups.flatMap((g) => g.items);
-  // "/nhan-vien" only fills a free slot (technicians: Tổng quan + their own month).
-  const wanted = ["/", "/quay", "/khach-hang", "/bao-cao", "/nhan-vien"];
-  return wanted.flatMap((to) => all.filter((i) => i.to === to)).slice(0, 4);
+  const first = all.some((i) => navKey(i) === APPOINTMENTS)
+    ? APPOINTMENTS
+    : "/";
+  // "/nhan-vien" only fills a free slot (technicians: home/appointments + their own month).
+  const wanted = [first, "/quay", "/khach-hang", "/bao-cao", "/nhan-vien"];
+  return wanted.flatMap((key) => all.filter((i) => navKey(i) === key)).slice(0, 4);
 }

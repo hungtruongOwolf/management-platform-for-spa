@@ -1,4 +1,4 @@
--- 0016: staff management — profiles linked to logins, pay terms, daily attendance, daily reviews,
+-- 0017: staff management — profiles linked to logins, pay terms, daily attendance, daily reviews,
 -- monthly evaluations, bonuses/penalties and monthly payroll with a closing lock
 -- (memory/wiki/product/specs/staff-management.md, rules: memory/wiki/product/compensation-rules.md).
 -- Depends on 0002 (role_permission, user_account), 0005 (staff, sale, reject_mutation), 0007 (visit_line).

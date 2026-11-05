@@ -2,6 +2,7 @@ import type {
   CustomerPackage,
   PaymentCreate,
   Service,
+  ServiceDiscountCreate,
   Staff,
   Visit,
   VisitCreate,
@@ -169,14 +170,51 @@ export function paymentsFor(
   return [{ method: mode, amount: total }];
 }
 
+/** A discount typed at the desk: percent or amount of the one-off lines (D10, server decides). */
+export interface DiscountDraft {
+  kind: "percent" | "amount";
+  /** Raw text of the number field. */
+  value: string;
+  reason: string;
+}
+
+/** The discount this draft asks for, as the server computes it (percent rounds down); 0 = none. */
+export function discountPreview(due: number, d: DiscountDraft | null): number {
+  if (!d) return 0;
+  const n = Number(d.value.replace(/[.\s,đ]/g, ""));
+  if (!Number.isInteger(n) || n <= 0) return 0;
+  if (d.kind === "percent") return n > 100 ? 0 : Math.floor((due * n) / 100);
+  return n > due ? 0 : n;
+}
+
+/** The wire form of a valid draft (`null` = no discount). */
+export function discountBody(
+  d: DiscountDraft | null,
+): ServiceDiscountCreate | null {
+  if (!d) return null;
+  const n = Number(d.value.replace(/[.\s,đ]/g, ""));
+  return d.kind === "percent"
+    ? { percent: n, amount: null, reason: d.reason.trim() }
+    : { percent: null, amount: n, reason: d.reason.trim() };
+}
+
+export interface VisitExtras {
+  discount?: DiscountDraft | null;
+  /** When the service happened (ISO instant); omitted = now. */
+  checkInAt?: string | null;
+}
+
 export function visitBody(
   customerId: string,
   lines: CartLine[],
   payments: PaymentCreate[],
   note: string,
+  extras: VisitExtras = {},
 ): VisitCreate {
   return {
     customer_id: customerId,
+    ...(extras.checkInAt ? { check_in_at: extras.checkInAt } : {}),
+    ...(extras.discount ? { discount: discountBody(extras.discount) } : {}),
     note: note.trim() === "" ? null : note.trim(),
     lines: lines.map((l) =>
       l.source === "package"
@@ -207,6 +245,30 @@ export function savedSummary(visit: Visit): string {
         `${l.service_name} còn ${String(l.sessions_left_after)}/${String(l.sessions_total ?? "?")}`,
     );
   return [`Đã lưu lượt của ${visit.customer_name}`, ...left].join(" · ");
+}
+
+/** "Đã thanh toán 150.000đ (TM)" / "Không phát sinh tiền" / "Đã hủy" for a saved visit. */
+export function paymentText(v: Visit, money: (n: number) => string): string {
+  if (v.status === "voided") return "Đã hủy, đã hoàn tiền";
+  if (v.total === 0) return "Trừ liệu trình, không phát sinh tiền";
+  const methods = [
+    ...new Set(
+      v.payments
+        .filter((p) => p.kind === "payment")
+        .map((p) => (p.method === "cash" ? "TM" : "CK")),
+    ),
+  ].join(" + ");
+  return `Đã thanh toán ${money(v.total)}${methods ? ` (${methods})` : ""}`;
+}
+
+/**
+ * The instant for a "giờ làm" picked at the desk: `day` (YYYY-MM-DD, spa calendar) at `time`
+ * (HH:MM) in the spa's zone (UTC+7, no DST). "" time → null (= now, server clock).
+ */
+export function serviceInstant(day: string, time: string): string | null {
+  if (!/^\d{2}:\d{2}$/.test(time) || !/^\d{4}-\d{2}-\d{2}$/.test(day))
+    return null;
+  return new Date(`${day}T${time}:00+07:00`).toISOString();
 }
 
 /** "2026-11-05T02:12:00Z" → "09:12" in the spa's time zone. */

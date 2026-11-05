@@ -20,7 +20,7 @@ EM (vòng 4, mục 2): "làm feature quản lý nhân viên, tính lương tính
 Thước đo: quản lý không phải cộng tay lương và hoa hồng ([personas](../personas.md) #1). KTV tự kiểm tra được từng khoản trên phiếu lương của mình (persona #3).
 
 ## 2. Personas & quyền
-| Permission (mới, migration 0016) | Chủ spa | Quản lý | KTV | Dùng cho |
+| Permission (mới, migration 0017) | Chủ spa | Quản lý | KTV | Dùng cho |
 |---|---|---|---|---|
 | `staff.manage` | ✓ | — | — | Hồ sơ nhân viên, liên kết tài khoản đăng nhập |
 | `attendance.record` | ✓ | ✓ | — | Xem và ghi lưới chấm công |
@@ -117,7 +117,7 @@ Màn "Nhân viên" (`/nhan-vien`, lazy chunk) có các tab, trạng thái tab v�
 KTV mở "Nhân viên" thì thấy "Tháng của tôi". Mỗi tab có đủ các trạng thái: đang tải, trống, lỗi, tháng đã chốt (chỉ đọc, kèm banner).
 
 ## 5. Data
-Migration `0016_staff_management.sql`. Tất cả có RLS theo tenant; FK đều có dạng `(tenant_id, x)`.
+Migration `0017_staff_management.sql`. Tất cả có RLS theo tenant; FK đều có dạng `(tenant_id, x)`.
 - Bảng `staff` thêm `user_id` (unique theo tenant) và `shift_start`.
 - `staff_pay` lưu điều kiện lương. Đây là dữ liệu nhạy cảm; audit có ghi số tiền, chỉ chủ spa đọc được audit.
 - `payroll_rules` (jsonb) lưu quy tắc của spa.

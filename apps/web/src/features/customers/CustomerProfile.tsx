@@ -5,6 +5,8 @@ import {
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import { useState } from "react";
+import { Icon } from "../../app/Icon";
+import { BottomSheet } from "../../components/BottomSheet";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
 import { setHealthNote } from "./api";
@@ -40,10 +42,10 @@ function HealthNoteEditor({
         e.preventDefault();
         mutation.mutate();
       }}
-      className="space-y-2"
+      className="grid content-start gap-2 border-t border-border pt-4"
     >
-      <label className="block">
-        <span className="text-sm font-semibold">Lưu ý sức khỏe</span>
+      <label className="field">
+        Lưu ý sức khỏe
         <textarea
           value={text}
           onChange={(e) => {
@@ -57,18 +59,28 @@ function HealthNoteEditor({
           {messageFor(mutation.error)}
         </p>
       )}
-      <button
-        type="submit"
-        disabled={mutation.isPending}
-        className="min-h-11 rounded-[10px] border border-border px-4 font-medium hover:bg-surface-2"
-      >
+      <button type="submit" disabled={mutation.isPending} className="btn btn-secondary">
         Lưu lưu ý sức khỏe
       </button>
     </form>
   );
 }
 
-/** Customer card + edit (profile page) with packages; visit history joins in S7. */
+/** One "label: value" line of the contact card; nothing when the value is empty. */
+function Detail({ label, children }: { label: string; children: string | null | undefined }) {
+  if (!children) return null;
+  return (
+    <div className="detail-row">
+      <dt>{label}</dt>
+      <dd>{children}</dd>
+    </div>
+  );
+}
+
+/**
+ * Left column of the profile: the contact card (details, health note, "Sửa hồ sơ" in a sheet)
+ * and the customer's packages. Both cards share the heading style of the history column.
+ */
 export function CustomerProfile({
   customer,
   onChanged,
@@ -81,52 +93,57 @@ export function CustomerProfile({
   const canWrite = can(me, "customer.write");
 
   return (
-    <article
-      aria-labelledby="customer-name"
-      className="grid content-start gap-3 rounded-[14px] border border-border bg-surface p-4 shadow-card"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        {/* Name and gender are the page title (PageHeader); the card starts with the contact line. */}
-        <p className="text-text-muted tabular">
-          {customer.phone}
-          {customer.birth_year ? ` · sinh năm ${String(customer.birth_year)}` : ""}
-        </p>
-        {canWrite && !editing && (
-          <button
-            type="button"
-            onClick={() => {
-              setEditing(true);
-            }}
-            className="min-h-11 rounded-[10px] border border-border px-4 font-medium hover:bg-surface-2"
-          >
-            Sửa hồ sơ
-          </button>
-        )}
-      </div>
-      <HealthNote customer={customer} />
-      {customer.note && <p className="text-sm">Ghi chú: {customer.note}</p>}
-      {customer.address && (
-        <p className="text-sm text-text-muted">Địa chỉ: {customer.address}</p>
-      )}
-      <CustomerPackages customerId={customer.id} />
-      {editing && (
-        <div className="mt-3 grid content-start gap-3">
-          <CustomerForm
-            customer={customer}
-            canWriteHealth={false}
-            onSaved={(c) => {
-              setEditing(false);
-              onChanged(c);
-            }}
-            onCancel={() => {
-              setEditing(false);
-            }}
-          />
-          {can(me, "customer.health_notes.write") && (
-            <HealthNoteEditor customer={customer} onSaved={onChanged} />
+    <div className="grid content-start gap-4">
+      <article aria-labelledby="customer-info-title" className="card grid content-start gap-3 p-4">
+        <div className="card-head">
+          <h2 id="customer-info-title" className="card-title">
+            <Icon name="users" className="size-5 text-accent" /> Thông tin khách
+          </h2>
+          {canWrite && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(true);
+              }}
+              className="btn btn-secondary"
+            >
+              Sửa hồ sơ
+            </button>
           )}
         </div>
-      )}
-    </article>
+        <HealthNote customer={customer} />
+        <dl className="detail-list">
+          <Detail label="Số điện thoại">{customer.phone}</Detail>
+          <Detail label="Năm sinh">{customer.birth_year ? String(customer.birth_year) : null}</Detail>
+          <Detail label="Địa chỉ">{customer.address}</Detail>
+          <Detail label="Ghi chú">{customer.note}</Detail>
+        </dl>
+      </article>
+      <CustomerPackages customerId={customer.id} />
+      <BottomSheet
+        open={editing}
+        onClose={() => {
+          setEditing(false);
+        }}
+        title="Sửa hồ sơ khách"
+        description={customer.full_name}
+        wide
+      >
+        <CustomerForm
+          customer={customer}
+          canWriteHealth={false}
+          onSaved={(c) => {
+            setEditing(false);
+            onChanged(c);
+          }}
+          onCancel={() => {
+            setEditing(false);
+          }}
+        />
+        {can(me, "customer.health_notes.write") && (
+          <HealthNoteEditor customer={customer} onSaved={onChanged} />
+        )}
+      </BottomSheet>
+    </div>
   );
 }

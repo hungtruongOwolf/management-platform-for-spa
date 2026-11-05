@@ -32,12 +32,12 @@ describe("navigation model (EM round 3: always a way back)", () => {
     const crumbs = screen.getByRole("navigation", { name: "Vị trí trang" });
     expect(within(crumbs).getByRole("link", { name: "Khách hàng" })).toHaveAttribute("href", "/khach-hang");
     // The profile belongs to the customers section, whichever list it was opened from.
-    expect(within(screen.getByRole("navigation", { name: "Chính" })).getByRole("link", { name: "Hồ sơ khách" })).toHaveClass("active");
+    expect(within(screen.getByRole("navigation", { name: "Chính" })).getByRole("link", { name: "Danh sách khách hàng" })).toHaveClass("active");
 
-    const back = screen.getByRole("link", { name: "Quay lại Theo dõi gói của khách" });
+    const back = screen.getByRole("link", { name: "Quay lại Gói liệu trình của khách" });
     expect(back).toHaveAttribute("href", "/goi-lieu-trinh?status=cancelled");
     await user.click(back);
-    expect(await screen.findByRole("heading", { level: 1, name: "Theo dõi gói của khách" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Gói liệu trình của khách" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Đã hủy/ })).toHaveAttribute("aria-pressed", "true");
     expect(history.location.search).toContain("status=cancelled");
   });
@@ -53,7 +53,7 @@ describe("navigation model (EM round 3: always a way back)", () => {
     serveManagement({ permissions: MANAGER });
     const user = userEvent.setup();
     const history = at("/khach-lau-khong-quay-lai");
-    await screen.findByRole("table", { name: "Khách lâu không quay lại" });
+    await screen.findByRole("table", { name: "Khách lâu chưa quay lại" });
     const entries = history.length;
     await user.selectOptions(screen.getByLabelText("Vắng từ"), "30");
     await user.selectOptions(screen.getByLabelText("Phạm vi"), "with_sessions");

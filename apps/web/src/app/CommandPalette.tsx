@@ -5,7 +5,7 @@ import { can, meQuery } from "../features/auth/session";
 import { isSearchable, searchQuery } from "../features/customers/api";
 import { Modal } from "./AppShell";
 import { Icon, type IconName } from "./Icon";
-import type { NavGroup } from "./nav";
+import { navKey, type NavGroup } from "./nav";
 
 interface Option {
   id: string;
@@ -17,14 +17,25 @@ interface Option {
 
 /** Vietnamese text without diacritics, lower case: "Hồ sơ" matches "ho so". */
 export function fold(s: string): string {
-  return s.normalize("NFD").replace(/\p{Diacritic}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+  return s
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase();
 }
 
 /**
  * Ctrl/⌘+K: jump to any screen the user may open, or find a customer by phone or name and open
  * the profile. Lazy chunk; the shell only mounts it while it is open.
  */
-export default function CommandPalette({ groups, onClose }: { groups: NavGroup[]; onClose: () => void }) {
+export default function CommandPalette({
+  groups,
+  onClose,
+}: {
+  groups: NavGroup[];
+  onClose: () => void;
+}) {
   const { data: me } = useSuspenseQuery(meQuery);
   const navigate = useNavigate();
   const [text, setText] = useState("");
@@ -53,11 +64,15 @@ export default function CommandPalette({ groups, onClose }: { groups: NavGroup[]
     .flatMap((g) => g.items.map((i) => ({ ...i, group: g.label })))
     .filter((i) => q === "" || fold(`${i.label} ${i.group}`).includes(q))
     .map((i) => ({
-      id: `screen-${i.to}`,
+      id: `screen-${navKey(i)}`,
       label: i.label,
       hint: i.group,
       icon: i.icon,
-      go: () => void navigate({ to: i.to }),
+      go: () =>
+        void navigate({
+          to: i.to,
+          ...(i.search ? { search: i.search as never } : {}),
+        }),
     }));
   const people: Option[] = searchable
     ? (customers.data ?? []).slice(0, 6).map((c) => ({
@@ -65,7 +80,11 @@ export default function CommandPalette({ groups, onClose }: { groups: NavGroup[]
         label: c.full_name,
         hint: c.phone,
         icon: "users",
-        go: () => void navigate({ to: "/khach-hang/$customerId", params: { customerId: c.id } }),
+        go: () =>
+          void navigate({
+            to: "/khach-hang/$customerId",
+            params: { customerId: c.id },
+          }),
       }))
     : [];
   const options = [...people, ...screens];
@@ -75,7 +94,9 @@ export default function CommandPalette({ groups, onClose }: { groups: NavGroup[]
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       const step = e.key === "ArrowDown" ? 1 : -1;
-      setActive((current + step + options.length) % Math.max(options.length, 1));
+      setActive(
+        (current + step + options.length) % Math.max(options.length, 1),
+      );
     } else if (e.key === "Enter") {
       const o = options[current];
       if (o) {
@@ -118,7 +139,10 @@ export default function CommandPalette({ groups, onClose }: { groups: NavGroup[]
   return (
     <Modal open onClose={onClose} className="palette" label="Tìm nhanh">
       <div className="relative">
-        <Icon name="search" className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-text-muted" />
+        <Icon
+          name="search"
+          className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-text-muted"
+        />
         <input
           autoFocus
           type="search"
@@ -126,7 +150,9 @@ export default function CommandPalette({ groups, onClose }: { groups: NavGroup[]
           aria-label="Tìm khách hoặc màn hình"
           aria-expanded={options.length > 0}
           aria-controls={`${id}-list`}
-          aria-activedescendant={options[current] ? `${id}-${options[current].id}` : undefined}
+          aria-activedescendant={
+            options[current] ? `${id}-${options[current].id}` : undefined
+          }
           autoComplete="off"
           maxLength={100}
           placeholder="Tên khách, SĐT hoặc tên màn hình…"
@@ -139,7 +165,12 @@ export default function CommandPalette({ groups, onClose }: { groups: NavGroup[]
           className="min-h-14 w-full border-0 border-b border-border bg-transparent pr-4 pl-12 text-lg shadow-none outline-none focus:shadow-none"
         />
       </div>
-      <ul id={`${id}-list`} role="listbox" aria-label="Kết quả" className="max-h-[60vh] overflow-y-auto p-2">
+      <ul
+        id={`${id}-list`}
+        role="listbox"
+        aria-label="Kết quả"
+        className="max-h-[60vh] overflow-y-auto p-2"
+      >
         {section("Khách hàng", people, 0)}
         {section("Màn hình", screens, people.length)}
       </ul>
@@ -149,7 +180,9 @@ export default function CommandPalette({ groups, onClose }: { groups: NavGroup[]
         </p>
       )}
       {options.length === 0 && !customers.isFetching && (
-        <p className="px-5 pb-5 text-text-muted">Không có kết quả cho “{text}”.</p>
+        <p className="px-5 pb-5 text-text-muted">
+          Không có kết quả cho “{text}”.
+        </p>
       )}
       <p className="flex gap-4 border-t border-border bg-surface-2 px-4 py-2 text-xs text-text-muted">
         <span>
