@@ -51,7 +51,8 @@ EM: "đặt lại các tên cho đúng đừng ghi là gói bán hay theo dõi g
 | Route | Nhóm nav | Mục nav = tiêu đề trang (h1) | Nhãn ngắn (tab bar) | Trước đây |
 |---|---|---|---|---|
 | `/` | Quầy | Tổng quan | Trang chủ | — |
-| `/quay` | Quầy | Ghi lượt khách | Quầy | — (appointments agent có thể đổi khi thêm lịch hẹn) |
+| `/quay` | Quầy | Ghi lượt khách | Quầy | — |
+| `/quay?view=lich` (tab thứ hai của màn quầy) | Quầy | Lịch hẹn | Lịch hẹn (**thay "Trang chủ"** trên tab bar khi có `appointment.manage`, EM vòng 4; Tổng quan vào "Thêm") | — |
 | `/khach-hang` | Khách hàng | Danh sách khách hàng (h1 "Khách hàng") | Khách | nav "Hồ sơ khách" |
 | `/khach-hang/:id` | Khách hàng | tên khách; breadcrumb `Khách hàng › Tên` | — | — |
 | `/khach-lau-khong-quay-lai` | Khách hàng | Khách lâu chưa quay lại | — | "Lâu không quay lại" / "Khách lâu không quay lại" |

@@ -8,8 +8,7 @@ import { BrandLogo } from "./BrandLogo";
 import { canSeeManagement } from "./features";
 import { Icon } from "./Icon";
 import { longDate } from "../lib/format";
-import { navFor } from "./nav";
-
+import { navFor, navKey } from "./nav";
 
 const HINTS: Record<string, string> = {
   "/quay": "Tìm khách, trừ buổi, thu tiền",
@@ -29,7 +28,10 @@ function Today() {
         <h2 id="today-title" className="text-lg font-semibold">
           Hôm nay
         </h2>
-        <Link to="/bao-cao" className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-primary hover:underline">
+        <Link
+          to="/bao-cao"
+          className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-primary hover:underline"
+        >
           Xem báo cáo <Icon name="arrow-right" className="size-4" />
         </Link>
       </div>
@@ -61,36 +63,63 @@ export function HomePage() {
   const { data: me } = useSuspenseQuery(meQuery);
   const shortcuts = navFor(me)
     .flatMap((g) => g.items)
-    .filter((i) => i.to in HINTS);
+    // One shortcut per screen: tabs inside a screen (Lịch hẹn) are reached from that screen.
+    .filter((i) => navKey(i) in HINTS);
   return (
     <div className="grid content-start gap-6">
       {/* The whole logo carries the tagline, so the greeting does not repeat it (EM round 3). */}
       <section className="welcome chrome ornament [--ornament:var(--chrome-accent)]">
         <BrandLogo className="welcome-logo" />
         <div className="min-w-0">
-          <p className="text-sm text-chrome-text-muted tabular">{longDate(new Date())}</p>
-          <h1 className="mt-0.5 font-brand text-2xl text-chrome-text sm:text-[28px] sm:leading-9">Xin chào, {me?.user.full_name}</h1>
-          <p className="mt-1 text-sm text-chrome-text-muted">{me?.active_tenant?.name ?? "Chưa chọn spa"}</p>
+          <p className="text-sm text-chrome-text-muted tabular">
+            {longDate(new Date())}
+          </p>
+          <h1 className="mt-0.5 font-brand text-2xl text-chrome-text sm:text-[28px] sm:leading-9">
+            Xin chào, {me?.user.full_name}
+          </h1>
+          <p className="mt-1 text-sm text-chrome-text-muted">
+            {me?.active_tenant?.name ?? "Chưa chọn spa"}
+          </p>
         </div>
       </section>
 
       {canSeeManagement(me) && <Today />}
 
-      <section aria-labelledby="shortcuts-title" className="grid content-start gap-3">
+      <section
+        aria-labelledby="shortcuts-title"
+        className="grid content-start gap-3"
+      >
         <h2 id="shortcuts-title" className="text-lg font-semibold">
           Lối tắt
         </h2>
-        <nav aria-label="Lối tắt" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <nav
+          aria-label="Lối tắt"
+          className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+        >
           {shortcuts.map((s) => (
-            <Link key={s.to} to={s.to} className="card card-link group flex min-h-[72px] items-center gap-3 px-4 py-3">
-              <span aria-hidden="true" className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-primary-soft text-primary">
+            <Link
+              key={s.to}
+              to={s.to}
+              className="card card-link group flex min-h-[72px] items-center gap-3 px-4 py-3"
+            >
+              <span
+                aria-hidden="true"
+                className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-primary-soft text-primary"
+              >
                 <Icon name={s.icon} className="size-5" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block font-semibold text-primary">{s.label}</span>
-                <span className="block text-sm text-text-muted">{HINTS[s.to]}</span>
+                <span className="block font-semibold text-primary">
+                  {s.label}
+                </span>
+                <span className="block text-sm text-text-muted">
+                  {HINTS[s.to]}
+                </span>
               </span>
-              <Icon name="chevron-right" className="size-5 text-text-muted transition-transform group-hover:translate-x-0.5" />
+              <Icon
+                name="chevron-right"
+                className="size-5 text-text-muted transition-transform group-hover:translate-x-0.5"
+              />
             </Link>
           ))}
         </nav>
