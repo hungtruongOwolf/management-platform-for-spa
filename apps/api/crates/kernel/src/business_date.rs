@@ -21,10 +21,6 @@ impl BusinessDate {
         Self(instant.with_timezone(&tz).date_naive())
     }
 
-    pub fn today(tz: Tz) -> Self {
-        Self::of_instant(Utc::now(), tz)
-    }
-
     pub const fn as_naive(self) -> NaiveDate {
         self.0
     }
