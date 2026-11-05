@@ -289,6 +289,11 @@ pub async fn record(
         })
         .collect();
     package_lines.sort_by_key(|(i, item)| (*item, *i));
+    // Packages before items, as voids and cancellations lock them (no deadlock with either).
+    let items: Vec<Uuid> = package_lines.iter().map(|(_, item)| *item).collect();
+    if !items.is_empty() {
+        packages::service::lock_for_consumption(&mut tx, &items).await?;
+    }
     let mut consumed: HashMap<usize, Consumed> = HashMap::new();
     for (i, item_id) in package_lines {
         let line = &order.lines[i];

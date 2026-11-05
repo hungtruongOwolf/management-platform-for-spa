@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.id FROM app.customer_package p\n           WHERE p.tenant_id = $1 AND p.id IN (\n             SELECT i.customer_package_id FROM app.customer_package_item i\n             WHERE i.tenant_id = $1 AND i.id = ANY($2))\n           ORDER BY p.id FOR SHARE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f49fff70c0916c1a356c695780a058eeac6c9b8a37df71ebef4fb8c8f3ee051e"
+}

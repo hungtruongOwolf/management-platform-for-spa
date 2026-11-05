@@ -300,6 +300,29 @@ pub async fn lock_packages_of_sale(
     .await?)
 }
 
+/// Share-locks the packages that own `item_ids`, in package id order, before any item is touched.
+/// Consuming then follows the same package → item order as voids and cancellations, which
+/// `FOR UPDATE` the package first: without it a visit (item lock, then the `visit_line` FK's key
+/// share on the package) and a void (package, then items) deadlock.
+pub async fn share_lock_packages_of_items(
+    tx: &mut TenantTx,
+    item_ids: &[Uuid],
+) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query_scalar!(
+        r#"SELECT p.id FROM app.customer_package p
+           WHERE p.tenant_id = $1 AND p.id IN (
+             SELECT i.customer_package_id FROM app.customer_package_item i
+             WHERE i.tenant_id = $1 AND i.id = ANY($2))
+           ORDER BY p.id FOR SHARE"#,
+        tenant,
+        item_ids
+    )
+    .fetch_all(tx.conn())
+    .await?;
+    Ok(())
+}
+
 pub struct LockedItem {
     pub sessions_total: i32,
     pub sessions_remaining: i32,
