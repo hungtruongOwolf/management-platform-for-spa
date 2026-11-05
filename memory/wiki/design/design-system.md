@@ -49,7 +49,7 @@ Ghi chú:
 
 ## Thương hiệu trong app (logo thật, nguyên vẹn, 2026-11-05 vòng 3)
 EM vòng 3 ([raw](../../raw/2026-11-05-em-ui-review-round3.md)): "logo bị sai trong trang chính … cứ để logo nguyên … đừng có bỏ ra". PR #29 đã tách logo thành mark (vòng + sen + lá + âm dương) và wordmark ghép lại: **bỏ hẳn**. Quy tắc mới:
-- **Luôn dùng TOÀN BỘ logo gốc, không sửa, không tách, không ghép lại:** sen, vòng tròn, chữ script "Viên Phúc / Y Đường", âm dương có lá, tagline cong "Hồi sinh sức khoẻ và sắc đẹp". Ở cỡ nhỏ tagline rất nhỏ: EM chấp nhận, vẫn giữ nguyên.
+- **Luôn dùng TOÀN BỘ logo gốc, không sửa, không tách, không ghép lại:** sen, vòng tròn, chữ script "Viên Phúc / Y Đường", âm dương có lá, tagline cong "Hồi sinh sức khoẻ và sắc đẹp". Ở cỡ nhỏ tagline rất nhỏ: EM chấp nhận, vẫn giữ nguyên. **Ngoại lệ duy nhất (EM 2026-11-05, [raw](../../raw/2026-11-05-em-answers-round4-polish.md)):** icon tab trình duyệt 16–48px dùng mark rút gọn vòng + sen (xem bảng cỡ bên dưới); PWA, apple-touch và mọi chỗ trong app vẫn logo đầy đủ.
 - Chữ "Viên Phúc Y Đường" đặt cạnh logo là tùy chọn; hiện app **không** lặp tên/tagline dạng chữ cạnh logo (đăng nhập đã bỏ dòng "HỒI SINH SỨC KHOẺ VÀ SẮC ĐẸP", khung chào trang chủ bỏ tagline chữ). Tên spa luôn có dạng chữ cho screen reader (h1 sr-only ở đăng nhập, `aria-label` của link logo).
 - **Nguồn:** `docs for reference/logo Viên phúc y đường transparent.png` (1024², chỉ có raster; nét nằm ở kênh alpha). `scripts/brand/build_logo_assets.py` trace kênh alpha bằng potrace ra **một** file `apps/web/src/assets/brand/emblem.svg` (11.3 KB gzip) và sinh favicon/PWA. `mark.svg`, `wordmark.svg` đã xóa.
 - **Component:** `BrandLogo` (`app/BrandLogo.tsx`, class `.brand-logo`): CSS mask, đặt cỡ bằng **chiều rộng** (tỉ lệ 923:943 của logo). Màu: token `--brand-ink` (sáng: nâu đỏ `#7A2620`, tối: vàng `#E0B456`; kiểm ≥ 4.5:1 trên `bg`/`surface`/`surface-2` trong `contrast.test.ts` vì logo có chữ); trong khung nâu đỏ (`.chrome`) tự đổi sang `chrome-accent` `#E3B455` (5.3:1).
@@ -63,8 +63,8 @@ EM vòng 3 ([raw](../../raw/2026-11-05-em-ui-review-round3.md)): "logo bị sai 
 | Khung chào trang chủ | 64px (điện thoại) / 88px |
 | Empty state, quầy chưa chọn khách | 56px |
 | Đăng nhập / MFA | 144px (điện thoại) / 240px |
-| Favicon, apple-touch, PWA 192/512/maskable | toàn bộ logo vàng trên nền nâu đỏ `#5A1D18` (maskable: logo trong 62% giữa) |
-| Tab trình duyệt (vòng 4) | `favicon.ico` (16/32/48) + `favicon.svg` + `favicon-32.png` + `favicon-16.png`, link có `?v=4` (trình duyệt cache favicon rất lâu: lý do EM vẫn thấy icon cũ). Logo **lấp gần kín ô** (lề 8%, trước 16%; góc bo 12%, trước 20%) và **nét được làm dày** trước khi thu nhỏ (max filter 15/11/9 px nguồn cho 16/32/48; SVG thêm stroke 9) vì nét gốc ~4px nguồn tan vào nền ở 16px. Vẫn là toàn bộ logo, không bỏ phần nào |
+| apple-touch, PWA 192/512/maskable | toàn bộ logo vàng trên nền nâu đỏ `#5A1D18` (maskable: logo trong 62% giữa) |
+| Tab trình duyệt (`favicon.ico` 16/32/48, `favicon.svg`, `favicon-32.png`, `favicon-16.png`) | **mark rút gọn: vòng tròn + hoa sen** (EM trả lời vòng 4, [raw](../../raw/2026-11-05-em-answers-round4-polish.md): "bản rút gọn chỉ cho icon tab, mọi chỗ khác giữ logo đầy đủ"). Hai phần là chính component trace của logo (lớn nhất = vòng, kế tiếp = sen), sen phóng 1,55× đặt giữa vòng, không vẽ lại. Nét làm dày trước khi thu nhỏ (max filter 31/21/15 px nguồn cho 16/32/48; SVG stroke 14), ô bo 18%, lề 6%. Link + manifest có `?v=ICON_VERSION` (hiện 5; trình duyệt cache favicon rất lâu), `app/icons.test.ts` kiểm mọi link cùng version với script |
 
 - **Câu hỏi cho EM (vẫn mở):** file gốc vector (AI/SVG/PDF)? Bản trace từ PNG 1024² nét tới ~600px.
 
@@ -174,11 +174,11 @@ Một lớp CSS **không nằm trong layer** (thắng utility) cho vài thuộc 
 | Điện thoại: bảng (gói, khách vắng, chi tiết ngày, sổ doanh thu) | bảng cuộn ngang trong card | thẻ (tên, số chính, cặp nhãn–giá trị, nút); tablet 2 cột thẻ |
 | Điện thoại: bộ lọc | 3–4 select xếp chồng chiếm nửa màn | ô tìm + nút "Bộ lọc (n)" → bottom sheet |
 | Kỳ báo cáo, trạng thái gói | segmented xuống 3 hàng | một hàng chip cuộn ngang |
-| Hồ sơ khách | một card, "Liệu trình" nhỏ, "(sổ cũ)", "Đã chi 0đ", ô ngày mm/dd/yyyy, "THÁNG 11 NĂM 2026" | 2 card cùng kiểu tiêu đề, dòng gói cố định, "Đã chi qua app" + chú thích, `DateField`, "Tháng 11/2026", sửa/bán/ghi liên hệ trong sheet |
+| Hồ sơ khách | một card, "Liệu trình" nhỏ, "(sổ cũ)", "Đã chi 0đ", ô ngày mm/dd/yyyy, "THÁNG 11 NĂM 2026" | 2 card cùng kiểu tiêu đề, dòng gói cố định, "Đã chi" một con số (gói sổ giấy được ghi thành hóa đơn thường), `DateField`, "Tháng 11/2026", sửa/bán/ghi liên hệ trong sheet |
 | Tooltip biểu đồ | "30 ngày qua" vỡ 3 dòng | một dòng mỗi chuỗi |
 | Bảng giá | nhãn "Nhóm dịch vụ mới" lệch cạnh ô | nhãn trên, ô + nút cùng hàng |
 | Tên | Gói bán, Theo dõi gói, Kinh doanh | Mẫu gói liệu trình, Gói liệu trình của khách, Báo cáo kinh doanh |
-| Favicon | nét mảnh tan ở 16px, lề 16% | nét dày, lấp gần kín ô, `.ico` + cache-bust |
+| Favicon tab | toàn bộ logo, nét mảnh tan ở 16px | mark vòng + sen, nét dày, `.ico` + cache-bust `?v=5` (PWA/apple-touch vẫn logo đầy đủ) |
 
 **Vòng 3 (shell, `feat/ui-shell-r3`):** ảnh trước/sau 360/768/1280/1440 mọi màn + hồ sơ khách + focus ô tìm khách + menu tài khoản + dark, thư mục scratchpad của agent `ui3-shell/before`, `ui3-shell/after`.
 | Màn | Trước (#29) | Sau |
@@ -254,7 +254,7 @@ Một lớp CSS **không nằm trong layer** (thắng utility) cho vài thuộc 
 EM: "check kĩ mấy cái viết hoa viết thường định dạng mọi thứ lại cho tôi". **Một quy tắc cho mọi chuỗi giao diện:**
 1. **Sentence case** (chỉ viết hoa chữ đầu + tên riêng) cho: tiêu đề trang, tiêu đề card, nhãn ô nhập, nút, tab, mục nav, tiêu đề cột bảng, badge, thông báo. Ví dụ: "Bán gói liệu trình", "Lưu ý sức khỏe", "Hẹn liên hệ lại", "Còn 2/12 buổi" (không "Bán Gói", không "còn 2/12 buổi" ở đầu câu).
 2. **CHỮ HOA chỉ cho hai loại nhãn nhỏ:** eyebrow phía trên h1 (`.eyebrow`, 12px, giãn 0.14em) và nhãn nhóm của sidebar (`.nav-group-label`, 11px). Chữ hoa là do CSS (`text-transform`), chuỗi gốc vẫn sentence case (screen reader không đánh vần). Bảng **không** còn tiêu đề cột chữ hoa (trước: 12px uppercase).
-3. **Tên riêng giữ nguyên cách viết của menu in:** tên dịch vụ ("Thư Giãn", "An Kiên Lạc", "Thân Tâm An Định"), tên gói theo menu, tên người, tên spa. Không tự đổi hoa/thường dữ liệu người dùng nhập.
+3. **Tên riêng giữ nguyên cách viết của menu in** (EM chốt 2026-11-05, [raw](../../raw/2026-11-05-em-answers-round4-polish.md): "như trên menu nhé"): tên dịch vụ ("Thư Giãn", "An Kiên Lạc", "Thân Tâm An Định"), **tên gói/mẫu gói** ("Gội đầu Thư Giãn 10 buổi + tặng 2"), tên người, tên spa. Đây là dữ liệu, không phải chữ giao diện: không tự đổi hoa/thường dữ liệu chủ spa nhập, kể cả khi nó đứng trong một câu sentence case ("Bán gói Gội đầu Thư Giãn…").
 4. Viết tắt chỉ khi chật và đã quen: "SĐT", "KTV", "HSD", "CK", "DV lẻ", "Buổi LT" (tiêu đề cột bảng; thẻ điện thoại dùng tên đầy đủ qua `cardLabel`).
 5. Dấu: "…" (một ký tự) cho placeholder và "Đang tải…"; " · " ngăn các mẩu thông tin cùng dòng; "–" cho khoảng ngày; "×" cho số buổi ("Thư Giãn × 10").
 6. Không viết hoa sau dấu "·" trừ tên riêng; nhóm thời gian là "Tháng 11/2026" (không "THÁNG 11 NĂM 2026").
@@ -294,7 +294,7 @@ Primitives dựng trên shadcn/ui (Radix) trong `packages/ui`, theme bằng toke
 | **Card heading** (`.card-head` + `.card-title`) | icon vàng 20px + tiêu đề 18/26 600 bên trái, một nút bên phải; mọi card hồ sơ khách (Thông tin khách, Gói liệu trình, Chăm sóc lại, Lịch sử sử dụng) |
 | **Detail list** (`.detail-list`) | cặp nhãn–giá trị 2 cột (nhãn 112px muted), thay chuỗi "0399 … · sinh năm 1968" |
 | **Field** (`.field`) | nhãn 14px 500 trên, ô dưới cách 6px; `.filter-field`/`.filter-select` cùng kiểu (trước: 12px muted, lệch với form). Nhãn bọc ô nhập luôn xếp ô xuống dưới (rule chung, sửa "Nhóm dịch vụ mới") |
-| **"Đã chi qua app"** (tóm tắt lịch sử) | tiền thu qua app (đã trừ hủy/hoàn). Khách có gói chuyển từ sổ giấy (`sale_id = null`) thì chú thích "chưa gồm tiền gói trả trước khi dùng app" (vòng 4: "Đã chi 0đ" gây hiểu nhầm) |
+| **"Đã chi"** (tóm tắt lịch sử) | **một con số** `net_spent` (đã trừ hủy/hoàn, chú thích "đã hoàn …" khi có). EM chốt ([raw](../../raw/2026-11-05-em-carried-over-is-revenue.md)): tiền khách trả ở sổ giấy là doanh thu thật, backend ghi gói chuyển từ sổ giấy thành hóa đơn thường theo ngày gốc, nên nó nằm sẵn trong "Đã chi", sổ doanh thu và báo cáo. **Không** tách phần giấy/app, **không** đánh dấu gói chuyển từ sổ giấy ở đâu cả |
 | **CartLine** | dịch vụ, nguồn (trừ liệu trình / dịch vụ lẻ), KTV (bắt buộc), giá, bỏ dòng |
 | **MoneySummary** | phải trả, đã trả; số `tabular-nums` |
 | **StatCard** (`features/reports/ui.tsx`) | nhãn + icon tròn vàng 28px, số 24px đếm lên, không min-height, chân: `Delta` (▲/▼ % so với hôm qua, màu + chữ); bản `accent` nâu đỏ cho "Thực thu"; loading: `StatSkeleton` |
