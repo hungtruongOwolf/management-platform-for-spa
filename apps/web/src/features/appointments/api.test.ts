@@ -1,6 +1,14 @@
 import type { Appointment, Calendar } from "@vpyd/api-client";
 import { describe, expect, it } from "vitest";
-import { daysFrom, freeAt, hhmm, instantAt, mondayOf, paymentLabel, spaMinutes } from "./api";
+import {
+  daysFrom,
+  freeAt,
+  hhmm,
+  instantAt,
+  mondayOf,
+  paymentLabel,
+  spaMinutes,
+} from "./api";
 
 function appt(over: Partial<Appointment>): Appointment {
   return {
@@ -57,8 +65,17 @@ describe("calendar helpers", () => {
   it("free places per slot mirror the server's capacity rule; closed ones free the slot", () => {
     const c = cal([
       appt({}),
-      appt({ id: "a2", staff_id: null, starts_at: "2026-11-06T03:30:00Z", duration_min: 60 }),
-      appt({ id: "a3", status: "cancelled", starts_at: "2026-11-06T03:00:00Z" }),
+      appt({
+        id: "a2",
+        staff_id: null,
+        starts_at: "2026-11-06T03:30:00Z",
+        duration_min: 60,
+      }),
+      appt({
+        id: "a3",
+        status: "cancelled",
+        starts_at: "2026-11-06T03:00:00Z",
+      }),
     ]);
     expect(freeAt(c, "2026-11-06", 600)).toBe(1); // 10:00: a1
     expect(freeAt(c, "2026-11-06", 630)).toBe(0); // 10:30: a1 + a2
@@ -75,9 +92,14 @@ describe("calendar helpers", () => {
   it("says whether the visit was paid", () => {
     const money = (n: number) => `${String(n)}đ`;
     expect(paymentLabel(appt({}), money)).toBe("Chưa thanh toán");
-    expect(paymentLabel(appt({ status: "done", payment_state: "paid", paid_amount: 349_000 }), money)).toBe(
-      "Đã thanh toán 349000đ",
-    );
-    expect(paymentLabel(appt({ status: "done", payment_state: "no_charge" }), money)).toMatch(/không phát sinh/);
+    expect(
+      paymentLabel(
+        appt({ status: "done", payment_state: "paid", paid_amount: 349_000 }),
+        money,
+      ),
+    ).toBe("Đã thanh toán 349000đ");
+    expect(
+      paymentLabel(appt({ status: "done", payment_state: "no_charge" }), money),
+    ).toMatch(/không phát sinh/);
   });
 });

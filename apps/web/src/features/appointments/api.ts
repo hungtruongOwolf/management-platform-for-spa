@@ -1,7 +1,5 @@
 import type {
   Appointment,
-  AppointmentComplete,
-  AppointmentCompleted,
   AppointmentCreate,
   AppointmentStatus,
   AppointmentUpdate,
@@ -63,19 +61,6 @@ export async function closeAppointment(
     method: "POST",
     body: { reason },
   })) as Appointment;
-}
-
-/** Records the appointment's visit (same rules as POST /visits) and marks it done. */
-export async function completeAppointment(
-  id: string,
-  body: AppointmentComplete,
-  idempotencyKey: string,
-): Promise<AppointmentCompleted> {
-  return (await api(`/appointments/${id}/complete`, {
-    method: "POST",
-    body,
-    headers: { "Idempotency-Key": idempotencyKey },
-  })) as AppointmentCompleted;
 }
 
 export const STATUS_LABEL: Record<AppointmentStatus, string> = {

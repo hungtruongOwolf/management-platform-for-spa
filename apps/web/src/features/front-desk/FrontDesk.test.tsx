@@ -531,19 +531,30 @@ describe("/quay", () => {
     const user = userEvent.setup();
     at("/quay");
     await user.type(
-      await screen.findByRole("combobox", { name: "Tìm khách theo SĐT hoặc tên" }),
+      await screen.findByRole("combobox", {
+        name: "Tìm khách theo SĐT hoặc tên",
+      }),
       "ha",
     );
-    await user.click(await screen.findByRole("option", { name: /Nguyễn Thị Hà/ }));
+    await user.click(
+      await screen.findByRole("option", { name: /Nguyễn Thị Hà/ }),
+    );
     // Picked customer's basics sit right under the name (EM round 4 item 6).
     const picked = await screen.findByRole("region", { name: /Nguyễn Thị Hà/ });
     expect(within(picked).getByText(/0905 111 222/)).toBeInTheDocument();
-    expect(await within(picked).findByText(/1 gói liệu trình đang dùng, còn 5 buổi/)).toBeInTheDocument();
+    expect(
+      await within(picked).findByText(/1 gói liệu trình đang dùng, còn 5 buổi/),
+    ).toBeInTheDocument();
     await screen.findByRole("option", { name: /Đại Thông Lạc/ });
     await user.selectOptions(screen.getByLabelText("Dịch vụ lẻ"), "s5");
     await user.click(screen.getByRole("button", { name: "Thêm" }));
-    await user.selectOptions(await screen.findByRole("combobox", { name: "KTV" }), "st1");
-    await user.click(screen.getByRole("button", { name: "+ Giảm giá dịch vụ lẻ" }));
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "KTV" }),
+      "st1",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "+ Giảm giá dịch vụ lẻ" }),
+    );
     await user.type(screen.getByLabelText("Mức giảm (%)"), "10");
     await user.type(screen.getByLabelText("Lý do (bắt buộc)"), "Khách quen");
     expect(screen.getByText("Giảm 34.900đ")).toBeInTheDocument();
@@ -563,24 +574,38 @@ describe("/quay", () => {
     serve(MANAGER, undefined, [pkg("cp1")], [VISIT]);
     const user = userEvent.setup();
     at("/quay");
-    const list = await screen.findByRole("list", { name: "Lượt khách hôm nay" });
+    const list = await screen.findByRole("list", {
+      name: "Lượt khách hôm nay",
+    });
     const row = await within(list).findByRole("button", { expanded: false });
     await user.click(row);
     expect(row).toHaveAttribute("aria-expanded", "true");
-    expect(within(list).getByText("Trừ liệu trình, không phát sinh tiền", { selector: "p" })).toBeInTheDocument();
-    expect(within(list).getByRole("link", { name: "Mở hồ sơ khách" })).toHaveAttribute(
-      "href",
-      "/khach-hang/c1",
-    );
-    expect(await within(list).findByText(/SĐT 0905 111 222/)).toBeInTheDocument();
+    expect(
+      within(list).getByText("Trừ liệu trình, không phát sinh tiền", {
+        selector: "p",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(list).getByRole("link", { name: "Mở hồ sơ khách" }),
+    ).toHaveAttribute("href", "/khach-hang/c1");
+    expect(
+      await within(list).findByText(/SĐT 0905 111 222/),
+    ).toBeInTheDocument();
   });
 
   it("shows the live countdown to the spa's midnight and the appointments tab", async () => {
     serve([...MANAGER, "appointment.manage"]);
     at("/quay");
-    expect(await screen.findByText(/để nhập số liệu hôm nay/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Lịch hẹn" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: "Ghi lượt khách" })).toHaveAttribute("aria-pressed", "true");
+    expect(
+      await screen.findByText(/để nhập số liệu hôm nay/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Lịch hẹn" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(
+      screen.getByRole("button", { name: "Ghi lượt khách" }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
   it("hides the Quầy entry without visit.record", async () => {

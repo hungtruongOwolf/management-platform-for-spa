@@ -25,6 +25,8 @@ import { categoriesQuery, servicesQuery } from "../catalog/api";
 import { spaToday } from "../corrections/api";
 import { CustomerSearch } from "../customers/CustomerSearch";
 import { customerQuery } from "../customers/api";
+import type { CartLine } from "../front-desk/api";
+import { cartFromAppointment } from "../front-desk/prefill";
 import { frontDeskSearch } from "../front-desk/search";
 import { activeStaffQuery, formatDate } from "../sales/api";
 import {
@@ -90,10 +92,11 @@ type Draft =
 export function AppointmentsCalendar({
   onComplete,
 }: {
-  /** Opens the visit cart for this appointment (customer and services filled in). */
-  onComplete: (a: Appointment) => void;
+  /** Opens the visit cart for this appointment, filled with its services and technician. */
+  onComplete: (a: Appointment, lines: CartLine[]) => void;
 }) {
   const { data: me } = useSuspenseQuery(meQuery);
+  const queryClient = useQueryClient();
   const [search, setSearch] = useSearchState(frontDeskSearch);
   const phone = usePhone();
   const today = spaToday();
@@ -296,7 +299,11 @@ export function AppointmentsCalendar({
           }}
           onComplete={() => {
             setOpenId(null);
-            onComplete(opened);
+            void cartFromAppointment(queryClient, opened)
+              .catch(() => [])
+              .then((lines) => {
+                onComplete(opened, lines);
+              });
           }}
         />
       )}

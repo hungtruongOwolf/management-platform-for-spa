@@ -6,13 +6,11 @@ import type {
   Visit,
 } from "@vpyd/api-client";
 import {
-  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import { formatVnd } from "@vpyd/ui";
 import {
   Suspense,
@@ -27,32 +25,21 @@ import { ApiError } from "../../lib/api";
 import { invalidateManagementViews } from "../../lib/invalidate";
 import { serviceLabel } from "../../lib/names";
 import { useSearchState } from "../../lib/searchState";
-import { CustomerName } from "../../app/CustomerName";
-import { DateField } from "../../components/DateField";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
 import { categoriesQuery, servicesQuery } from "../catalog/api";
 import { customerQuery } from "../customers/api";
 import { CustomerSearch } from "../customers/CustomerSearch";
-import { HealthNote } from "../customers/HealthNote";
-import { completeAppointment } from "../appointments/api";
-import {
-  activeStaffQuery,
-  customerPackagesQuery,
-  exceedsCap,
-  parseAmount,
-} from "../sales/api";
+import { completeAppointment } from "../appointments/complete";
+import { activeStaffQuery, exceedsCap, parseAmount } from "../sales/api";
 import {
   type CartLine,
   type DiscountDraft,
   type Gender,
   type PaymentMode,
   amountDue,
-  byUseOrder,
   discountPreview,
   inCart,
-  isUsable,
-  paymentText,
   paymentsFor,
   priceFor,
   recordVisit,
@@ -60,23 +47,13 @@ import {
   serviceInstant,
   staffByUse,
   timeOf,
-  todayAllVisitsQuery,
   todayVisitsQuery,
-  VISITS_PAGE,
   visitBody,
-  visitsOfDayQuery,
 } from "./api";
 import { CustomerCard } from "./CustomerCard";
 import { DayCountdown } from "./DayCountdown";
 import { frontDeskSearch } from "./search";
 import { spaToday } from "../corrections/api";
-
-// The void form only opens on demand: its own chunk.
-const VoidVisitForm = lazy(() =>
-  import("../corrections/VoidVisitForm").then((m) => ({
-    default: m.VoidVisitForm,
-  })),
-);
 
 // The new-customer form (react-hook-form + zod) is only needed when no match is found, so it is a
 // separate chunk: it stays off the front desk's first paint (frontend.md, perf budget).
@@ -91,6 +68,20 @@ const AppointmentsCalendar = lazy(() =>
   import("../appointments/AppointmentsCalendar").then((m) => ({
     default: m.AppointmentsCalendar,
   })),
+);
+
+// Below the fold / after a line is added: own chunks, fetched right after the first paint so they
+// are ready when needed (startup JS ≤ 125 KB gzip, frontend.md "Perf budget").
+const loadTodayVisits = () => import("./TodayVisits");
+const loadCartOptions = () => import("./CartOptions");
+const TodayVisits = lazy(() =>
+  loadTodayVisits().then((m) => ({ default: m.TodayVisits })),
+);
+const ServiceTime = lazy(() =>
+  loadCartOptions().then((m) => ({ default: m.ServiceTime })),
+);
+const DiscountField = lazy(() =>
+  loadCartOptions().then((m) => ({ default: m.DiscountField })),
 );
 
 const field = "min-h-11 rounded-[6px] border border-border bg-surface px-3";
@@ -123,13 +114,6 @@ function nowHm(): string {
   return timeOf(new Date().toISOString());
 }
 
-/** ISO day `days` before `day`. */
-function daysBefore(day: string, days: number): string {
-  const d = new Date(`${day}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - days);
-  return d.toISOString().slice(0, 10);
-}
-
 /**
  * /quay — the front desk. Two tabs: "Ghi lượt" (default; the walk-in fast path, design/front-desk-flows.md:
  * find the customer + Enter → "Trừ 1 buổi" → pick the technician → Lưu, Ctrl+Enter) and "Lịch hẹn"
@@ -146,6 +130,11 @@ export function FrontDeskPage() {
     ...todayVisitsQuery,
     enabled: painted,
   });
+  useEffect(() => {
+    if (!painted) return;
+    void loadTodayVisits();
+    void loadCartOptions();
+  }, [painted]);
   const todayIso = spaToday();
 
   const [customer, setCustomer] = useState<CustomerSummary | null>(null);
@@ -355,79 +344,22 @@ export function FrontDeskPage() {
   };
 
   /** Calendar → "Hoàn tất & ghi lượt": the cart filled with the booked services and technician. */
-  const startFromAppointment = (a: Appointment) => {
+  const startFromAppointment = (a: Appointment, prefilled: CartLine[]) => {
     if (!a.customer_id) return;
-    const summary: CustomerSummary = {
+    select({
       id: a.customer_id,
       full_name: a.customer_name,
       phone: a.customer_phone.replace(/^\+84/, "0"),
       gender: a.customer_gender ?? null,
-    };
-    select(summary);
+    });
     setFocusDeduct(false);
     setAppointment(a);
+    setLines(prefilled.map((l) => ({ ...l, key: nextKey.current++ })));
     setSearch({ view: "ghi" }, { push: true });
     if (a.business_date !== todayIso) {
       setServiceDay(a.business_date);
       setServiceTime(timeOf(a.arrived_at ?? a.starts_at));
     }
-    void Promise.all([
-      queryClient.query(customerPackagesQuery(a.customer_id)),
-      queryClient.query(servicesQuery(false)),
-      queryClient.query(categoriesQuery),
-    ])
-      .then(([pkgs, services, cats]) => {
-        const prefilled: CartLine[] = [];
-        const usable = byUseOrder(pkgs).filter(isUsable);
-        for (const s of a.services) {
-          const pkg = usable.find((p) =>
-            p.items.some(
-              (i) =>
-                i.service_id === s.service_id &&
-                i.sessions_remaining - inCart(prefilled, i.id) > 0,
-            ),
-          );
-          const item = pkg?.items.find(
-            (i) =>
-              i.service_id === s.service_id &&
-              i.sessions_remaining - inCart(prefilled, i.id) > 0,
-          );
-          if (pkg && item) {
-            prefilled.push({
-              key: nextKey.current++,
-              source: "package",
-              serviceId: s.service_id,
-              serviceName: item.name,
-              categoryName: item.category_name,
-              itemId: item.id,
-              packageName: pkg.name,
-              staffId: a.staff_id ?? "",
-            });
-            continue;
-          }
-          const service = services.find((x) => x.id === s.service_id);
-          const price = service
-            ? priceFor(service, summary.gender ?? null)
-            : null;
-          if (service && price?.ok)
-            prefilled.push({
-              key: nextKey.current++,
-              source: "one_off",
-              serviceId: service.id,
-              serviceName: service.name,
-              categoryName:
-                cats.find((c) => c.id === service.category_id)?.name ??
-                s.category_name,
-              priceVariant: null,
-              price: price.price,
-              staffId: a.staff_id ?? "",
-            });
-        }
-        setLines(prefilled);
-      })
-      .catch((e: unknown) => {
-        showToast(messageFor(e), true);
-      });
   };
 
   return (
@@ -708,34 +640,36 @@ export function FrontDeskPage() {
 
               {customer && lines.length > 0 && (
                 <div className="mt-4 grid content-start gap-3">
-                  <ServiceTime
-                    mayBackdate={mayBackdate}
-                    today={todayIso}
-                    day={serviceDay}
-                    time={serviceTime}
-                    invalid={attempted && problems.time}
-                    onDay={(d) => {
-                      setServiceDay(d === todayIso ? "" : d);
-                      if (d !== todayIso && serviceTime === "")
-                        setServiceTime(nowHm());
-                    }}
-                    onTime={setServiceTime}
-                  />
-                  {due > 0 && can(me, "sale.discount") && (
-                    <DiscountField
-                      due={due}
-                      draft={discount}
-                      onChange={setDiscount}
-                      overCap={
-                        discountAmount > 0 &&
-                        exceedsCap(
-                          due,
-                          discountAmount,
-                          can(me, "sale.discount_unlimited"),
-                        )
-                      }
+                  <Suspense fallback={null}>
+                    <ServiceTime
+                      mayBackdate={mayBackdate}
+                      today={todayIso}
+                      day={serviceDay}
+                      time={serviceTime}
+                      invalid={attempted && problems.time}
+                      onDay={(d) => {
+                        setServiceDay(d === todayIso ? "" : d);
+                        if (d !== todayIso && serviceTime === "")
+                          setServiceTime(nowHm());
+                      }}
+                      onTime={setServiceTime}
                     />
-                  )}
+                    {due > 0 && can(me, "sale.discount") && (
+                      <DiscountField
+                        due={due}
+                        draft={discount}
+                        onChange={setDiscount}
+                        overCap={
+                          discountAmount > 0 &&
+                          exceedsCap(
+                            due,
+                            discountAmount,
+                            can(me, "sale.discount_unlimited"),
+                          )
+                        }
+                      />
+                    )}
+                  </Suspense>
                   <p
                     className="flex justify-between text-lg font-bold"
                     aria-live="polite"
@@ -845,7 +779,15 @@ export function FrontDeskPage() {
             </section>
           </div>
 
-          <TodayVisits />
+          <Suspense
+            fallback={
+              <section aria-label="Lượt khách hôm nay" className={card}>
+                <div aria-hidden="true" className="h-24 skeleton" />
+              </section>
+            }
+          >
+            <TodayVisits />
+          </Suspense>
         </>
       )}
 
@@ -857,178 +799,6 @@ export function FrontDeskPage() {
         {toast?.text}
       </div>
     </div>
-  );
-}
-
-/** "Giờ làm": now by default; the desk may pick an earlier time today, the owner an earlier day. */
-function ServiceTime({
-  mayBackdate,
-  today,
-  day,
-  time,
-  invalid,
-  onDay,
-  onTime,
-}: {
-  mayBackdate: boolean;
-  today: string;
-  day: string;
-  time: string;
-  invalid: boolean;
-  onDay: (iso: string) => void;
-  onTime: (hm: string) => void;
-}) {
-  const [open, setOpen] = useState(day !== "" || time !== "");
-  if (!open)
-    return (
-      <p className="flex flex-wrap items-center gap-2 text-sm">
-        <span>
-          Giờ làm: <strong>bây giờ</strong>
-        </span>
-        <button
-          type="button"
-          className="underline"
-          onClick={() => {
-            setOpen(true);
-          }}
-        >
-          Đổi giờ làm{mayBackdate ? " / nhập bù ngày cũ" : ""}
-        </button>
-      </p>
-    );
-  return (
-    <fieldset className="grid gap-2 rounded-[10px] border border-border p-3">
-      <legend className="px-1 text-sm font-semibold">Giờ làm dịch vụ</legend>
-      <div className="flex flex-wrap items-end gap-3">
-        {mayBackdate && (
-          <DateField
-            label="Ngày làm"
-            value={day || today}
-            min={daysBefore(today, 366)}
-            max={today}
-            onChange={(iso) => {
-              onDay(iso || today);
-            }}
-            className="grid gap-1 text-sm"
-          />
-        )}
-        <label className="grid gap-1 text-sm">
-          <span>Giờ (để trống = bây giờ)</span>
-          <input
-            type="time"
-            step={300}
-            value={time}
-            aria-invalid={invalid}
-            onChange={(e) => {
-              onTime(e.target.value);
-            }}
-            className={`${field} ${invalid ? "border-danger" : ""}`}
-          />
-        </label>
-      </div>
-      {day !== "" && day < today && (
-        <p className="text-sm text-warning-text">
-          Nhập bù: lượt, hóa đơn và tiền thu được ghi vào ngày{" "}
-          {day.split("-").reverse().join("/")}.
-        </p>
-      )}
-    </fieldset>
-  );
-}
-
-/** Discount on the one-off lines: % or amount + reason (D10). The server computes and checks. */
-function DiscountField({
-  due,
-  draft,
-  overCap,
-  onChange,
-}: {
-  due: number;
-  draft: DiscountDraft | null;
-  overCap: boolean;
-  onChange: (d: DiscountDraft | null) => void;
-}) {
-  if (!draft)
-    return (
-      <button
-        type="button"
-        className="justify-self-start text-sm underline"
-        onClick={() => {
-          onChange({ kind: "percent", value: "", reason: "" });
-        }}
-      >
-        + Giảm giá dịch vụ lẻ
-      </button>
-    );
-  const amount = discountPreview(due, draft);
-  return (
-    <fieldset className="grid gap-2 rounded-[10px] border border-border p-3">
-      <legend className="px-1 text-sm font-semibold">
-        Giảm giá dịch vụ lẻ
-      </legend>
-      <div className="flex flex-wrap items-end gap-2">
-        <div role="group" aria-label="Kiểu giảm" className="segmented">
-          {(
-            [
-              ["percent", "%"],
-              ["amount", "Số tiền"],
-            ] as const
-          ).map(([k, label]) => (
-            <button
-              key={k}
-              type="button"
-              aria-pressed={draft.kind === k}
-              onClick={() => {
-                onChange({ ...draft, kind: k, value: "" });
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <label className="grid gap-1 text-sm">
-          <span>
-            {draft.kind === "percent" ? "Mức giảm (%)" : "Số tiền giảm (đ)"}
-          </span>
-          <input
-            inputMode="numeric"
-            value={draft.value}
-            onChange={(e) => {
-              onChange({ ...draft, value: e.target.value });
-            }}
-            className={`${field} w-32`}
-          />
-        </label>
-        <label className="grid min-w-0 flex-1 gap-1 text-sm">
-          <span>Lý do (bắt buộc)</span>
-          <input
-            value={draft.reason}
-            maxLength={500}
-            onChange={(e) => {
-              onChange({ ...draft, reason: e.target.value });
-            }}
-            className={`${field} w-full`}
-          />
-        </label>
-        <button
-          type="button"
-          className="min-h-11 rounded-[10px] border border-border px-3 text-sm"
-          onClick={() => {
-            onChange(null);
-          }}
-        >
-          Bỏ giảm giá
-        </button>
-      </div>
-      <p className="text-sm" aria-live="polite">
-        {amount > 0 ? `Giảm ${formatVnd(amount)}` : "Nhập mức giảm hợp lệ."}
-        {overCap && (
-          <span className="block text-danger">
-            Vượt mức quản lý được giảm: cần chủ spa.
-          </span>
-        )}
-      </p>
-    </fieldset>
   );
 }
 
@@ -1170,292 +940,5 @@ function AddOneOff({
         </p>
       )}
     </div>
-  );
-}
-
-/** Inline details of one visit: lines, technicians, payment, the customer's phone + a profile link. */
-function VisitDetails({ v }: { v: Visit }) {
-  const customer = useQuery(customerQuery(v.customer_id));
-  return (
-    <div className="mt-2 grid gap-2 rounded-[10px] bg-surface-2 p-3 text-sm">
-      <ul className="grid gap-1">
-        {v.lines.map((l) => (
-          <li key={l.id} className="flex flex-wrap justify-between gap-2">
-            <span>
-              {serviceLabel(l.service_name, l.category_name)} ·{" "}
-              {l.source === "package"
-                ? `trừ buổi ${l.package_name ?? ""}${l.sessions_left_after != null ? ` (còn ${String(l.sessions_left_after)}/${String(l.sessions_total ?? "?")})` : ""}`
-                : "dịch vụ lẻ"}{" "}
-              · KTV {l.staff_name}
-            </span>
-            <span className="tabular-nums">
-              {l.source === "one_off" ? formatVnd(l.line_value) : "—"}
-            </span>
-          </li>
-        ))}
-      </ul>
-      {v.discount_amount > 0 && (
-        <p>
-          Giảm {formatVnd(v.discount_amount)}
-          {v.discount_reason ? ` · ${v.discount_reason}` : ""}
-        </p>
-      )}
-      <p>{paymentText(v, formatVnd)}</p>
-      {v.business_date < v.created_at.slice(0, 10) && (
-        <p className="text-text-muted">
-          Nhập bù lúc {new Date(v.created_at).toLocaleString("vi-VN")}
-        </p>
-      )}
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        {customer.data && (
-          <span className="tabular-nums">SĐT {customer.data.phone}</span>
-        )}
-        <Link
-          to="/khach-hang/$customerId"
-          params={{ customerId: v.customer_id }}
-          className="font-semibold text-primary underline"
-        >
-          Mở hồ sơ khách
-        </Link>
-      </p>
-      {customer.data && <HealthNote customer={customer.data} />}
-    </div>
-  );
-}
-
-function TodayVisits() {
-  const { data: me } = useSuspenseQuery(meQuery);
-  const queryClient = useQueryClient();
-  const todayIso = spaToday();
-  const [day, setDay] = useState(todayIso);
-  const [voiding, setVoiding] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  // A busy day holds a hundred visits: the newest VISITS_PAGE first; "Xem tất cả" loads the day,
-  // then shows it VISITS_PAGE at a time.
-  const [all, setAll] = useState(false);
-  const [shown, setShown] = useState(VISITS_PAGE);
-  const isToday = day === todayIso;
-  const painted = useAfterFirstPaint();
-  const today = useQuery({
-    ...(isToday
-      ? all
-        ? todayAllVisitsQuery
-        : todayVisitsQuery
-      : visitsOfDayQuery(day, all)),
-    enabled: painted,
-    placeholderData: keepPreviousData,
-  });
-  const list = today.data ?? [];
-  const hasMore = !all && list.length > VISITS_PAGE;
-  const visible = list.slice(0, all ? shown : VISITS_PAGE);
-  // UX only: the server decides (403 day.locked for managers; owners may).
-  const mayVoid =
-    can(me, "record.void_same_day") &&
-    (isToday || can(me, "record.void_closed_day"));
-  return (
-    <section aria-labelledby="today-title" className={card}>
-      <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
-        <h2 id="today-title" className="font-semibold">
-          {isToday
-            ? "Lượt khách hôm nay"
-            : `Lượt khách ngày ${day.split("-").reverse().join("/")}`}
-          {today.data
-            ? ` (${hasMore ? `${String(VISITS_PAGE)}+` : String(list.length)})`
-            : ""}
-        </h2>
-        <DateField
-          label="Xem ngày"
-          value={day}
-          max={todayIso}
-          onChange={(iso) => {
-            setDay(iso || todayIso);
-            setVoiding(null);
-            setExpanded(null);
-            setAll(false);
-            setShown(VISITS_PAGE);
-          }}
-          className="flex items-center gap-2 text-sm"
-        />
-      </div>
-      {!isToday && can(me, "record.void_same_day") && !mayVoid && (
-        <p className="mb-2 text-sm text-text-muted">
-          Ngày đã chốt: chỉ chủ spa hủy được lượt của ngày này.
-        </p>
-      )}
-      {notice && (
-        <p
-          role="status"
-          className="mb-2 rounded-[10px] bg-primary-soft p-2 text-sm"
-        >
-          {notice}
-        </p>
-      )}
-      {today.isPending && (
-        <div aria-hidden="true" className="grid content-start gap-2">
-          <div className="h-10 skeleton" />
-          <div className="h-10 skeleton" />
-        </div>
-      )}
-      {today.isError && (
-        <p role="alert" className="text-danger">
-          {messageFor(today.error)}{" "}
-          <button
-            type="button"
-            className="underline"
-            onClick={() => void today.refetch()}
-          >
-            Thử lại
-          </button>
-        </p>
-      )}
-      {today.data?.length === 0 && (
-        <p className="text-text-muted">
-          Chưa có khách nào hôm nay. Lượt vừa lưu sẽ hiện ở đây.
-        </p>
-      )}
-      {today.data && today.data.length > 0 && (
-        <ul
-          aria-label={isToday ? "Lượt khách hôm nay" : "Lượt khách trong ngày"}
-        >
-          {visible.map((v) => {
-            const open = expanded === v.id;
-            return (
-              <li
-                key={v.id}
-                className="border-b border-dashed border-border py-2 text-sm last:border-b-0"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <button
-                    type="button"
-                    aria-expanded={open}
-                    onClick={() => {
-                      setExpanded(open ? null : v.id);
-                    }}
-                    className={`grid min-w-0 flex-1 gap-x-4 gap-y-0.5 rounded-[6px] text-left hover:bg-surface-2 md:grid-cols-[56px_minmax(0,1.2fr)_minmax(0,2fr)_minmax(0,1.3fr)] ${v.status === "voided" ? "text-text-muted" : ""}`}
-                  >
-                    <strong className="tabular-nums">
-                      {timeOf(v.check_in_at)}
-                    </strong>
-                    <span className="min-w-0">
-                      <CustomerName
-                        name={v.customer_name}
-                        gender={v.customer_gender}
-                      />
-                      {v.status === "voided" && (
-                        <span className="badge badge-danger ml-2 align-middle">
-                          Đã hủy
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-text-muted">
-                      {v.lines
-                        .map(
-                          (l) =>
-                            `${serviceLabel(l.service_name, l.category_name)}${l.source === "package" ? " (trừ buổi)" : ""}`,
-                        )
-                        .join(", ")}{" "}
-                      · KTV{" "}
-                      {[...new Set(v.lines.map((l) => l.staff_name))].join(
-                        ", ",
-                      )}
-                    </span>
-                    <span className="text-text-muted">
-                      {paymentText(v, formatVnd)}
-                    </span>
-                    {v.status === "voided" && v.void_reason && (
-                      <span className="md:col-span-4">
-                        Lý do hủy: {v.void_reason}
-                      </span>
-                    )}
-                  </button>
-                  <span className="flex shrink-0 items-start gap-2">
-                    <span
-                      className={`tabular-nums ${v.status === "voided" ? "text-text-muted line-through" : ""}`}
-                    >
-                      {v.total ? formatVnd(v.total) : "—"}
-                    </span>
-                    {mayVoid &&
-                      v.status === "completed" &&
-                      voiding !== v.id && (
-                        <button
-                          type="button"
-                          aria-label={`Hủy lượt ${timeOf(v.check_in_at)} của ${v.customer_name}`}
-                          onClick={() => {
-                            setNotice(null);
-                            setVoiding(v.id);
-                          }}
-                          className="min-h-11 rounded-[10px] border border-border px-3 font-medium text-danger"
-                        >
-                          Hủy
-                        </button>
-                      )}
-                  </span>
-                </div>
-                {open && <VisitDetails v={v} />}
-                {voiding === v.id && (
-                  <Suspense
-                    fallback={
-                      <p role="status" className="w-full text-text-muted">
-                        Đang mở…
-                      </p>
-                    }
-                  >
-                    <div className="w-full">
-                      <VoidVisitForm
-                        visit={v}
-                        onCancel={() => {
-                          setVoiding(null);
-                        }}
-                        onDone={(voided) => {
-                          setVoiding(null);
-                          setNotice(`Đã hủy lượt của ${voided.customer_name}.`);
-                          void queryClient.invalidateQueries({
-                            queryKey: ["visits"],
-                          });
-                          void queryClient.invalidateQueries({
-                            queryKey: ["customer-packages"],
-                          });
-                          void queryClient.invalidateQueries({
-                            queryKey: ["appointments"],
-                          });
-                          void invalidateManagementViews(
-                            queryClient,
-                            voided.customer_id,
-                          );
-                        }}
-                      />
-                    </div>
-                  </Suspense>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      {hasMore && (
-        <button
-          type="button"
-          onClick={() => {
-            setAll(true);
-            setShown(VISITS_PAGE * 2);
-          }}
-          className="mt-2 min-h-11 w-full rounded-[10px] border border-border px-4 font-medium hover:bg-surface-2"
-        >
-          Xem tất cả lượt trong ngày
-        </button>
-      )}
-      {all && list.length > shown && (
-        <button
-          type="button"
-          onClick={() => {
-            setShown((n) => n + VISITS_PAGE);
-          }}
-          className="mt-2 min-h-11 w-full rounded-[10px] border border-border px-4 font-medium hover:bg-surface-2"
-        >
-          Xem thêm ({list.length - shown} lượt nữa)
-        </button>
-      )}
-    </section>
   );
 }
