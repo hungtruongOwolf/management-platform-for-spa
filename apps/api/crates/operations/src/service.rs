@@ -572,6 +572,7 @@ async fn load(
                 id: r.id,
                 customer_id: r.customer_id,
                 customer_name: r.customer_name,
+                customer_gender: crm::http::gender_dto(r.customer_gender.as_deref()),
                 business_date: r.business_date,
                 check_in_at: r.check_in_at,
                 note,

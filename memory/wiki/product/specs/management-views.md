@@ -93,6 +93,33 @@ Thiếu `report.revenue.read` thì response **không chứa** các trường ti�
 - AC5.3 `GET /customers/inactive?days=N` (mặc định 7, EM 2026-11-05): khách **còn buổi** trên gói đang dùng mà lần đến gần nhất (hoặc ngày bắt đầu gói nếu chưa đến lần nào) cách hôm nay ≥ N ngày; vắng lâu nhất trước; kèm số buổi còn lại. `scope=all`: mọi khách đã từng đến/mua.
 - AC5.4 (neg): `days` hoặc `expiring_within_days` ngoài 1–365 → `422`; `q` 1 ký tự → `422 too_short`. KTV → `403`.
 
+### Bổ sung vòng 3 (EM 2026-11-05, [raw](../../../raw/2026-11-05-em-ui-review-round3.md))
+
+**US5 — phạm vi "Lâu không quay lại" (thay AC5.3):**
+- AC5.3': `GET /customers/inactive?days=N` (mặc định 7) liệt kê **mọi khách đã từng đến hoặc trả tiền** mà "lần gần nhất" cách hôm nay ≥ N ngày (biên **tính cả** ngày thứ N). "Lần gần nhất" = ngày muộn nhất trong: lượt hoàn tất gần nhất, hóa đơn chưa hủy gần nhất, ngày bắt đầu gói gần nhất (gói sổ giấy không có hóa đơn). Khách chỉ tạo hồ sơ, chưa đến chưa mua → không có trong danh sách. Lượt / hóa đơn đã hủy không tính.
+- Gồm cả **khách lẻ** (đến theo buổi, không gói) và **khách liệu trình** dù gói còn buổi, đã hết buổi hay hết hạn. Mỗi dòng có `kind`: `package` (có ít nhất một gói không thuộc hóa đơn đã hủy) / `one_off`; lọc `kind=package|one_off|all`. `scope=with_sessions` vẫn còn (chỉ khách còn buổi trên gói đang dùng); **mặc định đổi thành `all`**.
+- `q`: tên (không dấu, ≥ 2 ký tự) hoặc SĐT (≥ 3 số), ≤ 100 ký tự. Mỗi dòng có `gender`.
+
+**US5b — Theo dõi gọi lại khách (follow-up):**
+*Là quản lý, tôi muốn đánh dấu đã gọi / nhắn khách nào, ngày nào, kết quả ra sao và khi nào gọi lại, để biết hôm nay cần gọi ai thay vì chỉ nhìn ai vắng lâu.*
+- AC5b.1 `POST /customers/{id}/follow-ups` (Idempotency-Key, quyền mới `customer.follow_up`: chủ spa + quản lý): `contacted_on` (mặc định hôm nay theo giờ spa; không ở tương lai; lùi tối đa 30 ngày), `channel` = `phone` | `zalo` | `in_person` | `other`, `outcome` = `will_come` (liên lạc được, sẽ đến) | `not_interested` | `no_answer` | `other`, `note` (≤ 500 ký tự, ghi chú liên lạc, **không** ghi sức khỏe), `next_follow_up_on` (≥ ngày liên lạc, ≤ 365 ngày sau). Người ghi = user của session (body không gửi được). Chỉ thêm, không sửa / xóa (ghi nhầm thì ghi lần mới). Audit `customer.follow_up` (ghi `has_note`, không chép nội dung ghi chú).
+- AC5b.2 **Quy tắc mặc định:** `no_answer` mà không chọn ngày gọi lại → `next_follow_up_on` = ngày liên lạc + **3 ngày**. Kết quả khác không có mặc định. Ngày nhập tay luôn thắng.
+- AC5b.3 `GET /customers/{id}/follow-ups`: mới nhất trước, tối đa 100 (`has_more`). Quyền `customer.read`.
+- AC5b.4 Mỗi dòng của `/customers/inactive` có `last_follow_up {on, channel, outcome, by}` và `next_follow_up_on`, **chỉ tính các lần liên lạc trong đợt vắng hiện tại** (`contacted_on` ≥ "lần gần nhất"). Khách quay lại sau khi được gọi → đợt vắng mới, sạch.
+- AC5b.5 Lọc `follow_up=`: `due` = chưa liên lạc trong đợt này **hoặc** `next_follow_up_on` ≤ hôm nay; `not_contacted` = chưa liên lạc; `scheduled` = hẹn gọi sau hôm nay; `all` (mặc định). Đã liên lạc mà không hẹn ngày (ví dụ "không muốn") chỉ hiện ở `all`.
+- AC5b.6 Sắp xếp `sort=due|absent`: `due` = chưa liên lạc trước (vắng lâu trước), rồi `next_follow_up_on` gần nhất, cuối cùng là đã liên lạc không hẹn ngày; `absent` = vắng lâu nhất trước. Mặc định `due` khi `follow_up=due|scheduled`, ngược lại `absent`.
+- AC5b.7 (neg): KTV → `403`; chưa đăng nhập → `401`; khách spa khác → `404`; thiếu Idempotency-Key → `400`; cùng key khác body → `422 idempotency.key_reuse_mismatch`.
+
+**US4 — tìm trong hồ sơ khách:** `GET /customers/{id}/history?q=&kind=&from=&to=`: `q` (không dấu, 2–100 ký tự) khớp lượt theo tên dịch vụ, danh mục, tên gói, KTV; hóa đơn theo dòng gói và người chốt; hủy gói theo tên gói. `kind` một loại sự kiện; `from`/`to` theo ngày nghiệp vụ của sự kiện (`from > to` → `422`).
+
+**US5 — gói không thời hạn (EM hỏi "gói unlimited hết hạn thì sao"):** đã đúng từ R1-1 D2: `expires_on` trống = **không bao giờ hết hạn**. Đã kiểm `app.package_status` (`expires_on < today` với NULL → không phải `expired`), cửa sổ `expiring_within_days` và `counts.expiring_soon` (`expires_on <= …` với NULL → không đếm), `PackageStatus::derive`. Thêm test: gói không hạn bắt đầu 3 năm trước vẫn `active`, không bao giờ vào "sắp hết hạn" / "hết hạn". `/packages?q=` nay tìm cả **tên gói** (không dấu) ngoài tên / SĐT khách.
+
+**Trùng SĐT khi đang gõ:** `GET /customers/phone-check?phone=` (quyền `customer.read`) → `{valid, taken, existing_id?, full_name?}`, chuẩn hóa giống hệt khi tạo khách; số chưa đủ → `valid=false` (không lỗi, gọi được mỗi lần gõ). Chỉ trong spa của người gọi. Không lộ gì hơn `GET /customers?q=<số>`. Tạo khách vẫn trả `409 customer.phone_taken`.
+
+**Danh mục dịch vụ:** mọi DTO hiện tên dịch vụ có thêm `category_name` (danh mục **hiện tại** trong bảng giá, không phải snapshot): dòng lượt (`VisitLineDto`, lượt hôm nay), dòng lượt trong lịch sử, item gói (`CustomerPackageItemDto`), trang dùng gói, top dịch vụ trong báo cáo. Giới tính khách (`customer_gender`) có ở lượt (`VisitDto`), dòng sổ doanh thu, dòng tổng quan gói; dòng khách vắng có `gender`.
+
+**US2 — báo cáo linh hoạt:** `preset` = `last_7_days`, `last_30_days`, `this_month`, `last_month` (theo ngày), `this_year`, `last_12_months` (theo tháng), `last_5_years` (theo năm), tính theo "hôm nay" của spa; `granularity` thêm `year`; ghi đè được granularity mặc định của preset; `preset` cùng `from`/`to` → `422 preset conflicts_with_range`. Giới hạn: theo ngày/tuần ≤ 366 ngày, theo tháng/năm ≤ 1830 ngày (5 năm). Mỗi điểm `series` có `counts.customers`, `counts.visits` và `net_revenue` (phẳng, cho biểu đồ đường; chỉ khi có quyền tiền). Thêm `technicians[]` cho cả khoảng (như dashboard ngày).
+
 ### US6 (để sau, R1-3): Sổ thu chi
 Sổ thu chi giấy ghi cả **chi** (chi phí vận hành, rút/nộp quỹ) và **tồn quỹ** tiền mặt / tài khoản. Phần **thu** đã có (US3). Phần **chi** là loại dữ liệu mới (phiếu chi: ngày, diễn giải, số tiền, hình thức, người chi, chứng từ) cần spec riêng: quyền ghi/sửa, chốt quỹ cuối ngày, tồn đầu kỳ, đối soát. **Không làm ở R1-2.**
 

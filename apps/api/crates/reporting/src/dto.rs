@@ -253,8 +253,10 @@ impl Granularity {
 #[serde(rename_all = "snake_case")]
 pub enum RangePreset {
     /// Today and the 6 days before (by day).
+    #[serde(rename = "last_7_days")]
     Last7Days,
     /// Today and the 29 days before (by day).
+    #[serde(rename = "last_30_days")]
     Last30Days,
     /// 1st of this month → today (by day).
     ThisMonth,
@@ -263,8 +265,10 @@ pub enum RangePreset {
     /// 1 January → today (by month).
     ThisYear,
     /// 1st of the month 11 months ago → today: 12 calendar months (by month).
+    #[serde(rename = "last_12_months")]
     Last12Months,
     /// 1 January four years ago → today: 5 calendar years (by year).
+    #[serde(rename = "last_5_years")]
     Last5Years,
 }
 
@@ -325,6 +329,9 @@ pub struct RangeReport {
     pub top_services: Vec<TopService>,
     /// Top 10 by packages sold.
     pub top_packages: Vec<TopPackage>,
+    /// Every technician who worked in the range, most visits first (same counting as the daily
+    /// dashboard: a visit counts once per technician however many lines they did).
+    pub technicians: Vec<TechnicianDay>,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -364,6 +371,7 @@ pub struct LedgerRow {
     pub at: DateTime<Utc>,
     pub customer_id: Uuid,
     pub customer_name: String,
+    pub customer_gender: Option<GenderDto>,
     pub kind: SaleKind,
     /// "Dịch vụ 1 lần" column: the one-off services, comma-separated.
     pub one_off: Option<String>,
@@ -739,6 +747,17 @@ pub enum FollowUpFilter {
     Scheduled,
 }
 
+/// `GET /customers/inactive?sort=`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum InactiveSort {
+    /// Who to call first: never contacted in this absence, then `next_follow_up_on` soonest,
+    /// then contacted with no date planned; ties by longest absence.
+    Due,
+    /// Longest absence first.
+    Absent,
+}
+
 /// The latest follow-up of the current absence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct LastFollowUp {
@@ -787,6 +806,8 @@ pub struct InactiveQuery {
     pub kind: Option<CustomerKindFilter>,
     /// Default `all`.
     pub follow_up: Option<FollowUpFilter>,
+    /// Default `due` when `follow_up` is `due` or `scheduled`, else `absent`.
+    pub sort: Option<InactiveSort>,
     /// Customer name (accent-insensitive, ≥ 2 characters) or phone digits (≥ 3).
     pub q: Option<String>,
     pub cursor: Option<String>,

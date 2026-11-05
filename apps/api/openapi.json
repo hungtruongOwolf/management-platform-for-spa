@@ -443,14 +443,11 @@
         "parameters": [
           {
             "name": "q",
-            "in": "path",
+            "in": "query",
             "description": "≥ 3 digits of the phone, or ≥ 2 letters of the name (accents optional). Empty = most recent.",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -551,6 +548,15 @@
             }
           },
           {
+            "name": "sort",
+            "in": "query",
+            "description": "Default `due` when `follow_up` is `due` or `scheduled`, else `absent`.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/InactiveSort"
+            }
+          },
+          {
             "name": "q",
             "in": "query",
             "description": "Customer name (accent-insensitive, ≥ 2 characters) or phone digits (≥ 3).",
@@ -608,14 +614,11 @@
         "parameters": [
           {
             "name": "phone",
-            "in": "path",
+            "in": "query",
             "description": "The number as typed (any spacing, 0… or +84…). Normalised like `POST /customers`.",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -1122,14 +1125,11 @@
         "parameters": [
           {
             "name": "active",
-            "in": "path",
+            "in": "query",
             "description": "Only items currently on sale (default true).",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "boolean",
-                "null"
-              ]
+              "type": "boolean"
             }
           }
         ],
@@ -1738,14 +1738,11 @@
         "parameters": [
           {
             "name": "active",
-            "in": "path",
+            "in": "query",
             "description": "Only items currently on sale (default true).",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "boolean",
-                "null"
-              ]
+              "type": "boolean"
             }
           }
         ],
@@ -1860,22 +1857,15 @@
         "parameters": [
           {
             "name": "status",
-            "in": "path",
+            "in": "query",
             "description": "Default `active` (pickers only offer people still working here).",
-            "required": true,
+            "required": false,
             "schema": {
-              "oneOf": [
-                {
-                  "type": "string",
-                  "enum": [
-                    "active",
-                    "left",
-                    "all"
-                  ]
-                },
-                {
-                  "type": "null"
-                }
+              "type": "string",
+              "enum": [
+                "active",
+                "left",
+                "all"
               ]
             }
           }
@@ -1907,14 +1897,11 @@
         "parameters": [
           {
             "name": "date",
-            "in": "path",
+            "in": "query",
             "description": "Business day `YYYY-MM-DD`; default today.",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ],
+              "type": "string",
               "format": "date"
             }
           }
@@ -3506,6 +3493,14 @@
           "all"
         ]
       },
+      "InactiveSort": {
+        "type": "string",
+        "description": "`GET /customers/inactive?sort=`.",
+        "enum": [
+          "due",
+          "absent"
+        ]
+      },
       "KindSplit": {
         "type": "object",
         "description": "One amount split like the paper revenue book: package sales vs one-off services.",
@@ -3670,6 +3665,16 @@
           "cash": {
             "type": "integer",
             "format": "int64"
+          },
+          "customer_gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "customer_id": {
             "type": "string",
@@ -4702,13 +4707,13 @@
         "type": "string",
         "description": "Ready-made periods, computed on the server from the spa's own \"today\" (its time zone), so\nevery device agrees on what \"this month\" is. Each has a default granularity.",
         "enum": [
-          "last7_days",
-          "last30_days",
+          "last_7_days",
+          "last_30_days",
           "this_month",
           "last_month",
           "this_year",
-          "last12_months",
-          "last5_years"
+          "last_12_months",
+          "last_5_years"
         ]
       },
       "RangeReport": {
@@ -4721,7 +4726,8 @@
           "totals",
           "series",
           "top_services",
-          "top_packages"
+          "top_packages",
+          "technicians"
         ],
         "properties": {
           "from": {
@@ -4758,6 +4764,13 @@
               "$ref": "#/components/schemas/RangeBucket"
             },
             "description": "Every bucket of the range in order, empty ones included (continuous charts)."
+          },
+          "technicians": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TechnicianDay"
+            },
+            "description": "Every technician who worked in the range, most visits first (same counting as the daily\ndashboard: a visit counts once per technician however many lines they did)."
           },
           "to": {
             "type": "string",
@@ -5528,6 +5541,16 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "customer_gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "customer_id": {
             "type": "string",

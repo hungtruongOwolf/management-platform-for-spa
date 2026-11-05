@@ -146,6 +146,7 @@ pub struct HealthNoteWrite {
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct SearchQuery {
     /// ≥ 3 digits of the phone, or ≥ 2 letters of the name (accents optional). Empty = most recent.
@@ -153,6 +154,7 @@ pub struct SearchQuery {
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct PhoneCheckQuery {
     /// The number as typed (any spacing, 0… or +84…). Normalised like `POST /customers`.

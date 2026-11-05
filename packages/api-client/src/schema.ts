@@ -1122,6 +1122,11 @@ export interface components {
         };
         /** @enum {string} */
         InactiveScope: "with_sessions" | "all";
+        /**
+         * @description `GET /customers/inactive?sort=`.
+         * @enum {string}
+         */
+        InactiveSort: "due" | "absent";
         /** @description One amount split like the paper revenue book: package sales vs one-off services. */
         KindSplit: {
             /** Format: int64 */
@@ -1181,6 +1186,7 @@ export interface components {
             business_date: string;
             /** Format: int64 */
             cash: number;
+            customer_gender?: components["schemas"]["GenderDto"] | null;
             /** Format: uuid */
             customer_id: string;
             customer_name: string;
@@ -1569,7 +1575,7 @@ export interface components {
          *     every device agrees on what "this month" is. Each has a default granularity.
          * @enum {string}
          */
-        RangePreset: "last7_days" | "last30_days" | "this_month" | "last_month" | "this_year" | "last12_months" | "last5_years";
+        RangePreset: "last_7_days" | "last_30_days" | "this_month" | "last_month" | "this_year" | "last_12_months" | "last_5_years";
         /** @description `GET /reports/range`. */
         RangeReport: {
             /** Format: date */
@@ -1579,6 +1585,11 @@ export interface components {
             revenue?: components["schemas"]["Revenue"] | null;
             /** @description Every bucket of the range in order, empty ones included (continuous charts). */
             series: components["schemas"]["RangeBucket"][];
+            /**
+             * @description Every technician who worked in the range, most visits first (same counting as the daily
+             *     dashboard: a visit counts once per technician however many lines they did).
+             */
+            technicians: components["schemas"]["TechnicianDay"][];
             /** Format: date */
             to: string;
             /** @description Top 10 by packages sold. */
@@ -1857,6 +1868,7 @@ export interface components {
             check_in_at: string;
             /** Format: date-time */
             created_at: string;
+            customer_gender?: components["schemas"]["GenderDto"] | null;
             /** Format: uuid */
             customer_id: string;
             customer_name: string;
@@ -2488,12 +2500,12 @@ export interface operations {
     };
     search: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
+            query?: {
                 /** @description ≥ 3 digits of the phone, or ≥ 2 letters of the name (accents optional). Empty = most recent. */
-                q: string | null;
+                q?: string;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -2579,6 +2591,8 @@ export interface operations {
                 kind?: components["schemas"]["CustomerKindFilter"];
                 /** @description Default `all`. */
                 follow_up?: components["schemas"]["FollowUpFilter"];
+                /** @description Default `due` when `follow_up` is `due` or `scheduled`, else `absent`. */
+                sort?: components["schemas"]["InactiveSort"];
                 /** @description Customer name (accent-insensitive, ≥ 2 characters) or phone digits (≥ 3). */
                 q?: string;
                 cursor?: string;
@@ -2623,12 +2637,12 @@ export interface operations {
     };
     phone_check: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
+            query?: {
                 /** @description The number as typed (any spacing, 0… or +84…). Normalised like `POST /customers`. */
-                phone: string | null;
+                phone?: string;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -3145,12 +3159,12 @@ export interface operations {
     };
     list_package_plans: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
+            query?: {
                 /** @description Only items currently on sale (default true). */
-                active: boolean | null;
+                active?: boolean;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -3731,12 +3745,12 @@ export interface operations {
     };
     list_services: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
+            query?: {
                 /** @description Only items currently on sale (default true). */
-                active: boolean | null;
+                active?: boolean;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -3853,12 +3867,12 @@ export interface operations {
     };
     list_staff: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
+            query?: {
                 /** @description Default `active` (pickers only offer people still working here). */
-                status: ("active" | "left" | "all") | null;
+                status?: "active" | "left" | "all";
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -3887,12 +3901,12 @@ export interface operations {
     };
     list_visits: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
+            query?: {
                 /** @description Business day `YYYY-MM-DD`; default today. */
-                date: string | null;
+                date?: string;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

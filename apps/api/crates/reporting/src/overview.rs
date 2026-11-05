@@ -5,7 +5,7 @@
 use crate::cursor;
 use crate::dto::{
     CustomerKind, CustomerKindFilter, FollowUpFilter, InactiveCustomer, InactivePage,
-    InactiveQuery, InactiveScope, LastFollowUp, PackageOverviewCounts, PackageOverviewPage,
+    InactiveQuery, InactiveScope, InactiveSort, LastFollowUp, PackageOverviewCounts, PackageOverviewPage,
     PackageOverviewRow, PackageStatusFilter, PackagesQuery,
 };
 use chrono::{DateTime, NaiveDate, Utc};
@@ -312,13 +312,22 @@ pub async fn inactive(
         FollowUpFilter::NotContacted => "not_contacted",
         FollowUpFilter::Scheduled => "scheduled",
     };
+    let by_due = match query.sort {
+        Some(sort) => sort == InactiveSort::Due,
+        None => matches!(follow_up, "due" | "scheduled"),
+    };
     let (name_like, phone_like) = customer_filter(query.q.as_deref())?;
-    let (a_date, a_id) = match query.cursor.as_deref() {
+    // Cursor = (due key, last seen, id); the due key is a constant when sorting by absence.
+    let (a_key, a_date, a_id) = match query.cursor.as_deref() {
         Some(raw) => {
-            let p = cursor::decode(raw, 2)?;
-            (Some(cursor::date(&p[0])?), Some(cursor::uuid(&p[1])?))
+            let p = cursor::decode(raw, 3)?;
+            (
+                Some(cursor::date(&p[0])?),
+                Some(cursor::date(&p[1])?),
+                Some(cursor::uuid(&p[2])?),
+            )
         }
-        None => (None, None),
+        None => (None, None, None),
     };
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let today = kernel::tenant::profile(&mut tx)
@@ -375,17 +384,28 @@ pub async fn inactive(
                AND (NOT $4::bool OR cand.remaining > 0)
                AND ($10::bool IS NULL OR cand.is_package = $10)
            )
+           , keyed AS (
+             -- Due order: never contacted (0001-01-01), then the planned date, then contacted
+             -- with nothing planned (9999-12-31). By absence: one constant key.
+             SELECT absent.*,
+                    CASE WHEN NOT $12::bool THEN DATE '0001-01-01'
+                         WHEN f_on IS NULL THEN DATE '0001-01-01'
+                         WHEN f_next IS NULL THEN DATE '9999-12-31'
+                         ELSE f_next END AS due_key
+             FROM absent
+             WHERE ($11::text = 'all'
+                    OR ($11 = 'not_contacted' AND f_on IS NULL)
+                    OR ($11 = 'due' AND (f_on IS NULL OR f_next <= $2))
+                    OR ($11 = 'scheduled' AND f_next > $2))
+           )
            SELECT id AS "id!", full_name AS "full_name!", phone_e164 AS "phone!", gender, last_on,
                   last_seen AS "last_seen!", active AS "active!", remaining AS "remaining!",
                   is_package AS "is_package!", f_on AS "f_on?", f_channel AS "f_channel?",
-                  f_outcome AS "f_outcome?", f_next AS "f_next?", f_by AS "f_by?"
-           FROM absent
-           WHERE ($11::text = 'all'
-                  OR ($11 = 'not_contacted' AND f_on IS NULL)
-                  OR ($11 = 'due' AND (f_on IS NULL OR f_next <= $2))
-                  OR ($11 = 'scheduled' AND f_next > $2))
-             AND ($5::date IS NULL OR (last_seen, id) > ($5, $6))
-           ORDER BY last_seen, id
+                  f_outcome AS "f_outcome?", f_next AS "f_next?", f_by AS "f_by?",
+                  due_key AS "due_key!"
+           FROM keyed
+           WHERE ($5::date IS NULL OR (due_key, last_seen, id) > ($13, $5, $6))
+           ORDER BY due_key, last_seen, id
            LIMIT $7"#,
         tenant,
         today,
@@ -397,7 +417,9 @@ pub async fn inactive(
         name_like,
         phone_like,
         kind,
-        follow_up
+        follow_up,
+        by_due,
+        a_key
     )
     .fetch_all(tx.conn())
     .await?;
@@ -408,7 +430,13 @@ pub async fn inactive(
     let next_cursor = more
         .then(|| rows.last())
         .flatten()
-        .map(|r| cursor::encode(&[r.last_seen.to_string(), r.id.to_string()]));
+        .map(|r| {
+            cursor::encode(&[
+                r.due_key.to_string(),
+                r.last_seen.to_string(),
+                r.id.to_string(),
+            ])
+        });
     let mut items = Vec::with_capacity(rows.len());
     for r in rows {
         let last_follow_up = match (r.f_on, r.f_channel, r.f_outcome, r.f_by) {

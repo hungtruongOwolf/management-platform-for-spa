@@ -10,6 +10,7 @@ use crate::dto::{
     TechnicianDay, TopPackage, TopService,
 };
 use chrono::{Datelike, Days, Months, NaiveDate};
+use crm::http::gender_dto;
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use sqlx::PgPool;
 use std::collections::HashMap;
@@ -422,6 +423,24 @@ pub async fn range(
         revenue: with_money.then_some(r.revenue),
     })
     .collect();
+    let technicians = sqlx::query_as!(
+        TechnicianDay,
+        r#"SELECT l.staff_id, st.full_name AS name,
+                  count(DISTINCT v.id) AS "visits!",
+                  coalesce(sum(l.qty) FILTER (WHERE l.source = 'package'), 0)::bigint AS "sessions_used!",
+                  coalesce(sum(l.qty) FILTER (WHERE l.source = 'one_off'), 0)::bigint AS "one_off_services!"
+           FROM app.visit v
+           JOIN app.visit_line l ON l.tenant_id = v.tenant_id AND l.visit_id = v.id
+           JOIN app.staff st ON st.tenant_id = l.tenant_id AND st.id = l.staff_id
+           WHERE v.tenant_id = $1 AND v.business_date BETWEEN $2 AND $3 AND v.status = 'completed'
+           GROUP BY l.staff_id, st.full_name
+           ORDER BY 3 DESC, st.full_name, l.staff_id"#,
+        tenant,
+        from,
+        to
+    )
+    .fetch_all(tx.conn())
+    .await?;
     tx.commit().await?;
 
     let mut buckets: Vec<NaiveDate> = all_days
@@ -463,6 +482,7 @@ pub async fn range(
         series,
         top_services,
         top_packages,
+        technicians,
     })
 }
 
@@ -501,7 +521,7 @@ pub async fn ledger(
     let mut rows = sqlx::query!(
         r#"SELECT b.id AS "id!", b.seq AS "seq!", b.entry AS "entry!",
                   b.business_date AS "business_date!", b.at AS "at!",
-                  b.customer_id AS "customer_id!", c.full_name, b.sale_kind AS "sale_kind!",
+                  b.customer_id AS "customer_id!", c.full_name, c.gender, b.sale_kind AS "sale_kind!",
                   b.one_off, b.package, b.bank_transfer AS "bank_transfer!", b.cash AS "cash!",
                   b.unpaid AS "unpaid!", b.note, b.voided AS "voided!"
            FROM app.revenue_book b
@@ -570,6 +590,7 @@ pub async fn ledger(
                 at: r.at,
                 customer_id: r.customer_id,
                 customer_name: r.full_name,
+                customer_gender: gender_dto(r.gender.as_deref()),
                 kind: SaleKind::parse(&r.sale_kind),
                 one_off: r.one_off,
                 package: r.package,

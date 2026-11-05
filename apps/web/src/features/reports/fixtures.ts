@@ -157,6 +157,7 @@ export function mockRange(from: string, to: string): RangeReport {
       one_off_services: int(r, 2, 20),
     })).sort((a, b) => b.sessions_used + b.one_off_services - a.sessions_used - a.one_off_services),
     top_packages: PACKAGES.map((name, i) => ({ plan_id: `mock-plan-${String(i)}`, name, sold: int(r, 1, 9) })),
+    technicians: [],
   };
 }
 
