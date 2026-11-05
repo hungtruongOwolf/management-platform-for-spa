@@ -35,9 +35,7 @@ pub fn decode(raw: &str, n: usize) -> Result<Vec<String>, AppError> {
     if raw.len() > 512 {
         return Err(invalid());
     }
-    let bytes = URL_SAFE_NO_PAD
-        .decode(raw.trim())
-        .map_err(|_| invalid())?;
+    let bytes = URL_SAFE_NO_PAD.decode(raw.trim()).map_err(|_| invalid())?;
     let text = String::from_utf8(bytes).map_err(|_| invalid())?;
     let parts: Vec<String> = text.split('|').map(str::to_owned).collect();
     if parts.len() == n {
@@ -77,7 +75,8 @@ mod tests {
     #[test]
     fn round_trips_and_rejects_tampering() -> Result<(), AppError> {
         let id = Uuid::now_v7();
-        let at = Utc::now();
+        // Postgres keeps microseconds; the clock may have finer ticks.
+        let at = DateTime::from_timestamp_micros(Utc::now().timestamp_micros()).unwrap_or_default();
         let raw = encode(&[instant_part(at), id.to_string()]);
         let parts = decode(&raw, 2)?;
         assert_eq!(instant(&parts[0])?, at);

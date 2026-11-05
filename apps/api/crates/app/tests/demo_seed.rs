@@ -155,7 +155,12 @@ async fn a_fresh_spa_gets_demo_data_on_every_screen_once(pool: PgPool) -> TestRe
         .await
         .body,
     );
-    assert!(packages.iter().all(|p| p["origin"] == "opening_balance"));
+    // Migrated packages look like any other package: no paper-book flag, just no sale.
+    assert!(
+        packages
+            .iter()
+            .all(|p| p.get("origin").is_none() && p["sale_id"].is_null())
+    );
     assert!(packages.iter().any(|p| p["status"] == "expired"));
     assert!(
         packages

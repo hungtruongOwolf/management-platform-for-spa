@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(DISTINCT customer_id) AS \"n!\" FROM app.visit\n           WHERE tenant_id = $1 AND business_date BETWEEN $2 AND $3 AND status = 'completed'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e878140ffe924edbbfc4abd9f40c7f181e6ccaa9d11171549fa3e95adb8ccab1"
+}

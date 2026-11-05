@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT min(v.business_date) FILTER (WHERE v.status = 'completed') AS first_on,\n                  max(v.business_date) FILTER (WHERE v.status = 'completed') AS last_on,\n                  count(*) FILTER (WHERE v.status = 'completed') AS \"visits!\",\n                  count(*) FILTER (WHERE v.status = 'voided') AS \"voided!\",\n                  coalesce((SELECT sum(l.qty) FROM app.visit_line l\n                            JOIN app.visit v2 ON v2.tenant_id = l.tenant_id AND v2.id = l.visit_id\n                            WHERE l.tenant_id = $1 AND v2.customer_id = $2\n                              AND v2.status = 'completed' AND l.source = 'package'), 0)::bigint\n                    AS \"sessions!\"\n           FROM app.visit v WHERE v.tenant_id = $1 AND v.customer_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "first_on",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "last_on",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "visits!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "voided!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "sessions!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "c222008c3b005a22ab5f01e8dd72c0bae724563cc9297cad27f014735e35dbc8"
+}

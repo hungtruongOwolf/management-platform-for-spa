@@ -1,7 +1,7 @@
 //! Business-day reports: the daily dashboard ("Hôm nay"), the date-range report and the revenue
-//! book. Counts come from `visit` / `visit_line` / `sale`; money from the `app.revenue_book` view
-//! (0013) over `payment`, `sale_line` and `refund`, so the dashboard and the book can never
-//! disagree. Days are `business_date` values the writers computed in the spa's time zone.
+//! book. Counts come from `visit` / `visit_line` / `sale`; money from `payment`, `sale_line` and
+//! `refund`, the same rows the `app.revenue_book` view (0013) lists line by line (tests reconcile
+//! the two). Days are `business_date` values the writers computed in the spa's time zone.
 
 use crate::cursor;
 use crate::dto::{
@@ -121,14 +121,26 @@ impl Books {
         }
 
         if with_money {
+            // Same books as `app.revenue_book`, aggregated without its per-sale descriptions
+            // (a year of sales would pay for thousands of string_agg it then throws away).
+            // A sale is a package sale when it has a package line; refunds are always packages.
             for r in sqlx::query!(
-                r#"SELECT date_trunc($3, b.business_date::timestamp)::date AS "bucket!",
-                          b.entry AS "entry!", b.sale_kind AS "sale_kind!",
-                          coalesce(sum(b.cash), 0)::bigint AS "cash!",
-                          coalesce(sum(b.bank_transfer), 0)::bigint AS "bank_transfer!"
-                   FROM app.revenue_book b
-                   WHERE b.tenant_id = $1 AND b.business_date = ANY($2)
-                   GROUP BY 1, 2, 3"#,
+                r#"SELECT date_trunc($3, p.business_date::timestamp)::date AS "bucket!",
+                          p.kind AS "entry!", p.method AS "method!",
+                          CASE WHEN pk.sale_id IS NULL THEN 'one_off' ELSE 'package' END AS "sale_kind!",
+                          sum(p.amount)::bigint AS "amount!"
+                   FROM app.payment p
+                   LEFT JOIN (SELECT DISTINCT sl.sale_id FROM app.sale_line sl
+                              WHERE sl.tenant_id = $1 AND sl.line_type = 'package') pk
+                     ON pk.sale_id = p.sale_id
+                   WHERE p.tenant_id = $1 AND p.business_date = ANY($2)
+                   GROUP BY 1, 2, 3, 4
+                   UNION ALL
+                   SELECT date_trunc($3, r.business_date::timestamp)::date, 'refund', r.method,
+                          'package', sum(r.amount)::bigint
+                   FROM app.refund r
+                   WHERE r.tenant_id = $1 AND r.business_date = ANY($2)
+                   GROUP BY 1, 2, 3, 4"#,
                 tenant,
                 dates,
                 unit
@@ -138,17 +150,14 @@ impl Books {
             {
                 let money = books.revenue.entry(r.bucket).or_default();
                 let kind = SaleKind::parse(&r.sale_kind);
-                // The book stores outgoing money as negative amounts; the dashboard shows each
-                // book as a positive total and nets them in `settle`.
-                let (target, by_kind, sign) = match r.entry.as_str() {
-                    "sale" => (&mut money.collected, Some(&mut money.collected_by_kind), 1),
-                    "void" => (&mut money.voids, Some(&mut money.voids_by_kind), -1),
-                    _ => (&mut money.refunds, None, -1),
+                let (target, by_kind) = match r.entry.as_str() {
+                    "payment" => (&mut money.collected, Some(&mut money.collected_by_kind)),
+                    "reversal" => (&mut money.voids, Some(&mut money.voids_by_kind)),
+                    _ => (&mut money.refunds, None),
                 };
-                target.add("cash", sign * r.cash);
-                target.add("bank_transfer", sign * r.bank_transfer);
+                target.add(&r.method, r.amount);
                 if let Some(by_kind) = by_kind {
-                    by_kind.add(kind, sign * (r.cash + r.bank_transfer));
+                    by_kind.add(kind, r.amount);
                 }
             }
         }
@@ -342,7 +351,10 @@ pub async fn range(
     .collect();
     tx.commit().await?;
 
-    let mut buckets: Vec<NaiveDate> = all_days.iter().map(|d| bucket_of(*d, granularity)).collect();
+    let mut buckets: Vec<NaiveDate> = all_days
+        .iter()
+        .map(|d| bucket_of(*d, granularity))
+        .collect();
     buckets.dedup();
     let mut totals = DayCounts::default();
     let mut total_money = Revenue::default();
@@ -393,27 +405,26 @@ pub async fn ledger(
     let limit = cursor::limit(limit)?;
     let after = match after {
         Some(raw) => {
-            let p = cursor::decode(raw, 4)?;
-            Some((
-                cursor::date(&p[0])?,
-                cursor::instant(&p[1])?,
-                cursor::integer(&p[2])?,
-                cursor::uuid(&p[3])?,
-            ))
+            let p = cursor::decode(raw, 2)?;
+            Some((cursor::date(&p[0])?, cursor::uuid(&p[1])?))
         }
         None => None,
     };
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let today = today(&mut tx).await?;
     let from = from.unwrap_or(today);
-    let (from, to) = window(Some(from), Some(to.unwrap_or(from)), today, 1, MAX_LEDGER_DAYS)?;
+    let (from, to) = window(
+        Some(from),
+        Some(to.unwrap_or(from)),
+        today,
+        1,
+        MAX_LEDGER_DAYS,
+    )?;
     let tenant = tx.tenant().as_uuid();
-    let (a_day, a_at, a_rank, a_id) = after.map_or((None, None, None, None), |(d, t, r, i)| {
-        (Some(d), Some(t), Some(r), Some(i))
-    });
+    let (a_day, a_seq) = after.map_or((None, None), |(d, q)| (Some(d), Some(q)));
 
     let mut rows = sqlx::query!(
-        r#"SELECT b.id AS "id!", b.entry AS "entry!", b.entry_rank AS "entry_rank!",
+        r#"SELECT b.id AS "id!", b.seq AS "seq!", b.entry AS "entry!",
                   b.business_date AS "business_date!", b.at AS "at!",
                   b.customer_id AS "customer_id!", c.full_name, b.sale_kind AS "sale_kind!",
                   b.one_off, b.package, b.bank_transfer AS "bank_transfer!", b.cash AS "cash!",
@@ -421,17 +432,14 @@ pub async fn ledger(
            FROM app.revenue_book b
            JOIN app.customer c ON c.tenant_id = b.tenant_id AND c.id = b.customer_id
            WHERE b.tenant_id = $1 AND b.business_date BETWEEN $2 AND $3
-             AND ($4::date IS NULL
-                  OR (b.business_date, b.at, b.entry_rank, b.id) > ($4, $5, $6, $7))
-           ORDER BY b.business_date, b.at, b.entry_rank, b.id
-           LIMIT $8"#,
+             AND ($4::date IS NULL OR (b.business_date, b.seq) > ($4, $5))
+           ORDER BY b.business_date, b.seq
+           LIMIT $6"#,
         tenant,
         from,
         to,
         a_day,
-        a_at,
-        a_rank,
-        a_id,
+        a_seq,
         limit + 1
     )
     .fetch_all(tx.conn())
@@ -470,14 +478,7 @@ pub async fn ledger(
     let next_cursor = more
         .then(|| rows.last())
         .flatten()
-        .map(|r| {
-            cursor::encode(&[
-                r.business_date.to_string(),
-                cursor::instant_part(r.at),
-                r.entry_rank.to_string(),
-                r.id.to_string(),
-            ])
-        });
+        .map(|r| cursor::encode(&[r.business_date.to_string(), r.seq.to_string()]));
     Ok(LedgerPage {
         from,
         to,
@@ -520,11 +521,26 @@ mod tests {
     #[test]
     fn buckets_match_postgres_date_trunc() {
         // 2026-11-05 is a Thursday.
-        assert_eq!(bucket_of(d("2026-11-05"), Granularity::Week), d("2026-11-02"));
-        assert_eq!(bucket_of(d("2026-11-02"), Granularity::Week), d("2026-11-02"));
-        assert_eq!(bucket_of(d("2026-11-08"), Granularity::Week), d("2026-11-02"));
-        assert_eq!(bucket_of(d("2026-11-05"), Granularity::Month), d("2026-11-01"));
-        assert_eq!(bucket_of(d("2026-11-05"), Granularity::Day), d("2026-11-05"));
+        assert_eq!(
+            bucket_of(d("2026-11-05"), Granularity::Week),
+            d("2026-11-02")
+        );
+        assert_eq!(
+            bucket_of(d("2026-11-02"), Granularity::Week),
+            d("2026-11-02")
+        );
+        assert_eq!(
+            bucket_of(d("2026-11-08"), Granularity::Week),
+            d("2026-11-02")
+        );
+        assert_eq!(
+            bucket_of(d("2026-11-05"), Granularity::Month),
+            d("2026-11-01")
+        );
+        assert_eq!(
+            bucket_of(d("2026-11-05"), Granularity::Day),
+            d("2026-11-05")
+        );
     }
 
     #[test]
@@ -535,8 +551,14 @@ mod tests {
             Some((d("2026-10-30"), today))
         );
         assert!(window(Some(d("2026-11-06")), Some(today), today, 7, 366).is_err());
-        assert!(window(Some(d("2025-11-05")), Some(today), today, 7, 366).is_ok(), "366 days");
-        assert!(window(Some(d("2025-11-04")), Some(today), today, 7, 366).is_err(), "367 days");
+        assert!(
+            window(Some(d("2025-11-05")), Some(today), today, 7, 366).is_ok(),
+            "366 days"
+        );
+        assert!(
+            window(Some(d("2025-11-04")), Some(today), today, 7, 366).is_err(),
+            "367 days"
+        );
         assert_eq!(
             window(Some(today), Some(today), today, 1, MAX_LEDGER_DAYS).ok(),
             Some((today, today))

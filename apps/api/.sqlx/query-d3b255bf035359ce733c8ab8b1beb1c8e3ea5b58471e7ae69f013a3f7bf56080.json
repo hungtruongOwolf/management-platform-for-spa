@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH ev AS (\n             SELECT 'visit'::text AS kind, 0 AS rank, v.check_in_at AS at, v.business_date, v.id\n             FROM app.visit v WHERE v.tenant_id = $1 AND v.customer_id = $2\n             UNION ALL\n             SELECT 'visit_voided', 1, v.voided_at, (v.voided_at AT TIME ZONE $3)::date, v.id\n             FROM app.visit v\n             WHERE v.tenant_id = $1 AND v.customer_id = $2 AND v.status = 'voided'\n             UNION ALL\n             SELECT 'purchase', 2, s.created_at, s.business_date, s.id\n             FROM app.sale s\n             WHERE s.tenant_id = $1 AND s.customer_id = $2\n               AND NOT EXISTS (SELECT 1 FROM app.visit v WHERE v.tenant_id = s.tenant_id AND v.sale_id = s.id)\n             UNION ALL\n             SELECT 'purchase_voided', 3, s.voided_at, (s.voided_at AT TIME ZONE $3)::date, s.id\n             FROM app.sale s\n             WHERE s.tenant_id = $1 AND s.customer_id = $2 AND s.status = 'voided'\n               AND NOT EXISTS (SELECT 1 FROM app.visit v WHERE v.tenant_id = s.tenant_id AND v.sale_id = s.id)\n             UNION ALL\n             SELECT 'package_cancelled', 4, cp.cancelled_at, (cp.cancelled_at AT TIME ZONE $3)::date, cp.id\n             FROM app.customer_package cp\n             LEFT JOIN app.sale s ON s.tenant_id = cp.tenant_id AND s.id = cp.sale_id\n             WHERE cp.tenant_id = $1 AND cp.customer_id = $2 AND cp.cancelled_at IS NOT NULL\n               AND (s.id IS NULL OR s.status <> 'voided')\n           )\n           SELECT kind AS \"kind!\", rank AS \"rank!\", at AS \"at!\", business_date AS \"business_date!\",\n                  id AS \"id!\"\n           FROM ev\n           WHERE $4::date IS NULL OR (business_date, at, rank, id) < ($4, $5, $6, $7)\n           ORDER BY business_date DESC, at DESC, rank DESC, id DESC\n           LIMIT $8",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kind!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "rank!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "business_date!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Date",
+        "Timestamptz",
+        "Int4",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "d3b255bf035359ce733c8ab8b1beb1c8e3ea5b58471e7ae69f013a3f7bf56080"
+}

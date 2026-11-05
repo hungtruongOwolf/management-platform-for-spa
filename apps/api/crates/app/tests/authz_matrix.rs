@@ -233,7 +233,8 @@ const ROUTES: &[Route] = &[
     route(
         "POST",
         "/api/v1/opening-balances",
-        Access::Perm(P::OpeningBalanceImport, OWNER_MANAGER),
+        // Operator migration since 0013; the transitional route is owner-only.
+        Access::Perm(P::OpeningBalanceImport, OWNER_ONLY),
     )
     .body(opening_balance_body)
     .idempotent(),
@@ -312,6 +313,51 @@ const ROUTES: &[Route] = &[
     .id(Target::Visit)
     .body(void_body)
     .idempotent(),
+    // management views — reporting (read-only)
+    route(
+        "GET",
+        "/api/v1/reports/daily",
+        Access::Perm(P::ReportRead, OWNER_MANAGER),
+    ),
+    route(
+        "GET",
+        "/api/v1/reports/range",
+        Access::Perm(P::ReportRead, OWNER_MANAGER),
+    ),
+    route(
+        "GET",
+        "/api/v1/reports/ledger",
+        Access::Perm(P::ReportRevenueRead, OWNER_MANAGER),
+    ),
+    route(
+        "GET",
+        "/api/v1/customers/inactive",
+        Access::Perm(P::CustomerRead, OWNER_MANAGER),
+    ),
+    // Also needs visit.read + sale.read (same default holders).
+    route(
+        "GET",
+        "/api/v1/customers/{id}/history",
+        Access::Perm(P::CustomerRead, OWNER_MANAGER),
+    )
+    .id(Target::Customer),
+    route(
+        "GET",
+        "/api/v1/customers/{id}/summary",
+        Access::Perm(P::CustomerRead, OWNER_MANAGER),
+    )
+    .id(Target::Customer),
+    route(
+        "GET",
+        "/api/v1/customer-packages/{id}/usage",
+        Access::Perm(P::CustomerRead, OWNER_MANAGER),
+    )
+    .id(Target::CustomerPackage),
+    route(
+        "GET",
+        "/api/v1/packages",
+        Access::Perm(P::CustomerRead, OWNER_MANAGER),
+    ),
 ];
 
 /// Mounted but deliberately left out of the OpenAPI contract. Must answer without a session.

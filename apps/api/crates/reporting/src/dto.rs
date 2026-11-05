@@ -97,10 +97,13 @@ impl Revenue {
     /// Fills the derived `net` fields from the three books.
     pub fn settle(mut self) -> Self {
         self.net = self.collected.minus(self.voids).minus(self.refunds);
-        self.net_by_kind = self.collected_by_kind.minus(self.voids_by_kind).minus(KindSplit {
-            package: self.refunds.total,
-            one_off: 0,
-        });
+        self.net_by_kind = self
+            .collected_by_kind
+            .minus(self.voids_by_kind)
+            .minus(KindSplit {
+                package: self.refunds.total,
+                one_off: 0,
+            });
         self
     }
 

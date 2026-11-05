@@ -7,6 +7,7 @@ mod health;
 pub mod jobs;
 pub mod middleware;
 pub mod openapi;
+pub mod paper_book;
 
 use axum::Router;
 use middleware::HttpPolicy;

@@ -53,10 +53,13 @@ CROSS JOIN LATERAL (
 -- The paper "sổ theo dõi doanh thu hằng ngày", derived from the append-only money tables: one
 -- row per sale (money received for it), per voided sale on the day of its reversals (negative),
 -- and per refund (negative). Summing a day's rows gives that day's net cash movement.
+-- `seq` orders the book inside a day: the UUIDv7 the API minted for the sale, the latest
+-- reversal or the refund, i.e. the order the cashier recorded them (wall-clock columns mix
+-- the API's and the database's clocks).
 -- No GROUP BY over a non-key column in the sale arm (LATERAL instead), so a caller's
 -- `tenant_id` / `business_date` filter is pushed into every arm and hits the day indexes.
 CREATE VIEW app.revenue_book WITH (security_invoker = true) AS
-SELECT s.tenant_id, s.id, 'sale'::text AS entry, 0 AS entry_rank, s.business_date,
+SELECT s.tenant_id, s.id, s.id AS seq, 'sale'::text AS entry, s.business_date,
        s.created_at AS at, s.customer_id, s.id AS sale_id, NULL::uuid AS customer_package_id,
        d.sale_kind, d.one_off, d.package,
        pay.bank_transfer, pay.cash, (s.total - pay.received)::bigint AS unpaid,
@@ -79,11 +82,12 @@ CROSS JOIN LATERAL (
   WHERE sl.tenant_id = s.tenant_id AND sl.sale_id = s.id
 ) d
 UNION ALL
-SELECT v.tenant_id, v.sale_id, 'void', 1, v.business_date, v.at, s.customer_id, s.id, NULL,
+SELECT v.tenant_id, v.sale_id, v.seq, 'void', v.business_date, v.at, s.customer_id, s.id, NULL,
        d.sale_kind, d.one_off, d.package,
        -v.bank_transfer, -v.cash, 0::bigint, s.void_reason, true
 FROM (
   SELECT p.tenant_id, p.sale_id, p.business_date, max(p.paid_at) AS at,
+         (array_agg(p.id ORDER BY p.id DESC))[1] AS seq,
          coalesce(sum(p.amount) FILTER (WHERE p.method = 'bank_transfer'), 0)::bigint AS bank_transfer,
          coalesce(sum(p.amount) FILTER (WHERE p.method = 'cash'), 0)::bigint AS cash
   FROM app.payment p
@@ -101,7 +105,7 @@ CROSS JOIN LATERAL (
   WHERE sl.tenant_id = s.tenant_id AND sl.sale_id = s.id
 ) d
 UNION ALL
-SELECT r.tenant_id, r.id, 'refund', 2, r.business_date, r.created_at, r.customer_id, NULL,
+SELECT r.tenant_id, r.id, r.id, 'refund', r.business_date, r.created_at, r.customer_id, NULL,
        r.customer_package_id, 'package', NULL, cp.name_snapshot,
        CASE WHEN r.method = 'bank_transfer' THEN -r.amount ELSE 0 END,
        CASE WHEN r.method = 'cash' THEN -r.amount ELSE 0 END,

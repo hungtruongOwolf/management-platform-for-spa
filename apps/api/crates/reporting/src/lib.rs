@@ -8,8 +8,8 @@
 //! - [`customer`]: one customer's timeline, summary and per-package usage;
 //! - [`overview`]: packages overview and the re-engagement list.
 
-pub mod customer;
 mod cursor;
+pub mod customer;
 pub mod day;
 pub mod dto;
 pub mod http;

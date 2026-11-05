@@ -1,0 +1,125 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.status, s.subtotal, s.discount_amount, s.discount_reason, s.total,\n                  s.void_reason, s.voided_at, st.full_name AS \"closer_name?\"\n           FROM app.sale s\n           LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id\n           WHERE s.tenant_id = $1 AND s.id = ANY($2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "subtotal",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "subtotal"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "discount_amount",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "discount_amount"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "discount_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "discount_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "total",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "total"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "void_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "void_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "voided_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "voided_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "closer_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.staff",
+            "name": "full_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "e318a4cfeb7d58e9dfc8305f7592eb4b14d243506e194e886ab4b192f7fd5eb2"
+}

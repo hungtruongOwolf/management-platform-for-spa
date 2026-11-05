@@ -175,7 +175,7 @@ fn demo_phone(run: u32, customer: usize) -> String {
     format!("0399{run:02}{:04}", customer + 1)
 }
 
-async fn owner_of(owner: &PgPool, tenant: TenantId) -> anyhow::Result<UserId> {
+pub(crate) async fn owner_of(owner: &PgPool, tenant: TenantId) -> anyhow::Result<UserId> {
     let user: Option<Uuid> = sqlx::query_scalar(
         "SELECT m.user_id FROM app.membership m
          JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
@@ -193,7 +193,11 @@ async fn owner_of(owner: &PgPool, tenant: TenantId) -> anyhow::Result<UserId> {
 }
 
 /// Acts as `user` with exactly the permissions their roles grant (audit names them).
-async fn member_actor(app: &PgPool, user: UserId, tenant: TenantId) -> anyhow::Result<Actor> {
+pub(crate) async fn member_actor(
+    app: &PgPool,
+    user: UserId,
+    tenant: TenantId,
+) -> anyhow::Result<Actor> {
     let permissions = identity::service::tenant_permissions(app, user, tenant)
         .await
         .map_err(fail("read permissions"))?
@@ -408,7 +412,7 @@ struct PackageJson {
     sold_price: i64,
     expires_on: Option<NaiveDate>,
     starts_on: NaiveDate,
-    origin: String,
+    sale_id: Option<Uuid>,
     items: Vec<ItemJson>,
 }
 
@@ -443,7 +447,7 @@ fn packages_in(body: &Value, customer: usize) -> anyhow::Result<Vec<Package>> {
                 expires_on: p.expires_on,
                 sold_on: p.starts_on,
                 sold_price: p.sold_price,
-                from_sale: p.origin == "sale",
+                from_sale: p.sale_id.is_some(),
                 cancelled: false,
                 keep: 0,
             }

@@ -1,0 +1,137 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT l.visit_id, l.service_name_snapshot, l.source, l.customer_package_id,\n                  cp.name_snapshot AS \"package_name?\", l.qty, l.sessions_left_after, l.staff_id,\n                  st.full_name AS staff_name, l.line_value\n           FROM app.visit_line l\n           JOIN app.staff st ON st.tenant_id = l.tenant_id AND st.id = l.staff_id\n           LEFT JOIN app.customer_package cp\n             ON cp.tenant_id = l.tenant_id AND cp.id = l.customer_package_id\n           WHERE l.tenant_id = $1 AND l.visit_id = ANY($2)\n           ORDER BY l.visit_id, l.position",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "visit_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "visit_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "service_name_snapshot",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "service_name_snapshot"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "customer_package_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "customer_package_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "package_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "name_snapshot"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "qty",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "qty"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "sessions_left_after",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "sessions_left_after"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "staff_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "staff_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "staff_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.staff",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "line_value",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "line_value"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2e70e7892f049d01ba376e297b087cd36cbf25354713259ccaacdf26382d39a2"
+}

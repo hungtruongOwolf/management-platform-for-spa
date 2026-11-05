@@ -69,7 +69,7 @@ Thiếu `report.revenue.read` thì response **không chứa** các trường ti�
 ### US3: Sổ doanh thu hằng ngày (bản số của sổ giấy)
 *Là chủ spa / thu ngân, tôi muốn xem sổ doanh thu như sổ giấy: mỗi giao dịch một dòng, cột dịch vụ 1 lần / liệu trình / chuyển khoản / tiền mặt / chưa thanh toán / ghi chú, có cộng từng ngày.*
 - AC3.1: Mỗi hóa đơn = 1 dòng `sale` (tên khách, mô tả dịch vụ lẻ hoặc gói, tiền CK, tiền mặt, chưa thanh toán = 0 ở R1, ghi chú = lý do giảm giá). Hóa đơn bị hủy: dòng gốc giữ nguyên, có cờ `voided`, và một dòng `void` **âm** ở ngày hủy (ghi chú = lý do hủy). Hoàn tiền = một dòng `refund` âm (ghi chú = lý do).
-- AC3.2: Thứ tự như sổ: theo ngày rồi theo giờ. `days[]` có cộng từng ngày (CK, tiền mặt, chưa thanh toán, tổng) cho **mọi ngày trong khoảng**, không chỉ trang hiện tại. Tổng của một ngày = `revenue.net.total` của US1.
+- AC3.2: Thứ tự như sổ: theo ngày rồi theo thứ tự ghi. `days[]` có cộng từng ngày (CK, tiền mặt, chưa thanh toán, tổng) cho **mọi ngày trong khoảng**, không chỉ trang hiện tại. Tổng của một ngày = `revenue.net.total` của US1.
 - AC3.3: Phân trang cursor (`limit` ≤ 100); đi hết các trang thì không thiếu, không trùng dòng.
 - AC3.4 (neg): Cần `report.revenue.read` (sổ này toàn là tiền): quản lý bị tắt quyền → `403`. Khoảng > 92 ngày → `422`.
 
@@ -113,7 +113,7 @@ Không có bảng mới; chỉ đọc. Migration `0013_management_views`:
 Dữ liệu cá nhân trong response: tên + SĐT khách (đã có ở `customer.read`). Không có dữ liệu sức khỏe.
 
 ## 6. Non-functional
-- **Hiệu năng:** p95 đọc < **300 ms** với dữ liệu 3 năm (~44.000 lượt, ~27.000 hóa đơn); đo bằng test bench (`reports.rs::bench_three_years`, chạy tay).
+- **Hiệu năng:** p95 đọc < **300 ms** với dữ liệu 3 năm (~44.000 lượt, ~30.800 hóa đơn); đo bằng test bench `app/tests/reports_bench.rs` (chạy tay, `--ignored`): p95 tệ nhất 150 ms (báo cáo 1 năm theo tháng), xem [backend §3b](../../architecture/backend.md).
 - **Bảo mật:** server là ranh giới tin cậy duy nhất; quyền kiểm ở service; tenant lọc tường minh + RLS; trường tiền không bao giờ gửi cho người thiếu quyền; `Cache-Control: no-store`.
 - **A11y / i18n / thiết bị:** như R1-1 (WCAG 2.2 AA, tiếng Việt, responsive mọi thiết bị).
 

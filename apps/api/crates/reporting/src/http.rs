@@ -2,9 +2,9 @@
 //! (they carry customer and money data), all tenant-scoped by the session.
 
 use crate::dto::{
-    CustomerStats, DailyQuery, DailyReport, HistoryPage, InactivePage, InactiveQuery,
-    LedgerPage, LedgerQuery, PackageOverviewPage, PackageUsage, PackagesQuery, PageQuery,
-    RangeQuery, RangeReport,
+    CustomerStats, DailyQuery, DailyReport, HistoryPage, InactivePage, InactiveQuery, LedgerPage,
+    LedgerQuery, PackageOverviewPage, PackageUsage, PackagesQuery, PageQuery, RangeQuery,
+    RangeReport,
 };
 use crate::{customer, day, overview};
 use axum::extract::{FromRef, Path, Query, State};
@@ -129,14 +129,7 @@ pub async fn customer_history(
     Query(query): Query<PageQuery>,
 ) -> Result<Response, AppError> {
     Ok(no_store(
-        customer::history(
-            &pool,
-            &user.actor,
-            id,
-            query.cursor.as_deref(),
-            query.limit,
-        )
-        .await?,
+        customer::history(&pool, &user.actor, id, query.cursor.as_deref(), query.limit).await?,
     ))
 }
 
@@ -165,7 +158,9 @@ pub async fn package_usage(
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Response, AppError> {
-    Ok(no_store(customer::package_usage(&pool, &user.actor, id).await?))
+    Ok(no_store(
+        customer::package_usage(&pool, &user.actor, id).await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v1/packages", tag = "reports", params(PackagesQuery),
@@ -178,5 +173,7 @@ pub async fn list_packages(
     user: AuthUser,
     Query(query): Query<PackagesQuery>,
 ) -> Result<Response, AppError> {
-    Ok(no_store(overview::packages(&pool, &user.actor, &query).await?))
+    Ok(no_store(
+        overview::packages(&pool, &user.actor, &query).await?,
+    ))
 }

@@ -36,10 +36,7 @@ struct Paid {
 }
 
 /// Payments and reversals of `sale_ids`, per sale.
-async fn payments(
-    tx: &mut TenantTx,
-    sale_ids: &[Uuid],
-) -> Result<HashMap<Uuid, Paid>, AppError> {
+async fn payments(tx: &mut TenantTx, sale_ids: &[Uuid]) -> Result<HashMap<Uuid, Paid>, AppError> {
     let tenant = tx.tenant().as_uuid();
     let mut out: HashMap<Uuid, Paid> = HashMap::new();
     for r in sqlx::query!(
@@ -171,12 +168,15 @@ async fn purchases(
     .fetch_all(tx.conn())
     .await?
     {
-        lines.entry(l.sale_id).or_default().push(HistoryPurchaseLine {
-            description: l.description_snapshot,
-            qty: l.qty,
-            line_total: l.line_total,
-            customer_package_id: l.customer_package_id,
-        });
+        lines
+            .entry(l.sale_id)
+            .or_default()
+            .push(HistoryPurchaseLine {
+                description: l.description_snapshot,
+                qty: l.qty,
+                line_total: l.line_total,
+                customer_package_id: l.customer_package_id,
+            });
     }
     let paid = payments(tx, ids).await?;
     let sales = sqlx::query!(
@@ -264,7 +264,8 @@ fn kind(s: &str) -> Result<HistoryKind, AppError> {
 }
 
 /// `GET /customers/{id}/history?cursor=&limit=` (`customer.read` + `visit.read` + `sale.read`):
-/// newest first. Visits carry their one-off payment (the visit's own sale is not a separate
+/// newest business day first, then newest first within the day (a back-dated record keeps its
+/// day even though its `created_at` is when it was typed). Visits carry their one-off payment (the visit's own sale is not a separate
 /// purchase); a void is its own event at the moment it happened.
 pub async fn history(
     pool: &PgPool,
@@ -277,16 +278,19 @@ pub async fn history(
     let limit = cursor::limit(limit)?;
     let after = match after {
         Some(raw) => {
-            let p = cursor::decode(raw, 3)?;
+            let p = cursor::decode(raw, 4)?;
             Some((
-                cursor::instant(&p[0])?,
-                cursor::integer(&p[1])?,
-                cursor::uuid(&p[2])?,
+                cursor::date(&p[0])?,
+                cursor::instant(&p[1])?,
+                cursor::integer(&p[2])?,
+                cursor::uuid(&p[3])?,
             ))
         }
         None => None,
     };
-    let (a_at, a_rank, a_id) = after.map_or((None, None, None), |(t, r, i)| (Some(t), Some(r), Some(i)));
+    let (a_day, a_at, a_rank, a_id) = after.map_or((None, None, None, None), |(d, t, r, i)| {
+        (Some(d), Some(t), Some(r), Some(i))
+    });
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     require_customer(&mut tx, customer_id).await?;
     let tz = kernel::tenant::profile(&mut tx).await?.timezone.name();
@@ -319,12 +323,13 @@ pub async fn history(
            SELECT kind AS "kind!", rank AS "rank!", at AS "at!", business_date AS "business_date!",
                   id AS "id!"
            FROM ev
-           WHERE $4::timestamptz IS NULL OR (at, rank, id) < ($4, $5, $6)
-           ORDER BY at DESC, rank DESC, id DESC
-           LIMIT $7"#,
+           WHERE $4::date IS NULL OR (business_date, at, rank, id) < ($4, $5, $6, $7)
+           ORDER BY business_date DESC, at DESC, rank DESC, id DESC
+           LIMIT $8"#,
         tenant,
         customer_id,
         tz,
+        a_day,
         a_at,
         a_rank,
         a_id,
@@ -355,6 +360,7 @@ pub async fn history(
 
     let next_cursor = more.then(|| heads.last()).flatten().map(|h| {
         cursor::encode(&[
+            h.business_date.to_string(),
             cursor::instant_part(h.at),
             h.rank.to_string(),
             h.id.to_string(),

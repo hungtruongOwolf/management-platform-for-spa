@@ -122,7 +122,8 @@ pub async fn packages(
         "expiring_within_days",
     )?;
     let expiring = query.expiring_within_days.is_some();
-    let window_i32 = i32::try_from(window).map_err(|_| field("expiring_within_days", "out_of_range"))?;
+    let window_i32 =
+        i32::try_from(window).map_err(|_| field("expiring_within_days", "out_of_range"))?;
     let (name_like, phone_like) = customer_filter(query.q.as_deref())?;
     let status_filter = query.status.map(PackageStatusFilter::as_str);
     let after = query
@@ -214,10 +215,8 @@ pub async fn packages(
         .await?
     };
     // `status` narrows the expiring list too (only `active` can match it).
-    if expiring {
-        if let Some(wanted) = status_filter {
-            rows.retain(|r| r.status == wanted);
-        }
+    if let (true, Some(wanted)) = (expiring, status_filter) {
+        rows.retain(|r| r.status == wanted);
     }
 
     let mut counts = PackageOverviewCounts::default();
@@ -390,7 +389,10 @@ mod tests {
         assert!(customer_filter(Some("09")).is_err());
         assert!(customer_filter(Some("a")).is_err());
         assert!(customer_filter(Some(&"x".repeat(101))).is_err());
-        assert!(customer_filter(Some("50%_")).is_ok(), "LIKE wildcards are escaped");
+        assert!(
+            customer_filter(Some("50%_")).is_ok(),
+            "LIKE wildcards are escaped"
+        );
         Ok(())
     }
 
