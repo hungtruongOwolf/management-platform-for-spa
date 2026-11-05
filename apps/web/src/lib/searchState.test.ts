@@ -43,7 +43,7 @@ describe("search schemas", () => {
     expect(packagesSearch.validate({ status: "cancelled" })).toEqual({ status: "cancelled" });
     // Every customer, "Cần liên hệ" first (EM round 3 items 4 and 16).
     expect(inactiveSearch.defaults).toEqual({ days: 7, scope: "all", kind: "all", follow: "due", q: "" });
-    expect(inactiveSearch.validate({ days: "30", scope: "with_sessions" })).toEqual({ days: 30, scope: "with_sessions" });
+    expect(inactiveSearch.validate({ days: "30", scope: "with_sessions", follow: "not_contacted" })).toEqual({ days: 30, scope: "with_sessions" });
     expect(reportsSearch.validate({ period: "5y", from: "not-a-date" })).toEqual({});
     expect(customersSearch.validate({ q: "Hà" })).toEqual({ q: "Hà" });
   });

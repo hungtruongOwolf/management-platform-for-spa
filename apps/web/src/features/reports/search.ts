@@ -25,7 +25,8 @@ export const packagesSearch = searchSchema({
 export const THRESHOLDS = [7, 14, 30, 60, 90] as const;
 export const INACTIVE_SCOPES = ["all", "with_sessions"] as const satisfies readonly InactiveScope[];
 export const CUSTOMER_KINDS = ["all", "package", "one_off"] as const satisfies readonly CustomerKindFilter[];
-export const FOLLOW_UP_FILTERS = ["due", "not_contacted", "scheduled", "all"] as const satisfies readonly FollowUpFilter[];
+/** The three tabs of the absent list (EM 2026-11-05): who to call now, who is planned, everyone. */
+export const FOLLOW_UP_FILTERS = ["due", "scheduled", "all"] as const satisfies readonly FollowUpFilter[];
 
 /**
  * /khach-lau-khong-quay-lai: threshold, scope (every customer by default: EM round 3 item 4),

@@ -18,12 +18,21 @@ export const OUTCOME_LABEL: Record<FollowUpOutcome, string> = {
   other: "Khác",
 };
 
-/** Days until the suggested next try, per outcome; `null` = nothing to plan (the server agrees for no_answer: +3). */
+/**
+ * Suggested next try per outcome (lead decision 2026-11-05, the only copy in the web app): days
+ * after the contact, or `null` for no date. Pre-filled as soon as the outcome is picked; a date
+ * the user types always wins. The server applies the same rule when no date is sent.
+ */
 export const NEXT_TRY_DAYS: Record<FollowUpOutcome, number | null> = {
   no_answer: 3,
   will_come: 7,
-  other: 7,
   not_interested: null,
+  other: null,
+};
+
+/** Hint shown instead of a suggestion, per outcome without one. */
+export const NO_NEXT_TRY_HINT: Partial<Record<FollowUpOutcome, string>> = {
+  not_interested: "Không nhắc lại trong 90 ngày.",
 };
 
 /** The API keeps contacts up to 30 days back, never in the future. */

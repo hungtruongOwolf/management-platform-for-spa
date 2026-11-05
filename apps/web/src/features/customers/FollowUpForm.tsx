@@ -8,6 +8,7 @@ import {
   CHANNEL_LABEL,
   CONTACT_MAX_DAYS_BACK,
   NEXT_TRY_DAYS,
+  NO_NEXT_TRY_HINT,
   OUTCOME_LABEL,
   createFollowUp,
   invalidateAfterFollowUp,
@@ -180,7 +181,7 @@ export function FollowUpForm({
               )}
             </>
           ) : (
-            "Khách chưa có nhu cầu: không cần hẹn lại."
+            NO_NEXT_TRY_HINT[outcome]
           )}
           {next !== "" && (
             <button

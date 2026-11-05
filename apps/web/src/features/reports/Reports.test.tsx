@@ -218,6 +218,8 @@ describe("management lists", () => {
     // The seeded customer called 3 days ago with no answer is due again today.
     expect(await within(screen.getByRole("table", { name: "Khách lâu không quay lại" })).findByText(/Đến hạn/)).toBeInTheDocument();
 
+    expect(screen.getAllByRole("button", { name: /^(Cần liên hệ|Đã hẹn|Tất cả)$/ })).toHaveLength(3);
+    expect(screen.queryByRole("button", { name: "Chưa liên hệ" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Đã hẹn" }));
     await user.selectOptions(screen.getByLabelText("Loại khách"), "package");
     await waitFor(() => {
@@ -248,7 +250,7 @@ describe("management lists", () => {
   it("“Đã liên hệ” records a contact with a suggested next date, then refreshes the list", async () => {
     const spy = serveManagement({ permissions: [...MANAGER, "customer.follow_up"] });
     const user = userEvent.setup();
-    at("/khach-lau-khong-quay-lai?follow=not_contacted");
+    at("/khach-lau-khong-quay-lai");
     const table = await screen.findByRole("table", { name: "Khách lâu không quay lại" });
     const [first] = within(table).getAllByRole("button", { name: /^Đã liên hệ với / });
     const name = (first?.getAttribute("aria-label") ?? "").replace("Đã liên hệ với ", "");
@@ -257,6 +259,12 @@ describe("management lists", () => {
     expect(within(form).getByLabelText("Ngày liên hệ")).toHaveValue(spaToday());
     // "Không nghe máy" is the default outcome: try again in 3 days (the server's rule too).
     expect(within(form).getByLabelText("Hẹn liên hệ lại")).toHaveValue(addDays(spaToday(), 3));
+    // Each outcome pre-fills its rule before saving (lead decision): other → empty, not interested → hint.
+    await user.click(within(form).getByLabelText("Khác"));
+    expect(within(form).getByLabelText("Hẹn liên hệ lại")).toHaveValue("");
+    await user.click(within(form).getByLabelText("Chưa có nhu cầu"));
+    expect(within(form).getByLabelText("Hẹn liên hệ lại")).toHaveValue("");
+    expect(within(form).getByText("Không nhắc lại trong 90 ngày.")).toBeInTheDocument();
     await user.click(within(form).getByLabelText("Hẹn sẽ quay lại"));
     expect(within(form).getByLabelText("Hẹn liên hệ lại")).toHaveValue(addDays(spaToday(), 7));
     await user.selectOptions(within(form).getByLabelText("Cách liên hệ"), "zalo");
@@ -276,7 +284,7 @@ describe("management lists", () => {
       note: "Hẹn thứ bảy",
       next_follow_up_on: addDays(spaToday(), 7),
     });
-    // The list was invalidated: the contacted customer left "Chưa liên hệ".
+    // The list was invalidated: planned in 7 days, the customer left "Cần liên hệ".
     await waitFor(() => {
       expect(within(screen.getByRole("table", { name: "Khách lâu không quay lại" })).queryByRole("button", { name: `Đã liên hệ với ${name}` })).not.toBeInTheDocument();
     });

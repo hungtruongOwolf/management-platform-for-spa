@@ -16,7 +16,6 @@ import { EmptyState, ErrorState, ManagementOnly, PageHeader, RowsSkeleton } from
 
 const FOLLOW_UPS: [FollowUpFilter, string][] = [
   ["due", "Cần liên hệ"],
-  ["not_contacted", "Chưa liên hệ"],
   ["scheduled", "Đã hẹn"],
   ["all", "Tất cả"],
 ];
