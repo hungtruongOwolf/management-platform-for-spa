@@ -11,8 +11,14 @@ parts): lotus, ring, script wordmark, yin-yang with leaves and the curved taglin
 
 - apps/web/src/assets/brand/emblem.svg — the whole logo, black, used as a CSS mask so the app
   recolours it with tokens (gold on the maroon chrome, maroon on cream).
-- apps/web/public/ favicon.svg, favicon-32.png, apple-touch-icon.png, icons/icon-*.png — the whole
-  logo in gold on the chrome maroon.
+- apps/web/public/ favicon.svg, favicon.ico (16/32/48), favicon-16.png, favicon-32.png,
+  apple-touch-icon.png, icons/icon-*.png — the whole logo in gold on the chrome maroon.
+
+Tab-size legibility (EM round 4 item 9): the line art is ~4 source px thick, so at 16-48 px it fades
+into the maroon. Small icons fill the tile almost edge to edge and thicken the strokes first (a max
+filter on the alpha in the PNGs, a same-colour stroke in the SVG). Nothing is removed or redrawn:
+the whole logo stays, only bolder. Bump ICON_VERSION when the art changes: browsers cache favicons
+hard, and index.html links them with `?v=ICON_VERSION`.
 """
 
 import os
@@ -20,7 +26,7 @@ import sys
 
 import numpy as np
 import potrace
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 LOGO = os.path.join("docs for reference", "logo Viên phúc y đường transparent.png")
@@ -34,6 +40,12 @@ PUBLIC = os.path.join(ROOT, "apps", "web", "public")
 
 MAROON = (0x5A, 0x1D, 0x18)  # tokens.css --chrome-bg (light)
 GOLD = (0xE3, 0xB4, 0x55)  # tokens.css --chrome-accent
+# Cache-busting version in apps/web/index.html icon links (`?v=`); bump when the art changes.
+ICON_VERSION = 4
+# Stroke growth (source px, odd) per icon size: enough to survive downsampling, not enough to blob.
+GROW = {16: 15, 32: 11, 48: 9, 180: 5}
+# SVG favicon stroke (source px): Chrome rasterises it at 16/32 px in the tab.
+SVG_STROKE = 12
 
 
 def num(v):
@@ -89,7 +101,11 @@ def square(alpha):
     return Image.fromarray(sq, "L")
 
 
-def png_icon(logo, size, logo_frac, radius_frac, name):
+def tile(logo, size, logo_frac, radius_frac):
+    """The logo in gold on a maroon (optionally rounded) square, strokes grown for small sizes."""
+    grow = GROW.get(size, 1)
+    if grow > 1:
+        logo = logo.filter(ImageFilter.MaxFilter(grow))
     img = Image.new("RGBA", (size, size), MAROON + (255,))
     if radius_frac:
         big = Image.new("L", (size * 4, size * 4), 0)
@@ -99,6 +115,11 @@ def png_icon(logo, size, logo_frac, radius_frac, name):
     gold = Image.new("RGBA", (m, m), GOLD + (255,))
     gold.putalpha(logo.resize((m, m), Image.LANCZOS))
     img.alpha_composite(gold, ((size - m) // 2, (size - m) // 2))
+    return img
+
+
+def png_icon(logo, size, logo_frac, radius_frac, name):
+    img = tile(logo, size, logo_frac, radius_frac)
     path = os.path.join(PUBLIC, name)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     # A small palette: flat two-colour art, ~10x smaller than RGBA.
@@ -115,12 +136,14 @@ def main():
     w, h, d = write_svg("emblem.svg", ink, 6)
 
     # Favicon: the whole logo in gold on a rounded maroon tile (colours baked in: a favicon cannot use tokens).
-    side = max(w, h) * 1.16
+    # 4 % margin (was 16 %): at 16 px every pixel of the tile counts.
+    side = max(w, h) * 1.04
     fav = (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {s} {s}">'
         '<rect width="{s}" height="{s}" rx="{r}" fill="#5a1d18"/>'
-        '<path fill="#e3b455" transform="translate({tx} {ty})" d="{d}"/></svg>\n'
-    ).format(s=num(side), r=num(side * 0.2), tx=num((side - w) / 2), ty=num((side - h) / 2), d=d)
+        '<path fill="#e3b455" stroke="#e3b455" stroke-width="{sw}" stroke-linejoin="round" '
+        'transform="translate({tx} {ty})" d="{d}"/></svg>\n'
+    ).format(s=num(side), r=num(side * 0.2), sw=SVG_STROKE, tx=num((side - w) / 2), ty=num((side - h) / 2), d=d)
     with open(os.path.join(PUBLIC, "favicon.svg"), "w", encoding="utf-8", newline="\n") as fh:
         fh.write(fav)
     print("favicon.svg", os.path.getsize(os.path.join(PUBLIC, "favicon.svg")))
@@ -131,7 +154,13 @@ def main():
     # Maskable: launchers crop to a circle of 80% diameter, so the art stays inside ~62%.
     png_icon(logo, 512, 0.62, 0, "icons/icon-maskable-512.png")
     png_icon(logo, 180, 0.78, 0, "apple-touch-icon.png")
-    png_icon(logo, 32, 0.94, 0.18, "favicon-32.png")
+    png_icon(logo, 32, 0.98, 0.18, "favicon-32.png")
+    png_icon(logo, 16, 1.0, 0.18, "favicon-16.png")
+    # favicon.ico: what Windows, bookmarks and old tabs ask for at /favicon.ico (16, 32, 48 inside).
+    icons = [tile(logo, n, 0.98, 0.18) for n in (16, 32, 48)]
+    ico = os.path.join(PUBLIC, "favicon.ico")
+    icons[2].save(ico, format="ICO", sizes=[(16, 16), (32, 32), (48, 48)], append_images=icons[:2])
+    print("favicon.ico", os.path.getsize(ico))
 
 
 if __name__ == "__main__":

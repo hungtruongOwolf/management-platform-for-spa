@@ -599,7 +599,7 @@ impl Spa<'_> {
                     {"package_plan_id": self.catalog.plan(PLANS[0].name)?, "sold_price": 790_000,
                      "starts_on": day(-176), "expires_on": day(5), "gift_note": "Đã nhận dầu gội",
                      "items": [item("Thư Giãn", 10, 2, 6)?]},
-                    {"name": "Xông chân 10 buổi (sổ cũ)", "sold_price": 1_200_000,
+                    {"name": "Xông chân 10 buổi", "sold_price": 1_200_000,
                      "starts_on": day(-200), "expires_on": day(-3),
                      "items": [item("Xông chân thảo dược + Massage chân", 10, 0, 3)?]},
                 ]}),
@@ -615,7 +615,7 @@ impl Spa<'_> {
             (
                 6,
                 json!({"customer_id": self.customers[6].id, "packages": [
-                    {"name": "Cổ vai gáy 10 buổi (sổ cũ)", "sold_price": 2_000_000,
+                    {"name": "Cổ vai gáy 10 buổi", "sold_price": 2_000_000,
                      "starts_on": day(-90),
                      "items": [item("An Kiên Lạc", 10, 0, 6)?]},
                 ]}),
