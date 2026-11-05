@@ -45,7 +45,8 @@ echo "== api";       pnpm -s check:api
 echo "== lint";      pnpm -s lint
 echo "== typecheck"; pnpm -s typecheck
 echo "== test";      pnpm -s --filter web exec vitest run --no-file-parallelism
-pnpm -s -r --filter '!web' test
+# Root's `test` is `pnpm -r test`, so a `!web` filter would rerun web through the root.
+pnpm -s --filter @vpyd/ui test
 echo "== extra";     pnpm -s check:extra
 if [ "$e2e" = "--e2e" ]; then
   echo "== e2e";     pnpm -s e2e
