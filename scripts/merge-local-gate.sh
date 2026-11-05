@@ -34,6 +34,8 @@ cd "$wt"
 git -c user.name=gate -c user.email=gate@localhost merge -q --no-edit origin/main \
   || { echo "PR #$pr conflicts with main — merge origin/main into $head first"; exit 1; }
 
+# The e2e stack and the sqlx tests read the repo's .env (gitignored, so absent from a fresh worktree).
+cp "$repo_root/.env" "$wt/.env"
 set -a; . "$repo_root/.env"; set +a
 export SQLX_OFFLINE=true CARGO_INCREMENTAL=0
 export CARGO_TARGET_DIR="${GATE_CARGO_TARGET_DIR:-$work_base/target}"
