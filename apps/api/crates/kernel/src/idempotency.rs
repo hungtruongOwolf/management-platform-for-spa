@@ -20,12 +20,38 @@ pub enum Claim {
     Replay { status: u16, body: Value },
 }
 
+/// Fingerprint of a request for idempotency: method, route template, the record the path names
+/// (if any) and the canonical body. A key reused on another endpoint or record is therefore a
+/// mismatch (422), never a replay of a different operation's response, even when the bodies
+/// happen to be identical (e.g. `{"reason": …}` on cancel vs. void).
+///
+/// Each field is length-prefixed, so no two different inputs serialise to the same bytes.
+pub fn hash_route(method: &str, route: &str, record: Option<Uuid>, body: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"vpyd.idempotency.v2");
+    for part in [method.as_bytes(), route.as_bytes()] {
+        hasher.update((part.len() as u64).to_be_bytes());
+        hasher.update(part);
+    }
+    match record {
+        Some(id) => {
+            hasher.update([1]);
+            hasher.update(id.as_bytes());
+        }
+        None => hasher.update([0]),
+    }
+    hasher.update(body);
+    hasher.finalize().into()
+}
+
+/// Body-only fingerprint. Legacy: prefer [`hash_route`], which also binds method and route.
 pub fn hash_request(body: &[u8]) -> [u8; 32] {
     Sha256::digest(body).into()
 }
 
 /// Hash of a request acting on one record (`POST /visits/{id}/void`, …): the record id is part
 /// of it, so a key reused on another record is a mismatch (422), never a replay of the first.
+/// Legacy: prefer [`hash_route`], which also binds method and route.
 pub fn hash_request_on(record: Uuid, body: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(record.as_bytes());
@@ -129,5 +155,47 @@ mod tests {
         let (a, b) = (Uuid::now_v7(), Uuid::now_v7());
         assert_eq!(hash_request_on(a, b"{}"), hash_request_on(a, b"{}"));
         assert_ne!(hash_request_on(a, b"{}"), hash_request_on(b, b"{}"));
+    }
+
+    #[test]
+    fn route_hash_binds_method_route_and_record() {
+        let id = Uuid::now_v7();
+        let body = br#"{"reason":"x"}"#;
+        let cancel = hash_route("POST", "/customer-packages/{id}/cancel", Some(id), body);
+        assert_eq!(
+            cancel,
+            hash_route("POST", "/customer-packages/{id}/cancel", Some(id), body)
+        );
+        assert_ne!(
+            cancel,
+            hash_route("POST", "/customer-packages/{id}/extend", Some(id), body),
+            "same body, other endpoint"
+        );
+        assert_ne!(
+            cancel,
+            hash_route("PUT", "/customer-packages/{id}/cancel", Some(id), body)
+        );
+        assert_ne!(
+            cancel,
+            hash_route(
+                "POST",
+                "/customer-packages/{id}/cancel",
+                Some(Uuid::now_v7()),
+                body
+            )
+        );
+        assert_ne!(
+            hash_route("POST", "/sales", None, body),
+            hash_route("POST", "/visits", None, body)
+        );
+        // Length prefixes: moving bytes between fields never collides.
+        assert_ne!(
+            hash_route("POST", "/a", None, b"b"),
+            hash_route("POST", "/ab", None, b"")
+        );
+        assert_ne!(
+            hash_route("POS", "T/a", None, b""),
+            hash_route("POST", "/a", None, b"")
+        );
     }
 }

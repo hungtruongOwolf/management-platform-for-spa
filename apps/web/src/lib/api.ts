@@ -64,9 +64,16 @@ export function ifMatch(version: number): Record<string, string> {
   return { "If-Match": `"${String(version)}"` };
 }
 
+/**
+ * Control characters, space and backslash. URL parsers strip tab/CR/LF and treat "\" as "/",
+ * so "/\t/evil.example" would turn into the protocol-relative "//evil.example".
+ */
+// eslint-disable-next-line no-control-regex
+const UNSAFE_PATH_CHARS = /[\x00-\x20\\]/;
+
 /** Only same-app paths may be used as post-login destinations (prevents open redirects). */
 export function safeNextPath(next: unknown): string {
-  if (typeof next !== "string" || !next.startsWith("/") || next.startsWith("//") || next.includes("\\")) {
+  if (typeof next !== "string" || !next.startsWith("/") || next.startsWith("//") || UNSAFE_PATH_CHARS.test(next)) {
     return "/";
   }
   return next;

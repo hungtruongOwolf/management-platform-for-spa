@@ -14,7 +14,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use crm::FieldCipher;
 use identity::AuthUser;
 use kernel::http::{IdempotencyKey, IfMatch, etag};
-use kernel::idempotency::{hash_request, hash_request_on};
+use kernel::idempotency::hash_route;
 use kernel::{AppError, FieldError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -262,7 +262,7 @@ pub async fn import_opening_balance(
         &cipher,
         &user.actor,
         key,
-        hash_request(&canonical),
+        hash_route("POST", "/opening-balances", None, &canonical),
         &input,
     )
     .await?;
@@ -272,9 +272,10 @@ pub async fn import_opening_balance(
     ))
 }
 
-/// Parses a JSON body and hashes its canonical form (sorted keys) together with the package id,
-/// so a genuine retry replays and the same key on another package is a mismatch.
+/// Parses a JSON body and hashes its canonical form (sorted keys) together with the route and the
+/// package id, so a genuine retry replays and the same key on another package or action is a mismatch.
 fn canonical<T: serde::de::DeserializeOwned>(
+    route: &str,
     id: Uuid,
     body: &[u8],
 ) -> Result<(T, [u8; 32]), AppError> {
@@ -282,7 +283,7 @@ fn canonical<T: serde::de::DeserializeOwned>(
     let value: Value = serde_json::from_slice(body).map_err(|_| invalid())?;
     let bytes = serde_json::to_vec(&value).map_err(|e| AppError::Internal(e.to_string()))?;
     let input = serde_json::from_value(value).map_err(|_| invalid())?;
-    Ok((input, hash_request_on(id, &bytes)))
+    Ok((input, hash_route("POST", route, Some(id), &bytes)))
 }
 
 fn with_etag(body: Value) -> Response {
@@ -311,7 +312,7 @@ pub async fn extend_package(
     IdempotencyKey(key): IdempotencyKey,
     body: Bytes,
 ) -> Result<Response, AppError> {
-    let (input, hash): (PackageExtend, _) = canonical(id, &body)?;
+    let (input, hash): (PackageExtend, _) = canonical("/customer-packages/{id}/extend", id, &body)?;
     let (_, body) = lifecycle::extend(&pool, &user.actor, key, hash, id, version, &input).await?;
     Ok(with_etag(body))
 }
@@ -333,7 +334,7 @@ pub async fn cancel_package(
     IdempotencyKey(key): IdempotencyKey,
     body: Bytes,
 ) -> Result<Response, AppError> {
-    let (input, hash): (PackageCancel, _) = canonical(id, &body)?;
+    let (input, hash): (PackageCancel, _) = canonical("/customer-packages/{id}/cancel", id, &body)?;
     let (_, body) = lifecycle::cancel(&pool, &user.actor, key, hash, id, &input).await?;
     Ok(with_etag(body))
 }
