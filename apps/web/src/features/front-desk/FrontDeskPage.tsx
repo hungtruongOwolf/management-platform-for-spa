@@ -21,6 +21,7 @@ import {
 } from "react";
 import { useAfterFirstPaint } from "../../lib/afterFirstPaint";
 import { ApiError } from "../../lib/api";
+import { invalidateManagementViews } from "../../lib/invalidate";
 import { serviceLabel } from "../../lib/names";
 import { CustomerName } from "../../app/CustomerName";
 import { messageFor } from "../../lib/errors";
@@ -164,6 +165,7 @@ export function FrontDeskPage() {
       await queryClient.invalidateQueries({
         queryKey: ["customer-packages", visit.customer_id],
       });
+      void invalidateManagementViews(queryClient, visit.customer_id);
       showToast(savedSummary(visit));
       resetVisit();
     },
@@ -876,6 +878,7 @@ function TodayVisits() {
                         void queryClient.invalidateQueries({
                           queryKey: ["customer-packages"],
                         });
+                        void invalidateManagementViews(queryClient, voided.customer_id);
                       }}
                     />
                   </div>
