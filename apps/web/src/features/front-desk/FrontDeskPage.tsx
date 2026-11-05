@@ -812,7 +812,7 @@ function TodayVisits() {
                 <span
                   className={`min-w-0 ${v.status === "voided" ? "text-text-muted" : ""}`}
                 >
-                  <strong>{timeOf(v.check_in_at)}</strong> · <CustomerName name={v.customer_name} gender={(v as { customer_gender?: string | null }).customer_gender} />
+                  <strong>{timeOf(v.check_in_at)}</strong> · <CustomerName name={v.customer_name} gender={v.customer_gender} />
                   {v.status === "voided" && (
                     <span className="badge badge-danger ml-2 align-middle">
                       Đã hủy

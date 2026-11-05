@@ -1,8 +1,20 @@
-import type { FollowUp, FollowUpCreate, InactiveCustomer } from "@vpyd/api-client";
+import type {
+  FollowUp,
+  FollowUpCreate,
+  InactiveCustomer,
+} from "@vpyd/api-client";
 import { vi } from "vitest";
 import { spaToday } from "../corrections/api";
 import type { PackageFilter } from "./api";
-import { mockCustomerStats, mockDaily, mockHistory, mockInactive, mockLedger, mockPackages, mockRange } from "./fixtures";
+import {
+  mockCustomerStats,
+  mockDaily,
+  mockHistory,
+  mockInactive,
+  mockLedger,
+  mockPackages,
+  mockRange,
+} from "./fixtures";
 
 /** Test-only fake of the API for the management views, contract-shaped (fixtures.ts). */
 export interface FakeOptions {
@@ -28,15 +40,35 @@ interface State {
 }
 
 /** Same rule as the server (overview.rs): due = never contacted, or the planned day has come. */
-function matchesFollowUp(c: InactiveCustomer, filter: string, today: string): boolean {
+function matchesFollowUp(
+  c: InactiveCustomer,
+  filter: string,
+  today: string,
+): boolean {
   if (filter === "not_contacted") return !c.last_follow_up;
-  if (filter === "due") return !c.last_follow_up || (c.next_follow_up_on != null && c.next_follow_up_on <= today);
-  if (filter === "scheduled") return c.next_follow_up_on != null && c.next_follow_up_on > today;
+  if (filter === "due")
+    return (
+      !c.last_follow_up ||
+      (c.next_follow_up_on != null && c.next_follow_up_on <= today)
+    );
+  if (filter === "scheduled")
+    return c.next_follow_up_on != null && c.next_follow_up_on > today;
   return true;
 }
 
-function route(method: string, url: URL, body: unknown, options: FakeOptions, state: State): { status: number; json: unknown } {
-  const { permissions, withoutRevenue = false, searchHits = [], takenPhones = {} } = options;
+function route(
+  method: string,
+  url: URL,
+  body: unknown,
+  options: FakeOptions,
+  state: State,
+): { status: number; json: unknown } {
+  const {
+    permissions,
+    withoutRevenue = false,
+    searchHits = [],
+    takenPhones = {},
+  } = options;
   const ok = (json: unknown) => ({ status: 200, json });
   const q = url.searchParams;
   const p = url.pathname.replace(/^\/api\/v1/, "");
@@ -44,10 +76,17 @@ function route(method: string, url: URL, body: unknown, options: FakeOptions, st
   if (p === "/me") return ok(ME(permissions));
   if (p === "/customers" && q.has("q")) return ok(searchHits);
   if (p === "/customers/phone-check") {
-    const digits = (q.get("phone") ?? "").replace(/\D/g, "").replace(/^84/, "0");
+    const digits = (q.get("phone") ?? "")
+      .replace(/\D/g, "")
+      .replace(/^84/, "0");
     const valid = /^0[35789]\d{8}$/.test(digits);
     const hit = valid ? takenPhones[digits] : undefined;
-    return ok({ valid, taken: hit !== undefined, existing_id: hit?.id ?? null, full_name: hit?.name ?? null });
+    return ok({
+      valid,
+      taken: hit !== undefined,
+      existing_id: hit?.id ?? null,
+      full_name: hit?.name ?? null,
+    });
   }
   if (p === "/reports/daily") {
     const d = mockDaily(q.get("date") ?? today);
@@ -60,7 +99,11 @@ function route(method: string, url: URL, body: unknown, options: FakeOptions, st
   }
   if (p === "/reports/range") {
     const g = q.get("granularity");
-    const r = mockRange(q.get("from") ?? today, q.get("to") ?? today, g === "week" || g === "month" || g === "year" ? g : "day");
+    const r = mockRange(
+      q.get("from") ?? today,
+      q.get("to") ?? today,
+      g === "week" || g === "month" || g === "year" ? g : "day",
+    );
     if (withoutRevenue) {
       delete r.revenue;
       for (const b of r.series) delete b.revenue;
@@ -70,24 +113,60 @@ function route(method: string, url: URL, body: unknown, options: FakeOptions, st
     return ok(r);
   }
   if (p === "/reports/ledger") {
-    if (withoutRevenue) return { status: 403, json: { type: "about:blank", title: "Forbidden", status: 403, code: "auth.forbidden" } };
+    if (withoutRevenue)
+      return {
+        status: 403,
+        json: {
+          type: "about:blank",
+          title: "Forbidden",
+          status: 403,
+          code: "auth.forbidden",
+        },
+      };
     return ok(mockLedger(q.get("from") ?? today, q.get("to") ?? today));
   }
   if (p === "/customers/inactive") {
-    const page = mockInactive(today, Number(q.get("days") ?? "7"), state.followUps);
+    const page = mockInactive(
+      today,
+      Number(q.get("days") ?? "7"),
+      state.followUps,
+    );
     const kind = q.get("kind");
     const term = (q.get("q") ?? "").toLowerCase();
     const items = page.items
       .filter((c) => matchesFollowUp(c, q.get("follow_up") ?? "all", today))
       .filter((c) => !kind || c.kind === kind)
-      .filter((c) => q.get("scope") !== "with_sessions" || c.sessions_remaining > 0)
-      .filter((c) => !term || c.full_name.toLowerCase().includes(term) || c.phone.includes(term));
+      .filter(
+        (c) => q.get("scope") !== "with_sessions" || c.sessions_remaining > 0,
+      )
+      .filter(
+        (c) =>
+          !term ||
+          c.full_name.toLowerCase().includes(term) ||
+          c.phone.includes(term),
+      );
+    // Server default (overview.rs): by due date (never contacted first) for due/scheduled, else by absence.
+    const follow = q.get("follow_up") ?? "all";
+    const sort =
+      q.get("sort") ??
+      (follow === "due" || follow === "scheduled" ? "due" : "absent");
+    if (sort === "due")
+      items.sort(
+        (a, b) =>
+          (a.next_follow_up_on ?? "").localeCompare(
+            b.next_follow_up_on ?? "",
+          ) || b.days_absent - a.days_absent,
+      );
     // Two pages: the first half, then the rest behind a cursor.
     const half = Math.ceil(items.length / 2);
     return ok(
       q.get("cursor")
         ? { ...page, items: items.slice(half), next_cursor: null }
-        : { ...page, items: items.slice(0, half), next_cursor: items.length > half ? "page-2" : null },
+        : {
+            ...page,
+            items: items.slice(0, half),
+            next_cursor: items.length > half ? "page-2" : null,
+          },
     );
   }
   const followUps = /^\/customers\/([^/]+)\/follow-ups$/.exec(p);
@@ -110,10 +189,14 @@ function route(method: string, url: URL, body: unknown, options: FakeOptions, st
       state.followUps.unshift(saved);
       return { status: 201, json: saved };
     }
-    return ok({ items: state.followUps.filter((f) => f.customer_id === customerId), has_more: false });
+    return ok({
+      items: state.followUps.filter((f) => f.customer_id === customerId),
+      has_more: false,
+    });
   }
   // Any customer id (lists link to mock-customer-N): one profile, so a test can click through.
-  const profile = /^\/customers\/(?!inactive$)([^/]+)(\/history|\/summary)?$/.exec(p);
+  const profile =
+    /^\/customers\/(?!inactive$)([^/]+)(\/history|\/summary)?$/.exec(p);
   if (profile) {
     const id = profile[1] ?? "c1";
     if (profile[2] === "/history") {
@@ -122,21 +205,38 @@ function route(method: string, url: URL, body: unknown, options: FakeOptions, st
       const kind = q.get("kind");
       const events = page.events
         .filter((e) => !kind || e.kind === kind)
-        .filter((e) => !q.get("from") || e.business_date >= (q.get("from") ?? ""))
+        .filter(
+          (e) => !q.get("from") || e.business_date >= (q.get("from") ?? ""),
+        )
         .filter((e) => !q.get("to") || e.business_date <= (q.get("to") ?? ""))
         .filter(
           (e) =>
             !term ||
-            (e.visit?.lines ?? []).some((l) => `${l.service_name} ${l.category_name} ${l.staff_name} ${l.package_name ?? ""}`.toLowerCase().includes(term)) ||
-            (e.purchase?.lines ?? []).some((l) => l.description.toLowerCase().includes(term)),
+            (e.visit?.lines ?? []).some((l) =>
+              `${l.service_name} ${l.category_name} ${l.staff_name} ${l.package_name ?? ""}`
+                .toLowerCase()
+                .includes(term),
+            ) ||
+            (e.purchase?.lines ?? []).some((l) =>
+              l.description.toLowerCase().includes(term),
+            ),
         );
       return ok({ ...page, events });
     }
-    if (profile[2] === "/summary") return ok(mockCustomerStats(id, mockHistory(id, today)));
-    return ok({ id, full_name: "Nguyễn Thị Hà", phone: "0905 111 222", gender: "female", version: 1 });
+    if (profile[2] === "/summary")
+      return ok(mockCustomerStats(id, mockHistory(id, today)));
+    return ok({
+      id,
+      full_name: "Nguyễn Thị Hà",
+      phone: "0905 111 222",
+      gender: "female",
+      version: 1,
+    });
   }
   if (p === "/packages") {
-    const filter: PackageFilter = q.get("expiring_within_days") ? "expiring" : ((q.get("status") as PackageFilter | null) ?? "all");
+    const filter: PackageFilter = q.get("expiring_within_days")
+      ? "expiring"
+      : ((q.get("status") as PackageFilter | null) ?? "all");
     return ok(mockPackages(today, filter, q.get("q") ?? ""));
   }
   return ok([]);
@@ -146,10 +246,29 @@ function route(method: string, url: URL, body: unknown, options: FakeOptions, st
 export function serveManagement(options: FakeOptions) {
   const state: State = { followUps: [] };
   return vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
-    const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    const method = init?.method ?? (input instanceof Request ? input.method : "GET");
-    const body: unknown = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
-    const { status, json } = route(method.toUpperCase(), new URL(raw, "http://app.test"), body, options, state);
-    return Promise.resolve(Response.json(json, { status, headers: status >= 400 ? { "content-type": "application/problem+json" } : {} }));
+    const raw =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    const method =
+      init?.method ?? (input instanceof Request ? input.method : "GET");
+    const body: unknown =
+      typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
+    const { status, json } = route(
+      method.toUpperCase(),
+      new URL(raw, "http://app.test"),
+      body,
+      options,
+      state,
+    );
+    return Promise.resolve(
+      Response.json(json, {
+        status,
+        headers:
+          status >= 400 ? { "content-type": "application/problem+json" } : {},
+      }),
+    );
   });
 }

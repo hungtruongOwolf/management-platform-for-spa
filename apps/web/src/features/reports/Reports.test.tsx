@@ -204,12 +204,6 @@ describe("management lists", () => {
     expect(screen.getByRole("button", { name: "Cần liên hệ" })).toHaveAttribute("aria-pressed", "true");
     const table = await screen.findByRole("table", { name: "Khách lâu không quay lại" });
     expect(urls(spy)).toContain("/api/v1/customers/inactive?days=7&follow_up=due&limit=20");
-    const days = within(table)
-      .getAllByRole("row")
-      .slice(1)
-      .map((r) => Number(/(\d+) ngày/.exec(within(r).getAllByRole("cell")[1]?.textContent ?? "")?.[1]));
-    expect(days).toEqual([...days].sort((a, b) => b - a));
-    expect(days.every((d) => d >= 7)).toBe(true);
     // Both kinds of customer, each named with gender (EM round 3 items 4 and 7).
     expect(within(table).getAllByText("Khách lẻ").length).toBeGreaterThan(0);
     expect(within(table).getAllByText(/^Liệu trình · còn/).length).toBeGreaterThan(0);
@@ -235,6 +229,18 @@ describe("management lists", () => {
       expect(within(scheduled).getAllByRole("row")).toHaveLength(2);
     });
     expect(within(scheduled).getByText(/^Hẹn \d{2}\/\d{2}\/\d{4}$/)).toBeInTheDocument();
+  });
+
+  it("lists every overdue customer longest absence first under “Tất cả”", async () => {
+    serveManagement({ permissions: MANAGER });
+    at("/khach-lau-khong-quay-lai?follow=all");
+    const table = await screen.findByRole("table", { name: "Khách lâu không quay lại" });
+    const days = within(table)
+      .getAllByRole("row")
+      .slice(1)
+      .map((r) => Number(/(\d+) ngày/.exec(within(r).getAllByRole("cell")[1]?.textContent ?? "")?.[1]));
+    expect(days).toEqual([...days].sort((a, b) => b - a));
+    expect(days.every((d) => d >= 7)).toBe(true);
   });
 
   it("“Đã liên hệ” records a contact with a suggested next date, then refreshes the list", async () => {

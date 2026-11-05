@@ -5,9 +5,9 @@ import { serviceLabel } from "../../lib/names";
 import { useSearchState } from "../../lib/searchState";
 import { can, meQuery } from "../auth/session";
 import { spaToday } from "../corrections/api";
-import { compactVnd, dailyReportQuery, longDay, rangeReportQuery, shortDay, weekdayOf } from "./api";
+import { compactVnd, longDay, rangeReportQuery, shortDay, weekdayOf } from "./api";
 import { SplitBar } from "./charts";
-import type { RangeBucket, RangeReport, Revenue, TechnicianDay } from "./contract";
+import type { RangeBucket, RangeReport, Revenue } from "./contract";
 import { LedgerTab } from "./LedgerTab";
 import { LineChart } from "./LineChart";
 import {
@@ -473,17 +473,11 @@ function Breakdown({ range, bucket }: { range: RangeReport; bucket: Bucket }) {
   );
 }
 
-/**
- * Technicians over the period when the range report carries them; until then (contract adapter)
- * the last day of the period from the daily report, named as such.
- */
+/** Each technician's visits, sessions and one-off services over the period, most visits first. */
 function TechniciansCard({ range, period }: { range: RangeReport | undefined; period: Period }) {
-  const fromRange = (range as (RangeReport & { technicians?: TechnicianDay[] }) | undefined)?.technicians;
-  const daily = useQuery({ ...dailyReportQuery(period.to), enabled: range !== undefined && fromRange === undefined });
-  const technicians = fromRange ?? daily.data?.technicians;
-  const scope = fromRange ? period.label : period.to === spaToday() ? "hôm nay" : `ngày ${shortDay(period.to)}`;
+  const technicians = range?.technicians;
   return (
-    <CardList title={`Kỹ thuật viên · ${scope}`} icon="users">
+    <CardList title={`Kỹ thuật viên · ${period.label}`} icon="users">
       {!technicians ? (
         <RowsSkeleton rows={4} />
       ) : technicians.length === 0 ? (
@@ -545,7 +539,7 @@ function TopServices({ range, label }: { range: RangeReport | undefined; label: 
             <li key={s.service_id} className="flex items-center gap-3">
               <Rank i={i} />
               <span className="min-w-0 flex-1">
-                <span className="block truncate">{serviceLabel(s.name, (s as { category_name?: string | null }).category_name)}</span>
+                <span className="block truncate">{serviceLabel(s.name, s.category_name)}</span>
                 {s.one_off_revenue != null && s.one_off_revenue > 0 && (
                   <span className="block text-xs text-text-muted tabular">lẻ {money(s.one_off_revenue)}</span>
                 )}

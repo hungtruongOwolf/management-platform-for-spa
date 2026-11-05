@@ -172,6 +172,22 @@ function bucketStart(d: string, granularity: RangeReport["granularity"]): string
   return d;
 }
 
+function rangeTechnicians(from: string, to: string): RangeReport["technicians"] {
+  const byId = new Map<string, RangeReport["technicians"][number]>();
+  for (let d = from; d <= to; d = addDays(d, 1)) {
+    for (const t of mockDaily(d).technicians) {
+      const sum = byId.get(t.staff_id);
+      byId.set(
+        t.staff_id,
+        sum
+          ? { ...sum, visits: sum.visits + t.visits, sessions_used: sum.sessions_used + t.sessions_used, one_off_services: sum.one_off_services + t.one_off_services }
+          : { ...t },
+      );
+    }
+  }
+  return [...byId.values()].sort((a, b) => b.visits - a.visits);
+}
+
 export function mockRange(from: string, to: string, granularity: RangeReport["granularity"] = "day"): RangeReport {
   const series: RangeReport["series"] = [];
   for (let d = from; d <= to; d = addDays(d, 1)) {
@@ -204,7 +220,7 @@ export function mockRange(from: string, to: string, granularity: RangeReport["gr
       one_off_services: int(r, 2, 20),
     })).sort((a, b) => b.sessions_used + b.one_off_services - a.sessions_used - a.one_off_services),
     top_packages: PACKAGES.map((name, i) => ({ plan_id: `mock-plan-${String(i)}`, name, sold: int(r, 1, 9) })),
-    technicians: [],
+    technicians: rangeTechnicians(from, to),
   };
 }
 
