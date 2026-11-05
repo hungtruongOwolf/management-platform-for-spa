@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { ownerState, stack } from "../stack";
+import { ageRecentAuth } from "../support/db";
 import {
   credentials,
   expectAccessible,
@@ -158,23 +159,21 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     await cancel.getByLabel(/Số tiền hoàn/).fill("300.000");
     await cancel.getByLabel("Lý do hủy").fill("Khách chuyển nhà");
     await expectAccessible(page, "profile-cancel");
+    // 🔒: make the owner's last password confirmation older than the 5-minute window, so the
+    // re-auth dialog always appears (a fresh sign-in would otherwise skip it non-deterministically).
+    await ageRecentAuth(credentials().phone);
     await cancel.getByRole("button", { name: /Hủy và hoàn 300\.000/ }).click();
 
-    // 🔒: the owner's sign-in may be older than the 5-minute window by now.
     const reauth = page.getByRole("dialog", { name: "Xác nhận lại mật khẩu" });
     const done = page
       .getByRole("status")
       .filter({ hasText: /Đã hủy .* và hoàn 300\.000/ });
-    await expect(reauth.or(done)).toBeVisible();
-    if (await reauth.isVisible()) {
-      await expectAccessible(page, "reauth-dialog");
-      await reauth.getByLabel("Mật khẩu").fill(credentials().password);
-      await reauth.getByRole("button", { name: "Xác nhận" }).click();
-      await reauth
-        .getByLabel(/Mã xác thực hai bước/)
-        .fill(await nextTotpCode());
-      await reauth.getByRole("button", { name: "Xác nhận" }).click();
-    }
+    await expect(reauth).toBeVisible();
+    await expectAccessible(page, "reauth-dialog");
+    await reauth.getByLabel("Mật khẩu").fill(credentials().password);
+    await reauth.getByRole("button", { name: "Xác nhận" }).click();
+    await reauth.getByLabel(/Mã xác thực hai bước/).fill(await nextTotpCode());
+    await reauth.getByRole("button", { name: "Xác nhận" }).click();
     await expect(done).toBeVisible();
     const row = packages.getByRole("listitem").first();
     await expect(row).toContainText("Đã hủy: Khách chuyển nhà");
