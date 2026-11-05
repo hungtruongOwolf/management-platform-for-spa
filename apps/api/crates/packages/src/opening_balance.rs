@@ -10,11 +10,9 @@ use crm::FieldCipher;
 use crm::http::CustomerCreate;
 use crm::service::ProfileInput;
 use kernel::audit::{self, AuditEntry};
-use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
-use sqlx::PgPool;
+use serde_json::json;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -43,12 +41,84 @@ pub struct OpeningPackageCreate {
     /// Package name; defaults to the plan's name. Required without a plan.
     pub name: Option<String>,
     pub gift_note: Option<String>,
-    /// Price the customer originally paid, in đồng (for the per-session value; not revenue).
+    /// Price of the package in the paper book, in đồng (per-session value, refund cap).
     pub sold_price: i64,
+    /// Money the customer paid for it on paper, in đồng (0 – 10 000 000 000, default 0). Above 0,
+    /// it is booked as an ordinary sale + payment on `paid_on`: revenue of that day, in the
+    /// ledger, the reports, the history and "Đã chi", like any other sale.
+    #[serde(default)]
+    pub paid_amount: i64,
+    /// Day it was paid (the paper date), required when `paid_amount` > 0; not in the future.
+    pub paid_on: Option<NaiveDate>,
+    /// Default `cash`.
+    pub method: Option<PaperMethodDto>,
     /// Original registration date (not in the future).
     pub starts_on: NaiveDate,
     pub expires_on: Option<NaiveDate>,
     pub items: Vec<OpeningItemCreate>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PaperMethodDto {
+    Cash,
+    BankTransfer,
+}
+
+impl PaperMethodDto {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Cash => "cash",
+            Self::BankTransfer => "bank_transfer",
+        }
+    }
+}
+
+/// What the customer paid on paper for one package, validated: booked as a sale by the caller
+/// (`sales::paper`), which owns the money books.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PaperPayment {
+    pub amount: Money,
+    pub paid_on: NaiveDate,
+    pub method: PaperMethodDto,
+}
+
+/// Checks a paper payment; `None` = nothing was paid. Field names are relative to the package.
+pub fn paper_payment(
+    amount: i64,
+    paid_on: Option<NaiveDate>,
+    method: Option<PaperMethodDto>,
+    today: NaiveDate,
+) -> Result<Option<PaperPayment>, Vec<FieldError>> {
+    let mut errors = Vec::new();
+    let amount = match Money::vnd(amount) {
+        Ok(m) if m.is_enterable() => m,
+        Ok(_) => {
+            errors.push(FieldError::new("paid_amount", "out_of_range"));
+            Money::ZERO
+        }
+        Err(_) => {
+            errors.push(FieldError::new("paid_amount", "negative"));
+            Money::ZERO
+        }
+    };
+    let paid = amount > Money::ZERO;
+    match paid_on {
+        None if paid => errors.push(FieldError::new("paid_on", "required")),
+        Some(_) if !paid && errors.is_empty() => {
+            errors.push(FieldError::new("paid_on", "not_allowed"));
+        }
+        Some(d) if d > today => errors.push(FieldError::new("paid_on", "in_future")),
+        _ => {}
+    }
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+    Ok(paid_on.filter(|_| paid).map(|paid_on| PaperPayment {
+        amount,
+        paid_on,
+        method: method.unwrap_or(PaperMethodDto::Cash),
+    }))
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -105,7 +175,7 @@ async fn build(
     customer_id: Uuid,
     p: &OpeningPackageCreate,
     today: NaiveDate,
-) -> Result<NewPackage, AppError> {
+) -> Result<(NewPackage, Option<PaperPayment>), AppError> {
     let mut errors = Vec::new();
     let plan = match p.package_plan_id {
         Some(id) => Some(
@@ -130,6 +200,13 @@ async fn build(
         Err(_) => {
             errors.push(FieldError::new("sold_price", "negative"));
             Money::ZERO
+        }
+    };
+    let paid = match paper_payment(p.paid_amount, p.paid_on, p.method, today) {
+        Ok(paid) => paid,
+        Err(more) => {
+            errors.extend(more);
+            None
         }
     };
     if p.starts_on > today {
@@ -182,28 +259,38 @@ async fn build(
         );
     }
     if errors.is_empty() {
-        Ok(package)
+        Ok((package, paid))
     } else {
         Err(AppError::Validation(errors))
     }
 }
 
-/// `POST /opening-balances` (`opening_balance.import`; `customer.write` too when creating the
-/// customer). Returns the HTTP status and body, also stored under the idempotency key so a
-/// double submit replays them without importing twice.
+/// What [`import_in`] created: the customer and, per package in request order, its id and the
+/// paper payment the caller must book (`sales::paper`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Imported {
+    pub customer_id: Uuid,
+    pub customer_created: bool,
+    pub packages: Vec<(Uuid, Option<PaperPayment>)>,
+}
+
+/// The opening-balance use case (`opening_balance.import`; `customer.write` too when creating
+/// the customer) inside the caller's transaction: resolves or creates the customer and creates
+/// the packages (`origin = opening_balance`, no sale). The paper money is validated here and
+/// booked by the caller in the same transaction, so a package and its money land together.
+/// `sales::paper::import_opening_balance` wraps it for `POST /opening-balances` and the CLI.
 ///
 /// Errors: no/both customer fields → `422 customer_id exactly_one`; unknown customer or plan
 /// (or another spa's) → `404`; duplicate phone → `409 customer.phone_taken` + `existing_id`;
 /// field errors are prefixed `customer.` / `packages[j].` (e.g.
-/// `packages[0].items[0].sessions_remaining exceeds_total`, AC8.4).
-pub async fn import(
-    pool: &PgPool,
+/// `packages[0].items[0].sessions_remaining exceeds_total`, AC8.4, `packages[0].paid_on required`).
+pub async fn import_in(
+    tx: &mut TenantTx,
     cipher: &FieldCipher,
     actor: &Actor,
-    key: Uuid,
-    request_hash: [u8; 32],
     input: &OpeningBalanceCreate,
-) -> Result<(u16, Value), AppError> {
+    today: NaiveDate,
+) -> Result<Imported, AppError> {
     actor.require(Permission::OpeningBalanceImport)?;
     let mut shape = Vec::new();
     if input.customer_id.is_some() == input.customer.is_some() {
@@ -215,38 +302,18 @@ pub async fn import(
     if !shape.is_empty() {
         return Err(AppError::Validation(shape));
     }
-
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
-    if let Claim::Replay { status, body } =
-        idempotency::claim(&mut tx, actor, key, request_hash).await?
-    {
-        tx.commit().await?;
-        return Ok((status, body));
-    }
-    // The packages land on today's business day, so anyone who may import may do it any day;
-    // correcting an earlier day follows the closed-day rule (EM decision 2026-11-05, AC8.6).
-    let today = kernel::tenant::profile(&mut tx)
-        .await?
-        .business_date
-        .as_naive();
-
     let (customer_id, customer_created) = match (&input.customer_id, &input.customer) {
         (Some(id), _) => {
-            if !crm::service::exists_in(&mut tx, *id).await? {
+            if !crm::service::exists_in(tx, *id).await? {
                 return Err(AppError::NotFound);
             }
             (*id, false)
         }
         (None, Some(c)) => {
-            let created = crm::service::create_in(
-                &mut tx,
-                cipher,
-                actor,
-                profile(c),
-                c.health_note.as_deref(),
-            )
-            .await
-            .map_err(|e| prefixed("customer.", e))?;
+            let created =
+                crm::service::create_in(tx, cipher, actor, profile(c), c.health_note.as_deref())
+                    .await
+                    .map_err(|e| prefixed("customer.", e))?;
             (created.row.id, true)
         }
         (None, None) => return Err(AppError::Internal("customer shape unchecked".into())),
@@ -256,7 +323,7 @@ pub async fn import(
     let mut built = Vec::with_capacity(input.packages.len());
     let mut errors = Vec::new();
     for (j, p) in input.packages.iter().enumerate() {
-        match build(&mut tx, customer_id, p, today).await {
+        match build(tx, customer_id, p, today).await {
             Ok(package) => built.push(package),
             Err(e) => match prefixed(&format!("packages[{j}]."), e) {
                 AppError::Validation(more) => errors.extend(more),
@@ -269,14 +336,14 @@ pub async fn import(
     }
 
     let mut created = Vec::with_capacity(built.len());
-    for (j, package) in built.iter().enumerate() {
-        let p = service::create(&mut tx, actor, package)
+    for (j, (package, paid)) in built.iter().enumerate() {
+        let p = service::create(tx, actor, package)
             .await
             .map_err(|e| prefixed(&format!("packages[{j}]."), e))?;
-        created.push(p);
+        created.push((p.id, *paid));
     }
     audit::record(
-        &mut tx,
+        tx,
         actor,
         AuditEntry {
             action: "opening_balance.import",
@@ -285,22 +352,38 @@ pub async fn import(
             before: None,
             after: Some(json!({
                 "customer_created": customer_created,
-                "customer_package_ids": created.iter().map(|p| p.id).collect::<Vec<_>>(),
+                "customer_package_ids": created.iter().map(|(id, _)| id).collect::<Vec<_>>(),
             })),
             reason: None,
         },
     )
     .await?;
-
-    let dto = OpeningBalanceDto {
+    Ok(Imported {
         customer_id,
         customer_created,
-        customer_packages: created.into_iter().map(CustomerPackageDto::from).collect(),
-    };
-    let body = serde_json::to_value(&dto).map_err(|e| AppError::Internal(e.to_string()))?;
-    idempotency::complete(&mut tx, actor, key, 201, &body).await?;
-    tx.commit().await?;
-    Ok((201, body))
+        packages: created,
+    })
+}
+
+/// The response of `POST /opening-balances`, read after the paper money is booked (so each
+/// package's `sale_id` is set when it was paid).
+pub async fn dto(
+    tx: &mut TenantTx,
+    imported: &Imported,
+    today: NaiveDate,
+) -> Result<OpeningBalanceDto, AppError> {
+    let mut customer_packages = Vec::with_capacity(imported.packages.len());
+    for (id, _) in &imported.packages {
+        let p = service::load(tx, *id, today)
+            .await?
+            .ok_or_else(|| AppError::Internal("imported package vanished".into()))?;
+        customer_packages.push(CustomerPackageDto::from(p));
+    }
+    Ok(OpeningBalanceDto {
+        customer_id: imported.customer_id,
+        customer_created: imported.customer_created,
+        customer_packages,
+    })
 }
 
 #[cfg(test)]

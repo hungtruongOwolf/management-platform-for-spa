@@ -1324,6 +1324,7 @@ export interface components {
             expires_on?: string | null;
             gift_note?: string | null;
             items: components["schemas"]["OpeningItemCreate"][];
+            method?: components["schemas"]["PaperMethodDto"] | null;
             /** @description Package name; defaults to the plan's name. Required without a plan. */
             name?: string | null;
             /**
@@ -1334,7 +1335,19 @@ export interface components {
             package_plan_id?: string | null;
             /**
              * Format: int64
-             * @description Price the customer originally paid, in đồng (for the per-session value; not revenue).
+             * @description Money the customer paid for it on paper, in đồng (0 – 10 000 000 000, default 0). Above 0,
+             *     it is booked as an ordinary sale + payment on `paid_on`: revenue of that day, in the
+             *     ledger, the reports, the history and "Đã chi", like any other sale.
+             */
+            paid_amount?: number;
+            /**
+             * Format: date
+             * @description Day it was paid (the paper date), required when `paid_amount` > 0; not in the future.
+             */
+            paid_on?: string | null;
+            /**
+             * Format: int64
+             * @description Price of the package in the paper book, in đồng (per-session value, refund cap).
              */
             sold_price: number;
             /**
@@ -1495,6 +1508,8 @@ export interface components {
             /** @description The visit was voided and its sessions were put back. */
             voided: boolean;
         };
+        /** @enum {string} */
+        PaperMethodDto: "cash" | "bank_transfer";
         PaymentCreate: {
             /**
              * Format: int64
@@ -3147,7 +3162,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Packages created without a sale or payment. Deprecated: owner-only until the import screen is gone; the team migrates with `app import-paper-book` */
+            /** @description Paper-book packages; each `paid_amount` > 0 is booked as a sale + payment on its `paid_on` (revenue of that day). Owner-only; the team migrates with `app import-paper-book` */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -3189,7 +3204,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description validation_failed (fields prefixed customer. / packages[j].), idempotency.key_reuse_mismatch */
+            /** @description validation_failed (fields prefixed customer. / packages[j]., e.g. packages[0].paid_on required / in_future, packages[0].paid_amount negative / out_of_range), idempotency.key_reuse_mismatch */
             422: {
                 headers: {
                     [name: string]: unknown;

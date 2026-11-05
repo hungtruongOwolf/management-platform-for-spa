@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.sale\n             (id, tenant_id, branch_id, customer_id, business_date, subtotal, total, amount_paid,\n              created_by, created_at, source)\n           VALUES ($1, $2, $3, $4, $5, $6, $6, $6, $7, $8, 'paper_book')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Int8",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "934e08c4d4da2c060a51d3df22f4e624fdc9ece049e6baa2a0ef69a06ab82be1"
+}

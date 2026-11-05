@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.sale_line\n             (id, tenant_id, sale_id, line_type, package_plan_id, customer_package_id,\n              description_snapshot, qty, unit_price, line_total, position)\n           VALUES ($1, $2, $3, 'package', $4, $5, $6, 1, $7, $7, 0)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9369e3af25c0dc2d73ea7646b5d62cdf3239dd8b3d53cb0527d2558e5189d859"
+}

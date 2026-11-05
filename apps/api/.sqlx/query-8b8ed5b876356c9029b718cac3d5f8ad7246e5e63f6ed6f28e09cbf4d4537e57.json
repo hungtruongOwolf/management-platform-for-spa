@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, (cancelled_at IS NOT NULL) AS \"cancelled!\"\n           FROM app.customer_package WHERE tenant_id = $1 AND sale_id = $2\n           ORDER BY id FOR UPDATE",
+  "query": "SELECT id, (cancelled_at IS NOT NULL) AS \"cancelled!\"\n           FROM app.customer_package WHERE tenant_id = $1 AND sale_id = $2 AND origin = 'sale'\n           ORDER BY id FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -32,5 +32,5 @@
       null
     ]
   },
-  "hash": "088f4c77b547784b37a029132ecc3b4353dd506b1b35208e7a6151b814591bd2"
+  "hash": "8b8ed5b876356c9029b718cac3d5f8ad7246e5e63f6ed6f28e09cbf4d4537e57"
 }

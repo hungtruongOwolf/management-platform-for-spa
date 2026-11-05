@@ -625,7 +625,7 @@ impl Spa<'_> {
             let input: packages::opening_balance::OpeningBalanceCreate =
                 serde_json::from_value(body).context("opening balance body")?;
             let (key, hash) = idempotency();
-            let (_, reply) = packages::opening_balance::import(
+            let (_, reply) = sales::paper::import_opening_balance(
                 self.app,
                 self.cipher,
                 &self.owner,
