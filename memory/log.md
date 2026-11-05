@@ -242,3 +242,10 @@ Ops: `ingest`, `query`, `lint`, `record`, `decision`, `skip`.
 - EM chọn Vercel + Supabase cho đơn giản ([raw](raw/2026-11-05-em-simplify-owner-and-opening-balance.md)). ADR-0005 cập nhật; runbook [vercel-staging](wiki/runbooks/vercel-staging.md).
 - Supabase staging đã dựng: app_rw (NOBYPASSRLS), migrations 0001–0011, REVOKE anon/authenticated, tenant + chủ spa + menu 35 dịch vụ.
 - Vercel project `vien-phuc-y-duong`: Services (web Vite tĩnh + API container, pdx1), TLS verify-full với Supabase Root 2021 CA. Smoke test: `/`, `/api/v1/health` 200, `/api/v1/me` 401, CSP/HSTS có, đăng nhập chủ spa → `mfa_enroll`.
+
+## [2026-11-05] record | Brand redesign "Trà thất Đông y" (nâu đỏ / vàng / trắng / kem)
+- EM: UI "hơi xấu", giao việc phối 4 màu đặc trưng cho "sinh động và tinh tế" ([raw](raw/2026-11-05-em-brand-colors-and-demo-data.md)). Branch `feat/brand-redesign`. Skip stage: không spec riêng (thuần visual), đi thẳng frontend-design → build.
+- Palette trong `tokens.css` (bảng + quy tắc ở [design-system](wiki/design/design-system.md)): primary nâu đỏ `#7A2620`, khung app `#5A1D18 → #74271F`, vàng `#B07D24` (UI) / `#8A6114` (chữ) / `#E3B455` (trên nâu đỏ), nền kem `#FAF4E8`, card trắng; dark nâu trà ấm. `packages/ui/src/tokens/contrast.test.ts` kiểm 34 cặp × 2 theme (WCAG AA) và 2 khối dark giống nhau.
+- UI: header nâu đỏ + logo sen SVG inline (`BrandMark`) + wordmark vàng; `AuthFrame` cho đăng nhập/MFA; trang chủ có khung chào + lối tắt theo quyền; viền input `border-strong` 3.47:1 (cũ ~1.3:1); nút chính ánh sơn mài; badge trạng thái gói; thanh số buổi ở quầy; avatar chữ cái ở danh sách khách; toast nâu đỏ viền vàng.
+- Bug: `/quay` tràn ngang 48px khi có dòng trong giỏ (select dịch vụ lẻ rộng theo option dài nhất) → `w-56`, E2E assert không scroll ngang. Toast lỗi dark: chữ trắng trên `#FF8A80` (~2:1) → chữ `surface` (7.85).
+- Perf: critical path JS 121.7 → 123.1 KB gzip (+1.4 KB; ngân sách 125, còn ~2 KB); CSS 5.4 → 6.7 KB gzip. Không thêm dependency, không đổi font. Không sửa `opening-balance`, `corrections/*`, `ReauthDialog` (agent khác đang làm), các màn đó nhận style qua tokens + element polish.
