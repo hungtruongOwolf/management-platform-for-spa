@@ -52,6 +52,30 @@ export function navFor(me: Me | null): NavGroup[] {
     .filter((g) => g.items.length > 0);
 }
 
+/**
+ * Short names of the screens, for a back control whose destination has no PageHeader title (the
+ * front desk, home). Paths not listed fall back to the nearest listed parent.
+ */
+const SCREEN_LABELS: Record<string, string> = {
+  "/": "Tổng quan",
+  "/quay": "Quầy",
+  "/khach-hang": "Khách hàng",
+  "/khach-lau-khong-quay-lai": "Lâu không quay lại",
+  "/goi-lieu-trinh": "Theo dõi gói",
+  "/bao-cao": "Báo cáo",
+  "/bang-gia": "Dịch vụ",
+  "/bang-gia/goi": "Gói bán",
+  "/cai-dat": "Cài đặt",
+};
+
+export function screenLabel(pathname: string): string {
+  for (let p = pathname; p.length > 0; p = p.slice(0, Math.max(0, p.lastIndexOf("/")))) {
+    const label = SCREEN_LABELS[p];
+    if (label) return label;
+  }
+  return "Tổng quan";
+}
+
 /** Phone tab bar: the four most used screens; everything else sits in the "Thêm" drawer. */
 export function tabsFor(groups: NavGroup[]): NavItem[] {
   const all = groups.flatMap((g) => g.items);

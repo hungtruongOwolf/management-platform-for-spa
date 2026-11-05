@@ -1,17 +1,18 @@
 """Builds the web logo assets from the spa's real logo.
 
-    pip install pillow numpy scipy potracer
+    pip install pillow numpy potracer
     python scripts/brand/build_logo_assets.py
 
 Source: `docs for reference/logo Viên phúc y đường transparent.png` (1024², not in git). The artwork
 lives in its alpha channel; the "glow" is only the RGB of fully transparent pixels. So `alpha > 127`
 is the exact line art: it is traced with potrace (no redrawing), then split into parts by connected
-component. Outputs:
+component. The logo is always used WHOLE (EM 2026-11-05 round 3: never strip or recombine
+parts): lotus, ring, script wordmark, yin-yang with leaves and the curved tagline. Outputs:
 
-- apps/web/src/assets/brand/{emblem,mark,wordmark}.svg — black, used as CSS masks so the app
-  recolours them with tokens (gold on the maroon chrome, maroon on cream).
-- apps/web/public/ favicon.svg, favicon-32.png, apple-touch-icon.png, icons/icon-*.png — gold mark
-  on the chrome maroon.
+- apps/web/src/assets/brand/emblem.svg — the whole logo, black, used as a CSS mask so the app
+  recolours it with tokens (gold on the maroon chrome, maroon on cream).
+- apps/web/public/ favicon.svg, favicon-32.png, apple-touch-icon.png, icons/icon-*.png — the whole
+  logo in gold on the chrome maroon.
 """
 
 import os
@@ -20,7 +21,6 @@ import sys
 import numpy as np
 import potrace
 from PIL import Image, ImageDraw
-from scipy import ndimage
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 LOGO = os.path.join("docs for reference", "logo Viên phúc y đường transparent.png")
@@ -34,10 +34,6 @@ PUBLIC = os.path.join(ROOT, "apps", "web", "public")
 
 MAROON = (0x5A, 0x1D, 0x18)  # tokens.css --chrome-bg (light)
 GOLD = (0xE3, 0xB4, 0x55)  # tokens.css --chrome-accent
-
-# Connected components of the line art, labelled in row-major scan order (scipy.ndimage.label).
-RING, LOTUS, YIN_YANG, LEAF_LEFT, LEAF_RIGHT, YIN_YANG_DOT = 1, 2, 18, 19, 20, 21
-WORDMARK = list(range(3, 18))  # "Viên Phúc / Y Đường"; 22+ is the curved tagline
 
 
 def num(v):
@@ -77,7 +73,7 @@ def bbox(ink, pad):
 def write_svg(name, ink, pad):
     w, h, d = to_svg(ink, bbox(ink, pad))
     path = os.path.join(SVG_OUT, name)
-    with open(path, "w", encoding="utf-8") as fh:
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d"><path d="%s"/></svg>\n' % (w, h, d))
     print(name, os.path.getsize(path))
     return w, h, d
@@ -93,15 +89,15 @@ def square(alpha):
     return Image.fromarray(sq, "L")
 
 
-def png_icon(mark, size, mark_frac, radius_frac, name):
+def png_icon(logo, size, logo_frac, radius_frac, name):
     img = Image.new("RGBA", (size, size), MAROON + (255,))
     if radius_frac:
         big = Image.new("L", (size * 4, size * 4), 0)
         ImageDraw.Draw(big).rounded_rectangle((0, 0, size * 4 - 1, size * 4 - 1), radius=int(size * 4 * radius_frac), fill=255)
         img.putalpha(big.resize((size, size), Image.LANCZOS))
-    m = int(round(size * mark_frac))
+    m = int(round(size * logo_frac))
     gold = Image.new("RGBA", (m, m), GOLD + (255,))
-    gold.putalpha(mark.resize((m, m), Image.LANCZOS))
+    gold.putalpha(logo.resize((m, m), Image.LANCZOS))
     img.alpha_composite(gold, ((size - m) // 2, (size - m) // 2))
     path = os.path.join(PUBLIC, name)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -113,33 +109,29 @@ def png_icon(mark, size, mark_frac, radius_frac, name):
 def main():
     alpha = np.array(Image.open(SOURCE).convert("RGBA"))[..., 3]
     ink = alpha > 127
-    labels, _ = ndimage.label(ink)
     os.makedirs(SVG_OUT, exist_ok=True)
     os.makedirs(PUBLIC, exist_ok=True)
 
-    write_svg("emblem.svg", ink, 6)
-    mark_ink = np.isin(labels, [RING, LOTUS, YIN_YANG, LEAF_LEFT, LEAF_RIGHT, YIN_YANG_DOT])
-    w, h, d = write_svg("mark.svg", mark_ink, 6)
-    write_svg("wordmark.svg", np.isin(labels, WORDMARK), 4)
+    w, h, d = write_svg("emblem.svg", ink, 6)
 
-    # Favicon: the mark in gold on a rounded maroon tile (colours baked in: a favicon cannot use tokens).
+    # Favicon: the whole logo in gold on a rounded maroon tile (colours baked in: a favicon cannot use tokens).
     side = max(w, h) * 1.16
     fav = (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {s} {s}">'
         '<rect width="{s}" height="{s}" rx="{r}" fill="#5a1d18"/>'
         '<path fill="#e3b455" transform="translate({tx} {ty})" d="{d}"/></svg>\n'
     ).format(s=num(side), r=num(side * 0.2), tx=num((side - w) / 2), ty=num((side - h) / 2), d=d)
-    with open(os.path.join(PUBLIC, "favicon.svg"), "w", encoding="utf-8") as fh:
+    with open(os.path.join(PUBLIC, "favicon.svg"), "w", encoding="utf-8", newline="\n") as fh:
         fh.write(fav)
     print("favicon.svg", os.path.getsize(os.path.join(PUBLIC, "favicon.svg")))
 
-    mark = square(np.where(mark_ink, alpha, 0).astype(np.uint8))
-    png_icon(mark, 192, 0.8, 0, "icons/icon-192.png")
-    png_icon(mark, 512, 0.8, 0, "icons/icon-512.png")
+    logo = square(np.where(ink, alpha, 0).astype(np.uint8))
+    png_icon(logo, 192, 0.8, 0, "icons/icon-192.png")
+    png_icon(logo, 512, 0.8, 0, "icons/icon-512.png")
     # Maskable: launchers crop to a circle of 80% diameter, so the art stays inside ~62%.
-    png_icon(mark, 512, 0.62, 0, "icons/icon-maskable-512.png")
-    png_icon(mark, 180, 0.78, 0, "apple-touch-icon.png")
-    png_icon(mark, 32, 0.9, 0.18, "favicon-32.png")
+    png_icon(logo, 512, 0.62, 0, "icons/icon-maskable-512.png")
+    png_icon(logo, 180, 0.78, 0, "apple-touch-icon.png")
+    png_icon(logo, 32, 0.94, 0.18, "favicon-32.png")
 
 
 if __name__ == "__main__":

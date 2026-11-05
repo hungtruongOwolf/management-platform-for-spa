@@ -78,6 +78,12 @@ const PAIRS: [string, string, number][] = [
   ["chrome-text-muted", "chrome-bg-2", TEXT],
   ["chrome-accent", "chrome-bg", TEXT],
   ["chrome-accent", "chrome-bg-2", TEXT],
+  // The whole logo (lettering + tagline) on every light/dark surface it sits on.
+  ["brand-ink", "bg", TEXT],
+  ["brand-ink", "surface", TEXT],
+  ["brand-ink", "surface-2", TEXT],
+  // Focus ring next to the controls it outlines (WCAG 2.4.13 / 1.4.11).
+  ["focus", "surface-2", UI],
 ];
 
 describe.each([

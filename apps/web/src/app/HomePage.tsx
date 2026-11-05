@@ -4,7 +4,7 @@ import { meQuery } from "../features/auth/session";
 import { spaToday } from "../features/corrections/api";
 import { dailyReportQuery } from "../features/reports/api";
 import { CountUp, StatCard, StatSkeleton, money } from "../features/reports/ui";
-import { BrandMark } from "./BrandMark";
+import { BrandLogo } from "./BrandLogo";
 import { canSeeManagement } from "./features";
 import { Icon } from "./Icon";
 import { navFor } from "./nav";
@@ -39,7 +39,7 @@ function Today() {
           Xem báo cáo <Icon name="arrow-right" className="size-4" />
         </Link>
       </div>
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="stat-grid">
         {daily.data ? (
           <>
             {daily.data.revenue && (
@@ -69,14 +69,15 @@ export function HomePage() {
     .flatMap((g) => g.items)
     .filter((i) => i.to in HINTS);
   return (
-    <div className="grid content-start gap-8">
-      <section className="chrome ornament [--ornament:var(--chrome-accent)] relative overflow-hidden rounded-[18px] px-6 py-8 shadow-float sm:px-10 sm:py-10">
-        <BrandMark className="pointer-events-none absolute -right-8 -bottom-12 size-64 text-chrome-accent opacity-[0.14]" />
-        <p className="text-sm text-chrome-text-muted first-letter:uppercase">{longDate.format(new Date())}</p>
-        <h1 className="mt-1 font-brand text-3xl text-chrome-text sm:text-4xl">Xin chào, {me?.user.full_name}</h1>
-        <p className="mt-2 text-chrome-text-muted">
-          {me?.active_tenant?.name ?? "Chưa chọn spa"} · <span className="text-chrome-accent">Hồi sinh sức khoẻ và sắc đẹp</span>
-        </p>
+    <div className="grid content-start gap-6">
+      {/* The whole logo carries the tagline, so the greeting does not repeat it (EM round 3). */}
+      <section className="welcome chrome ornament [--ornament:var(--chrome-accent)]">
+        <BrandLogo className="welcome-logo" />
+        <div className="min-w-0">
+          <p className="text-sm text-chrome-text-muted first-letter:uppercase">{longDate.format(new Date())}</p>
+          <h1 className="mt-0.5 font-brand text-2xl text-chrome-text sm:text-[28px] sm:leading-9">Xin chào, {me?.user.full_name}</h1>
+          <p className="mt-1 text-sm text-chrome-text-muted">{me?.active_tenant?.name ?? "Chưa chọn spa"}</p>
+        </div>
       </section>
 
       {canSeeManagement(me) && <Today />}
@@ -85,11 +86,11 @@ export function HomePage() {
         <h2 id="shortcuts-title" className="text-lg font-semibold">
           Lối tắt
         </h2>
-        <nav aria-label="Lối tắt" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <nav aria-label="Lối tắt" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {shortcuts.map((s) => (
-            <Link key={s.to} to={s.to} className="card card-link group flex min-h-[88px] items-center gap-4 p-4">
-              <span aria-hidden="true" className="grid size-12 shrink-0 place-items-center rounded-[12px] bg-primary-soft text-primary">
-                <Icon name={s.icon} className="size-6" />
+            <Link key={s.to} to={s.to} className="card card-link group flex min-h-[72px] items-center gap-3 px-4 py-3">
+              <span aria-hidden="true" className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-primary-soft text-primary">
+                <Icon name={s.icon} className="size-5" />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block font-semibold text-primary">{s.label}</span>

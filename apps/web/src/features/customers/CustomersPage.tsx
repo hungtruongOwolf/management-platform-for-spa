@@ -5,20 +5,27 @@ import {
 } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
+import { CustomerName } from "../../app/CustomerName";
+import { PageHeader } from "../../app/PageHeader";
 import { messageFor } from "../../lib/errors";
+import { useSearchState } from "../../lib/searchState";
 import { can, meQuery } from "../auth/session";
-import { GENDER_LABEL, customerQuery, recentQuery } from "./api";
+import { customerQuery, recentQuery } from "./api";
 import { CustomerForm } from "./CustomerForm";
 import { CustomerProfile } from "./CustomerProfile";
 import { CustomerSearch } from "./CustomerSearch";
-import { Icon } from "../../app/Icon";
+import { customersSearch } from "./search";
 import { CustomerHistory } from "../reports/CustomerHistory";
+
+/** The customers list, parent of every profile (breadcrumbs, back after a deep link). */
+const CUSTOMERS: { label: string; to: string } = { label: "Khách hàng", to: "/khach-hang" };
 
 /** /khach-hang — find or register a customer. */
 export function CustomersPage() {
   const { data: me } = useSuspenseQuery(meQuery);
   const navigate = useNavigate();
   const [creating, setCreating] = useState<string | null>(null);
+  const [search, setSearch] = useSearchState(customersSearch);
   const recent = useQuery(recentQuery);
   const open = (id: string) =>
     void navigate({
@@ -28,14 +35,13 @@ export function CustomersPage() {
 
   return (
     <section aria-labelledby="customers-title" className="grid content-start gap-4">
-      <div>
-        <p className="eyebrow">Hồ sơ khách</p>
-        <h1 id="customers-title" className="page-title">
-          Khách hàng
-        </h1>
-      </div>
+      <PageHeader eyebrow="Hồ sơ khách" title="Khách hàng" titleId="customers-title" />
       <div className="card p-4">
         <CustomerSearch
+          query={search.q}
+          onQueryChange={(q) => {
+            setSearch({ q });
+          }}
           onSelect={(c) => {
             open(c.id);
           }}
@@ -95,12 +101,9 @@ export function CustomersPage() {
                   >
                     {c.full_name.trim().split(/\s+/).at(-1)?.charAt(0).toUpperCase()}
                   </span>
-                  <span className="font-semibold">{c.full_name}</span>
+                  <CustomerName name={c.full_name} gender={c.gender} className="font-semibold" />
                 </span>
-                <span className="text-sm text-text-muted tabular">
-                  {c.phone}
-                  {c.gender ? ` · ${GENDER_LABEL[c.gender] ?? ""}` : ""}
-                </span>
+                <span className="text-sm text-text-muted tabular">{c.phone}</span>
               </Link>
             </li>
           ))}
@@ -121,25 +124,33 @@ export function CustomerPage({ customerId }: { customerId: string }) {
   const queryClient = useQueryClient();
   const { data: me } = useSuspenseQuery(meQuery);
   const customer = useQuery(customerQuery(customerId));
+  // Loading and errors keep the header, so the way back is always there.
   if (customer.isPending)
     return (
-      <div role="status" aria-label="Đang tải hồ sơ…" className="grid content-start gap-3">
-        <div className="skeleton h-5 w-36" />
-        <div className="skeleton h-48" />
+      <div className="grid content-start gap-4">
+        <PageHeader breadcrumbs={[CUSTOMERS]} title={<span className="skeleton inline-block h-8 w-56 align-middle" />} />
+        <div role="status" aria-label="Đang tải hồ sơ…" className="skeleton h-48" />
       </div>
     );
   if (customer.isError) {
     return (
-      <p role="alert" className="rounded-[10px] bg-danger-soft p-3 text-danger">
-        {messageFor(customer.error)}
-      </p>
+      <div className="grid content-start gap-4">
+        <PageHeader breadcrumbs={[CUSTOMERS]} title="Hồ sơ khách" />
+        <p role="alert" className="rounded-[10px] bg-danger-soft p-3 text-danger">
+          {messageFor(customer.error)}
+        </p>
+      </div>
     );
   }
+  const c = customer.data;
   return (
-    <div className="grid content-start gap-3">
-      <Link to="/khach-hang" className="inline-flex min-h-11 items-center gap-1 text-sm text-text-muted hover:text-primary">
-        <Icon name="chevron-left" className="size-4" /> Danh sách khách
-      </Link>
+    <div className="grid content-start gap-4">
+      <PageHeader
+        breadcrumbs={[CUSTOMERS]}
+        title={<CustomerName name={c.full_name} gender={c.gender} showUnknown />}
+        label={c.full_name}
+        titleId="customer-name"
+      />
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <CustomerProfile
           customer={customer.data}
