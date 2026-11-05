@@ -147,8 +147,46 @@ pub async fn add_user(owner: &PgPool, new: NewUser<'_>) -> Result<UserId, AppErr
     )
     .execute(&mut *tx)
     .await?;
+    // A role that requires MFA must not be usable from a session that never passed a second
+    // factor (security review L4): end every session, so the next login goes through MFA.
+    let requires_mfa = sqlx::query_scalar!(
+        "SELECT requires_mfa FROM app.role WHERE tenant_id = $1 AND key = $2",
+        tenant,
+        new.role.key()
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    if requires_mfa {
+        revoke_sessions(&mut tx, user.as_uuid()).await?;
+    }
     tx.commit().await?;
     Ok(user)
+}
+
+/// Operator action for a locked-out account (security review L2): anyone who knows a phone number
+/// can trip the per-account lockout, so the operator can clear it after confirming the person
+/// out of band. Sessions are untouched; the password is not changed. False for an unknown phone.
+pub async fn unlock_account(owner: &PgPool, phone: &str) -> Result<bool, AppError> {
+    let phone = PhoneE164::parse(phone)
+        .map_err(|_| AppError::Validation(vec![FieldError::new("phone", "invalid_format")]))?;
+    let done = sqlx::query!(
+        "UPDATE app.user_account SET failed_logins = 0, locked_until = NULL, updated_at = now()
+         WHERE phone_e164 = $1",
+        phone.as_str()
+    )
+    .execute(owner)
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
+async fn revoke_sessions(conn: &mut sqlx::PgConnection, user: Uuid) -> Result<u64, AppError> {
+    let done = sqlx::query!(
+        "UPDATE app.session SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL",
+        user
+    )
+    .execute(conn)
+    .await?;
+    Ok(done.rows_affected())
 }
 
 /// Operator action for a lost authenticator: clears the TOTP secret and recovery codes and ends
@@ -172,12 +210,7 @@ pub async fn reset_mfa(owner: &PgPool, phone: &str) -> Result<bool, AppError> {
     sqlx::query!("DELETE FROM app.mfa_recovery_code WHERE user_id = $1", user)
         .execute(&mut *tx)
         .await?;
-    sqlx::query!(
-        "UPDATE app.session SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL",
-        user
-    )
-    .execute(&mut *tx)
-    .await?;
+    revoke_sessions(&mut tx, user).await?;
     tx.commit().await?;
     Ok(true)
 }

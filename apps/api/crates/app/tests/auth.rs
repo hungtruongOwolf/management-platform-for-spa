@@ -98,6 +98,51 @@ async fn five_failures_lock_the_account_even_for_the_right_password(owner: PgPoo
     Ok(())
 }
 
+/// Security review L2: whoever knows the phone can lock the account; the operator can lift it.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn operator_unlock_lifts_a_lockout(owner: PgPool) -> TestResult {
+    let h = staff_harness(owner).await?;
+    for _ in 0..5 {
+        login(&h.app, PHONE, "sai-mat-khau-roi").await;
+    }
+    assert_eq!(
+        login(&h.app, PHONE, PASSWORD).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert!(identity::provisioning::unlock_account(&h.owner, PHONE).await?);
+    assert!(!identity::provisioning::unlock_account(&h.owner, "0987000000").await?);
+    assert_eq!(login(&h.app, PHONE, PASSWORD).await.status, StatusCode::OK);
+    Ok(())
+}
+
+/// Security review L4: granting a role that requires MFA ends the sessions opened without it.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn promotion_to_an_mfa_role_ends_existing_sessions(owner: PgPool) -> TestResult {
+    let h = staff_harness(owner).await?;
+    let token = login(&h.app, PHONE, PASSWORD)
+        .await
+        .session()
+        .unwrap_or_default();
+    add_member(&h.owner, "vpyd", PHONE, "Quản lý", SystemRole::Technician).await?;
+    assert_eq!(
+        call(&h.app, "GET", "/me", Some(&token), None).await.status,
+        StatusCode::OK,
+        "a role without MFA keeps the session"
+    );
+
+    add_member(&h.owner, "vpyd", PHONE, "Quản lý", SystemRole::Owner).await?;
+    assert_eq!(
+        call(&h.app, "GET", "/me", Some(&token), None).await.status,
+        StatusCode::UNAUTHORIZED,
+        "the password-only session cannot use owner rights"
+    );
+    assert_eq!(
+        login(&h.app, PHONE, PASSWORD).await.body["next"],
+        "mfa_enroll"
+    );
+    Ok(())
+}
+
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn me_requires_a_live_session_and_logout_ends_it(owner: PgPool) -> TestResult {
     let h = staff_harness(owner).await?;
@@ -305,6 +350,74 @@ async fn member_of_two_spas_must_choose_and_cannot_switch_to_a_foreign_spa(
     Ok(())
 }
 
+/// Security review H1: the rotated session inherits the old one's absolute expiry and re-auth
+/// time, so switching spas can neither extend a stolen session nor stand in for a password.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn switch_tenant_keeps_absolute_expiry_and_reauth_time(owner: PgPool) -> TestResult {
+    let h = staff_harness(owner).await?;
+    let token = login(&h.app, PHONE, PASSWORD)
+        .await
+        .session()
+        .unwrap_or_default();
+    sqlx::query(
+        "UPDATE app.session SET absolute_expires_at = now() + interval '3 days',
+                                recent_auth_at = now() - interval '2 days'
+         WHERE revoked_at IS NULL",
+    )
+    .execute(&h.owner)
+    .await?;
+    let (old_absolute, old_reauth): (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>) =
+        sqlx::query_as(
+            "SELECT absolute_expires_at, recent_auth_at FROM app.session WHERE revoked_at IS NULL",
+        )
+        .fetch_one(&h.owner)
+        .await?;
+    let tenant: String = sqlx::query_scalar("SELECT id::text FROM app.tenant WHERE slug = 'vpyd'")
+        .fetch_one(&h.owner)
+        .await?;
+
+    let switched = call(
+        &h.app,
+        "POST",
+        "/auth/switch-tenant",
+        Some(&token),
+        Some(json!({"tenant_id": tenant})),
+    )
+    .await;
+    assert_eq!(switched.status, StatusCode::OK, "{}", switched.body);
+
+    let (absolute, idle, reauth): (
+        chrono::DateTime<chrono::Utc>,
+        chrono::DateTime<chrono::Utc>,
+        chrono::DateTime<chrono::Utc>,
+    ) = sqlx::query_as(
+        "SELECT absolute_expires_at, idle_expires_at, recent_auth_at
+         FROM app.session WHERE revoked_at IS NULL",
+    )
+    .fetch_one(&h.owner)
+    .await?;
+    assert_eq!(absolute, old_absolute, "absolute expiry is carried over");
+    assert_eq!(reauth, old_reauth, "switching is not a re-authentication");
+    assert!(idle <= absolute);
+    Ok(())
+}
+
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn login_marks_the_session_as_just_authenticated(owner: PgPool) -> TestResult {
+    let h = staff_harness(owner).await?;
+    let before = chrono::Utc::now() - chrono::Duration::seconds(5);
+    assert_eq!(login(&h.app, PHONE, PASSWORD).await.status, StatusCode::OK);
+    let (reauth, absolute): (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>) =
+        sqlx::query_as(
+            "SELECT recent_auth_at, absolute_expires_at FROM app.session WHERE revoked_at IS NULL",
+        )
+        .fetch_one(&h.owner)
+        .await?;
+    assert!(reauth >= before, "login is a fresh authentication");
+    assert!(absolute > chrono::Utc::now() + chrono::Duration::days(29));
+    Ok(())
+}
+
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn reauth_checks_the_password(owner: PgPool) -> TestResult {
     let h = staff_harness(owner).await?;
@@ -359,6 +472,37 @@ async fn disabled_accounts_and_memberships_lose_access(owner: PgPool) -> TestRes
         login(&h.app, PHONE, PASSWORD).await.status,
         StatusCode::UNAUTHORIZED
     );
+    Ok(())
+}
+
+/// Security review M3: suspending a spa takes effect on sessions that are already open.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn suspending_a_spa_cuts_off_its_open_sessions(owner: PgPool) -> TestResult {
+    let h = staff_harness(owner).await?;
+    let token = login(&h.app, PHONE, PASSWORD)
+        .await
+        .session()
+        .unwrap_or_default();
+    assert_eq!(
+        call(&h.app, "GET", "/customers", Some(&token), None)
+            .await
+            .status,
+        StatusCode::OK
+    );
+
+    sqlx::query("UPDATE app.tenant SET status = 'suspended' WHERE slug = 'vpyd'")
+        .execute(&h.owner)
+        .await?;
+    let refused = call(&h.app, "GET", "/customers", Some(&token), None).await;
+    assert_eq!(refused.status, StatusCode::FORBIDDEN);
+    assert_eq!(refused.body["code"], "auth.not_a_member");
+    let me = call(&h.app, "GET", "/me", Some(&token), None).await;
+    assert!(me.body["active_tenant"].is_null());
+    assert_eq!(me.body["permissions"], json!([]));
+
+    // MFA does not lapse with the suspension: the owner still owes a second factor.
+    let owner_login = login(&h.app, common::OWNER_PHONE, PASSWORD).await;
+    assert_eq!(owner_login.body["next"], "mfa_enroll");
     Ok(())
 }
 

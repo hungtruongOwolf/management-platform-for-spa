@@ -860,3 +860,36 @@ async fn cancelling_without_refund_records_no_money(pool: PgPool) -> TestResult 
     assert_eq!(method_needed.body["errors"][0]["field"], "refund_method");
     Ok(())
 }
+
+/// Security review H1: `switch-tenant` rotates the token but must not count as a fresh password
+/// confirmation, otherwise any stolen full session could skip 🔒 by switching to its own spa.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn switching_tenant_does_not_refresh_the_reauth_window(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let sold = s.sell().await?;
+    let tenant: String = sqlx::query_scalar("SELECT id::text FROM app.tenant WHERE slug = 'vpyd'")
+        .fetch_one(&s.h.owner)
+        .await?;
+    s.age_reauth().await?;
+    let switched = call(
+        &s.h.app,
+        "POST",
+        "/auth/switch-tenant",
+        Some(&s.owner),
+        Some(json!({"tenant_id": tenant})),
+    )
+    .await;
+    assert_eq!(switched.status, StatusCode::OK, "{}", switched.body);
+    let rotated = switched.session().unwrap_or_default();
+
+    let refund =
+        json!({"reason": "Khách chuyển nhà", "refund_amount": 300_000, "refund_method": "cash"});
+    let after_switch = s.cancel(&rotated, &sold.package, refund).await;
+    assert_eq!(
+        code(&after_switch),
+        (StatusCode::UNAUTHORIZED, Some("auth.reauth_required")),
+        "switch-tenant is not a re-authentication"
+    );
+    assert_eq!(s.count("SELECT count(*) FROM app.refund").await?, 0);
+    Ok(())
+}
