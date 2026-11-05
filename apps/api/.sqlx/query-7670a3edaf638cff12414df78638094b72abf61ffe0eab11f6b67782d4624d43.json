@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT v.id AS visit_id, l.id AS visit_line_id, v.business_date, v.check_in_at,\n                  l.customer_package_item_id AS \"item_id!\", l.service_name_snapshot AS service_name,\n                  l.qty, l.sessions_left_after, l.staff_id, st.full_name AS staff_name,\n                  v.status = 'voided' AS \"voided!\"\n           FROM app.visit_line l\n           JOIN app.visit v ON v.tenant_id = l.tenant_id AND v.id = l.visit_id\n           JOIN app.staff st ON st.tenant_id = l.tenant_id AND st.id = l.staff_id\n           WHERE l.tenant_id = $1 AND l.customer_package_id = $2\n           ORDER BY v.check_in_at, l.position",
+  "query": "SELECT v.id AS visit_id, l.id AS visit_line_id, v.business_date, v.check_in_at,\n                  l.customer_package_item_id AS \"item_id!\", l.service_name_snapshot AS service_name,\n                  sc.name AS category_name, l.qty, l.sessions_left_after, l.staff_id,\n                  st.full_name AS staff_name, v.status = 'voided' AS \"voided!\"\n           FROM app.visit_line l\n           JOIN app.visit v ON v.tenant_id = l.tenant_id AND v.id = l.visit_id\n           JOIN app.staff st ON st.tenant_id = l.tenant_id AND st.id = l.staff_id\n           JOIN app.service sv ON sv.tenant_id = l.tenant_id AND sv.id = l.service_id\n           JOIN app.service_category sc ON sc.tenant_id = sv.tenant_id AND sc.id = sv.category_id\n           WHERE l.tenant_id = $1 AND l.customer_package_id = $2\n           ORDER BY v.check_in_at, l.position",
   "describe": {
     "columns": [
       {
@@ -71,6 +71,17 @@
       },
       {
         "ordinal": 6,
+        "name": "category_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.service_category",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
         "name": "qty",
         "type_info": "Int4",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "sessions_left_after",
         "type_info": "Int4",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "staff_id",
         "type_info": "Uuid",
         "origin": {
@@ -103,7 +114,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "staff_name",
         "type_info": "Text",
         "origin": {
@@ -114,7 +125,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "voided!",
         "type_info": "Bool",
         "origin": "Expression"
@@ -134,11 +145,12 @@
       true,
       false,
       false,
+      false,
       true,
       false,
       false,
       null
     ]
   },
-  "hash": "ddf40e43fdc0bbefd96cec228b2aba36ad708869962f2f4a991fd514f81de00e"
+  "hash": "7670a3edaf638cff12414df78638094b72abf61ffe0eab11f6b67782d4624d43"
 }

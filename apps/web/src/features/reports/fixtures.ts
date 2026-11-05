@@ -152,6 +152,7 @@ export function mockRange(from: string, to: string): RangeReport {
     top_services: SERVICES.map((name, i) => ({
       service_id: `mock-service-${String(i)}`,
       name,
+      category_name: "Gội đầu dưỡng sinh",
       sessions_used: int(r, 10, 60),
       one_off_services: int(r, 2, 20),
     })).sort((a, b) => b.sessions_used + b.one_off_services - a.sessions_used - a.one_off_services),
@@ -187,6 +188,7 @@ export function mockHistory(customerId: string, today: string): HistoryPage {
         lines: [
           {
             service_name: pkg.replace(/ \d.*$/, ""),
+            category_name: "Gội đầu dưỡng sinh",
             source: "package",
             customer_package_id: "mock-package",
             package_name: pkg,
@@ -200,6 +202,7 @@ export function mockHistory(customerId: string, today: string): HistoryPage {
             ? [
                 {
                   service_name: SERVICES[int(r, 0, SERVICES.length - 1)] ?? "Dịch vụ lẻ",
+                  category_name: "Chăm sóc cổ vai gáy",
                   source: "one_off" as const,
                   customer_package_id: null,
                   package_name: null,
@@ -315,6 +318,7 @@ export function mockInactive(today: string, days: number): InactivePage {
       customer_id: `mock-customer-${String(i)}`,
       full_name,
       phone,
+      kind: i % 3 === 0 ? ("one_off" as const) : ("package" as const),
       last_visit_on: last,
       last_seen_on: last,
       days_absent: absent,

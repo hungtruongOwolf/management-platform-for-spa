@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, customer_package_id, service_id, name_snapshot, sessions_purchased, sessions_bonus,\n                  sessions_total AS \"sessions_total!\", sessions_remaining, per_session_value\n           FROM app.customer_package_item\n           WHERE tenant_id = $1 AND customer_package_id = ANY($2)\n           ORDER BY customer_package_id, id",
+  "query": "SELECT i.id, i.customer_package_id, i.service_id, i.name_snapshot, sc.name AS category_name,\n                  i.sessions_purchased, i.sessions_bonus, i.sessions_total AS \"sessions_total!\",\n                  i.sessions_remaining, i.per_session_value\n           FROM app.customer_package_item i\n           JOIN app.service sv ON sv.tenant_id = i.tenant_id AND sv.id = i.service_id\n           JOIN app.service_category sc ON sc.tenant_id = sv.tenant_id AND sc.id = sv.category_id\n           WHERE i.tenant_id = $1 AND i.customer_package_id = ANY($2)\n           ORDER BY i.customer_package_id, i.id",
   "describe": {
     "columns": [
       {
@@ -49,6 +49,17 @@
       },
       {
         "ordinal": 4,
+        "name": "category_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.service_category",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
         "name": "sessions_purchased",
         "type_info": "Int4",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "sessions_bonus",
         "type_info": "Int4",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "sessions_total!",
         "type_info": "Int4",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "sessions_remaining",
         "type_info": "Int4",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "per_session_value",
         "type_info": "Int8",
         "origin": {
@@ -116,10 +127,11 @@
       false,
       false,
       false,
+      false,
       true,
       false,
       false
     ]
   },
-  "hash": "3240f5cb8b2dc87d8f1c965c7921025956f21050173bc17d1b6877721f9b89f6"
+  "hash": "0cd01bf58eccd474f4c9579ffdf8684393d09f6f0f1b17f9328f234c92d005e9"
 }

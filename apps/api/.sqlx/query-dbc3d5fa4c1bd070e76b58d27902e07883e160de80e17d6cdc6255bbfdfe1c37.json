@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT date_trunc($3, s.business_date::timestamp)::date AS \"bucket!\",\n                      count(*) AS \"sold!\"\n               FROM app.sale s\n               JOIN app.customer_package cp ON cp.tenant_id = s.tenant_id AND cp.sale_id = s.id\n               WHERE s.tenant_id = $1 AND s.business_date BETWEEN $2 AND $4 AND ($5::date[] IS NULL OR s.business_date = ANY($5)) AND s.status = 'open'\n               GROUP BY 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bucket!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "sold!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Text",
+        "Date",
+        "DateArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "dbc3d5fa4c1bd070e76b58d27902e07883e160de80e17d6cdc6255bbfdfe1c37"
+}

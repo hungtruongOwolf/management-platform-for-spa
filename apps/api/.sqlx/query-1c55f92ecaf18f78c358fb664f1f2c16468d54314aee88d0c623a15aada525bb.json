@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT date_trunc($3, v.business_date::timestamp)::date AS \"bucket!\",\n                      coalesce(sum(l.qty) FILTER (WHERE l.source = 'package'), 0)::bigint AS \"sessions!\",\n                      coalesce(sum(l.qty) FILTER (WHERE l.source = 'one_off'), 0)::bigint AS \"one_off!\"\n               FROM app.visit v\n               JOIN app.visit_line l ON l.tenant_id = v.tenant_id AND l.visit_id = v.id\n               WHERE v.tenant_id = $1 AND v.business_date BETWEEN $2 AND $4 AND ($5::date[] IS NULL OR v.business_date = ANY($5)) AND v.status = 'completed'\n               GROUP BY 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bucket!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "sessions!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "one_off!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Text",
+        "Date",
+        "DateArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "1c55f92ecaf18f78c358fb664f1f2c16468d54314aee88d0c623a15aada525bb"
+}
