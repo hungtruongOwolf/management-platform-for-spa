@@ -972,7 +972,42 @@ dialog::backdrop {
   font-size: 14px;
 }
 
-/* --- Tabs (reports: Tổng quan / Sổ doanh thu) ------------------------------------------------ */
+/* --- Form dialog (follow-up "Đã liên hệ"): centred card, full-width sheet on phones ----------- */
+.form-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-2);
+  overflow: auto;
+}
+.form-dialog[open] {
+  animation: pop-in var(--dur-base) var(--ease-out);
+}
+/* Radio as a tappable row (44px), the selected one marked by an inset gold line, not by weight. */
+.choice {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 14px;
+  cursor: pointer;
+}
+.choice:has(input:checked) {
+  background: var(--primary-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* --- Tabs (reports: Tổng quan / Sổ doanh thu)------------------------------------------------ */
 .tabs {
   display: flex;
   gap: 4px;

@@ -1,4 +1,4 @@
-import type { Granularity, InactiveScope } from "@vpyd/api-client";
+import type { CustomerKindFilter, FollowUpFilter, Granularity, HistoryKind, InactiveScope } from "@vpyd/api-client";
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from "@tanstack/react-query";
 import type { Bucket } from "./period";
 import { api } from "../../lib/api";
@@ -32,8 +32,7 @@ export function dailyReportQuery(date: string) {
 
 /** API bucket of a period's chart (`/reports/range` `granularity`). */
 export function granularityOf(bucket: Bucket): Granularity {
-  // Adapter until the contract has `year` (feat/followup-and-reports-api).
-  return bucket === "year" ? "month" : bucket;
+  return bucket;
 }
 
 /**
@@ -64,10 +63,33 @@ export function ledgerQuery(from: string, to: string) {
   });
 }
 
-export function customerHistoryQuery(id: string) {
-  return queryOptions({
-    queryKey: ["customers", "history", id],
-    queryFn: async () => (await api(`/customers/${id}/history?limit=20`)) as HistoryPage,
+export interface HistoryFilter {
+  q?: string | undefined;
+  kind?: HistoryKind | undefined;
+  from?: string | undefined;
+  to?: string | undefined;
+}
+
+/** Query string of `GET /customers/{id}/history`: search service/category/package/staff, kind, dates. */
+export function historyPath(id: string, f: HistoryFilter, cursor = ""): string {
+  const params = new URLSearchParams();
+  if (f.q) params.set("q", f.q);
+  if (f.kind) params.set("kind", f.kind);
+  if (f.from) params.set("from", f.from);
+  if (f.to) params.set("to", f.to);
+  params.set("limit", "20");
+  if (cursor) params.set("cursor", cursor);
+  return `/customers/${id}/history?${params.toString()}`;
+}
+
+/** The profile timeline, newest first, 20 a page; key prefix `['customers','history',id]` for invalidation. */
+export function customerHistoryQuery(id: string, f: HistoryFilter = {}) {
+  return infiniteQueryOptions({
+    queryKey: ["customers", "history", id, f.q ?? "", f.kind ?? "", f.from ?? "", f.to ?? ""],
+    queryFn: async ({ pageParam }) => (await api(historyPath(id, f, pageParam))) as HistoryPage,
+    initialPageParam: "",
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -103,17 +125,35 @@ export function packagesOverviewQuery(filter: PackageFilter, q = "") {
   });
 }
 
+export interface InactiveFilter {
+  days: number;
+  scope: InactiveScope;
+  kind: CustomerKindFilter;
+  followUp: FollowUpFilter;
+  q: string;
+}
+
+/** Query string of `GET /customers/inactive`; API defaults (scope/kind all) are left out. */
+export function inactivePath(f: InactiveFilter, cursor = ""): string {
+  const params = new URLSearchParams({ days: String(f.days) });
+  if (f.scope !== "all") params.set("scope", f.scope);
+  if (f.kind !== "all") params.set("kind", f.kind);
+  params.set("follow_up", f.followUp);
+  if (f.q) params.set("q", f.q);
+  params.set("limit", "20");
+  if (cursor) params.set("cursor", cursor);
+  return `/customers/inactive?${params.toString()}`;
+}
+
 /** `GET /customers/inactive`, 20 a page; `next_cursor` drives "Xem thêm". */
-export function inactiveCustomersQuery(days: number, scope: InactiveScope = "with_sessions") {
+export function inactiveCustomersQuery(f: InactiveFilter) {
   return infiniteQueryOptions({
-    queryKey: ["customers", "inactive", days, scope],
-    queryFn: async ({ pageParam }) =>
-      (await api(
-        `/customers/inactive?days=${String(days)}&scope=${scope}&limit=20${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ""}`,
-      )) as InactivePage,
+    queryKey: ["customers", "inactive", f.days, f.scope, f.kind, f.followUp, f.q],
+    queryFn: async ({ pageParam }) => (await api(inactivePath(f, pageParam))) as InactivePage,
     initialPageParam: "",
     getNextPageParam: (last) => last.next_cursor ?? undefined,
     staleTime: 60_000,
+    placeholderData: keepPreviousData,
   });
 }
 

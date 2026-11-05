@@ -11,7 +11,7 @@ const PRESETS = ["today", "7d", "30d", "this_month", "last_month", "this_year", 
 const PACKAGE_FILTERS = ["expiring", "active", "expired", "exhausted", "cancelled", "all"] as const;
 const FOLLOW_UPS = ["due", "not_contacted", "scheduled", "all"] as const;
 const KINDS = ["package", "one_off"] as const;
-const HISTORY_KINDS = ["visit", "purchase", "voided", "cancelled"] as const;
+const HISTORY_KINDS = ["visit", "purchase", "visit_voided", "purchase_voided", "package_cancelled"] as const;
 const METRICS = ["revenue", "customers", "visits"] as const;
 
 function oneOf<T extends string>(values: readonly T[], v: unknown): T | undefined {
@@ -67,7 +67,8 @@ export const INACTIVE_THRESHOLDS = [7, 14, 30, 60, 90] as const;
 
 export interface InactiveSearch {
   days?: number;
-  scope?: "all";
+  /** Default: every customer seen before (EM round 3 item 4); "with_sessions" narrows to packages with sessions left. */
+  scope?: "with_sessions";
   kind?: (typeof KINDS)[number];
   follow?: (typeof FOLLOW_UPS)[number];
   q?: string;
@@ -78,7 +79,7 @@ export function parseInactiveSearch(s: Raw): InactiveSearch {
   const follow = oneOf(FOLLOW_UPS, s["follow"]);
   return compact<InactiveSearch>({
     days: (INACTIVE_THRESHOLDS as readonly number[]).includes(days) && days !== 7 ? days : undefined,
-    scope: s["scope"] === "all" ? "all" : undefined,
+    scope: s["scope"] === "with_sessions" ? "with_sessions" : undefined,
     kind: oneOf(KINDS, s["kind"]),
     // Default "due": the list opens on who to call today (EM round 3), "all" is explicit.
     follow: follow === "due" ? undefined : follow,

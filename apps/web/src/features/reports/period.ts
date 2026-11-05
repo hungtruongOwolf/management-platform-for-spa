@@ -33,8 +33,11 @@ export const PRESET_LABEL: Record<Preset, string> = {
   custom: "Tùy chọn",
 };
 
-/** The API's longest range (`/reports/range`: at most 366 days after `from`). */
-export const MAX_RANGE_DAYS = 367;
+/**
+ * Longest custom range: `/reports/range` serves 366 days after `from` by day or week, and 5 years
+ * (1830 days) by month or year; `bucketFor` never picks day/week past a quarter.
+ */
+export const MAX_RANGE_DAYS = 1831;
 
 const DAY_MS = 86_400_000;
 

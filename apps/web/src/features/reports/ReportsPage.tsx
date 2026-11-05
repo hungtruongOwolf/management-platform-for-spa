@@ -124,7 +124,7 @@ function PeriodPicker({
     setDraft(next);
     if (!next.from || !next.to) return;
     if (next.from > next.to) return setError("Ngày bắt đầu phải trước ngày kết thúc.");
-    if (daysBetween(next.from, next.to) > MAX_RANGE_DAYS) return setError("Chọn tối đa 1 năm (366 ngày).");
+    if (daysBetween(next.from, next.to) > MAX_RANGE_DAYS) return setError("Chọn tối đa 5 năm.");
     setError(null);
     onCustom(next.from, next.to);
   };
