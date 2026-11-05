@@ -30,6 +30,9 @@ use utoipa::OpenApi;
         crm::http::read,
         crm::http::update,
         crm::http::set_health_note,
+        crm::http::phone_check,
+        crm::http::record_follow_up,
+        crm::http::list_follow_ups,
         org::http::list_staff,
         packages::http::read_package,
         packages::http::list_customer_packages,
@@ -54,7 +57,16 @@ use utoipa::OpenApi;
         reporting::http::list_packages,
     ),
     // Enums used only as query parameters are not reached from any body, so register them.
-    components(schemas(reporting::dto::PackageStatusFilter, reporting::dto::InactiveScope, reporting::dto::Granularity)),
+    components(schemas(
+        reporting::dto::PackageStatusFilter,
+        reporting::dto::InactiveScope,
+        reporting::dto::Granularity,
+        reporting::dto::RangePreset,
+        reporting::dto::HistoryKind,
+        reporting::dto::CustomerKindFilter,
+        reporting::dto::FollowUpFilter,
+        reporting::dto::InactiveSort,
+    )),
     tags(
         (name = "auth", description = "Đăng nhập, phiên, đổi spa"),
         (name = "catalog", description = "Bảng giá dịch vụ và gói liệu trình"),
@@ -103,6 +115,8 @@ mod tests {
             "/api/v1/customers",
             "/api/v1/customers/{id}",
             "/api/v1/customers/{id}/health-note",
+            "/api/v1/customers/phone-check",
+            "/api/v1/customers/{id}/follow-ups",
             "/api/v1/staff",
             "/api/v1/sales",
             "/api/v1/sales/{id}",
@@ -158,8 +172,41 @@ mod tests {
             "PackageUsage",
             "PackageOverviewPage",
             "InactivePage",
+            "PhoneCheckDto",
+            "FollowUpCreate",
+            "FollowUpDto",
+            "FollowUpList",
+            "RangePreset",
+            "FollowUpFilter",
         ] {
             assert!(schemas.contains_key(schema), "{schema} missing");
         }
+    }
+
+    /// Only `{…}` segments are path parameters; a query struct derived without
+    /// `#[into_params(parameter_in = Query)]` is silently documented as a path parameter and the
+    /// generated client then builds the wrong URL (`/customers/phone-check?phone=` was one).
+    #[test]
+    fn non_path_parameters_are_documented_as_query() -> Result<(), serde_json::Error> {
+        let doc = serde_json::to_value(ApiDoc::openapi())?;
+        let paths = doc["paths"].as_object().cloned().unwrap_or_default();
+        for (path, item) in paths {
+            for (method, op) in item.as_object().cloned().unwrap_or_default() {
+                for p in op["parameters"].as_array().cloned().unwrap_or_default() {
+                    let name = p["name"].as_str().unwrap_or_default();
+                    let in_path = path.contains(&format!("{{{name}}}"));
+                    let location = p["in"].as_str().unwrap_or_default();
+                    if location == "header" {
+                        continue;
+                    }
+                    assert_eq!(
+                        location,
+                        if in_path { "path" } else { "query" },
+                        "{method} {path} parameter {name}"
+                    );
+                }
+            }
+        }
+        Ok(())
     }
 }

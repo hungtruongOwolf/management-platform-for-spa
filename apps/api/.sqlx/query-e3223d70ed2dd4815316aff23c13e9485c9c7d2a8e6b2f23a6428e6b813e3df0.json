@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT l.visit_id, l.service_name_snapshot, l.source, l.customer_package_id,\n                  cp.name_snapshot AS \"package_name?\", l.qty, l.sessions_left_after, l.staff_id,\n                  st.full_name AS staff_name, l.line_value\n           FROM app.visit_line l\n           JOIN app.staff st ON st.tenant_id = l.tenant_id AND st.id = l.staff_id\n           LEFT JOIN app.customer_package cp\n             ON cp.tenant_id = l.tenant_id AND cp.id = l.customer_package_id\n           WHERE l.tenant_id = $1 AND l.visit_id = ANY($2)\n           ORDER BY l.visit_id, l.position",
+  "query": "SELECT l.visit_id, l.service_name_snapshot, sc.name AS category_name, l.source,\n                  l.customer_package_id, cp.name_snapshot AS \"package_name?\", l.qty,\n                  l.sessions_left_after, l.staff_id, st.full_name AS staff_name, l.line_value\n           FROM app.visit_line l\n           JOIN app.staff st ON st.tenant_id = l.tenant_id AND st.id = l.staff_id\n           JOIN app.service sv ON sv.tenant_id = l.tenant_id AND sv.id = l.service_id\n           JOIN app.service_category sc ON sc.tenant_id = sv.tenant_id AND sc.id = sv.category_id\n           LEFT JOIN app.customer_package cp\n             ON cp.tenant_id = l.tenant_id AND cp.id = l.customer_package_id\n           WHERE l.tenant_id = $1 AND l.visit_id = ANY($2)\n           ORDER BY l.visit_id, l.position",
   "describe": {
     "columns": [
       {
@@ -27,6 +27,17 @@
       },
       {
         "ordinal": 2,
+        "name": "category_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.service_category",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
         "name": "source",
         "type_info": "Text",
         "origin": {
@@ -37,7 +48,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "customer_package_id",
         "type_info": "Uuid",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "package_name?",
         "type_info": "Text",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "qty",
         "type_info": "Int4",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "sessions_left_after",
         "type_info": "Int4",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "staff_id",
         "type_info": "Uuid",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "staff_name",
         "type_info": "Text",
         "origin": {
@@ -103,7 +114,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "line_value",
         "type_info": "Int8",
         "origin": {
@@ -124,6 +135,7 @@
       false,
       false,
       false,
+      false,
       true,
       true,
       false,
@@ -133,5 +145,5 @@
       false
     ]
   },
-  "hash": "2e70e7892f049d01ba376e297b087cd36cbf25354713259ccaacdf26382d39a2"
+  "hash": "e3223d70ed2dd4815316aff23c13e9485c9c7d2a8e6b2f23a6428e6b813e3df0"
 }

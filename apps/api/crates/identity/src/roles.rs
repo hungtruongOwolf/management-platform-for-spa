@@ -55,6 +55,8 @@ impl SystemRole {
                 P::CustomerWrite,
                 P::CustomerHealthNotesRead,
                 P::CustomerHealthNotesWrite,
+                // Re-engagement calls are the manager's job (EM 2026-11-05, round 3).
+                P::CustomerFollowUp,
                 P::PackageSell,
                 P::PackageUseExpiredOverride,
                 P::VisitRecord,

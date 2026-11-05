@@ -3,6 +3,7 @@
 //! JSON entirely when the caller lacks it (entitled data only, never hidden on the client).
 
 use chrono::{DateTime, NaiveDate, Utc};
+use crm::http::{FollowUpChannelDto, FollowUpOutcomeDto, GenderDto};
 use packages::http::{CustomerPackageDto, PackageStatusDto};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -231,6 +232,8 @@ pub enum Granularity {
     Week,
     /// Calendar months.
     Month,
+    /// Calendar years (multi-year views).
+    Year,
 }
 
 impl Granularity {
@@ -239,8 +242,34 @@ impl Granularity {
             Self::Day => "day",
             Self::Week => "week",
             Self::Month => "month",
+            Self::Year => "year",
         }
     }
+}
+
+/// Ready-made periods, computed on the server from the spa's own "today" (its time zone), so
+/// every device agrees on what "this month" is. Each has a default granularity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RangePreset {
+    /// Today and the 6 days before (by day).
+    #[serde(rename = "last_7_days")]
+    Last7Days,
+    /// Today and the 29 days before (by day).
+    #[serde(rename = "last_30_days")]
+    Last30Days,
+    /// 1st of this month → today (by day).
+    ThisMonth,
+    /// The whole previous calendar month (by day).
+    LastMonth,
+    /// 1 January → today (by month).
+    ThisYear,
+    /// 1st of the month 11 months ago → today: 12 calendar months (by month).
+    #[serde(rename = "last_12_months")]
+    Last12Months,
+    /// 1 January last year → today: this and last calendar year (by month; `year` compares the two).
+    #[serde(rename = "last_2_years")]
+    Last2Years,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
@@ -253,12 +282,17 @@ pub struct RangeBucket {
     pub counts: DayCounts,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub revenue: Option<Revenue>,
+    /// `revenue.net.total`, flat for line charts; only with `report.revenue.read`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub net_revenue: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct TopService {
     pub service_id: Uuid,
     pub name: String,
+    /// Current catalog category of the service (e.g. "Gội đầu dưỡng sinh").
+    pub category_name: String,
     pub sessions_used: i64,
     pub one_off_services: i64,
     /// List price of the one-off services; only with `report.revenue.read`.
@@ -283,6 +317,8 @@ pub struct RangeReport {
     pub from: NaiveDate,
     pub to: NaiveDate,
     pub granularity: Granularity,
+    /// The preset the range came from, if any.
+    pub preset: Option<RangePreset>,
     /// Whole range; `customers` = distinct customers over the range.
     pub totals: DayCounts,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -293,17 +329,23 @@ pub struct RangeReport {
     pub top_services: Vec<TopService>,
     /// Top 10 by packages sold.
     pub top_packages: Vec<TopPackage>,
+    /// Every technician who worked in the range, most visits first (same counting as the daily
+    /// dashboard: a visit counts once per technician however many lines they did).
+    pub technicians: Vec<TechnicianDay>,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct RangeQuery {
-    /// First business day; default `to` − 6 days.
+    /// First business day; default `to` − 6 days. Not with `preset`.
     pub from: Option<NaiveDate>,
-    /// Last business day (inclusive); default today. At most 366 days after `from`.
+    /// Last business day (inclusive); default today. Not with `preset`. Span: at most 366 days
+    /// for `day` / `week`, at most 732 days (2 years) for `month` / `year`.
     pub to: Option<NaiveDate>,
-    /// Bucket size of `series`; default `day`.
+    /// Bucket size of `series`; default `day`, or the preset's default.
     pub granularity: Option<Granularity>,
+    /// A ready-made period instead of `from` / `to`.
+    pub preset: Option<RangePreset>,
 }
 
 // ------------------------------------------------------------------------- revenue book (ledger)
@@ -329,6 +371,7 @@ pub struct LedgerRow {
     pub at: DateTime<Utc>,
     pub customer_id: Uuid,
     pub customer_name: String,
+    pub customer_gender: Option<GenderDto>,
     pub kind: SaleKind,
     /// "Dịch vụ 1 lần" column: the one-off services, comma-separated.
     pub one_off: Option<String>,
@@ -383,7 +426,7 @@ pub struct LedgerQuery {
 
 // -------------------------------------------------------------------------------- customers
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HistoryKind {
     Visit,
@@ -406,6 +449,8 @@ pub enum LineSource {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct HistoryVisitLine {
     pub service_name: String,
+    /// Current catalog category of the service.
+    pub category_name: String,
     pub source: LineSource,
     /// The package the session came from (`source = package`).
     pub customer_package_id: Option<Uuid>,
@@ -507,7 +552,15 @@ pub struct HistoryPage {
 
 #[derive(Debug, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
-pub struct PageQuery {
+pub struct HistoryQuery {
+    /// Service, category, package or staff name (accent-insensitive, 2–100 characters).
+    pub q: Option<String>,
+    /// Only events of this kind.
+    pub kind: Option<HistoryKind>,
+    /// First business day of the event (inclusive).
+    pub from: Option<NaiveDate>,
+    /// Last business day of the event (inclusive).
+    pub to: Option<NaiveDate>,
     pub cursor: Option<String>,
     /// 1–100, default 20.
     pub limit: Option<u32>,
@@ -552,6 +605,8 @@ pub struct PackageUse {
     pub check_in_at: DateTime<Utc>,
     pub item_id: Uuid,
     pub service_name: String,
+    /// Current catalog category of the service.
+    pub category_name: String,
     pub qty: i32,
     pub sessions_left_after: Option<i32>,
     pub staff_id: Uuid,
@@ -596,6 +651,7 @@ pub struct PackageOverviewRow {
     pub customer_id: Uuid,
     pub customer_name: String,
     pub customer_phone: String,
+    pub customer_gender: Option<GenderDto>,
     pub name: String,
     pub status: PackageStatusDto,
     pub sessions_total: i64,
@@ -638,7 +694,7 @@ pub struct PackagesQuery {
     /// 1–365. Set: only active packages expiring within that many days, soonest first.
     /// Also the window of `counts.expiring_soon` (default 30).
     pub expiring_within_days: Option<u32>,
-    /// Customer name (accent-insensitive, ≥ 2 characters) or phone digits (≥ 3).
+    /// Customer name or package name (accent-insensitive, ≥ 2 characters), or phone digits (≥ 3).
     pub q: Option<String>,
     pub cursor: Option<String>,
     /// 1–100, default 20.
@@ -648,11 +704,68 @@ pub struct PackagesQuery {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum InactiveScope {
-    /// Only customers with sessions left on an active package (default).
-    #[default]
+    /// Only customers with sessions left on an active package.
     WithSessions,
-    /// Every customer who has visited or bought before.
+    /// Every customer who ever came or paid: one-off and package customers alike (default since
+    /// EM round 3, 2026-11-05).
+    #[default]
     All,
+}
+
+/// What kind of customer a re-engagement row is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CustomerKind {
+    /// Has (or had) a package that was not voided: active, used up, expired or cancelled.
+    Package,
+    /// Only ever came or paid per session ("khách lẻ").
+    OneOff,
+}
+
+/// `GET /customers/inactive?kind=`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CustomerKindFilter {
+    #[default]
+    All,
+    Package,
+    OneOff,
+}
+
+/// `GET /customers/inactive?follow_up=`, judged on the follow-ups of the current absence
+/// (recorded on or after `last_seen_on`; a visit since then starts a new absence).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FollowUpFilter {
+    #[default]
+    All,
+    /// Needs a call today: never contacted in this absence, or `next_follow_up_on` ≤ today.
+    Due,
+    /// No follow-up recorded in this absence.
+    NotContacted,
+    /// Contacted, next follow-up planned after today.
+    Scheduled,
+}
+
+/// `GET /customers/inactive?sort=`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum InactiveSort {
+    /// Who to call first: never contacted in this absence, then `next_follow_up_on` soonest,
+    /// then contacted with no date planned; ties by longest absence.
+    Due,
+    /// Longest absence first.
+    Absent,
+}
+
+/// The latest follow-up of the current absence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct LastFollowUp {
+    pub on: NaiveDate,
+    pub channel: FollowUpChannelDto,
+    pub outcome: FollowUpOutcomeDto,
+    /// Name of the user who recorded it.
+    pub by: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
@@ -660,12 +773,18 @@ pub struct InactiveCustomer {
     pub customer_id: Uuid,
     pub full_name: String,
     pub phone: String,
+    pub gender: Option<GenderDto>,
+    pub kind: CustomerKind,
     pub last_visit_on: Option<NaiveDate>,
-    /// Last completed visit, or the latest package start when the customer never came.
+    /// Latest of: last completed visit, last sale not voided, last package start.
     pub last_seen_on: NaiveDate,
     pub days_absent: i64,
     pub active_packages: i64,
     pub sessions_remaining: i64,
+    /// Latest follow-up since `last_seen_on`; `null` = not contacted in this absence.
+    pub last_follow_up: Option<LastFollowUp>,
+    /// The date that follow-up planned for the next try (`null` = none planned).
+    pub next_follow_up_on: Option<NaiveDate>,
 }
 
 /// `GET /customers/inactive`: longest absence first.
@@ -681,7 +800,16 @@ pub struct InactivePage {
 pub struct InactiveQuery {
     /// Not seen for at least this many days (1–365, default 7).
     pub days: Option<u32>,
+    /// Default `all`.
     pub scope: Option<InactiveScope>,
+    /// Default `all`.
+    pub kind: Option<CustomerKindFilter>,
+    /// Default `all`.
+    pub follow_up: Option<FollowUpFilter>,
+    /// Default `due` when `follow_up` is `due` or `scheduled`, else `absent`.
+    pub sort: Option<InactiveSort>,
+    /// Customer name (accent-insensitive, ≥ 2 characters) or phone digits (≥ 3).
+    pub q: Option<String>,
     pub cursor: Option<String>,
     /// 1–100, default 20.
     pub limit: Option<u32>,

@@ -674,7 +674,8 @@ async fn the_range_report_is_continuous_and_reconciles(pool: PgPool) -> TestResu
 
     assert_eq!(
         daily.body["top_services"][0],
-        json!({"service_id": s.service, "name": "Gội đầu dưỡng sinh", "sessions_used": 2,
+        json!({"service_id": s.service, "name": "Gội đầu dưỡng sinh",
+               "category_name": "Dưỡng sinh", "sessions_used": 2,
                "one_off_services": 2, "one_off_revenue": 2 * PRICE})
     );
     assert_eq!(
@@ -1199,7 +1200,13 @@ async fn customers_who_stopped_coming_are_listed_longest_absence_first(pool: PgP
     )
     .await?;
 
-    let list = s.get(&s.manager, "/customers/inactive?days=30").await;
+    // Default scope is `all` since EM round 3; this asks for the package-only view.
+    let list = s
+        .get(
+            &s.manager,
+            "/customers/inactive?days=30&scope=with_sessions",
+        )
+        .await;
     assert_eq!(list.status, StatusCode::OK, "{}", list.body);
     let rows: Vec<(Value, Value, Value, Value)> = list.body["items"]
         .as_array()

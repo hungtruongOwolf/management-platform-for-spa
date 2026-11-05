@@ -164,6 +164,15 @@ async fn three_years_of_books_read_within_budget(pool: PgPool) -> TestResult {
         "/packages?q=khach%2012&limit=50".to_owned(),
         "/customers/inactive?days=30&limit=50".to_owned(),
         "/customers/inactive?days=30&scope=all&limit=50".to_owned(),
+        // Round 3: presets, multi-year, history search, follow-up views, phone check.
+        "/reports/range?preset=last_12_months".to_owned(),
+        "/reports/range?preset=last_2_years".to_owned(),
+        "/reports/range?from=2024-11-05&to=2026-11-05&granularity=year".to_owned(),
+        format!("/customers/{customer}/history?q=goi&limit=50"),
+        format!("/customers/{customer}/history?kind=visit&from=2026-01-01&to=2026-11-05&limit=50"),
+        "/customers/inactive?days=7&follow_up=due&limit=50".to_owned(),
+        "/customers/inactive?days=7&q=khach&kind=one_off&limit=50".to_owned(),
+        "/customers/phone-check?phone=0905000012".to_owned(),
     ];
     let mut over = Vec::new();
     let mut n = 0_u32;
@@ -202,6 +211,34 @@ async fn three_years_of_books_read_within_budget(pool: PgPool) -> TestResult {
         (
             "ledger days 92",
             "EXPLAIN (ANALYZE, BUFFERS) SELECT b.business_date, sum(b.cash) FROM app.revenue_book b WHERE b.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND b.business_date BETWEEN current_date - 91 AND current_date GROUP BY 1",
+        ),
+        (
+            "3y visit counts",
+            "EXPLAIN (ANALYZE, BUFFERS) SELECT date_trunc('month', v.business_date::timestamp)::date, count(*) FILTER (WHERE v.status = 'completed'), count(DISTINCT v.customer_id) FILTER (WHERE v.status = 'completed') FROM app.visit v WHERE v.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND v.business_date BETWEEN current_date - 1095 AND current_date GROUP BY 1",
+        ),
+        (
+            "3y lines",
+            "EXPLAIN (ANALYZE, BUFFERS) SELECT date_trunc('month', v.business_date::timestamp)::date, sum(l.qty) FROM app.visit v JOIN app.visit_line l ON l.tenant_id = v.tenant_id AND l.visit_id = v.id WHERE v.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND v.business_date BETWEEN current_date - 1095 AND current_date AND v.status = 'completed' GROUP BY 1",
+        ),
+        (
+            "3y money",
+            "EXPLAIN (ANALYZE, BUFFERS) SELECT date_trunc('month', p.business_date::timestamp)::date, p.kind, p.method, CASE WHEN pk.sale_id IS NULL THEN 'one_off' ELSE 'package' END, sum(p.amount) FROM app.payment p LEFT JOIN (SELECT DISTINCT sl.sale_id FROM app.sale_line sl WHERE sl.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND sl.line_type = 'package') pk ON pk.sale_id = p.sale_id WHERE p.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND p.business_date BETWEEN current_date - 1095 AND current_date GROUP BY 1, 2, 3, 4",
+        ),
+        (
+            "3y distinct customers",
+            "EXPLAIN (ANALYZE, BUFFERS) SELECT count(DISTINCT customer_id) FROM app.visit WHERE tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND business_date BETWEEN current_date - 1095 AND current_date AND status = 'completed'",
+        ),
+        (
+            "3y services/staff/customers",
+            "EXPLAIN (ANALYZE, BUFFERS) SELECT GROUPING(l.service_id, l.staff_id), l.service_id, min(s.name), min(sc.name), l.staff_id, min(st.full_name), count(DISTINCT v.customer_id), count(DISTINCT v.id), sum(l.qty) FILTER (WHERE l.source = 'package'), sum(l.qty) FILTER (WHERE l.source = 'one_off'), sum(l.line_value) FILTER (WHERE l.source = 'one_off') FROM app.visit v JOIN app.visit_line l ON l.tenant_id = v.tenant_id AND l.visit_id = v.id JOIN app.service s ON s.tenant_id = l.tenant_id AND s.id = l.service_id JOIN app.service_category sc ON sc.tenant_id = s.tenant_id AND sc.id = s.category_id JOIN app.staff st ON st.tenant_id = l.tenant_id AND st.id = l.staff_id WHERE v.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND v.business_date BETWEEN current_date - 1095 AND current_date AND v.status = 'completed' GROUP BY GROUPING SETS ((l.service_id), (l.staff_id), ())",
+        ),
+        (
+            "3y top packages",
+            "EXPLAIN (ANALYZE, BUFFERS) SELECT cp.plan_id, min(cp.name_snapshot), count(*), sum(cp.sold_price) FROM app.sale s JOIN app.customer_package cp ON cp.tenant_id = s.tenant_id AND cp.sale_id = s.id WHERE s.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND s.business_date BETWEEN current_date - 1095 AND current_date AND s.status = 'open' GROUP BY cp.plan_id",
+        ),
+        (
+            "3y packages sold",
+            "EXPLAIN (ANALYZE, BUFFERS) SELECT date_trunc('month', s.business_date::timestamp)::date, count(*) FROM app.sale s JOIN app.customer_package cp ON cp.tenant_id = s.tenant_id AND cp.sale_id = s.id WHERE s.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND s.business_date BETWEEN current_date - 1095 AND current_date AND s.status = 'open' GROUP BY 1",
         ),
         (
             "visits of a day",

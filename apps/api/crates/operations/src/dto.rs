@@ -80,6 +80,7 @@ pub struct VisitLineUpdate {
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct VisitListQuery {
     /// Business day `YYYY-MM-DD`; default today.
@@ -99,6 +100,8 @@ pub struct VisitLineDto {
     pub service_id: Uuid,
     /// Service name at the visit (snapshot).
     pub service_name: String,
+    /// Current catalog category of the service (e.g. "Gội đầu dưỡng sinh").
+    pub category_name: String,
     pub source: VisitLineSourceDto,
     pub customer_package_id: Option<Uuid>,
     pub customer_package_item_id: Option<Uuid>,
@@ -123,6 +126,7 @@ pub struct VisitDto {
     pub id: Uuid,
     pub customer_id: Uuid,
     pub customer_name: String,
+    pub customer_gender: Option<crm::http::GenderDto>,
     pub business_date: NaiveDate,
     pub check_in_at: DateTime<Utc>,
     pub status: VisitStatusDto,

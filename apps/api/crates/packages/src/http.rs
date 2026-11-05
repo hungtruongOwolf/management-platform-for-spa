@@ -50,6 +50,8 @@ pub struct CustomerPackageItemDto {
     pub service_id: Uuid,
     /// Service name when sold (snapshot).
     pub name: String,
+    /// Current catalog category of the service (e.g. "Chăm sóc cổ vai gáy").
+    pub category_name: String,
     pub sessions_purchased: i32,
     pub sessions_bonus: i32,
     pub sessions_total: i32,
@@ -64,6 +66,7 @@ impl From<PackageItem> for CustomerPackageItemDto {
             id: i.id,
             service_id: i.service_id,
             name: i.name,
+            category_name: i.category_name,
             sessions_purchased: i.sessions_purchased,
             sessions_bonus: i.sessions_bonus,
             sessions_total: i.sessions_total,

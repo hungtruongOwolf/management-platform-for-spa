@@ -1,0 +1,178 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH last_visit AS (\n             SELECT v.customer_id, max(v.business_date) AS last_on\n             FROM app.visit v\n             WHERE v.tenant_id = $1 AND v.status = 'completed'\n             GROUP BY v.customer_id\n           ), last_sale AS (\n             SELECT s.customer_id, max(s.business_date) AS last_on\n             FROM app.sale s\n             WHERE s.tenant_id = $1 AND s.status = 'open'\n             GROUP BY s.customer_id\n           ), pk AS (\n             -- Packages of a voided sale never really existed for the customer.\n             SELECT ps.customer_id,\n                    count(*) FILTER (WHERE app.package_status(ps.cancelled_at, ps.sessions_remaining, ps.expires_on, $2) = 'active') AS active,\n                    coalesce(sum(ps.sessions_remaining) FILTER (WHERE app.package_status(ps.cancelled_at, ps.sessions_remaining, ps.expires_on, $2) = 'active'), 0)::bigint AS remaining,\n                    max(ps.starts_on) AS last_start\n             FROM app.customer_package_state ps\n             LEFT JOIN app.sale s ON s.tenant_id = ps.tenant_id AND s.id = ps.sale_id\n             WHERE ps.tenant_id = $1 AND (s.id IS NULL OR s.status <> 'voided')\n             GROUP BY ps.customer_id\n           ), cand AS (\n             SELECT c.id, c.full_name, c.phone_e164, c.gender, lv.last_on,\n                    greatest(lv.last_on, ls.last_on, pk.last_start) AS last_seen,\n                    coalesce(pk.active, 0) AS active, coalesce(pk.remaining, 0) AS remaining,\n                    pk.customer_id IS NOT NULL AS is_package\n             FROM app.customer c\n             LEFT JOIN last_visit lv ON lv.customer_id = c.id\n             LEFT JOIN last_sale ls ON ls.customer_id = c.id\n             LEFT JOIN pk ON pk.customer_id = c.id\n             WHERE c.tenant_id = $1 AND c.anonymized_at IS NULL\n               AND ($8::text IS NULL OR c.search_text LIKE $8)\n               AND ($9::text IS NULL OR c.phone_e164 LIKE $9)\n           ), absent AS (\n             SELECT cand.*, f.contacted_on AS f_on, f.channel AS f_channel, f.outcome AS f_outcome,\n                    f.next_follow_up_on AS f_next, u.full_name AS f_by\n             FROM cand\n             LEFT JOIN LATERAL (\n               SELECT f.contacted_on, f.channel, f.outcome, f.next_follow_up_on, f.created_by\n               FROM app.customer_follow_up f\n               WHERE f.tenant_id = $1 AND f.customer_id = cand.id AND f.contacted_on >= cand.last_seen\n               ORDER BY f.contacted_on DESC, f.created_at DESC, f.id DESC\n               LIMIT 1\n             ) f ON true\n             LEFT JOIN app.user_account u ON u.id = f.created_by\n             WHERE cand.last_seen IS NOT NULL AND cand.last_seen <= $2 - $3::int\n               AND (NOT $4::bool OR cand.remaining > 0)\n               AND ($10::bool IS NULL OR cand.is_package = $10)\n           )\n           , keyed AS (\n             -- Due order: never contacted (0001-01-01), then the planned date, then contacted\n             -- with nothing planned (9999-12-31). By absence: one constant key.\n             SELECT absent.*,\n                    CASE WHEN NOT $12::bool THEN DATE '0001-01-01'\n                         WHEN f_on IS NULL THEN DATE '0001-01-01'\n                         WHEN f_next IS NULL THEN DATE '9999-12-31'\n                         ELSE f_next END AS due_key\n             FROM absent\n             WHERE ($11::text = 'all'\n                    OR ($11 = 'not_contacted' AND f_on IS NULL)\n                    OR ($11 = 'due' AND (f_on IS NULL OR f_next <= $2))\n                    OR ($11 = 'scheduled' AND f_next > $2))\n           )\n           SELECT id AS \"id!\", full_name AS \"full_name!\", phone_e164 AS \"phone!\", gender, last_on,\n                  last_seen AS \"last_seen!\", active AS \"active!\", remaining AS \"remaining!\",\n                  is_package AS \"is_package!\", f_on AS \"f_on?\", f_channel AS \"f_channel?\",\n                  f_outcome AS \"f_outcome?\", f_next AS \"f_next?\", f_by AS \"f_by?\",\n                  due_key AS \"due_key!\"\n           FROM keyed\n           WHERE ($5::date IS NULL OR (due_key, last_seen, id) > ($13, $5, $6))\n           ORDER BY due_key, last_seen, id\n           LIMIT $7",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.customer",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "full_name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "phone!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer",
+            "name": "phone_e164"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "gender",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer",
+            "name": "gender"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "last_on",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "last_seen!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "active!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "remaining!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "is_package!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "f_on?",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "app.customer_follow_up",
+            "name": "contacted_on"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "f_channel?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer_follow_up",
+            "name": "channel"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "f_outcome?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer_follow_up",
+            "name": "outcome"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "f_next?",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "app.customer_follow_up",
+            "name": "next_follow_up_on"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "f_by?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.user_account",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "due_key!",
+        "type_info": "Date",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Int4",
+        "Bool",
+        "Date",
+        "Uuid",
+        "Int8",
+        "Text",
+        "Text",
+        "Bool",
+        "Text",
+        "Bool",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false,
+      false,
+      false,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "09cf713f65b9b25b34939a457ad12fb2ed1755b87cffb203ccabca0fc77c3e62"
+}

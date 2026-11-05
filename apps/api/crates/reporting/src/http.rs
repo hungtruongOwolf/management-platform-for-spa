@@ -2,8 +2,8 @@
 //! (they carry customer and money data), all tenant-scoped by the session.
 
 use crate::dto::{
-    CustomerStats, DailyQuery, DailyReport, HistoryPage, InactivePage, InactiveQuery, LedgerPage,
-    LedgerQuery, PackageOverviewPage, PackageUsage, PackagesQuery, PageQuery, RangeQuery,
+    CustomerStats, DailyQuery, DailyReport, HistoryPage, HistoryQuery, InactivePage, InactiveQuery,
+    LedgerPage, LedgerQuery, PackageOverviewPage, PackageUsage, PackagesQuery, RangeQuery,
     RangeReport,
 };
 use crate::{customer, day, overview};
@@ -59,15 +59,13 @@ pub async fn daily_report(
     responses(
         (status = 200, body = RangeReport, description = "Money fields only with report.revenue.read"),
         (status = 401), (status = 403, description = "auth.forbidden: no report.read"),
-        (status = 422, description = "validation_failed: from after_to, to range_too_long (> 366 days)")))]
+        (status = 422, description = "validation_failed: from after_to, to range_too_long (> 366 days by day/week, > 732 days by month/year), preset conflicts_with_range")))]
 pub async fn range_report(
     State(pool): State<PgPool>,
     user: AuthUser,
     Query(query): Query<RangeQuery>,
 ) -> Result<Response, AppError> {
-    Ok(no_store(
-        day::range(&pool, &user.actor, query.from, query.to, query.granularity).await?,
-    ))
+    Ok(no_store(day::range(&pool, &user.actor, &query).await?))
 }
 
 #[utoipa::path(get, path = "/api/v1/reports/ledger", tag = "reports", params(LedgerQuery),
@@ -97,39 +95,31 @@ pub async fn ledger(
     responses(
         (status = 200, body = InactivePage),
         (status = 401), (status = 403, description = "auth.forbidden: needs customer.read + visit.read"),
-        (status = 422, description = "validation_failed: days out_of_range, cursor invalid, limit out_of_range")))]
+        (status = 422, description = "validation_failed: days out_of_range, q too_short / too_long, cursor invalid, limit out_of_range")))]
 pub async fn inactive_customers(
     State(pool): State<PgPool>,
     user: AuthUser,
     Query(query): Query<InactiveQuery>,
 ) -> Result<Response, AppError> {
     Ok(no_store(
-        overview::inactive(
-            &pool,
-            &user.actor,
-            query.days,
-            query.scope,
-            query.cursor.as_deref(),
-            query.limit,
-        )
-        .await?,
+        overview::inactive(&pool, &user.actor, &query).await?,
     ))
 }
 
 #[utoipa::path(get, path = "/api/v1/customers/{id}/history", tag = "reports",
-    params(("id" = Uuid, Path), PageQuery),
+    params(("id" = Uuid, Path), HistoryQuery),
     responses(
         (status = 200, body = HistoryPage),
         (status = 401), (status = 403, description = "auth.forbidden: needs customer.read + visit.read + sale.read"),
-        (status = 404), (status = 422, description = "validation_failed: cursor invalid, limit out_of_range")))]
+        (status = 404), (status = 422, description = "validation_failed: q too_short / too_long, from after_to, cursor invalid, limit out_of_range")))]
 pub async fn customer_history(
     State(pool): State<PgPool>,
     user: AuthUser,
     Path(id): Path<Uuid>,
-    Query(query): Query<PageQuery>,
+    Query(query): Query<HistoryQuery>,
 ) -> Result<Response, AppError> {
     Ok(no_store(
-        customer::history(&pool, &user.actor, id, query.cursor.as_deref(), query.limit).await?,
+        customer::history(&pool, &user.actor, id, &query).await?,
     ))
 }
 

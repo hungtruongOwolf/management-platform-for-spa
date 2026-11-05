@@ -307,6 +307,8 @@ pub struct PackageItem {
     pub id: Uuid,
     pub service_id: Uuid,
     pub name: String,
+    /// Current catalog category of the service.
+    pub category_name: String,
     pub sessions_purchased: i32,
     pub sessions_bonus: i32,
     pub sessions_total: i32,
@@ -368,6 +370,7 @@ fn item(r: ItemRow) -> Result<PackageItem, AppError> {
         id: r.id,
         service_id: r.service_id,
         name: r.name_snapshot,
+        category_name: r.category_name,
         sessions_purchased: r.sessions_purchased,
         sessions_bonus: r.sessions_bonus,
         sessions_total: r.sessions_total,
