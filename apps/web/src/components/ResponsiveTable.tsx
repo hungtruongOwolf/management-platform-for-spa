@@ -42,8 +42,8 @@ export interface ResponsiveTableProps<T> {
   columns: readonly Column<T>[];
   /** Class per row/card, e.g. a voided line. */
   rowClassName?: (row: T) => string | undefined;
-  /** Cards below this width (default 640 = phones). Wide tables (6+ columns) use 768. */
-  cardsBelow?: 640 | 768;
+  /** Cards below this width (default 640 = phones). Wide tables (6+ columns) use 1024: on a tablet with the icon rail they would squeeze every cell to two lines. */
+  cardsBelow?: 640 | 768 | 1024;
   /** The first link in the card title covers the whole card (one tap target, Polaris ResourceList). */
   stretchLink?: boolean;
   /** Desktop `<tfoot>` row(s); on phones shown under the cards as given. */

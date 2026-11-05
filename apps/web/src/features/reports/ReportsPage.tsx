@@ -384,7 +384,7 @@ function Breakdown({ range, bucket }: { range: RangeReport; bucket: Bucket }) {
         caption={`Chi tiết theo ${PERIOD_COLUMN[bucket].toLowerCase()}, mới nhất trước`}
         rows={rows}
         rowKey={(b) => b.start}
-        cardsBelow={768}
+        cardsBelow={1024}
         className="rt-pad"
         columns={[
           { id: "period", header: PERIOD_COLUMN[bucket], card: "title", rowHeader: true, className: "font-medium whitespace-nowrap", cell: (b) => bucketTitle(b, bucket) },

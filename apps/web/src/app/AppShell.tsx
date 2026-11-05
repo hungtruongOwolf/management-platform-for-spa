@@ -1,7 +1,7 @@
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
-import { useModalDialog } from "../components/BottomSheet";
+import { useModalDialog } from "../components/useModalDialog";
 import { logout, meQuery } from "../features/auth/session";
 import { longDate } from "../lib/format";
 import { BrandLogo } from "./BrandLogo";

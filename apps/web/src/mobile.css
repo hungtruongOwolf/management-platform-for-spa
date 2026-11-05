@@ -54,6 +54,12 @@
   display: grid;
   gap: 8px;
 }
+/* Tablets (wide tables become cards below 1024px): two columns of cards, not one stretched one. */
+@media (min-width: 640px) {
+  .rt-cards {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+}
 .rt-cards-wrap {
   display: grid;
   gap: 8px;

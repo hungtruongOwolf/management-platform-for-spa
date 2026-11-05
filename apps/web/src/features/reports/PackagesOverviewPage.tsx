@@ -130,7 +130,7 @@ function PackagesOverviewPageBody() {
             rows={items}
             rowKey={(p) => p.id}
             stretchLink
-            cardsBelow={768}
+            cardsBelow={1024}
             columns={[
               {
                 id: "customer",

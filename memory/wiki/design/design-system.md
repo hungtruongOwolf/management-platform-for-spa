@@ -106,7 +106,7 @@ EM: "UI của mobile đâu thể y như web được … nghiên cứu lại v�
 | Component | API | Ghi chú |
 |---|---|---|
 | `usePhone()` / `useMediaQuery(q)` | `boolean`, theo `matchMedia` (live) | jsdom không có `matchMedia` → `false` (test thấy bản desktop) |
-| `ResponsiveTable<T>` | `caption`, `rows`, `rowKey`, `columns: Column<T>[]`, `rowClassName?`, `cardsBelow? = 640 \| 768`, `stretchLink?`, `footer?: { table, cards }` | `Column`: `id`, `header`, `cell(row)`, `numeric?` (canh phải, tabular), `card?: "title" \| "subtitle" \| "aside" \| "field" \| "hidden"` (mặc định `field`), `cardLabel?`, `className?`. Desktop: `.data-table` trong `.table-wrap` + `<caption>` ẩn. Điện thoại: `<ul aria-label={caption}>` thẻ `.rt-card`; chỉ một bản trong DOM |
+| `ResponsiveTable<T>` | `caption`, `rows`, `rowKey`, `columns: Column<T>[]`, `rowClassName?`, `cardsBelow? = 640 | 768 | 1024`\| 768`, `stretchLink?`, `footer?: { table, cards }` | `Column`: `id`, `header`, `cell(row)`, `numeric?` (canh phải, tabular), `card?: "title" \| "subtitle" \| "aside" \| "field" \| "hidden"` (mặc định `field`), `cardLabel?`, `className?`. Desktop: `.data-table` trong `.table-wrap` + `<caption>` ẩn. Điện thoại: `<ul aria-label={caption}>` thẻ `.rt-card` (từ 640px: lưới 2 cột thẻ); chỉ một bản trong DOM. Bảng 6+ cột (gói của khách, khách vắng, chi tiết theo ngày) dùng `cardsBelow={1024}`: trên tablet có rail icon, bảng ép mọi ô xuống 2 dòng |
 | `BottomSheet` | `open`, `onClose`, `title`, `description?`, `children`, `footer?`, `wide?`, `className?` | `<dialog>` + `showModal()` (focus trap, Esc, backdrop); điện thoại: trượt từ đáy, grabber, kéo xuống > 96px để đóng, thân cuộn riêng, footer ghim + safe-area; ≥ 640px: dialog giữa màn 560px (`wide`: 760px). Hook `useModalDialog(open)` dùng lại được |
 | `StickyActions` | `children` (nút), `summary?`, `label? = "Thao tác"`, `always?` | `role=group`; < 640px dính trên tab bar, nút giãn đều; ≥ 640px hàng nút canh phải (dính nếu `always`) |
 | `ResponsiveFilters` (`features/reports/filters.tsx`) | `label`, `search?`, `children`, `activeCount`, `onReset?` | ≥ 640px = `FilterBar` một hàng; < 640px = ô tìm + nút "Bộ lọc" (badge số) mở `BottomSheet` |
@@ -168,6 +168,18 @@ Một lớp CSS **không nằm trong layer** (thắng utility) cho vài thuộc 
 
 
 ## Trước / sau
+**Vòng 4 (`feat/ui-polish-mobile`):** ảnh 12 màn × 360/390/768/1280/1440 × sáng/tối, scratchpad agent `r4-polish/before`, `r4-polish/after`, trạng thái tương tác `r4-polish/states`.
+| Màn | Trước | Sau |
+|---|---|---|
+| Điện thoại: bảng (gói, khách vắng, chi tiết ngày, sổ doanh thu) | bảng cuộn ngang trong card | thẻ (tên, số chính, cặp nhãn–giá trị, nút); tablet 2 cột thẻ |
+| Điện thoại: bộ lọc | 3–4 select xếp chồng chiếm nửa màn | ô tìm + nút "Bộ lọc (n)" → bottom sheet |
+| Kỳ báo cáo, trạng thái gói | segmented xuống 3 hàng | một hàng chip cuộn ngang |
+| Hồ sơ khách | một card, "Liệu trình" nhỏ, "(sổ cũ)", "Đã chi 0đ", ô ngày mm/dd/yyyy, "THÁNG 11 NĂM 2026" | 2 card cùng kiểu tiêu đề, dòng gói cố định, "Đã chi qua app" + chú thích, `DateField`, "Tháng 11/2026", sửa/bán/ghi liên hệ trong sheet |
+| Tooltip biểu đồ | "30 ngày qua" vỡ 3 dòng | một dòng mỗi chuỗi |
+| Bảng giá | nhãn "Nhóm dịch vụ mới" lệch cạnh ô | nhãn trên, ô + nút cùng hàng |
+| Tên | Gói bán, Theo dõi gói, Kinh doanh | Mẫu gói liệu trình, Gói liệu trình của khách, Báo cáo kinh doanh |
+| Favicon | nét mảnh tan ở 16px, lề 16% | nét dày, lấp gần kín ô, `.ico` + cache-bust |
+
 **Vòng 3 (shell, `feat/ui-shell-r3`):** ảnh trước/sau 360/768/1280/1440 mọi màn + hồ sơ khách + focus ô tìm khách + menu tài khoản + dark, thư mục scratchpad của agent `ui3-shell/before`, `ui3-shell/after`.
 | Màn | Trước (#29) | Sau |
 |---|---|---|
@@ -211,7 +223,7 @@ Một lớp CSS **không nằm trong layer** (thắng utility) cho vài thuộc 
 - **Vùng chạm ≥ 44×44px** (WCAG 2.5.8 + dùng trên tablet).
 
 ## Breakpoints
-`sm 640` (điện thoại ngang) · `md 768` (tablet dọc) · `lg 1024` (tablet ngang, laptop) · `xl 1280` (desktop).
+`sm 640` (điện thoại ngang) · `md`cardsBelow? = 640 | 768 | 1024` (tablet dọc) · `lg 1024` (tablet ngang, laptop) · `xl 1280` (desktop).
 - Màn hình quầy: **2 cột từ ≥ 900px** (trái: tìm + thẻ khách; phải: lượt đang ghi + thanh toán + lượt hôm nay), 1 cột khi nhỏ hơn.
 - Giao diện KTV (R2/R3): thiết kế mobile trước.
 

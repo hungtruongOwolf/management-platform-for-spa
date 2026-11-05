@@ -136,9 +136,9 @@ test("phones: tab bar, filter sheet, cards instead of tables, 44 px targets", as
   for (const [name, path] of screens()) {
     await open(page, path);
     const small = await page.evaluate(() =>
-      [...document.querySelectorAll<HTMLElement>(".btn, .tab, .filter-trigger, .icon-btn, main select, main input:not([type=checkbox], [type=radio], [type=hidden], [type=date])")]
+      Array.from(document.querySelectorAll<HTMLElement>(".btn, .tab, .filter-trigger, .icon-btn, main select, main input:not([type=checkbox], [type=radio], [type=hidden], [type=date])"))
         .filter((el) => el.offsetParent !== null)
-        .map((el) => [el.getAttribute("aria-label") ?? el.textContent?.trim().slice(0, 30) ?? el.tagName, Math.round(el.getBoundingClientRect().height)] as const)
+        .map((el) => [el.getAttribute("aria-label") ?? el.textContent.trim().slice(0, 30), Math.round(el.getBoundingClientRect().height)] as const)
         .filter(([, h]) => h < 44)
         .map(([label, h]) => `${label} (${String(h)}px)`),
     );

@@ -144,7 +144,7 @@ function InactiveCustomersPageBody() {
             rows={items}
             rowKey={(c) => c.customer_id}
             stretchLink
-            cardsBelow={768}
+            cardsBelow={1024}
             columns={inactiveColumns(canFollowUp, setContacting)}
           />
         )}
