@@ -1,6 +1,6 @@
 ---
 title: Backend design (R1-1)
-updated: 2026-11-04
+updated: 2026-11-05
 sources: [product/specs/front-desk-and-packages.md, architecture/system.md, architecture/data.md, security/authz-matrix.md]
 ---
 
@@ -141,6 +141,23 @@ domain: kiểu dữ liệu & bất biến thuần (Money, PhoneE164, SessionCoun
 | Dọn `idempotency_record` > 48 giờ, session hết hạn, auth token hết hạn | Mỗi giờ | Idempotent, chạy lại thoải mái |
 | Backup `pg_dump` → mã hóa → R2 | 02:00 hằng ngày (cron trên VPS, ở `/devops`) | Alert nếu không có backup mới trong 26 giờ |
 Nhắc nhở (spec #3) sẽ dùng bảng job trên Postgres (`FOR UPDATE SKIP LOCKED`) có dead-letter.
+
+## 6b. Lệnh vận hành (CLI `app`, `apps/api/crates/app/src/main.rs`)
+Chạy trên máy vận hành, không có route HTTP nào tương ứng. Mật khẩu chỉ qua env, không bao giờ qua argv.
+
+| Lệnh | Việc | Kết nối |
+|---|---|---|
+| `app` / `app serve` | Chạy API | `APP_DATABASE_URL` (app_rw) |
+| `app migrate` | Chạy migration | `DATABASE_URL` (schema owner) |
+| `app create-tenant --slug S --name N [--branch B]` | Tạo spa + chi nhánh + role hệ thống | owner |
+| `app add-user --tenant S --phone P --name N --role owner\|manager\|technician` | Thêm người vào spa, mật khẩu từ `APP_NEW_USER_PASSWORD` | owner |
+| `app add-staff --tenant S --name N --position P` | Thêm nhân viên cho picker KTV / người chốt | owner |
+| `app seed-catalog --tenant S` | Nạp menu in (35 dịch vụ / 10 nhóm) | owner |
+| `app seed-demo --tenant S [--force-again]` | Dữ liệu demo cho staging/buổi dùng thử, xem [runbook](../runbooks/vercel-staging.md#dữ-liệu-demo) | owner + app_rw + `APP_DATA_KEY` + `APP_NEW_USER_PASSWORD` |
+| `app reset-mfa --phone P` / `app unlock --phone P` | Mất authenticator / gỡ khóa đăng nhập (xác minh người trước) | owner |
+| `app openapi` | In contract ra stdout | — |
+
+`seed-demo` đi qua đúng các use case của quầy (`crm`, `sales`, `operations`, `packages`), nên validation, audit và quy tắc append-only vẫn giữ. Để ghi lịch sử 3 tuần, `sales::service::create_sale_as_of` và `operations::service::record_as_of` nhận đồng hồ làm tham số (`kernel::tenant::profile_as_of`). Handler HTTP chỉ gọi `create_sale` / `record`, hai hàm này truyền `Utc::now()`: client không có cách nào ghi lùi ngày.
 
 ## 7. Truy vết acceptance criteria → endpoint
 | Story | AC chính | Endpoint |

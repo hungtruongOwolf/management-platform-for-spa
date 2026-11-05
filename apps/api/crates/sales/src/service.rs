@@ -207,6 +207,20 @@ pub async fn create_sale(
     request_hash: [u8; 32],
     input: &SaleCreate,
 ) -> Result<(u16, Value), AppError> {
+    create_sale_as_of(pool, actor, key, request_hash, input, Utc::now()).await
+}
+
+/// [`create_sale`] on the business day of `now` instead of the server clock, with every other
+/// rule unchanged. Operator tooling only (`app seed-demo` back-fills demo history); no route
+/// reaches it — `POST /sales` calls [`create_sale`].
+pub async fn create_sale_as_of(
+    pool: &PgPool,
+    actor: &Actor,
+    key: Uuid,
+    request_hash: [u8; 32],
+    input: &SaleCreate,
+    now: DateTime<Utc>,
+) -> Result<(u16, Value), AppError> {
     actor.require(Permission::PackageSell)?;
     let order = parse(input)?;
     if !order.payments.is_empty() {
@@ -220,7 +234,7 @@ pub async fn create_sale(
         tx.commit().await?;
         return Ok((status, body));
     }
-    let tenant = kernel::tenant::profile(&mut tx).await?;
+    let tenant = kernel::tenant::profile_as_of(&mut tx, now).await?;
     let today = tenant.business_date.as_naive();
 
     if !crm::service::exists_in(&mut tx, order.customer_id).await? {

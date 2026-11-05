@@ -5,6 +5,7 @@ use crate::business_date::BusinessDate;
 use crate::db::TenantTx;
 use crate::error::AppError;
 use crate::ids::BranchId;
+use chrono::{DateTime, Utc};
 
 /// Manager discount cap when the tenant has not configured one (spec R1-1 D10).
 pub const DEFAULT_MANAGER_DISCOUNT_MAX_PCT: u32 = 10;
@@ -20,8 +21,19 @@ pub struct TenantProfile {
     pub manager_discount_max_pct: u32,
 }
 
-/// Reads the tenant of `tx` (RLS lets a tenant see only its own row).
+/// Reads the tenant of `tx` (RLS lets a tenant see only its own row); today is the business day
+/// of the server clock.
 pub async fn profile(tx: &mut TenantTx) -> Result<TenantProfile, AppError> {
+    profile_as_of(tx, Utc::now()).await
+}
+
+/// Like [`profile`], with today taken from `now` instead of the server clock. Only operator
+/// tooling that back-fills history (`app seed-demo`) passes another instant; HTTP use cases
+/// always go through [`profile`].
+pub async fn profile_as_of(
+    tx: &mut TenantTx,
+    now: DateTime<Utc>,
+) -> Result<TenantProfile, AppError> {
     let tenant = tx.tenant().as_uuid();
     let row = sqlx::query!(
         r#"SELECT t.timezone,
@@ -41,7 +53,7 @@ pub async fn profile(tx: &mut TenantTx) -> Result<TenantProfile, AppError> {
         .map(BranchId::from_uuid)
         .ok_or_else(|| AppError::Internal(format!("tenant {tenant} has no active branch")))?;
     Ok(TenantProfile {
-        business_date: BusinessDate::today(tz),
+        business_date: BusinessDate::of_instant(now, tz),
         timezone: tz,
         branch,
         manager_discount_max_pct: parse_pct(row.manager_discount_max_pct.as_deref()),

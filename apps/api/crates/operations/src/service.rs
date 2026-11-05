@@ -201,6 +201,22 @@ pub async fn record(
     request_hash: [u8; 32],
     input: &VisitCreate,
 ) -> Result<(u16, Value), AppError> {
+    record_as_of(pool, cipher, actor, key, request_hash, input, Utc::now()).await
+}
+
+/// [`record`] with `now` as the server clock: the visit lands on the business day of `now`, and
+/// the check-in rules (not in the future, on that day) are checked against it. Operator tooling
+/// only (`app seed-demo` back-fills demo history); no route reaches it — `POST /visits` calls
+/// [`record`].
+pub async fn record_as_of(
+    pool: &PgPool,
+    cipher: &FieldCipher,
+    actor: &Actor,
+    key: Uuid,
+    request_hash: [u8; 32],
+    input: &VisitCreate,
+    now: DateTime<Utc>,
+) -> Result<(u16, Value), AppError> {
     actor.require(Permission::VisitRecord)?;
     let order = parse(actor, input)?;
 
@@ -211,14 +227,16 @@ pub async fn record(
         tx.commit().await?;
         return Ok((status, body));
     }
-    let tenant = kernel::tenant::profile(&mut tx).await?;
+    let tenant = kernel::tenant::profile_as_of(&mut tx, now).await?;
     let today = tenant.business_date.as_naive();
-    let check_in_at = domain::check_in_at(order.check_in_at, Utc::now(), tenant.timezone, today)
-        .map_err(|e| AppError::Unprocessable {
-            code: match e {
-                CheckInError::InFuture => "visit.check_in_in_future",
-                CheckInError::NotToday => "visit.check_in_not_today",
-            },
+    let check_in_at =
+        domain::check_in_at(order.check_in_at, now, tenant.timezone, today).map_err(|e| {
+            AppError::Unprocessable {
+                code: match e {
+                    CheckInError::InFuture => "visit.check_in_in_future",
+                    CheckInError::NotToday => "visit.check_in_not_today",
+                },
+            }
         })?;
     let customer = crm::service::brief_in(&mut tx, order.customer_id)
         .await?
