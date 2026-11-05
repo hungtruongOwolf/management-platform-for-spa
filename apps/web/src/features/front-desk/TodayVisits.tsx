@@ -190,13 +190,8 @@ export function TodayVisits() {
                 className="border-b border-dashed border-border py-2 text-sm last:border-b-0"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <button
-                    type="button"
-                    aria-expanded={open}
-                    onClick={() => {
-                      setExpanded(open ? null : v.id);
-                    }}
-                    className={`grid min-w-0 flex-1 gap-x-4 gap-y-0.5 rounded-[6px] text-left hover:bg-surface-2 md:grid-cols-[56px_minmax(0,1.2fr)_minmax(0,2fr)_minmax(0,1.3fr)] ${v.status === "voided" ? "text-text-muted" : ""}`}
+                  <div
+                    className={`grid min-w-0 flex-1 gap-x-4 gap-y-0.5 md:grid-cols-[56px_minmax(0,1.2fr)_minmax(0,2fr)_minmax(0,1.3fr)] ${v.status === "voided" ? "text-text-muted" : ""}`}
                   >
                     <strong className="tabular-nums">
                       {timeOf(v.check_in_at)}
@@ -232,13 +227,24 @@ export function TodayVisits() {
                         Lý do hủy: {v.void_reason}
                       </span>
                     )}
-                  </button>
+                  </div>
                   <span className="flex shrink-0 items-start gap-2">
                     <span
                       className={`tabular-nums ${v.status === "voided" ? "text-text-muted line-through" : ""}`}
                     >
                       {v.total ? formatVnd(v.total) : "—"}
                     </span>
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      aria-label={`Chi tiết lượt ${timeOf(v.check_in_at)} của ${v.customer_name}`}
+                      onClick={() => {
+                        setExpanded(open ? null : v.id);
+                      }}
+                      className="min-h-11 rounded-[10px] border border-border px-3 font-medium"
+                    >
+                      {open ? "Thu gọn" : "Chi tiết"}
+                    </button>
                     {mayVoid &&
                       v.status === "completed" &&
                       voiding !== v.id && (

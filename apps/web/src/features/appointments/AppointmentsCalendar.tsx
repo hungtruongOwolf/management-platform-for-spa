@@ -413,7 +413,14 @@ function DayGrid({
     const width = Math.max(1, ...[...l.values()].map((v) => v + 1));
     const first = col;
     col += width;
-    return { ...g, first, width, lane: l };
+    // Rows an appointment already covers get no slot button underneath (no stacked controls).
+    const busy = new Set<number>();
+    for (const a of g.items) {
+      const s = Math.round((spaMinutes(a.starts_at) - opens) / slot);
+      for (let k = 0; k < Math.max(1, Math.round(a.duration_min / slot)); k++)
+        busy.add(s + k);
+    }
+    return { ...g, first, width, lane: l, busy };
   });
   const now = spaMinutes(new Date().toISOString());
   const isToday = day === spaToday();
@@ -478,6 +485,7 @@ function DayGrid({
         })}
         {laid.flatMap((g) =>
           Array.from({ length: rows }, (_, r) => {
+            if (g.busy.has(r)) return null;
             const m = opens + r * slot;
             const disabled = !canBook || past(m);
             return (
@@ -537,8 +545,7 @@ function DayGrid({
             style={{
               gridColumn: `1 / span ${String(col - 1)}`,
               gridRow: String(Math.floor((now - opens) / slot) + 2),
-              alignSelf: "start",
-              marginTop: `${String((((now - opens) % slot) / slot) * 26)}px`,
+              top: `${String((((now - opens) % slot) / slot) * 26)}px`,
             }}
           />
         )}

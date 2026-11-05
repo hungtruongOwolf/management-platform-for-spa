@@ -117,7 +117,7 @@ Nguồn: [EM review vòng 4](../../raw/2026-11-05-em-review-round4.md) mục 1, 
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 - **Thông tin khách ngay dưới tên vừa chọn** (cùng ô tìm, không còn thẻ riêng): tên + giới tính, SĐT, "N gói liệu trình đang dùng, còn M buổi", lưu ý sức khỏe, gói + "Trừ 1 buổi", nút "Đổi khách" (= Esc).
-- **Lượt khách hôm nay** rộng toàn trang; mỗi dòng là nút mở/đóng chi tiết (`aria-expanded`); "Mở hồ sơ khách" đi qua trail nên nút quay lại trên hồ sơ ghi tên màn quầy. Ô ngày dùng `DateField` (luôn dd/mm/yyyy).
+- **Lượt khách hôm nay** rộng toàn trang; nút "Chi tiết" (`aria-expanded`) mở/đóng chi tiết ngay dưới dòng; "Mở hồ sơ khách" đi qua trail nên nút quay lại trên hồ sơ ghi tên màn quầy. Ô ngày dùng `DateField` (luôn dd/mm/yyyy).
 - **Giờ làm:** mặc định "bây giờ" (một dòng chữ, fast path không thêm thao tác). "Đổi giờ làm" mở ô giờ; chủ spa (`visit.backdate`) có thêm ô ngày (lùi ≤ 366 ngày) + ghi chú "Nhập bù: lượt, hóa đơn và tiền thu được ghi vào ngày …"; toast sau khi lưu ghi "nhập bù ngày …".
 - **Giảm giá:** chỉ hiện khi có dòng lẻ và có `sale.discount`; % hoặc số tiền + lý do; xem trước "Giảm X", tổng gạch giá cũ; quản lý vượt 10% thấy "cần chủ spa" (server quyết định).
 

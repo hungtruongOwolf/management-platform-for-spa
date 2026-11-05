@@ -129,6 +129,11 @@
 .cal-cell.is-hour {
   border-top: 1px solid var(--border);
 }
+/* Slots touch the appointments above and below: draw the focus ring inside the slot. */
+.cal-cell:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 3px var(--focus);
+}
 .cal-cell:hover {
   background: var(--primary-soft);
 }
@@ -168,7 +173,11 @@
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+/* Decorative and stacked over the grid: absolute (its grid area is the containing block). */
 .cal-now {
+  position: absolute;
+  right: 0;
+  left: 0;
   z-index: 4;
   height: 0;
   border-top: 2px solid var(--danger);
