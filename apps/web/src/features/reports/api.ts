@@ -1,5 +1,6 @@
-import type { InactiveScope } from "@vpyd/api-client";
-import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
+import type { Granularity, InactiveScope } from "@vpyd/api-client";
+import { infiniteQueryOptions, keepPreviousData, queryOptions } from "@tanstack/react-query";
+import type { Bucket } from "./period";
 import { api } from "../../lib/api";
 import { spaToday } from "../corrections/api";
 import type {
@@ -7,6 +8,7 @@ import type {
   DailyReport,
   HistoryPage,
   InactivePage,
+  LedgerPage,
   PackageOverviewPage,
   PackageStatus,
   RangeReport,
@@ -28,10 +30,36 @@ export function dailyReportQuery(date: string) {
   });
 }
 
-export function rangeReportQuery(from: string, to: string) {
+/** API bucket of a period's chart (`/reports/range` `granularity`). */
+export function granularityOf(bucket: Bucket): Granularity {
+  // Adapter until the contract has `year` (feat/followup-and-reports-api).
+  return bucket === "year" ? "month" : bucket;
+}
+
+/**
+ * `GET /reports/range` for a period. The previous render stays on screen while the next period
+ * loads (dataviz: refetch keeps the frame); the caller dims it through `isPlaceholderData`.
+ */
+export function rangeReportQuery(from: string, to: string, bucket: Bucket = "day") {
+  const granularity = granularityOf(bucket);
   return queryOptions({
-    queryKey: ["reports", "range", from, to],
-    queryFn: async () => (await api(`/reports/range?from=${from}&to=${to}&granularity=day`)) as RangeReport,
+    queryKey: ["reports", "range", from, to, granularity],
+    queryFn: async () => (await api(`/reports/range?from=${from}&to=${to}&granularity=${granularity}`)) as RangeReport,
+    staleTime: 60_000,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** `GET /reports/ledger` (sổ doanh thu): 100 rows a page; `days[]` carries every day's totals. */
+export function ledgerQuery(from: string, to: string) {
+  return infiniteQueryOptions({
+    queryKey: ["reports", "ledger", from, to],
+    queryFn: async ({ pageParam }) =>
+      (await api(
+        `/reports/ledger?from=${from}&to=${to}&limit=100${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ""}`,
+      )) as LedgerPage,
+    initialPageParam: "",
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
     staleTime: 60_000,
   });
 }
@@ -52,18 +80,26 @@ export function customerStatsQuery(id: string) {
 
 export type PackageFilter = PackageStatus | "expiring" | "all";
 
-/** Query string of `GET /packages` for a filter chip. */
-export function packagesPath(filter: PackageFilter): string {
-  if (filter === "all") return "/packages?limit=50";
-  if (filter === "expiring") return "/packages?expiring_within_days=30&limit=50";
-  return `/packages?status=${filter}&limit=50`;
+/** Query string of `GET /packages` for a filter chip and a search (customer name or phone). */
+export function packagesPath(filter: PackageFilter, q = "", cursor = ""): string {
+  const params = new URLSearchParams();
+  if (filter === "expiring") params.set("expiring_within_days", "30");
+  else if (filter !== "all") params.set("status", filter);
+  if (q) params.set("q", q);
+  params.set("limit", "50");
+  if (cursor) params.set("cursor", cursor);
+  return `/packages?${params.toString()}`;
 }
 
-export function packagesOverviewQuery(filter: PackageFilter) {
-  return queryOptions({
-    queryKey: ["packages", "overview", filter],
-    queryFn: async () => (await api(packagesPath(filter))) as PackageOverviewPage,
+/** `GET /packages`, 50 a page; `counts` (first page) count the whole spa for the same `q`. */
+export function packagesOverviewQuery(filter: PackageFilter, q = "") {
+  return infiniteQueryOptions({
+    queryKey: ["packages", "overview", filter, q],
+    queryFn: async ({ pageParam }) => (await api(packagesPath(filter, q, pageParam))) as PackageOverviewPage,
+    initialPageParam: "",
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
 }
 

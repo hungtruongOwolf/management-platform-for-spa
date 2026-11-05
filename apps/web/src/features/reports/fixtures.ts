@@ -10,6 +10,8 @@ import type {
   HistoryEvent,
   HistoryPage,
   InactivePage,
+  LedgerPage,
+  LedgerRow,
   MethodSplit,
   PackageOverviewPage,
   PackageStatus,
@@ -127,28 +129,71 @@ export function mockDaily(date: string): DailyReport {
   };
 }
 
-export function mockRange(from: string, to: string): RangeReport {
+function addRevenue(a: Revenue, b: Revenue): Revenue {
+  const m = (x: MethodSplit, y: MethodSplit): MethodSplit => ({
+    cash: x.cash + y.cash,
+    bank_transfer: x.bank_transfer + y.bank_transfer,
+    total: x.total + y.total,
+  });
+  const k = (x: Revenue["net_by_kind"], y: Revenue["net_by_kind"]) => ({ package: x.package + y.package, one_off: x.one_off + y.one_off });
+  return {
+    collected: m(a.collected, b.collected),
+    collected_by_kind: k(a.collected_by_kind, b.collected_by_kind),
+    voids: m(a.voids, b.voids),
+    voids_by_kind: k(a.voids_by_kind, b.voids_by_kind),
+    refunds: m(a.refunds, b.refunds),
+    net: m(a.net, b.net),
+    net_by_kind: k(a.net_by_kind, b.net_by_kind),
+  };
+}
+
+const ZERO_COUNTS: DayCounts = { customers: 0, visits: 0, voided_visits: 0, sessions_used: 0, one_off_services: 0, packages_sold: 0 };
+
+function addCounts(a: DayCounts, b: DayCounts): DayCounts {
+  return {
+    customers: a.customers + b.customers,
+    visits: a.visits + b.visits,
+    voided_visits: a.voided_visits + b.voided_visits,
+    sessions_used: a.sessions_used + b.sessions_used,
+    one_off_services: a.one_off_services + b.one_off_services,
+    packages_sold: a.packages_sold + b.packages_sold,
+  };
+}
+
+/** First day of the bucket holding `d` (ISO week from Monday, calendar month). */
+function bucketStart(d: string, granularity: RangeReport["granularity"]): string {
+  if (granularity === "month") return `${d.slice(0, 7)}-01`;
+  if (granularity === "week") {
+    const wd = (new Date(`${d}T00:00:00Z`).getUTCDay() + 6) % 7;
+    return addDays(d, -wd);
+  }
+  return d;
+}
+
+export function mockRange(from: string, to: string, granularity: RangeReport["granularity"] = "day"): RangeReport {
   const series: RangeReport["series"] = [];
   for (let d = from; d <= to; d = addDays(d, 1)) {
     const { c, rev } = day(d);
-    series.push({ start: d, end: d, counts: c, revenue: rev });
+    const start = bucketStart(d, granularity);
+    const last = series.at(-1);
+    if (last && bucketStart(last.start, granularity) === start) {
+      last.end = d;
+      last.counts = addCounts(last.counts, c);
+      if (last.revenue) last.revenue = addRevenue(last.revenue, rev);
+    } else {
+      series.push({ start: d, end: d, counts: c, revenue: rev });
+    }
   }
-  const sum = (f: (c: DayCounts) => number) => series.reduce((s, b) => s + f(b.counts), 0);
-  const totals: DayCounts = {
-    customers: sum((c) => c.customers),
-    visits: sum((c) => c.visits),
-    voided_visits: sum((c) => c.voided_visits),
-    sessions_used: sum((c) => c.sessions_used),
-    one_off_services: sum((c) => c.one_off_services),
-    packages_sold: sum((c) => c.packages_sold),
-  };
+  const totals: DayCounts = series.reduce((s, b) => addCounts(s, b.counts), ZERO_COUNTS);
+  const revenueTotal = series.reduce<Revenue | null>((s, b) => (s && b.revenue ? addRevenue(s, b.revenue) : (b.revenue ?? s)), null);
   const r = rng(`range-${from}-${to}`);
   return {
     from,
     to,
-    granularity: "day",
+    granularity,
     totals,
     series,
+    revenue: revenueTotal,
     top_services: SERVICES.map((name, i) => ({
       service_id: `mock-service-${String(i)}`,
       name,
@@ -266,13 +311,15 @@ export function mockCustomerStats(customerId: string, history: HistoryPage): Cus
 
 const STATUSES: PackageStatus[] = ["active", "active", "active", "active", "expired", "exhausted", "cancelled"];
 
-export function mockPackages(today: string, status: PackageStatus | "expiring" | "all"): PackageOverviewPage {
+export function mockPackages(today: string, status: PackageStatus | "expiring" | "all", q = ""): PackageOverviewPage {
   const r = rng("packages");
-  const all = Array.from({ length: 28 }, (_, i) => {
+  const every = Array.from({ length: 28 }, (_, i) => {
     const [name, phone] = CUSTOMERS[i % CUSTOMERS.length] ?? ["Khách", "0900000000"];
     const st = STATUSES[int(r, 0, STATUSES.length - 1)] ?? "active";
     const total = [10, 12, 15, 8][i % 4] ?? 10;
     const remaining = st === "exhausted" ? 0 : int(r, 1, total - 1);
+    // Every 7th package never expires (spec D2): active, no date, never "expiring"/"expired".
+    const unlimited = i % 7 === 3;
     const days = st === "expired" ? -int(r, 1, 40) : int(r, 3, 200);
     return {
       id: `mock-package-${String(i)}`,
@@ -280,22 +327,29 @@ export function mockPackages(today: string, status: PackageStatus | "expiring" |
       customer_name: name,
       customer_phone: phone,
       name: PACKAGES[i % PACKAGES.length] ?? "Gói",
-      status: st,
+      status: unlimited && st === "expired" ? ("active" as const) : st,
       sessions_total: total,
       sessions_remaining: remaining,
       starts_on: addDays(today, days - 365),
-      expires_on: addDays(today, days),
-      days_to_expiry: days,
+      expires_on: unlimited ? null : addDays(today, days),
+      days_to_expiry: unlimited ? null : days,
       last_used_on: addDays(today, -int(r, 0, 60)),
       cancelled_at: st === "cancelled" ? iso(addDays(today, -int(r, 5, 30)), 15, 0) : null,
     };
   });
-  const expiring = (p: (typeof all)[number]) => p.status === "active" && p.days_to_expiry <= 30;
+  const fold = (t: string) =>
+    t
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/đ/gi, "d")
+      .toLowerCase();
+  const all = q ? every.filter((p) => fold(p.customer_name).includes(fold(q)) || p.customer_phone.includes(q.replace(/\D/g, "") || "~")) : every;
+  const expiring = (p: (typeof all)[number]) => p.status === "active" && p.days_to_expiry !== null && p.days_to_expiry <= 30;
   const items =
     status === "all"
       ? all
       : status === "expiring"
-        ? all.filter(expiring).sort((a, b) => a.days_to_expiry - b.days_to_expiry)
+        ? all.filter(expiring).sort((a, b) => (a.days_to_expiry ?? 0) - (b.days_to_expiry ?? 0))
         : all.filter((p) => p.status === status);
   const n = (s: PackageStatus) => all.filter((p) => p.status === s).length;
   return {
@@ -323,4 +377,44 @@ export function mockInactive(today: string, days: number): InactivePage {
     };
   }).sort((a, b) => b.days_absent - a.days_absent);
   return { days, items, next_cursor: null };
+}
+
+/** `GET /reports/ledger`: a sale per visit-ish, one void and one refund, book order. */
+export function mockLedger(from: string, to: string): LedgerPage {
+  const rows: LedgerRow[] = [];
+  const days: LedgerPage["days"] = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) {
+    const r = rng(`ledger-${d}`);
+    const n = int(r, 1, 3);
+    let cash = 0;
+    let bank = 0;
+    for (let i = 0; i < n; i++) {
+      const [name] = CUSTOMERS[int(r, 0, CUSTOMERS.length - 1)] ?? ["Khách"];
+      const amount = thousand(150_000 + r() * 2_000_000);
+      const isPackage = r() < 0.4;
+      const inCash = r() < 0.5;
+      const entry: LedgerRow["entry"] = i === 2 ? "void" : "sale";
+      const sign = entry === "void" ? -1 : 1;
+      rows.push({
+        id: `mock-ledger-${d}-${String(i)}`,
+        at: iso(d, 9 + i * 3, 10),
+        business_date: d,
+        customer_id: "c1",
+        customer_name: name,
+        entry,
+        kind: isPackage ? "package" : "one_off",
+        one_off: isPackage ? null : (SERVICES[i % SERVICES.length] ?? null),
+        package: isPackage ? (PACKAGES[i % PACKAGES.length] ?? null) : null,
+        cash: inCash ? sign * amount : 0,
+        bank_transfer: inCash ? 0 : sign * amount,
+        unpaid: 0,
+        note: entry === "void" ? "Ghi nhầm khách" : null,
+        voided: false,
+      });
+      if (inCash) cash += sign * amount;
+      else bank += sign * amount;
+    }
+    days.push({ date: d, cash, bank_transfer: bank, total: cash + bank, unpaid: 0, entries: n });
+  }
+  return { from, to, days, rows, next_cursor: null };
 }

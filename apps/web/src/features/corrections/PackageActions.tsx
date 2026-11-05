@@ -194,7 +194,7 @@ function ExtendForm({
       </h3>
       <p className="text-sm text-text-muted">
         Hạn hiện tại:{" "}
-        {pkg.expires_on ? formatDate(pkg.expires_on) : "không thời hạn"} · còn{" "}
+        {pkg.expires_on ? formatDate(pkg.expires_on) : "không hạn"} · còn{" "}
         {String(pkg.sessions_remaining)}/{String(pkg.sessions_total)} buổi
       </p>
       <form

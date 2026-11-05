@@ -15,6 +15,7 @@ import {
   formatDate,
 } from "../sales/api";
 import { byUseOrder, isUsable } from "./api";
+import { expiryText } from "../../lib/names";
 
 export interface Deduction {
   pkg: CustomerPackage;
@@ -134,9 +135,7 @@ export function CustomerCard({
                       {String(Math.max(left, 0))}/{String(item.sessions_total)}
                     </strong>{" "}
                     buổi ·{" "}
-                    {p.expires_on
-                      ? `HSD ${formatDate(p.expires_on)}`
-                      : "Không thời hạn"}
+                    {expiryText(p.expires_on, formatDate)}
                     {p.status !== "active" && (
                       <span
                         className={`badge ml-2 align-middle ${STATUS_BADGE[p.status]}`}

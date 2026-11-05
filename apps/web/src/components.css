@@ -653,85 +653,181 @@ dialog::backdrop {
   white-space: nowrap;
 }
 
-/* --- Charts (features/reports/charts.tsx) ------------------------------------------------------ */
-.chart-bars {
+/* --- Line chart (features/reports/LineChart.tsx; dataviz: 2px lines, hairline grid, 10% wash) - */
+.line-chart {
   display: grid;
-  height: 220px;
-  grid-auto-columns: minmax(0, 1fr);
-  grid-auto-flow: column;
-  align-items: end;
-  gap: 8px;
-  padding: 24px 0 0;
-  /* Four hairline gridlines behind the bars. */
-  background: repeating-linear-gradient(
-      to top,
-      var(--border) 0 1px,
-      transparent 1px calc((100% - 44px) / 4)
-    )
-    0 0 / 100% calc(100% - 44px) no-repeat;
+  gap: 12px;
 }
-.chart-col {
-  position: relative;
+.line-legend {
   display: flex;
-  height: 100%;
-  flex-direction: column;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.line-legend li {
+  display: inline-flex;
   align-items: center;
-  border-radius: 8px;
-  outline-offset: 0;
+  gap: 8px;
 }
-.chart-plot {
-  display: flex;
-  width: 100%;
-  flex: 1;
-  align-items: flex-end;
-  justify-content: center;
+.line-key {
+  display: inline-block;
+  width: 16px;
+  height: 2px;
+  flex: none;
+  border-radius: 2px;
 }
-.chart-bar {
-  width: min(100%, 36px);
-  border-radius: 6px 6px 2px 2px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 78%, var(--surface)), var(--primary));
-  transform-origin: bottom;
-  animation: bar-grow var(--dur-slow) var(--ease-out) both;
+.line-key-current {
+  background: var(--primary);
 }
-.chart-bar.is-highlight {
-  background: linear-gradient(180deg, var(--chrome-accent), var(--accent));
+.line-key-previous {
+  background: var(--border-strong);
 }
-.chart-col:hover .chart-bar,
-.chart-col:focus-visible .chart-bar {
-  filter: brightness(1.12);
+/* y-axis column + plot; x labels under the plot. */
+.line-frame {
+  position: relative;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  grid-template-rows: 220px 28px;
 }
-.chart-value {
+.line-yaxis {
+  position: relative;
+  grid-row: 1;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.line-yaxis li {
   position: absolute;
-  top: -22px;
+  right: 8px;
+  transform: translateY(50%);
+  white-space: nowrap;
+}
+.line-plot {
+  position: relative;
+  grid-row: 1;
+  grid-column: 2;
+  border-radius: 4px;
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+.line-plot svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.line-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.line-current,
+.line-previous {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.line-current {
+  stroke: var(--primary);
+  animation: line-in var(--dur-slow) var(--ease-out) both;
+}
+.line-previous {
+  stroke: var(--border-strong);
+}
+.line-area {
+  fill: var(--primary);
+  opacity: 0.1;
+}
+@keyframes line-in {
+  from {
+    opacity: 0;
+  }
+}
+.line-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--primary);
+  /* Surface ring keeps the dot legible where it crosses the other line. */
+  box-shadow: 0 0 0 2px var(--surface);
+  pointer-events: none;
+  transform: translate(-50%, 50%);
+}
+.line-dot-previous {
+  background: var(--border-strong);
+}
+.line-end-label {
+  position: absolute;
+  right: 0;
+  margin-bottom: 10px;
   color: var(--text);
   font-size: 12px;
   font-weight: 600;
+  pointer-events: none;
   white-space: nowrap;
-  opacity: 0;
-  transform: translateY(4px);
-  transition:
-    opacity var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out);
 }
-.chart-col:hover .chart-value,
-.chart-col:focus-visible .chart-value,
-.chart-col:last-child .chart-value {
-  opacity: 1;
-  transform: none;
+.line-crosshair {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-strong);
+  pointer-events: none;
 }
-.chart-label {
-  height: 44px;
-  padding-top: 6px;
+.line-tooltip {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  display: grid;
+  min-width: 168px;
+  gap: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
+  transform: translateX(12px);
+}
+.line-tooltip.is-left {
+  transform: translateX(calc(-100% - 12px));
+}
+.line-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.line-xaxis {
+  position: relative;
+  grid-row: 2;
+  grid-column: 2;
   color: var(--text-muted);
   font-size: 11px;
-  line-height: 15px;
-  text-align: center;
 }
-@keyframes bar-grow {
-  from {
-    transform: scaleY(0);
-  }
+.line-xaxis li {
+  position: absolute;
+  top: 8px;
+  transform: translateX(-50%);
+  white-space: nowrap;
 }
+.line-xaxis li.is-first {
+  transform: none;
+}
+.line-xaxis li.is-last {
+  transform: translateX(-100%);
+}
+/* Refetch keeps the frame (dataviz): previous render, dimmed, no skeleton flash. */
+.is-refreshing {
+  opacity: 0.55;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
 .split-bar {
   display: flex;
   height: 12px;
@@ -815,4 +911,97 @@ dialog::backdrop {
   color: var(--primary);
   /* Same weight as the idle state: a bolder label would widen the button and shift its row. */
   box-shadow: var(--shadow-1), inset 0 -2px 0 var(--accent);
+}
+
+/* --- Filter row (features/reports/filters.tsx): search, selects, chips in one wrapping row ----- */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+.search-field {
+  position: relative;
+  display: flex;
+  min-width: min(100%, 240px);
+  flex: 1 1 240px;
+  align-items: center;
+}
+.search-field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 40px;
+  border-radius: 10px;
+  background: var(--surface);
+}
+.search-field-icon {
+  position: absolute;
+  left: 12px;
+  width: 18px;
+  height: 18px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.search-field-clear {
+  position: absolute;
+  right: 2px;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+.search-field-clear:hover {
+  color: var(--text);
+}
+.filter-select,
+.filter-field {
+  display: grid;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.filter-select select,
+.filter-field input {
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+}
+
+/* --- Tabs (reports: Tổng quan / Sổ doanh thu) ------------------------------------------------ */
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.tabs > [role="tab"] {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 10px 10px 0 0;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.tabs > [role="tab"]:hover {
+  color: var(--text);
+}
+.tabs > [role="tab"][aria-selected="true"] {
+  color: var(--primary);
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+/* Ledger: negative void/refund rows and voided originals (spec R1-2 §4 "Sổ doanh thu"). */
+.ledger-day td {
+  background: var(--surface-2);
+  font-weight: 600;
+}
+.ledger-negative td {
+  color: var(--danger);
+}
+.ledger-voided td:not(:first-child) {
+  color: var(--text-muted);
+  text-decoration: line-through;
 }

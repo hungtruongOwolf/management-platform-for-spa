@@ -12,6 +12,13 @@ import { LoginPage } from "../features/auth/LoginPage";
 import { authQuery } from "../features/auth/session";
 import { FrontDeskPage } from "../features/front-desk/FrontDeskPage";
 import { safeNextPath } from "../lib/api";
+import {
+  parseCatalogSearch,
+  parseHistorySearch,
+  parseInactiveSearch,
+  parsePackagesSearch,
+  parseReportsSearch,
+} from "../features/reports/search";
 import { AppShell } from "./AppShell";
 
 // Other business screens are separate chunks so the first paint does not wait for their code
@@ -141,18 +148,21 @@ const homeRoute = createRoute({
 const reportsRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/bao-cao",
+  validateSearch: parseReportsSearch,
   component: lazyRouteComponent(reportsPage, "ReportsPage"),
 });
 
 const packagesRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/goi-lieu-trinh",
+  validateSearch: parsePackagesSearch,
   component: lazyRouteComponent(packagesPage, "PackagesOverviewPage"),
 });
 
 const inactiveRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/khach-lau-khong-quay-lai",
+  validateSearch: parseInactiveSearch,
   component: lazyRouteComponent(inactivePage, "InactiveCustomersPage"),
 });
 
@@ -165,6 +175,7 @@ const settingsRoute = createRoute({
 const priceListRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/bang-gia",
+  validateSearch: parseCatalogSearch,
   component: lazyRouteComponent(
     () => import("../features/catalog/PriceListPage"),
     "PriceListPage",
@@ -196,6 +207,7 @@ const customersRoute = createRoute({
 const customerRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/khach-hang/$customerId",
+  validateSearch: parseHistorySearch,
   component: lazyRouteComponent(customersModule, "CustomerRoutePage"),
 });
 
