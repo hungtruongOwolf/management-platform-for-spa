@@ -124,7 +124,7 @@ function PackagesOverviewPageBody() {
           <EmptyState title="Không có gói nào">{q ? `Không thấy gói nào khớp “${q}”. Thử tên khác hoặc chọn “Tất cả”.` : "Thử chọn một trạng thái khác."}</EmptyState>
         )}
         {items.length > 0 && (
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="Danh sách gói liệu trình">
             <table className="data-table">
               <caption className="sr-only">Gói liệu trình của khách</caption>
               <thead>

@@ -5,6 +5,9 @@ import { expectAccessible, uniquePhone } from "../support/run";
 
 test.use({ storageState: ownerState });
 
+/** CustomerName reads "Tên, Nữ" (the comma is screen-reader-only text, so spacing varies). */
+const nameWithGender = (name: string) => new RegExp(`^${name}\\s*,\\s*Nữ$`);
+
 interface Service {
   id: string;
   name: string;
@@ -92,12 +95,12 @@ test.describe("khách lâu không quay lại + chăm sóc lại (EM round 3)", (
 
     await page.goto(`/khach-lau-khong-quay-lai?q=${encodeURIComponent(phone)}`);
     const table = page.getByRole("table", { name: "Khách lâu không quay lại" });
-    await expect(table.getByRole("link", { name: `${name}, Nữ` })).toBeVisible();
+    await expect(table.getByRole("link", { name: nameWithGender(name) })).toBeVisible();
     await expect(table.getByText("Khách lẻ")).toBeVisible();
-    await expect(table.getByText("Chưa liên hệ")).toBeVisible();
+    await expect(table.getByText("Chưa liên hệ").filter({ visible: true })).toBeVisible();
     await expectAccessible(page, "inactive");
 
-    await table.getByRole("button", { name: `Đã liên hệ với ${name}` }).click();
+    await table.getByRole("button", { name: `Đã liên hệ với ${name}` }).filter({ visible: true }).click();
     const form = page.getByRole("form", { name: `Ghi lần liên hệ với ${name}` });
     await expect(form.getByLabel("Ngày liên hệ")).toBeVisible();
     await form.getByLabel("Hẹn sẽ quay lại").check();
@@ -106,13 +109,13 @@ test.describe("khách lâu không quay lại + chăm sóc lại (EM round 3)", (
     await form.getByRole("button", { name: "Lưu lần liên hệ" }).click();
     await expect(form).toBeHidden();
     // No longer due: gone from "Cần liên hệ", listed under "Đã hẹn" with the planned day.
-    await expect(table.getByRole("link", { name: `${name}, Nữ` })).toBeHidden();
+    await expect(table.getByRole("link", { name: nameWithGender(name) })).toBeHidden();
     await page.getByRole("button", { name: "Đã hẹn" }).click();
     await expect(page).toHaveURL(/follow=scheduled/);
-    await expect(table.getByRole("link", { name: `${name}, Nữ` })).toBeVisible();
-    await expect(table.getByText(/^Hẹn \d{2}\/\d{2}\/\d{4}$/)).toBeVisible();
+    await expect(table.getByRole("link", { name: nameWithGender(name) })).toBeVisible();
+    await expect(table.getByText(/^Hẹn \d{2}\/\d{2}\/\d{4}$/).filter({ visible: true })).toBeVisible();
 
-    await table.getByRole("link", { name: `${name}, Nữ` }).click();
+    await table.getByRole("link", { name: nameWithGender(name) }).click();
     const card = page.getByRole("region", { name: "Chăm sóc lại" });
     await expect(card.getByRole("list", { name: "Các lần liên hệ" })).toContainText("Hẹn sẽ quay lại");
     await expect(card).toContainText("Hẹn cuối tuần");

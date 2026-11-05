@@ -130,7 +130,7 @@ function InactiveCustomersPageBody() {
           <EmptyState title="Không có khách nào">{filter.q ? `Không thấy khách nào khớp “${filter.q}”.` : EMPTY[filter.followUp]}</EmptyState>
         )}
         {items.length > 0 && (
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="Danh sách khách lâu không quay lại">
             <table className="data-table">
               <caption className="sr-only">Khách lâu không quay lại</caption>
               <thead>
@@ -139,10 +139,16 @@ function InactiveCustomersPageBody() {
                   <th scope="col" className="num">
                     Số ngày vắng
                   </th>
-                  <th scope="col">Lần cuối</th>
-                  <th scope="col">Liên hệ gần nhất</th>
-                  <th scope="col">Hẹn lại</th>
-                  <th scope="col">
+                  <th scope="col" className="hidden sm:table-cell">
+                    Lần cuối
+                  </th>
+                  <th scope="col" className="hidden sm:table-cell">
+                    Liên hệ gần nhất
+                  </th>
+                  <th scope="col" className="hidden sm:table-cell">
+                    Hẹn lại
+                  </th>
+                  <th scope="col" className="hidden sm:table-cell">
                     <span className="sr-only">Thao tác</span>
                   </th>
                 </tr>
@@ -201,9 +207,32 @@ function InactiveCustomersPageBody() {
   );
 }
 
+function NextBadge({ on, today }: { on: string; today: string }) {
+  const due = on <= today;
+  return (
+    <span className={`badge ${due ? "badge-danger" : "badge-ok"}`}>
+      {due ? "Đến hạn" : "Hẹn"} {relativeDay(on)}
+    </span>
+  );
+}
+
+function RowActions({ c, canFollowUp, onContacted }: { c: InactiveCustomer; canFollowUp: boolean; onContacted: () => void }) {
+  return (
+    <>
+      <a className="icon-btn" href={`tel:${c.phone.replace(/[^\d+]/g, "")}`} aria-label={`Gọi ${c.full_name}`} title="Gọi điện">
+        <Icon name="phone" />
+      </a>
+      {canFollowUp && (
+        <button type="button" className="btn btn-secondary whitespace-nowrap" onClick={onContacted} aria-label={`Đã liên hệ với ${c.full_name}`}>
+          <Icon name="check" className="size-4" /> Đã liên hệ
+        </button>
+      )}
+    </>
+  );
+}
+
 function InactiveRow({ c, canFollowUp, onContacted }: { c: InactiveCustomer; canFollowUp: boolean; onContacted: () => void }) {
   const today = spaToday();
-  const due = c.next_follow_up_on != null && c.next_follow_up_on <= today;
   const f = c.last_follow_up;
   return (
     <tr>
@@ -212,15 +241,25 @@ function InactiveRow({ c, canFollowUp, onContacted }: { c: InactiveCustomer; can
         <span className={`badge mt-1 ${c.kind === "package" ? "badge-gold" : "badge-muted"}`}>
           {c.kind === "package" ? `Liệu trình · còn ${String(c.sessions_remaining)} buổi` : "Khách lẻ"}
         </span>
+        {/* Phones: the hidden columns' essentials and the actions, inside the row. */}
+        <span className="mt-2 grid gap-2 sm:hidden">
+          <span className="text-xs text-text-muted">
+            {f ? `Liên hệ ${relativeDay(f.on).toLowerCase()} · ${OUTCOME_LABEL[f.outcome]}` : "Chưa liên hệ"}
+          </span>
+          {c.next_follow_up_on && <NextBadge on={c.next_follow_up_on} today={today} />}
+          <span className="flex flex-wrap items-center gap-2">
+            <RowActions c={c} canFollowUp={canFollowUp} onContacted={onContacted} />
+          </span>
+        </span>
       </td>
       <td className="num">
         <span className={`badge ${c.days_absent >= 30 ? "badge-danger" : "badge-warn"}`}>{c.days_absent} ngày</span>
       </td>
-      <td className="tabular">
+      <td className="hidden tabular sm:table-cell">
         {relativeDay(c.last_seen_on)}
         {!c.last_visit_on && <span className="block text-xs text-text-muted">Chưa đến lần nào</span>}
       </td>
-      <td>
+      <td className="hidden sm:table-cell">
         {f ? (
           <>
             <span className="tabular">{relativeDay(f.on)}</span>
@@ -232,25 +271,12 @@ function InactiveRow({ c, canFollowUp, onContacted }: { c: InactiveCustomer; can
           <span className="text-text-muted">Chưa liên hệ</span>
         )}
       </td>
-      <td className="tabular">
-        {c.next_follow_up_on ? (
-          <span className={`badge ${due ? "badge-danger" : "badge-ok"}`}>
-            {due ? "Đến hạn" : "Hẹn"} {relativeDay(c.next_follow_up_on)}
-          </span>
-        ) : (
-          <span className="text-text-muted">—</span>
-        )}
+      <td className="hidden tabular sm:table-cell">
+        {c.next_follow_up_on ? <NextBadge on={c.next_follow_up_on} today={today} /> : <span className="text-text-muted">—</span>}
       </td>
-      <td>
+      <td className="hidden sm:table-cell">
         <span className="flex flex-wrap justify-end gap-2">
-          <a className="icon-btn" href={`tel:${c.phone.replace(/[^\d+]/g, "")}`} aria-label={`Gọi ${c.full_name}`} title="Gọi điện">
-            <Icon name="phone" />
-          </a>
-          {canFollowUp && (
-            <button type="button" className="btn btn-secondary whitespace-nowrap" onClick={onContacted} aria-label={`Đã liên hệ với ${c.full_name}`}>
-              <Icon name="check" className="size-4" /> Đã liên hệ
-            </button>
-          )}
+          <RowActions c={c} canFollowUp={canFollowUp} onContacted={onContacted} />
         </span>
       </td>
     </tr>

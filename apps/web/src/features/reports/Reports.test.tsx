@@ -216,7 +216,8 @@ describe("management lists", () => {
       expect(urls(spy)).toContain("/api/v1/customers/inactive?days=7&follow_up=due&limit=20&cursor=page-2");
     });
     // The seeded customer called 3 days ago with no answer is due again today.
-    expect(await within(screen.getByRole("table", { name: "Khách lâu không quay lại" })).findByText(/Đến hạn/)).toBeInTheDocument();
+    // (The badge is in the row twice: its column from 640px, and inside the first cell on phones.)
+    expect((await within(screen.getByRole("table", { name: "Khách lâu không quay lại" })).findAllByText(/Đến hạn/)).length).toBeGreaterThan(0);
 
     expect(screen.getAllByRole("button", { name: /^(Cần liên hệ|Đã hẹn|Tất cả)$/ })).toHaveLength(3);
     expect(screen.queryByRole("button", { name: "Chưa liên hệ" })).not.toBeInTheDocument();
@@ -232,7 +233,7 @@ describe("management lists", () => {
     await waitFor(() => {
       expect(within(scheduled).getAllByRole("row")).toHaveLength(2);
     });
-    expect(within(scheduled).getByText(/^Hẹn \d{2}\/\d{2}\/\d{4}$/)).toBeInTheDocument();
+    expect(within(scheduled).getAllByText(/^Hẹn \d{2}\/\d{2}\/\d{4}$/).length).toBeGreaterThan(0);
   });
 
   it("lists every overdue customer longest absence first under “Tất cả”", async () => {

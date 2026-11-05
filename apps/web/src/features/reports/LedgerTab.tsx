@@ -52,7 +52,7 @@ export function LedgerTab({ period }: { period: Period }) {
         {rows.length === 0 ? (
           <EmptyState title="Chưa có giao dịch nào">Hóa đơn, khoản hủy và hoàn tiền trong kỳ sẽ hiện ở đây.</EmptyState>
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="Sổ doanh thu (cuộn ngang để xem đủ cột)">
             <table className="data-table">
               <caption className="sr-only">Sổ doanh thu, theo ngày rồi theo giờ ghi</caption>
               <thead>

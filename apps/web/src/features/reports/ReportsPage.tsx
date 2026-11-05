@@ -383,7 +383,7 @@ function Breakdown({ range, bucket }: { range: RangeReport; bucket: Bucket }) {
       <h2 id="breakdown-title" className="flex items-center gap-2 px-4 pt-4 pb-3 font-semibold">
         <Icon name="menu-book" className="size-5 text-accent" /> Chi tiết theo {PERIOD_COLUMN[bucket].toLowerCase()}
       </h2>
-      <div className="table-wrap">
+      <div className="table-wrap" tabIndex={0} role="region" aria-labelledby="breakdown-title">
         <table className="data-table">
           <caption className="sr-only">Chi tiết theo {PERIOD_COLUMN[bucket].toLowerCase()}, mới nhất trước</caption>
           <thead>
