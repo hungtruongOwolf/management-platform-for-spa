@@ -71,8 +71,8 @@ pub async fn void_in(
     Ok(VoidedSale { reversals })
 }
 
-/// `POST /sales/{id}/void` (`record.void_same_day`; a closed day needs `record.void_closed_day`
-/// and a recent re-auth; Idempotency-Key). Only package sales: the sale of a visit's one-off
+/// `POST /sales/{id}/void` (`record.void_same_day`; a closed day needs `record.void_closed_day`;
+/// Idempotency-Key). Only package sales: the sale of a visit's one-off
 /// services is voided with its visit (`409 sale.void_via_visit`), so a visit never keeps lines
 /// whose money was returned. Any session of its packages used → `409 sale.has_used_sessions`.
 pub async fn void_sale(

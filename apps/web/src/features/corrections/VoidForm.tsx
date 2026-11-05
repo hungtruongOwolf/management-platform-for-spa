@@ -1,12 +1,12 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { fieldMessage, messageFor } from "../../lib/errors";
-import { useGuardedAction } from "./useGuardedAction";
+import { useFormAction } from "./useFormAction";
 
 const MAX_REASON = 500;
 
 /**
  * Inline "Hủy … — lý do" form (US6). The reason is required here as a UX shortcut; the server
- * enforces it (422). An owner voiding a closed day is asked for the password, then it retries.
+ * enforces it (422), as it does the closed-day rule (403 day.locked for managers).
  */
 export function VoidForm<T>({
   title,
@@ -27,11 +27,11 @@ export function VoidForm<T>({
   const titleId = useId();
   const reasonId = useId();
   const reasonRef = useRef<HTMLTextAreaElement>(null);
-  // One key for the life of this form: double click, retry or re-auth = the same void.
+  // One key for the life of this form: double click or retry = the same void.
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [reason, setReason] = useState("");
   const [touched, setTouched] = useState(false);
-  const action = useGuardedAction({
+  const action = useFormAction({
     run: () => run(reason.trim(), idempotencyKey),
     onSuccess: onDone,
   });
@@ -110,7 +110,6 @@ export function VoidForm<T>({
           </button>
         </div>
       </form>
-      {action.reauth}
     </section>
   );
 }

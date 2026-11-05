@@ -56,9 +56,6 @@ pub struct NewPackage {
     pub gift_note: Option<String>,
     /// Price actually paid, after discount.
     pub sold_price: Money,
-    /// Most that may be refunded on cancel, at most `sold_price`: the price paid for a sale; for an
-    /// opening balance, the book price only when the importer may refund (spec AC8.8), else 0.
-    pub refund_cap: Money,
     pub origin: Origin,
     pub starts_on: NaiveDate,
     pub expires_on: Option<NaiveDate>,
@@ -150,7 +147,6 @@ pub async fn create(
             name: p.name.trim(),
             gift_note: p.gift_note.as_deref(),
             sold_price: p.sold_price.as_i64(),
-            refund_cap: p.refund_cap.as_i64(),
             origin: p.origin.as_str(),
             sale_id,
             closer_staff_id: closer,
@@ -186,7 +182,6 @@ pub async fn create(
             after: Some(json!({
                 "customer_id": p.customer_id, "plan_id": p.plan_id, "name": p.name.trim(),
                 "origin": p.origin.as_str(), "sale_id": sale_id, "sold_price": p.sold_price.as_i64(),
-                "refund_cap": p.refund_cap.as_i64(),
                 "per_session_value": per_session.as_i64(), "starts_on": p.starts_on, "expires_on": p.expires_on,
                 "items": p.items.iter().map(|i| json!({
                     "service_id": i.service_id, "purchased": i.sessions_purchased,
@@ -327,8 +322,6 @@ pub struct CustomerPackage {
     pub name: String,
     pub gift_note: Option<String>,
     pub sold_price: Money,
-    /// Most that may be refunded on cancel (see `NewPackage::refund_cap`).
-    pub refund_cap: Money,
     pub origin: &'static str,
     pub sale_id: Option<Uuid>,
     pub closer_staff_id: Option<Uuid>,
@@ -417,8 +410,6 @@ async fn assemble(
                     today,
                 ),
                 sold_price: Money::vnd(r.sold_price)
-                    .map_err(|_| AppError::Internal(format!("corrupt package {}", r.id)))?,
-                refund_cap: Money::vnd(r.refund_cap)
                     .map_err(|_| AppError::Internal(format!("corrupt package {}", r.id)))?,
                 sessions_total: total,
                 sessions_remaining: remaining,

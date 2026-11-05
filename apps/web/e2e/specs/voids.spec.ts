@@ -1,12 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { ownerState, stack } from "../stack";
 import { ageRecentAuth } from "../support/db";
-import {
-  credentials,
-  expectAccessible,
-  nextTotpCode,
-  uniquePhone,
-} from "../support/run";
+import { credentials, expectAccessible, uniquePhone } from "../support/run";
 
 test.use({ storageState: ownerState });
 
@@ -131,7 +126,7 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     await expectAccessible(page, "quay-voided");
   });
 
-  test("owner extends a package, then cancels it with a refund (re-auth when asked)", async ({
+  test("owner extends a package, then cancels it with a refund (no password prompt)", async ({
     page,
   }) => {
     const customerId = await customerWithVisit(
@@ -159,22 +154,19 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     await cancel.getByLabel(/Số tiền hoàn/).fill("300.000");
     await cancel.getByLabel("Lý do hủy").fill("Khách chuyển nhà");
     await expectAccessible(page, "profile-cancel");
-    // 🔒: make the owner's last password confirmation older than the 5-minute window, so the
-    // re-auth dialog always appears (a fresh sign-in would otherwise skip it non-deterministically).
+    // EM decision 2026-11-05: the owner is never asked for the password on a business action.
+    // Age the last password confirmation past the old 5-minute window to prove it.
     await ageRecentAuth(credentials().phone);
     await cancel.getByRole("button", { name: /Hủy và hoàn 300\.000/ }).click();
 
-    const reauth = page.getByRole("dialog", { name: "Xác nhận lại mật khẩu" });
-    const done = page
-      .getByRole("status")
-      .filter({ hasText: /Đã hủy .* và hoàn 300\.000/ });
-    await expect(reauth).toBeVisible();
-    await expectAccessible(page, "reauth-dialog");
-    await reauth.getByLabel("Mật khẩu").fill(credentials().password);
-    await reauth.getByRole("button", { name: "Xác nhận" }).click();
-    await reauth.getByLabel(/Mã xác thực hai bước/).fill(await nextTotpCode());
-    await reauth.getByRole("button", { name: "Xác nhận" }).click();
-    await expect(done).toBeVisible();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: /Đã hủy .* và hoàn 300\.000/ }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("dialog", { name: "Xác nhận lại mật khẩu" }),
+    ).toHaveCount(0);
     const row = packages.getByRole("listitem").first();
     await expect(row).toContainText("Đã hủy: Khách chuyển nhà");
     await expect(row).toContainText("còn 0/12 buổi");

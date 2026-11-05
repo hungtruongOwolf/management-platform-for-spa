@@ -4,7 +4,7 @@
 //! - [`cancel_for_sale`]: cancel the still-unused packages of a sale that is being voided
 //!   (in-transaction);
 //! - [`extend`] (`POST /customer-packages/{id}/extend`) and [`cancel`]
-//!   (`POST /customer-packages/{id}/cancel` 🔒, with an optional refund).
+//!   (`POST /customer-packages/{id}/cancel`, with an optional refund).
 //!
 //! Lock order, shared with sales and visits: visit/sale row → package rows (by id) → item rows
 //! (by id). A concurrent `consume_session` only locks the item row and re-checks
@@ -128,7 +128,7 @@ pub struct PackageExtend {
     pub reason: Option<String>,
 }
 
-/// Body of `POST /customer-packages/{id}/cancel` 🔒.
+/// Body of `POST /customer-packages/{id}/cancel`.
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PackageCancel {
@@ -140,16 +140,6 @@ pub struct PackageCancel {
     pub refund_amount: i64,
     /// Required when `refund_amount` > 0.
     pub refund_method: Option<RefundMethodDto>,
-    /// Opening balances entered by someone who may not refund have a refund cap of 0 (spec
-    /// AC8.8): the owner checked the paper book and confirms its price as the cap. Audited.
-    #[serde(default)]
-    pub confirm_book_price: bool,
-}
-
-/// True when refunding `amount` from an opening balance goes above its current refund cap, so the
-/// owner must confirm the paper-book price first. Sold packages never need it (cap = price).
-fn refund_needs_book_confirmation(package: &repo::LockedPackage, amount: Option<Money>) -> bool {
-    package.origin == "opening_balance" && amount.is_some_and(|a| a.as_i64() > package.refund_cap)
 }
 
 fn to_body(package: service::CustomerPackage) -> Result<Value, AppError> {
@@ -258,7 +248,7 @@ fn parse_cancel(input: &PackageCancel) -> Result<CancelOrder, AppError> {
     Ok(CancelOrder { reason, refund })
 }
 
-/// `POST /customer-packages/{id}/cancel` 🔒 (`package.cancel_refund` + re-auth, Idempotency-Key):
+/// `POST /customer-packages/{id}/cancel` (`package.cancel_refund`, owner; Idempotency-Key):
 /// cancels the package — remaining sessions → 0, status `cancelled` — and optionally refunds up
 /// to what the customer paid for it (AC7.2, AC7.4). The refund is an append-only `refund` row in
 /// today's cash book; nothing already recorded is changed.
@@ -271,7 +261,6 @@ pub async fn cancel(
     input: &PackageCancel,
 ) -> Result<(u16, Value), AppError> {
     actor.require(Permission::PackageCancelRefund)?;
-    actor.require_recent_auth()?;
     let order = parse_cancel(input)?;
 
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
@@ -290,25 +279,15 @@ pub async fn cancel(
         });
     }
     // R1 always collects in full, so what the customer paid for a live package is its sold price
-    // (after discount). An opening balance carries the price from the paper books, which caps a
-    // refund only once someone allowed to refund vouched for it (AC8.8): `refund_cap`.
+    // (after discount); an opening balance carries the price paid in the paper books. A tighter
+    // cap for paper-book packages is deferred (EM decision 2026-11-05).
     let paid = package.sold_price;
-    let book_confirmed = refund_needs_book_confirmation(&package, order.refund.map(|r| r.0))
-        && input.confirm_book_price;
-    if let Some((amount, _)) = order.refund {
-        if amount.as_i64() > paid {
-            return Err(AppError::Unprocessable {
-                code: "refund.exceeds_paid",
-            });
-        }
-        if refund_needs_book_confirmation(&package, Some(amount)) && !book_confirmed {
-            return Err(AppError::Unprocessable {
-                code: "refund.book_price_unconfirmed",
-            });
-        }
-    }
-    if book_confirmed {
-        repo::confirm_book_price(&mut tx, id).await?;
+    if let Some((amount, _)) = order.refund
+        && amount.as_i64() > paid
+    {
+        return Err(AppError::Unprocessable {
+            code: "refund.exceeds_paid",
+        });
     }
     let tenant = kernel::tenant::profile(&mut tx).await?;
     let today = tenant.business_date.as_naive();
@@ -340,7 +319,7 @@ pub async fn cancel(
             entity_id: id,
             before: Some(json!({"sessions_remaining": remaining_before, "version": package.version})),
             after: Some(json!({
-                "sessions_remaining": 0, "paid": paid, "book_price_confirmed": book_confirmed,
+                "sessions_remaining": 0, "paid": paid,
                 "refund": order.refund.map(|(a, m)| json!({"amount": a.as_i64(), "method": m.as_str()})),
             })),
             reason: Some(&order.reason),
@@ -366,7 +345,6 @@ mod tests {
             reason: reason.map(str::to_owned),
             refund_amount: amount,
             refund_method: method,
-            confirm_book_price: false,
         }
     }
 

@@ -624,7 +624,7 @@ pub async fn for_day(
 
 /// `PATCH /visits/{id}` (`visit.record`, If-Match): correct the note or a line's technician.
 /// Sessions and money are never touched here (voids are S8). Only today's visits, unless the
-/// caller may correct closed days (`record.void_closed_day`) and re-authenticated recently (🔒).
+/// caller may correct closed days (`record.void_closed_day`, the owner; no re-auth).
 pub async fn update(
     pool: &PgPool,
     cipher: &FieldCipher,
@@ -662,7 +662,7 @@ pub async fn update(
         .await?
         .business_date
         .as_naive();
-    // Same 🔒 rule as voids: a closed day needs `record.void_closed_day` and a recent re-auth.
+    // Same rule as voids: a closed day needs `record.void_closed_day`.
     kernel::corrections::authorize_closed_day(actor, business_date, today)?;
     if current != version {
         return Err(AppError::StaleVersion);
@@ -707,8 +707,8 @@ pub async fn update(
     Ok(visit)
 }
 
-/// `POST /visits/{id}/void` (`record.void_same_day`; a closed day needs `record.void_closed_day`
-/// and a recent re-auth; Idempotency-Key): the visit stays in history as `voided` with its reason,
+/// `POST /visits/{id}/void` (`record.void_same_day`; a closed day needs `record.void_closed_day`;
+/// Idempotency-Key): the visit stays in history as `voided` with its reason,
 /// every session it took goes back to its package (AC6.1), and the sale of its one-off lines is
 /// voided with one reversal per payment. One transaction, so either all of it happens or nothing.
 ///

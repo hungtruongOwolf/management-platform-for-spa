@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT customer_id, sold_price, refund_cap, origin, expires_on, (cancelled_at IS NOT NULL) AS \"cancelled!\", version\n           FROM app.customer_package WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
+  "query": "SELECT customer_id, sold_price, expires_on, (cancelled_at IS NOT NULL) AS \"cancelled!\", version\n           FROM app.customer_package WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -27,28 +27,6 @@
       },
       {
         "ordinal": 2,
-        "name": "refund_cap",
-        "type_info": "Int8",
-        "origin": {
-          "Table": {
-            "table": "app.customer_package",
-            "name": "refund_cap"
-          }
-        }
-      },
-      {
-        "ordinal": 3,
-        "name": "origin",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "app.customer_package",
-            "name": "origin"
-          }
-        }
-      },
-      {
-        "ordinal": 4,
         "name": "expires_on",
         "type_info": "Date",
         "origin": {
@@ -59,13 +37,13 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 3,
         "name": "cancelled!",
         "type_info": "Bool",
         "origin": "Expression"
       },
       {
-        "ordinal": 6,
+        "ordinal": 4,
         "name": "version",
         "type_info": "Int8",
         "origin": {
@@ -85,12 +63,10 @@
     "nullable": [
       false,
       false,
-      false,
-      false,
       true,
       null,
       false
     ]
   },
-  "hash": "0e09d1de2321aa7c8e037d30fbec6c3232b67822f4deef6783514359fb25c520"
+  "hash": "779db2ee9ab9e8541e9efa6d0b30ce8d5bc6212f3b6d5734e5542ee82471c437"
 }

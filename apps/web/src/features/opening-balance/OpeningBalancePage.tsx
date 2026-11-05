@@ -10,7 +10,6 @@ import { formatVnd } from "@vpyd/ui";
 import { useState } from "react";
 import { ApiError } from "../../lib/api";
 import { fieldMessage, messageFor } from "../../lib/errors";
-import { ReauthDialog } from "../auth/ReauthDialog";
 import { can, meQuery } from "../auth/session";
 import { plansQuery, servicesQuery } from "../catalog/api";
 import { prefillFrom } from "../customers/CustomerForm";
@@ -25,10 +24,8 @@ import {
   importOpeningBalance,
   isValid,
   packageProblems,
-  setWindow,
   toRequest,
   todayInVietnam,
-  windowQuery,
 } from "./api";
 
 const input =
@@ -65,77 +62,7 @@ export function OpeningBalancePage() {
       </p>
     );
   }
-  return (
-    <ImportGate canManage={can(me, "opening_balance.manage_window")} />
-  );
-}
-
-/**
- * "Data of a day is entered that day" (EM decision M2): import is open only on a business day
- * the owner opened. Managers on any other day get an explanation; the owner may still import,
- * confirming the password on save. The server enforces all of this; this is UX only.
- */
-function ImportGate({ canManage }: { canManage: boolean }) {
-  const queryClient = useQueryClient();
-  const gate = useQuery(windowQuery);
-  const toggle = useMutation({
-    mutationFn: setWindow,
-    onSuccess: (next) => {
-      queryClient.setQueryData(windowQuery.queryKey, next);
-    },
-  });
-  if (gate.isPending) return <p role="status">Đang tải…</p>;
-  if (gate.isError) {
-    return (
-      <p role="alert" className="text-danger">
-        {messageFor(gate.error)}
-      </p>
-    );
-  }
-  const open = gate.data.open_today;
-  return (
-    <div className="space-y-4">
-      {canManage && (
-        <div className="rounded-[10px] border border-border p-3">
-          <label className="flex min-h-11 items-center gap-3 font-semibold">
-            <input
-              type="checkbox"
-              role="switch"
-              className="size-5"
-              checked={open}
-              disabled={toggle.isPending}
-              onChange={(e) => {
-                toggle.mutate(e.target.checked);
-              }}
-            />
-            Mở nhập sổ cũ hôm nay
-          </label>
-          <p className="text-sm text-text-muted">
-            {open
-              ? "Quản lý nhập được đến hết ngày hôm nay (0 giờ là tự đóng)."
-              : "Đang đóng: quản lý không nhập được. Chủ spa vẫn nhập được, mỗi lần lưu cần nhập lại mật khẩu."}
-          </p>
-          {toggle.isError && (
-            <p role="alert" className="text-sm text-danger">
-              {messageFor(toggle.error)}
-            </p>
-          )}
-        </div>
-      )}
-      {open || canManage ? (
-        <OpeningBalanceForm />
-      ) : (
-        <div className="space-y-2">
-          <h1 className="text-lg font-semibold">Nhập liệu trình từ sổ cũ</h1>
-          <p role="status">
-            Hôm nay chưa mở nhập sổ cũ. Thông tin của ngày nào chỉ nhập trong
-            ngày đó: nhờ chủ spa bật “Mở nhập sổ cũ hôm nay” rồi tải lại
-            trang.
-          </p>
-        </div>
-      )}
-    </div>
-  );
+  return <OpeningBalanceForm />;
 }
 
 function OpeningBalanceForm() {
@@ -150,8 +77,6 @@ function OpeningBalanceForm() {
     crypto.randomUUID(),
   );
   const [round, setRound] = useState(0);
-  // Owner on a day that was not opened: the server asks for the password again (🔒).
-  const [needsReauth, setNeedsReauth] = useState(false);
   const [imported, setImported] = useState(0);
   const [last, setLast] = useState<{
     result: OpeningBalance;
@@ -188,11 +113,6 @@ function OpeningBalanceForm() {
         },
         idempotencyKey,
       ),
-    onError: (error) => {
-      if (error instanceof ApiError && error.code === "auth.reauth_required") {
-        setNeedsReauth(true);
-      }
-    },
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({
         queryKey: ["customer-packages", result.customer_id],
@@ -238,18 +158,6 @@ function OpeningBalanceForm() {
 
   return (
     <div className="space-y-4">
-      {needsReauth && (
-        <ReauthDialog
-          onConfirmed={() => {
-            setNeedsReauth(false);
-            mutation.mutate();
-          }}
-          onCancel={() => {
-            setNeedsReauth(false);
-            mutation.reset();
-          }}
-        />
-      )}
       <div>
         <h1 className="text-lg font-semibold">Nhập liệu trình từ sổ cũ</h1>
         <p className="text-sm text-text-muted">

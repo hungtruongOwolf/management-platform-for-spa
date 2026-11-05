@@ -77,7 +77,6 @@ impl Fixture {
                 name: "Gội đầu (sổ cũ)".into(),
                 gift_note: None,
                 sold_price: Money::vnd(1_500_000).unwrap_or_default(),
-                refund_cap: Money::ZERO,
                 origin: Origin::OpeningBalance,
                 starts_on: today(),
                 expires_on: None,

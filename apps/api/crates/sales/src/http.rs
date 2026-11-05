@@ -87,7 +87,6 @@ pub async fn read_sale(
     responses(
         (status = 200, body = SaleDto, description = "Voided: every payment has a reversal, its packages are cancelled"),
         (status = 400, description = "idempotency.key_required"),
-        (status = 401, description = "auth.reauth_required (owner voiding a closed day)"),
         (status = 403, description = "auth.forbidden / day.locked (manager, a day before today)"),
         (status = 404),
         (status = 409, description = "sale.voided, sale.has_used_sessions (AC6.4), sale.void_via_visit, package.cancelled"),

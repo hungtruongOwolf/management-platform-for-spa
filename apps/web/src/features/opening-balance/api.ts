@@ -1,28 +1,11 @@
-import { queryOptions } from "@tanstack/react-query";
 import type {
   OpeningBalance,
   OpeningBalanceCreate,
-  OpeningBalanceWindow,
   OpeningPackageCreate,
   PackagePlan,
 } from "@vpyd/api-client";
 import { api } from "../../lib/api";
 import { parseAmount } from "../sales/api";
-
-/** Whether the owner opened paper-book import for today's business day (EM decision M2). */
-export const windowQuery = queryOptions({
-  queryKey: ["opening-balance-window"],
-  queryFn: async () =>
-    (await api("/opening-balances/window")) as OpeningBalanceWindow,
-});
-
-/** Owner only: open (or close) paper-book import for today. */
-export async function setWindow(open: boolean): Promise<OpeningBalanceWindow> {
-  return (await api("/opening-balances/window", {
-    method: "PUT",
-    body: { open },
-  })) as OpeningBalanceWindow;
-}
 
 /** One retry-safe import: the same key replays the first result instead of importing twice. */
 export async function importOpeningBalance(
