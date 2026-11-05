@@ -201,6 +201,22 @@ pub async fn record(
     request_hash: [u8; 32],
     input: &VisitCreate,
 ) -> Result<(u16, Value), AppError> {
+    record_as_of(pool, cipher, actor, key, request_hash, input, Utc::now()).await
+}
+
+/// [`record`] with `now` as the server clock: the visit lands on the business day of `now`, and
+/// the check-in rules (not in the future, on that day) are checked against it. Operator tooling
+/// only (`app seed-demo` back-fills demo history); no route reaches it — `POST /visits` calls
+/// [`record`].
+pub async fn record_as_of(
+    pool: &PgPool,
+    cipher: &FieldCipher,
+    actor: &Actor,
+    key: Uuid,
+    request_hash: [u8; 32],
+    input: &VisitCreate,
+    now: DateTime<Utc>,
+) -> Result<(u16, Value), AppError> {
     actor.require(Permission::VisitRecord)?;
     let order = parse(actor, input)?;
 
@@ -211,14 +227,16 @@ pub async fn record(
         tx.commit().await?;
         return Ok((status, body));
     }
-    let tenant = kernel::tenant::profile(&mut tx).await?;
+    let tenant = kernel::tenant::profile_as_of(&mut tx, now).await?;
     let today = tenant.business_date.as_naive();
-    let check_in_at = domain::check_in_at(order.check_in_at, Utc::now(), tenant.timezone, today)
-        .map_err(|e| AppError::Unprocessable {
-            code: match e {
-                CheckInError::InFuture => "visit.check_in_in_future",
-                CheckInError::NotToday => "visit.check_in_not_today",
-            },
+    let check_in_at =
+        domain::check_in_at(order.check_in_at, now, tenant.timezone, today).map_err(|e| {
+            AppError::Unprocessable {
+                code: match e {
+                    CheckInError::InFuture => "visit.check_in_in_future",
+                    CheckInError::NotToday => "visit.check_in_not_today",
+                },
+            }
         })?;
     let customer = crm::service::brief_in(&mut tx, order.customer_id)
         .await?
@@ -606,7 +624,7 @@ pub async fn for_day(
 
 /// `PATCH /visits/{id}` (`visit.record`, If-Match): correct the note or a line's technician.
 /// Sessions and money are never touched here (voids are S8). Only today's visits, unless the
-/// caller may correct closed days (`record.void_closed_day`) and re-authenticated recently (🔒).
+/// caller may correct closed days (`record.void_closed_day`, the owner; no re-auth).
 pub async fn update(
     pool: &PgPool,
     cipher: &FieldCipher,
@@ -644,7 +662,7 @@ pub async fn update(
         .await?
         .business_date
         .as_naive();
-    // Same 🔒 rule as voids: a closed day needs `record.void_closed_day` and a recent re-auth.
+    // Same rule as voids: a closed day needs `record.void_closed_day`.
     kernel::corrections::authorize_closed_day(actor, business_date, today)?;
     if current != version {
         return Err(AppError::StaleVersion);
@@ -689,8 +707,8 @@ pub async fn update(
     Ok(visit)
 }
 
-/// `POST /visits/{id}/void` (`record.void_same_day`; a closed day needs `record.void_closed_day`
-/// and a recent re-auth; Idempotency-Key): the visit stays in history as `voided` with its reason,
+/// `POST /visits/{id}/void` (`record.void_same_day`; a closed day needs `record.void_closed_day`;
+/// Idempotency-Key): the visit stays in history as `voided` with its reason,
 /// every session it took goes back to its package (AC6.1), and the sale of its one-off lines is
 /// voided with one reversal per payment. One transaction, so either all of it happens or nothing.
 ///

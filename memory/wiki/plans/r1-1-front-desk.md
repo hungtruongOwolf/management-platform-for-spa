@@ -174,7 +174,7 @@ Quy ước chung cho mọi ticket có endpoint:
     - Quy tắc ngày đã chốt ở một chỗ: `kernel::corrections::authorize_void` (trước hôm nay theo múi giờ spa: Manager → `403 day.locked`, Owner cần reauth). Reauth: `Actor::require_recent_auth()`, cờ đặt trong extractor `AuthUser` từ `session.recent_auth_at` (mặc định tắt = deny).
     - API in-transaction mới: `packages::lifecycle::{restore_sessions, cancel_for_sale}`, `sales::voids::void_in` (dùng cho cả hủy lượt). Thứ tự khóa: visit/sale → gói (theo id) → item (theo id). Hủy gói đưa buổi về 0, nên lượt đang trừ buổi song song bị `409`.
     - DTO thêm (additive): `VisitDto.void_reason/voided_at`, `SaleDto.void_reason/voided_at`, `PaymentDto.reversal_of`, `CustomerPackageDto.cancelled_at/cancel_reason/refund`.
-    - Web: nút "Hủy" trên từng lượt ở danh sách `/quay` (+ ô "Xem ngày" để chủ spa hủy lượt ngày cũ; Manager thấy "Ngày đã chốt"), lượt đã hủy hiện nhãn + lý do; trên hồ sơ khách mỗi liệu trình có "Gia hạn" (+1/2/3/6 tháng), "Hủy liệu trình + hoàn tiền" (chặn hoàn > đã trả ngay trên form), "Hủy hóa đơn bán gói" (khi chưa dùng buổi). `ReauthDialog` (mật khẩu, hiện ô mã TOTP khi server đòi) dùng chung qua `useGuardedAction`: gặp `401 auth.reauth_required` → hỏi lại → gửi lại cùng key.
+    - Web: nút "Hủy" trên từng lượt ở danh sách `/quay` (+ ô "Xem ngày" để chủ spa hủy lượt ngày cũ; Manager thấy "Ngày đã chốt"), lượt đã hủy hiện nhãn + lý do; trên hồ sơ khách mỗi liệu trình có "Gia hạn" (+1/2/3/6 tháng), "Hủy liệu trình + hoàn tiền" (chặn hoàn > đã trả ngay trên form), "Hủy hóa đơn bán gói" (khi chưa dùng buổi). `ReauthDialog` (mật khẩu, hiện ô mã TOTP khi server đòi) dùng chung qua `useGuardedAction`: gặp `401 auth.reauth_required` → hỏi lại → gửi lại cùng key (đã bỏ 2026-11-05: thao tác nghiệp vụ không hỏi lại mật khẩu, form dùng `useFormAction`).
     - Perf (frontend.md "Perf budget"): form hủy lượt (`VoidVisitForm`) và `PackageActions` là chunk lazy (0,4 KB + 1,6 KB + 2,5 KB gzip), bundle chính không đổi. **Lỗi tìm ra khi chạy `pnpm lhci`:** nút "Hủy" trong hàng `flex-wrap` làm hàng xuống dòng, cột phải cao hơn nên CLS `/quay` lên 0,27; giữ mỗi hàng một dòng flex → CLS 0,045 (S7 gốc 0,043), LCP 2,06 s (local).
     - Test: 14 HTTP `voids.rs` (mọi case của dòng Tests + 2 lượt hủy song song → đúng 1 thành công, retry cùng key, DB chặn đảo 2 lần / đảo reversal / sửa payment / mở lại sale) + 4 dòng mới `authz_matrix.rs` + unit (`kernel::corrections` 3, `Actor` 1, `lifecycle` 1); 11 web (`Corrections.test.tsx`); Playwright `e2e/specs/voids.spec.ts` (axe 5 màn hình). Mutation check: bỏ chặn hủy 2 lần, bỏ chặn hoàn > đã trả, bỏ khóa ngày → test đỏ, rồi khôi phục.
     - Lệch / chưa làm: không có trang chi tiết lượt riêng (hủy ngay trên danh sách); `PATCH /visits/{id}` ngày cũ (S7) cho Owner sửa mà **chưa** đòi reauth → để S10; hoàn tiền gói nhập sổ cũ tối đa bằng giá ghi trong sổ; chưa có báo cáo sổ quỹ (spec #2) đọc `refund`/reversal.
@@ -267,16 +267,18 @@ Quy ước chung cho mọi ticket có endpoint:
       | AC4.8 | `visits::technician_must_be_working_and_package_must_be_the_customers` |
       | AC6.1 | `voids::voiding_a_visit_gives_sessions_back_and_reverses_its_payment`, E2E `voids.spec` |
       | AC6.2 | `voids::a_void_needs_a_reason` |
-      | AC6.3 | `voids::closed_days_are_locked_for_managers_and_need_reauth_for_owners`, `voids::correcting_a_closed_day_visit_follows_the_void_rule`, `kernel::corrections` unit |
+      | AC6.3 | `voids::closed_days_are_locked_for_managers_and_open_to_owners_without_reauth`, `voids::correcting_a_closed_day_visit_follows_the_void_rule`, `kernel::corrections` unit |
       | AC6.4 | `voids::a_package_sale_with_used_sessions_cannot_be_voided` |
       | AC7.1 | `voids::owner_extends_an_expired_package_with_a_reason` |
-      | AC7.2 | `voids::owner_cancels_a_package_with_a_refund`, E2E `voids.spec` (reauth tất định) |
+      | AC7.2 | `voids::owner_cancels_a_package_with_a_refund`, E2E `voids.spec` (không hỏi lại mật khẩu, EM 2026-11-05) |
       | AC7.3 | `authz_matrix` (extend/cancel OWNER_ONLY), `voids::owner_extends_…` |
       | AC7.4 | `voids::refund_is_capped_by_what_was_paid_after_discount` |
       | AC8.1 | `opening_balances::four_of_ten_left_is_imported_without_any_sale_or_payment`, `packages::opening_balance_creates_a_package_without_money` |
       | AC8.3 | như AC8.1 (không có `sale`/`payment` nên báo cáo/sổ quỹ không thấy; báo cáo thuộc spec #2/#3) |
       | AC8.4 | `opening_balances::more_left_than_total_is_422_and_nothing_is_written` |
       | AC8.5 | web `Sales.test` (hồ sơ), `FrontDesk.test` "labels a package imported from the paper books" (quầy, S10), E2E `opening-balance.spec` |
+      | AC8.6–8.7 | `opening_balances::anyone_who_may_import_imports_today_without_a_window_or_reauth`, AC6.3 tests, E2E `opening-balance.spec` (không có công tắc) |
+      | AC8.8 | `opening_balances::an_opening_balance_refund_is_capped_by_its_book_price` |
       | §6 perf | `e2e/perf/api-latency.spec.ts` (2 test), `customers::search_stays_fast_with_ten_thousand_customers`, `pnpm lhci` (`/dang-nhap`, `/quay`) |
       | §6 a11y | axe trong mọi spec E2E + `a11y.spec.ts`; bàn phím `front-desk.spec.ts`; Lighthouse a11y ≥ 0,95 |
 

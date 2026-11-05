@@ -95,7 +95,6 @@ mod tests {
             Permission::RecordVoidClosedDay,
             Permission::AuditRead,
             Permission::SupportGrantManage,
-            Permission::OpeningBalanceManageWindow,
         ] {
             assert!(!manager.contains(&owner_only), "{owner_only:?}");
         }

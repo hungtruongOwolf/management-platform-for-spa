@@ -46,7 +46,7 @@ import { BrandMark } from "../../app/BrandMark";
 import { CustomerCard } from "./CustomerCard";
 import { spaToday } from "../corrections/api";
 
-// The void form (and the re-auth dialog behind it) only opens on demand: its own chunk.
+// The void form only opens on demand: its own chunk.
 const VoidVisitForm = lazy(() =>
   import("../corrections/VoidVisitForm").then((m) => ({
     default: m.VoidVisitForm,
@@ -716,7 +716,7 @@ function TodayVisits() {
   const [notice, setNotice] = useState<string | null>(null);
   const isToday = day === todayIso;
   const today = useQuery(isToday ? todayVisitsQuery : visitsOfDayQuery(day));
-  // UX only: the server decides (403 day.locked for managers, re-auth for owners).
+  // UX only: the server decides (403 day.locked for managers; owners may).
   const mayVoid =
     can(me, "record.void_same_day") &&
     (isToday || can(me, "record.void_closed_day"));

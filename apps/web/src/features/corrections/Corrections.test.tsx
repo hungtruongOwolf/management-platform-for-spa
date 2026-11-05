@@ -65,7 +65,6 @@ function pkg(
     name: "Gội đầu 10 + tặng 2",
     gift_note: null,
     sold_price: 1_500_000,
-    refund_cap: 1_500_000,
     origin: "sale",
     sale_id: "sale1",
     closer_staff_id: "st1",
@@ -306,35 +305,23 @@ describe("package actions on the customer profile", () => {
     expect(sent?.headers["Idempotency-Key"]).toMatch(/^[0-9a-f-]{36}$/);
   });
 
-  it("asks for the password (then the code) before a 🔒 cancel and retries with the same key", async () => {
-    let reauthed = false;
-    const calls = serve(OWNER, (c) => {
-      if (c.url === "/api/v1/customer-packages/cp1/cancel")
-        return reauthed
-          ? Response.json(
-              pkg(0, {
-                status: "cancelled",
-                refund: {
-                  id: "r1",
-                  amount: 300_000,
-                  method: "cash",
-                  business_date: "2026-11-04",
-                  created_at: "2026-11-04T03:00:00Z",
-                },
-              }),
-            )
-          : problem(401, "auth.reauth_required");
-      if (c.url === "/api/v1/auth/reauth") {
-        const body = c.body as { code?: string };
-        if (!body.code)
-          return problem(422, "validation_failed", [
-            { field: "code", code: "required" },
-          ]);
-        reauthed = true;
-        return new Response(null, { status: 204 });
-      }
-      return undefined;
-    });
+  it("cancels with a refund in one request, without asking the owner for the password", async () => {
+    const calls = serve(OWNER, (c) =>
+      c.url === "/api/v1/customer-packages/cp1/cancel"
+        ? Response.json(
+            pkg(0, {
+              status: "cancelled",
+              refund: {
+                id: "r1",
+                amount: 300_000,
+                method: "cash",
+                business_date: "2026-11-04",
+                created_at: "2026-11-04T03:00:00Z",
+              },
+            }),
+          )
+        : undefined,
+    );
     const user = userEvent.setup();
     at("/khach-hang/c1");
     await user.click(
@@ -350,6 +337,7 @@ describe("package actions on the customer profile", () => {
     ).toBeInTheDocument();
     await user.clear(amount);
     await user.type(amount, "300.000");
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
     await user.type(
       within(dialog).getByLabelText("Lý do hủy"),
       "Khách chuyển nhà",
@@ -358,78 +346,21 @@ describe("package actions on the customer profile", () => {
       within(dialog).getByRole("button", { name: /Hủy và hoàn 300\.000/ }),
     );
 
-    const reauth = await screen.findByRole("dialog", {
-      name: "Xác nhận lại mật khẩu",
-    });
-    await user.type(within(reauth).getByLabelText("Mật khẩu"), "mat-khau");
-    await user.click(within(reauth).getByRole("button", { name: "Xác nhận" }));
-    const code = await within(reauth).findByLabelText(/Mã xác thực hai bước/);
-    await waitFor(() => {
-      expect(code).toHaveFocus();
-    });
-    await user.type(code, "123456");
-    await user.click(within(reauth).getByRole("button", { name: "Xác nhận" }));
-
     expect(
       await screen.findByText(/Đã hủy "Gội đầu 10 \+ tặng 2" và hoàn 300\.000/),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: "Xác nhận lại mật khẩu" }),
+    ).not.toBeInTheDocument();
     const cancels = posts(calls, "/customer-packages/cp1/cancel");
-    expect(cancels).toHaveLength(2);
-    expect(cancels[0]?.headers["Idempotency-Key"]).toBe(
-      cancels[1]?.headers["Idempotency-Key"],
-    );
-    expect(cancels[1]?.body).toEqual({
+    expect(cancels).toHaveLength(1);
+    expect(cancels[0]?.headers["Idempotency-Key"]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(cancels[0]?.body).toEqual({
       reason: "Khách chuyển nhà",
       refund_amount: 300_000,
       refund_method: "cash",
     });
-    expect(posts(calls, "/auth/reauth").map((c) => c.body)).toEqual([
-      { password: "mat-khau" },
-      { password: "mat-khau", code: "123456" },
-    ]);
-  });
-
-  it("asks the owner to confirm a manager-typed paper-book price before refunding it (AC8.8)", async () => {
-    const book = pkg(4, {
-      origin: "opening_balance",
-      sale_id: null,
-      closer_staff_id: null,
-      closer_name: null,
-      refund_cap: 0,
-    });
-    const calls = serve(OWNER, (c) => {
-      if (c.url === "/api/v1/customers/c1/packages") return Response.json([book]);
-      if (c.url === "/api/v1/customer-packages/cp1/cancel")
-        return Response.json({ ...book, status: "cancelled" });
-      return undefined;
-    });
-    const user = userEvent.setup();
-    at("/khach-hang/c1");
-    await user.click(
-      await screen.findByRole("button", { name: "Hủy liệu trình + hoàn tiền" }),
-    );
-    const dialog = await screen.findByRole("dialog", {
-      name: /Hủy liệu trình/,
-    });
-    await user.type(within(dialog).getByLabelText(/Số tiền hoàn/), "300.000");
-    await user.click(
-      within(dialog).getByRole("checkbox", {
-        name: /Đã đối chiếu giá trong sổ/,
-      }),
-    );
-    await user.type(within(dialog).getByLabelText("Lý do hủy"), "Khách đi xa");
-    await user.click(
-      within(dialog).getByRole("button", { name: /Hủy và hoàn 300\.000/ }),
-    );
-    await waitFor(() => {
-      expect(posts(calls, "/customer-packages/cp1/cancel")).toHaveLength(1);
-    });
-    expect(posts(calls, "/customer-packages/cp1/cancel")[0]?.body).toEqual({
-      reason: "Khách đi xa",
-      refund_amount: 300_000,
-      refund_method: "cash",
-      confirm_book_price: true,
-    });
+    expect(posts(calls, "/auth/reauth")).toHaveLength(0);
   });
 
   it("shows the server's 409 when the sale's sessions were used meanwhile", async () => {

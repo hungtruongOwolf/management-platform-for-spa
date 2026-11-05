@@ -18,14 +18,8 @@ test.describe("nhập liệu trình từ sổ cũ (US8)", () => {
       name: "Tìm khách theo SĐT hoặc tên",
     });
     await expect(search).toBeFocused();
-
-    // M2 (AC8.6): the owner opens today's import; afterwards saving needs no re-auth.
-    const toggle = page.getByRole("switch", { name: "Mở nhập sổ cũ hôm nay" });
-    if (!(await toggle.isChecked())) await toggle.click();
-    await expect(toggle).toBeChecked();
-    await expect(
-      page.getByText("Quản lý nhập được đến hết ngày hôm nay"),
-    ).toBeVisible();
+    // EM decision 2026-11-05: no "open import today" switch; the import is always today's.
+    await expect(page.getByRole("switch")).toHaveCount(0);
 
     const phone = uniquePhone();
     await search.fill(phone);

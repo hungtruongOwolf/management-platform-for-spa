@@ -61,7 +61,7 @@ sources: [architecture/system.md, product/specs/front-desk-and-packages.md]
 ## Mối đe dọa nội bộ & vận hành
 | Mối đe dọa | Biện pháp |
 |---|---|
-| Máy quầy bỏ quên, đang đăng nhập (A4) | Idle timeout 12 giờ; nút khóa nhanh; thao tác nhạy cảm (hủy ngày đã chốt, hoàn tiền) yêu cầu nhập lại mật khẩu |
+| Máy quầy bỏ quên, đang đăng nhập (A4) | Idle timeout 12 giờ; hạn tuyệt đối 30 ngày; nút khóa nhanh; MFA khi đăng nhập của chủ spa; audit mọi thao tác. **Rủi ro chấp nhận (EM 2026-11-05):** thao tác nghiệp vụ của chủ spa (hủy/sửa ngày đã chốt, hoàn tiền) không còn hỏi lại mật khẩu, nên máy chủ spa bỏ quên hoặc session chủ spa bị đánh cắp làm được các việc đó; xem ADR-0004 update 2026-11-05 |
 | Dùng chung tài khoản → mất trách nhiệm | Mỗi người một tài khoản (vision rủi ro #5); audit theo user |
 | Platform admin xem dữ liệu spa tùy ý | Mặc định không có quyền đọc; chủ spa cấp support grant 24 giờ (thu hồi được); mọi truy cập đều audit và chủ spa xem được (ADR-0003) |
 | Mất dữ liệu (A5) | Backup Supabase + dump đêm ra R2 + diễn tập khôi phục |
@@ -69,8 +69,8 @@ sources: [architecture/system.md, product/specs/front-desk-and-packages.md]
 ## Security review r1 (2026-11-04): phát hiện → biện pháp → test
 | ID | Phát hiện | Biện pháp | Test (mutation-check) |
 |---|---|---|---|
-| H1 | `switch-tenant` phát session mới với `recent_auth_at = now()` (DEFAULT của cột) và hạn tuyệt đối mới 30 ngày: session bị đánh cắp bỏ qua được 🔒 và sống mãi | `identity::service::Issue::{MfaPending, Authenticated, Rotated}` bắt mọi chỗ phát session nói rõ thời điểm xác thực; switch-tenant giữ `recent_auth_at` + `absolute_expires_at` cũ; migration 0011 bỏ DEFAULT của `recent_auth_at` | `voids.rs::switching_tenant_does_not_refresh_the_reauth_window`, `auth.rs::switch_tenant_keeps_absolute_expiry_and_reauth_time`, `auth.rs::login_marks_the_session_as_just_authenticated` |
-| M2 | Nhập sổ cũ không giới hạn ngày; giá trong sổ do quản lý gõ thành trần hoàn tiền | Cửa sổ nhập theo ngày do chủ spa mở (`opening_balance_window`); ngày chưa mở chỉ Owner + 🔒; `refund_cap` = 0 khi người nhập không có quyền hoàn, chủ spa phải xác nhận giá sổ khi hoàn (EM 2026-11-05, spec AC8.6–8.8) | `opening_balances.rs` (xem mục M2 trong log) |
+| H1 | `switch-tenant` phát session mới với `recent_auth_at = now()` (DEFAULT của cột) và hạn tuyệt đối mới 30 ngày: session bị đánh cắp bỏ qua được 🔒 và sống mãi | `identity::service::Issue::{MfaPending, Authenticated, Rotated}` bắt mọi chỗ phát session nói rõ thời điểm xác thực; switch-tenant giữ `recent_auth_at` + `absolute_expires_at` cũ; migration 0011 bỏ DEFAULT của `recent_auth_at` | `auth.rs::a_rotated_session_needs_a_real_reauth`, `auth.rs::switch_tenant_keeps_absolute_expiry_and_reauth_time`, `auth.rs::login_marks_the_session_as_just_authenticated` |
+| M2 | Nhập sổ cũ không giới hạn ngày; giá trong sổ do quản lý gõ thành trần hoàn tiền | **Đã thay (EM 2026-11-05, migration 0012):** bỏ cửa sổ nhập và `refund_cap`. Gói sổ cũ luôn thuộc ngày nhập (hôm nay), ngày cũ khóa tự động cho Manager; hoàn ≤ `sold_price`, chỉ Owner hoàn, có audit. **Rủi ro còn lại chấp nhận:** quản lý gõ giá sổ cao rồi chủ spa hoàn theo giá đó mà không đối chiếu; trần hoàn riêng cho gói sổ cũ để sau | `opening_balances.rs::anyone_who_may_import_imports_today_without_a_window_or_reauth`, `::an_opening_balance_refund_is_capped_by_its_book_price` |
 | M3 | Spa bị tạm ngưng vẫn dùng được với session đang mở | `member_permissions` yêu cầu `tenant.status = 'active'` → `403 auth.not_a_member`; `user_requires_mfa` không còn bỏ qua spa bị ngưng | `auth.rs::suspending_a_spa_cuts_off_its_open_sessions` |
 | L1 | Map bucket rate limit tăng vô hạn; IPv6 mỗi địa chỉ một bucket | Bucket IPv6 theo /64 (IPv4-mapped → IPv4); task dọn `retain_recent` mỗi 60 giây, tự dừng khi layer bị drop | `middleware::tests::*` (unit) |
 | L2 | Biết SĐT chủ spa là khóa được tài khoản | Giữ khóa theo tài khoản (chống dò phân tán), thêm `app unlock --phone P`; lý do ở ADR-0004 (update 2026-11-04). Rủi ro DoS còn lại được chấp nhận | `auth.rs::operator_unlock_lifts_a_lockout` |
@@ -83,4 +83,4 @@ sources: [architecture/system.md, product/specs/front-desk-and-packages.md]
 | INFO | `safeNextPath` nhận `/\t/evil.com`; hash idempotency không gắn route; `POST /sales` thu tiền không cần `payment.collect`; phân bổ giảm giá có thể vượt giá dòng | Chặn `[\x00-\x20\\]`; `kernel::idempotency::hash_route` (method + route + record + body) cho mọi endpoint idempotent (sales, packages, operations); `payment.collect` khi có payments; phần dư phân bổ không vượt giá dòng | `api.test.ts`, `idempotency::tests::route_hash_binds_method_route_and_record`, `sales.rs::taking_money_needs_payment_collect`, `domain::tests::shares_always_sum_to_the_discount_and_fit_their_lines` |
 
 ## Còn mở
-- Danh sách thao tác yêu cầu nhập lại mật khẩu: chốt ở `/backend-design`.
+- Danh sách thao tác yêu cầu nhập lại mật khẩu: chỉ thao tác bảo mật tài khoản (đổi mật khẩu, cài đặt MFA), EM 2026-11-05. Khi thêm route đó: dùng `AuthUser::require_recent_auth` + test `401`.

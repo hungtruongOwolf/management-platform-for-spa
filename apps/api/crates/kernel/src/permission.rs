@@ -45,7 +45,6 @@ permissions! {
     PackageCancelRefund => "package.cancel_refund",
     PackageUseExpiredOverride => "package.use_expired_override",
     OpeningBalanceImport => "opening_balance.import",
-    OpeningBalanceManageWindow => "opening_balance.manage_window",
     VisitRecord => "visit.record",
     VisitRead => "visit.read",
     PaymentCollect => "payment.collect",
@@ -70,9 +69,6 @@ pub struct Actor {
     pub tenant_id: TenantId,
     pub ip: Option<IpAddr>,
     permissions: BTreeSet<Permission>,
-    /// Password (and second factor) confirmed within the re-auth window (🔒 actions). Off unless
-    /// the session layer says so: deny by default.
-    recent_auth: bool,
 }
 
 impl Actor {
@@ -87,24 +83,6 @@ impl Actor {
             tenant_id,
             ip,
             permissions: permissions.into_iter().collect(),
-            recent_auth: false,
-        }
-    }
-
-    /// Set by the session extractor from `session.recent_auth_at`.
-    #[must_use]
-    pub fn with_recent_auth(mut self, recent: bool) -> Self {
-        self.recent_auth = recent;
-        self
-    }
-
-    /// Guard for 🔒 actions: `401 auth.reauth_required` unless the user re-entered their
-    /// password (and code) within the last few minutes.
-    pub fn require_recent_auth(&self) -> Result<(), AppError> {
-        if self.recent_auth {
-            Ok(())
-        } else {
-            Err(AppError::ReauthRequired)
         }
     }
 
@@ -138,16 +116,6 @@ mod tests {
         for p in Permission::ALL {
             assert_eq!(Permission::from_str(p.as_str()), Ok(*p));
         }
-    }
-
-    #[test]
-    fn recent_auth_is_off_unless_the_session_says_so() {
-        let actor = Actor::new(UserId::new(), TenantId::new(), [], None);
-        assert!(matches!(
-            actor.require_recent_auth(),
-            Err(AppError::ReauthRequired)
-        ));
-        assert!(actor.with_recent_auth(true).require_recent_auth().is_ok());
     }
 
     #[test]

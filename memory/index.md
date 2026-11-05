@@ -30,7 +30,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [ADR-0001 tech stack](wiki/decisions/ADR-0001-tech-stack.md) — **accepted**: Rust/Axum + Postgres; internal app = Vite React SPA; public site later (Next/Astro); no Redis yet
 - [ADR-0002 database hosting](wiki/decisions/ADR-0002-database-hosting.md) — **accepted (provisional)**: Supabase Pro as plain Postgres, Singapore, with mandatory lockdown; staging exception: US region + Data API on, mitigated by REVOKE
 - [ADR-0003 multi-tenancy](wiki/decisions/ADR-0003-multi-tenancy.md) — **accepted**: shared schema + tenant_id + RLS, TenantId newtype
-- [ADR-0004 authentication](wiki/decisions/ADR-0004-authentication.md) — **accepted**: Argon2id + opaque Postgres sessions, __Host- cookie, MFA owner/admin
+- [ADR-0004 authentication](wiki/decisions/ADR-0004-authentication.md) — **accepted**: Argon2id + opaque Postgres sessions, __Host- cookie, MFA owner/admin; re-auth only for account-security actions (2026-11-05)
 - [ADR-0005 compute hosting](wiki/decisions/ADR-0005-compute-hosting.md) — **accepted**: 1 Singapore VPS, Docker Compose + Caddy (provider at /devops)
 - [ADR-0006 repo & module layout](wiki/decisions/ADR-0006-repo-and-module-layout.md) — **accepted**: monorepo, Cargo workspace crate per bounded context
 
@@ -44,7 +44,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 
 ## Runbooks
 - [staging-setup](wiki/runbooks/staging-setup.md) — S11: chọn VPS (giá + nguồn, ghép vùng với Supabase), hardening, Supabase checklist (REVOKE khi Data API bật, pooler session mode), R2 backup + restore drill, deploy/rollback, việc EM cần làm
-- [vercel-staging](wiki/runbooks/vercel-staging.md) — staging hiện tại: Vercel Services (web tĩnh + API container, pdx1) + Supabase us-west-2; env vars, bootstrap DB, deploy, kiểm tra, việc trước khi dùng thật
+- [vercel-staging](wiki/runbooks/vercel-staging.md) — staging hiện tại: Vercel Services (web tĩnh + API container, pdx1) + Supabase us-west-2; env vars, bootstrap DB, dữ liệu demo (`app seed-demo`), deploy, kiểm tra, việc trước khi dùng thật
 
 ## Research
 - [tech-stack](wiki/research/tech-stack.md) — backend & frontend language/framework comparison, recommendation

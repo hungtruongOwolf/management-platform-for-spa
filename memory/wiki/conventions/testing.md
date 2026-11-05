@@ -42,7 +42,7 @@ Thêm endpoint thì làm 3 bước:
    - `ids_from_another_spa_are_not_found`: chủ spa B gọi ID của spa A thì `404`. Có control call trên record của chính B để chứng minh 404 đến từ cách ly tenant, không phải do request hỏng.
    - `pending_mfa_sessions_reach_only_the_mfa_routes`: session pending MFA gọi mọi route khác (trừ logout) thì `401 auth.mfa_*`.
 
-Route 🔒 (re-auth) và rule giảm giá có test riêng trong file test của slice (authz-matrix mục 5–6). Matrix chỉ kiểm cổng permission.
+Rule ngày đã chốt / không reauth cho nghiệp vụ, route 🔒 bảo mật tài khoản (khi có) và rule giảm giá có test riêng trong file test của slice (authz-matrix mục 5–6). Matrix chỉ kiểm cổng permission.
 
 Chưa phủ: role `PlatformAdmin`/support grant (chưa có trong `identity::roles`). Khi S-ticket thêm role này, thêm nó vào `SystemRole::ALL` và các dòng tự động được kiểm thêm.
 

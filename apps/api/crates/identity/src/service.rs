@@ -351,7 +351,8 @@ pub async fn logout_all(pool: &PgPool, session: &Session) -> Result<u64, AppErro
     repo::revoke_all_sessions(pool, session.user_id).await
 }
 
-/// Confirms the password again before sensitive actions (🔒 in the authz matrix). Accounts with
+/// Confirms the password again before account-security actions (🔒 in the authz matrix: password
+/// and MFA settings; business actions never ask, EM decision 2026-11-05). Accounts with
 /// MFA must also give a current TOTP (or recovery) code. Failures count toward the lockout, so a
 /// stolen session cannot be used to guess the password or the code.
 pub async fn reauth(
@@ -626,7 +627,10 @@ async fn build_me(
     })
 }
 
-async fn tenant_permissions(
+/// Permissions of `user` in `tenant` from their roles; `None` = not an active member of an active
+/// spa. Requests get them through [`actor_for`]; operator tooling (`app seed-demo`) acts as a
+/// named member with exactly these, so audit and permission checks stay truthful.
+pub async fn tenant_permissions(
     pool: &PgPool,
     user: UserId,
     tenant: TenantId,
@@ -651,6 +655,5 @@ pub async fn actor_for(
         .ok_or(AppError::Forbidden {
             code: "auth.not_a_member",
         })?;
-    Ok(Actor::new(session.user_id, tenant, permissions, ip)
-        .with_recent_auth(session.recently_authenticated(Utc::now())))
+    Ok(Actor::new(session.user_id, tenant, permissions, ip))
 }

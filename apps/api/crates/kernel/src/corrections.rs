@@ -12,8 +12,8 @@ pub const MAX_REASON: usize = 500;
 /// Until spec #2 defines closing the cash book, every day before today counts as closed.
 /// - no `record.void_same_day` → `403 auth.forbidden`;
 /// - closed day without `record.void_closed_day` → `403 day.locked`;
-/// - closed day with it (🔒) → `401 auth.reauth_required` unless the password was re-entered
-///   within the re-auth window.
+/// - closed day with it (the owner) → allowed. EM decision 2026-11-05: the owner is not asked
+///   for the password again on business actions; MFA at login and the audit log cover it.
 pub fn authorize_void(
     actor: &Actor,
     record_day: NaiveDate,
@@ -23,11 +23,11 @@ pub fn authorize_void(
     authorize_closed_day(actor, record_day, today)
 }
 
-/// The 🔒 closed-day rule alone, for every change of a recorded day (voids and corrections such as
+/// The closed-day rule alone, for every change of a recorded day (voids and corrections such as
 /// `PATCH /visits/{id}`); the caller checks its own base permission first.
 /// - `record_day` is today → allowed;
 /// - closed day without `record.void_closed_day` → `403 day.locked`;
-/// - closed day with it → `401 auth.reauth_required` unless re-authenticated within the window.
+/// - closed day with it → allowed, without re-auth.
 pub fn authorize_closed_day(
     actor: &Actor,
     record_day: NaiveDate,
@@ -36,10 +36,11 @@ pub fn authorize_closed_day(
     if record_day >= today {
         return Ok(());
     }
-    if !actor.can(Permission::RecordVoidClosedDay) {
-        return Err(AppError::Forbidden { code: "day.locked" });
+    if actor.can(Permission::RecordVoidClosedDay) {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden { code: "day.locked" })
     }
-    actor.require_recent_auth()
 }
 
 /// The reason every void, extension and cancellation must carry: trimmed, 1–500 characters.
@@ -68,9 +69,8 @@ mod tests {
         NaiveDate::from_ymd_opt(2026, 11, d).unwrap_or_default()
     }
 
-    fn actor(perms: &[Permission], recent: bool) -> Actor {
+    fn actor(perms: &[Permission]) -> Actor {
         Actor::new(UserId::new(), TenantId::new(), perms.iter().copied(), None)
-            .with_recent_auth(recent)
     }
 
     const MANAGER: &[Permission] = &[Permission::RecordVoidSameDay];
@@ -85,35 +85,33 @@ mod tests {
 
     #[test]
     fn same_day_needs_only_the_same_day_permission() {
+        assert_eq!(code(authorize_void(&actor(MANAGER), day(4), day(4))), None);
         assert_eq!(
-            code(authorize_void(&actor(MANAGER, false), day(4), day(4))),
-            None
-        );
-        assert_eq!(
-            code(authorize_void(&actor(&[], true), day(4), day(4))),
+            code(authorize_void(&actor(&[]), day(4), day(4))),
             Some("auth.forbidden")
         );
     }
 
     #[test]
-    fn closed_day_is_locked_for_managers_and_needs_reauth_for_owners() {
+    fn closed_day_is_locked_for_managers_and_open_to_owners_without_reauth() {
         assert_eq!(
-            code(authorize_void(&actor(MANAGER, true), day(3), day(4))),
+            code(authorize_void(&actor(MANAGER), day(3), day(4))),
             Some("day.locked")
         );
         assert_eq!(
-            code(authorize_void(&actor(OWNER, false), day(3), day(4))),
-            Some("auth.reauth_required")
+            code(authorize_closed_day(&actor(MANAGER), day(3), day(4))),
+            Some("day.locked")
         );
         assert_eq!(
-            code(authorize_void(&actor(OWNER, true), day(3), day(4))),
+            code(authorize_void(&actor(OWNER), day(3), day(4))),
+            None,
+            "the owner is never asked for the password on a business action"
+        );
+        assert_eq!(
+            code(authorize_closed_day(&actor(OWNER), day(1), day(4))),
             None
         );
-        assert_eq!(
-            code(authorize_void(&actor(OWNER, false), day(4), day(4))),
-            None,
-            "today needs no re-auth"
-        );
+        assert_eq!(code(authorize_void(&actor(OWNER), day(4), day(4))), None);
     }
 
     #[test]
