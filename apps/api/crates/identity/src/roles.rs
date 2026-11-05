@@ -101,6 +101,8 @@ mod tests {
             Permission::SupportGrantManage,
             // Paper-book import is an operator migration, not a front-desk task (0013).
             Permission::OpeningBalanceImport,
+            // 3–5 year reports: rare, slow, owner only (EM Q5, 2026-11-05).
+            Permission::ReportLongRange,
         ] {
             assert!(!manager.contains(&owner_only), "{owner_only:?}");
         }
@@ -111,6 +113,8 @@ mod tests {
         let technician = SystemRole::Technician.default_permissions();
         assert!(!technician.contains(&Permission::CustomerRead));
         assert!(!technician.contains(&Permission::CustomerHealthNotesRead));
+        // EM Q7 (2026-11-05): technicians do not manage customers, so never follow up.
+        assert!(!technician.contains(&Permission::CustomerFollowUp));
         assert_eq!(
             technician,
             vec![Permission::CatalogRead, Permission::StaffReadBasic]

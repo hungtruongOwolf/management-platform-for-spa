@@ -2,8 +2,14 @@
 //! who has not come back and records when, how, what came of it and when to try again.
 //!
 //! Append-only: a wrong entry is corrected by recording a new one. The recorder is the session's
-//! user. Default rule: "no answer" with no next date given → try again
-//! [`NO_ANSWER_RETRY_DAYS`] days after the contact; every other outcome has no default.
+//! user. Defaults when no next date is given (lead's decision, EM Q6 2026-11-05; a date entered
+//! by hand always wins):
+//! - `no_answer` → try again [`NO_ANSWER_RETRY_DAYS`] days after the contact;
+//! - `will_come` → check in [`WILL_COME_CHECK_DAYS`] days later if they still have not come (a
+//!   visit starts a new absence, so the reminder disappears by itself);
+//! - `not_interested` → no date; the re-engagement list leaves them out of "due" for
+//!   [`NOT_INTERESTED_PAUSE_DAYS`] days, then shows them once more;
+//! - `other` → no date.
 
 use crate::repo::{self, FollowUpInsert, FollowUpRow};
 use chrono::{Days, NaiveDate};
@@ -16,6 +22,10 @@ use uuid::Uuid;
 
 /// "Không nghe máy" → gọi lại sau 3 ngày, unless the manager picks another date.
 pub const NO_ANSWER_RETRY_DAYS: u64 = 3;
+/// "Hẹn sẽ đến" → kiểm lại sau 7 ngày nếu vẫn chưa đến.
+pub const WILL_COME_CHECK_DAYS: u64 = 7;
+/// "Không muốn" → không làm phiền trong 90 ngày (the inactive list applies it).
+pub const NOT_INTERESTED_PAUSE_DAYS: u64 = 90;
 /// A contact can be recorded late (yesterday's calls typed in today), within this many days.
 pub const MAX_BACKDATE_DAYS: u64 = 30;
 /// The next follow-up can be planned at most this far after the contact.
@@ -125,16 +135,43 @@ impl TryFrom<FollowUpRow> for FollowUp {
     }
 }
 
-/// The default rule: the date given wins; otherwise "no answer" retries after 3 days.
+/// The date the rules suggest for a contact on `contacted_on` with this outcome.
+pub fn suggested_next(outcome: Outcome, contacted_on: NaiveDate) -> Option<NaiveDate> {
+    match outcome {
+        Outcome::NoAnswer => contacted_on.checked_add_days(Days::new(NO_ANSWER_RETRY_DAYS)),
+        Outcome::WillCome => contacted_on.checked_add_days(Days::new(WILL_COME_CHECK_DAYS)),
+        Outcome::NotInterested | Outcome::Other => None,
+    }
+}
+
+/// The stored next date: the date given wins, otherwise the suggestion.
 pub fn next_follow_up(
     outcome: Outcome,
     contacted_on: NaiveDate,
     requested: Option<NaiveDate>,
 ) -> Option<NaiveDate> {
-    requested.or_else(|| match outcome {
-        Outcome::NoAnswer => contacted_on.checked_add_days(Days::new(NO_ANSWER_RETRY_DAYS)),
-        Outcome::WillCome | Outcome::NotInterested | Outcome::Other => None,
-    })
+    requested.or_else(|| suggested_next(outcome, contacted_on))
+}
+
+/// Suggestions for a contact made today, per outcome, so the form can pre-fill the date
+/// before saving (`GET /customers/{id}/follow-ups`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Suggestions {
+    pub today: NaiveDate,
+    pub will_come: Option<NaiveDate>,
+    pub not_interested: Option<NaiveDate>,
+    pub no_answer: Option<NaiveDate>,
+    pub other: Option<NaiveDate>,
+}
+
+pub fn suggestions(today: NaiveDate) -> Suggestions {
+    Suggestions {
+        today,
+        will_come: suggested_next(Outcome::WillCome, today),
+        not_interested: suggested_next(Outcome::NotInterested, today),
+        no_answer: suggested_next(Outcome::NoAnswer, today),
+        other: suggested_next(Outcome::Other, today),
+    }
 }
 
 struct Clean {
@@ -257,17 +294,21 @@ pub async fn record(
 }
 
 /// `GET /customers/{id}/follow-ups` (`customer.read`): newest contact first, at most
-/// [`LIST_LIMIT`]; `bool` = more exist.
+/// [`LIST_LIMIT`]; `bool` = more exist; with today's suggested next dates.
 pub async fn list(
     pool: &PgPool,
     actor: &Actor,
     customer_id: Uuid,
-) -> Result<(Vec<FollowUp>, bool), AppError> {
+) -> Result<(Vec<FollowUp>, bool, Suggestions), AppError> {
     actor.require(Permission::CustomerRead)?;
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     if !repo::exists(&mut tx, customer_id).await? {
         return Err(AppError::NotFound);
     }
+    let today = kernel::tenant::profile(&mut tx)
+        .await?
+        .business_date
+        .as_naive();
     let mut rows = repo::follow_ups(&mut tx, customer_id, LIST_LIMIT + 1).await?;
     tx.commit().await?;
     let page = usize::try_from(LIST_LIMIT).unwrap_or(usize::MAX);
@@ -277,7 +318,7 @@ pub async fn list(
         .into_iter()
         .map(FollowUp::try_from)
         .collect::<Result<_, _>>()?;
-    Ok((items, more))
+    Ok((items, more, suggestions(today)))
 }
 
 #[cfg(test)]
@@ -309,12 +350,28 @@ mod tests {
             next_follow_up(Outcome::NoAnswer, on, Some(d("2026-11-20"))),
             Some(d("2026-11-20"))
         );
-        for o in [Outcome::WillCome, Outcome::NotInterested, Outcome::Other] {
+        assert_eq!(
+            next_follow_up(Outcome::WillCome, on, None),
+            Some(d("2026-11-12")),
+            "will come → check in a week"
+        );
+        for o in [Outcome::NotInterested, Outcome::Other] {
             assert_eq!(next_follow_up(o, on, None), None, "{o:?}");
         }
         assert_eq!(
-            next_follow_up(Outcome::WillCome, on, Some(d("2026-11-12"))),
-            Some(d("2026-11-12"))
+            next_follow_up(Outcome::NotInterested, on, Some(d("2027-01-05"))),
+            Some(d("2027-01-05")),
+            "a date given always wins"
+        );
+        assert_eq!(
+            suggestions(on),
+            Suggestions {
+                today: on,
+                will_come: Some(d("2026-11-12")),
+                not_interested: None,
+                no_answer: Some(d("2026-11-08")),
+                other: None,
+            }
         );
     }
 

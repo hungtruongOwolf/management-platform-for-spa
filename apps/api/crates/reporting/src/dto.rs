@@ -270,6 +270,12 @@ pub enum RangePreset {
     /// 1 January last year → today: this and last calendar year (by month; `year` compares the two).
     #[serde(rename = "last_2_years")]
     Last2Years,
+    /// 1 January two years ago → today: 3 calendar years (by month). Needs `report.long_range`.
+    #[serde(rename = "last_3_years")]
+    Last3Years,
+    /// 1 January four years ago → today: 5 calendar years (by year). Needs `report.long_range`.
+    #[serde(rename = "last_5_years")]
+    Last5Years,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
@@ -340,7 +346,8 @@ pub struct RangeQuery {
     /// First business day; default `to` − 6 days. Not with `preset`.
     pub from: Option<NaiveDate>,
     /// Last business day (inclusive); default today. Not with `preset`. Span: at most 366 days
-    /// for `day` / `week`, at most 732 days (2 years) for `month` / `year`.
+    /// for `day` / `week`, at most 732 days (2 years) for `month` / `year`; 1830 days (5 years)
+    /// with `report.long_range` (owner).
     pub to: Option<NaiveDate>,
     /// Bucket size of `series`; default `day`, or the preset's default.
     pub granularity: Option<Granularity>,
@@ -739,7 +746,8 @@ pub enum CustomerKindFilter {
 pub enum FollowUpFilter {
     #[default]
     All,
-    /// Needs a call today: never contacted in this absence, or `next_follow_up_on` ≤ today.
+    /// Needs a call today: never contacted in this absence, or `due_on` ≤ today (a planned date
+    /// that has come, or 90 days after a "not interested").
     Due,
     /// No follow-up recorded in this absence.
     NotContacted,
@@ -785,6 +793,10 @@ pub struct InactiveCustomer {
     pub last_follow_up: Option<LastFollowUp>,
     /// The date that follow-up planned for the next try (`null` = none planned).
     pub next_follow_up_on: Option<NaiveDate>,
+    /// When this contacted customer is due again: `next_follow_up_on`, or for `not_interested`
+    /// without a date, contact day + 90 (shown once more then). `null` = not contacted in this
+    /// absence (already due) or nothing due.
+    pub due_on: Option<NaiveDate>,
 }
 
 /// `GET /customers/inactive`: longest absence first.

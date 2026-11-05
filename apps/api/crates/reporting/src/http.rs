@@ -59,7 +59,7 @@ pub async fn daily_report(
     responses(
         (status = 200, body = RangeReport, description = "Money fields only with report.revenue.read"),
         (status = 401), (status = 403, description = "auth.forbidden: no report.read"),
-        (status = 422, description = "validation_failed: from after_to, to range_too_long (> 366 days by day/week, > 732 days by month/year), preset conflicts_with_range")))]
+        (status = 422, description = "validation_failed: from after_to, to range_too_long (> 366 days by day/week, > 732 days by month/year; > 1830 with report.long_range), preset conflicts_with_range")))]
 pub async fn range_report(
     State(pool): State<PgPool>,
     user: AuthUser,

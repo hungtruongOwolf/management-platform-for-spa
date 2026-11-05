@@ -56,6 +56,7 @@ permissions! {
     RecordVoidClosedDay => "record.void_closed_day",
     ReportRead => "report.read",
     ReportRevenueRead => "report.revenue.read",
+    ReportLongRange => "report.long_range",
     AuditRead => "audit.read",
     SupportGrantManage => "support_grant.manage",
     PlatformTenantManage => "platform.tenant.manage",

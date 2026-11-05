@@ -15,6 +15,8 @@ use std::time::Instant;
 const DAYS: i32 = 1100;
 const SAMPLES: usize = 20;
 const BUDGET_MS: u128 = 300;
+/// Owner-only 3–5 year reports (`report.long_range`, EM Q5): rare and computed on demand.
+const LONG_RANGE_BUDGET_MS: u128 = 1500;
 
 /// Bulk rows straight into the tables (owner pool), shaped like the use cases write them.
 const SEED: &str = r#"
@@ -173,6 +175,10 @@ async fn three_years_of_books_read_within_budget(pool: PgPool) -> TestResult {
         "/customers/inactive?days=7&follow_up=due&limit=50".to_owned(),
         "/customers/inactive?days=7&q=khach&kind=one_off&limit=50".to_owned(),
         "/customers/phone-check?phone=0905000012".to_owned(),
+        // Owner-only long range: the whole 3-year seed, by month and by year.
+        "/reports/range?preset=last_5_years".to_owned(),
+        "/reports/range?preset=last_3_years".to_owned(),
+        "/reports/range?from=2023-11-06&to=2026-11-05&granularity=month".to_owned(),
     ];
     let mut over = Vec::new();
     let mut n = 0_u32;
@@ -197,8 +203,16 @@ async fn three_years_of_books_read_within_budget(pool: PgPool) -> TestResult {
         }
         let (p50, p95) = (p(&mut ms, 0.5), p(&mut ms, 0.95));
         println!("p50 {p50:>4} ms  p95 {p95:>4} ms  {path}");
-        if p95 >= BUDGET_MS {
-            over.push(format!("{path}: p95 {p95} ms"));
+        let budget = if path.contains("last_5_years")
+            || path.contains("last_3_years")
+            || path.contains("from=2023-")
+        {
+            LONG_RANGE_BUDGET_MS
+        } else {
+            BUDGET_MS
+        };
+        if p95 >= budget {
+            over.push(format!("{path}: p95 {p95} ms (budget {budget} ms)"));
         }
     }
 
@@ -262,6 +276,6 @@ async fn three_years_of_books_read_within_budget(pool: PgPool) -> TestResult {
     for (index, scans) in used {
         println!("index {index}: {scans} scans");
     }
-    assert!(over.is_empty(), "over the {BUDGET_MS} ms budget: {over:?}");
+    assert!(over.is_empty(), "over budget: {over:?}");
     Ok(())
 }

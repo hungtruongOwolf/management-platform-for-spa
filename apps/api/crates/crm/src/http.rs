@@ -276,7 +276,7 @@ pub struct FollowUpCreate {
     /// ≤ 500 characters. A contact note, not a health note.
     pub note: Option<String>,
     /// When to try again (≥ `contacted_on`, ≤ 365 days after it). Omitted: `no_answer` → contact
-    /// day + 3; other outcomes → none.
+    /// day + 3, `will_come` → + 7, `not_interested` / `other` → none.
     pub next_follow_up_on: Option<NaiveDate>,
 }
 
@@ -312,6 +312,19 @@ impl From<FollowUp> for FollowUpDto {
     }
 }
 
+/// The next date the rules would store for a contact made today, per outcome (`null` = none).
+/// The form pre-fills `next_follow_up_on` with it; whatever the user leaves there is sent.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SuggestedNextOn {
+    /// Today + 7: check in if they still have not come.
+    pub will_come: Option<NaiveDate>,
+    /// None: they leave the "due" list for `not_interested_pause_days`, then come back once.
+    pub not_interested: Option<NaiveDate>,
+    /// Today + 3.
+    pub no_answer: Option<NaiveDate>,
+    pub other: Option<NaiveDate>,
+}
+
 /// `GET /customers/{id}/follow-ups`: newest contact first.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct FollowUpList {
@@ -319,6 +332,11 @@ pub struct FollowUpList {
     pub items: Vec<FollowUpDto>,
     /// More than 100 exist (only the newest are listed).
     pub has_more: bool,
+    /// The spa's business day the suggestions are computed from.
+    pub today: NaiveDate,
+    pub suggested_next_on_by_outcome: SuggestedNextOn,
+    /// Days a `not_interested` customer stays out of `GET /customers/inactive?follow_up=due`.
+    pub not_interested_pause_days: u64,
 }
 
 fn profile(
@@ -438,12 +456,20 @@ pub async fn list_follow_ups(
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Response, AppError> {
-    let (items, has_more) = follow_up::list(&pool, &user.actor, id).await?;
+    let (items, has_more, s) = follow_up::list(&pool, &user.actor, id).await?;
     Ok(no_store(
         StatusCode::OK,
         FollowUpList {
             items: items.into_iter().map(Into::into).collect(),
             has_more,
+            today: s.today,
+            suggested_next_on_by_outcome: SuggestedNextOn {
+                will_come: s.will_come,
+                not_interested: s.not_interested,
+                no_answer: s.no_answer,
+                other: s.other,
+            },
+            not_interested_pause_days: follow_up::NOT_INTERESTED_PAUSE_DAYS,
         },
     ))
 }

@@ -103,12 +103,17 @@ Thiếu `report.revenue.read` thì response **không chứa** các trường ti�
 **US5b — Theo dõi gọi lại khách (follow-up):**
 *Là quản lý, tôi muốn đánh dấu đã gọi / nhắn khách nào, ngày nào, kết quả ra sao và khi nào gọi lại, để biết hôm nay cần gọi ai thay vì chỉ nhìn ai vắng lâu.*
 - AC5b.1 `POST /customers/{id}/follow-ups` (Idempotency-Key, quyền mới `customer.follow_up`: chủ spa + quản lý): `contacted_on` (mặc định hôm nay theo giờ spa; không ở tương lai; lùi tối đa 30 ngày), `channel` = `phone` | `zalo` | `in_person` | `other`, `outcome` = `will_come` (liên lạc được, sẽ đến) | `not_interested` | `no_answer` | `other`, `note` (≤ 500 ký tự, ghi chú liên lạc, **không** ghi sức khỏe), `next_follow_up_on` (≥ ngày liên lạc, ≤ 365 ngày sau). Người ghi = user của session (body không gửi được). Chỉ thêm, không sửa / xóa (ghi nhầm thì ghi lần mới). Audit `customer.follow_up` (ghi `has_note`, không chép nội dung ghi chú).
-- AC5b.2 **Quy tắc mặc định:** `no_answer` mà không chọn ngày gọi lại → `next_follow_up_on` = ngày liên lạc + **3 ngày**. Kết quả khác không có mặc định. Ngày nhập tay luôn thắng.
-- AC5b.3 `GET /customers/{id}/follow-ups`: mới nhất trước, tối đa 100 (`has_more`). Quyền `customer.read`.
+- AC5b.2 **Quy tắc mặc định** (lead chốt, EM duyệt khi xem bản build, [raw](../../../raw/2026-11-05-em-answers-q5-q7.md)); không chọn ngày gọi lại thì:
+  - `no_answer` → ngày liên lạc + **3 ngày**;
+  - `will_come` → + **7 ngày** (kiểm lại nếu vẫn chưa đến; khách đến là sang đợt vắng mới nên tự hết);
+  - `not_interested` → không có ngày; khách **ra khỏi danh sách "cần liên hệ" 90 ngày** kể từ lần liên lạc, sau đó hiện lại một lần;
+  - `other` → không có ngày.
+  - Ngày nhập tay luôn thắng.
+- AC5b.3 `GET /customers/{id}/follow-ups`: mới nhất trước, tối đa 100 (`has_more`), kèm `today`, `suggested_next_on_by_outcome {will_come, not_interested, no_answer, other}` (ngày quy tắc sẽ lưu nếu liên lạc hôm nay) và `not_interested_pause_days` (90). Form điền sẵn ngày gợi ý **trước khi lưu**, người dùng sửa được. Quyền `customer.read`.
 - AC5b.4 Mỗi dòng của `/customers/inactive` có `last_follow_up {on, channel, outcome, by}` và `next_follow_up_on`, **chỉ tính các lần liên lạc trong đợt vắng hiện tại** (`contacted_on` ≥ "lần gần nhất"). Khách quay lại sau khi được gọi → đợt vắng mới, sạch.
-- AC5b.5 Lọc `follow_up=`: `due` = chưa liên lạc trong đợt này **hoặc** `next_follow_up_on` ≤ hôm nay; `not_contacted` = chưa liên lạc; `scheduled` = hẹn gọi sau hôm nay; `all` (mặc định). Đã liên lạc mà không hẹn ngày (ví dụ "không muốn") chỉ hiện ở `all`.
-- AC5b.6 Sắp xếp `sort=due|absent`: `due` = chưa liên lạc trước (vắng lâu trước), rồi `next_follow_up_on` gần nhất, cuối cùng là đã liên lạc không hẹn ngày; `absent` = vắng lâu nhất trước. Mặc định `due` khi `follow_up=due|scheduled`, ngược lại `absent`.
-- AC5b.7 (neg): KTV → `403`; chưa đăng nhập → `401`; khách spa khác → `404`; thiếu Idempotency-Key → `400`; cùng key khác body → `422 idempotency.key_reuse_mismatch`.
+- AC5b.5 Mỗi dòng có `due_on` = ngày khách cần liên hệ lại: `next_follow_up_on`, hoặc với `not_interested` không có ngày thì ngày liên lạc + 90. Lọc `follow_up=`: `due` = chưa liên lạc trong đợt này **hoặc** `due_on` ≤ hôm nay; `not_contacted` = chưa liên lạc; `scheduled` = có `next_follow_up_on` sau hôm nay; `all` (mặc định). Đã liên lạc mà không có `due_on` (`other` không hẹn ngày) chỉ hiện ở `all`.
+- AC5b.6 Sắp xếp `sort=due|absent`: `due` = chưa liên lạc trước (vắng lâu trước), rồi `due_on` gần nhất, cuối cùng là đã liên lạc không có `due_on`; `absent` = vắng lâu nhất trước. Mặc định `due` khi `follow_up=due|scheduled`, ngược lại `absent`.
+- AC5b.7 (neg): KTV → `403` (EM Q7: KTV không quản lý khách nên **không bao giờ** có `customer.follow_up`); chưa đăng nhập → `401`; khách spa khác → `404`; thiếu Idempotency-Key → `400`; cùng key khác body → `422 idempotency.key_reuse_mismatch`.
 
 **US4 — tìm trong hồ sơ khách:** `GET /customers/{id}/history?q=&kind=&from=&to=`: `q` (không dấu, 2–100 ký tự) khớp lượt theo tên dịch vụ, danh mục, tên gói, KTV; hóa đơn theo dòng gói và người chốt; hủy gói theo tên gói. `kind` một loại sự kiện; `from`/`to` theo ngày nghiệp vụ của sự kiện (`from > to` → `422`).
 
@@ -118,7 +123,7 @@ Thiếu `report.revenue.read` thì response **không chứa** các trường ti�
 
 **Danh mục dịch vụ:** mọi DTO hiện tên dịch vụ có thêm `category_name` (danh mục **hiện tại** trong bảng giá, không phải snapshot): dòng lượt (`VisitLineDto`, lượt hôm nay), dòng lượt trong lịch sử, item gói (`CustomerPackageItemDto`), trang dùng gói, top dịch vụ trong báo cáo. Giới tính khách (`customer_gender`) có ở lượt (`VisitDto`), dòng sổ doanh thu, dòng tổng quan gói; dòng khách vắng có `gender`.
 
-**US2 — báo cáo linh hoạt:** `preset` = `last_7_days`, `last_30_days`, `this_month`, `last_month` (theo ngày), `this_year`, `last_12_months`, `last_2_years` (năm nay + năm trước; theo tháng), tính theo "hôm nay" của spa; `granularity` thêm `year` (so sánh các năm); ghi đè được granularity mặc định của preset; `preset` cùng `from`/`to` → `422 preset conflicts_with_range`. Giới hạn: theo ngày/tuần ≤ 366 ngày, theo tháng/năm ≤ 732 ngày (**2 năm**: bench 3 năm dữ liệu đọc 1 năm ~120 ms, 2 năm ~230 ms, 3 năm ~380 ms > ngân sách 300 ms; xem dài hơn cần bảng tổng hợp theo ngày, câu hỏi Q5). Mỗi điểm `series` có `counts.customers`, `counts.visits` và `net_revenue` (phẳng, cho biểu đồ đường; chỉ khi có quyền tiền). Thêm `technicians[]` cho cả khoảng (như dashboard ngày).
+**US2 — báo cáo linh hoạt:** `preset` = `last_7_days`, `last_30_days`, `this_month`, `last_month` (theo ngày), `this_year`, `last_12_months`, `last_2_years` (năm nay + năm trước; theo tháng), tính theo "hôm nay" của spa; `granularity` thêm `year` (so sánh các năm); ghi đè được granularity mặc định của preset; `preset` cùng `from`/`to` → `422 preset conflicts_with_range`. Giới hạn: theo ngày/tuần ≤ 366 ngày, theo tháng/năm ≤ 732 ngày (**2 năm**, cho mọi người, trong ngân sách 300 ms). **Chủ spa** (quyền mới `report.long_range`, migration 0015) xem được tới 1830 ngày (5 năm) theo tháng/năm, preset `last_3_years` (theo tháng) và `last_5_years` (theo năm); tính tại chỗ, không có bảng tổng hợp, ngân sách riêng p95 ≤ **1,5 s** trên bench 3 năm (đo: 368–478 ms). Thiếu quyền → `422 to range_too_long` như cũ (cả hai preset này luôn bị từ chối, kể cả ngày đầu năm khi khoảng chưa vượt 2 năm). Mỗi điểm `series` có `counts.customers`, `counts.visits` và `net_revenue` (phẳng, cho biểu đồ đường; chỉ khi có quyền tiền). Thêm `technicians[]` cho cả khoảng (như dashboard ngày).
 
 ### US6 (để sau, R1-3): Sổ thu chi
 Sổ thu chi giấy ghi cả **chi** (chi phí vận hành, rút/nộp quỹ) và **tồn quỹ** tiền mặt / tài khoản. Phần **thu** đã có (US3). Phần **chi** là loại dữ liệu mới (phiếu chi: ngày, diễn giải, số tiền, hình thức, người chi, chứng từ) cần spec riêng: quyền ghi/sửa, chốt quỹ cuối ngày, tồn đầu kỳ, đối soát. **Không làm ở R1-2.**
@@ -181,7 +186,7 @@ EM: dữ liệu sổ giấy là **migration một lần** do team tự điền s
   - Q2: "lâu không quay lại" mặc định **7 ngày**, kèm màn hình riêng xem cả danh sách khách quá hạn.
   - Q3: tiền thực thu, khoản hủy ghi vào **ngày hủy**.
   - Q4: tạm thời **không giới hạn** số ngày quản lý được xem.
-- **Mở (vòng 3):**
-  - Q5: cần xem báo cáo **nhiều hơn 2 năm** không? Nếu cần: thêm bảng tổng hợp theo ngày (cập nhật khi ghi lượt/hóa đơn) để 5 năm vẫn < 300 ms.
-  - Q6: quy tắc mặc định "không nghe máy → gọi lại sau 3 ngày" có đúng ý không? Kết quả khác có cần ngày mặc định (ví dụ "hẹn sẽ đến" → kiểm lại sau 7 ngày)?
-  - Q7: KTV có cần ghi follow-up không (hiện chỉ chủ spa + quản lý)?
+- **Đã chốt vòng 3 (EM 2026-11-05, [raw](../../../raw/2026-11-05-em-answers-q5-q7.md)):**
+  - Q5: 2 năm cho mọi người; 3–5 năm **chỉ chủ spa**, lâu lâu mới xem nên tính tại chỗ (chậm hơn được), chưa làm bảng tổng hợp.
+  - Q6: EM giao lead chốt và sẽ review bản build: AC5b.2 (+3 / +7 / nghỉ 90 ngày / không có).
+  - Q7: KTV **không** follow-up.

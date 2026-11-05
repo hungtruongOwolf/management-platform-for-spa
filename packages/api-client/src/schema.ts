@@ -917,7 +917,7 @@ export interface components {
             /**
              * Format: date
              * @description When to try again (≥ `contacted_on`, ≤ 365 days after it). Omitted: `no_answer` → contact
-             *     day + 3; other outcomes → none.
+             *     day + 3, `will_come` → + 7, `not_interested` / `other` → none.
              */
             next_follow_up_on?: string | null;
             /** @description ≤ 500 characters. A contact note, not a health note. */
@@ -957,6 +957,17 @@ export interface components {
             has_more: boolean;
             /** @description At most 100. */
             items: components["schemas"]["FollowUpDto"][];
+            /**
+             * Format: int64
+             * @description Days a `not_interested` customer stays out of `GET /customers/inactive?follow_up=due`.
+             */
+            not_interested_pause_days: number;
+            suggested_next_on_by_outcome: components["schemas"]["SuggestedNextOn"];
+            /**
+             * Format: date
+             * @description The spa's business day the suggestions are computed from.
+             */
+            today: string;
         };
         /** @enum {string} */
         FollowUpOutcomeDto: "will_come" | "not_interested" | "no_answer" | "other";
@@ -1093,6 +1104,13 @@ export interface components {
             customer_id: string;
             /** Format: int64 */
             days_absent: number;
+            /**
+             * Format: date
+             * @description When this contacted customer is due again: `next_follow_up_on`, or for `not_interested`
+             *     without a date, contact day + 90 (shown once more then). `null` = not contacted in this
+             *     absence (already due) or nothing due.
+             */
+            due_on?: string | null;
             full_name: string;
             gender?: components["schemas"]["GenderDto"] | null;
             kind: components["schemas"]["CustomerKind"];
@@ -1575,7 +1593,7 @@ export interface components {
          *     every device agrees on what "this month" is. Each has a default granularity.
          * @enum {string}
          */
-        RangePreset: "last_7_days" | "last_30_days" | "this_month" | "last_month" | "this_year" | "last_12_months" | "last_2_years";
+        RangePreset: "last_7_days" | "last_30_days" | "this_month" | "last_month" | "this_year" | "last_12_months" | "last_2_years" | "last_3_years" | "last_5_years";
         /** @description `GET /reports/range`. */
         RangeReport: {
             /** Format: date */
@@ -1782,6 +1800,29 @@ export interface components {
         };
         /** @enum {string} */
         StaffStatusDto: "active" | "left";
+        /**
+         * @description The next date the rules would store for a contact made today, per outcome (`null` = none).
+         *     The form pre-fills `next_follow_up_on` with it; whatever the user leaves there is sent.
+         */
+        SuggestedNextOn: {
+            /**
+             * Format: date
+             * @description Today + 3.
+             */
+            no_answer?: string | null;
+            /**
+             * Format: date
+             * @description None: they leave the "due" list for `not_interested_pause_days`, then come back once.
+             */
+            not_interested?: string | null;
+            /** Format: date */
+            other?: string | null;
+            /**
+             * Format: date
+             * @description Today + 7: check in if they still have not come.
+             */
+            will_come?: string | null;
+        };
         SwitchTenantBody: {
             /** Format: uuid */
             tenant_id: string;
@@ -3427,7 +3468,8 @@ export interface operations {
                 from?: string;
                 /**
                  * @description Last business day (inclusive); default today. Not with `preset`. Span: at most 366 days
-                 *     for `day` / `week`, at most 732 days (2 years) for `month` / `year`.
+                 *     for `day` / `week`, at most 732 days (2 years) for `month` / `year`; 1830 days (5 years)
+                 *     with `report.long_range` (owner).
                  */
                 to?: string;
                 /** @description Bucket size of `series`; default `day`, or the preset's default. */
@@ -3463,7 +3505,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description validation_failed: from after_to, to range_too_long (> 366 days by day/week, > 732 days by month/year), preset conflicts_with_range */
+            /** @description validation_failed: from after_to, to range_too_long (> 366 days by day/week, > 732 days by month/year; > 1830 with report.long_range), preset conflicts_with_range */
             422: {
                 headers: {
                     [name: string]: unknown;

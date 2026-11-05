@@ -373,7 +373,19 @@ async fn a_follow_up_is_recorded_once_by_the_session_user(pool: PgPool) -> TestR
     let will_come = s
         .follow_up(ha, json!({"channel": "in_person", "outcome": "will_come"}))
         .await;
-    assert_eq!(will_come.body["next_follow_up_on"], Value::Null);
+    assert_eq!(
+        will_come.body["next_follow_up_on"],
+        json!(day + Duration::days(7)),
+        "will come → check in a week"
+    );
+    let list = s.get(&s.manager, &path).await;
+    assert_eq!(
+        list.body["suggested_next_on_by_outcome"],
+        json!({"will_come": day + Duration::days(7), "not_interested": null,
+               "no_answer": day + Duration::days(3), "other": null})
+    );
+    assert_eq!(list.body["today"], json!(day));
+    assert_eq!(list.body["not_interested_pause_days"], 90);
 
     for (bad, field, code) in [
         (
@@ -654,12 +666,40 @@ async fn the_follow_up_filter_tells_who_to_call_today(pool: PgPool) -> TestResul
         json!({"channel": "zalo", "outcome": "not_interested"}),
     )
     .await);
+    // F said "not interested" 95 days ago (older than the API accepts, so written directly):
+    // past the 90-day pause, F is due once more.
+    let f = s.customer("F hết thời gian nghỉ", "0905111006").await;
+    s.visit(
+        f,
+        s.service,
+        s.staff,
+        true,
+        Some(ict(day - Duration::days(100), 10, 0)),
+    )
+    .await?;
+    sqlx::query(
+        "INSERT INTO app.customer_follow_up (id, tenant_id, customer_id, contacted_on, channel, outcome, created_by)
+         SELECT $1, $2, $3, $4, 'phone', 'not_interested', u.id FROM app.user_account u
+         WHERE u.phone_e164 = '+84912000111'",
+    )
+    .bind(Uuid::now_v7())
+    .bind(s.tenant)
+    .bind(f)
+    .bind(day - Duration::days(95))
+    .execute(&s.h.owner)
+    .await?;
 
     let all = inactive(&s, "follow_up=all").await;
-    assert_eq!(names(&all, "items", "full_name").len(), 5);
+    assert_eq!(names(&all, "items", "full_name").len(), 6);
     assert_eq!(
         names(&inactive(&s, "follow_up=due").await, "items", "full_name"),
-        set(&["B đến hạn", "C chưa gọi", "D gọi trước lần đến"])
+        set(&[
+            "B đến hạn",
+            "C chưa gọi",
+            "D gọi trước lần đến",
+            "F hết thời gian nghỉ"
+        ]),
+        "E said not interested today: out of due for 90 days"
     );
     assert_eq!(
         names(
@@ -700,6 +740,20 @@ async fn the_follow_up_filter_tells_who_to_call_today(pool: PgPool) -> TestResul
         .unwrap_or(Value::Null);
     assert_eq!(d["last_follow_up"], Value::Null);
     assert_eq!(d["next_follow_up_on"], Value::Null);
+    let due_on = |name: &str| -> Value {
+        all.body["items"]
+            .as_array()
+            .and_then(|a| a.iter().find(|r| r["full_name"] == name).cloned())
+            .map(|r| r["due_on"].clone())
+            .unwrap_or(Value::Null)
+    };
+    assert_eq!(due_on("A hẹn gọi lại"), json!(day + Duration::days(3)));
+    assert_eq!(due_on("E không muốn"), json!(day + Duration::days(90)));
+    assert_eq!(
+        due_on("F hết thời gian nghỉ"),
+        json!(day - Duration::days(5))
+    );
+    assert_eq!(due_on("C chưa gọi"), Value::Null);
 
     // Sort: who to call first. Never contacted (longest absence first), then the planned date,
     // then contacted with nothing planned. `follow_up=due|scheduled` sorts by due by default.
@@ -715,9 +769,12 @@ async fn the_follow_up_filter_tells_who_to_call_today(pool: PgPool) -> TestResul
     };
     assert_eq!(
         order(&inactive(&s, "sort=due").await),
-        ["C", "D", "B", "A", "E"]
+        ["C", "D", "F", "B", "A", "E"]
     );
-    assert_eq!(order(&inactive(&s, "follow_up=due").await), ["C", "D", "B"]);
+    assert_eq!(
+        order(&inactive(&s, "follow_up=due").await),
+        ["C", "D", "F", "B"]
+    );
     assert_eq!(order(&inactive(&s, "follow_up=scheduled").await), ["A"]);
     let absent = order(&inactive(&s, "").await);
     assert_eq!(
@@ -727,7 +784,7 @@ async fn the_follow_up_filter_tells_who_to_call_today(pool: PgPool) -> TestResul
     );
     let due_by_absence: Vec<String> = absent
         .iter()
-        .filter(|n| ["B", "C", "D"].contains(&n.as_str()))
+        .filter(|n| ["B", "C", "D", "F"].contains(&n.as_str()))
         .cloned()
         .collect();
     assert_eq!(
@@ -751,7 +808,7 @@ async fn the_follow_up_filter_tells_who_to_call_today(pool: PgPool) -> TestResul
             None => break,
         }
     }
-    assert_eq!(seen, ["C", "D", "B", "A", "E"]);
+    assert_eq!(seen, ["C", "D", "F", "B", "A", "E"]);
     Ok(())
 }
 
@@ -1143,7 +1200,7 @@ async fn range_presets_cover_week_month_year_and_years(pool: PgPool) -> TestResu
         format!("/reports/range?from={from}&to={day}&granularity=day"),
         format!(
             "/reports/range?from={}&to={day}&granularity=year",
-            day - Duration::days(732)
+            day - Duration::days(1830)
         ),
         format!("/reports/range?preset=this_month&from={day}"),
         "/reports/range?preset=forever".to_owned(),
@@ -1151,6 +1208,45 @@ async fn range_presets_cover_week_month_year_and_years(pool: PgPool) -> TestResu
         let r = s.get(&s.owner, &bad).await;
         assert!(r.status.is_client_error(), "{bad}: {}", r.body);
     }
+
+    // 3–5 years: the owner only (report.long_range, EM Q5); the manager keeps the 2-year cap.
+    let five = s.get(&s.owner, "/reports/range?preset=last_5_years").await;
+    assert_eq!(five.status, StatusCode::OK, "{}", five.body);
+    assert_eq!(
+        (five.body["from"].clone(), five.body["granularity"].clone()),
+        (json!(jan(day.year() - 4)), json!("year"))
+    );
+    assert_eq!(five.body["series"].as_array().map(Vec::len), Some(5));
+    let three = s.get(&s.owner, "/reports/range?preset=last_3_years").await;
+    assert_eq!(
+        (
+            three.body["from"].clone(),
+            three.body["granularity"].clone()
+        ),
+        (json!(jan(day.year() - 2)), json!("month"))
+    );
+    let four_years = format!(
+        "/reports/range?from={}&to={day}&granularity=month",
+        day - Duration::days(4 * 365)
+    );
+    assert_eq!(s.get(&s.owner, &four_years).await.status, StatusCode::OK);
+    for path in [
+        "/reports/range?preset=last_5_years".to_owned(),
+        "/reports/range?preset=last_3_years".to_owned(),
+        four_years,
+        format!(
+            "/reports/range?from={}&to={day}&granularity=year",
+            day - Duration::days(732)
+        ),
+    ] {
+        let r = s.get(&s.manager, &path).await;
+        assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{path}");
+        assert_eq!(r.body["errors"][0]["code"], "range_too_long", "{path}");
+    }
+    let two = s
+        .get(&s.manager, "/reports/range?preset=last_2_years")
+        .await;
+    assert_eq!(two.status, StatusCode::OK, "manager keeps 2 years");
     let conflict = s
         .get(
             &s.owner,
