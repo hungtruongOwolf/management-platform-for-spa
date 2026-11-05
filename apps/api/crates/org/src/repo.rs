@@ -246,10 +246,7 @@ pub async fn pays(tx: &mut TenantTx) -> Result<Vec<PayRow>, AppError> {
 }
 
 /// One staff member's pay terms, locked for update.
-pub async fn pay_for_update(
-    tx: &mut TenantTx,
-    staff_id: Uuid,
-) -> Result<Option<PayRow>, AppError> {
+pub async fn pay_for_update(tx: &mut TenantTx, staff_id: Uuid) -> Result<Option<PayRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         PayRow,

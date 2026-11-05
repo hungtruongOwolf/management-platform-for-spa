@@ -322,3 +322,11 @@ Ops: `ingest`, `query`, `lint`, `record`, `decision`, `skip`.
 
 ## [2026-11-05] record | GitHub Actions tạm tắt, merge qua local gate
 GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); mọi job bị từ chối với lỗi billing. EM: "nếu github action hết usage thì có thể tạm thời tắt nó đi". Đã `gh workflow disable` cả `CI` và `Deploy (staging)`. Trong thời gian này merge bằng `scripts/merge-local-gate.sh <pr> [--e2e]`: tạo worktree tạm (ổ C:) ở đầu PR, merge `origin/main`, chạy check:api, lint, typecheck, unit test, check:extra (tùy chọn e2e), rồi squash-merge và xóa branch. Thiếu so với CI: Docker build, gitleaks, cargo-deny, Lighthouse. Bật lại: `gh workflow enable CI` và `gh workflow enable "Deploy (staging)"`, quay về `merge-when-green.sh`.
+
+## [2026-11-05] spec + build | Quản lý nhân viên (vòng 4 mục 2)
+- Source: [raw/2026-11-05-em-review-round4.md](raw/2026-11-05-em-review-round4.md) mục 2 + file Excel *Bảng chấm công đánh giá tháng* (3 sheet: Bảng tháng, Tham chiếu lương, Hướng dẫn) + 2 văn bản chương trình. Branch `feat/staff-management` (đã merge `feat/ui-polish-mobile` d5ea367 để dùng ResponsiveTable/BottomSheet/DateField).
+- Spec [staff-management](wiki/product/specs/staff-management.md) (draft). Bỏ qua bước architect (vừa kiến trúc hiện có: crate `hr` mới + mở rộng `org`).
+- Migration **0016_staff_management** (appointments agent có thể cũng dùng 0016: ai merge sau thì đổi số). Quyền mới: `staff.manage`, `attendance.record`, `evaluation.record`, `payroll.read`, `payroll.close`, `staff.read_own`. Quản lý: chấm công + đánh giá, **không** thấy lương (Q-S1).
+- 8 mâu thuẫn: #2, #3, #4, #7 là quy tắc của spa (`PUT /payroll/rules`); #5, #8 nhập theo từng người; #1, #6 chỉ ghi mặc định (chưa tính chi trả theo mốc, chưa có quy tắc ngày lễ).
+- Tests: `hr` unit 19 (bộ tính lương theo ô Excel), `staff.rs` 6 (lương chỉ cho payroll.read, KTV chỉ của mình, spa khác, khóa tháng + trigger + audit, hoa hồng khớp visit, quy tắc), `demo_seed.rs` (hoa hồng seed khớp visit 2 tháng, KTV đăng nhập), matrix +20 route; vitest `Staff.test.tsx` 5; e2e `staff.spec.ts` 2.
+- UI `/nhan-vien`: nav "Nhân viên" (KTV: "Công và lương của tôi"), icon `id-card` mới. Startup gzip -9 +0.8 KB (123.8/125).

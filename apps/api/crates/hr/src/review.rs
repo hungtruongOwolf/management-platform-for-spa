@@ -80,8 +80,7 @@ fn validate(entries: &[ReviewEntry], today: NaiveDate, staff: &[Profile]) -> Res
         if e.complaints > MAX_COUNT {
             errors.push(FieldError::new(f("complaints"), "out_of_range"));
         }
-        if e
-            .note
+        if e.note
             .as_ref()
             .is_some_and(|n| n.chars().count() > MAX_NOTE_CHARS)
         {
@@ -128,7 +127,11 @@ pub struct StaffReviews {
 }
 
 /// `GET /daily-reviews?month=` (`evaluation.record`).
-pub async fn sheet(pool: &PgPool, actor: &Actor, month: Option<Month>) -> Result<ReviewSheet, AppError> {
+pub async fn sheet(
+    pool: &PgPool,
+    actor: &Actor,
+    month: Option<Month>,
+) -> Result<ReviewSheet, AppError> {
     actor.require(Permission::EvaluationRecord)?;
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let today = period::today(&mut tx).await?;
@@ -141,7 +144,8 @@ pub async fn sheet(pool: &PgPool, actor: &Actor, month: Option<Month>) -> Result
         .iter()
         .filter(|p| period::employed_in(p, month))
         .map(|p| {
-            let days: Vec<DailyReview> = all.iter().filter(|r| r.staff_id == p.id).cloned().collect();
+            let days: Vec<DailyReview> =
+                all.iter().filter(|r| r.staff_id == p.id).cloned().collect();
             StaffReviews {
                 staff_id: p.id,
                 full_name: p.full_name.clone(),
@@ -178,7 +182,9 @@ pub async fn record(
     let by = actor.user_id.as_uuid();
     let mut out = Vec::new();
     for e in entries {
-        let before = repo::review_day(&mut tx, e.staff_id, e.date).await?.map(DailyReview::from);
+        let before = repo::review_day(&mut tx, e.staff_id, e.date)
+            .await?
+            .map(DailyReview::from);
         if e.is_empty() {
             repo::delete_review(&mut tx, e.staff_id, e.date).await?;
         } else {

@@ -103,6 +103,13 @@ Lighthouse CI chặn merge khi LCP > 2,5 s (mobile, Slow 4G, CPU 4×, `/dang-nha
 - **Số đo vòng 3 (shell, 2026-11-05):** critical JS gzip -9 `main` 117.5 KB → `feat/ui-shell-r3` **119.2 KB** (+1.7: PageHeader, trail, searchState, UserMenu, ThemePicker, CustomerName); CSS 10.5 → 11.2 KB gzip.
 - Đo trước/sau bằng `pnpm lhci` trên cùng một máy; local chậm hơn CI khoảng 0,3–0,4 s. Kết quả 2026-11-04: [log](../../log.md).
 
+## Màn Nhân viên (`/nhan-vien`, lazy chunk `StaffPage`, [spec](../product/specs/staff-management.md))
+- URL: `tab` (attendance|evaluation|adjustments|payroll|profiles), `month` (YYYY-MM), `day` (`features/staff/search.ts`). Tab hiện theo permission; KTV (chỉ `staff.read_own`) thấy "Công và lương của tôi".
+- Chấm công: phone = danh sách theo người cho một ngày (chạm mã ✓/P/ĐX/K là lưu); desktop có thêm lưới tháng (cột tên dính trái, gạch đỏ = muộn). Giờ đến/về + ghi chú trong `BottomSheet`. "Cả spa đi làm" = 1 PUT cho người chưa chấm.
+- Bảng lương, phiếu lương, sổ thưởng/phạt, hồ sơ: `ResponsiveTable` (thẻ trên phone); form trong `BottomSheet`.
+- CSS riêng `features/staff/staff.css` (chỉ tokens) đi cùng chunk lazy. Query key `["staff", …]`; mọi ghi invalidate `["staff"]` (gồm cả picker `["staff","active"]` của quầy).
+- Perf: chunk `StaffPage` 12.8 KB gzip; startup gzip -9 123.0 → 123.8 KB (ngân sách 125) do route + nav + thông báo lỗi.
+
 ## Auth & permission-aware UI
 - Session là cookie `__Host-session` HttpOnly ([ADR-0004](../decisions/ADR-0004-authentication.md)). **JS không bao giờ đọc hay lưu token.** Fetch dùng `credentials: 'same-origin'`.
 - `GET /api/v1/me` → user, tenant, branch, **danh sách permission** → `AuthContext`. Route guard và ẩn/hiện nút đọc từ đây. **Đây chỉ là UX**: server luôn kiểm tra lại; giao diện xử lý `403` đúng cách.

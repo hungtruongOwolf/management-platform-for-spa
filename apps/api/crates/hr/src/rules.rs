@@ -173,14 +173,21 @@ mod tests {
     #[test]
     fn missing_keys_take_the_defaults_and_unknown_keys_are_refused() {
         let partial: PayrollRules =
-            serde_json::from_value(serde_json::json!({"late_grace_minutes": 5})).unwrap_or_default();
+            serde_json::from_value(serde_json::json!({"late_grace_minutes": 5}))
+                .unwrap_or_default();
         assert_eq!(partial.late_grace_minutes, 5);
         assert_eq!(partial.free_leave_days, 2);
-        assert_eq!(partial.default_shift_start.format("%H:%M").to_string(), "09:00");
+        assert_eq!(
+            partial.default_shift_start.format("%H:%M").to_string(),
+            "09:00"
+        );
         assert!(serde_json::from_value::<PayrollRules>(serde_json::json!({"x": 1})).is_err());
         let round = serde_json::to_value(PayrollRules::default()).unwrap_or_default();
         assert_eq!(round["default_shift_start"], "09:00");
-        assert_eq!(round["free_leave_codes"], serde_json::json!(["leave_p", "leave_dx", "absent_k"]));
+        assert_eq!(
+            round["free_leave_codes"],
+            serde_json::json!(["leave_p", "leave_dx", "absent_k"])
+        );
     }
 
     #[test]

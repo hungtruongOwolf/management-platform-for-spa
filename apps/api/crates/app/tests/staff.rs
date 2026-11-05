@@ -7,8 +7,7 @@ use axum::http::StatusCode;
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use chrono_tz::Asia::Ho_Chi_Minh;
 use common::{
-    Harness, Reply, TestResult, add_member, call, call_with_headers, harness,
-    session_for,
+    Harness, Reply, TestResult, add_member, call, call_with_headers, harness, session_for,
 };
 use identity::SystemRole;
 use identity::provisioning::create_tenant;
@@ -68,18 +67,48 @@ fn id(reply: &Reply) -> Uuid {
 }
 
 fn criteria(level: &str) -> Value {
-    json!(["technique", "attitude", "customer_feedback", "diligence", "hygiene", "learning"]
+    json!(
+        [
+            "technique",
+            "attitude",
+            "customer_feedback",
+            "diligence",
+            "hygiene",
+            "learning"
+        ]
         .iter()
         .map(|k| json!({"key": k, "level": level}))
-        .collect::<Vec<_>>())
+        .collect::<Vec<_>>()
+    )
 }
 
 async fn spa(pool: PgPool) -> Setup<Spa> {
     let h = harness(pool).await?;
-    add_member(&h.owner, "vpyd", MANAGER_PHONE, "Quản lý Hoa", SystemRole::Manager).await?;
-    add_member(&h.owner, "vpyd", TECH_PHONE, "KTV Lan", SystemRole::Technician).await?;
+    add_member(
+        &h.owner,
+        "vpyd",
+        MANAGER_PHONE,
+        "Quản lý Hoa",
+        SystemRole::Manager,
+    )
+    .await?;
+    add_member(
+        &h.owner,
+        "vpyd",
+        TECH_PHONE,
+        "KTV Lan",
+        SystemRole::Technician,
+    )
+    .await?;
     create_tenant(&h.owner, OTHER_TENANT, "Spa khác", "Huế").await?;
-    add_member(&h.owner, OTHER_TENANT, OTHER_OWNER_PHONE, "Chủ khác", SystemRole::Owner).await?;
+    add_member(
+        &h.owner,
+        OTHER_TENANT,
+        OTHER_OWNER_PHONE,
+        "Chủ khác",
+        SystemRole::Owner,
+    )
+    .await?;
     let owner = session_for(&h, common::OWNER_PHONE).await;
     let manager = session_for(&h, MANAGER_PHONE).await;
     let tech = session_for(&h, TECH_PHONE).await;
@@ -96,27 +125,61 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
             .fetch_one(&h.owner)
             .await?;
 
-    let lan = call(&h.app, "POST", "/staff", Some(&owner), Some(json!({
-        "full_name": "Lê Thị Lan", "position": "Kỹ thuật viên", "user_id": tech_user,
-        "shift_start": "09:00"
-    }))).await;
+    let lan = call(
+        &h.app,
+        "POST",
+        "/staff",
+        Some(&owner),
+        Some(json!({
+            "full_name": "Lê Thị Lan", "position": "Kỹ thuật viên", "user_id": tech_user,
+            "shift_start": "09:00"
+        })),
+    )
+    .await;
     assert_eq!(lan.status, StatusCode::CREATED, "{}", lan.body);
-    let mai = call(&h.app, "POST", "/staff", Some(&owner), Some(json!({
-        "full_name": "Trần Thị Mai", "position": "Kỹ thuật viên"
-    }))).await;
+    let mai = call(
+        &h.app,
+        "POST",
+        "/staff",
+        Some(&owner),
+        Some(json!({
+            "full_name": "Trần Thị Mai", "position": "Kỹ thuật viên"
+        })),
+    )
+    .await;
     assert_eq!(mai.status, StatusCode::CREATED, "{}", mai.body);
 
-    let c = call(&h.app, "POST", "/service-categories", Some(&owner),
-        Some(json!({"name": "Gội đầu dưỡng sinh"}))).await;
-    let s = call(&h.app, "POST", "/services", Some(&owner), Some(json!({
-        "category_id": id(&c), "name": "Gội đầu thảo dược", "description": null,
-        "duration_min": 60, "recommended": false, "active": true, "prices": {"all": PRICE}
-    }))).await;
+    let c = call(
+        &h.app,
+        "POST",
+        "/service-categories",
+        Some(&owner),
+        Some(json!({"name": "Gội đầu dưỡng sinh"})),
+    )
+    .await;
+    let s = call(
+        &h.app,
+        "POST",
+        "/services",
+        Some(&owner),
+        Some(json!({
+            "category_id": id(&c), "name": "Gội đầu thảo dược", "description": null,
+            "duration_min": 60, "recommended": false, "active": true, "prices": {"all": PRICE}
+        })),
+    )
+    .await;
     assert_eq!(s.status, StatusCode::CREATED, "{}", s.body);
-    let plan = call(&h.app, "POST", "/package-plans", Some(&owner), Some(json!({
-        "name": "Gói 10 buổi", "price": PLAN_PRICE, "validity_months": null, "gift_note": null,
-        "active": true, "items": [{"service_id": id(&s), "sessions": 10, "bonus_sessions": 2}]
-    }))).await;
+    let plan = call(
+        &h.app,
+        "POST",
+        "/package-plans",
+        Some(&owner),
+        Some(json!({
+            "name": "Gói 10 buổi", "price": PLAN_PRICE, "validity_months": null, "gift_note": null,
+            "active": true, "items": [{"service_id": id(&s), "sessions": 10, "bonus_sessions": 2}]
+        })),
+    )
+    .await;
     assert_eq!(plan.status, StatusCode::CREATED, "{}", plan.body);
     Ok(Spa {
         owner,
@@ -155,15 +218,20 @@ impl Spa {
     }
 
     async fn post(&self, session: &str, path: &str, body: Value) -> Reply {
-        self.post_key(session, path, body, &Uuid::now_v7().to_string()).await
+        self.post_key(session, path, body, &Uuid::now_v7().to_string())
+            .await
     }
 
     async fn pay(&self, staff: Uuid, base: i64, rate_bp: i32) {
         let r = self
-            .put(&self.owner, &format!("/staff/{staff}/pay"), json!({
-                "base_salary": base, "commission_rate_bp": rate_bp,
-                "loyalty_bonus_monthly": 500_000, "meal_allowance": 300_000
-            }))
+            .put(
+                &self.owner,
+                &format!("/staff/{staff}/pay"),
+                json!({
+                    "base_salary": base, "commission_rate_bp": rate_bp,
+                    "loyalty_bonus_monthly": 500_000, "meal_allowance": 300_000
+                }),
+            )
             .await;
         assert_eq!(r.status, StatusCode::OK, "{}", r.body);
     }
@@ -173,13 +241,21 @@ impl Spa {
         if status == "present" {
             entry["check_in"] = json!("09:12");
         }
-        self.put(session, "/attendance", json!({"entries": [entry]})).await
+        self.put(session, "/attendance", json!({"entries": [entry]}))
+            .await
     }
 
     async fn customer(&self, phone: &str) -> Uuid {
-        let r = call(&self.h.app, "POST", "/customers", Some(&self.owner), Some(json!({
-            "full_name": "Nguyễn Thị Hằng", "phone": phone, "gender": "female"
-        }))).await;
+        let r = call(
+            &self.h.app,
+            "POST",
+            "/customers",
+            Some(&self.owner),
+            Some(json!({
+                "full_name": "Nguyễn Thị Hằng", "phone": phone, "gender": "female"
+            })),
+        )
+        .await;
         assert_eq!(r.status, StatusCode::CREATED, "{}", r.body);
         id(&r)
     }
@@ -195,7 +271,7 @@ impl Spa {
     }
 }
 
-fn slip<'a>(payroll: &'a Value, staff: Uuid) -> &'a Value {
+fn slip(payroll: &Value, staff: Uuid) -> &Value {
     payroll["payslips"]
         .as_array()
         .and_then(|a| a.iter().find(|s| s["staff_id"] == json!(staff)))
@@ -212,7 +288,12 @@ async fn salary_is_only_sent_to_payroll_readers(pool: PgPool) -> TestResult {
     let own = s.get(&s.owner, &format!("/staff/{}", s.lan)).await;
     assert_eq!(own.status, StatusCode::OK);
     assert_eq!(own.body["pay"]["base_salary"], 5_000_000);
-    assert_eq!(own.headers.get("cache-control").and_then(|v| v.to_str().ok()), Some("no-store"));
+    assert_eq!(
+        own.headers
+            .get("cache-control")
+            .and_then(|v| v.to_str().ok()),
+        Some("no-store")
+    );
 
     // A custom grant: the manager may now manage profiles, still without payroll.read.
     sqlx::query(
@@ -226,24 +307,50 @@ async fn salary_is_only_sent_to_payroll_readers(pool: PgPool) -> TestResult {
         let r = s.get(&s.manager, &path).await;
         assert_eq!(r.status, StatusCode::OK, "{path}: {}", r.body);
         let text = r.body.to_string();
-        for key in ["base_salary", "commission_rate_bp", "meal_allowance", "\"pay\""] {
+        for key in [
+            "base_salary",
+            "commission_rate_bp",
+            "meal_allowance",
+            "\"pay\"",
+        ] {
             assert!(!text.contains(key), "{path} leaked {key}: {text}");
         }
     }
-    assert_eq!(s.get(&s.manager, &format!("/staff/{}", s.lan)).await.body["pay_visible"], false);
+    assert_eq!(
+        s.get(&s.manager, &format!("/staff/{}", s.lan)).await.body["pay_visible"],
+        false
+    );
     let set = s
-        .put(&s.manager, &format!("/staff/{}/pay", s.lan), json!({"base_salary": 1, "commission_rate_bp": 0}))
+        .put(
+            &s.manager,
+            &format!("/staff/{}/pay", s.lan),
+            json!({"base_salary": 1, "commission_rate_bp": 0}),
+        )
         .await;
     assert_eq!(set.status, StatusCode::FORBIDDEN);
     for path in ["/payroll", "/payroll/rules"] {
-        assert_eq!(s.get(&s.manager, path).await.status, StatusCode::FORBIDDEN, "{path}");
+        assert_eq!(
+            s.get(&s.manager, path).await.status,
+            StatusCode::FORBIDDEN,
+            "{path}"
+        );
     }
-    let slip = s.get(&s.manager, &format!("/payroll/payslips/{}", s.lan)).await;
+    let slip = s
+        .get(&s.manager, &format!("/payroll/payslips/{}", s.lan))
+        .await;
     assert_eq!(slip.status, StatusCode::FORBIDDEN);
     // The manager keeps the daily books.
-    assert_eq!(s.attend(&s.manager, s.lan, yesterday(), "present").await.status, StatusCode::OK);
+    assert_eq!(
+        s.attend(&s.manager, s.lan, yesterday(), "present")
+            .await
+            .status,
+        StatusCode::OK
+    );
     let mine = s.get(&s.manager, "/me/staff").await;
-    assert_eq!((mine.status, mine.body["linked"].clone()), (StatusCode::OK, json!(false)));
+    assert_eq!(
+        (mine.status, mine.body["linked"].clone()),
+        (StatusCode::OK, json!(false))
+    );
     Ok(())
 }
 
@@ -254,7 +361,12 @@ async fn a_technician_sees_only_their_own_month(pool: PgPool) -> TestResult {
     s.pay(s.lan, 5_000_000, 500).await;
     s.pay(s.mai, 7_777_000, 1000).await;
     for staff in [s.lan, s.mai] {
-        assert_eq!(s.attend(&s.owner, staff, yesterday(), "present").await.status, StatusCode::OK);
+        assert_eq!(
+            s.attend(&s.owner, staff, yesterday(), "present")
+                .await
+                .status,
+            StatusCode::OK
+        );
     }
     let r = s.post(&s.owner, "/adjustments", json!({
         "staff_id": s.mai, "kind": "penalty", "amount": 50_000, "reason": "Đi muộn nhiều lần"
@@ -271,11 +383,17 @@ async fn a_technician_sees_only_their_own_month(pool: PgPool) -> TestResult {
     assert_eq!(data["payslip"]["staff_id"], json!(s.lan));
     assert_eq!(data["payslip"]["base_salary"], 5_000_000);
     let text = me.body.to_string();
-    assert!(!text.contains(&s.mai.to_string()) && !text.contains("Trần Thị Mai") && !text.contains("7777000"),
-        "another person's data leaked: {text}");
+    assert!(
+        !text.contains(&s.mai.to_string())
+            && !text.contains("Trần Thị Mai")
+            && !text.contains("7777000"),
+        "another person's data leaked: {text}"
+    );
 
     // No way to ask for someone else.
-    let other = s.get(&s.tech, &format!("/me/staff?staff_id={}", s.mai)).await;
+    let other = s
+        .get(&s.tech, &format!("/me/staff?staff_id={}", s.mai))
+        .await;
     assert!(other.status.is_client_error(), "{}", other.status);
     for path in [
         "/attendance".to_owned(),
@@ -286,9 +404,18 @@ async fn a_technician_sees_only_their_own_month(pool: PgPool) -> TestResult {
         format!("/payroll/payslips/{}", s.mai),
         "/staff/profiles".to_owned(),
     ] {
-        assert_eq!(s.get(&s.tech, &path).await.status, StatusCode::FORBIDDEN, "{path}");
+        assert_eq!(
+            s.get(&s.tech, &path).await.status,
+            StatusCode::FORBIDDEN,
+            "{path}"
+        );
     }
-    assert_eq!(s.attend(&s.tech, s.lan, yesterday(), "absent_k").await.status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        s.attend(&s.tech, s.lan, yesterday(), "absent_k")
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
     Ok(())
 }
 
@@ -296,21 +423,50 @@ async fn a_technician_sees_only_their_own_month(pool: PgPool) -> TestResult {
 async fn another_spa_cannot_reach_our_staff(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
     s.pay(s.lan, 5_000_000, 500).await;
-    assert_eq!(s.attend(&s.owner, s.lan, yesterday(), "present").await.status, StatusCode::OK);
+    assert_eq!(
+        s.attend(&s.owner, s.lan, yesterday(), "present")
+            .await
+            .status,
+        StatusCode::OK
+    );
 
     let write = s.attend(&s.other, s.lan, yesterday(), "absent_k").await;
-    assert_eq!(write.status, StatusCode::UNPROCESSABLE_ENTITY, "{}", write.body);
+    assert_eq!(
+        write.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{}",
+        write.body
+    );
     assert_eq!(write.body["errors"][0]["field"], "entries[0].staff_id");
-    let adj = s.post(&s.other, "/adjustments", json!({
-        "staff_id": s.lan, "kind": "penalty", "amount": 1_000, "reason": "x"
-    })).await;
+    let adj = s
+        .post(
+            &s.other,
+            "/adjustments",
+            json!({
+                "staff_id": s.lan, "kind": "penalty", "amount": 1_000, "reason": "x"
+            }),
+        )
+        .await;
     assert_eq!(adj.status, StatusCode::UNPROCESSABLE_ENTITY);
-    let eval = s.put(&s.other, "/evaluations", json!({
-        "staff_id": s.lan, "month": ym(today()), "criteria": criteria("m1")
-    })).await;
+    let eval = s
+        .put(
+            &s.other,
+            "/evaluations",
+            json!({
+                "staff_id": s.lan, "month": ym(today()), "criteria": criteria("m1")
+            }),
+        )
+        .await;
     assert_eq!(eval.status, StatusCode::UNPROCESSABLE_ENTITY);
-    for path in [format!("/staff/{}", s.lan), format!("/payroll/payslips/{}", s.lan)] {
-        assert_eq!(s.get(&s.other, &path).await.status, StatusCode::NOT_FOUND, "{path}");
+    for path in [
+        format!("/staff/{}", s.lan),
+        format!("/payroll/payslips/{}", s.lan),
+    ] {
+        assert_eq!(
+            s.get(&s.other, &path).await.status,
+            StatusCode::NOT_FOUND,
+            "{path}"
+        );
     }
     let payroll = s.get(&s.other, "/payroll").await;
     assert_eq!(payroll.status, StatusCode::OK);
@@ -326,9 +482,7 @@ async fn another_spa_cannot_reach_our_staff(pool: PgPool) -> TestResult {
         "SELECT count(*) FROM app.staff_pay",
         "SELECT count(*) FROM app.payroll_period",
     ] {
-        let n: i64 = sqlx::query_scalar(sql)
-            .fetch_one(tx.conn())
-            .await?;
+        let n: i64 = sqlx::query_scalar(sql).fetch_one(tx.conn()).await?;
         assert_eq!(n, 0, "{sql}");
     }
     tx.commit().await?;
@@ -343,35 +497,88 @@ async fn a_closed_month_is_locked_and_corrected_by_adjustments(pool: PgPool) -> 
     s.pay(s.lan, 5_000_000, 500).await;
     let last = end_of_last_month();
     let month = ym(last);
-    assert_eq!(s.attend(&s.owner, s.lan, last, "present").await.status, StatusCode::OK);
-    let ev = s.put(&s.manager, "/evaluations", json!({
-        "staff_id": s.lan, "month": month, "criteria": criteria("m2"), "comment": "Ổn định"
-    })).await;
+    assert_eq!(
+        s.attend(&s.owner, s.lan, last, "present").await.status,
+        StatusCode::OK
+    );
+    let ev = s
+        .put(
+            &s.manager,
+            "/evaluations",
+            json!({
+                "staff_id": s.lan, "month": month, "criteria": criteria("m2"), "comment": "Ổn định"
+            }),
+        )
+        .await;
     assert_eq!(ev.status, StatusCode::OK, "{}", ev.body);
-    assert_eq!((ev.body["total_points"].clone(), ev.body["result"].clone()), (json!(80), json!("m2")));
+    assert_eq!(
+        (ev.body["total_points"].clone(), ev.body["result"].clone()),
+        (json!(80), json!("m2"))
+    );
     let bonus = s.post(&s.manager, "/adjustments", json!({
         "staff_id": s.lan, "kind": "bonus", "amount": 200_000, "reason": "Khách khen", "occurred_on": last
     })).await;
     assert_eq!(bonus.status, StatusCode::CREATED, "{}", bonus.body);
 
-    let current = s.post(&s.owner, "/payroll/close", json!({"month": ym(today())})).await;
+    let current = s
+        .post(&s.owner, "/payroll/close", json!({"month": ym(today())}))
+        .await;
     assert_eq!(current.body["code"], "payroll.month_not_ended");
-    let incomplete = s.post(&s.owner, "/payroll/close", json!({"month": month})).await;
-    assert_eq!((incomplete.status, incomplete.body["code"].clone()),
-        (StatusCode::UNPROCESSABLE_ENTITY, json!("payroll.unrecorded_days")));
-    assert_eq!(s.post(&s.manager, "/payroll/close", json!({"month": month})).await.status, StatusCode::FORBIDDEN);
+    let incomplete = s
+        .post(&s.owner, "/payroll/close", json!({"month": month}))
+        .await;
+    assert_eq!(
+        (incomplete.status, incomplete.body["code"].clone()),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!("payroll.unrecorded_days")
+        )
+    );
+    assert_eq!(
+        s.post(&s.manager, "/payroll/close", json!({"month": month}))
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
 
     let key = Uuid::now_v7().to_string();
-    let closed = s.post_key(&s.owner, "/payroll/close", json!({"month": month, "allow_incomplete": true}), &key).await;
+    let closed = s
+        .post_key(
+            &s.owner,
+            "/payroll/close",
+            json!({"month": month, "allow_incomplete": true}),
+            &key,
+        )
+        .await;
     assert_eq!(closed.status, StatusCode::OK, "{}", closed.body);
     assert_eq!(closed.body["closed"], true);
     let frozen = slip(&closed.body, s.lan).clone();
     assert_eq!(frozen["bonuses"], 200_000);
     assert_eq!(frozen["evaluation_level"], "m2");
-    let replay = s.post_key(&s.owner, "/payroll/close", json!({"month": month, "allow_incomplete": true}), &key).await;
-    assert_eq!((replay.status, replay.body.clone()), (StatusCode::OK, closed.body.clone()), "replay");
-    let again = s.post(&s.owner, "/payroll/close", json!({"month": month, "allow_incomplete": true})).await;
-    assert_eq!((again.status, again.body["code"].clone()), (StatusCode::CONFLICT, json!("payroll.period_closed")));
+    let replay = s
+        .post_key(
+            &s.owner,
+            "/payroll/close",
+            json!({"month": month, "allow_incomplete": true}),
+            &key,
+        )
+        .await;
+    assert_eq!(
+        (replay.status, replay.body.clone()),
+        (StatusCode::OK, closed.body.clone()),
+        "replay"
+    );
+    let again = s
+        .post(
+            &s.owner,
+            "/payroll/close",
+            json!({"month": month, "allow_incomplete": true}),
+        )
+        .await;
+    assert_eq!(
+        (again.status, again.body["code"].clone()),
+        (StatusCode::CONFLICT, json!("payroll.period_closed"))
+    );
 
     // Every write into the month is refused.
     let locked = [
@@ -383,15 +590,31 @@ async fn a_closed_month_is_locked_and_corrected_by_adjustments(pool: PgPool) -> 
         })).await,
     ];
     for r in &locked {
-        assert_eq!((r.status, r.body["code"].clone()), (StatusCode::CONFLICT, json!("payroll.period_closed")), "{}", r.body);
+        assert_eq!(
+            (r.status, r.body["code"].clone()),
+            (StatusCode::CONFLICT, json!("payroll.period_closed")),
+            "{}",
+            r.body
+        );
     }
 
     // The frozen payslip does not follow later pay changes.
     s.pay(s.lan, 9_000_000, 1000).await;
     let after = s.get(&s.owner, &format!("/payroll?month={month}")).await;
     assert_eq!(slip(&after.body, s.lan), &frozen);
-    let one = s.get(&s.owner, &format!("/payroll/payslips/{}?month={month}", s.lan)).await;
-    assert_eq!((one.body["closed"].clone(), one.body["payslip"]["net_pay"].clone()), (json!(true), frozen["net_pay"].clone()));
+    let one = s
+        .get(
+            &s.owner,
+            &format!("/payroll/payslips/{}?month={month}", s.lan),
+        )
+        .await;
+    assert_eq!(
+        (
+            one.body["closed"].clone(),
+            one.body["payslip"]["net_pay"].clone()
+        ),
+        (json!(true), frozen["net_pay"].clone())
+    );
 
     // Correction: an adjustment in an open month that names the closed one.
     let fix = s.post(&s.owner, "/adjustments", json!({
@@ -400,10 +623,16 @@ async fn a_closed_month_is_locked_and_corrected_by_adjustments(pool: PgPool) -> 
     })).await;
     assert_eq!(fix.status, StatusCode::CREATED, "{}", fix.body);
     assert_eq!(fix.body["corrects_month"], month);
-    let open_fix = s.post(&s.owner, "/adjustments", json!({
-        "staff_id": s.lan, "kind": "bonus", "amount": 50_000, "reason": "x",
-        "corrects_month": ym(today())
-    })).await;
+    let open_fix = s
+        .post(
+            &s.owner,
+            "/adjustments",
+            json!({
+                "staff_id": s.lan, "kind": "bonus", "amount": 50_000, "reason": "x",
+                "corrects_month": ym(today())
+            }),
+        )
+        .await;
     assert_eq!(open_fix.status, StatusCode::UNPROCESSABLE_ENTITY);
     let now = s.get(&s.owner, "/payroll").await;
     assert_eq!(slip(&now.body, s.lan)["bonuses"], 50_000);
@@ -429,7 +658,14 @@ async fn a_closed_month_is_locked_and_corrected_by_adjustments(pool: PgPool) -> 
     .bind(s.tenant)
     .fetch_all(&s.h.owner)
     .await?;
-    for a in ["attendance.record", "evaluation.record", "payroll.close", "staff.adjustment", "staff.create", "staff.pay_update"] {
+    for a in [
+        "attendance.record",
+        "evaluation.record",
+        "payroll.close",
+        "staff.adjustment",
+        "staff.create",
+        "staff.pay_update",
+    ] {
         assert!(actions.iter().any(|x| x == a), "no audit {a}: {actions:?}");
     }
     Ok(())
@@ -446,7 +682,13 @@ async fn commission_reconciles_with_visits(pool: PgPool) -> TestResult {
     s.one_off_visit(hang, s.lan, 2).await;
     s.one_off_visit(hang, s.mai, 1).await;
     let wrong = s.one_off_visit(hang, s.lan, 1).await;
-    let void = s.post(&s.owner, &format!("/visits/{wrong}/void"), json!({"reason": "Ghi nhầm"})).await;
+    let void = s
+        .post(
+            &s.owner,
+            &format!("/visits/{wrong}/void"),
+            json!({"reason": "Ghi nhầm"}),
+        )
+        .await;
     assert_eq!(void.status, StatusCode::OK, "{}", void.body);
     let sale = s.post(&s.owner, "/sales", json!({
         "customer_id": hang, "closer_staff_id": s.lan, "lines": [{"package_plan_id": s.plan}],
@@ -461,9 +703,19 @@ async fn commission_reconciles_with_visits(pool: PgPool) -> TestResult {
     let payroll = s.get(&s.owner, "/payroll").await;
     assert_eq!(payroll.status, StatusCode::OK, "{}", payroll.body);
     let lan = slip(&payroll.body, s.lan);
-    assert_eq!(lan["service_commission_base"], 2 * PRICE, "voided visit excluded");
+    assert_eq!(
+        lan["service_commission_base"],
+        2 * PRICE,
+        "voided visit excluded"
+    );
     assert_eq!(lan["service_commission"], 15_000);
-    assert_eq!((lan["closing_commission_base"].clone(), lan["closing_commission"].clone()), (json!(PLAN_PRICE), json!(60_000)));
+    assert_eq!(
+        (
+            lan["closing_commission_base"].clone(),
+            lan["closing_commission"].clone()
+        ),
+        (json!(PLAN_PRICE), json!(60_000))
+    );
     let mai = slip(&payroll.body, s.mai);
     // A package session is worth price ÷ paid sessions (1.200.000 ÷ 10).
     assert_eq!(mai["service_commission_base"], PRICE + 120_000);
@@ -486,12 +738,21 @@ async fn commission_reconciles_with_visits(pool: PgPool) -> TestResult {
         .await?;
         assert_eq!(slip(&payroll.body, staff)["service_commission_base"], base);
     }
-    assert_eq!(payroll.body["totals"]["commission"], 15_000 + 60_000 + 27_000);
+    assert_eq!(
+        payroll.body["totals"]["commission"],
+        15_000 + 60_000 + 27_000
+    );
 
     // Rules: gift sessions can count, closing commission can be switched off.
-    let rules = s.put(&s.owner, "/payroll/rules", json!({
-        "commission_on_bonus_sessions": true, "closing_commission": false
-    })).await;
+    let rules = s
+        .put(
+            &s.owner,
+            "/payroll/rules",
+            json!({
+                "commission_on_bonus_sessions": true, "closing_commission": false
+            }),
+        )
+        .await;
     assert_eq!(rules.status, StatusCode::OK, "{}", rules.body);
     let p = s.get(&s.owner, "/payroll").await;
     assert_eq!(slip(&p.body, s.lan)["closing_commission"], 0);
@@ -502,36 +763,90 @@ async fn commission_reconciles_with_visits(pool: PgPool) -> TestResult {
 async fn rules_and_attendance_drive_deductions(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
     s.pay(s.lan, 5_000_000, 500).await;
-    let bad = s.put(&s.owner, "/payroll/rules", json!({"late_penalty_amount": -5})).await;
+    let bad = s
+        .put(
+            &s.owner,
+            "/payroll/rules",
+            json!({"late_penalty_amount": -5}),
+        )
+        .await;
     assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
-    let unknown = s.put(&s.owner, "/payroll/rules", json!({"pay_everyone_double": true})).await;
+    let unknown = s
+        .put(
+            &s.owner,
+            "/payroll/rules",
+            json!({"pay_everyone_double": true}),
+        )
+        .await;
     assert_eq!(unknown.status, StatusCode::UNPROCESSABLE_ENTITY);
     let ok = s.put(&s.owner, "/payroll/rules", json!({
         "free_leave_codes": ["leave_p", "leave_dx"], "late_grace_minutes": 10, "late_penalty_amount": 20_000
     })).await;
-    assert_eq!((ok.status, ok.body["version"].clone()), (StatusCode::OK, json!(1)));
-    assert_eq!(s.put(&s.manager, "/payroll/rules", json!({})).await.status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        (ok.status, ok.body["version"].clone()),
+        (StatusCode::OK, json!(1))
+    );
+    assert_eq!(
+        s.put(&s.manager, "/payroll/rules", json!({})).await.status,
+        StatusCode::FORBIDDEN
+    );
 
     let last = end_of_last_month();
-    assert_eq!(s.attend(&s.owner, s.lan, last, "absent_k").await.status, StatusCode::OK);
-    assert_eq!(s.attend(&s.owner, s.lan, last - Duration::days(1), "present").await.status, StatusCode::OK);
-    let p = s.get(&s.owner, &format!("/payroll?month={}", ym(last))).await;
+    assert_eq!(
+        s.attend(&s.owner, s.lan, last, "absent_k").await.status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        s.attend(&s.owner, s.lan, last - Duration::days(1), "present")
+            .await
+            .status,
+        StatusCode::OK
+    );
+    let p = s
+        .get(&s.owner, &format!("/payroll?month={}", ym(last)))
+        .await;
     let lan = slip(&p.body, s.lan);
     assert_eq!(lan["deducted_leave_days"], 1, "K is no longer free");
-    assert_eq!((lan["late_penalised"].clone(), lan["late_deduction"].clone()), (json!(1), json!(20_000)), "12 min > 10");
-    assert!(lan["flags"].as_array().is_some_and(|f| f.contains(&json!("unrecorded_days"))));
+    assert_eq!(
+        (lan["late_penalised"].clone(), lan["late_deduction"].clone()),
+        (json!(1), json!(20_000)),
+        "12 min > 10"
+    );
+    assert!(
+        lan["flags"]
+            .as_array()
+            .is_some_and(|f| f.contains(&json!("unrecorded_days")))
+    );
 
-    let future = s.attend(&s.owner, s.lan, today() + Duration::days(1), "present").await;
+    let future = s
+        .attend(&s.owner, s.lan, today() + Duration::days(1), "present")
+        .await;
     assert_eq!(future.status, StatusCode::UNPROCESSABLE_ENTITY);
-    let cleared = s.put(&s.owner, "/attendance", json!({"entries": [{"staff_id": s.lan, "date": last, "status": null}]})).await;
+    let cleared = s
+        .put(
+            &s.owner,
+            "/attendance",
+            json!({"entries": [{"staff_id": s.lan, "date": last, "status": null}]}),
+        )
+        .await;
     assert_eq!(cleared.status, StatusCode::OK, "{}", cleared.body);
-    let sheet = s.get(&s.owner, &format!("/attendance?month={}", ym(last))).await;
-    let days = sheet.body["staff"].as_array().and_then(|a| a.iter().find(|x| x["staff_id"] == json!(s.lan)))
+    let sheet = s
+        .get(&s.owner, &format!("/attendance?month={}", ym(last)))
+        .await;
+    let days = sheet.body["staff"]
+        .as_array()
+        .and_then(|a| a.iter().find(|x| x["staff_id"] == json!(s.lan)))
         .map(|x| x["days"].as_array().map(Vec::len));
     assert_eq!(days, Some(Some(1)));
-    let fail_no_plan = s.put(&s.owner, "/evaluations", json!({
-        "staff_id": s.lan, "month": ym(last), "criteria": criteria("m3")
-    })).await;
+    let fail_no_plan = s
+        .put(
+            &s.owner,
+            "/evaluations",
+            json!({
+                "staff_id": s.lan, "month": ym(last), "criteria": criteria("m3")
+            }),
+        )
+        .await;
     assert_eq!(fail_no_plan.body["errors"][0]["field"], "coaching_plan");
     Ok(())
 }

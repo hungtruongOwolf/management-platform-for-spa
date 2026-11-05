@@ -48,7 +48,10 @@ fn totals(slips: &[Payslip]) -> PayrollTotals {
     PayrollTotals {
         staff: u32::try_from(slips.len()).unwrap_or(u32::MAX),
         base_salary: slips.iter().map(|s| s.base_salary).sum(),
-        deductions: slips.iter().map(|s| s.leave_deduction + s.late_deduction).sum(),
+        deductions: slips
+            .iter()
+            .map(|s| s.leave_deduction + s.late_deduction)
+            .sum(),
         commission: slips
             .iter()
             .map(|s| s.service_commission + s.closing_commission)
@@ -141,9 +144,7 @@ pub async fn compute_in(
 
 fn parse_slips(raw: Vec<Value>) -> Result<Vec<Payslip>, AppError> {
     raw.into_iter()
-        .map(|v| {
-            serde_json::from_value(v).map_err(|e| AppError::Internal(format!("payslip: {e}")))
-        })
+        .map(|v| serde_json::from_value(v).map_err(|e| AppError::Internal(format!("payslip: {e}"))))
         .collect()
 }
 
@@ -163,7 +164,11 @@ pub async fn payslips_in(
 }
 
 /// `GET /payroll?month=` (`payroll.read`).
-pub async fn month(pool: &PgPool, actor: &Actor, month: Option<Month>) -> Result<PayrollMonth, AppError> {
+pub async fn month(
+    pool: &PgPool,
+    actor: &Actor,
+    month: Option<Month>,
+) -> Result<PayrollMonth, AppError> {
     actor.require(Permission::PayrollRead)?;
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let today = period::today(&mut tx).await?;
@@ -238,7 +243,11 @@ pub async fn close(
         return Err(period::closed());
     }
     let slips = compute_in(&mut tx, month, None, today).await?;
-    if !input.allow_incomplete && slips.iter().any(|s| s.flags.contains(&PayFlag::UnrecordedDays)) {
+    if !input.allow_incomplete
+        && slips
+            .iter()
+            .any(|s| s.flags.contains(&PayFlag::UnrecordedDays))
+    {
         return Err(AppError::Unprocessable {
             code: "payroll.unrecorded_days",
         });

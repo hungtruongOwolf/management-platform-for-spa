@@ -24,7 +24,11 @@ pub fn mul_div_round(a: i64, b: i64, c: i64) -> i64 {
     }
     let (a, b, c) = (i128::from(a), i128::from(b), i128::from(c));
     let n = a * b;
-    let q = if n >= 0 { (n + c / 2) / c } else { (n - c / 2) / c };
+    let q = if n >= 0 {
+        (n + c / 2) / c
+    } else {
+        (n - c / 2) / c
+    };
     i64::try_from(q).unwrap_or(i64::MAX)
 }
 
@@ -224,9 +228,14 @@ pub fn compute(
         version: 0,
     });
     let dim = input.month.days();
-    let employed_days =
-        u32::try_from(input.month.iter_days().filter(|d| employed(input, *d)).count())
-            .unwrap_or(0);
+    let employed_days = u32::try_from(
+        input
+            .month
+            .iter_days()
+            .filter(|d| employed(input, *d))
+            .count(),
+    )
+    .unwrap_or(0);
     let att = totals(input);
 
     let count = |code: LeaveCode| match code {
@@ -235,8 +244,16 @@ pub fn compute(
         LeaveCode::AbsentK => att.absent_k,
     };
     let all_codes = [LeaveCode::LeaveP, LeaveCode::LeaveDx, LeaveCode::AbsentK];
-    let counted: u32 = all_codes.iter().filter(|c| rules.is_free(**c)).map(|c| count(*c)).sum();
-    let never_free: u32 = all_codes.iter().filter(|c| !rules.is_free(**c)).map(|c| count(*c)).sum();
+    let counted: u32 = all_codes
+        .iter()
+        .filter(|c| rules.is_free(**c))
+        .map(|c| count(*c))
+        .sum();
+    let never_free: u32 = all_codes
+        .iter()
+        .filter(|c| !rules.is_free(**c))
+        .map(|c| count(*c))
+        .sum();
     let deducted = counted.saturating_sub(rules.free_leave_days) + never_free;
     let divisor = i64::from(dim.saturating_sub(rules.free_leave_days).max(1));
     let day_rate = mul_div_round(pay.base_salary, 1, divisor);
@@ -246,23 +263,41 @@ pub fn compute(
         input
             .days
             .iter()
-            .filter(|d| d.status == AttendanceStatus::Present && d.late_minutes > rules.late_grace_minutes)
+            .filter(|d| {
+                d.status == AttendanceStatus::Present && d.late_minutes > rules.late_grace_minutes
+            })
             .count(),
     )
     .unwrap_or(0);
-    let late_deduction = rules.late_penalty_amount.saturating_mul(i64::from(late_penalised));
+    let late_deduction = rules
+        .late_penalty_amount
+        .saturating_mul(i64::from(late_penalised));
 
     let service_base: i64 = input
         .commission_lines
         .iter()
-        .map(|l| if rules.commission_on_bonus_sessions { l.full_value } else { l.value })
+        .map(|l| {
+            if rules.commission_on_bonus_sessions {
+                l.full_value
+            } else {
+                l.value
+            }
+        })
         .sum();
     let rate = i64::from(pay.commission_rate_bp);
     let service_commission = mul_div_round(service_base, rate, 10_000);
-    let closing_base = if rules.closing_commission { input.closing_base } else { 0 };
+    let closing_base = if rules.closing_commission {
+        input.closing_base
+    } else {
+        0
+    };
     let closing_commission = mul_div_round(closing_base, rate, 10_000);
 
-    let meal = if employed_days > 0 { pay.meal_allowance } else { 0 };
+    let meal = if employed_days > 0 {
+        pay.meal_allowance
+    } else {
+        0
+    };
     let net_pay = pay.base_salary - leave_deduction - late_deduction
         + service_commission
         + closing_commission
@@ -271,9 +306,11 @@ pub fn compute(
         - input.penalties;
 
     let loyalty = match rules.loyalty_partial_month {
-        PartialMonthLoyalty::Prorate => {
-            mul_div_round(pay.loyalty_bonus_monthly, i64::from(employed_days), i64::from(dim))
-        }
+        PartialMonthLoyalty::Prorate => mul_div_round(
+            pay.loyalty_bonus_monthly,
+            i64::from(employed_days),
+            i64::from(dim),
+        ),
         PartialMonthLoyalty::Full if employed_days > 0 => pay.loyalty_bonus_monthly,
         PartialMonthLoyalty::NoneIfPartial if employed_days == dim => pay.loyalty_bonus_monthly,
         PartialMonthLoyalty::Full | PartialMonthLoyalty::NoneIfPartial => 0,
@@ -412,7 +449,10 @@ mod tests {
     #[test]
     fn two_free_days_then_one_day_rate_per_extra_day_as_the_sheet() {
         let rules = PayrollRules::default();
-        let two = days(&[(3, AttendanceStatus::LeaveP), (7, AttendanceStatus::LeaveDx)]);
+        let two = days(&[
+            (3, AttendanceStatus::LeaveP),
+            (7, AttendanceStatus::LeaveDx),
+        ]);
         let s = slip(&input(&two, &[]), &rules);
         assert_eq!((s.deducted_leave_days, s.leave_deduction), (0, 0));
         assert_eq!(s.day_rate, 178_571, "5tr ÷ (30 − 2)");
@@ -443,7 +483,10 @@ mod tests {
         assert_eq!((s.leave_days_counted, s.deducted_leave_days), (0, 1));
         assert_eq!(s.leave_deduction, 178_571);
         let default = slip(&input(&one_k, &[]), &PayrollRules::default());
-        assert_eq!(default.deducted_leave_days, 0, "default: K uses a free day (sheet)");
+        assert_eq!(
+            default.deducted_leave_days, 0,
+            "default: K uses a free day (sheet)"
+        );
     }
 
     #[test]
@@ -452,7 +495,10 @@ mod tests {
         ds[0].late_minutes = 5;
         ds[1].late_minutes = 20;
         let s = slip(&input(&ds, &[]), &PayrollRules::default());
-        assert_eq!((s.attendance.late_count, s.attendance.late_minutes), (2, 25));
+        assert_eq!(
+            (s.attendance.late_count, s.attendance.late_minutes),
+            (2, 25)
+        );
         assert_eq!(s.late_deduction, 0, "default: record only");
         let fined = PayrollRules {
             late_grace_minutes: 10,
@@ -512,7 +558,10 @@ mod tests {
 
     #[test]
     fn mid_month_joiners_are_prorated_by_rule_and_not_counted_as_absent() {
-        let ds: Vec<Day> = days(&[]).into_iter().filter(|x| x.date >= d("2026-11-16")).collect();
+        let ds: Vec<Day> = days(&[])
+            .into_iter()
+            .filter(|x| x.date >= d("2026-11-16"))
+            .collect();
         let mut i = input(&ds, &[]);
         i.joined_on = Some(d("2026-11-16"));
         let s = slip(&i, &PayrollRules::default());
@@ -557,6 +606,10 @@ mod tests {
         assert_eq!(s.net_pay, 0);
         assert_eq!(s.tet_level, None);
         i.recorded_until = Some(d("2026-11-21"));
-        assert_eq!(slip(&i, &PayrollRules::default()).attendance.unrecorded, 0, "future days");
+        assert_eq!(
+            slip(&i, &PayrollRules::default()).attendance.unrecorded,
+            0,
+            "future days"
+        );
     }
 }

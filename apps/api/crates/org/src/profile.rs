@@ -118,7 +118,12 @@ fn validate_profile(input: &ProfileInput) -> Result<CleanProfile, AppError> {
     if position.is_empty() || position.chars().count() > 100 {
         errors.push(FieldError::new("position", "invalid"));
     }
-    let phone = match input.phone.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+    let phone = match input
+        .phone
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
         None => None,
         Some(p) => match PhoneE164::parse(p) {
             Ok(phone) => Some(phone),
@@ -179,7 +184,8 @@ async fn check_link(
     let Some(user) = user_id else { return Ok(()) };
     if !repo::is_active_member(tx, user).await? {
         return Err(AppError::Validation(vec![FieldError::new(
-            "user_id", "not_a_member",
+            "user_id",
+            "not_a_member",
         )]));
     }
     match repo::staff_of_user(tx, user).await? {
@@ -492,7 +498,10 @@ mod tests {
     fn profile_is_trimmed_and_phone_normalised() -> Result<(), AppError> {
         let c = validate_profile(&input())?;
         assert_eq!(c.full_name, "Lê Thị Mai");
-        assert_eq!(c.phone.map(|p| p.as_str().to_owned()).as_deref(), Some("+84905111222"));
+        assert_eq!(
+            c.phone.map(|p| p.as_str().to_owned()).as_deref(),
+            Some("+84905111222")
+        );
         Ok(())
     }
 
@@ -522,8 +531,26 @@ mod tests {
             meal_allowance: 300_000,
         };
         assert!(validate_pay(&ok).is_ok());
-        assert!(validate_pay(&PayInput { base_salary: -1, ..ok }).is_err());
-        assert!(validate_pay(&PayInput { commission_rate_bp: 10_001, ..ok }).is_err());
-        assert!(validate_pay(&PayInput { meal_allowance: MAX_ALLOWANCE + 1, ..ok }).is_err());
+        assert!(
+            validate_pay(&PayInput {
+                base_salary: -1,
+                ..ok
+            })
+            .is_err()
+        );
+        assert!(
+            validate_pay(&PayInput {
+                commission_rate_bp: 10_001,
+                ..ok
+            })
+            .is_err()
+        );
+        assert!(
+            validate_pay(&PayInput {
+                meal_allowance: MAX_ALLOWANCE + 1,
+                ..ok
+            })
+            .is_err()
+        );
     }
 }

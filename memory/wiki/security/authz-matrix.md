@@ -34,6 +34,12 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
 | `report.read` (R1-2: dashboard ngày, báo cáo khoảng ngày, chỉ số đếm) | ✓ | ✓ | — | — |
 | `report.long_range` (vòng 3, migration 0015: báo cáo theo tháng/năm 3–5 năm; EM Q5) | ✓ | — | — | — |
 | `report.revenue.read` (R1-2: mọi con số tiền trong báo cáo + sổ doanh thu; mặc định bật cho quản lý, **câu hỏi Q1 cho EM**) | ✓ | ✓ | — | — |
+| `staff.manage` (migration 0016: hồ sơ nhân viên, gắn tài khoản; ghi lương cần thêm `payroll.read`) | ✓ | — | — | — |
+| `attendance.record` (0016: lưới chấm công, xem + ghi) | ✓ | ✓ | — | — |
+| `evaluation.record` (0016: đánh giá ngày, đánh giá tháng, sổ thưởng/phạt) | ✓ | ✓ | — | — |
+| `payroll.read` (0016: mọi con số lương; **mặc định không cho quản lý, Q-S1**) | ✓ | — | — | — |
+| `payroll.close` (0016: chốt tháng, sửa quy tắc lương) | ✓ | — | — | — |
+| `staff.read_own` (0016: `GET /me/staff`, tháng của chính mình) | ✓ | ✓ | ✓ | — |
 | `audit.read` | ✓ | — | — | — |
 | `support_grant.manage` | ✓ | — | — | — |
 | `platform.tenant.manage` | — | — | — | ✓ |
@@ -58,7 +64,15 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
 - **switch-tenant không phải re-auth (H1):** session mới sau `POST /auth/switch-tenant` giữ nguyên `recent_auth_at` và `absolute_expires_at` của session cũ (`app/tests/auth.rs::a_rotated_session_needs_a_real_reauth` kiểm trên session đã resolve, đúng cái guard 🔒 đọc; `auth.rs::switch_tenant_keeps_absolute_expiry_and_reauth_time`). Vẫn quan trọng: hạn tuyệt đối không được kéo dài, và guard 🔒 của thao tác bảo mật tài khoản dựa vào `recent_auth_at`.
 - **PlatformAdmin / support grant: ngoài phạm vi R1-1** (kiểm ở S10). Code chưa có role này (`identity::SystemRole` = Owner, Manager, Technician), chưa có bảng `support_grant` hay route nào cấp/thu hồi grant; permission `platform.tenant.manage` và `support_grant.manage` chỉ là hằng số trong `kernel::perm`. Cột PlatformAdmin và test #4 bên dưới chờ ticket thêm role (thêm vào `SystemRole::ALL` thì matrix tự kiểm). Tương tự `customer.anonymize` và `audit.read` chưa có route.
 - **grant** = chỉ khi có `support_grant` còn hiệu lực do chủ spa cấp; mọi truy cập đều audit. Platform admin **không bao giờ** đọc được ghi chú sức khỏe.
-- Technician ở R1-1 không có quyền thao tác quầy. Quyền "xem dữ liệu của chính mình" thuộc R2.
+- Technician ở R1-1 không có quyền thao tác quầy. Quyền "xem dữ liệu của chính mình" có từ 0016 (`staff.read_own`, chỉ tháng công/lương của mình).
+- **Quản lý nhân viên (0016, [spec](../product/specs/staff-management.md)):**
+  - **Lương chỉ gửi cho `payroll.read`.** `GET /staff/{id}` và `/staff/profiles` (`staff.manage`) chỉ có key `pay` khi có `payroll.read`; `pay_visible` báo cho UI. `PUT /staff/{id}/pay` cần cả hai. Test `staff.rs::salary_is_only_sent_to_payroll_readers` (cấp `staff.manage` cho quản lý → không có key lương nào; đã mutation-check).
+  - **KTV chỉ thấy của mình:** `GET /me/staff` lấy staff từ `staff.user_id = session.user` (unique theo tenant), không có tham số chọn người (`?staff_id=` → 400). Test `staff.rs::a_technician_sees_only_their_own_month`.
+  - **Spa khác:** id trên path → 404; `staff_id` trong body (chấm công, đánh giá, thưởng/phạt) → `422 …staff_id unknown`; RLS dưới `app_rw` không thấy dòng nào (`staff.rs::another_spa_cannot_reach_our_staff`).
+  - **Tháng đã chốt:** mọi ghi vào tháng → `409 payroll.period_closed` (service khóa `payroll_period` FOR SHARE / close FOR UPDATE) + trigger `reject_closed_period`; `payslip`, `staff_adjustment` chỉ thêm; tháng không mở lại (`payroll_period_forward_only`). Test `staff.rs::a_closed_month_is_locked_and_corrected_by_adjustments` (cả UPDATE/DELETE trực tiếp dưới app_rw bị từ chối).
+  - Người ghi luôn lấy từ session (`recorded_by`, `created_by`, `closed_by`, `updated_by`). Ghi chú chấm công/đánh giá không vào audit (`has_note`); audit điều kiện lương có số tiền (chỉ chủ spa đọc audit).
+  - Gắn tài khoản: chỉ thành viên đang hoạt động của spa, một tài khoản một hồ sơ (`409 staff.account_taken`). Lưu ý: chủ spa gắn nhầm tài khoản người khác vào hồ sơ thì người đó thấy phiếu lương của hồ sơ đó: đây là quyết định của chủ spa, có audit `staff.update`.
+  - Matrix: 20 route mới trong `authz_matrix.rs` (Target mới `Staff`).
 
 ## Ánh xạ endpoint → permission
 Danh sách đầy đủ ở [backend](../architecture/backend.md) §3 (cột "Permission"). CI fail nếu có route chưa khai báo permission (trừ `/auth/*` công khai và `/health`).

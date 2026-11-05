@@ -23,7 +23,9 @@ use uuid::Uuid;
 pub const MAX_TEXT_CHARS: usize = 1000;
 
 /// A level, ordered best (M1) to worst (Fail): `max` of two levels is the lower result.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, ToSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, ToSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Level {
     /// Mức 1 (Xuất sắc).
@@ -82,12 +84,36 @@ pub struct Criterion {
 
 /// The scorecard (sheet rows 61–66).
 pub const CRITERIA: [Criterion; 6] = [
-    Criterion { key: "technique", label: "Kỹ thuật liệu trình", max: 40 },
-    Criterion { key: "attitude", label: "Thái độ và giao tiếp", max: 15 },
-    Criterion { key: "customer_feedback", label: "Phản hồi khách hàng", max: 15 },
-    Criterion { key: "diligence", label: "Chuyên cần", max: 10 },
-    Criterion { key: "hygiene", label: "Vệ sinh và tác phong", max: 10 },
-    Criterion { key: "learning", label: "Tinh thần học hỏi", max: 10 },
+    Criterion {
+        key: "technique",
+        label: "Kỹ thuật liệu trình",
+        max: 40,
+    },
+    Criterion {
+        key: "attitude",
+        label: "Thái độ và giao tiếp",
+        max: 15,
+    },
+    Criterion {
+        key: "customer_feedback",
+        label: "Phản hồi khách hàng",
+        max: 15,
+    },
+    Criterion {
+        key: "diligence",
+        label: "Chuyên cần",
+        max: 10,
+    },
+    Criterion {
+        key: "hygiene",
+        label: "Vệ sinh và tác phong",
+        max: 10,
+    },
+    Criterion {
+        key: "learning",
+        label: "Tinh thần học hỏi",
+        max: 10,
+    },
 ];
 
 /// One scored criterion, as stored in `staff_evaluation.criteria`.
@@ -141,11 +167,17 @@ pub fn score(criteria: &[CriterionInput], serious_issue: bool) -> Result<Score, 
             (_, None) => ceiling,
             (Level::Fail, Some(p)) if p <= ceiling => p,
             (Level::Fail, Some(_)) => {
-                errors.push(FieldError::new(format!("criteria[{i}].points"), "above_ceiling"));
+                errors.push(FieldError::new(
+                    format!("criteria[{i}].points"),
+                    "above_ceiling",
+                ));
                 ceiling
             }
             (_, Some(_)) => {
-                errors.push(FieldError::new(format!("criteria[{i}].points"), "only_for_fail"));
+                errors.push(FieldError::new(
+                    format!("criteria[{i}].points"),
+                    "only_for_fail",
+                ));
                 ceiling
             }
         };
@@ -243,7 +275,11 @@ pub struct EvaluationSheet {
 }
 
 /// `GET /evaluations?month=` (`evaluation.record`).
-pub async fn sheet(pool: &PgPool, actor: &Actor, month: Option<Month>) -> Result<EvaluationSheet, AppError> {
+pub async fn sheet(
+    pool: &PgPool,
+    actor: &Actor,
+    month: Option<Month>,
+) -> Result<EvaluationSheet, AppError> {
     actor.require(Permission::EvaluationRecord)?;
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let today = period::today(&mut tx).await?;
@@ -290,8 +326,13 @@ pub async fn sheet(pool: &PgPool, actor: &Actor, month: Option<Month>) -> Result
 }
 
 fn clean_text(field: &str, raw: Option<&str>, errors: &mut Vec<FieldError>) -> Option<String> {
-    let t = raw.map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned);
-    if t.as_ref().is_some_and(|s| s.chars().count() > MAX_TEXT_CHARS) {
+    let t = raw
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned);
+    if t.as_ref()
+        .is_some_and(|s| s.chars().count() > MAX_TEXT_CHARS)
+    {
         errors.push(FieldError::new(field, "too_long"));
     }
     t
@@ -331,7 +372,8 @@ pub async fn record(
     let before = evaluations_in(&mut tx, input.month, Some(input.staff_id))
         .await?
         .pop();
-    let criteria = serde_json::to_value(&s.criteria).map_err(|e| AppError::Internal(e.to_string()))?;
+    let criteria =
+        serde_json::to_value(&s.criteria).map_err(|e| AppError::Internal(e.to_string()))?;
     repo::upsert_evaluation(
         &mut tx,
         &EvaluationWrite {
@@ -426,7 +468,10 @@ mod tests {
         let mut m1 = card([Level::M1; 6]);
         m1[1].points = Some(3);
         assert!(score(&m1, false).is_err(), "points only for Chưa đạt");
-        assert!(score(&card([Level::M1; 6])[..5], false).is_err(), "every criterion");
+        assert!(
+            score(&card([Level::M1; 6])[..5], false).is_err(),
+            "every criterion"
+        );
     }
 
     #[test]
@@ -437,6 +482,10 @@ mod tests {
         assert_eq!(Level::of_total(69), Level::M3);
         assert_eq!(Level::of_total(50), Level::M3);
         assert_eq!(Level::of_total(49), Level::Fail);
-        assert_eq!(Level::M2.max(Level::M3), Level::M3, "max is the lower result");
+        assert_eq!(
+            Level::M2.max(Level::M3),
+            Level::M3,
+            "max is the lower result"
+        );
     }
 }

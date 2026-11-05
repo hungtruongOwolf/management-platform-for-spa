@@ -38,7 +38,11 @@ pub struct MyStaff {
 }
 
 /// `GET /me/staff?month=` (`staff.read_own`).
-pub async fn my_month(pool: &PgPool, actor: &Actor, month: Option<Month>) -> Result<MyStaff, AppError> {
+pub async fn my_month(
+    pool: &PgPool,
+    actor: &Actor,
+    month: Option<Month>,
+) -> Result<MyStaff, AppError> {
     actor.require(Permission::StaffReadOwn)?;
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let Some(staff_id) = org::profile::own_staff_id(&mut tx, actor).await? else {
@@ -80,7 +84,13 @@ pub async fn my_month(pool: &PgPool, actor: &Actor, month: Option<Month>) -> Res
         data: Some(MyMonth {
             month: month.to_string(),
             closed: info.closed,
-            attendance: attendance::sheet_of(&profile, month, today, rules.default_shift_start, days),
+            attendance: attendance::sheet_of(
+                &profile,
+                month,
+                today,
+                rules.default_shift_start,
+                days,
+            ),
             reviews,
             evaluation,
             adjustments,

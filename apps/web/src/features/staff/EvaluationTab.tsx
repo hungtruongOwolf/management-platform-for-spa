@@ -15,7 +15,7 @@ import {
   type StaffEvaluation,
 } from "./api";
 import { LEVELS, LEVEL_LABEL, LEVEL_SHORT, type Level } from "./labels";
-import { ClosedBanner, dayLabel } from "./ui";
+import { ClosedBanner, dayLabel, lastDayOrToday } from "./ui";
 
 /**
  * Đánh giá: the sheet's daily Khen / Phàn nàn / Ghi chú for one day (list per person), then the
@@ -44,7 +44,7 @@ export function EvaluationTab({ month, day, today, onDay }: { month: string; day
             label="Ngày"
             value={inMonth}
             min={`${sheet.month}-01`}
-            max={today}
+            max={lastDayOrToday(sheet.month, today)}
             onChange={(d) => {
               if (d) onDay(d);
             }}

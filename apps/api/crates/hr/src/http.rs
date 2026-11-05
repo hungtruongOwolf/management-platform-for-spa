@@ -5,7 +5,9 @@
 use crate::adjustment::{self, Adjustment, AdjustmentInput, AdjustmentKind, AdjustmentLog};
 use crate::attendance::{self, AttendanceDay, AttendanceSheet, AttendanceStatus, Entry};
 use crate::calc::Payslip;
-use crate::evaluation::{self, CriterionInput, Evaluation, EvaluationInput, EvaluationSheet, Level};
+use crate::evaluation::{
+    self, CriterionInput, Evaluation, EvaluationInput, EvaluationSheet, Level,
+};
 use crate::me::{self, MyStaff};
 use crate::month::Month;
 use crate::payroll::{self, CloseInput, PayrollMonth};
@@ -34,7 +36,10 @@ where
 {
     Router::new()
         .route("/attendance", get(get_attendance).put(put_attendance))
-        .route("/daily-reviews", get(get_daily_reviews).put(put_daily_reviews))
+        .route(
+            "/daily-reviews",
+            get(get_daily_reviews).put(put_daily_reviews),
+        )
         .route("/evaluations", get(get_evaluations).put(put_evaluation))
         .route("/adjustments", get(get_adjustments).post(post_adjustment))
         .route("/payroll", get(get_payroll))
@@ -66,7 +71,10 @@ pub struct MonthQuery {
 }
 
 fn month_of(q: &MonthQuery) -> Result<Option<Month>, AppError> {
-    q.month.as_deref().map(|m| Month::parse("month", m)).transpose()
+    q.month
+        .as_deref()
+        .map(|m| Month::parse("month", m))
+        .transpose()
 }
 
 fn clean_note(raw: Option<String>) -> Option<String> {
@@ -139,8 +147,14 @@ pub async fn put_attendance(
                 staff_id: e.staff_id,
                 date: e.date,
                 status: e.status,
-                check_in: org::http::parse_hhmm(&format!("entries[{i}].check_in"), e.check_in.as_deref())?,
-                check_out: org::http::parse_hhmm(&format!("entries[{i}].check_out"), e.check_out.as_deref())?,
+                check_in: org::http::parse_hhmm(
+                    &format!("entries[{i}].check_in"),
+                    e.check_in.as_deref(),
+                )?,
+                check_out: org::http::parse_hhmm(
+                    &format!("entries[{i}].check_out"),
+                    e.check_out.as_deref(),
+                )?,
                 note: clean_note(e.note),
             })
         })

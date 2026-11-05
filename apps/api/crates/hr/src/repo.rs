@@ -440,7 +440,10 @@ pub struct AdjustmentInsert<'a> {
     pub created_by: Uuid,
 }
 
-pub async fn insert_adjustment(tx: &mut TenantTx, a: &AdjustmentInsert<'_>) -> Result<(), AppError> {
+pub async fn insert_adjustment(
+    tx: &mut TenantTx,
+    a: &AdjustmentInsert<'_>,
+) -> Result<(), AppError> {
     let tenant = tx.tenant().as_uuid();
     sqlx::query!(
         r#"INSERT INTO app.staff_adjustment

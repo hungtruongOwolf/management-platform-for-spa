@@ -45,14 +45,16 @@ pub struct StaffDemo<'a> {
 }
 
 /// (base salary, commission bp, loyalty per month, meal allowance, joined on)
-const TERMS: &[(i64, i32, i64, i64, &str)] = &[
+type Terms = (i64, i32, i64, i64, &'static str);
+
+const TERMS: &[Terms] = &[
     (5_000_000, 500, 500_000, 300_000, "2025-03-01"),
     (5_500_000, 700, 500_000, 300_000, "2024-06-10"),
     (4_500_000, 1000, 0, 300_000, "2026-02-16"),
     (6_050_000, 500, 500_000, 400_000, "2023-09-01"),
     (5_000_000, 700, 0, 300_000, "2025-11-03"),
 ];
-const MANAGER_TERMS: (i64, i32, i64, i64, &str) = (7_000_000, 300, 0, 500_000, "2023-01-02");
+const MANAGER_TERMS: Terms = (7_000_000, 300, 0, 500_000, "2023-01-02");
 
 fn date(s: &str) -> anyhow::Result<NaiveDate> {
     s.parse().context("demo date")
@@ -81,7 +83,7 @@ impl StaffDemo<'_> {
         member_actor(self.app, tech_user, self.tenant).await?;
         report.technician_login = true;
 
-        let everyone: Vec<(Uuid, (i64, i32, i64, i64, &str))> = self
+        let everyone: Vec<(Uuid, Terms)> = self
             .technicians
             .iter()
             .copied()
@@ -266,11 +268,46 @@ impl StaffDemo<'_> {
         let yesterday = self.today - Duration::days(1);
         let mid_last = last_month.first_day() + Duration::days(14);
         let items = [
-            (t[0], AdjustmentKind::Bonus, Some(200_000), None, "Khách khen đích danh 3 lần", mid_last),
-            (t[3], AdjustmentKind::Penalty, Some(50_000), None, "Đi muộn 4 lần không báo", last_month.last_day()),
-            (t[2], AdjustmentKind::Bonus, None, Some(5), "Chủ động học liệu trình mới", mid_last),
-            (t[1], AdjustmentKind::Bonus, Some(100_000), None, "Giới thiệu khách mới mua gói", yesterday),
-            (t[4], AdjustmentKind::Penalty, None, Some(2), "Quên vệ sinh giường sau ca", yesterday),
+            (
+                t[0],
+                AdjustmentKind::Bonus,
+                Some(200_000),
+                None,
+                "Khách khen đích danh 3 lần",
+                mid_last,
+            ),
+            (
+                t[3],
+                AdjustmentKind::Penalty,
+                Some(50_000),
+                None,
+                "Đi muộn 4 lần không báo",
+                last_month.last_day(),
+            ),
+            (
+                t[2],
+                AdjustmentKind::Bonus,
+                None,
+                Some(5),
+                "Chủ động học liệu trình mới",
+                mid_last,
+            ),
+            (
+                t[1],
+                AdjustmentKind::Bonus,
+                Some(100_000),
+                None,
+                "Giới thiệu khách mới mua gói",
+                yesterday,
+            ),
+            (
+                t[4],
+                AdjustmentKind::Penalty,
+                None,
+                Some(2),
+                "Quên vệ sinh giường sau ca",
+                yesterday,
+            ),
         ];
         let mut n = 0;
         for (staff, kind, amount, points, reason, on) in items {

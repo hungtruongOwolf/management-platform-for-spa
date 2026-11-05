@@ -237,7 +237,12 @@ const ROUTES: &[Route] = &[
     .id(Target::Customer),
     // staff — org
     route("GET", "/api/v1/staff", Access::Perm(P::StaffReadBasic, ALL)),
-    route("POST", "/api/v1/staff", Access::Perm(P::StaffManage, OWNER_ONLY)).body(staff_body),
+    route(
+        "POST",
+        "/api/v1/staff",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    )
+    .body(staff_body),
     route(
         "GET",
         "/api/v1/staff/profiles",
@@ -316,7 +321,11 @@ const ROUTES: &[Route] = &[
     )
     .body(adjustment_body)
     .idempotent(),
-    route("GET", "/api/v1/payroll", Access::Perm(P::PayrollRead, OWNER_ONLY)),
+    route(
+        "GET",
+        "/api/v1/payroll",
+        Access::Perm(P::PayrollRead, OWNER_ONLY),
+    ),
     route(
         "GET",
         "/api/v1/payroll/payslips/{id}",
@@ -342,7 +351,11 @@ const ROUTES: &[Route] = &[
         Access::Perm(P::PayrollClose, OWNER_ONLY),
     )
     .body(payroll_rules_body),
-    route("GET", "/api/v1/me/staff", Access::Perm(P::StaffReadOwn, ALL)),
+    route(
+        "GET",
+        "/api/v1/me/staff",
+        Access::Perm(P::StaffReadOwn, ALL),
+    ),
     // packages
     route(
         "GET",
@@ -544,8 +557,10 @@ fn yesterday() -> String {
         .to_string()
 }
 fn attendance_body(f: &Fixture) -> Option<Value> {
-    Some(json!({"entries": [{"staff_id": f.staff, "date": yesterday(), "status": "present",
-                              "check_in": "09:05"}]}))
+    Some(
+        json!({"entries": [{"staff_id": f.staff, "date": yesterday(), "status": "present",
+                              "check_in": "09:05"}]}),
+    )
 }
 fn daily_review_body(f: &Fixture) -> Option<Value> {
     Some(json!({"entries": [{"staff_id": f.staff, "date": yesterday(), "compliments": 1}]}))

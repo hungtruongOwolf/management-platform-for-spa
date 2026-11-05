@@ -42,10 +42,7 @@ impl Month {
     }
 
     pub fn last_day(self) -> NaiveDate {
-        self.next()
-            .0
-            .pred_opt()
-            .unwrap_or(self.0)
+        self.next().0.pred_opt().unwrap_or(self.0)
     }
 
     pub fn next(self) -> Self {
@@ -83,7 +80,10 @@ mod tests {
         assert_eq!(feb.days(), 29, "leap year");
         assert_eq!(feb.to_string(), "2028-02");
         assert_eq!(feb.next().to_string(), "2028-03");
-        assert_eq!(Month::parse("month", "2026-12")?.next().to_string(), "2027-01");
+        assert_eq!(
+            Month::parse("month", "2026-12")?.next().to_string(),
+            "2027-01"
+        );
         assert_eq!(Month::parse("month", "2026-11")?.iter_days().count(), 30);
         for bad in ["2026-13", "2026-1", "26-01", "2019-12", "abc", "2026/01"] {
             assert!(Month::parse("month", bad).is_err(), "{bad}");

@@ -62,8 +62,9 @@ impl TryFrom<AdjustmentRow> for Adjustment {
     type Error = AppError;
     fn try_from(r: AdjustmentRow) -> Result<Self, AppError> {
         Ok(Self {
-            kind: AdjustmentKind::parse(&r.kind)
-                .ok_or_else(|| AppError::Internal(format!("adjustment {} kind {}", r.id, r.kind)))?,
+            kind: AdjustmentKind::parse(&r.kind).ok_or_else(|| {
+                AppError::Internal(format!("adjustment {} kind {}", r.id, r.kind))
+            })?,
             id: r.id,
             staff_id: r.staff_id,
             occurred_on: r.work_date,
@@ -268,22 +269,44 @@ mod tests {
     fn amount_or_points_and_a_reason() -> Result<(), AppError> {
         let today = d("2026-11-05");
         let c = validate(&input(), today)?;
-        assert_eq!((c.occurred_on, c.reason.as_str()), (today, "Khách khen đích danh"));
-        let none = AdjustmentInput { amount: None, ..input() };
+        assert_eq!(
+            (c.occurred_on, c.reason.as_str()),
+            (today, "Khách khen đích danh")
+        );
+        let none = AdjustmentInput {
+            amount: None,
+            ..input()
+        };
         assert!(validate(&none, today).is_err());
-        let points = AdjustmentInput { amount: None, points: Some(5), ..input() };
+        let points = AdjustmentInput {
+            amount: None,
+            points: Some(5),
+            ..input()
+        };
         assert!(validate(&points, today).is_ok());
-        let blank = AdjustmentInput { reason: "  ".into(), ..input() };
+        let blank = AdjustmentInput {
+            reason: "  ".into(),
+            ..input()
+        };
         assert!(validate(&blank, today).is_err());
-        let zero = AdjustmentInput { amount: Some(0), ..input() };
+        let zero = AdjustmentInput {
+            amount: Some(0),
+            ..input()
+        };
         assert!(validate(&zero, today).is_err());
-        let future = AdjustmentInput { occurred_on: Some(d("2026-11-06")), ..input() };
+        let future = AdjustmentInput {
+            occurred_on: Some(d("2026-11-06")),
+            ..input()
+        };
         assert!(validate(&future, today).is_err());
         let same_month = AdjustmentInput {
             corrects_month: Some(Month::of(today)),
             ..input()
         };
-        assert!(validate(&same_month, today).is_err(), "corrects an earlier month only");
+        assert!(
+            validate(&same_month, today).is_err(),
+            "corrects an earlier month only"
+        );
         Ok(())
     }
 }

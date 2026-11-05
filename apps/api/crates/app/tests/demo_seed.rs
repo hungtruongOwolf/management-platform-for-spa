@@ -203,7 +203,9 @@ async fn demo_staff_month_and_commission_reconcile_with_visits(pool: PgPool) -> 
         .with_timezone(&chrono_tz::Asia::Ho_Chi_Minh)
         .date_naive();
     let first = today.with_day(1).unwrap_or(today);
-    let last_month_start = (first - chrono::Duration::days(1)).with_day(1).unwrap_or(first);
+    let last_month_start = (first - chrono::Duration::days(1))
+        .with_day(1)
+        .unwrap_or(first);
     for (month_start, month_end) in [
         (last_month_start, first - chrono::Duration::days(1)),
         (first, today),
@@ -216,7 +218,12 @@ async fn demo_staff_month_and_commission_reconcile_with_visits(pool: PgPool) -> 
             None,
         )
         .await;
-        assert_eq!(payroll.status, axum::http::StatusCode::OK, "{}", payroll.body);
+        assert_eq!(
+            payroll.status,
+            axum::http::StatusCode::OK,
+            "{}",
+            payroll.body
+        );
         let slips = list(&payroll.body["payslips"]);
         assert_eq!(slips.len(), 6, "5 technicians + the manager");
         let mut total = 0_i64;
@@ -233,7 +240,11 @@ async fn demo_staff_month_and_commission_reconcile_with_visits(pool: PgPool) -> 
             .bind(month_end)
             .fetch_one(&h.owner)
             .await?;
-            assert_eq!(slip["service_commission_base"], base, "{}", slip["full_name"]);
+            assert_eq!(
+                slip["service_commission_base"], base,
+                "{}",
+                slip["full_name"]
+            );
             let rate = slip["commission_rate_bp"].as_i64().unwrap_or_default();
             assert_eq!(
                 slip["service_commission"].as_i64(),
@@ -252,7 +263,10 @@ async fn demo_staff_month_and_commission_reconcile_with_visits(pool: PgPool) -> 
         .bind(month_end)
         .fetch_one(&h.owner)
         .await?;
-        assert_eq!(total, visits, "every completed line belongs to exactly one payslip");
+        assert_eq!(
+            total, visits,
+            "every completed line belongs to exactly one payslip"
+        );
     }
 
     let tech = session_for(&h, app::demo::TECHNICIAN_PHONE).await;
@@ -260,7 +274,9 @@ async fn demo_staff_month_and_commission_reconcile_with_visits(pool: PgPool) -> 
     assert_eq!(mine.body["linked"], true, "{}", mine.body);
     assert!(mine.body["data"]["payslip"]["base_salary"].is_number());
     assert_eq!(
-        call(&h.app, "GET", "/payroll", Some(&tech), None).await.status,
+        call(&h.app, "GET", "/payroll", Some(&tech), None)
+            .await
+            .status,
         axum::http::StatusCode::FORBIDDEN
     );
     Ok(())

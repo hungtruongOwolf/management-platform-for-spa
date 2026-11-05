@@ -1,6 +1,6 @@
 import { formatVnd } from "@vpyd/ui";
 import { Icon } from "../../app/Icon";
-import { monthLabel, shiftMonth, weekdayShort } from "./labels";
+import { daysOf, monthLabel, shiftMonth, weekdayShort } from "./labels";
 
 export const vnd = (n: number) => formatVnd(n);
 
@@ -49,4 +49,10 @@ export function MonthPicker({ month, current, onChange }: { month: string; curre
       </button>
     </div>
   );
+}
+
+/** Latest day a day picker of `month` offers: its last day, or today in the current month. */
+export function lastDayOrToday(month: string, today: string): string {
+  const last = daysOf(month).at(-1) ?? today;
+  return last < today ? last : today;
 }

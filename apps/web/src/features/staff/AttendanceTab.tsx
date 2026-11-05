@@ -14,7 +14,7 @@ import {
   type StaffSheet,
 } from "./api";
 import { STATUSES, STATUS_CODE, STATUS_HINT, STATUS_LABEL, daysOf, weekdayShort, type AttendanceStatus } from "./labels";
-import { ClosedBanner, dayLabel } from "./ui";
+import { ClosedBanner, dayLabel, lastDayOrToday } from "./ui";
 
 interface Editing {
   staff: StaffSheet;
@@ -89,7 +89,7 @@ export function AttendanceTab({ month, day, today, onDay }: { month: string; day
             label="Ngày chấm công"
             value={inMonth}
             min={`${sheet.month}-01`}
-            max={today < `${sheet.month}-31` ? today : undefined}
+            max={lastDayOrToday(sheet.month, today)}
             onChange={(d) => {
               if (d) onDay(d);
             }}

@@ -118,7 +118,10 @@ pub struct Entry {
 /// Minutes from the shift start to the check-in, 0 when on time or unknown.
 pub fn late_minutes(shift_start: NaiveTime, check_in: Option<NaiveTime>) -> u32 {
     check_in.map_or(0, |c| {
-        let (c, s) = (c.num_seconds_from_midnight(), shift_start.num_seconds_from_midnight());
+        let (c, s) = (
+            c.num_seconds_from_midnight(),
+            shift_start.num_seconds_from_midnight(),
+        );
         c.saturating_sub(s) / 60
     })
 }
@@ -155,8 +158,7 @@ pub fn validate(entries: &[Entry], today: NaiveDate, staff: &[Profile]) -> Resul
         if e.status.is_none() && e.note.is_some() {
             errors.push(FieldError::new(f("note"), "only_with_status"));
         }
-        if e
-            .note
+        if e.note
             .as_ref()
             .is_some_and(|n| n.chars().count() > MAX_NOTE_CHARS)
         {
@@ -240,7 +242,11 @@ pub async fn days_in(
 }
 
 /// `GET /attendance?month=` (`attendance.record`): month × staff grid of everyone employed in it.
-pub async fn sheet(pool: &PgPool, actor: &Actor, month: Option<Month>) -> Result<AttendanceSheet, AppError> {
+pub async fn sheet(
+    pool: &PgPool,
+    actor: &Actor,
+    month: Option<Month>,
+) -> Result<AttendanceSheet, AppError> {
     actor.require(Permission::AttendanceRecord)?;
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let today = period::today(&mut tx).await?;
@@ -254,7 +260,11 @@ pub async fn sheet(pool: &PgPool, actor: &Actor, month: Option<Month>) -> Result
         .iter()
         .filter(|p| period::employed_in(p, month))
         .map(|p| {
-            let days = all_days.iter().filter(|d| d.staff_id == p.id).cloned().collect();
+            let days = all_days
+                .iter()
+                .filter(|d| d.staff_id == p.id)
+                .cloned()
+                .collect();
             sheet_of(p, month, today, rules.default_shift_start, days)
         })
         .collect();
@@ -340,7 +350,8 @@ pub async fn record(
                     entity_type: "staff",
                     entity_id: e.staff_id,
                     before: audit_value(before.as_ref()),
-                    after: audit_value(after.as_ref()).or_else(|| Some(json!({"date": e.date, "cleared": true}))),
+                    after: audit_value(after.as_ref())
+                        .or_else(|| Some(json!({"date": e.date, "cleared": true}))),
                     reason: None,
                 },
             )
