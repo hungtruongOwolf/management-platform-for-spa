@@ -1,0 +1,5893 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Viên Phúc Y Đường API",
+    "description": "",
+    "license": {
+      "name": "UNLICENSED",
+      "identifier": "UNLICENSED"
+    },
+    "version": "1"
+  },
+  "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Sets the __Host-session cookie. `next` = done | mfa_verify | mfa_enroll; until done the session only works on /auth/mfa/* and logout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "auth.invalid_credentials"
+          },
+          "422": {},
+          "429": {}
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Works for full and pending-MFA sessions alike (a user may abandon the MFA step).",
+        "operationId": "logout",
+        "responses": {
+          "204": {},
+          "401": {}
+        }
+      }
+    },
+    "/api/v1/auth/logout-all": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "logout_all",
+        "responses": {
+          "204": {},
+          "401": {}
+        }
+      }
+    },
+    "/api/v1/auth/mfa/enroll/confirm": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "mfa_enroll_confirm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaCodeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "MFA enabled; recovery codes are shown this once. New full-session cookie",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaEnrolled"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "auth.invalid_mfa_code"
+          },
+          "409": {
+            "description": "auth.mfa_already_enrolled | auth.mfa_enrollment_not_started | auth.mfa_enrollment_changed | auth.mfa_not_pending"
+          },
+          "429": {}
+        }
+      }
+    },
+    "/api/v1/auth/mfa/enroll/start": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "mfa_enroll_start",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaEnrollment"
+                }
+              }
+            }
+          },
+          "401": {},
+          "409": {
+            "description": "auth.mfa_already_enrolled | auth.mfa_not_pending"
+          },
+          "429": {}
+        }
+      }
+    },
+    "/api/v1/auth/mfa/verify": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "mfa_verify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaCodeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Second factor accepted; the pending session is replaced by a full one (new cookie)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "auth.invalid_mfa_code (wrong, expired, replayed, or account locked) | auth.mfa_enrollment_required | auth.unauthenticated"
+          },
+          "409": {
+            "description": "auth.mfa_not_pending"
+          },
+          "429": {}
+        }
+      }
+    },
+    "/api/v1/auth/reauth": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "reauth",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReauthBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {},
+          "401": {
+            "description": "auth.invalid_credentials | auth.invalid_mfa_code"
+          },
+          "422": {
+            "description": "`code` required: the account has MFA enabled"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/switch-tenant": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "switch_tenant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SwitchTenantBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "401": {},
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/customer-packages/{id}": {
+      "get": {
+        "tags": [
+          "packages"
+        ],
+        "operationId": "read_package",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerPackageDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/customer-packages/{id}/cancel": {
+      "post": {
+        "tags": [
+          "packages"
+        ],
+        "operationId": "cancel_package",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per cancellation; a retry replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PackageCancel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Cancelled, sessions → 0, refund recorded (AC7.2)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerPackageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required"
+          },
+          "403": {
+            "description": "auth.forbidden (managers, AC7.3)"
+          },
+          "404": {},
+          "409": {
+            "description": "package.cancelled"
+          },
+          "422": {
+            "description": "refund.exceeds_paid (AC7.4), validation_failed: reason / refund_method"
+          }
+        }
+      }
+    },
+    "/api/v1/customer-packages/{id}/extend": {
+      "post": {
+        "tags": [
+          "packages"
+        ],
+        "operationId": "extend_package",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per extension; a retry replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PackageExtend"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "New expiry, audited with the reason (AC7.1)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerPackageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required, precondition.if_match_required"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden (managers, AC7.3)"
+          },
+          "404": {},
+          "409": {
+            "description": "package.cancelled"
+          },
+          "412": {
+            "description": "conflict.stale_version"
+          },
+          "422": {
+            "description": "validation_failed: reason required, expires_on not_later / in_past / package_has_no_expiry"
+          }
+        }
+      }
+    },
+    "/api/v1/customer-packages/{id}/usage": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "package_usage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageUsage"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs customer.read + visit.read"
+          },
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/customers": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "operationId": "search",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "≥ 3 digits of the phone, or ≥ 2 letters of the name (accents optional). Empty = most recent.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomerSummaryDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "422": {}
+        }
+      },
+      "post": {
+        "tags": [
+          "customers"
+        ],
+        "operationId": "create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerDto"
+                }
+              }
+            }
+          },
+          "403": {},
+          "409": {
+            "description": "customer.phone_taken with existing_id"
+          },
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/customers/inactive": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "inactive_customers",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "description": "Not seen for at least this many days (1–365, default 7).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "description": "Default `all`.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/InactiveScope"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "Default `all`.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/CustomerKindFilter"
+            }
+          },
+          {
+            "name": "follow_up",
+            "in": "query",
+            "description": "Default `all`.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/FollowUpFilter"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Default `due` when `follow_up` is `due` or `scheduled`, else `absent`.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/InactiveSort"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Customer name (accent-insensitive, ≥ 2 characters) or phone digits (≥ 3).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1–100, default 20.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InactivePage"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs customer.read + visit.read"
+          },
+          "422": {
+            "description": "validation_failed: days out_of_range, q too_short / too_long, cursor invalid, limit out_of_range"
+          }
+        }
+      }
+    },
+    "/api/v1/customers/phone-check": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "operationId": "phone_check",
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "query",
+            "description": "The number as typed (any spacing, 0… or +84…). Normalised like `POST /customers`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "valid=false while the number is incomplete; taken → existing_id + full_name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneCheckDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: no customer.read"
+          },
+          "422": {
+            "description": "validation_failed: phone too_long"
+          }
+        }
+      }
+    },
+    "/api/v1/customers/{id}": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "operationId": "read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "404": {}
+        }
+      },
+      "put": {
+        "tags": [
+          "customers"
+        ],
+        "operationId": "update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerDto"
+                }
+              }
+            }
+          },
+          "403": {},
+          "404": {},
+          "409": {},
+          "412": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/customers/{id}/follow-ups": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "operationId": "list_follow_ups",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FollowUpList"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: no customer.read"
+          },
+          "404": {}
+        }
+      },
+      "post": {
+        "tags": [
+          "customers"
+        ],
+        "operationId": "record_follow_up",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per follow-up form; a retry replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FollowUpCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Recorded (append-only), audited as customer.follow_up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FollowUpDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required / key_invalid"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: no customer.follow_up"
+          },
+          "404": {},
+          "422": {
+            "description": "validation_failed: contacted_on in_future / too_old, next_follow_up_on before_contact / too_far, note too_long, body invalid; idempotency.key_reuse_mismatch"
+          }
+        }
+      }
+    },
+    "/api/v1/customers/{id}/health-note": {
+      "put": {
+        "tags": [
+          "customers"
+        ],
+        "operationId": "set_health_note",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HealthNoteWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerDto"
+                }
+              }
+            }
+          },
+          "403": {},
+          "404": {},
+          "412": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/customers/{id}/history": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "customer_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Service, category, package or staff name (accent-insensitive, 2–100 characters).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "Only events of this kind.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/HistoryKind"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "First business day of the event (inclusive).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Last business day of the event (inclusive).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1–100, default 20.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryPage"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs customer.read + visit.read + sale.read"
+          },
+          "404": {},
+          "422": {
+            "description": "validation_failed: q too_short / too_long, from after_to, cursor invalid, limit out_of_range"
+          }
+        }
+      }
+    },
+    "/api/v1/customers/{id}/packages": {
+      "get": {
+        "tags": [
+          "packages"
+        ],
+        "operationId": "list_customer_packages",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomerPackageDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/customers/{id}/summary": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "customer_summary",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerStats"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs customer.read + visit.read + sale.read"
+          },
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "me",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "401": {}
+        }
+      }
+    },
+    "/api/v1/opening-balances": {
+      "post": {
+        "tags": [
+          "packages"
+        ],
+        "operationId": "import_opening_balance",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per import form; a retry with the same key replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpeningBalanceCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Packages created without a sale or payment. Deprecated: owner-only until the import screen is gone; the team migrates with `app import-paper-book`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpeningBalanceDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required / key_invalid"
+          },
+          "401": {},
+          "403": {},
+          "404": {
+            "description": "customer or plan not in this spa"
+          },
+          "409": {
+            "description": "customer.phone_taken with existing_id"
+          },
+          "422": {
+            "description": "validation_failed (fields prefixed customer. / packages[j].), idempotency.key_reuse_mismatch"
+          }
+        }
+      }
+    },
+    "/api/v1/package-plans": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "list_package_plans",
+        "parameters": [
+          {
+            "name": "active",
+            "in": "query",
+            "description": "Only items currently on sale (default true).",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PackagePlanDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {}
+        }
+      },
+      "post": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "create_plan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackagePlanDto"
+                }
+              }
+            }
+          },
+          "403": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/package-plans/{id}": {
+      "put": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "update_plan",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "version from the last read",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackagePlanDto"
+                }
+              }
+            }
+          },
+          "403": {},
+          "404": {},
+          "412": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/packages": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "list_packages",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Derived status; default all.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/PackageStatusFilter"
+            }
+          },
+          {
+            "name": "expiring_within_days",
+            "in": "query",
+            "description": "1–365. Set: only active packages expiring within that many days, soonest first.\nAlso the window of `counts.expiring_soon` (default 30).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Customer name or package name (accent-insensitive, ≥ 2 characters), or phone digits (≥ 3).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1–100, default 20.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageOverviewPage"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: no customer.read"
+          },
+          "422": {
+            "description": "validation_failed: q too_short / too_long, expiring_within_days out_of_range, cursor invalid, limit out_of_range"
+          }
+        }
+      }
+    },
+    "/api/v1/reports/daily": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "daily_report",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "description": "Business day `YYYY-MM-DD` (spa time zone); default today.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Counts; `revenue` and `net_revenue` only with report.revenue.read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyReport"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: no report.read"
+          },
+          "422": {
+            "description": "validation_failed: date out_of_range"
+          }
+        }
+      }
+    },
+    "/api/v1/reports/ledger": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "ledger",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Default today.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Default `from`; at most 92 days after `from`.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1–100, default 20.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerPage"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: no report.revenue.read"
+          },
+          "422": {
+            "description": "validation_failed: from after_to, to range_too_long (> 92 days), cursor invalid, limit out_of_range"
+          }
+        }
+      }
+    },
+    "/api/v1/reports/range": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "range_report",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "First business day; default `to` − 6 days. Not with `preset`.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Last business day (inclusive); default today. Not with `preset`. Span: at most 366 days\nfor `day` / `week`, at most 732 days (2 years) for `month` / `year`.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "granularity",
+            "in": "query",
+            "description": "Bucket size of `series`; default `day`, or the preset's default.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Granularity"
+            }
+          },
+          {
+            "name": "preset",
+            "in": "query",
+            "description": "A ready-made period instead of `from` / `to`.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/RangePreset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Money fields only with report.revenue.read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RangeReport"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: no report.read"
+          },
+          "422": {
+            "description": "validation_failed: from after_to, to range_too_long (> 366 days by day/week, > 732 days by month/year), preset conflicts_with_range"
+          }
+        }
+      }
+    },
+    "/api/v1/sales": {
+      "post": {
+        "tags": [
+          "sales"
+        ],
+        "operationId": "create_sale",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per sale attempt; a retry with the same key replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaleCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaleDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required / key_invalid"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden / discount.limit_exceeded"
+          },
+          "404": {
+            "description": "customer or plan not in this spa"
+          },
+          "422": {
+            "description": "validation_failed, payment.amount_mismatch, discount.reason_required, staff.inactive, idempotency.key_reuse_mismatch"
+          }
+        }
+      }
+    },
+    "/api/v1/sales/{id}": {
+      "get": {
+        "tags": [
+          "sales"
+        ],
+        "operationId": "read_sale",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaleDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/sales/{id}/void": {
+      "post": {
+        "tags": [
+          "sales"
+        ],
+        "operationId": "void_sale",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per void attempt; a retry replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Voided: every payment has a reversal, its packages are cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaleDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required"
+          },
+          "403": {
+            "description": "auth.forbidden / day.locked (manager, a day before today)"
+          },
+          "404": {},
+          "409": {
+            "description": "sale.voided, sale.has_used_sessions (AC6.4), sale.void_via_visit, package.cancelled"
+          },
+          "422": {
+            "description": "validation_failed: reason required"
+          }
+        }
+      }
+    },
+    "/api/v1/service-categories": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "list_categories",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceCategoryDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {}
+        }
+      },
+      "post": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "create_category",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceCategoryDto"
+                }
+              }
+            }
+          },
+          "403": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/service-categories/{id}": {
+      "put": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "update_category",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceCategoryDto"
+                }
+              }
+            }
+          },
+          "403": {},
+          "404": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/services": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "list_services",
+        "parameters": [
+          {
+            "name": "active",
+            "in": "query",
+            "description": "Only items currently on sale (default true).",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {}
+        }
+      },
+      "post": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "create_service",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceDto"
+                }
+              }
+            }
+          },
+          "403": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/services/{id}": {
+      "put": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "update_service",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "version from the last read",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceDto"
+                }
+              }
+            }
+          },
+          "403": {},
+          "404": {},
+          "412": {
+            "description": "conflict.stale_version"
+          },
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/staff": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "list_staff",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Default `active` (pickers only offer people still working here).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "left",
+                "all"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StaffDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {}
+        }
+      }
+    },
+    "/api/v1/visits": {
+      "get": {
+        "tags": [
+          "visits"
+        ],
+        "operationId": "list_visits",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "description": "Business day `YYYY-MM-DD`; default today.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VisitDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {}
+        }
+      },
+      "post": {
+        "tags": [
+          "visits"
+        ],
+        "operationId": "create_visit",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per visit being recorded; a retry with the same key replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisitCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required / key_invalid"
+          },
+          "401": {},
+          "403": {},
+          "404": {
+            "description": "customer or service not in this spa"
+          },
+          "409": {
+            "description": "package.no_sessions_left / package.expired / package.cancelled"
+          },
+          "422": {
+            "description": "validation_failed, payment.amount_mismatch, staff.inactive, package.item_not_found, price.gender_required, price.variant_not_available, visit.check_in_in_future, visit.check_in_not_today, idempotency.key_reuse_mismatch"
+          }
+        }
+      }
+    },
+    "/api/v1/visits/{id}": {
+      "get": {
+        "tags": [
+          "visits"
+        ],
+        "operationId": "read_visit",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "404": {}
+        }
+      },
+      "patch": {
+        "tags": [
+          "visits"
+        ],
+        "operationId": "update_visit",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisitUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "auth.forbidden / day.locked"
+          },
+          "404": {},
+          "409": {
+            "description": "visit.voided"
+          },
+          "412": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/visits/{id}/void": {
+      "post": {
+        "tags": [
+          "visits"
+        ],
+        "operationId": "void_visit",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per void attempt; a retry replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Voided: sessions given back, one-off payments reversed (AC6.1)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required"
+          },
+          "403": {
+            "description": "auth.forbidden / day.locked (manager, a day before today, AC6.3)"
+          },
+          "404": {},
+          "409": {
+            "description": "visit.voided (second void), package.cancelled (its package was cancelled since)"
+          },
+          "422": {
+            "description": "validation_failed: reason required (AC6.2)"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CategoryCreate": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CategoryUpdate": {
+        "type": "object",
+        "required": [
+          "name",
+          "sort_order"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CustomerCreate": {
+        "type": "object",
+        "required": [
+          "full_name",
+          "phone"
+        ],
+        "properties": {
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "birth_year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "health_note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Requires `customer.health_notes.write`."
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": "string"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "CustomerDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "full_name",
+          "phone",
+          "phone_e164",
+          "version",
+          "created_at"
+        ],
+        "properties": {
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "birth_year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "health_note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Present only for callers with `customer.health_notes.read`; null = no note."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": "string"
+          },
+          "phone_e164": {
+            "type": "string"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Send back as `If-Match` when updating."
+          }
+        }
+      },
+      "CustomerKind": {
+        "type": "string",
+        "description": "What kind of customer a re-engagement row is.",
+        "enum": [
+          "package",
+          "one_off"
+        ]
+      },
+      "CustomerKindFilter": {
+        "type": "string",
+        "description": "`GET /customers/inactive?kind=`.",
+        "enum": [
+          "all",
+          "package",
+          "one_off"
+        ]
+      },
+      "CustomerPackageDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "customer_id",
+          "name",
+          "sold_price",
+          "starts_on",
+          "status",
+          "sessions_total",
+          "sessions_remaining",
+          "version",
+          "created_at",
+          "items"
+        ],
+        "properties": {
+          "cancel_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cancelled_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Set when the package was cancelled (a voided sale or a cancellation with refund)."
+          },
+          "closer_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "closer_staff_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expires_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "gift_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomerPackageItemDto"
+            }
+          },
+          "name": {
+            "type": "string",
+            "description": "Plan name when sold (snapshot)."
+          },
+          "plan_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "refund": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RefundDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sale_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The sale it was sold in. `null` for a package migrated from the paper books, which\notherwise looks like any other package (EM 2026-11-05: no \"sổ cũ\" label in the product)."
+          },
+          "sessions_remaining": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sessions_total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sold_price": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Price paid after discount, in đồng."
+          },
+          "starts_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PackageStatusDto",
+            "description": "Derived on read: cancelled → exhausted → expired → active."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "CustomerPackageItemDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "service_id",
+          "name",
+          "category_name",
+          "sessions_purchased",
+          "sessions_bonus",
+          "sessions_total",
+          "sessions_remaining",
+          "per_session_value"
+        ],
+        "properties": {
+          "category_name": {
+            "type": "string",
+            "description": "Current catalog category of the service (e.g. \"Chăm sóc cổ vai gáy\")."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "Service name when sold (snapshot)."
+          },
+          "per_session_value": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Value of one purchased session in đồng (bonus sessions are worth 0)."
+          },
+          "service_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sessions_bonus": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sessions_purchased": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sessions_remaining": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sessions_total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "CustomerStats": {
+        "type": "object",
+        "description": "`GET /customers/{id}/summary`.",
+        "required": [
+          "customer_id",
+          "visit_count",
+          "voided_visit_count",
+          "sessions_used",
+          "paid",
+          "voided",
+          "refunded",
+          "net_spent",
+          "packages",
+          "sessions_remaining"
+        ],
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "days_since_last_visit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Days from the last completed visit to today."
+          },
+          "first_visit_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "last_visit_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "net_spent": {
+            "type": "integer",
+            "format": "int64",
+            "description": "paid − voided − refunded."
+          },
+          "packages": {
+            "$ref": "#/components/schemas/PackageCounts"
+          },
+          "paid": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Money received from this customer (before voids and refunds)."
+          },
+          "refunded": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sessions_remaining": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Remaining sessions across active packages."
+          },
+          "sessions_used": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "visit_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Completed visits."
+          },
+          "voided": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "voided_visit_count": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "CustomerSummaryDto": {
+        "type": "object",
+        "description": "Search hit for the counter: never contains notes.",
+        "required": [
+          "id",
+          "full_name",
+          "phone"
+        ],
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "phone": {
+            "type": "string",
+            "description": "National display form, e.g. \"0905 123 456\"."
+          }
+        }
+      },
+      "CustomerUpdate": {
+        "type": "object",
+        "required": [
+          "full_name",
+          "phone"
+        ],
+        "properties": {
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "birth_year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": "string"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "DailyReport": {
+        "type": "object",
+        "description": "`GET /reports/daily`.",
+        "required": [
+          "date",
+          "counts",
+          "technicians",
+          "compare"
+        ],
+        "properties": {
+          "compare": {
+            "$ref": "#/components/schemas/DayComparison"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/DayCounts"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "revenue": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Revenue",
+                "description": "Only with `report.revenue.read`; absent otherwise."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "technicians": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TechnicianDay"
+            },
+            "description": "Technicians who worked that day, most visits first."
+          }
+        }
+      },
+      "DayComparison": {
+        "type": "object",
+        "required": [
+          "yesterday",
+          "same_weekday_last_week"
+        ],
+        "properties": {
+          "same_weekday_last_week": {
+            "$ref": "#/components/schemas/DayHeadline"
+          },
+          "yesterday": {
+            "$ref": "#/components/schemas/DayHeadline"
+          }
+        }
+      },
+      "DayCounts": {
+        "type": "object",
+        "description": "Operational counts (no money): visible with `report.read`.",
+        "required": [
+          "customers",
+          "visits",
+          "voided_visits",
+          "sessions_used",
+          "one_off_services",
+          "packages_sold"
+        ],
+        "properties": {
+          "customers": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Distinct customers with at least one completed visit."
+          },
+          "one_off_services": {
+            "type": "integer",
+            "format": "int64",
+            "description": "One-off services performed in completed visits."
+          },
+          "packages_sold": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Packages sold in sales that are not voided."
+          },
+          "sessions_used": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Package sessions taken by completed visits."
+          },
+          "visits": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Completed visits (voided ones are in `voided_visits`)."
+          },
+          "voided_visits": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "DayHeadline": {
+        "type": "object",
+        "description": "The headline numbers of another day, for \"so với hôm qua / cùng thứ tuần trước\".",
+        "required": [
+          "date",
+          "customers",
+          "visits",
+          "sessions_used",
+          "packages_sold"
+        ],
+        "properties": {
+          "customers": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "net_revenue": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "`revenue.net.total` of that day; only with `report.revenue.read`."
+          },
+          "packages_sold": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sessions_used": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "visits": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "DiscountCreate": {
+        "type": "object",
+        "required": [
+          "amount"
+        ],
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "đồng, ≤ subtotal."
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required when `amount` > 0."
+          }
+        }
+      },
+      "FollowUpChannelDto": {
+        "type": "string",
+        "enum": [
+          "phone",
+          "zalo",
+          "in_person",
+          "other"
+        ]
+      },
+      "FollowUpCreate": {
+        "type": "object",
+        "description": "Body of `POST /customers/{id}/follow-ups`. The recorder is the signed-in user.",
+        "required": [
+          "channel",
+          "outcome"
+        ],
+        "properties": {
+          "channel": {
+            "$ref": "#/components/schemas/FollowUpChannelDto"
+          },
+          "contacted_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Day of the contact; default today (spa time zone). Not in the future, at most 30 days back."
+          },
+          "next_follow_up_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "When to try again (≥ `contacted_on`, ≤ 365 days after it). Omitted: `no_answer` → contact\nday + 3; other outcomes → none."
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "≤ 500 characters. A contact note, not a health note."
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/FollowUpOutcomeDto"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FollowUpDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "customer_id",
+          "contacted_on",
+          "channel",
+          "outcome",
+          "by_user_id",
+          "by_name",
+          "created_at"
+        ],
+        "properties": {
+          "by_name": {
+            "type": "string"
+          },
+          "by_user_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The user who recorded it."
+          },
+          "channel": {
+            "$ref": "#/components/schemas/FollowUpChannelDto"
+          },
+          "contacted_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "next_follow_up_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/FollowUpOutcomeDto"
+          }
+        }
+      },
+      "FollowUpFilter": {
+        "type": "string",
+        "description": "`GET /customers/inactive?follow_up=`, judged on the follow-ups of the current absence\n(recorded on or after `last_seen_on`; a visit since then starts a new absence).",
+        "enum": [
+          "all",
+          "due",
+          "not_contacted",
+          "scheduled"
+        ]
+      },
+      "FollowUpList": {
+        "type": "object",
+        "description": "`GET /customers/{id}/follow-ups`: newest contact first.",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean",
+            "description": "More than 100 exist (only the newest are listed)."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FollowUpDto"
+            },
+            "description": "At most 100."
+          }
+        }
+      },
+      "FollowUpOutcomeDto": {
+        "type": "string",
+        "enum": [
+          "will_come",
+          "not_interested",
+          "no_answer",
+          "other"
+        ]
+      },
+      "GenderDto": {
+        "type": "string",
+        "enum": [
+          "female",
+          "male"
+        ]
+      },
+      "Granularity": {
+        "type": "string",
+        "enum": [
+          "day",
+          "week",
+          "month",
+          "year"
+        ]
+      },
+      "HealthNoteWrite": {
+        "type": "object",
+        "properties": {
+          "health_note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "null or empty clears the note."
+          }
+        },
+        "additionalProperties": false
+      },
+      "HistoryCancellation": {
+        "type": "object",
+        "required": [
+          "customer_package_id",
+          "package_name",
+          "reason"
+        ],
+        "properties": {
+          "customer_package_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "package_name": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "refund": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/HistoryRefund"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HistoryEvent": {
+        "type": "object",
+        "description": "One entry of a customer's timeline; exactly one of the detail fields is set, per `kind`.",
+        "required": [
+          "kind",
+          "at",
+          "business_date"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "cancellation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/HistoryCancellation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/HistoryKind"
+          },
+          "purchase": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/HistoryPurchase"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "visit": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/HistoryVisit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "void": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/HistoryVoid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HistoryKind": {
+        "type": "string",
+        "enum": [
+          "visit",
+          "purchase",
+          "visit_voided",
+          "purchase_voided",
+          "package_cancelled"
+        ]
+      },
+      "HistoryPage": {
+        "type": "object",
+        "description": "`GET /customers/{id}/history`: newest first.",
+        "required": [
+          "customer_id",
+          "events"
+        ],
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoryEvent"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "HistoryPurchase": {
+        "type": "object",
+        "required": [
+          "sale_id",
+          "voided",
+          "lines",
+          "subtotal",
+          "discount_amount",
+          "total",
+          "paid"
+        ],
+        "properties": {
+          "closer_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "discount_amount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "discount_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoryPurchaseLine"
+            }
+          },
+          "paid": {
+            "$ref": "#/components/schemas/MethodSplit",
+            "description": "Money received (before any void)."
+          },
+          "sale_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "subtotal": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "void_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "voided": {
+            "type": "boolean"
+          },
+          "voided_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "HistoryPurchaseLine": {
+        "type": "object",
+        "required": [
+          "description",
+          "qty",
+          "line_total"
+        ],
+        "properties": {
+          "customer_package_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string"
+          },
+          "line_total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "HistoryRefund": {
+        "type": "object",
+        "required": [
+          "amount",
+          "method",
+          "business_date"
+        ],
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "method": {
+            "type": "string"
+          }
+        }
+      },
+      "HistoryVisit": {
+        "type": "object",
+        "required": [
+          "id",
+          "voided",
+          "check_in_at",
+          "lines",
+          "paid"
+        ],
+        "properties": {
+          "check_in_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoryVisitLine"
+            }
+          },
+          "paid": {
+            "$ref": "#/components/schemas/MethodSplit",
+            "description": "Money received for the one-off lines (before any void)."
+          },
+          "void_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "voided": {
+            "type": "boolean"
+          },
+          "voided_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "HistoryVisitLine": {
+        "type": "object",
+        "required": [
+          "service_name",
+          "category_name",
+          "source",
+          "qty",
+          "staff_id",
+          "staff_name",
+          "amount"
+        ],
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Price of a one-off line (0 for a package session)."
+          },
+          "category_name": {
+            "type": "string",
+            "description": "Current catalog category of the service."
+          },
+          "customer_package_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The package the session came from (`source = package`)."
+          },
+          "package_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "service_name": {
+            "type": "string"
+          },
+          "sessions_left_after": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Sessions left in that package item right after this visit."
+          },
+          "source": {
+            "$ref": "#/components/schemas/LineSource"
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "staff_name": {
+            "type": "string"
+          }
+        }
+      },
+      "HistoryVoid": {
+        "type": "object",
+        "required": [
+          "id",
+          "reason",
+          "reversed",
+          "sessions_restored"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The voided visit or sale."
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reversed": {
+            "$ref": "#/components/schemas/MethodSplit",
+            "description": "Money given back by reversal (positive amounts)."
+          },
+          "sessions_restored": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Package sessions put back (visit voids)."
+          }
+        }
+      },
+      "InactiveCustomer": {
+        "type": "object",
+        "required": [
+          "customer_id",
+          "full_name",
+          "phone",
+          "kind",
+          "last_seen_on",
+          "days_absent",
+          "active_packages",
+          "sessions_remaining"
+        ],
+        "properties": {
+          "active_packages": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "days_absent": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CustomerKind"
+          },
+          "last_follow_up": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LastFollowUp",
+                "description": "Latest follow-up since `last_seen_on`; `null` = not contacted in this absence."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_seen_on": {
+            "type": "string",
+            "format": "date",
+            "description": "Latest of: last completed visit, last sale not voided, last package start."
+          },
+          "last_visit_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "next_follow_up_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "The date that follow-up planned for the next try (`null` = none planned)."
+          },
+          "phone": {
+            "type": "string"
+          },
+          "sessions_remaining": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "InactivePage": {
+        "type": "object",
+        "description": "`GET /customers/inactive`: longest absence first.",
+        "required": [
+          "days",
+          "items"
+        ],
+        "properties": {
+          "days": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InactiveCustomer"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "InactiveScope": {
+        "type": "string",
+        "enum": [
+          "with_sessions",
+          "all"
+        ]
+      },
+      "InactiveSort": {
+        "type": "string",
+        "description": "`GET /customers/inactive?sort=`.",
+        "enum": [
+          "due",
+          "absent"
+        ]
+      },
+      "KindSplit": {
+        "type": "object",
+        "description": "One amount split like the paper revenue book: package sales vs one-off services.",
+        "required": [
+          "package",
+          "one_off"
+        ],
+        "properties": {
+          "one_off": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "package": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "LastFollowUp": {
+        "type": "object",
+        "description": "The latest follow-up of the current absence.",
+        "required": [
+          "on",
+          "channel",
+          "outcome",
+          "by"
+        ],
+        "properties": {
+          "by": {
+            "type": "string",
+            "description": "Name of the user who recorded it."
+          },
+          "channel": {
+            "$ref": "#/components/schemas/FollowUpChannelDto"
+          },
+          "on": {
+            "type": "string",
+            "format": "date"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/FollowUpOutcomeDto"
+          }
+        }
+      },
+      "LedgerDay": {
+        "type": "object",
+        "description": "Daily subtotal of the book, for every day of the range (not only the current page).",
+        "required": [
+          "date",
+          "bank_transfer",
+          "cash",
+          "unpaid",
+          "total",
+          "entries"
+        ],
+        "properties": {
+          "bank_transfer": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cash": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "entries": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "bank_transfer + cash: equals `revenue.net.total` of `GET /reports/daily`."
+          },
+          "unpaid": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "LedgerEntry": {
+        "type": "string",
+        "enum": [
+          "sale",
+          "void",
+          "refund"
+        ]
+      },
+      "LedgerPage": {
+        "type": "object",
+        "description": "`GET /reports/ledger`.",
+        "required": [
+          "from",
+          "to",
+          "rows",
+          "days"
+        ],
+        "properties": {
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LedgerDay"
+            },
+            "description": "Days of the range that have entries, in order."
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` for the next rows; `null` on the last page."
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LedgerRow"
+            },
+            "description": "Book order: day, then time."
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
+      "LedgerRow": {
+        "type": "object",
+        "description": "One line of the \"sổ theo dõi doanh thu hằng ngày\". Outgoing money is negative.",
+        "required": [
+          "id",
+          "entry",
+          "business_date",
+          "at",
+          "customer_id",
+          "customer_name",
+          "kind",
+          "bank_transfer",
+          "cash",
+          "unpaid",
+          "voided"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "bank_transfer": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "cash": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "customer_gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "customer_name": {
+            "type": "string"
+          },
+          "entry": {
+            "$ref": "#/components/schemas/LedgerEntry"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The sale id (`sale`, `void`) or the refund id (`refund`)."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SaleKind"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Discount reason, void reason or refund reason."
+          },
+          "one_off": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "\"Dịch vụ 1 lần\" column: the one-off services, comma-separated."
+          },
+          "package": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "\"Liệu trình\" column: the packages, comma-separated."
+          },
+          "unpaid": {
+            "type": "integer",
+            "format": "int64",
+            "description": "\"Chưa thanh toán\": total − received (always 0 in R1, which collects in full)."
+          },
+          "voided": {
+            "type": "boolean",
+            "description": "The sale was voided later (its `void` row may be on another day)."
+          }
+        }
+      },
+      "LineSource": {
+        "type": "string",
+        "enum": [
+          "package",
+          "one_off"
+        ]
+      },
+      "LoginBody": {
+        "type": "object",
+        "required": [
+          "phone",
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "LoginNext": {
+        "type": "string",
+        "description": "What the browser must do after the password step.",
+        "enum": [
+          "done",
+          "mfa_verify",
+          "mfa_enroll"
+        ]
+      },
+      "LoginResponse": {
+        "type": "object",
+        "description": "Body of a successful password step. `me` is only present once fully signed in: a session that\nstill owes a second factor learns nothing about spas or permissions.",
+        "required": [
+          "next"
+        ],
+        "properties": {
+          "me": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Me"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next": {
+            "$ref": "#/components/schemas/LoginNext"
+          }
+        }
+      },
+      "Me": {
+        "type": "object",
+        "description": "Body of `GET /me` and of a successful login.",
+        "required": [
+          "user",
+          "tenants",
+          "permissions"
+        ],
+        "properties": {
+          "active_tenant": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TenantSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tenants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TenantSummary"
+            }
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserSummary"
+          }
+        }
+      },
+      "MethodSplit": {
+        "type": "object",
+        "description": "One amount split by how the money moved.",
+        "required": [
+          "cash",
+          "bank_transfer",
+          "total"
+        ],
+        "properties": {
+          "bank_transfer": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cash": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "cash + bank_transfer."
+          }
+        }
+      },
+      "MfaCodeBody": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "6-digit TOTP code, or (for `verify`) one of the recovery codes."
+          }
+        },
+        "additionalProperties": false
+      },
+      "MfaEnrolled": {
+        "type": "object",
+        "description": "Result of confirming enrollment: signed in, plus the recovery codes (returned this once only).",
+        "required": [
+          "me",
+          "recovery_codes"
+        ],
+        "properties": {
+          "me": {
+            "$ref": "#/components/schemas/Me"
+          },
+          "recovery_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MfaEnrollment": {
+        "type": "object",
+        "description": "Enrollment material, shown only to the pending session that started enrollment.",
+        "required": [
+          "otpauth_uri",
+          "manual_key"
+        ],
+        "properties": {
+          "manual_key": {
+            "type": "string",
+            "description": "The same secret in base32, for typing into an authenticator app by hand."
+          },
+          "otpauth_uri": {
+            "type": "string",
+            "description": "`otpauth://totp/...` URI; the client renders it as a QR code."
+          }
+        }
+      },
+      "OpeningBalanceCreate": {
+        "type": "object",
+        "required": [
+          "packages"
+        ],
+        "properties": {
+          "customer": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CustomerCreate",
+                "description": "A new customer profile, created in the same transaction (needs `customer.write`)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "customer_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "An existing customer of this spa. Send exactly one of `customer_id` and `customer`."
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpeningPackageCreate"
+            },
+            "description": "1–10 packages."
+          }
+        },
+        "additionalProperties": false
+      },
+      "OpeningBalanceDto": {
+        "type": "object",
+        "required": [
+          "customer_id",
+          "customer_created",
+          "customer_packages"
+        ],
+        "properties": {
+          "customer_created": {
+            "type": "boolean",
+            "description": "True when `customer` was sent and a new profile was created."
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "customer_packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomerPackageDto"
+            }
+          }
+        }
+      },
+      "OpeningItemCreate": {
+        "type": "object",
+        "required": [
+          "service_id",
+          "sessions_purchased",
+          "sessions_remaining"
+        ],
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sessions_bonus": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Bonus sessions in the original package (default 0).",
+            "minimum": 0
+          },
+          "sessions_purchased": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Paid sessions in the original package.",
+            "minimum": 0
+          },
+          "sessions_remaining": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Sessions still unused today, ≤ purchased + bonus.",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "OpeningPackageCreate": {
+        "type": "object",
+        "required": [
+          "sold_price",
+          "starts_on",
+          "items"
+        ],
+        "properties": {
+          "expires_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "gift_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpeningItemCreate"
+            }
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Package name; defaults to the plan's name. Required without a plan."
+          },
+          "package_plan_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The current plan this old package matches, if any (reference only: items and price are\nwhat the paper book says)."
+          },
+          "sold_price": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Price the customer originally paid, in đồng (for the per-session value; not revenue)."
+          },
+          "starts_on": {
+            "type": "string",
+            "format": "date",
+            "description": "Original registration date (not in the future)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "PackageCancel": {
+        "type": "object",
+        "description": "Body of `POST /customer-packages/{id}/cancel`.",
+        "properties": {
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why (required, 1–500 characters); audited."
+          },
+          "refund_amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "đồng paid back now, 0 = no refund. At most what the customer paid for this package\n(`sold_price`), else `422 refund.exceeds_paid`."
+          },
+          "refund_method": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RefundMethodDto",
+                "description": "Required when `refund_amount` > 0."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "PackageCounts": {
+        "type": "object",
+        "required": [
+          "active",
+          "expired",
+          "exhausted",
+          "cancelled"
+        ],
+        "properties": {
+          "active": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cancelled": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "exhausted": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expired": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "PackageExtend": {
+        "type": "object",
+        "description": "Body of `POST /customer-packages/{id}/extend` (with `If-Match`).",
+        "required": [
+          "expires_on"
+        ],
+        "properties": {
+          "expires_on": {
+            "type": "string",
+            "format": "date",
+            "description": "The new last day of validity: later than the current one and not in the past."
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why (required, 1–500 characters); audited."
+          }
+        },
+        "additionalProperties": false
+      },
+      "PackageOverviewCounts": {
+        "type": "object",
+        "required": [
+          "active",
+          "expiring_soon",
+          "expired",
+          "exhausted",
+          "cancelled"
+        ],
+        "properties": {
+          "active": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cancelled": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "exhausted": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expired": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expiring_soon": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Active packages expiring within `expiring_within_days` (default 30)."
+          }
+        }
+      },
+      "PackageOverviewPage": {
+        "type": "object",
+        "description": "`GET /packages`.",
+        "required": [
+          "items",
+          "counts",
+          "expiring_within_days"
+        ],
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/PackageOverviewCounts",
+            "description": "Over the whole spa (or the `q` match), ignoring `status` and the cursor."
+          },
+          "expiring_within_days": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The window `counts.expiring_soon` used.",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PackageOverviewRow"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PackageOverviewRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "customer_id",
+          "customer_name",
+          "customer_phone",
+          "name",
+          "status",
+          "sessions_total",
+          "sessions_remaining",
+          "starts_on"
+        ],
+        "properties": {
+          "cancelled_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "customer_gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "customer_name": {
+            "type": "string"
+          },
+          "customer_phone": {
+            "type": "string"
+          },
+          "days_to_expiry": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Days from today to `expires_on` (negative once expired)."
+          },
+          "expires_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_used_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Last completed visit that used this package."
+          },
+          "name": {
+            "type": "string"
+          },
+          "sessions_remaining": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sessions_total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "starts_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PackageStatusDto"
+          }
+        }
+      },
+      "PackagePlanDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "price",
+          "active",
+          "version",
+          "items"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "gift_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PackagePlanItemDto"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "price": {
+            "type": "integer",
+            "format": "int64",
+            "description": "đồng"
+          },
+          "validity_months": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Send back as `If-Match` when updating."
+          }
+        }
+      },
+      "PackagePlanItemDto": {
+        "type": "object",
+        "required": [
+          "service_id",
+          "sessions",
+          "bonus_sessions"
+        ],
+        "properties": {
+          "bonus_sessions": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "service_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sessions": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "PackageStatusDto": {
+        "type": "string",
+        "enum": [
+          "active",
+          "expired",
+          "exhausted",
+          "cancelled"
+        ]
+      },
+      "PackageStatusFilter": {
+        "type": "string",
+        "enum": [
+          "active",
+          "expired",
+          "exhausted",
+          "cancelled"
+        ]
+      },
+      "PackageUsage": {
+        "type": "object",
+        "description": "`GET /customer-packages/{id}/usage`: one page of the paper \"sổ theo dõi liệu trình\".",
+        "required": [
+          "package",
+          "uses"
+        ],
+        "properties": {
+          "package": {
+            "$ref": "#/components/schemas/CustomerPackageDto"
+          },
+          "uses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PackageUse"
+            },
+            "description": "Oldest first, like the paper page (STT 1, 2, 3…)."
+          }
+        }
+      },
+      "PackageUse": {
+        "type": "object",
+        "required": [
+          "visit_id",
+          "visit_line_id",
+          "business_date",
+          "check_in_at",
+          "item_id",
+          "service_name",
+          "category_name",
+          "qty",
+          "staff_id",
+          "staff_name",
+          "voided"
+        ],
+        "properties": {
+          "business_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "category_name": {
+            "type": "string",
+            "description": "Current catalog category of the service."
+          },
+          "check_in_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "service_name": {
+            "type": "string"
+          },
+          "sessions_left_after": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "staff_name": {
+            "type": "string"
+          },
+          "visit_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "visit_line_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "voided": {
+            "type": "boolean",
+            "description": "The visit was voided and its sessions were put back."
+          }
+        }
+      },
+      "PaymentCreate": {
+        "type": "object",
+        "required": [
+          "method",
+          "amount"
+        ],
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "đồng, > 0."
+          },
+          "method": {
+            "$ref": "#/components/schemas/PaymentMethodDto"
+          },
+          "reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PaymentDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "method",
+          "amount",
+          "paid_at"
+        ],
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/PaymentKindDto"
+          },
+          "method": {
+            "$ref": "#/components/schemas/PaymentMethodDto"
+          },
+          "paid_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reversal_of": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "`reversal` rows: the payment this one cancels (same method and amount)."
+          }
+        }
+      },
+      "PaymentKindDto": {
+        "type": "string",
+        "enum": [
+          "payment",
+          "reversal"
+        ]
+      },
+      "PaymentMethodDto": {
+        "type": "string",
+        "enum": [
+          "cash",
+          "bank_transfer"
+        ]
+      },
+      "PhoneCheckDto": {
+        "type": "object",
+        "description": "`GET /customers/phone-check`. `taken` → `existing_id` + `full_name` name the profile to open\ninstead of creating a duplicate (create would answer `409 customer.phone_taken`).",
+        "required": [
+          "valid",
+          "taken"
+        ],
+        "properties": {
+          "existing_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "full_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "taken": {
+            "type": "boolean"
+          },
+          "valid": {
+            "type": "boolean",
+            "description": "The input is a complete, valid phone number (false while still typing)."
+          }
+        }
+      },
+      "PlanItemWrite": {
+        "type": "object",
+        "required": [
+          "service_id",
+          "sessions",
+          "bonus_sessions"
+        ],
+        "properties": {
+          "bonus_sessions": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "service_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sessions": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlanWrite": {
+        "type": "object",
+        "required": [
+          "name",
+          "price",
+          "active",
+          "items"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "gift_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanItemWrite"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "price": {
+            "type": "integer",
+            "format": "int64",
+            "description": "đồng"
+          },
+          "validity_months": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PriceVariant": {
+        "type": "string",
+        "enum": [
+          "all",
+          "female",
+          "male"
+        ]
+      },
+      "PricesInput": {
+        "type": "object",
+        "description": "Prices in đồng: either `all`, or `female` and/or `male` (a missing gender = not offered).",
+        "properties": {
+          "all": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "female": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "male": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RangeBucket": {
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "counts"
+        ],
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/DayCounts",
+            "description": "`customers` = distinct customers inside this bucket."
+          },
+          "end": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day of the bucket (clipped to `to`)."
+          },
+          "net_revenue": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "`revenue.net.total`, flat for line charts; only with `report.revenue.read`."
+          },
+          "revenue": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Revenue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start": {
+            "type": "string",
+            "format": "date",
+            "description": "First day of the bucket (clipped to `from`)."
+          }
+        }
+      },
+      "RangePreset": {
+        "type": "string",
+        "description": "Ready-made periods, computed on the server from the spa's own \"today\" (its time zone), so\nevery device agrees on what \"this month\" is. Each has a default granularity.",
+        "enum": [
+          "last_7_days",
+          "last_30_days",
+          "this_month",
+          "last_month",
+          "this_year",
+          "last_12_months",
+          "last_2_years"
+        ]
+      },
+      "RangeReport": {
+        "type": "object",
+        "description": "`GET /reports/range`.",
+        "required": [
+          "from",
+          "to",
+          "granularity",
+          "totals",
+          "series",
+          "top_services",
+          "top_packages",
+          "technicians"
+        ],
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "granularity": {
+            "$ref": "#/components/schemas/Granularity"
+          },
+          "preset": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RangePreset",
+                "description": "The preset the range came from, if any."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revenue": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Revenue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RangeBucket"
+            },
+            "description": "Every bucket of the range in order, empty ones included (continuous charts)."
+          },
+          "technicians": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TechnicianDay"
+            },
+            "description": "Every technician who worked in the range, most visits first (same counting as the daily\ndashboard: a visit counts once per technician however many lines they did)."
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "top_packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TopPackage"
+            },
+            "description": "Top 10 by packages sold."
+          },
+          "top_services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TopService"
+            },
+            "description": "Top 10 by sessions used + one-off services."
+          },
+          "totals": {
+            "$ref": "#/components/schemas/DayCounts",
+            "description": "Whole range; `customers` = distinct customers over the range."
+          }
+        }
+      },
+      "ReauthBody": {
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Current TOTP (or a recovery code); required when the account has MFA enabled."
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RefundDto": {
+        "type": "object",
+        "description": "Money paid back when the package was cancelled (US7).",
+        "required": [
+          "id",
+          "amount",
+          "method",
+          "business_date",
+          "created_at"
+        ],
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "đồng."
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Cash-book day of the refund."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "method": {
+            "$ref": "#/components/schemas/RefundMethodDto"
+          }
+        }
+      },
+      "RefundMethodDto": {
+        "type": "string",
+        "enum": [
+          "cash",
+          "bank_transfer"
+        ]
+      },
+      "Revenue": {
+        "type": "object",
+        "description": "Money of a day or a period, cash basis, from the append-only `payment` and `refund` rows.\nA void never deletes the original payment: it adds a reversal on the day of the void, so a\nsale voided the next day still counts on its own day and shows as a void on the next.",
+        "required": [
+          "collected",
+          "collected_by_kind",
+          "voids",
+          "voids_by_kind",
+          "refunds",
+          "net",
+          "net_by_kind"
+        ],
+        "properties": {
+          "collected": {
+            "$ref": "#/components/schemas/MethodSplit",
+            "description": "Money received (`payment.kind = 'payment'`), discounts already taken off."
+          },
+          "collected_by_kind": {
+            "$ref": "#/components/schemas/KindSplit"
+          },
+          "net": {
+            "$ref": "#/components/schemas/MethodSplit",
+            "description": "collected − voids − refunds."
+          },
+          "net_by_kind": {
+            "$ref": "#/components/schemas/KindSplit"
+          },
+          "refunds": {
+            "$ref": "#/components/schemas/MethodSplit",
+            "description": "Money paid back when a package was cancelled (always a package)."
+          },
+          "voids": {
+            "$ref": "#/components/schemas/MethodSplit",
+            "description": "Reversals of voided sales, booked on the day of the void."
+          },
+          "voids_by_kind": {
+            "$ref": "#/components/schemas/KindSplit"
+          }
+        }
+      },
+      "SaleCreate": {
+        "type": "object",
+        "description": "Body of `POST /sales`. Prices are never read from the client: unknown fields such as\n`unit_price` or `total` are ignored and every amount is computed from the catalog.",
+        "required": [
+          "customer_id",
+          "closer_staff_id",
+          "lines",
+          "payments"
+        ],
+        "properties": {
+          "closer_staff_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The staff member who closed the sale (must be currently working here)."
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "discount": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DiscountCreate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SaleLineCreate"
+            },
+            "description": "1–10 packages."
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentCreate"
+            },
+            "description": "0–2 payments, one per method, summing exactly to the total (R1 collects in full)."
+          }
+        }
+      },
+      "SaleDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "customer_id",
+          "business_date",
+          "subtotal",
+          "discount_amount",
+          "total",
+          "amount_paid",
+          "status",
+          "created_at",
+          "lines",
+          "payments",
+          "customer_packages"
+        ],
+        "properties": {
+          "amount_paid": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "closer_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "closer_staff_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "customer_packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomerPackageDto"
+            },
+            "description": "Packages this sale created."
+          },
+          "discount_amount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "discount_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SaleLineDto"
+            }
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentDto"
+            }
+          },
+          "status": {
+            "$ref": "#/components/schemas/SaleStatusDto"
+          },
+          "subtotal": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "void_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set when the sale was voided (US6); its payments then each have a `reversal`."
+          },
+          "voided_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "SaleKind": {
+        "type": "string",
+        "enum": [
+          "package",
+          "one_off"
+        ]
+      },
+      "SaleLineCreate": {
+        "type": "object",
+        "required": [
+          "package_plan_id"
+        ],
+        "properties": {
+          "gift_note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Gift note for this package; omitted = the plan's, empty = none."
+          },
+          "package_plan_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "SaleLineDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "line_type",
+          "description",
+          "qty",
+          "unit_price",
+          "line_total"
+        ],
+        "properties": {
+          "customer_package_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "line_total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "line_type": {
+            "$ref": "#/components/schemas/SaleLineTypeDto"
+          },
+          "package_plan_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "service_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "unit_price": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "SaleLineTypeDto": {
+        "type": "string",
+        "enum": [
+          "package",
+          "service"
+        ]
+      },
+      "SaleStatusDto": {
+        "type": "string",
+        "enum": [
+          "open",
+          "voided"
+        ]
+      },
+      "ServiceCategoryDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "sort_order"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ServiceDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "category_id",
+          "name",
+          "recommended",
+          "active",
+          "version",
+          "prices"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "category_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration_min": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Minutes; null means \"theo tư vấn\"."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "prices": {
+            "$ref": "#/components/schemas/ServicePrices"
+          },
+          "recommended": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Send back as `If-Match` when updating."
+          }
+        }
+      },
+      "ServicePrices": {
+        "type": "object",
+        "description": "Validated price set of one service.",
+        "properties": {
+          "all": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "female": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "male": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "ServiceWrite": {
+        "type": "object",
+        "required": [
+          "category_id",
+          "name",
+          "recommended",
+          "active",
+          "prices"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "category_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration_min": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Minutes; null = \"theo tư vấn\"."
+          },
+          "name": {
+            "type": "string"
+          },
+          "prices": {
+            "$ref": "#/components/schemas/PricesInput"
+          },
+          "recommended": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "StaffDto": {
+        "type": "object",
+        "description": "Basic staff card: no phone or personal data (`staff.read_basic`).",
+        "required": [
+          "id",
+          "full_name",
+          "position",
+          "status"
+        ],
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "position": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StaffStatusDto"
+          }
+        }
+      },
+      "StaffStatusDto": {
+        "type": "string",
+        "enum": [
+          "active",
+          "left"
+        ]
+      },
+      "SwitchTenantBody": {
+        "type": "object",
+        "required": [
+          "tenant_id"
+        ],
+        "properties": {
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TechnicianDay": {
+        "type": "object",
+        "required": [
+          "staff_id",
+          "name",
+          "visits",
+          "sessions_used",
+          "one_off_services"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "one_off_services": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sessions_used": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "visits": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Completed visits in which this technician did at least one line."
+          }
+        }
+      },
+      "TenantSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "TopPackage": {
+        "type": "object",
+        "required": [
+          "name",
+          "sold"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "plan_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "revenue": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Sum of their prices after discount; only with `report.revenue.read`."
+          },
+          "sold": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Packages sold in sales that are not voided."
+          }
+        }
+      },
+      "TopService": {
+        "type": "object",
+        "required": [
+          "service_id",
+          "name",
+          "category_name",
+          "sessions_used",
+          "one_off_services"
+        ],
+        "properties": {
+          "category_name": {
+            "type": "string",
+            "description": "Current catalog category of the service (e.g. \"Gội đầu dưỡng sinh\")."
+          },
+          "name": {
+            "type": "string"
+          },
+          "one_off_revenue": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "List price of the one-off services; only with `report.revenue.read`."
+          },
+          "one_off_services": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "service_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sessions_used": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "UserSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "full_name",
+          "phone"
+        ],
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "phone": {
+            "type": "string"
+          }
+        }
+      },
+      "VisitCreate": {
+        "type": "object",
+        "description": "Body of `POST /visits`. No amount is read from the client: unknown fields such as `unit_price`\nor `total` are ignored, one-off prices come from the catalog and the customer's gender.",
+        "required": [
+          "customer_id",
+          "lines"
+        ],
+        "properties": {
+          "check_in_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Defaults to now. At most 5 minutes ahead of the server and on today's business day."
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VisitLineCreate"
+            },
+            "description": "1–20 service lines."
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Session note incl. reactions (health data): needs `customer.health_notes.write`."
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentCreate"
+            },
+            "description": "For the one-off lines: 0–2 payments, one per method, summing exactly to their total."
+          }
+        }
+      },
+      "VisitDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "customer_id",
+          "customer_name",
+          "business_date",
+          "check_in_at",
+          "status",
+          "total",
+          "payments",
+          "lines",
+          "version",
+          "created_at"
+        ],
+        "properties": {
+          "business_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "check_in_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "customer_gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "customer_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VisitLineDto"
+            }
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Present only on a single visit and only for `customer.health_notes.read`; null = no note."
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentDto"
+            }
+          },
+          "sale_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Sale of the one-off lines (none when the visit only used package sessions)."
+          },
+          "status": {
+            "$ref": "#/components/schemas/VisitStatusDto"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Amount collected in this visit (sum of one-off lines)."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Send back as `If-Match` when correcting."
+          },
+          "void_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set when the visit was voided (US6): it stays in history with the reason."
+          },
+          "voided_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "VisitLineCreate": {
+        "type": "object",
+        "required": [
+          "service_id",
+          "source"
+        ],
+        "properties": {
+          "customer_package_item_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "`package` lines: the package item to use; omitted = the customer's usable package for this\nservice that expires soonest, then the oldest (AC4.3)."
+          },
+          "expiry_override_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`package` lines: use an expired package anyway (needs `package.use_expired_override`, audited)."
+          },
+          "price_variant": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PriceVariant",
+                "description": "`one_off` lines for a customer without a recorded gender: which gender price applies."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "qty": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Sessions / times, 1–10 (default 1).",
+            "minimum": 0
+          },
+          "service_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source": {
+            "$ref": "#/components/schemas/VisitLineSourceDto"
+          },
+          "staff_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Technician who performed the line (required, must be working here)."
+          }
+        }
+      },
+      "VisitLineDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "service_id",
+          "service_name",
+          "category_name",
+          "source",
+          "staff_id",
+          "staff_name",
+          "qty",
+          "unit_price",
+          "line_value"
+        ],
+        "properties": {
+          "category_name": {
+            "type": "string",
+            "description": "Current catalog category of the service (e.g. \"Gội đầu dưỡng sinh\")."
+          },
+          "customer_package_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "customer_package_item_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "expiry_override_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "line_value": {
+            "type": "integer",
+            "format": "int64",
+            "description": "One-off: qty × unit price (paid now); package: value of the sessions taken (bonus = 0)."
+          },
+          "package_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "price_variant": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PriceVariant",
+                "description": "`one_off` lines: which price was charged."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "service_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "service_name": {
+            "type": "string",
+            "description": "Service name at the visit (snapshot)."
+          },
+          "sessions_left_after": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "`package` lines: sessions left on the item right after this visit, of `sessions_total`."
+          },
+          "sessions_total": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "source": {
+            "$ref": "#/components/schemas/VisitLineSourceDto"
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "staff_name": {
+            "type": "string"
+          },
+          "unit_price": {
+            "type": "integer",
+            "format": "int64",
+            "description": "One-off: listed price; package: value of one paid session."
+          }
+        }
+      },
+      "VisitLineSourceDto": {
+        "type": "string",
+        "enum": [
+          "package",
+          "one_off"
+        ]
+      },
+      "VisitLineUpdate": {
+        "type": "object",
+        "required": [
+          "id",
+          "staff_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "VisitStatusDto": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "voided"
+        ]
+      },
+      "VisitUpdate": {
+        "type": "object",
+        "description": "Body of `PATCH /visits/{id}` (with `If-Match`): corrections that do not touch money or sessions.",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VisitLineUpdate"
+            },
+            "description": "Technician corrections, by line id."
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absent = unchanged, null or empty = cleared. Needs `customer.health_notes.write`."
+          }
+        },
+        "additionalProperties": false
+      },
+      "VoidCreate": {
+        "type": "object",
+        "description": "Body of `POST /sales/{id}/void` and `POST /visits/{id}/void`.",
+        "properties": {
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the record is voided (required, 1–500 characters); shown in history and audited."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "auth",
+      "description": "Đăng nhập, phiên, đổi spa"
+    },
+    {
+      "name": "catalog",
+      "description": "Bảng giá dịch vụ và gói liệu trình"
+    },
+    {
+      "name": "customers",
+      "description": "Hồ sơ khách hàng"
+    },
+    {
+      "name": "staff",
+      "description": "Nhân viên (chọn người chốt, KTV)"
+    },
+    {
+      "name": "packages",
+      "description": "Liệu trình của khách"
+    },
+    {
+      "name": "sales",
+      "description": "Bán liệu trình, thanh toán"
+    },
+    {
+      "name": "visits",
+      "description": "Ghi lượt khách tại quầy"
+    },
+    {
+      "name": "reports",
+      "description": "Xem lại và theo dõi: hôm nay, theo khoảng ngày, sổ doanh thu, lịch sử khách, liệu trình"
+    }
+  ]
+}
