@@ -19,6 +19,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useAfterFirstPaint } from "../../lib/afterFirstPaint";
 import { ApiError } from "../../lib/api";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
@@ -95,7 +96,11 @@ export function FrontDeskPage() {
   const { data: me } = useSuspenseQuery(meQuery);
   const queryClient = useQueryClient();
   const staff = useQuery(activeStaffQuery);
-  const today = useQuery(todayVisitsQuery);
+  // Secondary to the search box: fetched just after the first paint (see useAfterFirstPaint).
+  const today = useQuery({
+    ...todayVisitsQuery,
+    enabled: useAfterFirstPaint(),
+  });
 
   const [customer, setCustomer] = useState<CustomerSummary | null>(null);
   const [creating, setCreating] = useState<string | null>(null);
@@ -720,7 +725,11 @@ function TodayVisits() {
   const [notice, setNotice] = useState<string | null>(null);
   const [shown, setShown] = useState(VISITS_PAGE);
   const isToday = day === todayIso;
-  const today = useQuery(isToday ? todayVisitsQuery : visitsOfDayQuery(day));
+  const painted = useAfterFirstPaint();
+  const today = useQuery({
+    ...(isToday ? todayVisitsQuery : visitsOfDayQuery(day)),
+    enabled: painted,
+  });
   // UX only: the server decides (403 day.locked for managers; owners may).
   const mayVoid =
     can(me, "record.void_same_day") &&
