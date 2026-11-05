@@ -1,7 +1,7 @@
 ---
 title: Design system — internal app (R1)
 updated: 2026-11-05
-sources: ["docs for reference/logo Viên phúc y đường transparent.png", "docs for reference/Menu mặt trước - mới.png", product/personas.md, raw/2026-11-05-em-brand-colors-and-demo-data.md, raw/2026-11-05-em-management-views-logo-ui.md]
+sources: [raw/2026-11-05-em-ui-review-round3.md, "docs for reference/logo Viên phúc y đường transparent.png", "docs for reference/Menu mặt trước - mới.png", product/personas.md, raw/2026-11-05-em-brand-colors-and-demo-data.md, raw/2026-11-05-em-management-views-logo-ui.md]
 ---
 
 # Design system: app nội bộ
@@ -47,39 +47,76 @@ Ghi chú:
 - Toast lỗi ở dark: chữ `surface` trên `danger` (7.85), sửa lỗi cũ chữ trắng trên `#FF8A80` (~2:1).
 - Dark mode theo `prefers-color-scheme`, có thể ghi đè bằng `data-theme="light|dark"`.
 
-## Thương hiệu trong app (logo thật, 2026-11-05)
-EM: "logo dùng cho đúng chúng ta đã có logo rồi" ([raw](../../raw/2026-11-05-em-management-views-logo-ui.md)). Logo sen tự vẽ của PR #27 đã bỏ; mọi chỗ dùng **logo thật**.
-- **Nguồn:** `docs for reference/logo Viên phúc y đường transparent.png` (1024², chỉ có bản raster). Phần nét nằm trong **kênh alpha** (alpha > 127 là nét chuẩn); "ánh vàng phát sáng" chỉ là RGB của các pixel trong suốt. Nên không phải vẽ lại: `scripts/brand/build_logo_assets.py` trace kênh alpha bằng potrace rồi tách phần theo connected component (vòng, sen, lá, âm dương, chữ, tagline). Chạy lại script khi có file gốc mới.
-- **Asset web** (`apps/web/src/assets/brand/`, SVG đen, dùng làm **CSS mask** nên tô bằng `currentColor`: vàng trên nâu đỏ, nâu đỏ trên kem; không tốn JS; Vite hash vào `/assets`, cache vĩnh viễn; CSP `img-src 'self'`):
+## Thương hiệu trong app (logo thật, nguyên vẹn, 2026-11-05 vòng 3)
+EM vòng 3 ([raw](../../raw/2026-11-05-em-ui-review-round3.md)): "logo bị sai trong trang chính … cứ để logo nguyên … đừng có bỏ ra". PR #29 đã tách logo thành mark (vòng + sen + lá + âm dương) và wordmark ghép lại: **bỏ hẳn**. Quy tắc mới:
+- **Luôn dùng TOÀN BỘ logo gốc, không sửa, không tách, không ghép lại:** sen, vòng tròn, chữ script "Viên Phúc / Y Đường", âm dương có lá, tagline cong "Hồi sinh sức khoẻ và sắc đẹp". Ở cỡ nhỏ tagline rất nhỏ: EM chấp nhận, vẫn giữ nguyên.
+- Chữ "Viên Phúc Y Đường" đặt cạnh logo là tùy chọn; hiện app **không** lặp tên/tagline dạng chữ cạnh logo (đăng nhập đã bỏ dòng "HỒI SINH SỨC KHOẺ VÀ SẮC ĐẸP", khung chào trang chủ bỏ tagline chữ). Tên spa luôn có dạng chữ cho screen reader (h1 sr-only ở đăng nhập, `aria-label` của link logo).
+- **Nguồn:** `docs for reference/logo Viên phúc y đường transparent.png` (1024², chỉ có raster; nét nằm ở kênh alpha). `scripts/brand/build_logo_assets.py` trace kênh alpha bằng potrace ra **một** file `apps/web/src/assets/brand/emblem.svg` (11.3 KB gzip) và sinh favicon/PWA. `mark.svg`, `wordmark.svg` đã xóa.
+- **Component:** `BrandLogo` (`app/BrandLogo.tsx`, class `.brand-logo`): CSS mask, đặt cỡ bằng **chiều rộng** (tỉ lệ 923:943 của logo). Màu: token `--brand-ink` (sáng: nâu đỏ `#7A2620`, tối: vàng `#E0B456`; kiểm ≥ 4.5:1 trên `bg`/`surface`/`surface-2` trong `contrast.test.ts` vì logo có chữ); trong khung nâu đỏ (`.chrome`) tự đổi sang `chrome-accent` `#E3B455` (5.3:1).
 
-| Asset | Gồm | Gzip | Dùng ở |
-|---|---|---|---|
-| `mark.svg` (`.brand-mark`, `BrandMark`) | vòng + sen + 2 lá + âm dương (không chữ) | 2.5 KB | sidebar 40px, top bar điện thoại 32px, drawer, empty state, watermark trang chủ |
-| `wordmark.svg` (`.brand-wordmark`, `BrandWordmark`) | chữ script "Viên Phúc / Y Đường" | 3.8 KB | sidebar mở rộng (70×36), drawer |
-| `emblem.svg` (`.brand-emblem`, `BrandEmblem`) | toàn bộ logo + tagline cong | 11.8 KB | **chỉ** đăng nhập / MFA (không nằm trên đường nóng `/quay`) |
-| `public/favicon.svg`, `favicon-32.png`, `apple-touch-icon.png`, `icons/icon-{192,512,maskable-512}.png` | mark vàng `#E3B455` trên nâu đỏ `#5A1D18` | 0.6–9.8 KB | tab trình duyệt, màn hình chính, PWA manifest |
+| Chỗ | Cỡ (rộng) |
+|---|---|
+| Sidebar mở (≥ 1024px) | 104px, giữa, trên cùng |
+| Sidebar rail (768–1023px, hoặc thu gọn) | 52px |
+| Top bar điện thoại | 48px |
+| Drawer điện thoại | 96px |
+| Khung chào trang chủ | 64px (điện thoại) / 88px |
+| Empty state, quầy chưa chọn khách | 56px |
+| Đăng nhập / MFA | 144px (điện thoại) / 240px |
+| Favicon, apple-touch, PWA 192/512/maskable | toàn bộ logo vàng trên nền nâu đỏ `#5A1D18` (maskable: logo trong 62% giữa) |
 
-- Tên spa luôn có dạng chữ thật cho screen reader (logo là `aria-hidden`).
-- **Tagline** "Hồi sinh sức khoẻ và sắc đẹp" (đúng chính tả trong logo): chữ hoa giãn 0.18em ở trang đăng nhập, chữ vàng ở khung chào.
-- **AuthFrame**: desktop chia 2 cột (trái: panel nâu đỏ có emblem 224px + hoa văn góc; phải: form), điện thoại: emblem 112px trên đầu card. h1 "Viên Phúc Y Đường" sr-only trên desktop (emblem đã chứa tên).
-- **Câu hỏi cho EM:** có file gốc vector (AI/SVG/PDF) từ người thiết kế không? Bản trace từ PNG 1024² đủ nét tới ~600px; in ấn khổ lớn nên dùng file gốc.
+- **Câu hỏi cho EM (vẫn mở):** file gốc vector (AI/SVG/PDF)? Bản trace từ PNG 1024² nét tới ~600px.
 
-## App shell (2026-11-05)
-- **Desktop/tablet (≥ 768px):** sidebar nâu đỏ (`.sidebar.chrome`) sticky cao 100dvh: logo (mark + wordmark) → nav nhóm theo sổ giấy: **Quầy** (Tổng quan, Ghi lượt khách) · **Khách hàng** (Hồ sơ khách, Lâu chưa quay lại) · **Gói liệu trình** (Theo dõi gói) · **Báo cáo** (Hôm nay) · **Danh mục** (Dịch vụ, Gói bán) · **Cài đặt** (Giao diện & tài khoản). Mục đang chọn: nền gradient vàng nhạt + **thanh vàng 3px bên trái** mọc từ giữa (`scaleY`) + icon vàng. ≥ 1024px rộng 248px, thu gọn được (nút "Thu gọn", nhớ theo thiết bị `localStorage vpyd.sidebar`); 768–1023px luôn là rail icon 76px (nhãn vẫn có cho screen reader, `title` làm tooltip).
-- **Top bar** (sticky, 64px, nền `surface` 88% + blur, đường kẻ dưới gradient vàng): ngày (md+), ô **Tìm khách, mở màn hình… Ctrl K** (mở command palette), avatar chữ cái + tên + spa (xl+), nút **Khóa nhanh** (icon + chữ; điện thoại chỉ icon, `aria-label` giữ tên).
-- **Điện thoại (< 768px):** top bar có mark; **tab bar** nâu đỏ cố định đáy: Trang chủ · Quầy · Khách · Hôm nay (nếu có quyền) · Thêm (mở **drawer** `<dialog>` trượt từ trái với toàn bộ nav). Nội dung chừa `--tabbar-h` (68px) ở đáy; toast quầy nổi trên tab bar.
-- **Command palette** (`app/CommandPalette.tsx`, chunk lazy chỉ tải khi mở): `<dialog>` modal (focus trap, Esc, backdrop do trình duyệt lo). Gõ tên/SĐT → khách (dùng `GET /customers?q=`, chỉ khi có `customer.read`) + màn hình (so khớp không dấu: "goi ban" → "Gói bán"). ↑↓ Enter. Không đụng phím tắt quầy (`/`, `Ctrl+Enter`, `Esc`).
-- Nav lấy từ một model (`app/nav.ts` `navFor(me)`) cho sidebar, drawer, tab bar, palette, lối tắt trang chủ. Lọc theo permission (UX; server quyết định).
-- **Không còn "sổ cũ" trong UI** (EM 2026-11-05): không mục nav, không ô trang chủ, không badge "Nhập từ sổ cũ"; gói chuyển từ sổ giấy hiển thị như mọi gói. Màn `/nhap-so-cu` đã xóa; dữ liệu sổ giấy nhập bằng CLI `app import-paper-book`.
+## App shell (2026-11-05, vòng 3)
+- **Desktop/tablet (≥ 768px):** sidebar nâu đỏ (`.sidebar.chrome`) sticky cao 100dvh: logo nguyên vẹn → nav nhóm theo sổ giấy: **Quầy** (Tổng quan, Ghi lượt khách) · **Khách hàng** (Hồ sơ khách, Lâu chưa quay lại) · **Gói liệu trình** (Theo dõi gói) · **Báo cáo** (Hôm nay) · **Danh mục** (Dịch vụ, Gói bán) · **Cài đặt**. Mục đang chọn: nền gradient vàng nhạt + thanh vàng 3px bên trái + icon vàng. Mục được chọn theo **URL** (Link fuzzy match): trang chi tiết sáng mục của section nó thuộc về (hồ sơ khách → "Hồ sơ khách", dù mở từ "Theo dõi gói"). ≥ 1024px rộng 248px, thu gọn được (`localStorage vpyd.sidebar`); 768–1023px là rail icon 76px.
+- **Top bar** (sticky 64px): ngày (md+), ô **Tìm khách, mở màn hình… Ctrl K** (command palette), **menu tài khoản**.
+- **Menu tài khoản** (`app/UserMenu.tsx`, thay chip avatar + tên cũ mà EM chê "chưa ổn"): nút tròn chữ cái đầu tên (điện thoại/tablet chỉ avatar 44px; ≥ 1024px thêm tên + vai trò, rộng tối đa 160px, cắt "…", mũi tên ▾). Bấm mở panel 320px: avatar + tên + **vai trò · spa**; **Giao diện** (Theo máy / Sáng / Tối, dùng chung một store với `/cai-dat`); **Khóa nhanh** (đăng xuất, đăng nhập lại quay về đúng màn đang mở: `/dang-nhap?next=…`); **Đăng xuất** (đăng xuất, xóa trail, về trang chủ sau khi đăng nhập). Đóng bằng Esc (focus về nút), bấm ra ngoài, Tab ra ngoài. Vai trò ("Chủ spa / Quản lý / Kỹ thuật viên") suy từ permission chỉ để **hiển thị**; `/me` chưa có trường role (câu hỏi cho backend).
+- **Điện thoại (< 768px):** top bar có logo; **tab bar** nâu đỏ cố định đáy: Trang chủ · Quầy · Khách · Hôm nay · Thêm (drawer `<dialog>` với toàn bộ nav). Nội dung chừa `--tabbar-h` (68px).
+- **Command palette** (`app/CommandPalette.tsx`, chunk lazy): như cũ.
+- Nav lấy từ một model (`app/nav.ts` `navFor(me)`); `screenLabel(pathname)` cho tên ngắn của màn không có PageHeader (dùng bởi nút quay lại).
 
-## Quy tắc layout (audit 2026-11-05)
-EM: "mấy ô cách sắp xếp nó bị khó nhìn không đồng đều chỗ to, chỗ nhỏ, chỗ thì bị dính vào nhau chỗ thì khi bấm ra hiệu ứng ảnh hưởng luôn các phần khác".
-- **Một thang khoảng cách** (4px: 8/12/16/20/24) và **`gap` thay margin**: mọi khối xếp dọc là `grid gap-*` (không còn `space-y-*` ở container). `.grid` mặc định 1 cột `minmax(0,1fr)` để chữ không xuống dòng (truncate) không đẩy trang rộng ra; nút/link/segmented/badge trong grid giữ bề rộng của nó (`justify-self: start`), muốn full thì `w-full`.
-- **Ô cùng hàng cao bằng nhau:** grid `align-items: stretch`; StatCard `min-h-[152px]` có dòng chân dành sẵn (`mt-auto min-h-5`) dù có hay không có ghi chú; ô lối tắt `min-h-[88px]`.
-- **Hiệu ứng hover/nhấn chỉ dùng `transform` / `opacity` / `box-shadow` / `outline` / màu.** Không đổi width, height, padding, margin, border-width hay **font-weight** khi tương tác (đã bỏ chữ đậm ở nút segmented và nút Nữ/Nam đang chọn: thay bằng gạch chân vàng `inset box-shadow`).
-- Badge luôn `white-space: nowrap` + cách chữ bên cạnh `ml-2`; bảng cuộn trong card (`.table-wrap`, header dính mép card).
-- Panel mở ra (form hủy, thao tác gói) nằm ngay dưới dòng đã bấm: chỉ đẩy phần bên dưới, không đẩy phần ngang hàng.
-- **Kiểm tự động:** `e2e/specs/layout.spec.ts` (+ `e2e/support/layout.ts`): mỗi màn, lấy mẫu ≤ 12 control, đo box mọi phần tử trước/sau hover và nhấn (mousedown, kéo ra ngoài, nhả), lỗi nếu phần tử nào ngoài control đổi vị trí/kích thước; và không cuộn ngang ở 360/768/1280/1440, đính kèm ảnh từng màn × bề rộng vào report.
+## Điều hướng (2026-11-05 vòng 3)
+EM: "bấm vào để xem infor chi tiết rồi nhảy qua trang khác muốn quay về xem thì không biết làm thế nào". Mô hình chọn theo các hệ thống lớn ([ADR-0007](../decisions/ADR-0007-navigation-and-url-state.md)):
+- **Breadcrumb = vị trí trong cây** (GOV.UK, Polaris): `Khách hàng › Nguyễn Thị Hà`. Chỉ hiện từ 640px; điện thoại chỉ có nút quay lại (Material "Up", GOV.UK mobile).
+- **Nút quay lại = lịch sử thật** (Apple HIG: nhãn là tên màn trước): "‹ Theo dõi gói của khách". Có màn trước trong app → `history.back()` (giữ nguyên bộ lọc + vị trí cuộn). Mở thẳng bằng link/reload không có màn trước → về **cha logic** (crumb cuối). Không bao giờ quay về `/dang-nhap`/`/xac-thuc`. Khi đích quay lại chính là cha, từ 640px chỉ hiện breadcrumb (không lặp hai thứ giống nhau).
+- **Trail** (`app/trail.ts`): mỗi entry lịch sử (theo `history.state.__TSR_index`) lưu URL + tiêu đề màn (PageHeader ghi). `sessionStorage` (`vpyd.trail`, ≤ 60 entry, mỗi tab một trail, sống qua reload). Crumb tới một danh sách mở lại **URL cuối cùng** của danh sách đó trong tab (giữ bộ lọc).
+- **Trạng thái danh sách nằm trên URL** (tìm, lọc, tab, ngày, trang): `useSearchState` (xem [frontend § State](../architecture/frontend.md#state-management)). Lọc dùng `replace` (không lấp lịch sử), giá trị mặc định không lên URL. Router bật `scrollRestoration`.
+- Liên kết chéo (khách → gói → lượt) giữ trail vì mỗi bước là một entry: quay lại từng bước, mỗi bước nói rõ về đâu.
+- **`PageHeader`** (`app/PageHeader.tsx`): `title` (chuỗi hoặc node, ví dụ `CustomerName`), `label` (tên dạng chữ cho trail khi title là node), `eyebrow`, `breadcrumbs: {label,to}[]` (không gồm trang hiện tại), `back` (mặc định: có khi có breadcrumbs), `titleId`, `children` = nút thao tác bên phải (xuống dòng khi hẹp). Mọi màn dùng nó (một h1 mỗi màn). Hồ sơ khách: header giữ nguyên lúc đang tải/lỗi để luôn có đường về.
+
+## Quy tắc layout (audit 2026-11-05, vòng 2 + 3)
+EM vòng 2: "mấy ô … chỗ to, chỗ nhỏ, chỗ thì bị dính vào nhau"; vòng 3: "responsive … đừng có bị lỗi … check kĩ lại", "đừng có làm thừa thãi … điều chỉnh cho đúng kích thước".
+- **Một thang khoảng cách** (4px: 8/12/16/20/24) và **`gap` thay margin**. `.grid` mặc định 1 cột `minmax(0,1fr)`; nút/link/segmented/badge trong grid giữ bề rộng của nó.
+- **Ô cùng hàng cao bằng nhau nhờ grid stretch**, không nhờ `min-height` cố định (StatCard 152px cũ gây thừa trống: đã bỏ). Dòng chân chỉ chiếm chỗ khi có nội dung.
+- **Hover/nhấn chỉ dùng `transform` / `opacity` / `box-shadow` / `outline` / màu.** Không đổi kích thước/khung/font-weight khi tương tác.
+- Badge `nowrap`; **bảng trên điện thoại (< 640px) giữ mỗi ô một dòng và cuộn ngang trong card** (`.table-wrap`), không bẻ tên gói thành từng chữ.
+- Panel mở ra nằm ngay dưới dòng đã bấm, chỉ đẩy phần bên dưới.
+- **Focus ring không bao giờ che nội dung bên cạnh** (EM vòng 3: vòng focus ô tìm khách che chữ nhãn phía trên). Ba loại, đều vàng `--focus` (≥ 3:1 trên `surface`, `bg`, `surface-2`):
+  - mặc định (nút, link): 3px, cách 2px ra ngoài (tổng 5px) — các control cách nhau ≥ 8px;
+  - **ô nhập**: 2px sát viền (offset 0), bỏ quầng `box-shadow`; ô nằm **cách nhãn 6px** (rule chung trong `components.css`, áp cho cả nhãn bọc ô và nhãn đứng trước ô; nhãn `flex` và `sr-only` không bị đẩy) → còn 4px trống;
+  - control xếp sát nhau (nav, tab bar, segmented, menu, option listbox, cột biểu đồ): vòng vẽ **bên trong** control (offset −3px); link chữ trong dòng (tên khách trên SĐT): 2px, offset 1px.
+- **Kiểm tự động** (`e2e/specs/layout.spec.ts`, helper `e2e/support/layout.ts` + `responsive.ts`):
+  - hover/nhấn không xê dịch phần tử nào khác (như vòng 2);
+  - mọi màn (+ hồ sơ khách tên dài) **quét 320 → 1920px mỗi 80px** (21 bề rộng, resize liên tục như kéo cửa sổ) **và 1280×800 zoom 200 %** (= viewport 640×400): không cuộn ngang, **không phần tử anh em nào chồng lên nhau** (so bounding box từng cặp con in-flow của mọi phần tử; bỏ qua absolute/fixed, inline, sr-only), **không chữ bị cắt** (phần tử clip overflow có chữ trực tiếp mà nội dung lớn hơn hộp, trừ `text-overflow: ellipsis`);
+  - **vòng focus không phủ chữ của phần tử khác** ở 1280 và 360px (focus bằng bàn phím mẫu ≤ 16 control đang nhìn thấy mỗi màn). Đã thử ngược: chạy trên bản trước sửa thì bắt đúng lỗi ô tìm khách của EM.
+  - Ảnh 360/768/1280/1440 mỗi màn đính kèm vào report.
+
+## Kích thước (size scale, vòng 3)
+Audit lại từng component; số trong ngoặc là trước → sau khi đổi.
+| Thành phần | Kích thước |
+|---|---|
+| Control (nút, input, select, segmented ngoài) | cao **44px** (vùng chạm WCAG 2.5.8); segmented: nút 40 trong khung 48; ô tìm khách quầy/khách 52px, chữ 18px |
+| Nút quay lại (PageHeader) | cao 36px, vùng chạm mở rộng 44px bằng `::after` (không đẩy tiêu đề) |
+| Icon | 16 (trong chữ, breadcrumb) · 18 (trong nút, menu) · 20 (nav, tiêu đề card, lối tắt) · 24 (chỉ sprite gốc) |
+| Card | padding 16px (điện thoại) / 16–20px; radius 14; bóng `shadow-1` |
+| **Ô số (StatCard)** | padding 14×16, nhãn 14px + icon tròn 28px, số 24/32px; **không min-height** (152px → ~92px), lưới `stat-grid` `auto-fit minmax(180px,1fr)` gap 12 |
+| Khung chào trang chủ | padding 16×20 / 20×28, logo 64/88px, h1 24/28px (py 32–40 + h1 36px → gọn ~120px) |
+| Ô lối tắt | min-height 72px (88 → 72), icon khung 40px (48 → 40), gap 12 |
+| Bảng | ô 12×14px (dòng ~48px), header 12px chữ hoa |
+| Empty state | padding 32px dọc (40 → 32), logo 56px |
+| Dialog / panel | panel tài khoản 320px; palette 640px; drawer 320px (≤ 86vw) |
+| Avatar | 36px (top bar, danh sách), 44px (panel tài khoản), 56px (cài đặt) |
+| Tiêu đề trang | Lora 26/34; eyebrow 12px chữ hoa giãn 0.14em; header cách nội dung 16–20px |
 
 ## Element polish toàn app (`apps/web/src/styles.css`)
 Một lớp CSS **không nằm trong layer** (thắng utility) cho vài thuộc tính, để mọi màn hình (kể cả màn chỉ dùng utility như `/nhap-so-cu`) cùng một kiểu:
@@ -90,6 +127,15 @@ Một lớp CSS **không nằm trong layer** (thắng utility) cho vài thuộc 
 
 
 ## Trước / sau
+**Vòng 3 (shell, `feat/ui-shell-r3`):** ảnh trước/sau 360/768/1280/1440 mọi màn + hồ sơ khách + focus ô tìm khách + menu tài khoản + dark, thư mục scratchpad của agent `ui3-shell/before`, `ui3-shell/after`.
+| Màn | Trước (#29) | Sau |
+|---|---|---|
+| Logo | mark + wordmark ghép lại (sidebar, top bar, drawer, empty state, favicon) | logo nguyên vẹn mọi nơi; đăng nhập bỏ dòng tagline chữ lặp |
+| Trang chi tiết | link "‹ Danh sách khách" cố định | breadcrumb + nút quay lại theo lịch sử, giữ bộ lọc + cuộn |
+| User | avatar + tên + spa (xl) + nút "Khóa nhanh" riêng | menu tài khoản: tên, vai trò, spa, giao diện, Khóa nhanh, Đăng xuất |
+| Focus | ring 3px + quầng 3px che nhãn ô tìm | ring 2px sát viền, nhãn cách 6px |
+| Trang chủ | khung chào ~ 176px, ô "Hôm nay" 152px | khung chào ~ 120px có logo, ô số ~ 92px |
+
 Ảnh 1280×800 và 390×844, light + dark, dữ liệu `app seed-demo`: thư mục scratchpad của agent `ui2-shots/before`, `ui2-shots/after` và `ui2-shots/after-widths` (360/768/1280/1440) (PR #29). CI đính kèm ảnh từng màn × bề rộng vào report của `layout.spec.ts`.
 
 **UI overhaul (2026-11-05, sau PR #27):**
@@ -184,15 +230,18 @@ Primitives dựng trên shadcn/ui (Radix) trong `packages/ui`, theme bằng toke
 | **PackageRow** | tên, `còn X/Y buổi`, HSD; states: active, sắp hết (≤ 2 buổi: thanh đỏ), hết buổi, hết hạn, đã hủy. Gói chuyển từ sổ giấy **không** có nhãn riêng |
 | **CartLine** | dịch vụ, nguồn (trừ liệu trình / dịch vụ lẻ), KTV (bắt buộc), giá, bỏ dòng |
 | **MoneySummary** | phải trả, đã trả; số `tabular-nums` |
-| **StatCard** (`features/reports/ui.tsx`) | nhãn + icon tròn vàng, số 28px đếm lên, chân: `Delta` (▲/▼ % so với hôm qua, màu + chữ); bản `accent` nâu đỏ cho "Thực thu"; loading: `StatSkeleton` |
+| **StatCard** (`features/reports/ui.tsx`) | nhãn + icon tròn vàng 28px, số 24px đếm lên, không min-height, chân: `Delta` (▲/▼ % so với hôm qua, màu + chữ); bản `accent` nâu đỏ cho "Thực thu"; loading: `StatSkeleton` |
 | **LineChart** (`features/reports/LineChart.tsx`) | SVG tự viết (không thư viện): 1 trục, đường 2px nâu đỏ + vùng 10% cho kỳ này, đường xám `border-strong` cho kỳ trước (dạng emphasis, đã chạy validator dataviz cả light/dark); lưới hairline; nhãn giá trị chỉ ở điểm cuối; crosshair + tooltip (giá trị đậm trước, tên sau, line key) khi rê chuột và khi focus ← → Home End; nhãn trục X ≤ 7 (≤ 4 dưới 640px); `role="img"` + bảng chi tiết bên dưới là bản thay thế; đổi kỳ: khung cũ mờ (`.is-refreshing`) |
 | **SplitBar** (`features/reports/charts.tsx`) | thanh chia phần (tiền mặt/CK, gói/lẻ) + chú thích có số và % |
-| **FilterBar / SearchField / FilterSelect** (`features/reports/filters.tsx`) | một hàng lọc phía trên nội dung, xuống dòng trên điện thoại; ô tìm có icon, nút xóa, debounce 300 ms, ≥ 2 ký tự; select native có nhãn |
+| **FilterBar / SearchField / FilterSelect** (`features/reports/filters.tsx`) | một hàng lọc phía trên nội dung, xuống dòng trên điện thoại; ô tìm có icon, nút xóa, debounce 300 ms, ≥ 2 ký tự; select native có nhãn; mọi ô viền `border-strong` |
 | **FollowUpForm** + `.form-dialog` + `.choice` | dialog giữa màn (điện thoại: gần full); kết quả là hàng radio 44px, mục chọn = nền `primary-soft` + vạch vàng trong (không đổi chữ đậm) |
 | **Tabs** (`.tabs`) | `role=tablist`, tab chọn = gạch chân vàng 3px `inset box-shadow` |
 | **Timeline** (lịch sử khách) | đường dọc gradient vàng, chấm theo loại (lượt nâu đỏ, mua gói vàng, hủy xám/đỏ), nhóm theo tháng |
-| EmptyState (mark logo mờ + câu hướng dẫn), ErrorState ("Thử lại") | |
+| EmptyState (logo nguyên vẹn 56px + câu hướng dẫn), ErrorState ("Thử lại") | |
 | Dialog / Sheet (điện thoại) | `<dialog>` + `showModal()` (`Modal` trong AppShell): focus trap, Esc, backdrop |
 | ReasonDialog | bắt buộc nhập lý do (hủy, giảm giá, cho dùng gói hết hạn) |
 | Toast | `role=status`; lỗi dùng `role=alert`; 3–4 giây; không che nút Lưu; nổi trên tab bar điện thoại |
-| AppShell, CommandPalette | xem § App shell |
+| AppShell, CommandPalette, UserMenu | xem § App shell |
+| **PageHeader** (`app/PageHeader.tsx`) | xem § Điều hướng |
+| **CustomerName** (`app/CustomerName.tsx`) | tên + **chip giới tính ngay cạnh tên** (EM vòng 3: "giới tính để bên cạnh tên cho dễ phân biệt"): "Nữ" nền `primary-soft` chữ `primary`, "Nam" nền `info-soft` chữ `info`, `showUnknown` → "Chưa rõ" xám (chỉ ở tiêu đề hồ sơ). Chữ, không chỉ màu; screen reader đọc "Nguyễn Thị Hà, Nữ". Inline: dùng trong link, h1, ô bảng. Đã dùng ở: tìm khách (quầy + /khach-hang), khách gần đây, tiêu đề hồ sơ, ô khách của bảng báo cáo (khi dòng có `gender`) |
+| **ThemePicker** (`app/ThemePicker.tsx`) | segmented Theo máy / Sáng / Tối; `useSyncExternalStore` trên `prefs.ts` nên mọi picker đang hiện luôn khớp |

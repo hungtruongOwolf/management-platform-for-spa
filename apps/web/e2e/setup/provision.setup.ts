@@ -107,6 +107,6 @@ setup("migrate and provision a fresh spa", () => {
 
 setup("sign the owner in once for the specs", async ({ page }) => {
   await signIn(page);
-  await expect(page.getByRole("button", { name: "Khóa nhanh" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Tài khoản/ })).toBeVisible();
   await page.context().storageState({ path: ownerState });
 });

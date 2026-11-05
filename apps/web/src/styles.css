@@ -70,6 +70,12 @@ body {
 :is(.nav-item, .sidebar-toggle, .tab, .segmented > button, .menu-item, .palette-option, [role="option"], .chart-col):focus-visible {
   outline-offset: -3px;
 }
+/* Text links inside a line (a customer's name above their phone): a slimmer, closer ring. */
+a:not([class]):focus-visible,
+a.font-semibold:focus-visible {
+  outline-width: 2px;
+  outline-offset: 1px;
+}
 
 /*
  * Element polish, applied app-wide so every screen (including ones styled only with utilities)

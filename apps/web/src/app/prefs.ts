@@ -25,16 +25,32 @@ function write(key: string, value: string | null): void {
   }
 }
 
+/** The theme chosen during this visit, so it shows even when storage refuses to keep it. */
+let chosen: Theme | null = null;
+
 export function readTheme(): Theme {
+  if (chosen) return chosen;
   const t = read(THEME_KEY);
   return t === "light" || t === "dark" ? t : "system";
 }
+
+const themeListeners = new Set<() => void>();
 
 /** Applies a theme (tokens.css reads `data-theme`) and remembers it on this device. */
 export function applyTheme(theme: Theme, root: HTMLElement = document.documentElement): void {
   if (theme === "system") delete root.dataset["theme"];
   else root.dataset["theme"] = theme;
   write(THEME_KEY, theme === "system" ? null : theme);
+  chosen = theme;
+  for (const notify of themeListeners) notify();
+}
+
+/** For useSyncExternalStore: every picker (account menu, settings) shows the one stored value. */
+export function subscribeTheme(listener: () => void): () => void {
+  themeListeners.add(listener);
+  return () => {
+    themeListeners.delete(listener);
+  };
 }
 
 export function readSidebarCollapsed(): boolean {
