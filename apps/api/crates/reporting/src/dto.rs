@@ -679,7 +679,7 @@ pub struct InactivePage {
 #[derive(Debug, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct InactiveQuery {
-    /// Not seen for at least this many days (1–365, default 30).
+    /// Not seen for at least this many days (1–365, default 7).
     pub days: Option<u32>,
     pub scope: Option<InactiveScope>,
     pub cursor: Option<String>,

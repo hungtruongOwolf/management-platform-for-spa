@@ -515,7 +515,7 @@
           {
             "name": "days",
             "in": "query",
-            "description": "Not seen for at least this many days (1–365, default 30).",
+            "description": "Not seen for at least this many days (1–365, default 7).",
             "required": false,
             "schema": {
               "type": "integer",
