@@ -41,7 +41,7 @@ set -a; . "$repo_root/.env"; set +a
 # run drops every leftover one it finds there; a gate run sharing the dev database with agents'
 # test runs would drop theirs (and they ours). The gate gets its own registry database.
 docker exec vpyd-dev-postgres-1 createdb -U vpyd vpyd_gate >/dev/null 2>&1 || true
-export DATABASE_URL="${DATABASE_URL%/*}/vpyd_gate" E2E_DATABASE=vpyd_gate_e2e
+export DATABASE_URL="${DATABASE_URL%/*}/vpyd_gate"
 export SQLX_OFFLINE=true CARGO_INCREMENTAL=0
 export CARGO_TARGET_DIR="${GATE_CARGO_TARGET_DIR:-$work_base/target}"
 
