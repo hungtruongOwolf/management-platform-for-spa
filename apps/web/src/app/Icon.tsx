@@ -12,6 +12,7 @@ export type IconName =
   | "layers"
   | "settings"
   | "search"
+  | "filter"
   | "lock"
   | "chevron-left"
   | "chevron-right"

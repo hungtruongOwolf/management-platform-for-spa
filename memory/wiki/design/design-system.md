@@ -84,6 +84,44 @@ EM: "bấm vào để xem infor chi tiết rồi nhảy qua trang khác muốn q
 - Liên kết chéo (khách → gói → lượt) giữ trail vì mỗi bước là một entry: quay lại từng bước, mỗi bước nói rõ về đâu.
 - **`PageHeader`** (`app/PageHeader.tsx`): `title` (chuỗi hoặc node, ví dụ `CustomerName`), `label` (tên dạng chữ cho trail khi title là node), `eyebrow`, `breadcrumbs: {label,to}[]` (không gồm trang hiện tại), `back` (mặc định: có khi có breadcrumbs), `titleId`, `children` = nút thao tác bên phải (xuống dòng khi hẹp). Mọi màn dùng nó (một h1 mỗi màn). Hồ sơ khách: header giữ nguyên lúc đang tải/lỗi để luôn có đường về.
 
+## Mobile patterns (EM vòng 4 mục 3, 2026-11-05)
+EM: "UI của mobile đâu thể y như web được … nghiên cứu lại vụ UI/UX cho mobile" ([raw](../../raw/2026-11-05-em-review-round4.md)). Điện thoại (< 640px) có **hình dạng riêng**, không thu nhỏ bản desktop. Nguồn (đã đọc; trang M3/HIG/Polaris render bằng JS nên một số số liệu lấy từ docs thư viện chính thức):
+- **M3** navigation bar 3–5 đích, mỗi đích icon + nhãn một dòng, cao 80dp ([Android MDC docs](https://github.com/material-components/material-components-android/blob/master/docs/components/BottomNavigation.md), [m3 specs](https://m3.material.io/components/navigation-bar/specs)); top app bar 64dp, ≤ 2–3 action ([m3](https://m3.material.io/components/top-app-bar/specs)); modal bottom sheet cho tác vụ tập trung (form, bộ lọc), rộng tối đa 640dp, có drag handle ([m3](https://m3.material.io/components/bottom-sheets/guidelines)); vùng chạm 48dp.
+- **Apple HIG**: tab bar chỉ cho section cấp cao, luôn hiện, 3–5 tab ([tab bars](https://developer.apple.com/design/human-interface-guidelines/tab-bars)); nút back mang tên màn trước ([navigation bars](https://developer.apple.com/design/human-interface-guidelines/navigation-bars)); sheet medium/large có grabber, luôn có Xong/Hủy rõ ([sheets](https://developer.apple.com/design/human-interface-guidelines/sheets)); vùng chạm 44×44pt.
+- **Shopify Polaris**: IndexTable `condensed` thành danh sách xếp chồng trên màn nhỏ; ResourceList = mỗi dòng là thẻ 2–3 dòng có số chính; DataTable cuộn ngang nên tránh trên điện thoại ([index table](https://polaris-react.shopify.com/components/tables/index-table), [data table](https://polaris-react.shopify.com/components/tables/data-table)).
+- **Baymard**: bộ lọc trên mobile mở thành lớp phủ có nút Áp dụng ([#1125](https://baymard.com/guidelines/1125-apply-buttons-in-mobile-filtering-interfaces)), hiện số kết quả/bộ lọc đang chọn ([#467](https://baymard.com/guidelines/467-indicating-the-number-of-matches-for-filtering-options)).
+- **WCAG 2.2** 2.5.8 (AA) tối thiểu 24px, 2.5.5 (AAA) 44px → app giữ 44px ([w3.org](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html)). Thanh cố định đáy cộng `env(safe-area-inset-bottom)` (cần `viewport-fit=cover`, [MDN](https://developer.mozilla.org/en-US/docs/Web/HTML/Viewport_meta_tag)).
+
+**Quy tắc cho mọi màn ở < 640px:**
+1. Khung: **top app bar** 56px (logo · tìm nhanh · tài khoản) + **tab bar** đáy 5 đích (Trang chủ · Quầy · Khách · Báo cáo · Thêm), nhãn ngắn một dòng ([glossary](../product/glossary.md#tên-màn-hình-và-điều-hướng-em-vòng-4-mục-7-2026-11-05)). Tiêu đề trang là "large title" ngay dưới top bar, nút quay lại có tên đích ở trên tiêu đề (HIG).
+2. **Danh sách, không bảng rộng:** mọi bảng dùng `ResponsiveTable` → thẻ có tên (link mở chi tiết, cả thẻ bấm được), dòng phụ, **một số chính** góc phải (còn buổi, tiền, số ngày vắng, trạng thái), còn lại là cặp nhãn–giá trị. Không cuộn ngang.
+3. **Bộ lọc vào sheet:** ô tìm giữ nguyên trên trang (thứ dùng đầu tiên), còn select/ngày/phạm vi vào `BottomSheet` sau nút "Bộ lọc" có số đang chọn (`ResponsiveFilters`). Lọc vẫn áp ngay (URL), nút "Xem kết quả" đóng sheet, "Xóa bộ lọc" đặt lại.
+4. **Form mở trong sheet** (`BottomSheet`): ghi liên hệ, bán gói, sửa hồ sơ… Nút chính ghim ở `footer` của sheet, trên vùng home indicator.
+5. **Thao tác chính dính đáy** (`StickyActions`) khi form dài trên trang: nằm ngay trên tab bar, nút giãn đều, nút chính ở bên phải.
+6. Segmented nhiều lựa chọn (kỳ báo cáo, trạng thái gói) → **một hàng chip cuộn ngang** (`.chip-row`), không xếp 3 hàng.
+7. Vùng chạm ≥ 44px; control quan trọng ở nửa dưới màn (tầm ngón cái); không hover-only.
+
+**Component API** (`apps/web/src/components/`, CSS ở `src/mobile.css`; dùng chung cho mọi agent):
+| Component | API | Ghi chú |
+|---|---|---|
+| `usePhone()` / `useMediaQuery(q)` | `boolean`, theo `matchMedia` (live) | jsdom không có `matchMedia` → `false` (test thấy bản desktop) |
+| `ResponsiveTable<T>` | `caption`, `rows`, `rowKey`, `columns: Column<T>[]`, `rowClassName?`, `cardsBelow? = 640 \| 768`, `stretchLink?`, `footer?: { table, cards }` | `Column`: `id`, `header`, `cell(row)`, `numeric?` (canh phải, tabular), `card?: "title" \| "subtitle" \| "aside" \| "field" \| "hidden"` (mặc định `field`), `cardLabel?`, `className?`. Desktop: `.data-table` trong `.table-wrap` + `<caption>` ẩn. Điện thoại: `<ul aria-label={caption}>` thẻ `.rt-card`; chỉ một bản trong DOM |
+| `BottomSheet` | `open`, `onClose`, `title`, `description?`, `children`, `footer?`, `wide?`, `className?` | `<dialog>` + `showModal()` (focus trap, Esc, backdrop); điện thoại: trượt từ đáy, grabber, kéo xuống > 96px để đóng, thân cuộn riêng, footer ghim + safe-area; ≥ 640px: dialog giữa màn 560px (`wide`: 760px). Hook `useModalDialog(open)` dùng lại được |
+| `StickyActions` | `children` (nút), `summary?`, `label? = "Thao tác"`, `always?` | `role=group`; < 640px dính trên tab bar, nút giãn đều; ≥ 640px hàng nút canh phải (dính nếu `always`) |
+| `ResponsiveFilters` (`features/reports/filters.tsx`) | `label`, `search?`, `children`, `activeCount`, `onReset?` | ≥ 640px = `FilterBar` một hàng; < 640px = ô tìm + nút "Bộ lọc" (badge số) mở `BottomSheet` |
+| `DateField` (`components/DateField.tsx`) | `label`, `value` (ISO `yyyy-mm-dd` hoặc `""`), `onChange(iso)`, `min?`, `max?` | luôn hiện `dd/mm/yyyy` bất kể ngôn ngữ trình duyệt (input date gốc hiện `mm/dd/yyyy` trên Chrome tiếng Anh); nút lịch mở picker gốc |
+
+Ví dụ:
+```tsx
+<ResponsiveTable caption="Gói liệu trình của khách" rows={items} rowKey={(p) => p.id} stretchLink
+  columns={[
+    { id: "customer", header: "Khách", card: "title", cell: (p) => <Link to=…>{p.customer_name}</Link> },
+    { id: "plan", header: "Gói", card: "subtitle", cell: (p) => p.name },
+    { id: "left", header: "Còn", numeric: true, card: "aside", cell: (p) => `${p.left}/${p.total}` },
+    { id: "expiry", header: "Hạn dùng", cell: (p) => expiryText(p.expires_on, formatDate) },
+  ]} />
+```
+
 ## Quy tắc layout (audit 2026-11-05, vòng 2 + 3)
 EM vòng 2: "mấy ô … chỗ to, chỗ nhỏ, chỗ thì bị dính vào nhau"; vòng 3: "responsive … đừng có bị lỗi … check kĩ lại", "đừng có làm thừa thãi … điều chỉnh cho đúng kích thước".
 - **Một thang khoảng cách** (4px: 8/12/16/20/24) và **`gap` thay margin**. `.grid` mặc định 1 cột `minmax(0,1fr)`; nút/link/segmented/badge trong grid giữ bề rộng của nó.

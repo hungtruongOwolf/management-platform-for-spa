@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Icon } from "../../app/Icon";
+import { BottomSheet } from "../../components/BottomSheet";
+import { usePhone } from "../../components/useMediaQuery";
 
 /** Delay between the last keystroke and the URL/API update (one request per pause, not per key). */
 export const SEARCH_DEBOUNCE_MS = 300;
@@ -143,6 +145,86 @@ export function FilterBar({ children, label }: { children: ReactNode; label: str
   return (
     <div role="search" aria-label={label} className="filter-bar">
       {children}
+    </div>
+  );
+}
+
+/**
+ * Search + filters. From 640 px: one inline row (`FilterBar`). Phones: the search box stays inline
+ * (it is the first thing people use) and the other filters move into a bottom sheet behind a
+ * "Bộ lọc" button that shows how many are set (Baymard mobile filtering, M3 modal bottom sheet).
+ * Filters still apply as they change (URL state); the sheet's "Xem kết quả" just closes it.
+ */
+export function ResponsiveFilters({
+  label,
+  search,
+  children,
+  activeCount,
+  onReset,
+}: {
+  label: string;
+  /** The `SearchField`, if the page has one. */
+  search?: ReactNode;
+  /** The other filters (`FilterSelect`, date fields, segmented controls). */
+  children: ReactNode;
+  /** Filters set away from their default (badge on the button). */
+  activeCount: number;
+  /** "Xóa bộ lọc" in the sheet; omitted when nothing can be reset. */
+  onReset?: () => void;
+}) {
+  const phone = usePhone();
+  const [open, setOpen] = useState(false);
+  if (!phone) {
+    return (
+      <FilterBar label={label}>
+        {search}
+        {children}
+      </FilterBar>
+    );
+  }
+  return (
+    <div role="search" aria-label={label} className="filter-row-phone">
+      {search}
+      <button
+        type="button"
+        className="filter-trigger"
+        aria-haspopup="dialog"
+        aria-label={activeCount > 0 ? `Bộ lọc, ${String(activeCount)} đang chọn` : "Bộ lọc"}
+        onClick={() => {
+          setOpen(true);
+        }}
+      >
+        <Icon name="filter" className="size-[18px]" />
+        Bộ lọc
+        {activeCount > 0 && <span className="filter-count">{activeCount}</span>}
+      </button>
+      <BottomSheet
+        open={open}
+        onClose={() => {
+          setOpen(false);
+        }}
+        title={label}
+        footer={
+          <>
+            {onReset && activeCount > 0 && (
+              <button type="button" className="btn btn-secondary" onClick={onReset}>
+                Xóa bộ lọc
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                setOpen(false);
+              }}
+            >
+              Xem kết quả
+            </button>
+          </>
+        }
+      >
+        {children}
+      </BottomSheet>
     </div>
   );
 }
