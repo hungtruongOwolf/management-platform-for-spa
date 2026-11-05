@@ -277,6 +277,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opening-balances/window": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["read_opening_window"];
+        put: operations["set_opening_window"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/package-plans": {
         parameters: {
             query?: never;
@@ -557,6 +573,12 @@ export interface components {
             /** Format: uuid */
             plan_id?: string | null;
             refund?: components["schemas"]["RefundDto"] | null;
+            /**
+             * Format: int64
+             * @description Most that may be refunded on cancel. Equals `sold_price` for a sale; 0 for an opening
+             *     balance a manager entered, until the owner confirms the book price (AC8.8).
+             */
+            refund_cap: number;
             /** Format: uuid */
             sale_id?: string | null;
             /** Format: int64 */
@@ -687,6 +709,26 @@ export interface components {
             customer_id: string;
             customer_packages: components["schemas"]["CustomerPackageDto"][];
         };
+        OpeningBalanceWindowDto: {
+            /**
+             * Format: date
+             * @description Today's business day in the spa's time zone.
+             */
+            business_date: string;
+            /**
+             * Format: date
+             * @description The day the window was last opened for, if any (it may be a past day: then it is closed).
+             */
+            open_on?: string | null;
+            /** @description True when managers may import today. */
+            open_today: boolean;
+            /** Format: date-time */
+            opened_at?: string | null;
+        };
+        OpeningBalanceWindowUpdate: {
+            /** @description true = open paper-book import for today's business day; false = close it now. */
+            open: boolean;
+        };
         OpeningItemCreate: {
             /** Format: uuid */
             service_id: string;
@@ -732,6 +774,11 @@ export interface components {
         };
         /** @description Body of `POST /customer-packages/{id}/cancel` 🔒. */
         PackageCancel: {
+            /**
+             * @description Opening balances entered by someone who may not refund have a refund cap of 0 (spec
+             *     AC8.8): the owner checked the paper book and confirms its price as the cap. Audited.
+             */
+            confirm_book_price?: boolean;
             /** @description Why (required, 1–500 characters); audited. */
             reason?: string | null;
             /**
@@ -1557,7 +1604,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description refund.exceeds_paid (AC7.4), validation_failed: reason / refund_method */
+            /** @description refund.exceeds_paid (AC7.4), refund.book_price_unconfirmed (opening balance entered by a manager: send confirm_book_price, AC8.8), validation_failed: reason / refund_method */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -1995,6 +2042,82 @@ export interface operations {
                 content?: never;
             };
             /** @description validation_failed (fields prefixed customer. / packages[j].), idempotency.key_reuse_mismatch */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    read_opening_window: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Whether paper-book import is open today (AC8.6) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpeningBalanceWindowDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_opening_window: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpeningBalanceWindowUpdate"];
+            };
+        };
+        responses: {
+            /** @description Opened for today's business day, or closed (AC8.6); audited */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpeningBalanceWindowDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: owner only (opening_balance.manage_window) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed */
             422: {
                 headers: {
                     [name: string]: unknown;

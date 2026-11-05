@@ -124,6 +124,10 @@ R1 coi mọi giao dịch là **thu đủ ngay**: không có ghi nợ, thu nợ h
 - AC8.3: Báo cáo doanh thu và sổ quỹ **không** tính các khoản opening balance là doanh thu mới.
 - AC8.4 (neg): Số buổi còn lại > tổng số buổi → `422`.
 - AC8.5: Bản ghi opening balance hiển thị nhãn "Nhập từ sổ cũ" ở mọi nơi.
+- **Quyết định EM 2026-11-05 (security review M2, nguồn `raw/2026-11-05-em-opening-balance-same-day.md`):** "thông tin làm ngày hôm đó chỉ nên nhập làm trong ngày thôi".
+  - AC8.6: Chủ spa bật **"Mở nhập sổ cũ hôm nay"** (`PUT /opening-balances/window {open: true}`, quyền `opening_balance.manage_window`, chỉ Owner) → mở cho **ngày kinh doanh hôm nay** theo múi giờ spa (Asia/Ho_Chi_Minh); qua 0 giờ là tự đóng. `{open: false}` đóng ngay. Mỗi lần mở/đóng ghi audit.
+  - AC8.7: Ngày đã mở → người có `opening_balance.import` nhập được như cũ. Ngày chưa mở → quản lý nhận `403 opening_balance.closed` (web hiện giải thích thay cho form); chủ spa vẫn nhập được nhưng là thao tác 🔒 (`401 auth.reauth_required` → nhập lại mật khẩu + mã).
+  - AC8.8: Giá trong sổ (`sold_price`) chỉ là **trần hoàn tiền** khi người nhập có quyền hoàn tiền (`package.cancel_refund`, tức chủ spa). Quản lý nhập → trần = 0; khi hủy + hoàn, chủ spa phải tích "Đã đối chiếu giá trong sổ" (`confirm_book_price: true`, ghi audit) thì trần mới thành `sold_price`; thiếu → `422 refund.book_price_unconfirmed`. Hủy vẫn là 🔒 Owner như AC7.2. DB giữ trần bằng cột `customer_package.refund_cap` + trigger `refund_within_paid` (hoàn ≤ least(sold_price, refund_cap)).
 
 ## 4. UX notes
 - **Màn hình quầy** (tablet/laptop ưu tiên, dùng được trên điện thoại):

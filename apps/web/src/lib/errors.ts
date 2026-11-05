@@ -44,6 +44,10 @@ const MESSAGES: Record<string, string> = {
     'Liệu trình đã dùng buổi nên không hủy hóa đơn được. Hãy dùng "Hủy liệu trình + hoàn tiền".',
   "sale.void_via_visit": "Hóa đơn dịch vụ lẻ được hủy cùng lượt khách.",
   "refund.exceeds_paid": "Số tiền hoàn lớn hơn số khách đã trả cho liệu trình.",
+  "refund.book_price_unconfirmed":
+    'Liệu trình nhập từ sổ cũ do quản lý nhập: chủ spa đối chiếu sổ rồi tích "Đã đối chiếu giá trong sổ" để hoàn tiền.',
+  "opening_balance.closed":
+    "Hôm nay chưa mở nhập sổ cũ. Nhờ chủ spa bật “Mở nhập sổ cũ hôm nay”.",
   "package.restore_exceeds_total":
     "Buổi của lượt này đã được cộng lại trước đó. Vui lòng tải lại.",
   "idempotency.key_reuse_mismatch":

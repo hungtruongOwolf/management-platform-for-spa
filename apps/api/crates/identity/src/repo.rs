@@ -111,6 +111,9 @@ pub struct NewSession<'a> {
     pub active_tenant: Option<TenantId>,
     pub idle_expires_at: DateTime<Utc>,
     pub absolute_expires_at: DateTime<Utc>,
+    /// When the user last proved the password (and second factor). The column has no default
+    /// (migration 0011): a token rotation must carry the old value, never get a free "now".
+    pub recent_auth_at: DateTime<Utc>,
     pub ip: Option<std::net::IpAddr>,
     pub user_agent: Option<&'a str>,
     /// Password accepted, second factor still owed.
@@ -121,14 +124,16 @@ pub async fn insert_session(pool: &PgPool, s: NewSession<'_>) -> Result<Uuid, Ap
     let id = Uuid::now_v7();
     sqlx::query!(
         r#"INSERT INTO app.session
-             (id, token_hash, user_id, active_tenant_id, idle_expires_at, absolute_expires_at, ip, user_agent, mfa_pending)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#,
+             (id, token_hash, user_id, active_tenant_id, idle_expires_at, absolute_expires_at,
+              recent_auth_at, ip, user_agent, mfa_pending)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
         id,
         &s.token_hash[..],
         s.user_id.as_uuid(),
         s.active_tenant.map(|t| t.as_uuid()),
         s.idle_expires_at,
         s.absolute_expires_at,
+        s.recent_auth_at,
         s.ip.map(IpNetwork::from),
         s.user_agent,
         s.mfa_pending,
@@ -359,14 +364,16 @@ pub async fn tenants_of_user(pool: &PgPool, user: UserId) -> Result<Vec<TenantRe
         .collect())
 }
 
-/// Permissions of an active member in the transaction's tenant. `None` = not an active member.
+/// Permissions of an active member of an active spa (the transaction's tenant). `None` = not an
+/// active member, or the spa is suspended: a suspended spa grants nothing, even to live sessions.
 pub async fn member_permissions(
     tx: &mut TenantTx,
     user: UserId,
 ) -> Result<Option<Vec<Permission>>, AppError> {
     let tenant = tx.tenant().as_uuid();
     let member = sqlx::query_scalar!(
-        "SELECT id FROM app.membership WHERE tenant_id = $1 AND user_id = $2 AND status = 'active'",
+        "SELECT m.id FROM app.membership m JOIN app.tenant t ON t.id = m.tenant_id
+         WHERE m.tenant_id = $1 AND m.user_id = $2 AND m.status = 'active' AND t.status = 'active'",
         tenant,
         user.as_uuid()
     )

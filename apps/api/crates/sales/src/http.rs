@@ -10,7 +10,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use identity::AuthUser;
 use kernel::http::IdempotencyKey;
-use kernel::idempotency::{hash_request, hash_request_on};
+use kernel::idempotency::hash_route;
 use kernel::{AppError, FieldError};
 use serde_json::Value;
 use sqlx::PgPool;
@@ -58,8 +58,14 @@ pub async fn create_sale(
     // genuine retry into a "different body".
     let canonical = serde_json::to_vec(&value).map_err(|e| AppError::Internal(e.to_string()))?;
     let input: SaleCreate = serde_json::from_value(value).map_err(|_| invalid_body())?;
-    let (status, body) =
-        service::create_sale(&pool, &user.actor, key, hash_request(&canonical), &input).await?;
+    let (status, body) = service::create_sale(
+        &pool,
+        &user.actor,
+        key,
+        hash_route("POST", "/sales", None, &canonical),
+        &input,
+    )
+    .await?;
     let status = StatusCode::from_u16(status).unwrap_or(StatusCode::CREATED);
     Ok(no_store(status, body))
 }
@@ -100,7 +106,7 @@ pub async fn void_sale(
         &pool,
         &user.actor,
         key,
-        hash_request_on(id, &canonical),
+        hash_route("POST", "/sales/{id}/void", Some(id), &canonical),
         id,
         input.reason.as_deref(),
     )

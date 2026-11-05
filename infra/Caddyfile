@@ -53,6 +53,13 @@
 
 	log {
 		output stdout
-		format json
+		# Security review L5: query strings carry customer search terms (GET /api/v1/customers?q=<name or phone>).
+		# Deny by default: drop the whole query from the logged URI instead of listing keys, and drop Referer
+		# (same-origin requests send the SPA URL with its query). Cookie/Authorization are redacted by Caddy already.
+		format filter {
+			request>uri regexp "\?.*$" "?[redacted]"
+			request>headers>Referer delete
+			wrap json
+		}
 	}
 }

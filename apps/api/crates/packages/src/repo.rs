@@ -11,6 +11,7 @@ pub struct PackageRow {
     pub name_snapshot: String,
     pub gift_note: Option<String>,
     pub sold_price: i64,
+    pub refund_cap: i64,
     pub origin: String,
     pub sale_id: Option<Uuid>,
     pub closer_staff_id: Option<Uuid>,
@@ -42,6 +43,8 @@ pub struct PackageInsert<'a> {
     pub name: &'a str,
     pub gift_note: Option<&'a str>,
     pub sold_price: i64,
+    /// Most that may be refunded on cancel (migration 0011); never above `sold_price`.
+    pub refund_cap: i64,
     pub origin: &'a str,
     pub sale_id: Option<Uuid>,
     pub closer_staff_id: Option<Uuid>,
@@ -54,9 +57,9 @@ pub async fn insert_package(tx: &mut TenantTx, p: &PackageInsert<'_>) -> Result<
     let tenant = tx.tenant().as_uuid();
     sqlx::query!(
         r#"INSERT INTO app.customer_package
-             (id, tenant_id, customer_id, plan_id, name_snapshot, gift_note, sold_price, origin, sale_id,
-              closer_staff_id, starts_on, expires_on, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)"#,
+             (id, tenant_id, customer_id, plan_id, name_snapshot, gift_note, sold_price, refund_cap, origin,
+              sale_id, closer_staff_id, starts_on, expires_on, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)"#,
         p.id,
         tenant,
         p.customer_id,
@@ -64,6 +67,7 @@ pub async fn insert_package(tx: &mut TenantTx, p: &PackageInsert<'_>) -> Result<
         p.name,
         p.gift_note,
         p.sold_price,
+        p.refund_cap,
         p.origin,
         p.sale_id,
         p.closer_staff_id,
@@ -118,8 +122,8 @@ pub async fn packages(
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         PackageRow,
-        r#"SELECT p.id, p.customer_id, p.plan_id, p.name_snapshot, p.gift_note, p.sold_price, p.origin, p.sale_id,
-                  p.closer_staff_id, s.full_name AS "closer_name?", p.starts_on, p.expires_on, p.cancelled_at,
+        r#"SELECT p.id, p.customer_id, p.plan_id, p.name_snapshot, p.gift_note, p.sold_price, p.refund_cap, p.origin,
+                  p.sale_id, p.closer_staff_id, s.full_name AS "closer_name?", p.starts_on, p.expires_on, p.cancelled_at,
                   p.cancel_reason, p.version, p.created_at
            FROM app.customer_package p
            LEFT JOIN app.staff s ON s.tenant_id = p.tenant_id AND s.id = p.closer_staff_id
@@ -257,6 +261,8 @@ pub async fn item_state(tx: &mut TenantTx, item_id: Uuid) -> Result<Option<ItemS
 pub struct LockedPackage {
     pub customer_id: Uuid,
     pub sold_price: i64,
+    pub refund_cap: i64,
+    pub origin: String,
     pub expires_on: Option<NaiveDate>,
     pub cancelled: bool,
     pub version: i64,
@@ -268,7 +274,7 @@ pub async fn lock_package(tx: &mut TenantTx, id: Uuid) -> Result<Option<LockedPa
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         LockedPackage,
-        r#"SELECT customer_id, sold_price, expires_on, (cancelled_at IS NOT NULL) AS "cancelled!", version
+        r#"SELECT customer_id, sold_price, refund_cap, origin, expires_on, (cancelled_at IS NOT NULL) AS "cancelled!", version
            FROM app.customer_package WHERE tenant_id = $1 AND id = $2 FOR UPDATE"#,
         tenant,
         id
@@ -511,4 +517,63 @@ pub async fn refunds(tx: &mut TenantTx, package_ids: &[Uuid]) -> Result<Vec<Refu
     )
     .fetch_all(tx.conn())
     .await?)
+}
+
+/// Raises an opening balance's refund cap to its book price, once the owner confirmed the paper
+/// book on cancel (spec AC8.8). The caller holds the package row lock.
+pub async fn confirm_book_price(tx: &mut TenantTx, id: Uuid) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        "UPDATE app.customer_package SET refund_cap = sold_price, updated_at = now()
+         WHERE tenant_id = $1 AND id = $2 AND origin = 'opening_balance'",
+        tenant,
+        id
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------- opening-balance window (M2)
+
+pub struct WindowRow {
+    pub open_on: NaiveDate,
+    pub opened_at: DateTime<Utc>,
+}
+
+pub async fn opening_window(tx: &mut TenantTx) -> Result<Option<WindowRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        WindowRow,
+        "SELECT open_on, opened_at FROM app.opening_balance_window WHERE tenant_id = $1",
+        tenant
+    )
+    .fetch_optional(tx.conn())
+    .await?)
+}
+
+pub async fn open_window(tx: &mut TenantTx, on: NaiveDate, by: Uuid) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        "INSERT INTO app.opening_balance_window (tenant_id, open_on, opened_by) VALUES ($1, $2, $3)
+         ON CONFLICT (tenant_id) DO UPDATE
+           SET open_on = EXCLUDED.open_on, opened_by = EXCLUDED.opened_by, opened_at = now()",
+        tenant,
+        on,
+        by
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+pub async fn close_window(tx: &mut TenantTx) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        "DELETE FROM app.opening_balance_window WHERE tenant_id = $1",
+        tenant
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
 }

@@ -77,6 +77,8 @@ check "index.html no-cache" sh -c "curl -ksI $base/ | grep -qi 'cache-control: n
 asset="$(curl -ksf $base/ | sed -n 's/.*src="\(\/assets\/[^"]*\.js\)".*/\1/p' | head -n 1)"
 check "hashed asset immutable ($asset)" sh -c "curl -ksI $base$asset | grep -qi 'immutable'"
 check "http -> https redirect" sh -c "curl -s -o /dev/null -w '%{http_code}' http://localhost:18080/ | grep -qE '30[18]'"
+curl -ks -o /dev/null "$base/api/v1/customers?q=0905111222" || true
+check "access log drops query strings (L5)" sh -c "docker logs ${project}-caddy-1 2>&1 | grep -q 'customers?\[redacted\]' && ! docker logs ${project}-caddy-1 2>&1 | grep -q 0905111222"
 check "API has no host port (only via Caddy)" sh -c "test -z \"\$(docker port ${project}-api-1)\""
 
 echo "== backup -> restore drill"

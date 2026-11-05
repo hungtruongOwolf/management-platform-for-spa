@@ -45,6 +45,7 @@ permissions! {
     PackageCancelRefund => "package.cancel_refund",
     PackageUseExpiredOverride => "package.use_expired_override",
     OpeningBalanceImport => "opening_balance.import",
+    OpeningBalanceManageWindow => "opening_balance.manage_window",
     VisitRecord => "visit.record",
     VisitRead => "visit.read",
     PaymentCollect => "payment.collect",

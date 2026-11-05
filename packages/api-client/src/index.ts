@@ -27,6 +27,7 @@ export type CustomerPackageItem = Schemas["CustomerPackageItemDto"];
 export type PackageStatus = Schemas["PackageStatusDto"];
 export type OpeningBalanceCreate = Schemas["OpeningBalanceCreate"];
 export type OpeningBalance = Schemas["OpeningBalanceDto"];
+export type OpeningBalanceWindow = Schemas["OpeningBalanceWindowDto"];
 export type OpeningPackageCreate = Schemas["OpeningPackageCreate"];
 export type OpeningItemCreate = Schemas["OpeningItemCreate"];
 export type Visit = Schemas["VisitDto"];

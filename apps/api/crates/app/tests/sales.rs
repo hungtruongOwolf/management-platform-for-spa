@@ -196,6 +196,29 @@ async fn ten_plus_two_at_1_5m_gives_12_sessions_worth_150k_each(pool: PgPool) ->
     Ok(())
 }
 
+/// Security review INFO: taking money on `POST /sales` needs `payment.collect`, as on `/visits`.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn taking_money_needs_payment_collect(pool: PgPool) -> TestResult {
+    let s = shop(pool).await?;
+    sqlx::query(
+        "DELETE FROM app.role_permission rp USING app.role r
+         WHERE rp.role_id = r.id AND r.key = 'manager' AND rp.permission = 'payment.collect'",
+    )
+    .execute(&s.h.owner)
+    .await?;
+    let refused = s.sell(&s.manager, s.cash(1_500_000)).await;
+    assert_eq!(
+        code(&refused),
+        (StatusCode::FORBIDDEN, Some("auth.forbidden"))
+    );
+    assert_eq!(s.count("sale").await?, 0);
+    assert_eq!(s.count("payment").await?, 0);
+
+    let owner = s.sell(&s.owner, s.cash(1_500_000)).await;
+    assert_eq!(owner.status, StatusCode::CREATED, "{}", owner.body);
+    Ok(())
+}
+
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn mixed_cash_and_transfer_is_two_payments(pool: PgPool) -> TestResult {
     let s = shop(pool).await?;

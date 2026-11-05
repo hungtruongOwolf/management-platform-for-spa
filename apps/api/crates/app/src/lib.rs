@@ -1,6 +1,7 @@
 //! HTTP application wiring: state, router, configuration, cross-cutting middleware and jobs.
 
 pub mod config;
+pub mod db_guard;
 mod health;
 pub mod jobs;
 pub mod middleware;

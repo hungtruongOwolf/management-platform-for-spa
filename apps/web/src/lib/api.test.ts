@@ -35,4 +35,11 @@ describe("safeNextPath", () => {
       expect(safeNextPath(bad)).toBe("/");
     }
   });
+
+  it("rejects control characters and whitespace that browsers strip from URLs", () => {
+    // URL parsers drop tab/newline, so "/\t/evil.example" becomes "//evil.example" (protocol-relative).
+    for (const bad of ["/\t/evil.example", "/\n/evil.example", "/\r/evil.example", "/ /evil.example", "/\u0000x", "/a b", "/x\u001f"]) {
+      expect(safeNextPath(bad)).toBe("/");
+    }
+  });
 });

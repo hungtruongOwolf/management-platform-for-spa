@@ -69,6 +69,7 @@ function pkg(
     name: `Gói ${id}`,
     gift_note: null,
     sold_price: 1_500_000,
+    refund_cap: 1_500_000,
     origin: "sale",
     sale_id: "sale1",
     closer_staff_id: "st1",

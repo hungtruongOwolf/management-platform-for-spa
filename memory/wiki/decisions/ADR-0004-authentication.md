@@ -33,6 +33,14 @@ Người dùng R1–R3 là nhân sự spa (chủ, quản lý, KTV): vài ngườ
   - Mất thiết bị: operator chạy `app reset-mfa` sau khi xác minh danh tính ngoài hệ thống (TOFU: ai có mật khẩu trước khi owner enroll có thể enroll trước — giảm bằng cách owner enroll ngay khi nhận tài khoản; ở R1 tài khoản do operator tạo).
 - Phân quyền: permission-based, role là dữ liệu ([principles](../architecture/principles.md) #2). Permissions được nạp vào `AuthUser` mỗi request từ session.
 
+## Update 2026-11-04: security review r1
+- **Xoay token ≠ xác thực lại (H1).** Mỗi lần phát session, code phải nói rõ loại (`identity::service::Issue`): `MfaPending`, `Authenticated` (đăng nhập/MFA xong: `recent_auth_at = now`, hạn tuyệt đối mới 30 ngày), `Rotated` (switch-tenant: **giữ** `recent_auth_at` và `absolute_expires_at` của session cũ, idle = min(now + 12h, hạn tuyệt đối)). Cột `session.recent_auth_at` không còn `DEFAULT now()` (migration 0011), nên quên truyền giá trị là lỗi NOT NULL chứ không phải một cửa sổ 🔒 miễn phí.
+- **Spa bị tạm ngưng (M3):** không cấp permission cho session nào, kể cả session đang mở (`repo::member_permissions` kiểm `tenant.status = 'active'`) → `403 auth.not_a_member`. Ngược lại, `app.user_requires_mfa` **bỏ** điều kiện spa active: owner của spa đang ngưng vẫn phải MFA, để session đăng nhập trong lúc ngưng không thành session owner không-MFA khi spa mở lại.
+- **Cấp role cần MFA (L4):** `provisioning::add_user` thu hồi mọi session của user khi role được cấp có `requires_mfa`; lần đăng nhập sau đi qua MFA.
+- **Khóa tài khoản (L2), chọn cách nhỏ và an toàn:** giữ khóa **theo tài khoản** (không đổi sang theo tài khoản + IP), thêm lệnh operator `app unlock --phone P` (xác minh danh tính ngoài hệ thống trước, giống `reset-mfa`). Lý do: khóa theo (tài khoản, IP) cho kẻ tấn công có nhiều IP (IPv6, botnet) 5 lần đoán mỗi IP, tức làm yếu chống dò mật khẩu phân tán, đúng thứ mà khóa tài khoản sinh ra để chặn; spa có 1 chi nhánh, operator gọi được, và khóa tối đa 24 giờ. Rủi ro còn lại: ai biết SĐT chủ spa có thể khóa lại liên tục (DoS). Nếu điều đó xảy ra thực tế thì cân nhắc: khóa theo (tài khoản, IP) + trần toàn cục theo tài khoản cao hơn, hoặc cho thiết bị đã từng đăng nhập thành công một hạn mức riêng.
+- **Rate limit (L1):** bucket theo IPv4, hoặc theo **/64** với IPv6; map bucket được dọn mỗi 60 giây (`retain_recent`).
+- **TOFU khi enroll MFA lần đầu (L3), chỉ ghi nhận, chưa sửa:** ai có mật khẩu owner trước khi owner tự enroll thì enroll được authenticator của mình. Giảm thiểu hiện tại: operator tạo tài khoản và owner enroll ngay khi nhận (ở R1 tài khoản do operator tạo trực tiếp). Hướng sửa sau: mã kích hoạt một lần do operator đưa tận tay, bắt buộc cho lần enroll đầu.
+
 ## Consequences
 - Positive: không có service phụ; token không bao giờ nằm trong JS (chống XSS lấy cắp).
 - Negative: tự viết luồng auth. Giảm rủi ro bằng checklist `secure/authn-authz.md` và test tích hợp đầy đủ.

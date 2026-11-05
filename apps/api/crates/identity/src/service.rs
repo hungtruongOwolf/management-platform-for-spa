@@ -35,6 +35,8 @@ pub struct Session {
     pub user_id: UserId,
     pub active_tenant: Option<TenantId>,
     pub recent_auth_at: DateTime<Utc>,
+    /// Hard end of the login this session belongs to; token rotation never moves it.
+    pub absolute_expires_at: DateTime<Utc>,
 }
 
 impl Session {
@@ -119,25 +121,58 @@ pub struct PendingMfa {
     pub enrolled: bool,
 }
 
+/// Why a session row is being issued. Every caller states it explicitly, because it decides
+/// whether the new token counts as a fresh authentication (security review H1).
+#[derive(Debug, Clone, Copy)]
+enum Issue {
+    /// Password accepted, second factor still owed: short-lived, usable only for MFA.
+    MfaPending,
+    /// Every required factor was just checked: a fresh login (new absolute expiry, re-auth now).
+    Authenticated,
+    /// Same login, new token (switch-tenant): keeps the re-auth time and the absolute expiry,
+    /// so rotation can neither stand in for a password nor extend a session.
+    Rotated {
+        recent_auth_at: DateTime<Utc>,
+        absolute_expires_at: DateTime<Utc>,
+    },
+}
+
+/// `(idle_expires_at, absolute_expires_at, recent_auth_at)` for a session issued at `now`.
+fn session_times(
+    issue: Issue,
+    now: DateTime<Utc>,
+) -> (DateTime<Utc>, DateTime<Utc>, DateTime<Utc>) {
+    let idle_from =
+        |absolute: DateTime<Utc>| (now + Duration::hours(IDLE_TIMEOUT_HOURS)).min(absolute);
+    match issue {
+        Issue::MfaPending => {
+            let deadline = now + Duration::minutes(MFA_PENDING_MINUTES);
+            (deadline, deadline, now)
+        }
+        Issue::Authenticated => {
+            let absolute = now + Duration::days(ABSOLUTE_TIMEOUT_DAYS);
+            (idle_from(absolute), absolute, now)
+        }
+        Issue::Rotated {
+            recent_auth_at,
+            absolute_expires_at,
+        } => (
+            idle_from(absolute_expires_at),
+            absolute_expires_at,
+            recent_auth_at,
+        ),
+    }
+}
+
 async fn issue_session(
     pool: &PgPool,
     user: UserId,
     tenant: Option<TenantId>,
     meta: &ClientMeta,
-    mfa_pending: bool,
+    issue: Issue,
 ) -> Result<SessionToken, AppError> {
     let token = token::generate().map_err(|e| AppError::Internal(e.to_string()))?;
-    let now = Utc::now();
-    let (idle, absolute) = if mfa_pending {
-        let deadline = now + Duration::minutes(MFA_PENDING_MINUTES);
-        (deadline, deadline)
-    } else {
-        let absolute = now + Duration::days(ABSOLUTE_TIMEOUT_DAYS);
-        (
-            (now + Duration::hours(IDLE_TIMEOUT_HOURS)).min(absolute),
-            absolute,
-        )
-    };
+    let (idle, absolute, recent_auth_at) = session_times(issue, Utc::now());
     repo::insert_session(
         pool,
         NewSession {
@@ -146,9 +181,10 @@ async fn issue_session(
             active_tenant: tenant,
             idle_expires_at: idle,
             absolute_expires_at: absolute,
+            recent_auth_at,
             ip: meta.ip,
             user_agent: meta.user_agent.as_deref(),
-            mfa_pending,
+            mfa_pending: matches!(issue, Issue::MfaPending),
         },
     )
     .await?;
@@ -167,12 +203,14 @@ async fn open_full_session(
         [only] => Some(only.id),
         _ => None,
     };
-    let token = issue_session(pool, user, active, meta, false).await?;
+    let token = issue_session(pool, user, active, meta, Issue::Authenticated).await?;
+    let now = Utc::now();
     let session = Session {
         id: Uuid::nil(),
         user_id: user,
         active_tenant: active,
-        recent_auth_at: Utc::now(),
+        recent_auth_at: now,
+        absolute_expires_at: now + Duration::days(ABSOLUTE_TIMEOUT_DAYS),
     };
     let me = build_me(pool, &session, Some(tenants)).await?;
     Ok((token, me))
@@ -230,7 +268,7 @@ pub async fn login(
     if account.mfa_enabled || repo::user_requires_mfa(pool, account.id).await? {
         // The failure counter is reset only after the second factor: otherwise re-entering the
         // (stolen) password would reset the lockout between rounds of code guessing.
-        let token = issue_session(pool, account.id, None, meta, true).await?;
+        let token = issue_session(pool, account.id, None, meta, Issue::MfaPending).await?;
         let next = if account.mfa_enabled {
             LoginNext::MfaVerify
         } else {
@@ -284,6 +322,7 @@ pub async fn resolve(pool: &PgPool, secret: &str) -> Result<Session, AppError> {
         user_id: row.user_id,
         active_tenant: row.active_tenant,
         recent_auth_at: row.recent_auth_at,
+        absolute_expires_at: row.absolute_expires_at,
     })
 }
 
@@ -511,7 +550,8 @@ pub async fn confirm_enrollment(
     Ok((token, MfaEnrolled { me, recovery_codes }))
 }
 
-/// Moves the session to another spa the user belongs to. Privileges change, so the token rotates.
+/// Moves the session to another spa the user belongs to. Privileges change, so the token rotates,
+/// but it is the same login: the re-auth time and the absolute expiry carry over (review H1).
 pub async fn switch_tenant(
     pool: &PgPool,
     session: &Session,
@@ -523,12 +563,15 @@ pub async fn switch_tenant(
         return Err(AppError::NotFound);
     }
     repo::revoke_session(pool, session.id).await?;
-    let token = issue_session(pool, session.user_id, Some(tenant), meta, false).await?;
+    let issue = Issue::Rotated {
+        recent_auth_at: session.recent_auth_at,
+        absolute_expires_at: session.absolute_expires_at,
+    };
+    let token = issue_session(pool, session.user_id, Some(tenant), meta, issue).await?;
     let moved = Session {
         id: Uuid::nil(),
-        user_id: session.user_id,
         active_tenant: Some(tenant),
-        recent_auth_at: session.recent_auth_at,
+        ..session.clone()
     };
     let me = build_me(pool, &moved, Some(tenants)).await?;
     Ok((token, me))

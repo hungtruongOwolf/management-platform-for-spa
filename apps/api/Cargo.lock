@@ -78,6 +78,7 @@ dependencies = [
  "chrono-tz",
  "crm",
  "dotenvy",
+ "governor",
  "http-body-util",
  "identity",
  "kernel",

@@ -208,9 +208,9 @@ Cài client trên VPS: `docker run --rm -it postgres:17-alpine psql "<owner-url>
 
 ## 5. Cloudflare R2 (backup)
 1. R2 → Create bucket `vpyd-backups`, location hint **Asia-Pacific**.
-2. **Lifecycle rules:** prefix `staging/daily/` xóa sau 35 ngày; `staging/monthly/` xóa sau 400 ngày. Script để `BACKUP_*_RETENTION_DAYS` trống, việc xóa do R2 làm.
-3. **Bucket lock rule** (chống ransomware: VPS bị chiếm cũng không xóa được backup): prefix `staging/`, retention 30 ngày.
-4. **API token:** R2 → Manage API tokens → "Object Read & Write", **chỉ bucket `vpyd-backups`**. Ghi lại Access Key ID và Secret (Secret chỉ hiện một lần), dán thẳng vào `.env.production`.
+2. **Lifecycle rules** (việc xóa chỉ do R2 làm, VPS không bao giờ xóa backup đã hoàn tất, security review L7): prefix `staging/daily/` xóa sau 35 ngày; `staging/monthly/` xóa sau 400 ngày; `staging/incoming/` xóa sau 1 ngày (chỗ upload tạm, xem §7).
+3. **Bucket lock rules** (bắt buộc, chống ransomware: VPS bị chiếm, token bị lộ cũng không xóa hay ghi đè được backup): `staging/daily/` retention 35 ngày, `staging/monthly/` retention 400 ngày. **Không** lock `staging/incoming/` (script cần xóa upload hỏng ở đó). Kiểm tra: `npx wrangler r2 bucket lock list vpyd-backups`. Lock thắng lifecycle, nên giữ retention của lock ≤ lifecycle tương ứng.
+4. **API token:** R2 → Manage API tokens → "Object Read & Write", **chỉ bucket `vpyd-backups`**. R2 không có token chỉ-ghi ([R2 API tokens](https://developers.cloudflare.com/r2/api/tokens/)), nên token này về lý thuyết xóa được object; chính bucket lock ở bước 3 chặn việc đó ([R2 bucket locks](https://developers.cloudflare.com/r2/buckets/bucket-locks/)). **Không bao giờ** dùng token Admin trên VPS: Admin sửa/xóa được lock rule. Lock và lifecycle chỉ chỉnh từ dashboard bằng tài khoản Cloudflare của EM (bật 2FA). Ghi lại Access Key ID và Secret (Secret chỉ hiện một lần), dán thẳng vào `.env.production`.
 5. **Khóa mã hóa (age):** EM tạo trên máy cá nhân `age-keygen -o vpyd-backup-key.txt`. Dòng `# public key: age1…` là `AGE_RECIPIENT`, công khai được. File private key cất trong password manager kèm một bản offline (USB/giấy) và **không** để trên VPS, trừ lúc diễn tập khôi phục.
 
 ## 6. Deploy lần đầu
@@ -235,7 +235,7 @@ Cài client trên VPS: `docker run --rm -it postgres:17-alpine psql "<owner-url>
 **Rollback:** chạy workflow với `rollback = true`, hoặc trên VPS `infra/deploy.sh --rollback` (deploy lại tag trước trong `.deploy-history`). Migration phải theo kiểu expand/contract để API cũ vẫn chạy được trên schema mới.
 
 ## 7. Backup và diễn tập khôi phục
-- **Backup đêm:** systemd timer 19:30 UTC (02:30 giờ VN) chạy `backup.sh`. Quy trình: `pg_dump -Fc` schema `app` + `public` (bảng `_sqlx_migrations`) → `age -r AGE_RECIPIENT` → `rclone rcat` lên `r2:vpyd-backups/staging/daily/…dump.age`. Dữ liệu được stream nên không có file plaintext nào nằm trên đĩa. Script kiểm tra kích thước object, xóa object nếu pipeline lỗi giữa chừng, và mùng 1 hằng tháng chép thêm một bản vào `monthly/`. Mật khẩu DB truyền qua biến libpq `PG*`, không nằm trong argv.
+- **Backup đêm:** systemd timer 19:30 UTC (02:30 giờ VN) chạy `backup.sh`. Quy trình: `pg_dump -Fc` schema `app` + `public` (bảng `_sqlx_migrations`) → `age -r AGE_RECIPIENT` → `rclone rcat` lên `r2:vpyd-backups/staging/incoming/…dump.age`. Dữ liệu được stream nên không có file plaintext nào nằm trên đĩa. Script kiểm tra kích thước object, chỉ khi cả pipeline thành công mới chép (server-side) sang `daily/` đã bị lock, rồi xóa bản ở `incoming/`; pipeline lỗi thì chỉ xóa bản ở `incoming/`, nên `daily/` không bao giờ chứa dump cụt. Mùng 1 hằng tháng chép thêm một bản vào `monthly/`. Script không có bước dọn backup cũ (đã bỏ `BACKUP_*_RETENTION_DAYS`). Mật khẩu DB truyền qua biến libpq `PG*`, không nằm trong argv.
 - **Diễn tập khôi phục (hằng tháng, và bắt buộc trước khi đóng S11):**
   ```bash
   cd /opt/vpyd; C="docker compose --env-file .env.production -f infra/docker-compose.prod.yml --profile drill"

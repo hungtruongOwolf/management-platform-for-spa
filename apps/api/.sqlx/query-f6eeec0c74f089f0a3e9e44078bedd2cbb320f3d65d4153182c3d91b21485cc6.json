@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT open_on, opened_at FROM app.opening_balance_window WHERE tenant_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "open_on",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "app.opening_balance_window",
+            "name": "open_on"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "opened_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.opening_balance_window",
+            "name": "opened_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "f6eeec0c74f089f0a3e9e44078bedd2cbb320f3d65d4153182c3d91b21485cc6"
+}

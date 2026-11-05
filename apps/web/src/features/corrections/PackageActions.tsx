@@ -301,7 +301,11 @@ function CancelForm({
   const [method, setMethod] = useState<"cash" | "bank_transfer">("cash");
   const [reason, setReason] = useState("");
   const [touched, setTouched] = useState(false);
+  const [bookConfirmed, setBookConfirmed] = useState(false);
   const amount = amountText.trim() === "" ? 0 : parseAmount(amountText);
+  // A paper-book price typed by a manager is not a refund cap until the owner checks the book.
+  const needsBookCheck =
+    pkg.origin === "opening_balance" && amount > pkg.refund_cap;
   const action = useGuardedAction({
     run: () =>
       cancelPackage(
@@ -311,6 +315,9 @@ function CancelForm({
               reason: reason.trim(),
               refund_amount: amount,
               refund_method: method,
+              ...(needsBookCheck && bookConfirmed
+                ? { confirm_book_price: true }
+                : {}),
             }
           : { reason: reason.trim(), refund_amount: 0 },
         idempotencyKey,
@@ -373,6 +380,18 @@ function CancelForm({
         </label>
         {amountProblem && (
           <p className="text-sm text-danger">{amountProblem}</p>
+        )}
+        {amount > 0 && needsBookCheck && (
+          <label className="flex min-h-11 items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={bookConfirmed}
+              onChange={(e) => {
+                setBookConfirmed(e.target.checked);
+              }}
+            />
+            Đã đối chiếu giá trong sổ ({formatVnd(pkg.sold_price)})
+          </label>
         )}
         {amount > 0 && (
           <fieldset className="flex flex-wrap gap-3">

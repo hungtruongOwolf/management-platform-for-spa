@@ -196,7 +196,8 @@ fn session_count(v: i32) -> Result<u32, AppError> {
     u32::try_from(v).map_err(|_| AppError::Internal("negative session count in plan".into()))
 }
 
-/// `POST /sales` (`package.sell`, plus `sale.discount` / `sale.discount_unlimited` for a discount).
+/// `POST /sales` (`package.sell`, plus `payment.collect` when money is taken, as on `POST /visits`,
+/// and `sale.discount` / `sale.discount_unlimited` for a discount).
 /// Returns the HTTP status and body to send, which are also stored under the idempotency key:
 /// retrying with the same key and body replays them without creating anything (AC3.7).
 pub async fn create_sale(
@@ -208,6 +209,9 @@ pub async fn create_sale(
 ) -> Result<(u16, Value), AppError> {
     actor.require(Permission::PackageSell)?;
     let order = parse(input)?;
+    if !order.payments.is_empty() {
+        actor.require(Permission::PaymentCollect)?;
+    }
 
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     if let Claim::Replay { status, body } =
@@ -310,6 +314,8 @@ pub async fn create_sale(
                 })
             })
             .collect::<Result<Vec<_>, AppError>>()?;
+        // Collected in full (R1), so what was paid is also the refund cap.
+        let paid = plan.price.checked_sub(share).map_err(money_err)?;
         let package = packages::service::create(
             &mut tx,
             actor,
@@ -321,7 +327,8 @@ pub async fn create_sale(
                     .gift_note
                     .clone()
                     .unwrap_or_else(|| plan.gift_note.clone()),
-                sold_price: plan.price.checked_sub(share).map_err(money_err)?,
+                sold_price: paid,
+                refund_cap: paid,
                 origin: Origin::Sale {
                     sale_id,
                     closer_staff_id: closer.id,

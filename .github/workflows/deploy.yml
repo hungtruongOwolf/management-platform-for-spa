@@ -14,9 +14,9 @@ on:
         type: boolean
         default: false
 
+# Least privilege per job (security review L8): only `build` may push images.
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: deploy-staging
@@ -29,32 +29,35 @@ jobs:
   build:
     if: ${{ !inputs.rollback }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - id: tag
         run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: apps/api
           push: true
           tags: ${{ env.REGISTRY }}/vpyd-api:${{ steps.tag.outputs.tag }}
           cache-from: type=gha,scope=api
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: infra/Caddy.Dockerfile
           push: true
           tags: ${{ env.REGISTRY }}/vpyd-web:${{ steps.tag.outputs.tag }}
           cache-from: type=gha,scope=web
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: infra/backup
           push: true
@@ -66,8 +69,12 @@ jobs:
     if: ${{ always() && (needs.build.result == 'success' || inputs.rollback) }}
     runs-on: ubuntu-latest
     environment: staging
+    # The job token is forwarded to the VPS for `docker pull`: it must be read-only.
+    permissions:
+      contents: read
+      packages: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: SSH setup (pinned host key, no TOFU)
         env:
           SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
@@ -91,7 +98,7 @@ jobs:
           ROLLBACK: ${{ inputs.rollback }}
         run: |
           if [ "$ROLLBACK" = "true" ]; then target="--rollback"; else target="$TAG"; fi
-          # Short-lived job token for the pull only; logged out again so nothing long-lived stays on the VPS.
+          # Short-lived, read-only (packages: read) job token for the pull only; logged out again so nothing long-lived stays on the VPS.
           printf '%s' "$GHCR_TOKEN" | ssh -o StrictHostKeyChecking=yes "deploy@$HOST" \
             "docker login ghcr.io -u '$ACTOR' --password-stdin >/dev/null && /opt/vpyd/infra/deploy.sh $target; rc=\$?; docker logout ghcr.io >/dev/null; exit \$rc"
       - name: Remove SSH key

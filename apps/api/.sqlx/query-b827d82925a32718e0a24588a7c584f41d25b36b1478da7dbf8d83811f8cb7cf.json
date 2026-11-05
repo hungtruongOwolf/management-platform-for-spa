@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.user_account SET failed_logins = 0, locked_until = NULL, updated_at = now()\n         WHERE phone_e164 = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b827d82925a32718e0a24588a7c584f41d25b36b1478da7dbf8d83811f8cb7cf"
+}

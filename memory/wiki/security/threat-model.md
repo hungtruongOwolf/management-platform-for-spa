@@ -48,7 +48,7 @@ sources: [architecture/system.md, product/specs/front-desk-and-packages.md]
 | STRIDE | Mối đe dọa | Biện pháp |
 |---|---|---|
 | I | Lộ file backup | Bucket private; mã hóa file trước khi upload (age/gpg); key chỉ cho phép ghi vào bucket backup |
-| T | Kẻ xâm nhập xóa backup | Bucket versioning + object lock (retention 30 ngày); key upload không có quyền xóa |
+| T | Kẻ xâm nhập xóa backup | R2 bucket lock (`daily/` 35 ngày, `monthly/` 400 ngày) chặn xóa/ghi đè kể cả với token của VPS (R2 không có token chỉ-ghi); lifecycle và lock chỉ chỉnh từ dashboard của EM; VPS không bao giờ xóa backup đã hoàn tất (review L7) |
 | D | Backup lỗi âm thầm | Alert nếu không có backup mới trong 26 giờ; diễn tập khôi phục hằng tháng |
 
 ## TB4: Máy chủ VPS
@@ -65,6 +65,22 @@ sources: [architecture/system.md, product/specs/front-desk-and-packages.md]
 | Dùng chung tài khoản → mất trách nhiệm | Mỗi người một tài khoản (vision rủi ro #5); audit theo user |
 | Platform admin xem dữ liệu spa tùy ý | Mặc định không có quyền đọc; chủ spa cấp support grant 24 giờ (thu hồi được); mọi truy cập đều audit và chủ spa xem được (ADR-0003) |
 | Mất dữ liệu (A5) | Backup Supabase + dump đêm ra R2 + diễn tập khôi phục |
+
+## Security review r1 (2026-11-04): phát hiện → biện pháp → test
+| ID | Phát hiện | Biện pháp | Test (mutation-check) |
+|---|---|---|---|
+| H1 | `switch-tenant` phát session mới với `recent_auth_at = now()` (DEFAULT của cột) và hạn tuyệt đối mới 30 ngày: session bị đánh cắp bỏ qua được 🔒 và sống mãi | `identity::service::Issue::{MfaPending, Authenticated, Rotated}` bắt mọi chỗ phát session nói rõ thời điểm xác thực; switch-tenant giữ `recent_auth_at` + `absolute_expires_at` cũ; migration 0011 bỏ DEFAULT của `recent_auth_at` | `voids.rs::switching_tenant_does_not_refresh_the_reauth_window`, `auth.rs::switch_tenant_keeps_absolute_expiry_and_reauth_time`, `auth.rs::login_marks_the_session_as_just_authenticated` |
+| M2 | Nhập sổ cũ không giới hạn ngày; giá trong sổ do quản lý gõ thành trần hoàn tiền | Cửa sổ nhập theo ngày do chủ spa mở (`opening_balance_window`); ngày chưa mở chỉ Owner + 🔒; `refund_cap` = 0 khi người nhập không có quyền hoàn, chủ spa phải xác nhận giá sổ khi hoàn (EM 2026-11-05, spec AC8.6–8.8) | `opening_balances.rs` (xem mục M2 trong log) |
+| M3 | Spa bị tạm ngưng vẫn dùng được với session đang mở | `member_permissions` yêu cầu `tenant.status = 'active'` → `403 auth.not_a_member`; `user_requires_mfa` không còn bỏ qua spa bị ngưng | `auth.rs::suspending_a_spa_cuts_off_its_open_sessions` |
+| L1 | Map bucket rate limit tăng vô hạn; IPv6 mỗi địa chỉ một bucket | Bucket IPv6 theo /64 (IPv4-mapped → IPv4); task dọn `retain_recent` mỗi 60 giây, tự dừng khi layer bị drop | `middleware::tests::*` (unit) |
+| L2 | Biết SĐT chủ spa là khóa được tài khoản | Giữ khóa theo tài khoản (chống dò phân tán), thêm `app unlock --phone P`; lý do ở ADR-0004 (update 2026-11-04). Rủi ro DoS còn lại được chấp nhận | `auth.rs::operator_unlock_lifts_a_lockout` |
+| L3 | TOFU khi enroll MFA lần đầu | Chỉ ghi nhận (ADR-0004); giảm thiểu bằng quy trình operator | — |
+| L4 | Thăng lên role cần MFA không thu hồi session cũ | `add_user` thu hồi mọi session khi role được cấp có `requires_mfa` | `auth.rs::promotion_to_an_mfa_role_ends_existing_sessions` |
+| L5 | Từ khóa tìm khách (SĐT/tên) nằm trong access log | Caddy `format filter`: `request>uri regexp "\?.*$" "?[redacted]"`, xóa `Referer`; span tracing của API chỉ ghi `path` | `infra/prodtest/run.sh` ("access log drops query strings"); kiểm thủ công bằng `caddy:2.10-alpine` |
+| L6 | Không kiểm TLS DB / quyền role khi khởi động | Ngoài development, `APP_DATABASE_URL` phải `sslmode=verify-full` hoặc `verify-ca` (miễn trừ duy nhất: `APP_DB_INSECURE_TLS_FOR_LOCAL_TEST=true`, chỉ staging, chỉ prodtest); `db_guard::check_runtime_role` từ chối superuser, BYPASSRLS, role sở hữu bảng trong `app` | `config::tests::*`, `tests/runtime_role.rs` |
+| L7 | Backup xóa được từ VPS | R2 không có token chỉ-ghi → bucket lock `daily/` 35 ngày, `monthly/` 400 ngày; lifecycle do R2 chạy; script không còn bước xóa backup cũ; upload vào `incoming/` rồi mới chép sang `daily/` | Runbook §5, §7 |
+| L8 | Action CI không pin SHA; deploy job có `packages: write` và chuyển token đó lên VPS | Pin mọi action theo commit SHA (`# vX`); `packages: write` chỉ ở job build, job deploy `packages: read` | `actionlint` sạch |
+| INFO | `safeNextPath` nhận `/\t/evil.com`; hash idempotency không gắn route; `POST /sales` thu tiền không cần `payment.collect`; phân bổ giảm giá có thể vượt giá dòng | Chặn `[\x00-\x20\\]`; `kernel::idempotency::hash_route` (method + route + record + body) cho mọi endpoint idempotent (sales, packages, operations); `payment.collect` khi có payments; phần dư phân bổ không vượt giá dòng | `api.test.ts`, `idempotency::tests::route_hash_binds_method_route_and_record`, `sales.rs::taking_money_needs_payment_collect`, `domain::tests::shares_always_sum_to_the_discount_and_fit_their_lines` |
 
 ## Còn mở
 - Danh sách thao tác yêu cầu nhập lại mật khẩu: chốt ở `/backend-design`.

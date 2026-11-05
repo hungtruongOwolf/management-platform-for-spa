@@ -71,8 +71,10 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
 | `GET /customer-packages/{id}` | Chi tiết + items, trạng thái suy ra (S6 ✅; lịch sử sử dụng thêm ở S7) | `customer.read` | — | read |
 | `GET /customers/{id}/packages` | Liệu trình của khách, mới nhất trước, còn X/Y buổi (S6 ✅) | `customer.read` | — | read |
 | `POST /customer-packages/{id}/extend` | Gia hạn (US7, S8 ✅): `{expires_on, reason}` + If-Match. Hạn mới phải sau hạn hiện tại và không ở quá khứ (`422 expires_on not_later / in_past / package_has_no_expiry`); gói đã hủy → `409 package.cancelled`. `200 CustomerPackageDto` + `ETag`; audit before/after + lý do | `package.extend_expiry` | ✓ | write |
-| `POST /customer-packages/{id}/cancel` 🔒 | Hủy + hoàn tiền (US7, S8 ✅): `{reason, refund_amount (0 = không hoàn), refund_method?}`. Buổi còn lại → 0, `cancelled`; hoàn > `sold_price` → `422 refund.exceeds_paid`; tạo một dòng `refund` (sổ quỹ hôm nay). `200 CustomerPackageDto` (có `cancel_reason`, `refund`) | `package.cancel_refund` + reauth | ✓ | write |
+| `POST /customer-packages/{id}/cancel` 🔒 | Hủy + hoàn tiền (US7, S8 ✅): `{reason, refund_amount (0 = không hoàn), refund_method?}`. Buổi còn lại → 0, `cancelled`; hoàn > `sold_price` → `422 refund.exceeds_paid`; gói sổ cũ: hoàn > `refund_cap` cần `confirm_book_price: true` (Owner đối chiếu sổ), thiếu → `422 refund.book_price_unconfirmed` (M2, AC8.8); tạo một dòng `refund` (sổ quỹ hôm nay). `200 CustomerPackageDto` (có `cancel_reason`, `refund`) | `package.cancel_refund` + reauth | ✓ | write |
 | `POST /opening-balances` | Nhập liệu trình dở dang (US8, S9 ✅): `customer_id` **hoặc** `customer{…như POST /customers}` + `packages[{package_plan_id?, name?, sold_price, starts_on, expires_on?, gift_note?, items[{service_id, sessions_purchased, sessions_bonus?, sessions_remaining}]}]` (1–10). `201 {customer_id, customer_created, customer_packages}`; không sale/payment; lỗi field có tiền tố `customer.` / `packages[j].`; bắt buộc `Idempotency-Key` | `opening_balance.import` (+ `customer.write` khi tạo khách) | ✓ | write |
+| `GET /opening-balances/window` | Hôm nay có mở nhập sổ cũ không (M2, AC8.6): `200 {business_date, open_today, open_on?, opened_at?}` | `opening_balance.import` | — | read |
+| `PUT /opening-balances/window` | `{open}`: mở cho ngày kinh doanh hôm nay (múi giờ spa) hoặc đóng; audit. Ngày chưa mở: `POST /opening-balances` → Manager `403 opening_balance.closed`, Owner 🔒 | `opening_balance.manage_window` (Owner) | — | write |
 | `POST /sales` | Bán gói: `lines[{package_plan_id, gift_note?}]` (1–10), `closer_staff_id`, `discount{amount, reason}?`, `payments[{method, amount, reference?}]` (0–2, mỗi hình thức 1 lần). `201` trả `SaleDto` kèm `customer_packages` (US3, S6 ✅) | `package.sell` (+ `sale.discount*`) | ✓ | write |
 | `GET /sales/{id}` | Chi tiết hóa đơn: lines, payments, customer_packages (S6 ✅) | `sale.read` | — | read |
 | `POST /sales/{id}/void` | Hủy hóa đơn bán gói + `{reason}` (US6, S8 ✅): mỗi payment một `reversal`, `amount_paid` → 0, các gói của hóa đơn → `cancelled` (buổi → 0). Gói đã dùng buổi → `409 sale.has_used_sessions`; gói đã hủy/hoàn tiền → `409 package.cancelled`; hóa đơn dịch vụ lẻ của lượt → `409 sale.void_via_visit`; hủy lần 2 → `409 sale.voided`. `200 SaleDto` (`void_reason`, `voided_at`) | `record.void_same_day`; ngày trước hôm nay: `record.void_closed_day` 🔒 (thiếu → `403 day.locked`) | ✓ | write |
@@ -150,7 +152,7 @@ Nhắc nhở (spec #3) sẽ dùng bảng job trên Postgres (`FOR UPDATE SKIP LO
 | US5 | hoãn | Không có endpoint thu nợ / công nợ ở R1; không có endpoint sửa/xóa payment |
 | US6 | 6.1–6.4 | `POST /visits/{id}/void`, `POST /sales/{id}/void` (S8 ✅) |
 | US7 | 7.1–7.4 | `/customer-packages/{id}/extend`, `/cancel` (S8 ✅) |
-| US8 | 8.1, 8.3–8.5 | `POST /opening-balances` (tạo `customer_package` với `origin=opening_balance`, không có sale hay payment; báo cáo lọc theo origin) |
+| US8 | 8.1, 8.3–8.8 | `POST /opening-balances` (tạo `customer_package` với `origin=opening_balance`, không có sale hay payment; báo cáo lọc theo origin) |
 | G1–G6 | | Middleware + extractor + `kernel` |
 
 ## 8. Áp dụng `secure` (tóm tắt)

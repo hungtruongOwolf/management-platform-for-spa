@@ -65,6 +65,7 @@ function pkg(
     name: "Gội đầu 10 + tặng 2",
     gift_note: null,
     sold_price: 1_500_000,
+    refund_cap: 1_500_000,
     origin: "sale",
     sale_id: "sale1",
     closer_staff_id: "st1",
@@ -386,6 +387,49 @@ describe("package actions on the customer profile", () => {
       { password: "mat-khau" },
       { password: "mat-khau", code: "123456" },
     ]);
+  });
+
+  it("asks the owner to confirm a manager-typed paper-book price before refunding it (AC8.8)", async () => {
+    const book = pkg(4, {
+      origin: "opening_balance",
+      sale_id: null,
+      closer_staff_id: null,
+      closer_name: null,
+      refund_cap: 0,
+    });
+    const calls = serve(OWNER, (c) => {
+      if (c.url === "/api/v1/customers/c1/packages") return Response.json([book]);
+      if (c.url === "/api/v1/customer-packages/cp1/cancel")
+        return Response.json({ ...book, status: "cancelled" });
+      return undefined;
+    });
+    const user = userEvent.setup();
+    at("/khach-hang/c1");
+    await user.click(
+      await screen.findByRole("button", { name: "Hủy liệu trình + hoàn tiền" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: /Hủy liệu trình/,
+    });
+    await user.type(within(dialog).getByLabelText(/Số tiền hoàn/), "300.000");
+    await user.click(
+      within(dialog).getByRole("checkbox", {
+        name: /Đã đối chiếu giá trong sổ/,
+      }),
+    );
+    await user.type(within(dialog).getByLabelText("Lý do hủy"), "Khách đi xa");
+    await user.click(
+      within(dialog).getByRole("button", { name: /Hủy và hoàn 300\.000/ }),
+    );
+    await waitFor(() => {
+      expect(posts(calls, "/customer-packages/cp1/cancel")).toHaveLength(1);
+    });
+    expect(posts(calls, "/customer-packages/cp1/cancel")[0]?.body).toEqual({
+      reason: "Khách đi xa",
+      refund_amount: 300_000,
+      refund_method: "cash",
+      confirm_book_price: true,
+    });
   });
 
   it("shows the server's 409 when the sale's sessions were used meanwhile", async () => {

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM app.membership WHERE tenant_id = $1 AND user_id = $2 AND status = 'active'",
+  "query": "SELECT m.id FROM app.membership m JOIN app.tenant t ON t.id = m.tenant_id\n         WHERE m.tenant_id = $1 AND m.user_id = $2 AND m.status = 'active' AND t.status = 'active'",
   "describe": {
     "columns": [
       {
@@ -25,5 +25,5 @@
       false
     ]
   },
-  "hash": "c12a50619505d0d5c5057e589e0fad7fa469dab9ca9d19ca85f042c078dcbe16"
+  "hash": "8375ac0e48f54fe2f3740bcbb4f2b248eabaaecd9fd11a246b871ab5979862d2"
 }

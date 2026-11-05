@@ -19,6 +19,7 @@ use tracing_subscriber::EnvFilter;
 ///   `app add-staff --tenant S --name N --position P`   closer / technician for the pickers
 ///   `app reset-mfa --phone P`          lost authenticator: clear TOTP + recovery codes, end
 ///                                      sessions; next login re-enrolls (verify identity first)
+///   `app unlock --phone P`             clear a login lockout (verify identity first)
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Local development convenience: load .env if present. Real deployments set variables in the environment.
@@ -31,12 +32,13 @@ async fn main() -> anyhow::Result<()> {
         Some("add-staff") => add_staff().await,
         Some("seed-catalog") => seed_catalog().await,
         Some("reset-mfa") => reset_mfa().await,
+        Some("unlock") => unlock().await,
         Some("openapi") => {
             print!("{}", app::openapi::json()?);
             Ok(())
         }
         Some(other) => anyhow::bail!(
-            "unknown command {other:?} (expected: serve | migrate | create-tenant | add-user | add-staff | seed-catalog | reset-mfa | openapi)"
+            "unknown command {other:?} (expected: serve | migrate | create-tenant | add-user | add-staff | seed-catalog | reset-mfa | unlock | openapi)"
         ),
     }
 }
@@ -51,6 +53,9 @@ async fn serve() -> anyhow::Result<()> {
         .connect(config.app_database_url.expose_secret())
         .await
         .context("cannot connect to the database as app_rw")?;
+    app::db_guard::check_runtime_role(&pool)
+        .await
+        .context("refusing to start: APP_DATABASE_URL must be the app_rw role (RLS applies)")?;
     jobs::spawn_idempotency_purge(pool.clone());
 
     let policy = HttpPolicy::standard(config.public_origin.clone());
@@ -180,6 +185,18 @@ async fn reset_mfa() -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("reset-mfa failed: {}", e.code()))?;
     anyhow::ensure!(found, "no account with that phone number");
     tracing::info!("MFA reset; the next login will ask to enroll an authenticator again");
+    Ok(())
+}
+
+async fn unlock() -> anyhow::Result<()> {
+    init_tracing(Environment::Development);
+    let phone = required_flag("phone")?;
+    let pool = owner_pool().await?;
+    let found = identity::provisioning::unlock_account(&pool, &phone)
+        .await
+        .map_err(|e| anyhow::anyhow!("unlock failed: {}", e.code()))?;
+    anyhow::ensure!(found, "no account with that phone number");
+    tracing::info!("login lockout cleared");
     Ok(())
 }
 

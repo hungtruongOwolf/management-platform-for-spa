@@ -140,6 +140,16 @@ pub struct PackageCancel {
     pub refund_amount: i64,
     /// Required when `refund_amount` > 0.
     pub refund_method: Option<RefundMethodDto>,
+    /// Opening balances entered by someone who may not refund have a refund cap of 0 (spec
+    /// AC8.8): the owner checked the paper book and confirms its price as the cap. Audited.
+    #[serde(default)]
+    pub confirm_book_price: bool,
+}
+
+/// True when refunding `amount` from an opening balance goes above its current refund cap, so the
+/// owner must confirm the paper-book price first. Sold packages never need it (cap = price).
+fn refund_needs_book_confirmation(package: &repo::LockedPackage, amount: Option<Money>) -> bool {
+    package.origin == "opening_balance" && amount.is_some_and(|a| a.as_i64() > package.refund_cap)
 }
 
 fn to_body(package: service::CustomerPackage) -> Result<Value, AppError> {
@@ -280,14 +290,25 @@ pub async fn cancel(
         });
     }
     // R1 always collects in full, so what the customer paid for a live package is its sold price
-    // (after discount); an opening balance carries the price paid in the paper books.
+    // (after discount). An opening balance carries the price from the paper books, which caps a
+    // refund only once someone allowed to refund vouched for it (AC8.8): `refund_cap`.
     let paid = package.sold_price;
-    if let Some((amount, _)) = order.refund
-        && amount.as_i64() > paid
-    {
-        return Err(AppError::Unprocessable {
-            code: "refund.exceeds_paid",
-        });
+    let book_confirmed = refund_needs_book_confirmation(&package, order.refund.map(|r| r.0))
+        && input.confirm_book_price;
+    if let Some((amount, _)) = order.refund {
+        if amount.as_i64() > paid {
+            return Err(AppError::Unprocessable {
+                code: "refund.exceeds_paid",
+            });
+        }
+        if refund_needs_book_confirmation(&package, Some(amount)) && !book_confirmed {
+            return Err(AppError::Unprocessable {
+                code: "refund.book_price_unconfirmed",
+            });
+        }
+    }
+    if book_confirmed {
+        repo::confirm_book_price(&mut tx, id).await?;
     }
     let tenant = kernel::tenant::profile(&mut tx).await?;
     let today = tenant.business_date.as_naive();
@@ -319,7 +340,7 @@ pub async fn cancel(
             entity_id: id,
             before: Some(json!({"sessions_remaining": remaining_before, "version": package.version})),
             after: Some(json!({
-                "sessions_remaining": 0, "paid": paid,
+                "sessions_remaining": 0, "paid": paid, "book_price_confirmed": book_confirmed,
                 "refund": order.refund.map(|(a, m)| json!({"amount": a.as_i64(), "method": m.as_str()})),
             })),
             reason: Some(&order.reason),
@@ -345,6 +366,7 @@ mod tests {
             reason: reason.map(str::to_owned),
             refund_amount: amount,
             refund_method: method,
+            confirm_book_price: false,
         }
     }
 

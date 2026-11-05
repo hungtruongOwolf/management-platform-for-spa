@@ -31,6 +31,25 @@ pub enum ConfigError {
     Invalid { name: &'static str, value: String },
 }
 
+/// Lets the local prod-like smoke test (`infra/prodtest`, a TLS-less stand-in Postgres) run with
+/// `APP_ENV=staging`. Honoured only in staging, never in production.
+pub const INSECURE_DB_TLS_FLAG: &str = "APP_DB_INSECURE_TLS_FOR_LOCAL_TEST";
+
+/// Whether a libpq URL makes the client verify the server certificate (security review L6):
+/// `verify-full` (CA + host name) or `verify-ca` (CA only; acceptable when the CA is private to
+/// the provider, as Supabase's is). `require`/`prefer` encrypt but accept any certificate.
+pub fn verifies_server_certificate(url: &str) -> bool {
+    let Some((_, query)) = url.split_once('?') else {
+        return false;
+    };
+    let modes: Vec<&str> = query
+        .split('&')
+        .filter_map(|pair| pair.strip_prefix("sslmode="))
+        .collect();
+    // A repeated parameter is ambiguous across drivers: refuse rather than guess which wins.
+    matches!(modes.as_slice(), [mode] if *mode == "verify-full" || *mode == "verify-ca")
+}
+
 impl Config {
     /// Reads configuration from process environment variables.
     pub fn from_env() -> Result<Self, ConfigError> {
@@ -72,6 +91,19 @@ impl Config {
                 name: "APP_DATABASE_URL",
                 value: "[redacted]".to_owned(),
             });
+        }
+
+        if environment != Environment::Development {
+            let exempt = environment == Environment::Staging
+                && lookup(INSECURE_DB_TLS_FLAG).as_deref() == Some("true");
+            if !exempt && !verifies_server_certificate(&app_database_url) {
+                return Err(ConfigError::Invalid {
+                    name: "APP_DATABASE_URL",
+                    value:
+                        "[redacted] (outside development, sslmode must be verify-full or verify-ca)"
+                            .to_owned(),
+                });
+            }
         }
 
         let public_origin = required("APP_PUBLIC_ORIGIN")?;
@@ -195,9 +227,86 @@ mod tests {
         ));
     }
 
+    const TLS_DB: &str = "postgres://app_rw:pw@db.example:5432/vpyd?sslmode=verify-full&sslrootcert=/run/secrets/ca.crt";
+
+    fn deployed(env: &'static str) -> Vec<(&'static str, &'static str)> {
+        let mut pairs = valid();
+        pairs.retain(|(k, _)| !matches!(*k, "APP_DATABASE_URL" | "APP_PUBLIC_ORIGIN"));
+        pairs.extend([
+            ("APP_ENV", env),
+            ("APP_DATABASE_URL", TLS_DB),
+            ("APP_PUBLIC_ORIGIN", "https://staging.example"),
+        ]);
+        pairs
+    }
+
+    fn with_db(
+        mut pairs: Vec<(&'static str, &'static str)>,
+        url: &'static str,
+    ) -> Vec<(&'static str, &'static str)> {
+        pairs.retain(|(k, _)| *k != "APP_DATABASE_URL");
+        pairs.push(("APP_DATABASE_URL", url));
+        pairs
+    }
+
+    fn rejects_db(pairs: Vec<(&'static str, &'static str)>) -> bool {
+        matches!(
+            Config::from_lookup(lookup(&pairs)).err(),
+            Some(ConfigError::Invalid {
+                name: "APP_DATABASE_URL",
+                ..
+            })
+        )
+    }
+
+    #[test]
+    fn verified_tls_is_recognised_in_the_url() {
+        assert!(verifies_server_certificate(TLS_DB));
+        assert!(verifies_server_certificate(
+            "postgres://h/db?sslmode=verify-ca"
+        ));
+        assert!(!verifies_server_certificate("postgres://h/db"));
+        assert!(!verifies_server_certificate(
+            "postgres://h/db?sslmode=require"
+        ));
+        assert!(!verifies_server_certificate(
+            "postgres://h/db?sslmode=prefer"
+        ));
+        assert!(!verifies_server_certificate(
+            "postgres://h/db?xsslmode=verify-full"
+        ));
+        assert!(!verifies_server_certificate(
+            "postgres://h/db?sslmode=verify-full&sslmode=disable"
+        ));
+    }
+
+    #[test]
+    fn deployed_environments_require_verified_database_tls() {
+        for env in ["staging", "production"] {
+            assert!(Config::from_lookup(lookup(&deployed(env))).is_ok(), "{env}");
+            assert!(rejects_db(with_db(deployed(env), DB)), "{env}: no sslmode");
+            assert!(
+                rejects_db(with_db(deployed(env), "postgres://h/db?sslmode=require")),
+                "{env}: unverified TLS"
+            );
+        }
+        // Development (local Postgres, CI, E2E) keeps working without TLS.
+        assert!(Config::from_lookup(lookup(&valid())).is_ok());
+    }
+
+    #[test]
+    fn the_local_smoke_test_exemption_never_applies_to_production() {
+        let mut staging = with_db(deployed("staging"), DB);
+        staging.push((INSECURE_DB_TLS_FLAG, "true"));
+        assert!(Config::from_lookup(lookup(&staging)).is_ok());
+        let mut prod = with_db(deployed("production"), DB);
+        prod.push((INSECURE_DB_TLS_FLAG, "true"));
+        assert!(rejects_db(prod));
+    }
+
     #[test]
     fn production_requires_https_origin() {
-        let mut prod = valid();
+        let mut prod = with_db(valid(), TLS_DB);
         prod.push(("APP_ENV", "production"));
         assert!(matches!(
             Config::from_lookup(lookup(&prod)).err(),
