@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT rules, version FROM app.payroll_rules WHERE tenant_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "rules",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "app.payroll_rules",
+            "name": "rules"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "version",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.payroll_rules",
+            "name": "version"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "abf9142b2f372e8da661d1a86c43619daf8f6e5dd8090bcb958877dd0c5d8605"
+}

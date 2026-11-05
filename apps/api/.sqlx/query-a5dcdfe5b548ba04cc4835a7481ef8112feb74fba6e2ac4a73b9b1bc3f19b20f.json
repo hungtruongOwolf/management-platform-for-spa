@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.staff_evaluation\n             (tenant_id, staff_id, work_date, criteria, serious_issue, total_points, result_level,\n              coaching_plan, comment, recorded_by)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n           ON CONFLICT (tenant_id, staff_id, work_date) DO UPDATE SET\n             criteria = EXCLUDED.criteria, serious_issue = EXCLUDED.serious_issue,\n             total_points = EXCLUDED.total_points, result_level = EXCLUDED.result_level,\n             coaching_plan = EXCLUDED.coaching_plan, comment = EXCLUDED.comment,\n             recorded_by = EXCLUDED.recorded_by, version = app.staff_evaluation.version + 1,\n             updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Jsonb",
+        "Bool",
+        "Int4",
+        "Text",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a5dcdfe5b548ba04cc4835a7481ef8112feb74fba6e2ac4a73b9b1bc3f19b20f"
+}

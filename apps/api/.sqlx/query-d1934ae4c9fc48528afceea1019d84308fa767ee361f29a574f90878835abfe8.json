@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.detail FROM app.payslip p JOIN app.staff s ON s.tenant_id = p.tenant_id AND s.id = p.staff_id\n           WHERE p.tenant_id = $1 AND p.period = $2 AND ($3::uuid IS NULL OR p.staff_id = $3)\n           ORDER BY s.full_name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "detail",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "app.payslip",
+            "name": "detail"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d1934ae4c9fc48528afceea1019d84308fa767ee361f29a574f90878835abfe8"
+}

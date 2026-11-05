@@ -1,0 +1,138 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT e.staff_id, e.criteria, e.serious_issue, e.total_points, e.result_level,\n                  e.coaching_plan, e.comment, u.full_name AS by_name, e.updated_at, e.version\n           FROM app.staff_evaluation e JOIN app.user_account u ON u.id = e.recorded_by\n           WHERE e.tenant_id = $1 AND e.work_date = $2 AND ($3::uuid IS NULL OR e.staff_id = $3)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "staff_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.staff_evaluation",
+            "name": "staff_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "criteria",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "app.staff_evaluation",
+            "name": "criteria"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "serious_issue",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "app.staff_evaluation",
+            "name": "serious_issue"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "total_points",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.staff_evaluation",
+            "name": "total_points"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "result_level",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.staff_evaluation",
+            "name": "result_level"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "coaching_plan",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.staff_evaluation",
+            "name": "coaching_plan"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "comment",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.staff_evaluation",
+            "name": "comment"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "by_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.user_account",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.staff_evaluation",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "version",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.staff_evaluation",
+            "name": "version"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f69d0de665e2f04dd244db3177e24156b1282d5295f45c16457994c4fd40ccc1"
+}
