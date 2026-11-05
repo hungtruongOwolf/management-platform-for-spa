@@ -84,10 +84,7 @@ pub async fn seed(
         ..DemoReport::default()
     };
 
-    let owner_actor = member_actor(app, owner_of(owner, tenant).await?, tenant)
-        .await?
-        // An operator at the console stands in for the owner's fresh password confirmation.
-        .with_recent_auth(true);
+    let owner_actor = member_actor(app, owner_of(owner, tenant).await?, tenant).await?;
     report.catalog_seeded = ensure_catalog(owner, tenant, slug).await?;
     let catalog = Catalog::load(app, &owner_actor).await?;
     report.plans_created = ensure_plans(app, &owner_actor, &catalog).await?;
