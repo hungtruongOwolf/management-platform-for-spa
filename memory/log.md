@@ -237,3 +237,8 @@ Ops: `ingest`, `query`, `lint`, `record`, `decision`, `skip`.
 - Perf (local, debug API, 1 client, p95 ms): search 14–14.4, catalog 13–16, POST /sales 41, POST /visits 37, POST /opening-balances 24, GET /visits (104 visits) 38, /customers/{id} 13, /customers/{id}/packages (> 200 packages) 34, /sales/{id} 18, /staff 13. Lighthouse (local, machine loaded by parallel agents, 3 runs): /dang-nhap LCP 1911/2079/4233 ms, CLS 0; /quay LCP 2495/2572/4268 ms, CLS 0.013/0.013/0; `pnpm lhci` passes. A run without the busy day showed LCP up to 7 s, which is machine noise; earlier quiet runs measured 1.8–2.1 s.
 - Authz matrix: all 37 ApiDoc routes have rows. PlatformAdmin / support grant is documented as out of R1-1 scope (no such role in code). Coordinated with the parallel security-fix agent: did not touch identity, middleware, config, infra, workflows, api.ts, idempotency hashing, allocate_discount.
 - Open (EM decision): visit history on the customer profile (`GET /customers/{id}/visits`, deferred since S7); AC4.4 per-technician count is data only (the report belongs to spec #3); `GET /visits` has no pagination.
+
+## [2026-11-05] record | Staging lên Vercel + Supabase
+- EM chọn Vercel + Supabase cho đơn giản ([raw](raw/2026-11-05-em-simplify-owner-and-opening-balance.md)). ADR-0005 cập nhật; runbook [vercel-staging](wiki/runbooks/vercel-staging.md).
+- Supabase staging đã dựng: app_rw (NOBYPASSRLS), migrations 0001–0011, REVOKE anon/authenticated, tenant + chủ spa + menu 35 dịch vụ.
+- Vercel project `vien-phuc-y-duong`: Services (web Vite tĩnh + API container, pdx1), TLS verify-full với Supabase Root 2021 CA. Smoke test: `/`, `/api/v1/health` 200, `/api/v1/me` 401, CSP/HSTS có, đăng nhập chủ spa → `mfa_enroll`.

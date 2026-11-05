@@ -32,6 +32,8 @@ FROM busybox:1.37-musl AS probe
 FROM gcr.io/distroless/cc-debian13:nonroot AS runtime
 COPY --from=probe /bin/busybox /usr/local/bin/busybox
 COPY --from=builder /app /usr/local/bin/app
+# Supabase's private root CA (public certificate) for APP_DATABASE_URL `sslmode=verify-full` (security review L6).
+COPY certs/supabase-root-2021.crt /etc/ssl/certs/supabase-root-2021.crt
 ENV APP_BIND_ADDR=0.0.0.0:8080 \
     APP_ENV=production \
     RUST_LOG=info

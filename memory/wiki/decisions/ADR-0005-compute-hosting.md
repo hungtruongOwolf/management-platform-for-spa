@@ -31,3 +31,19 @@ Nhiều spa, cần uptime cao hơn → 2 instance + load balancer (API stateless
 - Provider khuyến nghị: **DigitalOcean Basic 2 GiB / 1 vCPU ($12/tháng)**, so sánh giá và nguồn ở [runbooks/staging-setup](../runbooks/staging-setup.md) §1. EM chốt khi mua.
 - **Staging** đặt VPS **cùng vùng với project Supabase staging (Mỹ)**, vì đi xuyên Thái Bình Dương mất khoảng 170 ms mỗi query. **Production** vẫn là Singapore (VPS SGP1 + project Supabase mới ở `ap-southeast-1`).
 - Triển khai: image build trên GitHub Actions rồi push lên GHCR; deploy bằng `workflow_dispatch` qua SSH; `migrate` chạy one-shot trước `api`; runtime distroless non-root.
+
+## Update 2026-11-05: staging lên Vercel + Supabase (EM)
+EM muốn bắt đầu đơn giản: "dùng vercel và supabase cho đơn giản trước" ([raw](../../raw/2026-11-05-em-simplify-owner-and-opening-balance.md)). VPS, Caddy, R2 và domain riêng hoãn lại.
+- **Một project Vercel** (`vien-phuc-y-duong`) dùng [Services](https://vercel.com/docs/services) (beta, mọi plan): service `web` là bản build Vite tĩnh, service `api` là `apps/api/Dockerfile` chạy bằng [Container Runtime](https://vercel.com/docs/functions/runtimes/container) (beta). `vercel.json` ở gốc repo rewrite `/api/*` sang `api`, phần còn lại sang `web`. Vẫn **một origin**, nên cookie `__Host-session`, CSRF origin check và CSP `'self'` giữ nguyên. Header bảo mật trước đây nằm trong Caddyfile nay chuyển vào `vercel.json`.
+- **Region `pdx1`**, cạnh Supabase `us-west-2`.
+- **TLS DB**: dùng `sslmode=verify-full` với Supabase Root 2021 CA, file công khai được bake vào image ở `/etc/ssl/certs/supabase-root-2021.crt`. Fingerprint SHA-256 `80:70:25:AD:…:CA:FA` khớp giữa file tải từ Supabase và chain mà pooler trả về.
+- **Pool**: `APP_DB_MAX_CONNECTIONS=3` mỗi instance, vì Vercel chạy nhiều instance nhỏ trỏ vào cùng một pooler.
+- **Job nền**: tick đầu tiên của job purge idempotency chạy ngay khi instance khởi động. Vercel scale về 0 sau 5 phút không có traffic, nên lần chạy lúc khởi động là đủ.
+- **Đánh đổi chấp nhận**:
+  1. Cold start vài giây sau khi nghỉ.
+  2. Rate limit theo IP nằm trong bộ nhớ của từng instance. Khóa tài khoản sau 5 lần sai vẫn lưu ở DB nên vẫn giữ.
+  3. Log request của Vercel có thể chứa query string (`?q=` tìm khách), tức là L5 chưa giải được trên Vercel. Ghi nhận, cần xem lại trước production.
+  4. Gói Hobby chỉ cho dùng phi thương mại. Khi spa dùng thật thì phải lên Pro, hoặc chuyển API sang nơi khác.
+  5. Gói Supabase Free không có backup tự động. Phải lên Pro trước khi nhập dữ liệu thật.
+- Migration chạy từ máy dev hoặc CI bằng owner URL (`.env.staging`), không chạy trong container.
+- Runbook: [vercel-staging](../runbooks/vercel-staging.md).
