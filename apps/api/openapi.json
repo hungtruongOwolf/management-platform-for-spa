@@ -1435,7 +1435,7 @@
           {
             "name": "to",
             "in": "query",
-            "description": "Last business day (inclusive); default today. Not with `preset`. Span: at most 366 days\nfor `day` / `week`, at most 1830 days (5 years) for `month` / `year`.",
+            "description": "Last business day (inclusive); default today. Not with `preset`. Span: at most 366 days\nfor `day` / `week`, at most 732 days (2 years) for `month` / `year`.",
             "required": false,
             "schema": {
               "type": "string",
@@ -1477,7 +1477,7 @@
             "description": "auth.forbidden: no report.read"
           },
           "422": {
-            "description": "validation_failed: from after_to, to range_too_long (> 366 days by day/week, > 1830 days by month/year), preset conflicts_with_range"
+            "description": "validation_failed: from after_to, to range_too_long (> 366 days by day/week, > 732 days by month/year), preset conflicts_with_range"
           }
         }
       }
@@ -4713,7 +4713,7 @@
           "last_month",
           "this_year",
           "last_12_months",
-          "last_5_years"
+          "last_2_years"
         ]
       },
       "RangeReport": {

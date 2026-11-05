@@ -118,7 +118,7 @@ Thiếu `report.revenue.read` thì response **không chứa** các trường ti�
 
 **Danh mục dịch vụ:** mọi DTO hiện tên dịch vụ có thêm `category_name` (danh mục **hiện tại** trong bảng giá, không phải snapshot): dòng lượt (`VisitLineDto`, lượt hôm nay), dòng lượt trong lịch sử, item gói (`CustomerPackageItemDto`), trang dùng gói, top dịch vụ trong báo cáo. Giới tính khách (`customer_gender`) có ở lượt (`VisitDto`), dòng sổ doanh thu, dòng tổng quan gói; dòng khách vắng có `gender`.
 
-**US2 — báo cáo linh hoạt:** `preset` = `last_7_days`, `last_30_days`, `this_month`, `last_month` (theo ngày), `this_year`, `last_12_months` (theo tháng), `last_5_years` (theo năm), tính theo "hôm nay" của spa; `granularity` thêm `year`; ghi đè được granularity mặc định của preset; `preset` cùng `from`/`to` → `422 preset conflicts_with_range`. Giới hạn: theo ngày/tuần ≤ 366 ngày, theo tháng/năm ≤ 1830 ngày (5 năm). Mỗi điểm `series` có `counts.customers`, `counts.visits` và `net_revenue` (phẳng, cho biểu đồ đường; chỉ khi có quyền tiền). Thêm `technicians[]` cho cả khoảng (như dashboard ngày).
+**US2 — báo cáo linh hoạt:** `preset` = `last_7_days`, `last_30_days`, `this_month`, `last_month` (theo ngày), `this_year`, `last_12_months`, `last_2_years` (năm nay + năm trước; theo tháng), tính theo "hôm nay" của spa; `granularity` thêm `year` (so sánh các năm); ghi đè được granularity mặc định của preset; `preset` cùng `from`/`to` → `422 preset conflicts_with_range`. Giới hạn: theo ngày/tuần ≤ 366 ngày, theo tháng/năm ≤ 732 ngày (**2 năm**: bench 3 năm dữ liệu đọc 1 năm ~120 ms, 2 năm ~230 ms, 3 năm ~380 ms > ngân sách 300 ms; xem dài hơn cần bảng tổng hợp theo ngày, câu hỏi Q5). Mỗi điểm `series` có `counts.customers`, `counts.visits` và `net_revenue` (phẳng, cho biểu đồ đường; chỉ khi có quyền tiền). Thêm `technicians[]` cho cả khoảng (như dashboard ngày).
 
 ### US6 (để sau, R1-3): Sổ thu chi
 Sổ thu chi giấy ghi cả **chi** (chi phí vận hành, rút/nộp quỹ) và **tồn quỹ** tiền mặt / tài khoản. Phần **thu** đã có (US3). Phần **chi** là loại dữ liệu mới (phiếu chi: ngày, diễn giải, số tiền, hình thức, người chi, chứng từ) cần spec riêng: quyền ghi/sửa, chốt quỹ cuối ngày, tồn đầu kỳ, đối soát. **Không làm ở R1-2.**
@@ -181,3 +181,7 @@ EM: dữ liệu sổ giấy là **migration một lần** do team tự điền s
   - Q2: "lâu không quay lại" mặc định **7 ngày**, kèm màn hình riêng xem cả danh sách khách quá hạn.
   - Q3: tiền thực thu, khoản hủy ghi vào **ngày hủy**.
   - Q4: tạm thời **không giới hạn** số ngày quản lý được xem.
+- **Mở (vòng 3):**
+  - Q5: cần xem báo cáo **nhiều hơn 2 năm** không? Nếu cần: thêm bảng tổng hợp theo ngày (cập nhật khi ghi lượt/hóa đơn) để 5 năm vẫn < 300 ms.
+  - Q6: quy tắc mặc định "không nghe máy → gọi lại sau 3 ngày" có đúng ý không? Kết quả khác có cần ngày mặc định (ví dụ "hẹn sẽ đến" → kiểm lại sau 7 ngày)?
+  - Q7: KTV có cần ghi follow-up không (hiện chỉ chủ spa + quản lý)?

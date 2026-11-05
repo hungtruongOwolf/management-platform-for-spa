@@ -14,11 +14,14 @@ use crm::http::gender_dto;
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use sqlx::PgPool;
 use std::collections::HashMap;
+use uuid::Uuid;
 
 /// Longest `GET /reports/range` window by day or week: a full (leap) year.
 pub const MAX_RANGE_DAYS: u64 = 366;
-/// Longest window by month or year: five (leap) years. Few buckets, one range scan.
-pub const MAX_LONG_RANGE_DAYS: u64 = 5 * 366;
+/// Longest window by month or year: two (leap) years. The bench (3 busy years, debug build)
+/// reads one year in ~140 ms and three in ~380 ms, over the 300 ms budget, so longer views wait
+/// for a pre-aggregated daily table (open question for the EM).
+pub const MAX_LONG_RANGE_DAYS: u64 = 2 * 366;
 /// Longest `GET /reports/ledger` window: a quarter.
 pub const MAX_LEDGER_DAYS: u64 = 92;
 const TOP: i64 = 10;
@@ -76,7 +79,7 @@ fn preset_window(
         }
         RangePreset::ThisYear => (jan_first(today.year())?, today, Granularity::Month),
         RangePreset::Last12Months => (months_back(11)?, today, Granularity::Month),
-        RangePreset::Last5Years => (jan_first(today.year() - 4)?, today, Granularity::Year),
+        RangePreset::Last2Years => (jan_first(today.year() - 1)?, today, Granularity::Month),
     })
 }
 
@@ -90,16 +93,29 @@ fn days(from: NaiveDate, to: NaiveDate) -> Vec<NaiveDate> {
 struct Books {
     counts: HashMap<NaiveDate, DayCounts>,
     revenue: HashMap<NaiveDate, Revenue>,
+    /// Completed visit lines of the whole span, per service and per technician.
+    services: Vec<LineTotals>,
+    staff: Vec<LineTotals>,
+    /// Distinct customers with a completed visit over the whole span.
+    customers: i64,
+}
+
+struct LineTotals {
+    id: Uuid,
+    /// Distinct visits (technicians only).
+    visits: i64,
+    sessions: i64,
+    one_off: i64,
+    one_off_revenue: i64,
 }
 
 impl Books {
-    /// Reads the books of `from..=to` (only the days in `only`, when given), grouped by
-    /// `granularity`. Money only when `with_money`. A range is a range scan on the day indexes,
-    /// so a five-year report never ships 1 800 dates to the database.
+    /// Reads the books of `from..=to`, grouped by `granularity`. Money only when `with_money`.
+    /// Always a range scan on the day indexes (the daily dashboard reads its 8-day span), so a
+    /// five-year report never ships 1 800 dates and no plan depends on an optional array.
     async fn read(
         tx: &mut TenantTx,
         (from, to): (NaiveDate, NaiveDate),
-        only: Option<&[NaiveDate]>,
         granularity: Granularity,
         with_money: bool,
     ) -> Result<Self, AppError> {
@@ -107,49 +123,75 @@ impl Books {
         let unit = granularity.as_sql();
         let mut books = Self::default();
 
+        // Every visit-side figure from one scan of the range's visit lines (materialised once,
+        // so the base tables and their RLS checks are read once): per bucket, per service, per
+        // technician and the distinct customers of the whole range. Every visit has ≥ 1 line.
         for r in sqlx::query!(
-            r#"SELECT date_trunc($3, v.business_date::timestamp)::date AS "bucket!",
-                      count(*) FILTER (WHERE v.status = 'completed') AS "visits!",
-                      count(DISTINCT v.customer_id) FILTER (WHERE v.status = 'completed') AS "customers!",
-                      count(*) FILTER (WHERE v.status = 'voided') AS "voided!"
-               FROM app.visit v
-               WHERE v.tenant_id = $1 AND v.business_date BETWEEN $2 AND $4 AND ($5::date[] IS NULL OR v.business_date = ANY($5))
-               GROUP BY 1"#,
+            r#"WITH vl AS MATERIALIZED (
+                 SELECT date_trunc($3, v.business_date::timestamp)::date AS bucket, v.id AS visit_id,
+                        v.customer_id, v.status = 'completed' AS done, l.service_id, l.staff_id,
+                        l.source, l.qty, l.line_value
+                 FROM app.visit v
+                 JOIN app.visit_line l ON l.tenant_id = v.tenant_id AND l.visit_id = v.id
+                 WHERE v.tenant_id = $1 AND v.business_date BETWEEN $2 AND $4
+               )
+               SELECT 'bucket' AS tag, bucket, NULL::uuid AS key,
+                      count(DISTINCT visit_id) FILTER (WHERE done) AS visits,
+                      count(DISTINCT customer_id) FILTER (WHERE done) AS customers,
+                      count(DISTINCT visit_id) FILTER (WHERE NOT done) AS voided,
+                      coalesce(sum(qty) FILTER (WHERE done AND source = 'package'), 0)::bigint AS sessions,
+                      coalesce(sum(qty) FILTER (WHERE done AND source = 'one_off'), 0)::bigint AS one_off,
+                      coalesce(sum(line_value) FILTER (WHERE done AND source = 'one_off'), 0)::bigint AS revenue
+               FROM vl GROUP BY bucket
+               UNION ALL
+               SELECT 'service', NULL, service_id, 0, 0, 0,
+                      coalesce(sum(qty) FILTER (WHERE source = 'package'), 0)::bigint,
+                      coalesce(sum(qty) FILTER (WHERE source = 'one_off'), 0)::bigint,
+                      coalesce(sum(line_value) FILTER (WHERE source = 'one_off'), 0)::bigint
+               FROM vl WHERE done GROUP BY service_id
+               UNION ALL
+               SELECT 'staff', NULL, staff_id, count(DISTINCT visit_id), 0, 0,
+                      coalesce(sum(qty) FILTER (WHERE source = 'package'), 0)::bigint,
+                      coalesce(sum(qty) FILTER (WHERE source = 'one_off'), 0)::bigint, 0
+               FROM vl WHERE done GROUP BY staff_id
+               UNION ALL
+               SELECT 'all', NULL, NULL, 0, count(DISTINCT customer_id), 0, 0, 0, 0
+               FROM vl WHERE done"#,
             tenant,
             from,
             unit,
-            to,
-            only
+            to
         )
         .fetch_all(tx.conn())
         .await?
         {
-            let c = books.counts.entry(r.bucket).or_default();
-            c.visits = r.visits;
-            c.customers = r.customers;
-            c.voided_visits = r.voided;
-        }
-
-        for r in sqlx::query!(
-            r#"SELECT date_trunc($3, v.business_date::timestamp)::date AS "bucket!",
-                      coalesce(sum(l.qty) FILTER (WHERE l.source = 'package'), 0)::bigint AS "sessions!",
-                      coalesce(sum(l.qty) FILTER (WHERE l.source = 'one_off'), 0)::bigint AS "one_off!"
-               FROM app.visit v
-               JOIN app.visit_line l ON l.tenant_id = v.tenant_id AND l.visit_id = v.id
-               WHERE v.tenant_id = $1 AND v.business_date BETWEEN $2 AND $4 AND ($5::date[] IS NULL OR v.business_date = ANY($5)) AND v.status = 'completed'
-               GROUP BY 1"#,
-            tenant,
-            from,
-            unit,
-            to,
-            only
-        )
-        .fetch_all(tx.conn())
-        .await?
-        {
-            let c = books.counts.entry(r.bucket).or_default();
-            c.sessions_used = r.sessions;
-            c.one_off_services = r.one_off;
+            let n = |v: Option<i64>| v.unwrap_or_default();
+            match (r.tag.as_deref(), r.bucket, r.key) {
+                (Some("bucket"), Some(bucket), _) => {
+                    let c = books.counts.entry(bucket).or_default();
+                    c.visits = n(r.visits);
+                    c.customers = n(r.customers);
+                    c.voided_visits = n(r.voided);
+                    c.sessions_used = n(r.sessions);
+                    c.one_off_services = n(r.one_off);
+                }
+                (Some("service"), _, Some(id)) => books.services.push(LineTotals {
+                    id,
+                    visits: 0,
+                    sessions: n(r.sessions),
+                    one_off: n(r.one_off),
+                    one_off_revenue: n(r.revenue),
+                }),
+                (Some("staff"), _, Some(id)) => books.staff.push(LineTotals {
+                    id,
+                    visits: n(r.visits),
+                    sessions: n(r.sessions),
+                    one_off: n(r.one_off),
+                    one_off_revenue: 0,
+                }),
+                (Some("all"), _, _) => books.customers = n(r.customers),
+                _ => {}
+            }
         }
 
         for r in sqlx::query!(
@@ -157,13 +199,12 @@ impl Books {
                       count(*) AS "sold!"
                FROM app.sale s
                JOIN app.customer_package cp ON cp.tenant_id = s.tenant_id AND cp.sale_id = s.id
-               WHERE s.tenant_id = $1 AND s.business_date BETWEEN $2 AND $4 AND ($5::date[] IS NULL OR s.business_date = ANY($5)) AND s.status = 'open'
+               WHERE s.tenant_id = $1 AND s.business_date BETWEEN $2 AND $4 AND s.status = 'open'
                GROUP BY 1"#,
             tenant,
             from,
             unit,
-            to,
-            only
+            to
         )
         .fetch_all(tx.conn())
         .await?
@@ -184,19 +225,18 @@ impl Books {
                    LEFT JOIN (SELECT DISTINCT sl.sale_id FROM app.sale_line sl
                               WHERE sl.tenant_id = $1 AND sl.line_type = 'package') pk
                      ON pk.sale_id = p.sale_id
-                   WHERE p.tenant_id = $1 AND p.business_date BETWEEN $2 AND $4 AND ($5::date[] IS NULL OR p.business_date = ANY($5))
+                   WHERE p.tenant_id = $1 AND p.business_date BETWEEN $2 AND $4
                    GROUP BY 1, 2, 3, 4
                    UNION ALL
                    SELECT date_trunc($3, r.business_date::timestamp)::date, 'refund', r.method,
                           'package', sum(r.amount)::bigint
                    FROM app.refund r
-                   WHERE r.tenant_id = $1 AND r.business_date BETWEEN $2 AND $4 AND ($5::date[] IS NULL OR r.business_date = ANY($5))
+                   WHERE r.tenant_id = $1 AND r.business_date BETWEEN $2 AND $4
                    GROUP BY 1, 2, 3, 4"#,
                 tenant,
                 from,
                 unit,
-                to,
-                only
+                to
             )
             .fetch_all(tx.conn())
             .await?
@@ -260,14 +300,7 @@ pub async fn daily(
         None => today(&mut tx).await?,
     };
     let (yesterday, last_week) = (minus_days(date, 1)?, minus_days(date, 7)?);
-    let books = Books::read(
-        &mut tx,
-        (last_week, date),
-        Some(&[date, yesterday, last_week]),
-        Granularity::Day,
-        with_money,
-    )
-    .await?;
+    let books = Books::read(&mut tx, (last_week, date), Granularity::Day, with_money).await?;
     let tenant = tx.tenant().as_uuid();
     let technicians = sqlx::query_as!(
         TechnicianDay,
@@ -355,49 +388,76 @@ pub async fn range(
     let today = today(&mut tx).await?;
     let (from, to, granularity) = range_window(query, today)?;
     let all_days = days(from, to);
-    let books = Books::read(&mut tx, (from, to), None, granularity, with_money).await?;
+    let books = Books::read(&mut tx, (from, to), granularity, with_money).await?;
     let tenant = tx.tenant().as_uuid();
 
-    let customers = sqlx::query_scalar!(
-        r#"SELECT count(DISTINCT customer_id) AS "n!" FROM app.visit
-           WHERE tenant_id = $1 AND business_date BETWEEN $2 AND $3 AND status = 'completed'"#,
-        tenant,
-        from,
-        to
-    )
-    .fetch_one(tx.conn())
-    .await?;
-
-    let top_services = sqlx::query!(
-        r#"SELECT l.service_id, s.name, sc.name AS category_name,
-                  coalesce(sum(l.qty) FILTER (WHERE l.source = 'package'), 0)::bigint AS "sessions!",
-                  coalesce(sum(l.qty) FILTER (WHERE l.source = 'one_off'), 0)::bigint AS "one_off!",
-                  coalesce(sum(l.line_value) FILTER (WHERE l.source = 'one_off'), 0)::bigint AS "one_off_revenue!"
-           FROM app.visit v
-           JOIN app.visit_line l ON l.tenant_id = v.tenant_id AND l.visit_id = v.id
-           JOIN app.service s ON s.tenant_id = l.tenant_id AND s.id = l.service_id
+    // Names for the per-service / per-technician totals the books already summed.
+    let service_ids: Vec<Uuid> = books.services.iter().map(|s| s.id).collect();
+    let names: HashMap<Uuid, (String, String)> = sqlx::query!(
+        r#"SELECT s.id, s.name, sc.name AS category_name
+           FROM app.service s
            JOIN app.service_category sc ON sc.tenant_id = s.tenant_id AND sc.id = s.category_id
-           WHERE v.tenant_id = $1 AND v.business_date BETWEEN $2 AND $3 AND v.status = 'completed'
-           GROUP BY l.service_id, s.name, sc.name
-           ORDER BY sum(l.qty) DESC, s.name, l.service_id
-           LIMIT $4"#,
+           WHERE s.tenant_id = $1 AND s.id = ANY($2)"#,
         tenant,
-        from,
-        to,
-        TOP
+        &service_ids
     )
     .fetch_all(tx.conn())
     .await?
     .into_iter()
-    .map(|r| TopService {
-        service_id: r.service_id,
-        name: r.name,
-        category_name: r.category_name,
-        sessions_used: r.sessions,
-        one_off_services: r.one_off,
-        one_off_revenue: with_money.then_some(r.one_off_revenue),
-    })
+    .map(|r| (r.id, (r.name, r.category_name)))
     .collect();
+    let mut top_services: Vec<TopService> = books
+        .services
+        .iter()
+        .map(|t| {
+            let (name, category_name) = names.get(&t.id).cloned().unwrap_or_default();
+            TopService {
+                service_id: t.id,
+                name,
+                category_name,
+                sessions_used: t.sessions,
+                one_off_services: t.one_off,
+                one_off_revenue: with_money.then_some(t.one_off_revenue),
+            }
+        })
+        .collect();
+    top_services.sort_by(|a, b| {
+        (b.sessions_used + b.one_off_services)
+            .cmp(&(a.sessions_used + a.one_off_services))
+            .then_with(|| a.name.cmp(&b.name))
+            .then_with(|| a.service_id.cmp(&b.service_id))
+    });
+    top_services.truncate(usize::try_from(TOP).unwrap_or(10));
+
+    let staff_ids: Vec<Uuid> = books.staff.iter().map(|s| s.id).collect();
+    let staff_names: HashMap<Uuid, String> = sqlx::query!(
+        "SELECT id, full_name FROM app.staff WHERE tenant_id = $1 AND id = ANY($2)",
+        tenant,
+        &staff_ids
+    )
+    .fetch_all(tx.conn())
+    .await?
+    .into_iter()
+    .map(|r| (r.id, r.full_name))
+    .collect();
+    let mut technicians: Vec<TechnicianDay> = books
+        .staff
+        .iter()
+        .map(|t| TechnicianDay {
+            staff_id: t.id,
+            name: staff_names.get(&t.id).cloned().unwrap_or_default(),
+            visits: t.visits,
+            sessions_used: t.sessions,
+            one_off_services: t.one_off,
+        })
+        .collect();
+    technicians.sort_by(|a, b| {
+        b.visits
+            .cmp(&a.visits)
+            .then_with(|| a.name.cmp(&b.name))
+            .then_with(|| a.staff_id.cmp(&b.staff_id))
+    });
+    let customers = books.customers;
 
     let top_packages = sqlx::query!(
         r#"SELECT cp.plan_id, min(cp.name_snapshot) AS "name!", count(*) AS "sold!",
@@ -423,24 +483,6 @@ pub async fn range(
         revenue: with_money.then_some(r.revenue),
     })
     .collect();
-    let technicians = sqlx::query_as!(
-        TechnicianDay,
-        r#"SELECT l.staff_id, st.full_name AS name,
-                  count(DISTINCT v.id) AS "visits!",
-                  coalesce(sum(l.qty) FILTER (WHERE l.source = 'package'), 0)::bigint AS "sessions_used!",
-                  coalesce(sum(l.qty) FILTER (WHERE l.source = 'one_off'), 0)::bigint AS "one_off_services!"
-           FROM app.visit v
-           JOIN app.visit_line l ON l.tenant_id = v.tenant_id AND l.visit_id = v.id
-           JOIN app.staff st ON st.tenant_id = l.tenant_id AND st.id = l.staff_id
-           WHERE v.tenant_id = $1 AND v.business_date BETWEEN $2 AND $3 AND v.status = 'completed'
-           GROUP BY l.staff_id, st.full_name
-           ORDER BY 3 DESC, st.full_name, l.staff_id"#,
-        tenant,
-        from,
-        to
-    )
-    .fetch_all(tx.conn())
-    .await?;
     tx.commit().await?;
 
     let mut buckets: Vec<NaiveDate> = all_days
@@ -637,6 +679,51 @@ mod tests {
             bucket_of(d("2026-11-05"), Granularity::Day),
             d("2026-11-05")
         );
+    }
+
+    #[test]
+    fn presets_follow_the_calendar() -> Result<(), AppError> {
+        let today = d("2026-03-31");
+        assert_eq!(
+            preset_window(RangePreset::LastMonth, today)?,
+            (d("2026-02-01"), d("2026-02-28"), Granularity::Day)
+        );
+        assert_eq!(
+            preset_window(RangePreset::Last12Months, today)?,
+            (d("2025-04-01"), today, Granularity::Month)
+        );
+        assert_eq!(
+            preset_window(RangePreset::Last2Years, today)?,
+            (d("2025-01-01"), today, Granularity::Month)
+        );
+        assert_eq!(
+            preset_window(RangePreset::LastMonth, d("2026-01-15"))?,
+            (d("2025-12-01"), d("2025-12-31"), Granularity::Day),
+            "across the new year"
+        );
+        assert_eq!(
+            bucket_of(d("2026-11-05"), Granularity::Year),
+            d("2026-01-01")
+        );
+        // Every preset fits its granularity's limit, even on the longest days of the calendar.
+        for day in [d("2028-12-31"), d("2027-01-01"), d("2026-02-28")] {
+            for p in [
+                RangePreset::Last7Days,
+                RangePreset::Last30Days,
+                RangePreset::ThisMonth,
+                RangePreset::LastMonth,
+                RangePreset::ThisYear,
+                RangePreset::Last12Months,
+                RangePreset::Last2Years,
+            ] {
+                let (from, to, g) = preset_window(p, day)?;
+                assert!(
+                    window(Some(from), Some(to), day, 7, max_days(g)).is_ok(),
+                    "{p:?} {day}"
+                );
+            }
+        }
+        Ok(())
     }
 
     #[test]

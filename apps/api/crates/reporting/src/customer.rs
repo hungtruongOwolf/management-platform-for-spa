@@ -629,3 +629,19 @@ pub async fn package_usage(
         uses,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn history_text_is_folded_escaped_and_bounded() -> Result<(), AppError> {
+        assert_eq!(text_filter(None)?, None);
+        assert_eq!(text_filter(Some("  "))?, None);
+        assert_eq!(text_filter(Some("Gội ĐẦU"))?, Some("%goi dau%".to_owned()));
+        assert_eq!(text_filter(Some("50%"))?, Some("%50\\%%".to_owned()));
+        assert!(text_filter(Some("a")).is_err());
+        assert!(text_filter(Some(&"x".repeat(101))).is_err());
+        Ok(())
+    }
+}

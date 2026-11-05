@@ -350,7 +350,10 @@ pub enum PhoneCheck {
     /// Not (yet) a valid Vietnamese mobile/landline number: nothing to look up.
     Invalid,
     Free,
-    Taken { id: Uuid, full_name: String },
+    Taken {
+        id: Uuid,
+        full_name: String,
+    },
 }
 
 /// `GET /customers/phone-check?phone=` (`customer.read`): whether a live customer of the caller's
