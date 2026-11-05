@@ -107,7 +107,9 @@ export function CustomerCard({
               (expired && !canOverrideExpiry);
             const isFirst = item.id === firstUsableItem;
             const label =
-              p.items.length > 1 ? `${p.name} · ${serviceLabel(item.name, item.category_name)}` : p.name;
+              p.items.length > 1
+                ? `${p.name} · ${serviceLabel(item.name, item.category_name)}`
+                : p.name;
             return (
               <li
                 key={item.id}
@@ -132,8 +134,7 @@ export function CustomerCard({
                     <strong>
                       {String(Math.max(left, 0))}/{String(item.sessions_total)}
                     </strong>{" "}
-                    buổi ·{" "}
-                    {expiryText(p.expires_on, formatDate)}
+                    buổi · {expiryText(p.expires_on, formatDate)}
                     {p.status !== "active" && (
                       <span
                         className={`badge ml-2 align-middle ${STATUS_BADGE[p.status]}`}
