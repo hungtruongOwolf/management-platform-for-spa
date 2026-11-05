@@ -32,6 +32,7 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
 | `record.void_same_day` | ✓ | ✓ | — | — |
 | `record.void_closed_day` | ✓ | — | — | — |
 | `report.read` (R1-2: dashboard ngày, báo cáo khoảng ngày, chỉ số đếm) | ✓ | ✓ | — | — |
+| `report.long_range` (vòng 3, migration 0015: báo cáo theo tháng/năm 3–5 năm; EM Q5) | ✓ | — | — | — |
 | `report.revenue.read` (R1-2: mọi con số tiền trong báo cáo + sổ doanh thu; mặc định bật cho quản lý, **câu hỏi Q1 cho EM**) | ✓ | ✓ | — | — |
 | `audit.read` | ✓ | — | — | — |
 | `support_grant.manage` | ✓ | — | — | — |
@@ -50,6 +51,7 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
 - **Vòng 3 (EM 2026-11-05, [spec](../product/specs/management-views.md) "Bổ sung vòng 3", migration 0014):**
   - `POST /customers/{id}/follow-ups` cần `customer.follow_up` + Idempotency-Key; người ghi lấy từ session (`created_by` = user, body có field lạ → `422`); bảng `customer_follow_up` chỉ thêm (trigger `reject_mutation`, app_rw chỉ `SELECT, INSERT`) + RLS tenant; audit `customer.follow_up` ghi `has_note`, không chép ghi chú. `GET /customers/{id}/follow-ups` cần `customer.read`. Khách spa khác → `404`.
   - `GET /customers/phone-check?phone=` cần `customer.read`; chỉ tra trong tenant của session (lọc tường minh + RLS); trả tên + id như `GET /customers?q=<số>` đã trả cho cùng người, nên không mở thêm bề mặt dò số. Chi phí: 1 lookup trên unique index; rate limit chung theo IP (5/s, burst 60). Số điện thoại nằm trong query string như `GET /customers?q=` (log truy cập không ghi query; xem threat-model).
+  - `GET /reports/range` với khoảng tháng/năm > 732 ngày hoặc preset `last_3_years` / `last_5_years` cần thêm `report.long_range` (chủ spa); thiếu → `422 to range_too_long` (cố ý không phải 403: cùng mã lỗi với giới hạn thường, quản lý không thấy khác biệt). KTV không bao giờ có `customer.follow_up` (EM Q7; `roles.rs::technician_never_sees_customer_data` khẳng định).
   - Test: `app/tests/follow_ups.rs` (quyền chủ/quản lý/KTV/ẩn danh/spa khác, idempotency, append-only + RLS dưới app_rw), `authz_matrix.rs` (+3 dòng).
 - **Nhập sổ giấy (EM 2026-11-05, R1-2 §7):** quản lý mất `opening_balance.import` (migration 0013 xóa khỏi role hệ thống `manager`; `SystemRole::default_permissions` cũng vậy). `POST /opening-balances` còn tạm cho chủ spa tới khi web xóa màn `/nhap-so-cu`; team migrate bằng `app import-paper-book` (CLI, đi qua đúng use case với quyền của chủ spa). Test: `opening_balances.rs::only_the_owner_imports_today_without_a_window_or_reauth`, `paper_book.rs`.
 - **Spa bị tạm ngưng (M3):** `tenant.status = 'suspended'` → không cấp permission nào, kể cả cho session đang mở: route nghiệp vụ trả `403 auth.not_a_member` (cùng mã với membership bị tắt), `/me` trả `active_tenant: null`, `permissions: []`. Yêu cầu MFA **không** mất theo spa bị ngưng (migration 0011). Test: `app/tests/auth.rs::suspending_a_spa_cuts_off_its_open_sessions`.

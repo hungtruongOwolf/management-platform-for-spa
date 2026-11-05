@@ -316,6 +316,8 @@ pub async fn inactive(
         Some(sort) => sort == InactiveSort::Due,
         None => matches!(follow_up, "due" | "scheduled"),
     };
+    let pause_days = i32::try_from(crm::follow_up::NOT_INTERESTED_PAUSE_DAYS)
+        .map_err(|_| AppError::Internal("pause days".into()))?;
     let (name_like, phone_like) = customer_filter(query.q.as_deref())?;
     // Cursor = (due key, last seen, id); the due key is a constant when sorting by absence.
     let (a_key, a_date, a_id) = match query.cursor.as_deref() {
@@ -384,25 +386,34 @@ pub async fn inactive(
                AND (NOT $4::bool OR cand.remaining > 0)
                AND ($10::bool IS NULL OR cand.is_package = $10)
            )
-           , keyed AS (
-             -- Due order: never contacted (0001-01-01), then the planned date, then contacted
-             -- with nothing planned (9999-12-31). By absence: one constant key.
+           , dated AS (
+             -- When a contacted customer is due again: the planned date, or for "not interested"
+             -- without one, the end of the quiet period (then shown once more). NULL = never.
              SELECT absent.*,
+                    CASE WHEN f_on IS NULL THEN NULL
+                         WHEN f_next IS NOT NULL THEN f_next
+                         WHEN f_outcome = 'not_interested' THEN f_on + $14::int
+                    END AS due_on
+             FROM absent
+           ), keyed AS (
+             -- Due order: never contacted (0001-01-01), then the due date, then contacted with
+             -- nothing due (9999-12-31). By absence: one constant key.
+             SELECT dated.*,
                     CASE WHEN NOT $12::bool THEN DATE '0001-01-01'
                          WHEN f_on IS NULL THEN DATE '0001-01-01'
-                         WHEN f_next IS NULL THEN DATE '9999-12-31'
-                         ELSE f_next END AS due_key
-             FROM absent
+                         WHEN due_on IS NULL THEN DATE '9999-12-31'
+                         ELSE due_on END AS due_key
+             FROM dated
              WHERE ($11::text = 'all'
                     OR ($11 = 'not_contacted' AND f_on IS NULL)
-                    OR ($11 = 'due' AND (f_on IS NULL OR f_next <= $2))
+                    OR ($11 = 'due' AND (f_on IS NULL OR due_on <= $2))
                     OR ($11 = 'scheduled' AND f_next > $2))
            )
            SELECT id AS "id!", full_name AS "full_name!", phone_e164 AS "phone!", gender, last_on,
                   last_seen AS "last_seen!", active AS "active!", remaining AS "remaining!",
                   is_package AS "is_package!", f_on AS "f_on?", f_channel AS "f_channel?",
                   f_outcome AS "f_outcome?", f_next AS "f_next?", f_by AS "f_by?",
-                  due_key AS "due_key!"
+                  due_on AS "due_on?", due_key AS "due_key!"
            FROM keyed
            WHERE ($5::date IS NULL OR (due_key, last_seen, id) > ($13, $5, $6))
            ORDER BY due_key, last_seen, id
@@ -419,7 +430,8 @@ pub async fn inactive(
         kind,
         follow_up,
         by_due,
-        a_key
+        a_key,
+        pause_days
     )
     .fetch_all(tx.conn())
     .await?;
@@ -465,6 +477,7 @@ pub async fn inactive(
             active_packages: r.active,
             sessions_remaining: r.remaining,
             next_follow_up_on: last_follow_up.as_ref().and(r.f_next),
+            due_on: last_follow_up.as_ref().and(r.due_on),
             last_follow_up,
         });
     }

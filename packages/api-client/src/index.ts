@@ -73,4 +73,5 @@ export type FollowUpCreate = Schemas["FollowUpCreate"];
 export type FollowUp = Schemas["FollowUpDto"];
 export type FollowUpList = Schemas["FollowUpList"];
 export type PhoneCheck = Schemas["PhoneCheckDto"];
+export type SuggestedNextOn = Schemas["SuggestedNextOn"];
 export type Gender = Schemas["GenderDto"];

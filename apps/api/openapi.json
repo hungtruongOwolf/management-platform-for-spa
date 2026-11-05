@@ -1435,7 +1435,7 @@
           {
             "name": "to",
             "in": "query",
-            "description": "Last business day (inclusive); default today. Not with `preset`. Span: at most 366 days\nfor `day` / `week`, at most 732 days (2 years) for `month` / `year`.",
+            "description": "Last business day (inclusive); default today. Not with `preset`. Span: at most 366 days\nfor `day` / `week`, at most 732 days (2 years) for `month` / `year`; 1830 days (5 years)\nwith `report.long_range` (owner).",
             "required": false,
             "schema": {
               "type": "string",
@@ -1477,7 +1477,7 @@
             "description": "auth.forbidden: no report.read"
           },
           "422": {
-            "description": "validation_failed: from after_to, to range_too_long (> 366 days by day/week, > 732 days by month/year), preset conflicts_with_range"
+            "description": "validation_failed: from after_to, to range_too_long (> 366 days by day/week, > 732 days by month/year; > 1830 with report.long_range), preset conflicts_with_range"
           }
         }
       }
@@ -2855,7 +2855,7 @@
               "null"
             ],
             "format": "date",
-            "description": "When to try again (≥ `contacted_on`, ≤ 365 days after it). Omitted: `no_answer` → contact\nday + 3; other outcomes → none."
+            "description": "When to try again (≥ `contacted_on`, ≤ 365 days after it). Omitted: `no_answer` → contact\nday + 3, `will_come` → + 7, `not_interested` / `other` → none."
           },
           "note": {
             "type": [
@@ -2943,7 +2943,10 @@
         "description": "`GET /customers/{id}/follow-ups`: newest contact first.",
         "required": [
           "items",
-          "has_more"
+          "has_more",
+          "today",
+          "suggested_next_on_by_outcome",
+          "not_interested_pause_days"
         ],
         "properties": {
           "has_more": {
@@ -2956,6 +2959,20 @@
               "$ref": "#/components/schemas/FollowUpDto"
             },
             "description": "At most 100."
+          },
+          "not_interested_pause_days": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Days a `not_interested` customer stays out of `GET /customers/inactive?follow_up=due`.",
+            "minimum": 0
+          },
+          "suggested_next_on_by_outcome": {
+            "$ref": "#/components/schemas/SuggestedNextOn"
+          },
+          "today": {
+            "type": "string",
+            "format": "date",
+            "description": "The spa's business day the suggestions are computed from."
           }
         }
       },
@@ -3402,6 +3419,14 @@
           "days_absent": {
             "type": "integer",
             "format": "int64"
+          },
+          "due_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "When this contacted customer is due again: `next_follow_up_on`, or for `not_interested`\nwithout a date, contact day + 90 (shown once more then). `null` = not contacted in this\nabsence (already due) or nothing due."
           },
           "full_name": {
             "type": "string"
@@ -4713,7 +4738,9 @@
           "last_month",
           "this_year",
           "last_12_months",
-          "last_2_years"
+          "last_2_years",
+          "last_3_years",
+          "last_5_years"
         ]
       },
       "RangeReport": {
@@ -5318,6 +5345,43 @@
           "active",
           "left"
         ]
+      },
+      "SuggestedNextOn": {
+        "type": "object",
+        "description": "The next date the rules would store for a contact made today, per outcome (`null` = none).\nThe form pre-fills `next_follow_up_on` with it; whatever the user leaves there is sent.",
+        "properties": {
+          "no_answer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Today + 3."
+          },
+          "not_interested": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "None: they leave the \"due\" list for `not_interested_pause_days`, then come back once."
+          },
+          "other": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "will_come": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Today + 7: check in if they still have not come."
+          }
+        }
       },
       "SwitchTenantBody": {
         "type": "object",

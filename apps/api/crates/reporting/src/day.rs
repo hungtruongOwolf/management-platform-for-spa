@@ -18,10 +18,12 @@ use uuid::Uuid;
 
 /// Longest `GET /reports/range` window by day or week: a full (leap) year.
 pub const MAX_RANGE_DAYS: u64 = 366;
-/// Longest window by month or year: two (leap) years. The bench (3 busy years, debug build)
-/// reads one year in ~140 ms and three in ~380 ms, over the 300 ms budget, so longer views wait
-/// for a pre-aggregated daily table (open question for the EM).
+/// Longest window by month or year: two (leap) years, within the 300 ms budget (the bench reads
+/// one busy year in ~120 ms, two in ~230 ms).
 pub const MAX_LONG_RANGE_DAYS: u64 = 2 * 366;
+/// With `report.long_range` (owner, EM Q5): five (leap) years, computed on demand. Rarely used,
+/// so it has its own, looser budget (p95 ≤ 1.5 s on the 3-year bench) instead of a rollup table.
+pub const MAX_OWNER_RANGE_DAYS: u64 = 5 * 366;
 /// Longest `GET /reports/ledger` window: a quarter.
 pub const MAX_LEDGER_DAYS: u64 = 92;
 const TOP: i64 = 10;
@@ -45,10 +47,12 @@ fn bucket_of(d: NaiveDate, g: Granularity) -> NaiveDate {
     }
 }
 
-const fn max_days(g: Granularity) -> u64 {
-    match g {
-        Granularity::Day | Granularity::Week => MAX_RANGE_DAYS,
-        Granularity::Month | Granularity::Year => MAX_LONG_RANGE_DAYS,
+/// Longest span for a granularity; `long_range` = the caller holds `report.long_range`.
+const fn max_days(g: Granularity, long_range: bool) -> u64 {
+    match (g, long_range) {
+        (Granularity::Day | Granularity::Week, _) => MAX_RANGE_DAYS,
+        (Granularity::Month | Granularity::Year, false) => MAX_LONG_RANGE_DAYS,
+        (Granularity::Month | Granularity::Year, true) => MAX_OWNER_RANGE_DAYS,
     }
 }
 
@@ -80,6 +84,8 @@ fn preset_window(
         RangePreset::ThisYear => (jan_first(today.year())?, today, Granularity::Month),
         RangePreset::Last12Months => (months_back(11)?, today, Granularity::Month),
         RangePreset::Last2Years => (jan_first(today.year() - 1)?, today, Granularity::Month),
+        RangePreset::Last3Years => (jan_first(today.year() - 2)?, today, Granularity::Month),
+        RangePreset::Last5Years => (jan_first(today.year() - 4)?, today, Granularity::Year),
     })
 }
 
@@ -360,10 +366,15 @@ fn window(
 fn range_window(
     query: &RangeQuery,
     today: NaiveDate,
+    long_range: bool,
 ) -> Result<(NaiveDate, NaiveDate, Granularity), AppError> {
     let (from, to, granularity) = match query.preset {
         Some(_) if query.from.is_some() || query.to.is_some() => {
             return Err(field("preset", "conflicts_with_range"));
+        }
+        // The 3- and 5-year presets are the owner's long view, whatever the calendar day.
+        Some(RangePreset::Last3Years | RangePreset::Last5Years) if !long_range => {
+            return Err(field("to", "range_too_long"));
         }
         Some(preset) => {
             let (from, to, default) = preset_window(preset, today)?;
@@ -371,7 +382,7 @@ fn range_window(
         }
         None => (query.from, query.to, query.granularity.unwrap_or_default()),
     };
-    let (from, to) = window(from, to, today, 7, max_days(granularity))?;
+    let (from, to) = window(from, to, today, 7, max_days(granularity, long_range))?;
     Ok((from, to, granularity))
 }
 
@@ -386,7 +397,8 @@ pub async fn range(
     let with_money = actor.can(Permission::ReportRevenueRead);
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let today = today(&mut tx).await?;
-    let (from, to, granularity) = range_window(query, today)?;
+    let (from, to, granularity) =
+        range_window(query, today, actor.can(Permission::ReportLongRange))?;
     let all_days = days(from, to);
     let books = Books::read(&mut tx, (from, to), granularity, with_money).await?;
     let tenant = tx.tenant().as_uuid();
@@ -718,9 +730,20 @@ mod tests {
             ] {
                 let (from, to, g) = preset_window(p, day)?;
                 assert!(
-                    window(Some(from), Some(to), day, 7, max_days(g)).is_ok(),
+                    window(Some(from), Some(to), day, 7, max_days(g, false)).is_ok(),
                     "{p:?} {day}"
                 );
+            }
+            // The owner-only presets fit the owner's limit and are refused to everyone else.
+            for p in [RangePreset::Last3Years, RangePreset::Last5Years] {
+                let query = RangeQuery {
+                    from: None,
+                    to: None,
+                    granularity: None,
+                    preset: Some(p),
+                };
+                assert!(range_window(&query, day, true).is_ok(), "{p:?} {day}");
+                assert!(range_window(&query, day, false).is_err(), "{p:?} {day}");
             }
         }
         Ok(())
