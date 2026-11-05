@@ -120,8 +120,12 @@ function PeriodPicker({
   const change = (next: { from: string; to: string }) => {
     setDraft(next);
     if (!next.from || !next.to) return;
-    if (next.from > next.to) return setError("Ngày bắt đầu phải trước ngày kết thúc.");
-    if (daysBetween(next.from, next.to) > MAX_RANGE_DAYS) return setError("Chọn tối đa 5 năm.");
+    const problem =
+      next.from > next.to ? "Ngày bắt đầu phải trước ngày kết thúc." : daysBetween(next.from, next.to) > MAX_RANGE_DAYS ? "Chọn tối đa 5 năm." : null;
+    if (problem) {
+      setError(problem);
+      return;
+    }
     setError(null);
     onCustom(next.from, next.to);
   };

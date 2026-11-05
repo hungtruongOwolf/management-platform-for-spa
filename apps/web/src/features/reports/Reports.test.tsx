@@ -261,7 +261,7 @@ describe("management lists", () => {
     const post = spy.mock.calls.find(([, init]) => init?.method === "POST");
     expect(post?.[0]).toMatch(/\/api\/v1\/customers\/mock-customer-\d+\/follow-ups$/);
     expect(new Headers(post?.[1]?.headers).get("Idempotency-Key")).toMatch(/^[0-9a-f-]{36}$/);
-    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+    expect(JSON.parse(post?.[1]?.body as string)).toEqual({
       contacted_on: spaToday(),
       channel: "zalo",
       outcome: "will_come",
@@ -336,7 +336,7 @@ describe("customer history", () => {
     const log = await within(card).findByRole("list", { name: "Các lần liên hệ" });
     expect(within(log).getByText("Chưa có nhu cầu")).toBeInTheDocument();
     const post = spy.mock.calls.find(([, init]) => init?.method === "POST");
-    expect(JSON.parse(String(post?.[1]?.body))).toMatchObject({ outcome: "not_interested", next_follow_up_on: null });
+    expect(JSON.parse(post?.[1]?.body as string)).toMatchObject({ outcome: "not_interested", next_follow_up_on: null });
   });
 
   it("is not shown without report.read", async () => {

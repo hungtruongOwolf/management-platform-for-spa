@@ -3,6 +3,7 @@ import type {
   CustomerCreate,
   CustomerSummary,
   CustomerUpdate,
+  PhoneCheck,
 } from "@vpyd/api-client";
 import { queryOptions } from "@tanstack/react-query";
 import { api, ifMatch } from "../../lib/api";
@@ -68,6 +69,30 @@ export async function setHealthNote(
     headers: ifMatch(version),
   })) as Customer;
 }
+
+/** Digits a typed phone carries, the way the server normalises it ("+84 905…" → "0905…"). */
+export function phoneDigits(typed: string): string {
+  const d = typed.replace(/\D/g, "");
+  return d.startsWith("84") && d.length === 11 ? `0${d.slice(2)}` : d;
+}
+
+/** Only complete-looking numbers are checked: 10 digits from 0 (the API says `valid: false` otherwise). */
+export function isCompletePhone(typed: string): boolean {
+  return /^0\d{9}$/.test(phoneDigits(typed));
+}
+
+/** `GET /customers/phone-check?phone=` while the number is typed (EM round 3 item 13). */
+export function phoneCheckQuery(digits: string) {
+  return queryOptions({
+    queryKey: ["customers", "phone-check", digits],
+    queryFn: async () => (await api(`/customers/phone-check?phone=${encodeURIComponent(digits)}`)) as PhoneCheck,
+    staleTime: 30_000,
+    enabled: isCompletePhone(digits),
+  });
+}
+
+/** Wait between the last keystroke and the check, so a number typed fast costs one request. */
+export const PHONE_CHECK_DEBOUNCE_MS = 400;
 
 export const GENDER_LABEL: Record<string, string> = {
   female: "Nữ",

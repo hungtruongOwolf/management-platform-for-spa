@@ -6,7 +6,8 @@ import type {
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { messageFor } from "../../lib/errors";
-import { GENDER_LABEL, customerQuery } from "../customers/api";
+import { customerQuery } from "../customers/api";
+import { CustomerName } from "../../app/CustomerName";
 import { HealthNote } from "../customers/HealthNote";
 import {
   STATUS_BADGE,
@@ -15,7 +16,7 @@ import {
   formatDate,
 } from "../sales/api";
 import { byUseOrder, isUsable } from "./api";
-import { expiryText } from "../../lib/names";
+import { expiryText, serviceLabel } from "../../lib/names";
 
 export interface Deduction {
   pkg: CustomerPackage;
@@ -66,12 +67,9 @@ export function CustomerCard({
       className="rounded-[14px] border border-border bg-surface p-4 shadow-card"
     >
       <h2 id="customer-card-title" className="font-brand text-xl text-primary">
-        {summary.full_name}
+        <CustomerName name={summary.full_name} gender={gender} showUnknown />
       </h2>
-      <p className="text-sm text-text-muted">
-        {summary.phone} ·{" "}
-        {gender ? (GENDER_LABEL[gender] ?? "") : "Chưa rõ giới tính"}
-      </p>
+      <p className="text-sm text-text-muted tabular">{summary.phone}</p>
       {customer.data && <HealthNote customer={customer.data} />}
 
       <h3 className="mt-3 font-semibold">Liệu trình</h3>
@@ -109,7 +107,7 @@ export function CustomerCard({
               (expired && !canOverrideExpiry);
             const isFirst = item.id === firstUsableItem;
             const label =
-              p.items.length > 1 ? `${p.name} · ${item.name}` : p.name;
+              p.items.length > 1 ? `${p.name} · ${serviceLabel(item.name, item.category_name)}` : p.name;
             return (
               <li
                 key={item.id}

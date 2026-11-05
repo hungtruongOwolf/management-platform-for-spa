@@ -47,6 +47,8 @@ export type CartLine =
       source: "package";
       serviceId: string;
       serviceName: string;
+      /** Menu category shown before the name ("Thư Giãn · Gội đầu dưỡng sinh"). */
+      categoryName?: string;
       itemId: string;
       packageName: string;
       staffId: string;
@@ -57,6 +59,7 @@ export type CartLine =
       source: "one_off";
       serviceId: string;
       serviceName: string;
+      categoryName?: string;
       /** Only sent when the customer has no recorded gender. */
       priceVariant: Gender | null;
       price: number;
