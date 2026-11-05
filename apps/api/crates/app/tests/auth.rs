@@ -402,6 +402,56 @@ async fn switch_tenant_keeps_absolute_expiry_and_reauth_time(owner: PgPool) -> T
     Ok(())
 }
 
+/// Security review H1, as the re-auth guard sees it: after `switch-tenant` the rotated session is
+/// not "recently authenticated", so it cannot pass `AuthUser::require_recent_auth` (the 🔒 guard
+/// for account-security actions) without a real `/auth/reauth`. Business actions no longer ask for
+/// re-auth (EM decision 2026-11-05), so this is checked on the resolved session itself.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_rotated_session_needs_a_real_reauth(owner: PgPool) -> TestResult {
+    let h = staff_harness(owner).await?;
+    let pool = kernel::testing::app_pool(&h.owner).await?;
+    let token = login(&h.app, PHONE, PASSWORD)
+        .await
+        .session()
+        .unwrap_or_default();
+    sqlx::query("UPDATE app.session SET recent_auth_at = now() - interval '10 minutes'")
+        .execute(&h.owner)
+        .await?;
+    let tenant: String = sqlx::query_scalar("SELECT id::text FROM app.tenant WHERE slug = 'vpyd'")
+        .fetch_one(&h.owner)
+        .await?;
+    let switched = call(
+        &h.app,
+        "POST",
+        "/auth/switch-tenant",
+        Some(&token),
+        Some(json!({"tenant_id": tenant})),
+    )
+    .await;
+    assert_eq!(switched.status, StatusCode::OK, "{}", switched.body);
+    let rotated = switched.session().unwrap_or_default();
+
+    let now = chrono::Utc::now();
+    let session = identity::service::resolve(&pool, &rotated).await?;
+    assert!(
+        !session.recently_authenticated(now),
+        "switch-tenant is not a re-authentication"
+    );
+
+    let reauth = call(
+        &h.app,
+        "POST",
+        "/auth/reauth",
+        Some(&rotated),
+        Some(json!({"password": PASSWORD})),
+    )
+    .await;
+    assert_eq!(reauth.status, StatusCode::NO_CONTENT);
+    let session = identity::service::resolve(&pool, &rotated).await?;
+    assert!(session.recently_authenticated(chrono::Utc::now()));
+    Ok(())
+}
+
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn login_marks_the_session_as_just_authenticated(owner: PgPool) -> TestResult {
     let h = staff_harness(owner).await?;

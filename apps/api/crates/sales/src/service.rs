@@ -328,7 +328,6 @@ pub async fn create_sale(
                     .clone()
                     .unwrap_or_else(|| plan.gift_note.clone()),
                 sold_price: paid,
-                refund_cap: paid,
                 origin: Origin::Sale {
                     sale_id,
                     closer_staff_id: closer.id,

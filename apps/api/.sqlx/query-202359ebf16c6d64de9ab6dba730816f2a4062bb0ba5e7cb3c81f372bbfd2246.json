@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT p.id, p.customer_id, p.plan_id, p.name_snapshot, p.gift_note, p.sold_price, p.refund_cap, p.origin,\n                  p.sale_id, p.closer_staff_id, s.full_name AS \"closer_name?\", p.starts_on, p.expires_on, p.cancelled_at,\n                  p.cancel_reason, p.version, p.created_at\n           FROM app.customer_package p\n           LEFT JOIN app.staff s ON s.tenant_id = p.tenant_id AND s.id = p.closer_staff_id\n           WHERE p.tenant_id = $1\n             AND ($2::uuid IS NULL OR p.id = $2)\n             AND ($3::uuid IS NULL OR p.customer_id = $3)\n             AND ($4::uuid IS NULL OR p.sale_id = $4)\n           ORDER BY p.created_at DESC, p.id DESC\n           LIMIT 200",
+  "query": "SELECT p.id, p.customer_id, p.plan_id, p.name_snapshot, p.gift_note, p.sold_price, p.origin, p.sale_id,\n                  p.closer_staff_id, s.full_name AS \"closer_name?\", p.starts_on, p.expires_on, p.cancelled_at,\n                  p.cancel_reason, p.version, p.created_at\n           FROM app.customer_package p\n           LEFT JOIN app.staff s ON s.tenant_id = p.tenant_id AND s.id = p.closer_staff_id\n           WHERE p.tenant_id = $1\n             AND ($2::uuid IS NULL OR p.id = $2)\n             AND ($3::uuid IS NULL OR p.customer_id = $3)\n             AND ($4::uuid IS NULL OR p.sale_id = $4)\n           ORDER BY p.created_at DESC, p.id DESC\n           LIMIT 200",
   "describe": {
     "columns": [
       {
@@ -71,17 +71,6 @@
       },
       {
         "ordinal": 6,
-        "name": "refund_cap",
-        "type_info": "Int8",
-        "origin": {
-          "Table": {
-            "table": "app.customer_package",
-            "name": "refund_cap"
-          }
-        }
-      },
-      {
-        "ordinal": 7,
         "name": "origin",
         "type_info": "Text",
         "origin": {
@@ -92,7 +81,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 7,
         "name": "sale_id",
         "type_info": "Uuid",
         "origin": {
@@ -103,7 +92,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 8,
         "name": "closer_staff_id",
         "type_info": "Uuid",
         "origin": {
@@ -114,7 +103,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 9,
         "name": "closer_name?",
         "type_info": "Text",
         "origin": {
@@ -125,7 +114,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 10,
         "name": "starts_on",
         "type_info": "Date",
         "origin": {
@@ -136,7 +125,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 11,
         "name": "expires_on",
         "type_info": "Date",
         "origin": {
@@ -147,7 +136,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 12,
         "name": "cancelled_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -158,7 +147,7 @@
         }
       },
       {
-        "ordinal": 14,
+        "ordinal": 13,
         "name": "cancel_reason",
         "type_info": "Text",
         "origin": {
@@ -169,7 +158,7 @@
         }
       },
       {
-        "ordinal": 15,
+        "ordinal": 14,
         "name": "version",
         "type_info": "Int8",
         "origin": {
@@ -180,7 +169,7 @@
         }
       },
       {
-        "ordinal": 16,
+        "ordinal": 15,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -207,7 +196,6 @@
       true,
       false,
       false,
-      false,
       true,
       true,
       false,
@@ -219,5 +207,5 @@
       false
     ]
   },
-  "hash": "6b0533d0c0d783c860a2dc5b86517c0c75f986f86e86264e14f361c448a342bd"
+  "hash": "202359ebf16c6d64de9ab6dba730816f2a4062bb0ba5e7cb3c81f372bbfd2246"
 }

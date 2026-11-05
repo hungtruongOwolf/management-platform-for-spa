@@ -108,7 +108,6 @@ pub async fn read_visit(
 #[utoipa::path(patch, path = "/api/v1/visits/{id}", tag = "visits", request_body = VisitUpdate,
     params(("id" = Uuid, Path), ("If-Match" = String, Header)),
     responses((status = 200, body = VisitDto),
-        (status = 401, description = "auth.reauth_required (owner correcting a closed day)"),
         (status = 403, description = "auth.forbidden / day.locked"), (status = 404),
         (status = 409, description = "visit.voided"), (status = 412), (status = 422)))]
 pub async fn update_visit(
@@ -130,7 +129,6 @@ pub async fn update_visit(
     responses(
         (status = 200, body = VisitDto, description = "Voided: sessions given back, one-off payments reversed (AC6.1)"),
         (status = 400, description = "idempotency.key_required"),
-        (status = 401, description = "auth.reauth_required (owner voiding a closed day)"),
         (status = 403, description = "auth.forbidden / day.locked (manager, a day before today, AC6.3)"),
         (status = 404),
         (status = 409, description = "visit.voided (second void), package.cancelled (its package was cancelled since)"),

@@ -238,17 +238,6 @@ const ROUTES: &[Route] = &[
     .body(opening_balance_body)
     .idempotent(),
     route(
-        "GET",
-        "/api/v1/opening-balances/window",
-        Access::Perm(P::OpeningBalanceImport, OWNER_MANAGER),
-    ),
-    route(
-        "PUT",
-        "/api/v1/opening-balances/window",
-        Access::Perm(P::OpeningBalanceManageWindow, OWNER_ONLY),
-    )
-    .body(window_body),
-    route(
         "POST",
         "/api/v1/customer-packages/{id}/extend",
         Access::Perm(P::PackageExtendExpiry, OWNER_ONLY),
@@ -398,10 +387,6 @@ fn sell_body(f: &Fixture) -> Option<Value> {
     }))
 }
 
-/// Always `open: true`, so the matrix itself never closes the import window it relies on.
-fn window_body(_: &Fixture) -> Option<Value> {
-    Some(json!({"open": true}))
-}
 fn opening_balance_body(f: &Fixture) -> Option<Value> {
     Some(json!({
         "customer_id": f.customer,
@@ -656,20 +641,6 @@ async fn fixture(
         .as_str()
         .ok_or_else(|| format!("fixture POST /visits → {} {}", visit.status, visit.body))?
         .to_owned();
-    // Paper-book import is open only on a day the owner opened (M2): open today, so the manager
-    // row of POST /opening-balances checks the permission, not the window.
-    let window = send(
-        app,
-        "PUT",
-        "/opening-balances/window",
-        Some(&owner),
-        window_body(&f),
-        &[],
-    )
-    .await;
-    if window.status != StatusCode::OK {
-        return Err(format!("fixture PUT /opening-balances/window → {}", window.status).into());
-    }
     Ok(f)
 }
 

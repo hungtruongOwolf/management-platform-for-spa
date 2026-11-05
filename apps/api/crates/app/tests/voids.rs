@@ -5,8 +5,8 @@ mod common;
 use axum::http::StatusCode;
 use catalog::service::seed_menu;
 use common::{
-    Harness, OWNER_PHONE, PASSWORD, Reply, TestResult, add_member, call, call_with_headers,
-    current_code, forget_used_step, harness, session_for,
+    Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
+    session_for,
 };
 use identity::SystemRole;
 use kernel::testing::app_pool;
@@ -199,24 +199,11 @@ impl Spa {
             .map(|_| ())
     }
 
-    /// Every session's password confirmation is older than the 5-minute re-auth window.
+    /// Every session's password confirmation is older than the 5-minute re-auth window, so a
+    /// passing owner action proves it does not ask for the password (EM decision 2026-11-05).
     async fn age_reauth(&self) -> Result<(), sqlx::Error> {
         self.exec("UPDATE app.session SET recent_auth_at = now() - interval '10 minutes'")
             .await
-    }
-
-    /// `POST /auth/reauth` for the owner: password + a current TOTP code.
-    async fn owner_reauth(&self) -> Setup<Reply> {
-        forget_used_step(&self.h, OWNER_PHONE).await?;
-        let code = current_code(&self.h, OWNER_PHONE).await?;
-        Ok(call(
-            &self.h.app,
-            "POST",
-            "/auth/reauth",
-            Some(&self.owner),
-            Some(json!({"password": PASSWORD, "code": code})),
-        )
-        .await)
     }
 
     async fn extend(&self, who: &str, package: &str, version: &str, body: Value) -> Reply {
@@ -429,7 +416,7 @@ async fn a_void_needs_a_reason(pool: PgPool) -> TestResult {
 }
 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
-async fn closed_days_are_locked_for_managers_and_need_reauth_for_owners(
+async fn closed_days_are_locked_for_managers_and_open_to_owners_without_reauth(
     pool: PgPool,
 ) -> TestResult {
     let s = spa(pool).await?;
@@ -445,16 +432,9 @@ async fn closed_days_are_locked_for_managers_and_need_reauth_for_owners(
         "AC6.3"
     );
 
-    s.age_reauth().await?;
-    let stale = s.void_visit(&s.owner, &visit, json!("nhầm")).await;
-    assert_eq!(
-        code(&stale),
-        (StatusCode::UNAUTHORIZED, Some("auth.reauth_required"))
-    );
-    assert_eq!(s.remaining(&sold.item).await?, 11, "nothing changed yet");
+    assert_eq!(s.remaining(&sold.item).await?, 11, "nothing changed");
 
-    let reauth = s.owner_reauth().await?;
-    assert_eq!(reauth.status, StatusCode::NO_CONTENT, "{}", reauth.body);
+    s.age_reauth().await?;
     let owner = s.void_visit(&s.owner, &visit, json!("nhầm hôm qua")).await;
     assert_eq!(owner.status, StatusCode::OK, "{}", owner.body);
     assert_eq!(s.remaining(&sold.item).await?, 12);
@@ -472,11 +452,7 @@ async fn closed_days_are_locked_for_managers_and_need_reauth_for_owners(
         (StatusCode::FORBIDDEN, Some("day.locked"))
     );
     let owner_sale = s.void_sale(&s.owner, &other.sale, json!("nhầm")).await;
-    assert_eq!(
-        owner_sale.status,
-        StatusCode::OK,
-        "within the re-auth window"
-    );
+    assert_eq!(owner_sale.status, StatusCode::OK, "{}", owner_sale.body);
     Ok(())
 }
 
@@ -491,8 +467,8 @@ async fn same_day_voids_need_no_reauth(pool: PgPool) -> TestResult {
     Ok(())
 }
 
-/// S10: correcting a closed day's visit (`PATCH /visits/{id}`) follows the same 🔒 rule as voiding
-/// it: managers get `403 day.locked`, owners must have re-entered their password recently.
+/// S10: correcting a closed day's visit (`PATCH /visits/{id}`) follows the same rule as voiding
+/// it: managers get `403 day.locked`, owners may, without re-entering the password.
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn correcting_a_closed_day_visit_follows_the_void_rule(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
@@ -519,28 +495,25 @@ async fn correcting_a_closed_day_visit_follows_the_void_rule(pool: PgPool) -> Te
     let manager = patch(s.manager.clone()).await;
     assert_eq!(code(&manager), (StatusCode::FORBIDDEN, Some("day.locked")));
 
-    s.age_reauth().await?;
-    let stale = patch(s.owner.clone()).await;
-    assert_eq!(
-        code(&stale),
-        (StatusCode::UNAUTHORIZED, Some("auth.reauth_required")),
-        "{}",
-        stale.body
-    );
     assert_eq!(
         s.count("SELECT count(*) FROM app.audit_log WHERE action = 'visit.update'")
             .await?,
         0,
-        "nothing changed yet"
+        "nothing changed"
     );
 
-    let reauth = s.owner_reauth().await?;
-    assert_eq!(reauth.status, StatusCode::NO_CONTENT, "{}", reauth.body);
+    s.age_reauth().await?;
     let owner = patch(s.owner.clone()).await;
     assert_eq!(owner.status, StatusCode::OK, "{}", owner.body);
     assert_eq!(owner.body["version"], 2);
+    assert_eq!(
+        s.count("SELECT count(*) FROM app.audit_log WHERE action = 'visit.update'")
+            .await?,
+        1,
+        "audited"
+    );
 
-    // Today's visits need no re-auth, as for voids.
+    // Today's visits, as for voids.
     let today = str_of(&s.visit(&sold.item, false).await.body["id"]);
     s.age_reauth().await?;
     let same_day = call_with_headers(
@@ -803,15 +776,8 @@ async fn owner_cancels_a_package_with_a_refund(pool: PgPool) -> TestResult {
         "AC7.4"
     );
 
+    // No password prompt for the owner (EM decision 2026-11-05).
     s.age_reauth().await?;
-    let stale = s.cancel(&s.owner, &sold.package, refund.clone()).await;
-    assert_eq!(
-        code(&stale),
-        (StatusCode::UNAUTHORIZED, Some("auth.reauth_required")),
-        "🔒"
-    );
-    assert_eq!(s.owner_reauth().await?.status, StatusCode::NO_CONTENT);
-
     let ok = s.cancel(&s.owner, &sold.package, refund.clone()).await;
     assert_eq!(ok.status, StatusCode::OK, "{}", ok.body);
     assert_eq!(ok.body["status"], "cancelled", "AC7.2");
@@ -923,38 +889,5 @@ async fn cancelling_without_refund_records_no_money(pool: PgPool) -> TestResult 
         )
         .await;
     assert_eq!(method_needed.body["errors"][0]["field"], "refund_method");
-    Ok(())
-}
-
-/// Security review H1: `switch-tenant` rotates the token but must not count as a fresh password
-/// confirmation, otherwise any stolen full session could skip 🔒 by switching to its own spa.
-#[sqlx::test(migrator = "kernel::MIGRATOR")]
-async fn switching_tenant_does_not_refresh_the_reauth_window(pool: PgPool) -> TestResult {
-    let s = spa(pool).await?;
-    let sold = s.sell().await?;
-    let tenant: String = sqlx::query_scalar("SELECT id::text FROM app.tenant WHERE slug = 'vpyd'")
-        .fetch_one(&s.h.owner)
-        .await?;
-    s.age_reauth().await?;
-    let switched = call(
-        &s.h.app,
-        "POST",
-        "/auth/switch-tenant",
-        Some(&s.owner),
-        Some(json!({"tenant_id": tenant})),
-    )
-    .await;
-    assert_eq!(switched.status, StatusCode::OK, "{}", switched.body);
-    let rotated = switched.session().unwrap_or_default();
-
-    let refund =
-        json!({"reason": "Khách chuyển nhà", "refund_amount": 300_000, "refund_method": "cash"});
-    let after_switch = s.cancel(&rotated, &sold.package, refund).await;
-    assert_eq!(
-        code(&after_switch),
-        (StatusCode::UNAUTHORIZED, Some("auth.reauth_required")),
-        "switch-tenant is not a re-authentication"
-    );
-    assert_eq!(s.count("SELECT count(*) FROM app.refund").await?, 0);
     Ok(())
 }
