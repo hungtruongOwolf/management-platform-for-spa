@@ -44,14 +44,14 @@ pub fn hash_route(method: &str, route: &str, record: Option<Uuid>, body: &[u8]) 
     hasher.finalize().into()
 }
 
-/// Body-only fingerprint. Legacy: prefer [`hash_route`], which also binds method and route.
+/// Body-only fingerprint (kernel tests). Endpoints use [`hash_route`], which also binds method and route.
 pub fn hash_request(body: &[u8]) -> [u8; 32] {
     Sha256::digest(body).into()
 }
 
 /// Hash of a request acting on one record (`POST /visits/{id}/void`, …): the record id is part
 /// of it, so a key reused on another record is a mismatch (422), never a replay of the first.
-/// Legacy: prefer [`hash_route`], which also binds method and route.
+/// Endpoints use [`hash_route`], which also binds method and route.
 pub fn hash_request_on(record: Uuid, body: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(record.as_bytes());

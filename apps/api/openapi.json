@@ -321,7 +321,7 @@
             "description": "package.cancelled"
           },
           "422": {
-            "description": "refund.exceeds_paid (AC7.4), validation_failed: reason / refund_method"
+            "description": "refund.exceeds_paid (AC7.4), refund.book_price_unconfirmed (opening balance entered by a manager: send confirm_book_price, AC8.8), validation_failed: reason / refund_method"
           }
         }
       }
@@ -717,6 +717,63 @@
           },
           "422": {
             "description": "validation_failed (fields prefixed customer. / packages[j].), idempotency.key_reuse_mismatch"
+          }
+        }
+      }
+    },
+    "/api/v1/opening-balances/window": {
+      "get": {
+        "tags": [
+          "packages"
+        ],
+        "operationId": "read_opening_window",
+        "responses": {
+          "200": {
+            "description": "Whether paper-book import is open today (AC8.6)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpeningBalanceWindowDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {}
+        }
+      },
+      "put": {
+        "tags": [
+          "packages"
+        ],
+        "operationId": "set_opening_window",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpeningBalanceWindowUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Opened for today's business day, or closed (AC8.6); audited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpeningBalanceWindowDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: owner only (opening_balance.manage_window)"
+          },
+          "422": {
+            "description": "validation_failed"
           }
         }
       }
@@ -1684,6 +1741,7 @@
           "customer_id",
           "name",
           "sold_price",
+          "refund_cap",
           "origin",
           "starts_on",
           "status",
@@ -1775,6 +1833,11 @@
                 "type": "null"
               }
             ]
+          },
+          "refund_cap": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Most that may be refunded on cancel. Equals `sold_price` for a sale; 0 for an opening\nbalance a manager entered, until the owner confirms the book price (AC8.8)."
           },
           "sale_id": {
             "type": [
@@ -2173,6 +2236,52 @@
           }
         }
       },
+      "OpeningBalanceWindowDto": {
+        "type": "object",
+        "required": [
+          "business_date",
+          "open_today"
+        ],
+        "properties": {
+          "business_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Today's business day in the spa's time zone."
+          },
+          "open_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "The day the window was last opened for, if any (it may be a past day: then it is closed)."
+          },
+          "open_today": {
+            "type": "boolean",
+            "description": "True when managers may import today."
+          },
+          "opened_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "OpeningBalanceWindowUpdate": {
+        "type": "object",
+        "required": [
+          "open"
+        ],
+        "properties": {
+          "open": {
+            "type": "boolean",
+            "description": "true = open paper-book import for today's business day; false = close it now."
+          }
+        },
+        "additionalProperties": false
+      },
       "OpeningItemCreate": {
         "type": "object",
         "required": [
@@ -2265,6 +2374,10 @@
         "type": "object",
         "description": "Body of `POST /customer-packages/{id}/cancel` 🔒.",
         "properties": {
+          "confirm_book_price": {
+            "type": "boolean",
+            "description": "Opening balances entered by someone who may not refund have a refund cap of 0 (spec\nAC8.8): the owner checked the paper book and confirms its price as the cap. Audited."
+          },
           "reason": {
             "type": [
               "string",

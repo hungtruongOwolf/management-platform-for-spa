@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.customer_package\n             (id, tenant_id, customer_id, plan_id, name_snapshot, gift_note, sold_price, refund_cap, origin,\n              sale_id, closer_staff_id, starts_on, expires_on, created_by)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Int8",
+        "Int8",
+        "Text",
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Date",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "57086c389c4ce1a2652a8812285672bd9d00e310b52457fe92fb9140a3cfcf5f"
+}

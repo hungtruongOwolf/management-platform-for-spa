@@ -895,6 +895,16 @@ async fn every_catalog_and_profile_write_is_audited(pool: PgPool) -> TestResult 
     )
     .await;
     assert!(note.status.is_success(), "{} {}", note.status, note.body);
+    // Managers import only on a day the owner opened (security review M2, AC8.6).
+    let window = call(
+        &s.h.app,
+        "PUT",
+        "/opening-balances/window",
+        Some(&s.owner),
+        Some(json!({"open": true})),
+    )
+    .await;
+    assert_eq!(window.status, StatusCode::OK, "{}", window.body);
     let imported = s
         .post(
             &s.manager,

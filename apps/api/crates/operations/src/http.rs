@@ -12,7 +12,7 @@ use axum::{Json, Router};
 use identity::AuthUser;
 use kernel::crypto::FieldCipher;
 use kernel::http::{IdempotencyKey, IfMatch, etag};
-use kernel::idempotency::{hash_request, hash_request_on};
+use kernel::idempotency::hash_route;
 use kernel::{AppError, FieldError};
 use sales::dto::VoidCreate;
 use serde_json::Value;
@@ -71,7 +71,7 @@ pub async fn create_visit(
         &cipher,
         &user.actor,
         key,
-        hash_request(&canonical),
+        hash_route("POST", "/visits", None, &canonical),
         &input,
     )
     .await?;
@@ -151,7 +151,7 @@ pub async fn void_visit(
         &cipher,
         &user.actor,
         key,
-        hash_request_on(id, &canonical),
+        hash_route("POST", "/visits/{id}/void", Some(id), &canonical),
         id,
         input.reason.as_deref(),
     )
