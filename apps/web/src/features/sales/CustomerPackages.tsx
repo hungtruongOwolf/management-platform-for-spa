@@ -1,16 +1,31 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { formatVnd } from "@vpyd/ui";
+import { Suspense, lazy, useState } from "react";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
 import { STATUS_LABEL, customerPackagesQuery, formatDate } from "./api";
 import { SellPackageDialog } from "./SellPackageDialog";
 
-/** Packages on the customer card: remaining / total sessions, expiry, status; "Bán liệu trình mới" for sellers. */
+// Lifecycle forms (extend, cancel + refund, sale void, re-auth) load only for users who can act.
+const PackageActions = lazy(() =>
+  import("../corrections/PackageActions").then((m) => ({
+    default: m.PackageActions,
+  })),
+);
+
+/**
+ * Packages on the customer card: remaining / total sessions, expiry, status; "Bán liệu trình mới"
+ * for sellers; lifecycle actions (extend, cancel + refund, void the sale) for those allowed.
+ */
 export function CustomerPackages({ customerId }: { customerId: string }) {
   const { data: me } = useSuspenseQuery(meQuery);
   const packages = useQuery(customerPackagesQuery(customerId));
   const [selling, setSelling] = useState(false);
   const [sold, setSold] = useState<string | null>(null);
+  const canAct =
+    can(me, "package.extend_expiry") ||
+    can(me, "package.cancel_refund") ||
+    can(me, "record.void_same_day");
 
   return (
     <section aria-labelledby="packages-title" className="mt-4 space-y-2">
@@ -91,6 +106,14 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
                     : "Không thời hạn"}
                   {p.gift_note ? ` · Quà: ${p.gift_note}` : ""}
                 </span>
+                {p.status === "cancelled" && p.cancel_reason && (
+                  <span className="block text-sm text-danger">
+                    Đã hủy: {p.cancel_reason}
+                    {p.refund
+                      ? ` · Hoàn ${formatVnd(p.refund.amount)} ${p.refund.method === "cash" ? "tiền mặt" : "chuyển khoản"}`
+                      : ""}
+                  </span>
+                )}
               </div>
               <span className="text-right">
                 <strong>
@@ -101,6 +124,16 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
                   {STATUS_LABEL[p.status]}
                 </span>
               </span>
+              {canAct && (
+                <Suspense fallback={null}>
+                  <PackageActions
+                    pkg={p}
+                    onDone={(message) => {
+                      setSold(message);
+                    }}
+                  />
+                </Suspense>
+              )}
             </li>
           ))}
         </ul>

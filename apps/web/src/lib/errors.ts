@@ -28,7 +28,8 @@ const MESSAGES: Record<string, string> = {
     "Liệu trình vừa hết buổi (có thể vừa được dùng ở máy khác). Đã cập nhật số buổi.",
   "package.expired":
     "Liệu trình đã hết hạn. Cần quản lý cho dùng tiếp (ghi lý do).",
-  "package.cancelled": "Liệu trình đã bị hủy, không trừ được.",
+  "package.cancelled":
+    "Liệu trình đã bị hủy: không trừ, cộng lại buổi hay hủy hóa đơn được nữa.",
   "package.item_not_found":
     "Không tìm thấy liệu trình còn dùng được cho dịch vụ này. Gợi ý bán gói mới.",
   "price.gender_required": "Chọn Nữ hoặc Nam để tính giá dịch vụ lẻ.",
@@ -38,6 +39,13 @@ const MESSAGES: Record<string, string> = {
   "visit.check_in_not_today": "Giờ vào phải thuộc ngày hôm nay.",
   "visit.voided": "Lượt này đã bị hủy, không sửa được.",
   "day.locked": "Ngày đã chốt, liên hệ chủ spa.",
+  "sale.voided": "Hóa đơn này đã được hủy trước đó.",
+  "sale.has_used_sessions":
+    'Liệu trình đã dùng buổi nên không hủy hóa đơn được. Hãy dùng "Hủy liệu trình + hoàn tiền".',
+  "sale.void_via_visit": "Hóa đơn dịch vụ lẻ được hủy cùng lượt khách.",
+  "refund.exceeds_paid": "Số tiền hoàn lớn hơn số khách đã trả cho liệu trình.",
+  "package.restore_exceeds_total":
+    "Buổi của lượt này đã được cộng lại trước đó. Vui lòng tải lại.",
   "idempotency.key_reuse_mismatch":
     "Hóa đơn này có thể đã được lưu. Vui lòng đóng hộp thoại và kiểm tra lại liệu trình.",
 };
@@ -61,6 +69,10 @@ const FIELD_MESSAGES: Record<string, string> = {
   before_start: "Trước ngày bắt đầu.",
   invalid_format: "Sai định dạng.",
   invalid: "Giá trị không hợp lệ.",
+  not_later: "Hạn mới phải sau hạn hiện tại.",
+  in_past: "Không được là ngày đã qua.",
+  package_has_no_expiry: "Liệu trình không có thời hạn, không cần gia hạn.",
+  not_allowed: "Không dùng được ở đây.",
 };
 
 export function messageFor(error: unknown): string {

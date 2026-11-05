@@ -562,7 +562,9 @@ async fn exhausted_and_cancelled_packages_are_409(pool: PgPool) -> TestResult {
 
     d.set_remaining(&item, 3).await?;
     sqlx::query(
-        "UPDATE app.customer_package SET cancelled_at = now(), cancel_reason = 'hoàn tiền'",
+        // A cancellation is complete only with who did it (0009). Sessions are left at 3 to prove
+        // the consume refuses a cancelled package on its own, not because the counter is empty.
+        "UPDATE app.customer_package SET cancelled_at = now(), cancel_reason = 'hoàn tiền', cancelled_by = created_by",
     )
     .execute(&d.h.owner)
     .await?;

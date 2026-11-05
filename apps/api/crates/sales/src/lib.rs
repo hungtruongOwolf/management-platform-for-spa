@@ -5,5 +5,6 @@ pub mod dto;
 pub mod http;
 mod repo;
 pub mod service;
+pub mod voids;
 
 pub use domain::PaymentMethod;

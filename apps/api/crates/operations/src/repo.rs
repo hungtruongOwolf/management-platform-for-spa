@@ -92,6 +92,8 @@ pub struct VisitRow {
     pub check_in_at: DateTime<Utc>,
     pub note_ct: Option<Vec<u8>>,
     pub status: String,
+    pub void_reason: Option<String>,
+    pub voided_at: Option<DateTime<Utc>>,
     pub sale_id: Option<Uuid>,
     pub version: i64,
     pub created_at: DateTime<Utc>,
@@ -107,7 +109,7 @@ pub async fn visits(
     Ok(sqlx::query_as!(
         VisitRow,
         r#"SELECT v.id, v.customer_id, c.full_name AS customer_name, v.business_date, v.check_in_at, v.note_ct,
-                  v.status, v.sale_id, v.version, v.created_at
+                  v.status, v.void_reason, v.voided_at, v.sale_id, v.version, v.created_at
            FROM app.visit v
            JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id
            WHERE v.tenant_id = $1
@@ -228,5 +230,76 @@ pub async fn set_line_staff(
         staff_id
     )
     .fetch_optional(tx.conn())
+    .await?)
+}
+
+// ---------------------------------------------------------------- voids (S8)
+
+pub struct LockedVisit {
+    pub business_date: NaiveDate,
+    pub status: String,
+    pub sale_id: Option<Uuid>,
+}
+
+/// Locks a visit for a void (the first lock of `POST /visits/{id}/void`).
+pub async fn lock_for_void(tx: &mut TenantTx, id: Uuid) -> Result<Option<LockedVisit>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        LockedVisit,
+        "SELECT business_date, status, sale_id FROM app.visit WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
+        tenant,
+        id
+    )
+    .fetch_optional(tx.conn())
+    .await?)
+}
+
+/// `completed` → `voided` with the reason. `false` = already voided: the `WHERE status =
+/// 'completed'` alone makes a second void impossible.
+pub async fn mark_voided(
+    tx: &mut TenantTx,
+    id: Uuid,
+    reason: &str,
+    by: Uuid,
+) -> Result<bool, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query!(
+        r#"UPDATE app.visit
+           SET status = 'voided', void_reason = $3, voided_at = now(), voided_by = $4,
+               version = version + 1, updated_at = now()
+           WHERE tenant_id = $1 AND id = $2 AND status = 'completed'"#,
+        tenant,
+        id,
+        reason,
+        by
+    )
+    .execute(tx.conn())
+    .await?
+    .rows_affected()
+        == 1)
+}
+
+pub struct PackageLine {
+    pub customer_package_id: Uuid,
+    pub customer_package_item_id: Uuid,
+    pub qty: i32,
+}
+
+/// The package lines of a visit (sessions to give back), in lock order: package, then item.
+pub async fn package_lines(
+    tx: &mut TenantTx,
+    visit_id: Uuid,
+) -> Result<Vec<PackageLine>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        PackageLine,
+        r#"SELECT customer_package_id AS "customer_package_id!", customer_package_item_id AS "customer_package_item_id!", qty
+           FROM app.visit_line
+           WHERE tenant_id = $1 AND visit_id = $2 AND source = 'package'
+           ORDER BY customer_package_id, customer_package_item_id, position"#,
+        tenant,
+        visit_id
+    )
+    .fetch_all(tx.conn())
     .await?)
 }

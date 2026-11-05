@@ -14,7 +14,8 @@ sources: [product/specs/front-desk-and-packages.md, architecture/system.md, deci
 - **Tiền:** `bigint` đồng VND, `CHECK (>= 0)`. **Thời gian:** `timestamptz`. **Ngày nghiệp vụ** `business_date date` do server tính theo `tenant.timezone`, không bao giờ nhận từ client.
 - **Văn bản:** chuẩn hóa NFC ở biên. Cột `search_text` = chữ thường, bỏ dấu, `đ→d`, do app tính.
 - **Dữ liệu nhạy cảm:** `health_note`, `visit.note` mã hóa ở tầng app bằng AES-256-GCM (`*_ct bytea`, tiền tố phiên bản key). Key nằm trong env `APP_DATA_KEY` (base64, 32 byte), không bao giờ lưu trong DB. Ciphertext = `b'v'` + số phiên bản key + nonce 12 byte + ciphertext; AAD = tenant_id + customer_id nên không chép được ciphertext sang khách khác. Xoay key: thêm `APP_DATA_KEY_V{n}` khi cần (chưa làm).
-- **Bảng append-only** (`payment`, `refund`, `audit_log`, `sale_line`): app role chỉ có `INSERT, SELECT`. `payment` và `sale_line` có thêm trigger `app.reject_mutation` (BEFORE UPDATE OR DELETE), chặn cả schema owner (S6).
+- **Bảng append-only** (`payment`, `refund`, `audit_log`, `sale_line`): app role chỉ có `INSERT, SELECT`. `payment`, `sale_line` và `refund` có thêm trigger `app.reject_mutation` (BEFORE UPDATE OR DELETE), chặn cả schema owner (S6, S8).
+- **Sửa sai bằng bút toán đảo (S8, 0009):** hủy hóa đơn thêm một dòng `payment.kind='reversal'` cho mỗi payment (cùng sale, method, amount; `business_date` = ngày hủy). Trigger `payment_reversal_mirrors_original` kiểm tra điều đó và chặn đảo một reversal; `UNIQUE (tenant_id, reversal_of)` chặn đảo 2 lần. Trạng thái chỉ đi tới: trigger `visit_voided_is_final`, `sale_voided_is_final`, `customer_package_cancelled_is_final` chặn mọi UPDATE sau khi `voided`/`cancelled`; `customer_package_item_no_restore_when_cancelled` chặn cộng buổi vào gói đã hủy. CHECK: sale `voided` phải có `voided_by`, `amount_paid = 0`, lý do 1–500; gói `cancelled` phải có `cancelled_by` + lý do.
 
 ## ER
 ```mermaid
@@ -82,7 +83,7 @@ Buổi tặng đặt ở **từng dòng** dịch vụ, để gói combo không b
 ### packages
 | Bảng | Cột chính | Ràng buộc / index |
 |---|---|---|
-| `customer_package` ✅ 0005 | tenant_id, customer_id, plan_id?, name_snapshot, gift_note, sold_price, origin (`sale`/`opening_balance`), sale_id?, closer_staff_id?, starts_on, expires_on?, cancelled_at?, cancel_reason?, version | `CHECK (origin <> 'sale' OR (sale_id IS NOT NULL AND closer_staff_id IS NOT NULL))`; `CHECK (expires_on IS NULL OR expires_on >= starts_on)`; index `(tenant_id, customer_id)` |
+| `customer_package` ✅ 0005 (+ `cancelled_by` 0009) | tenant_id, customer_id, plan_id?, name_snapshot, gift_note, sold_price, origin (`sale`/`opening_balance`), sale_id?, closer_staff_id?, starts_on, expires_on?, cancelled_at?, cancel_reason?, cancelled_by?, version | `CHECK (origin <> 'sale' OR (sale_id IS NOT NULL AND closer_staff_id IS NOT NULL))`; `CHECK (expires_on IS NULL OR expires_on >= starts_on)`; index `(tenant_id, customer_id)` |
 | `customer_package_item` ✅ 0005 | tenant_id, customer_package_id, service_id, name_snapshot, sessions_purchased, sessions_bonus, sessions_total (generated = purchased + bonus), sessions_remaining, per_session_value, version | `CHECK (sessions_remaining BETWEEN 0 AND sessions_total)`; index `(tenant_id, customer_package_id)` |
 
 **Trạng thái được suy ra, không lưu**, nên không bao giờ lệch:
@@ -105,7 +106,7 @@ Thứ tự ưu tiên đúng như trên. Không cần job cập nhật trạng th
 | `sale` ✅ 0005 | tenant_id, branch_id, customer_id, business_date, subtotal, discount_amount, discount_reason?, total, amount_paid, status (`open`/`voided`), closer_staff_id?, void_reason?, version | `CHECK (total = subtotal - discount_amount AND total >= 0)`; `CHECK (discount_amount = 0 OR discount_reason IS NOT NULL)`; **`CHECK (amount_paid BETWEEN 0 AND total)`** |
 | `sale_line` ✅ 0005 *(bất biến)* | tenant_id, sale_id, line_type (`package`/`service`; để mở cho `product`), service_id?, package_plan_id?, customer_package_id?, description_snapshot, qty, unit_price, line_total, position | `CHECK (line_total = qty * unit_price)`; CHECK cột theo `line_type`; `UNIQUE(tenant_id, sale_id, position)`; trigger chặn UPDATE/DELETE |
 | `payment` ✅ 0005 *(append-only)* | tenant_id, branch_id, sale_id, business_date, kind (`payment`/`reversal`), method (`cash`/`bank_transfer`), amount, reversal_of?, reference?, paid_at | `CHECK (amount > 0)`; `CHECK ((kind='reversal') = (reversal_of IS NOT NULL))`; `UNIQUE(tenant_id, reversal_of)` (mỗi payment chỉ đảo được 1 lần); index `(tenant_id, branch_id, business_date)`, `(tenant_id, sale_id)` |
-| `refund` *(append-only)* | tenant_id, branch_id, customer_package_id, business_date, method, amount, reason | `CHECK (amount > 0)`; `reason NOT NULL` |
+| `refund` ✅ 0009 *(append-only)* | tenant_id, branch_id, customer_id, customer_package_id, business_date, method (`cash`/`bank_transfer`), amount, reason, created_by | `CHECK (amount > 0)`; `reason` 1–500; `UNIQUE (tenant_id, customer_package_id)` (một gói hoàn 1 lần); trigger `refund_within_paid` (amount ≤ `sold_price`); trigger `reject_mutation`; app_rw chỉ `SELECT, INSERT`; index `(tenant_id, branch_id, business_date)` cho sổ quỹ |
 
 **Công nợ:** hoãn (EM 2026-11-04). R1 luôn ghi `amount_paid = total`. Cột và `CHECK` được giữ lại để sau này bật công nợ bằng cách thêm view `receivable`, không cần đổi schema.
 

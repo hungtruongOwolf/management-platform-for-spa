@@ -89,6 +89,8 @@ pub enum PaymentKindDto {
 pub struct PaymentDto {
     pub id: Uuid,
     pub kind: PaymentKindDto,
+    /// `reversal` rows: the payment this one cancels (same method and amount).
+    pub reversal_of: Option<Uuid>,
     pub method: PaymentMethodDto,
     pub amount: i64,
     pub reference: Option<String>,
@@ -106,6 +108,9 @@ pub struct SaleDto {
     pub total: i64,
     pub amount_paid: i64,
     pub status: SaleStatusDto,
+    /// Set when the sale was voided (US6); its payments then each have a `reversal`.
+    pub void_reason: Option<String>,
+    pub voided_at: Option<DateTime<Utc>>,
     pub closer_staff_id: Option<Uuid>,
     pub closer_name: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -113,4 +118,12 @@ pub struct SaleDto {
     pub payments: Vec<PaymentDto>,
     /// Packages this sale created.
     pub customer_packages: Vec<CustomerPackageDto>,
+}
+
+/// Body of `POST /sales/{id}/void` and `POST /visits/{id}/void`.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct VoidCreate {
+    /// Why the record is voided (required, 1–500 characters); shown in history and audited.
+    pub reason: Option<String>,
 }

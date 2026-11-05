@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT v.id, v.customer_id, c.full_name AS customer_name, v.business_date, v.check_in_at, v.note_ct,\n                  v.status, v.sale_id, v.version, v.created_at\n           FROM app.visit v\n           JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id\n           WHERE v.tenant_id = $1\n             AND ($2::uuid IS NULL OR v.id = $2)\n             AND ($3::date IS NULL OR v.business_date = $3)\n           ORDER BY v.check_in_at DESC, v.id DESC\n           LIMIT 500",
+  "query": "SELECT v.id, v.customer_id, c.full_name AS customer_name, v.business_date, v.check_in_at, v.note_ct,\n                  v.status, v.void_reason, v.voided_at, v.sale_id, v.version, v.created_at\n           FROM app.visit v\n           JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id\n           WHERE v.tenant_id = $1\n             AND ($2::uuid IS NULL OR v.id = $2)\n             AND ($3::date IS NULL OR v.business_date = $3)\n           ORDER BY v.check_in_at DESC, v.id DESC\n           LIMIT 500",
   "describe": {
     "columns": [
       {
@@ -82,6 +82,28 @@
       },
       {
         "ordinal": 7,
+        "name": "void_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "void_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "voided_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "voided_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
         "name": "sale_id",
         "type_info": "Uuid",
         "origin": {
@@ -92,7 +114,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 10,
         "name": "version",
         "type_info": "Int8",
         "origin": {
@@ -103,7 +125,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 11,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -130,9 +152,11 @@
       true,
       false,
       true,
+      true,
+      true,
       false,
       false
     ]
   },
-  "hash": "6a700f6893a35d54198a6513cf447b4de84ab1d228f7614514519cbe07cdafd3"
+  "hash": "6fd1e57f9a75c69fdbbb3dfd31de198c5b4cba3917ee8dd78208255368a68a0d"
 }

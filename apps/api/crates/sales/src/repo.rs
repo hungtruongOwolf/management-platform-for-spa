@@ -114,6 +114,7 @@ pub struct SalePaymentRow {
     pub sale_id: Uuid,
     pub id: Uuid,
     pub kind: String,
+    pub reversal_of: Option<Uuid>,
     pub method: String,
     pub amount: i64,
     pub reference: Option<String>,
@@ -128,7 +129,7 @@ pub async fn payments_of(
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         SalePaymentRow,
-        r#"SELECT sale_id, id, kind, method, amount, reference, paid_at
+        r#"SELECT sale_id, id, kind, reversal_of, method, amount, reference, paid_at
            FROM app.payment WHERE tenant_id = $1 AND sale_id = ANY($2) ORDER BY paid_at, id"#,
         tenant,
         sale_ids
@@ -178,6 +179,8 @@ pub struct SaleRow {
     pub total: i64,
     pub amount_paid: i64,
     pub status: String,
+    pub void_reason: Option<String>,
+    pub voided_at: Option<DateTime<Utc>>,
     pub closer_staff_id: Option<Uuid>,
     pub closer_name: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -188,7 +191,7 @@ pub async fn sale(tx: &mut TenantTx, id: Uuid) -> Result<Option<SaleRow>, AppErr
     Ok(sqlx::query_as!(
         SaleRow,
         r#"SELECT s.id, s.customer_id, s.business_date, s.subtotal, s.discount_amount, s.discount_reason, s.total,
-                  s.amount_paid, s.status, s.closer_staff_id, st.full_name AS "closer_name?", s.created_at
+                  s.amount_paid, s.status, s.void_reason, s.voided_at, s.closer_staff_id, st.full_name AS "closer_name?", s.created_at
            FROM app.sale s
            LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id
            WHERE s.tenant_id = $1 AND s.id = $2"#,
@@ -228,6 +231,7 @@ pub async fn lines(tx: &mut TenantTx, sale_id: Uuid) -> Result<Vec<LineRow>, App
 pub struct PaymentRow {
     pub id: Uuid,
     pub kind: String,
+    pub reversal_of: Option<Uuid>,
     pub method: String,
     pub amount: i64,
     pub reference: Option<String>,
@@ -238,11 +242,119 @@ pub async fn payments(tx: &mut TenantTx, sale_id: Uuid) -> Result<Vec<PaymentRow
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         PaymentRow,
-        r#"SELECT id, kind, method, amount, reference, paid_at
+        r#"SELECT id, kind, reversal_of, method, amount, reference, paid_at
            FROM app.payment WHERE tenant_id = $1 AND sale_id = $2 ORDER BY paid_at, id"#,
         tenant,
         sale_id
     )
     .fetch_all(tx.conn())
     .await?)
+}
+
+// ---------------------------------------------------------------- voids (S8)
+
+pub struct LockedSale {
+    pub business_date: NaiveDate,
+    pub status: String,
+    /// The sale created packages (a package sale); otherwise it is a visit's one-off services.
+    pub sells_packages: bool,
+}
+
+/// Locks a sale row for a void.
+pub async fn lock_sale(tx: &mut TenantTx, id: Uuid) -> Result<Option<LockedSale>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        LockedSale,
+        r#"SELECT s.business_date, s.status,
+                  EXISTS (SELECT 1 FROM app.sale_line l
+                          WHERE l.tenant_id = s.tenant_id AND l.sale_id = s.id AND l.line_type = 'package')
+                    AS "sells_packages!"
+           FROM app.sale s WHERE s.tenant_id = $1 AND s.id = $2 FOR UPDATE OF s"#,
+        tenant,
+        id
+    )
+    .fetch_optional(tx.conn())
+    .await?)
+}
+
+/// `open` → `voided`, money collected back to 0. `false` = it was already voided: the
+/// `WHERE status = 'open'` makes a second void impossible even without the row lock.
+pub async fn mark_voided(
+    tx: &mut TenantTx,
+    id: Uuid,
+    reason: &str,
+    by: Uuid,
+) -> Result<bool, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query!(
+        r#"UPDATE app.sale
+           SET status = 'voided', amount_paid = 0, void_reason = $3, voided_at = now(), voided_by = $4,
+               version = version + 1
+           WHERE tenant_id = $1 AND id = $2 AND status = 'open'"#,
+        tenant,
+        id,
+        reason,
+        by
+    )
+    .execute(tx.conn())
+    .await?
+    .rows_affected()
+        == 1)
+}
+
+pub struct OpenPayment {
+    pub id: Uuid,
+    pub branch_id: Uuid,
+    pub method: String,
+    pub amount: i64,
+}
+
+/// Payments of a sale that have no reversal yet, oldest first.
+pub async fn unreversed_payments(
+    tx: &mut TenantTx,
+    sale_id: Uuid,
+) -> Result<Vec<OpenPayment>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        OpenPayment,
+        r#"SELECT p.id, p.branch_id, p.method, p.amount
+           FROM app.payment p
+           WHERE p.tenant_id = $1 AND p.sale_id = $2 AND p.kind = 'payment'
+             AND NOT EXISTS (SELECT 1 FROM app.payment r WHERE r.tenant_id = p.tenant_id AND r.reversal_of = p.id)
+           ORDER BY p.paid_at, p.id"#,
+        tenant,
+        sale_id
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+/// A reversal row mirroring `original` (same sale, method, amount), booked on `business_date`.
+/// UNIQUE (tenant_id, reversal_of) and a trigger (0009) make a second or mismatched reversal fail.
+pub async fn insert_reversal(
+    tx: &mut TenantTx,
+    sale_id: Uuid,
+    original: &OpenPayment,
+    business_date: NaiveDate,
+    by: Uuid,
+) -> Result<Uuid, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let id = Uuid::now_v7();
+    sqlx::query!(
+        r#"INSERT INTO app.payment
+             (id, tenant_id, branch_id, sale_id, business_date, kind, method, amount, reversal_of, created_by)
+           VALUES ($1, $2, $3, $4, $5, 'reversal', $6, $7, $8, $9)"#,
+        id,
+        tenant,
+        original.branch_id,
+        sale_id,
+        business_date,
+        original.method,
+        original.amount,
+        original.id,
+        by
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(id)
 }

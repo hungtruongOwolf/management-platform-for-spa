@@ -1,8 +1,9 @@
 //! Package endpoints: reads for the customer profile, and the opening-balance import (S9).
 
-use crate::domain::PackageStatus;
+use crate::domain::{PackageStatus, RefundMethod};
+use crate::lifecycle::{self, PackageCancel, PackageExtend};
 use crate::opening_balance::{self, OpeningBalanceCreate, OpeningBalanceDto};
-use crate::service::{self, CustomerPackage, PackageItem};
+use crate::service::{self, CustomerPackage, PackageItem, Refund};
 use axum::body::Bytes;
 use axum::extract::{FromRef, Path, State};
 use axum::http::{HeaderValue, StatusCode, header};
@@ -12,10 +13,10 @@ use axum::{Json, Router};
 use chrono::{DateTime, NaiveDate, Utc};
 use crm::FieldCipher;
 use identity::AuthUser;
-use kernel::http::IdempotencyKey;
-use kernel::idempotency::hash_request;
+use kernel::http::{IdempotencyKey, IfMatch, etag};
+use kernel::idempotency::{hash_request, hash_request_on};
 use kernel::{AppError, FieldError};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -78,6 +79,49 @@ impl From<PackageItem> for CustomerPackageItemDto {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RefundMethodDto {
+    Cash,
+    BankTransfer,
+}
+
+impl From<RefundMethodDto> for RefundMethod {
+    fn from(m: RefundMethodDto) -> Self {
+        match m {
+            RefundMethodDto::Cash => Self::Cash,
+            RefundMethodDto::BankTransfer => Self::BankTransfer,
+        }
+    }
+}
+
+/// Money paid back when the package was cancelled (US7).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RefundDto {
+    pub id: Uuid,
+    /// đồng.
+    pub amount: i64,
+    pub method: RefundMethodDto,
+    /// Cash-book day of the refund.
+    pub business_date: NaiveDate,
+    pub created_at: DateTime<Utc>,
+}
+
+impl From<Refund> for RefundDto {
+    fn from(r: Refund) -> Self {
+        Self {
+            id: r.id,
+            amount: r.amount.as_i64(),
+            method: match r.method {
+                RefundMethod::Cash => RefundMethodDto::Cash,
+                RefundMethod::BankTransfer => RefundMethodDto::BankTransfer,
+            },
+            business_date: r.business_date,
+            created_at: r.created_at,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CustomerPackageDto {
     pub id: Uuid,
@@ -94,6 +138,10 @@ pub struct CustomerPackageDto {
     pub closer_name: Option<String>,
     pub starts_on: NaiveDate,
     pub expires_on: Option<NaiveDate>,
+    /// Set when the package was cancelled (a voided sale or a cancellation with refund).
+    pub cancelled_at: Option<DateTime<Utc>>,
+    pub cancel_reason: Option<String>,
+    pub refund: Option<RefundDto>,
     /// Derived on read: cancelled → exhausted → expired → active.
     pub status: PackageStatusDto,
     pub sessions_total: i64,
@@ -122,6 +170,9 @@ impl From<CustomerPackage> for CustomerPackageDto {
             closer_name: p.closer_name,
             starts_on: p.starts_on,
             expires_on: p.expires_on,
+            cancelled_at: p.cancelled_at,
+            cancel_reason: p.cancel_reason,
+            refund: p.refund.map(Into::into),
             status: p.status.into(),
             sessions_total: p.sessions_total,
             sessions_remaining: p.sessions_remaining,
@@ -140,6 +191,8 @@ where
 {
     Router::new()
         .route("/customer-packages/{id}", get(read_package))
+        .route("/customer-packages/{id}/extend", post(extend_package))
+        .route("/customer-packages/{id}/cancel", post(cancel_package))
         .route("/customers/{id}/packages", get(list_customer_packages))
         .route("/opening-balances", post(import_opening_balance))
 }
@@ -217,4 +270,70 @@ pub async fn import_opening_balance(
         StatusCode::from_u16(status).unwrap_or(StatusCode::CREATED),
         body,
     ))
+}
+
+/// Parses a JSON body and hashes its canonical form (sorted keys) together with the package id,
+/// so a genuine retry replays and the same key on another package is a mismatch.
+fn canonical<T: serde::de::DeserializeOwned>(
+    id: Uuid,
+    body: &[u8],
+) -> Result<(T, [u8; 32]), AppError> {
+    let invalid = || AppError::Validation(vec![FieldError::new("body", "invalid")]);
+    let value: Value = serde_json::from_slice(body).map_err(|_| invalid())?;
+    let bytes = serde_json::to_vec(&value).map_err(|e| AppError::Internal(e.to_string()))?;
+    let input = serde_json::from_value(value).map_err(|_| invalid())?;
+    Ok((input, hash_request_on(id, &bytes)))
+}
+
+fn with_etag(body: Value) -> Response {
+    let version = body["version"].as_i64();
+    let mut response = no_store(body);
+    if let Some(v) = version {
+        response.headers_mut().insert(header::ETAG, etag(v));
+    }
+    response
+}
+
+#[utoipa::path(post, path = "/api/v1/customer-packages/{id}/extend", tag = "packages", request_body = PackageExtend,
+    params(("id" = Uuid, Path), ("If-Match" = String, Header),
+        ("Idempotency-Key" = Uuid, Header, description = "One key per extension; a retry replays the first response")),
+    responses(
+        (status = 200, body = CustomerPackageDto, description = "New expiry, audited with the reason (AC7.1)"),
+        (status = 400, description = "idempotency.key_required, precondition.if_match_required"),
+        (status = 401), (status = 403, description = "auth.forbidden (managers, AC7.3)"), (status = 404),
+        (status = 409, description = "package.cancelled"), (status = 412, description = "conflict.stale_version"),
+        (status = 422, description = "validation_failed: reason required, expires_on not_later / in_past / package_has_no_expiry")))]
+pub async fn extend_package(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+    IfMatch(version): IfMatch,
+    IdempotencyKey(key): IdempotencyKey,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    let (input, hash): (PackageExtend, _) = canonical(id, &body)?;
+    let (_, body) = lifecycle::extend(&pool, &user.actor, key, hash, id, version, &input).await?;
+    Ok(with_etag(body))
+}
+
+#[utoipa::path(post, path = "/api/v1/customer-packages/{id}/cancel", tag = "packages", request_body = PackageCancel,
+    params(("id" = Uuid, Path),
+        ("Idempotency-Key" = Uuid, Header, description = "One key per cancellation; a retry replays the first response")),
+    responses(
+        (status = 200, body = CustomerPackageDto, description = "Cancelled, sessions → 0, refund recorded (AC7.2)"),
+        (status = 400, description = "idempotency.key_required"),
+        (status = 401, description = "auth.reauth_required: confirm the password (and code) via /auth/reauth first"),
+        (status = 403, description = "auth.forbidden (managers, AC7.3)"), (status = 404),
+        (status = 409, description = "package.cancelled"),
+        (status = 422, description = "refund.exceeds_paid (AC7.4), validation_failed: reason / refund_method")))]
+pub async fn cancel_package(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+    IdempotencyKey(key): IdempotencyKey,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    let (input, hash): (PackageCancel, _) = canonical(id, &body)?;
+    let (_, body) = lifecycle::cancel(&pool, &user.actor, key, hash, id, &input).await?;
+    Ok(with_etag(body))
 }

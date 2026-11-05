@@ -160,13 +160,24 @@ Quy ước chung cho mọi ticket có endpoint:
     - Lệch so với thiết kế: **không có giảm giá trong lượt** (backend.md có `discount`; ticket không yêu cầu; để sau); không có giờ ra (EM); ghi lượt cho ngày cũ chưa hỗ trợ; `customer_package_item_id` không bắt buộc (server chọn mặc định); thêm code `price.gender_required`, `visit.check_in_in_future`, `visit.check_in_not_today`, `visit.voided`; `GET /customers/{id}/visits` chưa làm.
     - Cho S8: hủy lượt cần `visit_line.customer_package_item_id` + `qty` để cộng lại buổi (cần thêm `packages::service::restore_sessions`), và `visit.sale_id` để hủy sale dịch vụ lẻ (reversal payment). `visit.status/void_*` đã có sẵn.
 
-- [ ] **S8 Hủy / sửa sai & vòng đời liệu trình** (size: M)
+- [x] **S8 Hủy / sửa sai & vòng đời liệu trình** (size: M) ✅ 2026-11-04
   - **Goal:** hủy lượt/hóa đơn có lý do (hoàn buổi, bút toán đảo); chủ spa gia hạn, hủy gói kèm hoàn tiền.
   - **Acceptance:** AC6.1–AC6.4, AC7.1–AC7.4.
   - **Touches:** `POST /visits/{id}/void`, `POST /sales/{id}/void`, `POST /customer-packages/{id}/extend|cancel`; `refund`; quy tắc "ngày đã chốt" tạm thời = trước hôm nay (cho tới spec #2). Web: nút hủy trong danh sách lượt, hành động trên liệu trình, hộp thoại nhập lại mật khẩu.
   - **Tests:** hủy lượt → buổi được cộng lại, lượt còn trong lịch sử với trạng thái đã hủy; hủy 2 lần → lần 2 bị chặn; hủy không lý do → 422; Manager hủy ngày cũ → 403 `day.locked`, Owner được nhưng phải reauth; hủy hóa đơn gói đã dùng buổi → 409; hoàn tiền > đã thu → 422; Manager gia hạn → 403; reversal không đảo được 2 lần.
   - **Security:** thao tác 🔒 cần reauth; append-only; audit có lý do.
   - **Depends on:** S7
+  - **Kết quả:**
+    - Migration `0009_void_lifecycle` (0008 để trống, từng giữ cho S9). Bảng `refund` (append-only, một gói hoàn tối đa 1 lần, trigger hoàn ≤ `sold_price`), cột `customer_package.cancelled_by`. Trigger: reversal phải "soi gương" payment gốc (cùng sale, method, amount) và không đảo được reversal; `voided`/`cancelled` là trạng thái cuối (visit, sale, customer_package không UPDATE được nữa); không cộng buổi vào gói đã hủy. CHECK: sale `voided` phải có `voided_by`, `amount_paid = 0`, lý do; gói `cancelled` phải có `cancelled_by` + lý do.
+    - **Thiết kế bút toán đảo:** dùng lại `payment.kind='reversal'` + `reversal_of` đã có từ 0005 (không tạo bảng `sale_reversal`). Lý do: sổ quỹ một ngày = tổng `payment` theo `business_date`, payment − reversal; reversal mang `business_date` của ngày hủy nên sổ ngày cũ không đổi; `UNIQUE (tenant_id, reversal_of)` chặn đảo 2 lần ngay trong DB; một bảng duy nhất cho mọi dòng tiền vào nên báo cáo spec #2 không phải `UNION`.
+    - Endpoint (đều bắt buộc `Idempotency-Key`): `POST /visits/{id}/void`, `POST /sales/{id}/void` (chỉ hóa đơn bán gói; hóa đơn dịch vụ lẻ → `409 sale.void_via_visit`), `POST /customer-packages/{id}/extend` (If-Match), `POST /customer-packages/{id}/cancel` 🔒. Body hủy `{reason}`; gia hạn `{expires_on, reason}`; hủy gói `{reason, refund_amount, refund_method?}`.
+    - Quy tắc ngày đã chốt ở một chỗ: `kernel::corrections::authorize_void` (trước hôm nay theo múi giờ spa: Manager → `403 day.locked`, Owner cần reauth). Reauth: `Actor::require_recent_auth()`, cờ đặt trong extractor `AuthUser` từ `session.recent_auth_at` (mặc định tắt = deny).
+    - API in-transaction mới: `packages::lifecycle::{restore_sessions, cancel_for_sale}`, `sales::voids::void_in` (dùng cho cả hủy lượt). Thứ tự khóa: visit/sale → gói (theo id) → item (theo id). Hủy gói đưa buổi về 0, nên lượt đang trừ buổi song song bị `409`.
+    - DTO thêm (additive): `VisitDto.void_reason/voided_at`, `SaleDto.void_reason/voided_at`, `PaymentDto.reversal_of`, `CustomerPackageDto.cancelled_at/cancel_reason/refund`.
+    - Web: nút "Hủy" trên từng lượt ở danh sách `/quay` (+ ô "Xem ngày" để chủ spa hủy lượt ngày cũ; Manager thấy "Ngày đã chốt"), lượt đã hủy hiện nhãn + lý do; trên hồ sơ khách mỗi liệu trình có "Gia hạn" (+1/2/3/6 tháng), "Hủy liệu trình + hoàn tiền" (chặn hoàn > đã trả ngay trên form), "Hủy hóa đơn bán gói" (khi chưa dùng buổi). `ReauthDialog` (mật khẩu, hiện ô mã TOTP khi server đòi) dùng chung qua `useGuardedAction`: gặp `401 auth.reauth_required` → hỏi lại → gửi lại cùng key.
+    - Perf (frontend.md "Perf budget"): form hủy lượt (`VoidVisitForm`) và `PackageActions` là chunk lazy (0,4 KB + 1,6 KB + 2,5 KB gzip), bundle chính không đổi. **Lỗi tìm ra khi chạy `pnpm lhci`:** nút "Hủy" trong hàng `flex-wrap` làm hàng xuống dòng, cột phải cao hơn nên CLS `/quay` lên 0,27; giữ mỗi hàng một dòng flex → CLS 0,045 (S7 gốc 0,043), LCP 2,06 s (local).
+    - Test: 14 HTTP `voids.rs` (mọi case của dòng Tests + 2 lượt hủy song song → đúng 1 thành công, retry cùng key, DB chặn đảo 2 lần / đảo reversal / sửa payment / mở lại sale) + 4 dòng mới `authz_matrix.rs` + unit (`kernel::corrections` 3, `Actor` 1, `lifecycle` 1); 11 web (`Corrections.test.tsx`); Playwright `e2e/specs/voids.spec.ts` (axe 5 màn hình). Mutation check: bỏ chặn hủy 2 lần, bỏ chặn hoàn > đã trả, bỏ khóa ngày → test đỏ, rồi khôi phục.
+    - Lệch / chưa làm: không có trang chi tiết lượt riêng (hủy ngay trên danh sách); `PATCH /visits/{id}` ngày cũ (S7) cho Owner sửa mà **chưa** đòi reauth → để S10; hoàn tiền gói nhập sổ cũ tối đa bằng giá ghi trong sổ; chưa có báo cáo sổ quỹ (spec #2) đọc `refund`/reversal.
 
 - [x] **S9 Nhập liệu trình dở dang từ sổ cũ** (size: S)
   - **Goal:** nhập nhanh khoảng 1–2 phút mỗi khách; không phát sinh doanh thu.
@@ -197,7 +208,7 @@ Quy ước chung cho mọi ticket có endpoint:
     - Playwright `apps/web/e2e/`: stack riêng (API :8091 + Vite :5181, DB `vpyd_e2e`), setup project provision qua CLI. Spec phủ login → bảng giá, guard `next`, `next` ngoài site, tạo khách → tìm không dấu → cảnh báo sức khỏe, và axe trên login/bảng giá/khách hàng/hồ sơ.
     - Perf: p95 `/customers?q=` và catalog < 300 ms. `lighthouserc.json` (LCP < 2,5 s) hiện chỉ đo `/dang-nhap`.
     - CI: job `e2e`.
-    - **Còn lại cho S10:** thêm dòng matrix cho route S8–S9 (S6, S7 đã có); `/quay` đã có trong Lighthouse (S7); test role PlatformAdmin/support grant khi có role; `/qa` tìm khoảng trống; buổi dùng thử với quản lý.
+    - **Còn lại cho S10:** (matrix đã có dòng cho mọi route S6–S9) `PATCH /visits/{id}` ngày cũ cần reauth như hủy; `/quay` đã có trong Lighthouse (S7); test role PlatformAdmin/support grant khi có role; `/qa` tìm khoảng trống; buổi dùng thử với quản lý.
 
 - [ ] **S11 Staging trên VPS** (size: S)
   - **Goal:** chạy thật trên VPS Singapore + Supabase để quản lý dùng thử bằng dữ liệu giả.

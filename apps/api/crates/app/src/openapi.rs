@@ -34,12 +34,16 @@ use utoipa::OpenApi;
         packages::http::read_package,
         packages::http::list_customer_packages,
         packages::http::import_opening_balance,
+        packages::http::extend_package,
+        packages::http::cancel_package,
         sales::http::create_sale,
         sales::http::read_sale,
+        sales::http::void_sale,
         operations::http::create_visit,
         operations::http::list_visits,
         operations::http::read_visit,
         operations::http::update_visit,
+        operations::http::void_visit,
     ),
     tags(
         (name = "auth", description = "Đăng nhập, phiên, đổi spa"),
@@ -96,6 +100,10 @@ mod tests {
             "/api/v1/opening-balances",
             "/api/v1/visits",
             "/api/v1/visits/{id}",
+            "/api/v1/visits/{id}/void",
+            "/api/v1/sales/{id}/void",
+            "/api/v1/customer-packages/{id}/extend",
+            "/api/v1/customer-packages/{id}/cancel",
         ] {
             assert!(paths.contains(&expected), "{expected} missing from OpenAPI");
         }
@@ -119,6 +127,10 @@ mod tests {
             "VisitCreate",
             "VisitDto",
             "VisitUpdate",
+            "VoidCreate",
+            "PackageExtend",
+            "PackageCancel",
+            "RefundDto",
         ] {
             assert!(schemas.contains_key(schema), "{schema} missing");
         }

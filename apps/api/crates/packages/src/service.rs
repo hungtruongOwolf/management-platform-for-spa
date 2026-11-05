@@ -7,8 +7,8 @@
 //!
 //! Both run inside the caller's `TenantTx` and leave authorization to the caller.
 
-use crate::domain::{self, PackageStatus};
-use crate::repo::{self, ItemInsert, ItemRow, PackageInsert, PackageRow};
+use crate::domain::{self, PackageStatus, RefundMethod};
+use crate::repo::{self, ItemInsert, ItemRow, PackageInsert, PackageRow, RefundRow};
 use chrono::{DateTime, NaiveDate, Utc};
 use kernel::audit::{self, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx};
@@ -322,12 +322,36 @@ pub struct CustomerPackage {
     pub starts_on: NaiveDate,
     pub expires_on: Option<NaiveDate>,
     pub cancelled_at: Option<DateTime<Utc>>,
+    pub cancel_reason: Option<String>,
+    /// Money paid back when the package was cancelled (US7), if any.
+    pub refund: Option<Refund>,
     pub status: PackageStatus,
     pub sessions_total: i64,
     pub sessions_remaining: i64,
     pub version: i64,
     pub created_at: DateTime<Utc>,
     pub items: Vec<PackageItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refund {
+    pub id: Uuid,
+    pub amount: Money,
+    pub method: RefundMethod,
+    pub business_date: NaiveDate,
+    pub created_at: DateTime<Utc>,
+}
+
+fn refund(r: RefundRow) -> Result<Refund, AppError> {
+    Ok(Refund {
+        amount: Money::vnd(r.amount)
+            .map_err(|_| AppError::Internal(format!("corrupt refund {}", r.id)))?,
+        method: RefundMethod::parse(&r.method)
+            .ok_or_else(|| AppError::Internal(format!("refund method {}", r.method)))?,
+        id: r.id,
+        business_date: r.business_date,
+        created_at: r.created_at,
+    })
 }
 
 fn item(r: ItemRow) -> Result<PackageItem, AppError> {
@@ -356,6 +380,10 @@ async fn assemble(
             .entry(r.customer_package_id)
             .or_default()
             .push(item(r)?);
+    }
+    let mut refunds: HashMap<Uuid, Refund> = HashMap::new();
+    for r in repo::refunds(tx, &ids).await? {
+        refunds.insert(r.customer_package_id, refund(r)?);
     }
     rows.into_iter()
         .map(|r| {
@@ -390,6 +418,8 @@ async fn assemble(
                 starts_on: r.starts_on,
                 expires_on: r.expires_on,
                 cancelled_at: r.cancelled_at,
+                refund: refunds.remove(&r.id),
+                cancel_reason: r.cancel_reason,
                 version: r.version,
                 created_at: r.created_at,
                 items,
@@ -398,7 +428,7 @@ async fn assemble(
         .collect()
 }
 
-async fn load(
+pub(crate) async fn load(
     tx: &mut TenantTx,
     id: Uuid,
     today: NaiveDate,

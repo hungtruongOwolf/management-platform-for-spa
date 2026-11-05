@@ -1,0 +1,184 @@
+import { expect, test, type Page } from "@playwright/test";
+import { ownerState, stack } from "../stack";
+import {
+  credentials,
+  expectAccessible,
+  nextTotpCode,
+  uniquePhone,
+} from "../support/run";
+
+test.use({ storageState: ownerState });
+
+interface Service {
+  id: string;
+  active: boolean;
+  prices: { all?: number };
+}
+interface Pkg {
+  id: string;
+  sessions_remaining: number;
+  items: { id: string }[];
+}
+
+const write = { Origin: stack.webOrigin };
+
+/** A customer with a fresh "10 + 2" package and one recorded visit that took a session (11/12). */
+async function customerWithVisit(
+  page: Page,
+  phone: string,
+  fullName: string,
+): Promise<string> {
+  const services = (await (
+    await page.request.get("/api/v1/services")
+  ).json()) as Service[];
+  const service = services.find((s) => s.active && s.prices.all != null);
+  expect(service, "seeded menu has a flat-priced service").toBeDefined();
+  const plan = await page.request.post("/api/v1/package-plans", {
+    headers: write,
+    data: {
+      name: `Gói hủy ${String(Date.now())}`,
+      price: 1_500_000,
+      validity_months: 6,
+      gift_note: null,
+      active: true,
+      items: [{ service_id: service?.id, sessions: 10, bonus_sessions: 2 }],
+    },
+  });
+  expect(plan.status()).toBe(201);
+  const customer = await page.request.post("/api/v1/customers", {
+    headers: write,
+    data: { full_name: fullName, phone, gender: "female" },
+  });
+  expect(customer.status()).toBe(201);
+  const customerId = ((await customer.json()) as { id: string }).id;
+  const staff = (await (await page.request.get("/api/v1/staff")).json()) as {
+    id: string;
+  }[];
+  const sale = await page.request.post("/api/v1/sales", {
+    headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+    data: {
+      customer_id: customerId,
+      closer_staff_id: staff[0]?.id,
+      lines: [{ package_plan_id: ((await plan.json()) as { id: string }).id }],
+      payments: [{ method: "cash", amount: 1_500_000 }],
+    },
+  });
+  expect(sale.status()).toBe(201);
+  const pkg = ((await sale.json()) as { customer_packages: Pkg[] })
+    .customer_packages[0];
+  const visit = await page.request.post("/api/v1/visits", {
+    headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+    data: {
+      customer_id: customerId,
+      lines: [
+        {
+          service_id: service?.id,
+          source: "package",
+          customer_package_item_id: pkg?.items[0]?.id,
+          staff_id: staff[0]?.id,
+        },
+      ],
+    },
+  });
+  expect(visit.status()).toBe(201);
+  return customerId;
+}
+
+async function remaining(page: Page, customerId: string): Promise<number> {
+  const list = (await (
+    await page.request.get(`/api/v1/customers/${customerId}/packages`)
+  ).json()) as Pkg[];
+  return list[0]?.sessions_remaining ?? -1;
+}
+
+test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () => {
+  test("void a visit from the day list: the session comes back, the visit stays as voided", async ({
+    page,
+  }) => {
+    const customerId = await customerWithVisit(
+      page,
+      uniquePhone(),
+      "Đặng Thị Hủy",
+    );
+    expect(await remaining(page, customerId)).toBe(11);
+
+    await page.goto("/quay");
+    const today = page.getByRole("list", { name: "Lượt khách hôm nay" });
+    await today
+      .getByRole("button", { name: /^Hủy lượt .* của Đặng Thị Hủy$/ })
+      .click();
+    const dialog = page.getByRole("dialog", {
+      name: /Hủy lượt .* Đặng Thị Hủy/,
+    });
+    await expect(dialog.getByLabel("Lý do hủy")).toBeFocused();
+    await dialog.getByRole("button", { name: "Hủy lượt" }).click();
+    await expect(dialog.getByText("Bắt buộc ghi lý do.")).toBeVisible();
+    await expectAccessible(page, "quay-void-dialog");
+
+    await dialog.getByLabel("Lý do hủy").fill("Ghi nhầm khách");
+    await dialog.getByRole("button", { name: "Hủy lượt" }).click();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Đã hủy lượt của Đặng Thị Hủy." }),
+    ).toBeVisible();
+    const row = today.getByRole("listitem").filter({ hasText: "Đặng Thị Hủy" });
+    await expect(row).toContainText("Đã hủy");
+    await expect(row).toContainText("Lý do hủy: Ghi nhầm khách");
+    await expect(row.getByRole("button", { name: /^Hủy lượt/ })).toHaveCount(0);
+    expect(await remaining(page, customerId)).toBe(12);
+    await expectAccessible(page, "quay-voided");
+  });
+
+  test("owner extends a package, then cancels it with a refund (re-auth when asked)", async ({
+    page,
+  }) => {
+    const customerId = await customerWithVisit(
+      page,
+      uniquePhone(),
+      "Võ Thị Gia Hạn",
+    );
+    await page.goto(`/khach-hang/${customerId}`);
+    const packages = page.getByRole("list", { name: "Liệu trình của khách" });
+
+    await packages.getByRole("button", { name: "Gia hạn" }).click();
+    const extend = page.getByRole("dialog", { name: /Gia hạn/ });
+    await extend.getByRole("button", { name: "+2 tháng" }).click();
+    await extend.getByLabel("Lý do gia hạn").fill("Khách đi công tác dài ngày");
+    await expectAccessible(page, "profile-extend");
+    await extend.getByRole("button", { name: "Gia hạn" }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Đã gia hạn" }),
+    ).toBeVisible();
+
+    await packages
+      .getByRole("button", { name: "Hủy liệu trình + hoàn tiền" })
+      .click();
+    const cancel = page.getByRole("dialog", { name: /Hủy liệu trình/ });
+    await cancel.getByLabel(/Số tiền hoàn/).fill("300.000");
+    await cancel.getByLabel("Lý do hủy").fill("Khách chuyển nhà");
+    await expectAccessible(page, "profile-cancel");
+    await cancel.getByRole("button", { name: /Hủy và hoàn 300\.000/ }).click();
+
+    // 🔒: the owner's sign-in may be older than the 5-minute window by now.
+    const reauth = page.getByRole("dialog", { name: "Xác nhận lại mật khẩu" });
+    const done = page
+      .getByRole("status")
+      .filter({ hasText: /Đã hủy .* và hoàn 300\.000/ });
+    await expect(reauth.or(done)).toBeVisible();
+    if (await reauth.isVisible()) {
+      await expectAccessible(page, "reauth-dialog");
+      await reauth.getByLabel("Mật khẩu").fill(credentials().password);
+      await reauth.getByRole("button", { name: "Xác nhận" }).click();
+      await reauth
+        .getByLabel(/Mã xác thực hai bước/)
+        .fill(await nextTotpCode());
+      await reauth.getByRole("button", { name: "Xác nhận" }).click();
+    }
+    await expect(done).toBeVisible();
+    const row = packages.getByRole("listitem").first();
+    await expect(row).toContainText("Đã hủy: Khách chuyển nhà");
+    await expect(row).toContainText("còn 0/12 buổi");
+    await expect(row.getByRole("button")).toHaveCount(0);
+  });
+});

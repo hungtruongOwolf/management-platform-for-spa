@@ -237,6 +237,24 @@ const ROUTES: &[Route] = &[
     )
     .body(opening_balance_body)
     .idempotent(),
+    route(
+        "POST",
+        "/api/v1/customer-packages/{id}/extend",
+        Access::Perm(P::PackageExtendExpiry, OWNER_ONLY),
+    )
+    .id(Target::CustomerPackage)
+    .body(extend_body)
+    .if_match()
+    .idempotent(),
+    // 🔒: the owner's fresh login is within the re-auth window; staleness is tested in voids.rs.
+    route(
+        "POST",
+        "/api/v1/customer-packages/{id}/cancel",
+        Access::Perm(P::PackageCancelRefund, OWNER_ONLY),
+    )
+    .id(Target::CustomerPackage)
+    .body(cancel_body)
+    .idempotent(),
     // sales
     route(
         "POST",
@@ -251,6 +269,14 @@ const ROUTES: &[Route] = &[
         Access::Perm(P::SaleRead, OWNER_MANAGER),
     )
     .id(Target::Sale),
+    route(
+        "POST",
+        "/api/v1/sales/{id}/void",
+        Access::Perm(P::RecordVoidSameDay, OWNER_MANAGER),
+    )
+    .id(Target::Sale)
+    .body(void_body)
+    .idempotent(),
     // visits — operations
     route(
         "POST",
@@ -278,6 +304,14 @@ const ROUTES: &[Route] = &[
     .id(Target::Visit)
     .body(visit_update_body)
     .if_match(),
+    route(
+        "POST",
+        "/api/v1/visits/{id}/void",
+        Access::Perm(P::RecordVoidSameDay, OWNER_MANAGER),
+    )
+    .id(Target::Visit)
+    .body(void_body)
+    .idempotent(),
 ];
 
 /// Mounted but deliberately left out of the OpenAPI contract. Must answer without a session.
@@ -335,6 +369,15 @@ fn visit_body(f: &Fixture) -> Option<Value> {
 }
 fn visit_update_body(_: &Fixture) -> Option<Value> {
     Some(json!({}))
+}
+fn void_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"reason": "Ghi nhầm"}))
+}
+fn extend_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"expires_on": "2099-12-31", "reason": "Khách ốm"}))
+}
+fn cancel_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"reason": "Khách chuyển nhà", "refund_amount": 100_000, "refund_method": "cash"}))
 }
 fn sell_body(f: &Fixture) -> Option<Value> {
     Some(json!({

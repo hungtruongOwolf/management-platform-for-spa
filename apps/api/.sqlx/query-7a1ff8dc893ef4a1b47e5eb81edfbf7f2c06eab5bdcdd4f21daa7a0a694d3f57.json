@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id, s.customer_id, s.business_date, s.subtotal, s.discount_amount, s.discount_reason, s.total,\n                  s.amount_paid, s.status, s.closer_staff_id, st.full_name AS \"closer_name?\", s.created_at\n           FROM app.sale s\n           LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id\n           WHERE s.tenant_id = $1 AND s.id = $2",
+  "query": "SELECT s.id, s.customer_id, s.business_date, s.subtotal, s.discount_amount, s.discount_reason, s.total,\n                  s.amount_paid, s.status, s.void_reason, s.voided_at, s.closer_staff_id, st.full_name AS \"closer_name?\", s.created_at\n           FROM app.sale s\n           LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id\n           WHERE s.tenant_id = $1 AND s.id = $2",
   "describe": {
     "columns": [
       {
@@ -104,6 +104,28 @@
       },
       {
         "ordinal": 9,
+        "name": "void_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "void_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "voided_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "voided_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
         "name": "closer_staff_id",
         "type_info": "Uuid",
         "origin": {
@@ -114,7 +136,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 12,
         "name": "closer_name?",
         "type_info": "Text",
         "origin": {
@@ -125,7 +147,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -154,8 +176,10 @@
       false,
       true,
       true,
+      true,
+      true,
       false
     ]
   },
-  "hash": "764cc5bb4f519591e42117cffc2efa71d2b4f836bcbeda7fc3146bb78b689fe7"
+  "hash": "7a1ff8dc893ef4a1b47e5eb81edfbf7f2c06eab5bdcdd4f21daa7a0a694d3f57"
 }

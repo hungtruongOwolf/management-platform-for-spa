@@ -14,7 +14,7 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
 - **Danh sách:** cursor (`?cursor=&limit=`), `limit` mặc định 20, tối đa 100 (server ép). Sort và filter chỉ theo allowlist.
 - **Idempotency:** mọi `POST` có tạo tiền hoặc trừ buổi bắt buộc header `Idempotency-Key` (UUID). Thiếu key → `400 idempotency.key_required`.
   - Cùng key, cùng body → trả lại response cũ.
-  - Cùng key, khác body → `422 idempotency.key_reuse_mismatch`.
+  - Cùng key, khác body → `422 idempotency.key_reuse_mismatch`. Với lệnh trên một bản ghi (`/visits/{id}/void`, `/sales/{id}/void`, `/customer-packages/{id}/extend|cancel`), hash gồm cả `{id}` (`kernel::idempotency::hash_request_on`), nên dùng lại key cho bản ghi khác → `422`, không bao giờ replay nhầm (S8).
   - Request đầu vẫn đang chạy → request trùng **chờ** (khóa PK của Postgres) cho tới khi request đầu commit, rồi replay; nếu request đầu rollback thì request trùng chạy mới. (`409 idempotency.in_progress` chỉ là nhánh phòng thủ.) Hiện thực: `kernel::idempotency` (S1).
 - **Optimistic lock:** DTO có trường `version`; ghi xong trả về `ETag: "<version>"`. Lệnh sửa (`PUT`, thay toàn bộ bản ghi) bắt buộc `If-Match`: thiếu → `400 precondition.if_match_required`, lệch phiên bản → `412 conflict.stale_version` (S4 ✅).
 - **Rate-limit classes:** `auth` (5/phút/tài khoản, 20/phút/IP) · `search` (120/phút/user) · `write` (60/phút/user) · `read` (300/phút/user). Vượt → `429 rate_limited`.
@@ -38,10 +38,13 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
 | `price.variant_not_available` | 422 | Ví dụ dịch vụ chỉ dành cho Nữ chọn cho khách Nam |
 | `price.gender_required` | 422 | Khách chưa có giới tính, dịch vụ có giá Nữ/Nam, không gửi `price_variant` (S7) |
 | `visit.check_in_in_future` / `visit.check_in_not_today` | 422 | Giờ vào > now + 5 phút / khác ngày nghiệp vụ hôm nay (S7) |
-| `visit.voided` | 409 | Sửa lượt đã hủy (S7, phòng cho S8) |
-| `sale.has_used_sessions` | 409 | Hủy hóa đơn gói đã dùng buổi |
-| `refund.exceeds_paid` | 422 | |
-| `day.locked` | 403 | Quản lý sửa ngày đã chốt |
+| `visit.voided` | 409 | Sửa hoặc hủy lại lượt đã hủy (S7, S8) |
+| `sale.voided` | 409 | Hủy lại hóa đơn đã hủy (S8) |
+| `sale.has_used_sessions` | 409 | Hủy hóa đơn gói đã dùng buổi (AC6.4) |
+| `sale.void_via_visit` | 409 | Hủy trực tiếp hóa đơn dịch vụ lẻ của một lượt: phải hủy lượt (S8) |
+| `package.restore_exceeds_total` | 409 | Cộng lại buổi vượt tổng (phòng thủ, S8) |
+| `refund.exceeds_paid` | 422 | Hoàn nhiều hơn `sold_price` của gói (AC7.4) |
+| `day.locked` | 403 | Quản lý sửa/hủy bản ghi của ngày đã chốt (tạm thời: mọi ngày trước hôm nay) |
 | `conflict.stale_version` | 412 | |
 
 ## 3. Endpoints
@@ -67,16 +70,16 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
 | `POST /customers/{id}/anonymize` 🔒 | Ẩn danh hóa | `customer.anonymize` | ✓ | write |
 | `GET /customer-packages/{id}` | Chi tiết + items, trạng thái suy ra (S6 ✅; lịch sử sử dụng thêm ở S7) | `customer.read` | — | read |
 | `GET /customers/{id}/packages` | Liệu trình của khách, mới nhất trước, còn X/Y buổi (S6 ✅) | `customer.read` | — | read |
-| `POST /customer-packages/{id}/extend` | Gia hạn + lý do (If-Match) (US7) | `package.extend_expiry` | ✓ | write |
-| `POST /customer-packages/{id}/cancel` 🔒 | Hủy + hoàn tiền (US7) | `package.cancel_refund` | ✓ | write |
+| `POST /customer-packages/{id}/extend` | Gia hạn (US7, S8 ✅): `{expires_on, reason}` + If-Match. Hạn mới phải sau hạn hiện tại và không ở quá khứ (`422 expires_on not_later / in_past / package_has_no_expiry`); gói đã hủy → `409 package.cancelled`. `200 CustomerPackageDto` + `ETag`; audit before/after + lý do | `package.extend_expiry` | ✓ | write |
+| `POST /customer-packages/{id}/cancel` 🔒 | Hủy + hoàn tiền (US7, S8 ✅): `{reason, refund_amount (0 = không hoàn), refund_method?}`. Buổi còn lại → 0, `cancelled`; hoàn > `sold_price` → `422 refund.exceeds_paid`; tạo một dòng `refund` (sổ quỹ hôm nay). `200 CustomerPackageDto` (có `cancel_reason`, `refund`) | `package.cancel_refund` + reauth | ✓ | write |
 | `POST /opening-balances` | Nhập liệu trình dở dang (US8, S9 ✅): `customer_id` **hoặc** `customer{…như POST /customers}` + `packages[{package_plan_id?, name?, sold_price, starts_on, expires_on?, gift_note?, items[{service_id, sessions_purchased, sessions_bonus?, sessions_remaining}]}]` (1–10). `201 {customer_id, customer_created, customer_packages}`; không sale/payment; lỗi field có tiền tố `customer.` / `packages[j].`; bắt buộc `Idempotency-Key` | `opening_balance.import` (+ `customer.write` khi tạo khách) | ✓ | write |
 | `POST /sales` | Bán gói: `lines[{package_plan_id, gift_note?}]` (1–10), `closer_staff_id`, `discount{amount, reason}?`, `payments[{method, amount, reference?}]` (0–2, mỗi hình thức 1 lần). `201` trả `SaleDto` kèm `customer_packages` (US3, S6 ✅) | `package.sell` (+ `sale.discount*`) | ✓ | write |
 | `GET /sales/{id}` | Chi tiết hóa đơn: lines, payments, customer_packages (S6 ✅) | `sale.read` | — | read |
-| `POST /sales/{id}/void` | Hủy hóa đơn + lý do (US6) | `record.void_same_day` / `_closed_day` 🔒 | ✓ | write |
+| `POST /sales/{id}/void` | Hủy hóa đơn bán gói + `{reason}` (US6, S8 ✅): mỗi payment một `reversal`, `amount_paid` → 0, các gói của hóa đơn → `cancelled` (buổi → 0). Gói đã dùng buổi → `409 sale.has_used_sessions`; gói đã hủy/hoàn tiền → `409 package.cancelled`; hóa đơn dịch vụ lẻ của lượt → `409 sale.void_via_visit`; hủy lần 2 → `409 sale.voided`. `200 SaleDto` (`void_reason`, `voided_at`) | `record.void_same_day`; ngày trước hôm nay: `record.void_closed_day` 🔒 (thiếu → `403 day.locked`) | ✓ | write |
 | `POST /visits` | Ghi lượt: `lines` (1–20), `check_in_at?`, `note?`, `payments[]` (US4). `201` trả `VisitDto` (không bao giờ có `note`) (S7 ✅) | `visit.record` (+ `payment.collect` khi có tiền, `customer.health_notes.write` khi có ghi chú, `package.use_expired_override` khi có lý do) | ✓ | write |
 | `GET /visits?date=` | Lượt của một ngày nghiệp vụ (mặc định hôm nay), mới nhất trước, kèm lines + payments, **không có ghi chú** (S7 ✅) | `visit.read` | — | read |
 | `GET /visits/{id}` · `PATCH /visits/{id}` | Xem (có `note` nếu có `customer.health_notes.read`, `ETag`) / sửa ghi chú và KTV từng dòng (If-Match; không đụng buổi hay tiền; ngày khác hôm nay → `403 day.locked` trừ khi có `record.void_closed_day`) (S7 ✅) | `visit.read` / `visit.record` (+ `customer.health_notes.write` khi sửa ghi chú) | — | read/write |
-| `POST /visits/{id}/void` | Hủy lượt + lý do (US6) | `record.void_same_day` / `_closed_day` 🔒 | ✓ | write |
+| `POST /visits/{id}/void` | Hủy lượt + `{reason}` (US6, S8 ✅): lượt → `voided` (giữ trong lịch sử, `void_reason`, `voided_at`), buổi đã trừ được cộng lại, sale dịch vụ lẻ của lượt bị hủy bằng reversal. Hủy lần 2 → `409 visit.voided`; gói đã bị hủy từ lúc đó → `409 package.cancelled`; thiếu lý do → `422`. `200 VisitDto` (không có `note`) | `record.void_same_day`; ngày trước hôm nay: `record.void_closed_day` 🔒 (thiếu → `403 day.locked`) | ✓ | write |
 | `POST /support-grants` · `DELETE /support-grants/{id}` | Cấp / thu hồi quyền hỗ trợ | `support_grant.manage` 🔒 | — | write |
 
 **Thân `POST /visits` (rút gọn):**
@@ -103,16 +106,18 @@ Mọi use case chạy trong **một transaction**, mở bởi `kernel::TenantTx`
 | Write path | Bất biến | Chiến lược xung đột / trùng lặp |
 |---|---|---|
 | Trừ buổi (`POST /visits`) | `0 ≤ sessions_remaining ≤ total` | Update nguyên tử `… - qty WHERE sessions_remaining >= qty`; 0 dòng → `409`. Có `CHECK` constraint. Idempotency |
-| Hoàn buổi khi hủy lượt | Không vượt `sessions_total` | `+ qty WHERE sessions_remaining + qty <= sessions_total`; lượt chuyển `voided` qua `WHERE status='completed'`, nên mỗi lượt chỉ hủy được 1 lần |
+| Hoàn buổi khi hủy lượt (S8 ✅) | Không vượt `sessions_total`; không cộng vào gói đã hủy | Khóa visit `FOR UPDATE` → `status` phải `completed` → `UPDATE … WHERE status='completed'`; rồi với mỗi dòng gói (theo package, item): khóa gói `FOR UPDATE`, gói đã hủy → `409`, `+ qty WHERE sessions_remaining + qty <= sessions_total`. Trigger 0009: lượt `voided` không đổi được nữa; item của gói đã hủy không tăng buổi được. Hai lần hủy song song → đúng 1 thành công (test) |
 | Thu tiền (payments[] trong sale/visit) | R1: `sum(payments) = total`, `amount_paid = total` | Kiểm tra trong service trước khi insert; `CHECK (amount_paid BETWEEN 0 AND total)` vẫn giữ để bật công nợ sau này. Idempotency |
-| Hủy hóa đơn | Payment không bị xóa | Mỗi payment sinh một `reversal` (`UNIQUE reversal_of`); `amount_paid` về 0; `WHERE status='open'` |
+| Hủy hóa đơn (S8 ✅) | Payment không bị xóa; mỗi payment đảo tối đa 1 lần | Khóa sale → gói (theo id) → item (theo id). Gói phải chưa dùng buổi và chưa hủy. `UPDATE sale … WHERE status='open'`, `amount_paid` → 0, mỗi payment chưa đảo sinh một `reversal` cùng phương thức + số tiền, `business_date` = ngày hủy. DB: `UNIQUE (tenant_id, reversal_of)` (0005) + trigger 0009 (reversal phải trỏ tới một `payment` cùng sale, cùng method, cùng amount; reversal không đảo được) + trigger `voided` là cuối |
 | Bán gói | Snapshot giá / tên / buổi | Transaction duy nhất tạo sale + lines + customer_package + items + payments |
 | Nhập sổ cũ (S9) | `sessions_remaining ≤ purchased + bonus`; không sale, không payment | Transaction duy nhất: khách (tìm hoặc tạo qua `crm::service::create_in`) + các gói `origin=opening_balance` + audit. Idempotency |
-| Hoàn tiền | Tổng hoàn ≤ tổng đã thu của gói | Khóa `customer_package FOR UPDATE`, kiểm tra, insert `refund`, set `cancelled_at`, đưa `sessions_remaining` về 0 |
-| Sửa khách / dịch vụ / gói / gia hạn | | Optimistic lock `version` + `If-Match` → `412` |
+| Hoàn tiền (S8 ✅) | Hoàn ≤ `sold_price` (R1 thu đủ nên đã thu = giá sau giảm; sổ cũ = giá ghi trong sổ); một gói hoàn tối đa 1 lần | Reauth → khóa `customer_package FOR UPDATE` → kiểm tra → khóa item → buổi về 0 + `cancelled_at/by/reason` → insert `refund`. DB: `UNIQUE (tenant_id, customer_package_id)`, trigger `refund ≤ sold_price`, append-only, gói đã hủy không đổi được nữa |
+| Sửa khách / dịch vụ / gói / gia hạn | | Optimistic lock `version` + `If-Match` → `412`. Gia hạn còn có Idempotency-Key |
 | Tạo khách | SĐT duy nhất trong tenant | Partial `UNIQUE` → `23505` → `409 customer.phone_taken` |
 | Mọi mutation | Có dấu vết | `audit_log` insert trong cùng transaction |
 
+- **Ngày đã chốt (S8):** `kernel::corrections::authorize_void(actor, record_day, today)`: cùng ngày cần `record.void_same_day`; ngày trước hôm nay (theo múi giờ của spa) cần thêm `record.void_closed_day` (Manager → `403 day.locked`) và reauth (`Actor::require_recent_auth`, cờ lấy từ `session.recent_auth_at` trong extractor `AuthUser`). Hủy cùng ngày không cần reauth.
+- **Thứ tự khóa (S8):** visit / sale → customer_package (theo id) → customer_package_item (theo id). Trừ buổi chỉ khóa item và kiểm tra lại `sessions_remaining >= qty`; vì hủy gói đưa buổi về 0 nên không thể trừ buổi của gói vừa bị hủy.
 - Retry transaction **tối đa 3 lần** với lỗi `40001`/`40P01`.
 - Bảng chỉ có `INSERT` cho `payment`, `refund`, `audit_log`.
 - Không cần outbox ở R1-1 vì không có hệ thống ngoài. Sẽ thêm khi có Zalo/SMS (spec #3).
@@ -143,8 +148,8 @@ Nhắc nhở (spec #3) sẽ dùng bảng job trên Postgres (`FOR UPDATE SKIP LO
 | US3 | 3.1–3.7 | `POST /sales` |
 | US4 | 4.1–4.10, 4.2b/c | `POST/GET/PATCH /visits` |
 | US5 | hoãn | Không có endpoint thu nợ / công nợ ở R1; không có endpoint sửa/xóa payment |
-| US6 | 6.1–6.4 | `POST /visits/{id}/void`, `POST /sales/{id}/void` |
-| US7 | 7.1–7.4 | `/customer-packages/{id}/extend`, `/cancel` |
+| US6 | 6.1–6.4 | `POST /visits/{id}/void`, `POST /sales/{id}/void` (S8 ✅) |
+| US7 | 7.1–7.4 | `/customer-packages/{id}/extend`, `/cancel` (S8 ✅) |
 | US8 | 8.1, 8.3–8.5 | `POST /opening-balances` (tạo `customer_package` với `origin=opening_balance`, không có sale hay payment; báo cáo lọc theo origin) |
 | G1–G6 | | Middleware + extractor + `kernel` |
 

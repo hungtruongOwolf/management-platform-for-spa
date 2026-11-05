@@ -18,6 +18,16 @@ export const todayVisitsQuery = queryOptions({
   staleTime: 15_000,
 });
 
+/** Visits of one business day ("YYYY-MM-DD"), e.g. to void a record of an earlier day. */
+export function visitsOfDayQuery(date: string) {
+  return queryOptions({
+    queryKey: ["visits", date],
+    queryFn: async () =>
+      (await api(`/visits?date=${encodeURIComponent(date)}`)) as Visit[],
+    staleTime: 15_000,
+  });
+}
+
 /** One key per visit being recorded: a double click or a retry after a network error replays it. */
 export async function recordVisit(
   body: VisitCreate,
@@ -107,10 +117,10 @@ export function byUseOrder(packages: CustomerPackage[]): CustomerPackage[] {
   });
 }
 
-/** Technicians who worked most today come first, so the usual pick is at the top. */
+/** Technicians who worked most today come first, so the usual pick is at the top. Voided visits do not count. */
 export function staffByUse(staff: Staff[], today: Visit[]): Staff[] {
   const uses = new Map<string, number>();
-  for (const v of today)
+  for (const v of today.filter((v) => v.status !== "voided"))
     for (const l of v.lines)
       uses.set(l.staff_id, (uses.get(l.staff_id) ?? 0) + 1);
   return [...staff].sort(

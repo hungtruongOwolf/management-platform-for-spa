@@ -130,6 +130,14 @@ export async function confirmMfaEnrollment(code: string): Promise<{ me: Me; reco
   return { me: parseMe(reply["me"]), recoveryCodes: list(reply["recovery_codes"], str) };
 }
 
+/**
+ * Confirms the password again before a 🔒 action (5-minute window on the server). Accounts with
+ * two-step login also send the current code; the server answers 422 on `code` when it is missing.
+ */
+export async function reauthenticate(password: string, code?: string): Promise<void> {
+  await api("/auth/reauth", { method: "POST", body: code ? { password, code } : { password } });
+}
+
 export function setAuthState(queryClient: QueryClient, auth: AuthState): void {
   queryClient.setQueryData(authQuery.queryKey, auth);
 }

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.customer_package_item SET sessions_remaining = 0, version = version + 1\n           WHERE tenant_id = $1 AND customer_package_id = $2 AND sessions_remaining > 0",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f5152341c8c6697bb73b84bcf5f69913abfaaa61b734152c2d4acc6c2f6e8171"
+}
