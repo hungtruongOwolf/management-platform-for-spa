@@ -31,7 +31,7 @@ export function MyWorkPage() {
 
   return (
     <section className="grid content-start gap-5">
-      <PageHeader eyebrow="Nhân viên" title="Khách của tôi">
+      <PageHeader title="Khách của tôi">
         <MonthPicker
           month={month}
           current={current}

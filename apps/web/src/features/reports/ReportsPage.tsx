@@ -26,7 +26,7 @@ import {
   type Preset,
 } from "./period";
 import { reportsSearch, type ReportMetric } from "./search";
-import { CountUp, Delta, EmptyState, ErrorState, Loading, ManagementOnly, PageHeader, RowsSkeleton, StatCard, StatSkeleton, money } from "./ui";
+import { Delta, EmptyState, ErrorState, Loading, ManagementOnly, PageHeader, RowsSkeleton, StatCard, StatSkeleton, count, money } from "./ui";
 
 type Metric = ReportMetric;
 
@@ -54,7 +54,7 @@ function ReportsPageBody() {
 
   return (
     <section className="grid content-start gap-5">
-      <PageHeader eyebrow="Báo cáo" title={tab === "ledger" ? "Sổ doanh thu" : "Báo cáo kinh doanh"} />
+      <PageHeader title={tab === "ledger" ? "Sổ doanh thu" : "Báo cáo kinh doanh"} />
       {canLedger && (
         <div role="tablist" aria-label="Loại báo cáo" className="tabs">
           {(
@@ -230,23 +230,23 @@ function Kpis({ range, previous, compareLabel }: { range: RangeReport; previous:
       {range.revenue && (
         <div className="col-span-2 lg:col-span-1">
           <StatCard label="Thực thu" icon="wallet" accent foot={delta(range.revenue.net.total, previous?.revenue?.net.total, true)}>
-            <CountUp value={range.revenue.net.total} format={money} />
+            {money(range.revenue.net.total)}
           </StatCard>
         </div>
       )}
       <StatCard label="Khách" icon="users" foot={delta(c.customers, p?.customers)}>
-        <CountUp value={c.customers} />
+        {count(c.customers)}
       </StatCard>
       <StatCard label="Lượt khách" icon="desk" foot={delta(c.visits, p?.visits)}>
-        <CountUp value={c.visits} />
+        {count(c.visits)}
         {c.voided_visits > 0 && <span className="ml-2 text-sm font-normal text-text-muted">({c.voided_visits} đã hủy)</span>}
         {c.corrected_visits > 0 && <span className="ml-2 text-sm font-normal text-text-muted">({c.corrected_visits} đã sửa)</span>}
       </StatCard>
       <StatCard label="Buổi liệu trình đã trừ" icon="package" foot={delta(c.sessions_used, p?.sessions_used)}>
-        <CountUp value={c.sessions_used} />
+        {count(c.sessions_used)}
       </StatCard>
       <StatCard label="Gói liệu trình bán ra" icon="layers" foot={delta(c.packages_sold, p?.packages_sold)}>
-        <CountUp value={c.packages_sold} />
+        {count(c.packages_sold)}
       </StatCard>
     </>
   );

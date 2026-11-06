@@ -35,7 +35,7 @@ export function CustomersPage() {
 
   return (
     <section aria-labelledby="customers-title" className="grid content-start gap-4">
-      <PageHeader eyebrow="Khách hàng" title="Danh sách khách hàng" titleId="customers-title" />
+      <PageHeader title="Danh sách khách hàng" titleId="customers-title" />
       <div className="card p-4">
         <CustomerSearch
           query={search.q}

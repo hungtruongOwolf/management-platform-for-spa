@@ -173,7 +173,7 @@ describe("customers page", () => {
     at("/khach-hang");
     const user = userEvent.setup();
     await user.type(await screen.findByRole("combobox"), "0905111222");
-    await user.click(screen.getByRole("button", { name: "+ Khách mới" }));
+    await user.click(screen.getByRole("button", { name: "Khách mới" }));
     const form = screen.getByRole("form", { name: "Khách mới" });
     expect(within(form).getByLabelText("Số điện thoại")).toHaveValue(
       "0905111222",
@@ -202,7 +202,7 @@ describe("customers page", () => {
     at("/khach-hang");
     const user = userEvent.setup();
     await user.type(await screen.findByRole("combobox"), "Hà");
-    await user.click(screen.getByRole("button", { name: "+ Khách mới" }));
+    await user.click(screen.getByRole("button", { name: "Khách mới" }));
     const form = screen.getByRole("form", { name: "Khách mới" });
     await user.type(within(form).getByLabelText("Số điện thoại"), "0905 111 222");
     const notice = await within(form).findByText(/Số này đã có hồ sơ:/, {}, { timeout: 3000 });
@@ -243,7 +243,7 @@ describe("customers page", () => {
     at("/khach-hang");
     const user = userEvent.setup();
     await user.click(
-      await screen.findByRole("button", { name: "+ Khách mới" }),
+      await screen.findByRole("button", { name: "Khách mới" }),
     );
     const form = screen.getByRole("form", { name: "Khách mới" });
     await user.type(within(form).getByLabelText("Họ tên"), "Ai đó");

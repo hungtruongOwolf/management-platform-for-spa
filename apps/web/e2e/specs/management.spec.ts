@@ -130,7 +130,7 @@ test.describe("khách lâu không quay lại + chăm sóc lại (EM round 3)", (
     await absentCustomer(page, name, phone);
     await page.goto("/khach-hang");
     await page.getByRole("combobox", { name: "Tìm khách theo SĐT hoặc tên" }).fill("Khách mới hoàn toàn");
-    await page.getByRole("button", { name: "+ Khách mới" }).click();
+    await page.getByRole("button", { name: "Khách mới", exact: true }).click();
     const form = page.getByRole("form", { name: "Khách mới" });
     await form.getByLabel("Số điện thoại").fill(phone);
     await expect(form.getByText(`Số này đã có hồ sơ: ${name}`)).toBeVisible();

@@ -65,7 +65,7 @@ function InactiveCustomersPageBody() {
 
   return (
     <section className="grid content-start gap-5">
-      <PageHeader eyebrow="Khách hàng" title="Khách lâu chưa quay lại" />
+      <PageHeader title="Khách lâu chưa quay lại" />
       <p className="max-w-2xl text-text-muted">
         Khách liệu trình và khách lẻ chưa quay lại từ {filter.days} ngày trở lên. “Cần liên hệ” xếp người chưa gọi và người đến hạn gọi lại lên trước; liên hệ xong bấm “Đã liên hệ” để hẹn lần sau.
       </p>

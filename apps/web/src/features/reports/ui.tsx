@@ -1,44 +1,11 @@
 import { formatVnd } from "@vpyd/ui";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { canSeeManagement } from "../../app/features";
 import { meQuery } from "../auth/session";
 import { BrandLogo } from "../../app/BrandLogo";
 import { Icon, type IconName } from "../../app/Icon";
 import { messageFor } from "../../lib/errors";
-
-function prefersReducedMotion(): boolean {
-  return typeof window.matchMedia !== "function" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
-/**
- * A number that counts up to its value on first show (700 ms, ease-out). Text only changes, so no
- * layout work beyond the digits (tabular-nums keeps their width). Reduced motion: the value at once.
- */
-export function CountUp({ value, format = (n) => n.toLocaleString("vi-VN") }: { value: number; format?: (n: number) => string }) {
-  const [still] = useState(prefersReducedMotion);
-  const [shown, setShown] = useState(0);
-  useEffect(() => {
-    if (still) return;
-    let frame = 0;
-    const start = performance.now();
-    const tick = (now: number) => {
-      const t = Math.min(1, (now - start) / 700);
-      setShown(Math.round(value * (1 - (1 - t) ** 3)));
-      if (t < 1) frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => {
-      cancelAnimationFrame(frame);
-    };
-  }, [value, still]);
-  return (
-    <>
-      <span aria-hidden="true">{format(still ? value : shown)}</span>
-      <span className="sr-only">{format(value)}</span>
-    </>
-  );
-}
 
 export const money = (n: number) => formatVnd(n);
 
@@ -83,7 +50,7 @@ export function StatCard({
         </span>
         {label}
       </p>
-      <p className={`stat-value tabular ${accent ? "font-brand text-chrome-accent" : "text-text"}`}>{children}</p>
+      <p className={`stat-value tabular ${accent ? "text-chrome-accent" : "text-text"}`}>{children}</p>
       {/* Cards in a row stretch to the tallest (grid), so a footnote only takes space where it exists. */}
       {foot !== undefined && <div className="mt-auto">{foot}</div>}
     </div>
@@ -127,7 +94,7 @@ export function EmptyState({ title, children }: { title: string; children?: Reac
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-8 text-center">
       <BrandLogo className="mb-1 w-14 opacity-80" />
-      <p className="font-brand text-lg text-primary">{title}</p>
+      <p className="text-lg font-semibold">{title}</p>
       {children && <p className="max-w-sm text-sm text-text-muted">{children}</p>}
     </div>
   );
@@ -160,3 +127,6 @@ export function ManagementOnly({ children }: { children: ReactNode }) {
   }
   return <>{children}</>;
 }
+
+/** A count as shown on the stat tiles (vi-VN digit grouping). */
+export const count = (n: number) => n.toLocaleString("vi-VN");

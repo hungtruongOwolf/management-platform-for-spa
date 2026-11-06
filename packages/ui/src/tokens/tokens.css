@@ -51,6 +51,7 @@
   --text-muted: #6d5a50;
   --primary: #7a2620;
   --primary-hover: #5f1c17;
+  --primary-pressed: #4a1511;
   --on-primary: #ffffff;
   --primary-soft: #f6e4dc;
   --accent: #b07d24;
@@ -77,13 +78,20 @@
   --chrome-hover: rgb(251 241 225 / 0.1);
   --shadow-1: 0 1px 2px rgb(90 29 24 / 0.05), 0 2px 8px rgb(90 29 24 / 0.06);
   --shadow-2: 0 12px 32px rgb(90 29 24 / 0.16), 0 2px 6px rgb(90 29 24 / 0.08);
-  --shadow-primary: inset 0 1px 0 rgb(255 255 255 / 0.14), 0 2px 6px rgb(90 29 24 / 0.22);
-  /* Faint gold dot grid on the cream page (like giấy dó): texture only, never content. */
-  --texture: radial-gradient(circle at 1px 1px, rgb(176 125 36 / 0.1) 1px, transparent 0);
 
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
+
+  /* Type scale (design-system.md "Chữ"): fixed steps, ratio ≈ 1.13–1.2, one family for the UI.
+   * Fields are 16px so phones never zoom on focus. */
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-base: 15px;
+  --fs-field: 16px;
+  --fs-md: 17px;
+  --fs-lg: 20px;
+  --fs-xl: 24px;
 
   --dur-fast: 120ms;
   --dur-base: 200ms;
@@ -108,6 +116,7 @@
     --text-muted: #c4b2a3;
     --primary: #e8a592;
     --primary-hover: #f2bfae;
+    --primary-pressed: #f8d6ca;
     --on-primary: #2a0f0b;
     --primary-soft: #3b2420;
     --accent: #e0b456;
@@ -123,7 +132,7 @@
     --info: #9cc8e6;
     --info-soft: #172a38;
     --focus: #e0b456;
-  --brand-ink: #e0b456;
+    --brand-ink: #e0b456;
     --chrome-bg: #2b1310;
     --chrome-bg-2: #3a1915;
     --chrome-text: #f6ede1;
@@ -132,9 +141,7 @@
     --chrome-hover: rgb(246 237 225 / 0.08);
     --shadow-1: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 8px rgb(0 0 0 / 0.25);
     --shadow-2: 0 12px 32px rgb(0 0 0 / 0.5);
-    --shadow-primary: 0 2px 6px rgb(0 0 0 / 0.35);
-    --texture: radial-gradient(circle at 1px 1px, rgb(224 180 86 / 0.06) 1px, transparent 0);
-    color-scheme: dark;
+        color-scheme: dark;
   }
 }
 
@@ -149,6 +156,7 @@
   --text-muted: #c4b2a3;
   --primary: #e8a592;
   --primary-hover: #f2bfae;
+  --primary-pressed: #f8d6ca;
   --on-primary: #2a0f0b;
   --primary-soft: #3b2420;
   --accent: #e0b456;
@@ -173,16 +181,19 @@
   --chrome-hover: rgb(246 237 225 / 0.08);
   --shadow-1: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 8px rgb(0 0 0 / 0.25);
   --shadow-2: 0 12px 32px rgb(0 0 0 / 0.5);
-  --shadow-primary: 0 2px 6px rgb(0 0 0 / 0.35);
-  --texture: radial-gradient(circle at 1px 1px, rgb(224 180 86 / 0.06) 1px, transparent 0);
   color-scheme: dark;
 }
 
+/*
+ * Reduced motion: nothing moves (no animation, no transform transitions), but colour and opacity
+ * still change so hover/press/selection feedback survives.
+ */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    transition: none !important;
     animation: none !important;
+    transition-property: color, background-color, border-color, opacity, outline-color !important;
+    scroll-behavior: auto !important;
   }
 }

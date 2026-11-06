@@ -89,6 +89,12 @@ test.describe("màn hình quầy (US4)", () => {
       ),
       "no horizontal scroll with a line in the cart",
     ).toBe(true);
+    // EM 2026-11-06: "Lưu lượt khách" was clipped against its right edge. Full width, never clipped.
+    const saveButton = page.getByRole("button", { name: "Lưu lượt khách" });
+    expect(
+      await saveButton.evaluate((b) => b.scrollWidth <= b.clientWidth),
+      "the save label fits its button",
+    ).toBe(true);
     await expectAccessible(page, "quay-cart");
 
     // 3. Pick the technician.

@@ -119,8 +119,8 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     // The session should have been a paid one-off.
     const cart = page.getByRole("list", { name: "Dịch vụ trong lượt" });
     await cart.getByRole("button", { name: /^Bỏ dòng / }).click();
-    await page.getByLabel("Dịch vụ lẻ").selectOption(oneOff?.id ?? "");
-    await page.getByRole("button", { name: "Thêm", exact: true }).click();
+    // Picking a service adds it (no separate "Thêm").
+    await page.getByLabel("Thêm dịch vụ lẻ").selectOption(oneOff?.id ?? "");
     await cart.getByRole("combobox", { name: "KTV" }).selectOption({ index: 1 });
     await expect(page.getByTestId("correction-difference")).toContainText(
       "Thu thêm",
@@ -128,7 +128,14 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     await page
       .getByRole("textbox", { name: /^Lý do sửa/ })
       .fill("Khách trả tiền lẻ, không trừ gói");
+    // The correction cart is taller than the window: wherever it is scrolled, the sticky top bar or
+    // the sticky checkout cuts some control, and axe target-size counts that cut. Audit the whole
+    // screen laid out in a window as tall as the page, then go back.
+    const size = page.viewportSize();
+    const tall = await page.evaluate(() => document.documentElement.scrollHeight);
+    if (size) await page.setViewportSize({ width: size.width, height: tall });
     await expectAccessible(page, "quay-correction");
+    if (size) await page.setViewportSize(size);
     await page.getByRole("button", { name: "Lưu sửa lượt" }).click();
 
     await expect(

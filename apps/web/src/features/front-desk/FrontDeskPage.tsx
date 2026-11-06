@@ -2,7 +2,6 @@ import type {
   Appointment,
   Customer,
   CustomerSummary,
-  Service,
   Visit,
 } from "@vpyd/api-client";
 import {
@@ -27,22 +26,19 @@ import { serviceLabel } from "../../lib/names";
 import { useSearchState } from "../../lib/searchState";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
-import { categoriesQuery, servicesQuery } from "../catalog/api";
 import { customerQuery } from "../customers/api";
 import { CustomerSearch } from "../customers/CustomerSearch";
-import { StickyActions } from "../../components/StickyActions";
+import { Icon } from "../../app/Icon";
 import { completeAppointment } from "../appointments/complete";
 import { activeStaffQuery, exceedsCap, parseAmount } from "../sales/api";
 import {
   type CartLine,
   type DiscountDraft,
-  type Gender,
   type PaymentMode,
   amountDue,
   discountPreview,
   inCart,
   paymentsFor,
-  priceFor,
   recordVisit,
   savedSummary,
   serviceInstant,
@@ -52,6 +48,8 @@ import {
   visitBody,
 } from "./api";
 import { CustomerCard } from "./CustomerCard";
+import { Tip } from "./Tip";
+import "./front-desk.css";
 import type {
   CorrectionDraft,
   CorrectionPlan,
@@ -93,23 +91,37 @@ const ServiceTime = lazy(() =>
 const DiscountField = lazy(() =>
   loadCartOptions().then((m) => ({ default: m.DiscountField })),
 );
+const AddOneOff = lazy(() =>
+  loadCartOptions().then((m) => ({ default: m.AddOneOff })),
+);
 // "Sửa lượt" (US6b): only when a recorded visit is opened for correction.
 const loadCorrection = () => import("./correction");
 const CorrectionPanel = lazy(() =>
   import("./CorrectionPanel").then((m) => ({ default: m.CorrectionPanel })),
 );
 
-const field = "min-h-11 rounded-[6px] border border-border bg-surface px-3";
-const card = "rounded-[14px] border border-border bg-surface p-4 shadow-card";
-
 // Placeholders for the lazy pieces until they are mounted after the first paint: the same boxes,
 // so swapping them in shifts nothing (CLS budget).
-const countdownBox = <span aria-hidden="true" className="block h-10 w-64" />;
+const countdownBox = <span aria-hidden="true" className="day-clock" />;
 const todayVisitsSkeleton = (
-  <section aria-label="Lượt khách hôm nay" className={card}>
+  <section aria-label="Lượt khách hôm nay" className="panel">
     <div aria-hidden="true" className="h-24 skeleton" />
   </section>
 );
+
+// The one-off picker's box (label + field) while its chunk loads: nothing shifts when it lands.
+const addOneOffBox = <div aria-hidden="true" className="h-[78px]" />;
+
+/** "yyyy-mm-dd" → "dd/mm/yyyy". */
+const dmyOf = (iso: string) => iso.split("-").reverse().join("/");
+
+/** "+84905111222" → "0905 111 222" (the booking carries E.164). */
+function localPhone(e164: string): string {
+  const d = e164.replace(/^\+84/, "0");
+  return /^\d{10}$/.test(d)
+    ? `${d.slice(0, 4)} ${d.slice(4, 7)} ${d.slice(7)}`
+    : d;
+}
 
 interface Toast {
   text: string;
@@ -450,7 +462,7 @@ export function FrontDeskPage() {
     select({
       id: a.customer_id,
       full_name: a.customer_name,
-      phone: a.customer_phone.replace(/^\+84/, "0"),
+      phone: localPhone(a.customer_phone),
       gender: a.customer_gender ?? null,
     });
     setFocusDeduct(false);
@@ -511,10 +523,33 @@ export function FrontDeskPage() {
       });
   }, [requested, painted, queryClient, todayIso, setSearch, showToast]);
 
+  const shortcuts = (
+    <Tip label="Phím tắt" align="right">
+      <dl className="kbd-list">
+        <dt>
+          <kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd>
+        </dt>
+        <dd>chọn khách trong kết quả</dd>
+        <dt>
+          <kbd>/</kbd>
+        </dt>
+        <dd>về ô tìm khách</dd>
+        <dt>
+          <kbd>Ctrl</kbd> + <kbd>Enter</kbd>
+        </dt>
+        <dd>lưu lượt khách</dd>
+        <dt>
+          <kbd>Esc</kbd>
+        </dt>
+        <dd>bỏ khách đang chọn</dd>
+      </dl>
+    </Tip>
+  );
+
   return (
-    <div className="grid min-w-0 gap-4">
+    <div className="desk">
       <h1 className="sr-only">Màn hình quầy</h1>
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="desk-toolbar">
         <div role="group" aria-label="Màn hình quầy" className="segmented">
           <button
             type="button"
@@ -558,59 +593,48 @@ export function FrontDeskPage() {
         </Suspense>
       ) : (
         <>
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-            <section
-              aria-label="Tìm khách"
-              className={`${card} grid min-w-0 content-start gap-3`}
-            >
-              <div>
-                <CustomerSearch
-                  key={searchGeneration}
-                  inputRef={searchInput}
-                  autoFocus
-                  onSelect={select}
-                  onCreate={(typed) => {
-                    setCreating(typed);
-                  }}
-                />
-                {creating !== null && can(me, "customer.write") && (
-                  <div className="mt-3">
-                    <Suspense
-                      fallback={
-                        <p role="status" className="text-text-muted">
-                          Đang mở biểu mẫu…
-                        </p>
-                      }
-                    >
-                      <CustomerForm
-                        typed={creating}
-                        canWriteHealth={can(me, "customer.health_notes.write")}
-                        onSaved={(c) => {
+          <div className="desk-grid">
+            <section aria-label="Tìm khách" className="panel">
+              <CustomerSearch
+                key={searchGeneration}
+                inputRef={searchInput}
+                autoFocus
+                aside={shortcuts}
+                onSelect={select}
+                onCreate={(typed) => {
+                  setCreating(typed);
+                }}
+              />
+              {creating !== null && can(me, "customer.write") && (
+                <Suspense
+                  fallback={
+                    <p role="status" className="text-text-muted">
+                      Đang mở biểu mẫu…
+                    </p>
+                  }
+                >
+                  <CustomerForm
+                    typed={creating}
+                    canWriteHealth={can(me, "customer.health_notes.write")}
+                    onSaved={(c) => {
+                      select(summaryOf(c));
+                    }}
+                    onOpenExisting={(id) => {
+                      void queryClient
+                        .query(customerQuery(id))
+                        .then((c) => {
                           select(summaryOf(c));
-                        }}
-                        onOpenExisting={(id) => {
-                          void queryClient
-                            .query(customerQuery(id))
-                            .then((c) => {
-                              select(summaryOf(c));
-                            })
-                            .catch((e: unknown) => {
-                              showToast(messageFor(e), true);
-                            });
-                        }}
-                        onCancel={() => {
-                          setCreating(null);
-                        }}
-                      />
-                    </Suspense>
-                  </div>
-                )}
-                <p className="mt-2 hidden text-xs text-text-muted sm:block">
-                  <kbd>↑</kbd> <kbd>↓</kbd> chọn, <kbd>Enter</kbd> mở,{" "}
-                  <kbd>/</kbd> về ô tìm, <kbd>Ctrl</kbd>+<kbd>Enter</kbd> lưu,{" "}
-                  <kbd>Esc</kbd> bỏ khách.
-                </p>
-              </div>
+                        })
+                        .catch((e: unknown) => {
+                          showToast(messageFor(e), true);
+                        });
+                    }}
+                    onCancel={() => {
+                      setCreating(null);
+                    }}
+                  />
+                </Suspense>
+              )}
               {customer ? (
                 <CustomerCard
                   key={customer.id}
@@ -640,93 +664,116 @@ export function FrontDeskPage() {
                   }}
                 />
               ) : (
-                <p className="text-center text-sm text-text-muted">
-                  Chưa chọn khách. Tìm khách ở ô phía trên để bắt đầu một lượt.
-                  Khách đặt trước: mở tab “Lịch hẹn”.
+                <p className="desk-empty">
+                  Chưa chọn khách. Tìm theo SĐT hoặc tên ở ô phía trên; khách
+                  đặt trước thì mở tab “Lịch hẹn”.
                 </p>
               )}
             </section>
 
-            <section aria-labelledby="cart-title" className={`${card} min-w-0`}>
-              <h2 id="cart-title" className="mb-3 scroll-mt-20 font-semibold">
+            <section aria-labelledby="cart-title" className="panel">
+              <h2 id="cart-title" className="panel-title scroll-mt-20">
                 {correcting ? "Sửa lượt khách" : "Lượt khách đang ghi"}
               </h2>
               {correcting && (
-                <p className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-[10px] bg-info-soft p-2 text-sm text-info">
+                <div className="context-bar">
                   <span>
                     Đang sửa lượt {timeOf(correcting.visit.check_in_at)} ·{" "}
-                    {correcting.visit.business_date
-                      .split("-")
-                      .reverse()
-                      .join("/")}{" "}
-                    của {correcting.visit.customer_name}
+                    {dmyOf(correcting.visit.business_date)} của{" "}
+                    {correcting.visit.customer_name}
                   </span>
                   <button
                     type="button"
-                    className="min-h-11 underline"
+                    className="btn btn-ghost min-h-9 px-3"
                     onClick={resetVisit}
                   >
                     Bỏ sửa
                   </button>
-                </p>
+                </div>
               )}
               {appointment && (
-                <p className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-[10px] bg-info-soft p-2 text-sm text-info">
+                <div className="context-bar">
                   <span>
-                    Hoàn tất lịch hẹn {timeOf(appointment.starts_at)} ·{" "}
-                    {appointment.business_date.split("-").reverse().join("/")}
+                    Đang ghi cho lịch hẹn {timeOf(appointment.starts_at)}
+                    {appointment.business_date !== todayIso
+                      ? ` · ${dmyOf(appointment.business_date)}`
+                      : ""}{" "}
+                    · {appointment.customer_name}
                   </span>
-                  <button
-                    type="button"
-                    className="underline"
-                    onClick={() => {
-                      setAppointment(null);
-                      setServiceDay("");
-                      setServiceTime("");
+                  <details
+                    className="context-menu"
+                    onKeyDown={(e) => {
+                      const d = e.currentTarget;
+                      if (e.key === "Escape" && d.open) {
+                        e.stopPropagation();
+                        d.open = false;
+                        d.querySelector("summary")?.focus();
+                      }
                     }}
                   >
-                    Ghi như khách vãng lai
-                  </button>
-                </p>
+                    <summary aria-label="Tùy chọn lịch hẹn">
+                      <Icon name="dots" />
+                    </summary>
+                    <div className="context-menu-panel">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAppointment(null);
+                          setServiceDay("");
+                          setServiceTime("");
+                        }}
+                      >
+                        Bỏ liên kết lịch hẹn
+                      </button>
+                      <p>
+                        Lịch hẹn vẫn mở (chưa hoàn tất). Lượt này được ghi
+                        riêng, như khách đến không hẹn.
+                      </p>
+                    </div>
+                  </details>
+                </div>
               )}
               {!customer && (
-                <p className="text-text-muted">
-                  Chọn khách để bắt đầu ghi lượt.
-                </p>
+                <p className="desk-empty">Chọn khách để bắt đầu ghi lượt.</p>
               )}
               {customer && lines.length === 0 && (
-                <p className="text-text-muted">
-                  Chưa có dịch vụ. Bấm “Trừ 1 buổi” ở liệu trình hoặc thêm dịch
-                  vụ lẻ.
+                <p className="desk-empty">
+                  Chưa có dịch vụ. Bấm “Trừ 1 buổi” ở gói liệu trình, hoặc chọn
+                  dịch vụ lẻ bên dưới.
                 </p>
               )}
               {lines.length > 0 && (
-                <ul aria-label="Dịch vụ trong lượt" className="grid gap-2">
+                <ul aria-label="Dịch vụ trong lượt" className="cart-lines">
                   {lines.map((l) => {
                     const invalid = attempted && l.staffId === "";
                     const selectId = `staff-${String(l.key)}`;
                     return (
-                      <li
-                        key={l.key}
-                        className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-[10px] border border-border px-3 py-2"
-                      >
-                        <div>
-                          <strong>
+                      <li key={l.key} className="cart-line">
+                        <div className="min-w-0">
+                          <span className="cart-line-name">
                             {serviceLabel(l.serviceName, l.categoryName)}
-                          </strong>
-                          <span className="block text-xs text-text-muted">
+                          </span>
+                          <span className="cart-line-source">
                             {l.source === "package"
                               ? `Trừ liệu trình · ${l.packageName}${l.expiryOverrideReason ? " · cho dùng tiếp" : ""}`
                               : "Dịch vụ lẻ"}
                           </span>
                         </div>
-                        <span className="text-right font-semibold tabular-nums">
-                          {l.source === "one_off" ? formatVnd(l.price) : "—"}
+                        <span className="cart-line-price">
+                          {l.source === "one_off" ? formatVnd(l.price) : ""}
                         </span>
-                        <div className="col-span-2 flex flex-wrap items-center gap-2">
-                          <label htmlFor={selectId} className="text-sm">
-                            KTV
-                          </label>
+                        <button
+                          type="button"
+                          aria-label={`Bỏ dòng ${l.serviceName}`}
+                          onClick={() => {
+                            setLines((ls) => ls.filter((x) => x.key !== l.key));
+                          }}
+                          className="btn btn-ghost btn-icon text-text-muted"
+                        >
+                          <Icon name="x" />
+                        </button>
+                        <div className="cart-line-staff">
+                          <label htmlFor={selectId}>KTV</label>
                           <select
                             id={selectId}
                             ref={(el) => {
@@ -754,7 +801,7 @@ export function FrontDeskPage() {
                                 ),
                               );
                             }}
-                            className={`${field} ${invalid ? "border-danger" : ""}`}
+                            className="input"
                           >
                             <option value="">
                               {staff.isPending ? "Đang tải…" : "Chọn KTV…"}
@@ -768,24 +815,11 @@ export function FrontDeskPage() {
                           {invalid && (
                             <span
                               id={`${selectId}-error`}
-                              className="text-sm text-danger"
+                              className="field-error"
                             >
                               Cần chọn KTV
                             </span>
                           )}
-                          <span className="flex-1" />
-                          <button
-                            type="button"
-                            aria-label={`Bỏ dòng ${l.serviceName}`}
-                            onClick={() => {
-                              setLines((ls) =>
-                                ls.filter((x) => x.key !== l.key),
-                              );
-                            }}
-                            className="min-h-11 rounded-[10px] border border-border px-3 text-sm"
-                          >
-                            Bỏ
-                          </button>
                         </div>
                       </li>
                     );
@@ -794,89 +828,76 @@ export function FrontDeskPage() {
               )}
 
               {customer && (
-                <AddOneOff
-                  customer={customer}
-                  onAdd={(service, priceVariant, price, categoryName) => {
-                    addLine({
-                      key: nextKey.current++,
-                      source: "one_off",
-                      serviceId: service.id,
-                      serviceName: service.name,
-                      ...(categoryName ? { categoryName } : {}),
-                      priceVariant,
-                      price,
-                      staffId: appointment?.staff_id ?? "",
-                    });
-                  }}
-                  onProblem={(m) => {
-                    showToast(m, true);
-                  }}
-                />
+                <Suspense fallback={addOneOffBox}>
+                  <AddOneOff
+                    customer={customer}
+                    onAdd={(service, priceVariant, price, categoryName) => {
+                      addLine({
+                        key: nextKey.current++,
+                        source: "one_off",
+                        serviceId: service.id,
+                        serviceName: service.name,
+                        ...(categoryName ? { categoryName } : {}),
+                        priceVariant,
+                        price,
+                        staffId: appointment?.staff_id ?? "",
+                      });
+                    }}
+                    onProblem={(m) => {
+                      showToast(m, true);
+                    }}
+                  />
+                </Suspense>
               )}
 
               {customer && lines.length > 0 && (
-                <div className="mt-4 grid content-start gap-3">
-                  <Suspense fallback={null}>
-                    <ServiceTime
-                      mayBackdate={mayBackdate}
-                      today={todayIso}
-                      day={serviceDay}
-                      time={serviceTime}
-                      invalid={attempted && problems.time}
-                      onDay={(d) => {
-                        setServiceDay(d === todayIso ? "" : d);
-                        if (d !== todayIso && serviceTime === "")
-                          setServiceTime(nowHm());
-                      }}
-                      onTime={setServiceTime}
-                    />
-                    {due > 0 && can(me, "sale.discount") && (
-                      <DiscountField
-                        due={due}
-                        draft={discount}
-                        onChange={setDiscount}
-                        overCap={
-                          discountAmount > 0 &&
-                          exceedsCap(
-                            due,
-                            discountAmount,
-                            can(me, "sale.discount_unlimited"),
-                          )
-                        }
+                <>
+                  <div className="cart-options">
+                    <Suspense fallback={null}>
+                      <ServiceTime
+                        mayBackdate={mayBackdate}
+                        today={todayIso}
+                        day={serviceDay}
+                        time={serviceTime}
+                        invalid={attempted && problems.time}
+                        onDay={(d) => {
+                          setServiceDay(d === todayIso ? "" : d);
+                          if (d !== todayIso && serviceTime === "")
+                            setServiceTime(nowHm());
+                        }}
+                        onTime={setServiceTime}
                       />
-                    )}
-                  </Suspense>
-                  <p
-                    className="flex justify-between text-lg font-bold"
-                    aria-live="polite"
-                  >
-                    <span>Phải trả</span>
-                    <span className="tabular-nums">
-                      {discountAmount > 0 && (
-                        <s className="mr-2 text-sm font-normal text-text-muted">
-                          {formatVnd(due)}
-                        </s>
+                      {due > 0 && can(me, "sale.discount") && (
+                        <DiscountField
+                          due={due}
+                          draft={discount}
+                          onChange={setDiscount}
+                          overCap={
+                            discountAmount > 0 &&
+                            exceedsCap(
+                              due,
+                              discountAmount,
+                              can(me, "sale.discount_unlimited"),
+                            )
+                          }
+                        />
                       )}
-                      {formatVnd(payable)}
-                    </span>
-                  </p>
-                  {payable > 0 ? (
-                    <fieldset className="grid content-start gap-2">
-                      <legend className="text-sm font-semibold">
+                    </Suspense>
+                  </div>
+                  {payable > 0 && (
+                    <fieldset className="grid gap-2">
+                      <legend className="section-label mb-2">
                         Thanh toán (thu đủ)
                       </legend>
-                      <div className="flex flex-wrap gap-3">
+                      <div className="pay-choices">
                         {(
                           [
                             ["cash", "Tiền mặt"],
                             ["bank_transfer", "Chuyển khoản"],
-                            ["mixed", "Tiền mặt + chuyển khoản"],
+                            ["mixed", "Tiền mặt + CK"],
                           ] as const
                         ).map(([value, label]) => (
-                          <label
-                            key={value}
-                            className="inline-flex min-h-11 items-center gap-2"
-                          >
+                          <label key={value} className="pay-choice">
                             <input
                               type="radio"
                               name="visit-payment"
@@ -890,14 +911,13 @@ export function FrontDeskPage() {
                         ))}
                       </div>
                       {mode === "mixed" && (
-                        <label className="block max-w-xs">
-                          <span className="text-sm font-semibold">
-                            Tiền mặt (đ)
-                          </span>
+                        <label className="field max-w-xs">
+                          <span>Tiền mặt (đ)</span>
                           <input
-                            className={`${field} w-full`}
+                            className="input"
                             inputMode="numeric"
                             value={cashText}
+                            aria-invalid={attempted && problems.cash}
                             onChange={(e) => {
                               setCashText(e.target.value);
                             }}
@@ -905,22 +925,21 @@ export function FrontDeskPage() {
                           {!Number.isNaN(cashPart) &&
                             cashPart > 0 &&
                             cashPart < payable && (
-                              <span className="block text-xs text-text-muted">
+                              <span className="field-hint">
                                 Chuyển khoản: {formatVnd(payable - cashPart)}
                               </span>
                             )}
                         </label>
                       )}
                     </fieldset>
-                  ) : (
-                    <p className="text-sm text-text-muted">
-                      Lượt này chỉ trừ buổi liệu trình, không phát sinh tiền.
-                    </p>
                   )}
                   {can(me, "customer.health_notes.write") && (
-                    <label className="block">
-                      <span className="text-sm font-semibold">
-                        Ghi chú buổi (không bắt buộc)
+                    <label className="field">
+                      <span>
+                        Ghi chú buổi{" "}
+                        <span className="font-normal text-text-muted">
+                          (không bắt buộc)
+                        </span>
                       </span>
                       <textarea
                         value={note}
@@ -929,7 +948,7 @@ export function FrontDeskPage() {
                         }}
                         rows={2}
                         maxLength={2000}
-                        className="w-full rounded-[6px] border border-border bg-surface p-2"
+                        className="input"
                       />
                     </label>
                   )}
@@ -947,19 +966,29 @@ export function FrontDeskPage() {
                   {(mutation.isError || correction.isError) &&
                     !(mutation.error instanceof ApiError) &&
                     !(correction.error instanceof ApiError) && (
-                      <p
-                        role="alert"
-                        className="rounded-[10px] bg-danger-soft p-3 text-sm text-danger"
-                      >
+                      <p role="alert" className="alert">
                         Chưa lưu được. Bấm Lưu để thử lại (không bị ghi đôi).
                       </p>
                     )}
-                  <StickyActions label="Lưu lượt">
+                  <div role="group" aria-label="Lưu lượt" className="checkout">
+                    <p className="checkout-total" aria-live="polite">
+                      <span>Phải trả</span>
+                      <span className="checkout-amount">
+                        {discountAmount > 0 && <s>{formatVnd(due)}</s>}
+                        {formatVnd(payable)}
+                      </span>
+                    </p>
+                    {payable === 0 && (
+                      <p className="-mt-2 text-sm text-text-muted">
+                        Lượt này chỉ trừ buổi liệu trình, không phát sinh tiền.
+                      </p>
+                    )}
                     <button
                       type="button"
                       onClick={save}
-                      disabled={saving}
-                      className="min-h-13 w-full rounded-[10px] bg-primary text-lg font-semibold text-on-primary disabled:opacity-60"
+                      aria-disabled={saving}
+                      aria-busy={saving}
+                      className="btn btn-primary btn-lg btn-block"
                     >
                       {saving
                         ? "Đang lưu…"
@@ -967,8 +996,8 @@ export function FrontDeskPage() {
                           ? "Lưu sửa lượt"
                           : "Lưu lượt khách"}
                     </button>
-                  </StickyActions>
-                </div>
+                  </div>
+                </>
               )}
             </section>
           </div>
@@ -990,151 +1019,10 @@ export function FrontDeskPage() {
       <div
         role="status"
         aria-live="polite"
-        className={`pointer-events-none fixed bottom-[calc(var(--tabbar-h,0px)+24px)] left-1/2 z-30 max-w-[calc(100%-32px)] -translate-x-1/2 rounded-[10px] border-l-4 px-4 py-3 shadow-float transition-[opacity,translate] duration-200 ease-[var(--ease-out)] motion-reduce:transition-none ${toast ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"} ${toast?.error ? "border-danger-soft bg-danger text-surface" : "border-chrome-accent bg-chrome text-chrome-text"}`}
+        className={`desk-toast ${toast ? "is-shown" : ""} ${toast?.error ? "is-error" : ""}`}
       >
         {toast?.text}
       </div>
-    </div>
-  );
-}
-
-/** One-off service: grouped by category, ★ first; price by the customer's gender. */
-function AddOneOff({
-  customer,
-  onAdd,
-  onProblem,
-}: {
-  customer: CustomerSummary;
-  onAdd: (
-    service: Service,
-    priceVariant: Gender | null,
-    price: number,
-    categoryName: string | undefined,
-  ) => void;
-  onProblem: (message: string) => void;
-}) {
-  const services = useQuery(servicesQuery(false));
-  const categories = useQuery(categoriesQuery);
-  const [serviceId, setServiceId] = useState("");
-  const [chosenGender, setChosenGender] = useState<Gender | null>(null);
-  const known = customer.gender ?? null;
-  const gender = known ?? chosenGender;
-
-  const groups = (categories.data ?? []).map((c) => ({
-    category: c,
-    items: (services.data ?? [])
-      .filter((s) => s.category_id === c.id)
-      .sort((a, b) => Number(b.recommended) - Number(a.recommended)),
-  }));
-
-  const add = () => {
-    const service = services.data?.find((s) => s.id === serviceId);
-    if (!service) {
-      onProblem("Chọn một dịch vụ trước.");
-      return;
-    }
-    const r = priceFor(service, gender);
-    if (!r.ok) {
-      onProblem(
-        r.reason === "need_gender"
-          ? "Chọn Nữ hoặc Nam để tính giá dịch vụ này."
-          : r.reason === "not_offered"
-            ? `“${service.name}” không áp dụng cho khách ${gender === "male" ? "Nam" : "Nữ"}.`
-            : `“${service.name}” chưa có giá.`,
-      );
-      return;
-    }
-    onAdd(
-      service,
-      known ? null : r.variant === "all" ? null : r.variant,
-      r.price,
-      categories.data?.find((c) => c.id === service.category_id)?.name,
-    );
-    setServiceId("");
-  };
-
-  const priceLabel = (s: Service) =>
-    s.prices.all != null
-      ? formatVnd(s.prices.all)
-      : `Nữ ${s.prices.female != null ? formatVnd(s.prices.female) : "—"} / Nam ${s.prices.male != null ? formatVnd(s.prices.male) : "—"}`;
-
-  return (
-    <div className="mt-4 border-t border-border pt-3">
-      <h3 className="mb-2 font-semibold">Thêm dịch vụ lẻ / dùng thêm</h3>
-      {services.isError && (
-        <p role="alert" className="text-sm text-danger">
-          {messageFor(services.error)}
-        </p>
-      )}
-      <div className="flex flex-wrap items-center gap-2">
-        <label htmlFor="one-off-service" className="sr-only">
-          Dịch vụ lẻ
-        </label>
-        <select
-          id="one-off-service"
-          value={serviceId}
-          onChange={(e) => {
-            setServiceId(e.target.value);
-          }}
-          // A definite width: a select's intrinsic width is its longest option, which would
-          // otherwise widen the whole column past the viewport.
-          className={`${field} w-56 min-w-56 flex-1`}
-        >
-          <option value="">
-            {services.isPending ? "Đang tải bảng giá…" : "Chọn dịch vụ…"}
-          </option>
-          {groups
-            .filter((g) => g.items.length > 0)
-            .map((g) => (
-              <optgroup key={g.category.id} label={g.category.name}>
-                {g.items.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.recommended ? "★ " : ""}
-                    {s.name} · {priceLabel(s)}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-        </select>
-        {!known && (
-          <span
-            role="group"
-            aria-label="Giới tính để tính giá"
-            className="inline-flex gap-1"
-          >
-            {(
-              [
-                ["female", "Nữ"],
-                ["male", "Nam"],
-              ] as const
-            ).map(([g, label]) => (
-              <button
-                key={g}
-                type="button"
-                aria-pressed={chosenGender === g}
-                onClick={() => {
-                  setChosenGender(g);
-                }}
-                className="min-h-11 rounded-[10px] border border-border px-3 aria-pressed:border-primary aria-pressed:bg-primary-soft aria-pressed:text-primary"
-              >
-                {label}
-              </button>
-            ))}
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={add}
-          className="min-h-11 rounded-[10px] border border-border px-4 font-medium hover:bg-surface-2"
-        >
-          Thêm
-        </button>
-      </div>
-      {!known && (
-        <p className="mt-1 text-xs text-text-muted">
-          Khách chưa có giới tính: chọn Nữ/Nam để tính giá.
-        </p>
-      )}
     </div>
   );
 }

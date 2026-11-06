@@ -8,13 +8,9 @@ import { useEffect, useRef, useState } from "react";
 import { messageFor } from "../../lib/errors";
 import { customerQuery } from "../customers/api";
 import { CustomerName } from "../../app/CustomerName";
+import { Icon } from "../../app/Icon";
 import { HealthNote } from "../customers/HealthNote";
-import {
-  STATUS_BADGE,
-  STATUS_LABEL,
-  customerPackagesQuery,
-  formatDate,
-} from "../sales/api";
+import { customerPackagesQuery, formatDate } from "../sales/api";
 import { byUseOrder, isUsable } from "./api";
 import { expiryText, serviceLabel } from "../../lib/names";
 
@@ -24,11 +20,32 @@ export interface Deduction {
   expiryOverrideReason?: string;
 }
 
+interface Row {
+  pkg: CustomerPackage;
+  item: CustomerPackageItem;
+  label: string;
+  /** Sessions left after what this cart already uses. */
+  left: number;
+}
+
+/**
+ * One state per row (design-system.md "Quy tắc"): a package item is open (in use, or expired with
+ * sessions left) or closed (cancelled, or no session left). Closed rows never offer "Trừ 1 buổi";
+ * they wait behind the "Gói đã hết / đã hủy" disclosure.
+ */
+function isClosed(p: CustomerPackage, item: CustomerPackageItem): boolean {
+  return (
+    p.status === "cancelled" ||
+    p.status === "exhausted" ||
+    item.sessions_remaining <= 0
+  );
+}
+
 /**
  * The selected customer, inline right under the search box it was picked in (EM round 4 item 6):
  * name, phone, gender, health warning, a one-line summary of active packages, then the packages in
- * the order they should be used with one "Trừ 1 buổi" per item. Remaining counts already subtract
- * what is in the cart.
+ * the order they should be used with one "Trừ 1 buổi" per open item. Remaining counts already
+ * subtract what is in the cart.
  */
 export function CustomerCard({
   summary,
@@ -60,32 +77,50 @@ export function CustomerCard({
     if (focusFirst && packages.isSuccess) firstButton.current?.focus();
   }, [focusFirst, packages.isSuccess]);
 
-  const firstUsableItem = ordered
-    .filter(isUsable)
-    .flatMap((p) => p.items)
-    .find((i) => i.sessions_remaining - inCart(i.id) > 0)?.id;
+  const rows: Row[] = ordered.flatMap((p) =>
+    p.items.map((item) => ({
+      pkg: p,
+      item,
+      label:
+        p.items.length > 1
+          ? `${p.name} · ${serviceLabel(item.name, item.category_name)}`
+          : p.name,
+      left: item.sessions_remaining - inCart(item.id),
+    })),
+  );
+  const open = rows.filter((r) => !isClosed(r.pkg, r.item));
+  const closed = rows.filter((r) => isClosed(r.pkg, r.item));
+  const firstUsableItem = open.find((r) => isUsable(r.pkg) && r.left > 0)?.item
+    .id;
   const gender = customer.data?.gender ?? summary.gender;
   const active = ordered.filter(isUsable);
   const sessionsLeft = active.reduce((n, p) => n + p.sessions_remaining, 0);
 
+  const deduct = ({ pkg: p, item, left }: Row) => {
+    if (left <= 0) {
+      onBlocked("Đã trừ hết số buổi còn lại trong lượt này.");
+      return;
+    }
+    if (p.status === "expired") {
+      setReason("");
+      setOverriding({ pkg: p, item });
+      return;
+    }
+    onDeduct({ pkg: p, item });
+  };
+
   return (
-    <section
-      aria-labelledby="customer-card-title"
-      className="border-t border-border pt-3"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-2">
+    <section aria-labelledby="customer-card-title" className="grid gap-4">
+      <div className="customer-head">
         <div className="min-w-0">
-          <h2
-            id="customer-card-title"
-            className="font-brand text-xl text-primary"
-          >
+          <h2 id="customer-card-title" className="customer-title">
             <CustomerName
               name={summary.full_name}
               gender={gender}
               showUnknown
             />
           </h2>
-          <p className="text-sm text-text-muted">
+          <p className="customer-meta">
             <span className="tabular">{summary.phone}</span>
             {packages.isSuccess && (
               <>
@@ -98,179 +133,184 @@ export function CustomerCard({
           </p>
         </div>
         {onClear && (
-          <button
-            type="button"
-            onClick={onClear}
-            className="min-h-11 rounded-[10px] border border-border px-3 text-sm"
-          >
+          <button type="button" onClick={onClear} className="btn btn-secondary">
             Đổi khách
           </button>
         )}
       </div>
       {customer.data && <HealthNote customer={customer.data} />}
 
-      <h3 className="mt-3 font-semibold">Gói liệu trình</h3>
-      {packages.isPending && (
-        <div aria-hidden="true" className="mt-2 grid content-start gap-2">
-          <div className="h-14 skeleton" />
-          <div className="h-14 skeleton" />
-        </div>
-      )}
-      {packages.isError && (
-        <p role="alert" className="mt-2 text-danger">
-          {messageFor(packages.error)}{" "}
-          <button
-            type="button"
-            className="underline"
-            onClick={() => void packages.refetch()}
-          >
-            Thử lại
-          </button>
-        </p>
-      )}
-      {packages.isSuccess && ordered.length === 0 && (
-        <p className="mt-2 text-text-muted">
-          Khách chưa có liệu trình. Thêm dịch vụ lẻ ở cột bên phải.
-        </p>
-      )}
-      <ul aria-label="Liệu trình của khách" className="mt-2 grid gap-2">
-        {ordered.flatMap((p) =>
-          p.items.map((item) => {
-            const left = item.sessions_remaining - inCart(item.id);
-            const expired = p.status === "expired";
-            const blocked =
-              p.status === "cancelled" ||
-              left <= 0 ||
-              (expired && !canOverrideExpiry);
-            const isFirst = item.id === firstUsableItem;
-            const label =
-              p.items.length > 1
-                ? `${p.name} · ${serviceLabel(item.name, item.category_name)}`
-                : p.name;
-            return (
-              <li
-                key={item.id}
-                className={`flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-border border-l-4 px-3 py-2 ${blocked ? "border-l-border bg-surface-2" : "border-l-accent"}`}
-              >
-                <div>
-                  <span className="font-semibold">{label}</span>
-                  {/* Sessions left as a gold bar: readable at a glance; the numbers below say it. */}
-                  <span
-                    aria-hidden="true"
-                    className="mt-1 block h-1.5 w-40 max-w-full overflow-hidden rounded-full bg-surface-2"
-                  >
-                    <span
-                      className={`block h-full rounded-full ${left <= 2 ? "bg-danger" : "bg-accent"}`}
-                      style={{
-                        width: `${String(Math.round((Math.max(left, 0) / Math.max(item.sessions_total, 1)) * 100))}%`,
-                      }}
-                    />
-                  </span>
-                  <span className="block text-sm text-text-muted">
-                    Còn{" "}
-                    <strong>
-                      {String(Math.max(left, 0))}/{String(item.sessions_total)}
-                    </strong>{" "}
-                    buổi · {expiryText(p.expires_on, formatDate)}
-                    {p.status !== "active" && (
-                      <span
-                        className={`badge ml-2 align-middle ${STATUS_BADGE[p.status]}`}
-                      >
-                        {STATUS_LABEL[p.status]}
-                      </span>
-                    )}
-                  </span>
-                  {item.sessions_remaining === 0 && (
-                    <span className="block text-sm text-danger">
-                      Đã hết buổi. Gợi ý: tư vấn bán gói mới.
-                    </span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  ref={isFirst ? firstButton : undefined}
-                  aria-disabled={blocked}
-                  aria-label={`Trừ 1 buổi ${label}`}
-                  onClick={() => {
-                    if (p.status === "cancelled") {
-                      onBlocked("Liệu trình đã bị hủy, không trừ được.");
-                      return;
-                    }
-                    if (left <= 0) {
-                      onBlocked(
-                        item.sessions_remaining === 0
-                          ? "Liệu trình đã hết buổi. Gợi ý bán gói mới."
-                          : "Đã trừ hết số buổi còn lại trong lượt này.",
-                      );
-                      return;
-                    }
-                    if (expired) {
-                      if (!canOverrideExpiry) {
-                        onBlocked(
-                          "Liệu trình đã hết hạn. Cần quản lý cho dùng tiếp.",
-                        );
-                        return;
-                      }
-                      setReason("");
-                      setOverriding({ pkg: p, item });
-                      return;
-                    }
-                    onDeduct({ pkg: p, item });
-                  }}
-                  className="min-h-11 rounded-[10px] border border-primary bg-surface px-4 font-semibold text-primary not-aria-disabled:hover:bg-primary-soft aria-disabled:cursor-not-allowed aria-disabled:opacity-55"
-                >
-                  Trừ 1 buổi
-                </button>
-              </li>
-            );
-          }),
+      <div className="grid gap-2">
+        <h3 className="section-label">Gói liệu trình</h3>
+        {packages.isPending && (
+          <div aria-hidden="true" className="grid content-start gap-2">
+            <div className="h-14 skeleton" />
+            <div className="h-14 skeleton" />
+          </div>
         )}
-      </ul>
-
-      {overriding && (
-        <form
-          aria-label="Cho dùng tiếp liệu trình hết hạn"
-          className="mt-3 grid content-start gap-2 rounded-[10px] border border-warning-border bg-warning-bg p-3 text-warning-text"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (reason.trim() === "") return;
-            onDeduct({ ...overriding, expiryOverrideReason: reason.trim() });
-            setOverriding(null);
-          }}
-        >
-          <label className="block">
-            <span className="text-sm font-semibold">
-              Lý do cho dùng tiếp “{overriding.pkg.name}” (đã hết hạn)
-            </span>
-            <input
-              autoFocus
-              value={reason}
-              onChange={(e) => {
-                setReason(e.target.value);
-              }}
-              className="min-h-11 w-full rounded-[6px] border border-border bg-surface px-3 text-text"
-            />
-          </label>
-          <div className="flex gap-2">
-            <button
-              type="submit"
-              aria-disabled={reason.trim() === ""}
-              className="min-h-11 rounded-[10px] bg-primary px-4 font-semibold text-on-primary aria-disabled:opacity-60"
-            >
-              Cho dùng tiếp
-            </button>
+        {packages.isError && (
+          <p role="alert" className="field-error">
+            {messageFor(packages.error)}{" "}
             <button
               type="button"
-              onClick={() => {
-                setOverriding(null);
-              }}
-              className="min-h-11 rounded-[10px] border border-border bg-surface px-4 text-text"
+              className="btn btn-ghost min-h-9 px-2"
+              onClick={() => void packages.refetch()}
             >
-              Thôi
+              Thử lại
             </button>
-          </div>
-        </form>
-      )}
+          </p>
+        )}
+        {packages.isSuccess && ordered.length === 0 && (
+          <p className="text-text-muted">
+            Khách chưa có gói liệu trình. Chọn dịch vụ lẻ ở phần “Lượt khách
+            đang ghi”.
+          </p>
+        )}
+        {packages.isSuccess && ordered.length > 0 && open.length === 0 && (
+          <p className="text-text-muted">
+            Không còn gói nào dùng được. Gợi ý: tư vấn bán gói mới.
+          </p>
+        )}
+        <ul aria-label="Liệu trình của khách" className="pkg-list">
+          {open.map((r) => {
+            const { pkg: p, item, label, left } = r;
+            const expired = p.status === "expired";
+            const isFirst = item.id === firstUsableItem;
+            return (
+              <li key={item.id} className="pkg-row">
+                <div className="grid min-w-0 gap-1">
+                  <span className="pkg-name">{label}</span>
+                  <span className="pkg-meta">
+                    <span>
+                      Còn{" "}
+                      <strong>
+                        {String(Math.max(left, 0))}/
+                        {String(item.sessions_total)}
+                      </strong>{" "}
+                      buổi
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span>{expiryText(p.expires_on, formatDate)}</span>
+                    {expired ? (
+                      <span className="badge badge-warn">Hết hạn</span>
+                    ) : (
+                      left > 0 &&
+                      left <= 2 && (
+                        <span className="badge badge-warn">Sắp hết buổi</span>
+                      )
+                    )}
+                  </span>
+                </div>
+                {expired && !canOverrideExpiry ? (
+                  <span className="pkg-note">
+                    Đã hết hạn: cần quản lý cho dùng tiếp.
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    ref={isFirst ? firstButton : undefined}
+                    aria-disabled={left <= 0}
+                    aria-label={`Trừ 1 buổi ${label}`}
+                    onClick={() => {
+                      deduct(r);
+                    }}
+                    className="btn btn-secondary"
+                  >
+                    Trừ 1 buổi
+                  </button>
+                )}
+                {left <= 0 && (
+                  <span className="pkg-note">
+                    Đã trừ hết số buổi còn lại trong lượt này.
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+
+        {overriding && (
+          <form
+            aria-label="Cho dùng tiếp liệu trình hết hạn"
+            className="inline-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (reason.trim() === "") return;
+              onDeduct({ ...overriding, expiryOverrideReason: reason.trim() });
+              setOverriding(null);
+            }}
+          >
+            <label className="field">
+              <span>
+                Lý do cho dùng tiếp “{overriding.pkg.name}” (đã hết hạn)
+              </span>
+              <input
+                autoFocus
+                value={reason}
+                onChange={(e) => {
+                  setReason(e.target.value);
+                }}
+                className="input"
+              />
+            </label>
+            <div className="button-row">
+              <button
+                type="submit"
+                aria-disabled={reason.trim() === ""}
+                className="btn btn-primary"
+              >
+                Cho dùng tiếp
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOverriding(null);
+                }}
+                className="btn btn-secondary"
+              >
+                Thôi
+              </button>
+            </div>
+          </form>
+        )}
+
+        {closed.length > 0 && (
+          <details className="pkg-closed">
+            <summary>
+              <Icon name="chevron-right" className="size-4" />
+              Gói đã hết / đã hủy ({closed.length})
+            </summary>
+            <ul aria-label="Gói đã hết hoặc đã hủy" className="pkg-list">
+              {closed.map(({ pkg: p, item, label }) => (
+                <li key={item.id} className="pkg-row">
+                  <div className="grid min-w-0 gap-1">
+                    <span className="pkg-name">{label}</span>
+                    <span className="pkg-meta">
+                      <span>
+                        Đã dùng{" "}
+                        <strong>
+                          {String(
+                            item.sessions_total - item.sessions_remaining,
+                          )}
+                          /{String(item.sessions_total)}
+                        </strong>{" "}
+                        buổi
+                      </span>
+                      <span aria-hidden="true">·</span>
+                      <span>{expiryText(p.expires_on, formatDate)}</span>
+                    </span>
+                  </div>
+                  {p.status === "cancelled" ? (
+                    <span className="badge badge-danger">Đã hủy</span>
+                  ) : (
+                    <span className="badge badge-muted">Hết buổi</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </div>
     </section>
   );
 }

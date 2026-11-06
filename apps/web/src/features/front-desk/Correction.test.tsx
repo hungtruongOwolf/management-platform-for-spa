@@ -303,8 +303,8 @@ describe("/quay Sửa lượt", () => {
     const calls = serve();
     const user = await openCorrection();
     await user.click(screen.getByRole("button", { name: "Bỏ dòng Giác hơi" }));
-    await user.selectOptions(screen.getByLabelText("Dịch vụ lẻ"), "s5");
-    await user.click(screen.getByRole("button", { name: "Thêm" }));
+    // Picking is adding: no separate "Thêm".
+    await user.selectOptions(screen.getByLabelText("Thêm dịch vụ lẻ"), "s5");
     const cart = screen.getByRole("list", { name: "Dịch vụ trong lượt" });
     await user.selectOptions(within(cart).getByRole("combobox", { name: "KTV" }), "st1");
     expect(await screen.findByTestId("correction-difference")).toHaveTextContent("Thu thêm 249.000đ");
