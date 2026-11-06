@@ -266,13 +266,15 @@ jobs:
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - name: Install Playwright Chromium
         if: steps.pw-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 5   # an apt/CDN stall once hung here for 8+ min
         run: pnpm --filter web exec playwright install --with-deps chromium
       - name: Install Chromium system deps
         if: steps.pw-cache.outputs.cache-hit == 'true'
+        timeout-minutes: 5
         run: pnpm --filter web exec playwright install-deps chromium
       # Each shard provisions its own spa (setup project) on its own Postgres.
       - name: E2E and axe (shard ${{ matrix.shard }}/2)
-        run: pnpm e2e --project=desktop --shard=${{ matrix.shard }}/2
+        run: pnpm e2e --project=desktop --shard=${{ matrix.shard }}/2 --reporter=list,github,html
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
@@ -328,9 +330,11 @@ jobs:
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - name: Install Playwright Chromium
         if: steps.pw-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 5
         run: pnpm --filter web exec playwright install --with-deps chromium
       - name: Install Chromium system deps
         if: steps.pw-cache.outputs.cache-hit == 'true'
+        timeout-minutes: 5
         run: pnpm --filter web exec playwright install-deps chromium
       # Setup project provisions the spa (and the manager Lighthouse signs in as); the perf project
       # seeds 300 customers and 100 visits, so /quay is audited with data on it, as before.
