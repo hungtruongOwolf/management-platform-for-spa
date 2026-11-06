@@ -141,6 +141,12 @@ export async function expectAccessible(
       .getAnimations()
       .every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity),
   );
+  // Overlap checks (target-size) depend on the scroll position: a button scrolled under the sticky
+  // top bar reads as covered by its controls. Audit from the top so results do not depend on where
+  // the previous click left the page.
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+  });
   const results = await new AxeBuilder({ page }).withTags(WCAG).analyze();
   const blocking = results.violations.filter(
     (v) => v.impact === "serious" || v.impact === "critical",

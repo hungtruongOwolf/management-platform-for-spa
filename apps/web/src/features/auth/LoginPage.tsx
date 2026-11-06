@@ -92,8 +92,8 @@ export function LoginPage({ next }: { next?: string | undefined }) {
           <p className="text-sm text-text-muted">Dùng số điện thoại và mật khẩu spa đã cấp.</p>
         </div>
 
-        <div className="grid content-start gap-1">
-          <label htmlFor="phone" className="block text-sm font-semibold">
+        <div className="field">
+          <label htmlFor="phone">
             Số điện thoại
           </label>
           <input
@@ -103,7 +103,7 @@ export function LoginPage({ next }: { next?: string | undefined }) {
             type="tel"
             inputMode="tel"
             autoComplete="username"
-            className="min-h-11 w-full rounded-[6px] border border-border bg-surface px-3"
+            className="input"
             value={values.phone}
             onChange={(e) => {
               change("phone", e.target.value);
@@ -112,14 +112,14 @@ export function LoginPage({ next }: { next?: string | undefined }) {
             aria-describedby={errors.phone ? "phone-error" : undefined}
           />
           {errors.phone && (
-            <p id="phone-error" className="text-sm text-danger">
+            <p id="phone-error" className="field-error">
               {errors.phone}
             </p>
           )}
         </div>
 
-        <div className="grid content-start gap-1">
-          <label htmlFor="password" className="block text-sm font-semibold">
+        <div className="field">
+          <label htmlFor="password">
             Mật khẩu
           </label>
           <input
@@ -128,7 +128,7 @@ export function LoginPage({ next }: { next?: string | undefined }) {
             name="password"
             type="password"
             autoComplete="current-password"
-            className="min-h-11 w-full rounded-[6px] border border-border bg-surface px-3"
+            className="input"
             value={values.password}
             onChange={(e) => {
               change("password", e.target.value);
@@ -137,7 +137,7 @@ export function LoginPage({ next }: { next?: string | undefined }) {
             aria-describedby={errors.password ? "password-error" : undefined}
           />
           {errors.password && (
-            <p id="password-error" className="text-sm text-danger">
+            <p id="password-error" className="field-error">
               {errors.password}
             </p>
           )}
@@ -151,10 +151,10 @@ export function LoginPage({ next }: { next?: string | undefined }) {
 
         <button
           type="submit"
-          disabled={isSubmitting}
-          className="btn btn-primary min-h-12 w-full"
+          aria-busy={isSubmitting || undefined}
+          className="btn btn-primary btn-lg btn-block"
         >
-          {isSubmitting ? "Đang đăng nhập…" : "Đăng nhập"}
+          Đăng nhập
         </button>
       </form>
     </AuthFrame>

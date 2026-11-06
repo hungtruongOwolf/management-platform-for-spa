@@ -3,7 +3,6 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { canSeeManagement } from "../../app/features";
 import { meQuery } from "../auth/session";
-import { BrandLogo } from "../../app/BrandLogo";
 import { Icon, type IconName } from "../../app/Icon";
 import { messageFor } from "../../lib/errors";
 
@@ -26,31 +25,48 @@ export function Delta({ now, before, label, onChrome = false }: { now: number; b
   );
 }
 
+/**
+ * One headline number. Three looks (EM review 2026-11-06):
+ * - default: the dashboard's tile (gold icon disc), kept from before the redesign;
+ * - `accent`: the maroon "Thực thu" tile (dashboard and the report);
+ * - `plain`: the report's quiet tile (muted icon, no disc).
+ */
 export function StatCard({
   label,
   icon,
   children,
   foot,
   accent = false,
+  plain = false,
 }: {
   label: string;
   icon: IconName;
   children: ReactNode;
   foot?: ReactNode;
   accent?: boolean;
+  plain?: boolean;
 }) {
+  if (plain && !accent) {
+    return (
+      <div className="card stat-card">
+        <p className="stat-label">
+          <Icon name={icon} className="size-4" />
+          {label}
+        </p>
+        <p className="stat-value tabular">{children}</p>
+        {foot !== undefined && <div className="mt-auto">{foot}</div>}
+      </div>
+    );
+  }
   return (
-    <div className={`card stat-card ${accent ? "border-transparent bg-chrome bg-[linear-gradient(135deg,var(--chrome-bg-2),var(--chrome-bg))] text-chrome-text" : ""}`}>
-      <p className={`flex items-center gap-2 text-sm font-medium ${accent ? "text-chrome-text-muted" : "text-text-muted"}`}>
-        <span
-          aria-hidden="true"
-          className={`grid size-7 place-items-center rounded-full ${accent ? "bg-[var(--chrome-hover)] text-chrome-accent" : "bg-accent-soft text-accent-text"}`}
-        >
+    <div className={`card stat-card ${accent ? "stat-card-accent" : ""}`}>
+      <p className="stat-label">
+        <span aria-hidden="true" className="stat-disc">
           <Icon name={icon} className="size-4" />
         </span>
         {label}
       </p>
-      <p className={`stat-value tabular ${accent ? "text-chrome-accent" : "text-text"}`}>{children}</p>
+      <p className="stat-value tabular">{children}</p>
       {/* Cards in a row stretch to the tallest (grid), so a footnote only takes space where it exists. */}
       {foot !== undefined && <div className="mt-auto">{foot}</div>}
     </div>
@@ -63,7 +79,7 @@ export function StatSkeleton({ count = 4 }: { count?: number }) {
     <>
       {Array.from({ length: count }, (_, i) => (
         <div key={i} className="card stat-card" {...(i === 0 ? { role: "status", "aria-label": "Đang tải số liệu" } : {})}>
-          <div className="skeleton h-7 w-32" />
+          <div className="skeleton h-[18px] w-28" />
           <div className="skeleton h-8 w-24" />
         </div>
       ))}
@@ -90,12 +106,29 @@ export function Loading({ label, children }: { label: string; children: ReactNod
   );
 }
 
-export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
+/**
+ * Empty list or panel (rulebook §9): what is missing, then the next step in words, and the button
+ * for it when there is one (`action`). A muted icon, never the logo (brand lives in the chrome).
+ */
+export function EmptyState({
+  title,
+  children,
+  icon = "sparkle",
+  action,
+}: {
+  title: string;
+  children?: ReactNode;
+  icon?: IconName;
+  action?: ReactNode;
+}) {
   return (
-    <div className="flex flex-col items-center gap-2 px-6 py-8 text-center">
-      <BrandLogo className="mb-1 w-14 opacity-80" />
-      <p className="text-lg font-semibold">{title}</p>
+    <div className="empty-state">
+      <span aria-hidden="true" className="empty-state-icon">
+        <Icon name={icon} className="size-5" />
+      </span>
+      <p className="empty-state-title">{title}</p>
       {children && <p className="max-w-sm text-sm text-text-muted">{children}</p>}
+      {action}
     </div>
   );
 }
