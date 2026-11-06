@@ -70,8 +70,14 @@ impl SystemRole {
                 P::ReportRead,
                 // Default on: the manager is also the cashier (spec management-views, open question Q1).
                 P::ReportRevenueRead,
+                // Staff management (spec staff-management): the manager keeps the daily books of
+                // attendance and evaluation but sees no salary (payroll.*, open question Q-S1).
+                P::AttendanceRecord,
+                P::EvaluationRecord,
+                P::StaffReadOwn,
             ],
-            Self::Technician => vec![P::CatalogRead, P::StaffReadBasic],
+            // Own attendance, evaluation and payslip only (`/me/staff/*`).
+            Self::Technician => vec![P::CatalogRead, P::StaffReadBasic, P::StaffReadOwn],
         }
     }
 }
@@ -107,6 +113,10 @@ mod tests {
             Permission::ReportLongRange,
             // Entering a past day's visits: owner only (EM round 4 item 5).
             Permission::VisitBackdate,
+            // Salaries: owner only by default (spec staff-management Q-S1).
+            Permission::StaffManage,
+            Permission::PayrollRead,
+            Permission::PayrollClose,
         ] {
             assert!(!manager.contains(&owner_only), "{owner_only:?}");
         }
@@ -123,7 +133,11 @@ mod tests {
         assert!(!technician.contains(&Permission::AppointmentManage));
         assert_eq!(
             technician,
-            vec![Permission::CatalogRead, Permission::StaffReadBasic]
+            vec![
+                Permission::CatalogRead,
+                Permission::StaffReadBasic,
+                Permission::StaffReadOwn
+            ]
         );
     }
 

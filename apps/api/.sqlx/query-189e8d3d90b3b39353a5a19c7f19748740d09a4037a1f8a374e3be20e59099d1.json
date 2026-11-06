@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.payroll_period (tenant_id, period) VALUES ($1, $2)\n           ON CONFLICT (tenant_id, period) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "189e8d3d90b3b39353a5a19c7f19748740d09a4037a1f8a374e3be20e59099d1"
+}

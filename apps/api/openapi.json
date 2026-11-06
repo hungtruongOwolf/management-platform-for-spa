@@ -10,6 +10,84 @@
     "version": "1"
   },
   "paths": {
+    "/api/v1/adjustments": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "get_adjustments",
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "description": "`YYYY-MM`; default the current month (spa time zone).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdjustmentLog"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "422": {}
+        }
+      },
+      "post": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "post_adjustment",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustmentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Adjustment"
+                }
+              }
+            }
+          },
+          "400": {},
+          "401": {},
+          "403": {},
+          "409": {
+            "description": "payroll.period_closed"
+          },
+          "422": {}
+        }
+      }
+    },
     "/api/v1/appointments": {
       "get": {
         "tags": [
@@ -410,6 +488,75 @@
           "422": {
             "description": "reason required, appointment.not_started"
           }
+        }
+      }
+    },
+    "/api/v1/attendance": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "get_attendance",
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "description": "`YYYY-MM`; default the current month (spa time zone).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttendanceSheet"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "422": {}
+        }
+      },
+      "put": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "put_attendance",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttendanceWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AttendanceDay"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "409": {
+            "description": "payroll.period_closed"
+          },
+          "422": {}
         }
       }
     },
@@ -1443,6 +1590,141 @@
         }
       }
     },
+    "/api/v1/daily-reviews": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "get_daily_reviews",
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "description": "`YYYY-MM`; default the current month (spa time zone).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewSheet"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "422": {}
+        }
+      },
+      "put": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "put_daily_reviews",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DailyReviewWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DailyReview"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "409": {
+            "description": "payroll.period_closed"
+          },
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/evaluations": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "get_evaluations",
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "description": "`YYYY-MM`; default the current month (spa time zone).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationSheet"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "422": {}
+        }
+      },
+      "put": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "put_evaluation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluationWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Evaluation"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "409": {
+            "description": "payroll.period_closed"
+          },
+          "422": {}
+        }
+      }
+    },
     "/api/v1/me": {
       "get": {
         "tags": [
@@ -1460,6 +1742,39 @@
             }
           },
           "401": {}
+        }
+      }
+    },
+    "/api/v1/me/staff": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "get_my_staff",
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "description": "`YYYY-MM`; default the current month (spa time zone).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyStaff"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "422": {}
         }
       }
     },
@@ -1709,6 +2024,183 @@
           "422": {
             "description": "validation_failed: q too_short / too_long, expiring_within_days out_of_range, cursor invalid, limit out_of_range"
           }
+        }
+      }
+    },
+    "/api/v1/payroll": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "get_payroll",
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "description": "`YYYY-MM`; default the current month (spa time zone).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayrollMonth"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/payroll/close": {
+      "post": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "close_payroll",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PayrollClose"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayrollMonth"
+                }
+              }
+            }
+          },
+          "400": {},
+          "401": {},
+          "403": {},
+          "409": {
+            "description": "payroll.period_closed"
+          },
+          "422": {
+            "description": "payroll.month_not_ended | payroll.unrecorded_days"
+          }
+        }
+      }
+    },
+    "/api/v1/payroll/payslips/{id}": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "get_payslip",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Staff id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "month",
+            "in": "query",
+            "description": "`YYYY-MM`; default the current month (spa time zone).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayslipDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "404": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/payroll/rules": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "get_rules",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayrollRulesDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {}
+        }
+      },
+      "put": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "put_rules",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PayrollRules"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayrollRulesDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "422": {}
         }
       }
     },
@@ -2289,6 +2781,210 @@
           "401": {},
           "403": {}
         }
+      },
+      "post": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "create_staff",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffProfileWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffProfileDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "409": {
+            "description": "staff.account_taken"
+          },
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/staff/accounts": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "list_accounts",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StaffAccountDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {}
+        }
+      }
+    },
+    "/api/v1/staff/profiles": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "list_profiles",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StaffProfileDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {}
+        }
+      }
+    },
+    "/api/v1/staff/{id}": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "get_staff",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffProfileDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "404": {}
+        }
+      },
+      "put": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "update_staff",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffProfileWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffProfileDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "404": {},
+          "409": {
+            "description": "staff.account_taken"
+          },
+          "412": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/staff/{id}/pay": {
+      "put": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "set_staff_pay",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffPayWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffPayDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "404": {},
+          "422": {}
+        }
       }
     },
     "/api/v1/visits": {
@@ -2546,6 +3242,149 @@
   },
   "components": {
     "schemas": {
+      "Adjustment": {
+        "type": "object",
+        "required": [
+          "id",
+          "staff_id",
+          "occurred_on",
+          "kind",
+          "reason",
+          "by_name",
+          "created_at"
+        ],
+        "properties": {
+          "amount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Đồng; `None` = points only."
+          },
+          "by_name": {
+            "type": "string"
+          },
+          "corrects_month": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`YYYY-MM` of the closed month this entry corrects."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AdjustmentKind"
+          },
+          "occurred_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "points": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string"
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "AdjustmentCreate": {
+        "type": "object",
+        "required": [
+          "staff_id",
+          "kind",
+          "reason"
+        ],
+        "properties": {
+          "amount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Đồng, 1–100.000.000; give `amount`, `points` or both."
+          },
+          "corrects_month": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`YYYY-MM` of a closed month this entry corrects."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AdjustmentKind"
+          },
+          "occurred_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Default today; its month must be open."
+          },
+          "points": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string"
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdjustmentKind": {
+        "type": "string",
+        "enum": [
+          "bonus",
+          "penalty"
+        ]
+      },
+      "AdjustmentLog": {
+        "type": "object",
+        "required": [
+          "month",
+          "closed",
+          "items"
+        ],
+        "properties": {
+          "closed": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Adjustment"
+            }
+          },
+          "month": {
+            "type": "string"
+          }
+        }
+      },
       "AppointmentArrive": {
         "type": "object",
         "description": "Body of `POST /appointments/{id}/arrive`.",
@@ -2936,6 +3775,214 @@
         },
         "additionalProperties": false
       },
+      "AttendanceDay": {
+        "type": "object",
+        "description": "One recorded day as the API shows it.",
+        "required": [
+          "staff_id",
+          "date",
+          "status",
+          "late_minutes"
+        ],
+        "properties": {
+          "check_in": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`HH:MM`."
+          },
+          "check_out": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "late_minutes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AttendanceStatus"
+          }
+        }
+      },
+      "AttendanceEntryWrite": {
+        "type": "object",
+        "required": [
+          "staff_id",
+          "date"
+        ],
+        "properties": {
+          "check_in": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`HH:MM`, only when present."
+          },
+          "check_out": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AttendanceStatus",
+                "description": "`null` clears the day."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "AttendanceSheet": {
+        "type": "object",
+        "required": [
+          "month",
+          "days_in_month",
+          "today",
+          "closed",
+          "default_shift_start",
+          "staff"
+        ],
+        "properties": {
+          "closed": {
+            "type": "boolean"
+          },
+          "days_in_month": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "default_shift_start": {
+            "type": "string"
+          },
+          "month": {
+            "type": "string",
+            "description": "`YYYY-MM`."
+          },
+          "staff": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StaffSheet"
+            }
+          },
+          "today": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
+      "AttendanceStatus": {
+        "type": "string",
+        "enum": [
+          "present",
+          "leave_p",
+          "leave_dx",
+          "absent_k"
+        ]
+      },
+      "AttendanceTotals": {
+        "type": "object",
+        "required": [
+          "present",
+          "late_count",
+          "late_minutes",
+          "leave_p",
+          "leave_dx",
+          "absent_k",
+          "unrecorded"
+        ],
+        "properties": {
+          "absent_k": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "late_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "late_minutes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "leave_dx": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "leave_p": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "present": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "unrecorded": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Employed days (up to yesterday in the current month) with nothing recorded.",
+            "minimum": 0
+          }
+        }
+      },
+      "AttendanceWrite": {
+        "type": "object",
+        "required": [
+          "entries"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttendanceEntryWrite"
+            },
+            "description": "1–100 cells."
+          }
+        },
+        "additionalProperties": false
+      },
       "CalendarDto": {
         "type": "object",
         "description": "`GET /appointments`: the spa's grid and its appointments over `from..=to`.",
@@ -3041,6 +4088,88 @@
           "sort_order": {
             "type": "integer",
             "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommissionLine": {
+        "type": "object",
+        "description": "Commission base of one service performed in the month.",
+        "required": [
+          "service_name",
+          "source",
+          "qty",
+          "value",
+          "full_value"
+        ],
+        "properties": {
+          "full_value": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Same lines at full per-session value, gift sessions included."
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Sessions / quantity performed."
+          },
+          "service_name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "description": "`one_off` or `package`."
+          },
+          "value": {
+            "type": "integer",
+            "format": "int64",
+            "description": "What the lines are worth (`visit_line.line_value`): gift sessions count 0."
+          }
+        }
+      },
+      "Criterion": {
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "max"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "max": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "CriterionWrite": {
+        "type": "object",
+        "required": [
+          "key",
+          "level"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "One of the six criterion keys (`GET /evaluations` → `criteria`)."
+          },
+          "level": {
+            "$ref": "#/components/schemas/Level"
+          },
+          "points": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Only for `fail`: a score below the 30 % ceiling.",
+            "minimum": 0
           }
         },
         "additionalProperties": false
@@ -3586,6 +4715,91 @@
           }
         }
       },
+      "DailyReview": {
+        "type": "object",
+        "required": [
+          "staff_id",
+          "date",
+          "compliments",
+          "complaints"
+        ],
+        "properties": {
+          "complaints": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "compliments": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "DailyReviewEntryWrite": {
+        "type": "object",
+        "required": [
+          "staff_id",
+          "date"
+        ],
+        "properties": {
+          "complaints": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "compliments": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DailyReviewWrite": {
+        "type": "object",
+        "required": [
+          "entries"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyReviewEntryWrite"
+            },
+            "description": "1–100 days; all zero and no note clears the day."
+          }
+        },
+        "additionalProperties": false
+      },
       "DayComparison": {
         "type": "object",
         "required": [
@@ -3704,6 +4918,139 @@
             "description": "Required when `amount` > 0."
           }
         }
+      },
+      "Evaluation": {
+        "type": "object",
+        "required": [
+          "staff_id",
+          "month",
+          "criteria",
+          "serious_issue",
+          "total_points",
+          "result",
+          "by_name",
+          "updated_at",
+          "version"
+        ],
+        "properties": {
+          "by_name": {
+            "type": "string"
+          },
+          "coaching_plan": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "criteria": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScoredCriterion"
+            }
+          },
+          "month": {
+            "type": "string"
+          },
+          "result": {
+            "$ref": "#/components/schemas/Level"
+          },
+          "serious_issue": {
+            "type": "boolean"
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "total_points": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "EvaluationSheet": {
+        "type": "object",
+        "required": [
+          "month",
+          "closed",
+          "criteria",
+          "staff"
+        ],
+        "properties": {
+          "closed": {
+            "type": "boolean"
+          },
+          "criteria": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Criterion"
+            }
+          },
+          "month": {
+            "type": "string"
+          },
+          "staff": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StaffEvaluation"
+            }
+          }
+        }
+      },
+      "EvaluationWrite": {
+        "type": "object",
+        "required": [
+          "staff_id",
+          "month",
+          "criteria"
+        ],
+        "properties": {
+          "coaching_plan": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required when the result is Mức 3 or Chưa đạt."
+          },
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "criteria": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CriterionWrite"
+            }
+          },
+          "month": {
+            "type": "string",
+            "description": "`YYYY-MM`, not after the current month."
+          },
+          "serious_issue": {
+            "type": "boolean"
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
       },
       "FollowUpChannelDto": {
         "type": "string",
@@ -4471,6 +5818,15 @@
           }
         }
       },
+      "LeaveCode": {
+        "type": "string",
+        "description": "The absence codes, for rules that treat them differently (⚠️ #2).",
+        "enum": [
+          "leave_p",
+          "leave_dx",
+          "absent_k"
+        ]
+      },
       "LedgerDay": {
         "type": "object",
         "description": "Daily subtotal of the book, for every day of the range (not only the current page).",
@@ -4652,6 +6008,16 @@
           }
         }
       },
+      "Level": {
+        "type": "string",
+        "description": "A level, ordered best (M1) to worst (Fail): `max` of two levels is the lower result.",
+        "enum": [
+          "m1",
+          "m2",
+          "m3",
+          "fail"
+        ]
+      },
       "LineSource": {
         "type": "string",
         "enum": [
@@ -4813,6 +6179,82 @@
           "otpauth_uri": {
             "type": "string",
             "description": "`otpauth://totp/...` URI; the client renders it as a QR code."
+          }
+        }
+      },
+      "MyMonth": {
+        "type": "object",
+        "required": [
+          "month",
+          "closed",
+          "attendance",
+          "reviews",
+          "adjustments"
+        ],
+        "properties": {
+          "adjustments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Adjustment"
+            }
+          },
+          "attendance": {
+            "$ref": "#/components/schemas/StaffSheet"
+          },
+          "closed": {
+            "type": "boolean"
+          },
+          "evaluation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Evaluation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "month": {
+            "type": "string"
+          },
+          "payslip": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Payslip",
+                "description": "`None` before the person's pay terms are set."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviews": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyReview"
+            }
+          }
+        }
+      },
+      "MyStaff": {
+        "type": "object",
+        "required": [
+          "linked"
+        ],
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MyMonth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "linked": {
+            "type": "boolean",
+            "description": "`false`: this login is not linked to a staff profile (ask the owner)."
           }
         }
       },
@@ -5375,6 +6817,24 @@
           }
         }
       },
+      "PartialMonthLoyalty": {
+        "type": "string",
+        "description": "How Thưởng gắn bó is accrued in a month the person did not work in full (⚠️ #7).",
+        "enum": [
+          "prorate",
+          "full",
+          "none_if_partial"
+        ]
+      },
+      "PayFlag": {
+        "type": "string",
+        "enum": [
+          "no_pay_terms",
+          "unrecorded_days",
+          "absent_k5_plus",
+          "evaluation_missing"
+        ]
+      },
       "PaymentCreate": {
         "type": "object",
         "required": [
@@ -5466,6 +6926,406 @@
           "voided",
           "none"
         ]
+      },
+      "PayrollClose": {
+        "type": "object",
+        "required": [
+          "month"
+        ],
+        "properties": {
+          "allow_incomplete": {
+            "type": "boolean",
+            "description": "Close although some employed days have no attendance (default false → 422)."
+          },
+          "month": {
+            "type": "string",
+            "description": "`YYYY-MM` of an ended month."
+          }
+        },
+        "additionalProperties": false
+      },
+      "PayrollMonth": {
+        "type": "object",
+        "required": [
+          "month",
+          "closed",
+          "ended",
+          "payslips",
+          "totals"
+        ],
+        "properties": {
+          "closed": {
+            "type": "boolean"
+          },
+          "closed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "closed_by_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ended": {
+            "type": "boolean",
+            "description": "The month has ended (it can be closed)."
+          },
+          "month": {
+            "type": "string"
+          },
+          "payslips": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Payslip"
+            }
+          },
+          "totals": {
+            "$ref": "#/components/schemas/PayrollTotals"
+          }
+        }
+      },
+      "PayrollRules": {
+        "type": "object",
+        "properties": {
+          "closing_commission": {
+            "type": "boolean",
+            "description": "Pay the \"chốt liệu trình mới\" commission to the closer of a package sale (⚠️ #3; R1\nalways collects in full, so collected = sold value).",
+            "default": true
+          },
+          "commission_on_bonus_sessions": {
+            "type": "boolean",
+            "description": "Count bonus (gift) package sessions at their per-session value for commission (⚠️ #3;\ndefault false: a gift session earns nothing, as `visit_line.line_value`).",
+            "default": false
+          },
+          "default_shift_start": {
+            "type": "string",
+            "description": "Shift start used when a staff member has none (`HH:MM`, sheet: 09:00).",
+            "default": "09:00:00",
+            "example": "09:00"
+          },
+          "free_leave_codes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeaveCode"
+            },
+            "description": "Which absence codes use up those free days (⚠️ #2). Default: P, ĐX and K, as the sheet\ncounts them; a code left out is always deducted.",
+            "default": [
+              "leave_p",
+              "leave_dx",
+              "absent_k"
+            ]
+          },
+          "free_leave_days": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Leave days per month without a pay deduction (§4: 2).",
+            "default": 2,
+            "minimum": 0
+          },
+          "late_grace_minutes": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Minutes late that do not count as late (⚠️ #4; default 0: every minute is recorded).",
+            "default": 0,
+            "minimum": 0
+          },
+          "late_penalty_amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Deduction per late arrival beyond the grace (⚠️ #4; default 0đ: lateness is only recorded).",
+            "default": 0
+          },
+          "loyalty_partial_month": {
+            "$ref": "#/components/schemas/PartialMonthLoyalty",
+            "description": "⚠️ #7.",
+            "default": "prorate"
+          },
+          "tet_level_amounts": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Tết bonus recorded per month for Mức 1, 2, 3 (§6: 500k / 400k / 300k).",
+            "default": [
+              500000,
+              400000,
+              300000
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "PayrollRulesDto": {
+        "type": "object",
+        "required": [
+          "rules",
+          "version"
+        ],
+        "properties": {
+          "rules": {
+            "$ref": "#/components/schemas/PayrollRules"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "0 = never saved (all defaults)."
+          }
+        }
+      },
+      "PayrollTotals": {
+        "type": "object",
+        "required": [
+          "staff",
+          "base_salary",
+          "deductions",
+          "commission",
+          "bonuses",
+          "penalties",
+          "net_pay"
+        ],
+        "properties": {
+          "base_salary": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "bonuses": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "commission": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "deductions": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "net_pay": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "penalties": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "staff": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "Payslip": {
+        "type": "object",
+        "description": "The computed payslip. Stored as JSON in `app.payslip.detail` when the month closes.",
+        "required": [
+          "staff_id",
+          "full_name",
+          "position",
+          "month",
+          "days_in_month",
+          "employed_days",
+          "base_salary",
+          "commission_rate_bp",
+          "day_rate",
+          "attendance",
+          "free_leave_days",
+          "leave_days_counted",
+          "deducted_leave_days",
+          "leave_deduction",
+          "late_penalised",
+          "late_deduction",
+          "service_commission_base",
+          "service_commission",
+          "closing_commission_base",
+          "closing_commission",
+          "meal_allowance",
+          "bonuses",
+          "penalties",
+          "bonus_points",
+          "penalty_points",
+          "net_pay",
+          "loyalty_bonus_accrued",
+          "tet_amount",
+          "commission_lines",
+          "flags"
+        ],
+        "properties": {
+          "attendance": {
+            "$ref": "#/components/schemas/AttendanceTotals"
+          },
+          "base_salary": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "bonus_points": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "bonuses": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "closing_commission": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "closing_commission_base": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "commission_lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommissionLine"
+            }
+          },
+          "commission_rate_bp": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "day_rate": {
+            "type": "integer",
+            "format": "int64",
+            "description": "base ÷ (days in month − free leave days), rounded."
+          },
+          "days_in_month": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "deducted_leave_days": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Days deducted: counted days beyond the allowance + days of codes never free.",
+            "minimum": 0
+          },
+          "employed_days": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "evaluation_level": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Level"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "flags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PayFlag"
+            }
+          },
+          "free_leave_days": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "late_deduction": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "late_penalised": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Late arrivals beyond the grace minutes.",
+            "minimum": 0
+          },
+          "leave_days_counted": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Leave days that use up the free allowance (codes in `free_leave_codes`).",
+            "minimum": 0
+          },
+          "leave_deduction": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "loyalty_bonus_accrued": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Thưởng gắn bó recorded this month (paid at the milestone; not in `net_pay`)."
+          },
+          "meal_allowance": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "month": {
+            "type": "string",
+            "description": "`YYYY-MM`."
+          },
+          "net_pay": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "penalties": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "penalty_points": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "position": {
+            "type": "string"
+          },
+          "service_commission": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "service_commission_base": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tet_amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Tết bonus recorded for the month (not in `net_pay`)."
+          },
+          "tet_level": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Level",
+                "description": "Tết level of the month (lower of the leave level and the evaluation); `None` = not\nevaluated yet. `fail` = \"không tính\"."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "PayslipDto": {
+        "type": "object",
+        "required": [
+          "closed",
+          "payslip"
+        ],
+        "properties": {
+          "closed": {
+            "type": "boolean"
+          },
+          "payslip": {
+            "$ref": "#/components/schemas/Payslip"
+          }
+        }
       },
       "PhoneCheckDto": {
         "type": "object",
@@ -5835,6 +7695,33 @@
           }
         }
       },
+      "ReviewSheet": {
+        "type": "object",
+        "required": [
+          "month",
+          "today",
+          "closed",
+          "staff"
+        ],
+        "properties": {
+          "closed": {
+            "type": "boolean"
+          },
+          "month": {
+            "type": "string"
+          },
+          "staff": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StaffReviews"
+            }
+          },
+          "today": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
       "SaleCreate": {
         "type": "object",
         "description": "Body of `POST /sales`. Prices are never read from the client: unknown fields such as\n`unit_price` or `total` are ignored and every amount is computed from the catalog.",
@@ -6082,6 +7969,34 @@
           "voided"
         ]
       },
+      "ScoredCriterion": {
+        "type": "object",
+        "description": "One scored criterion, as stored in `staff_evaluation.criteria`.",
+        "required": [
+          "key",
+          "max",
+          "level",
+          "points"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "level": {
+            "$ref": "#/components/schemas/Level"
+          },
+          "max": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "points": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "ServiceCategoryDto": {
         "type": "object",
         "required": [
@@ -6257,6 +8172,37 @@
         },
         "additionalProperties": false
       },
+      "StaffAccountDto": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "full_name",
+          "roles"
+        ],
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "staff_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Staff profile already linked to this login."
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "StaffDto": {
         "type": "object",
         "description": "Basic staff card: no phone or personal data (`staff.read_basic`).",
@@ -6279,6 +8225,337 @@
           },
           "status": {
             "$ref": "#/components/schemas/StaffStatusDto"
+          }
+        }
+      },
+      "StaffEvaluation": {
+        "type": "object",
+        "required": [
+          "staff_id",
+          "full_name",
+          "position",
+          "compliments",
+          "complaints",
+          "attendance"
+        ],
+        "properties": {
+          "attendance": {
+            "$ref": "#/components/schemas/AttendanceTotals",
+            "description": "The month's attendance, as context for \"Chuyên cần\"."
+          },
+          "complaints": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "compliments": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The month's daily reviews, as context for \"Phản hồi khách hàng\".",
+            "minimum": 0
+          },
+          "evaluation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Evaluation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "string"
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "StaffPayDto": {
+        "type": "object",
+        "description": "Pay terms (salary data). Only ever sent to holders of `payroll.read`.",
+        "required": [
+          "base_salary",
+          "commission_rate_bp",
+          "loyalty_bonus_monthly",
+          "meal_allowance"
+        ],
+        "properties": {
+          "base_salary": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "commission_rate_bp": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Basis points: 500 = 5 %."
+          },
+          "loyalty_bonus_monthly": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "meal_allowance": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "StaffPayWrite": {
+        "type": "object",
+        "required": [
+          "base_salary",
+          "commission_rate_bp"
+        ],
+        "properties": {
+          "base_salary": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "commission_rate_bp": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "loyalty_bonus_monthly": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "meal_allowance": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "StaffProfileDto": {
+        "type": "object",
+        "description": "A staff profile (`staff.manage`). `pay` is present only for `payroll.read` holders who have\nset terms; `pay_visible` says whether the caller may see pay at all.",
+        "required": [
+          "id",
+          "full_name",
+          "position",
+          "status",
+          "version",
+          "pay_visible"
+        ],
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "joined_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "left_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "pay": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StaffPayDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pay_visible": {
+            "type": "boolean"
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "National form, e.g. `0905 123 456`."
+          },
+          "position": {
+            "type": "string"
+          },
+          "shift_start": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`HH:MM`; `null` = the spa default (payroll rules)."
+          },
+          "status": {
+            "$ref": "#/components/schemas/StaffStatusDto"
+          },
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "user_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "StaffProfileWrite": {
+        "type": "object",
+        "required": [
+          "full_name",
+          "position"
+        ],
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "joined_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "left_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "position": {
+            "type": "string"
+          },
+          "shift_start": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`HH:MM`."
+          },
+          "status": {
+            "$ref": "#/components/schemas/StaffStatusDto"
+          },
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Login to link (an active member of this spa, not linked to anyone else)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "StaffReviews": {
+        "type": "object",
+        "required": [
+          "staff_id",
+          "full_name",
+          "position",
+          "compliments",
+          "complaints",
+          "days"
+        ],
+        "properties": {
+          "complaints": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "compliments": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyReview"
+            }
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "string"
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "StaffSheet": {
+        "type": "object",
+        "required": [
+          "staff_id",
+          "full_name",
+          "position",
+          "shift_start",
+          "days",
+          "totals"
+        ],
+        "properties": {
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttendanceDay"
+            }
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "joined_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "left_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "position": {
+            "type": "string"
+          },
+          "shift_start": {
+            "type": "string",
+            "description": "`HH:MM`, the person's own or the spa default."
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/AttendanceTotals"
           }
         }
       },
@@ -6914,7 +9191,7 @@
     },
     {
       "name": "staff",
-      "description": "Nhân viên (chọn người chốt, KTV)"
+      "description": "Nhân viên: hồ sơ, chấm công, đánh giá, thưởng/phạt, bảng lương"
     },
     {
       "name": "packages",

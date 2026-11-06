@@ -150,6 +150,26 @@ OpenAPI: struct query (`SearchQuery`, `ActiveFilter`, `VisitListQuery`, `StaffQu
 - **Giảm giá lượt:** `VisitCreate.discount {percent? | amount?, reason}` (đúng một). `sales::service::record_service_sale` tính `percent → floor(subtotal × % / 100)`, kiểm D10 như bán gói, chia cho từng dòng lẻ bằng `allocate_discount` → `visit_line.discount_amount`, `line_value = qty × unit_price − phần giảm` (CHECK 0016). `VisitDto` thêm `subtotal`, `discount_amount`, `discount_reason`; `VisitLineDto.discount_amount`. Sổ doanh thu hiện lý do giảm ở cột ghi chú (view `revenue_book` đã dùng `sale.discount_reason`).
 - Mã lỗi mới: `appointment.staff_busy` / `slot_full` / `closed` / `already_arrived` (409), `appointment.outside_opening_hours` / `not_today` / `not_started` / `customer_required` (422), `visit.check_in_too_old` (422); field: `starts_at not_on_slot / too_far`, `duration_min out_of_range`, `discount percent_or_amount`, `discount.percent out_of_range`.
 
+### 3c. Quản lý nhân viên (crate `org` + crate mới `hr`, [spec](../product/specs/staff-management.md), migration 0017)
+Mọi response `Cache-Control: no-store`; `?month=YYYY-MM` mặc định tháng hiện tại theo giờ spa.
+
+| Method + path | Mô tả | Permission | Ghi chú |
+|---|---|---|---|
+| `POST /staff`, `PUT /staff/{id}` (`If-Match`) | Hồ sơ: tên, vị trí, SĐT, trạng thái, ngày vào/nghỉ, `user_id`, `shift_start` | `staff.manage` | `409 staff.account_taken`, `412` |
+| `GET /staff/profiles`, `GET /staff/{id}` | Hồ sơ đầy đủ; `pay` chỉ khi có `payroll.read` | `staff.manage` | |
+| `PUT /staff/{id}/pay` | Lương cứng, `commission_rate_bp`, thưởng gắn bó, tiền ăn | `staff.manage` + `payroll.read` | audit `staff.pay_update` |
+| `GET /staff/accounts` | Tài khoản của spa để gắn | `staff.manage` | |
+| `GET/PUT /attendance` | Lưới tháng × người; PUT 1–100 ô/transaction, `status: null` xóa | `attendance.record` | phút muộn do server tính |
+| `GET/PUT /daily-reviews` | Khen/phàn nàn/ghi chú theo ngày | `evaluation.record` | |
+| `GET/PUT /evaluations` | Phiếu 6 tiêu chí tháng (upsert) | `evaluation.record` | `hr::evaluation::score` |
+| `GET /adjustments`, `POST /adjustments` (`Idempotency-Key`) | Sổ thưởng/phạt, chỉ thêm, `corrects_month` | `evaluation.record` | |
+| `GET /payroll`, `GET /payroll/payslips/{staff_id}` | Bảng lương; tạm tính hoặc bản chụp | `payroll.read` | |
+| `POST /payroll/close` (`Idempotency-Key`) | Chốt tháng đã kết thúc | `payroll.close` (+ `payroll.read`) | `422 payroll.month_not_ended / unrecorded_days`, `409 payroll.period_closed` |
+| `GET /payroll/rules`, `PUT /payroll/rules` | Quy tắc cho 8 mâu thuẫn | `payroll.read` / `payroll.close` | `deny_unknown_fields`, có giới hạn |
+| `GET /me/staff` | Tháng của chính mình | `staff.read_own` | `{linked:false}` nếu chưa gắn |
+
+Tính lương: bộ tính thuần `hr::calc::compute` (unit test theo ô Excel E55/K54, Tết, cờ). Hoa hồng: 1 query gom `visit_line` (lượt `completed`, theo `business_date`) theo (KTV, dịch vụ, nguồn) + `sale.total` theo `closer_staff_id` (không hủy). Khóa tháng: `hr::period` (FOR SHARE khi ghi, FOR UPDATE khi chốt) + trigger. Mã lỗi mới: `payroll.period_closed` (409), `payroll.month_not_ended`, `payroll.unrecorded_days` (422), `staff.account_taken` (409).
+
 ## 4. Use case & tính toàn vẹn dữ liệu (áp dụng [data-integrity](../../../.claude/skills/backend-design/data-integrity.md))
 Mọi use case chạy trong **một transaction**, mở bởi `kernel::TenantTx`. `TenantTx` chạy `SET LOCAL app.tenant_id` và `SET LOCAL statement_timeout = '5s'`, giữ `actor` và `business_date`, và **không gọi mạng ra ngoài** trong lúc transaction mở.
 

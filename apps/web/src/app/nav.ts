@@ -109,6 +109,7 @@ export function navFor(me: Me | null): NavGroup[] {
         },
       ],
     ],
+    ["Nhân viên", [staffItem(me)]],
     [
       "Danh mục",
       [
@@ -138,6 +139,13 @@ export function navFor(me: Me | null): NavGroup[] {
     .filter((g) => g.items.length > 0);
 }
 
+/** Staff management for those who keep the books; "my month" for everyone else linked to a profile. */
+function staffItem(me: Me | null): NavItem | false {
+  const manages = ["attendance.record", "evaluation.record", "payroll.read", "staff.manage"].some((p) => can(me, p));
+  if (manages) return { to: "/nhan-vien", label: "Nhân viên", icon: "id-card" };
+  return can(me, "staff.read_own") && { to: "/nhan-vien", label: "Công và lương của tôi", short: "Công lương", icon: "id-card" };
+}
+
 /**
  * Short names of the screens, for a back control whose destination has no PageHeader title (the
  * front desk, home). Paths not listed fall back to the nearest listed parent.
@@ -151,6 +159,7 @@ const SCREEN_LABELS: Record<string, string> = {
   "/bao-cao": "Báo cáo kinh doanh",
   "/bang-gia": "Bảng giá dịch vụ",
   "/bang-gia/goi": "Mẫu gói liệu trình",
+  "/nhan-vien": "Nhân viên",
   "/cai-dat": "Cài đặt",
 };
 
@@ -175,6 +184,7 @@ export function tabsFor(groups: NavGroup[]): NavItem[] {
   const first = all.some((i) => navKey(i) === APPOINTMENTS)
     ? APPOINTMENTS
     : "/";
-  const wanted = [first, "/quay", "/khach-hang", "/bao-cao"];
-  return wanted.flatMap((key) => all.filter((i) => navKey(i) === key));
+  // "/nhan-vien" only fills a free slot (technicians: home/appointments + their own month).
+  const wanted = [first, "/quay", "/khach-hang", "/bao-cao", "/nhan-vien"];
+  return wanted.flatMap((key) => all.filter((i) => navKey(i) === key)).slice(0, 4);
 }

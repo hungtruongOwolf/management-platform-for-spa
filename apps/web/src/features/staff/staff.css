@@ -1,0 +1,142 @@
+/* Staff management screen (/nhan-vien). Loaded with the lazy chunk only; tokens only. */
+
+@layer components {
+  .section-title {
+    font-family: var(--font-brand, inherit);
+    font-size: 1.125rem;
+    color: var(--primary);
+  }
+
+  .link-button {
+    color: var(--primary);
+    font-weight: 600;
+    text-align: left;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .tabs-scroll {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tabs-scroll > [role="tab"] {
+    flex: none;
+  }
+
+  .month-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+  }
+  .month-picker-label {
+    min-width: 8.5rem;
+    font-weight: 600;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Month grid: names stay visible while the 31 day columns scroll. */
+  .attendance-grid {
+    overflow-x: auto;
+  }
+  .attendance-grid .data-table th,
+  .attendance-grid .data-table td {
+    padding: 6px 4px;
+    text-align: center;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .attendance-grid .data-table .sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    min-width: 10rem;
+    padding-inline: 12px;
+    background: var(--surface);
+    text-align: left;
+    white-space: nowrap;
+  }
+  .attendance-grid thead .sticky-col {
+    background: var(--surface-2);
+  }
+  .attendance-grid .is-sunday {
+    color: var(--accent-text);
+  }
+  .att-cell {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+  }
+  /* Late: a red underline in the cell (minutes are in its accessible name and the totals). */
+  .att-cell.is-late {
+    box-shadow: inset 0 -3px 0 var(--danger);
+  }
+  .att-cell:hover {
+    background: var(--surface-2);
+  }
+  .att-none {
+    color: var(--text-muted);
+  }
+  .att-present {
+    background: var(--success-soft);
+    color: var(--success);
+  }
+  .att-leave_p {
+    background: var(--info-soft);
+    color: var(--info);
+  }
+  .att-leave_dx {
+    background: var(--warning-bg);
+    color: var(--warning-text);
+  }
+  .att-absent_k {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+
+  .counter {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .counter-label {
+    min-width: 4.5rem;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+  }
+  .counter-value {
+    min-width: 1.5rem;
+    font-weight: 600;
+    text-align: center;
+  }
+
+  .payslip {
+    display: grid;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+  }
+  .payslip-muted {
+    background: var(--surface-2);
+  }
+  .payslip-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .payslip-row:last-child {
+    border-bottom: 0;
+  }
+  .payslip-row dd {
+    white-space: nowrap;
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.staff_pay (tenant_id, staff_id, base_salary, commission_rate_bp,\n                                      loyalty_bonus_monthly, meal_allowance)\n           VALUES ($1, $2, $3, $4, $5, $6)\n           ON CONFLICT (tenant_id, staff_id) DO UPDATE SET\n             base_salary = EXCLUDED.base_salary, commission_rate_bp = EXCLUDED.commission_rate_bp,\n             loyalty_bonus_monthly = EXCLUDED.loyalty_bonus_monthly,\n             meal_allowance = EXCLUDED.meal_allowance,\n             version = app.staff_pay.version + 1, updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8",
+        "Int4",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0f6529482a2c3581176a3a6a74835c360840390beb2a43dc7702de32221804a8"
+}

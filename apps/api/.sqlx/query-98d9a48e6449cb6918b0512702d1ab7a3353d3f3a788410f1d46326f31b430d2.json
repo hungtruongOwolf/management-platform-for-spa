@@ -1,0 +1,103 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT staff_id, work_date, status, check_in, check_out, late_minutes, note\n           FROM app.attendance_day\n           WHERE tenant_id = $1 AND work_date BETWEEN $2 AND $3\n             AND ($4::uuid IS NULL OR staff_id = $4)\n           ORDER BY staff_id, work_date",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "staff_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.attendance_day",
+            "name": "staff_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "work_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "app.attendance_day",
+            "name": "work_date"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.attendance_day",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "check_in",
+        "type_info": "Time",
+        "origin": {
+          "Table": {
+            "table": "app.attendance_day",
+            "name": "check_in"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "check_out",
+        "type_info": "Time",
+        "origin": {
+          "Table": {
+            "table": "app.attendance_day",
+            "name": "check_out"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "late_minutes",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.attendance_day",
+            "name": "late_minutes"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.attendance_day",
+            "name": "note"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "98d9a48e6449cb6918b0512702d1ab7a3353d3f3a788410f1d46326f31b430d2"
+}

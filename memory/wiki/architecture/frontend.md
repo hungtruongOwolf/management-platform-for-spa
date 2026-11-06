@@ -112,6 +112,13 @@ Lighthouse CI chặn merge khi LCP > 2,5 s (mobile, Slow 4G, CPU 4×, `/dang-nha
 - **Vòng 4 (lịch hẹn, `feat/appointments-front-desk`):** baseline (main + `feat/ui-polish-mobile`) **123.0 KB** gzip -9 → **124.7 KB** (+1.7: tab, đồng hồ đếm ngược, giỏ từ lịch hẹn, giờ làm/giảm giá wiring, thông tin khách inline). Giữ dưới 125 KB bằng cách tách: lịch (`AppointmentsCalendar`, 7.4 KB gz + CSS 1.3 KB, chỉ tải khi mở tab), `TodayVisits` (2.6 KB gz) và `CartOptions` (giờ làm + giảm giá, 1.4 KB gz) là chunk lazy **prefetch ngay sau lần vẽ đầu** (`useAfterFirstPaint`), `front-desk/prefill.ts` (giỏ điền sẵn từ lịch hẹn) nằm trong chunk lịch, `appointments/complete.ts` tách khỏi `appointments/api.ts` để helper của lịch không vào bundle khởi động. Lần đo đầu (chưa tách) là 127.9 KB.
 - Đo trước/sau bằng `pnpm lhci` trên cùng một máy; local chậm hơn CI khoảng 0,3–0,4 s. Kết quả 2026-11-04: [log](../../log.md).
 
+## Màn Nhân viên (`/nhan-vien`, lazy chunk `StaffPage`, [spec](../product/specs/staff-management.md))
+- URL: `tab` (attendance|evaluation|adjustments|payroll|profiles), `month` (YYYY-MM), `day` (`features/staff/search.ts`). Tab hiện theo permission; KTV (chỉ `staff.read_own`) thấy "Công và lương của tôi".
+- Chấm công: phone = danh sách theo người cho một ngày (chạm mã ✓/P/ĐX/K là lưu); desktop có thêm lưới tháng (cột tên dính trái, gạch đỏ = muộn). Giờ đến/về + ghi chú trong `BottomSheet`. "Cả spa đi làm" = 1 PUT cho người chưa chấm.
+- Bảng lương, phiếu lương, sổ thưởng/phạt, hồ sơ: `ResponsiveTable` (thẻ trên phone); form trong `BottomSheet`.
+- CSS riêng `features/staff/staff.css` (chỉ tokens) đi cùng chunk lazy. Query key `["staff", …]`; mọi ghi invalidate `["staff"]` (gồm cả picker `["staff","active"]` của quầy).
+- Perf: chunk `StaffPage` 12.8 KB gzip; startup gzip -9 123.0 → 123.8 KB (ngân sách 125) do route + nav + thông báo lỗi.
+
 ## Auth & permission-aware UI
 - Session là cookie `__Host-session` HttpOnly ([ADR-0004](../decisions/ADR-0004-authentication.md)). **JS không bao giờ đọc hay lưu token.** Fetch dùng `credentials: 'same-origin'`.
 - `GET /api/v1/me` → user, tenant, branch, **danh sách permission** → `AuthContext`. Route guard và ẩn/hiện nút đọc từ đây. **Đây chỉ là UX**: server luôn kiểm tra lại; giao diện xử lý `403` đúng cách.

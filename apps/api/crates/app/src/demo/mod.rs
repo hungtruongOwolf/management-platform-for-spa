@@ -12,8 +12,10 @@
 
 mod data;
 mod rng;
+mod staff;
 
 pub use data::MANAGER_PHONE;
+pub use staff::{StaffDemoReport, TECHNICIAN_PHONE};
 
 use anyhow::{Context, anyhow, bail};
 use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
@@ -60,6 +62,8 @@ pub struct DemoReport {
     pub voided_sales: usize,
     pub voided_visits: usize,
     pub cancelled_with_refund: usize,
+    /// Staff management demo (first run only): attendance, reviews, evaluations, adjustments.
+    pub staff_management: StaffDemoReport,
     /// Bookings for the next two days (round 4 calendar), one of them for a newcomer.
     pub appointments: usize,
 }
@@ -136,6 +140,21 @@ pub async fn seed(
     spa.run_today().await?;
     spa.book_upcoming().await?;
     spa.cancel_one_with_refund().await?;
+    if run == 0 {
+        let demo = staff::StaffDemo {
+            owner_pool: owner,
+            app,
+            tenant,
+            slug,
+            password: options.manager_password,
+            owner: &spa.owner,
+            manager: &spa.manager,
+            technicians: &spa.staff.technicians,
+            manager_staff: spa.staff.closer,
+            today: spa.today,
+        };
+        spa.report.staff_management = demo.run(&mut spa.rng).await?;
+    }
     Ok(spa.report)
 }
 

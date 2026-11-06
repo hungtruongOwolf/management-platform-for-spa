@@ -325,7 +325,7 @@ async fn member_of_two_spas_must_choose_and_cannot_switch_to_a_foreign_spa(
     assert_eq!(switched.body["active_tenant"]["name"], "Spa B");
     assert_eq!(
         switched.body["permissions"],
-        json!(["catalog.read", "staff.read_basic"]),
+        json!(["catalog.read", "staff.read_basic", "staff.read_own"]),
         "technician role in spa B"
     );
     let new_token = switched.session().unwrap_or_default();

@@ -13,6 +13,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [service-catalog](wiki/product/service-catalog.md) — real menu: 35 services, 10 categories, female/male pricing (seed data)
 - [personas](wiki/product/personas.md) — operating context (1 branch, 3–8 KTV, manager-cashier) + 5 personas
 - [spec R1-1 front-desk-and-packages](wiki/product/specs/front-desk-and-packages.md) — **approved**: catalog, customers, sell package, record visit, payments/receivables, void, package lifecycle, opening balance (AC8.5 dropped 2026-11-05)
+- [spec staff-management](wiki/product/specs/staff-management.md) — **draft**: hồ sơ + lương, chấm công ✓/P/ĐX/K, đánh giá ngày + tháng 100 điểm, thưởng/phạt chỉ thêm, bảng lương + phiếu lương + chốt tháng khóa sổ, KTV xem tháng của mình; 8 mâu thuẫn → mặc định + quy tắc chỉnh được; Q-S1…S4, Q-C1…C8
 - [spec R1-2 management-views](wiki/product/specs/management-views.md) — **draft**: dashboard Hôm nay, range report, revenue book, customer history/summary/package page, packages overview, re-engagement; no "sổ cũ" in product (CLI import); thu chi later; open Q1–Q4; **vòng 3**: follow-up khách vắng (US5b, `customer.follow_up`), phạm vi khách lẻ + liệu trình, tìm lịch sử/gói, check trùng SĐT, preset báo cáo + theo năm, `category_name`
 
 - [spec R1-3 appointments](wiki/product/specs/appointments.md) — **draft (vòng 4)**: lịch hẹn booked → arrived → done (= lượt khách qua đúng use case), no-show/hủy; chặn trùng KTV + sức chứa theo ô 15 phút; giờ làm + nhập bù của chủ spa (`visit.backdate`); giảm giá dịch vụ lẻ trong lượt (D10); đồng hồ đếm ngược; câu hỏi EM Q1–Q8
@@ -37,9 +38,10 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [ADR-0005 compute hosting](wiki/decisions/ADR-0005-compute-hosting.md) — **accepted**: 1 Singapore VPS, Docker Compose + Caddy (provider at /devops)
 - [ADR-0006 repo & module layout](wiki/decisions/ADR-0006-repo-and-module-layout.md) — **accepted**: monorepo, Cargo workspace crate per bounded context
 - [ADR-0007 navigation & URL state](wiki/decisions/ADR-0007-navigation-and-url-state.md) — **accepted**: breadcrumb = cây, nút quay lại = lịch sử có tên đích (fallback về cha), trạng thái danh sách trên URL (`useSearchState`)
+- [ADR-0008 payroll close snapshots](wiki/decisions/ADR-0008-payroll-close-snapshots.md) — **proposed**: chốt lương một lần → phiếu lương jsonb chỉ thêm, khóa tháng 2 lớp, không mở lại, sửa bằng điều chỉnh tháng sau
 
 ## Security
-- [authz-matrix](wiki/security/authz-matrix.md) — R1-1 + R1-2 (report.read, report.revenue.read) permissions × roles, re-auth, support grants, mandatory authz tests
+- [authz-matrix](wiki/security/authz-matrix.md) — R1-1 + R1-2 (report.read, report.revenue.read) + 0016 staff (staff.manage, attendance.record, evaluation.record, payroll.read/close, staff.read_own) permissions × roles, re-auth, support grants, mandatory authz tests
 - [threat-model](wiki/security/threat-model.md) — STRIDE per trust boundary for R1, with tests
 
 ## Plans
