@@ -13,6 +13,7 @@ use crate::month::Month;
 use crate::payroll::{self, CloseInput, PayrollMonth};
 use crate::review::{self, DailyReview, ReviewEntry, ReviewSheet};
 use crate::rules::{self, PayrollRules};
+use crate::work::{self, MyWork};
 use axum::body::Bytes;
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::{StatusCode, header};
@@ -47,6 +48,7 @@ where
         .route("/payroll/close", post(close_payroll))
         .route("/payroll/rules", get(get_rules).put(put_rules))
         .route("/me/staff", get(get_my_staff))
+        .route("/me/work", get(get_my_work))
 }
 
 fn no_store(status: StatusCode, body: impl Serialize) -> Response {
@@ -447,5 +449,18 @@ pub async fn get_my_staff(
     Query(q): Query<MonthQuery>,
 ) -> Result<Response, AppError> {
     let mine = me::my_month(&pool, &user.actor, month_of(&q)?).await?;
+    Ok(no_store(StatusCode::OK, mine))
+}
+
+/// Customers I served in the month and appointments assigned to me (spec §10 US9). The person is
+/// the session's own staff link; there is no parameter to pick anyone else (`?staff_id=` → 400).
+#[utoipa::path(get, path = "/api/v1/me/work", tag = "staff", params(MonthQuery),
+    responses((status = 200, body = MyWork), (status = 400), (status = 401), (status = 403), (status = 422)))]
+pub async fn get_my_work(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Query(q): Query<MonthQuery>,
+) -> Result<Response, AppError> {
+    let mine = work::my_work(&pool, &user.actor, month_of(&q)?).await?;
     Ok(no_store(StatusCode::OK, mine))
 }

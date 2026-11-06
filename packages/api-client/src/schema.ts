@@ -533,6 +533,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/work": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Customers I served in the month and appointments assigned to me (spec §10 US9). The person is
+         *     the session's own staff link; there is no parameter to pick anyone else (`?staff_id=` → 400).
+         */
+        get: operations["get_my_work"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/opening-balances": {
         parameters: {
             query?: never;
@@ -1990,6 +2010,20 @@ export interface components {
             /** @description `false`: this login is not linked to a staff profile (ask the owner). */
             linked: boolean;
         };
+        MyWork: {
+            data?: components["schemas"]["MyWorkData"] | null;
+            /** @description `false`: this login is not linked to a staff profile (ask the owner). */
+            linked: boolean;
+        };
+        MyWorkData: {
+            month: string;
+            /** @description Newest first. */
+            served: components["schemas"]["ServedVisit"][];
+            /** Format: date */
+            today: string;
+            /** @description Booked / arrived, from today to today + 30 days, earliest first. */
+            upcoming: components["schemas"]["UpcomingAppointment"][];
+        };
         OpeningBalanceCreate: {
             customer?: components["schemas"]["CustomerCreate"] | null;
             /**
@@ -2674,6 +2708,27 @@ export interface components {
             /** Format: int32 */
             points: number;
         };
+        ServedLine: {
+            /** @description `true`: a session of the customer's package; `false`: a one-off service. */
+            from_package: boolean;
+            /** Format: int32 */
+            qty: number;
+            service_name: string;
+        };
+        /**
+         * @description A completed visit in which this person performed at least one line; `services` lists only
+         *     **their** lines.
+         */
+        ServedVisit: {
+            /** Format: date */
+            business_date: string;
+            /** Format: date-time */
+            check_in_at: string;
+            customer_name: string;
+            services: components["schemas"]["ServedLine"][];
+            /** Format: uuid */
+            visit_id: string;
+        };
         ServiceCategoryDto: {
             /** Format: uuid */
             id: string;
@@ -2949,6 +3004,22 @@ export interface components {
             /** Format: int64 */
             sessions_used: number;
         };
+        UpcomingAppointment: {
+            /** Format: uuid */
+            appointment_id: string;
+            /** Format: date */
+            business_date: string;
+            /** @description The customer's profile name, or the newcomer's name given at booking. */
+            customer_name: string;
+            /** Format: date-time */
+            ends_at: string;
+            services: string[];
+            /** Format: date-time */
+            starts_at: string;
+            status: components["schemas"]["UpcomingStatus"];
+        };
+        /** @enum {string} */
+        UpcomingStatus: "booked" | "arrived";
         UserSummary: {
             full_name: string;
             /** Format: uuid */
@@ -5060,6 +5131,52 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MyStaff"];
                 };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_my_work: {
+        parameters: {
+            query?: {
+                /** @description `YYYY-MM`; default the current month (spa time zone). */
+                month?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyWork"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: {
                 headers: {

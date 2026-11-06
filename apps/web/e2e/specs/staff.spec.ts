@@ -20,28 +20,29 @@ test.describe("nhân viên", () => {
     await expect(profile).toBeHidden();
     await expect(page.getByRole("button", { name })).toBeVisible();
 
-    // Attendance: one tap for a code, the sheet for the times.
-    await page.getByRole("tab", { name: "Chấm công" }).click();
-    const card = page.getByRole("listitem").filter({ hasText: name });
+    // Daily book: one card per person — times in the sheet, the bonus inline, progress on top.
+    await page.getByRole("tab", { name: "Sổ hằng ngày" }).click();
+    await expect(page.getByRole("status", { name: "Tiến độ chấm công" })).toBeVisible();
+    const card = page.getByRole("listitem").filter({ has: page.getByText(name, { exact: true }) });
     await card.getByRole("button", { name: "Giờ & ghi chú" }).click();
-    const day = page.getByRole("dialog", { name: `Chấm công ${name}` });
+    const day = page.getByRole("dialog", { name });
     await day.getByLabel("Giờ đến", { exact: true }).fill("09:20");
     await day.getByRole("button", { name: "Lưu" }).click();
+    await expect(day).toBeHidden();
     await expect(card).toContainText("muộn 20 phút");
-    await expectAccessible(page, "staff-attendance-day");
-    await page.getByRole("button", { name: "Cả tháng" }).click();
-    await expect(page.getByRole("table", { name: /Bảng chấm công/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: new RegExp(`^${name}, .*muộn 20 phút`) })).toBeVisible();
-
-    // Bonus.
-    await page.getByRole("tab", { name: "Thưởng, phạt" }).click();
-    await page.getByRole("button", { name: "+ Ghi thưởng / phạt" }).click();
-    const adj = page.getByRole("dialog", { name: "Ghi thưởng / phạt" });
-    await adj.getByLabel("Nhân viên").selectOption({ label: name });
+    await card.getByRole("button", { name: "+ Thưởng / phạt" }).click();
+    const adj = page.getByRole("dialog", { name: `Thưởng / phạt · ${name}` });
     await adj.getByLabel("Số tiền (đ)").fill("100000");
     await adj.getByLabel("Lý do").fill("Khách khen đích danh");
     await adj.getByRole("button", { name: "Lưu" }).click();
     await expect(adj).toBeHidden();
+    await expect(card).toContainText("Khách khen đích danh");
+    await expectAccessible(page, "staff-daily-book");
+
+    // Month sheet: the grid, then the month's bonus log.
+    await page.getByRole("tab", { name: "Bảng công tháng" }).click();
+    await expect(page.getByRole("table", { name: /Bảng chấm công/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: new RegExp(`^${name}, .*muộn 20 phút`) })).toBeVisible();
     await expect(page.getByText("Khách khen đích danh")).toBeVisible();
 
     // Payroll: live payslip with every line.
@@ -55,13 +56,17 @@ test.describe("nhân viên", () => {
     await expectAccessible(page, "staff-payslip");
   });
 
-  test("phones get the day list, never the wide grid, and no sideways scroll", async ({ page }) => {
+  test("phones: daily book and month grid fit 390 px without sideways page scroll", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/nhan-vien");
-    await expect(page.getByRole("tab", { name: "Chấm công" })).toBeVisible();
-    await expect(page.getByRole("list", { name: /^Chấm công / })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Cả tháng" })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Sổ hằng ngày" })).toBeVisible();
+    await expect(page.getByLabel("Ngày", { exact: true })).toBeVisible();
     expect(await sidewaysOverflow(page)).toBe(0);
+    await page.getByRole("tab", { name: "Bảng công tháng" }).click();
+    // The grid scrolls inside its own box; the page itself never scrolls sideways.
+    await expect(page.getByRole("table", { name: /Bảng chấm công/ })).toBeVisible();
+    expect(await sidewaysOverflow(page)).toBe(0);
+    await expectAccessible(page, "staff-phone-month");
     await page.getByRole("tab", { name: "Bảng lương" }).click();
     await expect(page.getByText("Tạm tính")).toBeVisible();
     expect(await sidewaysOverflow(page)).toBe(0);

@@ -1,8 +1,8 @@
 ---
 title: "Spec: Quản lý nhân viên (chấm công, đánh giá, thưởng/phạt, bảng lương)"
 status: draft
-updated: 2026-11-05
-sources: [raw/2026-11-05-em-review-round4.md, raw/2026-11-04-idea-internal-platform.md]
+updated: 2026-11-06
+sources: [raw/2026-11-06-em-review-round5.md, raw/2026-11-05-em-review-round4.md, raw/2026-11-04-idea-internal-platform.md]
 related: [../compensation-rules.md, ../personas.md, ../../architecture/backend.md, ../../architecture/data.md, ../../security/authz-matrix.md]
 ---
 
@@ -108,6 +108,8 @@ Thước đo: quản lý không phải cộng tay lương và hoa hồng ([perso
 - AC6.2 Không có tham số nào chọn được người khác (`?staff_id=` → `400`). Mọi route quản lý khác → `403` (test `a_technician_sees_only_their_own_month`).
 
 ## 4. UX
+> **Vòng 5 thay mục này** cho quản lý: xem §10 (sổ hằng ngày một trang, bảng công tháng dạng lưới, đánh giá tháng nhắc khi đến hạn). Phần dưới giữ để đối chiếu.
+
 Màn "Nhân viên" (`/nhan-vien`, lazy chunk) có các tab, trạng thái tab và tháng nằm trên URL (`useSearchState`):
 1. **Chấm công**. Desktop là lưới tháng × nhân viên: bấm một ô để đổi mã; nút "Cả spa đi làm hôm nay" ghi một lần cho cả spa. Phone là **danh sách theo người** cho một ngày, dùng `BottomSheet` để nhập giờ đến/về và ghi chú.
 2. **Đánh giá**: khen/phàn nàn theo ngày, và phiếu 6 tiêu chí của tháng (`BottomSheet` trên phone).
@@ -158,3 +160,34 @@ Hoa hồng bán sản phẩm (chưa có module sản phẩm). Chi trả theo m�
 - **Q-S3**: Ghi thưởng/phạt bằng tiền: quản lý ghi được (mặc định) hay chỉ chủ spa?
 - **Q-S4**: Người vào làm hoặc nghỉ giữa tháng: lương cứng có tính theo tỷ lệ ngày không? Hiện tại là **không** (giống Excel); ngày trước khi vào làm chỉ không bị tính là nghỉ.
 - **Q-C1 … Q-C8**: các dòng tương ứng ở §6 (giữ mặc định hay chọn cách khác).
+
+## 10. Vòng 5 (EM 2026-11-06, [raw](../../../raw/2026-11-06-em-review-round5.md), mục 9–11)
+EM: ba tab Chấm công / Đánh giá / Thưởng-phạt làm người dùng không biết phải điền đủ ba chỗ; ngày công dạng danh sách 30 dòng khó xem; tài khoản KTV thiếu lịch sử "đã làm cho ai, ai đặt lịch mình".
+
+**Cách làm thực tế (nghiên cứu, 2026-11-06).** Spa nhỏ không có máy chấm công: quản lý điểm danh một lần đầu ca, ghi sự việc trong ngày (khen, phàn nàn, đi muộn, phạt) vào sổ, cuối tháng mới cộng và chấm điểm. Các app chấm công cho tiệm nhỏ đều xoay quanh **một màn trong ngày** (ai đã vào ca, ai chưa) và **một báo cáo tháng dạng lưới** (nhân viên theo hàng, ngày theo cột, như mẫu bảng chấm công VN), còn việc cuối tháng là một bước riêng có nhắc ([ClockIt cho salon/spa](https://clockit.io/use-cases/time-clock-for-salons-and-spas/), [Everhour Shifts](https://everhour.com/shifts/salon-spa-scheduling-software), [MISA: lập bảng chấm công](https://helpact.misa.vn/kb/lap-bang-cham-cong/), [luatvietnam: mẫu bảng chấm công](https://luatvietnam.vn/bieu-mau/mau-bang-cham-cong-571-19464-article.html)). Sheet Excel của spa cũng đúng như vậy (cột ngày + tổng cuối hàng).
+
+Không đổi API hay quy tắc dữ liệu cho mục 9–10 (khóa tháng, quyền giữ nguyên). Mục 11 thêm một route chỉ đọc.
+
+### US7: Sổ hằng ngày một trang (quản lý)
+*Là quản lý, tôi muốn mở một trang cho một ngày, đi lần lượt từng người và ghi hết mọi thứ của người đó ngay tại chỗ, để không phải nhớ còn tab nào chưa điền.*
+- AC7.1 `/nhan-vien` mở tab **"Sổ hằng ngày"** (mặc định). Mỗi người có làm trong ngày là một thẻ: chấm công ✓/P/ĐX/K (một chạm là lưu), bộ đếm Khen / Phàn nàn, các khoản thưởng/phạt đã ghi ngày đó, nút "+ Thưởng/phạt" (form mở sẵn đúng người, đúng ngày) và nút "Chi tiết" (giờ đến/về, ghi chú chấm công, ghi chú đánh giá).
+- AC7.2 Đầu trang có **thanh tiến độ** "Đã chấm công x/y người" và danh sách "Còn thiếu: …" (bấm tên → cuộn tới thẻ). Chỉ chấm công là bắt buộc; khen/phàn nàn/thưởng/phạt là tùy chọn và trang nói rõ điều đó. Chấm đủ → "Xong ngày này".
+- AC7.3 Có ngày đã qua trong tháng còn người chưa chấm → banner "Còn n ngày chưa chấm đủ" với các ngày bấm được (mở đúng ngày đó). Ngày tương lai không chấm được.
+- AC7.4 **Đánh giá tháng chỉ nhắc khi đến hạn**: từ ngày cuối tháng đến ngày 10 tháng sau, nếu tháng trước (hoặc tháng này vào ngày cuối) chưa chốt và còn người chưa có phiếu → banner "Đến hạn đánh giá tháng m: còn n người" + nút mở tab "Đánh giá tháng" đúng tháng đó. Ngoài thời gian này không có banner. *(Lead's decision — EM to review: cửa sổ nhắc = ngày cuối tháng → ngày 10 tháng sau; spec gốc nói ngày 1–5.)*
+- AC7.5 Tab còn lại: "Bảng công tháng" (US8), "Đánh giá tháng" (phiếu 100 điểm như AC3b, có dấu đếm số người còn thiếu khi đến hạn), "Bảng lương" và "Hồ sơ" (như cũ, theo quyền). Bỏ tab "Thưởng, phạt" riêng: sổ thưởng/phạt của tháng nằm cuối "Bảng công tháng". Link cũ `?tab=attendance|evaluation|adjustments` mở tab mới tương ứng (không 404). *(Lead's decision — EM to review.)*
+- AC7.6 Âm: tháng đã chốt → mọi nút ghi bị tắt + banner (server vẫn `409`); quyền: thiếu `attendance.record` thì không có nút chấm công, thiếu `evaluation.record` thì không có khen/phàn nàn/thưởng/phạt (server vẫn `403`); lỗi mạng khi lưu → thông báo lỗi tại trang, trạng thái thẻ không đổi (dữ liệu lấy lại từ server).
+
+### US8: Bảng công tháng dạng lưới
+*Là quản lý, tôi muốn xem cả tháng trong một bảng (người × ngày), để nhìn là thấy ai nghỉ, ai muộn.*
+- AC8.1 Lưới: hàng = nhân viên, cột = ngày (thứ, CN tô màu), ô = mã ✓/P/ĐX/K (muộn có gạch đỏ, chưa chấm "–", ngoài thời gian làm / tương lai "·"), cột tổng cuối hàng (công, muộn, P/ĐX/K, khen/phàn nàn). Cột tên dính bên trái khi cuộn ngang; **dùng được ở 390 px** (không còn chỉ desktop). Bấm ô (tháng chưa chốt) → sheet sửa ô đó.
+- AC8.2 KTV ("Công và lương của tôi"): **lịch tháng thu gọn** (7 cột T2…CN, ô = ngày + mã) thay cho danh sách, kèm ô tổng (đi làm, muộn, P, ĐX, K, khen, phàn nàn). Không có thanh cuộn ngang ở 390 px.
+- AC8.3 Âm: tháng chưa có người nào → trạng thái trống; lỗi tải → trạng thái lỗi có nút thử lại.
+
+### US9: KTV xem khách đã làm và lịch hẹn của mình
+*Là KTV, tôi muốn xem mình đã làm cho khách nào và ai đã đặt lịch với mình, để chuẩn bị và tự đối chiếu hoa hồng.*
+- AC9.1 `GET /me/work?month=YYYY-MM` (`staff.read_own`, `Cache-Control: no-store`). Staff lấy từ `staff.user_id = session.user` (như `/me/staff`); tài khoản chưa gắn → `200 {linked: false}`.
+- AC9.2 `served[]`: các lượt **completed** của tháng có ít nhất một dòng dịch vụ do chính người đó làm; mỗi lượt: `visit_id`, `business_date`, `check_in_at`, `customer_name`, `services[]` = **chỉ các dòng của người đó** (tên dịch vụ, số lượng, `source` lẻ/gói). Mới nhất trước. Lượt đã hủy không có.
+- AC9.3 `upcoming[]`: lịch hẹn `booked`/`arrived` gán cho người đó, từ hôm nay tới 30 ngày sau, sớm nhất trước: `appointment_id`, `starts_at`, `ends_at`, `status`, `customer_name` (tên hồ sơ hoặc tên khách mới), `services[]` (tên).
+- AC9.4 **Chỉ các trường trên.** Không có giá, doanh thu, giá trị dòng, SĐT, ghi chú buổi, ghi chú sức khỏe, ghi chú lịch hẹn, id khách (test kiểm không có key nào khác). KTV vẫn không có `customer.read`/`visit.read`/`appointment.manage`. *(Lead's decision — EM to review: KTV thấy tên khách mình phục vụ, không thấy SĐT; tên dịch vụ đã có trên phiếu lương.)*
+- AC9.5 Âm: chưa đăng nhập → `401`; role không có `staff.read_own` → `403`; tham số lạ (`?staff_id=`) → `400`; tháng sai → `422`; KTV A không bao giờ thấy lượt/lịch của KTV B, kể cả lượt có cả hai cùng làm (A chỉ thấy dòng của A); spa khác không thấy gì (lọc tenant + RLS). Quản lý/chủ spa: các route quản lý không đổi.
+- AC9.6 UI: mục nav **"Khách của tôi"** (`/khach-cua-toi`, tab bar "Khách") cho người có `staff.read_own` mà không có `visit.read` (quản lý/chủ spa đã có màn quầy). Hai phần: "Lịch hẹn sắp tới" (nhóm theo ngày) và "Khách đã làm" của tháng (chọn tháng, nhóm theo ngày). Trạng thái: đang tải, trống, lỗi, chưa gắn hồ sơ.

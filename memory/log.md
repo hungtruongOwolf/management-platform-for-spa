@@ -367,3 +367,9 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - **"Đã chi":** một con số `net_spent`, bỏ chú thích "chưa gồm tiền gói trả trước khi dùng app" và không tách giấy/app; backend ghi gói sổ giấy thành hóa đơn thường theo ngày gốc (không đánh dấu gói chuyển từ sổ giấy ở UI).
 - **Viết hoa:** design-system quy tắc 3 ghi rõ tên dịch vụ/gói giữ cách viết của menu in (EM: "như trên menu nhé").
 - Tab bar "Lịch hẹn" thay "Trang chủ": agent lịch hẹn làm.
+## [2026-11-06] spec + build | Vòng 5 mục 9–11: sổ hằng ngày, bảng công tháng, "Khách của tôi"
+- Source: raw/2026-11-06-em-review-round5.md (commit ở PR khác). Spec: [staff-management §10](wiki/product/specs/staff-management.md) (US7–US9, AC7.1–AC9.6). Bỏ qua stage architect/breakdown (thay đổi nằm trong kiến trúc hiện có).
+- **Mục 9:** `/nhan-vien` mở "Sổ hằng ngày": một trang/ngày, thẻ theo người (chấm công, khen/phàn nàn, thưởng/phạt, giờ & ghi chú gộp), tiến độ "Đã chấm công x/y" + "Còn thiếu", banner ngày cũ chưa đủ, banner đánh giá tháng chỉ khi đến hạn. Bỏ tab "Thưởng, phạt" (sổ tháng nằm cuối "Bảng công tháng"); link cũ chuyển tab. Không đổi API.
+- **Mục 10:** "Bảng công tháng" = lưới người × ngày + tổng, dùng ở 390 px; KTV: lịch 7 cột + ô tổng.
+- **Mục 11:** `GET /me/work` (`staff.read_own`, `hr::work`, không migration): khách đã làm (chỉ dòng của mình) + lịch hẹn gán cho mình 30 ngày tới; allowlist không giá/SĐT/ghi chú/id khách. Nav "Khách của tôi" (tab bar "Khách") cho người có `staff.read_own` mà không có `visit.read`. [authz-matrix](wiki/security/authz-matrix.md) cập nhật.
+- Lead's decisions (EM review): cửa sổ nhắc đánh giá = ngày cuối tháng → ngày 10 tháng sau; bỏ tab thưởng/phạt riêng; KTV thấy tên khách, không thấy SĐT.

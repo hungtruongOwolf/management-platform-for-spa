@@ -109,7 +109,7 @@ export function navFor(me: Me | null): NavGroup[] {
         },
       ],
     ],
-    ["Nhân viên", [staffItem(me)]],
+    ["Nhân viên", [staffItem(me), myWorkItem(me)]],
     [
       "Danh mục",
       [
@@ -147,6 +147,22 @@ function staffItem(me: Me | null): NavItem | false {
 }
 
 /**
+ * "Khách của tôi" (round 5): a technician's served customers and bookings. Staff who already see
+ * visits at the front desk (`visit.read`) do not need it.
+ */
+function myWorkItem(me: Me | null): NavItem | false {
+  return (
+    can(me, "staff.read_own") &&
+    !can(me, "visit.read") && {
+      to: "/khach-cua-toi",
+      label: "Khách của tôi",
+      short: "Khách",
+      icon: "history",
+    }
+  );
+}
+
+/**
  * Short names of the screens, for a back control whose destination has no PageHeader title (the
  * front desk, home). Paths not listed fall back to the nearest listed parent.
  */
@@ -160,6 +176,7 @@ const SCREEN_LABELS: Record<string, string> = {
   "/bang-gia": "Bảng giá dịch vụ",
   "/bang-gia/goi": "Mẫu gói liệu trình",
   "/nhan-vien": "Nhân viên",
+  "/khach-cua-toi": "Khách của tôi",
   "/cai-dat": "Cài đặt",
 };
 
@@ -184,7 +201,15 @@ export function tabsFor(groups: NavGroup[]): NavItem[] {
   const first = all.some((i) => navKey(i) === APPOINTMENTS)
     ? APPOINTMENTS
     : "/";
-  // "/nhan-vien" only fills a free slot (technicians: home/appointments + their own month).
-  const wanted = [first, "/quay", "/khach-hang", "/bao-cao", "/nhan-vien"];
+  // "/nhan-vien" and "/khach-cua-toi" only fill free slots (technicians: home, their month,
+  // their customers).
+  const wanted = [
+    first,
+    "/quay",
+    "/khach-hang",
+    "/bao-cao",
+    "/nhan-vien",
+    "/khach-cua-toi",
+  ];
   return wanted.flatMap((key) => all.filter((i) => navKey(i) === key)).slice(0, 4);
 }

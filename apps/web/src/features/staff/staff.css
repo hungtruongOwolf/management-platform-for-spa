@@ -58,9 +58,150 @@
     background: var(--surface);
     text-align: left;
     white-space: nowrap;
+    box-shadow: 1px 0 0 var(--border);
   }
   .attendance-grid thead .sticky-col {
     background: var(--surface-2);
+  }
+  /* Phone (390 px): a narrower name column that wraps instead of truncating. */
+  @media (max-width: 639px) {
+    .attendance-grid .data-table .sticky-col {
+      min-width: 6.5rem;
+      max-width: 7.5rem;
+      padding-inline: 8px;
+      white-space: normal;
+      line-height: 1.25;
+    }
+  }
+  .attendance-grid .data-table .total-col {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    background: var(--surface-2);
+  }
+
+  /* ------------------------------------------------------------ daily book (round 5) */
+  .book-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+  }
+  .book-banner-accent {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .book-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 12px 20px;
+  }
+  .book-progress {
+    display: grid;
+    flex: 1 1 14rem;
+    gap: 6px;
+  }
+  .book-progress-bar {
+    height: 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--surface-2);
+  }
+  .book-progress-bar > span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--success);
+    transition: width 200ms ease-out;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .book-progress-bar > span {
+      transition: none;
+    }
+  }
+  .book-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+  .book-chip:hover {
+    background: var(--surface-2);
+  }
+  .book-card {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    scroll-margin-top: 80px;
+  }
+  .book-card.is-missing {
+    box-shadow: inset 4px 0 0 var(--warning-text);
+  }
+  .book-status > button {
+    min-width: 3rem;
+  }
+
+  /* ---------------------------------------- technician's month as a calendar (round 5) */
+  .my-calendar {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .my-calendar-head {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-align: center;
+  }
+  .my-calendar-day {
+    display: grid;
+    min-height: 3.25rem;
+    padding: 4px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    font-size: 0.75rem;
+    align-content: space-between;
+  }
+  .my-calendar-day .code {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    text-align: center;
+  }
+  .my-calendar-day.is-late {
+    box-shadow: inset 0 -3px 0 var(--danger);
+  }
+  .my-calendar-day.is-today {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
+  }
+  .my-totals {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+    gap: 8px;
+  }
+  .my-totals > div {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+  }
+  .my-totals dt {
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+  }
+  .my-totals dd {
+    font-size: 1.25rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
   }
   .attendance-grid .is-sunday {
     color: var(--accent-text);

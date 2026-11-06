@@ -357,6 +357,7 @@ const ROUTES: &[Route] = &[
         "/api/v1/me/staff",
         Access::Perm(P::StaffReadOwn, ALL),
     ),
+    route("GET", "/api/v1/me/work", Access::Perm(P::StaffReadOwn, ALL)),
     // packages
     route(
         "GET",

@@ -1,9 +1,63 @@
 import { useQuery } from "@tanstack/react-query";
+import { spaToday } from "../corrections/api";
 import { EmptyState, ErrorState, RowsSkeleton } from "../reports/ui";
-import { myMonthQuery } from "./api";
-import { LEVEL_LABEL, STATUS_CODE, STATUS_LABEL } from "./labels";
+import { myMonthQuery, type AttendanceDay } from "./api";
+import { LEVEL_LABEL, STATUS_CODE, STATUS_LABEL, daysOf } from "./labels";
 import { PayslipView } from "./PayrollTab";
 import { ClosedBanner, dayLabel, vnd } from "./ui";
+
+function Total({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
+const WEEK_HEAD = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+
+/**
+ * A technician's month as a compact calendar (spec §10 AC8.2): 7 columns Monday–Sunday, each day
+ * with its code; fits 390 px without horizontal scroll.
+ */
+export function MonthCalendar({ month, today, days }: { month: string; today: string; days: AttendanceDay[] }) {
+  const all = daysOf(month);
+  // Monday-first offset of the 1st: getUTCDay() is 0 for Sunday.
+  const lead = ((new Date(`${month}-01T00:00:00Z`).getUTCDay() + 6) % 7);
+  const byDate = new Map(days.map((d) => [d.date, d]));
+  return (
+    <div className="my-calendar">
+      {WEEK_HEAD.map((w) => (
+        <span key={w} aria-hidden="true" className="my-calendar-head">
+          {w}
+        </span>
+      ))}
+      <ol className="contents" aria-label={`Lịch công ${month}`}>
+        {Array.from({ length: lead }, (_, i) => (
+          <li key={`lead-${String(i)}`} aria-hidden="true" />
+        ))}
+        {all.map((date) => {
+          const d = byDate.get(date);
+          const label = `${dayLabel(date)}: ${d ? STATUS_LABEL[d.status] : date > today ? "chưa tới" : "chưa chấm"}${d && d.late_minutes > 0 ? `, muộn ${String(d.late_minutes)} phút` : ""}`;
+          return (
+            <li
+              key={date}
+              aria-label={label}
+              title={label}
+              className={`my-calendar-day att-${d?.status ?? "none"}${d && d.late_minutes > 0 ? " is-late" : ""}${date === today ? " is-today" : ""}`}
+            >
+              <span aria-hidden="true">{Number(date.slice(8))}</span>
+              <span aria-hidden="true" className="code">
+                {d ? STATUS_CODE[d.status] : date > today ? "" : "–"}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
 
 /**
  * "Tháng của tôi": a technician's own attendance, reviews, evaluation, bonuses/penalties and
@@ -23,6 +77,9 @@ export function MyMonth({ month }: { month: string }) {
     );
   }
   const t = data.attendance.totals;
+  const compliments = data.reviews.reduce((n, r) => n + r.compliments, 0);
+  const complaints = data.reviews.reduce((n, r) => n + r.complaints, 0);
+  const today = spaToday();
   return (
     <div className="grid content-start gap-6">
       {data.closed && <ClosedBanner />}
@@ -30,33 +87,20 @@ export function MyMonth({ month }: { month: string }) {
         <h2 id="my-attendance" className="section-title">
           Ngày công
         </h2>
-        <p className="text-sm text-text-muted">
-          Đi làm {t.present} ngày · muộn {t.late_count} lần ({t.late_minutes} phút) · P {t.leave_p} · ĐX {t.leave_dx} · K {t.absent_k}
-        </p>
-        {data.attendance.days.length === 0 ? (
-          <p className="text-text-muted">Chưa có ngày nào được chấm.</p>
-        ) : (
-          <ul className="grid gap-1">
-            {data.attendance.days.map((d) => (
-              <li key={d.date} className="flex flex-wrap gap-x-3 text-sm">
-                <span className="w-28 tabular">{dayLabel(d.date)}</span>
-                <span aria-label={STATUS_LABEL[d.status]}>
-                  {STATUS_CODE[d.status]} {STATUS_LABEL[d.status]}
-                </span>
-                {d.check_in && <span className="text-text-muted">đến {d.check_in}</span>}
-                {d.late_minutes > 0 && <span className="text-danger">muộn {d.late_minutes} phút</span>}
-              </li>
-            ))}
-          </ul>
-        )}
+        <dl className="my-totals">
+          <Total label="Đi làm" value={`${String(t.present)} ngày`} />
+          <Total label="Đi muộn" value={t.late_count ? `${String(t.late_count)} lần · ${String(t.late_minutes)}′` : "0"} />
+          <Total label="Nghỉ P / ĐX" value={`${String(t.leave_p)} / ${String(t.leave_dx)}`} />
+          <Total label="Nghỉ K" value={String(t.absent_k)} />
+          <Total label="Khen / Phàn nàn" value={`${String(compliments)} / ${String(complaints)}`} />
+        </dl>
+        <MonthCalendar month={data.month} today={today} days={data.attendance.days} />
+        <p className="text-sm text-text-muted">✓ đi làm · P nghỉ có phép · ĐX nghỉ đột xuất · K nghỉ không lý do · – chưa chấm · gạch đỏ: đi muộn</p>
       </section>
       <section className="grid gap-2" aria-labelledby="my-evaluation">
         <h2 id="my-evaluation" className="section-title">
           Đánh giá
         </h2>
-        <p className="text-sm">
-          {data.reviews.reduce((n, r) => n + r.compliments, 0)} lần được khen · {data.reviews.reduce((n, r) => n + r.complaints, 0)} lần bị phàn nàn
-        </p>
         {data.evaluation ? (
           <p>
             Tháng này: <strong>{data.evaluation.total_points} điểm · {LEVEL_LABEL[data.evaluation.result]}</strong>

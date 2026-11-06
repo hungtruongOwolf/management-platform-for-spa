@@ -167,6 +167,7 @@ Mọi response `Cache-Control: no-store`; `?month=YYYY-MM` mặc định tháng 
 | `POST /payroll/close` (`Idempotency-Key`) | Chốt tháng đã kết thúc | `payroll.close` (+ `payroll.read`) | `422 payroll.month_not_ended / unrecorded_days`, `409 payroll.period_closed` |
 | `GET /payroll/rules`, `PUT /payroll/rules` | Quy tắc cho 8 mâu thuẫn | `payroll.read` / `payroll.close` | `deny_unknown_fields`, có giới hạn |
 | `GET /me/staff` | Tháng của chính mình | `staff.read_own` | `{linked:false}` nếu chưa gắn |
+| `GET /me/work?month=` (vòng 5) | `MyWork {linked, data?: {month, today, served[]{visit_id, business_date, check_in_at, customer_name, services[]{service_name, qty, from_package}}, upcoming[]{appointment_id, business_date, starts_at, ends_at, status booked/arrived, customer_name, services[]}}}`: khách mình đã làm trong tháng (chỉ dòng của mình, lượt completed, mới nhất trước) + lịch hẹn gán cho mình từ hôm nay tới +30 ngày | `staff.read_own` | `hr::work`, 2 query (`repo::served_lines` dùng `visit_day_status_idx`, `repo::upcoming_appointments` dùng `appointment_day_idx`); không giá/SĐT/ghi chú |
 
 Tính lương: bộ tính thuần `hr::calc::compute` (unit test theo ô Excel E55/K54, Tết, cờ). Hoa hồng: 1 query gom `visit_line` (lượt `completed`, theo `business_date`) theo (KTV, dịch vụ, nguồn) + `sale.total` theo `closer_staff_id` (không hủy). Khóa tháng: `hr::period` (FOR SHARE khi ghi, FOR UPDATE khi chốt) + trigger. Mã lỗi mới: `payroll.period_closed` (409), `payroll.month_not_ended`, `payroll.unrecorded_days` (422), `staff.account_taken` (409).
 
