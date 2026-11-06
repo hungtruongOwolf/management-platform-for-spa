@@ -42,8 +42,6 @@ const VoidVisitForm = lazy(() =>
   })),
 );
 
-const card = "rounded-[14px] border border-border bg-surface p-4 shadow-card";
-
 /** The "Thanh toán" cell: how it was paid, short (the amount has its own column). */
 function paymentShort(v: Visit): string {
   // The "Đã hủy" badge sits by the name; this says what the cancel gave back.
@@ -133,7 +131,7 @@ function VisitDetails({
           <button
             type="button"
             onClick={onCorrect}
-            className="min-h-11 rounded-[10px] border border-border bg-surface px-3 font-semibold"
+            className="btn btn-secondary"
           >
             Sửa lượt
           </button>
@@ -292,9 +290,9 @@ export function TodayVisits({
     if (voiding === id) setVoiding(null);
   };
   return (
-    <section aria-labelledby="today-title" className={card}>
-      <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
-        <h2 id="today-title" className="font-semibold">
+    <section aria-labelledby="today-title" className="panel">
+      <div className="panel-head items-end">
+        <h2 id="today-title" className="panel-title">
           {isToday
             ? "Lượt khách hôm nay"
             : `Lượt khách ngày ${day.split("-").reverse().join("/")}`}
@@ -316,15 +314,12 @@ export function TodayVisits({
         />
       </div>
       {!isToday && can(me, "record.void_same_day") && !mayVoid && (
-        <p className="mb-2 text-sm text-text-muted">
+        <p className="text-sm text-text-muted">
           Ngày đã chốt: chỉ chủ spa hủy được lượt của ngày này.
         </p>
       )}
       {notice && (
-        <p
-          role="status"
-          className="mb-2 rounded-[10px] bg-primary-soft p-2 text-sm"
-        >
+        <p role="status" className="rounded-[10px] bg-primary-soft p-2 text-sm">
           {notice}
         </p>
       )}
@@ -335,11 +330,11 @@ export function TodayVisits({
         </div>
       )}
       {today.isError && (
-        <p role="alert" className="text-danger">
+        <p role="alert" className="field-error">
           {messageFor(today.error)}{" "}
           <button
             type="button"
-            className="underline"
+            className="btn btn-ghost min-h-9 px-2"
             onClick={() => void today.refetch()}
           >
             Thử lại
@@ -348,7 +343,9 @@ export function TodayVisits({
       )}
       {today.data?.length === 0 && (
         <p className="text-text-muted">
-          Chưa có khách nào hôm nay. Lượt vừa lưu sẽ hiện ở đây.
+          {isToday
+            ? "Chưa có khách nào hôm nay. Lượt vừa lưu sẽ hiện ở đây."
+            : "Ngày này không có lượt khách nào. Chọn ngày khác ở ô “Xem ngày”."}
         </p>
       )}
       {today.data && today.data.length > 0 && (
@@ -460,7 +457,7 @@ export function TodayVisits({
             setAll(true);
             setShown(VISITS_PAGE * 2);
           }}
-          className="mt-2 min-h-11 w-full rounded-[10px] border border-border px-4 font-medium hover:bg-surface-2"
+          className="btn btn-secondary btn-block"
         >
           Xem tất cả lượt trong ngày
         </button>
@@ -471,7 +468,7 @@ export function TodayVisits({
           onClick={() => {
             setShown((n) => n + VISITS_PAGE);
           }}
-          className="mt-2 min-h-11 w-full rounded-[10px] border border-border px-4 font-medium hover:bg-surface-2"
+          className="btn btn-secondary btn-block"
         >
           Xem thêm ({list.length - shown} lượt nữa)
         </button>

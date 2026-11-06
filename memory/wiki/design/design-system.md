@@ -1,15 +1,61 @@
 ---
 title: Design system — internal app (R1)
 updated: 2026-11-06
-sources: [raw/2026-11-06-em-review-round5.md, raw/2026-11-05-em-ui-review-round3.md, "docs for reference/logo Viên phúc y đường transparent.png", "docs for reference/Menu mặt trước - mới.png", product/personas.md, raw/2026-11-05-em-brand-colors-and-demo-data.md, raw/2026-11-05-em-management-views-logo-ui.md]
+sources: [raw/2026-11-06-em-ui-redesign-direction.md, raw/2026-11-06-research-ui-skills-taste-impeccable.md, raw/2026-11-06-em-review-round5.md, raw/2026-11-05-em-ui-review-round3.md, "docs for reference/logo Viên phúc y đường transparent.png", "docs for reference/Menu mặt trước - mới.png", product/personas.md, raw/2026-11-05-em-brand-colors-and-demo-data.md, raw/2026-11-05-em-management-views-logo-ui.md]
 ---
 
 # Design system: app nội bộ
 
+## Quy tắc (rulebook, 2026-11-06 — áp cho mọi màn làm việc)
+EM chốt hướng redesign ([raw](../../raw/2026-11-06-em-ui-redesign-direction.md)): app nội bộ là **chế độ "Vận hành"**, không phải trang quảng bá. Người dùng ngồi cả ngày, nên mẫu quen thuộc + phân cấp rõ thắng mọi trang trí. Thương hiệu (nâu đỏ, vàng, logo, Lora) sống ở **khung app** (sidebar, tab bar, đăng nhập, khung chào); vùng làm việc yên tĩnh. Màn mẫu đầu tiên: `/quay` "Ghi lượt khách" (PR redesign pilot). Màn khác chuyển dần theo đúng các quy tắc này.
+
+**1. Chữ.** Một họ chữ cho UI: *Be Vietnam Pro*. *Lora* chỉ ở chỗ thương hiệu (logo chữ, đăng nhập/MFA, lời chào ở khung chào trang chủ); tiêu đề màn làm việc (`.page-title`) dùng Be Vietnam Pro 600 24/32 màu `text`. Thang cố định (không `clamp`, tỉ lệ ≈ 1,13–1,2), token trong `tokens.css`:
+
+| Token | px / line-height | Dùng cho |
+|---|---|---|
+| `--fs-xs` | 12 / 16 | chip trạng thái, kbd |
+| `--fs-sm` | 13 / 18 | nhãn nhóm, chữ phụ, meta dòng |
+| `--fs-base` | 15 / 22 | chữ thường, nút |
+| `--fs-field` | 16 / 24 | **chữ trong ô nhập/select/textarea** (điện thoại không zoom khi focus) |
+| `--fs-md` | 17 / 24 | tiêu đề panel, nút lớn |
+| `--fs-lg` | 20 / 28 | tên khách đang chọn |
+| `--fs-xl` | 24 / 32 | tiêu đề trang, số tiền phải trả |
+
+Không chữ hoa giãn chữ (eyebrow) ở bất kỳ đâu; nhãn nhóm là sentence case 13px 600 `text-muted` (`.section-label`, `.eyebrow` của palette). Số luôn `tabular-nums`.
+
+**2. Khoảng cách.** Bước 4px; chỉ dùng **4 · 8 · 12 · 16 · 20 · 24 · 32**. Trong panel: 16 giữa các khối, 12 trong một khối, 8 giữa control cạnh nhau. Panel padding 16 (điện thoại) / 20. `gap`, không margin lẻ.
+
+**3. Màu theo vai trò.** Màu nhấn (`primary` nâu đỏ) chỉ cho **hành động, mục đang chọn, trạng thái**; không tô tiêu đề hay icon trang trí bằng nâu đỏ/vàng. Vàng (`accent`) chỉ ở khung app, focus ring, ★. Nền trang `bg` phẳng (**bỏ chấm vàng `--texture`**), panel `surface`, vùng phụ `surface-2`. Đỏ = lỗi/hủy, hổ phách = cần chú ý, xanh lá = đang dùng/đã thu, xanh dương = thông tin trung tính. Tương phản: chữ ≥ 4.5:1, viền control ≥ 3:1, kiểm tự động trong `contrast.test.ts` (thêm `on-primary` trên `primary-pressed` và `danger`).
+
+**4. Nút** (`.btn` + kiểu, `components.css`). Bốn kiểu, **phẳng** (không gradient, không bóng màu):
+
+| Kiểu | Dùng khi | Mặc định | Hover | Nhấn | 
+|---|---|---|---|---|
+| `btn-primary` | **một** hành động chính mỗi vùng tác vụ (Lưu lượt khách) | nền `primary`, chữ `on-primary` | `primary-hover` | `primary-pressed` |
+| `btn-secondary` | hành động thường (Trừ 1 buổi, Đổi khách, Khách mới) | viền `border-strong`, nền `surface` | viền + chữ `primary` | nền `primary-soft` |
+| `btn-ghost` | hành động phụ trong dòng (Đổi giờ, Thêm giảm giá, Bỏ sửa, ✕) | trong suốt, chữ `primary` | nền `surface-2` | nền `primary-soft` |
+| `btn-danger` | hành động phá (Hủy lượt) | nền `danger` | tối hơn 14% | |
+
+Đủ 7 trạng thái: mặc định · hover · focus-visible (vòng vàng toàn cục) · nhấn (đổi nền, dịch 1px) · disabled / `aria-disabled` (mờ 50%, `not-allowed`; ưu tiên `aria-disabled` để không mất focus) · đang tải `aria-busy="true"` (spinner trước nhãn, giữ nguyên bề rộng, không bấm lần 2) · lỗi (thông báo cạnh nút/ô, không đổi màu nút). Cao 44px; `btn-lg` 48px; `btn-block` rộng 100%; `btn-icon` vuông 44px luôn có `aria-label`. Nhãn = **động từ + đối tượng** ("Lưu lượt khách", "Thêm giảm giá", "Bỏ liên kết lịch hẹn"), không "OK", không "Thêm" trơn.
+
+**5. Ô nhập** (`.input`, `.field`). Nhãn **ở trên** (14px 500), ô cao 44px, chữ 16px, viền `border-strong`, bo 6px; dưới ô là gợi ý `.field-hint` (13px muted) hoặc lỗi `.field-error` (13px `danger`, có `aria-describedby`, ô `aria-invalid` viền đỏ). Placeholder không thay nhãn. Select chọn-là-thêm (dịch vụ lẻ, dịch vụ đặt lịch): chọn bằng chuột thêm ngay; bước qua bằng ↑/↓ khi danh sách đóng chỉ **chọn tạm** và hiện "Nhấn Enter để thêm …".
+
+**6. Card / panel.** Một kiểu: viền `border`, bo 14, `shadow-1`. **Không card trong card**: các dòng trong panel cách nhau bằng đường kẻ mảnh (`border-bottom`), không khung riêng. **Không viền sọc một bên** (border-left màu) ở nội dung: trạng thái nói bằng chip + chữ. Ngoại lệ duy nhất là thanh vàng mục nav đang chọn (chỉ báo điều hướng). Hoa văn góc (`.ornament`) chỉ ở panel đăng nhập.
+
+**7. Chip trạng thái** (`.badge`, một bộ cho cả app, luôn có chữ): `badge-ok` đang dùng / đã thu · `badge-warn` cần chú ý (hết hạn, sắp hết buổi) · `badge-danger` đã hủy / lỗi · `badge-muted` đã xong / hết buổi · `badge-info` trung tính (đã đặt) · `badge-gold` chỉ cho ★ thương hiệu. Mỗi đối tượng **một** trạng thái hiển thị; không đặt hai chip mâu thuẫn ("Đã hủy" + "Đã hết buổi") và không cho hành động mà trạng thái đã cấm.
+
+**8. Danh sách / bảng.** Dòng ≥ 44px (bảng ~48px), số canh phải `tabular-nums`, cột cố định khi nhiều dòng (`ResponsiveTable` `width`), ≥ 2 thao tác mỗi dòng → menu ⋯. Mục đã đóng (gói hết buổi/đã hủy, lượt đã hủy) gom sau một disclosure có số đếm hoặc làm mờ, không trộn với mục đang dùng.
+
+**9. Trống / đang tải / lỗi.** Trống **dạy bước tiếp theo** ("Chưa có dịch vụ. Bấm “Trừ 1 buổi” … hoặc chọn dịch vụ lẻ bên dưới"; "Không tìm thấy khách nào. Bấm “Khách mới” …"). Đang tải = skeleton đúng hình (không spinner, trừ nút `aria-busy`). Lỗi = câu tiếng Việt nói cái gì hỏng + cách sửa + "Thử lại", giữ dữ liệu đã nhập. Thông tin phụ (phím tắt, ghi chú giờ khóa sổ) nằm sau một toggletip `Tip` (nút tròn "?"/"i", hover/focus/chạm mở, Esc đóng, nội dung là mô tả của nút).
+
+**10. Chuyển động.** 150–250 ms, **chỉ cho thay đổi trạng thái** (hover, mở/đóng, toast); chỉ `transform`/`opacity`/màu. **Bỏ `CountUp`** (số hiện ngay), không hiệu ứng tải trang, không lấp lánh trang trí (trừ skeleton). `prefers-reduced-motion`: tắt animation và chuyển động, **giữ** đổi màu/opacity để vẫn thấy phản hồi. Modal là lựa chọn cuối: ưu tiên mở ngay tại chỗ (inline, disclosure); toast nằm **trên cùng** giữa màn (không che thanh lưu dính đáy).
+
+**Kiểm tra mỗi màn trước khi xong:** 1280 / 1024 / 390, sáng + tối, các trạng thái (hover/focus/nhấn/disabled/đang tải/lỗi/trống), axe sạch, vùng chạm 44px, không chữ bị cắt, không cuộn ngang.
+
 ## Hướng thiết kế: "Trà thất Đông y" (2026-11-05, thay "Trà thất yên tĩnh")
 EM thấy UI cũ "hơi xấu" và giao việc phối 4 màu đặc trưng của spa: **nâu đỏ, vàng, trắng, kem**, sao cho "sinh động và tinh tế" ([raw](../../raw/2026-11-05-em-brand-colors-and-demo-data.md)). Hướng mới lấy cảm hứng trực tiếp từ menu in: **khung app (header, dải đầu trang đăng nhập, khung chào ở trang chủ) dùng nền nâu đỏ đậm + chữ kem + vàng kim**, còn **vùng làm việc** giữ nền kem + card trắng để đọc số tiền cả ngày không mỏi mắt.
 - **Quy tắc 70 / 20 / 10:** kem + trắng ~70% (nền, card), nâu đỏ ~20% (header, nút chính, tiêu đề), vàng ~10% (viền focus, gạch chân mục nav đang chọn, thanh số buổi, ★, logo, đường kẻ). Vàng **không** dùng làm nền lớn, cũng không dùng cho chữ nhỏ trên nền sáng (chỉ dùng `accent-text`).
-- Tính từ định hướng: ấm áp, sang, điềm tĩnh, rõ ràng, nhanh. "Sinh động" đến từ khung nâu đỏ có gradient nhẹ, ánh sơn mài trên nút chính, viền vàng và micro-motion, **không** từ nhiều màu.
+- Tính từ định hướng: ấm áp, sang, điềm tĩnh, rõ ràng, nhanh. "Sinh động" đến từ khung nâu đỏ và logo vàng; vùng làm việc phẳng và yên tĩnh (2026-11-06: bỏ ánh sơn mài trên nút chính, chấm vàng nền trang, hoa văn góc ở màn làm việc).
 - Lý do giữ vùng làm việc sáng: quản lý dùng app 8–10 giờ/ngày; nền đỏ đô toàn trang như menu in quá nặng (giữ cho site công khai sau này).
 
 ## Màu (semantic tokens)
@@ -17,7 +63,7 @@ Mọi màu đều qua token (`packages/ui/src/tokens/tokens.css`), component kh�
 
 | Token | Light | Dark | Dùng cho | Tương phản (light / dark) |
 |---|---|---|---|---|
-| `bg` | `#FAF4E8` kem | `#18110F` | nền trang (+ `--texture` chấm vàng mờ 22px) | |
+| `bg` | `#FAF4E8` kem | `#18110F` | nền trang (phẳng; `--texture` đã bỏ 2026-11-06) | |
 | `surface` | `#FFFFFF` trắng | `#221815` | card, input | |
 | `surface-2` | `#F5EBDA` kem đậm | `#2D211D` | hover, vùng phụ, skeleton | |
 | `border` | `#E6D6BD` | `#453530` | viền card (trang trí) | |
@@ -26,10 +72,11 @@ Mọi màu đều qua token (`packages/ui/src/tokens/tokens.css`), component kh�
 | `text-muted` | `#6D5A50` | `#C4B2A3` | chữ phụ (kể cả trên `surface-2`) | 5.5 / 7.6 (tệ nhất) |
 | `primary` | `#7A2620` nâu đỏ | `#E8A592` | nút chính, link, tiêu đề trang | 9.0 trên kem / 9.1 |
 | `primary-hover` | `#5F1C17` | `#F2BFAE` | hover nút chính | |
+| `primary-pressed` | `#4A1511` | `#F8D6CA` | nút chính đang nhấn | on-primary trên nó ≥ 4.5 (test) |
 | `on-primary` | `#FFFFFF` | `#2A0F0B` | chữ trên nút chính | 9.9 / 8.7 |
 | `primary-soft` | `#F6E4DC` | `#3B2420` | nền mục chọn, gợi ý tìm kiếm | primary trên nó 8.0 / 7.0 |
 | `accent` | `#B07D24` vàng kim | `#E0B456` | vòng focus, viền trái gói, thanh buổi, ★ | 3.3 trên kem (chỉ UI) / 9.6 |
-| `accent-text` | `#8A6114` | `#E6C06A` | **chữ màu vàng** (eyebrow tiêu đề, "★ Khuyên dùng", badge vàng) | 4.9 trên `accent-soft` / 8.0 |
+| `accent-text` | `#8A6114` | `#E6C06A` | **chữ màu vàng** ("★ Khuyên dùng", badge vàng) | 4.9 trên `accent-soft` / 8.0 |
 | `accent-soft` | `#FBF0D6` | `#3A2A12` | nền badge vàng, avatar chữ cái, `::selection` | |
 | `danger` / `danger-soft` | `#B3261E` / `#FCEBE7` | `#FF8F80` / `#3B1D19` | lỗi, công nợ, huỷ | 5.7 / 6.9 |
 | `warning-bg` / `-text` / `-border` | `#FFF3DA` / `#7A4A00` / `#DDAE52` | `#3A2A12` / `#F2CF8A` / `#8A6418` | **lưu ý sức khỏe**, hết hạn | 6.8 / 9.3 |
@@ -160,13 +207,13 @@ Audit lại từng component; số trong ngoặc là trước → sau khi đổi
 | Empty state | padding 32px dọc (40 → 32), logo 56px |
 | Dialog / panel | panel tài khoản 320px; palette 640px; drawer 320px (≤ 86vw) |
 | Avatar | 36px (top bar, danh sách), 44px (panel tài khoản), 56px (cài đặt) |
-| Tiêu đề trang | Lora 26/34; eyebrow 12px chữ hoa giãn 0.14em; header cách nội dung 16–20px |
+| Tiêu đề trang | Be Vietnam Pro 600 24/32 màu `text` (2026-11-06; trước Lora 26/34 nâu đỏ + eyebrow chữ hoa, đã bỏ); header cách nội dung 16–20px |
 
 ## Element polish toàn app (`apps/web/src/styles.css`)
 Một lớp CSS **không nằm trong layer** (thắng utility) cho vài thuộc tính, để mọi màn hình (kể cả màn chỉ dùng utility như `/nhap-so-cu`) cùng một kiểu:
 - input/select/textarea: viền `border-strong`, hover `text-muted`, focus viền `primary` + quầng 3px `primary` 14%, `aria-invalid` → viền `danger`, disabled → `surface-2`. Checkbox/radio `accent-color: primary`.
 - button/a: transition màu/viền/bóng/transform 120ms; nhấn → dịch 1px.
-- `button.bg-primary` / `a.bg-primary`: "ánh sơn mài" (gradient trắng 10% → 0) + `shadow-primary`.
+- `button.bg-primary` / `a.bg-primary`: **phẳng** (2026-11-06; trước: "ánh sơn mài" gradient + `shadow-primary`, đã bỏ cùng token), hover `primary-hover`, nhấn `primary-pressed`.
 - Utility mới: `shadow-card` (= `shadow-1`), `shadow-float` (= `shadow-2`), màu `chrome`, `chrome-text(-muted)`, `chrome-accent`, `accent-soft`, `info(-soft)`, `border-strong`.
 
 
@@ -220,9 +267,9 @@ Một lớp CSS **không nằm trong layer** (thắng utility) cho vài thuộc 
 
 ## Chữ
 - **UI:** *Be Vietnam Pro* (400/500/600/700). Font này thiết kế cho tiếng Việt nên dấu chồng (ệ, ở, ữ) không bị cắt. Dự phòng: `system-ui, Segoe UI, Roboto`.
-- **Thương hiệu:** *Lora* 600, chỉ dùng cho logo chữ và tiêu đề trang lớn; có subset Vietnamese.
+- **Thương hiệu:** *Lora* 600, **chỉ** ở chỗ thương hiệu: đăng nhập/MFA, lời chào ở khung chào trang chủ (2026-11-06: không còn ở tiêu đề màn, tên khách, số liệu, empty state, avatar); có subset Vietnamese.
 - Tải font với `subset=vietnamese`, `display=swap`; self-host qua `@fontsource` khi build. Hiện app nội bộ chỉ tải Be Vietnam Pro 400/600 + Lora 600, subset latin + vietnamese, và lần tải đầu tải font sau màn hình đầu tiên (quy tắc ở [frontend § Perf budget](../architecture/frontend.md)). Muốn thêm weight 500/700 thì đo lại LCP trước.
-- Thang cỡ chữ (px / line-height): `xs 12/16` · `sm 13/18` · `base 15/22` · `md 17/24` · `lg 20/28` · `xl 24/32` · `2xl 30/38`. Số tiền dùng `font-variant-numeric: tabular-nums`.
+- Thang cỡ chữ: xem § Quy tắc mục 1 (token `--fs-*`); ô nhập 16px. Số tiền dùng `font-variant-numeric: tabular-nums`.
 - Ô tìm khách ở quầy dùng 18px để đọc từ xa.
 
 ## Spacing, radius, elevation, z-index
@@ -253,17 +300,15 @@ Một lớp CSS **không nằm trong layer** (thắng utility) cho vài thuộc 
 | Chuyển trang | `.page-enter`: opacity 0→1 + translateY 6px, `dur-slow` | **không chạy ở lần vẽ đầu** (không trễ LCP), chỉ sau điều hướng |
 | Thanh mục nav | `scaleY` 0→1, `dur-base` | |
 | Card bấm được | `.card-link`: nhấc 2px + `shadow-2` khi hover | không đổi layout |
-| Đếm số | `CountUp` 700 ms ease-out (rAF), số `tabular-nums` nên không xô chữ | screen reader đọc giá trị cuối |
 | Biểu đồ | đường hiện dần (opacity); split bar `scaleX` | |
 | Skeleton | `.skeleton::after` vệt sáng `translateX` 1.4 s | thay spinner và `animate-pulse` |
 | Drawer / palette | trượt từ trái / pop-in 8px + scale .98 | |
-- `prefers-reduced-motion: reduce` → tắt mọi transition/animation (tokens.css), `CountUp` hiện ngay giá trị cuối.
-- `prefers-reduced-motion: reduce` → tắt mọi transition/animation, chỉ đổi trạng thái tức thì.
+- `prefers-reduced-motion: reduce` → tắt animation và chuyển động (transform); vẫn giữ transition màu/nền/viền/opacity (tokens.css) để còn phản hồi. `CountUp` đã bỏ (2026-11-06): số hiện ngay.
 
 ## Chữ trên giao diện: viết hoa, viết thường (EM vòng 4 mục 4)
 EM: "check kĩ mấy cái viết hoa viết thường định dạng mọi thứ lại cho tôi". **Một quy tắc cho mọi chuỗi giao diện:**
 1. **Sentence case** (chỉ viết hoa chữ đầu + tên riêng) cho: tiêu đề trang, tiêu đề card, nhãn ô nhập, nút, tab, mục nav, tiêu đề cột bảng, badge, thông báo. Ví dụ: "Bán gói liệu trình", "Lưu ý sức khỏe", "Hẹn liên hệ lại", "Còn 2/12 buổi" (không "Bán Gói", không "còn 2/12 buổi" ở đầu câu).
-2. **CHỮ HOA chỉ cho hai loại nhãn nhỏ:** eyebrow phía trên h1 (`.eyebrow`, 12px, giãn 0.14em) và nhãn nhóm của sidebar (`.nav-group-label`, 11px). Chữ hoa là do CSS (`text-transform`), chuỗi gốc vẫn sentence case (screen reader không đánh vần). Bảng **không** còn tiêu đề cột chữ hoa (trước: 12px uppercase).
+2. **CHỮ HOA chỉ còn ở nhãn nhóm của sidebar** (`.nav-group-label`, 11px, trong khung nâu đỏ = điều hướng). Eyebrow chữ hoa phía trên h1 **đã bỏ** (2026-11-06, prop `eyebrow` của `PageHeader` đã xóa); `.eyebrow` giờ là nhãn nhóm sentence case 13px muted (command palette). Bảng không có tiêu đề cột chữ hoa.
 3. **Tên riêng giữ nguyên cách viết của menu in** (EM chốt 2026-11-05, [raw](../../raw/2026-11-05-em-answers-round4-polish.md): "như trên menu nhé"): tên dịch vụ ("Thư Giãn", "An Kiên Lạc", "Thân Tâm An Định"), **tên gói/mẫu gói** ("Gội đầu Thư Giãn 10 buổi + tặng 2"), tên người, tên spa. Đây là dữ liệu, không phải chữ giao diện: không tự đổi hoa/thường dữ liệu chủ spa nhập, kể cả khi nó đứng trong một câu sentence case ("Bán gói Gội đầu Thư Giãn…").
 4. Viết tắt chỉ khi chật và đã quen: "SĐT", "KTV", "HSD", "CK", "DV lẻ", "Buổi LT" (tiêu đề cột bảng; thẻ điện thoại dùng tên đầy đủ qua `cardLabel`).
 5. Dấu: "…" (một ký tự) cho placeholder và "Đang tải…"; " · " ngăn các mẩu thông tin cùng dòng; "–" cho khoảng ngày; "×" cho số buổi ("Thư Giãn × 10").
@@ -283,13 +328,13 @@ Primitives dựng trên shadcn/ui (Radix) trong `packages/ui`, theme bằng toke
 | Class | Dùng cho |
 |---|---|
 | `.card`, `.card-link` | card trắng viền + `shadow-1`; bản bấm được nâng nhẹ |
-| `.ornament` | hoa văn góc vàng (trên trái + dưới phải), lấy cảm hứng góc trang sổ giấy; `--ornament` đổi màu |
-| `.btn` + `.btn-primary` / `.btn-secondary` | nút 44px; nút outline cũ (`border-border`) tự có nền `surface` + hover viền đậm |
-| `.badge` + `-ok` / `-warn` / `-danger` / `-muted` / `-gold` | badge có chấm màu; chữ luôn đi kèm màu |
+| `.ornament` | hoa văn góc vàng; **chỉ panel đăng nhập** (2026-11-06 bỏ khỏi khung chào trang chủ và mọi màn làm việc) |
+| `.btn` + `.btn-primary` / `-secondary` / `-ghost` / `-danger`, `.btn-lg`, `.btn-block`, `.btn-icon` | xem § Quy tắc mục 4 (7 trạng thái, `aria-busy` = đang tải); nút outline cũ (`border-border`) tự có nền `surface` |
+| `.badge` + `-ok` / `-warn` / `-danger` / `-muted` / `-info` / `-gold` | một bộ chip trạng thái (§ Quy tắc mục 7); chấm màu + chữ |
 | `.data-table` | header dính dưới top bar, kẻ mảnh, hover dòng, `.num` canh phải + `tabular-nums` |
 | `.segmented` | bộ lọc / chọn theme / kiểu xem lịch (`aria-pressed`). State: idle chữ muted trên nền `surface-2`; hover nền `surface` 60 %; pressed nền `surface`; **chọn = ô nổi cả khối** (nền `surface` + viền 1px `border-strong` + `shadow-1`, chữ `primary`, cùng độ đậm); focus vòng vàng bên trong; disabled mờ 55 %. Vòng 5 (2026-11-06) **bỏ gạch chân vàng inset**: trên nút bo góc nó cong ở hai đầu, nhìn như ô vỡ. Viền trong suốt sẵn ở idle nên chọn không đổi kích thước |
 | `.skeleton` | khối chờ có vệt sáng |
-| `.page-title`, `.eyebrow`, `.gold-rule` | tiêu đề Lora nâu đỏ 26/34, nhãn nhóm chữ hoa vàng, đường kẻ vàng |
+| `.page-title`, `.eyebrow` | tiêu đề màn Be Vietnam Pro 600 24/32; nhãn nhóm sentence case 13px muted (`.gold-rule` đã xóa, không dùng) |
 | `.icon` | icon nét 24×24 từ sprite `assets/icons.svg` (`<Icon name>`; `<use href>` tới 1 file hash, 1.3 KB gzip, không thư viện icon) |
 
 | Component | Ghi chú riêng |
@@ -305,9 +350,10 @@ Primitives dựng trên shadcn/ui (Radix) trong `packages/ui`, theme bằng toke
 | **Detail list** (`.detail-list`) | cặp nhãn–giá trị 2 cột (nhãn 112px muted), thay chuỗi "0399 … · sinh năm 1968" |
 | **Field** (`.field`) | nhãn 14px 500 trên, ô dưới cách 6px; `.filter-field`/`.filter-select` cùng kiểu (trước: 12px muted, lệch với form). Nhãn bọc ô nhập luôn xếp ô xuống dưới (rule chung, sửa "Nhóm dịch vụ mới") |
 | **"Đã chi"** (tóm tắt lịch sử) | **một con số** `net_spent` (đã trừ hủy/hoàn, chú thích "đã hoàn …" khi có). EM chốt ([raw](../../raw/2026-11-05-em-carried-over-is-revenue.md)): tiền khách trả ở sổ giấy là doanh thu thật, backend ghi gói chuyển từ sổ giấy thành hóa đơn thường theo ngày gốc, nên nó nằm sẵn trong "Đã chi", sổ doanh thu và báo cáo. **Không** tách phần giấy/app, **không** đánh dấu gói chuyển từ sổ giấy ở đâu cả |
-| **CartLine** | dịch vụ, nguồn (trừ liệu trình / dịch vụ lẻ), KTV (bắt buộc), giá, bỏ dòng |
+| **CartLine** (`.cart-line`, /quay) | dòng 1: dịch vụ + nguồn · giá (dòng trừ buổi để trống) · ✕ `btn-ghost btn-icon` "Bỏ dòng …"; dòng 2: "KTV" + select 44px rộng hết (mọi dòng cùng lưới). Các dòng cách nhau đường kẻ, không khung |
+| **Checkout** (`.checkout`, /quay) | cuối panel giỏ, **dính đáy viewport** (điện thoại: trên tab bar): "Phải trả" + số 24px tabular (giá gốc gạch khi có giảm), ghi chú khi 0đ, nút chính `btn-primary btn-lg btn-block` "Lưu lượt khách" (không bao giờ bị cắt; `aria-busy` khi lưu) |
 | **MoneySummary** | phải trả, đã trả; số `tabular-nums` |
-| **StatCard** (`features/reports/ui.tsx`) | nhãn + icon tròn vàng 28px, số 24px đếm lên, không min-height, chân: `Delta` (▲/▼ % so với hôm qua, màu + chữ); bản `accent` nâu đỏ cho "Thực thu"; loading: `StatSkeleton` |
+| **StatCard** (`features/reports/ui.tsx`) | nhãn + icon tròn vàng 28px, số 24px hiện ngay (Be Vietnam Pro; bỏ `CountUp` + Lora 2026-11-06), không min-height, chân: `Delta` (▲/▼ % so với hôm qua, màu + chữ); bản `accent` nâu đỏ cho "Thực thu"; loading: `StatSkeleton` |
 | **LineChart** (`features/reports/LineChart.tsx`) | SVG tự viết (không thư viện): 1 trục, đường 2px nâu đỏ + vùng 10% cho kỳ này, đường xám `border-strong` cho kỳ trước (dạng emphasis, đã chạy validator dataviz cả light/dark); lưới hairline; nhãn giá trị chỉ ở điểm cuối; crosshair + tooltip (giá trị đậm trước, tên sau, line key) khi rê chuột và khi focus ← → Home End; nhãn trục X ≤ 7 (≤ 4 dưới 640px); `role="img"` + bảng chi tiết bên dưới là bản thay thế; đổi kỳ: khung cũ mờ (`.is-refreshing`) |
 | **SplitBar** (`features/reports/charts.tsx`) | thanh chia phần (tiền mặt/CK, gói/lẻ) + chú thích có số và % |
 | **FilterBar / SearchField / FilterSelect** (`features/reports/filters.tsx`) | một hàng lọc phía trên nội dung, xuống dòng trên điện thoại; ô tìm có icon, nút xóa, debounce 300 ms, ≥ 2 ký tự; select native có nhãn; mọi ô viền `border-strong` |
@@ -317,10 +363,11 @@ Primitives dựng trên shadcn/ui (Radix) trong `packages/ui`, theme bằng toke
 | **Thẻ Sổ hằng ngày** (`.book-card`) | 3 dải giống nhau mọi thẻ: (1) tên (xuống dòng, `overflow-wrap:anywhere`) + vai trò · giờ đến/về, bên phải chỉ badge **có thêm thông tin** ("Chưa chấm công", "Đi muộn n phút") + nút "Giờ & ghi chú"; **không** còn chip lặp lại trạng thái đã chọn; (2) AttendanceChoice; (3) "Ghi nhận trong ngày": Khen, Phàn nàn, "+ Ghi thưởng / phạt" một hàng (nút dạt phải; điện thoại: full-width), dưới là các dòng thưởng/phạt (badge · số tiền đậm · lý do) và ghi chú. Mọi nút trong thẻ là `btn-secondary` 44px (thẻ không có hành động chính, chấm công mới là thao tác chính). Thẻ chưa chấm: viền `warning-border` 1px (bỏ vạch trái 4px). Đầu trang: ô "Ngày" và "Tiến độ" cùng dạng nhãn + khối 44px nên thẳng hàng |
 | **Tabs** (`.tabs`) | `role=tablist`, tab chọn = gạch chân vàng 3px `inset box-shadow` |
 | **Timeline** (lịch sử khách) | đường dọc gradient vàng, chấm theo loại (lượt nâu đỏ, mua gói vàng, hủy xám/đỏ), nhóm theo tháng |
-| EmptyState (logo nguyên vẹn 56px + câu hướng dẫn), ErrorState ("Thử lại") | |
+| EmptyState (logo nguyên vẹn 56px + tiêu đề Be Vietnam Pro 600 + câu hướng dẫn bước tiếp theo), ErrorState ("Thử lại") | |
+| **Tip** (`features/front-desk/Tip.tsx`, `.tip`) | toggletip: nút tròn 28px vẽ trong vùng chạm 44px, hover/focus/chạm mở, Esc đóng (không lan ra Esc của trang), nội dung là `aria-describedby` của nút. Dùng cho phím tắt quầy, ghi chú giờ khóa sổ |
 | Dialog / Sheet (điện thoại) | `<dialog>` + `showModal()` (`Modal` trong AppShell): focus trap, Esc, backdrop |
 | ReasonDialog | bắt buộc nhập lý do (hủy, giảm giá, cho dùng gói hết hạn) |
-| Toast | `role=status`; lỗi dùng `role=alert`; 3–4 giây; không che nút Lưu; nổi trên tab bar điện thoại |
+| Toast | `role=status`; 4 giây; phẳng (không sọc trái); **trên cùng giữa màn** (`top: 72px + safe-area`, 2026-11-06) để không che thanh lưu dính đáy; lỗi nền `danger` |
 | AppShell, CommandPalette, UserMenu | xem § App shell |
 | **PageHeader** (`app/PageHeader.tsx`) | xem § Điều hướng |
 | **CustomerName** (`app/CustomerName.tsx`) | tên + **chip giới tính ngay cạnh tên** (EM vòng 3: "giới tính để bên cạnh tên cho dễ phân biệt"): "Nữ" nền `primary-soft` chữ `primary`, "Nam" nền `info-soft` chữ `info`, `showUnknown` → "Chưa rõ" xám (chỉ ở tiêu đề hồ sơ). Chữ, không chỉ màu; screen reader đọc "Nguyễn Thị Hà, Nữ". Inline: dùng trong link, h1, ô bảng. Đã dùng ở: tìm khách (quầy + /khach-hang), khách gần đây, tiêu đề hồ sơ, ô khách của bảng báo cáo (khi dòng có `gender`) |

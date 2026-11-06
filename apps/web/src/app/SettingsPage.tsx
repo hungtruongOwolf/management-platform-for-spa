@@ -9,7 +9,7 @@ export function SettingsPage() {
   const { data: me } = useSuspenseQuery(meQuery);
   return (
     <section className="grid max-w-3xl content-start gap-5">
-      <PageHeader eyebrow="Cài đặt" title="Giao diện & tài khoản" />
+      <PageHeader title="Giao diện & tài khoản" />
 
       <section aria-labelledby="theme-title" className="card grid content-start gap-3 p-4 sm:p-5">
         <h2 id="theme-title" className="font-semibold">

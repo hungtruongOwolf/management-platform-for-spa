@@ -56,6 +56,8 @@ const PAIRS: [string, string, number][] = [
   ["text", "primary-soft", TEXT],
   ["on-primary", "primary", TEXT],
   ["on-primary", "primary-hover", TEXT],
+  ["on-primary", "primary-pressed", TEXT],
+  ["on-primary", "danger", TEXT],
   ["accent-text", "surface", TEXT],
   ["accent-text", "bg", TEXT],
   ["accent-text", "accent-soft", TEXT],
@@ -105,7 +107,7 @@ describe("dark theme blocks", () => {
   });
 
   it("dark defines every light token except the shared scales", () => {
-    const shared = /^(radius|dur|ease|font)-/;
+    const shared = /^(radius|dur|ease|font|fs)-/;
     const missing = Object.keys(light).filter((k) => !shared.test(k) && !(k in dark));
     expect(missing).toEqual([]);
   });

@@ -1,6 +1,12 @@
 import type { CustomerPackage, Service, Staff, Visit } from "@vpyd/api-client";
 import { createMemoryHistory } from "@tanstack/react-router";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../../app/App";
@@ -467,8 +473,8 @@ describe("/quay", () => {
       await screen.findByRole("option", { name: /Nguyễn Thị Hà/ }),
     );
     await screen.findByRole("option", { name: /Đại Thông Lạc/ });
-    await user.selectOptions(screen.getByLabelText("Dịch vụ lẻ"), "s5");
-    await user.click(screen.getByRole("button", { name: "Thêm" }));
+    // Picking is adding: no separate "Thêm".
+    await user.selectOptions(screen.getByLabelText("Thêm dịch vụ lẻ"), "s5");
     await user.selectOptions(
       await screen.findByRole("combobox", { name: "KTV" }),
       "st2",
@@ -548,15 +554,13 @@ describe("/quay", () => {
       await within(picked).findByText(/1 gói liệu trình đang dùng, còn 5 buổi/),
     ).toBeInTheDocument();
     await screen.findByRole("option", { name: /Đại Thông Lạc/ });
-    await user.selectOptions(screen.getByLabelText("Dịch vụ lẻ"), "s5");
-    await user.click(screen.getByRole("button", { name: "Thêm" }));
+    // Picking is adding: no separate "Thêm".
+    await user.selectOptions(screen.getByLabelText("Thêm dịch vụ lẻ"), "s5");
     await user.selectOptions(
       await screen.findByRole("combobox", { name: "KTV" }),
       "st1",
     );
-    await user.click(
-      screen.getByRole("button", { name: "+ Giảm giá dịch vụ lẻ" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Thêm giảm giá" }));
     await user.type(screen.getByLabelText("Mức giảm (%)"), "10");
     await user.type(screen.getByLabelText("Lý do (bắt buộc)"), "Khách quen");
     expect(screen.getByText("Giảm 34.900đ")).toBeInTheDocument();
@@ -598,7 +602,9 @@ describe("/quay", () => {
     expect(
       await within(list).findByText(/SĐT 0905 111 222/),
     ).toBeInTheDocument();
-    expect(within(list).queryByRole("button", { name: /^Chi tiết/ })).toBeNull();
+    expect(
+      within(list).queryByRole("button", { name: /^Chi tiết/ }),
+    ).toBeNull();
   });
 
   it("lines every visit up in the same columns; a click anywhere on the row opens it", async () => {
@@ -612,8 +618,17 @@ describe("/quay", () => {
       within(table)
         .getAllByRole("columnheader")
         .map((h) => h.textContent),
-    ).toEqual(["Giờ", "Khách", "Dịch vụ · KTV", "Thanh toán", "Số tiền", "Thao tác"]);
-    expect(within(table).getByRole("cell", { name: "Trừ liệu trình" })).toBeInTheDocument();
+    ).toEqual([
+      "Giờ",
+      "Khách",
+      "Dịch vụ · KTV",
+      "Thanh toán",
+      "Số tiền",
+      "Thao tác",
+    ]);
+    expect(
+      within(table).getByRole("cell", { name: "Trừ liệu trình" }),
+    ).toBeInTheDocument();
     await user.click(within(table).getByRole("cell", { name: "09:12" }));
     expect(
       within(table).getByRole("button", { name: /^Nguyễn Thị Hà/ }),
@@ -653,11 +668,143 @@ describe("/quay", () => {
     expect(more).toHaveFocus();
     // ↓ on the button opens on the first item; Enter runs it.
     await user.keyboard("{ArrowDown}");
-    expect(within(screen.getByRole("menu")).getByRole("menuitem")).toHaveFocus();
+    expect(
+      within(screen.getByRole("menu")).getByRole("menuitem"),
+    ).toHaveFocus();
     await user.keyboard("{Enter}");
     await waitFor(() => {
       expect(history.location.pathname).toBe("/khach-hang/c1");
     });
+  });
+
+  it("gives every package one state: cancelled and used-up ones wait behind a disclosure without Trừ 1 buổi", async () => {
+    serve(MANAGER, undefined, [
+      pkg("cp1"),
+      // The EM's screenshot: cancelled AND 0/12 still offered "Trừ 1 buổi".
+      pkg("dead", { status: "cancelled" }, 0),
+      pkg("used", { status: "exhausted" }, 0),
+      pkg("old", { status: "expired", expires_on: "2026-10-01" }, 3),
+    ]);
+    const user = userEvent.setup();
+    at("/quay");
+    await user.type(
+      await screen.findByRole("combobox", {
+        name: "Tìm khách theo SĐT hoặc tên",
+      }),
+      "0905111",
+    );
+    await screen.findByRole("option", { name: /Nguyễn Thị Hà/ });
+    await user.keyboard("{Enter}");
+    const open = await screen.findByRole("list", {
+      name: "Liệu trình của khách",
+    });
+    expect(within(open).getAllByRole("listitem")).toHaveLength(2);
+    expect(
+      within(open).getByRole("button", { name: "Trừ 1 buổi Gói cp1" }),
+    ).toBeInTheDocument();
+    // Expired with sessions left: its own chip; this manager may allow it with a reason.
+    expect(within(open).getByText("Hết hạn")).toBeInTheDocument();
+    expect(
+      within(open).getByRole("button", { name: "Trừ 1 buổi Gói old" }),
+    ).toBeInTheDocument();
+    expect(within(open).queryByText(/Gói dead|Gói used/)).toBeNull();
+
+    const closed = screen
+      .getByText("Gói đã hết / đã hủy (2)")
+      .closest("details");
+    if (!closed) throw new Error("no disclosure");
+    expect(closed).not.toHaveAttribute("open");
+    const closedList = within(closed).getByRole("list", {
+      hidden: true,
+      name: "Gói đã hết hoặc đã hủy",
+    });
+    expect(within(closedList).getByText("Đã hủy")).toBeInTheDocument();
+    expect(within(closedList).getByText("Hết buổi")).toBeInTheDocument();
+    expect(
+      within(closedList).queryByRole("button", { hidden: true }),
+    ).toBeNull();
+  });
+
+  it("does not offer an expired package to a desk without the override", async () => {
+    serve(
+      MANAGER.filter((p) => p !== "package.use_expired_override"),
+      undefined,
+      [pkg("old", { status: "expired", expires_on: "2026-10-01" }, 3)],
+    );
+    const user = userEvent.setup();
+    at("/quay");
+    await user.type(
+      await screen.findByRole("combobox", {
+        name: "Tìm khách theo SĐT hoặc tên",
+      }),
+      "0905111",
+    );
+    await screen.findByRole("option", { name: /Nguyễn Thị Hà/ });
+    await user.keyboard("{Enter}");
+    const open = await screen.findByRole("list", {
+      name: "Liệu trình của khách",
+    });
+    expect(
+      within(open).getByText("Đã hết hạn: cần quản lý cho dùng tiếp."),
+    ).toBeInTheDocument();
+    expect(
+      within(open).queryByRole("button", { name: /Trừ 1 buổi/ }),
+    ).toBeNull();
+  });
+
+  it("adds a one-off on pick, but a keyboard step through the closed list waits for Enter", async () => {
+    serve(MANAGER);
+    const user = userEvent.setup();
+    at("/quay");
+    await user.type(
+      await screen.findByRole("combobox", {
+        name: "Tìm khách theo SĐT hoặc tên",
+      }),
+      "0905111",
+    );
+    await screen.findByRole("option", { name: /Nguyễn Thị Hà/ });
+    await user.keyboard("{Enter}");
+    await screen.findByRole("option", { name: /Đại Thông Lạc/ });
+    const picker = screen.getByLabelText("Thêm dịch vụ lẻ");
+    expect(screen.queryByRole("button", { name: "Thêm" })).toBeNull();
+
+    // ↓ on a closed select changes its value: that is browsing, not adding.
+    picker.focus();
+    fireEvent.keyDown(picker, { key: "ArrowDown" });
+    fireEvent.change(picker, { target: { value: "s5" } });
+    expect(
+      screen.queryByRole("list", { name: "Dịch vụ trong lượt" }),
+    ).toBeNull();
+    expect(
+      screen.getByText("Nhấn Enter để thêm “Đại Thông Lạc”."),
+    ).toBeInTheDocument();
+    fireEvent.keyDown(picker, { key: "Enter" });
+    const cart = await screen.findByRole("list", {
+      name: "Dịch vụ trong lượt",
+    });
+    expect(
+      within(cart).getByText("Cổ vai gáy · Đại Thông Lạc"),
+    ).toBeInTheDocument();
+    expect(picker).toHaveValue("");
+
+    // A pointer pick adds at once.
+    await user.selectOptions(picker, "s10");
+    expect(within(cart).getAllByRole("listitem")).toHaveLength(2);
+  });
+
+  it("keeps the owner's note behind the clock's ⓘ, one line on the page", async () => {
+    serve([...MANAGER, "visit.backdate"]);
+    const user = userEvent.setup();
+    at("/quay");
+    await screen.findByText(/để nhập số liệu hôm nay/);
+    const tip = screen.getByRole("button", { name: "Về giờ khóa số liệu" });
+    expect(tip).toHaveAccessibleDescription(
+      /Chủ spa vẫn nhập bù được ngày đã qua/,
+    );
+    await user.click(tip);
+    expect(tip).toHaveAttribute("aria-expanded", "true");
+    await user.keyboard("{Escape}");
+    expect(tip).toHaveAttribute("aria-expanded", "false");
   });
 
   it("shows the live countdown to the spa's midnight and the appointments tab", async () => {

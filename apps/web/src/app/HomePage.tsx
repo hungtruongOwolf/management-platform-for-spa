@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { meQuery } from "../features/auth/session";
 import { spaToday } from "../features/corrections/api";
 import { dailyReportQuery } from "../features/reports/api";
-import { CountUp, StatCard, StatSkeleton, money } from "../features/reports/ui";
+import { StatCard, StatSkeleton, count, money } from "../features/reports/ui";
 import { BrandLogo } from "./BrandLogo";
 import { canSeeManagement } from "./features";
 import { Icon } from "./Icon";
@@ -40,14 +40,14 @@ function Today() {
           <>
             {daily.data.revenue && (
               <StatCard label="Thực thu" icon="wallet" accent>
-                <CountUp value={daily.data.revenue.net.total} format={money} />
+                {money(daily.data.revenue.net.total)}
               </StatCard>
             )}
             <StatCard label="Khách" icon="users">
-              <CountUp value={daily.data.counts.customers} />
+              {count(daily.data.counts.customers)}
             </StatCard>
             <StatCard label="Buổi liệu trình đã trừ" icon="package">
-              <CountUp value={daily.data.counts.sessions_used} />
+              {count(daily.data.counts.sessions_used)}
             </StatCard>
           </>
         ) : (
@@ -68,7 +68,7 @@ export function HomePage() {
   return (
     <div className="grid content-start gap-6">
       {/* The whole logo carries the tagline, so the greeting does not repeat it (EM round 3). */}
-      <section className="welcome chrome ornament [--ornament:var(--chrome-accent)]">
+      <section className="welcome chrome">
         <BrandLogo className="welcome-logo" />
         <div className="min-w-0">
           <p className="text-sm text-chrome-text-muted tabular">

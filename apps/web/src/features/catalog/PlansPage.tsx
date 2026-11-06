@@ -36,7 +36,7 @@ export function PlansPage() {
 
   return (
     <section aria-labelledby="plans-title" className="grid content-start gap-4">
-      <PageHeader eyebrow="Danh mục" title="Mẫu gói liệu trình" titleId="plans-title">
+      <PageHeader title="Mẫu gói liệu trình" titleId="plans-title">
         {canManage && editing === null && (
           <button
             type="button"

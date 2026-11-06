@@ -1,0 +1,613 @@
+/*
+ * /quay "Ghi lượt khách" (design-system.md "Quy tắc", pilot screen of the 2026-11-06 redesign).
+ * Two panels — customer + packages | visit cart — then the day's visits. Inside a panel, rows are
+ * divided by hairlines (no card in a card, no side stripes). Classes rather than utility strings:
+ * class names in JSX ship in the startup JS.
+ */
+@layer components {
+  .desk {
+    display: grid;
+    min-width: 0;
+    gap: 16px;
+  }
+
+  /* Tabs left, the day clock right; one row from 640px. */
+  .desk-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+  }
+
+  .desk-grid {
+    display: grid;
+    min-width: 0;
+    align-items: start;
+    gap: 16px;
+  }
+  @media (min-width: 1024px) {
+    .desk-grid {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+  }
+
+  .panel {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: 16px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-1);
+  }
+  @media (min-width: 640px) {
+    .panel {
+      padding: 20px;
+    }
+  }
+  .panel-head {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 12px;
+  }
+  .panel-title {
+    font-size: var(--fs-md);
+    font-weight: 600;
+    line-height: 24px;
+  }
+  .section-label {
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+  }
+  /* Empty states teach the next step: one muted sentence, centred in the panel. */
+  .desk-empty {
+    padding: 8px 0;
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  /* --- Day clock: one quiet line, details behind ⓘ -------------------------------------------- */
+  .day-clock {
+    position: relative;
+    display: inline-flex;
+    width: 22rem;
+    max-width: 100%;
+    min-height: 44px;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+  }
+  .day-clock-time {
+    color: var(--text);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .day-clock-time.is-late {
+    color: var(--danger);
+  }
+  @media (max-width: 639.98px) {
+    .day-clock {
+      width: 100%;
+      justify-content: flex-start;
+    }
+  }
+
+  /* --- Toggletip: a small "?"/"i" button that shows a short note (hover, focus or tap) --------- */
+  .tip {
+    position: relative;
+    display: inline-flex;
+  }
+  /* 44px target; the visible mark is a 28px ring drawn in the background (no layout growth:
+   * the negative margin keeps the row as tall as its text). */
+  .tip-button {
+    --ring: var(--border-strong);
+    display: inline-grid;
+    width: 44px;
+    height: 44px;
+    margin: -8px;
+    place-items: center;
+    border-radius: 999px;
+    background: radial-gradient(
+      circle,
+      var(--surface) 13px,
+      var(--ring) 13.5px 14.5px,
+      transparent 15px
+    );
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    line-height: 1;
+  }
+  .tip-button:hover,
+  .tip-button[aria-expanded="true"] {
+    --ring: var(--primary);
+    color: var(--primary);
+  }
+  .tip-body {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% - 2px);
+    right: 0;
+    width: max-content;
+    max-width: min(20rem, calc(100vw - 32px));
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    box-shadow: var(--shadow-2);
+    color: var(--text);
+    font-size: var(--fs-sm);
+    font-weight: 400;
+    line-height: 20px;
+    text-align: left;
+    visibility: hidden;
+    opacity: 0;
+    transition:
+      opacity var(--dur-fast) var(--ease-out),
+      visibility var(--dur-fast);
+  }
+  .tip:hover .tip-body,
+  .tip-button:focus-visible + .tip-body,
+  .tip-button[aria-expanded="true"] + .tip-body {
+    visibility: visible;
+    opacity: 1;
+  }
+  .tip-body.is-left {
+    right: auto;
+    left: 0;
+  }
+  .kbd-list {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 6px 12px;
+    align-items: center;
+  }
+  .kbd-list dt {
+    white-space: nowrap;
+  }
+  kbd {
+    display: inline-block;
+    min-width: 1.6em;
+    padding: 0 5px;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--surface-2);
+    font-family: inherit;
+    font-size: var(--fs-xs);
+    line-height: 18px;
+    text-align: center;
+  }
+
+  /* --- Selected customer -------------------------------------------------------------------- */
+  .customer-head {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px 12px;
+  }
+  .customer-title {
+    font-size: var(--fs-lg);
+    font-weight: 600;
+    line-height: 28px;
+    overflow-wrap: anywhere;
+  }
+  .customer-meta {
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+  }
+
+  /* --- Package list: one state per row, used-up and cancelled behind a disclosure ------------ */
+  .pkg-list {
+    display: grid;
+    border-top: 1px solid var(--border);
+  }
+  .pkg-row {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .pkg-name {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .pkg-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+  }
+  .pkg-meta strong {
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .pkg-note {
+    grid-column: 1 / -1;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+  }
+  .pkg-closed > summary {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+  }
+  .pkg-closed > summary::-webkit-details-marker {
+    display: none;
+  }
+  .pkg-closed > summary .icon {
+    transition: transform var(--dur-fast) var(--ease-out);
+  }
+  .pkg-closed[open] > summary .icon {
+    transform: rotate(90deg);
+  }
+  .pkg-closed > summary:hover {
+    color: var(--text);
+  }
+  .pkg-closed .pkg-row {
+    opacity: 0.85;
+  }
+
+  /* An inline form under a row (reason for using an expired package). */
+  .inline-form {
+    display: grid;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius-md);
+    background: var(--warning-bg);
+    color: var(--warning-text);
+  }
+  .inline-form .field {
+    color: var(--warning-text);
+  }
+  .button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* --- Context bar (completing a booking / correcting a visit) ------------------------------- */
+  .context-bar {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px 12px;
+    padding: 6px 6px 6px 12px;
+    border: 1px solid color-mix(in srgb, var(--info) 30%, transparent);
+    border-radius: var(--radius-md);
+    background: var(--info-soft);
+    color: var(--info);
+    font-size: var(--fs-sm);
+  }
+  .context-bar strong {
+    font-weight: 600;
+  }
+  .context-menu {
+    position: relative;
+  }
+  .context-menu > summary {
+    display: inline-grid;
+    width: 44px;
+    height: 36px;
+    place-items: center;
+    border-radius: var(--radius-sm);
+    color: var(--info);
+    cursor: pointer;
+    list-style: none;
+  }
+  .context-menu > summary::-webkit-details-marker {
+    display: none;
+  }
+  .context-menu > summary:hover,
+  .context-menu[open] > summary {
+    background: color-mix(in srgb, var(--info) 14%, transparent);
+  }
+  .context-menu-panel {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 4px);
+    right: 0;
+    display: grid;
+    width: min(18rem, calc(100vw - 48px));
+    gap: 4px;
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    box-shadow: var(--shadow-2);
+    color: var(--text);
+  }
+  .context-menu-panel > button {
+    min-height: 44px;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    text-align: left;
+  }
+  .context-menu-panel > button:hover {
+    background: var(--surface-2);
+  }
+  .context-menu-panel > p {
+    padding: 0 10px 6px;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+  }
+
+  /* --- Cart lines ---------------------------------------------------------------------------- */
+  .cart-lines {
+    display: grid;
+    border-top: 1px solid var(--border);
+  }
+  .cart-line {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto 44px;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .cart-line-name {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .cart-line-source {
+    display: block;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+  }
+  .cart-line-price {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+  /* Technician: label + select on one row under the service, the same on every line. */
+  .cart-line-staff {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: 3rem minmax(0, 1fr);
+    align-items: center;
+    gap: 4px 8px;
+  }
+  .cart-line-staff > label {
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+  }
+  .cart-line-staff > select {
+    margin-top: 0;
+  }
+  .cart-line-staff > .field-error {
+    grid-column: 2;
+  }
+
+  /* A field: 44px, 16px text (no phone zoom), border-strong, label above. */
+  .input {
+    width: 100%;
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+    font-size: var(--fs-field);
+  }
+  textarea.input {
+    min-height: 72px;
+    padding: 10px 12px;
+    line-height: 22px;
+  }
+  .field-error {
+    color: var(--danger);
+    font-size: var(--fs-sm);
+    font-weight: 500;
+  }
+
+  /* --- Cart options (time, discount): label · value · one ghost action, aligned rows -------- */
+  .cart-options {
+    display: grid;
+    border-top: 1px solid var(--border);
+  }
+  .option-row {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: 6.5rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px 12px;
+    min-height: 52px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: var(--fs-base);
+  }
+  .option-label {
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+  }
+  .option-value {
+    min-width: 0;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .option-panel {
+    display: grid;
+    grid-column: 1 / -1;
+    gap: 12px;
+    padding: 4px 0 12px;
+  }
+  .option-fields {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+  }
+  @media (max-width: 479.98px) {
+    .option-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .option-label {
+      grid-column: 1 / -1;
+      padding-top: 6px;
+    }
+  }
+
+  /* --- Payment method: three radio chips in one row ----------------------------------------- */
+  .pay-choices {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+    gap: 8px;
+  }
+  .pay-choice {
+    position: relative;
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    font-size: var(--fs-base);
+    line-height: 20px;
+    text-align: center;
+    cursor: pointer;
+  }
+  .pay-choice:hover {
+    border-color: var(--primary);
+  }
+  /* Selected: tint + border + weight + a check mark (never colour alone). */
+  .pay-choice:has(input:checked) {
+    border-color: var(--primary);
+    background: var(--primary-soft);
+    color: var(--primary);
+    font-weight: 600;
+  }
+  .pay-choice:has(input:checked)::before {
+    content: "✓";
+  }
+  .pay-choice:has(input:focus-visible) {
+    outline: 3px solid var(--focus);
+    outline-offset: -3px;
+  }
+  /* The native radio stays in the tab order and the accessibility tree; the chip is its face. */
+  .pay-choice > input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* --- Checkout: total + the one primary action, pinned to the bottom of the viewport ------- */
+  .checkout {
+    position: sticky;
+    z-index: 10;
+    bottom: 0;
+    display: grid;
+    gap: 12px;
+    margin: 0 -16px -16px;
+    padding: 12px 16px 16px;
+    border-top: 1px solid var(--border);
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+    background: var(--surface);
+  }
+  @media (min-width: 640px) {
+    .checkout {
+      margin: 0 -20px -20px;
+      padding: 16px 20px 20px;
+    }
+  }
+  @media (max-width: 767.98px) {
+    .checkout {
+      bottom: calc(var(--tabbar-h, 0px) + env(safe-area-inset-bottom));
+      border-radius: 0;
+      box-shadow: 0 -6px 16px rgb(0 0 0 / 0.08);
+    }
+  }
+  .checkout-total {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .checkout-total > span:first-child {
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .checkout-amount {
+    font-size: var(--fs-xl);
+    font-weight: 700;
+    line-height: 32px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .checkout-amount s {
+    margin-right: 8px;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 400;
+  }
+
+  .alert {
+    padding: 10px 12px;
+    border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+    border-radius: var(--radius-md);
+    background: var(--danger-soft);
+    color: var(--danger);
+    font-size: var(--fs-sm);
+  }
+
+  /* Toast: flat, no side stripe. */
+  .desk-toast {
+    position: fixed;
+    z-index: 50;
+    top: calc(env(safe-area-inset-top) + 72px);
+    left: 50%;
+    max-width: calc(100% - 32px);
+    padding: 12px 16px;
+    border-radius: var(--radius-md);
+    background: var(--chrome-bg);
+    box-shadow: var(--shadow-2);
+    color: var(--chrome-text);
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -8px);
+    transition:
+      opacity var(--dur-base) var(--ease-out),
+      transform var(--dur-base) var(--ease-out);
+  }
+  .desk-toast.is-shown {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  .desk-toast.is-error {
+    background: var(--danger);
+    color: var(--surface);
+  }
+}

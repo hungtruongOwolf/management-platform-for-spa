@@ -2,9 +2,8 @@
 
 @layer components {
   .section-title {
-    font-family: var(--font-brand, inherit);
     font-size: 1.125rem;
-    color: var(--primary);
+    font-weight: 600;
   }
 
   .link-button {

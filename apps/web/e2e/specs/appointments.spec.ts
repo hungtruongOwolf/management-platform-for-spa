@@ -141,7 +141,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
       .click();
     await expect(panel).toContainText("Đang làm");
     await panel.getByRole("button", { name: "Ghi lượt", exact: true }).click();
-    await expect(page.getByText(/Hoàn tất lịch hẹn 09:00/)).toBeVisible();
+    await expect(page.getByText(/Đang ghi cho lịch hẹn 09:00/)).toBeVisible();
     const cart = page.getByRole("list", { name: "Dịch vụ trong lượt" });
     await expect(cart).toContainText("Trừ liệu trình");
     await expect(page.getByRole("combobox", { name: "KTV" })).toHaveValue(
@@ -630,9 +630,9 @@ test("round-4 screenshots", async ({ page }) => {
         .getByRole("button", { name: /^Trừ 1 buổi/ })
         .first()
         .click();
-      await page.getByLabel("Dịch vụ lẻ").selectOption(r.service.id);
-      await page.getByRole("button", { name: "Thêm", exact: true }).click();
-      await page.getByRole("button", { name: "+ Giảm giá dịch vụ lẻ" }).click();
+      // Picking a service adds it (no separate "Thêm").
+      await page.getByLabel("Thêm dịch vụ lẻ").selectOption(r.service.id);
+      await page.getByRole("button", { name: "Thêm giảm giá" }).click();
       await page.getByLabel("Mức giảm (%)").fill("10");
       await page.getByLabel("Lý do (bắt buộc)").fill("Khách quen");
       await page.screenshot({

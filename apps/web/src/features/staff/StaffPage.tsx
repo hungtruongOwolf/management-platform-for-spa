@@ -60,7 +60,7 @@ export function StaffPage() {
   if (!tab) {
     return (
       <section className="grid content-start gap-5">
-        <PageHeader eyebrow="Nhân viên" title="Công và lương của tôi">
+        <PageHeader title="Công và lương của tôi">
           {picker}
         </PageHeader>
         {can(me, "staff.read_own") ? (
@@ -79,7 +79,7 @@ export function StaffPage() {
   };
   return (
     <section className="grid content-start gap-5">
-      <PageHeader eyebrow="Nhân viên" title="Nhân viên" label={`Nhân viên · ${TAB_LABEL[tab]}`}>
+      <PageHeader title="Nhân viên" label={`Nhân viên · ${TAB_LABEL[tab]}`}>
         {tab !== "profiles" && picker}
       </PageHeader>
       <div role="tablist" aria-label="Mục quản lý nhân viên" className="tabs tabs-scroll">

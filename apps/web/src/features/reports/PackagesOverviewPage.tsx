@@ -88,7 +88,7 @@ function PackagesOverviewPageBody() {
 
   return (
     <section className="grid content-start gap-5">
-      <PageHeader eyebrow="Gói liệu trình" title="Gói liệu trình của khách" />
+      <PageHeader title="Gói liệu trình của khách" />
       <div role="search" aria-label="Tìm và lọc gói" className="grid content-start gap-3">
         <SearchField
           label="Tìm theo tên khách, tên gói hoặc số điện thoại"

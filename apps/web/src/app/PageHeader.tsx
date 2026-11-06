@@ -15,8 +15,6 @@ export interface PageHeaderProps {
   title: ReactNode;
   /** Plain-text title for the trail ("‹ Quay lại …") when `title` is not a string. */
   label?: string;
-  /** Small gold line above the title (section name on top-level screens). */
-  eyebrow?: string;
   /** Ancestors, root first; the current page is appended automatically. */
   breadcrumbs?: Crumb[];
   /** Show the back control. Default: when there are breadcrumbs (detail pages). */
@@ -33,13 +31,13 @@ function plainClick(e: MouseEvent): boolean {
 }
 
 /**
- * Header of every screen (design-system.md "Điều hướng"): optional eyebrow, breadcrumbs that show
+ * Header of every screen (design-system.md "Điều hướng"): breadcrumbs that show
  * where the page sits (Khách hàng › Nguyễn Thị Hà), a back control that returns to where the user
  * actually came from — the previous in-app screen with its filters and scroll, through the browser
  * history — or, after a deep link, to the logical parent. It also records its title in the trail so
  * the next screen can name it.
  */
-export function PageHeader({ title, label, eyebrow, breadcrumbs = [], back, titleId, children }: PageHeaderProps) {
+export function PageHeader({ title, label, breadcrumbs = [], back, titleId, children }: PageHeaderProps) {
   const router = useRouter();
   const { index, href, pathname } = useRouterState({
     select: (s) => ({ index: s.location.state.__TSR_index, href: s.location.href, pathname: s.location.pathname }),
@@ -109,7 +107,6 @@ export function PageHeader({ title, label, eyebrow, breadcrumbs = [], back, titl
       ) : null}
       <div className="page-header-main">
         <div className="min-w-0">
-          {eyebrow && <p className="eyebrow">{eyebrow}</p>}
           <h1 id={titleId} className="page-title">
             {title}
           </h1>

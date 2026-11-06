@@ -46,7 +46,7 @@ export function PriceListPage() {
 
   return (
     <section aria-labelledby="price-list-title" className="grid content-start gap-6">
-      <PageHeader eyebrow="Danh mục" title="Bảng giá dịch vụ" titleId="price-list-title">
+      <PageHeader title="Bảng giá dịch vụ" titleId="price-list-title">
         <Link to="/bang-gia/goi" className="btn btn-secondary">
           Mẫu gói liệu trình
         </Link>
