@@ -150,7 +150,8 @@ export function AppointmentsCalendar({
     const opens = minutesOf(cal.data?.opens_at ?? "09:00");
     const start =
       day === today ? Math.max(opens, Math.ceil(now / slot) * slot) : opens;
-    const staffId = shown && shown.technicians.length === 1 ? who : "";
+    // Looking at one technician: the booking is for them.
+    const staffId = shown && shown !== cal.data && who !== "none" ? who : "";
     setDraft({ mode: "new", day, start, staffId });
   };
   const shift = (days: number) => {
@@ -194,6 +195,18 @@ export function AppointmentsCalendar({
             <DaySummary cal={shown} day={layout === "tuan" ? null : day} />
           )}
         </div>
+        {/* The primary action, top right (EM round 6); phones keep it in the bottom bar. */}
+        {!locked && !phone && (
+          <button
+            type="button"
+            className="btn btn-primary min-h-11"
+            onClick={book}
+          >
+            <Icon name="plus" /> Đặt lịch
+          </button>
+        )}
+      </div>
+      <div className="cal-bar">
         <div className="cal-toolbar">
           <div
             role="group"
@@ -302,15 +315,6 @@ export function AppointmentsCalendar({
                 : ""}
             </button>
           )}
-          {!locked && !phone && (
-            <button
-              type="button"
-              className="btn btn-primary min-h-11"
-              onClick={book}
-            >
-              <Icon name="plus" /> Đặt lịch
-            </button>
-          )}
         </div>
       </div>
       {locked && (
@@ -339,7 +343,7 @@ export function AppointmentsCalendar({
               everyone={cal.data}
               day={day}
               canBook={!locked}
-              unassigned={shown.technicians.length !== 1}
+              unassigned={shown === cal.data || who === "none"}
               onOpen={setOpenId}
               onBook={(start, staffId) => {
                 setDraft({ mode: "new", day, start, staffId });
@@ -628,7 +632,11 @@ function DayGrid({
           <div
             key={`layer-${g.key}`}
             className="cal-layer"
-            style={{ gridColumn: g.col, gridRow: `2 / span ${String(rows)}` }}
+            // Explicit "/ span 1": an absolute grid item with an auto end line would reach the grid edge.
+            style={{
+              gridColumn: `${String(g.col)} / span 1`,
+              gridRow: `2 / span ${String(rows)}`,
+            }}
           >
             {g.items.map((e) => {
               const block = blockOf(e.start, e.minutes, opens, closes, slot);
@@ -729,13 +737,14 @@ function DayEvent({
         </span>
       ) : (
         <>
-          <strong>{e.customerName}</strong>
+          {/* The spaces keep the lines apart in the text (accessible name match), not on screen. */}
+          <strong>{e.customerName}</strong>{" "}
           <span className="cal-event-phase">
             {phase}
             {fit === "short" && services && (
               <span className="cal-event-more"> · {services}</span>
             )}
-          </span>
+          </span>{" "}
           {fit === "full" && services && <span>{services}</span>}
         </>
       )}

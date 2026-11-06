@@ -74,9 +74,20 @@
   flex-wrap: nowrap;
   gap: 4px;
 }
-.cal-toolbar :is(.btn, .segmented, .date-field, select) {
+.cal-toolbar :is(.btn, .segmented, .date-field, .date-field > input, select) {
+  box-sizing: border-box;
   height: 44px;
   min-height: 44px;
+  margin: 0;
+}
+.cal-who {
+  display: flex;
+}
+@media (max-width: 639.98px) {
+  .cal-toolbar,
+  .cal-toolbar-group {
+    flex-wrap: wrap;
+  }
 }
 .cal-toolbar .segmented {
   flex-wrap: nowrap;
@@ -99,8 +110,7 @@
   white-space: nowrap;
 }
 .cal-date .date-field input {
-  width: 9.5rem;
-  min-height: 44px;
+  width: 9rem;
 }
 .cal-who select {
   max-width: 14rem;
@@ -122,6 +132,9 @@
   max-height: max(420px, calc(100dvh - 220px));
   overflow: auto;
   overscroll-behavior: contain;
+  /* Scrolling a slot or card into view (focus, keyboard) keeps it clear of the sticky header and
+     time gutter, so focusing a card never nudges the grid. */
+  scroll-padding: 48px 0 0 96px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
@@ -228,11 +241,12 @@
   background: var(--surface-2);
   cursor: default;
 }
-/* A column's event layer: over its cells, transparent to the pointer except on the cards. */
+/* A column's event layer: an overlay over its cells (absolute, so its grid area is the containing
+   block and it takes no place in the grid), transparent to the pointer except on the cards. */
 .cal-layer {
-  position: relative;
+  position: absolute;
+  inset: 0;
   z-index: 2;
-  min-width: 0;
   pointer-events: none;
 }
 .cal-event {
@@ -262,6 +276,12 @@
   z-index: 1;
   box-shadow: var(--shadow-1);
 }
+/* A card is a block of the timeline: pressing it must not nudge it off its time (the app-wide
+   1 px press offset); the inset ring says "pressed" instead. */
+.cal-grid .cal-event:active {
+  transform: none;
+  box-shadow: inset 0 0 0 1px var(--appt-edge);
+}
 .cal-event strong,
 .cal-event > span,
 .cal-event-line {
@@ -286,10 +306,12 @@
 }
 /* Decorative and stacked over the grid: --top is in slots from the first row. */
 .cal-now {
-  position: relative;
+  position: absolute;
+  top: calc(var(--top) * var(--slot-h));
+  right: 0;
+  left: 0;
   z-index: 4;
   height: 0;
-  margin-top: calc(var(--top) * var(--slot-h));
   border-top: 2px solid var(--danger);
   pointer-events: none;
 }

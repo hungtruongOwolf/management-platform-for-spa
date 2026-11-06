@@ -420,6 +420,10 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
       throw new Error(`no ${String(name)} cell in the card's column`);
     };
     const under = await inColumn(/^Đặt lịch 10:15/);
+    // The card stays inside its own column, with a small inset on both sides.
+    expect(box.x).toBeGreaterThan(under.b.x);
+    expect(box.x + box.width).toBeLessThan(under.b.x + under.b.width);
+    expect(box.width).toBeGreaterThan(under.b.width - 12);
     expect(under.b.y).toBeGreaterThanOrEqual(box.y - 1);
     expect(under.b.y + under.b.height).toBeLessThanOrEqual(
       box.y + box.height + 2,
@@ -486,7 +490,10 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     ).filter((b): b is NonNullable<typeof b> => b !== null);
     expect(boxes.length).toBeGreaterThanOrEqual(4);
     for (const b of boxes) {
-      expect(Math.abs(b.height - 44)).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(b.height - 44),
+        `toolbar control ${JSON.stringify(b)}`,
+      ).toBeLessThanOrEqual(1);
       // Controls on the same line share their top and bottom.
       for (const o of boxes)
         if (o.y < b.y + b.height && b.y < o.y + o.height)
@@ -521,6 +528,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     await page.goto(`/quay?view=lich&ngay=${day}`);
     const grid = page.getByRole("group", { name: /Lịch theo KTV/ });
     const picker = page.getByLabel("Xem theo KTV");
+    await expect(picker.locator("option").first()).toHaveText("Tất cả KTV");
     const options = await picker.locator("option").allTextContents();
     expect(options[0]).toBe("Tất cả KTV");
     expect(options.at(-1)).toBe("Chưa gán KTV");
