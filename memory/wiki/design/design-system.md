@@ -87,6 +87,8 @@ EM chấm UI ~5–6/10 ([raw](../../raw/2026-11-06-em-review-polish-round2.md)):
 
 Sửa lẻ cùng đợt: chip "★ Khuyên dùng" bỏ chấm trạng thái (thành "• ★"); banner "Đến hạn đánh giá" (sổ hằng ngày) icon + câu + nút một hàng (`.callout` chung làm nó xếp dọc).
 
+**Ngân sách** (`vite build`, gzip -9 entry + modulepreload/stylesheet, cùng máy): JS khởi động 124.12 → 124.21 KB (chip ngày + chữ cái avatar); CSS khởi động 16.18 → 17.36 KB (+1.2 KB: hoa văn SVG inline, thang control, chip). LCP: watermark là mask trên lớp toàn viewport, logo là file sidebar đã tải; không ảnh nào trên khung hay card. Ảnh trước/sau ở scratchpad agent `round2-style/before`, `round2-style/after`.
+
 ## Kiểm tra thống nhất 2026-11-06 (`redesign(unify)`)
 EM sau vòng duyệt 2 ([raw](../../raw/2026-11-06-em-review-redesign-rollout.md)): "bản cũ và bản mới chọn 2 option qua lại sẽ bị lẫn lộn về phối màu và style … cân đối lại … cho thống nhất 1 bản cuối". Bố cục EM chọn giữ nguyên (lịch sử sử dụng, lịch tuần, gói liệu trình của khách, bảng giá + "Thêm nhóm dịch vụ" ở đầu, Tổng quan, phối màu nav; "Thực thu" nâu đỏ); việc này chỉ thống nhất **token + component bên dưới**. Kiểm: mọi màn × 1280/1024/390 × sáng/tối trên API thật + `seed-demo`, quét thuộc tính tính toán của mọi ô nhập, quét CSS/TSX.
 
