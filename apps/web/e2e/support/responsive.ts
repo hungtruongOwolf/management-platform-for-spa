@@ -23,6 +23,8 @@ export function overlappingSiblings(page: Page): Promise<string[]> {
     const box = (el: Element): DOMRect | null => {
       const cs = getComputedStyle(el);
       if (cs.display === "none" || cs.display === "inline" || cs.display === "contents") return null;
+      // <colgroup>/<col> only carry widths; their box spans the whole table by definition.
+      if (cs.display === "table-column-group" || cs.display === "table-column") return null;
       if (cs.visibility === "hidden" || Number(cs.opacity) === 0) return null;
       if (cs.position === "absolute" || cs.position === "fixed") return null;
       const r = el.getBoundingClientRect();
@@ -112,7 +114,8 @@ export async function focusRingsOverText(page: Page, max = 16): Promise<string[]
       if (document.activeElement !== el) continue;
       const cs = getComputedStyle(el);
       if (cs.outlineStyle === "none" || parseFloat(cs.outlineWidth) === 0) continue;
-      const reach = parseFloat(cs.outlineWidth) + Math.max(0, parseFloat(cs.outlineOffset));
+      // The ring's outer edge sits offset + width outside the border (an inset ring: ≤ 0, nothing outside).
+      const reach = Math.max(0, parseFloat(cs.outlineWidth) + parseFloat(cs.outlineOffset));
       const r = el.getBoundingClientRect();
       const ring = { left: r.left - reach, right: r.right + reach, top: r.top - reach, bottom: r.bottom + reach };
       for (const { node, rects } of texts) {

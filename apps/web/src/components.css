@@ -1103,6 +1103,9 @@ h2 .gender-chip {
   display: inline-flex;
   min-height: 44px;
   align-items: center;
+  /* Room for the inset focus ring (styles.css) without moving the name off its column edge. */
+  margin-inline: -6px;
+  padding-inline: 6px;
   border-radius: var(--radius-sm);
   font-weight: 600;
   text-align: left;
