@@ -86,10 +86,15 @@
     color: var(--text-muted);
     font-size: var(--fs-sm);
   }
+  /* Be Vietnam Pro has no true tabular figures: a fixed box keeps the line still as the seconds
+   * tick (layout.spec "hover and press move nothing" caught the 4px jitter). */
   .day-clock-time {
+    display: inline-block;
+    min-width: 8.5ch;
     color: var(--text);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
+    text-align: right;
   }
   .day-clock-time.is-late {
     color: var(--danger);

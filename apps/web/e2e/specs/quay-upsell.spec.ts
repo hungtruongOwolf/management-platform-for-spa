@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { ownerState, stack } from "../stack";
 import { expectAccessible, uniquePhone } from "../support/run";
 
@@ -83,6 +83,19 @@ async function addOneOff(page: Page, f: Fixture): Promise<void> {
 
 const toast = (page: Page) => page.locator(".desk-toast");
 
+/**
+ * Opens a row's ⋯ menu from the keyboard and runs one item. The menu closes on scroll (it is a
+ * fixed popover), so the button is scrolled into view before it opens, and nothing scrolls after.
+ */
+async function rowAction(page: Page, button: Locator, item: string): Promise<void> {
+  await button.scrollIntoViewIfNeeded();
+  await button.focus();
+  await page.keyboard.press("Enter");
+  const entry = page.getByRole("menu").getByRole("menuitem", { name: item });
+  await expect(entry).toBeVisible();
+  await entry.dispatchEvent("click");
+}
+
 test.describe("vòng 6: bán gói trong giỏ, giỏ nháp, chuyển sang gói", () => {
   test("sells a package in the cart and uses today's session from it", async ({ page }) => {
     const f = await fixture(page, "giỏ");
@@ -164,9 +177,11 @@ test.describe("vòng 6: bán gói trong giỏ, giỏ nháp, chuyển sang gói",
     expect(visit.status()).toBe(201);
     await page.goto("/quay");
     const today = page.getByRole("table", { name: "Lượt khách hôm nay" });
-    const menu = today.getByRole("button", { name: new RegExp(`^Thao tác lượt .* của ${f.name}$`) });
-    await menu.click();
-    await page.getByRole("menuitem", { name: "Chuyển sang gói liệu trình" }).click();
+    await rowAction(
+      page,
+      today.getByRole("button", { name: new RegExp(`^Thao tác lượt .* của ${f.name}$`) }),
+      "Chuyển sang gói liệu trình",
+    );
     await page.getByRole("combobox", { name: "Mẫu gói" }).selectOption(f.planId);
     const count = page.getByRole("checkbox", { name: /Tính buổi hôm nay vào gói/ });
     await expect(count).not.toBeChecked();
@@ -186,8 +201,12 @@ test.describe("vòng 6: bán gói trong giỏ, giỏ nháp, chuyển sang gói",
       .filter({ hasText: f.name })
       .filter({ hasNotText: "Đã sửa" })
       .first();
-    await current.getByRole("button", { name: /^Thao tác lượt/ }).click();
-    await page.getByRole("menuitem", { name: "Thêm dịch vụ / bán gói" }).click();
+    await page.waitForLoadState("networkidle");
+    await rowAction(
+      page,
+      current.getByRole("button", { name: /^Thao tác lượt/ }),
+      "Thêm dịch vụ / bán gói",
+    );
     const extra = page.getByLabel("Thêm dịch vụ vào lượt");
     await expect(extra.locator(`option[value="${f.serviceId}"]`)).toHaveCount(1);
     await extra.selectOption(f.serviceId);
