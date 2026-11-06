@@ -1348,6 +1348,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "crm",
+ "hr",
  "identity",
  "kernel",
  "org",

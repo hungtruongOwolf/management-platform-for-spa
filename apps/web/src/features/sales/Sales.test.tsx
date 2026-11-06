@@ -217,6 +217,28 @@ describe("sell package dialog", () => {
     expect(within(list).getByText(/HSD 04\/05\/2027/)).toBeInTheDocument();
   });
 
+  it("records a package the customer chose themselves with nobody credited (Q-U2)", async () => {
+    const calls = serve(MANAGER);
+    const { user, dialog } = await openDialog();
+    const [planSelect, closerSelect] = within(dialog).getAllByRole("combobox");
+    if (!planSelect || !closerSelect) throw new Error("selects missing");
+    await user.selectOptions(planSelect, "p1");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Lưu & thu tiền" }),
+    );
+    expect(
+      within(dialog).getByText("Chọn người tư vấn chốt (hoặc Khách tự chọn)."),
+    ).toBeInTheDocument();
+    await user.selectOptions(closerSelect, "self");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Lưu & thu tiền" }),
+    );
+    const post = calls.find(
+      (c) => c.method === "POST" && c.url === "/api/v1/sales",
+    );
+    expect(post?.body).toMatchObject({ closer_staff_id: null });
+  });
+
   it("requires a reason for a discount and blocks a manager above 10%", async () => {
     const calls = serve(MANAGER);
     const { user, dialog } = await openDialog();

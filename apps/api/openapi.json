@@ -3303,6 +3303,150 @@
         }
       }
     },
+    "/api/v1/visits/{id}/additions": {
+      "post": {
+        "tags": [
+          "visits"
+        ],
+        "operationId": "add_to_visit",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per addition; a retry replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisitAdditions"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Lines and sales added (US12): each new sale is linked to the visit, nothing existing changes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required"
+          },
+          "403": {
+            "description": "auth.forbidden / day.locked (manager, a day before today) / discount.limit_exceeded"
+          },
+          "404": {
+            "description": "visit, service, plan or beneficiary not in this spa"
+          },
+          "409": {
+            "description": "visit.voided / visit.corrected, payroll.period_closed, package.*"
+          },
+          "422": {
+            "description": "validation_failed, payment.amount_mismatch and every rule of POST /visits"
+          }
+        }
+      }
+    },
+    "/api/v1/visits/{id}/convert-to-package": {
+      "post": {
+        "tags": [
+          "visits"
+        ],
+        "operationId": "convert_visit",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Version of the visit being converted",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per conversion; a retry replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisitConversion"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Old visit voided (one-off payments reversed), package sold, visit recorded again with today's session from the package (US11); `difference` = what the customer hands over now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitCorrected"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required / precondition.if_match_required"
+          },
+          "403": {
+            "description": "auth.forbidden / day.locked (manager, a day before today) / discount.limit_exceeded"
+          },
+          "404": {
+            "description": "visit or plan not in this spa"
+          },
+          "409": {
+            "description": "visit.voided / visit.corrected, payroll.period_closed, package.*"
+          },
+          "412": {
+            "description": "conflict.stale_version"
+          },
+          "422": {
+            "description": "visit.nothing_to_convert (no one-off line the package covers), validation_failed, payment.amount_mismatch"
+          }
+        }
+      }
+    },
     "/api/v1/visits/{id}/correct": {
       "post": {
         "tags": [
@@ -3635,6 +3779,13 @@
             "format": "date-time",
             "description": "When the service happened. Default: arrival time, else the booked start if already\npast, else now. Same day rules as `POST /visits` (owner may back-date)."
           },
+          "companions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Companions; omitted or empty = the booking's."
+          },
           "discount": {
             "oneOf": [
               {
@@ -3656,6 +3807,13 @@
               "string",
               "null"
             ]
+          },
+          "package_sales": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VisitPackageSaleCreate"
+            },
+            "description": "Packages sold in this checkout, as in `POST /visits` (spec §10.4.1, AC9.9)."
           },
           "payments": {
             "type": "array",
@@ -3689,6 +3847,13 @@
           "starts_at"
         ],
         "properties": {
+          "companions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "0–5 companions known only by a note (\"chồng của chị Lan\", 1–100 characters): shown on\nthe booking, never a customer, never served or charged."
+          },
           "customer_id": {
             "type": [
               "string",
@@ -3752,6 +3917,7 @@
           "id",
           "status",
           "phase",
+          "companions",
           "business_date",
           "starts_at",
           "ends_at",
@@ -3783,6 +3949,13 @@
               "null"
             ],
             "format": "date-time"
+          },
+          "companions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Companions known only by a note (never customers, never served or charged)."
           },
           "created_at": {
             "type": "string",
@@ -3909,6 +4082,13 @@
           "people"
         ],
         "properties": {
+          "companions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "0–5 people who come along known only by a note (\"chồng của chị Lan\", \"gia đình của …\",\nQ-U5): kept on the first person's booking, never served or charged."
+          },
           "note": {
             "type": [
               "string",
@@ -3921,7 +4101,7 @@
             "items": {
               "$ref": "#/components/schemas/GroupPersonCreate"
             },
-            "description": "2–6 people; an existing customer appears at most once."
+            "description": "1–6 people; an existing customer appears at most once. With no `companions`, at least 2."
           },
           "starts_at": {
             "type": "string",
@@ -5866,6 +6046,13 @@
           "paid"
         ],
         "properties": {
+          "beneficiary_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Bought for someone else (US13): who the packages belong to."
+          },
           "closer_name": {
             "type": [
               "string",
@@ -5903,6 +6090,14 @@
           "total": {
             "type": "integer",
             "format": "int64"
+          },
+          "visit_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The visit this package was sold in, if any."
           },
           "void_reason": {
             "type": [
@@ -6481,6 +6676,21 @@
             "type": "integer",
             "format": "int64",
             "description": "\"Chưa thanh toán\": total − received (always 0 in R1, which collects in full)."
+          },
+          "upsell_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Upsell attribution (\"người giới thiệu / chốt\"): the closer of a package sale, the\nreferrers of the one-off lines of a service sale; null = \"khách tự chọn\"."
+          },
+          "visit_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The visit the sale was made in (one-off lines, a package sold in the cart, an addition)."
           },
           "voided": {
             "type": "boolean",
@@ -7742,7 +7952,8 @@
           },
           "closing_commission_base": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "Upsell base (\"hoa hồng giới thiệu / chốt\", §3.2) = packages + recommended services."
           },
           "commission_lines": {
             "type": "array",
@@ -7874,6 +8085,23 @@
                 "type": "null"
               }
             ]
+          },
+          "upsell_lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UpsellLine"
+            },
+            "description": "What the upsell commission is computed from, item by item (older snapshots: empty)."
+          },
+          "upsell_package_base": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Part of the upsell base from packages closed."
+          },
+          "upsell_service_base": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Part of the upsell base from one-off services recommended (Q-U3)."
           }
         }
       },
@@ -8304,19 +8532,30 @@
         "description": "Body of `POST /sales`. Prices are never read from the client: unknown fields such as\n`unit_price` or `total` are ignored and every amount is computed from the catalog.",
         "required": [
           "customer_id",
-          "closer_staff_id",
           "lines",
           "payments"
         ],
         "properties": {
-          "closer_staff_id": {
-            "type": "string",
+          "beneficiary_customer_id": {
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "uuid",
-            "description": "The staff member who closed the sale (must be currently working here)."
+            "description": "Who the packages belong to (US13: \"mua cho người khác\"); omitted = the payer. Must be a\ncustomer of this spa (`404` otherwise)."
+          },
+          "closer_staff_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "\"Người giới thiệu / chốt\" (gets the upsell credit): any staff member currently working\nhere (owner, manager, technician); null or omitted = \"khách tự chọn\" (nobody is credited)."
           },
           "customer_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Who pays."
           },
           "discount": {
             "oneOf": [
@@ -8433,6 +8672,14 @@
           "total": {
             "type": "integer",
             "format": "int64"
+          },
+          "visit_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The visit this sale was made in (its one-off lines, a package sold in the cart, an\naddition); null = a sale at the desk without a visit."
           },
           "void_reason": {
             "type": [
@@ -9417,6 +9664,35 @@
           "arrived"
         ]
       },
+      "UpsellLine": {
+        "type": "object",
+        "description": "Upsell credit of one item sold in the month (\"người giới thiệu / chốt\", compensation-rules\n§3.2, EM 2026-11-06 Q-U3): a package closed by this person or a one-off service they\nrecommended. Performing the service is a separate credit ([`CommissionLine`]).",
+        "required": [
+          "kind",
+          "description",
+          "qty",
+          "value"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`package` or `service`."
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Packages sold / services recommended."
+          },
+          "value": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Price paid (packages, after discount) or `line_value` (services)."
+          }
+        }
+      },
       "UserSummary": {
         "type": "object",
         "required": [
@@ -9434,6 +9710,64 @@
           },
           "phone": {
             "type": "string"
+          }
+        }
+      },
+      "VisitAdditions": {
+        "type": "object",
+        "description": "Body of `POST /visits/{id}/additions` (Idempotency-Key): services or packages sold after the\nvisit was saved (\"Thêm dịch vụ vào lượt\", US12). Adds lines and sales, never changes the\nexisting ones, needs no reason. Same rules as `POST /visits`.",
+        "properties": {
+          "discount": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ServiceDiscountCreate",
+                "description": "Discount on the new one-off lines."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VisitLineCreate"
+            },
+            "description": "0–20 new lines (one-off or package); at least one line or one package sale."
+          },
+          "package_sales": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VisitPackageSaleCreate"
+            },
+            "description": "0–3 packages sold now, linked to the visit."
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentCreate"
+            },
+            "description": "Summing exactly to the new one-off lines plus the new packages."
+          }
+        }
+      },
+      "VisitConversion": {
+        "type": "object",
+        "description": "Body of `POST /visits/{id}/convert-to-package` (If-Match + Idempotency-Key): \"Tính buổi hôm\nnay vào gói\" (US11, Q-U1 case by case). The one-off lines of the visit whose service the new\npackage covers become today's session of that package and their charge is reversed; every\nother line is recorded again unchanged. Without this choice the desk simply sells the package\nwith `POST /visits/{id}/additions` and today's one-off stays.",
+        "required": [
+          "package_sale"
+        ],
+        "properties": {
+          "package_sale": {
+            "$ref": "#/components/schemas/VisitPackageSaleCreate",
+            "description": "The package (its `ref` is ignored); it must belong to the visit's customer."
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentCreate"
+            },
+            "description": "Summing exactly to the package plus the one-off lines kept (the old one-off payments are\nreversed). The desk shows \"Khách đưa thêm\" = this − what was paid for the visit."
           }
         }
       },
@@ -9476,6 +9810,13 @@
             ],
             "format": "date-time",
             "description": "Service time; absent = the old visit's. Must stay on the old visit's business day."
+          },
+          "companions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Companions (notes only), as in `POST /visits`."
           },
           "customer_id": {
             "type": "string",
@@ -9537,6 +9878,13 @@
             "format": "date-time",
             "description": "When the service happened (giờ làm), not when it is typed. Defaults to now. At most\n5 minutes ahead of the server and on today's business day; with `visit.backdate` (owner)\nup to 366 days back, and the visit, its sale and payments then belong to that day."
           },
+          "companions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "0–5 companions known only by a note (\"chồng của chị Lan\"), 1–100 characters each: shown\non the visit, never served or charged."
+          },
           "customer_id": {
             "type": "string",
             "format": "uuid"
@@ -9566,12 +9914,19 @@
             ],
             "description": "Session note incl. reactions (health data): needs `customer.health_notes.write`."
           },
+          "package_sales": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VisitPackageSaleCreate"
+            },
+            "description": "0–3 packages sold in this checkout (spec §10.4.1, needs `package.sell`). Each becomes a\nsale of its own linked to the visit (`sale.visit_id`); a line with `package_ref` uses\ntoday's session from it (\"Dùng gói này cho buổi hôm nay\")."
+          },
           "payments": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PaymentCreate"
             },
-            "description": "For the one-off lines: 0–2 payments, one per method, summing exactly to their total."
+            "description": "0–2 payments, one per method, summing exactly to everything due: the one-off lines after\ndiscount plus every package sold in `package_sales`. The server splits them over the\nsales: cash pays the one-off sale first, then the packages in order; the rest is transfer."
           }
         }
       },
@@ -9588,6 +9943,8 @@
           "discount_amount",
           "total",
           "payments",
+          "package_sales",
+          "companions",
           "lines",
           "version",
           "created_at"
@@ -9602,6 +9959,13 @@
             "type": "string",
             "format": "date-time",
             "description": "When the service happened (giờ làm)."
+          },
+          "companions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Companions known only by a note (never served or charged)."
           },
           "corrected_by_visit_id": {
             "type": [
@@ -9667,11 +10031,19 @@
             ],
             "description": "Present only on a single visit and only for `customer.health_notes.read`; null = no note."
           },
+          "package_sales": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VisitPackageSaleDto"
+            },
+            "description": "Packages sold in this visit, each a sale of its own."
+          },
           "payments": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PaymentDto"
-            }
+            },
+            "description": "Payments of the one-off sales (the first one and every addition)."
           },
           "sale_id": {
             "type": [
@@ -9679,7 +10051,7 @@
               "null"
             ],
             "format": "uuid",
-            "description": "Sale of the one-off lines (none when the visit only used package sessions)."
+            "description": "First sale of the one-off lines (none when the visit only used package sessions); later\nadditions have sales of their own (`lines[].sale_id`)."
           },
           "status": {
             "$ref": "#/components/schemas/VisitStatusDto"
@@ -9692,7 +10064,7 @@
           "total": {
             "type": "integer",
             "format": "int64",
-            "description": "Amount collected in this visit (one-off lines after discount)."
+            "description": "Amount collected for the one-off lines (after discount), additions included. Packages sold\nin the visit are in `package_sales`."
           },
           "version": {
             "type": "integer",
@@ -9737,6 +10109,13 @@
             ],
             "description": "`package` lines: use an expired package anyway (needs `package.use_expired_override`, audited)."
           },
+          "package_ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`package` lines: take today's session from the package sold in this request under that\n`ref` (instead of `customer_package_item_id`)."
+          },
           "price_variant": {
             "oneOf": [
               {
@@ -9756,6 +10135,14 @@
             "format": "int32",
             "description": "Sessions / times, 1–10 (default 1).",
             "minimum": 0
+          },
+          "referrer_staff_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "`one_off` lines: who recommended this service (\"người giới thiệu\", upsell credit); null =\n\"khách tự chọn\". The technician (`staff_id`) keeps the credit for performing it."
           },
           "service_id": {
             "type": "string",
@@ -9849,6 +10236,28 @@
             "type": "integer",
             "format": "int32"
           },
+          "referrer_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "referrer_staff_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "`one_off` lines: who recommended it (upsell credit); null = \"khách tự chọn\"."
+          },
+          "sale_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "`one_off` lines: the sale that charged it (the visit's first sale or an addition)."
+          },
           "service_id": {
             "type": "string",
             "format": "uuid"
@@ -9914,6 +10323,135 @@
         },
         "additionalProperties": false
       },
+      "VisitPackageSaleCreate": {
+        "type": "object",
+        "description": "A package sold inside a checkout (`POST /visits`, `POST /appointments/{id}/complete`,\n`POST /visits/{id}/additions`, `POST /visits/{id}/convert-to-package`). Same rules as\n`POST /sales` for one package; the price comes from the catalog.",
+        "required": [
+          "package_plan_id"
+        ],
+        "properties": {
+          "beneficiary_customer_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Who the package belongs to (US13); omitted = the visit's customer (the payer). A package\nfor someone else cannot be used in this visit."
+          },
+          "closer_staff_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "\"Người giới thiệu / chốt\" (upsell credit): any staff member working here; null = \"khách tự\nchọn\". The desk defaults to the technician serving the customer."
+          },
+          "discount": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DiscountCreate",
+                "description": "Discount on this package alone (D10; Q-U9: the manager cap applies per sale)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gift_note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted = the plan's gift; empty = none."
+          },
+          "package_plan_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Client-chosen name (1–20 characters, unique in the request) that lines point at with\n`package_ref`; omitted when no line uses this package today."
+          }
+        }
+      },
+      "VisitPackageSaleDto": {
+        "type": "object",
+        "description": "A package sold in a visit (`sale.visit_id`), as the visit shows it.",
+        "required": [
+          "sale_id",
+          "voided",
+          "business_date",
+          "description",
+          "customer_package_ids",
+          "total",
+          "payments"
+        ],
+        "properties": {
+          "beneficiary_customer_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Who the package belongs to when not the visit's customer (US13)."
+          },
+          "beneficiary_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "closer_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "closer_staff_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "\"Người giới thiệu / chốt\"; null = \"khách tự chọn\"."
+          },
+          "customer_package_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "description": {
+            "type": "string",
+            "description": "Package names, in sale order."
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentDto"
+            }
+          },
+          "sale_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "voided": {
+            "type": "boolean"
+          }
+        }
+      },
       "VisitStatusDto": {
         "type": "string",
         "enum": [
@@ -9932,6 +10470,16 @@
             ],
             "format": "date-time",
             "description": "New service time (giờ làm): on the visit's own business day, not in the future."
+          },
+          "companions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Absent = unchanged; otherwise the full list of companion notes (0–5)."
           },
           "lines": {
             "type": "array",

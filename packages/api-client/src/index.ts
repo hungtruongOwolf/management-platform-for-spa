@@ -36,6 +36,11 @@ export type VisitLineCreate = Schemas["VisitLineCreate"];
 export type VisitUpdate = Schemas["VisitUpdate"];
 export type VisitCorrection = Schemas["VisitCorrection"];
 export type VisitCorrected = Schemas["VisitCorrected"];
+// Round 6 (spec R1-1 §10): packages in the checkout, additions, conversion.
+export type VisitPackageSaleCreate = Schemas["VisitPackageSaleCreate"];
+export type VisitPackageSale = Schemas["VisitPackageSaleDto"];
+export type VisitAdditions = Schemas["VisitAdditions"];
+export type VisitConversion = Schemas["VisitConversion"];
 export type VoidCreate = Schemas["VoidCreate"];
 export type PackageExtend = Schemas["PackageExtend"];
 export type PackageCancel = Schemas["PackageCancel"];

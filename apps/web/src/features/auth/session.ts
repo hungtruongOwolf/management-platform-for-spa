@@ -138,8 +138,14 @@ export async function logout(queryClient: QueryClient): Promise<void> {
   try {
     await api("/auth/logout", { method: "POST" });
   } finally {
-    // Whatever the server said, forget everything cached for this user.
+    // Whatever the server said, forget everything cached for this user, unsaved carts included
+    // (loaded on demand: the draft module is not part of the startup chunk).
     queryClient.clear();
+    try {
+      (await import("../front-desk/draftCart")).clearAllDrafts();
+    } catch {
+      // The tab closes the storage anyway; signing out must not fail over it.
+    }
     setAuthState(queryClient, { state: "anonymous" });
   }
 }

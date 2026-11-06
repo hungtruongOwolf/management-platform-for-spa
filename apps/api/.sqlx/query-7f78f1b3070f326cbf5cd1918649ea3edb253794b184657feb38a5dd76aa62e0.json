@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT l.id, l.visit_id, l.service_id, l.service_name_snapshot, sc.name AS category_name,\n                  l.source, l.customer_package_id,\n                  l.customer_package_item_id, p.name_snapshot AS \"package_name?\", l.sessions_left_after,\n                  i.sessions_total AS \"sessions_total?\", l.staff_id, s.full_name AS staff_name, l.qty,\n                  l.price_variant, l.unit_price, l.line_value, l.discount_amount, l.expiry_override_reason\n           FROM app.visit_line l\n           JOIN app.staff s ON s.tenant_id = l.tenant_id AND s.id = l.staff_id\n           JOIN app.service sv ON sv.tenant_id = l.tenant_id AND sv.id = l.service_id\n           JOIN app.service_category sc ON sc.tenant_id = sv.tenant_id AND sc.id = sv.category_id\n           LEFT JOIN app.customer_package p ON p.tenant_id = l.tenant_id AND p.id = l.customer_package_id\n           LEFT JOIN app.customer_package_item i ON i.tenant_id = l.tenant_id AND i.id = l.customer_package_item_id\n           WHERE l.tenant_id = $1 AND l.visit_id = ANY($2)\n           ORDER BY l.visit_id, l.position",
+  "query": "SELECT l.id, l.visit_id, l.service_id, l.service_name_snapshot, sc.name AS category_name,\n                  l.source, l.customer_package_id,\n                  l.customer_package_item_id, p.name_snapshot AS \"package_name?\", l.sessions_left_after,\n                  i.sessions_total AS \"sessions_total?\", l.staff_id, s.full_name AS staff_name, l.qty,\n                  l.price_variant, l.unit_price, l.line_value, l.discount_amount, l.expiry_override_reason,\n                  l.sale_id, l.referrer_staff_id, r.full_name AS \"referrer_name?\"\n           FROM app.visit_line l\n           JOIN app.staff s ON s.tenant_id = l.tenant_id AND s.id = l.staff_id\n           LEFT JOIN app.staff r ON r.tenant_id = l.tenant_id AND r.id = l.referrer_staff_id\n           JOIN app.service sv ON sv.tenant_id = l.tenant_id AND sv.id = l.service_id\n           JOIN app.service_category sc ON sc.tenant_id = sv.tenant_id AND sc.id = sv.category_id\n           LEFT JOIN app.customer_package p ON p.tenant_id = l.tenant_id AND p.id = l.customer_package_id\n           LEFT JOIN app.customer_package_item i ON i.tenant_id = l.tenant_id AND i.id = l.customer_package_item_id\n           WHERE l.tenant_id = $1 AND l.visit_id = ANY($2)\n           ORDER BY l.visit_id, l.position",
   "describe": {
     "columns": [
       {
@@ -211,6 +211,39 @@
             "name": "expiry_override_reason"
           }
         }
+      },
+      {
+        "ordinal": 19,
+        "name": "sale_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "sale_id"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "referrer_staff_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "referrer_staff_id"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "referrer_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.staff",
+            "name": "full_name"
+          }
+        }
       }
     ],
     "parameters": {
@@ -238,8 +271,11 @@
       false,
       false,
       false,
-      true
+      true,
+      true,
+      true,
+      false
     ]
   },
-  "hash": "b583ea9768db4aa9c958b6aa9dae5b8bcd3863b5134227de8cdd41729c3c8144"
+  "hash": "7f78f1b3070f326cbf5cd1918649ea3edb253794b184657feb38a5dd76aa62e0"
 }

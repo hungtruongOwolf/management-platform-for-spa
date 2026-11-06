@@ -4,7 +4,7 @@
 
 use crate::adjustment::{self, AdjustmentKind};
 use crate::attendance::{self, AttendanceDay};
-use crate::calc::{self, CommissionLine, Day, MonthInput, PayFlag, Payslip};
+use crate::calc::{self, CommissionLine, Day, MonthInput, PayFlag, Payslip, UpsellLine};
 use crate::evaluation;
 use crate::month::Month;
 use crate::period::{self, PeriodInfo};
@@ -80,7 +80,7 @@ pub async fn compute_in(
     let days = attendance::days_in(tx, month, only).await?;
     let (from, to) = (month.first_day(), month.last_day());
     let lines = repo::commission_lines(tx, from, to).await?;
-    let closing = repo::closing_bases(tx, from, to).await?;
+    let upsell = repo::upsell_lines(tx, from, to).await?;
     let adjustments = adjustment::adjustments_in(tx, month, only).await?;
     let evaluations = evaluation::evaluations_in(tx, month, only).await?;
     let recorded_until = attendance::recorded_until(month, today);
@@ -101,6 +101,16 @@ pub async fn compute_in(
                     qty: l.qty,
                     value: l.value,
                     full_value: l.full_value,
+                })
+                .collect();
+            let my_upsell: Vec<UpsellLine> = upsell
+                .iter()
+                .filter(|l| l.staff_id == p.id)
+                .map(|l| UpsellLine {
+                    kind: l.kind.clone(),
+                    description: l.description.clone(),
+                    qty: l.qty,
+                    value: l.value,
                 })
                 .collect();
             let mine = adjustments.iter().filter(|a| a.staff_id == p.id);
@@ -124,10 +134,7 @@ pub async fn compute_in(
                 pay: pays.iter().find(|(id, _)| *id == p.id).map(|(_, t)| *t),
                 days: &my_days,
                 commission_lines: &my_lines,
-                closing_base: closing
-                    .iter()
-                    .find(|(id, _)| *id == p.id)
-                    .map_or(0, |(_, t)| *t),
+                upsell_lines: &my_upsell,
                 bonuses: sum(AdjustmentKind::Bonus, true),
                 penalties: sum(AdjustmentKind::Penalty, true),
                 bonus_points: sum(AdjustmentKind::Bonus, false),

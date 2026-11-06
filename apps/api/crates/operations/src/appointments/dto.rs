@@ -1,6 +1,6 @@
 //! Wire types of the appointments API (spec appointments.md).
 
-use crate::dto::{VisitDto, VisitLineCreate};
+use crate::dto::{VisitDto, VisitLineCreate, VisitPackageSaleCreate};
 use chrono::{DateTime, NaiveDate, Utc};
 use sales::dto::{PaymentCreate, ServiceDiscountCreate};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -31,6 +31,10 @@ pub struct AppointmentCreate {
     pub duration_min: Option<u32>,
     /// Booking note, ≤ 500 characters. Not for health data.
     pub note: Option<String>,
+    /// 0–5 companions known only by a note ("chồng của chị Lan", 1–100 characters): shown on
+    /// the booking, never a customer, never served or charged.
+    #[serde(default)]
+    pub companions: Vec<String>,
 }
 
 /// One person of a group booking: like `AppointmentCreate`, without the shared note.
@@ -57,8 +61,12 @@ pub struct AppointmentGroupCreate {
     pub starts_at: DateTime<Utc>,
     /// Booking note for everyone, ≤ 500 characters. Not for health data.
     pub note: Option<String>,
-    /// 2–6 people; an existing customer appears at most once.
+    /// 1–6 people; an existing customer appears at most once. With no `companions`, at least 2.
     pub people: Vec<GroupPersonCreate>,
+    /// 0–5 people who come along known only by a note ("chồng của chị Lan", "gia đình của …",
+    /// Q-U5): kept on the first person's booking, never served or charged.
+    #[serde(default)]
+    pub companions: Vec<String>,
 }
 
 /// `POST /appointments/group` → 201.
@@ -140,6 +148,12 @@ pub struct AppointmentComplete {
     #[serde(default)]
     pub payments: Vec<PaymentCreate>,
     pub discount: Option<ServiceDiscountCreate>,
+    /// Packages sold in this checkout, as in `POST /visits` (spec §10.4.1, AC9.9).
+    #[serde(default)]
+    pub package_sales: Vec<VisitPackageSaleCreate>,
+    /// Companions; omitted or empty = the booking's.
+    #[serde(default)]
+    pub companions: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -208,6 +222,8 @@ pub struct AppointmentDto {
     pub phase: PhaseDto,
     /// Shared by the people of one group (family) booking; null = booked alone.
     pub group_id: Option<Uuid>,
+    /// Companions known only by a note (never customers, never served or charged).
+    pub companions: Vec<String>,
     pub business_date: NaiveDate,
     pub starts_at: DateTime<Utc>,
     pub ends_at: DateTime<Utc>,

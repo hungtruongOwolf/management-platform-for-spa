@@ -2,7 +2,8 @@
 //! `POST /visits/{id}/void`, `POST /visits/{id}/correct`.
 
 use crate::dto::{
-    VisitCorrected, VisitCorrection, VisitCreate, VisitDto, VisitListQuery, VisitUpdate,
+    VisitAdditions, VisitConversion, VisitCorrected, VisitCorrection, VisitCreate, VisitDto,
+    VisitListQuery, VisitUpdate,
 };
 use crate::service;
 use axum::body::Bytes;
@@ -33,6 +34,101 @@ where
         .route("/visits/{id}", get(read_visit).patch(update_visit))
         .route("/visits/{id}/void", post(void_visit))
         .route("/visits/{id}/correct", post(correct_visit))
+        .route("/visits/{id}/additions", post(add_to_visit))
+        .route("/visits/{id}/convert-to-package", post(convert_visit))
+}
+
+/// Body bytes → canonical JSON (for the idempotency hash) and the typed input.
+fn read_json<T: serde::de::DeserializeOwned>(body: &Bytes) -> Result<(Vec<u8>, T), AppError> {
+    let value: Value = serde_json::from_slice(body).map_err(|_| invalid_body())?;
+    let canonical = serde_json::to_vec(&value).map_err(|e| AppError::Internal(e.to_string()))?;
+    let input = serde_json::from_value(value).map_err(|_| invalid_body())?;
+    Ok((canonical, input))
+}
+
+#[utoipa::path(post, path = "/api/v1/visits/{id}/additions", tag = "visits", request_body = VisitAdditions,
+    params(("id" = Uuid, Path),
+        ("Idempotency-Key" = Uuid, Header, description = "One key per addition; a retry replays the first response")),
+    responses(
+        (status = 201, body = VisitDto, description = "Lines and sales added (US12): each new sale is linked to the visit, nothing existing changes"),
+        (status = 400, description = "idempotency.key_required"),
+        (status = 403, description = "auth.forbidden / day.locked (manager, a day before today) / discount.limit_exceeded"),
+        (status = 404, description = "visit, service, plan or beneficiary not in this spa"),
+        (status = 409, description = "visit.voided / visit.corrected, payroll.period_closed, package.*"),
+        (status = 422, description = "validation_failed, payment.amount_mismatch and every rule of POST /visits")))]
+pub async fn add_to_visit(
+    State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+    IdempotencyKey(key): IdempotencyKey,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    let (canonical, input): (_, VisitAdditions) = read_json(&body)?;
+    let visit = input.into_visit();
+    let (status, body) = service::add(
+        &pool,
+        &cipher,
+        &user.actor,
+        key,
+        hash_route("POST", "/visits/{id}/additions", Some(id), &canonical),
+        id,
+        &visit,
+    )
+    .await?;
+    let version = body["version"].as_i64();
+    Ok(no_store(
+        StatusCode::from_u16(status).unwrap_or(StatusCode::CREATED),
+        body,
+        version,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v1/visits/{id}/convert-to-package", tag = "visits", request_body = VisitConversion,
+    params(("id" = Uuid, Path), ("If-Match" = String, Header, description = "Version of the visit being converted"),
+        ("Idempotency-Key" = Uuid, Header, description = "One key per conversion; a retry replays the first response")),
+    responses(
+        (status = 201, body = VisitCorrected, description = "Old visit voided (one-off payments reversed), package sold, visit recorded again with today's session from the package (US11); `difference` = what the customer hands over now"),
+        (status = 400, description = "idempotency.key_required / precondition.if_match_required"),
+        (status = 403, description = "auth.forbidden / day.locked (manager, a day before today) / discount.limit_exceeded"),
+        (status = 404, description = "visit or plan not in this spa"),
+        (status = 409, description = "visit.voided / visit.corrected, payroll.period_closed, package.*"),
+        (status = 412, description = "conflict.stale_version"),
+        (status = 422, description = "visit.nothing_to_convert (no one-off line the package covers), validation_failed, payment.amount_mismatch")))]
+pub async fn convert_visit(
+    State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+    IfMatch(version): IfMatch,
+    IdempotencyKey(key): IdempotencyKey,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    let (canonical, input): (_, VisitConversion) = read_json(&body)?;
+    let (status, body) = service::convert(
+        &pool,
+        &cipher,
+        &user.actor,
+        key,
+        hash_route(
+            "POST",
+            "/visits/{id}/convert-to-package",
+            Some(id),
+            &canonical,
+        ),
+        service::Conversion {
+            id,
+            version,
+            input: &input,
+        },
+    )
+    .await?;
+    let version = body["visit"]["version"].as_i64();
+    Ok(no_store(
+        StatusCode::from_u16(status).unwrap_or(StatusCode::CREATED),
+        body,
+        version,
+    ))
 }
 
 fn invalid_body() -> AppError {

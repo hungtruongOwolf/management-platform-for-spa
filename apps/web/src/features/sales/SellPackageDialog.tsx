@@ -21,6 +21,9 @@ import {
 } from "./api";
 import { invalidateManagementViews } from "../../lib/invalidate";
 
+/** Select value for "Khách tự chọn": the customer chose the package, nobody is credited. */
+const SELF_CHOSEN = "self";
+
 const input =
   "min-h-11 w-full rounded-[6px] border border-border bg-surface px-3";
 
@@ -71,7 +74,9 @@ export function SellPackageDialog({
 
   const problems = {
     plan: plan ? undefined : "Chọn gói liệu trình.",
-    closer: closerId ? undefined : "Chọn người tư vấn chốt.",
+    closer: closerId
+      ? undefined
+      : "Chọn người tư vấn chốt (hoặc Khách tự chọn).",
     discount: Number.isNaN(discount)
       ? "Nhập số tiền (chỉ chữ số)."
       : discount > subtotal
@@ -96,7 +101,8 @@ export function SellPackageDialog({
       createSale(
         {
           customer_id: customerId,
-          closer_staff_id: closerId,
+          // "Khách tự chọn" credits nobody (EM 2026-11-06, Q-U2).
+          closer_staff_id: closerId === SELF_CHOSEN ? null : closerId,
           lines: [{ package_plan_id: planId, gift_note: giftNote.trim() }],
           discount:
             discount > 0 ? { amount: discount, reason: reason.trim() } : null,
@@ -179,8 +185,9 @@ export function SellPackageDialog({
               setCloserId(e.target.value);
             }}
           >
-            <option value="">
-              {staff.isPending ? "Đang tải…" : "Chọn nhân viên…"}
+            <option value="">{staff.isPending ? "Đang tải…" : "Chọn…"}</option>
+            <option value={SELF_CHOSEN}>
+              Khách tự chọn (không tính cho ai)
             </option>
             {staff.data?.map((s) => (
               <option key={s.id} value={s.id}>
@@ -298,10 +305,18 @@ export function SellPackageDialog({
           </p>
         )}
         <StickyActions className="sm:col-span-2">
-          <button type="button" onClick={onCancel} className="btn btn-secondary">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="btn btn-secondary"
+          >
             Hủy
           </button>
-          <button type="submit" disabled={mutation.isPending} className="btn btn-primary">
+          <button
+            type="submit"
+            disabled={mutation.isPending}
+            className="btn btn-primary"
+          >
             {mutation.isPending ? "Đang lưu…" : "Lưu & thu tiền"}
           </button>
         </StickyActions>

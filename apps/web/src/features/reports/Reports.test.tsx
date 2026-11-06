@@ -113,6 +113,8 @@ describe("/bao-cao", () => {
     expect(within(table).getByRole("columnheader", { name: "Dịch vụ 1 lần" })).toBeInTheDocument();
     expect(within(table).getAllByText(/^Cộng /)).toHaveLength(7);
     expect(within(table).getAllByText("Hủy hóa đơn").length).toBeGreaterThan(0);
+    // Round 6: who sold it (người giới thiệu / chốt) sits with the note.
+    expect(within(table).getAllByText("Giới thiệu: KTV Lan").length).toBeGreaterThan(0);
     expect(urls(spy).some((u) => u.startsWith(`/api/v1/reports/ledger?from=${addDays(today, -6)}&to=${today}&limit=100`))).toBe(true);
   });
 

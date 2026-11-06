@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT v.id, v.customer_id, c.full_name AS customer_name, c.gender AS customer_gender, v.business_date, v.check_in_at, v.note_ct,\n                  v.status, v.void_reason, v.voided_at, v.sale_id,\n                  s.discount_amount AS \"discount_amount?\", s.discount_reason AS \"discount_reason?\",\n                  v.corrects_visit_id, n.id AS \"corrected_by_visit_id?\",\n                  v.version, v.created_at\n           FROM app.visit v\n           JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id\n           LEFT JOIN app.sale s ON s.tenant_id = v.tenant_id AND s.id = v.sale_id\n           LEFT JOIN app.visit n ON n.tenant_id = v.tenant_id AND n.corrects_visit_id = v.id\n           WHERE v.tenant_id = $1\n             AND ($2::uuid IS NULL OR v.id = $2)\n             AND ($3::date IS NULL OR v.business_date = $3)\n           ORDER BY v.check_in_at DESC, v.id DESC\n           LIMIT 500",
+  "query": "SELECT v.id, v.customer_id, c.full_name AS customer_name, c.gender AS customer_gender, v.business_date, v.check_in_at, v.note_ct,\n                  v.status, v.void_reason, v.voided_at, v.sale_id,\n                  s.discount_reason AS \"discount_reason?\",\n                  v.corrects_visit_id, n.id AS \"corrected_by_visit_id?\", v.companions,\n                  v.version, v.created_at\n           FROM app.visit v\n           JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id\n           LEFT JOIN app.sale s ON s.tenant_id = v.tenant_id AND s.id = v.sale_id\n           LEFT JOIN app.visit n ON n.tenant_id = v.tenant_id AND n.corrects_visit_id = v.id\n           WHERE v.tenant_id = $1\n             AND ($2::uuid IS NULL OR v.id = $2)\n             AND ($3::date IS NULL OR v.business_date = $3)\n           ORDER BY v.check_in_at DESC, v.id DESC\n           LIMIT 500",
   "describe": {
     "columns": [
       {
@@ -126,17 +126,6 @@
       },
       {
         "ordinal": 11,
-        "name": "discount_amount?",
-        "type_info": "Int8",
-        "origin": {
-          "Table": {
-            "table": "app.sale",
-            "name": "discount_amount"
-          }
-        }
-      },
-      {
-        "ordinal": 12,
         "name": "discount_reason?",
         "type_info": "Text",
         "origin": {
@@ -147,7 +136,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 12,
         "name": "corrects_visit_id",
         "type_info": "Uuid",
         "origin": {
@@ -158,13 +147,24 @@
         }
       },
       {
-        "ordinal": 14,
+        "ordinal": 13,
         "name": "corrected_by_visit_id?",
         "type_info": "Uuid",
         "origin": {
           "Table": {
             "table": "app.visit",
             "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "companions",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "companions"
           }
         }
       },
@@ -210,13 +210,13 @@
       true,
       true,
       true,
+      true,
+      true,
       false,
-      true,
-      true,
       false,
       false,
       false
     ]
   },
-  "hash": "b044d5ff5f56dadb9577beeb03e5a301ffcca90f58b1c8f822381949224b8a16"
+  "hash": "691c8b2143460e232305b1157f36163a9f5f66a3e87014a41fde9dab69735bac"
 }

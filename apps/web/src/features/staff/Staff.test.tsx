@@ -10,6 +10,7 @@ import type { AdjustmentLog, AttendanceSheet, EvaluationSheet, MyStaff, MyWork, 
 import { daysOf, monthLabel, percentOfBp, shiftMonth, weekdayShort } from "./labels";
 import { evaluationDueMonth, incompleteDays, missingOn } from "./progress";
 import { staffSearch } from "./search";
+import { PayslipView } from "./PayrollTab";
 
 const MANAGER = ["catalog.read", "staff.read_basic", "attendance.record", "evaluation.record", "staff.read_own", "report.read"];
 const OWNER = [...MANAGER, "staff.manage", "payroll.read", "payroll.close"];
@@ -71,6 +72,8 @@ function slip(): Payslip {
     service_commission: 15_000,
     closing_commission_base: 0,
     closing_commission: 0,
+    upsell_package_base: 0,
+    upsell_service_base: 0,
     meal_allowance: 300_000,
     bonuses: 0,
     penalties: 0,
@@ -82,6 +85,7 @@ function slip(): Payslip {
     tet_level: null,
     tet_amount: 0,
     commission_lines: [{ service_name: "Gội đầu thảo dược", source: "one_off", qty: 2, value: 300_000, full_value: 300_000 }],
+    upsell_lines: [],
     flags: ["evaluation_missing"],
   };
 }
@@ -387,6 +391,31 @@ describe("/nhan-vien", () => {
     expect(within(sheetDialog).getByText("Thực lĩnh")).toBeInTheDocument();
     expect(within(sheetDialog).getByText(/5\.315\.000/)).toBeInTheDocument();
     expect(within(sheetDialog).getByText("Gội đầu thảo dược")).toBeInTheDocument();
+    // Two separate credits (Q-U3): performing, and upsell (packages + one-off services).
+    expect(within(sheetDialog).getByText("Hoa hồng làm liệu trình")).toBeInTheDocument();
+    expect(within(sheetDialog).getByText("Hoa hồng giới thiệu / chốt")).toBeInTheDocument();
+    expect(within(sheetDialog).queryByRole("region", { name: "Giới thiệu / chốt được" })).not.toBeInTheDocument();
+  });
+
+  it("payslip lists what the upsell commission is computed from", () => {
+    const base = slip();
+    const withUpsell: Payslip = {
+      ...base,
+      closing_commission_base: 1_539_000,
+      closing_commission: 76_950,
+      upsell_package_base: 1_500_000,
+      upsell_service_base: 39_000,
+      upsell_lines: [
+        { kind: "package", description: "Gội đầu 10 buổi + tặng 2", qty: 1, value: 1_500_000 },
+        { kind: "service", description: "Ngâm chân thảo dược", qty: 1, value: 39_000 },
+      ],
+    };
+    render(<PayslipView slip={withUpsell} closed={false} />);
+    const [region] = screen.getAllByRole("region", { name: "Giới thiệu / chốt được" });
+    if (!region) throw new Error("upsell section missing");
+    expect(within(region).getAllByText("Gội đầu 10 buổi + tặng 2").length).toBeGreaterThan(0);
+    expect(within(region).getAllByText("Dịch vụ lẻ").length).toBeGreaterThan(0);
+    expect(screen.getByText(/gói 1\.500\.000đ · dịch vụ lẻ 39\.000đ/)).toBeInTheDocument();
   });
 
   it("technician: own month as a calendar with totals, never the management APIs", async () => {

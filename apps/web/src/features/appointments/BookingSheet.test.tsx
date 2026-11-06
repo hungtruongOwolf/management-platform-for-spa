@@ -148,6 +148,7 @@ describe("Đặt lịch hẹn (spec appointments.md §10.2, §10.5)", () => {
 });
 
 const CAL_APPT: Calendar["appointments"][number] = {
+  companions: [],
   id: "a1",
   status: "booked",
   phase: "waiting",

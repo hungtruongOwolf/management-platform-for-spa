@@ -140,3 +140,22 @@ Nguồn: [EM review vòng 4](../../raw/2026-11-05-em-review-round4.md) mục 1, 
 - Sheet lịch: nút chính **"Khách đến · ghi lượt"** (đã đến: "Ghi lượt") → giỏ điền sẵn; phụ **"Chỉ báo đã đến (ghi lượt sau)"** + KTV làm. Nhóm: danh sách "Cùng nhóm (n người)" + **"Khách đến cả nhóm · ghi n lượt"** → sheet bảng: mỗi người giỏ điền sẵn, KTV, Tiền mặt / Chuyển khoản, số thu → "Ghi n lượt"; dòng nào lỗi hiện lỗi tại dòng, bấm lại chỉ gửi người chưa ghi.
 - Sheet lượt vãng lai: khách (+ Mở hồ sơ), dịch vụ, KTV, thanh toán (không ghi chú buổi).
 - Form đặt lịch: **chọn dịch vụ = thêm** (bỏ nút "Thêm"); thời lượng theo dịch vụ, tự tính lại tới khi chỉnh tay ("Đã chỉnh tay · theo dịch vụ: X phút · Dùng lại theo dịch vụ"); **"+ Thêm người (gia đình, nhóm)"** → mỗi người một khung "Người n" (khách, dịch vụ, thời lượng, KTV, "Bỏ người này"), giờ hẹn chung; "Giờ hẹn" mỗi giờ "· n khách" (hoặc "· n/max khách"); nút "Đặt lịch" / "Đặt lịch n người" luôn bấm được: thiếu → "Còn thiếu: …", lỗi server → câu tiếng Việt nêu đúng người; vượt tối đa → cảnh báo, vẫn đặt được.
+
+## Vòng 6: giỏ bán gói, thêm dịch vụ, chuyển sang gói ([spec §10](../product/specs/front-desk-and-packages.md))
+**Thứ tự build:** chờ PR #56 (redesign pilot `/quay`) merge, rồi dựng trên component và quy tắc mới của [design-system](design-system.md). Mọi UI mới của vòng này nằm trong chunk lazy (ngân sách khởi động ~124/125 KB gzip đã gần đầy): khối "Gói bán hôm nay", sheet "Bán gói cho lượt này", sheet "Thêm dịch vụ" chỉ tải khi bấm.
+
+**Giỏ của lượt (3 phần, một tổng, một nút):**
+1. *Dịch vụ hôm nay*: mỗi dòng có dịch vụ · KTV làm · nguồn (trừ gói / lẻ / **trừ gói vừa mua**) · giá. Dòng lẻ có thêm ô **"Người giới thiệu"** (select: Khách tự chọn [mặc định] · từng nhân viên kèm chức vụ). Dòng trừ gói không có ô này.
+2. *Gói bán hôm nay*: "+ Bán gói liệu trình" mở khối inline gồm mẫu gói, **Người giới thiệu / chốt** (mặc định KTV của dòng hôm nay khớp gói, không có thì KTV dòng đầu; có "Khách tự chọn"), quà, giảm giá gói (quản lý ≤ 10 % của gói, lý do bắt buộc), "Mua cho người khác" (tìm khách có hồ sơ). Ô **"Dùng gói này cho buổi hôm nay"** chỉ hiện khi mẫu gói chứa dịch vụ đang ở dạng lẻ trong giỏ; bật thì dòng đó đổi sang "Trừ gói (mua hôm nay)", giá 0đ, xem trước "còn 11/12". Gói mua cho người khác thì ô này ẩn (gói không dùng chung).
+3. *Người đi cùng (ghi chú)*: "+ Người đi cùng" mở ô chữ ("Chồng của chị Hà"), tối đa 5; không tính tiền, không chọn dịch vụ.
+- Tổng: "Phải trả: lẻ X + gói Y = Z" · TM / CK / TM + CK. Một request `POST /visits` (hoặc `/appointments/{id}/complete`). Chỉ có gói, không có dịch vụ: nút "Lưu hóa đơn gói" gọi `POST /sales`.
+- **Giỏ nháp:** lưu `sessionStorage` khóa `vpyd.cart.v1:<userId>:<customerId>` (try/catch; chỉ id, số lượng, lựa chọn; không ghi chú sức khỏe, không giá ngoài cái trang đang hiện). Xóa khi lưu thành công, bấm "Hủy giỏ", đăng xuất. Tải lại trang: banner "Đã khôi phục giỏ chưa lưu" + "Bỏ".
+
+**Lượt khách hôm nay, menu ⋯:**
+- **"Thêm dịch vụ / bán gói"**: sheet giỏ ở chế độ thêm (chỉ thêm, không lý do), gọi `POST /visits/{id}/additions`. Mặc định người giới thiệu của dòng thêm = KTV của lượt (đây là upsell).
+- **"Bán gói cho lượt này"**: sheet gồm mẫu gói (ưu tiên gói chứa dịch vụ lẻ của lượt), người chốt, quà, giảm giá. Ô **"Tính buổi hôm nay vào gói"** (mặc định **tắt**, Q-U1) chỉ hiện khi gói chứa dịch vụ lẻ của lượt; bật thì hiện "Hôm nay khách đã trả 49.000đ (TM) cho Gội đầu · Khách đưa thêm 1.451.000đ" và gọi `convert-to-package` (If-Match); tắt thì bán gói thường qua `additions`, lượt lẻ giữ nguyên.
+- Lượt của ngày trước: chỉ chủ spa thấy; tháng đã chốt lương thì nút tắt + "Tháng đã chốt lương" (server vẫn `409`).
+
+**States:** đang lưu (nút khóa + spinner); lỗi tại khối gói ("Vượt 10 %, cần chủ spa", "Mẫu gói đã ngừng bán"); `409 visit.corrected`: "Lượt đã được sửa ở máy khác, mở bản mới"; `412`: tải lại lượt; thành công: toast "Đã lưu lượt + bán Gói … (còn 11/12)". Bàn phím: khối gói mở/đóng bằng Enter, focus vào mẫu gói; select người giới thiệu có nhãn.
+
+**Đã làm trong PR phần A (không đụng file của pilot):** client API (`features/front-desk/upsell.ts`), giỏ nháp (`draftCart.ts`, có test), "Khách tự chọn" ở hộp thoại bán gói, phiếu lương tách "Hoa hồng giới thiệu: gói / dịch vụ", sổ doanh thu có cột "Giới thiệu".

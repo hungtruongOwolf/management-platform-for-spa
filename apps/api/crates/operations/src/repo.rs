@@ -16,6 +16,8 @@ pub struct VisitInsert<'a> {
     pub created_by: Uuid,
     /// "Sửa lượt": the voided visit this one replaces.
     pub corrects_visit_id: Option<Uuid>,
+    /// Companions known only by a note.
+    pub companions: &'a [String],
 }
 
 pub async fn insert_visit(tx: &mut TenantTx, v: &VisitInsert<'_>) -> Result<(), AppError> {
@@ -23,8 +25,8 @@ pub async fn insert_visit(tx: &mut TenantTx, v: &VisitInsert<'_>) -> Result<(), 
     sqlx::query!(
         r#"INSERT INTO app.visit
              (id, tenant_id, branch_id, customer_id, business_date, check_in_at, note_ct, sale_id, created_by,
-              corrects_visit_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
+              corrects_visit_id, companions)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
         v.id,
         tenant,
         v.branch_id,
@@ -34,7 +36,8 @@ pub async fn insert_visit(tx: &mut TenantTx, v: &VisitInsert<'_>) -> Result<(), 
         v.note_ct,
         v.sale_id,
         v.created_by,
-        v.corrects_visit_id
+        v.corrects_visit_id,
+        v.companions
     )
     .execute(tx.conn())
     .await?;
@@ -57,6 +60,10 @@ pub struct LineInsert<'a> {
     pub line_value: i64,
     pub expiry_override_reason: Option<&'a str>,
     pub discount_amount: i64,
+    /// `one_off` lines: the sale that charged them.
+    pub sale_id: Option<Uuid>,
+    /// `one_off` lines: who recommended them (upsell credit).
+    pub referrer_staff_id: Option<Uuid>,
 }
 
 pub async fn insert_line(tx: &mut TenantTx, l: &LineInsert<'_>) -> Result<(), AppError> {
@@ -65,8 +72,8 @@ pub async fn insert_line(tx: &mut TenantTx, l: &LineInsert<'_>) -> Result<(), Ap
         r#"INSERT INTO app.visit_line
              (id, tenant_id, visit_id, position, service_id, service_name_snapshot, source, customer_package_id,
               customer_package_item_id, sessions_left_after, staff_id, qty, price_variant, unit_price, line_value,
-              expiry_override_reason, discount_amount)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)"#,
+              expiry_override_reason, discount_amount, sale_id, referrer_staff_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)"#,
         Uuid::now_v7(),
         tenant,
         l.visit_id,
@@ -83,7 +90,9 @@ pub async fn insert_line(tx: &mut TenantTx, l: &LineInsert<'_>) -> Result<(), Ap
         l.unit_price,
         l.line_value,
         l.expiry_override_reason,
-        l.discount_amount
+        l.discount_amount,
+        l.sale_id,
+        l.referrer_staff_id
     )
     .execute(tx.conn())
     .await?;
@@ -102,10 +111,10 @@ pub struct VisitRow {
     pub void_reason: Option<String>,
     pub voided_at: Option<DateTime<Utc>>,
     pub sale_id: Option<Uuid>,
-    pub discount_amount: Option<i64>,
     pub discount_reason: Option<String>,
     pub corrects_visit_id: Option<Uuid>,
     pub corrected_by_visit_id: Option<Uuid>,
+    pub companions: Vec<String>,
     pub version: i64,
     pub created_at: DateTime<Utc>,
 }
@@ -121,8 +130,8 @@ pub async fn visits(
         VisitRow,
         r#"SELECT v.id, v.customer_id, c.full_name AS customer_name, c.gender AS customer_gender, v.business_date, v.check_in_at, v.note_ct,
                   v.status, v.void_reason, v.voided_at, v.sale_id,
-                  s.discount_amount AS "discount_amount?", s.discount_reason AS "discount_reason?",
-                  v.corrects_visit_id, n.id AS "corrected_by_visit_id?",
+                  s.discount_reason AS "discount_reason?",
+                  v.corrects_visit_id, n.id AS "corrected_by_visit_id?", v.companions,
                   v.version, v.created_at
            FROM app.visit v
            JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id
@@ -142,6 +151,7 @@ pub async fn visits(
 }
 
 pub struct LockedVisit {
+    pub customer_id: Uuid,
     pub business_date: NaiveDate,
     pub check_in_at: DateTime<Utc>,
     pub status: String,
@@ -157,7 +167,7 @@ pub struct LockedVisit {
 pub async fn lock(tx: &mut TenantTx, id: Uuid) -> Result<Option<LockedVisit>, AppError> {
     let tenant = tx.tenant().as_uuid();
     let Some(row) = sqlx::query!(
-        r#"SELECT business_date, check_in_at, status, sale_id, note_ct, version
+        r#"SELECT customer_id, business_date, check_in_at, status, sale_id, note_ct, version
            FROM app.visit WHERE tenant_id = $1 AND id = $2 FOR UPDATE"#,
         tenant,
         id
@@ -181,6 +191,7 @@ pub async fn lock(tx: &mut TenantTx, id: Uuid) -> Result<Option<LockedVisit>, Ap
         None
     };
     Ok(Some(LockedVisit {
+        customer_id: row.customer_id,
         business_date: row.business_date,
         check_in_at: row.check_in_at,
         status: row.status,
@@ -211,6 +222,9 @@ pub struct LineRow {
     pub line_value: i64,
     pub discount_amount: i64,
     pub expiry_override_reason: Option<String>,
+    pub sale_id: Option<Uuid>,
+    pub referrer_staff_id: Option<Uuid>,
+    pub referrer_name: Option<String>,
 }
 
 pub async fn lines(tx: &mut TenantTx, visit_ids: &[Uuid]) -> Result<Vec<LineRow>, AppError> {
@@ -221,9 +235,11 @@ pub async fn lines(tx: &mut TenantTx, visit_ids: &[Uuid]) -> Result<Vec<LineRow>
                   l.source, l.customer_package_id,
                   l.customer_package_item_id, p.name_snapshot AS "package_name?", l.sessions_left_after,
                   i.sessions_total AS "sessions_total?", l.staff_id, s.full_name AS staff_name, l.qty,
-                  l.price_variant, l.unit_price, l.line_value, l.discount_amount, l.expiry_override_reason
+                  l.price_variant, l.unit_price, l.line_value, l.discount_amount, l.expiry_override_reason,
+                  l.sale_id, l.referrer_staff_id, r.full_name AS "referrer_name?"
            FROM app.visit_line l
            JOIN app.staff s ON s.tenant_id = l.tenant_id AND s.id = l.staff_id
+           LEFT JOIN app.staff r ON r.tenant_id = l.tenant_id AND r.id = l.referrer_staff_id
            JOIN app.service sv ON sv.tenant_id = l.tenant_id AND sv.id = l.service_id
            JOIN app.service_category sc ON sc.tenant_id = sv.tenant_id AND sc.id = sv.category_id
            LEFT JOIN app.customer_package p ON p.tenant_id = l.tenant_id AND p.id = l.customer_package_id
@@ -245,6 +261,7 @@ pub async fn update_visit(
     version: i64,
     note_ct: Option<Option<&[u8]>>,
     check_in_at: Option<DateTime<Utc>>,
+    companions: Option<&[String]>,
 ) -> Result<bool, AppError> {
     let tenant = tx.tenant().as_uuid();
     let (set_note, note) = match note_ct {
@@ -255,6 +272,7 @@ pub async fn update_visit(
         r#"UPDATE app.visit
            SET note_ct = CASE WHEN $4 THEN $5 ELSE note_ct END,
                check_in_at = coalesce($6, check_in_at),
+               companions = coalesce($7, companions),
                version = version + 1, updated_at = now()
            WHERE tenant_id = $1 AND id = $2 AND version = $3"#,
         tenant,
@@ -262,7 +280,8 @@ pub async fn update_visit(
         version,
         set_note,
         note,
-        check_in_at
+        check_in_at,
+        companions
     )
     .execute(tx.conn())
     .await?
@@ -340,6 +359,126 @@ pub async fn package_lines(
            ORDER BY customer_package_id, customer_package_item_id, position"#,
         tenant,
         visit_id
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+// ---------------------------------------------------------------- round 6: sales of a visit
+
+/// Position for the next line appended to a visit (additions).
+pub async fn next_position(tx: &mut TenantTx, visit_id: Uuid) -> Result<i32, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_scalar!(
+        r#"SELECT coalesce(max(position) + 1, 0) AS "next!" FROM app.visit_line
+           WHERE tenant_id = $1 AND visit_id = $2"#,
+        tenant,
+        visit_id
+    )
+    .fetch_one(tx.conn())
+    .await?)
+}
+
+/// A new version of the visit (an addition changed it): a desk holding the old `ETag` gets `412`.
+pub async fn bump_version(tx: &mut TenantTx, id: Uuid) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        "UPDATE app.visit SET version = version + 1, updated_at = now() WHERE tenant_id = $1 AND id = $2",
+        tenant,
+        id
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+/// The one-off sales of a visit still open (its first sale and every addition), oldest first:
+/// what a void of the visit reverses. Packages sold in the visit are not among them.
+pub async fn open_service_sales(tx: &mut TenantTx, visit_id: Uuid) -> Result<Vec<Uuid>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_scalar!(
+        r#"SELECT s.id FROM app.sale s
+           WHERE s.tenant_id = $1 AND s.status = 'open'
+             AND s.id IN (SELECT l.sale_id FROM app.visit_line l
+                          WHERE l.tenant_id = $1 AND l.visit_id = $2 AND l.sale_id IS NOT NULL
+                          UNION
+                          SELECT v.sale_id FROM app.visit v
+                          WHERE v.tenant_id = $1 AND v.id = $2 AND v.sale_id IS NOT NULL)
+           ORDER BY s.id"#,
+        tenant,
+        visit_id
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+/// Sale ids charging the one-off lines of these visits (for their payments).
+pub async fn service_sales_of(
+    tx: &mut TenantTx,
+    visit_ids: &[Uuid],
+) -> Result<Vec<(Uuid, Uuid)>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query!(
+        r#"SELECT DISTINCT l.visit_id, l.sale_id AS "sale_id!" FROM app.visit_line l
+           WHERE l.tenant_id = $1 AND l.visit_id = ANY($2) AND l.sale_id IS NOT NULL
+           UNION
+           SELECT v.id, v.sale_id AS "sale_id!" FROM app.visit v
+           WHERE v.tenant_id = $1 AND v.id = ANY($2) AND v.sale_id IS NOT NULL"#,
+        tenant,
+        visit_ids
+    )
+    .fetch_all(tx.conn())
+    .await?
+    .into_iter()
+    .filter_map(|r| Some((r.visit_id?, r.sale_id)))
+    .collect())
+}
+
+pub struct PackageSaleRow {
+    pub visit_id: Uuid,
+    pub sale_id: Uuid,
+    pub status: String,
+    pub business_date: NaiveDate,
+    pub description: String,
+    pub customer_package_ids: Vec<Uuid>,
+    pub total: i64,
+    pub closer_staff_id: Option<Uuid>,
+    pub closer_name: Option<String>,
+    pub beneficiary_customer_id: Option<Uuid>,
+    pub beneficiary_name: Option<String>,
+}
+
+/// Package sales made in these visits (`sale.visit_id`), oldest first. The beneficiary is set only
+/// when the packages belong to someone other than the payer.
+pub async fn package_sales(
+    tx: &mut TenantTx,
+    visit_ids: &[Uuid],
+) -> Result<Vec<PackageSaleRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        PackageSaleRow,
+        r#"SELECT s.visit_id AS "visit_id!", s.id AS sale_id, s.status, s.business_date,
+                  d.description AS "description!", d.packages AS "customer_package_ids!",
+                  s.total, s.closer_staff_id, st.full_name AS "closer_name?",
+                  b.id AS "beneficiary_customer_id?", b.full_name AS "beneficiary_name?"
+           FROM app.sale s
+           CROSS JOIN LATERAL (
+             SELECT string_agg(sl.description_snapshot, ', ' ORDER BY sl.position) AS description,
+                    array_agg(sl.customer_package_id ORDER BY sl.position) AS packages
+             FROM app.sale_line sl
+             WHERE sl.tenant_id = s.tenant_id AND sl.sale_id = s.id AND sl.line_type = 'package'
+           ) d
+           LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id
+           LEFT JOIN LATERAL (
+             SELECT c.id, c.full_name FROM app.customer_package cp
+             JOIN app.customer c ON c.tenant_id = cp.tenant_id AND c.id = cp.customer_id
+             WHERE cp.tenant_id = s.tenant_id AND cp.sale_id = s.id AND cp.customer_id <> s.customer_id
+             LIMIT 1
+           ) b ON true
+           WHERE s.tenant_id = $1 AND s.visit_id = ANY($2) AND d.description IS NOT NULL
+           ORDER BY s.id"#,
+        tenant,
+        visit_ids
     )
     .fetch_all(tx.conn())
     .await?)

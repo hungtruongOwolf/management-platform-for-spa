@@ -582,7 +582,7 @@ pub async fn ledger(
                   b.business_date AS "business_date!", b.at AS "at!",
                   b.customer_id AS "customer_id!", c.full_name, c.gender, b.sale_kind AS "sale_kind!",
                   b.one_off, b.package, b.bank_transfer AS "bank_transfer!", b.cash AS "cash!",
-                  b.unpaid AS "unpaid!", b.note, b.voided AS "voided!"
+                  b.unpaid AS "unpaid!", b.note, b.voided AS "voided!", b.visit_id, b.upsell_by
            FROM app.revenue_book b
            JOIN app.customer c ON c.tenant_id = b.tenant_id AND c.id = b.customer_id
            WHERE b.tenant_id = $1 AND b.business_date BETWEEN $2 AND $3
@@ -658,6 +658,8 @@ pub async fn ledger(
                 unpaid: r.unpaid,
                 note: r.note,
                 voided: r.voided,
+                visit_id: r.visit_id,
+                upsell_by: r.upsell_by,
             })
             .collect(),
         days,

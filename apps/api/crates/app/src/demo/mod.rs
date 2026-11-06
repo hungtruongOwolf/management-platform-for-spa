@@ -699,7 +699,8 @@ impl Spa<'_> {
         };
         let input = SaleCreate {
             customer_id: self.customers[customer].id,
-            closer_staff_id: closer,
+            beneficiary_customer_id: None,
+            closer_staff_id: Some(closer),
             lines: vec![SaleLineCreate {
                 package_plan_id: self.catalog.plan(plan.name)?,
                 gift_note: None,
@@ -821,6 +822,8 @@ impl Spa<'_> {
                 qty: None,
                 price_variant: if l.item.is_some() { None } else { variant },
                 expiry_override_reason: l.override_reason.map(str::to_owned),
+                package_ref: None,
+                referrer_staff_id: None,
             });
         }
         let note = if self.rng.chance(15) {
@@ -835,6 +838,8 @@ impl Spa<'_> {
             note,
             lines: wire,
             payments: self.payments(total),
+            package_sales: Vec::new(),
+            companions: Vec::new(),
         };
         let (key, hash) = idempotency();
         let (_, body) = operations::service::record_as_of(

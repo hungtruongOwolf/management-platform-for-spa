@@ -464,6 +464,25 @@ const ROUTES: &[Route] = &[
     .body(correction_body)
     .if_match()
     .idempotent(),
+    // Round 6 (spec §10): "Thêm dịch vụ vào lượt" (US12) and "Tính buổi hôm nay vào gói" (US11).
+    route(
+        "POST",
+        "/api/v1/visits/{id}/additions",
+        Access::Perm(P::VisitRecord, OWNER_MANAGER),
+    )
+    .id(Target::Visit)
+    .body(addition_body)
+    .idempotent(),
+    // Also needs `visit.record` and `package.sell`, checked first (technicians lack all three).
+    route(
+        "POST",
+        "/api/v1/visits/{id}/convert-to-package",
+        Access::Perm(P::RecordVoidSameDay, OWNER_MANAGER),
+    )
+    .id(Target::Visit)
+    .body(conversion_body)
+    .if_match()
+    .idempotent(),
     // appointments — operations (spec appointments.md)
     route(
         "GET",
@@ -729,6 +748,18 @@ fn correction_body(f: &Fixture) -> Option<Value> {
         "customer_id": f.customer,
         "lines": [{"service_id": f.service, "source": "one_off", "staff_id": f.staff}],
         "payments": [{"method": "cash", "amount": 150_000}]
+    }))
+}
+fn addition_body(f: &Fixture) -> Option<Value> {
+    Some(json!({
+        "lines": [{"service_id": f.service, "source": "one_off", "staff_id": f.staff}],
+        "payments": [{"method": "cash", "amount": 150_000}]
+    }))
+}
+fn conversion_body(f: &Fixture) -> Option<Value> {
+    Some(json!({
+        "package_sale": {"package_plan_id": f.plan, "closer_staff_id": f.staff},
+        "payments": [{"method": "cash", "amount": 1_000_000}]
     }))
 }
 fn void_body(_: &Fixture) -> Option<Value> {

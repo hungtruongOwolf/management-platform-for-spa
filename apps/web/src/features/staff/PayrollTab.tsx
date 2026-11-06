@@ -162,6 +162,14 @@ const LINE_COLUMNS: Column<Payslip["commission_lines"][number]>[] = [
   { id: "value", header: "Giá trị", numeric: true, card: "aside", cell: (l) => vnd(l.value) },
 ];
 
+/** Upsell credits (EM 2026-11-06, Q-U3): packages closed and one-off services recommended. */
+const UPSELL_COLUMNS: Column<NonNullable<Payslip["upsell_lines"]>[number]>[] = [
+  { id: "item", header: "Gói / dịch vụ", card: "title", cell: (l) => l.description },
+  { id: "kind", header: "Loại", card: "subtitle", cell: (l) => (l.kind === "package" ? "Gói liệu trình" : "Dịch vụ lẻ") },
+  { id: "qty", header: "Số lượng", numeric: true, cell: (l) => l.qty },
+  { id: "value", header: "Giá trị", numeric: true, card: "aside", cell: (l) => vnd(l.value) },
+];
+
 /** Phiếu lương: every line the sheet had, so a technician can check each amount. */
 export function PayslipView({ slip, closed }: { slip: Payslip; closed: boolean }) {
   const a = slip.attendance;
@@ -188,9 +196,9 @@ export function PayslipView({ slip, closed }: { slip: Payslip; closed: boolean }
           hint={`${percentOfBp(slip.commission_rate_bp)} × ${vnd(slip.service_commission_base)}`}
         />
         <Row
-          label="Hoa hồng chốt liệu trình"
+          label="Hoa hồng giới thiệu / chốt"
           value={vnd(slip.closing_commission)}
-          hint={`${percentOfBp(slip.commission_rate_bp)} × ${vnd(slip.closing_commission_base)}`}
+          hint={`${percentOfBp(slip.commission_rate_bp)} × ${vnd(slip.closing_commission_base)} (gói ${vnd(slip.upsell_package_base ?? slip.closing_commission_base)} · dịch vụ lẻ ${vnd(slip.upsell_service_base ?? 0)})`}
         />
         <Row label="Hỗ trợ tiền ăn" value={vnd(slip.meal_allowance)} />
         <Row label="Thưởng" value={vnd(slip.bonuses)} hint={slip.bonus_points ? `${String(slip.bonus_points)} điểm thưởng` : undefined} />
@@ -213,6 +221,17 @@ export function PayslipView({ slip, closed }: { slip: Payslip; closed: boolean }
             rows={slip.commission_lines}
             rowKey={(l) => `${l.service_name}-${l.source}`}
             columns={LINE_COLUMNS}
+          />
+        </section>
+      )}
+      {(slip.upsell_lines ?? []).length > 0 && (
+        <section className="grid gap-2" aria-label="Giới thiệu / chốt được">
+          <h3 className="text-sm font-semibold">Giới thiệu / chốt được</h3>
+          <ResponsiveTable
+            caption="Giới thiệu / chốt được"
+            rows={slip.upsell_lines ?? []}
+            rowKey={(l) => `${l.kind}-${l.description}`}
+            columns={UPSELL_COLUMNS}
           />
         </section>
       )}
