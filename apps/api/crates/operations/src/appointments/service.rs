@@ -486,13 +486,29 @@ pub async fn get(pool: &PgPool, actor: &Actor, id: Uuid) -> Result<AppointmentDt
 
 // ----------------------------------------------------------------------------------- writes
 
-/// Who the booking is for: an existing customer or a newcomer (name + E.164 phone).
+/// Who the booking is for: an existing customer or a newcomer (name, and an E.164 phone unless
+/// they are a served companion known only by name, spec §10.10).
 enum Who {
     Customer(Uuid),
-    Guest { name: String, phone: PhoneE164 },
+    Guest {
+        name: String,
+        phone: Option<PhoneE164>,
+    },
 }
 
-fn parse_who(customer_id: Option<Uuid>, guest: Option<&GuestCreate>) -> Result<Who, AppError> {
+/// Whether a newcomer must leave a phone: the person who books does, a served companion
+/// (`people[1..]` of a group, `group_with`) may not.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GuestPhone {
+    Required,
+    Optional,
+}
+
+fn parse_who(
+    customer_id: Option<Uuid>,
+    guest: Option<&GuestCreate>,
+    phone_rule: GuestPhone,
+) -> Result<Who, AppError> {
     match (customer_id, guest) {
         (Some(id), None) => Ok(Who::Customer(id)),
         (None, Some(g)) => {
@@ -501,16 +517,28 @@ fn parse_who(customer_id: Option<Uuid>, guest: Option<&GuestCreate>) -> Result<W
             if name.is_empty() || name.chars().count() > MAX_NAME {
                 errors.push(FieldError::new("guest.full_name", "required"));
             }
-            let phone = PhoneE164::parse(&g.phone);
-            if phone.is_err() {
-                errors.push(FieldError::new("guest.phone", "invalid"));
-            }
-            match phone {
-                Ok(phone) if errors.is_empty() => Ok(Who::Guest {
+            let typed = g.phone.as_deref().map(str::trim).filter(|p| !p.is_empty());
+            let phone = match typed {
+                Some(p) => match PhoneE164::parse(p) {
+                    Ok(phone) => Some(phone),
+                    Err(_) => {
+                        errors.push(FieldError::new("guest.phone", "invalid"));
+                        None
+                    }
+                },
+                None if phone_rule == GuestPhone::Required => {
+                    errors.push(FieldError::new("guest.phone", "required"));
+                    None
+                }
+                None => None,
+            };
+            if errors.is_empty() {
+                Ok(Who::Guest {
                     name: name.to_owned(),
                     phone,
-                }),
-                _ => Err(AppError::Validation(errors)),
+                })
+            } else {
+                Err(AppError::Validation(errors))
             }
         }
         _ => Err(invalid("customer_id", "customer_or_guest")),
@@ -568,7 +596,9 @@ async fn insert_booking(
                 .ok_or(AppError::NotFound)?
                 .id,
         ),
-        Who::Guest { phone, .. } => {
+        Who::Guest {
+            phone: Some(phone), ..
+        } => {
             if let Some((existing, _)) = crm::service::phone_holder_in(tx, phone).await? {
                 return Err(AppError::ConflictWith {
                     code: "customer.phone_taken",
@@ -577,6 +607,7 @@ async fn insert_booking(
             }
             None
         }
+        Who::Guest { phone: None, .. } => None,
     };
     let services = resolve_services(tx, b.service_ids).await?;
     let durations: Vec<Option<i32>> = services.iter().map(|s| s.2).collect();
@@ -588,7 +619,7 @@ async fn insert_booking(
 
     let id = Uuid::now_v7();
     let (guest_name, guest_phone) = match &b.who {
-        Who::Guest { name, phone } => (Some(name.as_str()), Some(phone.as_str())),
+        Who::Guest { name, phone } => (Some(name.as_str()), phone.as_ref().map(PhoneE164::as_str)),
         Who::Customer(_) => (None, None),
     };
     repo::insert(
@@ -622,6 +653,7 @@ async fn insert_booking(
             "customer_id": customer_id, "guest": guest_name.is_some(),
             "starts_at": p.starts_at, "ends_at": p.ends_at, "staff_id": p.staff_id,
             "service_ids": b.service_ids, "has_note": note.is_some(), "group_id": group_id,
+            "guest_phone": guest_phone.is_some(),
             "companions": companions.len(),
         }),
         None,
@@ -639,8 +671,13 @@ pub async fn book(
     input: &AppointmentCreate,
 ) -> Result<(u16, Value), AppError> {
     actor.require(Permission::AppointmentManage)?;
+    let phone_rule = if input.group_with.is_some() {
+        GuestPhone::Optional
+    } else {
+        GuestPhone::Required
+    };
     let booking = Booking {
-        who: parse_who(input.customer_id, input.guest.as_ref())?,
+        who: parse_who(input.customer_id, input.guest.as_ref(), phone_rule)?,
         service_ids: &input.service_ids,
         staff_id: input.staff_id,
         starts_at: input.starts_at,
@@ -657,16 +694,23 @@ pub async fn book(
         return Ok((status, body));
     }
     let spa = spa(&mut tx).await?;
-    let (id, _) = insert_booking(
+    let host = match input.group_with {
+        Some(host) => Some(join_group(&mut tx, actor, &spa, host, &booking.who).await?),
+        None => None,
+    };
+    let (id, day) = insert_booking(
         &mut tx,
         actor,
         &spa,
         &booking,
         note.as_deref(),
-        None,
+        host.map(|(group, _)| group),
         &companions,
     )
     .await?;
+    if host.is_some_and(|(_, host_day)| host_day != day) {
+        return Err(invalid("starts_at", "not_same_day"));
+    }
     let body = serde_json::to_value(load_one(&mut tx, id).await?)
         .map_err(|e| AppError::Internal(e.to_string()))?;
     idempotency::complete(&mut tx, actor, key, 201, &body).await?;
@@ -698,8 +742,14 @@ pub async fn book_group(
     let note = clean_note(input.note.as_ref())?;
     let mut bookings = Vec::with_capacity(input.people.len());
     for (i, person) in input.people.iter().enumerate() {
-        let who =
-            parse_who(person.customer_id, person.guest.as_ref()).map_err(|e| in_person(i, e))?;
+        // The first person booked; the others are their served companions (spec §10.10).
+        let phone_rule = if i == 0 {
+            GuestPhone::Required
+        } else {
+            GuestPhone::Optional
+        };
+        let who = parse_who(person.customer_id, person.guest.as_ref(), phone_rule)
+            .map_err(|e| in_person(i, e))?;
         if let Who::Customer(id) = who
             && input.people[..i].iter().any(|p| p.customer_id == Some(id))
         {
@@ -758,6 +808,40 @@ pub async fn book_group(
     Ok((201, body))
 }
 
+/// `group_with` of `POST /appointments`: locks the host appointment (open, closed-day rule),
+/// opens a group on it when it had none, and refuses a customer already in that group.
+/// Returns the group and the host's business day (the companion must share it).
+async fn join_group(
+    tx: &mut TenantTx,
+    actor: &Actor,
+    spa: &Spa,
+    host: Uuid,
+    who: &Who,
+) -> Result<(Uuid, NaiveDate), AppError> {
+    let row = lock_open(tx, actor, spa, host).await?;
+    let group = match row.group_id {
+        Some(g) => {
+            if let Who::Customer(c) = who
+                && repo::group_customers(tx, g).await?.contains(c)
+            {
+                return Err(invalid("customer_id", "duplicate"));
+            }
+            g
+        }
+        None => {
+            if let Who::Customer(c) = who
+                && row.customer_id == Some(*c)
+            {
+                return Err(invalid("customer_id", "duplicate"));
+            }
+            let g = Uuid::now_v7();
+            repo::open_group(tx, host, g).await?;
+            g
+        }
+    };
+    Ok((group, row.business_date))
+}
+
 /// Locks an appointment that must still be open, applying the closed-day rule to its day.
 async fn lock_open(
     tx: &mut TenantTx,
@@ -791,6 +875,7 @@ pub async fn update(
         .as_ref()
         .map(|n| clean_note(n.as_ref()))
         .transpose()?;
+    let new_companions = input.companions.as_deref().map(companions).transpose()?;
 
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let spa = spa(&mut tx).await?;
@@ -856,6 +941,7 @@ pub async fn update(
             staff_id: p.staff_id,
             note: note_value.as_deref(),
             customer_id: input.customer_id,
+            companions: new_companions.as_deref().unwrap_or(&current.companions),
         },
     )
     .await?
@@ -879,6 +965,7 @@ pub async fn update(
             "version": version + 1, "starts_at": p.starts_at, "ends_at": p.ends_at,
             "staff_id": p.staff_id, "customer_id": input.customer_id.or(current.customer_id),
             "service_ids": input.service_ids, "note_changed": note.is_some(),
+            "companions": new_companions.as_ref().map(Vec::len),
         }),
         None,
     )

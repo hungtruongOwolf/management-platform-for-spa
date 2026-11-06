@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.appointment\n           SET group_id = $3, version = version + 1, updated_at = now()\n           WHERE tenant_id = $1 AND id = $2 AND group_id IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "168ff2fa09b118cbf61e06ba65f202abca74e36b2b6de0e6261efcf015319ace"
+}

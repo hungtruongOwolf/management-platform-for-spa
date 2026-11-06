@@ -3,9 +3,10 @@ import type {
   Calendar,
   CustomerSummary,
   Service,
+  ServiceCategory,
 } from "@vpyd/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { CustomerName } from "../../app/CustomerName";
 import { Icon } from "../../app/Icon";
 import { BottomSheet } from "../../components/BottomSheet";
@@ -23,7 +24,6 @@ import {
   autoMinutes,
   bookAppointment,
   bookGroup,
-  companionNotes,
   hhmm,
   instantAt,
   minutesOf,
@@ -37,11 +37,15 @@ export type Draft =
   | { mode: "new"; day: string; start: number; staffId: string }
   | { mode: "edit"; appointment: Appointment };
 
-/** Most people in one booking (server: 2–6 for a group). */
-export const MAX_PEOPLE = 6;
 const MAX_SERVICES = 5;
 
-/** One person of the booking form. `duration` null = follows the services (spec §10.2). */
+/**
+ * One person of the booking form: `people[0]` is the customer who books, the others are their
+ * companions (spec front-desk-and-packages §10.10). A companion with services is booked for real
+ * (own technician, own block on the calendar); one without is only a note on the booking.
+ * `duration` null = follows the services (spec appointments §10.2); `start` null = with the
+ * booking (companions only).
+ */
 export interface Person {
   key: number;
   who: "customer" | "guest";
@@ -51,6 +55,9 @@ export interface Person {
   serviceIds: string[];
   staffId: string;
   duration: number | null;
+  start: number | null;
+  /** Idempotency key of a companion added to an existing booking (`group_with`). */
+  bookingKey: string;
 }
 
 export function blank(key: number, staffId = ""): Person {
@@ -63,29 +70,62 @@ export function blank(key: number, staffId = ""): Person {
     serviceIds: [],
     staffId,
     duration: null,
+    start: null,
+    bookingKey: crypto.randomUUID(),
   };
 }
 
-/** "Người 2 (Chị Mai)" — how errors and hints name a person. */
-function personLabel(p: Person, i: number): string {
-  const name =
-    p.who === "customer" ? p.customer?.full_name : p.guestName.trim() || null;
-  return `Người ${String(i + 1)}${name ? ` (${name})` : ""}`;
+/** A new companion row: known by a name or a note until someone picks a customer record. */
+export function companion(key: number, note = ""): Person {
+  return { ...blank(key), who: "guest", guestName: note };
+}
+
+function nameOf(p: Person): string | null {
+  return p.who === "customer"
+    ? (p.customer?.full_name ?? null)
+    : p.guestName.trim() || null;
+}
+
+/** "Khách (Chị Hà)" / "Người đi cùng 2 (Chồng của chị Hà)": how errors and hints name a person. */
+export function personLabel(p: Person, i: number): string {
+  const name = nameOf(p);
+  const who = i === 0 ? "Khách" : `Người đi cùng ${String(i)}`;
+  return name ? `${who} (${name})` : who;
+}
+
+/** A companion who gets a service is booked; one without stays a note (round 6 Q-U5). */
+export function isServed(p: Person, i: number): boolean {
+  return i === 0 || p.serviceIds.length > 0;
+}
+
+/** The note-only companions, as the server's `companions[]`. */
+export function noteCompanions(people: Person[]): string[] {
+  return people
+    .filter((p, i) => !isServed(p, i))
+    .map((p) => nameOf(p) ?? "")
+    .filter((n) => n !== "")
+    .slice(0, MAX_COMPANIONS);
 }
 
 /** What still stops the form from being sent, in words (never a silent no-op, spec §10.5). */
 export function missingParts(people: Person[], editing: boolean): string[] {
   const out: string[] = [];
   people.forEach((p, i) => {
-    const who = people.length > 1 ? ` của ${personLabel(p, i)}` : "";
-    if (!editing) {
-      if (p.who === "customer" && p.customer === null) out.push(`khách${who}`);
-      if (p.who === "guest" && p.guestName.trim() === "")
-        out.push(`tên khách mới${who}`);
-      if (p.who === "guest" && p.guestPhone.trim() === "")
-        out.push(`SĐT khách mới${who}`);
+    const who = i > 0 ? ` của ${personLabel(p, i)}` : "";
+    if (i === 0) {
+      if (!editing) {
+        if (p.who === "customer" && p.customer === null) out.push("khách");
+        if (p.who === "guest" && p.guestName.trim() === "")
+          out.push("tên khách mới");
+        if (p.who === "guest" && p.guestPhone.trim() === "")
+          out.push("SĐT khách mới");
+      }
+      if (p.serviceIds.length === 0) out.push("dịch vụ");
+      return;
     }
-    if (p.serviceIds.length === 0) out.push(`dịch vụ${who}`);
+    if (p.who === "customer" && p.customer === null) out.push(`khách${who}`);
+    if (p.who === "guest" && p.guestName.trim() === "")
+      out.push(`tên hoặc ghi chú${who}`);
   });
   return out;
 }
@@ -101,11 +141,15 @@ const FIELD_NAMES: Record<string, string> = {
   companions: "người đi cùng",
 };
 
-/** Every server refusal as one Vietnamese sentence, naming the person when it is a group's. */
+/**
+ * Every server refusal as one Vietnamese sentence. `sent` are the people of the request in its
+ * order (`people[i]` of a group) and `labels` how the form names each of them.
+ */
 export function bookingErrorText(
   error: unknown,
   cal: Calendar,
-  people: Person[],
+  sent: Person[],
+  labels: string[] = sent.map(personLabel),
 ): string {
   if (!(error instanceof ApiError)) return messageFor(error);
   if (error.code === "appointment.staff_busy") {
@@ -114,8 +158,8 @@ export function bookingErrorText(
       const s = spaMinutes(other.starts_at);
       return `${other.staff_name ?? "KTV"} đã có lịch ${hhmm(s)}–${hhmm(s + other.duration_min)} (${other.customer_name}). Chọn giờ hoặc KTV khác.`;
     }
-    return people.length > 1
-      ? "Hai người trong nhóm đang chọn cùng một KTV trùng giờ, hoặc KTV đã có lịch. Chọn KTV khác."
+    return sent.length > 1
+      ? "Hai người đang chọn cùng một KTV trùng giờ, hoặc KTV đã có lịch. Chọn KTV khác."
       : messageFor(error);
   }
   if (error.code === "appointment.outside_opening_hours")
@@ -125,8 +169,8 @@ export function bookingErrorText(
       .map((f) => {
         const m = /^people\[(\d+)\]\.(.+)$/.exec(f.field);
         const field = m?.[2] ?? f.field;
-        const person = m ? people[Number(m[1])] : undefined;
-        const who = person ? `${personLabel(person, Number(m?.[1]))}: ` : "";
+        const label = m ? labels[Number(m[1])] : undefined;
+        const who = label ? `${label}: ` : "";
         const along = /^companions\[(\d+)\]$/.exec(field);
         const name = along
           ? `người đi cùng ${String(Number(along[1]) + 1)}`
@@ -135,7 +179,7 @@ export function bookingErrorText(
           f.code === "duplicate" && field === "customer_id"
             ? "khách này đã có trong nhóm."
             : f.code === "count_out_of_range" && field === "people"
-              ? `nhóm phải có 2–${String(MAX_PEOPLE)} người.`
+              ? "một lịch có tối đa 6 người được làm."
               : f.code === "count_out_of_range"
                 ? `chọn 1–${String(MAX_SERVICES)} dịch vụ.`
                 : `${name} — ${(fieldMessage(error, f.field) ?? "không hợp lệ.").toLowerCase()}`;
@@ -147,11 +191,12 @@ export function bookingErrorText(
 }
 
 /**
- * "Đặt lịch hẹn" (spec appointments.md §2, §10.2–10.5): one or more people ("+ Thêm người", a
- * family) at the same day and time, each with their own services, technician and length. Picking
- * a service adds it at once and the length follows the services until the desk sets it by hand.
- * One person → POST /appointments; a group → POST /appointments/group (all or nobody). Editing an
- * appointment is the same form for its one person. Every rule is the server's; this previews.
+ * "Đặt lịch hẹn" (spec appointments.md §2, §10.2–10.5; front-desk-and-packages §10.10): the
+ * customer, then "Người đi cùng". Each companion is a name (or a customer record) and, if they
+ * get a service, their own services, technician, length and start: a booking of their own in the
+ * group. Without a service a companion is a note. Nobody served alongside → POST /appointments;
+ * otherwise POST /appointments/group (all or nobody). Editing: PATCH the booking (note-only
+ * companions included), then each new served companion joins it (`group_with`).
  */
 export function BookingSheet({
   cal,
@@ -171,7 +216,7 @@ export function BookingSheet({
   const slot = cal.slot_minutes;
   const opens = minutesOf(cal.opens_at);
   const closes = minutesOf(cal.closes_at);
-  const nextKey = useRef(1);
+  const nextKey = useRef(1 + (editing?.companions.length ?? 0));
   const [people, setPeople] = useState<Person[]>(() => {
     if (!editing) return [blank(0, draft.mode === "new" ? draft.staffId : "")];
     const auto = autoMinutes(
@@ -184,6 +229,7 @@ export function BookingSheet({
         serviceIds: editing.services.map((s) => s.service_id),
         duration: editing.duration_min === auto ? null : editing.duration_min,
       },
+      ...editing.companions.map((n, j) => companion(j + 1, n)),
     ];
   });
   const [day, setDay] = useState(
@@ -201,11 +247,11 @@ export function BookingSheet({
         : opens,
   );
   const [note, setNote] = useState(editing?.note ?? "");
-  // People who come along, known only by a note (round 6 Q-U5): never served or charged.
-  const [companions, setCompanions] = useState<string[]>([]);
   const [attempted, setAttempted] = useState(false);
   // One key per booking, kept across retries so a resend never books twice.
   const [key] = useState(() => crypto.randomUUID());
+  // Editing runs several requests: what already went through is not sent again on a retry.
+  const patched = useRef<Appointment | null>(null);
   const missingRef = useRef<HTMLParagraphElement | null>(null);
 
   const serviceOf = (id: string): Service | undefined =>
@@ -221,55 +267,85 @@ export function BookingSheet({
       slot,
     );
   const minutesOfPerson = (p: Person) => p.duration ?? autoOf(p);
-  const longest = Math.max(...people.map(minutesOfPerson));
+  const startOf = (p: Person) => p.start ?? start;
+  const served = people.filter(isServed);
+  const notes = noteCompanions(people);
+  const firstStart = Math.min(...served.map(startOf));
+  const lastEnd = Math.max(
+    ...served.map((p) => startOf(p) + minutesOfPerson(p)),
+  );
 
   const change = (k: number, patch: Partial<Person>) => {
     setPeople((ps) => ps.map((p) => (p.key === k ? { ...p, ...patch } : p)));
   };
 
   const missing = missingParts(people, editing !== null);
-  // Everyone starts together, so one technician on two people always overlaps.
-  const clashing = people.filter(
-    (p, i) =>
-      p.staffId !== "" &&
-      people.some((q, j) => j < i && q.staffId === p.staffId),
+  // One technician on two people whose times overlap.
+  const clashing = served.filter((p, i) =>
+    served.some(
+      (q, j) =>
+        j < i &&
+        p.staffId !== "" &&
+        q.staffId === p.staffId &&
+        startOf(p) < startOf(q) + minutesOfPerson(q) &&
+        startOf(q) < startOf(p) + minutesOfPerson(p),
+    ),
   );
   const inRange = day >= cal.from && day <= cal.to;
   const max = cal.max_per_slot ?? null;
-  const already = inRange ? peakPeople(cal, day, start, longest) : 0;
-  const overMax =
-    max !== null && inRange && already + (editing ? 0 : people.length) > max;
+  const already = inRange
+    ? peakPeople(cal, day, firstStart, lastEnd - firstStart)
+    : 0;
+  const adding = editing ? served.length - 1 : served.length;
+  const overMax = max !== null && inRange && already + adding > max;
+
+  const person = (p: Person) => ({
+    ...(p.who === "customer"
+      ? { customer_id: p.customer?.id ?? null }
+      : {
+          guest: {
+            full_name: p.guestName.trim(),
+            phone: p.guestPhone.trim() || null,
+          },
+        }),
+    service_ids: p.serviceIds,
+    staff_id: p.staffId || null,
+    duration_min: minutesOfPerson(p),
+  });
 
   const save = useMutation({
     mutationFn: async (): Promise<Appointment> => {
       const starts_at = instantAt(day, start);
-      const [first] = people;
+      const [first, ...others] = served;
       if (!first) throw new Error("no person");
-      if (editing)
-        return updateAppointment(editing, {
+      const withNotes = notes.length > 0 ? { companions: notes } : {};
+      if (editing) {
+        patched.current ??= await updateAppointment(editing, {
           starts_at,
           duration_min: minutesOfPerson(first),
           staff_id: first.staffId || null,
           service_ids: first.serviceIds,
           note: note.trim() || null,
+          companions: notes,
         });
-      const person = (p: Person) => ({
-        ...(p.who === "customer"
-          ? { customer_id: p.customer?.id ?? null }
-          : { guest: { full_name: p.guestName, phone: p.guestPhone } }),
-        service_ids: p.serviceIds,
-        staff_id: p.staffId || null,
-        duration_min: minutesOfPerson(p),
-      });
-      const along = companionNotes(companions);
-      const withCompanions = along.length > 0 ? { companions: along } : {};
-      if (people.length === 1)
+        for (const p of others)
+          await bookAppointment(
+            {
+              ...person(p),
+              starts_at: instantAt(day, startOf(p)),
+              group_with: editing.id,
+            },
+            p.bookingKey,
+          );
+        return patched.current;
+      }
+      if (others.length === 0)
         return bookAppointment(
           {
             ...person(first),
             starts_at,
             note: note.trim() || null,
-            ...withCompanions,
+            ...withNotes,
           },
           key,
         );
@@ -277,8 +353,11 @@ export function BookingSheet({
         {
           starts_at,
           note: note.trim() || null,
-          people: people.map(person),
-          ...withCompanions,
+          people: served.map((p) => ({
+            ...person(p),
+            ...(p.start === null ? {} : { starts_at: instantAt(day, p.start) }),
+          })),
+          ...withNotes,
         },
         key,
       );
@@ -334,6 +413,9 @@ export function BookingSheet({
     { length: Math.max(0, (closes - opens) / slot) },
     (_, i) => opens + i * slot,
   );
+  const sentLabels = served.map((p) => personLabel(p, people.indexOf(p)));
+  const companionsCount = people.length - 1;
+  const servedCompanions = served.length - 1;
 
   return (
     <BottomSheet
@@ -355,8 +437,8 @@ export function BookingSheet({
           >
             {editing
               ? "Lưu thay đổi"
-              : people.length > 1
-                ? `Đặt lịch ${String(people.length)} người`
+              : served.length > 1
+                ? `Đặt lịch ${String(served.length)} người`
                 : "Đặt lịch"}
           </button>
         </>
@@ -372,40 +454,19 @@ export function BookingSheet({
         }}
       >
         {people.map((p, i) => {
-          const chosen = p.serviceIds.map((id) => ({
-            id,
-            name:
-              serviceOf(id)?.name ??
-              editing?.services.find((s) => s.service_id === id)
-                ?.service_name ??
-              "",
-            duration:
-              serviceOf(id)?.duration_min ??
-              editing?.services.find((s) => s.service_id === id)
-                ?.duration_min ??
-              null,
-          }));
-          const auto = autoOf(p);
-          // An untimed add-on next to a timed service runs meanwhile: "(kèm)", not "(60′)".
-          const chipMinutes = (d: number | null) => {
-            const m = addedMinutes(
-              d,
-              chosen.map((c) => c.duration),
-            );
-            return m ? `${String(m)} phút` : "kèm";
-          };
-          const many = people.length > 1;
-          const legend = many ? `Người ${String(i + 1)}` : "Khách";
-          const suffix = many ? ` · ${legend}` : "";
+          const legend = i === 0 ? "Khách" : `Người đi cùng ${String(i)}`;
           const id = (what: string) => `booking-${what}-${String(p.key)}`;
+          const main = i === 0;
+          const booked = isServed(p, i);
           return (
             <fieldset key={p.key} className="appt-person">
               <legend className="appt-person-head">
                 <span>{legend}</span>
-                {many && (
+                {!main && (
                   <button
                     type="button"
                     className="btn btn-ghost"
+                    aria-label={`Bỏ người này (${legend})`}
                     onClick={() => {
                       setPeople((ps) => ps.filter((x) => x.key !== p.key));
                     }}
@@ -414,314 +475,114 @@ export function BookingSheet({
                   </button>
                 )}
               </legend>
-              {!editing && (
-                <>
-                  <div
-                    role="group"
-                    aria-label={`Loại khách ${legend}`}
-                    className="segmented justify-self-start"
-                  >
-                    <button
-                      type="button"
-                      aria-pressed={p.who === "customer"}
-                      onClick={() => {
-                        change(p.key, { who: "customer" });
+              {(!editing || !main) && (
+                <WhoFields
+                  p={p}
+                  main={main}
+                  legend={legend}
+                  id={id}
+                  booked={booked}
+                  change={change}
+                />
+              )}
+              <ServiceFields
+                p={p}
+                main={main}
+                suffix={main ? "" : ` · ${legend}`}
+                id={id}
+                groups={groups}
+                loading={allServices.isPending}
+                serviceOf={serviceOf}
+                editing={editing}
+                change={change}
+              />
+              {booked && (
+                <div className="appt-fields">
+                  <LengthField
+                    p={p}
+                    auto={autoOf(p)}
+                    minutes={minutesOfPerson(p)}
+                    slot={slot}
+                    label={
+                      <>
+                        Thời lượng
+                        <Who legend={main ? null : legend} />
+                      </>
+                    }
+                    id={id}
+                    change={change}
+                  />
+                  <div className="field">
+                    <label htmlFor={id("staff")}>
+                      {main
+                        ? "KTV (không bắt buộc)"
+                        : "KTV làm cho người đi cùng"}
+                      <Who legend={main ? null : legend} />
+                    </label>
+                    <select
+                      id={id("staff")}
+                      className="input"
+                      value={p.staffId}
+                      aria-invalid={clashing.includes(p) || undefined}
+                      onChange={(e) => {
+                        change(p.key, { staffId: e.target.value });
                       }}
                     >
-                      Khách có hồ sơ
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={p.who === "guest"}
-                      onClick={() => {
-                        change(p.key, { who: "guest" });
-                      }}
-                    >
-                      Khách mới
-                    </button>
+                      <option value="">Chưa gán KTV</option>
+                      {cal.technicians.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.full_name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                  {p.who === "customer" &&
-                    (p.customer ? (
-                      <p className="appt-chosen-person">
-                        <strong>
-                          <CustomerName
-                            name={p.customer.full_name}
-                            gender={p.customer.gender}
-                          />
-                        </strong>
-                        <span className="field-hint tabular-nums">
-                          {p.customer.phone}
-                        </span>
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          onClick={() => {
-                            change(p.key, { customer: null });
-                          }}
-                        >
-                          Đổi khách
-                        </button>
-                      </p>
-                    ) : (
-                      <CustomerSearch
-                        onSelect={(c) => {
-                          change(p.key, { customer: c });
+                  {!main && (
+                    <div className="field">
+                      <label htmlFor={id("start")}>
+                        Giờ bắt đầu
+                        <Who legend={legend} />
+                      </label>
+                      <select
+                        id={id("start")}
+                        className="input"
+                        value={p.start ?? ""}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          change(p.key, { start: v === "" ? null : Number(v) });
                         }}
-                        onCreate={(typed) => {
-                          change(
-                            p.key,
-                            /\d/.test(typed)
-                              ? { who: "guest", guestPhone: typed }
-                              : { who: "guest", guestName: typed },
-                          );
-                        }}
-                      />
-                    ))}
-                  {p.who === "guest" && (
-                    <div className="appt-fields">
-                      <div className="field">
-                        <label htmlFor={id("guest-name")}>Tên khách</label>
-                        <input
-                          id={id("guest-name")}
-                          className="input"
-                          value={p.guestName}
-                          maxLength={200}
-                          autoComplete="off"
-                          onChange={(e) => {
-                            change(p.key, { guestName: e.target.value });
-                          }}
-                        />
-                      </div>
-                      <div className="field">
-                        <label htmlFor={id("guest-phone")}>Số điện thoại</label>
-                        <input
-                          id={id("guest-phone")}
-                          className="input"
-                          inputMode="tel"
-                          autoComplete="off"
-                          value={p.guestPhone}
-                          onChange={(e) => {
-                            change(p.key, { guestPhone: e.target.value });
-                          }}
-                        />
-                      </div>
+                      >
+                        <option value="">
+                          Cùng giờ với khách ({hhmm(start)})
+                        </option>
+                        {startOptions.map((m) => (
+                          <option key={m} value={m}>
+                            {hhmm(m)}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   )}
-                </>
+                </div>
               )}
-
-              <div className="field">
-                {/* The group's visible label; the picker itself is named "Thêm dịch vụ". */}
-                <span>Dịch vụ</span>
-                {chosen.length > 0 && (
-                  <ul
-                    className="appt-services"
-                    aria-label={`Dịch vụ đã chọn${suffix}`}
-                  >
-                    {chosen.map((s, j) => (
-                      <li key={`${s.id}-${String(j)}`}>
-                        <span>
-                          {s.name}
-                          <span className="appt-minutes">
-                            {chipMinutes(s.duration)}
-                          </span>
-                        </span>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-icon"
-                          aria-label={`Bỏ ${s.name}`}
-                          onClick={() => {
-                            change(p.key, {
-                              serviceIds: p.serviceIds.filter(
-                                (_, x) => x !== j,
-                              ),
-                            });
-                          }}
-                        >
-                          <Icon name="x" />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {p.serviceIds.length < MAX_SERVICES && (
-                  <select
-                    id={id("service")}
-                    aria-label={`Thêm dịch vụ${suffix}`}
-                    className="input"
-                    value=""
-                    aria-describedby={id("service-hint")}
-                    onChange={(e) => {
-                      // Picking is adding (round 5: a pick that waited for "Thêm" was lost).
-                      const picked = e.target.value;
-                      if (picked)
-                        change(p.key, {
-                          serviceIds: [...p.serviceIds, picked],
-                        });
-                    }}
-                  >
-                    <option value="">
-                      {allServices.isPending
-                        ? "Đang tải bảng giá…"
-                        : chosen.length > 0
-                          ? "+ Thêm dịch vụ khác…"
-                          : "Chọn dịch vụ…"}
-                    </option>
-                    {groups
-                      .filter((g) => g.items.length > 0)
-                      .map((g) => (
-                        <optgroup key={g.c.id} label={g.c.name}>
-                          {g.items.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name}
-                              {s.duration_min
-                                ? ` · ${String(s.duration_min)} phút`
-                                : ""}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                  </select>
-                )}
-                <span id={id("service-hint")} className="field-hint">
-                  Chọn là thêm, tối đa {MAX_SERVICES} dịch vụ. Dịch vụ không có
-                  thời lượng làm kèm, không cộng giờ.
-                </span>
-              </div>
-
-              <div className="appt-fields">
-                <div className="field">
-                  <label htmlFor={id("length")}>Thời lượng{suffix}</label>
-                  <select
-                    id={id("length")}
-                    className="input"
-                    value={minutesOfPerson(p)}
-                    aria-describedby={id("length-hint")}
-                    onChange={(e) => {
-                      const m = Number(e.target.value);
-                      change(p.key, { duration: m === auto ? null : m });
-                    }}
-                  >
-                    {Array.from(
-                      { length: 480 / slot },
-                      (_, x) => (x + 1) * slot,
-                    ).map((m) => (
-                      <option key={m} value={m}>
-                        {m} phút{m === auto ? " (theo dịch vụ)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                  <span
-                    id={id("length-hint")}
-                    className="field-hint"
-                    aria-live="polite"
-                  >
-                    {p.duration === null
-                      ? `Theo dịch vụ: ${String(auto)} phút`
-                      : `Đã chỉnh tay · theo dịch vụ: ${String(auto)} phút`}
-                  </span>
-                  {p.duration !== null && (
-                    <button
-                      type="button"
-                      className="btn btn-ghost justify-self-start"
-                      onClick={() => {
-                        change(p.key, { duration: null });
-                      }}
-                    >
-                      Dùng lại theo dịch vụ
-                    </button>
-                  )}
-                </div>
-                <div className="field">
-                  <label htmlFor={id("staff")}>
-                    KTV (không bắt buộc){suffix}
-                  </label>
-                  <select
-                    id={id("staff")}
-                    className="input"
-                    value={p.staffId}
-                    aria-invalid={clashing.includes(p) || undefined}
-                    onChange={(e) => {
-                      change(p.key, { staffId: e.target.value });
-                    }}
-                  >
-                    <option value="">Chưa gán KTV</option>
-                    {cal.technicians.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.full_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
             </fieldset>
           );
         })}
 
-        {!editing && people.length < MAX_PEOPLE && (
-          <button
-            type="button"
-            className="btn btn-secondary justify-self-start"
-            onClick={() => {
-              setPeople((ps) => [...ps, blank(nextKey.current++)]);
-            }}
-          >
-            <Icon name="plus" /> Thêm người (gia đình, nhóm)
-          </button>
-        )}
-
-        {!editing && (
+        {companionsCount < MAX_COMPANIONS && (
           <div className="appt-companions">
-            {companions.map((c, j) => (
-              <div key={j} className="appt-companion">
-                <div className="field">
-                  <label htmlFor={`booking-companion-${String(j)}`}>
-                    Người đi cùng {j + 1}
-                  </label>
-                  <input
-                    id={`booking-companion-${String(j)}`}
-                    className="input"
-                    value={c}
-                    maxLength={100}
-                    placeholder="Chồng của chị Hà"
-                    autoComplete="off"
-                    autoFocus={j === companions.length - 1 && c === ""}
-                    onChange={(e) => {
-                      const text = e.target.value;
-                      setCompanions((list) =>
-                        list.map((x, k) => (k === j ? text : x)),
-                      );
-                    }}
-                  />
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-icon"
-                  aria-label={`Bỏ người đi cùng ${String(j + 1)}`}
-                  onClick={() => {
-                    setCompanions((list) => list.filter((_, k) => k !== j));
-                  }}
-                >
-                  <Icon name="x" />
-                </button>
-              </div>
-            ))}
-            {companions.length < MAX_COMPANIONS && (
-              <button
-                type="button"
-                className="btn btn-ghost justify-self-start"
-                onClick={() => {
-                  setCompanions((list) => [...list, ""]);
-                }}
-              >
-                <Icon name="plus" /> Người đi cùng (ghi chú)
-              </button>
-            )}
-            {companions.length > 0 && (
-              <span className="field-hint">
-                Chỉ ghi chú trên lịch hẹn: không chọn dịch vụ, không tính tiền.
-              </span>
-            )}
+            <button
+              type="button"
+              className="btn btn-secondary justify-self-start"
+              onClick={() => {
+                setPeople((ps) => [...ps, companion(nextKey.current++)]);
+              }}
+            >
+              <Icon name="plus" /> Người đi cùng
+            </button>
+            <span className="field-hint">
+              Chọn dịch vụ và KTV nếu người đi cùng cũng làm; không chọn dịch vụ
+              thì chỉ ghi chú trên lịch hẹn.
+            </span>
           </div>
         )}
 
@@ -735,9 +596,7 @@ export function BookingSheet({
             }}
           />
           <div className="field">
-            <label htmlFor="booking-start">
-              Giờ hẹn{people.length > 1 ? " (cả nhóm)" : ""}
-            </label>
+            <label htmlFor="booking-start">Giờ hẹn</label>
             <select
               id="booking-start"
               className="input"
@@ -783,33 +642,38 @@ export function BookingSheet({
         </div>
         <p className="appt-recap">
           <strong>
-            {formatDate(day)} · {hhmm(start)}–{hhmm(start + longest)}
+            {formatDate(day)} · {hhmm(firstStart)}–{hhmm(lastEnd)}
           </strong>{" "}
-          ({longest} phút)
-          {people.length > 1 ? ` · ${String(people.length)} người` : ""}
-          {companionNotes(companions).length > 0
-            ? ` · ${String(companionNotes(companions).length)} người đi cùng`
+          ({lastEnd - firstStart} phút)
+          {servedCompanions > 0 ? ` · ${String(served.length)} người làm` : ""}
+          {notes.length > 0
+            ? ` · ${String(notes.length)} người đi cùng (ghi chú)`
             : ""}{" "}
           · chưa thanh toán (thu khi ghi lượt)
         </p>
         {clashing.length > 0 && (
           <p role="status" className="callout">
             {clashing.map((p) => personLabel(p, people.indexOf(p))).join(", ")}{" "}
-            đang cùng KTV với người khác trong nhóm, cùng giờ: chọn KTV khác
-            hoặc để “Chưa gán KTV”.
+            đang cùng KTV với người khác trong lịch này, trùng giờ: chọn KTV
+            khác, đổi giờ bắt đầu hoặc để “Chưa gán KTV”.
           </p>
         )}
         {overMax && (
           <p role="status" className="callout">
-            Khung {hhmm(start)} đã có {already}/{max} khách
-            {editing
-              ? ""
-              : `; thêm ${String(people.length)} người sẽ vượt mức tối đa`}
+            Khung {hhmm(firstStart)} đã có {already}/{max} khách
+            {adding > 0
+              ? `; thêm ${String(adding)} người sẽ vượt mức tối đa`
+              : ""}
             . Vẫn đặt được nếu khách chịu chờ.
           </p>
         )}
         {attempted && missing.length > 0 && (
-          <p ref={missingRef} tabIndex={-1} role="alert" className="field-error">
+          <p
+            ref={missingRef}
+            tabIndex={-1}
+            role="alert"
+            className="field-error"
+          >
             Còn thiếu: {missing.join(", ")}.
           </p>
         )}
@@ -829,10 +693,310 @@ export function BookingSheet({
         )}
         {save.isError && !taken && (
           <p role="alert" className="field-error">
-            {bookingErrorText(save.error, cal, people)}
+            {bookingErrorText(
+              save.error,
+              cal,
+              editing ? served.slice(1) : served,
+              editing ? sentLabels.slice(1) : sentLabels,
+            )}
           </p>
         )}
       </form>
     </BottomSheet>
+  );
+}
+
+type Change = (k: number, patch: Partial<Person>) => void;
+
+/** " · Người đi cùng 2" after a companion's label: read out, not shown (the legend shows it). */
+function Who({ legend }: { legend: string | null }) {
+  return legend ? <span className="sr-only"> · {legend}</span> : null;
+}
+
+/** Who the person is: a customer record, a newcomer (the customer) or a name / note (a companion). */
+function WhoFields({
+  p,
+  main,
+  legend,
+  id,
+  booked,
+  change,
+}: {
+  p: Person;
+  main: boolean;
+  legend: string;
+  id: (what: string) => string;
+  booked: boolean;
+  change: Change;
+}) {
+  return (
+    <>
+      <div
+        role="group"
+        aria-label={`Loại khách ${legend}`}
+        className="segmented justify-self-start"
+      >
+        <button
+          type="button"
+          aria-pressed={p.who === "customer"}
+          onClick={() => {
+            change(p.key, { who: "customer" });
+          }}
+        >
+          Khách có hồ sơ
+        </button>
+        <button
+          type="button"
+          aria-pressed={p.who === "guest"}
+          onClick={() => {
+            change(p.key, { who: "guest" });
+          }}
+        >
+          {main ? "Khách mới" : "Chỉ ghi tên"}
+        </button>
+      </div>
+      {p.who === "customer" &&
+        (p.customer ? (
+          <p className="appt-chosen-person">
+            <strong>
+              <CustomerName
+                name={p.customer.full_name}
+                gender={p.customer.gender}
+              />
+            </strong>
+            <span className="field-hint tabular-nums">{p.customer.phone}</span>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => {
+                change(p.key, { customer: null });
+              }}
+            >
+              Đổi khách
+            </button>
+          </p>
+        ) : (
+          <CustomerSearch
+            onSelect={(c) => {
+              change(p.key, { customer: c });
+            }}
+            onCreate={(typed) => {
+              change(
+                p.key,
+                /\d/.test(typed)
+                  ? { who: "guest", guestPhone: typed }
+                  : { who: "guest", guestName: typed },
+              );
+            }}
+          />
+        ))}
+      {p.who === "guest" && (
+        <div className="appt-fields">
+          <div className="field">
+            <label htmlFor={id("guest-name")}>
+              {main ? "Tên khách" : "Tên hoặc ghi chú"}
+              <Who legend={main ? null : legend} />
+            </label>
+            <input
+              id={id("guest-name")}
+              className="input"
+              value={p.guestName}
+              maxLength={main ? 200 : 100}
+              placeholder={main ? undefined : "Chồng của chị Hà"}
+              autoComplete="off"
+              autoFocus={!main && p.guestName === ""}
+              onChange={(e) => {
+                change(p.key, { guestName: e.target.value });
+              }}
+            />
+          </div>
+          {(main || booked) && (
+            <div className="field">
+              <label htmlFor={id("guest-phone")}>
+                {main ? "Số điện thoại" : "SĐT (không bắt buộc)"}
+                <Who legend={main ? null : legend} />
+              </label>
+              <input
+                id={id("guest-phone")}
+                className="input"
+                inputMode="tel"
+                autoComplete="off"
+                value={p.guestPhone}
+                onChange={(e) => {
+                  change(p.key, { guestPhone: e.target.value });
+                }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** The person's services: picking is adding; an untimed add-on next to a timed one is "kèm". */
+function ServiceFields({
+  p,
+  main,
+  suffix,
+  id,
+  groups,
+  loading,
+  serviceOf,
+  editing,
+  change,
+}: {
+  p: Person;
+  main: boolean;
+  suffix: string;
+  id: (what: string) => string;
+  groups: { c: ServiceCategory; items: Service[] }[];
+  loading: boolean;
+  serviceOf: (id: string) => Service | undefined;
+  editing: Appointment | null;
+  change: Change;
+}) {
+  const booked = (sid: string) =>
+    main ? editing?.services.find((s) => s.service_id === sid) : undefined;
+  const chosen = p.serviceIds.map((sid) => ({
+    id: sid,
+    name: serviceOf(sid)?.name ?? booked(sid)?.service_name ?? "",
+    duration: serviceOf(sid)?.duration_min ?? booked(sid)?.duration_min ?? null,
+  }));
+  const chipMinutes = (d: number | null) => {
+    const m = addedMinutes(
+      d,
+      chosen.map((c) => c.duration),
+    );
+    return m ? `${String(m)} phút` : "kèm";
+  };
+  return (
+    <div className="field">
+      {/* The group's visible label; the picker itself is named "Thêm dịch vụ". */}
+      <span>{main ? "Dịch vụ" : "Dịch vụ (không bắt buộc)"}</span>
+      {chosen.length > 0 && (
+        <ul className="appt-services" aria-label={`Dịch vụ đã chọn${suffix}`}>
+          {chosen.map((s, j) => (
+            <li key={`${s.id}-${String(j)}`}>
+              <span>
+                {s.name}
+                <span className="appt-minutes">{chipMinutes(s.duration)}</span>
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon"
+                aria-label={`Bỏ ${s.name}${suffix}`}
+                onClick={() => {
+                  change(p.key, {
+                    serviceIds: p.serviceIds.filter((_, x) => x !== j),
+                  });
+                }}
+              >
+                <Icon name="x" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {p.serviceIds.length < MAX_SERVICES && (
+        <select
+          id={id("service")}
+          aria-label={`Thêm dịch vụ${suffix}`}
+          className="input"
+          value=""
+          aria-describedby={id("service-hint")}
+          onChange={(e) => {
+            // Picking is adding (round 5: a pick that waited for "Thêm" was lost).
+            const picked = e.target.value;
+            if (picked)
+              change(p.key, { serviceIds: [...p.serviceIds, picked] });
+          }}
+        >
+          <option value="">
+            {loading
+              ? "Đang tải bảng giá…"
+              : chosen.length > 0
+                ? "+ Thêm dịch vụ khác…"
+                : "Chọn dịch vụ…"}
+          </option>
+          {groups
+            .filter((g) => g.items.length > 0)
+            .map((g) => (
+              <optgroup key={g.c.id} label={g.c.name}>
+                {g.items.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                    {s.duration_min ? ` · ${String(s.duration_min)} phút` : ""}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+        </select>
+      )}
+      <span id={id("service-hint")} className="field-hint">
+        {main || chosen.length > 0
+          ? `Chọn là thêm, tối đa ${String(MAX_SERVICES)} dịch vụ. Dịch vụ không có thời lượng làm kèm, không cộng giờ.`
+          : "Chưa chọn dịch vụ: chỉ ghi chú trên lịch hẹn, không làm, không tính tiền."}
+      </span>
+    </div>
+  );
+}
+
+/** Length of one person's booking: follows the services until set by hand. */
+function LengthField({
+  p,
+  auto,
+  minutes,
+  slot,
+  label,
+  id,
+  change,
+}: {
+  p: Person;
+  auto: number;
+  minutes: number;
+  slot: number;
+  label: ReactNode;
+  id: (what: string) => string;
+  change: Change;
+}) {
+  return (
+    <div className="field">
+      <label htmlFor={id("length")}>{label}</label>
+      <select
+        id={id("length")}
+        className="input"
+        value={minutes}
+        aria-describedby={id("length-hint")}
+        onChange={(e) => {
+          const m = Number(e.target.value);
+          change(p.key, { duration: m === auto ? null : m });
+        }}
+      >
+        {Array.from({ length: 480 / slot }, (_, x) => (x + 1) * slot).map(
+          (m) => (
+            <option key={m} value={m}>
+              {m} phút{m === auto ? " (theo dịch vụ)" : ""}
+            </option>
+          ),
+        )}
+      </select>
+      <span id={id("length-hint")} className="field-hint" aria-live="polite">
+        {p.duration === null
+          ? `Theo dịch vụ: ${String(auto)} phút`
+          : `Đã chỉnh tay · theo dịch vụ: ${String(auto)} phút`}
+      </span>
+      {p.duration !== null && (
+        <button
+          type="button"
+          className="btn btn-ghost justify-self-start"
+          onClick={() => {
+            change(p.key, { duration: null });
+          }}
+        >
+          Dùng lại theo dịch vụ
+        </button>
+      )}
+    </div>
   );
 }

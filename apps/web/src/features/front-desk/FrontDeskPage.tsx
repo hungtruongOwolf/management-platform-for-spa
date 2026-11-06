@@ -617,7 +617,7 @@ export function FrontDeskPage() {
       {
         id: a.customer_id,
         full_name: a.customer_name,
-        phone: localPhone(a.customer_phone),
+        phone: localPhone(a.customer_phone ?? ""),
         gender: a.customer_gender ?? null,
       },
       true,

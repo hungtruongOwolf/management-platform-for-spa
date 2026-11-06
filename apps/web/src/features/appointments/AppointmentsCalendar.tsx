@@ -1202,7 +1202,9 @@ function AppointmentSheet({
           </dd>
           <dt>SĐT</dt>
           <dd className="tabular-nums">
-            {a.customer_phone.replace(/^\+84/, "0")}
+            {a.customer_phone
+              ? a.customer_phone.replace(/^\+84/, "0")
+              : "Chưa có"}
           </dd>
           <dt>Dịch vụ</dt>
           <dd>
@@ -1254,6 +1256,17 @@ function AppointmentSheet({
                     </button>
                   )}
                   <PhaseBadge phase={x.phase} />
+                  {/* Who serves each person, at what time: the companion's own booking. */}
+                  <span className="appt-member-meta">
+                    {range(spaMinutes(x.starts_at), x.duration_min)} ·{" "}
+                    {servicesText(x.services)} ·{" "}
+                    {/* "KTV Lan", without doubling a name that already says "KTV …". */}
+                    {x.staff_name === null || x.staff_name === undefined
+                      ? "Chưa gán KTV"
+                      : /^ktv\b/i.test(x.staff_name)
+                        ? x.staff_name
+                        : `KTV ${x.staff_name}`}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -1277,7 +1290,11 @@ function AppointmentSheet({
 
         {open && !locked && a.is_guest && (
           <div className="callout">
-            <p>Khách mới: tạo hồ sơ (điền sẵn tên và SĐT) để ghi lượt được.</p>
+            <p>
+              {a.customer_phone
+                ? "Khách mới: tạo hồ sơ (điền sẵn tên và SĐT) để ghi lượt được."
+                : "Người đi cùng chưa có hồ sơ: tạo hồ sơ (điền sẵn tên, thêm SĐT) để ghi lượt cho họ; KTV đã gán vẫn giữ."}
+            </p>
             {canCreateCustomer && !creating && (
               <button
                 type="button"
@@ -1300,7 +1317,7 @@ function AppointmentSheet({
                   <CustomerForm
                     prefill={{
                       full_name: a.customer_name,
-                      phone: a.customer_phone.replace(/^\+84/, "0"),
+                      phone: (a.customer_phone ?? "").replace(/^\+84/, "0"),
                     }}
                     canWriteHealth={canWriteHealth}
                     onSaved={(c) => {

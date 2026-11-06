@@ -188,5 +188,10 @@ Không có bảng mới. 0013:
 - `visit.companions`, `appointment.companions` `text[] NOT NULL DEFAULT '{}'`, `CHECK (app.valid_companions(...))` (0–5 mục, 1–100 ký tự).
 - `app.revenue_book` (CREATE OR REPLACE, thêm cột cuối): `visit_id`, `upsell_by` (người chốt của hóa đơn gói, hoặc người giới thiệu của các dòng lẻ).
 
+## Người đi cùng được làm (0022, [ADR-0009](../decisions/ADR-0009-served-companions.md))
+- Bỏ `appointment_check1` (khách có hồ sơ **hoặc** tên + SĐT). Thay bằng `appointment_customer_or_guest` (có hồ sơ và không có trường khách mới, **hoặc** không hồ sơ và có tên; SĐT tùy chọn) + `appointment_guest_phone_or_group` (`customer_id IS NOT NULL OR guest_phone IS NOT NULL OR group_id IS NOT NULL`): khách không SĐT chỉ tồn tại trong một nhóm, cạnh người đặt lịch có SĐT.
+- Không có cột mới; người đi cùng được làm là một dòng `appointment` cùng `group_id`. `EXCLUDE` theo KTV áp dụng như mọi lịch.
+- Kiểm trên dữ liệu giống thật: DB mới migrate tới 0021 → `seed-demo` (8 lịch, 1 khách mới) → 0022 áp dụng sạch (6 ms).
+
 ## Seed
 Dữ liệu tenant Viên Phúc Y Đường: 1 chi nhánh (Phường Đông Hà), 10 nhóm và 35 dịch vụ từ [service-catalog](../product/service-catalog.md), role hệ thống, tài khoản chủ spa. Giá "Ôn ấm tử cung" và các gói liệu trình: chờ EM.

@@ -211,18 +211,24 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     const mother = await regular(page, "Đỗ Thị Mẹ");
     const child = await regular(page, "Đỗ Văn Con");
 
-    // Book both through the form: "+ Thêm người".
+    // Book both through the form: the child is a companion with a customer record.
     await page.goto(`/quay?view=lich&ngay=${spaDay(3)}`);
     await page.getByRole("button", { name: "Đặt lịch", exact: true }).click();
     const sheet = page.getByRole("dialog", { name: "Đặt lịch hẹn" });
-    await sheet.getByRole("button", { name: /Thêm người/ }).click();
-    for (const [i, who, name] of [
-      [1, mother, "Đỗ Thị Mẹ"],
-      [2, child, "Đỗ Văn Con"],
+    await sheet
+      .getByRole("button", { name: "Người đi cùng", exact: true })
+      .click();
+    for (const [legend, who, name] of [
+      ["Khách", mother, "Đỗ Thị Mẹ"],
+      ["Người đi cùng 1", child, "Đỗ Văn Con"],
     ] as const) {
       const person = sheet.getByRole("group", {
-        name: new RegExp(`^Người ${String(i)}`),
+        name: new RegExp(`^${legend}`),
       });
+      if (legend !== "Khách")
+        await person
+          .getByRole("button", { name: "Khách có hồ sơ", exact: true })
+          .click();
       await person
         .getByRole("combobox", { name: "Tìm khách theo SĐT hoặc tên" })
         .pressSequentially(who.phone);
@@ -295,6 +301,82 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     await expect(list.getByText(/Vãng lai/)).toBeVisible();
     await expect(
       list.getByRole("button", { name: /Đỗ Thị Mẹ.*(Đang làm|Xong)/ }),
+    ).toBeVisible();
+  });
+
+  test("a companion gets their own service and technician, and their own block (EM 2026-11-07)", async ({
+    page,
+  }) => {
+    const host = await regular(page, "Lê Thị Chủ Lịch");
+    const day = spaDay(4);
+    const cal = (await (
+      await page.request.get(`/api/v1/appointments?from=${day}`)
+    ).json()) as { technicians: { id: string; full_name: string }[] };
+    const tech = cal.technicians.at(-1) ?? host.staff;
+
+    await page.goto(`/quay?view=lich&ngay=${day}`);
+    await page.getByRole("button", { name: "Đặt lịch", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "Đặt lịch hẹn" });
+    await sheet
+      .getByRole("combobox", { name: "Tìm khách theo SĐT hoặc tên" })
+      .pressSequentially(host.phone);
+    await sheet.getByRole("option", { name: /Lê Thị Chủ Lịch/ }).click();
+    await sheet
+      .getByLabel("Thêm dịch vụ", { exact: true })
+      .selectOption(host.service.id);
+    await sheet.getByLabel("Giờ hẹn").selectOption({ value: String(10 * 60) });
+
+    // The companion: a name only, a service, the technician who serves them, a later start.
+    await sheet
+      .getByRole("button", { name: "Người đi cùng", exact: true })
+      .click();
+    await sheet
+      .getByLabel("Tên hoặc ghi chú · Người đi cùng 1")
+      .fill("Chồng của chị Chủ Lịch");
+    await sheet
+      .getByLabel("Thêm dịch vụ · Người đi cùng 1")
+      .selectOption(host.service.id);
+    await sheet
+      .getByLabel("KTV làm cho người đi cùng · Người đi cùng 1")
+      .selectOption(tech.id);
+    await sheet
+      .getByLabel("Giờ bắt đầu · Người đi cùng 1")
+      .selectOption({ value: String(14 * 60) });
+    // A second companion stays a note.
+    await sheet
+      .getByRole("button", { name: "Người đi cùng", exact: true })
+      .click();
+    await sheet.getByLabel("Tên hoặc ghi chú · Người đi cùng 2").fill("Bé Bin");
+    await expect(sheet.getByText(/1 người đi cùng \(ghi chú\)/)).toBeVisible();
+    await expectAccessible(page, "lich-dat-nguoi-di-cung");
+    await sheet.getByRole("button", { name: "Đặt lịch 2 người" }).click();
+
+    const opened = page.getByRole("dialog", { name: /10:00.*Lê Thị Chủ Lịch/ });
+    await expect(opened).toContainText("Cùng nhóm (2 người)");
+    await expect(opened).toContainText("Bé Bin");
+    await expect(opened).toContainText(tech.full_name);
+    await page.keyboard.press("Escape");
+
+    // Their block sits in the technician's column.
+    await page.getByLabel("Xem theo KTV").selectOption(tech.id);
+    const grid = page.getByRole("group", { name: /Lịch theo KTV/ });
+    const block = grid.getByRole("button", {
+      name: /^14:00.*Chồng của chị Chủ Lịch, Chưa đến/,
+    });
+    await expect(block).toBeVisible();
+    await expect(grid.locator(".cal-head:not(.cal-corner)")).toHaveText(
+      tech.full_name,
+    );
+
+    // Their sheet: no phone yet, a record is created before recording their visit.
+    await block.click();
+    const theirs = page.getByRole("dialog", {
+      name: /14:00.*Chồng của chị Chủ Lịch/,
+    });
+    await expect(theirs).toContainText("Chưa có");
+    await expect(theirs).toContainText("Người đi cùng chưa có hồ sơ");
+    await expect(
+      theirs.getByRole("button", { name: "Tạo hồ sơ khách" }),
     ).toBeVisible();
   });
 
@@ -654,6 +736,109 @@ test("round-4 screenshots", async ({ page }) => {
           fullPage: true,
         });
       }
+    }
+  }
+});
+
+test("companion screenshots (EM 2026-11-07)", async ({ page }) => {
+  const dir = process.env["COMPANION_SHOTS_DIR"];
+  test.skip(!dir, "set COMPANION_SHOTS_DIR to capture");
+  test.setTimeout(5 * 60_000);
+  const host = await regular(page, "Nguyễn Thị Hà Ảnh");
+  const day = spaDay(2);
+  const cal = (await (
+    await page.request.get(`/api/v1/appointments?from=${day}`)
+  ).json()) as { technicians: { id: string; full_name: string }[] };
+  const tech = cal.technicians.at(-1) ?? host.staff;
+  const booked = await page.request.post("/api/v1/appointments/group", {
+    headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+    data: {
+      starts_at: `${day}T10:00:00+07:00`,
+      companions: ["Bé Na"],
+      people: [
+        {
+          customer_id: host.customer,
+          service_ids: [host.service.id],
+          staff_id: null,
+        },
+        {
+          guest: { full_name: "Chồng của chị Hà", phone: null },
+          service_ids: [host.service.id],
+          staff_id: tech.id,
+          starts_at: `${day}T10:30:00+07:00`,
+        },
+      ],
+    },
+  });
+  expect(booked.status(), await booked.text()).toBe(201);
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    for (const width of [390, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/quay?view=lich&ngay=${day}`);
+      await expect(page.getByText("Chồng của chị Hà").first()).toBeVisible();
+      await page.waitForTimeout(300);
+      await page.screenshot({
+        path: `${dir}/lich-${String(width)}-${scheme}.png`,
+        fullPage: true,
+      });
+      await page
+        .getByRole("button", { name: "Đặt lịch", exact: true })
+        .first()
+        .click();
+      const sheet = page.getByRole("dialog", { name: "Đặt lịch hẹn" });
+      await sheet
+        .getByRole("combobox", { name: "Tìm khách theo SĐT hoặc tên" })
+        .pressSequentially(host.phone);
+      await sheet.getByRole("option", { name: /Nguyễn Thị Hà Ảnh/ }).click();
+      await sheet
+        .getByLabel("Thêm dịch vụ", { exact: true })
+        .selectOption(host.service.id);
+      await sheet
+        .getByRole("button", { name: "Người đi cùng", exact: true })
+        .click();
+      await sheet
+        .getByLabel("Tên hoặc ghi chú · Người đi cùng 1")
+        .fill("Chồng của chị Hà");
+      await sheet
+        .getByLabel("Thêm dịch vụ · Người đi cùng 1")
+        .selectOption(host.service.id);
+      await sheet
+        .getByLabel("KTV làm cho người đi cùng · Người đi cùng 1")
+        .selectOption(tech.id);
+      await sheet
+        .getByRole("button", { name: "Người đi cùng", exact: true })
+        .click();
+      await sheet
+        .getByLabel("Tên hoặc ghi chú · Người đi cùng 2")
+        .fill("Bé Na");
+      await page.waitForTimeout(300);
+      await sheet.screenshot({
+        path: `${dir}/dat-lich-${String(width)}-${scheme}.png`,
+      });
+      await sheet
+        .getByRole("button", { name: "Người đi cùng 1" })
+        .first()
+        .scrollIntoViewIfNeeded()
+        .catch(() => undefined);
+      await sheet
+        .getByLabel("KTV làm cho người đi cùng · Người đi cùng 1")
+        .scrollIntoViewIfNeeded();
+      await sheet.screenshot({
+        path: `${dir}/dat-lich-nguoi-di-cung-${String(width)}-${scheme}.png`,
+      });
+      await page.keyboard.press("Escape");
+      const card = page
+        .getByRole("button", { name: /Nguyễn Thị Hà Ảnh/ })
+        .first();
+      await card.click();
+      const opened = page.getByRole("dialog", { name: /Nguyễn Thị Hà Ảnh/ });
+      await expect(opened).toContainText("Cùng nhóm");
+      await page.waitForTimeout(300);
+      await opened.screenshot({
+        path: `${dir}/sheet-${String(width)}-${scheme}.png`,
+      });
+      await page.keyboard.press("Escape");
     }
   }
 });

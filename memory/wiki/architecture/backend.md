@@ -192,6 +192,17 @@ Tính lương: bộ tính thuần `hr::calc::compute` (unit test theo ô Excel E
 - **Báo cáo:** `app.revenue_book` thêm `visit_id`, `upsell_by` → `LedgerRow.{visit_id, upsell_by}`; lịch sử khách: hóa đơn lẻ của lượt (kể cả thêm) thuộc lượt, `HistoryPurchase.{visit_id, beneficiary_name}`. Báo cáo ngày không đổi công thức (mỗi loại một hóa đơn).
 - Test: `crates/app/tests/upsell.rs` (10), 2 dòng mới trong `authz_matrix.rs`, unit test `allocate_payments` (4) và `calc` upsell (2).
 
+### 3f. Người đi cùng được làm ([spec §10.10](../product/specs/front-desk-and-packages.md), migration 0022, [ADR-0009](../decisions/ADR-0009-served-companions.md))
+| Method | Path | Permission | Ghi chú |
+|---|---|---|---|
+| POST | `/appointments/group` (mở rộng) | `appointment.manage` | `people[1..]` là người đi cùng được làm: `guest.phone` tùy chọn (chỉ tên, ví dụ "Chồng của chị Hà"); `people[0]` vẫn bắt buộc SĐT (`422 people[0].guest.phone required`). Mỗi người `starts_at?` riêng (mặc định giờ của nhóm, cùng ngày). Người đi cùng không làm vẫn là `companions[]` |
+| POST | `/appointments` (mở rộng) | `appointment.manage` | `group_with?`: lịch đang mở mà người này đi cùng → khóa lịch đó (`FOR UPDATE`, quy tắc ngày đã chốt), mở nhóm nếu chưa có (version +1), lịch mới cùng `group_id`; `guest.phone` tùy chọn. `404` (không có / spa khác), `409 appointment.closed`, `422 customer_id duplicate` (khách đã trong nhóm), `422 starts_at not_same_day`. Không `group_with` → SĐT bắt buộc như cũ |
+| PATCH | `/appointments/{id}` (mở rộng) | `appointment.manage` | `companions?` = danh sách ghi chú đầy đủ (vắng = giữ nguyên, `[]` = xóa), cùng quy tắc `valid_companions`; audit ghi số mục |
+
+- `GuestCreate.phone: string \| null`; `AppointmentDto.customer_phone: string \| null` (null = người đi cùng chỉ có tên). Ghi lượt cho họ vẫn `422 appointment.customer_required` cho tới khi `PATCH customer_id` (hồ sơ tạo ở quầy) — lượt, trừ buổi, hoa hồng "làm" (`visit_line.staff_id`) đi đúng đường cũ.
+- Thứ tự khóa của `group_with`: dòng lịch chủ (`FOR UPDATE`) → khóa ngày (`pg_advisory_xact_lock` trong `check_fits`), giống `PATCH` → không đảo thứ tự, không deadlock.
+- Test: `appointments.rs` `served_companions_get_their_own_technician_and_block`, `companions_are_added_and_edited_on_an_existing_booking`.
+
 ## 4. Use case & tính toàn vẹn dữ liệu (áp dụng [data-integrity](../../../.claude/skills/backend-design/data-integrity.md))
 Mọi use case chạy trong **một transaction**, mở bởi `kernel::TenantTx`. `TenantTx` chạy `SET LOCAL app.tenant_id` và `SET LOCAL statement_timeout = '5s'`, giữ `actor` và `business_date`, và **không gọi mạng ra ngoài** trong lúc transaction mở.
 

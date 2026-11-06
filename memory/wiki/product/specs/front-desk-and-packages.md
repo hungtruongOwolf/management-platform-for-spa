@@ -430,4 +430,24 @@ Trả trước một phần / còn nợ / đặt cọc (US5, Q-U7) · một ngư
 - AC-P2: hủy lượt → mất hoa hồng giới thiệu dịch vụ lẻ của lượt; hoa hồng chốt gói còn cho tới khi hóa đơn gói bị hủy.
 - AC-C1 (người đi cùng): `companions` 6 mục hoặc mục rỗng / > 100 ký tự → `422 companions` / `companions[i] invalid`; hoàn tất lịch hẹn không gửi `companions` → lượt lấy ghi chú của lịch hẹn; `PATCH /visits/{id}` sửa được danh sách.
 
+### 10.10 Người đi cùng được làm: dịch vụ + KTV riêng (EM 2026-11-07)
+EM ([raw](../../../raw/2026-11-07-em-review-round3-small.md)): *"trong cái đặt lịch hẹn chọn người đi cùng nhưng ai làm cho người đi cùng thì không assign được người làm cho người đi cùng rất tệ"*. Trước đây form có hai khái niệm tách nhau: "+ Thêm người (gia đình, nhóm)" (mỗi người một lịch, KTV riêng) và "+ Người đi cùng (ghi chú)" (chỉ chữ). Quầy chọn cái thứ hai và không gán được ai làm.
+
+**Quyết định (lead, [ADR-0009](../../decisions/ADR-0009-served-companions.md)):**
+- **Một danh sách "Người đi cùng"** trong form đặt lịch (gộp hai khái niệm). Mỗi dòng = **tên** (tìm khách có hồ sơ, hoặc "Chỉ ghi tên": chữ tự do như "Chồng của chị Hà") + **dịch vụ (không bắt buộc)**. Chọn dịch vụ thì hiện thêm **KTV làm cho người đi cùng**, thời lượng, **giờ bắt đầu** (mặc định "Cùng giờ với khách") và SĐT (không bắt buộc). Không chọn dịch vụ → vẫn là **ghi chú** như Q-U5 (không làm, không tính tiền). Tối đa 5 người đi cùng.
+- Người đi cùng có dịch vụ = **một lịch hẹn riêng trong nhóm** của khách (`group_id`): thẻ riêng ở cột KTV đó trên lịch, cùng quy tắc trùng KTV (`409 appointment.staff_busy`), sức chứa, khách đến / ghi lượt riêng. Không có kiểu dữ liệu mới.
+- **Chỉ có tên, chưa có SĐT** được phép cho người đi cùng (`people[1..]` của nhóm, hoặc `group_with`); người đặt lịch (khách chính) vẫn bắt buộc SĐT. DB chặn khách mới không SĐT nằm ngoài nhóm.
+- **Ghi lượt** cho người đi cùng chưa có hồ sơ: như khách mới hiện nay, quầy bấm "Tạo hồ sơ khách" (điền sẵn tên, thêm SĐT) rồi mới ghi lượt; KTV đã gán giữ nguyên, nên **hoa hồng "làm"** đi đúng KTV của dòng lượt (`visit_line.staff_id`). Lượt, lương, lịch sử không đổi đường đi.
+- **Sửa lịch** ("Đổi lịch"): danh sách người đi cùng ghi chú sửa được (`PATCH /appointments` nhận `companions`, hết lỗ hổng cũ); thêm người đi cùng có dịch vụ vào lịch đã đặt = `POST /appointments` với `group_with` (lịch chưa có nhóm thì mở nhóm). Sheet lịch hẹn, phần "Cùng nhóm", hiện từng người: giờ · dịch vụ · KTV; bấm tên để mở lịch của họ và đổi dịch vụ / KTV như mọi lịch.
+
+**AC:**
+- AC-C2: nhóm Hà (Lan) + "Chồng của chị Hà" (không SĐT, Đại Thông Lạc, Tuấn, 01:30) + ghi chú "Bé Na" → 201, người đi cùng `customer_phone: null`, `is_guest`, KTV Tuấn, giờ riêng; lịch Tuấn chồng giờ → `409 staff_busy` với `existing_id` = lịch người đi cùng.
+- AC-C3: khách chính không SĐT (`POST /appointments` không `group_with`, hoặc `people[0]`) → `422 guest.phone required`; bỏ `group_id` của khách không SĐT ở DB → vi phạm `appointment_guest_phone_or_group`.
+- AC-C4: người đi cùng đã đến → ghi lượt khi chưa có hồ sơ → `422 appointment.customer_required`; tạo hồ sơ + `PATCH customer_id` → ghi lượt được, dòng lượt có `staff_id` = Tuấn.
+- AC-C5: `group_with`: lịch chưa có nhóm → mở nhóm (version +1); khách đã có trong nhóm → `422 customer_id duplicate`; khác ngày → `422 starts_at not_same_day`; lịch không tồn tại / spa khác → `404`; lịch đã đóng → `409 appointment.closed`; ngày đã chốt → `403 day.locked` cho quản lý.
+- AC-C6: `PATCH /appointments` `companions` (cả danh sách): cắt khoảng trắng; vắng = giữ nguyên; 6 mục → `422`; `[]` = xóa.
+- AC-C7 (web): form đặt lịch → "Người đi cùng" → tên + dịch vụ + KTV + giờ bắt đầu → "Đặt lịch 2 người" → sheet "Cùng nhóm (2 người)" hiện KTV; lọc "Xem theo KTV" = KTV đó → thẻ 14:00 của người đi cùng ở cột đó; sheet của họ: SĐT "Chưa có", "Tạo hồ sơ khách".
+
+**Câu hỏi cho EM:** Q-C9 — người đi cùng chỉ có tên muốn ghi lượt thì vẫn cần hồ sơ có SĐT (SĐT là duy nhất mỗi spa). Có cần **hồ sơ khách không SĐT** (ví dụ chồng / con không muốn cho số) không? Mặc định: giữ quy tắc cũ (giống Q11 của spec lịch hẹn).
+
 **Tiếp theo:** đã chạy `/backend-design` ([backend §3e](../../architecture/backend.md), [data 0021](../../architecture/data.md)) → `/frontend-design` ([front-desk-flows vòng 6](../../design/front-desk-flows.md)) → `/breakdown` ([plan r1-6-upsell](../../plans/r1-6-upsell.md)).

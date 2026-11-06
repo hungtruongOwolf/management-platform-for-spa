@@ -1154,6 +1154,13 @@ export interface components {
              * @description Default: the services' durations (empty = 60) rounded up to the slot. 1 slot – 480.
              */
             duration_min?: number | null;
+            /**
+             * Format: uuid
+             * @description Book a served companion of this open appointment (spec §10.10): the new appointment joins
+             *     its group (one is opened if it had none) and must be on the same business day. The guest
+             *     phone becomes optional.
+             */
+            group_with?: string | null;
             guest?: components["schemas"]["GuestCreate"] | null;
             /** @description Booking note, ≤ 500 characters. Not for health data. */
             note?: string | null;
@@ -1189,8 +1196,8 @@ export interface components {
             customer_id?: string | null;
             /** @description The customer's name, or the newcomer's. */
             customer_name: string;
-            /** @description E.164. */
-            customer_phone: string;
+            /** @description E.164; null for a served companion booked by name only (spec §10.10). */
+            customer_phone?: string | null;
             /** Format: int64 */
             duration_min: number;
             /** Format: date-time */
@@ -1285,6 +1292,11 @@ export interface components {
         AppointmentStatusDto: "booked" | "arrived" | "done" | "no_show" | "cancelled";
         /** @description Body of `PATCH /appointments/{id}` (If-Match): reschedule or edit an open appointment. */
         AppointmentUpdate: {
+            /**
+             * @description Note-only companions, the full list (absent = unchanged, `[]` = none). Same rules as
+             *     `POST /appointments`.
+             */
+            companions?: string[] | null;
             /**
              * Format: uuid
              * @description Link a newcomer to the customer record created for them (replaces the guest name/phone).
@@ -1867,7 +1879,10 @@ export interface components {
         GenderDto: "female" | "male";
         /** @enum {string} */
         Granularity: "day" | "week" | "month" | "year";
-        /** @description One person of a group booking: like `AppointmentCreate`, without the shared note. */
+        /**
+         * @description One person of a group booking: like `AppointmentCreate`, without the shared note.
+         *     `people[1..]` are the served companions of `people[0]`: their guest phone is optional.
+         */
         GroupPersonCreate: {
             /** Format: uuid */
             customer_id?: string | null;
@@ -1887,10 +1902,15 @@ export interface components {
              */
             starts_at?: string | null;
         };
-        /** @description A newcomer known only by name and phone until they arrive. */
+        /** @description A newcomer known by name (and phone) until they arrive and get a customer record. */
         GuestCreate: {
+            /** @description 1–200 characters; for a companion it may be a description ("Chồng của chị Hà"). */
             full_name: string;
-            phone: string;
+            /**
+             * @description Required for the person who books (`POST /appointments` without `group_with`, and
+             *     `people[0]` of a group); optional for a served companion (`people[1..]`, `group_with`).
+             */
+            phone?: string | null;
         };
         HealthNoteWrite: {
             /** @description null or empty clears the note. */
