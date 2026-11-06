@@ -63,6 +63,19 @@ body {
   line-height: 22px;
   -webkit-font-smoothing: antialiased;
 }
+/*
+ * The page is warm paper, not flat colour (polish pass 2026-11-06): a faint grain and two soft
+ * washes on a fixed layer behind everything. Fixed + its own layer, so scrolling never repaints it;
+ * full-viewport and low-entropy, so it is never an LCP candidate.
+ */
+body::before {
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  background-image: var(--paper-grain), var(--gradient-page);
+  content: "";
+  pointer-events: none;
+}
 
 ::selection {
   background: var(--accent-soft);
@@ -104,6 +117,8 @@ input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]),
 select,
 textarea {
   border-color: var(--border-strong);
+  /* A recessed top edge: fields read as wells you type into, buttons as raised. */
+  box-shadow: var(--shadow-field);
   transition:
     border-color var(--dur-fast) var(--ease-out),
     box-shadow var(--dur-fast) var(--ease-out);
@@ -117,7 +132,7 @@ input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]):foc
 select:focus,
 textarea:focus {
   border-color: var(--primary);
-  box-shadow: none;
+  box-shadow: var(--shadow-field);
 }
 input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]):focus-visible,
 select:focus-visible,
@@ -164,10 +179,17 @@ button:not(:disabled, [aria-disabled="true"]):active {
   transform: translateY(1px);
 }
 
-/* Primary actions are flat (design-system.md "Nút"): one step darker on hover, two when pressed. */
+/* Older primary actions written with utilities look like .btn-primary (design-system.md "Nút"):
+ * lit top + small drop, one step darker on hover, two and sunk when pressed. */
+:is(button, a).bg-primary {
+  background-image: var(--gradient-gloss);
+  box-shadow: var(--shadow-btn);
+}
 :is(button, a).bg-primary:not(:disabled, [aria-disabled="true"]):hover {
   background-color: var(--primary-hover);
 }
 :is(button, a).bg-primary:not(:disabled, [aria-disabled="true"]):active {
   background-color: var(--primary-pressed);
+  background-image: none;
+  box-shadow: var(--shadow-press);
 }
