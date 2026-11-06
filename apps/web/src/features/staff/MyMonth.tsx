@@ -95,7 +95,7 @@ export function MyMonth({ month }: { month: string }) {
           <Total label="Khen / Phàn nàn" value={`${String(compliments)} / ${String(complaints)}`} />
         </dl>
         <MonthCalendar month={data.month} today={today} days={data.attendance.days} />
-        <p className="text-sm text-text-muted">✓ đi làm · P nghỉ có phép · ĐX nghỉ đột xuất · K nghỉ không lý do · – chưa chấm · gạch đỏ: đi muộn</p>
+        <p className="text-sm text-text-muted">✓ đi làm · P nghỉ có phép · ĐX nghỉ đột xuất · K nghỉ không phép · – chưa chấm · gạch đỏ: đi muộn</p>
       </section>
       <section className="grid gap-2" aria-labelledby="my-evaluation">
         <h2 id="my-evaluation" className="section-title">

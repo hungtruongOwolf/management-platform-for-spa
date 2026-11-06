@@ -134,6 +134,13 @@ export async function expectAccessible(
   page: Page,
   screen: string,
 ): Promise<void> {
+  // Audit what the user ends up seeing: axe composites ancestor opacity, so a dialog still in its
+  // 200 ms pop-in (opacity 0 → 1) reads its muted text as too light (CI, PR #51: 4.04:1).
+  await page.waitForFunction(() =>
+    document
+      .getAnimations()
+      .every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity),
+  );
   const results = await new AxeBuilder({ page }).withTags(WCAG).analyze();
   const blocking = results.violations.filter(
     (v) => v.impact === "serious" || v.impact === "critical",

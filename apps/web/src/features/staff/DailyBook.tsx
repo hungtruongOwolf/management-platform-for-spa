@@ -16,11 +16,13 @@ import {
   type Adjustment,
   type AttendanceEntryWrite,
   type DailyReview,
+  type DailyReviewEntryWrite,
   type StaffSheet,
 } from "./api";
 import { AdjustmentForm } from "./AdjustmentsTab";
+import { AttendanceChoice } from "./AttendanceChoice";
 import { Counter } from "./Counter";
-import { monthLabel, STATUSES, STATUS_CODE, STATUS_LABEL, type AttendanceStatus } from "./labels";
+import { monthLabel, type AttendanceStatus } from "./labels";
 import { PersonDaySheet } from "./PersonDaySheet";
 import { cellOf, employedOn, evaluationDueMonth, incompleteDays, missingOn } from "./progress";
 import { ClosedBanner, dayLabel, lastDayOrToday, vnd } from "./ui";
@@ -61,9 +63,11 @@ export function DailyBook({
   const due = useQuery({ ...evaluationsQuery(dueMonth ?? month), enabled: dueMonth !== null });
   const [details, setDetails] = useState<StaffSheet | null>(null);
   const [adjusting, setAdjusting] = useState<StaffSheet | null>(null);
-  const [notice, setNotice] = useState("");
-  const onError = (e: unknown) => {
-    setNotice(messageFor(e));
+  // A failed save shows on the person's card; one covering several people ("Cả spa đi làm") on the
+  // page. The card rolls back by itself: it renders the server's data, which did not change.
+  const [failed, setFailed] = useState<{ staffId: string | null; message: string } | null>(null);
+  const onError = (e: unknown, entries: { staff_id: string }[]) => {
+    setFailed({ staffId: entries.length === 1 ? (entries[0]?.staff_id ?? null) : null, message: messageFor(e) });
   };
   const onSaved = () => invalidateStaff(queryClient);
   const mark = useMutation({ mutationFn: saveAttendance, onSuccess: onSaved, onError });
@@ -99,9 +103,14 @@ export function DailyBook({
     (adjustments.data?.items ?? []).filter((a) => a.staff_id === id && a.occurred_on === date);
   const dueMissing = due.data && !due.data.closed ? due.data.staff.filter((s) => !s.evaluation) : [];
   const record = (entries: AttendanceEntryWrite[]) => {
-    setNotice("");
+    setFailed(null);
     mark.mutate(entries);
   };
+  /** What is being saved for a person right now: shown at once, replaced by the server's answer. */
+  const savingStatus = (id: string): AttendanceStatus | null =>
+    (mark.isPending ? mark.variables.find((e) => e.staff_id === id)?.status : null) ?? null;
+  const savingReview = (id: string) => (review.isPending ? review.variables.find((e) => e.staff_id === id) : undefined);
+  const notice = failed && failed.staffId === null ? failed.message : "";
 
   return (
     <div className="grid content-start gap-4">
@@ -157,18 +166,24 @@ export function DailyBook({
           }}
         />
         {canAttendance && working.length > 0 && (
+          // Same shape as the date field beside it (a label line, then a 44 px box), so the two
+          // labels share one baseline and the two boxes another.
           <div className="book-progress" role="status" aria-label="Tiến độ chấm công">
-            <p>
+            <span className="book-progress-label">Tiến độ</span>
+            <div className="book-progress-box">
               {missing.length === 0 ? (
-                <strong className="text-success">✓ Xong ngày này: đã chấm công đủ {working.length} người</strong>
+                <p className="flex items-center gap-1.5 font-semibold text-success">
+                  <Icon name="check" className="size-4" />
+                  Xong ngày này: đã chấm công đủ {working.length} người
+                </p>
               ) : (
-                <>
+                <p>
                   Đã chấm công <strong className="tabular">{recorded}/{working.length}</strong> người
-                </>
+                </p>
               )}
-            </p>
-            <div className="book-progress-bar" aria-hidden="true">
-              <span style={{ width: `${String(working.length ? (recorded * 100) / working.length : 0)}%` }} />
+              <div className="book-progress-bar" aria-hidden="true">
+                <span style={{ width: `${String(working.length ? (recorded * 100) / working.length : 0)}%` }} />
+              </div>
             </div>
           </div>
         )}
@@ -187,7 +202,7 @@ export function DailyBook({
                 // Scroll to the card without touching the URL (a #hash would add a history entry).
                 const el = document.getElementById(`book-${s.staff_id}`);
                 el?.scrollIntoView({ block: "center" });
-                el?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
+                el?.querySelector<HTMLButtonElement>('[role="radio"][tabindex="0"]')?.focus({ preventScroll: true });
               }}
             >
               {s.full_name}
@@ -232,11 +247,14 @@ export function DailyBook({
               canReview={canReview}
               readOnly={readOnly}
               busy={mark.isPending || review.isPending}
+              savingStatus={savingStatus(s.staff_id)}
+              savingReview={savingReview(s.staff_id)}
+              error={failed?.staffId === s.staff_id ? failed.message : ""}
               onStatus={(status) => {
                 record([{ staff_id: s.staff_id, date, status }]);
               }}
               onReview={(compliments, complaints) => {
-                setNotice("");
+                setFailed(null);
                 review.mutate([{ staff_id: s.staff_id, date, compliments, complaints, note: reviewOf(s.staff_id)?.note ?? null }]);
               }}
               onAdjust={() => {
@@ -277,6 +295,15 @@ export function DailyBook({
   );
 }
 
+/**
+ * One person's card. Same grid in every card so they line up down the list:
+ * 1. head: name + role/times (wraps) · flags that add information (not recorded yet, late) ·
+ *    "Giờ & ghi chú";
+ * 2. the attendance choice, in words;
+ * 3. "Ghi nhận trong ngày": the two steppers and "+ Thưởng / phạt" on one row, the day's
+ *    bonuses/penalties and notes as compact rows under it.
+ * No chip repeats the chosen status: the filled option already says it.
+ */
 function PersonCard({
   staff: s,
   date,
@@ -286,6 +313,9 @@ function PersonCard({
   canReview,
   readOnly,
   busy,
+  savingStatus,
+  savingReview,
+  error,
   onStatus,
   onReview,
   onAdjust,
@@ -299,98 +329,119 @@ function PersonCard({
   canReview: boolean;
   readOnly: boolean;
   busy: boolean;
+  savingStatus: AttendanceStatus | null;
+  savingReview: DailyReviewEntryWrite | undefined;
+  error: string;
   onStatus: (status: AttendanceStatus) => void;
   onReview: (compliments: number, complaints: number) => void;
   onAdjust: () => void;
   onDetails: () => void;
 }) {
   const cell = cellOf(s, date);
-  const c = review?.compliments ?? 0;
-  const k = review?.complaints ?? 0;
+  // While a review save runs, show the counts being saved; the server's answer replaces them.
+  const c = savingReview?.compliments ?? review?.compliments ?? 0;
+  const k = savingReview?.complaints ?? review?.complaints ?? 0;
+  const missing = canAttendance && !cell && !savingStatus;
+  const times = [cell?.check_in && `đến ${cell.check_in}`, cell?.check_out && `về ${cell.check_out}`].filter(Boolean).join(" · ");
+  const hasLog = Boolean(cell?.note || review?.note || adjustments.length > 0);
   return (
-    <li id={`book-${s.staff_id}`} className={`card book-card${canAttendance && !cell ? " is-missing" : ""}`}>
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="font-semibold">{s.full_name}</p>
+    <li id={`book-${s.staff_id}`} className={`card book-card${missing ? " is-missing" : ""}`}>
+      <div className="book-card-head">
+        <div className="book-card-who">
+          <p className="book-card-name">{s.full_name}</p>
           <p className="text-sm text-text-muted">
             {s.position}
-            {cell?.check_in && ` · đến ${cell.check_in}`}
-            {cell?.check_out && ` · về ${cell.check_out}`}
-            {cell && cell.late_minutes > 0 && <span className="text-danger"> · muộn {cell.late_minutes} phút</span>}
+            {times && ` · ${times}`}
           </p>
         </div>
-        {canAttendance &&
-          (cell ? (
-            <span className="badge badge-ok">{STATUS_LABEL[cell.status]}</span>
-          ) : (
-            <span className="badge badge-warn">Chưa chấm công</span>
-          ))}
-      </div>
-      {canAttendance && (
-        <div className="segmented book-status" role="group" aria-label={`Chấm công ${s.full_name}`}>
-          {STATUSES.map((st) => (
-            <button
-              key={st}
-              type="button"
-              aria-pressed={cell?.status === st}
-              title={STATUS_LABEL[st]}
-              aria-label={`${STATUS_CODE[st]} ${STATUS_LABEL[st]}`}
-              disabled={readOnly || busy}
-              onClick={() => {
-                onStatus(st);
-              }}
-            >
-              {STATUS_CODE[st]}
-            </button>
-          ))}
-        </div>
-      )}
-      {canReview && (
-        <div className="flex flex-wrap gap-x-5 gap-y-2">
-          <Counter
-            label="Khen"
-            name={s.full_name}
-            value={c}
-            disabled={readOnly || busy}
-            onChange={(v) => {
-              onReview(v, k);
-            }}
-          />
-          <Counter
-            label="Phàn nàn"
-            name={s.full_name}
-            value={k}
-            disabled={readOnly || busy}
-            onChange={(v) => {
-              onReview(c, v);
-            }}
-          />
-        </div>
-      )}
-      {(cell?.note || review?.note || adjustments.length > 0) && (
-        <ul className="grid gap-1 text-sm">
-          {cell?.note && <li className="text-text-muted">Chấm công: {cell.note}</li>}
-          {review?.note && <li className="text-text-muted">Đánh giá: {review.note}</li>}
-          {adjustments.map((a) => (
-            <li key={a.id}>
-              <span className={`badge ${a.kind === "bonus" ? "badge-ok" : "badge-danger"}`}>{a.kind === "bonus" ? "Thưởng" : "Phạt"}</span>{" "}
-              {[a.amount != null ? vnd(a.amount) : "", a.points != null ? `${String(a.points)} điểm` : ""].filter(Boolean).join(" · ")} · {a.reason}
-            </li>
-          ))}
-        </ul>
-      )}
-      {!readOnly && (
-        <div className="flex flex-wrap gap-2">
-          {canReview && (
-            <button type="button" className="btn btn-secondary" onClick={onAdjust}>
-              + Thưởng / phạt
+        <div className="book-card-tools">
+          {missing && <span className="badge badge-warn">Chưa chấm công</span>}
+          {cell && cell.late_minutes > 0 && <span className="badge badge-danger">Đi muộn {cell.late_minutes} phút</span>}
+          {!readOnly && (
+            <button type="button" className="btn btn-secondary" onClick={onDetails}>
+              <Icon name="clock" className="size-4" />
+              Giờ & ghi chú
             </button>
           )}
-          <button type="button" className="btn btn-secondary" onClick={onDetails}>
-            Giờ & ghi chú
-          </button>
         </div>
+      </div>
+      {canAttendance && (
+        <AttendanceChoice
+          name={s.full_name}
+          value={cell?.status ?? null}
+          pending={savingStatus}
+          busy={busy}
+          disabled={readOnly}
+          onChange={onStatus}
+        />
+      )}
+      {error && (
+        <p role="alert" className="book-card-error">
+          <Icon name="alert" className="size-4" />
+          Chưa lưu được: {error}
+        </p>
+      )}
+      {(canReview || hasLog) && (
+        <section className="book-record" aria-label={`Ghi nhận trong ngày, ${s.full_name}`}>
+          <p className="book-record-title">Ghi nhận trong ngày</p>
+          {canReview && (
+            <div className="book-record-row">
+              <Counter
+                label="Khen"
+                name={s.full_name}
+                value={c}
+                disabled={readOnly}
+                busy={busy}
+                onChange={(v) => {
+                  onReview(v, k);
+                }}
+              />
+              <Counter
+                label="Phàn nàn"
+                name={s.full_name}
+                value={k}
+                disabled={readOnly}
+                busy={busy}
+                onChange={(v) => {
+                  onReview(c, v);
+                }}
+              />
+              {!readOnly && (
+                <button type="button" className="btn btn-secondary book-record-add" onClick={onAdjust}>
+                  <Icon name="plus" className="size-4" />
+                  Ghi thưởng / phạt
+                </button>
+              )}
+            </div>
+          )}
+          {hasLog && (
+            <ul className="book-log">
+              {adjustments.map((a) => (
+                <li key={a.id}>
+                  <span className={`badge ${a.kind === "bonus" ? "badge-ok" : "badge-danger"}`}>{a.kind === "bonus" ? "Thưởng" : "Phạt"}</span>
+                  <span className="book-log-amount tabular">
+                    {[a.amount != null ? vnd(a.amount) : "", a.points != null ? `${String(a.points)} điểm` : ""].filter(Boolean).join(" · ")}
+                  </span>
+                  <span className="book-log-text">{a.reason}</span>
+                </li>
+              ))}
+              {cell?.note && (
+                <li>
+                  <span className="book-log-label">Chấm công</span>
+                  <span className="book-log-text">{cell.note}</span>
+                </li>
+              )}
+              {review?.note && (
+                <li>
+                  <span className="book-log-label">Đánh giá</span>
+                  <span className="book-log-text">{review.note}</span>
+                </li>
+              )}
+            </ul>
+          )}
+        </section>
       )}
     </li>
   );
 }
+
