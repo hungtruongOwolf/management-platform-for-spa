@@ -3,7 +3,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { canSeeManagement } from "../../app/features";
-import { Icon } from "../../app/Icon";
+import { Icon, type IconName } from "../../app/Icon";
 import { monthLabel } from "../../lib/format";
 import { serviceLabel } from "../../lib/names";
 import { useSearchState } from "../../lib/searchState";
@@ -17,7 +17,7 @@ import type { HistoryEvent } from "./contract";
 import { BottomSheet } from "../../components/BottomSheet";
 import { DateField } from "../../components/DateField";
 import { FilterSelect, ResponsiveFilters, SearchField } from "./filters";
-import { ErrorState, RowsSkeleton, money } from "./ui";
+import { EmptyState, ErrorState, RowsSkeleton, money } from "./ui";
 import "../customers/khach.css";
 
 const time = new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Ho_Chi_Minh" });
@@ -51,12 +51,21 @@ function eventHead(e: HistoryEvent): { title: string; chip?: [string, string] } 
   }
 }
 
+/** Dot colour and icon of each kind on the timeline (round-5 layout, kept by the EM 2026-11-06). */
+const DOT: Record<HistoryKind, [IconName, string]> = {
+  visit: ["desk", "bg-primary"],
+  purchase: ["package", "bg-accent"],
+  visit_voided: ["x", "bg-border-strong"],
+  purchase_voided: ["x", "bg-border-strong"],
+  package_cancelled: ["alert", "bg-danger"],
+};
+
 function Fact({ label, value, hint }: { label: string; value: string; hint?: string | undefined }) {
   return (
-    <div>
-      <dt>{label}</dt>
-      <dd className="stat-num">{value}</dd>
-      {hint && <dd className="stat-hint">{hint}</dd>}
+    <div className="rounded-[10px] bg-surface-2 p-3">
+      <dt className="text-sm text-text-muted">{label}</dt>
+      <dd className="mt-0.5 text-lg font-semibold tabular">{value}</dd>
+      {hint && <dd className="text-xs text-text-muted">{hint}</dd>}
     </div>
   );
 }
@@ -65,16 +74,16 @@ function Summary({ customerId }: { customerId: string }) {
   const stats = useQuery(customerStatsQuery(customerId));
   if (stats.isPending)
     return (
-      <div role="status" aria-label="Đang tải tóm tắt" className="stat-strip">
+      <div role="status" aria-label="Đang tải tóm tắt" className="grid grid-cols-2 gap-3">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="skeleton h-14" />
+          <div key={i} className="skeleton h-[72px]" />
         ))}
       </div>
     );
   if (stats.isError) return <ErrorState error={stats.error} onRetry={() => void stats.refetch()} />;
   const s = stats.data;
   return (
-    <dl className="stat-strip">
+    <dl className="grid grid-cols-2 gap-3">
       <Fact
         label="Lần gần nhất"
         value={s.last_visit_on ? relativeDay(s.last_visit_on) : "Chưa đến"}
@@ -92,59 +101,58 @@ function EventBody({ e, correctable }: { e: HistoryEvent; correctable: boolean }
   if (e.visit) {
     const v = e.visit;
     return (
-      <>
-        <ul className="grid gap-1">
-          {v.lines.map((l, i) => (
-            <li key={i} className="event-line">
-              <span className="min-w-0">
-                {serviceLabel(l.service_name, l.category_name)}
-                <span className="row-meta">
-                  {l.source === "package" ? ` · trừ buổi${l.sessions_left_after != null ? `, còn ${String(l.sessions_left_after)}` : ""}` : " · dịch vụ lẻ"} · KTV{" "}
-                  {l.staff_name}
-                </span>
+      <ul className="mt-1 grid content-start gap-1 text-sm">
+        {v.lines.map((l, i) => (
+          <li key={i} className="flex flex-wrap justify-between gap-x-3">
+            <span>
+              {serviceLabel(l.service_name, l.category_name)}
+              <span className="text-text-muted">
+                {l.source === "package" ? ` · trừ buổi${l.sessions_left_after != null ? `, còn ${String(l.sessions_left_after)}` : ""}` : " · dịch vụ lẻ"} · KTV {l.staff_name}
               </span>
-              {l.amount > 0 && <span className="event-amount">{money(l.amount)}</span>}
-            </li>
-          ))}
-        </ul>
+            </span>
+            {l.amount > 0 && <span className={`tabular ${v.voided ? "line-through" : ""}`}>{money(l.amount)}</span>}
+          </li>
+        ))}
         {v.corrected_by_visit_id ? (
-          <p className="row-meta">Đã sửa thành lượt mới · {v.void_reason}</p>
+          <li className="text-text-muted">Đã sửa thành lượt mới · {v.void_reason}</li>
         ) : (
-          v.void_reason && <p className="row-meta">Lý do hủy: {v.void_reason}</p>
+          v.void_reason && <li className="text-text-muted">Lý do hủy: {v.void_reason}</li>
         )}
-        {v.corrects_visit_id && <p className="row-meta">Thay cho lượt ghi trước (đã sửa).</p>}
+        {v.corrects_visit_id && <li className="text-text-muted">Thay cho lượt ghi trước (đã sửa).</li>}
         {correctable && (
-          <Link to="/quay" search={{ sua: v.id }} className="btn btn-ghost">
-            Sửa lượt
-          </Link>
+          <li>
+            <Link to="/quay" search={{ sua: v.id }} className="inline-flex min-h-11 items-center font-semibold text-primary underline">
+              Sửa lượt
+            </Link>
+          </li>
         )}
-      </>
+      </ul>
     );
   }
   if (e.purchase) {
     return (
-      <>
+      <div className="mt-1 text-sm">
         {e.purchase.lines.map((l, i) => (
           <p key={i}>{l.description}</p>
         ))}
-        <p className="row-meta">
-          Thanh toán <strong className="event-amount">{money(e.purchase.total)}</strong>
+        <p className="text-text-muted">
+          Thanh toán <span className={`font-semibold text-text tabular ${e.purchase.voided ? "line-through" : ""}`}>{money(e.purchase.total)}</span>
           {e.purchase.discount_amount > 0 && ` (giảm ${money(e.purchase.discount_amount)})`}
           {e.purchase.closer_name && ` · chốt bởi ${e.purchase.closer_name}`}
         </p>
-        {e.purchase.void_reason && <p className="row-meta">Lý do hủy: {e.purchase.void_reason}</p>}
-      </>
+        {e.purchase.void_reason && <p className="text-text-muted">Lý do hủy: {e.purchase.void_reason}</p>}
+      </div>
     );
   }
   if (e.cancellation) {
     return (
-      <p>
+      <p className="mt-1 text-sm">
         {e.cancellation.package_name} · {e.cancellation.reason}
-        {e.cancellation.refund && <span className="row-meta"> · hoàn {money(e.cancellation.refund.amount)}</span>}
+        {e.cancellation.refund && <span className="text-text-muted"> · hoàn {money(e.cancellation.refund.amount)}</span>}
       </p>
     );
   }
-  return e.void ? <p className="row-meta">{e.void.reason}</p> : null;
+  return e.void ? <p className="mt-1 text-sm text-text-muted">{e.void.reason}</p> : null;
 }
 
 /** Search, kind and dates over the history (EM round 3 item 6), kept in the profile's URL. */
@@ -219,52 +227,49 @@ function Timeline({ customerId, permissions }: { customerId: string; permissions
   const events = history.data.pages.flatMap((p) => p.events);
   if (events.length === 0)
     return filtered ? (
-      <p className="khach-empty">
-        <strong className="block text-text">Không thấy mục nào</strong>
-        Thử bỏ bớt bộ lọc (“Xóa bộ lọc”) hoặc tìm bằng tên dịch vụ, gói hay KTV khác.
-      </p>
+      <EmptyState title="Không thấy mục nào">Thử bỏ bớt bộ lọc hoặc tìm bằng tên khác.</EmptyState>
     ) : (
-      <p className="khach-empty">Chưa có lịch sử. Lượt khách ghi ở “Ghi lượt khách” và gói đã bán sẽ hiện ở đây.</p>
+      <EmptyState title="Chưa có lịch sử">Lượt khách và gói đã mua sẽ hiện ở đây.</EmptyState>
     );
   const monthOf = (e: HistoryEvent) => monthLabel(e.business_date);
   return (
     <div className={`grid content-start gap-3 ${history.isPlaceholderData ? "is-refreshing" : ""}`}>
-      <ol className="row-list" aria-label="Lịch sử sử dụng">
-        {events.flatMap((e, i) => {
+      <ol className="timeline" aria-label="Lịch sử sử dụng">
+        {events.map((e, i) => {
           const m = monthOf(e);
           const prev = events[i - 1];
+          const heading = !prev || monthOf(prev) !== m ? m : null;
+          const [icon, dot] = DOT[e.kind];
+          // One chip per event (design-system.md "Quy tắc" 7); a voided entry reads muted.
           const { title, chip } = eventHead(e);
-          const closed = e.kind.endsWith("_voided");
-          const row = (
-            <li key={`${e.at}-${String(i)}`} className={closed ? "is-muted event-voided" : undefined}>
-              <div className="row-head">
-                <span className="flex min-w-0 flex-wrap items-center gap-2">
-                  <span className="row-title">{title}</span>
-                  {chip && <span className={`badge ${chip[1]}`}>{chip[0]}</span>}
+          const voided = e.kind.endsWith("_voided");
+          return (
+            <li key={`${e.at}-${String(i)}`} className="relative">
+              {heading && <p className="timeline-month">{heading}</p>}
+              <div className={`relative rounded-[10px] border border-border p-3 ${voided ? "bg-surface-2 text-text-muted" : "bg-surface"}`}>
+                <span aria-hidden="true" className={`timeline-dot ${dot} text-on-primary`}>
+                  <Icon name={icon} className="size-2.5" />
                 </span>
-                <span className="row-meta tabular">
-                  {relativeDay(e.business_date)} · {time.format(new Date(e.at))}
-                </span>
+                <p className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">{title}</span>
+                    {chip && <span className={`badge ${chip[1]}`}>{chip[0]}</span>}
+                  </span>
+                  <span className="text-xs text-text-muted tabular">
+                    {relativeDay(e.business_date)} · {time.format(new Date(e.at))}
+                  </span>
+                </p>
+                <EventBody
+                  e={e}
+                  correctable={
+                    e.kind === "visit" &&
+                    !!e.visit &&
+                    mayCorrectVisit(permissions, { business_date: e.business_date, voided: e.visit.voided }, today)
+                  }
+                />
               </div>
-              <EventBody
-                e={e}
-                correctable={
-                  e.kind === "visit" &&
-                  !!e.visit &&
-                  mayCorrectVisit(permissions, { business_date: e.business_date, voided: e.visit.voided }, today)
-                }
-              />
             </li>
           );
-          // Month headings sit between the rows; screen readers get the date on every row instead.
-          return !prev || monthOf(prev) !== m
-            ? [
-                <li key={`m-${m}-${String(i)}`} className="row-month" aria-hidden="true">
-                  {m}
-                </li>,
-                row,
-              ]
-            : [row];
         })}
       </ol>
       {history.hasNextPage && (

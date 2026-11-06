@@ -182,6 +182,27 @@ describe("owner edits the price list", () => {
     );
   });
 
+  it("adds a service group from the page header, the form at the top of the page", async () => {
+    const calls = serve(OWNER, (c) =>
+      c.method === "POST" && c.path === "/api/v1/service-categories"
+        ? Response.json({ id: "c9", name: "Chăm sóc tay chân", sort_order: 9 }, { status: 201 })
+        : undefined,
+    );
+    at("/bang-gia");
+    const user = userEvent.setup();
+    // Beside "Mẫu gói liệu trình", like "Tạo mẫu gói" on the plans page (EM 2026-11-06).
+    await user.click(await screen.findByRole("button", { name: "Thêm nhóm dịch vụ" }));
+    const form = screen.getByRole("form", { name: "Thêm nhóm dịch vụ" });
+    expect(screen.queryByRole("button", { name: "Thêm nhóm dịch vụ" })).not.toBeInTheDocument();
+    await user.click(within(form).getByRole("button", { name: "Lưu nhóm dịch vụ" }));
+    expect(within(form).getByText("Nhập tên nhóm.")).toBeInTheDocument();
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+    await user.type(within(form).getByLabelText("Tên nhóm dịch vụ mới"), "Chăm sóc tay chân");
+    await user.click(within(form).getByRole("button", { name: "Lưu nhóm dịch vụ" }));
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ name: "Chăm sóc tay chân" });
+    expect(await screen.findByRole("button", { name: "Thêm nhóm dịch vụ" })).toBeInTheDocument();
+  });
+
   it("blocks an active service without a price before calling the API", async () => {
     const calls = serve(OWNER);
     at("/bang-gia");

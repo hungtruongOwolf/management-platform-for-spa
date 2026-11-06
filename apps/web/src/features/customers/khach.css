@@ -149,31 +149,6 @@
     color: var(--text-muted);
   }
 
-  /* --- Summary numbers: one strip, hairline separated ---------------------------------------- */
-  .stat-strip {
-    display: grid;
-    /* Four across where the panel is wide enough, two otherwise (the panel, not the viewport). */
-    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-    gap: 12px 16px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--border);
-  }
-  .stat-strip dt {
-    color: var(--text-muted);
-    font-size: var(--fs-sm);
-  }
-  .stat-strip .stat-num {
-    font-size: var(--fs-md);
-    font-weight: 600;
-    line-height: 24px;
-    font-variant-numeric: tabular-nums;
-  }
-  .stat-strip .stat-hint {
-    color: var(--text-muted);
-    font-size: var(--fs-xs);
-    line-height: 16px;
-  }
-
   /* --- Contact details ---------------------------------------------------------------------- */
   .detail-grid {
     display: grid;
@@ -408,32 +383,6 @@
     grid-column: 1 / -1;
   }
 
-  /* --- History timeline: month headings between hairline rows ------------------------------- */
-  .row-list > li.row-month {
-    min-height: 0;
-    padding: 16px 0 4px;
-    border-bottom: 0;
-    color: var(--text-muted);
-    font-size: var(--fs-sm);
-    font-weight: 600;
-  }
-  .row-list > li.row-month:first-child {
-    padding-top: 0;
-  }
-  .event-line {
-    display: flex;
-    min-width: 0;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 0 12px;
-  }
-  .event-amount {
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-  .event-voided .event-amount {
-    text-decoration: line-through;
-  }
   .row-list > li > .btn {
     justify-self: start;
   }

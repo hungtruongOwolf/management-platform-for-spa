@@ -226,8 +226,11 @@ Một lớp CSS **không nằm trong layer** (thắng utility) cho vài thuộc 
 | Lưu ý sức khỏe | chỉ sửa trong sheet "Sửa hồ sơ" | mục riêng trong "Thông tin khách" (chỉ khi API gửi trường), "Thêm/Sửa lưu ý sức khỏe" mở tại chỗ |
 | Khách mới / Bán gói / Gia hạn / Hủy gói / Dịch vụ / Mẫu gói | ô 44px chữ 15px, viền nhạt, lỗi không nối `aria-describedby`, form trong hộp viền đứt/nền hồng | `.field` nhãn trên + `.input` 16px viền `border-strong`, gợi ý/lỗi dưới ô nối `aria-describedby` (nhãn không chứa gợi ý), radio = `.choice`, nút chính phẳng `aria-busy`; trùng SĐT báo ngay dưới ô + "Mở hồ sơ" |
 | Khách lâu chưa quay lại | 6 cột, ở 1024px bảng cuộn ngang trong card (875 > 678px) | 4 cột cố định (Khách · Vắng · Liên hệ + hẹn lại · Đã liên hệ) vừa khung; chip "liệu trình" vàng → chữ phụ; hẹn = `badge-info`, đến hạn = `badge-warn` |
-| Gói liệu trình của khách | chip 4 trạng thái, thanh tiến độ vàng | chip 5 trạng thái (có "Sắp hết"), cột cố định, gói đã đóng mờ |
-| Bảng giá / Mẫu gói | mỗi mẫu gói một card, "Ngừng bán" lẫn với đang bán, chữ "Đang tải…" | một panel, dịch vụ/mẫu ngừng bán gom "Ngừng bán (N)", skeleton, trống chỉ bước tiếp theo, "Sửa" ghost |
+| Gói liệu trình của khách | chip 4 trạng thái, thanh tiến độ vàng | **EM giữ bố cục cũ** (vòng duyệt 2): bảng như cũ, chỉ đổi chip sang 5 trạng thái chung (có "Sắp hết"), thanh còn buổi màu `primary` / hổ phách khi sắp hết |
+| Mẫu gói | mỗi mẫu gói một card, "Ngừng bán" lẫn với đang bán, chữ "Đang tải…" | một panel, mẫu ngừng bán gom "Ngừng bán (N)", skeleton, trống chỉ bước tiếp theo, "Sửa" ghost |
+| Bảng giá dịch vụ | "Nhóm dịch vụ mới" là card cuối trang | **EM giữ bố cục cũ** (card mỗi nhóm, dòng kẻ, "Sửa" secondary, ngừng bán mờ tại chỗ); "Thêm nhóm dịch vụ" lên **đầu trang** cạnh "Mẫu gói liệu trình" (nút chính như "Tạo mẫu gói"), mở form ở đầu trang; chip ★/Ngừng bán, field, skeleton theo bộ chung |
+
+**Vòng duyệt 2 (EM 2026-11-06, [raw](../../raw/2026-11-06-em-review-redesign-rollout.md)):** "Lịch sử sử dụng" trên hồ sơ giữ bố cục cũ (4 ô tóm tắt, timeline chấm + mục có khung, tháng màu vàng) nhưng giữ sửa đúng: một chip mỗi mục (Đã hủy / Đã sửa / Lượt sửa lại), mục hủy mờ + gạch số tiền, link "Sửa lượt"; khung ngoài là `.panel` như các panel khác của hồ sơ.
 
 Lưu ý hành vi: gói **hết buổi** không còn "Hủy gói và hoàn tiền" (trạng thái đóng, rule 7); muốn hoàn tiền gói đã dùng hết thì cần EM quyết định (server vẫn cho phép).
 

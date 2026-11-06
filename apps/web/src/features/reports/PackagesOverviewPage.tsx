@@ -12,7 +12,6 @@ import { packagesSearch } from "./search";
 import { longDay, packagesOverviewQuery, relativeDay, type PackageFilter } from "./api";
 import type { PackageOverviewRow } from "./contract";
 import { EmptyState, ErrorState, ManagementOnly, PageHeader, RowsSkeleton } from "./ui";
-import "../customers/khach.css";
 
 /** "+84905123456" → "0905 123 456" (design-system.md "Định dạng"); other shapes stay as they are. */
 export function displayPhone(phone: string): string {
@@ -42,18 +41,33 @@ export function CustomerCell({
   );
 }
 
-/** /goi-lieu-trinh — every customer package of the spa: what is running, expiring, finished. */
+function Remaining({ p, ending }: { p: PackageOverviewRow; ending: boolean }) {
+  return (
+    <span className="inline-flex flex-col items-end gap-1">
+      <span className={`font-semibold tabular ${ending ? "text-warning-text" : ""}`}>
+        {p.sessions_remaining}/{p.sessions_total}
+      </span>
+      <span aria-hidden="true" className="split-bar block h-1.5 w-20">
+        <span
+          className={`split-part block ${ending ? "bg-warning-text" : "bg-primary"}`}
+          style={{ width: `${String(p.sessions_total ? (p.sessions_remaining / p.sessions_total) * 100 : 0)}%` }}
+        />
+      </span>
+    </span>
+  );
+}
+
+/**
+ * /goi-lieu-trinh — every customer package of the spa: what is running, expiring, finished. Layout
+ * of round 5 (EM 2026-11-06 kept it); the status column shows the one shared package state
+ * (sales/packageState.ts), "Sắp hết" included.
+ */
 export function PackagesOverviewPage() {
   return (
     <ManagementOnly>
       <PackagesOverviewPageBody />
     </ManagementOnly>
   );
-}
-
-function StateChip({ p, today }: { p: PackageOverviewRow; today: string }) {
-  const { label, badge } = PACKAGE_STATE[packageState(p, today)];
-  return <span className={`badge ${badge}`}>{label}</span>;
 }
 
 function PackagesOverviewPageBody() {
@@ -72,7 +86,7 @@ function PackagesOverviewPageBody() {
   ];
 
   return (
-    <section className="khach-page">
+    <section className="grid content-start gap-5">
       <PageHeader title="Gói liệu trình của khách" />
       <div role="search" aria-label="Tìm và lọc gói" className="grid content-start gap-3">
         <SearchField
@@ -107,13 +121,7 @@ function PackagesOverviewPageBody() {
         )}
         {page.isPending && <RowsSkeleton rows={6} />}
         {page.isSuccess && items.length === 0 && (
-          <EmptyState title="Không có gói nào">
-            {q
-              ? `Không thấy gói nào khớp “${q}”. Thử tên khác hoặc chọn “Tất cả”.`
-              : filter === "all"
-                ? "Chưa bán gói liệu trình nào. Bán gói từ hồ sơ khách: “Bán gói liệu trình”."
-                : "Thử chọn một trạng thái khác, hoặc “Tất cả”."}
-          </EmptyState>
+          <EmptyState title="Không có gói nào">{q ? `Không thấy gói nào khớp “${q}”. Thử tên khác hoặc chọn “Tất cả”.` : "Thử chọn một trạng thái khác."}</EmptyState>
         )}
         {items.length > 0 && (
           <ResponsiveTable
@@ -122,7 +130,6 @@ function PackagesOverviewPageBody() {
             rowKey={(p) => p.id}
             stretchLink
             cardsBelow={1024}
-            rowClassName={(p) => (p.status === "cancelled" || p.status === "exhausted" ? "visit-voided" : undefined)}
             columns={[
               {
                 id: "customer",
@@ -130,47 +137,37 @@ function PackagesOverviewPageBody() {
                 card: "title",
                 cell: (p) => <CustomerCell id={p.customer_id} name={p.customer_name} phone={p.customer_phone} gender={p.customer_gender ?? null} />,
               },
-              { id: "plan", header: "Gói", card: "subtitle", width: "26%", cell: (p) => p.name },
+              { id: "plan", header: "Gói", card: "subtitle", cell: (p) => p.name },
               {
                 id: "left",
                 header: "Còn",
                 numeric: true,
                 card: "aside",
-                width: "88px",
-                cell: (p) => (
-                  <span className="font-semibold">
-                    {p.sessions_remaining}/{p.sessions_total}
-                  </span>
-                ),
+                cell: (p) => <Remaining p={p} ending={packageState(p, today) === "ending"} />,
               },
               {
                 id: "expiry",
                 header: "Hạn dùng",
                 className: "tabular",
-                width: "136px",
                 cell: (p) => {
                   const soon = p.status === "active" && p.expires_on != null && p.days_to_expiry != null && p.days_to_expiry <= ENDING_DAYS;
                   return (
                     <>
-                      {p.expires_on ? longDay(p.expires_on) : NO_EXPIRY}
-                      {soon && <span className="cell-note">còn {p.days_to_expiry} ngày</span>}
+                      {p.expires_on ? longDay(p.expires_on) : <span className="badge badge-muted">{NO_EXPIRY}</span>}
+                      {soon && <span className="block text-xs font-semibold text-warning-text">còn {p.days_to_expiry} ngày</span>}
                     </>
                   );
                 },
               },
-              {
-                id: "used",
-                header: "Dùng gần nhất",
-                className: "text-text-muted",
-                width: "128px",
-                cell: (p) => (p.last_used_on ? relativeDay(p.last_used_on) : "Chưa dùng"),
-              },
+              { id: "used", header: "Dùng gần nhất", className: "text-text-muted", cell: (p) => (p.last_used_on ? relativeDay(p.last_used_on) : "Chưa dùng") },
               {
                 id: "status",
                 header: "Trạng thái",
                 card: "aside",
-                width: "112px",
-                cell: (p) => <StateChip p={p} today={today} />,
+                cell: (p) => {
+                  const { label, badge } = PACKAGE_STATE[packageState(p, today)];
+                  return <span className={`badge ${badge}`}>{label}</span>;
+                },
               },
             ]}
           />
@@ -186,7 +183,7 @@ function PackagesOverviewPageBody() {
               if (!page.isFetchingNextPage) void page.fetchNextPage();
             }}
           >
-            Xem thêm gói
+            Xem thêm
           </button>
         </div>
       )}
