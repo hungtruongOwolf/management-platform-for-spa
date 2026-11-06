@@ -272,9 +272,14 @@ jobs:
         if: steps.pw-cache.outputs.cache-hit == 'true'
         timeout-minutes: 5
         run: pnpm --filter web exec playwright install-deps chromium
-      # Each shard provisions its own spa (setup project) on its own Postgres.
+      # Each shard provisions its own spa (setup project) on its own Postgres. Specs are split by
+      # measured duration (e2e/shard.mjs): Playwright's --shard splits by test count per file.
       - name: E2E and axe (shard ${{ matrix.shard }}/2)
-        run: pnpm e2e --project=desktop --shard=${{ matrix.shard }}/2 --reporter=list,github,html
+        run: |
+          specs=$(cd apps/web && node e2e/shard.mjs ${{ matrix.shard }} 2)
+          echo "specs: $specs"
+          # shellcheck disable=SC2086 # one argument per spec
+          pnpm e2e --project=desktop --reporter=list,github,html e2e/setup/ $specs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
