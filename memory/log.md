@@ -453,3 +453,6 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Mới: "+ Người đi cùng (ghi chú)" trong form đặt lịch (≤ 5, bỏ dòng trống) → `companions`; sheet lịch hiện "Đi cùng". Sửa lịch chưa sửa được danh sách (PATCH chưa nhận `companions`).
 - Lỗi bắt được khi chụp: bỏ class `grid` ở khung lịch làm lưới 6 cột đẩy cả trang cuộn ngang ở 1024px → các stack của chunk có `grid-template-columns: minmax(0, 1fr)`.
 - Tests: vitest web 232 (+4: người đi cùng gửi/không gửi, `PHASE_BADGE`, `companionNotes`); e2e giữ nhãn/selector. axe sạch 23 trạng thái (mock API, sáng/tối, 1280/1024/390, gồm trống/tải/sheet). JS khởi động không đổi (chỉ chunk lazy). Chi tiết: [front-desk-flows § Redesign Lịch hẹn](wiki/design/front-desk-flows.md).
+## [2026-11-06] ingest + build + record | EM review đợt 2 cho PR #59 Lịch hẹn
+- Nguồn: [raw](raw/2026-11-06-em-review-redesign-rollout.md) (chép nguyên). Phần lịch: (1) lịch tuần quay về bố cục cũ (thẻ ngày + khối tô màu phase) nhưng dùng token/kiểu chung: khối như thẻ lưới ngày, viền 1px đều (bỏ sọc 4px), chữ theo thang; (2) ngày trống chỉ còn ghi chú, bỏ nút "Đặt lịch hẹn". Phần còn lại của #59 EM duyệt.
+- Kiểm: vitest 232 pass, axe sạch 23 trạng thái, ảnh tuần + ngày trống cập nhật.

@@ -342,7 +342,7 @@ export function AppointmentsCalendar({
             }
             filtered={shown !== cal.data}
             onGrid={layout === "ngay" && !locked}
-            onBook={locked ? null : book}
+            canBook={!locked}
           />
         )}
       {cal.data && shown && (
@@ -476,40 +476,35 @@ function isEmpty(cal: Calendar, day: string | null): boolean {
 }
 
 /**
- * An empty day teaches the next step (rulebook 9): "Chưa có lịch hẹn hôm nay" + the way to book.
- * The button is not named "Đặt lịch" (that one stays the toolbar's single primary action).
+ * An empty day teaches the next step (rulebook 9): "Chưa có lịch hẹn hôm nay" + where to book.
+ * A note only (EM review 2026-11-06): the toolbar's "Đặt lịch" is the one way in, no second button.
  */
 function EmptyHint({
   when,
   filtered,
   onGrid,
-  onBook,
+  canBook,
 }: {
   when: string;
   /** Looking at one technician: say so, the others may have bookings. */
   filtered: boolean;
   /** The day grid is below: its free slots book too. */
   onGrid: boolean;
-  onBook: (() => void) | null;
+  canBook: boolean;
 }) {
   return (
-    <div className="cal-empty">
-      <p>
+    <p className="cal-empty">
+      <span>
         <strong>
           Chưa có lịch hẹn {when}
           {filtered ? " của KTV đang xem" : ""}.
         </strong>{" "}
-        {onBook &&
+        {canBook &&
           (onGrid
-            ? "Bấm một ô giờ trống bên dưới hoặc nút bên cạnh để đặt lịch."
-            : "Bấm nút bên cạnh để đặt lịch.")}
-      </p>
-      {onBook && (
-        <button type="button" className="btn btn-secondary" onClick={onBook}>
-          <Icon name="plus" /> Đặt lịch hẹn
-        </button>
-      )}
-    </div>
+            ? "Bấm một ô giờ trống bên dưới hoặc “Đặt lịch” để thêm."
+            : "Bấm “Đặt lịch” để thêm.")}
+      </span>
+    </p>
   );
 }
 
@@ -903,42 +898,41 @@ function WeekGrid({
               }}
               aria-label={`Xem ngày ${formatDate(d)}`}
             >
-              <span className="cal-day-title">
-                {dayTitle(d)}
-                {d === today ? " · Hôm nay" : ""}
-              </span>
+              <span className="cal-day-title">{dayTitle(d)}</span>
               <span className="cal-day-meta">
                 {live.length} khách
                 {full > 0 ? ` · ${String(full)} khung đủ khách` : ""}
               </span>
             </button>
-            {items.length > 0 ? (
-              <ul className="cal-day-rows">
-                {items.map((e) => {
-                  const v = view(e);
-                  return (
-                    <li key={e.id}>
-                      <button
-                        type="button"
-                        className="cal-day-row"
-                        data-closed={counts(v.phase) ? undefined : ""}
-                        onClick={() => {
-                          onOpen(e.id);
-                        }}
-                      >
-                        <span className="cal-day-when">
-                          {hhmm(v.start)} <PhaseBadge phase={v.phase} />
-                        </span>
-                        <span className="cal-day-who">
-                          {v.customerName}
-                          {e.kind === "visit" ? " · Vãng lai" : ""}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
+            {/* The old week look (EM review 2026-11-06): one tinted block per booking, in the
+                phase's colours of the day grid; the phase is said in words on the first line. */}
+            {items.map((e) => {
+              const v = view(e);
+              return (
+                <button
+                  key={e.id}
+                  type="button"
+                  className="appt cal-chip"
+                  data-phase={v.phase}
+                  data-kind={e.kind}
+                  onClick={() => {
+                    onOpen(e.id);
+                  }}
+                >
+                  <span className="cal-chip-when">
+                    {hhmm(v.start)} ·{" "}
+                    <span className="cal-chip-phase">
+                      {PHASE_LABEL[v.phase]}
+                    </span>
+                  </span>
+                  <span className="cal-chip-who">
+                    {v.customerName}
+                    {e.kind === "visit" ? " · Vãng lai" : ""}
+                  </span>
+                </button>
+              );
+            })}
+            {items.length === 0 && (
               <p className="cal-day-empty">Chưa có lịch hẹn.</p>
             )}
           </div>

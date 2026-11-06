@@ -145,7 +145,7 @@
   color: var(--danger);
   font-size: var(--fs-base);
 }
-/* Empty day / week / list: says what to do next, with the way to do it. */
+/* Empty day / week / list: a note saying what to do next (the toolbar holds the button). */
 .cal-empty {
   display: flex;
   flex-wrap: wrap;
@@ -390,7 +390,9 @@
 }
 
 /* ------------------------------------------------------------------ week */
-/* Seven day panels side by side; inside a panel the entries are rows divided by hairlines. */
+/* The previous week layout, kept by the EM (review 2026-11-06): seven day cards, each booking a
+   tinted block in its phase's colours, on the shared tokens and type scale. The blocks share the
+   day grid's card style (1 px edge all round, phase in words), so both views read as one app. */
 .cal-week {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -398,95 +400,88 @@
 }
 @media (max-width: 1023.98px) {
   .cal-week {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   }
 }
 .cal-day {
   display: grid;
   align-content: start;
+  gap: 6px;
   min-width: 0;
+  padding: 8px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--surface);
-  box-shadow: var(--shadow-1);
 }
 .cal-day.is-today {
   border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
 }
 .cal-day-head {
   display: grid;
   gap: 2px;
-  min-height: 52px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  font-size: var(--fs-sm);
-  line-height: 18px;
+  min-height: 44px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-base);
+  line-height: 22px;
   text-align: left;
   transition: background-color var(--dur-fast) var(--ease-out);
 }
 .cal-day-head:hover {
-  background: var(--surface-2);
-}
-.cal-day-head:focus-visible {
-  outline-offset: -3px;
+  background: var(--primary-soft);
 }
 .cal-day-title {
   font-weight: 600;
-}
-.cal-day.is-today .cal-day-title {
-  color: var(--primary);
 }
 .cal-day-meta {
   color: var(--text-muted);
   font-size: var(--fs-xs);
   line-height: 16px;
 }
-.cal-day-rows {
+.cal-chip {
   display: grid;
-}
-.cal-day-row {
-  display: grid;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
   min-height: 44px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--border);
+  padding: 4px 8px;
+  border: 1px solid var(--appt-edge);
+  border-radius: var(--radius-sm);
+  background: var(--appt-bg);
+  color: var(--text);
   font-size: var(--fs-sm);
   line-height: 18px;
   text-align: left;
-  transition: background-color var(--dur-fast) var(--ease-out);
+  transition: box-shadow var(--dur-fast) var(--ease-out);
 }
-.cal-day-rows > li:last-child .cal-day-row {
-  border-bottom: 0;
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+.cal-chip[data-kind="visit"] {
+  border-style: dashed;
 }
-.cal-day-row:hover {
-  background: var(--surface-2);
+.cal-chip:hover {
+  box-shadow: var(--shadow-1);
 }
-.cal-day-row:focus-visible {
+.cal-chip:focus-visible {
   outline-offset: -3px;
 }
-.cal-day-when {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 6px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-}
-.cal-day-who {
+.cal-chip > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cal-day-row[data-closed] .cal-day-who {
+.cal-chip-when {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.cal-chip-phase {
+  color: var(--appt-fg);
+}
+.cal-chip:is([data-phase="cancelled"], [data-phase="voided"]) .cal-chip-who {
   color: var(--text-muted);
   text-decoration: line-through;
 }
 .cal-day-empty {
-  padding: 12px;
+  padding: 0 6px;
   color: var(--text-muted);
   font-size: var(--fs-xs);
 }
