@@ -1193,7 +1193,7 @@ function AppointmentSheet({
                 <Link
                   to="/khach-hang/$customerId"
                   params={{ customerId: a.customer_id }}
-                  className="link underline"
+                  className="link whitespace-nowrap underline"
                 >
                   Mở hồ sơ
                 </Link>

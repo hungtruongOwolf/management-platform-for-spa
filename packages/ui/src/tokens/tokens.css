@@ -242,6 +242,8 @@
   /* The select's chevron (fields share one look; the native arrow differed per browser and theme). */
   --watermark-ink: rgb(122 38 32 / 0.05);
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%236d5a50' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+  /* The textarea's resize grip: two short strokes in the chevron's colour. */
+  --resize-grip: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%236d5a50' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M13 7l-6 6M13 11l-2 2'/%3E%3C/svg%3E") center / 16px no-repeat;
 
   --dur-fast: 120ms;
   --dur-base: 200ms;
@@ -302,6 +304,7 @@
     --paper-grain: var(--texture-cream-grain);
     --watermark-ink: rgb(224 180 86 / 0.035);
     --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23c4b2a3' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+    --resize-grip: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23c4b2a3' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M13 7l-6 6M13 11l-2 2'/%3E%3C/svg%3E") center / 16px no-repeat;
     --scrim: rgb(0 0 0 / 0.6);
     --shadow-up: 0 -6px 16px rgb(0 0 0 / 0.4);
     color-scheme: dark;
@@ -355,6 +358,7 @@
   --paper-grain: var(--texture-cream-grain);
   --watermark-ink: rgb(224 180 86 / 0.035);
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23c4b2a3' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+  --resize-grip: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23c4b2a3' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M13 7l-6 6M13 11l-2 2'/%3E%3C/svg%3E") center / 16px no-repeat;
   --scrim: rgb(0 0 0 / 0.6);
   --shadow-up: 0 -6px 16px rgb(0 0 0 / 0.4);
   color-scheme: dark;

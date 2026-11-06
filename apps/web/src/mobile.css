@@ -245,9 +245,16 @@
   border-top: 1px solid var(--border);
   background: var(--surface);
 }
+/* Phones: the buttons share the row by their label's width and never break a label over two lines
+   (EM 2026-11-07: "Khách đến · ghi lượt" wrapped in an equal half at 390px); when the labels do
+   not fit side by side, each takes the full width on its own row. */
 @media (max-width: 639.98px) {
+  .sheet-footer {
+    flex-wrap: wrap;
+  }
   .sheet-footer > :is(button, a) {
-    flex: 1;
+    flex: 1 1 auto;
+    white-space: nowrap;
   }
 }
 @media (min-width: 640px) {

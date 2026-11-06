@@ -235,6 +235,7 @@ describe("home page", () => {
       "/khach-hang",
       "/bang-gia",
       "/bang-gia/goi",
+      "/cai-dat",
     ]);
     // Paper-book data goes through the operator CLI (EM 2026-11-05): never a shortcut.
     expect(
@@ -243,5 +244,68 @@ describe("home page", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Xin chào, Chủ Spa" }),
     ).toBeInTheDocument();
+  });
+
+  // EM 2026-11-07: "Nhân viên" was missing. Every screen in the nav has one shortcut with a hint;
+  // the appointments tab of /quay and home itself have none.
+  it.each([
+    [
+      "owner",
+      [
+        "visit.record", "visit.read", "appointment.manage", "customer.read", "report.read", "catalog.read",
+        "attendance.record", "evaluation.record", "payroll.read", "staff.manage", "staff.read_own",
+      ],
+      [
+        ["/quay", "Ghi lượt khách"],
+        ["/khach-hang", "Danh sách khách hàng"],
+        ["/khach-lau-khong-quay-lai", "Khách lâu chưa quay lại"],
+        ["/goi-lieu-trinh", "Gói liệu trình của khách"],
+        ["/bao-cao", "Báo cáo kinh doanh"],
+        ["/nhan-vien", "Nhân viên", "Chấm công, đánh giá, bảng lương, hồ sơ nhân viên"],
+        ["/bang-gia", "Bảng giá dịch vụ"],
+        ["/bang-gia/goi", "Mẫu gói liệu trình"],
+        ["/cai-dat", "Giao diện & tài khoản"],
+      ],
+    ],
+    [
+      "manager",
+      ["visit.record", "visit.read", "appointment.manage", "customer.read", "report.read", "catalog.read", "attendance.record", "evaluation.record", "staff.read_own"],
+      [
+        ["/quay", "Ghi lượt khách"],
+        ["/khach-hang", "Danh sách khách hàng"],
+        ["/khach-lau-khong-quay-lai", "Khách lâu chưa quay lại"],
+        ["/goi-lieu-trinh", "Gói liệu trình của khách"],
+        ["/bao-cao", "Báo cáo kinh doanh"],
+        ["/nhan-vien", "Nhân viên", "Chấm công, đánh giá"],
+        ["/bang-gia", "Bảng giá dịch vụ"],
+        ["/bang-gia/goi", "Mẫu gói liệu trình"],
+        ["/cai-dat", "Giao diện & tài khoản"],
+      ],
+    ],
+    [
+      "technician",
+      ["staff.read_own"],
+      [
+        ["/nhan-vien", "Công và lương của tôi", "Ngày công, đánh giá, phiếu lương của bạn"],
+        ["/khach-cua-toi", "Khách của tôi"],
+        ["/cai-dat", "Giao diện & tài khoản"],
+      ],
+    ],
+  ])("gives the %s one shortcut per screen it can open", async (_role, permissions, expected) => {
+    server((_method, path) =>
+      path === "/api/v1/me" ? Response.json({ ...ME, permissions }) : new Response(null, { status: 404 }),
+    );
+    renderAt("/");
+    const shortcuts = await screen.findByRole("navigation", { name: "Lối tắt" });
+    const links = within(shortcuts).getAllByRole("link");
+    expect(links.map((l) => l.getAttribute("href"))).toEqual(expected.map(([href]) => href));
+    links.forEach((link, i) => {
+      const [, title, hint] = expected[i] ?? [];
+      expect(link.querySelector(".shortcut-title")).toHaveTextContent(title ?? "");
+      // Every shortcut carries a hint line under its title.
+      const hintLine = link.querySelector(".text-text-muted")?.textContent ?? "";
+      expect(hintLine).not.toBe("");
+      if (hint) expect(hintLine).toBe(hint);
+    });
   });
 });
