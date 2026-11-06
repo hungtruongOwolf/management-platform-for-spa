@@ -197,16 +197,22 @@ pub fn duration_minutes(
     Ok(minutes)
 }
 
-/// The services' durations (empty = 1 hour each) summed and rounded up to the slot grid.
+/// The services' durations summed and rounded up to the slot grid. A service without a duration
+/// ("theo tư vấn") books one hour when nothing else has a duration; next to a timed service it is
+/// an add-on done within that time ("Mặt nạ thuốc bắc" with a 30-minute "Gội đầu") and adds
+/// nothing. Counting every add-on as an hour drew a 30-minute visit 2.5 hours tall (round 6).
 fn services_minutes(service_minutes: &[Option<i32>], slot: u32) -> u32 {
-    let sum: u32 = service_minutes
+    let timed: Vec<u32> = service_minutes
         .iter()
-        .map(|m| {
-            m.and_then(|v| u32::try_from(v).ok())
-                .filter(|v| *v > 0)
-                .unwrap_or(DEFAULT_SERVICE_MINUTES)
-        })
-        .sum();
+        .filter_map(|m| m.and_then(|v| u32::try_from(v).ok()).filter(|v| *v > 0))
+        .collect();
+    let sum: u32 = if timed.is_empty() {
+        u32::try_from(service_minutes.len())
+            .unwrap_or(u32::MAX)
+            .saturating_mul(DEFAULT_SERVICE_MINUTES)
+    } else {
+        timed.iter().sum()
+    };
     sum.div_ceil(slot) * slot
 }
 
@@ -297,7 +303,11 @@ mod tests {
     #[test]
     fn duration_comes_from_services_rounded_to_the_slot() {
         assert_eq!(duration_minutes(&[Some(60)], None, 15), Ok(60));
-        assert_eq!(duration_minutes(&[Some(50), None], None, 15), Ok(120));
+        // An untimed service is an hour on its own, an add-on next to a timed one.
+        assert_eq!(duration_minutes(&[Some(50), None], None, 15), Ok(60));
+        assert_eq!(duration_minutes(&[Some(30), None, None], None, 15), Ok(30));
+        assert_eq!(duration_minutes(&[None], None, 15), Ok(60));
+        assert_eq!(duration_minutes(&[None, None], None, 15), Ok(120));
         assert_eq!(duration_minutes(&[Some(40)], None, 15), Ok(45));
         assert_eq!(duration_minutes(&[Some(60)], Some(90), 15), Ok(90));
         assert_eq!(
@@ -328,7 +338,9 @@ mod tests {
     #[test]
     fn a_visit_occupies_its_services_time_clamped_to_the_grid() {
         assert_eq!(visit_minutes(&[Some(90)], 15), 90);
-        assert_eq!(visit_minutes(&[Some(40), None], 15), 105);
+        assert_eq!(visit_minutes(&[Some(40), None], 15), 45);
+        assert_eq!(visit_minutes(&[Some(90), None], 15), 90);
+        assert_eq!(visit_minutes(&[None], 15), 60);
         assert_eq!(visit_minutes(&[Some(5)], 15), 15);
         assert_eq!(visit_minutes(&[], 15), 15);
         assert_eq!(visit_minutes(&[Some(300), Some(300)], 15), 480);

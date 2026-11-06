@@ -18,6 +18,7 @@ import { CustomerSearch } from "../customers/CustomerSearch";
 import { customerQuery } from "../customers/api";
 import { formatDate } from "../sales/api";
 import {
+  addedMinutes,
   autoMinutes,
   bookAppointment,
   bookGroup,
@@ -368,6 +369,14 @@ export function BookingSheet({
               null,
           }));
           const auto = autoOf(p);
+          // An untimed add-on next to a timed service runs meanwhile: "(kèm)", not "(60′)".
+          const chipMinutes = (d: number | null) => {
+            const m = addedMinutes(
+              d,
+              chosen.map((c) => c.duration),
+            );
+            return m ? `${String(m)}′` : "kèm";
+          };
           const legend = people.length > 1 ? `Người ${String(i + 1)}` : "Khách";
           return (
             <fieldset
@@ -494,7 +503,7 @@ export function BookingSheet({
                         key={`${s.id}-${String(j)}`}
                         className="badge badge-muted"
                       >
-                        {s.name} ({s.duration ?? 60}′)
+                        {s.name} ({chipMinutes(s.duration)})
                         <button
                           type="button"
                           aria-label={`Bỏ ${s.name}`}
