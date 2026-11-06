@@ -118,6 +118,39 @@ test("every screen holds from 320 to 1920 px and at 200 % zoom", async ({
   expect(problems).toEqual([]);
 });
 
+/** EM round 5 item 2: "navbar bên trái … bị mất chữ" — every label whole, no sideways scroll. */
+test("sidebar labels are never cut, open or folded, at 1024 / 1280 / 1440", async ({
+  page,
+}) => {
+  const cut = () =>
+    page.evaluate(() => {
+      const side = document.querySelector<HTMLElement>(".sidebar");
+      if (!side) return ["no sidebar"];
+      const out: string[] = [];
+      if (side.scrollWidth > side.clientWidth)
+        out.push(`sidebar scrolls sideways by ${String(side.scrollWidth - side.clientWidth)}px`);
+      const edge = side.getBoundingClientRect().right;
+      for (const label of Array.from(side.querySelectorAll<HTMLElement>(".nav-label, .nav-group-label"))) {
+        const r = label.getBoundingClientRect();
+        if (r.width <= 1) continue; // the folded rail keeps labels for screen readers only
+        if (label.scrollWidth > label.clientWidth + 1 || r.right > edge)
+          out.push(`cut: ${label.textContent.trim()}`);
+      }
+      return out;
+    });
+  for (const width of [1024, 1280, 1440]) {
+    await page.setViewportSize({ width, height: 800 });
+    await open(page, "/");
+    expect(await cut(), `open sidebar @ ${String(width)}px`).toEqual([]);
+    await expect(page.locator(".sidebar .nav-label").filter({ hasText: "Khách lâu chưa quay lại" })).toBeVisible();
+  }
+  await page.getByRole("button", { name: "Thu gọn thanh bên" }).click();
+  expect(await cut(), "folded rail @ 1440px").toEqual([]);
+  await page.getByRole("button", { name: "Mở rộng thanh bên" }).click();
+  await page.setViewportSize({ width: 900, height: 800 });
+  expect(await cut(), "tablet rail @ 900px").toEqual([]);
+});
+
 /**
  * Phones get their own shapes (EM round 4 item 3, design-system § Mobile patterns): a 5-tab bar,
  * filters behind "Bộ lọc" in a bottom sheet glued to the bottom edge, cards instead of tables,

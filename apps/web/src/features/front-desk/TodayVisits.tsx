@@ -1,6 +1,9 @@
-// Today's visits on /quay (full width, EM round 4 item 6): rows open inline with the lines,
-// payment, phone, health warning and a link to the profile. A lazy chunk: it renders after the
-// first paint anyway (its query waits for it), so it stays off the startup bundle.
+// Today's visits on /quay (full width, EM round 4 item 6; aligned table, EM round 5 item 1): one
+// row per visit with fixed columns (Giờ, Khách, Dịch vụ · KTV, Thanh toán, Số tiền, ⋯). A click on
+// the row (or the name, for keyboards) opens the details inline: lines, payment, phone, health
+// warning, profile link, and the reason of a cancelled visit. "Hủy lượt" lives in the ⋯ menu. A
+// lazy chunk: it renders after the first paint anyway (its query waits for it), so it stays off
+// the startup bundle.
 import type { Visit } from "@vpyd/api-client";
 import {
   keepPreviousData,
@@ -8,11 +11,13 @@ import {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { formatVnd } from "@vpyd/ui";
 import { Suspense, lazy, useState } from "react";
 import { CustomerName } from "../../app/CustomerName";
 import { DateField } from "../../components/DateField";
+import { ResponsiveTable, type Column } from "../../components/ResponsiveTable";
+import { RowMenu, type RowMenuItem } from "../../components/RowMenu";
 import { useAfterFirstPaint } from "../../lib/afterFirstPaint";
 import { messageFor } from "../../lib/errors";
 import { invalidateManagementViews } from "../../lib/invalidate";
@@ -38,11 +43,29 @@ const VoidVisitForm = lazy(() =>
 
 const card = "rounded-[14px] border border-border bg-surface p-4 shadow-card";
 
+/** The "Thanh toán" cell: how it was paid, short (the amount has its own column). */
+function paymentShort(v: Visit): string {
+  // The "Đã hủy" badge sits by the name; this says what the cancel gave back.
+  if (v.status === "voided") return v.total > 0 ? "Đã hoàn tiền" : "Đã trả lại buổi";
+  if (v.total === 0) return "Trừ liệu trình";
+  const methods = new Set(
+    v.payments.filter((p) => p.kind === "payment").map((p) => p.method),
+  );
+  if (methods.size === 0) return "Đã thanh toán";
+  if (methods.size > 1) return "Tiền mặt + CK";
+  return methods.has("cash") ? "Tiền mặt" : "Chuyển khoản";
+}
+
 /** Inline details of one visit: lines, technicians, payment, the customer's phone + a profile link. */
 function VisitDetails({ v }: { v: Visit }) {
   const customer = useQuery(customerQuery(v.customer_id));
   return (
-    <div className="mt-2 grid gap-2 rounded-[10px] bg-surface-2 p-3 text-sm">
+    <div className="grid gap-2 rounded-[10px] bg-surface-2 p-3 text-sm">
+      {v.status === "voided" && (
+        <p className="font-semibold text-danger">
+          Lý do hủy: {v.void_reason ?? "không ghi"}
+        </p>
+      )}
       <ul className="grid gap-1">
         {v.lines.map((l) => (
           <li key={l.id} className="flex flex-wrap justify-between gap-2">
@@ -88,9 +111,110 @@ function VisitDetails({ v }: { v: Visit }) {
   );
 }
 
+/**
+ * Columns of the day's visits. Fixed widths keep every row on the same grid; the service text
+ * wraps (at most two lines) inside its own column. Phones: cards (name, time · services, amount,
+ * payment, ⋯).
+ */
+function visitColumns({
+  expanded,
+  toggle,
+  actions,
+}: {
+  expanded: string | null;
+  toggle: (id: string) => void;
+  actions: (v: Visit) => RowMenuItem[];
+}): Column<Visit>[] {
+  return [
+    {
+      id: "time",
+      header: "Giờ",
+      width: "80px",
+      card: "subtitle",
+      className: "tabular-nums font-semibold whitespace-nowrap",
+      cell: (v) => timeOf(v.check_in_at),
+    },
+    {
+      id: "customer",
+      header: "Khách",
+      width: "24%",
+      card: "title",
+      cell: (v) => (
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {/* The keyboard path of the row click: Enter/Space opens the details. */}
+          <button
+            type="button"
+            className="row-toggle"
+            aria-expanded={expanded === v.id}
+            onClick={() => {
+              toggle(v.id);
+            }}
+          >
+            <CustomerName name={v.customer_name} gender={v.customer_gender} />
+          </button>
+          {v.status === "voided" && (
+            <span className="badge badge-danger">Đã hủy</span>
+          )}
+        </span>
+      ),
+    },
+    {
+      id: "services",
+      header: "Dịch vụ · KTV",
+      cardLabel: "Dịch vụ",
+      cell: (v) => {
+        const services = v.lines
+          .map(
+            (l) =>
+              `${serviceLabel(l.service_name, l.category_name)}${l.source === "package" ? " (trừ buổi)" : ""}`,
+          )
+          .join(", ");
+        const staff = [...new Set(v.lines.map((l) => l.staff_name))].join(", ");
+        return (
+          <span className="grid min-w-0">
+            <span className="line-clamp-2 text-ellipsis" title={services}>
+              {services}
+            </span>
+            <span className="truncate text-text-muted">KTV {staff}</span>
+          </span>
+        );
+      },
+    },
+    {
+      id: "payment",
+      header: "Thanh toán",
+      width: "16%",
+      cell: (v) => <span className="text-text-muted">{paymentShort(v)}</span>,
+    },
+    {
+      id: "amount",
+      header: "Số tiền",
+      width: "112px",
+      numeric: true,
+      card: "aside",
+      className: "visit-amount",
+      cell: (v) => (v.total ? formatVnd(v.total) : "—"),
+    },
+    {
+      id: "actions",
+      header: <span className="sr-only">Thao tác</span>,
+      width: "60px",
+      card: "actions",
+      className: "text-right",
+      cell: (v) => (
+        <RowMenu
+          label={`Thao tác lượt ${timeOf(v.check_in_at)} của ${v.customer_name}`}
+          items={actions(v)}
+        />
+      ),
+    },
+  ];
+}
+
 export function TodayVisits() {
   const { data: me } = useSuspenseQuery(meQuery);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const todayIso = spaToday();
   const [day, setDay] = useState(todayIso);
   const [voiding, setVoiding] = useState<string | null>(null);
@@ -118,6 +242,10 @@ export function TodayVisits() {
   const mayVoid =
     can(me, "record.void_same_day") &&
     (isToday || can(me, "record.void_closed_day"));
+  const toggle = (id: string) => {
+    setExpanded((open) => (open === id ? null : id));
+    if (voiding === id) setVoiding(null);
+  };
   return (
     <section aria-labelledby="today-title" className={card}>
       <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
@@ -179,129 +307,87 @@ export function TodayVisits() {
         </p>
       )}
       {today.data && today.data.length > 0 && (
-        <ul
-          aria-label={isToday ? "Lượt khách hôm nay" : "Lượt khách trong ngày"}
-        >
-          {visible.map((v) => {
-            const open = expanded === v.id;
-            return (
-              <li
-                key={v.id}
-                className="border-b border-dashed border-border py-2 text-sm last:border-b-0"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div
-                    className={`grid min-w-0 flex-1 gap-x-4 gap-y-0.5 md:grid-cols-[56px_minmax(0,1.2fr)_minmax(0,2fr)_minmax(0,1.3fr)] ${v.status === "voided" ? "text-text-muted" : ""}`}
-                  >
-                    <strong className="tabular-nums">
-                      {timeOf(v.check_in_at)}
-                    </strong>
-                    <span className="min-w-0">
-                      <CustomerName
-                        name={v.customer_name}
-                        gender={v.customer_gender}
-                      />
-                      {v.status === "voided" && (
-                        <span className="badge badge-danger ml-2 align-middle">
-                          Đã hủy
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-text-muted">
-                      {v.lines
-                        .map(
-                          (l) =>
-                            `${serviceLabel(l.service_name, l.category_name)}${l.source === "package" ? " (trừ buổi)" : ""}`,
-                        )
-                        .join(", ")}{" "}
-                      · KTV{" "}
-                      {[...new Set(v.lines.map((l) => l.staff_name))].join(
-                        ", ",
-                      )}
-                    </span>
-                    <span className="text-text-muted">
-                      {paymentText(v, formatVnd)}
-                    </span>
-                    {v.status === "voided" && v.void_reason && (
-                      <span className="md:col-span-4">
-                        Lý do hủy: {v.void_reason}
-                      </span>
-                    )}
-                  </div>
-                  <span className="flex shrink-0 items-start gap-2">
-                    <span
-                      className={`tabular-nums ${v.status === "voided" ? "text-text-muted line-through" : ""}`}
-                    >
-                      {v.total ? formatVnd(v.total) : "—"}
-                    </span>
-                    <button
-                      type="button"
-                      aria-expanded={open}
-                      aria-label={`Chi tiết lượt ${timeOf(v.check_in_at)} của ${v.customer_name}`}
-                      onClick={() => {
-                        setExpanded(open ? null : v.id);
-                      }}
-                      className="min-h-11 rounded-[10px] border border-border px-3 font-medium"
-                    >
-                      {open ? "Thu gọn" : "Chi tiết"}
-                    </button>
-                    {mayVoid &&
-                      v.status === "completed" &&
-                      voiding !== v.id && (
-                        <button
-                          type="button"
-                          aria-label={`Hủy lượt ${timeOf(v.check_in_at)} của ${v.customer_name}`}
-                          onClick={() => {
-                            setNotice(null);
-                            setVoiding(v.id);
-                          }}
-                          className="min-h-11 rounded-[10px] border border-border px-3 font-medium text-danger"
-                        >
-                          Hủy
-                        </button>
-                      )}
-                  </span>
-                </div>
-                {open && <VisitDetails v={v} />}
-                {voiding === v.id && (
-                  <Suspense
-                    fallback={
-                      <p role="status" className="w-full text-text-muted">
-                        Đang mở…
-                      </p>
-                    }
-                  >
-                    <div className="w-full">
-                      <VoidVisitForm
-                        visit={v}
-                        onCancel={() => {
-                          setVoiding(null);
-                        }}
-                        onDone={(voided) => {
-                          setVoiding(null);
-                          setNotice(`Đã hủy lượt của ${voided.customer_name}.`);
-                          void queryClient.invalidateQueries({
-                            queryKey: ["visits"],
-                          });
-                          void queryClient.invalidateQueries({
-                            queryKey: ["customer-packages"],
-                          });
-                          void queryClient.invalidateQueries({
-                            queryKey: ["appointments"],
-                          });
-                          void invalidateManagementViews(
-                            queryClient,
-                            voided.customer_id,
-                          );
-                        }}
-                      />
-                    </div>
-                  </Suspense>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+        <div className="rt-host overflow-hidden rounded-[10px] border border-border">
+          <ResponsiveTable
+            caption={isToday ? "Lượt khách hôm nay" : "Lượt khách trong ngày"}
+            rows={visible}
+            rowKey={(v) => v.id}
+            cardsBelow={1024}
+            rowClassName={(v) =>
+              v.status === "voided" ? "visit-voided" : undefined
+            }
+            columns={visitColumns({
+              expanded,
+              toggle,
+              actions: (v) => [
+                {
+                  label: "Mở hồ sơ khách",
+                  onSelect: () => {
+                    void navigate({
+                      to: "/khach-hang/$customerId",
+                      params: { customerId: v.customer_id },
+                    });
+                  },
+                },
+                ...(mayVoid && v.status === "completed"
+                  ? [
+                      {
+                        label: "Hủy lượt",
+                        danger: true,
+                        onSelect: () => {
+                          setNotice(null);
+                          setExpanded(v.id);
+                          setVoiding(v.id);
+                        },
+                      },
+                    ]
+                  : []),
+              ],
+            })}
+            onRowClick={(v) => {
+              toggle(v.id);
+            }}
+            expanded={(v) =>
+              voiding === v.id ? (
+                <Suspense
+                  fallback={
+                    <p role="status" className="text-text-muted">
+                      Đang mở…
+                    </p>
+                  }
+                >
+                  <VoidVisitForm
+                    visit={v}
+                    onCancel={() => {
+                      setVoiding(null);
+                    }}
+                    onDone={(voided) => {
+                      setVoiding(null);
+                      // Stay open on the cancelled visit: its details now carry the reason.
+                      setExpanded(voided.id);
+                      setNotice(`Đã hủy lượt của ${voided.customer_name}.`);
+                      void queryClient.invalidateQueries({
+                        queryKey: ["visits"],
+                      });
+                      void queryClient.invalidateQueries({
+                        queryKey: ["customer-packages"],
+                      });
+                      void queryClient.invalidateQueries({
+                        queryKey: ["appointments"],
+                      });
+                      void invalidateManagementViews(
+                        queryClient,
+                        voided.customer_id,
+                      );
+                    }}
+                  />
+                </Suspense>
+              ) : expanded === v.id ? (
+                <VisitDetails v={v} />
+              ) : null
+            }
+          />
+        </div>
       )}
       {hasMore && (
         <button

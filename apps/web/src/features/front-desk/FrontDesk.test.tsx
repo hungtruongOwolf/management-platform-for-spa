@@ -375,7 +375,7 @@ describe("/quay", () => {
         "Đã lưu lượt của Nguyễn Thị Hà · Gội đầu còn 4/12",
       ),
     ).toBeInTheDocument();
-    const today = await screen.findByRole("list", {
+    const today = await screen.findByRole("table", {
       name: "Lượt khách hôm nay",
     });
     expect(within(today).getByText(/KTV Hoa/)).toBeInTheDocument();
@@ -395,10 +395,10 @@ describe("/quay", () => {
     const calls = serve(MANAGER, undefined, undefined, many);
     const user = userEvent.setup();
     at("/quay");
-    const list = await screen.findByRole("list", {
+    const list = await screen.findByRole("table", {
       name: "Lượt khách hôm nay",
     });
-    expect(within(list).getAllByRole("listitem")).toHaveLength(30);
+    expect(within(list).getAllByRole("row").slice(1)).toHaveLength(30);
     // Only the newest 31 are fetched first: one more than shown says the day has more.
     expect(
       calls.some(
@@ -412,7 +412,7 @@ describe("/quay", () => {
       screen.getByRole("button", { name: "Xem tất cả lượt trong ngày" }),
     );
     await waitFor(() => {
-      expect(within(list).getAllByRole("listitem")).toHaveLength(60);
+      expect(within(list).getAllByRole("row").slice(1)).toHaveLength(60);
     });
     expect(
       screen.getByRole("heading", { name: /Lượt khách hôm nay \(65\)/ }),
@@ -420,7 +420,7 @@ describe("/quay", () => {
     await user.click(
       screen.getByRole("button", { name: "Xem thêm (5 lượt nữa)" }),
     );
-    expect(within(list).getAllByRole("listitem")).toHaveLength(65);
+    expect(within(list).getAllByRole("row").slice(1)).toHaveLength(65);
     expect(
       screen.queryByRole("button", { name: /Xem thêm/ }),
     ).not.toBeInTheDocument();
@@ -576,11 +576,16 @@ describe("/quay", () => {
     serve(MANAGER, undefined, [pkg("cp1")], [VISIT]);
     const user = userEvent.setup();
     at("/quay");
-    const list = await screen.findByRole("list", {
+    const list = await screen.findByRole("table", {
       name: "Lượt khách hôm nay",
     });
-    const row = await within(list).findByRole("button", { expanded: false });
-    await user.click(row);
+    const row = await within(list).findByRole("button", {
+      name: /^Nguyễn Thị Hà/,
+      expanded: false,
+    });
+    // Keyboard: the name is the row's button (EM round 5: no "Chi tiết" button any more).
+    row.focus();
+    await user.keyboard("{Enter}");
     expect(row).toHaveAttribute("aria-expanded", "true");
     expect(
       within(list).getByText("Trừ liệu trình, không phát sinh tiền", {
@@ -593,6 +598,66 @@ describe("/quay", () => {
     expect(
       await within(list).findByText(/SĐT 0905 111 222/),
     ).toBeInTheDocument();
+    expect(within(list).queryByRole("button", { name: /^Chi tiết/ })).toBeNull();
+  });
+
+  it("lines every visit up in the same columns; a click anywhere on the row opens it", async () => {
+    serve(MANAGER, undefined, [pkg("cp1")], [VISIT]);
+    const user = userEvent.setup();
+    at("/quay");
+    const table = await screen.findByRole("table", {
+      name: "Lượt khách hôm nay",
+    });
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((h) => h.textContent),
+    ).toEqual(["Giờ", "Khách", "Dịch vụ · KTV", "Thanh toán", "Số tiền", "Thao tác"]);
+    expect(within(table).getByRole("cell", { name: "Trừ liệu trình" })).toBeInTheDocument();
+    await user.click(within(table).getByRole("cell", { name: "09:12" }));
+    expect(
+      within(table).getByRole("button", { name: /^Nguyễn Thị Hà/ }),
+    ).toHaveAttribute("aria-expanded", "true");
+    await user.click(within(table).getByRole("cell", { name: "09:12" }));
+    expect(
+      within(table).getByRole("button", { name: /^Nguyễn Thị Hà/ }),
+    ).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("keeps the row actions in a ⋯ menu: arrows move, Esc closes back to the button", async () => {
+    serve(MANAGER, undefined, [pkg("cp1")], [VISIT]);
+    const user = userEvent.setup();
+    const history = createMemoryHistory({ initialEntries: ["/quay"] });
+    render(<App history={history} />);
+    const table = await screen.findByRole("table", {
+      name: "Lượt khách hôm nay",
+    });
+    const more = within(table).getByRole("button", {
+      name: "Thao tác lượt 09:12 của Nguyễn Thị Hà",
+    });
+    expect(more).toHaveAttribute("aria-haspopup", "menu");
+    await user.click(more);
+    const menu = screen.getByRole("menu", {
+      name: "Thao tác lượt 09:12 của Nguyễn Thị Hà",
+    });
+    // A manager without record.void_same_day: only the profile, no "Hủy lượt".
+    const items = within(menu).getAllByRole("menuitem");
+    expect(items.map((i) => i.textContent)).toEqual(["Mở hồ sơ khách"]);
+    expect(items[0]).toHaveFocus();
+    // Opening the menu does not open the row.
+    expect(
+      within(table).getByRole("button", { name: /^Nguyễn Thị Hà/ }),
+    ).toHaveAttribute("aria-expanded", "false");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(more).toHaveFocus();
+    // ↓ on the button opens on the first item; Enter runs it.
+    await user.keyboard("{ArrowDown}");
+    expect(within(screen.getByRole("menu")).getByRole("menuitem")).toHaveFocus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(history.location.pathname).toBe("/khach-hang/c1");
+    });
   });
 
   it("shows the live countdown to the spa's midnight and the appointments tab", async () => {
