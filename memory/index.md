@@ -52,6 +52,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 ## Runbooks
 - [staging-setup](wiki/runbooks/staging-setup.md) — S11: chọn VPS (giá + nguồn, ghép vùng với Supabase), hardening, Supabase checklist (REVOKE khi Data API bật, pooler session mode), R2 backup + restore drill, deploy/rollback, việc EM cần làm
 - [vercel-staging](wiki/runbooks/vercel-staging.md) — staging hiện tại: Vercel Services (web tĩnh + API container, pdx1) + Supabase us-west-2; env vars, bootstrap DB, dữ liệu demo (`app seed-demo`), deploy, kiểm tra, việc trước khi dùng thật
+- [local-merge-gate](wiki/runbooks/local-merge-gate.md) — merge khi GitHub Actions tắt: `merge-local-gate.sh` theo thay đổi (phân loại file → bước), `--dry-run`/`--full`/`--batch`, build Rust một lần, khi nào tin gate chọn lọc (`--full` trước deploy), contract rỗng
 
 ## Research
 - [tech-stack](wiki/research/tech-stack.md) — backend & frontend language/framework comparison, recommendation
