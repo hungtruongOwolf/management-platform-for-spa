@@ -1,7 +1,7 @@
 import { useId, useState, type ReactNode } from "react";
 
 /**
- * A toggletip: a small round button that shows a short note on hover, keyboard focus or tap
+ * A toggletip: a small round button that shows a short note on click, tap, Enter or Space
  * (design-system.md "Quy tắc": secondary information stays one quiet control away). The note is
  * the button's description, so screen readers read it with the button. Esc closes it.
  */

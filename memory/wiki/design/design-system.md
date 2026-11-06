@@ -46,7 +46,7 @@ Không chữ hoa giãn chữ (eyebrow) ở bất kỳ đâu; nhãn nhóm là sen
 
 **8. Danh sách / bảng.** Dòng ≥ 44px (bảng ~48px), số canh phải `tabular-nums`, cột cố định khi nhiều dòng (`ResponsiveTable` `width`), ≥ 2 thao tác mỗi dòng → menu ⋯. Mục đã đóng (gói hết buổi/đã hủy, lượt đã hủy) gom sau một disclosure có số đếm hoặc làm mờ, không trộn với mục đang dùng.
 
-**9. Trống / đang tải / lỗi.** Trống **dạy bước tiếp theo** ("Chưa có dịch vụ. Bấm “Trừ 1 buổi” … hoặc chọn dịch vụ lẻ bên dưới"; "Không tìm thấy khách nào. Bấm “Khách mới” …"). Đang tải = skeleton đúng hình (không spinner, trừ nút `aria-busy`). Lỗi = câu tiếng Việt nói cái gì hỏng + cách sửa + "Thử lại", giữ dữ liệu đã nhập. Thông tin phụ (phím tắt, ghi chú giờ khóa sổ) nằm sau một toggletip `Tip` (nút tròn "?"/"i", hover/focus/chạm mở, Esc đóng, nội dung là mô tả của nút).
+**9. Trống / đang tải / lỗi.** Trống **dạy bước tiếp theo** ("Chưa có dịch vụ. Bấm “Trừ 1 buổi” … hoặc chọn dịch vụ lẻ bên dưới"; "Không tìm thấy khách nào. Bấm “Khách mới” …"). Đang tải = skeleton đúng hình (không spinner, trừ nút `aria-busy`). Lỗi = câu tiếng Việt nói cái gì hỏng + cách sửa + "Thử lại", giữ dữ liệu đã nhập. Thông tin phụ (phím tắt, ghi chú giờ khóa sổ) nằm sau một toggletip `Tip` (nút tròn "?"/"i", bấm/chạm mở, Esc đóng, nội dung là mô tả của nút).
 
 **10. Chuyển động.** 150–250 ms, **chỉ cho thay đổi trạng thái** (hover, mở/đóng, toast); chỉ `transform`/`opacity`/màu. **Bỏ `CountUp`** (số hiện ngay), không hiệu ứng tải trang, không lấp lánh trang trí (trừ skeleton). `prefers-reduced-motion`: tắt animation và chuyển động, **giữ** đổi màu/opacity để vẫn thấy phản hồi. Modal là lựa chọn cuối: ưu tiên mở ngay tại chỗ (inline, disclosure); toast nằm **trên cùng** giữa màn (không che thanh lưu dính đáy).
 
@@ -364,7 +364,7 @@ Primitives dựng trên shadcn/ui (Radix) trong `packages/ui`, theme bằng toke
 | **Tabs** (`.tabs`) | `role=tablist`, tab chọn = gạch chân vàng 3px `inset box-shadow` |
 | **Timeline** (lịch sử khách) | đường dọc gradient vàng, chấm theo loại (lượt nâu đỏ, mua gói vàng, hủy xám/đỏ), nhóm theo tháng |
 | EmptyState (logo nguyên vẹn 56px + tiêu đề Be Vietnam Pro 600 + câu hướng dẫn bước tiếp theo), ErrorState ("Thử lại") | |
-| **Tip** (`features/front-desk/Tip.tsx`, `.tip`) | toggletip: nút tròn 28px vẽ trong vùng chạm 44px, hover/focus/chạm mở, Esc đóng (không lan ra Esc của trang), nội dung là `aria-describedby` của nút. Dùng cho phím tắt quầy, ghi chú giờ khóa sổ |
+| **Tip** (`features/front-desk/Tip.tsx`, `.tip`) | toggletip: nút tròn 28px vẽ trong vùng chạm 44px, bấm/chạm/Enter mở (không mở khi hover, để không phủ nội dung), Esc đóng (không lan ra Esc của trang), nội dung là `aria-describedby` của nút. Dùng cho phím tắt quầy, ghi chú giờ khóa sổ |
 | Dialog / Sheet (điện thoại) | `<dialog>` + `showModal()` (`Modal` trong AppShell): focus trap, Esc, backdrop |
 | ReasonDialog | bắt buộc nhập lý do (hủy, giảm giá, cho dùng gói hết hạn) |
 | Toast | `role=status`; 4 giây; phẳng (không sọc trái); **trên cùng giữa màn** (`top: 72px + safe-area`, 2026-11-06) để không che thanh lưu dính đáy; lỗi nền `danger` |

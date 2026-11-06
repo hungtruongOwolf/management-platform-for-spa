@@ -128,7 +128,14 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     await page
       .getByRole("textbox", { name: /^Lý do sửa/ })
       .fill("Khách trả tiền lẻ, không trừ gói");
+    // The correction cart is taller than the window: wherever it is scrolled, the sticky top bar or
+    // the sticky checkout cuts some control, and axe target-size counts that cut. Audit the whole
+    // screen laid out in a window as tall as the page, then go back.
+    const size = page.viewportSize();
+    const tall = await page.evaluate(() => document.documentElement.scrollHeight);
+    if (size) await page.setViewportSize({ width: size.width, height: tall });
     await expectAccessible(page, "quay-correction");
+    if (size) await page.setViewportSize(size);
     await page.getByRole("button", { name: "Lưu sửa lượt" }).click();
 
     await expect(

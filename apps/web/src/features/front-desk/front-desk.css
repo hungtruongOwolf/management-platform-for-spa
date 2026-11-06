@@ -152,9 +152,8 @@
     /* Closed = not rendered at all: no invisible box over the controls under it. */
     display: none;
   }
-  /* Hover or an explicit open (click, tap, Enter/Space). Keyboard focus alone only announces it
-   * (aria-describedby), so tabbing past never covers the content around the button. */
-  .tip:hover .tip-body,
+  /* Opens on an explicit click / tap / Enter / Space only. Focus alone announces it
+   * (aria-describedby); hovering past never drops a box over the content around it. */
   .tip-button[aria-expanded="true"] + .tip-body {
     display: block;
   }
