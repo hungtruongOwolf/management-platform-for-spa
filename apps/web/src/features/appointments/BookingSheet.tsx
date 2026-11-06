@@ -18,10 +18,12 @@ import { CustomerSearch } from "../customers/CustomerSearch";
 import { customerQuery } from "../customers/api";
 import { formatDate } from "../sales/api";
 import {
+  MAX_COMPANIONS,
   addedMinutes,
   autoMinutes,
   bookAppointment,
   bookGroup,
+  companionNotes,
   hhmm,
   instantAt,
   minutesOf,
@@ -96,6 +98,7 @@ const FIELD_NAMES: Record<string, string> = {
   starts_at: "giờ hẹn",
   duration_min: "thời lượng",
   people: "số người",
+  companions: "người đi cùng",
 };
 
 /** Every server refusal as one Vietnamese sentence, naming the person when it is a group's. */
@@ -124,7 +127,10 @@ export function bookingErrorText(
         const field = m?.[2] ?? f.field;
         const person = m ? people[Number(m[1])] : undefined;
         const who = person ? `${personLabel(person, Number(m?.[1]))}: ` : "";
-        const name = FIELD_NAMES[field] ?? field;
+        const along = /^companions\[(\d+)\]$/.exec(field);
+        const name = along
+          ? `người đi cùng ${String(Number(along[1]) + 1)}`
+          : (FIELD_NAMES[field] ?? field);
         const text =
           f.code === "duplicate" && field === "customer_id"
             ? "khách này đã có trong nhóm."
@@ -195,6 +201,8 @@ export function BookingSheet({
         : opens,
   );
   const [note, setNote] = useState(editing?.note ?? "");
+  // People who come along, known only by a note (round 6 Q-U5): never served or charged.
+  const [companions, setCompanions] = useState<string[]>([]);
   const [attempted, setAttempted] = useState(false);
   // One key per booking, kept across retries so a resend never books twice.
   const [key] = useState(() => crypto.randomUUID());
@@ -253,13 +261,25 @@ export function BookingSheet({
         staff_id: p.staffId || null,
         duration_min: minutesOfPerson(p),
       });
+      const along = companionNotes(companions);
+      const withCompanions = along.length > 0 ? { companions: along } : {};
       if (people.length === 1)
         return bookAppointment(
-          { ...person(first), starts_at, note: note.trim() || null },
+          {
+            ...person(first),
+            starts_at,
+            note: note.trim() || null,
+            ...withCompanions,
+          },
           key,
         );
       const group = await bookGroup(
-        { starts_at, note: note.trim() || null, people: people.map(person) },
+        {
+          starts_at,
+          note: note.trim() || null,
+          people: people.map(person),
+          ...withCompanions,
+        },
         key,
       );
       const opened = group.appointments[0];
@@ -310,8 +330,6 @@ export function BookingSheet({
     c,
     items: (allServices.data ?? []).filter((s) => s.category_id === c.id),
   }));
-  const field =
-    "min-h-11 w-full rounded-[6px] border border-border bg-surface px-3";
   const startOptions = Array.from(
     { length: Math.max(0, (closes - opens) / slot) },
     (_, i) => opens + i * slot,
@@ -328,26 +346,25 @@ export function BookingSheet({
           <button type="button" className="btn btn-secondary" onClick={onClose}>
             Thôi
           </button>
+          {/* Always pressable (round 5): a click with something missing names it. */}
           <button
             type="submit"
             form="booking-form"
             className="btn btn-primary"
-            disabled={save.isPending}
+            aria-busy={save.isPending}
           >
-            {save.isPending
-              ? "Đang lưu…"
-              : editing
-                ? "Lưu thay đổi"
-                : people.length > 1
-                  ? `Đặt lịch ${String(people.length)} người`
-                  : "Đặt lịch"}
+            {editing
+              ? "Lưu thay đổi"
+              : people.length > 1
+                ? `Đặt lịch ${String(people.length)} người`
+                : "Đặt lịch"}
           </button>
         </>
       }
     >
       <form
         id="booking-form"
-        className="grid gap-3"
+        className="appt-form"
         noValidate
         onSubmit={(e) => {
           e.preventDefault();
@@ -375,20 +392,20 @@ export function BookingSheet({
               d,
               chosen.map((c) => c.duration),
             );
-            return m ? `${String(m)}′` : "kèm";
+            return m ? `${String(m)} phút` : "kèm";
           };
-          const legend = people.length > 1 ? `Người ${String(i + 1)}` : "Khách";
+          const many = people.length > 1;
+          const legend = many ? `Người ${String(i + 1)}` : "Khách";
+          const suffix = many ? ` · ${legend}` : "";
+          const id = (what: string) => `booking-${what}-${String(p.key)}`;
           return (
-            <fieldset
-              key={p.key}
-              className={`grid gap-2 ${people.length > 1 ? "rounded-[10px] border border-border p-3" : ""}`}
-            >
-              <legend className="flex w-full items-center justify-between gap-2 text-sm font-semibold">
+            <fieldset key={p.key} className="appt-person">
+              <legend className="appt-person-head">
                 <span>{legend}</span>
-                {people.length > 1 && (
+                {many && (
                   <button
                     type="button"
-                    className="text-sm font-normal underline"
+                    className="btn btn-ghost"
                     onClick={() => {
                       setPeople((ps) => ps.filter((x) => x.key !== p.key));
                     }}
@@ -425,19 +442,19 @@ export function BookingSheet({
                   </div>
                   {p.who === "customer" &&
                     (p.customer ? (
-                      <p className="flex flex-wrap items-center gap-2">
+                      <p className="appt-chosen-person">
                         <strong>
                           <CustomerName
                             name={p.customer.full_name}
                             gender={p.customer.gender}
                           />
                         </strong>
-                        <span className="text-sm text-text-muted tabular-nums">
+                        <span className="appt-hint tabular-nums">
                           {p.customer.phone}
                         </span>
                         <button
                           type="button"
-                          className="underline"
+                          className="btn btn-ghost"
                           onClick={() => {
                             change(p.key, { customer: null });
                           }}
@@ -461,51 +478,57 @@ export function BookingSheet({
                       />
                     ))}
                   {p.who === "guest" && (
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <label className="grid gap-1 text-sm">
-                        <span>Tên khách</span>
+                    <div className="appt-fields">
+                      <div className="field">
+                        <label htmlFor={id("guest-name")}>Tên khách</label>
                         <input
-                          className={field}
+                          id={id("guest-name")}
+                          className="appt-input"
                           value={p.guestName}
                           maxLength={200}
+                          autoComplete="off"
                           onChange={(e) => {
                             change(p.key, { guestName: e.target.value });
                           }}
                         />
-                      </label>
-                      <label className="grid gap-1 text-sm">
-                        <span>Số điện thoại</span>
+                      </div>
+                      <div className="field">
+                        <label htmlFor={id("guest-phone")}>Số điện thoại</label>
                         <input
-                          className={field}
+                          id={id("guest-phone")}
+                          className="appt-input"
                           inputMode="tel"
+                          autoComplete="off"
                           value={p.guestPhone}
                           onChange={(e) => {
                             change(p.key, { guestPhone: e.target.value });
                           }}
                         />
-                      </label>
+                      </div>
                     </div>
                   )}
                 </>
               )}
 
-              <div className="grid gap-2">
-                <span className="text-sm font-semibold">
-                  Dịch vụ (tối đa {MAX_SERVICES})
-                </span>
+              <div className="field">
+                {/* The group's visible label; the picker itself is named "Thêm dịch vụ". */}
+                <span>Dịch vụ</span>
                 {chosen.length > 0 && (
                   <ul
-                    className="flex flex-wrap gap-2"
-                    aria-label={`Dịch vụ đã chọn${people.length > 1 ? ` · ${legend}` : ""}`}
+                    className="appt-services"
+                    aria-label={`Dịch vụ đã chọn${suffix}`}
                   >
                     {chosen.map((s, j) => (
-                      <li
-                        key={`${s.id}-${String(j)}`}
-                        className="badge badge-muted"
-                      >
-                        {s.name} ({chipMinutes(s.duration)})
+                      <li key={`${s.id}-${String(j)}`}>
+                        <span>
+                          {s.name}
+                          <span className="appt-minutes">
+                            {chipMinutes(s.duration)}
+                          </span>
+                        </span>
                         <button
                           type="button"
+                          className="btn btn-ghost btn-icon"
                           aria-label={`Bỏ ${s.name}`}
                           onClick={() => {
                             change(p.key, {
@@ -515,62 +538,65 @@ export function BookingSheet({
                             });
                           }}
                         >
-                          <Icon name="x" className="size-4" />
+                          <Icon name="x" />
                         </button>
                       </li>
                     ))}
                   </ul>
                 )}
                 {p.serviceIds.length < MAX_SERVICES && (
-                  <label className="grid gap-1 text-sm">
-                    <span className="sr-only">
-                      Thêm dịch vụ{people.length > 1 ? ` · ${legend}` : ""}
-                    </span>
-                    <select
-                      className={field}
-                      value=""
-                      onChange={(e) => {
-                        // Picking is adding (round 5: a pick that waited for "Thêm" was lost).
-                        const id = e.target.value;
-                        if (id)
-                          change(p.key, { serviceIds: [...p.serviceIds, id] });
-                      }}
-                    >
-                      <option value="">
-                        {allServices.isPending
-                          ? "Đang tải bảng giá…"
-                          : chosen.length > 0
-                            ? "+ Thêm dịch vụ khác…"
-                            : "Chọn dịch vụ…"}
-                      </option>
-                      {groups
-                        .filter((g) => g.items.length > 0)
-                        .map((g) => (
-                          <optgroup key={g.c.id} label={g.c.name}>
-                            {g.items.map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.name}
-                                {s.duration_min
-                                  ? ` · ${String(s.duration_min)} phút`
-                                  : ""}
-                              </option>
-                            ))}
-                          </optgroup>
-                        ))}
-                    </select>
-                  </label>
+                  <select
+                    id={id("service")}
+                    aria-label={`Thêm dịch vụ${suffix}`}
+                    className="appt-input"
+                    value=""
+                    aria-describedby={id("service-hint")}
+                    onChange={(e) => {
+                      // Picking is adding (round 5: a pick that waited for "Thêm" was lost).
+                      const picked = e.target.value;
+                      if (picked)
+                        change(p.key, {
+                          serviceIds: [...p.serviceIds, picked],
+                        });
+                    }}
+                  >
+                    <option value="">
+                      {allServices.isPending
+                        ? "Đang tải bảng giá…"
+                        : chosen.length > 0
+                          ? "+ Thêm dịch vụ khác…"
+                          : "Chọn dịch vụ…"}
+                    </option>
+                    {groups
+                      .filter((g) => g.items.length > 0)
+                      .map((g) => (
+                        <optgroup key={g.c.id} label={g.c.name}>
+                          {g.items.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                              {s.duration_min
+                                ? ` · ${String(s.duration_min)} phút`
+                                : ""}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                  </select>
                 )}
+                <span id={id("service-hint")} className="appt-hint">
+                  Chọn là thêm, tối đa {MAX_SERVICES} dịch vụ. Dịch vụ không có
+                  thời lượng làm kèm, không cộng giờ.
+                </span>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="grid gap-1 text-sm">
-                  <label htmlFor={`booking-length-${String(p.key)}`}>
-                    Thời lượng{people.length > 1 ? ` · ${legend}` : ""}
-                  </label>
+              <div className="appt-fields">
+                <div className="field">
+                  <label htmlFor={id("length")}>Thời lượng{suffix}</label>
                   <select
-                    id={`booking-length-${String(p.key)}`}
-                    className={field}
+                    id={id("length")}
+                    className="appt-input"
                     value={minutesOfPerson(p)}
+                    aria-describedby={id("length-hint")}
                     onChange={(e) => {
                       const m = Number(e.target.value);
                       change(p.key, { duration: m === auto ? null : m });
@@ -585,33 +611,36 @@ export function BookingSheet({
                       </option>
                     ))}
                   </select>
-                  <span className="text-xs text-text-muted" aria-live="polite">
-                    {p.duration === null ? (
-                      `Theo dịch vụ: ${String(auto)} phút`
-                    ) : (
-                      <>
-                        Đã chỉnh tay · theo dịch vụ: {auto} phút ·{" "}
-                        <button
-                          type="button"
-                          className="underline"
-                          onClick={() => {
-                            change(p.key, { duration: null });
-                          }}
-                        >
-                          Dùng lại theo dịch vụ
-                        </button>
-                      </>
-                    )}
+                  <span
+                    id={id("length-hint")}
+                    className="appt-hint"
+                    aria-live="polite"
+                  >
+                    {p.duration === null
+                      ? `Theo dịch vụ: ${String(auto)} phút`
+                      : `Đã chỉnh tay · theo dịch vụ: ${String(auto)} phút`}
                   </span>
+                  {p.duration !== null && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost justify-self-start"
+                      onClick={() => {
+                        change(p.key, { duration: null });
+                      }}
+                    >
+                      Dùng lại theo dịch vụ
+                    </button>
+                  )}
                 </div>
-                <label className="grid content-start gap-1 text-sm">
-                  <span>
-                    KTV (không bắt buộc)
-                    {people.length > 1 ? ` · ${legend}` : ""}
-                  </span>
+                <div className="field">
+                  <label htmlFor={id("staff")}>
+                    KTV (không bắt buộc){suffix}
+                  </label>
                   <select
-                    className={field}
+                    id={id("staff")}
+                    className="appt-input"
                     value={p.staffId}
+                    aria-invalid={clashing.includes(p) || undefined}
                     onChange={(e) => {
                       change(p.key, { staffId: e.target.value });
                     }}
@@ -623,7 +652,7 @@ export function BookingSheet({
                       </option>
                     ))}
                   </select>
-                </label>
+                </div>
               </div>
             </fieldset>
           );
@@ -632,7 +661,7 @@ export function BookingSheet({
         {!editing && people.length < MAX_PEOPLE && (
           <button
             type="button"
-            className="btn btn-secondary min-h-11 justify-self-start"
+            className="btn btn-secondary justify-self-start"
             onClick={() => {
               setPeople((ps) => [...ps, blank(nextKey.current++)]);
             }}
@@ -641,7 +670,62 @@ export function BookingSheet({
           </button>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        {!editing && (
+          <div className="appt-companions">
+            {companions.map((c, j) => (
+              <div key={j} className="appt-companion">
+                <div className="field">
+                  <label htmlFor={`booking-companion-${String(j)}`}>
+                    Người đi cùng {j + 1}
+                  </label>
+                  <input
+                    id={`booking-companion-${String(j)}`}
+                    className="appt-input"
+                    value={c}
+                    maxLength={100}
+                    placeholder="Chồng của chị Hà"
+                    autoComplete="off"
+                    autoFocus={j === companions.length - 1 && c === ""}
+                    onChange={(e) => {
+                      const text = e.target.value;
+                      setCompanions((list) =>
+                        list.map((x, k) => (k === j ? text : x)),
+                      );
+                    }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-icon"
+                  aria-label={`Bỏ người đi cùng ${String(j + 1)}`}
+                  onClick={() => {
+                    setCompanions((list) => list.filter((_, k) => k !== j));
+                  }}
+                >
+                  <Icon name="x" />
+                </button>
+              </div>
+            ))}
+            {companions.length < MAX_COMPANIONS && (
+              <button
+                type="button"
+                className="btn btn-ghost justify-self-start"
+                onClick={() => {
+                  setCompanions((list) => [...list, ""]);
+                }}
+              >
+                <Icon name="plus" /> Người đi cùng (ghi chú)
+              </button>
+            )}
+            {companions.length > 0 && (
+              <span className="appt-hint">
+                Chỉ ghi chú trên lịch hẹn: không chọn dịch vụ, không tính tiền.
+              </span>
+            )}
+          </div>
+        )}
+
+        <div className="appt-fields">
           <DateField
             label="Ngày hẹn"
             value={day}
@@ -650,10 +734,13 @@ export function BookingSheet({
               if (iso) setDay(iso);
             }}
           />
-          <label className="grid gap-1 text-sm">
-            <span>Giờ hẹn{people.length > 1 ? " (cả nhóm)" : ""}</span>
+          <div className="field">
+            <label htmlFor="booking-start">
+              Giờ hẹn{people.length > 1 ? " (cả nhóm)" : ""}
+            </label>
             <select
-              className={field}
+              id="booking-start"
+              className="appt-input"
               value={start}
               onChange={(e) => {
                 setStart(Number(e.target.value));
@@ -675,37 +762,45 @@ export function BookingSheet({
                 );
               })}
             </select>
-          </label>
+          </div>
         </div>
-        <label className="grid gap-1 text-sm">
-          <span>Ghi chú lịch hẹn (không ghi thông tin sức khỏe)</span>
+        <div className="field">
+          <label htmlFor="booking-note">Ghi chú lịch hẹn</label>
           <textarea
+            id="booking-note"
             rows={2}
             maxLength={500}
             value={note}
+            aria-describedby="booking-note-hint"
             onChange={(e) => {
               setNote(e.target.value);
             }}
-            className="rounded-[6px] border border-border bg-surface p-2"
+            className="appt-input"
           />
-        </label>
-        <p className="text-sm text-text-muted">
-          {formatDate(day)} · {hhmm(start)}–{hhmm(start + longest)} ({longest}{" "}
-          phút){people.length > 1 ? ` · ${String(people.length)} người` : ""} ·
-          chưa thanh toán (thu khi ghi lượt)
+          <span id="booking-note-hint" className="appt-hint">
+            Không ghi thông tin sức khỏe ở đây (ghi ở hồ sơ khách).
+          </span>
+        </div>
+        <p className="appt-recap">
+          <strong>
+            {formatDate(day)} · {hhmm(start)}–{hhmm(start + longest)}
+          </strong>{" "}
+          ({longest} phút)
+          {people.length > 1 ? ` · ${String(people.length)} người` : ""}
+          {companionNotes(companions).length > 0
+            ? ` · ${String(companionNotes(companions).length)} người đi cùng`
+            : ""}{" "}
+          · chưa thanh toán (thu khi ghi lượt)
         </p>
         {clashing.length > 0 && (
-          <p role="status" className="text-sm text-warning-text">
+          <p role="status" className="appt-warn">
             {clashing.map((p) => personLabel(p, people.indexOf(p))).join(", ")}{" "}
             đang cùng KTV với người khác trong nhóm, cùng giờ: chọn KTV khác
             hoặc để “Chưa gán KTV”.
           </p>
         )}
         {overMax && (
-          <p
-            role="status"
-            className="rounded-[10px] bg-warning-bg p-2 text-sm text-warning-text"
-          >
+          <p role="status" className="appt-warn">
             Khung {hhmm(start)} đã có {already}/{max} khách
             {editing
               ? ""
@@ -714,24 +809,16 @@ export function BookingSheet({
           </p>
         )}
         {attempted && missing.length > 0 && (
-          <p
-            ref={missingRef}
-            tabIndex={-1}
-            role="alert"
-            className="text-sm text-danger"
-          >
+          <p ref={missingRef} tabIndex={-1} role="alert" className="appt-error">
             Còn thiếu: {missing.join(", ")}.
           </p>
         )}
         {taken && (
-          <p
-            role="alert"
-            className="flex flex-wrap items-center gap-2 text-sm text-danger"
-          >
+          <p role="alert" className="appt-actions appt-error">
             Số điện thoại của khách mới đã có hồ sơ khách.
             <button
               type="button"
-              className="underline"
+              className="btn btn-secondary"
               onClick={() => {
                 void adoptExisting(taken);
               }}
@@ -741,7 +828,7 @@ export function BookingSheet({
           </p>
         )}
         {save.isError && !taken && (
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="appt-error">
             {bookingErrorText(save.error, cal, people)}
           </p>
         )}
