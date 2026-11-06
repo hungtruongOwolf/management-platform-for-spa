@@ -1,7 +1,7 @@
 ---
 title: Glossary — ubiquitous language (draft)
-updated: 2026-11-05
-sources: [raw/2026-11-04-idea-internal-platform.md, raw/2026-11-05-em-review-round4.md]
+updated: 2026-11-06
+sources: [raw/2026-11-04-idea-internal-platform.md, raw/2026-11-05-em-review-round4.md, raw/2026-11-06-em-upsell-and-convert-to-package.md]
 ---
 
 # Glossary (draft — chốt trong `/idea`)
@@ -24,6 +24,10 @@ Code, DB và API dùng đúng tên tiếng Anh ở cột 2; giao diện dùng ti
 | Gói liệu trình của khách (nói gọn: gói liệu trình) | `CustomerPackage` | Gói khách đã mua: số buổi còn lại, hạn, trạng thái. **Không** gọi là "theo dõi gói" |
 | Lượt phục vụ / Buổi | `Visit` | Một lần khách đến: giờ vào/ra, các dịch vụ, KTV |
 | Dịch vụ dùng thêm | `Visit add-on` | Dịch vụ lẻ phát sinh trong một buổi |
+| Gói bán hôm nay *(draft vòng 6)* | `package_sales[]` của lượt | Gói bán ngay trong giỏ của lượt; "Dùng gói này cho buổi hôm nay" trừ buổi hôm nay từ gói đó ([spec §10](specs/front-desk-and-packages.md)) |
+| Chuyển sang gói liệu trình *(draft vòng 6)* | `convert-to-package` | Lượt lẻ đã trả được thay bằng lượt trừ buổi của gói vừa mua; khách đưa thêm phần chênh |
+| Thêm dịch vụ vào lượt *(draft vòng 6)* | visit addition | Thêm dòng / bán gói vào lượt đã lưu, hóa đơn mới nối `sale.visit_id`; không phải sửa sai |
+| Người trả / người dùng gói *(draft vòng 6)* | `sale.customer_id` / `customer_package.customer_id` | Mua gói cho người khác: hóa đơn ghi người trả, gói thuộc người dùng; không dùng chung (D5) |
 | Lịch hẹn | `Appointment` | Hẹn trước một buổi: Đã đặt (`booked`) → Đã đến (`arrived`) → Hoàn tất (`done`, thành một lượt khách); hoặc Không đến (`no_show`) / Đã hủy (`cancelled`) kèm lý do ([spec](specs/appointments.md)) |
 | Khách vãng lai | walk-in | Khách đến không hẹn trước: ghi thẳng lượt khách, không qua lịch |
 | Khách mới (trong lịch hẹn) | `guest` | Người hẹn chỉ có tên + SĐT, chưa có hồ sơ; tạo hồ sơ khi đến |

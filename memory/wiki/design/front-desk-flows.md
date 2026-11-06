@@ -4,6 +4,8 @@ updated: 2026-11-04
 sources: [product/specs/front-desk-and-packages.md, design/design-system.md]
 ---
 
+> **Vòng 6 (draft, 2026-11-06):** bán gói trong giỏ, "Dùng gói này cho buổi hôm nay", "Chuyển sang gói liệu trình", "Thêm dịch vụ vào lượt" — xem [spec R1-1 §10](../product/specs/front-desk-and-packages.md#10-vòng-6-upsell-trong-lượt-và-chuyển-sang-gói-liệu-trình). Lưu ý: dòng "giỏ chưa lưu được giữ trong sessionStorage" (bảng States chung, 401) **chưa có trong code** (`FrontDeskPage.tsx` giữ giỏ bằng `useState`); §10.4.1 đưa vào phạm vi.
+
 > **Cập nhật 2026-11-04 (EM):** R1 **không có ghi nợ / thu nợ / công nợ** (mọi giao dịch thu đủ) và **không theo dõi giờ ra**. Bỏ qua các phần mô tả những luồng đó bên dưới; spec là nguồn đúng.
 
 # Luồng màn hình quầy (spec R1-1)
