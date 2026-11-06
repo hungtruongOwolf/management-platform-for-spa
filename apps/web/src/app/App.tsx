@@ -17,13 +17,16 @@ export function App({ history }: { history?: RouterHistory }) {
   const [router] = useState(() => createAppRouter(queryClient, history));
   // Tab icons + manifest: once the first screen's paint is reported (app/deferredHead.ts).
   useEffect(() => {
+    let active = true;
     const unsubscribe = router.subscribe("onRendered", () => {
       void afterFirstPaint().then(() => {
-        declareDeferredHead();
+        // An unmounted app (or a torn-down test DOM) has nothing to declare into.
+        if (active) declareDeferredHead();
       });
     });
     const timer = setTimeout(declareDeferredHead, FIRST_SCREEN_FALLBACK_MS);
     return () => {
+      active = false;
       unsubscribe();
       clearTimeout(timer);
     };
