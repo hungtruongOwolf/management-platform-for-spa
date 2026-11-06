@@ -24,6 +24,9 @@ Code, DB và API dùng đúng tên tiếng Anh ở cột 2; giao diện dùng ti
 | Gói liệu trình của khách (nói gọn: gói liệu trình) | `CustomerPackage` | Gói khách đã mua: số buổi còn lại, hạn, trạng thái. **Không** gọi là "theo dõi gói" |
 | Lượt phục vụ / Buổi | `Visit` | Một lần khách đến: giờ vào/ra, các dịch vụ, KTV |
 | Dịch vụ dùng thêm | `Visit add-on` | Dịch vụ lẻ phát sinh trong một buổi |
+| Hủy lượt | `POST /visits/{id}/void` | Lượt ghi nhầm bị hủy hẳn: buổi cộng lại, tiền ghi bút toán đảo, lượt còn trong lịch sử "Đã hủy" |
+| Sửa lượt | `PATCH /visits/{id}` · `POST /visits/{id}/correct` | Chỉnh lượt đã ghi. Sửa trực tiếp (KTV, giờ làm, ghi chú) giữ lượt; đụng tiền/buổi thì **hủy-ghi lại**: lượt cũ "Đã sửa" (`corrected_by_visit_id`), lượt mới nối `corrects_visit_id`. Không gọi là "hủy" trong báo cáo |
+| Chênh lệch khi sửa | `VisitCorrected.difference` | "Thu thêm …" / "Hoàn …" / "Không đổi tiền" = tổng mới − tổng cũ |
 | Lịch hẹn | `Appointment` | Hẹn trước một buổi: Đã đặt (`booked`) → Đã đến (`arrived`) → Hoàn tất (`done`, thành một lượt khách); hoặc Không đến (`no_show`) / Đã hủy (`cancelled`) kèm lý do ([spec](specs/appointments.md)) |
 | Khách vãng lai | walk-in | Khách đến không hẹn trước: ghi thẳng lượt khách, không qua lịch |
 | Khách mới (trong lịch hẹn) | `guest` | Người hẹn chỉ có tên + SĐT, chưa có hồ sơ; tạo hồ sơ khi đến |
