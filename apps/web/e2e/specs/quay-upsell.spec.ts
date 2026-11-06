@@ -107,7 +107,7 @@ test.describe("vòng 6: bán gói trong giỏ, giỏ nháp, chuyển sang gói",
     const today = page.getByRole("table", { name: "Lượt khách hôm nay" });
     const row = today.getByRole("row").filter({ hasText: f.name }).first();
     await expect(row).toContainText("1.200.000đ");
-    await row.getByRole("button", { name: new RegExp(f.name) }).click();
+    await row.getByRole("button", { name: new RegExp(`^${f.name}`) }).click();
     const details = today.getByTestId("visit-details");
     await expect(details).toContainText(f.planName);
     await expect(details).toContainText("Người chốt: KTV E2E");
@@ -177,6 +177,10 @@ test.describe("vòng 6: bán gói trong giỏ, giỏ nháp, chuyển sang gói",
     await expect(page.getByText(`Đã chuyển lượt của ${f.name}`)).toBeVisible();
 
     // The corrected visit is the current one: add a service to it (its own sale, no reason).
+    // Wait for the refetched day: the old visit now reads "Đã sửa".
+    await expect(
+      today.getByRole("row").filter({ hasText: f.name }).filter({ hasText: "Đã sửa" }),
+    ).toHaveCount(1);
     const current = today
       .getByRole("row")
       .filter({ hasText: f.name })
