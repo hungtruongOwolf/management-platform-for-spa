@@ -603,6 +603,12 @@
       opacity var(--dur-base) var(--ease-out),
       transform var(--dur-base) var(--ease-out);
   }
+  /* The idle live region stays in the accessibility tree (announcements stay reliable) but has no
+   * box, so it never sits over a control (axe target-size). */
+  .desk-toast:empty {
+    padding: 0;
+    box-shadow: none;
+  }
   .desk-toast.is-shown {
     opacity: 1;
     transform: translate(-50%, 0);
