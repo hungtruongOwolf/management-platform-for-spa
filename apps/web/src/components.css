@@ -1426,16 +1426,43 @@ h2 .gender-chip {
   align-items: center;
   gap: 8px;
   padding: 0 14px;
+  /* Transparent until chosen, so choosing never changes the button's size. */
+  border: 1px solid transparent;
   border-radius: 8px;
   color: var(--text-muted);
   font-size: 14px;
   font-weight: 500;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
+.segmented > button:not(:disabled, [aria-pressed="true"]):hover {
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  color: var(--text);
+}
+.segmented > button:not(:disabled):active {
+  background: var(--surface);
+}
+/*
+ * Chosen: the whole segment is a raised tile (surface + strong 1px border + shadow) with the label
+ * in primary — one shape that follows the segment's own rounded corners. Round 5 (EM 2026-11-06)
+ * removed the inset gold underline: on a rounded segment it bent at the corners and read as a
+ * broken box. Same weight as the idle state: a bolder label would widen the button and shift its row.
+ */
 .segmented > button[aria-pressed="true"] {
+  border-color: var(--border-strong);
   background: var(--surface);
   color: var(--primary);
-  /* Same weight as the idle state: a bolder label would widen the button and shift its row. */
-  box-shadow: var(--shadow-1), inset 0 -2px 0 var(--accent);
+  box-shadow: var(--shadow-1);
+}
+.segmented > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+@media (prefers-reduced-motion: reduce) {
+  .segmented > button {
+    transition: none;
+  }
 }
 
 /* --- Filter row (features/reports/filters.tsx): search, selects, chips in one wrapping row ----- */
@@ -1529,22 +1556,33 @@ h2 .gender-chip {
 .form-dialog[open] {
   animation: pop-in var(--dur-base) var(--ease-out);
 }
-/* Radio as a tappable row (44px), the selected one marked by an inset gold line, not by weight. */
+/*
+ * Radio/checkbox as a tappable row (44px). Chosen = primary-soft fill + primary border all round
+ * (the native control's own check says it too), not by weight. Round 5 (EM 2026-11-06) dropped the
+ * 3px inset gold line on the left: on the rounded row it bent at the corners and looked broken.
+ */
 .choice {
   display: flex;
   min-height: 44px;
   align-items: center;
   gap: 10px;
-  padding: 0 12px;
+  padding: 6px 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
   font-size: 14px;
   cursor: pointer;
 }
+.choice:hover {
+  border-color: var(--border-strong);
+}
 .choice:has(input:checked) {
+  border-color: var(--primary);
   background: var(--primary-soft);
-  box-shadow: inset 3px 0 0 var(--accent);
+}
+.choice:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 /* --- Tabs (reports: Tổng quan / Sổ doanh thu)------------------------------------------------ */

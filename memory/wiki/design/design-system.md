@@ -170,6 +170,13 @@ Một lớp CSS **không nằm trong layer** (thắng utility) cho vài thuộc 
 
 
 ## Trước / sau
+**Vòng 5, Sổ hằng ngày (`feat/staff-daily-book-polish`):** ảnh 1280/1024/390 × sáng/tối + hover/focus + sheet "Giờ & ghi chú" + form thưởng/phạt, thư mục scratchpad của agent `shots/before-*`, `shots/after-*`.
+| Chỗ | Trước | Sau |
+|---|---|---|
+| Chấm công | "✓ P ĐX K" dồn trái, nửa hàng trống; mục chọn = hộp + gạch vàng cong | 4 lựa chọn bằng chữ lấp hàng (2 × 2 trên điện thoại), mục chọn tô màu trạng thái + ✓ |
+| Chip trạng thái góc phải | lặp lại lựa chọn ("Đi làm", "Nghỉ có phép (P)") | bỏ; chỉ còn "Chưa chấm công", "Đi muộn n phút" |
+| Khen / Phàn nàn | "− 0 +" chữ rời, nút nhỏ | stepper viền, nút 44px, cùng hàng với "+ Ghi thưởng / phạt" trong "Ghi nhận trong ngày" |
+| Segmented toàn app, `.choice` | gạch/vạch vàng inset cong ở góc | ô nổi viền 1px (segmented), viền `primary` cả bốn cạnh (`.choice`) |
 **Vòng 4 (`feat/ui-polish-mobile`):** ảnh 12 màn × 360/390/768/1280/1440 × sáng/tối, scratchpad agent `r4-polish/before`, `r4-polish/after`, trạng thái tương tác `r4-polish/states`.
 | Màn | Trước | Sau |
 |---|---|---|
@@ -279,7 +286,7 @@ Primitives dựng trên shadcn/ui (Radix) trong `packages/ui`, theme bằng toke
 | `.btn` + `.btn-primary` / `.btn-secondary` | nút 44px; nút outline cũ (`border-border`) tự có nền `surface` + hover viền đậm |
 | `.badge` + `-ok` / `-warn` / `-danger` / `-muted` / `-gold` | badge có chấm màu; chữ luôn đi kèm màu |
 | `.data-table` | header dính dưới top bar, kẻ mảnh, hover dòng, `.num` canh phải + `tabular-nums` |
-| `.segmented` | bộ lọc / chọn theme (`aria-pressed`) |
+| `.segmented` | bộ lọc / chọn theme / kiểu xem lịch (`aria-pressed`). State: idle chữ muted trên nền `surface-2`; hover nền `surface` 60 %; pressed nền `surface`; **chọn = ô nổi cả khối** (nền `surface` + viền 1px `border-strong` + `shadow-1`, chữ `primary`, cùng độ đậm); focus vòng vàng bên trong; disabled mờ 55 %. Vòng 5 (2026-11-06) **bỏ gạch chân vàng inset**: trên nút bo góc nó cong ở hai đầu, nhìn như ô vỡ. Viền trong suốt sẵn ở idle nên chọn không đổi kích thước |
 | `.skeleton` | khối chờ có vệt sáng |
 | `.page-title`, `.eyebrow`, `.gold-rule` | tiêu đề Lora nâu đỏ 26/34, nhãn nhóm chữ hoa vàng, đường kẻ vàng |
 | `.icon` | icon nét 24×24 từ sprite `assets/icons.svg` (`<Icon name>`; `<use href>` tới 1 file hash, 1.3 KB gzip, không thư viện icon) |
@@ -303,7 +310,10 @@ Primitives dựng trên shadcn/ui (Radix) trong `packages/ui`, theme bằng toke
 | **LineChart** (`features/reports/LineChart.tsx`) | SVG tự viết (không thư viện): 1 trục, đường 2px nâu đỏ + vùng 10% cho kỳ này, đường xám `border-strong` cho kỳ trước (dạng emphasis, đã chạy validator dataviz cả light/dark); lưới hairline; nhãn giá trị chỉ ở điểm cuối; crosshair + tooltip (giá trị đậm trước, tên sau, line key) khi rê chuột và khi focus ← → Home End; nhãn trục X ≤ 7 (≤ 4 dưới 640px); `role="img"` + bảng chi tiết bên dưới là bản thay thế; đổi kỳ: khung cũ mờ (`.is-refreshing`) |
 | **SplitBar** (`features/reports/charts.tsx`) | thanh chia phần (tiền mặt/CK, gói/lẻ) + chú thích có số và % |
 | **FilterBar / SearchField / FilterSelect** (`features/reports/filters.tsx`) | một hàng lọc phía trên nội dung, xuống dòng trên điện thoại; ô tìm có icon, nút xóa, debounce 300 ms, ≥ 2 ký tự; select native có nhãn; mọi ô viền `border-strong` |
-| **FollowUpForm** + `.form-dialog` + `.choice` | dialog giữa màn (điện thoại: gần full); kết quả là hàng radio 44px, mục chọn = nền `primary-soft` + vạch vàng trong (không đổi chữ đậm) |
+| **FollowUpForm** + `.form-dialog` + `.choice` | dialog giữa màn (điện thoại: gần full); kết quả là hàng radio 44px, mục chọn = nền `primary-soft` + **viền 1px `primary` cả bốn cạnh** (vòng 5 bỏ vạch vàng 3px bên trái, cùng lý do như segmented), không đổi chữ đậm; hover viền `border-strong`; disabled mờ |
+| **AttendanceChoice** (`features/staff/AttendanceChoice.tsx`, `.att-choice`) | chấm công một người một ngày trong Sổ hằng ngày: 4 lựa chọn **bằng chữ** (Đi làm · Nghỉ có phép `P` · Nghỉ đột xuất `ĐX` · Nghỉ không phép `K`; mã là chip phụ, tooltip = quy tắc), 4 cột bằng nhau lấp hàng, **2 × 2 khi thẻ < 560px** (container query). `role=radiogroup` + `role=radio`/`aria-checked`, một tab stop (mục đang chọn), ←/→/↑/↓/Home/End **chỉ di chuyển focus**, Space/Enter mới chọn (mỗi lần chọn là một lần lưu, đi qua 3 mục không được ghi 3 lần). State: chọn = nền màu trạng thái (success/info/warning/danger soft) + viền cùng màu + icon ✓ + chữ đậm (màu không là tín hiệu duy nhất); hover viền `border-strong`; focus vòng vàng bên trong; **đang lưu** = mục vừa bấm hiện đã chọn và nhấp nháy nhẹ (reduced-motion: đứng yên 75 %), các mục khác `aria-disabled` (giữ focus) + live "Đang lưu…"; **lỗi** = quay về giá trị server + "Chưa lưu được: …" ngay trên thẻ; disabled (tháng đã chốt, ngày tương lai) = `disabled`, mục đã chọn vẫn hiện màu |
+| **Counter** (stepper, `features/staff/Counter.tsx`) | nhãn + một khối viền `[− n +]`, nút 44 × 44 icon `minus`/`plus`, số `tabular-nums` giữa hai vạch; hover/pressed/focus bên trong/disabled (0 hoặc 99, tháng chốt); khi đang lưu dùng `aria-disabled` thay `disabled` để không mất focus khi bấm + liên tục |
+| **Thẻ Sổ hằng ngày** (`.book-card`) | 3 dải giống nhau mọi thẻ: (1) tên (xuống dòng, `overflow-wrap:anywhere`) + vai trò · giờ đến/về, bên phải chỉ badge **có thêm thông tin** ("Chưa chấm công", "Đi muộn n phút") + nút "Giờ & ghi chú"; **không** còn chip lặp lại trạng thái đã chọn; (2) AttendanceChoice; (3) "Ghi nhận trong ngày": Khen, Phàn nàn, "+ Ghi thưởng / phạt" một hàng (nút dạt phải; điện thoại: full-width), dưới là các dòng thưởng/phạt (badge · số tiền đậm · lý do) và ghi chú. Mọi nút trong thẻ là `btn-secondary` 44px (thẻ không có hành động chính, chấm công mới là thao tác chính). Thẻ chưa chấm: viền `warning-border` 1px (bỏ vạch trái 4px). Đầu trang: ô "Ngày" và "Tiến độ" cùng dạng nhãn + khối 44px nên thẳng hàng |
 | **Tabs** (`.tabs`) | `role=tablist`, tab chọn = gạch chân vàng 3px `inset box-shadow` |
 | **Timeline** (lịch sử khách) | đường dọc gradient vàng, chấm theo loại (lượt nâu đỏ, mua gói vàng, hủy xám/đỏ), nhóm theo tháng |
 | EmptyState (logo nguyên vẹn 56px + câu hướng dẫn), ErrorState ("Thử lại") | |

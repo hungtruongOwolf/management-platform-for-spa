@@ -157,7 +157,13 @@ function work(): MyWork {
   };
 }
 
-function serve(permissions: string[]) {
+/** Knobs for the daily-book state tests: a closed month, or a custom answer to PUT /attendance. */
+interface ServeOptions {
+  closed?: boolean;
+  attendancePut?: () => Promise<Response>;
+}
+
+function serve(permissions: string[], options: ServeOptions = {}) {
   return vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
     const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const url = new URL(raw, "http://app.test");
@@ -165,8 +171,8 @@ function serve(permissions: string[]) {
     const method = (init?.method ?? "GET").toUpperCase();
     const ok = (json: unknown, status = 200) => Promise.resolve(Response.json(json, { status }));
     if (p === "/me") return ok(ME(permissions));
-    if (p === "/attendance" && method === "PUT") return ok([]);
-    if (p === "/attendance") return ok(sheet());
+    if (p === "/attendance" && method === "PUT") return options.attendancePut ? options.attendancePut() : ok([]);
+    if (p === "/attendance") return ok({ ...sheet(), closed: options.closed ?? false });
     if (p === "/payroll") return permissions.includes("payroll.read") ? ok(payroll()) : ok({ code: "auth.forbidden" }, 403);
     if (p === "/me/staff") return ok({ linked: true, data: { month, closed: false, attendance: lan(), reviews: [], evaluation: null, adjustments: [], payslip: slip() } } satisfies MyStaff);
     if (p === "/me/work") return ok(work());
@@ -268,7 +274,15 @@ describe("/nhan-vien", () => {
     expect(card("s-lan").getByText(/Khách khen tay nghề/)).toBeInTheDocument();
     expect(card("s-mai").getByText("Chưa chấm công")).toBeInTheDocument();
 
-    await userEvent.click(card("s-mai").getByRole("button", { name: "P Nghỉ có phép (P)" }));
+    // Attendance in words, one radiogroup per person; the chosen option says it, no extra chip.
+    const lanChoice = card("s-lan").getByRole("radiogroup", { name: "Chấm công Lê Thị Lan" });
+    expect(within(lanChoice).getAllByRole("radio").map((r) => r.textContent)).toEqual(["Đi làm", "Nghỉ có phépP", "Nghỉ đột xuấtĐX", "Nghỉ không phépK"]);
+    expect(within(lanChoice).getByRole("radio", { name: "Đi làm" })).toHaveAttribute("aria-checked", "true");
+    expect(card("s-lan").getAllByText("Đi làm")).toHaveLength(1);
+    expect(card("s-lan").getByText("Đi muộn 12 phút")).toBeInTheDocument();
+    expect(within(card("s-mai").getByRole("radiogroup")).queryByRole("radio", { checked: true })).not.toBeInTheDocument();
+
+    await userEvent.click(card("s-mai").getByRole("radio", { name: "Nghỉ có phép (P)" }));
     await waitFor(() => {
       expect(puts(spy, "/attendance")).toHaveLength(1);
     });
@@ -290,10 +304,68 @@ describe("/nhan-vien", () => {
     expect(puts(spy, "/attendance")[1]?.body).toEqual({ entries: [{ staff_id: "s-mai", date: today, status: "present" }] });
 
     // Bonus/penalty opens for that person and day, no person picker.
-    await userEvent.click(card("s-mai").getByRole("button", { name: "+ Thưởng / phạt" }));
+    await userEvent.click(card("s-mai").getByRole("button", { name: "Ghi thưởng / phạt" }));
     const dialog = await screen.findByRole("dialog", { name: "Thưởng / phạt · Trần Thị Mai" });
     expect(within(dialog).queryByLabelText("Nhân viên")).not.toBeInTheDocument();
     expect(requests(spy).some((r) => r.url.includes("/payroll"))).toBe(false);
+  });
+
+  it("daily book: arrows move between options without saving; Space or Enter records the focused one", async () => {
+    const spy = serve(MANAGER);
+    at("/nhan-vien");
+    const group = await waitFor(() => card("s-lan").getByRole("radiogroup"));
+    const radios = within(group).getAllByRole("radio");
+    // One tab stop per group: the chosen option.
+    expect(radios.map((r) => r.tabIndex)).toEqual([0, -1, -1, -1]);
+    radios[0]?.focus();
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}");
+    expect(radios[2]).toHaveFocus();
+    await userEvent.keyboard("{ArrowLeft}{End}");
+    expect(radios[3]).toHaveFocus();
+    await userEvent.keyboard("{Home}{ArrowLeft}");
+    expect(radios[3]).toHaveFocus();
+    expect(puts(spy, "/attendance")).toHaveLength(0);
+    await userEvent.keyboard("{ArrowLeft} ");
+    await waitFor(() => {
+      expect(puts(spy, "/attendance")).toHaveLength(1);
+    });
+    expect(puts(spy, "/attendance")[0]?.body).toEqual({ entries: [{ staff_id: "s-lan", date: today, status: "leave_dx" }] });
+  });
+
+  it("daily book: shows the choice while saving, then rolls back and explains on the card when the save fails", async () => {
+    let fail: (r: Response) => void = () => undefined;
+    serve(MANAGER, {
+      attendancePut: () =>
+        new Promise<Response>((resolve) => {
+          fail = resolve;
+        }),
+    });
+    at("/nhan-vien");
+    const group = await waitFor(() => card("s-mai").getByRole("radiogroup"));
+    await userEvent.click(within(group).getByRole("radio", { name: "Nghỉ đột xuất (ĐX)" }));
+    // Saving: the tapped option shows chosen at once, the others ignore taps but keep focus.
+    expect(within(group).getByRole("radio", { name: "Nghỉ đột xuất (ĐX)" })).toHaveAttribute("aria-checked", "true");
+    expect(within(group).getByRole("radio", { name: "Đi làm" })).toHaveAttribute("aria-disabled", "true");
+    expect(within(group).getByRole("radio", { name: "Đi làm" })).toBeEnabled();
+    expect(card("s-mai").getByRole("status")).toHaveTextContent("Đang lưu chấm công Trần Thị Mai");
+    expect(card("s-mai").queryByText("Chưa chấm công")).not.toBeInTheDocument();
+
+    fail(Response.json({ status: 500, code: "internal" }, { status: 500 }));
+    expect(await card("s-mai").findByRole("alert")).toHaveTextContent(/^Chưa lưu được/);
+    expect(within(group).queryByRole("radio", { checked: true })).not.toBeInTheDocument();
+    expect(card("s-mai").getByText("Chưa chấm công")).toBeInTheDocument();
+    expect(card("s-lan").queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("daily book: a closed month shows every choice read-only and no write buttons", async () => {
+    serve(MANAGER, { closed: true });
+    at("/nhan-vien");
+    const group = await waitFor(() => card("s-lan").getByRole("radiogroup"));
+    for (const r of within(group).getAllByRole("radio")) expect(r).toBeDisabled();
+    expect(within(group).getByRole("radio", { name: "Đi làm" })).toHaveAttribute("aria-checked", "true");
+    expect(card("s-lan").getByRole("button", { name: "Thêm khen cho Lê Thị Lan" })).toBeDisabled();
+    expect(card("s-lan").queryByRole("button", { name: "Ghi thưởng / phạt" })).not.toBeInTheDocument();
+    expect(card("s-lan").queryByRole("button", { name: "Giờ & ghi chú" })).not.toBeInTheDocument();
   });
 
   it("manager: the month sheet is a person × day grid with totals and the bonus log", async () => {
