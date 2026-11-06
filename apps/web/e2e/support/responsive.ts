@@ -118,6 +118,11 @@ export async function focusRingsOverText(page: Page, max = 16): Promise<string[]
       if (cs.outlineStyle === "none" || parseFloat(cs.outlineWidth) === 0) continue;
       // The ring's outer edge sits offset + width outside the border (an inset ring: ≤ 0, nothing outside).
       const reach = Math.max(0, parseFloat(cs.outlineWidth) + parseFloat(cs.outlineOffset));
+      // An inset ring is drawn inside the control and cannot reach a neighbour's text.
+      if (reach === 0) {
+        el.blur();
+        continue;
+      }
       const r = el.getBoundingClientRect();
       const ring = { left: r.left - reach, right: r.right + reach, top: r.top - reach, bottom: r.bottom + reach };
       for (const { node, rects } of texts) {
@@ -128,7 +133,10 @@ export async function focusRingsOverText(page: Page, max = 16): Promise<string[]
           // Only the band between the control's border and the ring's outer edge is "ring".
           const inRing = t.right > ring.left + 0.5 && t.left < ring.right - 0.5 && t.bottom > ring.top + 0.5 && t.top < ring.bottom - 0.5;
           const inControl = t.left >= r.left && t.right <= r.right && t.top >= r.top && t.bottom <= r.bottom;
-          if (inRing && !inControl) {
+          // Text hidden under an opaque layer (e.g. content scrolled beneath the phone action bar) is not covered by a ring.
+          const top = inRing && !inControl ? document.elementFromPoint((t.left + t.right) / 2, (t.top + t.bottom) / 2) : null;
+          const seen = top !== null && (owner.contains(top) || top.contains(owner));
+          if (inRing && !inControl && seen) {
             out.push(`ring of "${(el.getAttribute("aria-label") ?? el.textContent).trim().slice(0, 30)}" covers "${node.textContent.trim().slice(0, 30)}"`);
             break;
           }
