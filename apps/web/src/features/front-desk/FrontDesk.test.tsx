@@ -594,11 +594,13 @@ describe("/quay", () => {
     await user.keyboard("{Enter}");
     expect(row).toHaveAttribute("aria-expanded", "true");
     const details = within(list).getByTestId("visit-details");
-    // A package session: "Trừ buổi · còn 4/12" in the payment column, "—" under "Số tiền".
+    // One package session: the details add only what the row lacks (EM 2026-11-06: no repeat of
+    // the service, technician, payment or amount).
     expect(
       within(details).getByText("Trừ buổi · còn 4/12"),
     ).toBeInTheDocument();
-    expect(within(details).getByText("KTV KTV Hoa")).toBeInTheDocument();
+    expect(within(details).queryByText(/KTV Hoa/)).toBeNull();
+    expect(within(details).queryByText(/Đã thanh toán|Tổng cộng/)).toBeNull();
     expect(
       await within(details).findByText(/SĐT 0905 111 222/),
     ).toBeInTheDocument();

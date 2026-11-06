@@ -58,6 +58,20 @@ function methodText(payments: PaymentDto[]): string {
   return methods.has("cash") ? "Tiền mặt" : "Chuyển khoản";
 }
 
+type LineDto = Visit["lines"][number];
+
+/** Who sold a one-off line ("Khách tự chọn" when nobody did). */
+function referrerText(name: string | null | undefined): string {
+  return `Giới thiệu: ${name ?? "Khách tự chọn"}`;
+}
+
+/** "còn 4/12" after a package session; "" when unknown. */
+function sessionsLeft(l: LineDto): string {
+  return l.sessions_left_after != null
+    ? `còn ${String(l.sessions_left_after)}/${String(l.sessions_total ?? "?")}`
+    : "";
+}
+
 /** Packages sold in the visit that still stand (a voided visit keeps them, AC12.4). */
 function soldPackages(v: Visit) {
   return v.package_sales.filter((p) => !p.voided);
@@ -136,6 +150,20 @@ function VisitDetails({ v }: { v: Visit }) {
         : null;
   const backdated = v.business_date < v.created_at.slice(0, 10);
   const phone = customer.data ? `SĐT ${customer.data.phone}` : null;
+  // A breakdown only when the visit has several parts; one line repeats the row (EM 2026-11-06).
+  const breakdown =
+    v.lines.length > 1 || packages.length > 0 || v.discount_amount > 0;
+  const moneyItems =
+    v.lines.filter((l) => l.source === "one_off").length +
+    packages.length +
+    (v.discount_amount > 0 ? 1 : 0);
+  const only = v.lines[0];
+  const single =
+    !breakdown && only
+      ? only.source === "one_off"
+        ? referrerText(only.referrer_name)
+        : `Trừ buổi${sessionsLeft(only) ? ` · ${sessionsLeft(only)}` : ""}`
+      : null;
   return (
     <div className="visit-details" data-testid="visit-details">
       {note && (
@@ -154,51 +182,67 @@ function VisitDetails({ v }: { v: Visit }) {
           }
         />
       )}
-      {v.lines.map((l, i) => (
-        <DetailRow
-          key={l.id}
-          who={i === 0 && !note ? phone : null}
-          main={serviceLabel(l.service_name, l.category_name)}
-          meta={`KTV ${l.staff_name}${l.source === "one_off" ? ` · Giới thiệu: ${l.referrer_name ?? "Khách tự chọn"}` : ""}`}
-          pay={
-            l.source === "package"
-              ? `Trừ buổi${l.sessions_left_after != null ? ` · còn ${String(l.sessions_left_after)}/${String(l.sessions_total ?? "?")}` : ""}`
-              : "Dịch vụ lẻ"
-          }
-          amount={
-            l.source === "one_off" ? formatVnd(l.unit_price * l.qty) : "—"
-          }
-        />
-      ))}
-      {v.discount_amount > 0 && (
-        <DetailRow
-          main="Giảm giá dịch vụ lẻ"
-          meta={v.discount_reason ?? undefined}
-          amount={`−${formatVnd(v.discount_amount)}`}
-        />
-      )}
-      {packages.map((p) => (
-        <DetailRow
-          key={p.sale_id}
-          main={p.description}
-          meta={[
-            `Người chốt: ${p.closer_name ?? "Khách tự chọn"}`,
-            p.beneficiary_name ? `Mua cho ${p.beneficiary_name}` : "",
-            p.voided ? "Hóa đơn gói đã hủy" : "",
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-          pay={`Gói liệu trình${methodText(p.payments) ? ` · ${methodText(p.payments)}` : ""}`}
-          amount={p.voided ? <s>{formatVnd(p.total)}</s> : formatVnd(p.total)}
-        />
-      ))}
-      {visitAmount(v) > 0 && (
-        <DetailRow
-          strong
-          main={v.status === "voided" ? "Đã hoàn" : "Đã thanh toán"}
-          pay={paymentShort(v)}
-          amount={formatVnd(visitAmount(v))}
-        />
+      {breakdown ? (
+        <>
+          {v.lines.map((l, i) => (
+            <DetailRow
+              key={l.id}
+              who={i === 0 && !note ? phone : null}
+              main={serviceLabel(l.service_name, l.category_name)}
+              meta={`KTV ${l.staff_name}${l.source === "one_off" ? ` · ${referrerText(l.referrer_name)}` : ""}`}
+              pay={
+                l.source === "package"
+                  ? `Trừ buổi${sessionsLeft(l) ? ` · ${sessionsLeft(l)}` : ""}`
+                  : "Dịch vụ lẻ"
+              }
+              amount={
+                l.source === "one_off" ? formatVnd(l.unit_price * l.qty) : "—"
+              }
+            />
+          ))}
+          {v.discount_amount > 0 && (
+            <DetailRow
+              main="Giảm giá dịch vụ lẻ"
+              meta={v.discount_reason ?? undefined}
+              amount={`−${formatVnd(v.discount_amount)}`}
+            />
+          )}
+          {packages.map((p) => (
+            <DetailRow
+              key={p.sale_id}
+              main={p.description}
+              meta={[
+                `Người chốt: ${p.closer_name ?? "Khách tự chọn"}`,
+                p.beneficiary_name ? `Mua cho ${p.beneficiary_name}` : "",
+                p.voided ? "Hóa đơn gói đã hủy" : "",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              pay={`Gói liệu trình${methodText(p.payments) ? ` · ${methodText(p.payments)}` : ""}`}
+              amount={
+                p.voided ? <s>{formatVnd(p.total)}</s> : formatVnd(p.total)
+              }
+            />
+          ))}
+          {moneyItems > 1 && (
+            <DetailRow
+              strong
+              main={v.status === "voided" ? "Tổng đã hoàn" : "Tổng cộng"}
+              pay={paymentShort(v)}
+              amount={formatVnd(visitAmount(v))}
+            />
+          )}
+        </>
+      ) : (
+        // One line, nothing sold, no discount: the row already shows the service, technician,
+        // payment and amount, so the details carry only what the row does not.
+        (single || (!note && phone)) && (
+          <DetailRow
+            who={note ? null : phone}
+            main=""
+            meta={single ?? undefined}
+          />
+        )
       )}
       {v.companions.length > 0 && (
         <DetailRow main="Người đi cùng" meta={v.companions.join(", ")} />
