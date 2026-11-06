@@ -138,50 +138,113 @@
     border-color: var(--primary);
     color: var(--primary);
   }
-  /* One person's card: the same three bands in every card so they line up down the list. */
-  .book-card {
+  /*
+   * The day's people: one panel, one row per person split by hairlines (like the monthly
+   * evaluation; EM 2026-11-07: a card per person was far bigger than its content). The list is the
+   * container: rows switch layout by its width, not the viewport's.
+   * - narrow (< 880px): who + "Giờ & ghi chú" / attendance / the day's record, stacked;
+   * - wide: who on the left; attendance + "Giờ & ghi chú" on line 1, the record on line 2.
+   * An error line (rare) goes on its own row under the rest.
+   */
+  .book-list {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 14px;
-    padding: 16px;
-    scroll-margin-top: 80px;
+    padding: 0 16px;
     container-type: inline-size;
   }
-  /* Not recorded yet: a warm 1px border all round + the "Chưa chấm công" badge (no side stripe). */
-  .book-card.is-missing {
-    border-color: var(--warning-border);
-  }
-  .book-card-head {
-    display: flex;
-    flex-wrap: wrap;
+  .book-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "who details"
+      "att att"
+      "rec rec";
     align-items: start;
-    justify-content: space-between;
     gap: 8px 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+    scroll-margin-top: 80px;
   }
-  .book-card-who {
-    min-width: min(100%, 12rem);
-    flex: 1 1 12rem;
+  .book-row:last-child {
+    border-bottom: 0;
   }
-  .book-card-name {
-    font-size: var(--fs-md);
+  /* Name, then the flags on the same line when they fit; role/times always on the line below. */
+  .book-row-who {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 8px;
+    grid-area: who;
+  }
+  .book-row-name {
+    min-width: 0;
     font-weight: 600;
-    line-height: 1.35;
     overflow-wrap: anywhere;
     text-wrap: pretty;
   }
-  .book-card-tools {
+  .book-row-who > .text-sm {
+    flex-basis: 100%;
+    order: 1;
+  }
+  .book-row-flags {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
+    gap: 4px;
   }
-  .book-card-error {
+  .book-row-details {
+    grid-area: details;
+  }
+  .book-row > .att-choice {
+    grid-area: att;
+  }
+  .book-row > .book-record {
+    grid-area: rec;
+  }
+  .book-row-error {
     display: flex;
     align-items: center;
     gap: 6px;
+    grid-column: 1 / -1;
     color: var(--danger);
     font-size: var(--fs-sm);
+  }
+  /* 880 = who 10.5rem + the four options at their words' width (~530) + "Giờ & ghi chú" + gaps. */
+  @container (min-width: 880px) {
+    .book-row {
+      grid-template-columns: 10.5rem minmax(0, 1fr) auto;
+      grid-template-areas:
+        "who att details"
+        "who rec rec";
+      column-gap: 16px;
+    }
+    .book-row-error {
+      grid-column: 2 / -1;
+    }
+    /* Options never narrower than their words: a label never breaks over two lines. */
+    .book-row .att-choice {
+      grid-template-columns: repeat(4, minmax(max-content, 1fr));
+    }
+    .book-row .att-choice > button {
+      padding-inline: 8px;
+    }
+  }
+  /* Beyond phones (the 2 × 2 keeps 44px options): one control scale (rulebook A), track
+     1 + 3 + 36 = 44px with the options 36px inside it. Each option's hit area reaches the track's
+     edge, so a tap still has 44px. */
+  @container (min-width: 561px) {
+    .book-row .att-choice {
+      padding: 3px;
+    }
+    .book-row .att-choice > button {
+      position: relative;
+      min-height: var(--size-control-inner);
+      padding-block: 0;
+    }
+    .book-row .att-choice > button::after {
+      position: absolute;
+      inset: -4px -2px;
+      content: "";
+    }
   }
 
   /* Attendance choice (AttendanceChoice.tsx): four equal worded options filling the row; 2 × 2
@@ -192,7 +255,7 @@
     gap: 4px;
     padding: 4px;
     border: 1px solid var(--border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-control);
     background: var(--surface-2);
   }
   /* Narrow cards: 2 × 2, words only on one line (the code stays in the name and the tooltip). */
@@ -204,6 +267,10 @@
       gap: 4px;
       padding-inline: 6px;
     }
+  }
+  /* Below a wide row the four words share ~150px each: the code goes (it stays in the option's
+     name and tooltip) so "Nghỉ đột xuất" never breaks over two lines (1024px before 2026-11-07). */
+  @container (max-width: 879.98px) {
     .att-choice-code {
       display: none;
     }
@@ -219,7 +286,7 @@
     gap: 6px;
     padding: 4px 10px;
     border: 1px solid transparent;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-inner);
     color: var(--text);
     font-size: var(--fs-base);
     font-weight: 500;
@@ -311,30 +378,30 @@
     }
   }
 
-  /* "Ghi nhận trong ngày": steppers + bonus/penalty on one row, the day's entries under it. */
+  /* The day's record (Khen / Phàn nàn steppers + "Ghi thưởng / phạt"), the day's entries under it.
+     No visible title: the steppers name themselves; the section keeps its accessible name. */
   .book-record {
     display: grid;
     gap: 8px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border);
-  }
-  .book-record-title {
-    color: var(--text-muted);
-    font-size: var(--fs-sm);
-    font-weight: 600;
   }
   .book-record-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 10px 24px;
+    gap: 8px 20px;
   }
   .book-record-add {
     margin-inline-start: auto;
   }
   @container (max-width: 560px) {
     .book-record-row {
-      gap: 10px 16px;
+      gap: 8px 16px;
+    }
+    /* Two steppers do not fit side by side: one per line, label left and stepper right, so both
+       steppers line up. */
+    .book-record-row > .counter {
+      width: 100%;
+      justify-content: space-between;
     }
     .book-record-add {
       width: 100%;
@@ -460,13 +527,14 @@
   }
 
   /* Stepper (Counter.tsx): label, then one bordered [− n +] group with 44 px buttons. */
+  /* The label 8px before its own stepper, for both (EM 2026-11-07: a 4.5rem label box left "Khen"
+     far from its stepper and "Phàn nàn" glued to it). */
   .counter {
     display: inline-flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
   }
   .counter-label {
-    min-width: 4.5rem;
     font-size: var(--fs-label);
     font-weight: 500;
   }
@@ -475,7 +543,7 @@
     align-items: stretch;
     overflow: hidden;
     border: 1px solid var(--border-strong);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-control);
     background: var(--surface);
   }
   .counter-box > button {
@@ -516,6 +584,16 @@
     .counter-box > button {
       transition: none;
     }
+  }
+
+  /* Staff profiles: seven short columns. Each value stays on one line ("16/02/2026", "Kỹ thuật
+     viên"); where the card is narrower (tablet, 1024px with the sidebar) the table scrolls inside
+     it instead of breaking names into three lines. */
+  .profiles-table > .data-table {
+    min-width: 46rem;
+  }
+  .profiles-table :is(th, td) {
+    white-space: nowrap;
   }
 
   /* Monthly evaluation: one panel, one row per person (status by chip, never by a border). */

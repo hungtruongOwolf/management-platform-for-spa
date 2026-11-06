@@ -72,6 +72,28 @@ test.describe("nhân viên", () => {
     await expectAccessible(page, "staff-payslip");
   });
 
+  // EM 2026-11-07 (image 52): a person's card was far taller than its content and "Khen" sat apart
+  // from its stepper. Desktop: one compact row per person; each label 8px before its stepper.
+  test("desktop: one compact row per person in the daily book", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/nhan-vien");
+    const book = page.getByRole("list", { name: /^Sổ ngày/ });
+    const row = book.locator(":scope > li").first();
+    await expect(row.getByRole("radiogroup")).toBeVisible();
+    const height = await row.evaluate((el) => el.getBoundingClientRect().height);
+    expect(height, "row height").toBeLessThanOrEqual(150);
+    for (const group of await row.getByRole("group").all()) {
+      const gap = await group.evaluate((el) => {
+        const label = el.firstElementChild?.getBoundingClientRect();
+        const box = el.lastElementChild?.getBoundingClientRect();
+        return label && box ? Math.round(box.left - label.right) : -1;
+      });
+      expect(gap, "label → stepper").toBe(8);
+    }
+    expect(await sidewaysOverflow(page)).toBe(0);
+    await expectAccessible(page, "staff-daily-book-rows");
+  });
+
   test("phones: daily book and month grid fit 390 px without sideways page scroll", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/nhan-vien");

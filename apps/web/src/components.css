@@ -641,8 +641,8 @@ dialog::backdrop {
  * `.appt-input`. Every field now has the same box: 44px, 16px text (phones never zoom), 1px
  * border-strong, 6px corners, surface fill. Hover/focus/invalid/disabled: styles.css.
  */
-.input,
-:is(.field, .filter-field, .filter-select) > :is(input:not([type="checkbox"], [type="radio"]), select, textarea),
+.input:not(textarea),
+:is(.field, .filter-field, .filter-select) > :is(input:not([type="checkbox"], [type="radio"]), select),
 .date-field > input[type="text"],
 .search-field input,
 :where(select:not([multiple], [size])) {
@@ -656,11 +656,29 @@ dialog::backdrop {
   font-size: var(--fs-field);
   font-weight: 400;
 }
-textarea.input,
-:is(.field, .filter-field) > textarea {
-  min-height: 72px;
+/*
+ * Every textarea, with or without a class (EM 2026-11-07, image 51): the field box above with
+ * room for three lines (2 × 44 = 88px: 3 × 22 + 2 × 10 padding + border), text from the top, and
+ * a vertical-only resize with a quiet grip. Before, the one-line rule above outranked
+ * `textarea.input` (specificity 0,2,1 vs 0,1,1): 44px tall, no top padding.
+ * Hover/focus ring: styles.css, the same as every input.
+ */
+textarea {
+  display: block;
+  width: 100%;
+  min-height: calc(2 * var(--size-control));
   padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-field);
+  font-weight: 400;
   line-height: 22px;
+  resize: vertical;
+}
+textarea::-webkit-resizer {
+  background: var(--resize-grip);
 }
 /* A larger field for the one search of a screen (customer search on /quay, /khach-hang). */
 .input-lg {

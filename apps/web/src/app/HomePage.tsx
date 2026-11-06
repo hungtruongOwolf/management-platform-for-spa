@@ -1,6 +1,6 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { meQuery } from "../features/auth/session";
+import { can, meQuery, type Me } from "../features/auth/session";
 import { spaToday } from "../features/corrections/api";
 import { dailyReportQuery } from "../features/reports/api";
 import { StatCard, StatSkeleton, count, money } from "../features/reports/ui";
@@ -8,17 +8,41 @@ import { BrandLogo } from "./BrandLogo";
 import { canSeeManagement } from "./features";
 import { Icon } from "./Icon";
 import { longDate } from "../lib/format";
-import { navFor, navKey } from "./nav";
+import { navFor, navKey, type NavItem } from "./nav";
 
+/** One line under each shortcut: what the screen is for. Screens without a hint get no shortcut. */
 const HINTS: Record<string, string> = {
   "/quay": "Tìm khách, trừ buổi, thu tiền",
   "/khach-hang": "Tìm khách, hồ sơ, gói liệu trình, lịch sử",
   "/khach-lau-khong-quay-lai": "Khách vắng từ 7 ngày, cần gọi nhắc",
   "/goi-lieu-trinh": "Gói sắp hết hạn, hết buổi, đã hủy",
   "/bao-cao": "Thực thu, khách, lượt theo kỳ; sổ doanh thu",
+  "/khach-cua-toi": "Khách bạn đã làm, lịch hẹn gán cho bạn",
   "/bang-gia": "Dịch vụ theo nhóm, giá Nữ/Nam",
   "/bang-gia/goi": "Số buổi, giá, quà tặng, hạn dùng của từng gói",
+  "/cai-dat": "Giao diện sáng/tối, tài khoản đang đăng nhập",
 };
+
+/**
+ * "/nhan-vien" opens different tabs per permission (StaffPage), so its hint lists only those;
+ * staff who only see their own month get "Công và lương của tôi".
+ */
+function staffHint(me: Me | null): string {
+  const parts = [
+    can(me, "attendance.record") && "chấm công",
+    can(me, "evaluation.record") && "đánh giá",
+    can(me, "payroll.read") && "bảng lương",
+    can(me, "staff.manage") && "hồ sơ nhân viên",
+  ].filter((p): p is string => p !== false);
+  const text = parts.length ? parts.join(", ") : "ngày công, đánh giá, phiếu lương của bạn";
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** The hint of a nav item, or undefined when the item is not a screen of its own (Lịch hẹn is a tab of /quay). */
+function hintFor(item: NavItem, me: Me | null): string | undefined {
+  if (navKey(item) === "/nhan-vien") return staffHint(me);
+  return HINTS[navKey(item)];
+}
 
 function Today() {
   const daily = useQuery(dailyReportQuery(spaToday()));
@@ -61,10 +85,14 @@ function Today() {
 /** "/" — greeting, today's numbers (where the management views exist) and shortcuts by permission. */
 export function HomePage() {
   const { data: me } = useSuspenseQuery(meQuery);
+  // One shortcut per screen: tabs inside a screen (Lịch hẹn) are reached from that screen, and
+  // home is this page.
   const shortcuts = navFor(me)
     .flatMap((g) => g.items)
-    // One shortcut per screen: tabs inside a screen (Lịch hẹn) are reached from that screen.
-    .filter((i) => navKey(i) in HINTS);
+    .flatMap((item) => {
+      const hint = hintFor(item, me);
+      return hint ? [{ item, hint }] : [];
+    });
   return (
     <div className="grid content-start gap-6">
       {/* The whole logo carries the tagline, so the greeting does not repeat it (EM round 3). */}
@@ -96,7 +124,7 @@ export function HomePage() {
           aria-label="Lối tắt"
           className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
         >
-          {shortcuts.map((s) => (
+          {shortcuts.map(({ item: s, hint }) => (
             <Link
               key={s.to}
               to={s.to}
@@ -113,7 +141,7 @@ export function HomePage() {
                   {s.label}
                 </span>
                 <span className="block text-sm text-text-muted">
-                  {HINTS[s.to]}
+                  {hint}
                 </span>
               </span>
               <Icon

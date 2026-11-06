@@ -235,7 +235,7 @@ export function DailyBook({
       {working.length === 0 ? (
         <p className="empty-block">Không có nhân viên nào làm việc ngày này.</p>
       ) : (
-        <ul className="grid gap-3" aria-label={`Sổ ngày ${dayLabel(date)}`}>
+        <ul className="card book-list" aria-label={`Sổ ngày ${dayLabel(date)}`}>
           {working.map((s) => (
             <PersonCard
               key={s.staff_id}
@@ -296,13 +296,15 @@ export function DailyBook({
 }
 
 /**
- * One person's card. Same grid in every card so they line up down the list:
- * 1. head: name + role/times (wraps) · flags that add information (not recorded yet, late) ·
- *    "Giờ & ghi chú";
- * 2. the attendance choice, in words;
- * 3. "Ghi nhận trong ngày": the two steppers and "+ Thưởng / phạt" on one row, the day's
- *    bonuses/penalties and notes as compact rows under it.
- * No chip repeats the chosen status: the filled option already says it.
+ * One person's row in the day's panel (EM 2026-11-07: the card was far bigger than its content).
+ * Same grid areas in every row so they line up down the list (staff.css `.book-row`):
+ * - who: name, role/times, the flags that add information (not recorded yet, late);
+ * - the attendance choice, in words;
+ * - the day's record: Khen / Phàn nàn steppers and "Ghi thưởng / phạt", the day's
+ *   bonuses/penalties and notes as compact rows under it;
+ * - "Giờ & ghi chú".
+ * Wide rows: who on the left; attendance + "Giờ & ghi chú", then the record (two lines). Narrower rows
+ * stack. No chip repeats the chosen status: the filled option already says it.
  */
 function PersonCard({
   staff: s,
@@ -345,26 +347,26 @@ function PersonCard({
   const times = [cell?.check_in && `đến ${cell.check_in}`, cell?.check_out && `về ${cell.check_out}`].filter(Boolean).join(" · ");
   const hasLog = Boolean(cell?.note || review?.note || adjustments.length > 0);
   return (
-    <li id={`book-${s.staff_id}`} className={`card book-card${missing ? " is-missing" : ""}`}>
-      <div className="book-card-head">
-        <div className="book-card-who">
-          <p className="book-card-name">{s.full_name}</p>
-          <p className="text-sm text-text-muted">
-            {s.position}
-            {times && ` · ${times}`}
+    <li id={`book-${s.staff_id}`} className="book-row">
+      <div className="book-row-who">
+        <p className="book-row-name">{s.full_name}</p>
+        <p className="text-sm text-text-muted">
+          {s.position}
+          {times && ` · ${times}`}
+        </p>
+        {(missing || (cell && cell.late_minutes > 0)) && (
+          <p className="book-row-flags">
+            {missing && <span className="badge badge-warn">Chưa chấm công</span>}
+            {cell && cell.late_minutes > 0 && <span className="badge badge-danger">Đi muộn {cell.late_minutes} phút</span>}
           </p>
-        </div>
-        <div className="book-card-tools">
-          {missing && <span className="badge badge-warn">Chưa chấm công</span>}
-          {cell && cell.late_minutes > 0 && <span className="badge badge-danger">Đi muộn {cell.late_minutes} phút</span>}
-          {!readOnly && (
-            <button type="button" className="btn btn-secondary" onClick={onDetails}>
-              <Icon name="clock" className="size-4" />
-              Giờ & ghi chú
-            </button>
-          )}
-        </div>
+        )}
       </div>
+      {!readOnly && (
+        <button type="button" className="btn btn-secondary book-row-details" onClick={onDetails}>
+          <Icon name="clock" className="size-4" />
+          Giờ & ghi chú
+        </button>
+      )}
       {canAttendance && (
         <AttendanceChoice
           name={s.full_name}
@@ -376,14 +378,13 @@ function PersonCard({
         />
       )}
       {error && (
-        <p role="alert" className="book-card-error">
+        <p role="alert" className="book-row-error">
           <Icon name="alert" className="size-4" />
           Chưa lưu được: {error}
         </p>
       )}
       {(canReview || hasLog) && (
         <section className="book-record" aria-label={`Ghi nhận trong ngày, ${s.full_name}`}>
-          <p className="book-record-title">Ghi nhận trong ngày</p>
           {canReview && (
             <div className="book-record-row">
               <Counter

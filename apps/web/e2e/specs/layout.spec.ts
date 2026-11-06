@@ -307,6 +307,27 @@ test("phones: tab bar, filter sheet, cards instead of tables, 44 px targets", as
   }
 });
 
+// EM 2026-11-07 (image 51): a textarea inside `.field` lost to the one-line field rule: 44 px tall,
+// no top padding. Every textarea is the field box with room for three lines and resizes only
+// vertically.
+test("textareas are three-line fields with the control corners", async ({ page }) => {
+  await open(page, "/khach-hang");
+  await page.getByRole("button", { name: "Khách mới", exact: true }).click();
+  const note = page.getByRole("form", { name: "Khách mới" }).getByLabel(/Lưu ý sức khỏe/);
+  await expect(note).toBeVisible();
+  const box = await note.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return {
+      height: el.getBoundingClientRect().height,
+      radius: s.borderTopLeftRadius,
+      paddingTop: s.paddingTop,
+      resize: s.resize,
+    };
+  });
+  expect(box.height).toBeGreaterThanOrEqual(88);
+  expect(box).toMatchObject({ radius: "10px", paddingTop: "10px", resize: "vertical" });
+});
+
 test("focus rings never cover neighbouring text", async ({ page }) => {
   test.setTimeout(5 * 60_000);
   const problems: string[] = [];
