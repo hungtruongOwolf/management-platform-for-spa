@@ -757,6 +757,7 @@ export function FrontDeskPage() {
                 key={searchGeneration}
                 inputRef={searchInput}
                 autoFocus
+                asHeading
                 aside={shortcuts}
                 onSelect={select}
                 onCreate={(typed) => {

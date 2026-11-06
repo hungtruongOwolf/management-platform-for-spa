@@ -1481,7 +1481,8 @@ h2 .gender-chip {
 }
 
 /* Home shortcuts (Tổng quan, the layout the EM kept, review 2026-11-06): a tinted icon tile and the
- * title in primary, on the shared card + card-link. */
+ * title, on the shared card + card-link. The title is text colour and turns primary on hover/focus,
+ * like a linked name (`.name-link`; EM polish round 2: pink titles read as white-vs-pink noise). */
 .shortcut {
   display: flex;
   min-height: 72px;
@@ -1506,8 +1507,12 @@ h2 .gender-chip {
 }
 .shortcut-title {
   display: block;
-  color: var(--primary);
+  color: var(--text);
   font-weight: 600;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.shortcut:is(:hover, :focus-visible) .shortcut-title {
+  color: var(--primary);
 }
 .shortcut-chevron {
   color: var(--text-muted);
@@ -2036,6 +2041,28 @@ h2 .gender-chip {
   align-items: flex-end;
   gap: 12px;
 }
+/* The profile history's date range: two equal fields, on the row of search + kind when there is
+ * room, else on their own row under them (was one field per row in the narrow column). In the phone sheet: one column like any sheet field. */
+.history-filters {
+  display: grid;
+  /* 320px: each date keeps its 156px; on a wide screen the whole filter is one row. */
+  flex: 1 1 320px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 8px;
+}
+.history-filters .date-field > input[type="text"] {
+  min-width: 0;
+}
+.sheet-body .history-filters {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* Its search shares the first row with "Loại" in the ~420px column (the shared 240px minimum
+ * pushed the select onto a row of its own). */
+.search-field.history-search {
+  min-width: min(100%, 180px);
+  flex-basis: 180px;
+}
 .search-field {
   position: relative;
   display: flex;
@@ -2224,6 +2251,22 @@ tr.ledger-day > :is(td, th) {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+/* The label is the panel title on /quay (`asHeading`, the same 17/24 as "Lượt khách đang ghi"
+ * beside it) and a field label in forms (14/500 like .field). EM polish round 2: it was 13px
+ * semibold next to a 52px field. */
+.search-label {
+  font-size: var(--fs-label);
+  font-weight: 500;
+}
+/* "Khách mới" is as tall as the large search field beside it. */
+.search-row > .btn {
+  min-height: var(--size-control-lg);
+}
+/* The toggletip keeps its 44px target but takes the height of its 28px ring in the row, so the
+ * title sits where the next panel's title sits. */
+.search-head > .tip {
+  margin-block: -8px;
 }
 .search-row {
   display: flex;

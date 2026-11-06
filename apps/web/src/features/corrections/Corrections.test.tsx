@@ -500,6 +500,8 @@ describe("voids in the /quay visit list", () => {
     await screen.findByRole("table", { name: "Lượt khách hôm nay" });
     // DateField: always dd/mm/yyyy (round 4), committed on blur.
     const dayField = screen.getByLabelText("Xem ngày");
+    // On the title's row (EM polish round 2): its label is for screen readers only.
+    expect(screen.getByText("Xem ngày")).toHaveClass("sr-only");
     fireEvent.change(dayField, { target: { value: "01/11/2026" } });
     fireEvent.blur(dayField);
     expect(

@@ -435,7 +435,8 @@ export function TodayVisits({
   };
   return (
     <section aria-labelledby="today-title" className="panel">
-      <div className="panel-head items-end">
+      {/* The day picker sits on the title's row (EM polish round 2): no label line above it. */}
+      <div className="panel-head">
         <h2 id="today-title" className="panel-title">
           {isToday
             ? "Lượt khách hôm nay"
@@ -446,6 +447,7 @@ export function TodayVisits({
         </h2>
         <DateField
           label="Xem ngày"
+          hideLabel
           value={day}
           max={todayIso}
           onChange={(iso) => {
@@ -489,7 +491,7 @@ export function TodayVisits({
         <p className="text-text-muted">
           {isToday
             ? "Chưa có khách nào hôm nay. Lượt vừa lưu sẽ hiện ở đây."
-            : "Ngày này không có lượt khách nào. Chọn ngày khác ở ô “Xem ngày”."}
+            : "Ngày này không có lượt khách nào. Chọn ngày khác ở ô ngày phía trên."}
         </p>
       )}
       {today.data && today.data.length > 0 && (

@@ -15,6 +15,7 @@ export function CustomerSearch({
   query = "",
   onQueryChange,
   aside,
+  asHeading = false,
 }: {
   onSelect: (c: CustomerSummary) => void;
   onCreate: (typed: string) => void;
@@ -28,6 +29,10 @@ export function CustomerSearch({
   onQueryChange?: (q: string) => void;
   /** A small control at the right of the label row (front desk: the shortcuts tip). */
   aside?: ReactNode;
+  /** The search is its panel's first block (/quay, /khach-hang): its label takes the panel-title
+   * style, in balance with the large field under it. Elsewhere (a form, a sheet) it is a field
+   * label. */
+  asHeading?: boolean;
 }) {
   const [text, setText] = useState(query);
   const [term, setTerm] = useState(query);
@@ -78,7 +83,10 @@ export function CustomerSearch({
   return (
     <div className="grid gap-2">
       <div className="search-head">
-        <label htmlFor={`${listId}-input`} className="text-sm font-semibold">
+        <label
+          htmlFor={`${listId}-input`}
+          className={asHeading ? "panel-title" : "search-label"}
+        >
           Tìm khách theo SĐT hoặc tên
         </label>
         {aside}
@@ -111,7 +119,7 @@ export function CustomerSearch({
           onClick={() => {
             onCreate(text);
           }}
-          className="btn btn-secondary min-h-13"
+          className="btn btn-secondary"
         >
           <Icon name="plus" className="size-[18px]" />
           Khách mới

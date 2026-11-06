@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blockOf, columnLanes, density } from "./layout";
+import { blockOf, cardLines, columnLanes, gutterBands } from "./layout";
 
 const at = (h: number, m = 0) => h * 60 + m;
 
@@ -59,9 +59,32 @@ describe("day grid event layer (round 6: events float over the grid)", () => {
     expect(lanes.get("b")).toEqual({ lane: 0, lanes: 1 });
   });
 
-  it("short events get a compact layout", () => {
-    expect(density(1)).toBe("compact");
-    expect(density(2)).toBe("short");
-    expect(density(4)).toBe("full");
+  it("a card holds whole lines only: name, then phase, then services", () => {
+    // 15 minutes: one line, the phase dot sits by the name.
+    expect(cardLines(1, 1)).toEqual({ name: 1, meta: 0, services: 0 });
+    // 30 minutes: name + phase.
+    expect(cardLines(2, 2)).toEqual({ name: 1, meta: 1, services: 0 });
+    // 45 minutes alone in its column: two name lines, the phase, one services line.
+    expect(cardLines(3, 1)).toEqual({ name: 2, meta: 1, services: 1 });
+    // 45 minutes sharing the column: the phase and tag may wrap, no room for services.
+    expect(cardLines(3, 2)).toEqual({ name: 2, meta: 2, services: 0 });
+    // An hour sharing the column: one services line under them.
+    expect(cardLines(4, 2)).toEqual({ name: 2, meta: 2, services: 1 });
+    expect(cardLines(8, 1).services).toBe(9);
+    // Three lanes or more: a sliver, one line each.
+    expect(cardLines(4, 3)).toEqual({ name: 1, meta: 1, services: 0 });
+  });
+
+  it("the time gutter has one band per hour, the hour on its first slot", () => {
+    expect(gutterBands(at(9), at(11), 15)).toEqual([
+      { row: 0, span: 4, m: at(9) },
+      { row: 4, span: 4, m: at(10) },
+    ]);
+    // Opens at 08:30 and closes at 10:15: a half-hour band first, a short band last.
+    expect(gutterBands(at(8, 30), at(10, 15), 15)).toEqual([
+      { row: 0, span: 2, m: at(8, 30) },
+      { row: 2, span: 4, m: at(9) },
+      { row: 6, span: 1, m: at(10) },
+    ]);
   });
 });

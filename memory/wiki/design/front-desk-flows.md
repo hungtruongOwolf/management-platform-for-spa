@@ -165,6 +165,18 @@ Nguồn: [EM review vòng 4](../../raw/2026-11-05-em-review-round4.md) mục 1, 
 - "Khách đến cả nhóm": mỗi người một dòng kẻ mảnh, giỏ đang chuẩn bị = skeleton, đã ghi = chip `badge-ok`, thiếu KTV = gợi ý dưới dòng.
 - "Số khách tối đa": ô theo mẫu field (gợi ý "Để trống = không giới hạn…", lỗi dưới ô), nút "Lưu số khách tối đa" `aria-busy`.
 
+**Polish vòng 2 (EM 2026-11-06, [raw](../../raw/2026-11-06-em-review-polish-round2.md), ảnh #47–#50; thay các điểm tương ứng ở trên):**
+- **Cột giờ = một dải mỗi giờ** (`layout.ts` `gutterBands`): giờ ở trên (13px 600), chip "n khách" / "n/max" ở dưới, cùng canh trái. Trước: giờ và chip cùng một hàng 26px → chip "7 khách" chạm mép cột 104px.
+- **Khung lưới ngày `overflow: clip` cả hai trục** (trước chỉ trục x): clip một trục bỏ qua bo góc, nên ô tiêu đề / cột giờ vuông vẽ đè lên góc bo của khung (chỉ thấy khi lưới vừa khung, không cuộn ngang, ví dụ màn ≥ ~1530px hoặc lọc ít KTV). Hàng tiêu đề vẫn dính dưới thanh trên cùng (`clip` không tạo khung cuộn).
+- **Thẻ trên lưới chỉ có dòng nguyên** (`cardLines(cao, số làn)`): tên tối đa 2 dòng (xuống dòng theo từ), rồi **chấm màu phase + chữ phase** + nhãn ("Vãng lai", "Nhóm · n người") dạng cụm từ xuống dòng nguyên cụm (cụm không còn chỗ thì không vẽ, không cắt giữa chữ), rồi dịch vụ với chỗ còn lại. Thẻ 15 phút: chấm + tên. Cột ≥ 3 làn: tên/phase một dòng có "…", không dịch vụ. Trước: ba dòng cắt "Bùi Văn …" / "Xong · Vã…" / "Chăm só…". Tên truy cập (aria-label) và tooltip giữ nguyên đủ giờ, tên, phase, dịch vụ.
+- **Tuần:** khối "giờ · phase" thành giờ + chấm + phase, cụm nguyên; ngày hẹp < 168px thì phase xuống dòng riêng ở **mọi** khối của ngày (container query, các khối cao bằng nhau). Lưới tuần: 7 cột khi mỗi ngày ≥ 124px, hẹp hơn thì ngày xuống hàng (trước: 1024px có sidebar → ngày ~90px, phase/tên bị cắt "Đang l").
+- Sheet lịch hẹn: nút "Chỉ báo đã đến" canh đáy với ô "KTV làm" (trước canh giữa cả nhãn + ô, lệch 14px).
+- **/quay "Lượt khách hôm nay":** ô ngày nằm cùng hàng tiêu đề, bên phải, không dòng nhãn (`DateField hideLabel`: nhãn "Xem ngày" chỉ cho trình đọc màn hình); bảng bắt đầu ngay dưới. Câu trống đổi "…ở ô “Xem ngày”" → "…ở ô ngày phía trên".
+- **/quay "Tìm khách theo SĐT hoặc tên":** nhãn dùng `.panel-title` 17/24 như "Lượt khách đang ghi" (`CustomerSearch asHeading`); nút "?" giữ vùng chạm 44px nhưng chỉ chiếm 28px trong hàng, nên hai tiêu đề panel cùng độ cao. `/khach-hang` cũng vậy (nhãn 14px cạnh ô 48px/18px trông lệch); ở form/sheet (đặt lịch, mua cho người khác) nhãn là nhãn ô 14/500 (`.search-label`, trước 13/600). Nút "Khách mới" cao bằng ô tìm (`--size-control-lg`, trước `min-h-13` 52px cạnh ô 48px).
+- **Hồ sơ khách, bộ lọc lịch sử:** cột hẹp (~420px ở 1280) → hàng 1 ô tìm + "Loại", hàng 2 "Từ ngày" + "Đến ngày" hai ô bằng nhau (`.history-filters`); màn rộng thì cả bộ một hàng. Trước: mỗi ô một hàng. Một hàng ba ô ở 418px thì ô ngày còn 145px, cắt "07/10/202…" → không chọn.
+- **Tổng quan, "Lối tắt":** tiêu đề thẻ màu `text`, chỉ chuyển `primary` khi hover/focus (cùng quy tắc tên `.name-link`); trước luôn `primary` (hồng ở dark).
+- **Hồ sơ khách, thẻ lượt:** "Sửa lượt" là `btn btn-secondary` ở hàng đầu thẻ, bên phải cạnh ngày giờ (như "Sửa" ở Bảng giá); mỗi dòng dịch vụ: chữ bên trái tự xuống dòng, số tiền một cột bên phải không xuống dòng.
+
 ## Vòng 6: giỏ bán gói, thêm dịch vụ, chuyển sang gói ([spec §10](../product/specs/front-desk-and-packages.md))
 **Thứ tự build:** chờ PR #56 (redesign pilot `/quay`) merge, rồi dựng trên component và quy tắc mới của [design-system](design-system.md). Mọi UI mới của vòng này nằm trong chunk lazy (ngân sách khởi động ~124/125 KB gzip đã gần đầy): khối "Gói bán hôm nay", sheet "Bán gói cho lượt này", sheet "Thêm dịch vụ" chỉ tải khi bấm.
 

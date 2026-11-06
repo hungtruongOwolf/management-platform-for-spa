@@ -35,6 +35,7 @@ export function CustomersPage() {
       <PageHeader title="Danh sách khách hàng" titleId="customers-title" />
       <div className="panel">
         <CustomerSearch
+          asHeading
           query={search.q}
           onQueryChange={(q) => {
             setSearch({ q });

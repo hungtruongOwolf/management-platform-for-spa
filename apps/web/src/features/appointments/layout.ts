@@ -76,9 +76,58 @@ export function blockOf(
   return { top: (from - opens) / slot, height: (to - from) / slot };
 }
 
-/** How much text fits: 1 line under two slots, 2 lines under three, then the services too. */
-export function density(heightInSlots: number): "compact" | "short" | "full" {
-  if (heightInSlots < 2) return "compact";
-  if (heightInSlots < 3) return "short";
-  return "full";
+/** Text lines of a day-grid card (calendar.css: 26 px slots, 18 px name lines, 16 px others). */
+export interface CardLines {
+  /** Customer name (bold): up to two lines, never cut mid-word when it wraps. */
+  name: number;
+  /** Phase dot + phase word + tag ("Vãng lai", "Nhóm · 3 người"); 0 = the dot sits by the name. */
+  meta: number;
+  services: number;
+}
+
+const SLOT_PX = 26;
+/** 1 px gap above and below, 1 px border, 3 px padding, top and bottom. */
+const CARD_CHROME_PX = 10;
+const NAME_LINE_PX = 18;
+const LINE_PX = 16;
+
+/**
+ * Whole lines a card holds, so no line is cut through its middle (EM polish round 2: "Bùi Văn …",
+ * "Xong · Vã…" in three cut lines). Name first, then the phase, then the services with what is
+ * left. A card sharing its column with one other is narrow: its phase and tag may take two lines.
+ */
+export function cardLines(heightInSlots: number, lanes: number): CardLines {
+  if (heightInSlots < 2) return { name: 1, meta: 0, services: 0 };
+  if (heightInSlots < 3) return { name: 1, meta: 1, services: 0 };
+  // Three or more lanes leave a sliver: name and phase one line each, cut with "…", no services,
+  // instead of words broken letter by letter.
+  const name = lanes > 2 ? 1 : 2;
+  const meta = lanes === 2 ? 2 : 1;
+  const free =
+    heightInSlots * SLOT_PX -
+    CARD_CHROME_PX -
+    name * NAME_LINE_PX -
+    meta * LINE_PX;
+  const services = lanes > 2 ? 0 : Math.max(0, Math.floor(free / LINE_PX));
+  return { name, meta, services };
+}
+
+/**
+ * The time gutter's bands: one per hour (from its first slot to the next hour), plus a band for
+ * the slots before the first full hour when the spa opens off the hour. Rows are 0-based slots.
+ */
+export function gutterBands(
+  opens: number,
+  closes: number,
+  slot: number,
+): { row: number; span: number; m: number }[] {
+  const rows = Math.max(1, Math.round((closes - opens) / slot));
+  const bands: { row: number; span: number; m: number }[] = [];
+  for (let r = 0; r < rows; r += 1) {
+    const m = opens + r * slot;
+    const last = bands.at(-1);
+    if (last && m % 60 !== 0) last.span += 1;
+    else bands.push({ row: r, span: 1, m });
+  }
+  return bands;
 }

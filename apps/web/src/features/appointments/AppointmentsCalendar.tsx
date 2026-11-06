@@ -33,7 +33,14 @@ import { frontDeskSearch } from "../front-desk/search";
 import { activeStaffQuery, formatDate } from "../sales/api";
 import { BookingSheet, type Draft } from "./BookingSheet";
 import { GroupCheckIn } from "./GroupCheckIn";
-import { type Block, type Lane, blockOf, columnLanes, density } from "./layout";
+import {
+  type Block,
+  type Lane,
+  blockOf,
+  cardLines,
+  columnLanes,
+  gutterBands,
+} from "./layout";
 import {
   type Entry,
   type EntryView,
@@ -218,6 +225,7 @@ export function AppointmentsCalendar({
             </button>
             <DateField
               label="Ngày"
+              hideLabel
               className="filter-field cal-date"
               value={day}
               onChange={(iso) => {
@@ -658,22 +666,21 @@ function DayGrid({
             <span>{g.title}</span>
           </div>
         ))}
-        {Array.from({ length: rows }, (_, r) => {
-          const m = opens + r * slot;
+        {gutterBands(opens, closes, slot).map(({ row, span, m }) => {
           const hour = m % 60 === 0;
           // One number per hour (its busiest slot), not one per 15-minute row (EM round 5).
-          const n = hour
-            ? peakPeople(cal, day, m, Math.min(60, closes - m))
-            : 0;
+          const n = hour ? peakPeople(cal, day, m, Math.min(60, closes - m)) : 0;
           const text = hour && (n > 0 || max !== null) ? slotCount(n, max) : "";
           const full = max !== null && n >= max;
+          // One gutter band per hour (EM polish round 2: the count chip collided with the hour on
+          // one 26 px row): the hour on top, its count chip under it.
           return (
             <div
-              key={`g${String(r)}`}
+              key={`g${String(row)}`}
               className={`cal-gutter ${hour ? "is-hour" : ""}`}
-              style={{ gridColumn: 1, gridRow: r + 2 }}
+              style={{ gridColumn: 1, gridRow: `${String(row + 2)} / span ${String(span)}` }}
             >
-              <span>{hour ? hhmm(m) : ""}</span>
+              {hour && <span>{hhmm(m)}</span>}
               {text && (
                 <span
                   className={`cal-count ${full ? "is-full" : ""}`}
@@ -793,7 +800,8 @@ function useFits(cols: number) {
 
 /**
  * One card of the event layer: as tall as its real time span, `1 / lanes` of the column wide.
- * Name, phase and services, each line cut with "…"; the full text is the tooltip and the name.
+ * Whole lines only (layout.ts `cardLines`): the name (up to two lines), then a phase dot + phase
+ * word + tag, then the services with the room left. The full text is the tooltip and the name.
  */
 function DayEvent({
   e,
@@ -816,21 +824,25 @@ function DayEvent({
   );
   const phase = parts.join(" · ");
   const services = servicesText(e.services);
-  const fit = density(block.height);
+  const lines = cardLines(block.height, lane.lanes);
   const when = range(e.start, e.minutes);
+  const dot = <span aria-hidden="true" className="appt-dot" />;
   return (
     <button
       type="button"
       className="appt cal-event"
       data-phase={e.phase}
       data-kind={e.kind}
-      data-fit={fit}
+      data-fit={lines.meta === 0 ? "compact" : undefined}
       style={
         {
           "--top": String(block.top),
           "--span": String(block.height),
           "--lane": String(lane.lane),
           "--lanes": String(lane.lanes),
+          "--name-lines": String(lines.name),
+          "--meta-lines": String(lines.meta),
+          "--svc-lines": String(lines.services),
         } as React.CSSProperties
       }
       onClick={() => {
@@ -843,22 +855,31 @@ function DayEvent({
         .filter(Boolean)
         .join(" · ")}
     >
-      {fit === "compact" ? (
-        <span className="cal-event-line">
+      {lines.meta === 0 ? (
+        <span className="cal-event-name">
+          {dot}
           <strong>{e.customerName}</strong>
-          <span className="cal-event-phase"> · {phase}</span>
         </span>
       ) : (
         <>
-          {/* The spaces keep the lines apart in the text (accessible name match), not on screen. */}
-          <strong>{e.customerName}</strong>{" "}
-          <span className="cal-event-phase">
-            {phase}
-            {fit === "short" && services && (
-              <span className="cal-event-more"> · {services}</span>
+          {/* The spaces keep the word groups apart in the text, so it reads inside the accessible
+              name (WCAG 2.5.3); flex layout ignores them on screen. */}
+          <strong className="cal-event-name">{e.customerName}</strong>{" "}
+          <span className="cal-event-meta">
+            <span className="cal-event-phase">
+              {dot}
+              {PHASE_LABEL[e.phase]}
+            </span>{" "}
+            {late && <span className="cal-event-phase">quá giờ</span>}{" "}
+            {tag && <span className="cal-event-tag">{tag}</span>}{" "}
+            {/* No services line: they follow as the last word group, where there is room. */}
+            {lines.services === 0 && services && (
+              <span className="cal-event-tag">{services}</span>
             )}
           </span>{" "}
-          {fit === "full" && services && <span>{services}</span>}
+          {lines.services > 0 && services && (
+            <span className="cal-event-services">{services}</span>
+          )}
         </>
       )}
     </button>
@@ -920,9 +941,12 @@ function WeekGrid({
                     onOpen(e.id);
                   }}
                 >
+                  {/* Time and phase wrap as whole groups: a narrow day card no longer cuts the
+                      phase to "Đan…" (EM polish round 2 sweep). */}
                   <span className="cal-chip-when">
-                    {hhmm(v.start)} ·{" "}
+                    <span>{hhmm(v.start)}</span>{" "}
                     <span className="cal-chip-phase">
+                      <span aria-hidden="true" className="appt-dot" />
                       {PHASE_LABEL[v.phase]}
                     </span>
                   </span>
