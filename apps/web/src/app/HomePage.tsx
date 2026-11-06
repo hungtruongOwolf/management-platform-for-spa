@@ -25,12 +25,12 @@ function Today() {
   return (
     <section aria-labelledby="today-title" className="grid content-start gap-3">
       <div className="flex items-center justify-between gap-2">
-        <h2 id="today-title" className="text-lg font-semibold">
+        <h2 id="today-title" className="section-heading">
           Hôm nay
         </h2>
         <Link
           to="/bao-cao"
-          className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-primary hover:underline"
+          className="link inline-flex min-h-11 items-center gap-1 text-sm"
         >
           Xem báo cáo <Icon name="arrow-right" className="size-4" />
         </Link>
@@ -89,7 +89,7 @@ export function HomePage() {
         aria-labelledby="shortcuts-title"
         className="grid content-start gap-3"
       >
-        <h2 id="shortcuts-title" className="text-lg font-semibold">
+        <h2 id="shortcuts-title" className="section-heading">
           Lối tắt
         </h2>
         <nav
@@ -100,16 +100,16 @@ export function HomePage() {
             <Link
               key={s.to}
               to={s.to}
-              className="card card-link group flex min-h-[72px] items-center gap-3 px-4 py-3"
+              className="card card-link shortcut"
             >
               <span
                 aria-hidden="true"
-                className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-primary-soft text-primary"
+                className="shortcut-icon"
               >
                 <Icon name={s.icon} className="size-5" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block font-semibold text-primary">
+                <span className="shortcut-title">
                   {s.label}
                 </span>
                 <span className="block text-sm text-text-muted">
@@ -118,7 +118,7 @@ export function HomePage() {
               </span>
               <Icon
                 name="chevron-right"
-                className="size-5 text-text-muted transition-transform group-hover:translate-x-0.5"
+                className="shortcut-chevron size-5"
               />
             </Link>
           ))}

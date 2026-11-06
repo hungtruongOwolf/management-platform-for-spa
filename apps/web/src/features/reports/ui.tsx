@@ -135,7 +135,7 @@ export function EmptyState({
 
 export function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
-    <div role="alert" className="flex flex-wrap items-center gap-3 rounded-[10px] bg-danger-soft p-4 text-danger">
+    <div role="alert" className="alert">
       <Icon name="alert" />
       <span className="flex-1">{messageFor(error)}</span>
       <button type="button" className="btn btn-secondary" onClick={onRetry}>
@@ -153,7 +153,7 @@ export function ManagementOnly({ children }: { children: ReactNode }) {
   const { data: me } = useSuspenseQuery(meQuery);
   if (!canSeeManagement(me)) {
     return (
-      <p role="alert" className="rounded-[10px] bg-surface-2 p-4 text-text-muted">
+      <p role="alert" className="note">
         Màn hình này chưa mở cho tài khoản của bạn.
       </p>
     );

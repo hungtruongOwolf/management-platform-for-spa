@@ -2,7 +2,9 @@
  * /quay "Ghi lượt khách" (design-system.md "Quy tắc", pilot screen of the 2026-11-06 redesign).
  * Two panels — customer + packages | visit cart — then the day's visits. Inside a panel, rows are
  * divided by hairlines (no card in a card, no side stripes). Classes rather than utility strings:
- * class names in JSX ship in the startup JS.
+ * class names in JSX ship in the startup JS. The shared pieces (.panel, .panel-title, .input,
+ * .field-error, .alert, .callout, .disclosure, .toast, .pay-choice, kbd) live in components.css
+ * since the unification pass (2026-11-06); this file only lays out /quay.
  */
 @layer components {
   .desk {
@@ -30,47 +32,6 @@
     .desk-grid {
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
-  }
-
-  .panel {
-    display: grid;
-    min-width: 0;
-    align-content: start;
-    gap: 16px;
-    padding: 16px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    background: var(--surface);
-    box-shadow: var(--shadow-1);
-  }
-  @media (min-width: 640px) {
-    .panel {
-      padding: 20px;
-    }
-  }
-  .panel-head {
-    display: flex;
-    min-width: 0;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px 12px;
-  }
-  .panel-title {
-    font-size: var(--fs-md);
-    font-weight: 600;
-    line-height: 24px;
-  }
-  .section-label {
-    color: var(--text-muted);
-    font-size: var(--fs-sm);
-    font-weight: 600;
-  }
-  /* Empty states teach the next step: one muted sentence, centred in the panel. */
-  .desk-empty {
-    padding: 8px 0;
-    color: var(--text-muted);
-    text-align: center;
   }
 
   /* --- Day clock: one quiet line, details behind ⓘ -------------------------------------------- */
@@ -115,22 +76,28 @@
    * so the 5px focus ring never covers their text. */
   .tip-button {
     --ring: var(--border-strong);
+    position: relative;
+    isolation: isolate;
     display: inline-grid;
     width: 44px;
     height: 44px;
     flex-shrink: 0;
     place-items: center;
     border-radius: 999px;
-    background: radial-gradient(
-      circle,
-      var(--surface) 13px,
-      var(--ring) 13.5px 14.5px,
-      transparent 15px
-    );
     color: var(--text-muted);
     font-size: var(--fs-sm);
     font-weight: 600;
     line-height: 1;
+  }
+  /* The visible 28px ring, drawn inside the 44px target. */
+  .tip-button::before {
+    position: absolute;
+    inset: 8px;
+    z-index: -1;
+    border: 1px solid var(--ring);
+    border-radius: 999px;
+    background: var(--surface);
+    content: "";
   }
   .tip-button:hover,
   .tip-button[aria-expanded="true"] {
@@ -174,18 +141,6 @@
   }
   .kbd-list dt {
     white-space: nowrap;
-  }
-  kbd {
-    display: inline-block;
-    min-width: 1.6em;
-    padding: 0 5px;
-    border: 1px solid var(--border-strong);
-    border-radius: 4px;
-    background: var(--surface-2);
-    font-family: inherit;
-    font-size: var(--fs-xs);
-    line-height: 18px;
-    text-align: center;
   }
 
   /* --- Selected customer -------------------------------------------------------------------- */
@@ -238,57 +193,14 @@
     color: var(--text);
     font-variant-numeric: tabular-nums;
   }
+  .disclosure .pkg-row {
+    opacity: 0.85;
+  }
   .pkg-note {
     grid-column: 1 / -1;
     color: var(--text-muted);
     font-size: var(--fs-sm);
   }
-  .pkg-closed > summary {
-    display: flex;
-    min-height: 44px;
-    align-items: center;
-    gap: 8px;
-    color: var(--text-muted);
-    font-size: var(--fs-sm);
-    font-weight: 600;
-    cursor: pointer;
-    list-style: none;
-  }
-  .pkg-closed > summary::-webkit-details-marker {
-    display: none;
-  }
-  .pkg-closed > summary .icon {
-    transition: transform var(--dur-fast) var(--ease-out);
-  }
-  .pkg-closed[open] > summary .icon {
-    transform: rotate(90deg);
-  }
-  .pkg-closed > summary:hover {
-    color: var(--text);
-  }
-  .pkg-closed .pkg-row {
-    opacity: 0.85;
-  }
-
-  /* An inline form under a row (reason for using an expired package). */
-  .inline-form {
-    display: grid;
-    gap: 12px;
-    padding: 12px;
-    border: 1px solid var(--warning-border);
-    border-radius: var(--radius-md);
-    background: var(--warning-bg);
-    color: var(--warning-text);
-  }
-  .inline-form .field {
-    color: var(--warning-text);
-  }
-  .button-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
   /* --- Context bar (completing a booking / correcting a visit) ------------------------------- */
   .context-bar {
     position: relative;
@@ -425,28 +337,6 @@
     grid-column: 2;
   }
 
-  /* A field: 44px, 16px text (no phone zoom), border-strong, label above. */
-  .input {
-    width: 100%;
-    min-height: 44px;
-    padding: 0 12px;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-sm);
-    background: var(--surface);
-    color: var(--text);
-    font-size: var(--fs-field);
-  }
-  textarea.input {
-    min-height: 72px;
-    padding: 10px 12px;
-    line-height: 22px;
-  }
-  .field-error {
-    color: var(--danger);
-    font-size: var(--fs-sm);
-    font-weight: 500;
-  }
-
   /* --- Cart options (time, discount): label · value · one ghost action, aligned rows -------- */
   .cart-options {
     display: grid;
@@ -495,54 +385,6 @@
     }
   }
 
-  /* --- Payment method: three radio chips in one row ----------------------------------------- */
-  .pay-choices {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
-    gap: 8px;
-  }
-  .pay-choice {
-    position: relative;
-    display: flex;
-    min-height: 44px;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 6px 8px;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-md);
-    background: var(--surface);
-    font-size: var(--fs-base);
-    line-height: 20px;
-    text-align: center;
-    cursor: pointer;
-  }
-  .pay-choice:hover {
-    border-color: var(--primary);
-  }
-  /* Selected: tint + border + weight + a check mark (never colour alone). */
-  .pay-choice:has(input:checked) {
-    border-color: var(--primary);
-    background: var(--primary-soft);
-    color: var(--primary);
-    font-weight: 600;
-  }
-  .pay-choice:has(input:checked)::before {
-    content: "✓";
-  }
-  .pay-choice:has(input:focus-visible) {
-    outline: 3px solid var(--focus);
-    outline-offset: -3px;
-  }
-  /* The native radio stays in the tab order and the accessibility tree; the chip is its face. */
-  .pay-choice > input {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    opacity: 0;
-    pointer-events: none;
-  }
-
   /* --- Checkout: total + the one primary action, pinned to the bottom of the viewport ------- */
   .checkout {
     position: sticky;
@@ -566,7 +408,7 @@
     .checkout {
       bottom: calc(var(--tabbar-h, 0px) + env(safe-area-inset-bottom));
       border-radius: 0;
-      box-shadow: 0 -6px 16px rgb(0 0 0 / 0.08);
+      box-shadow: var(--shadow-up);
     }
   }
   .checkout-total {
@@ -593,46 +435,4 @@
     font-weight: 400;
   }
 
-  .alert {
-    padding: 10px 12px;
-    border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
-    border-radius: var(--radius-md);
-    background: var(--danger-soft);
-    color: var(--danger);
-    font-size: var(--fs-sm);
-  }
-
-  /* Toast: flat, no side stripe. */
-  .desk-toast {
-    position: fixed;
-    z-index: 50;
-    top: calc(env(safe-area-inset-top) + 72px);
-    left: 50%;
-    max-width: calc(100% - 32px);
-    padding: 12px 16px;
-    border-radius: var(--radius-md);
-    background: var(--chrome-bg);
-    box-shadow: var(--shadow-2);
-    color: var(--chrome-text);
-    opacity: 0;
-    pointer-events: none;
-    transform: translate(-50%, -8px);
-    transition:
-      opacity var(--dur-base) var(--ease-out),
-      transform var(--dur-base) var(--ease-out);
-  }
-  /* The idle live region stays in the accessibility tree (announcements stay reliable) but has no
-   * box, so it never sits over a control (axe target-size). */
-  .desk-toast:empty {
-    padding: 0;
-    box-shadow: none;
-  }
-  .desk-toast.is-shown {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
-  .desk-toast.is-error {
-    background: var(--danger);
-    color: var(--surface);
-  }
 }

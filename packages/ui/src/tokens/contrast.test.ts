@@ -86,6 +86,21 @@ const PAIRS: [string, string, number][] = [
   ["brand-ink", "surface-2", TEXT],
   // Focus ring next to the controls it outlines (WCAG 2.4.13 / 1.4.11).
   ["focus", "surface-2", UI],
+  // Unification pass 2026-11-06: pairs of the shared components every screen now uses.
+  // Callouts (.callout-warn) and calendar phase blocks: body text on the soft status fills.
+  ["text", "warning-bg", TEXT],
+  ["text", "info-soft", TEXT],
+  ["text", "success-soft", TEXT],
+  ["text", "danger-soft", TEXT],
+  ["text-muted", "warning-bg", TEXT],
+  // Ghost buttons and links on a hover / secondary surface.
+  ["primary", "surface-2", TEXT],
+  // Every field (.input, filters, dates, search) is bordered border-strong, on cards and the page.
+  ["border-strong", "bg", UI],
+  // The error toast (.toast.is-error) and the maroon "Thực thu" tile.
+  ["surface", "danger", TEXT],
+  ["chrome-accent", "chrome-bg", TEXT],
+  ["chrome-text-muted", "chrome-bg-2", TEXT],
 ];
 
 describe.each([
@@ -107,7 +122,8 @@ describe("dark theme blocks", () => {
   });
 
   it("dark defines every light token except the shared scales", () => {
-    const shared = /^(radius|dur|ease|font|fs)-/;
+    // Gradients are built from colour tokens (var()), so they follow the theme without a copy.
+    const shared = /^(radius|dur|ease|font|fs|gradient)-/;
     const missing = Object.keys(light).filter((k) => !shared.test(k) && !(k in dark));
     expect(missing).toEqual([]);
   });

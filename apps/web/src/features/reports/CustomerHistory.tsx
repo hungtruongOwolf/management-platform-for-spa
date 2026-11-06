@@ -62,7 +62,7 @@ const DOT: Record<HistoryKind, [IconName, string]> = {
 
 function Fact({ label, value, hint }: { label: string; value: string; hint?: string | undefined }) {
   return (
-    <div className="rounded-[10px] bg-surface-2 p-3">
+    <div className="rounded-md bg-surface-2 p-3">
       <dt className="text-sm text-text-muted">{label}</dt>
       <dd className="mt-0.5 text-lg font-semibold tabular">{value}</dd>
       {hint && <dd className="text-xs text-text-muted">{hint}</dd>}
@@ -121,7 +121,7 @@ function EventBody({ e, correctable }: { e: HistoryEvent; correctable: boolean }
         {v.corrects_visit_id && <li className="text-text-muted">Thay cho lượt ghi trước (đã sửa).</li>}
         {correctable && (
           <li>
-            <Link to="/quay" search={{ sua: v.id }} className="inline-flex min-h-11 items-center font-semibold text-primary underline">
+            <Link to="/quay" search={{ sua: v.id }} className="link inline-flex min-h-11 items-center">
               Sửa lượt
             </Link>
           </li>
@@ -246,7 +246,7 @@ function Timeline({ customerId, permissions }: { customerId: string; permissions
           return (
             <li key={`${e.at}-${String(i)}`} className="relative">
               {heading && <p className="timeline-month">{heading}</p>}
-              <div className={`relative rounded-[10px] border border-border p-3 ${voided ? "bg-surface-2 text-text-muted" : "bg-surface"}`}>
+              <div className={`relative rounded-md border border-border p-3 ${voided ? "bg-surface-2 text-text-muted" : "bg-surface"}`}>
                 <span aria-hidden="true" className={`timeline-dot ${dot} text-on-primary`}>
                   <Icon name={icon} className="size-2.5" />
                 </span>
@@ -341,7 +341,7 @@ function FollowUps({ customerId, customerName, canRecord }: { customerId: string
       {list.isPending && <RowsSkeleton rows={2} />}
       {list.isError && <ErrorState error={list.error} onRetry={() => void list.refetch()} />}
       {list.data && list.data.items.length === 0 && (
-        <p className="khach-empty">Chưa liên hệ lần nào.{canRecord ? " Gọi hoặc nhắn khách xong, bấm “Ghi lần liên hệ” để hẹn lần sau." : ""}</p>
+        <p className="empty-note">Chưa liên hệ lần nào.{canRecord ? " Gọi hoặc nhắn khách xong, bấm “Ghi lần liên hệ” để hẹn lần sau." : ""}</p>
       )}
       {list.data && list.data.items.length > 0 && (
         <ol className="row-list" aria-label="Các lần liên hệ">

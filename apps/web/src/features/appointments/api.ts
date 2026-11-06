@@ -13,6 +13,25 @@ import type {
 } from "@vpyd/api-client";
 import { queryOptions } from "@tanstack/react-query";
 import { api, ifMatch } from "../../lib/api";
+import { addMessages } from "../../lib/errors";
+
+// Error messages only the calendar and booking sheets can meet: here, not in the startup chunk (lib/errors.ts).
+addMessages(
+  {
+    "appointment.staff_busy": "KTV này đã có lịch trùng giờ.",
+    "appointment.outside_opening_hours":
+      "Lịch hẹn phải nằm trọn trong giờ mở cửa: chọn giờ sớm hơn hoặc rút ngắn thời lượng.",
+    "appointment.already_arrived": "Khách đã được đánh dấu là đã đến.",
+    "appointment.not_started": "Chưa tới giờ hẹn, chưa đánh dấu không đến được.",
+  },
+  {
+    not_on_slot: "Giờ hẹn phải đúng ô 15 phút (ví dụ 10:00, 10:15).",
+    too_far: "Chỉ đặt lịch trước tối đa 90 ngày.",
+    customer_or_guest: "Chọn khách có hồ sơ hoặc nhập khách mới.",
+    not_same_day: "Mọi người trong nhóm phải hẹn cùng một ngày.",
+    range_too_long: "Chỉ xem tối đa 14 ngày.",
+  },
+);
 
 /** Calendar of `from..to` (spa business days, inclusive; ≤ 14 days). */
 export function calendarQuery(from: string, to: string = from) {

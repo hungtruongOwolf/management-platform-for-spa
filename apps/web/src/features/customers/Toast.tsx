@@ -23,7 +23,7 @@ export function useToast(): [(text: string) => void, React.ReactNode] {
   }, []);
   return [
     show,
-    <p key="toast" role="status" className={`khach-toast ${text ? "is-shown" : ""}`}>
+    <p key="toast" role="status" className={`toast ${text ? "is-shown" : ""}`}>
       {text}
     </p>,
   ];

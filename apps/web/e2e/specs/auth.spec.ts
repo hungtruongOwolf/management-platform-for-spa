@@ -5,6 +5,7 @@ import {
   signIn,
   submitLogin,
 } from "../support/run";
+import { ownerState } from "../stack";
 
 test.describe("đăng nhập", () => {
   test("login form is accessible", async ({ page }) => {
@@ -61,5 +62,33 @@ test.describe("đăng nhập", () => {
     await page.getByRole("button", { name: "Đăng nhập" }).click();
     await expect(page.getByRole("alert")).toBeVisible();
     await expect(page).toHaveURL(/\/dang-nhap/);
+  });
+});
+
+test.describe("busy API", () => {
+  test.use({ storageState: ownerState });
+
+  // 2026-11-06: a 429 on GET /me used to replace the whole app with the error page. The session
+  // check now retries with backoff and says so calmly; the screen opens once the API answers.
+  test("a rate-limited /me is retried with an inline note, not the error page", async ({
+    page,
+  }) => {
+    let busy = 3;
+    await page.route("**/api/v1/me", (route) =>
+      busy-- > 0
+        ? route.fulfill({
+            status: 429,
+            contentType: "application/problem+json",
+            body: JSON.stringify({ code: "rate_limited" }),
+          })
+        : route.fallback(),
+    );
+    await page.goto("/quay");
+    await expect(page.getByText("Đang thử lại…")).toBeVisible();
+    await expect(
+      page.getByRole("combobox", { name: "Tìm khách theo SĐT hoặc tên" }),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Màn hình này gặp lỗi")).toHaveCount(0);
+    expect(busy).toBeLessThan(0);
   });
 });

@@ -29,7 +29,7 @@ function Card({ title, subtitle, children }: { title: string; subtitle: string; 
 
 function ErrorNote({ message }: { message: string | null }) {
   return message ? (
-    <p role="alert" className="rounded-[10px] bg-danger-soft p-3 text-sm text-danger">
+    <p role="alert" className="alert">
       {message}
     </p>
   ) : null;
@@ -235,7 +235,7 @@ function EnrollStep({ onDone, onRestart }: StepProps) {
           </div>
           <div className="grid content-start gap-1">
             <p className="text-sm font-semibold">Không quét được? Nhập khóa này:</p>
-            <code data-testid="manual-key" className="block rounded-[6px] bg-surface-2 p-2 text-center font-mono text-sm break-all">
+            <code data-testid="manual-key" className="block rounded-sm bg-surface-2 p-2 text-center font-mono text-sm break-all">
               {formatKey(enrollment.data.manual_key)}
             </code>
           </div>
@@ -291,7 +291,7 @@ function RecoveryCodes({ codes, onContinue }: { codes: string[]; onContinue: () 
     >
       <ul aria-label="Mã khôi phục" className="grid grid-cols-2 gap-2 font-mono text-sm">
         {codes.map((c) => (
-          <li key={c} className="rounded-[6px] bg-surface-2 p-2 text-center">
+          <li key={c} className="rounded-sm bg-surface-2 p-2 text-center">
             {c}
           </li>
         ))}

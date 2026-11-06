@@ -3,7 +3,9 @@
  * (design-system.md "Quy tắc"): the fixed type scale (--fs-*), 44 px controls, flat buttons, one
  * status chip set (.badge), no card in a card and no side stripes (a phase is its chip + words),
  * hairlines between rows, skeletons while loading, state-only motion (150–250 ms). Colours come
- * from tokens only, so light and dark both hold.
+ * from tokens only, so light and dark both hold. Since the unification pass the frames are the
+ * shared `.card`, and fields, errors, notes, callouts, the closed disclosure and the facts grid are
+ * the shared classes of components.css; this file lays out the calendar only.
  */
 
 /* A phase's colours for the grid cards: the same roles as its chip (badge-info / -warn / -ok /
@@ -55,11 +57,6 @@
   min-width: 0;
   gap: 4px;
 }
-.cal-title {
-  font-size: var(--fs-md);
-  font-weight: 600;
-  line-height: 24px;
-}
 .cal-summary {
   color: var(--text-muted);
   font-size: var(--fs-sm);
@@ -96,7 +93,6 @@
 }
 .cal-toolbar .segmented > button {
   min-height: 0;
-  font-size: var(--fs-base);
 }
 /* The date field's label is for screen readers only: the buttons beside it say what it is. */
 .cal-date {
@@ -112,40 +108,16 @@
 }
 .cal-date .date-field input {
   width: 9.25rem;
-  font-size: var(--fs-field);
 }
 .cal-who {
   display: flex;
 }
 .cal-who select {
   max-width: 15rem;
-  padding: 0 32px 0 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-  background-color: var(--surface);
-  color: var(--text);
-  font-size: var(--fs-field);
+  padding-right: 32px;
 }
-/* "Ngày đã chốt: chỉ xem" — information, not a box of its own. */
-.cal-note {
-  padding: 8px 12px;
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-}
-.cal-error {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  padding: 12px 16px;
-  border-radius: var(--radius-md);
-  background: var(--danger-soft);
-  color: var(--danger);
-  font-size: var(--fs-base);
-}
-/* Empty day / week / list: a note saying what to do next (the toolbar holds the button). */
+/* Empty day / week / list: a note on a .card saying what to do next (the toolbar holds the
+ * button). */
 .cal-empty {
   display: flex;
   flex-wrap: wrap;
@@ -153,11 +125,7 @@
   justify-content: space-between;
   gap: 8px 16px;
   padding: 12px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
   color: var(--text-muted);
-  font-size: var(--fs-base);
 }
 .cal-empty strong {
   color: var(--text);
@@ -173,10 +141,6 @@
   /* The page scrolls as one (EM round 6, no nested vertical scroll): clip, not a scroll box, so the
      header row sticks under the top bar while the page scrolls. */
   overflow-x: clip;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-1);
 }
 /* More columns than fit: scroll sideways inside the frame, the time gutter stays (sticky left). */
 .cal-scroll.is-wide {
@@ -491,10 +455,6 @@
 .cal-panel {
   display: grid;
   min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-1);
 }
 .cal-list {
   display: grid;
@@ -551,32 +511,9 @@
 .cal-closed {
   border-top: 1px solid var(--border);
 }
+/* The shared .disclosure, inset like the rows of the panel. */
 .cal-closed > summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 48px;
   padding: 0 16px;
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  cursor: pointer;
-  list-style: none;
-}
-.cal-closed > summary::-webkit-details-marker {
-  display: none;
-}
-.cal-closed > summary::before {
-  width: 8px;
-  height: 8px;
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  content: "";
-  transform: rotate(-45deg);
-  transition: transform var(--dur-fast) var(--ease-out);
-}
-.cal-closed[open] > summary::before {
-  transform: rotate(45deg);
 }
 .cal-closed > summary:focus-visible {
   outline-offset: -3px;
@@ -615,42 +552,12 @@
 }
 
 /* ------------------------------------------------------------------ sheets */
-/* Facts of a booking or visit: label column + value, the body text size. */
-.appt-facts {
-  display: grid;
-  grid-template-columns: 6.5rem minmax(0, 1fr);
-  gap: 8px 16px;
-  font-size: var(--fs-base);
-  line-height: 22px;
-}
-.appt-facts dt {
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  line-height: 22px;
-}
-.appt-facts dd {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
 /* A part of a sheet (group, check-in, closing): divided from the one above by a hairline. */
 .appt-section {
   display: grid;
   gap: 12px;
   padding-top: 16px;
   border-top: 1px solid var(--border);
-}
-.appt-section-label {
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  line-height: 18px;
-}
-.appt-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 8px;
 }
 .appt-members {
   display: grid;
@@ -673,21 +580,12 @@
 /* Ghost buttons standing alone in a column (other members' names, "Dùng lại theo dịch vụ",
    "+ Người đi cùng"): their text lines up with the text above, the hover fill reaches out. */
 .appt-members .btn-ghost,
-.appt-actions > .btn-ghost:first-child,
+.appt-sheet .button-row > .btn-ghost:first-child,
 .field > .btn-ghost,
 .appt-companions > .btn-ghost {
   margin-left: -16px;
 }
-.appt-callout {
-  display: grid;
-  gap: 12px;
-  padding: 12px 16px;
-  border-radius: var(--radius-md);
-  background: var(--warning-bg);
-  color: var(--warning-text);
-  font-size: var(--fs-base);
-}
-.appt-callout > .appt-callout-body {
+.callout > .appt-callout-body {
   color: var(--text);
 }
 .appt-sheet {
@@ -696,38 +594,10 @@
 }
 
 /* ------------------------------------------------------------------ forms */
-/* The field pattern (rulebook 5): label above (14 px 500), a 44 px field with 16 px text, the hint
-   or the error under it (13 px). The same as /quay's, scoped to this chunk. */
+/* Fields are the shared .field / .input / .field-hint / .field-error (components.css). */
 .appt-form {
   display: grid;
   gap: 16px;
-}
-.appt-input {
-  width: 100%;
-  min-height: 44px;
-  margin-top: 0;
-  padding: 0 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text);
-  font-size: var(--fs-field);
-  font-weight: 400;
-}
-textarea.appt-input {
-  min-height: 72px;
-  padding: 10px 12px;
-  line-height: 22px;
-}
-.appt-error {
-  color: var(--danger);
-  font-size: var(--fs-sm);
-  font-weight: 500;
-}
-.appt-hint {
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-  font-weight: 400;
 }
 .appt-fields {
   display: grid;
@@ -821,13 +691,6 @@ textarea.appt-input {
 .appt-recap strong {
   font-weight: 600;
 }
-.appt-warn {
-  padding: 8px 12px;
-  border-radius: var(--radius-md);
-  background: var(--warning-bg);
-  color: var(--warning-text);
-  font-size: var(--fs-sm);
-}
 /* "Khách đến cả nhóm": one row per person, divided by hairlines. */
 .appt-checkin {
   display: grid;
@@ -873,7 +736,6 @@ textarea.appt-input {
   .appt-form,
   .appt-person,
   .appt-companions,
-  .appt-callout,
   .appt-checkin > li
 ) {
   grid-template-columns: minmax(0, 1fr);
@@ -885,7 +747,7 @@ textarea.appt-input {
     .appt-form,
     .appt-person,
     .appt-companions,
-    .appt-callout,
+    .callout,
     .appt-checkin > li,
     .field
   )

@@ -16,6 +16,9 @@ Hạ tầng test hardening dựng ở S10. Mọi ticket S6–S9 trở đi cắm 
 | E2E + a11y (axe) | Playwright, `apps/web/e2e/specs/` | `pnpm e2e` |
 | p95 API | `apps/web/e2e/perf/api-latency.spec.ts` | `pnpm e2e:perf` |
 | LCP (Lighthouse CI) | `apps/web/lighthouserc.json` | `pnpm lhci` |
+| Token guard (màu/gradient/cỡ chữ/bo góc chỉ qua token) + contrast | `apps/web/src/app/tokens-only.test.ts`, `packages/ui/src/tokens/contrast.test.ts` | `pnpm -r test` |
+
+Stack test (E2E + Lighthouse) chạy API với `APP_RATE_PER_SECOND=200`, `APP_RATE_BURST=2000` (một trình duyệt trên 127.0.0.1 chạy cả bộ; mặc định 5 rps burst 60 làm `/me` trả 429 giữa chừng). API chỉ nhận hai biến này khi `APP_ENV=development`; staging/production từ chối khởi động nếu có (`config.rs`).
 
 ## 1. Thêm route mới vào authz matrix (bắt buộc)
 

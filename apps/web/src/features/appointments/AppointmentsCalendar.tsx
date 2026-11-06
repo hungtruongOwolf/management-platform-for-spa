@@ -182,7 +182,7 @@ export function AppointmentsCalendar({
     <section aria-labelledby="cal-title" className="cal">
       <div className="cal-bar">
         <div className="cal-heading">
-          <h2 id="cal-title" className="cal-title">
+          <h2 id="cal-title" className="panel-title">
             Lịch hẹn ·{" "}
             {layout === "tuan"
               ? `tuần ${formatDate(from).slice(0, 5)}–${formatDate(to).slice(0, 5)}`
@@ -274,6 +274,7 @@ export function AppointmentsCalendar({
             <label className="cal-who">
               <span className="sr-only">Xem theo KTV</span>
               <select
+                className="input"
                 value={
                   who === "none" ||
                   cal.data.technicians.some((t) => t.id === who)
@@ -311,13 +312,13 @@ export function AppointmentsCalendar({
         </div>
       </div>
       {locked && (
-        <p className="cal-note">
+        <p className="note">
           Ngày đã chốt: chỉ xem. Chủ spa sửa và nhập bù được.
         </p>
       )}
       {cal.isPending && <CalendarSkeleton layout={layout} />}
       {cal.isError && !cal.data && (
-        <div role="alert" className="cal-error">
+        <div role="alert" className="alert">
           <span>Không tải được lịch hẹn. {messageFor(cal.error)}</span>
           <button
             type="button"
@@ -493,7 +494,7 @@ function EmptyHint({
   canBook: boolean;
 }) {
   return (
-    <p className="cal-empty">
+    <p className="card cal-empty">
       <span>
         <strong>
           Chưa có lịch hẹn {when}
@@ -536,7 +537,7 @@ function CalendarSkeleton({ layout }: { layout: "ngay" | "tuan" | "ds" }) {
       </div>
     );
   return (
-    <div aria-hidden="true" className="cal-panel">
+    <div aria-hidden="true" className="card cal-panel">
       <div className="cal-skel-rows">
         {Array.from({ length: 5 }, (_, j) => (
           <div key={j} className="skeleton cal-skel-line" />
@@ -621,7 +622,7 @@ function DayGrid({
   const { frame, wide } = useFits(cols);
 
   return (
-    <div ref={frame} className={`cal-scroll ${wide ? "is-wide" : ""}`}>
+    <div ref={frame} className={`card cal-scroll ${wide ? "is-wide" : ""}`}>
       <div
         className="cal-grid"
         style={
@@ -1005,7 +1006,7 @@ function DayList({
     );
   };
   return (
-    <div className="cal-panel">
+    <div className="card cal-panel">
       {live.length > 0 && (
         <ul
           className="cal-list"
@@ -1015,7 +1016,7 @@ function DayList({
         </ul>
       )}
       {closed.length > 0 && (
-        <details className="cal-closed" open={live.length === 0}>
+        <details className="disclosure cal-closed" open={live.length === 0}>
           <summary>Đã hủy / không đến ({closed.length})</summary>
           <ul
             className="cal-list"
@@ -1157,7 +1158,7 @@ function AppointmentSheet({
       }
     >
       <div className="appt-sheet">
-        <dl className="appt-facts">
+        <dl className="detail-grid">
           <dt>Khách</dt>
           <dd>
             <CustomerName name={a.customer_name} gender={a.customer_gender} />
@@ -1168,7 +1169,7 @@ function AppointmentSheet({
                 <Link
                   to="/khach-hang/$customerId"
                   params={{ customerId: a.customer_id }}
-                  className="underline"
+                  className="link underline"
                 >
                   Mở hồ sơ
                 </Link>
@@ -1209,7 +1210,7 @@ function AppointmentSheet({
 
         {group.length > 1 && (
           <section className="appt-section" aria-label="Cùng nhóm">
-            <p className="appt-section-label">
+            <p className="section-label">
               Cùng nhóm ({group.length} người)
             </p>
             <ul className="appt-members">
@@ -1247,11 +1248,11 @@ function AppointmentSheet({
         )}
 
         {locked && open && (
-          <p className="cal-note">Ngày đã chốt, liên hệ chủ spa.</p>
+          <p className="note">Ngày đã chốt, liên hệ chủ spa.</p>
         )}
 
         {open && !locked && a.is_guest && (
-          <div className="appt-callout">
+          <div className="callout">
             <p>Khách mới: tạo hồ sơ (điền sẵn tên và SĐT) để ghi lượt được.</p>
             {canCreateCustomer && !creating && (
               <button
@@ -1297,12 +1298,12 @@ function AppointmentSheet({
           a.status === "booked" &&
           a.business_date === today && (
             <section className="appt-section" aria-label="Khách đã đến">
-              <div className="appt-actions">
+              <div className="button-row">
                 <div className="field">
                   <label htmlFor={`arrive-staff-${a.id}`}>KTV làm</label>
                   <select
                     id={`arrive-staff-${a.id}`}
-                    className="appt-input"
+                    className="input"
                     value={staffId}
                     onChange={(e) => {
                       setStaffId(e.target.value);
@@ -1335,7 +1336,7 @@ function AppointmentSheet({
         {open && !locked && (
           <section className="appt-section" aria-label="Hủy hoặc không đến">
             {closing === null ? (
-              <div className="appt-actions">
+              <div className="button-row">
                 {a.status === "booked" && started && (
                   <button
                     type="button"
@@ -1387,24 +1388,24 @@ function AppointmentSheet({
                     onChange={(e) => {
                       setReason(e.target.value);
                     }}
-                    className="appt-input"
+                    className="input"
                     aria-invalid={reasonTried && reasonMissing}
                     aria-describedby={`close-reason-${a.id}-msg`}
                   />
                   {reasonTried && reasonMissing ? (
                     <span
                       id={`close-reason-${a.id}-msg`}
-                      className="appt-error"
+                      className="field-error"
                     >
                       Nhập {reasonLabel.toLowerCase()} rồi bấm lại.
                     </span>
                   ) : (
-                    <span id={`close-reason-${a.id}-msg`} className="appt-hint">
+                    <span id={`close-reason-${a.id}-msg`} className="field-hint">
                       Ghi vào lịch hẹn, ai mở lịch cũng thấy.
                     </span>
                   )}
                 </div>
-                <div className="appt-actions">
+                <div className="button-row">
                   <button
                     type="submit"
                     className={
@@ -1431,7 +1432,7 @@ function AppointmentSheet({
           </section>
         )}
         {action.isError && (
-          <p role="alert" className="appt-error">
+          <p role="alert" className="field-error">
             {conflictMessage(action.error, cal)}
           </p>
         )}
@@ -1475,7 +1476,7 @@ function VisitSheet({ v, onClose }: { v: CalendarVisit; onClose: () => void }) {
       }
     >
       <div className="appt-sheet">
-        <dl className="appt-facts">
+        <dl className="detail-grid">
           <dt>Khách</dt>
           <dd>
             <CustomerName name={v.customer_name} gender={v.customer_gender} />
@@ -1483,7 +1484,7 @@ function VisitSheet({ v, onClose }: { v: CalendarVisit; onClose: () => void }) {
             <Link
               to="/khach-hang/$customerId"
               params={{ customerId: v.customer_id }}
-              className="underline"
+              className="link underline"
             >
               Mở hồ sơ
             </Link>
@@ -1495,7 +1496,7 @@ function VisitSheet({ v, onClose }: { v: CalendarVisit; onClose: () => void }) {
           <dt>Thanh toán</dt>
           <dd>{visitPayment(v)}</dd>
         </dl>
-        <p className="appt-hint">
+        <p className="field-hint">
           Lượt ghi thẳng ở “Ghi lượt khách”. Sửa hoặc hủy lượt ở danh sách lượt
           hôm nay.
         </p>
@@ -1559,7 +1560,7 @@ function SlotLimitSheet({
           <input
             id="slot-limit"
             inputMode="numeric"
-            className="appt-input"
+            className="input"
             value={text}
             onChange={(e) => {
               setText(e.target.value);
@@ -1568,19 +1569,19 @@ function SlotLimitSheet({
             aria-describedby="slot-limit-msg"
           />
           {valid ? (
-            <span id="slot-limit-msg" className="appt-hint">
+            <span id="slot-limit-msg" className="field-hint">
               Để trống = không giới hạn. Lịch hiện “số khách / tối đa” ở mỗi
               khung giờ và cảnh báo khi đủ, nhưng vẫn cho đặt khi khách chịu
               chờ.
             </span>
           ) : (
-            <span id="slot-limit-msg" role="alert" className="appt-error">
+            <span id="slot-limit-msg" role="alert" className="field-error">
               Nhập số từ 1 đến 200, hoặc để trống.
             </span>
           )}
         </div>
         {save.isError && (
-          <p role="alert" className="appt-error">
+          <p role="alert" className="field-error">
             {messageFor(save.error)}
           </p>
         )}

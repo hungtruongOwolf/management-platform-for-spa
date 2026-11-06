@@ -116,7 +116,7 @@ export function DailyBook({
     <div className="grid content-start gap-4">
       {closed && <ClosedBanner />}
       {dueMonth && dueMissing.length > 0 && (
-        <div role="status" className="book-banner book-banner-accent">
+        <div role="status" className="book-banner callout">
           <Icon name="alert" className="size-5 shrink-0" />
           <p className="min-w-0 flex-1">
             <strong>Đến hạn đánh giá {monthLabel(dueMonth).toLowerCase()}:</strong> còn {dueMissing.length} người chưa chấm điểm (
@@ -134,7 +134,7 @@ export function DailyBook({
         </div>
       )}
       {pastGaps.length > 0 && (
-        <div role="status" className="book-banner">
+        <div role="status" className="note book-banner">
           <p className="min-w-0 flex-1">
             <strong>Còn {pastGaps.length} ngày chưa chấm đủ</strong> trong {monthLabel(month).toLowerCase()}:
           </p>

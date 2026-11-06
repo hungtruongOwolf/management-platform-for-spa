@@ -31,7 +31,7 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
       cell: (s) => (
         <button
           type="button"
-          className="link-button"
+          className="link"
           onClick={() => {
             setSlip(s);
           }}

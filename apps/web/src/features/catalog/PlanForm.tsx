@@ -127,7 +127,7 @@ export function PlanForm({
       }}
       className="row-form"
     >
-      <h3 className="row-form-title">{title}</h3>
+      <h3 className="panel-title">{title}</h3>
       <div className="form-grid">
         <div className="field">
           <label htmlFor={`${id}-name`}>Tên gói</label>
@@ -273,11 +273,11 @@ export function PlanForm({
           </label>
         </div>
         {mutation.isError && (
-          <p role="alert" className="form-error span-2">
+          <p role="alert" className="alert span-2">
             {messageFor(mutation.error)}
           </p>
         )}
-        <div className="form-actions span-2">
+        <div className="button-row span-2">
           <button type="submit" aria-busy={mutation.isPending || undefined} className="btn btn-primary">
             Lưu mẫu gói
           </button>

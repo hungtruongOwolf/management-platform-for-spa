@@ -27,7 +27,7 @@
   .stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .stat-grid > .stat-card.bg-chrome {
+  .stat-grid > .stat-card-accent {
     grid-column: 1 / -1;
   }
 }
@@ -92,7 +92,7 @@
 }
 .rt-card-sub {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 400;
 }
 .rt-card-sub > span:empty {
@@ -113,7 +113,7 @@
 .rt-card-fields {
   display: grid;
   gap: 4px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
 }
 .rt-card-fields > div {
   display: flex;
@@ -209,13 +209,13 @@
   transform: translateX(-50%);
 }
 .sheet-title {
-  font-size: 18px;
+  font-size: var(--fs-lg);
   font-weight: 600;
-  line-height: 26px;
+  line-height: 28px;
 }
 .sheet-desc {
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: var(--fs-sm);
 }
 .sheet-close {
   flex-shrink: 0;
@@ -343,10 +343,10 @@
   height: 22px;
   place-items: center;
   padding: 0 6px;
-  border-radius: 11px;
+  border-radius: 999px;
   background: var(--primary);
   color: var(--on-primary);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-weight: 600;
 }
 .filter-row-phone {
@@ -383,7 +383,7 @@
   width: 40px;
   height: 40px;
   place-items: center;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
 }
 .date-field-btn:hover {

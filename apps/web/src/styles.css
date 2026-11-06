@@ -38,12 +38,29 @@
   --shadow-float: var(--shadow-2);
   --font-sans: var(--font-ui);
   --font-brand: var(--font-brand);
+  /* Tailwind's text-* steps ARE the rulebook scale (design-system.md § Quy tắc 1), so a utility and
+   * a class can never disagree: xs 12/16 · sm 13/18 · base 15/22 · lg 17/24 · xl 20/28 · 2xl 24/32.
+   * Before 2026-11-06 utilities used Tailwind's own 14/16/18 steps next to the 13/15/17 tokens. */
+  --text-xs: var(--fs-xs);
+  --text-xs--line-height: 16px;
+  --text-sm: var(--fs-sm);
+  --text-sm--line-height: 18px;
+  --text-base: var(--fs-base);
+  --text-base--line-height: 22px;
+  --text-lg: var(--fs-md);
+  --text-lg--line-height: 24px;
+  --text-xl: var(--fs-lg);
+  --text-xl--line-height: 28px;
+  --text-2xl: var(--fs-xl);
+  --text-2xl--line-height: 32px;
 }
 
 body {
   background-color: var(--bg);
   color: var(--text);
   font-family: var(--font-ui);
+  font-size: var(--fs-base);
+  line-height: 22px;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -67,7 +84,7 @@ body {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
-:is(.nav-item, .sidebar-toggle, .tab, .segmented > button, .menu-item, .palette-option, [role="option"], .chart-col, .row-toggle, .sticky-actions-buttons > button, .sticky-actions-buttons > a):focus-visible {
+:is(.nav-item, .sidebar-toggle, .tab, .segmented > button, .menu-item, .palette-option, [role="option"], .row-toggle, .sticky-actions-buttons > button, .sticky-actions-buttons > a):focus-visible {
   outline-offset: -3px;
 }
 /* Text links inside a line (a customer's name above their phone): a slimmer, closer ring. */

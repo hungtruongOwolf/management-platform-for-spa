@@ -84,7 +84,7 @@ export function MyMonth({ month }: { month: string }) {
     <div className="grid content-start gap-6">
       {data.closed && <ClosedBanner />}
       <section className="card grid gap-3 p-4 sm:p-5" aria-labelledby="my-attendance">
-        <h2 id="my-attendance" className="section-title">
+        <h2 id="my-attendance" className="panel-title">
           Ngày công
         </h2>
         <dl className="my-totals">
@@ -98,7 +98,7 @@ export function MyMonth({ month }: { month: string }) {
         <p className="text-sm text-text-muted">✓ đi làm · P nghỉ có phép · ĐX nghỉ đột xuất · K nghỉ không phép · – chưa chấm · gạch đỏ: đi muộn</p>
       </section>
       <section className="card grid gap-2 p-4 sm:p-5" aria-labelledby="my-evaluation">
-        <h2 id="my-evaluation" className="section-title">
+        <h2 id="my-evaluation" className="panel-title">
           Đánh giá
         </h2>
         {data.evaluation ? (
@@ -120,7 +120,7 @@ export function MyMonth({ month }: { month: string }) {
         )}
       </section>
       <section className="grid gap-2" aria-labelledby="my-payslip">
-        <h2 id="my-payslip" className="section-title">
+        <h2 id="my-payslip" className="panel-title">
           Phiếu lương
         </h2>
         {data.payslip ? <PayslipView slip={data.payslip} closed={data.closed} /> : <p className="text-text-muted">Chủ spa chưa nhập lương cho bạn.</p>}

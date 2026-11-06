@@ -122,10 +122,10 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
       )}
       {packages.isError && <ErrorState error={packages.error} onRetry={() => void packages.refetch()} />}
       {packages.data?.length === 0 && (
-        <p className="khach-empty">Chưa có gói liệu trình nào.{canSell ? " Bấm “Bán gói liệu trình” để bán gói đầu tiên cho khách." : ""}</p>
+        <p className="empty-note">Chưa có gói liệu trình nào.{canSell ? " Bấm “Bán gói liệu trình” để bán gói đầu tiên cho khách." : ""}</p>
       )}
       {packages.data && packages.data.length > 0 && open.length === 0 && (
-        <p className="khach-empty">Không còn gói nào đang dùng.{canSell ? " Bấm “Bán gói liệu trình” để bán gói mới." : ""}</p>
+        <p className="empty-note">Không còn gói nào đang dùng.{canSell ? " Bấm “Bán gói liệu trình” để bán gói mới." : ""}</p>
       )}
       {open.length > 0 && (
         <ul aria-label="Gói liệu trình của khách" className="row-list">
@@ -135,9 +135,9 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
         </ul>
       )}
       {closed.length > 0 && (
-        <details className="closed-group">
+        <details className="disclosure">
           <summary>
-            <Icon name="chevron-right" className="size-4" /> Gói đã hết / đã hủy ({closed.length})
+            Gói đã hết / đã hủy ({closed.length})
           </summary>
           <ul aria-label="Gói đã hết hoặc đã hủy" className="row-list">
             {closed.map((p) => (

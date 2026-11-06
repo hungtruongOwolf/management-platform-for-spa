@@ -238,7 +238,7 @@ export function CustomerCard({
         {overriding && (
           <form
             aria-label="Cho dùng tiếp liệu trình hết hạn"
-            className="inline-form"
+            className="callout"
             onSubmit={(e) => {
               e.preventDefault();
               if (reason.trim() === "") return;
@@ -281,9 +281,8 @@ export function CustomerCard({
         )}
 
         {closed.length > 0 && (
-          <details className="pkg-closed">
+          <details className="disclosure">
             <summary>
-              <Icon name="chevron-right" className="size-4" />
               Gói đã hết / đã hủy ({closed.length})
             </summary>
             <ul aria-label="Gói đã hết hoặc đã hủy" className="pkg-list">

@@ -213,7 +213,7 @@ export function GroupCheckIn({
         </div>
       )}
       {carts.isError && (
-        <div role="alert" className="cal-error">
+        <div role="alert" className="alert">
           <span>
             Không chuẩn bị được giỏ của từng người. {messageFor(carts.error)}
           </span>
@@ -243,7 +243,7 @@ export function GroupCheckIn({
                     gender={a.customer_gender}
                   />
                 </strong>
-                <span className="appt-hint tabular-nums">
+                <span className="field-hint tabular-nums">
                   {hhmm(spaMinutes(a.starts_at))} · {a.duration_min} phút
                 </span>
               </p>
@@ -264,14 +264,14 @@ export function GroupCheckIn({
                   Đã ghi lượt{due > 0 ? ` · đã thu ${formatVnd(due)}` : ""}
                 </span>
               ) : skip ? (
-                <p className="appt-warn">{skip}</p>
+                <p className="callout">{skip}</p>
               ) : (
-                <div className="appt-actions">
+                <div className="button-row">
                   <div className="field">
                     <label htmlFor={staffField}>KTV làm</label>
                     <select
                       id={staffField}
-                      className="appt-input"
+                      className="input"
                       value={row.staffId}
                       aria-invalid={row.staffId === "" || undefined}
                       onChange={(e) => {
@@ -317,7 +317,7 @@ export function GroupCheckIn({
                 </div>
               )}
               {row.state !== "done" && !skip && row.staffId === "" && (
-                <p className="appt-hint">Chọn KTV làm để ghi lượt người này.</p>
+                <p className="field-hint">Chọn KTV làm để ghi lượt người này.</p>
               )}
               {maySell && lines && !skip && row.state !== "done" && (
                 <GroupPackagePick
@@ -332,7 +332,7 @@ export function GroupCheckIn({
                 />
               )}
               {row.state === "error" && row.error && (
-                <p role="alert" className="appt-error">
+                <p role="alert" className="field-error">
                   {row.error}
                 </p>
               )}

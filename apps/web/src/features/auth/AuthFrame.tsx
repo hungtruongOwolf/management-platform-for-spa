@@ -17,7 +17,7 @@ export function AuthFrame({ brand, children }: { brand: ReactNode; children: Rea
           {brand}
         </div>
         <div className="flex flex-col justify-center">
-          <div aria-hidden="true" className="h-0.5 bg-[linear-gradient(90deg,transparent,var(--chrome-accent),transparent)] md:hidden" />
+          <div aria-hidden="true" className="chrome-rule md:hidden" />
           {children}
         </div>
       </div>

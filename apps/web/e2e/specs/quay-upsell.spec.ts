@@ -81,7 +81,7 @@ async function addOneOff(page: Page, f: Fixture): Promise<void> {
   await page.getByRole("combobox", { name: "KTV" }).last().selectOption(f.staffId);
 }
 
-const toast = (page: Page) => page.locator(".desk-toast");
+const toast = (page: Page) => page.locator(".toast");
 
 /**
  * Opens a row's ⋯ menu from the keyboard and runs one item. The menu closes on scroll (it is a

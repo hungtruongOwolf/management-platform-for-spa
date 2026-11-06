@@ -53,7 +53,7 @@ export function VoidForm<T>({
       onKeyDown={(e) => {
         if (e.key === "Escape") onCancel();
       }}
-      className="mt-2 space-y-2 rounded-[10px] border border-danger/50 bg-surface p-3"
+      className="mt-2 grid gap-3 rounded-md border border-danger/50 bg-surface p-3"
     >
       <h3 id={titleId} className="font-semibold">
         {title}
@@ -65,9 +65,9 @@ export function VoidForm<T>({
           setTouched(true);
           if (!missing) action.submit();
         }}
-        className="space-y-2"
+        className="grid gap-2"
       >
-        <label htmlFor={reasonId} className="block text-sm font-medium">
+        <label htmlFor={reasonId} className="field">
           Lý do hủy
         </label>
         <textarea
@@ -81,30 +81,30 @@ export function VoidForm<T>({
           onChange={(e) => {
             setReason(e.target.value);
           }}
-          className="w-full rounded-[6px] border border-border bg-surface px-3 py-2"
+          className="input"
         />
         {reasonProblem && (
-          <p id={`${reasonId}-error`} className="text-sm text-danger">
+          <p id={`${reasonId}-error`} className="field-error">
             {reasonProblem}
           </p>
         )}
         {action.error != null && !fieldMessage(action.error, "reason") && (
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="alert">
             {messageFor(action.error)}
           </p>
         )}
-        <div className="flex flex-wrap gap-2">
+        <div className="button-row">
           <button
             type="submit"
             disabled={action.pending}
-            className="min-h-11 rounded-[10px] bg-danger px-4 font-semibold text-on-primary disabled:opacity-60"
+            className="btn btn-danger"
           >
             {action.pending ? "Đang hủy…" : confirmLabel}
           </button>
           <button
             type="button"
             onClick={onCancel}
-            className="min-h-11 rounded-[10px] border border-border px-4"
+            className="btn btn-secondary"
           >
             Thôi
           </button>

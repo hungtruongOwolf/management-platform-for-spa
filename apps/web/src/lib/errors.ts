@@ -1,6 +1,10 @@
 import { ApiError } from "./api";
 
-/** Vietnamese messages for stable API error codes. Unknown codes fall back to a generic message. */
+/**
+ * Vietnamese messages for stable API error codes. Unknown codes fall back to a generic message.
+ * Codes only a lazy screen can meet are added by that screen (`addMessages`, e.g. staff/api.ts), so
+ * their text stays out of the startup chunk.
+ */
 const MESSAGES: Record<string, string> = {
   "auth.invalid_credentials": "Số điện thoại hoặc mật khẩu không đúng.",
   "auth.unauthenticated": "Phiên đăng nhập đã hết. Vui lòng đăng nhập lại.",
@@ -39,13 +43,8 @@ const MESSAGES: Record<string, string> = {
   "visit.check_in_not_today":
     "Giờ làm phải thuộc ngày hôm nay. Chỉ chủ spa nhập bù được ngày đã qua.",
   "visit.check_in_too_old": "Chỉ nhập bù được trong vòng 1 năm.",
-  "appointment.staff_busy": "KTV này đã có lịch trùng giờ.",
-  "appointment.outside_opening_hours":
-    "Lịch hẹn phải nằm trọn trong giờ mở cửa: chọn giờ sớm hơn hoặc rút ngắn thời lượng.",
   "appointment.closed": "Lịch hẹn này đã kết thúc (hoàn tất, hủy hoặc không đến).",
-  "appointment.already_arrived": "Khách đã được đánh dấu là đã đến.",
   "appointment.not_today": "Chỉ làm được việc này vào đúng ngày của lịch hẹn.",
-  "appointment.not_started": "Chưa tới giờ hẹn, chưa đánh dấu không đến được.",
   "appointment.customer_required":
     "Khách mới: tạo hồ sơ khách trước rồi mới hoàn tất được.",
   "customer.phone_taken": "Số điện thoại này đã có hồ sơ khách.",
@@ -60,11 +59,6 @@ const MESSAGES: Record<string, string> = {
   "refund.exceeds_paid": "Số tiền hoàn lớn hơn số khách đã trả cho liệu trình.",
   "package.restore_exceeds_total":
     "Buổi của lượt này đã được cộng lại trước đó. Vui lòng tải lại.",
-  "payroll.period_closed":
-    "Tháng này đã chốt lương nên không sửa được. Hãy ghi một khoản thưởng/phạt điều chỉnh vào tháng đang mở.",
-  "payroll.month_not_ended": "Tháng chưa kết thúc, chưa chốt lương được.",
-  "payroll.unrecorded_days": "Còn ngày chưa chấm công. Chấm đủ hoặc chọn chốt dù còn thiếu.",
-  "staff.account_taken": "Tài khoản này đã gắn với một nhân viên khác.",
   "idempotency.key_reuse_mismatch":
     "Hóa đơn này có thể đã được lưu. Vui lòng đóng hộp thoại và kiểm tra lại liệu trình.",
 };
@@ -92,31 +86,21 @@ const FIELD_MESSAGES: Record<string, string> = {
   in_past: "Không được là ngày đã qua.",
   package_has_no_expiry: "Liệu trình không có thời hạn, không cần gia hạn.",
   not_allowed: "Không dùng được ở đây.",
-  not_employed: "Ngày này nhân viên chưa vào làm hoặc đã nghỉ.",
-  only_when_present: "Chỉ ghi giờ khi đi làm.",
-  above_ceiling: "Chưa đạt tối đa 30% số điểm.",
-  only_for_fail: "Chỉ nhập điểm tay khi Chưa đạt.",
-  amount_or_points_required: "Nhập số tiền hoặc số điểm.",
-  not_closed: "Tháng này chưa chốt, không cần điều chỉnh.",
-  not_earlier: "Tháng điều chỉnh phải trước tháng ghi.",
   invalid_time: "Giờ không hợp lệ (dạng 09:00).",
-  invalid_month: "Tháng không hợp lệ.",
   unknown: "Không tìm thấy nhân viên.",
-  before_joined_on: "Ngày nghỉ việc trước ngày vào làm.",
-  must_be_empty: "Nhân viên đang làm thì không có ngày nghỉ việc.",
-  not_a_member: "Tài khoản không thuộc spa này.",
-  not_on_slot: "Giờ hẹn phải đúng ô 15 phút (ví dụ 10:00, 10:15).",
-  too_far: "Chỉ đặt lịch trước tối đa 90 ngày.",
-  customer_or_guest: "Chọn khách có hồ sơ hoặc nhập khách mới.",
   percent_or_amount: "Chỉ nhập % hoặc số tiền, không cả hai.",
   rounds_to_zero: "Mức giảm quá nhỏ.",
   count_out_of_range: "Số lượng không hợp lệ.",
-  not_same_day: "Mọi người trong nhóm phải hẹn cùng một ngày.",
   not_today: "Chỉ đổi sang ngày khác khi khách chưa đến.",
   before_from: "Ngày kết thúc trước ngày bắt đầu.",
-  range_too_long: "Chỉ xem tối đa 14 ngày.",
   not_visit_day: "Giờ làm phải thuộc đúng ngày của lượt.",
 };
+
+/** Registers the messages of a lazy feature (called once at the top of its module). */
+export function addMessages(codes: Record<string, string>, fields: Record<string, string>): void {
+  Object.assign(MESSAGES, codes);
+  Object.assign(FIELD_MESSAGES, fields);
+}
 
 export function messageFor(error: unknown): string {
   if (error instanceof ApiError) {

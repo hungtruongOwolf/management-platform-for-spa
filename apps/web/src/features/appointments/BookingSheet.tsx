@@ -449,7 +449,7 @@ export function BookingSheet({
                             gender={p.customer.gender}
                           />
                         </strong>
-                        <span className="appt-hint tabular-nums">
+                        <span className="field-hint tabular-nums">
                           {p.customer.phone}
                         </span>
                         <button
@@ -483,7 +483,7 @@ export function BookingSheet({
                         <label htmlFor={id("guest-name")}>Tên khách</label>
                         <input
                           id={id("guest-name")}
-                          className="appt-input"
+                          className="input"
                           value={p.guestName}
                           maxLength={200}
                           autoComplete="off"
@@ -496,7 +496,7 @@ export function BookingSheet({
                         <label htmlFor={id("guest-phone")}>Số điện thoại</label>
                         <input
                           id={id("guest-phone")}
-                          className="appt-input"
+                          className="input"
                           inputMode="tel"
                           autoComplete="off"
                           value={p.guestPhone}
@@ -548,7 +548,7 @@ export function BookingSheet({
                   <select
                     id={id("service")}
                     aria-label={`Thêm dịch vụ${suffix}`}
-                    className="appt-input"
+                    className="input"
                     value=""
                     aria-describedby={id("service-hint")}
                     onChange={(e) => {
@@ -583,7 +583,7 @@ export function BookingSheet({
                       ))}
                   </select>
                 )}
-                <span id={id("service-hint")} className="appt-hint">
+                <span id={id("service-hint")} className="field-hint">
                   Chọn là thêm, tối đa {MAX_SERVICES} dịch vụ. Dịch vụ không có
                   thời lượng làm kèm, không cộng giờ.
                 </span>
@@ -594,7 +594,7 @@ export function BookingSheet({
                   <label htmlFor={id("length")}>Thời lượng{suffix}</label>
                   <select
                     id={id("length")}
-                    className="appt-input"
+                    className="input"
                     value={minutesOfPerson(p)}
                     aria-describedby={id("length-hint")}
                     onChange={(e) => {
@@ -613,7 +613,7 @@ export function BookingSheet({
                   </select>
                   <span
                     id={id("length-hint")}
-                    className="appt-hint"
+                    className="field-hint"
                     aria-live="polite"
                   >
                     {p.duration === null
@@ -638,7 +638,7 @@ export function BookingSheet({
                   </label>
                   <select
                     id={id("staff")}
-                    className="appt-input"
+                    className="input"
                     value={p.staffId}
                     aria-invalid={clashing.includes(p) || undefined}
                     onChange={(e) => {
@@ -680,7 +680,7 @@ export function BookingSheet({
                   </label>
                   <input
                     id={`booking-companion-${String(j)}`}
-                    className="appt-input"
+                    className="input"
                     value={c}
                     maxLength={100}
                     placeholder="Chồng của chị Hà"
@@ -718,7 +718,7 @@ export function BookingSheet({
               </button>
             )}
             {companions.length > 0 && (
-              <span className="appt-hint">
+              <span className="field-hint">
                 Chỉ ghi chú trên lịch hẹn: không chọn dịch vụ, không tính tiền.
               </span>
             )}
@@ -740,7 +740,7 @@ export function BookingSheet({
             </label>
             <select
               id="booking-start"
-              className="appt-input"
+              className="input"
               value={start}
               onChange={(e) => {
                 setStart(Number(e.target.value));
@@ -775,9 +775,9 @@ export function BookingSheet({
             onChange={(e) => {
               setNote(e.target.value);
             }}
-            className="appt-input"
+            className="input"
           />
-          <span id="booking-note-hint" className="appt-hint">
+          <span id="booking-note-hint" className="field-hint">
             Không ghi thông tin sức khỏe ở đây (ghi ở hồ sơ khách).
           </span>
         </div>
@@ -793,14 +793,14 @@ export function BookingSheet({
           · chưa thanh toán (thu khi ghi lượt)
         </p>
         {clashing.length > 0 && (
-          <p role="status" className="appt-warn">
+          <p role="status" className="callout">
             {clashing.map((p) => personLabel(p, people.indexOf(p))).join(", ")}{" "}
             đang cùng KTV với người khác trong nhóm, cùng giờ: chọn KTV khác
             hoặc để “Chưa gán KTV”.
           </p>
         )}
         {overMax && (
-          <p role="status" className="appt-warn">
+          <p role="status" className="callout">
             Khung {hhmm(start)} đã có {already}/{max} khách
             {editing
               ? ""
@@ -809,12 +809,12 @@ export function BookingSheet({
           </p>
         )}
         {attempted && missing.length > 0 && (
-          <p ref={missingRef} tabIndex={-1} role="alert" className="appt-error">
+          <p ref={missingRef} tabIndex={-1} role="alert" className="field-error">
             Còn thiếu: {missing.join(", ")}.
           </p>
         )}
         {taken && (
-          <p role="alert" className="appt-actions appt-error">
+          <p role="alert" className="button-row field-error">
             Số điện thoại của khách mới đã có hồ sơ khách.
             <button
               type="button"
@@ -828,7 +828,7 @@ export function BookingSheet({
           </p>
         )}
         {save.isError && !taken && (
-          <p role="alert" className="appt-error">
+          <p role="alert" className="field-error">
             {bookingErrorText(save.error, cal, people)}
           </p>
         )}

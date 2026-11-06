@@ -192,7 +192,7 @@ export function CustomerForm({
         {/* Polite live region: announced once the check answers, before the user submits. */}
         <span id={`${id}-phone-duplicate`} aria-live="polite" className="grid">
           {duplicate && !existingId && (
-            <span className="field-notice">
+            <span className="callout field-notice">
               <span>
                 Số này đã có hồ sơ: <strong>{duplicate.name}</strong>
               </span>
@@ -258,7 +258,7 @@ export function CustomerForm({
         </div>
       )}
       {mutation.isError && (
-        <p role="alert" className="form-error span-2">
+        <p role="alert" className="alert span-2">
           {existingId ? (
             <>
               Số điện thoại này đã có hồ sơ.{" "}
@@ -277,7 +277,7 @@ export function CustomerForm({
           )}
         </p>
       )}
-      <div className="form-actions span-2">
+      <div className="button-row span-2">
         <button type="submit" aria-busy={mutation.isPending || undefined} className="btn btn-primary">
           {customer ? "Lưu thay đổi" : "Lưu khách"}
         </button>

@@ -131,11 +131,19 @@
   border-top: 1px solid var(--border);
 }
 .data-table .visit-inline-form {
+  position: relative;
   max-width: calc(44rem + 80px);
   padding-left: calc(80px + 14px);
   border-top: 0;
-  background: linear-gradient(var(--border), var(--border)) no-repeat 80px 0 /
-    100% 1px;
+}
+/* The hairline starts under the details column (80px in), like the rows above it. */
+.data-table .visit-inline-form::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 80px;
+  border-top: 1px solid var(--border);
+  content: "";
 }
 .visit-inline-form > .btn,
 .visit-inline-form .button-row {
