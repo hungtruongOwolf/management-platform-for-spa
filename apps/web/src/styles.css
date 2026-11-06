@@ -76,6 +76,24 @@ body::before {
   content: "";
   pointer-events: none;
 }
+/*
+ * The spa's whole logo as a large, faint watermark (round 2, EM 2026-11-06: "background của cả
+ * page … cái logo dạng mờ mờ bản to"), low on the right of the work area, partly off the edge like a
+ * seal on paper. Same rules as the paper layer: full-viewport, fixed, its own compositor layer, and
+ * a MASK painted with a colour token rather than a background image (so it is never an LCP image;
+ * the emblem file is the one the sidebar logo already loads).
+ */
+body::after {
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  background-color: var(--watermark-ink);
+  content: "";
+  pointer-events: none;
+  will-change: transform;
+  -webkit-mask: url("./assets/brand/emblem.svg") right -6vmin bottom -10vmin / min(82vmin, 760px) no-repeat;
+  mask: url("./assets/brand/emblem.svg") right -6vmin bottom -10vmin / min(82vmin, 760px) no-repeat;
+}
 
 ::selection {
   background: var(--accent-soft);
@@ -102,7 +120,8 @@ body::before {
 }
 /* Text links inside a line (a customer's name above their phone): a slimmer, closer ring. */
 a:not([class]):focus-visible,
-a.font-semibold:focus-visible {
+a.font-semibold:focus-visible,
+a.name-link:focus-visible {
   outline-width: 2px;
   outline-offset: 1px;
 }
@@ -147,6 +166,15 @@ textarea:focus-visible {
 }
 [aria-invalid="true"]:is(input, select, textarea):focus-visible {
   outline-color: var(--danger);
+}
+/* One chevron for every select (the native arrow differed by browser and theme). */
+select:not([multiple], [size]) {
+  appearance: none;
+  padding-right: 36px;
+  background-image: var(--select-chevron);
+  background-position: right 12px center;
+  background-repeat: no-repeat;
+  background-size: 16px;
 }
 input:disabled,
 select:disabled,

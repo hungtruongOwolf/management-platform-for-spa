@@ -77,7 +77,7 @@ export function CustomersPage() {
           </div>
         )}
         {recent.data?.length === 0 && (
-          <p className="empty-note">Chưa có khách nào. Gõ tên hoặc số điện thoại vào ô tìm ở trên rồi bấm “Khách mới” để tạo hồ sơ đầu tiên.</p>
+          <p className="empty-block">Chưa có khách nào. Gõ tên hoặc số điện thoại vào ô tìm ở trên rồi bấm “Khách mới” để tạo hồ sơ đầu tiên.</p>
         )}
         {recent.data && recent.data.length > 0 && (
           <ul className="row-list">

@@ -495,7 +495,7 @@ function TechniciansCard({ range, period }: { range: RangeReport | undefined; pe
       {!technicians ? (
         <RowsSkeleton rows={4} />
       ) : technicians.length === 0 ? (
-        <EmptyState title="Chưa có lượt khách nào" icon="users">
+        <EmptyState title="Chưa có lượt khách nào">
           Kỹ thuật viên hiện ở đây khi có lượt được ghi ở “Ghi lượt khách”. Hoặc chọn kỳ dài hơn.
         </EmptyState>
       ) : (
@@ -546,7 +546,7 @@ function TopServices({ range, label }: { range: RangeReport | undefined; label: 
       {!range ? (
         <RowsSkeleton rows={4} />
       ) : range.top_services.length === 0 ? (
-        <p className="text-sm text-text-muted">Chưa có dịch vụ nào trong kỳ này. Lượt ghi ở “Ghi lượt khách” sẽ hiện ở đây; hoặc chọn kỳ dài hơn.</p>
+        <p className="empty-block text-sm">Chưa có dịch vụ nào trong kỳ này. Lượt ghi ở “Ghi lượt khách” sẽ hiện ở đây; hoặc chọn kỳ dài hơn.</p>
       ) : (
         <ol className="grid content-start gap-2">
           {range.top_services.slice(0, 5).map((s, i) => (
@@ -573,7 +573,7 @@ function TopPackages({ range, label }: { range: RangeReport | undefined; label: 
       {!range ? (
         <RowsSkeleton rows={4} />
       ) : range.top_packages.length === 0 ? (
-        <p className="text-sm text-text-muted">Chưa bán gói nào trong kỳ này. Chọn kỳ dài hơn để so sánh.</p>
+        <p className="empty-block text-sm">Chưa bán gói nào trong kỳ này. Chọn kỳ dài hơn để so sánh.</p>
       ) : (
         <ol className="grid content-start gap-2">
           {range.top_packages.slice(0, 5).map((p, i) => (

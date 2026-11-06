@@ -24,7 +24,7 @@ export function ProfilesTab({ canPay }: { canPay: boolean }) {
       cell: (p) => (
         <button
           type="button"
-          className="link"
+          className="name-link"
           onClick={() => {
             setEditing(p);
           }}

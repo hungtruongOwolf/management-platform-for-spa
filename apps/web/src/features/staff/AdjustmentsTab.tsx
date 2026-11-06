@@ -74,7 +74,7 @@ export function AdjustmentLogSection({ month, today, canWrite }: { month: string
       </div>
       {log.data.items.length === 0 ? (
         <div className="card">
-          <EmptyState title="Chưa có khoản thưởng hay phạt nào trong tháng này" icon="menu-book">
+          <EmptyState title="Chưa có khoản thưởng hay phạt nào trong tháng này">
             {canWrite ? "Bấm “Ghi thưởng / phạt” để ghi một khoản; khoản ghi trong Sổ hằng ngày cũng hiện ở đây." : "Khoản ghi trong Sổ hằng ngày sẽ hiện ở đây."}
           </EmptyState>
         </div>

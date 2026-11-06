@@ -66,6 +66,8 @@
   }
 
   /* ------------------------------------------------------------ daily book (round 5) */
+  /* Icon, sentence and button on one row (the shared .callout would stack them). */
+  .book-banner.callout,
   .book-banner {
     display: flex;
     flex-wrap: wrap;

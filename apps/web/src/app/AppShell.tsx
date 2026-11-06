@@ -7,7 +7,7 @@ import {
 } from "@tanstack/react-router";
 import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
 import { useModalDialog } from "../components/useModalDialog";
-import { logout, meQuery } from "../features/auth/session";
+import { can, logout, meQuery } from "../features/auth/session";
 import { longDate } from "../lib/format";
 import { BrandLogo } from "./BrandLogo";
 import { Icon } from "./Icon";
@@ -70,6 +70,32 @@ function NavLinks({
   );
 }
 
+/**
+ * Today's date in the top bar as a chip (EM round 2: "thứ ngày … có cái link hay component cho nó
+ * rõ lên"): a calendar icon and the date; for whoever books appointments it opens today's calendar.
+ */
+function TodayChip({ canOpenCalendar }: { canOpenCalendar: boolean }) {
+  const today = longDate(new Date());
+  const face = (
+    <>
+      <Icon name="calendar" className="size-4" />
+      <span>{today}</span>
+    </>
+  );
+  return canOpenCalendar ? (
+    <Link
+      to="/quay"
+      search={{ view: "lich" } as never}
+      className="date-chip is-link tabular"
+      aria-label={`${today}, mở lịch hẹn hôm nay`}
+    >
+      {face}
+    </Link>
+  ) : (
+    <p className="date-chip tabular">{face}</p>
+  );
+}
+
 /** `<dialog>` driven by React state: the browser gives focus trapping, Esc and the backdrop. */
 export function Modal({
   open,
@@ -112,6 +138,7 @@ export function AppShell() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const groups = navFor(me);
+  const canOpenCalendar = can(me, "visit.record") && can(me, "appointment.manage");
   const tabs = tabsFor(groups);
   const [collapsed, setCollapsed] = useState(readSidebarCollapsed);
   const [palette, setPalette] = useState(false);
@@ -191,9 +218,7 @@ export function AppShell() {
           >
             <BrandLogo className="w-12" />
           </Link>
-          <p className="hidden text-sm text-text-muted tabular md:block">
-            {longDate(new Date())}
-          </p>
+          <TodayChip canOpenCalendar={canOpenCalendar} />
           <button
             type="button"
             onClick={() => {

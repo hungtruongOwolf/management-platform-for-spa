@@ -108,24 +108,21 @@ export function Loading({ label, children }: { label: string; children: ReactNod
 
 /**
  * Empty list or panel (rulebook §9): what is missing, then the next step in words, and the button
- * for it when there is one (`action`). A muted icon, never the logo (brand lives in the chrome).
+ * for it when there is one (`action`). Round 2 (EM 2026-11-06: "chưa có data thì hiện cái gì đẹp
+ * … như logo cộng chữ"): the spa's whole logo, faint, above the words.
  */
 export function EmptyState({
   title,
   children,
-  icon = "sparkle",
   action,
 }: {
   title: string;
   children?: ReactNode;
-  icon?: IconName;
   action?: ReactNode;
 }) {
   return (
     <div className="empty-state">
-      <span aria-hidden="true" className="empty-state-icon">
-        <Icon name={icon} className="size-5" />
-      </span>
+      <span aria-hidden="true" className="empty-mark" />
       <p className="empty-state-title">{title}</p>
       {children && <p className="max-w-sm text-sm text-text-muted">{children}</p>}
       {action}

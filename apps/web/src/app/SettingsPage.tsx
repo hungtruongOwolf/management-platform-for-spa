@@ -12,7 +12,7 @@ export function SettingsPage() {
       <PageHeader title="Giao diện & tài khoản" />
 
       <section aria-labelledby="theme-title" className="card grid content-start gap-3 p-4 sm:p-5">
-        <h2 id="theme-title" className="font-semibold">
+        <h2 id="theme-title" className="panel-title">
           Giao diện
         </h2>
         <p className="text-sm text-text-muted">Chỉ áp dụng trên thiết bị này. Chế độ tối dễ nhìn hơn khi quầy thiếu sáng.</p>
@@ -20,7 +20,7 @@ export function SettingsPage() {
       </section>
 
       <section aria-labelledby="account-title" className="card p-4 sm:p-5">
-        <h2 id="account-title" className="mb-4 font-semibold">
+        <h2 id="account-title" className="panel-title mb-4">
           Tài khoản đang đăng nhập
         </h2>
         <div className="flex items-center gap-4">

@@ -122,7 +122,7 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
       )}
       {packages.isError && <ErrorState error={packages.error} onRetry={() => void packages.refetch()} />}
       {packages.data?.length === 0 && (
-        <p className="empty-note">Chưa có gói liệu trình nào.{canSell ? " Bấm “Bán gói liệu trình” để bán gói đầu tiên cho khách." : ""}</p>
+        <p className="empty-block">Chưa có gói liệu trình nào.{canSell ? " Bấm “Bán gói liệu trình” để bán gói đầu tiên cho khách." : ""}</p>
       )}
       {packages.data && packages.data.length > 0 && open.length === 0 && (
         <p className="empty-note">Không còn gói nào đang dùng.{canSell ? " Bấm “Bán gói liệu trình” để bán gói mới." : ""}</p>

@@ -45,7 +45,7 @@ export function MyWorkPage() {
       ) : query.isError ? (
         <ErrorState error={query.error} onRetry={() => void query.refetch()} />
       ) : !query.data.linked || !query.data.data ? (
-        <EmptyState title="Tài khoản chưa gắn với hồ sơ nhân viên" icon="id-card">
+        <EmptyState title="Tài khoản chưa gắn với hồ sơ nhân viên">
           Nhờ chủ spa gắn tài khoản này vào hồ sơ của bạn để xem lịch hẹn và khách đã làm.
         </EmptyState>
       ) : (
@@ -65,7 +65,7 @@ function Upcoming({ items, today }: { items: UpcomingAppointment[]; today: strin
         Lịch hẹn sắp tới
       </h2>
       {items.length === 0 ? (
-        <p className="text-text-muted">Chưa có ai đặt lịch với bạn trong 30 ngày tới. Lịch quầy đặt cho bạn sẽ hiện ở đây.</p>
+        <p className="empty-block">Chưa có ai đặt lịch với bạn trong 30 ngày tới. Lịch quầy đặt cho bạn sẽ hiện ở đây.</p>
       ) : (
         byDay(items).map(([day, list]) => (
           <div key={day} className="grid gap-2">
@@ -99,7 +99,7 @@ function Served({ items, month }: { items: ServedVisit[]; month: string }) {
         Khách đã làm · {monthLabel(month)}
       </h2>
       {items.length === 0 ? (
-        <p className="text-text-muted">Chưa có lượt khách nào trong tháng này. Chọn tháng trước ở góc trên để xem lại.</p>
+        <p className="empty-block">Chưa có lượt khách nào trong tháng này. Chọn tháng trước ở góc trên để xem lại.</p>
       ) : (
         <>
           <p className="text-sm">

@@ -95,7 +95,7 @@ export function PriceListPage() {
       {header}
       {editing?.kind === "new-category" && <NewCategory onDone={done} />}
       {services.data.length === 0 && !canManage && (
-        <p className="text-text-muted">Chưa có dịch vụ nào trong bảng giá.</p>
+        <p className="empty-block">Chưa có dịch vụ nào trong bảng giá.</p>
       )}
 
       {categories.data.map((category) => {

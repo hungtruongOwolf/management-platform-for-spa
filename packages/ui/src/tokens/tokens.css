@@ -116,6 +116,19 @@
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
+  /*
+   * Control scale (round 2, EM 2026-11-06: "dropdown … viền không cùng style bo góc với các button"):
+   * every button, field, select, date field, segmented track and chip button shares ONE height and
+   * ONE corner. Parts nested inside a control (a segment, a menu row) take the inner corner, so
+   * the curves stay concentric. Surfaces (cards, menus, dialogs) keep --radius-lg; status chips
+   * and the global search are pills.
+   */
+  --radius-control: 10px;
+  --radius-inner: 6px;
+  --radius-pill: 999px;
+  --size-control: 44px;
+  --size-control-lg: 48px;
+  --size-control-inner: 36px;
 
   /* Type scale (design-system.md "Chữ"): fixed steps, ratio ≈ 1.13–1.2, one family for the UI.
    * Fields are 16px so phones never zoom on focus. */
@@ -206,6 +219,30 @@
   --mix-tile-ring: inset 0 0 0 1px color-mix(in srgb, currentColor 14%, transparent);
   --mix-secondary-hover: color-mix(in srgb, var(--primary-soft) 45%, var(--surface));
 
+  /*
+   * Ornament (round 2, EM 2026-11-06: "minimalism quá … thêm style, hoa lá cành, layer ẩn"). All
+   * masks (colourless shapes painted with a colour token), so dark mode follows and none of them is
+   * ever an image candidate for LCP:
+   * - watermark (--watermark-ink, per theme): the whole logo, very faint and large, on the fixed
+   *   page layer (styles.css body::after);
+   * - flourish: a tapered gold rule with a lotus bud under every page title;
+   * - lotus: a small gold lotus before panel / section headings;
+   * - empty mark: the logo at low strength above an empty list's sentence;
+   * - card: a warm light falling on the top of every card and panel.
+   */
+  --texture-flourish: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 12'%3E%3Cpath d='M2 6.5 46 5.4v2.2zM118 6.5 74 5.4v2.2zM60 .8c2.6 2.4 2.6 7.6 0 10.4-2.6-2.8-2.6-8 0-10.4zM58.6 11c-3.2-.6-5.6-3-6.4-6.4 3 .4 5.6 2.8 6.4 6.4zM61.4 11c3.2-.6 5.6-3 6.4-6.4-3 .4-5.6 2.8-6.4 6.4z'/%3E%3Ccircle cx='49.5' cy='6.5' r='1.3'/%3E%3Ccircle cx='70.5' cy='6.5' r='1.3'/%3E%3C/svg%3E");
+  --texture-lotus: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.5c2.4 2.7 2.4 8.2 0 11-2.4-2.8-2.4-8.3 0-11zM11 14c-3-.5-5.6-2.9-6.2-6.6 3.2.4 5.6 3 6.2 6.6zM13 14c3-.5 5.6-2.9 6.2-6.6-3.2.4-5.6 3-6.2 6.6zM10.4 15.2C7 15.9 3.6 14.6 1.8 11.8c3.4-.8 6.8.8 8.6 3.4zM13.6 15.2c3.4.7 6.8-.6 8.6-3.4-3.4-.8-6.8.8-8.6 3.4zM5 17h14c-1.6 2.6-4.2 4-7 4s-5.4-1.4-7-4z'/%3E%3C/svg%3E");
+  --mix-ornament: color-mix(in srgb, var(--accent) 80%, transparent);
+  --mix-empty-mark: color-mix(in srgb, var(--brand-ink) 20%, transparent);
+  --gradient-card: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent-soft) 60%, transparent),
+    transparent 96px
+  );
+  /* The select's chevron (fields share one look; the native arrow differed per browser and theme). */
+  --watermark-ink: rgb(122 38 32 / 0.05);
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%236d5a50' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+
   --dur-fast: 120ms;
   --dur-base: 200ms;
   --dur-slow: 320ms;
@@ -263,6 +300,8 @@
     --shadow-bar: 0 12px 24px -20px rgb(0 0 0 / 0.8);
     --shadow-chrome: 8px 0 28px -18px rgb(0 0 0 / 0.7);
     --paper-grain: var(--texture-cream-grain);
+    --watermark-ink: rgb(224 180 86 / 0.035);
+    --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23c4b2a3' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
     --scrim: rgb(0 0 0 / 0.6);
     --shadow-up: 0 -6px 16px rgb(0 0 0 / 0.4);
     color-scheme: dark;
@@ -314,6 +353,8 @@
   --shadow-bar: 0 12px 24px -20px rgb(0 0 0 / 0.8);
   --shadow-chrome: 8px 0 28px -18px rgb(0 0 0 / 0.7);
   --paper-grain: var(--texture-cream-grain);
+  --watermark-ink: rgb(224 180 86 / 0.035);
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23c4b2a3' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
   --scrim: rgb(0 0 0 / 0.6);
   --shadow-up: 0 -6px 16px rgb(0 0 0 / 0.4);
   color-scheme: dark;
