@@ -468,6 +468,20 @@ const ROUTES: &[Route] = &[
     .body(appointment_body)
     .idempotent(),
     route(
+        "POST",
+        "/api/v1/appointments/group",
+        Access::Perm(P::AppointmentManage, OWNER_MANAGER),
+    )
+    .body(appointment_group_body)
+    .idempotent(),
+    // The advisory "max customers per slot" (round 5): owner only.
+    route(
+        "PUT",
+        "/api/v1/appointment-settings",
+        Access::Perm(P::AppointmentSettings, OWNER_ONLY),
+    )
+    .body(appointment_settings_body),
+    route(
         "GET",
         "/api/v1/appointments/{id}",
         Access::Perm(P::AppointmentManage, OWNER_MANAGER),
@@ -674,6 +688,18 @@ fn appointment_body(f: &Fixture) -> Option<Value> {
         "customer_id": f.customer, "service_ids": [f.service], "staff_id": f.staff,
         "starts_at": tomorrow_at_ten(),
     }))
+}
+fn appointment_group_body(f: &Fixture) -> Option<Value> {
+    Some(json!({
+        "starts_at": tomorrow_at_ten(),
+        "people": [
+            {"customer_id": f.customer, "service_ids": [f.service]},
+            {"guest": {"full_name": "Bé Na", "phone": "0905777888"}, "service_ids": [f.service]},
+        ],
+    }))
+}
+fn appointment_settings_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"max_per_slot": 4}))
 }
 fn arrive_body(f: &Fixture) -> Option<Value> {
     Some(json!({"staff_id": f.staff}))

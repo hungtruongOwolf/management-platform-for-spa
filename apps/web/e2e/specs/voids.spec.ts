@@ -99,10 +99,13 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     expect(await remaining(page, customerId)).toBe(11);
 
     await page.goto("/quay");
-    const today = page.getByRole("list", { name: "Lượt khách hôm nay" });
+    const today = page.getByRole("table", { name: "Lượt khách hôm nay" });
+    // EM round 5: "Hủy lượt" lives in the row's ⋯ menu.
     await today
-      .getByRole("button", { name: /^Hủy lượt .* của Đặng Thị Hủy$/ })
+      .getByRole("button", { name: /^Thao tác lượt .* của Đặng Thị Hủy$/ })
       .click();
+    await expectAccessible(page, "quay-row-menu");
+    await page.getByRole("menuitem", { name: "Hủy lượt" }).click();
     const dialog = page.getByRole("dialog", {
       name: /Hủy lượt .* Đặng Thị Hủy/,
     });
@@ -118,10 +121,13 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
         .getByRole("status")
         .filter({ hasText: "Đã hủy lượt của Đặng Thị Hủy." }),
     ).toBeVisible();
-    const row = today.getByRole("listitem").filter({ hasText: "Đặng Thị Hủy" });
+    const row = today.getByRole("row").filter({ hasText: "Đặng Thị Hủy" }).first();
     await expect(row).toContainText("Đã hủy");
-    await expect(row).toContainText("Lý do hủy: Ghi nhầm khách");
-    await expect(row.getByRole("button", { name: /^Hủy lượt/ })).toHaveCount(0);
+    // The details stay open on the cancelled visit, with its reason.
+    await expect(today).toContainText("Lý do hủy: Ghi nhầm khách");
+    await row.getByRole("button", { name: /^Thao tác lượt/ }).click();
+    await expect(page.getByRole("menuitem", { name: "Hủy lượt" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
     expect(await remaining(page, customerId)).toBe(12);
     await expectAccessible(page, "quay-voided");
   });

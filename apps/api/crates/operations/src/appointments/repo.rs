@@ -31,34 +31,30 @@ pub async fn lock_day(tx: &mut TenantTx, day: NaiveDate) -> Result<(), AppError>
     Ok(())
 }
 
-pub struct OpenSlot {
-    pub id: Uuid,
-    pub staff_id: Option<Uuid>,
-    pub starts_at: DateTime<Utc>,
-    pub ends_at: DateTime<Utc>,
-}
-
-/// Open (booked / arrived) appointments overlapping `[from, to)`, other than `except`.
-pub async fn open_overlapping(
+/// The first open (booked / arrived) appointment of `staff` overlapping `[from, to)`, other than
+/// `except`.
+pub async fn staff_overlap(
     tx: &mut TenantTx,
+    staff: Uuid,
     from: DateTime<Utc>,
     to: DateTime<Utc>,
     except: Option<Uuid>,
-) -> Result<Vec<OpenSlot>, AppError> {
+) -> Result<Option<Uuid>, AppError> {
     let tenant = tx.tenant().as_uuid();
-    Ok(sqlx::query_as!(
-        OpenSlot,
-        r#"SELECT id, staff_id, starts_at, ends_at FROM app.appointment
-           WHERE tenant_id = $1 AND status IN ('booked', 'arrived')
-             AND starts_at < $3 AND ends_at > $2
-             AND ($4::uuid IS NULL OR id <> $4)
-           ORDER BY starts_at, id"#,
+    Ok(sqlx::query_scalar!(
+        r#"SELECT id FROM app.appointment
+           WHERE tenant_id = $1 AND staff_id = $2 AND status IN ('booked', 'arrived')
+             AND starts_at < $4 AND ends_at > $3
+             AND ($5::uuid IS NULL OR id <> $5)
+           ORDER BY starts_at, id
+           LIMIT 1"#,
         tenant,
+        staff,
         from,
         to,
         except
     )
-    .fetch_all(tx.conn())
+    .fetch_optional(tx.conn())
     .await?)
 }
 
@@ -93,6 +89,7 @@ pub struct AppointmentInsert<'a> {
     pub ends_at: DateTime<Utc>,
     pub staff_id: Option<Uuid>,
     pub note: Option<&'a str>,
+    pub group_id: Option<Uuid>,
     pub created_by: Uuid,
 }
 
@@ -101,8 +98,8 @@ pub async fn insert(tx: &mut TenantTx, a: &AppointmentInsert<'_>) -> Result<(), 
     sqlx::query!(
         r#"INSERT INTO app.appointment
              (id, tenant_id, branch_id, customer_id, guest_name, guest_phone, business_date, starts_at,
-              ends_at, staff_id, note, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
+              ends_at, staff_id, note, created_by, group_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)"#,
         a.id,
         tenant,
         a.branch_id,
@@ -114,7 +111,8 @@ pub async fn insert(tx: &mut TenantTx, a: &AppointmentInsert<'_>) -> Result<(), 
         a.ends_at,
         a.staff_id,
         a.note,
-        a.created_by
+        a.created_by,
+        a.group_id
     )
     .execute(tx.conn())
     .await?;
@@ -280,7 +278,9 @@ pub struct AppointmentRow {
     pub closed_at: Option<DateTime<Utc>>,
     pub visit_id: Option<Uuid>,
     pub visit_status: Option<String>,
+    pub visit_check_in_at: Option<DateTime<Utc>>,
     pub sale_total: Option<i64>,
+    pub group_id: Option<Uuid>,
     pub version: i64,
     pub created_at: DateTime<Utc>,
 }
@@ -300,7 +300,8 @@ pub async fn appointments(
                   coalesce(c.phone_e164, a.guest_phone) AS "customer_phone!",
                   c.gender AS "customer_gender?", a.staff_id, st.full_name AS "staff_name?",
                   a.note, a.status_reason, a.arrived_at, a.closed_at, a.visit_id,
-                  v.status AS "visit_status?", s.total AS "sale_total?", a.version, a.created_at
+                  v.status AS "visit_status?", v.check_in_at AS "visit_check_in_at?",
+                  s.total AS "sale_total?", a.group_id, a.version, a.created_at
            FROM app.appointment a
            LEFT JOIN app.customer c ON c.tenant_id = a.tenant_id AND c.id = a.customer_id
            LEFT JOIN app.staff st ON st.tenant_id = a.tenant_id AND st.id = a.staff_id
@@ -344,4 +345,109 @@ pub async fn services_of(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Vec<ServiceR
     )
     .fetch_all(tx.conn())
     .await?)
+}
+
+pub struct WalkInRow {
+    pub id: Uuid,
+    pub business_date: NaiveDate,
+    pub check_in_at: DateTime<Utc>,
+    pub customer_id: Uuid,
+    pub customer_name: String,
+    pub customer_gender: Option<String>,
+    pub status: String,
+    pub sale_total: Option<i64>,
+}
+
+/// Visits of `from..=to` in this branch that no appointment points at (walk-ins), earliest first.
+pub async fn walk_ins(
+    tx: &mut TenantTx,
+    branch: Uuid,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<Vec<WalkInRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        WalkInRow,
+        r#"SELECT v.id, v.business_date, v.check_in_at, v.customer_id, c.full_name AS customer_name,
+                  c.gender AS "customer_gender?", v.status, s.total AS "sale_total?"
+           FROM app.visit v
+           JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id
+           LEFT JOIN app.sale s ON s.tenant_id = v.tenant_id AND s.id = v.sale_id
+           WHERE v.tenant_id = $1 AND v.branch_id = $2 AND v.business_date BETWEEN $3 AND $4
+             AND NOT EXISTS (
+               SELECT 1 FROM app.appointment a WHERE a.tenant_id = v.tenant_id AND a.visit_id = v.id)
+           ORDER BY v.check_in_at, v.id
+           LIMIT 2000"#,
+        tenant,
+        branch,
+        from,
+        to
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+pub struct VisitLineRow {
+    pub visit_id: Uuid,
+    pub service_id: Uuid,
+    pub service_name: String,
+    pub category_name: String,
+    pub duration_min: Option<i32>,
+    pub staff_id: Uuid,
+    pub staff_name: String,
+}
+
+/// Lines of the given visits, in order (no N+1).
+pub async fn visit_lines(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Vec<VisitLineRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        VisitLineRow,
+        r#"SELECT l.visit_id, l.service_id, l.service_name_snapshot AS service_name,
+                  sc.name AS category_name, sv.duration_min, l.staff_id, st.full_name AS staff_name
+           FROM app.visit_line l
+           JOIN app.service sv ON sv.tenant_id = l.tenant_id AND sv.id = l.service_id
+           JOIN app.service_category sc ON sc.tenant_id = sv.tenant_id AND sc.id = sv.category_id
+           JOIN app.staff st ON st.tenant_id = l.tenant_id AND st.id = l.staff_id
+           WHERE l.tenant_id = $1 AND l.visit_id = ANY($2)
+           ORDER BY l.visit_id, l.position"#,
+        tenant,
+        ids
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+/// The owner's advisory "max customers per slot"; `None` = no limit (or never set).
+pub async fn max_per_slot(tx: &mut TenantTx) -> Result<Option<i32>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_scalar!(
+        "SELECT max_per_slot FROM app.appointment_setting WHERE tenant_id = $1",
+        tenant
+    )
+    .fetch_optional(tx.conn())
+    .await?
+    .flatten())
+}
+
+/// Sets (or clears with `None`) the spa's "max customers per slot"; returns the previous value.
+pub async fn set_max_per_slot(
+    tx: &mut TenantTx,
+    value: Option<i32>,
+    by: Uuid,
+) -> Result<Option<i32>, AppError> {
+    let before = max_per_slot(tx).await?;
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"INSERT INTO app.appointment_setting (tenant_id, max_per_slot, updated_by)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (tenant_id) DO UPDATE
+             SET max_per_slot = EXCLUDED.max_per_slot, updated_by = EXCLUDED.updated_by,
+                 updated_at = now()"#,
+        tenant,
+        value,
+        by
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(before)
 }

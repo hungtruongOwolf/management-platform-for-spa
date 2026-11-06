@@ -67,7 +67,7 @@ function InactiveCustomersPageBody() {
     <section className="grid content-start gap-5">
       <PageHeader eyebrow="Khách hàng" title="Khách lâu chưa quay lại" />
       <p className="max-w-2xl text-text-muted">
-        Khách liệu trình và khách lẻ chưa quay lại từ {filter.days} ngày trở lên. “Cần liên hệ” xếp người chưa gọi và người đến hạn gọi lại lên trước; gọi xong bấm “Đã liên hệ” để hẹn lần sau.
+        Khách liệu trình và khách lẻ chưa quay lại từ {filter.days} ngày trở lên. “Cần liên hệ” xếp người chưa gọi và người đến hạn gọi lại lên trước; liên hệ xong bấm “Đã liên hệ” để hẹn lần sau.
       </p>
       <ResponsiveFilters
         label="Lọc khách vắng"
@@ -193,18 +193,13 @@ function NextBadge({ on, today }: { on: string; today: string }) {
   );
 }
 
-function RowActions({ c, canFollowUp, onContacted }: { c: InactiveCustomer; canFollowUp: boolean; onContacted: () => void }) {
+// EM round 5 item 8: no call button for now (the desk calls from its own phone); marking the
+// contact is the one action. The number stays readable under the name.
+function MarkContacted({ c, onContacted }: { c: InactiveCustomer; onContacted: () => void }) {
   return (
-    <>
-      <a className="icon-btn" href={`tel:${c.phone.replace(/[^\d+]/g, "")}`} aria-label={`Gọi ${c.full_name}`} title="Gọi điện">
-        <Icon name="phone" />
-      </a>
-      {canFollowUp && (
-        <button type="button" className="btn btn-secondary whitespace-nowrap" onClick={onContacted} aria-label={`Đã liên hệ với ${c.full_name}`}>
-          <Icon name="check" className="size-4" /> Đã liên hệ
-        </button>
-      )}
-    </>
+    <button type="button" className="btn btn-secondary whitespace-nowrap" onClick={onContacted} aria-label={`Đã liên hệ với ${c.full_name}`}>
+      <Icon name="check" className="size-4" /> Đã liên hệ
+    </button>
   );
 }
 
@@ -267,21 +262,25 @@ function inactiveColumns(canFollowUp: boolean, onContacted: (c: InactiveCustomer
       cardOmit: (c) => !c.next_follow_up_on,
       cell: (c) => (c.next_follow_up_on ? <NextBadge on={c.next_follow_up_on} today={today} /> : <span className="text-text-muted">—</span>),
     },
-    {
-      id: "actions",
-      header: <span className="sr-only">Thao tác</span>,
-      card: "actions",
-      cell: (c) => (
-        <span className="flex flex-wrap justify-end gap-2">
-          <RowActions
-            c={c}
-            canFollowUp={canFollowUp}
-            onContacted={() => {
-              onContacted(c);
-            }}
-          />
-        </span>
-      ),
-    },
+    // Without customer.follow_up the row has nothing to do: no empty actions column.
+    ...(canFollowUp
+      ? [
+          {
+            id: "actions",
+            header: <span className="sr-only">Thao tác</span>,
+            card: "actions" as const,
+            cell: (c: InactiveCustomer) => (
+              <span className="flex justify-end">
+                <MarkContacted
+                  c={c}
+                  onContacted={() => {
+                    onContacted(c);
+                  }}
+                />
+              </span>
+            ),
+          },
+        ]
+      : []),
   ];
 }

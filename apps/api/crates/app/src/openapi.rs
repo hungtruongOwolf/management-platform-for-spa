@@ -70,6 +70,8 @@ use utoipa::OpenApi;
         operations::http::void_visit,
         operations::appointments::http::calendar,
         operations::appointments::http::book,
+        operations::appointments::http::book_group,
+        operations::appointments::http::update_settings,
         operations::appointments::http::read_appointment,
         operations::appointments::http::update_appointment,
         operations::appointments::http::arrive,

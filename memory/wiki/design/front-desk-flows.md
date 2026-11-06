@@ -71,7 +71,7 @@ States: validation inline; thu > phải trả → lỗi tại ô tiền; lưu tr
 - Thu vượt số nợ → lỗi tại ô; payment không có nút sửa/xóa (chỉ hủy theo US6).
 
 ## US6: Hủy / sửa sai
-- Danh sách "Lượt khách hôm nay" → mở chi tiết → **Hủy lượt** → ReasonDialog (bắt buộc lý do) → lượt hiển thị gạch ngang + nhãn "Đã hủy: <lý do>", buổi đã trừ được cộng lại, toast xác nhận.
+- Danh sách "Lượt khách hôm nay" → ⋯ của dòng → **Hủy lượt** (vòng 5; form lý do mở ngay dưới dòng) → ReasonDialog (bắt buộc lý do) → lượt hiển thị gạch ngang + nhãn "Đã hủy: <lý do>", buổi đã trừ được cộng lại, toast xác nhận.
 - Hóa đơn bán gói chưa dùng buổi nào → **Hủy hóa đơn**; đã dùng → nút bị khóa, tooltip "Đã dùng buổi, dùng Hủy liệu trình (chủ spa)".
 - Ngày đã chốt → nút Hủy chỉ hiện với chủ spa (không hỏi lại mật khẩu, EM 2026-11-05); Quản lý thấy "Ngày đã chốt, liên hệ chủ spa".
 
@@ -117,7 +117,7 @@ Nguồn: [EM review vòng 4](../../raw/2026-11-05-em-review-round4.md) mục 1, 
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 - **Thông tin khách ngay dưới tên vừa chọn** (cùng ô tìm, không còn thẻ riêng): tên + giới tính, SĐT, "N gói liệu trình đang dùng, còn M buổi", lưu ý sức khỏe, gói + "Trừ 1 buổi", nút "Đổi khách" (= Esc).
-- **Lượt khách hôm nay** rộng toàn trang; nút "Chi tiết" (`aria-expanded`) mở/đóng chi tiết ngay dưới dòng; "Mở hồ sơ khách" đi qua trail nên nút quay lại trên hồ sơ ghi tên màn quầy. Ô ngày dùng `DateField` (luôn dd/mm/yyyy).
+- **Lượt khách hôm nay** rộng toàn trang. **Vòng 5 (EM mục 1: "không hàng không lối")**: bảng thật, cột cố định `Giờ 80px · Khách 24% · Dịch vụ · KTV (phần còn lại, tối đa 2 dòng + "…", KTV dòng dưới) · Thanh toán 16% (Tiền mặt / Chuyển khoản / Tiền mặt + CK / Trừ liệu trình / Đã hoàn tiền) · Số tiền 112px canh phải tabular · ⋯ 60px`. Bỏ nút "Chi tiết": **bấm vào dòng** (hoặc Enter trên tên khách, là nút `aria-expanded`) mở/đóng chi tiết ngay dưới dòng; ⋯ (`RowMenu`) gồm "Mở hồ sơ khách" và "Hủy lượt" (chỉ khi có quyền + lượt chưa hủy). Lượt đã hủy: dòng mờ, số tiền gạch ngang, badge "Đã hủy" cạnh tên, **lý do nằm trong chi tiết** (hủy xong chi tiết tự mở). Dưới 1024px: thẻ (tên, giờ · dịch vụ, số tiền, thanh toán, ⋯), bấm thẻ = mở chi tiết. "Mở hồ sơ khách" đi qua trail nên nút quay lại trên hồ sơ ghi tên màn quầy. Ô ngày dùng `DateField` (luôn dd/mm/yyyy).
 - **Giờ làm:** mặc định "bây giờ" (một dòng chữ, fast path không thêm thao tác). "Đổi giờ làm" mở ô giờ; chủ spa (`visit.backdate`) có thêm ô ngày (lùi ≤ 366 ngày) + ghi chú "Nhập bù: lượt, hóa đơn và tiền thu được ghi vào ngày …"; toast sau khi lưu ghi "nhập bù ngày …".
 - **Giảm giá:** chỉ hiện khi có dòng lẻ và có `sale.discount`; % hoặc số tiền + lý do; xem trước "Giảm X", tổng gạch giá cũ; quản lý vượt 10% thấy "cần chủ spa" (server quyết định).
 
@@ -129,3 +129,11 @@ Nguồn: [EM review vòng 4](../../raw/2026-11-05-em-review-round4.md) mục 1, 
 - **Sheet chi tiết** (`BottomSheet`): khách (+ "Mở hồ sơ"), SĐT, dịch vụ + thời lượng, KTV, **Thanh toán** ("Chưa thanh toán" / "Đã thanh toán X" / "Trừ liệu trình, không phát sinh tiền" / "Lượt đã hủy"), ghi chú, lý do. Thao tác: **KTV làm** + "Khách đã đến" (đúng ngày), "Hoàn tất & ghi lượt" (mở tab Ghi lượt với giỏ điền sẵn: dịch vụ đã đặt → trừ gói nếu còn, không thì dịch vụ lẻ theo giá giới tính; KTV của lịch), "Đổi lịch", "Không đến" (sau giờ hẹn), "Hủy lịch" (lý do bắt buộc). Khách mới: "Tạo hồ sơ khách" (form điền sẵn tên + SĐT) rồi mới hoàn tất. Ngày đã chốt (không phải chủ spa): chỉ xem.
 - **Form đặt lịch** (`BottomSheet` rộng): Khách có hồ sơ (ô tìm) | Khách mới (tên + SĐT; trùng → "Dùng hồ sơ này"); dịch vụ (≤ 5); ngày; giờ bắt đầu (mỗi giờ "(còn N)" / "(kín)"); thời lượng (mặc định theo dịch vụ); KTV (không bắt buộc); ghi chú (không ghi sức khỏe). `409 staff_busy` → "KTV Lan đã có lịch 10:00–11:30 (Nguyễn Thị Hà). Chọn giờ hoặc KTV khác."
 - **Màu trạng thái** (token, đủ sáng/tối, luôn kèm chữ): Đã đặt `info` · Đã đến `warning` · Hoàn tất `success` · Không đến `danger` · Đã hủy `surface-2` (+ gạch ngang ở danh sách).
+
+**Vòng 5: lịch = dòng thời gian của quầy** ([spec §10](../product/specs/appointments.md), thay các điểm tương ứng ở trên):
+- Lưới / tuần / danh sách hiện cả **lượt vãng lai** (viền nét đứt, chữ "Vãng lai") cạnh lịch hẹn. Nhãn + màu theo `phase`: Chưa đến `info` · Đang làm `warning` · Xong `success` · Không đến `danger` · Đã hủy / Lượt đã hủy `surface-2`. Tóm tắt: "Chưa đến n · Đang làm n · Xong n · Hủy/không đến n" (bỏ "K KTV"). Hôm nay tự làm mới 60 giây.
+- Cột giờ: **một con số mỗi giờ** (số khách đông nhất trong giờ, chỉ khi có khách); chủ spa đặt tối đa → "n/max", đầy tô đỏ. Không còn chip "còn N"/"Kín" ở mỗi ô 15 phút. Thẻ lịch: tên + trạng thái (+ "Nhóm · n người"), dịch vụ khi thẻ cao; bỏ dòng giờ lặp. Lưới không vẽ thẻ hủy / không đến / lượt đã hủy.
+- Nút **"Số khách tối đa[: n]"** (chỉ chủ spa) → sheet nhập số (trống = không giới hạn).
+- Sheet lịch: nút chính **"Khách đến · ghi lượt"** (đã đến: "Ghi lượt") → giỏ điền sẵn; phụ **"Chỉ báo đã đến (ghi lượt sau)"** + KTV làm. Nhóm: danh sách "Cùng nhóm (n người)" + **"Khách đến cả nhóm · ghi n lượt"** → sheet bảng: mỗi người giỏ điền sẵn, KTV, Tiền mặt / Chuyển khoản, số thu → "Ghi n lượt"; dòng nào lỗi hiện lỗi tại dòng, bấm lại chỉ gửi người chưa ghi.
+- Sheet lượt vãng lai: khách (+ Mở hồ sơ), dịch vụ, KTV, thanh toán (không ghi chú buổi).
+- Form đặt lịch: **chọn dịch vụ = thêm** (bỏ nút "Thêm"); thời lượng theo dịch vụ, tự tính lại tới khi chỉnh tay ("Đã chỉnh tay · theo dịch vụ: X phút · Dùng lại theo dịch vụ"); **"+ Thêm người (gia đình, nhóm)"** → mỗi người một khung "Người n" (khách, dịch vụ, thời lượng, KTV, "Bỏ người này"), giờ hẹn chung; "Giờ hẹn" mỗi giờ "· n khách" (hoặc "· n/max khách"); nút "Đặt lịch" / "Đặt lịch n người" luôn bấm được: thiếu → "Còn thiếu: …", lỗi server → câu tiếng Việt nêu đúng người; vượt tối đa → cảnh báo, vẫn đặt được.

@@ -20,6 +20,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/appointment-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["update_settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/appointments": {
         parameters: {
             query?: never;
@@ -30,6 +46,22 @@ export interface paths {
         get: operations["calendar"];
         put?: never;
         post: operations["book"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/appointments/group": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["book_group"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1104,6 +1136,11 @@ export interface components {
             duration_min: number;
             /** Format: date-time */
             ends_at: string;
+            /**
+             * Format: uuid
+             * @description Shared by the people of one group (family) booking; null = booked alone.
+             */
+            group_id?: string | null;
             /** Format: uuid */
             id: string;
             is_guest: boolean;
@@ -1114,6 +1151,7 @@ export interface components {
              */
             paid_amount: number;
             payment_state: components["schemas"]["PaymentStateDto"];
+            phase: components["schemas"]["PhaseDto"];
             services: components["schemas"]["AppointmentServiceDto"][];
             /** Format: uuid */
             staff_id?: string | null;
@@ -1131,6 +1169,28 @@ export interface components {
             /** Format: uuid */
             visit_id?: string | null;
         };
+        /**
+         * @description Body of `POST /appointments/group`: a family booked at once, saved atomically. Each person
+         *     becomes an appointment of their own sharing one `group_id`.
+         */
+        AppointmentGroupCreate: {
+            /** @description Booking note for everyone, ≤ 500 characters. Not for health data. */
+            note?: string | null;
+            /** @description 2–6 people; an existing customer appears at most once. */
+            people: components["schemas"]["GroupPersonCreate"][];
+            /**
+             * Format: date-time
+             * @description Shared start, same rules as `POST /appointments`.
+             */
+            starts_at: string;
+        };
+        /** @description `POST /appointments/group` → 201. */
+        AppointmentGroupDto: {
+            /** @description In the order of `people`. */
+            appointments: components["schemas"]["AppointmentDto"][];
+            /** Format: uuid */
+            group_id: string;
+        };
         AppointmentServiceDto: {
             category_name: string;
             /**
@@ -1141,6 +1201,21 @@ export interface components {
             /** Format: uuid */
             service_id: string;
             service_name: string;
+        };
+        AppointmentSettingsDto: {
+            /**
+             * Format: int32
+             * @description Null = no limit.
+             */
+            max_per_slot?: number | null;
+        };
+        /** @description Body of `PUT /appointment-settings` (owner): the advisory "số khách tối đa mỗi khung giờ". */
+        AppointmentSettingsUpdate: {
+            /**
+             * Format: int32
+             * @description 1–200, or `null` = no limit. Required (send `null` to clear).
+             */
+            max_per_slot: number | null;
         };
         /** @enum {string} */
         AppointmentStatusDto: "booked" | "arrived" | "done" | "no_show" | "cancelled";
@@ -1228,27 +1303,74 @@ export interface components {
         CalendarDto: {
             /** @description Every status, earliest first. */
             appointments: components["schemas"]["AppointmentDto"][];
-            /** Format: int32 */
-            capacity: number;
             closes_at: string;
             /** Format: date */
             from: string;
+            /**
+             * Format: int32
+             * @description The owner's advisory "max customers per slot"; null = no limit. Bookings are never
+             *     refused on it: the calendar shows "n / max" and warns.
+             */
+            max_per_slot?: number | null;
             /** @description "HH:MM", spa time. */
             opens_at: string;
             /** Format: int32 */
             slot_minutes: number;
-            /** @description Columns of the day view; their count is the spa's capacity per instant. */
+            /** @description Columns of the day view (active technicians). */
             technicians: components["schemas"]["CalendarTechnician"][];
             time_zone: string;
             /** Format: date */
             to: string;
             /** Format: date */
             today: string;
+            /**
+             * @description Visits of the days recorded without a booking (walk-ins), earliest first. Visits that
+             *     completed an appointment are that appointment. Empty without `visit.read`.
+             */
+            visits: components["schemas"]["CalendarVisitDto"][];
         };
         CalendarTechnician: {
             full_name: string;
             /** Format: uuid */
             id: string;
+        };
+        /**
+         * @description A walk-in visit on the timeline: when it was served, by whom, and where it stands. Carries no
+         *     session note (health data) and no phone.
+         */
+        CalendarVisitDto: {
+            /** Format: date */
+            business_date: string;
+            customer_gender?: components["schemas"]["GenderDto"] | null;
+            /** Format: uuid */
+            customer_id: string;
+            customer_name: string;
+            /** Format: int64 */
+            duration_min: number;
+            /**
+             * Format: date-time
+             * @description `starts_at` + the services' durations (empty = 60) rounded up to the slot, ≤ 8 h.
+             */
+            ends_at: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            paid_amount: number;
+            /** @description `paid` / `no_charge` / `voided`. */
+            payment_state: components["schemas"]["PaymentStateDto"];
+            phase: components["schemas"]["PhaseDto"];
+            services: components["schemas"]["AppointmentServiceDto"][];
+            /**
+             * Format: uuid
+             * @description The first line's technician (the calendar column).
+             */
+            staff_id: string;
+            staff_name: string;
+            /**
+             * Format: date-time
+             * @description The service time (`check_in_at`).
+             */
+            starts_at: string;
         };
         CategoryCreate: {
             name: string;
@@ -1673,6 +1795,26 @@ export interface components {
         GenderDto: "female" | "male";
         /** @enum {string} */
         Granularity: "day" | "week" | "month" | "year";
+        /** @description One person of a group booking: like `AppointmentCreate`, without the shared note. */
+        GroupPersonCreate: {
+            /** Format: uuid */
+            customer_id?: string | null;
+            /**
+             * Format: int32
+             * @description Default: this person's services' durations rounded up to the slot.
+             */
+            duration_min?: number | null;
+            guest?: components["schemas"]["GuestCreate"] | null;
+            /** @description 1–5 services, in the order they will be done. */
+            service_ids: string[];
+            /** Format: uuid */
+            staff_id?: string | null;
+            /**
+             * Format: date-time
+             * @description Default: the group's `starts_at`. Must be on the same business day.
+             */
+            starts_at?: string | null;
+        };
         /** @description A newcomer known only by name and phone until they arrive. */
         GuestCreate: {
             full_name: string;
@@ -2477,6 +2619,13 @@ export interface components {
             closed: boolean;
             payslip: components["schemas"]["Payslip"];
         };
+        /**
+         * @description Where it stands on the desk's timeline (spec §10.1), derived when read: `waiting` (booked),
+         *     `in_service` (arrived, or its visit is within its service time), `done`, `no_show`,
+         *     `cancelled`, `voided` (the visit was voided).
+         * @enum {string}
+         */
+        PhaseDto: "waiting" | "in_service" | "done" | "no_show" | "cancelled" | "voided";
         /**
          * @description `GET /customers/phone-check`. `taken` → `existing_id` + `full_name` name the profile to open
          *     instead of creating a duplicate (create would answer `409 customer.phone_taken`).
@@ -3298,6 +3447,49 @@ export interface operations {
             };
         };
     };
+    update_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppointmentSettingsUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentSettingsDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden (owner only: appointment.settings) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description max_per_slot required / out_of_range (1–200 or null) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     calendar: {
         parameters: {
             query?: {
@@ -3391,7 +3583,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description appointment.staff_busy (existing_id = the overlapping appointment), appointment.slot_full, customer.phone_taken (newcomer's phone already has a record: existing_id) */
+            /** @description appointment.staff_busy (existing_id = the overlapping appointment), customer.phone_taken (newcomer's phone already has a record: existing_id) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3399,6 +3591,72 @@ export interface operations {
                 content?: never;
             };
             /** @description validation_failed (starts_at not_on_slot / too_far, duration_min out_of_range, guest.*), appointment.outside_opening_hours, staff.inactive */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    book_group: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description One key per group booking; a retry replays the first response */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppointmentGroupCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentGroupDto"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description a customer or service not in this spa */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.staff_busy (existing_id; also two people of the group on one technician), customer.phone_taken (existing_id) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed: people count_out_of_range (2–6), people[i].customer_id duplicate, people[i].starts_at not_same_day, and every 422 of POST /appointments under people[i].* */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3490,7 +3748,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description appointment.closed, appointment.staff_busy, appointment.slot_full */
+            /** @description appointment.closed, appointment.staff_busy */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3553,7 +3811,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description appointment.closed / already_arrived / staff_busy / slot_full */
+            /** @description appointment.closed / already_arrived / staff_busy */
             409: {
                 headers: {
                     [name: string]: unknown;

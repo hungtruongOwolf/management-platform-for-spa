@@ -66,6 +66,55 @@ describe("ResponsiveTable", () => {
     expect(within(first).getByText("Đang dùng").tagName).toBe("DD");
     expect(list).toHaveClass("rt-stretch");
   });
+
+  it("keeps fixed column widths, opens a row on click (not on its controls) and shows its details below", async () => {
+    const user = userEvent.setup();
+    const onRowClick = vi.fn();
+    const sized = columns.map((c) => (c.id === "left" ? { ...c, width: "96px" } : c));
+    const { rerender } = render(
+      <ResponsiveTable caption="Gói" rows={rows} rowKey={(r) => r.id} columns={sized} onRowClick={onRowClick} />,
+    );
+    const table = screen.getByRole("table", { name: "Gói" });
+    expect(table).toHaveClass("data-table-fixed");
+    expect(table.querySelectorAll("col")[2]).toHaveStyle({ width: "96px" });
+    await user.click(within(table).getByRole("cell", { name: "Hết buổi" }));
+    expect(onRowClick).toHaveBeenCalledWith(rows[1]);
+    await user.click(within(table).getByRole("link", { name: "Nguyễn Thị Hà" }));
+    expect(onRowClick).toHaveBeenCalledOnce();
+    rerender(
+      <ResponsiveTable
+        caption="Gói"
+        rows={rows}
+        rowKey={(r) => r.id}
+        columns={sized}
+        expanded={(r) => (r.id === "a" ? <p>Chi tiết của {r.name}</p> : null)}
+      />,
+    );
+    const [, first, details] = within(table).getAllByRole("row");
+    expect(first).toHaveClass("rt-open");
+    expect(within(details as HTMLElement).getByRole("cell")).toHaveAttribute("colspan", "4");
+    expect(details).toHaveTextContent("Chi tiết của Nguyễn Thị Hà");
+  });
+
+  it("on phones the whole card opens the row and the details go to the card's foot", async () => {
+    asPhone();
+    const user = userEvent.setup();
+    const onRowClick = vi.fn();
+    render(
+      <ResponsiveTable
+        caption="Gói"
+        rows={rows}
+        rowKey={(r) => r.id}
+        columns={columns}
+        onRowClick={onRowClick}
+        expanded={(r) => (r.id === "b" ? <p>Chi tiết của {r.name}</p> : null)}
+      />,
+    );
+    const [, second] = within(screen.getByRole("list", { name: "Gói" })).getAllByRole("listitem");
+    await user.click(within(second as HTMLElement).getByText("Hết buổi"));
+    expect(onRowClick).toHaveBeenCalledWith(rows[1]);
+    expect(second).toHaveTextContent("Chi tiết của Trần Văn Nam");
+  });
 });
 
 describe("BottomSheet", () => {

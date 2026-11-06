@@ -416,12 +416,18 @@ describe("voids in the /quay visit list", () => {
     });
     const user = userEvent.setup();
     at("/quay");
-    const list = await screen.findByRole("list", {
+    const list = await screen.findByRole("table", {
       name: "Lượt khách hôm nay",
     });
+    // EM round 5: "Hủy" lives in the row's ⋯ menu.
     await user.click(
       await within(list).findByRole("button", {
-        name: /Hủy lượt .* của Nguyễn Thị Hà/,
+        name: /Thao tác lượt .* của Nguyễn Thị Hà/,
+      }),
+    );
+    await user.click(
+      within(screen.getByRole("menu")).getByRole("menuitem", {
+        name: "Hủy lượt",
       }),
     );
     const dialog = await screen.findByRole("dialog", { name: /Hủy lượt/ });
@@ -443,8 +449,15 @@ describe("voids in the /quay visit list", () => {
     expect(
       await within(list).findByText("Lý do hủy: Ghi nhầm khách"),
     ).toBeInTheDocument();
+    // The row stays, muted and marked; the reason sits in its (still open) details.
     expect(within(list).getByText("Đã hủy")).toBeInTheDocument();
-    expect(within(list).queryByRole("button", { name: /Hủy lượt/ })).toBeNull();
+    expect(within(list).getAllByRole("row")[1]).toHaveClass("visit-voided");
+    await user.click(
+      within(list).getByRole("button", { name: /Thao tác lượt .* của Nguyễn Thị Hà/ }),
+    );
+    expect(
+      within(screen.getByRole("menu")).queryByRole("menuitem", { name: "Hủy lượt" }),
+    ).toBeNull();
     expect(posts(calls, "/visits/v1/void")[0]?.body).toEqual({
       reason: "Ghi nhầm khách",
     });
@@ -453,7 +466,7 @@ describe("voids in the /quay visit list", () => {
   it("hides the void of a closed day from managers", async () => {
     serve(MANAGER);
     at("/quay");
-    await screen.findByRole("list", { name: "Lượt khách hôm nay" });
+    await screen.findByRole("table", { name: "Lượt khách hôm nay" });
     // DateField: always dd/mm/yyyy (round 4), committed on blur.
     const dayField = screen.getByLabelText("Xem ngày");
     fireEvent.change(dayField, { target: { value: "01/11/2026" } });
@@ -463,9 +476,14 @@ describe("voids in the /quay visit list", () => {
         "Ngày đã chốt: chỉ chủ spa hủy được lượt của ngày này.",
       ),
     ).toBeInTheDocument();
-    const list = await screen.findByRole("list", {
+    const list = await screen.findByRole("table", {
       name: "Lượt khách trong ngày",
     });
-    expect(within(list).queryByRole("button", { name: /Hủy lượt/ })).toBeNull();
+    await userEvent.click(
+      within(list).getByRole("button", { name: /^Thao tác lượt / }),
+    );
+    expect(
+      within(screen.getByRole("menu")).queryByRole("menuitem", { name: "Hủy lượt" }),
+    ).toBeNull();
   });
 });

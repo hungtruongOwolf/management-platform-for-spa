@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type MouseEvent, type ReactNode } from "react";
 import { useMediaQuery } from "./useMediaQuery";
 
 /** Where a column goes in the phone card (design-system § Mobile patterns). */
@@ -32,6 +32,8 @@ export interface Column<T> {
   rowHeader?: boolean;
   /** Leave this field out of a card when it has nothing to say (a table keeps its "—"). */
   cardOmit?: (row: T) => boolean;
+  /** Desktop column width ("72px", "24%"). Any width switches the table to a fixed layout: every row keeps the same columns and long text wraps inside its own. */
+  width?: string;
 }
 
 export interface ResponsiveTableProps<T> {
@@ -49,6 +51,13 @@ export interface ResponsiveTableProps<T> {
   /** Desktop `<tfoot>` row(s); on phones shown under the cards as given. */
   footer?: { table: ReactNode; cards: ReactNode };
   className?: string;
+  /**
+   * A click on the row (or card) outside its controls, e.g. to open the row's details. Mouse and
+   * touch only: the row must also hold a real control doing the same for keyboards.
+   */
+  onRowClick?: (row: T) => void;
+  /** Content under a row (its details, an inline form): a full-width row, or the card's foot. */
+  expanded?: (row: T) => ReactNode;
 }
 
 /**
@@ -67,14 +76,31 @@ export function ResponsiveTable<T>({
   stretchLink = false,
   footer,
   className = "",
+  onRowClick,
+  expanded,
 }: ResponsiveTableProps<T>) {
   const cards = useMediaQuery(`(max-width: ${String(cardsBelow - 0.02)}px)`);
+  const clickRow = onRowClick
+    ? (row: T) => (e: MouseEvent) => {
+        // A control in the row does its own thing; a drag that selected text is not a click.
+        const onControl = (e.target as Element).closest("a, button, input, select, textarea, label, [role=menu]");
+        if (!onControl && !window.getSelection()?.toString()) onRowClick(row);
+      }
+    : undefined;
+  const fixed = columns.some((c) => c.width);
   if (!cards) {
     return (
       // The wrapper scrolls (sticky header, long lists): focusable and named so keyboards can too.
       <div className={`table-wrap ${className}`} tabIndex={0} role="region" aria-label={caption}>
-        <table className="data-table">
+        <table className={`data-table ${fixed ? "data-table-fixed" : ""}`}>
           <caption className="sr-only">{caption}</caption>
+          {fixed && (
+            <colgroup>
+              {columns.map((c) => (
+                <col key={c.id} style={c.width ? { width: c.width } : undefined} />
+              ))}
+            </colgroup>
+          )}
           <thead>
             <tr>
               {columns.map((c) => (
@@ -85,22 +111,33 @@ export function ResponsiveTable<T>({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={rowKey(row)} className={rowClassName?.(row)}>
-                {columns.map((c) => {
-                  const cls = [c.numeric ? "num" : "", c.className ?? ""].join(" ").trim() || undefined;
-                  return c.rowHeader ? (
-                    <th key={c.id} scope="row" className={cls}>
-                      {c.cell(row)}
-                    </th>
-                  ) : (
-                    <td key={c.id} className={cls}>
-                      {c.cell(row)}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+            {rows.map((row) => {
+              const more = expanded?.(row);
+              const rowCls = [rowClassName?.(row), onRowClick ? "rt-clickable" : "", more ? "rt-open" : ""];
+              return (
+                <Fragment key={rowKey(row)}>
+                  <tr className={rowCls.join(" ").trim() || undefined} onClick={clickRow?.(row)}>
+                    {columns.map((c) => {
+                      const cls = [c.numeric ? "num" : "", c.className ?? ""].join(" ").trim() || undefined;
+                      return c.rowHeader ? (
+                        <th key={c.id} scope="row" className={cls}>
+                          {c.cell(row)}
+                        </th>
+                      ) : (
+                        <td key={c.id} className={cls}>
+                          {c.cell(row)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  {more && (
+                    <tr className="rt-expanded">
+                      <td colSpan={columns.length}>{more}</td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
           {footer && <tfoot>{footer.table}</tfoot>}
         </table>
@@ -114,7 +151,11 @@ export function ResponsiveTable<T>({
     <div className={`rt-cards-wrap ${className}`}>
       <ul aria-label={caption} className={`rt-cards ${stretchLink ? "rt-stretch" : ""}`}>
         {rows.map((row) => (
-          <li key={rowKey(row)} className={`rt-card ${rowClassName?.(row) ?? ""}`}>
+          <li
+            key={rowKey(row)}
+            className={`rt-card ${rowClassName?.(row) ?? ""} ${onRowClick ? "rt-clickable" : ""}`}
+            onClick={clickRow?.(row)}
+          >
             <div className="rt-card-head">
               <div className="rt-card-title">
                 {title.map((c) => (
@@ -155,6 +196,7 @@ export function ResponsiveTable<T>({
                 ))}
               </div>
             )}
+            {expanded?.(row)}
           </li>
         ))}
       </ul>

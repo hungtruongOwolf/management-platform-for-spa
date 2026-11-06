@@ -1,14 +1,17 @@
 //! Appointment use cases (spec appointments.md). Every change runs in one `TenantTx`; bookings of
-//! one business day are serialized by an advisory lock so the technician-overlap and capacity
-//! checks hold under concurrency (the `EXCLUDE` constraint is the second wall for technicians).
+//! one business day are serialized by an advisory lock so the technician-overlap check holds
+//! under concurrency (the `EXCLUDE` constraint is the second wall). The spa-wide "max per slot"
+//! is advisory since round 5 (§10.4): shown and warned about on the calendar, never refused here.
 //! Completing an appointment records its visit through [`crate::service::record_in`]: the same
 //! pricing, session, payment and discount rules as `POST /visits`, in the same transaction.
 
-use super::domain::{self, CalendarSettings, SlotError, Status};
+use super::domain::{self, CalendarSettings, Phase, SlotError, Status};
 use super::dto::{
     AppointmentArrive, AppointmentComplete, AppointmentCompleted, AppointmentCreate,
-    AppointmentDto, AppointmentServiceDto, AppointmentStatusDto, AppointmentUpdate, CalendarDto,
-    CalendarQuery, CalendarTechnician, PaymentStateDto,
+    AppointmentDto, AppointmentGroupCreate, AppointmentGroupDto, AppointmentServiceDto,
+    AppointmentSettingsDto, AppointmentSettingsUpdate, AppointmentStatusDto, AppointmentUpdate,
+    CalendarDto, CalendarQuery, CalendarTechnician, CalendarVisitDto, GuestCreate, PaymentStateDto,
+    PhaseDto,
 };
 use super::repo::{self, AppointmentInsert, AppointmentRow, Reschedule};
 use crate::dto::VisitCreate;
@@ -51,9 +54,6 @@ struct Spa {
 impl Spa {
     fn today(&self) -> NaiveDate {
         self.profile.business_date.as_naive()
-    }
-    fn capacity(&self) -> usize {
-        self.technicians.len()
     }
 }
 
@@ -139,11 +139,10 @@ fn place(
     })
 }
 
-/// The technician is free and the spa has room over the whole booking (AC9.2, AC9.3). Takes the
-/// day lock first, so the answer stays true until the caller commits.
+/// The technician (if any) is free over the whole booking (AC9.2). Takes the day lock first, so
+/// the answer stays true until the caller commits.
 async fn check_fits(
     tx: &mut TenantTx,
-    spa: &Spa,
     p: &Placement,
     except: Option<Uuid>,
 ) -> Result<(), AppError> {
@@ -151,19 +150,12 @@ async fn check_fits(
         org::service::require_active(tx, staff).await?;
     }
     repo::lock_day(tx, p.business_date).await?;
-    let others = repo::open_overlapping(tx, p.starts_at, p.ends_at, except).await?;
     if let Some(staff) = p.staff_id
-        && let Some(busy) = others.iter().find(|o| o.staff_id == Some(staff))
+        && let Some(busy) = repo::staff_overlap(tx, staff, p.starts_at, p.ends_at, except).await?
     {
         return Err(AppError::ConflictWith {
             code: "appointment.staff_busy",
-            existing_id: busy.id,
-        });
-    }
-    let intervals: Vec<_> = others.iter().map(|o| (o.starts_at, o.ends_at)).collect();
-    if domain::peak_overlap(&intervals, p.starts_at, p.ends_at) + 1 > spa.capacity() {
-        return Err(AppError::Conflict {
-            code: "appointment.slot_full",
+            existing_id: busy,
         });
     }
     Ok(())
@@ -207,11 +199,28 @@ fn parse_status(s: &str) -> Result<Status, AppError> {
     Status::parse(s).ok_or_else(|| AppError::Internal(format!("appointment status {s}")))
 }
 
+fn phase_dto(p: Phase) -> PhaseDto {
+    match p {
+        Phase::Waiting => PhaseDto::Waiting,
+        Phase::InService => PhaseDto::InService,
+        Phase::Done => PhaseDto::Done,
+        Phase::NoShow => PhaseDto::NoShow,
+        Phase::Cancelled => PhaseDto::Cancelled,
+        Phase::Voided => PhaseDto::Voided,
+    }
+}
+
 fn dto(
     r: AppointmentRow,
     services: Vec<AppointmentServiceDto>,
+    now: DateTime<Utc>,
 ) -> Result<AppointmentDto, AppError> {
     let status = parse_status(&r.status)?;
+    let duration_min = (r.ends_at - r.starts_at).num_minutes();
+    let visit = r
+        .visit_check_in_at
+        .map(|at| (at, r.visit_status.as_deref() == Some("voided")));
+    let phase = domain::appointment_phase(status, visit, duration_min, now);
     let paid = r.sale_total.unwrap_or(0);
     let payment_state = match status {
         Status::Booked | Status::Arrived => PaymentStateDto::Unpaid,
@@ -222,7 +231,9 @@ fn dto(
     };
     Ok(AppointmentDto {
         status: status_dto(status),
-        duration_min: (r.ends_at - r.starts_at).num_minutes(),
+        phase: phase_dto(phase),
+        group_id: r.group_id,
+        duration_min,
         is_guest: r.customer_id.is_none(),
         customer_gender: crm::http::gender_dto(r.customer_gender.as_deref()),
         paid_amount: if payment_state == PaymentStateDto::Paid {
@@ -272,12 +283,81 @@ async fn load(
                 duration_min: s.duration_min,
             });
     }
+    let now = Utc::now();
     rows.into_iter()
         .map(|r| {
             let s = services.remove(&r.id).unwrap_or_default();
-            dto(r, s)
+            dto(r, s, now)
         })
         .collect()
+}
+
+/// Walk-in visits of `from..=to` on the timeline, with their lines in one more query.
+async fn walk_ins(
+    tx: &mut TenantTx,
+    spa: &Spa,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<Vec<CalendarVisitDto>, AppError> {
+    let rows = repo::walk_ins(tx, spa.profile.branch.as_uuid(), from, to).await?;
+    let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
+    let mut lines: HashMap<Uuid, Vec<repo::VisitLineRow>> = HashMap::new();
+    for l in repo::visit_lines(tx, &ids).await? {
+        lines.entry(l.visit_id).or_default().push(l);
+    }
+    let now = Utc::now();
+    let mut out = Vec::with_capacity(rows.len());
+    for r in rows {
+        // Every visit has a line; one without would have no column to sit in.
+        let Some(ls) = lines.remove(&r.id) else {
+            continue;
+        };
+        let Some((staff_id, staff_name)) = ls.first().map(|l| (l.staff_id, l.staff_name.clone()))
+        else {
+            continue;
+        };
+        let durations: Vec<Option<i32>> = ls.iter().map(|l| l.duration_min).collect();
+        let minutes = domain::visit_minutes(&durations, spa.settings.slot_minutes);
+        let ends_at = r.check_in_at + Duration::minutes(i64::from(minutes));
+        let voided = r.status == "voided";
+        let paid = r.sale_total.unwrap_or(0);
+        let payment_state = if voided {
+            PaymentStateDto::Voided
+        } else if paid > 0 {
+            PaymentStateDto::Paid
+        } else {
+            PaymentStateDto::NoCharge
+        };
+        out.push(CalendarVisitDto {
+            id: r.id,
+            phase: phase_dto(domain::served_phase(voided, ends_at, now)),
+            business_date: r.business_date,
+            starts_at: r.check_in_at,
+            ends_at,
+            duration_min: i64::from(minutes),
+            customer_id: r.customer_id,
+            customer_name: r.customer_name,
+            customer_gender: crm::http::gender_dto(r.customer_gender.as_deref()),
+            staff_id,
+            staff_name,
+            services: ls
+                .into_iter()
+                .map(|l| AppointmentServiceDto {
+                    service_id: l.service_id,
+                    service_name: l.service_name,
+                    category_name: l.category_name,
+                    duration_min: l.duration_min,
+                })
+                .collect(),
+            paid_amount: if payment_state == PaymentStateDto::Paid {
+                paid
+            } else {
+                0
+            },
+            payment_state,
+        });
+    }
+    Ok(out)
 }
 
 async fn load_one(tx: &mut TenantTx, id: Uuid) -> Result<AppointmentDto, AppError> {
@@ -332,8 +412,14 @@ pub async fn calendar(
         return Err(invalid("to", "range_too_long"));
     }
     let appointments = load(&mut tx, None, Some(from), Some(to)).await?;
+    // Entitled data only: walk-in visits are visit records (spec §10.1).
+    let visits = if actor.can(Permission::VisitRead) {
+        walk_ins(&mut tx, &spa, from, to).await?
+    } else {
+        Vec::new()
+    };
+    let max_per_slot = repo::max_per_slot(&mut tx).await?;
     tx.commit().await?;
-    let capacity = u32::try_from(spa.capacity()).unwrap_or(u32::MAX);
     Ok(CalendarDto {
         from,
         to,
@@ -343,8 +429,48 @@ pub async fn calendar(
         slot_minutes: spa.settings.slot_minutes,
         time_zone: spa.profile.timezone.name().to_owned(),
         technicians: spa.technicians,
-        capacity,
+        max_per_slot: max_per_slot.and_then(|m| u32::try_from(m).ok()),
         appointments,
+        visits,
+    })
+}
+
+/// `PUT /appointment-settings` (`appointment.settings`, owner): sets or clears the advisory
+/// "max customers per slot" (1–200, `null` = no limit). Audited.
+pub async fn update_settings(
+    pool: &PgPool,
+    actor: &Actor,
+    input: &AppointmentSettingsUpdate,
+) -> Result<AppointmentSettingsDto, AppError> {
+    actor.require(Permission::AppointmentSettings)?;
+    let value = input
+        .max_per_slot
+        .ok_or_else(|| invalid("max_per_slot", "required"))?;
+    if value.is_some_and(|m| m == 0 || m > domain::MAX_PER_SLOT) {
+        return Err(invalid("max_per_slot", "out_of_range"));
+    }
+    let stored = value
+        .map(i32::try_from)
+        .transpose()
+        .map_err(|_| invalid("max_per_slot", "out_of_range"))?;
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let before = repo::set_max_per_slot(&mut tx, stored, actor.user_id.as_uuid()).await?;
+    audit::record(
+        &mut tx,
+        actor,
+        AuditEntry {
+            action: "appointment.settings",
+            entity_type: "tenant",
+            entity_id: actor.tenant_id.as_uuid(),
+            before: Some(json!({"max_per_slot": before})),
+            after: Some(json!({"max_per_slot": stored})),
+            reason: None,
+        },
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(AppointmentSettingsDto {
+        max_per_slot: value,
     })
 }
 
@@ -365,9 +491,9 @@ enum Who {
     Guest { name: String, phone: PhoneE164 },
 }
 
-fn parse_who(input: &AppointmentCreate) -> Result<Who, AppError> {
-    match (&input.customer_id, &input.guest) {
-        (Some(id), None) => Ok(Who::Customer(*id)),
+fn parse_who(customer_id: Option<Uuid>, guest: Option<&GuestCreate>) -> Result<Who, AppError> {
+    match (customer_id, guest) {
+        (Some(id), None) => Ok(Who::Customer(id)),
         (None, Some(g)) => {
             let name = g.full_name.trim();
             let mut errors = Vec::new();
@@ -390,35 +516,47 @@ fn parse_who(input: &AppointmentCreate) -> Result<Who, AppError> {
     }
 }
 
-/// `POST /appointments` (`appointment.manage`, Idempotency-Key): book a slot (AC9.1–9.4).
-pub async fn book(
-    pool: &PgPool,
-    actor: &Actor,
-    key: Uuid,
-    request_hash: [u8; 32],
-    input: &AppointmentCreate,
-) -> Result<(u16, Value), AppError> {
-    actor.require(Permission::AppointmentManage)?;
-    let who = parse_who(input)?;
-    let note = clean_note(input.note.as_ref())?;
+/// One person to book, parsed at the edge (single booking or one person of a group).
+struct Booking<'a> {
+    who: Who,
+    service_ids: &'a [Uuid],
+    staff_id: Option<Uuid>,
+    starts_at: DateTime<Utc>,
+    duration_min: Option<u32>,
+}
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
-    if let Claim::Replay { status, body } =
-        idempotency::claim(&mut tx, actor, key, request_hash).await?
-    {
-        tx.commit().await?;
-        return Ok((status, body));
+/// Field errors of person `i` of a group point at `people[i].<field>`.
+fn in_person(i: usize, e: AppError) -> AppError {
+    match e {
+        AppError::Validation(fields) => AppError::Validation(
+            fields
+                .into_iter()
+                .map(|f| FieldError::new(format!("people[{i}].{}", f.field), f.code))
+                .collect(),
+        ),
+        other => other,
     }
-    let spa = spa(&mut tx).await?;
-    let customer_id = match &who {
+}
+
+/// Checks and inserts one appointment inside the caller's transaction (day lock taken by
+/// `check_fits`, so a later person of the same group sees this one). Returns its id and day.
+async fn insert_booking(
+    tx: &mut TenantTx,
+    actor: &Actor,
+    spa: &Spa,
+    b: &Booking<'_>,
+    note: Option<&str>,
+    group_id: Option<Uuid>,
+) -> Result<(Uuid, NaiveDate), AppError> {
+    let customer_id = match &b.who {
         Who::Customer(id) => Some(
-            crm::service::brief_in(&mut tx, *id)
+            crm::service::brief_in(tx, *id)
                 .await?
                 .ok_or(AppError::NotFound)?
                 .id,
         ),
         Who::Guest { phone, .. } => {
-            if let Some((existing, _)) = crm::service::phone_holder_in(&mut tx, phone).await? {
+            if let Some((existing, _)) = crm::service::phone_holder_in(tx, phone).await? {
                 return Err(AppError::ConflictWith {
                     code: "customer.phone_taken",
                     existing_id: existing,
@@ -427,22 +565,21 @@ pub async fn book(
             None
         }
     };
-    let services = resolve_services(&mut tx, &input.service_ids).await?;
+    let services = resolve_services(tx, b.service_ids).await?;
     let durations: Vec<Option<i32>> = services.iter().map(|s| s.2).collect();
-    let minutes =
-        domain::duration_minutes(&durations, input.duration_min, spa.settings.slot_minutes)
-            .map_err(slot_error)?;
-    let p = place(&spa, input.starts_at, minutes, input.staff_id)?;
-    check_day(actor, &spa, p.business_date)?;
-    check_fits(&mut tx, &spa, &p, None).await?;
+    let minutes = domain::duration_minutes(&durations, b.duration_min, spa.settings.slot_minutes)
+        .map_err(slot_error)?;
+    let p = place(spa, b.starts_at, minutes, b.staff_id)?;
+    check_day(actor, spa, p.business_date)?;
+    check_fits(tx, &p, None).await?;
 
     let id = Uuid::now_v7();
-    let (guest_name, guest_phone) = match &who {
+    let (guest_name, guest_phone) = match &b.who {
         Who::Guest { name, phone } => (Some(name.as_str()), Some(phone.as_str())),
         Who::Customer(_) => (None, None),
     };
     repo::insert(
-        &mut tx,
+        tx,
         &AppointmentInsert {
             id,
             branch_id: spa.profile.branch.as_uuid(),
@@ -453,15 +590,16 @@ pub async fn book(
             starts_at: p.starts_at,
             ends_at: p.ends_at,
             staff_id: p.staff_id,
-            note: note.as_deref(),
+            note,
+            group_id,
             created_by: actor.user_id.as_uuid(),
         },
     )
     .await?;
     let named: Vec<(Uuid, String)> = services.iter().map(|s| (s.0, s.1.clone())).collect();
-    repo::set_services(&mut tx, id, &named).await?;
+    repo::set_services(tx, id, &named).await?;
     record_audit(
-        &mut tx,
+        tx,
         actor,
         "appointment.create",
         id,
@@ -469,13 +607,110 @@ pub async fn book(
         json!({
             "customer_id": customer_id, "guest": guest_name.is_some(),
             "starts_at": p.starts_at, "ends_at": p.ends_at, "staff_id": p.staff_id,
-            "service_ids": input.service_ids, "has_note": note.is_some(),
+            "service_ids": b.service_ids, "has_note": note.is_some(), "group_id": group_id,
         }),
         None,
     )
     .await?;
+    Ok((id, p.business_date))
+}
+
+/// `POST /appointments` (`appointment.manage`, Idempotency-Key): book a slot (AC9.1–9.4).
+pub async fn book(
+    pool: &PgPool,
+    actor: &Actor,
+    key: Uuid,
+    request_hash: [u8; 32],
+    input: &AppointmentCreate,
+) -> Result<(u16, Value), AppError> {
+    actor.require(Permission::AppointmentManage)?;
+    let booking = Booking {
+        who: parse_who(input.customer_id, input.guest.as_ref())?,
+        service_ids: &input.service_ids,
+        staff_id: input.staff_id,
+        starts_at: input.starts_at,
+        duration_min: input.duration_min,
+    };
+    let note = clean_note(input.note.as_ref())?;
+
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    if let Claim::Replay { status, body } =
+        idempotency::claim(&mut tx, actor, key, request_hash).await?
+    {
+        tx.commit().await?;
+        return Ok((status, body));
+    }
+    let spa = spa(&mut tx).await?;
+    let (id, _) = insert_booking(&mut tx, actor, &spa, &booking, note.as_deref(), None).await?;
     let body = serde_json::to_value(load_one(&mut tx, id).await?)
         .map_err(|e| AppError::Internal(e.to_string()))?;
+    idempotency::complete(&mut tx, actor, key, 201, &body).await?;
+    tx.commit().await?;
+    Ok((201, body))
+}
+
+/// `POST /appointments/group` (`appointment.manage`, Idempotency-Key): a family booked at once
+/// (spec §10.3). Every person is checked like `POST /appointments` and the whole group is saved
+/// in one transaction: one refusal saves nobody. Errors of person `i` name `people[i].…`.
+pub async fn book_group(
+    pool: &PgPool,
+    actor: &Actor,
+    key: Uuid,
+    request_hash: [u8; 32],
+    input: &AppointmentGroupCreate,
+) -> Result<(u16, Value), AppError> {
+    actor.require(Permission::AppointmentManage)?;
+    if !(domain::MIN_GROUP..=domain::MAX_GROUP).contains(&input.people.len()) {
+        return Err(invalid("people", "count_out_of_range"));
+    }
+    let note = clean_note(input.note.as_ref())?;
+    let mut bookings = Vec::with_capacity(input.people.len());
+    for (i, person) in input.people.iter().enumerate() {
+        let who =
+            parse_who(person.customer_id, person.guest.as_ref()).map_err(|e| in_person(i, e))?;
+        if let Who::Customer(id) = who
+            && input.people[..i].iter().any(|p| p.customer_id == Some(id))
+        {
+            return Err(invalid(format!("people[{i}].customer_id"), "duplicate"));
+        }
+        bookings.push(Booking {
+            who,
+            service_ids: &person.service_ids,
+            staff_id: person.staff_id,
+            starts_at: person.starts_at.unwrap_or(input.starts_at),
+            duration_min: person.duration_min,
+        });
+    }
+
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    if let Claim::Replay { status, body } =
+        idempotency::claim(&mut tx, actor, key, request_hash).await?
+    {
+        tx.commit().await?;
+        return Ok((status, body));
+    }
+    let spa = spa(&mut tx).await?;
+    let group_id = Uuid::now_v7();
+    let mut ids = Vec::with_capacity(bookings.len());
+    let mut group_day = None;
+    for (i, b) in bookings.iter().enumerate() {
+        let (id, day) = insert_booking(&mut tx, actor, &spa, b, note.as_deref(), Some(group_id))
+            .await
+            .map_err(|e| in_person(i, e))?;
+        if *group_day.get_or_insert(day) != day {
+            return Err(invalid(format!("people[{i}].starts_at"), "not_same_day"));
+        }
+        ids.push(id);
+    }
+    let mut appointments = Vec::with_capacity(ids.len());
+    for id in ids {
+        appointments.push(load_one(&mut tx, id).await?);
+    }
+    let body = serde_json::to_value(AppointmentGroupDto {
+        group_id,
+        appointments,
+    })
+    .map_err(|e| AppError::Internal(e.to_string()))?;
     idempotency::complete(&mut tx, actor, key, 201, &body).await?;
     tx.commit().await?;
     Ok((201, body))
@@ -563,7 +798,7 @@ pub async fn update(
         }
         check_day(actor, &spa, p.business_date)?;
     }
-    check_fits(&mut tx, &spa, &p, Some(id)).await?;
+    check_fits(&mut tx, &p, Some(id)).await?;
     let note_value = match &note {
         Some(n) => n.clone(),
         None => current.note.clone(),
@@ -639,7 +874,7 @@ pub async fn arrive(
         ends_at: current.ends_at,
         staff_id: Some(input.staff_id),
     };
-    check_fits(&mut tx, &spa, &p, Some(id)).await?;
+    check_fits(&mut tx, &p, Some(id)).await?;
     if !repo::mark_arrived(&mut tx, id, input.staff_id).await? {
         return Err(AppError::Conflict {
             code: "appointment.already_arrived",

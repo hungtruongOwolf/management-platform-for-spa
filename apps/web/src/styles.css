@@ -60,7 +60,7 @@ body {
  * - default (buttons, links): 3px, 2px outside — 5px in all, and controls keep ≥ 8px apart;
  * - text fields: 2px hugging the border (offset 0), no halo, and the field sits 6px below its label
  *   (components.css), so 4px stay clear;
- * - controls packed edge to edge (nav, tabs, segmented, menu and listbox rows): the ring is drawn
+ * - controls packed edge to edge (nav, tabs, segmented, menu and listbox rows, a row's name toggle): the ring is drawn
  *   inside the control.
  * e2e/specs/layout.spec.ts checks that no ring overlaps another element's text.
  */
@@ -68,7 +68,7 @@ body {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
-:is(.nav-item, .sidebar-toggle, .tab, .segmented > button, .menu-item, .palette-option, [role="option"], .chart-col):focus-visible {
+:is(.nav-item, .sidebar-toggle, .tab, .segmented > button, .menu-item, .palette-option, [role="option"], .chart-col, .row-toggle, .sticky-actions-buttons > button, .sticky-actions-buttons > a):focus-visible {
   outline-offset: -3px;
 }
 /* Text links inside a line (a customer's name above their phone): a slimmer, closer ring. */
