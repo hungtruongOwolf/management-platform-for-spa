@@ -268,10 +268,8 @@ jobs:
         if: steps.pw-cache.outputs.cache-hit != 'true'
         timeout-minutes: 5   # an apt/CDN stall once hung here for 8+ min
         run: pnpm --filter web exec playwright install --with-deps chromium
-      - name: Install Chromium system deps
-        if: steps.pw-cache.outputs.cache-hit == 'true'
-        timeout-minutes: 5
-        run: pnpm --filter web exec playwright install-deps chromium
+      # On a cache hit no apt step: the ubuntu-24.04 image already ships Chrome and its libraries
+      # (a missing library fails the browser launch loudly, it cannot pass silently).
       # Each shard provisions its own spa (setup project) on its own Postgres. Specs are split by
       # measured duration (e2e/shard.mjs): Playwright's --shard splits by test count per file.
       - name: E2E and axe (shard ${{ matrix.shard }}/2)
@@ -337,10 +335,6 @@ jobs:
         if: steps.pw-cache.outputs.cache-hit != 'true'
         timeout-minutes: 5
         run: pnpm --filter web exec playwright install --with-deps chromium
-      - name: Install Chromium system deps
-        if: steps.pw-cache.outputs.cache-hit == 'true'
-        timeout-minutes: 5
-        run: pnpm --filter web exec playwright install-deps chromium
       # Setup project provisions the spa (and the manager Lighthouse signs in as); the perf project
       # seeds 300 customers and 100 visits, so /quay is audited with data on it, as before.
       - name: API p95
