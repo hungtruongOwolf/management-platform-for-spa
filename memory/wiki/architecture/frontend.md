@@ -125,6 +125,7 @@ Lighthouse CI chặn merge khi LCP > 2,5 s (mobile, Slow 4G, CPU 4×, `/dang-nha
 - Bảng lương, phiếu lương, sổ thưởng/phạt, hồ sơ: `ResponsiveTable` (thẻ trên phone); form trong `BottomSheet`.
 - CSS riêng `features/staff/staff.css` (chỉ tokens) đi cùng chunk lazy. Query key `["staff", …]`; mọi ghi invalidate `["staff"]` (gồm cả picker `["staff","active"]` của quầy).
 - Perf: chunk `StaffPage` 12.8 KB gzip; startup gzip -9 123.0 → 123.8 KB (ngân sách 125) do route + nav + thông báo lỗi.
+- **Vòng 6 phần B /quay (2026-11-06):** startup gzip -9 **123.53 → 124.96 KB**. Lần đo đầu 125.46 KB (vượt) dù mọi UI mới đã lazy: phần thêm vào bundle là dây nối trong `FrontDeskPage` (state gói/người đi cùng, `coverage`, tổng, banner). Bù bằng: `checkout.ts` (dạng wire + bán chỉ gói), `DraftKeeper`, `LineReferrer`, `checkoutProblem`/`saleErrorOf` vào chunk `CartPackages`; 3 thanh ngữ cảnh giỏ vào `CartOptions`; CSS mới tách `cart-packages.css` / `visits.css` (CSS khởi động 15.2 KB như trước). Một `lazy()` nhỏ cho đoạn JSX < ~150 B gz làm bundle **to hơn** (vỏ lazy + Suspense). Còn ~40 B: thay đổi khởi động tiếp theo phải tách trước (ứng viên: danh sách dòng giỏ, ~1 KB).
 
 ## Auth & permission-aware UI
 - Session là cookie `__Host-session` HttpOnly ([ADR-0004](../decisions/ADR-0004-authentication.md)). **JS không bao giờ đọc hay lưu token.** Fetch dùng `credentials: 'same-origin'`.

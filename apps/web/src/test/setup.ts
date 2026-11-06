@@ -9,4 +9,6 @@ configure({ asyncUtilTimeout: 4000 });
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  // Tab-scoped state (the /quay cart draft, the navigation trail) must not leak between tests.
+  sessionStorage.clear();
 });

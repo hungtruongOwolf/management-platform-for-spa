@@ -269,6 +269,7 @@ async function openCorrection() {
   expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
     "Mở hồ sơ khách",
     "Sửa lượt",
+    "Thêm dịch vụ / bán gói",
     "Hủy lượt",
   ]);
   await user.click(within(menu).getByRole("menuitem", { name: "Sửa lượt" }));

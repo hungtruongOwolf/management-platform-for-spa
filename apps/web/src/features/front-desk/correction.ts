@@ -75,6 +75,7 @@ export function cartFromVisit(v: Visit): CartLine[] {
               : null,
           price: l.unit_price,
           staffId: l.staff_id,
+          ...(l.referrer_staff_id ? { referrerId: l.referrer_staff_id } : {}),
         });
       }
     }
@@ -205,7 +206,9 @@ export function planCorrection(
         ? o.customer_package_item_id === l.itemId &&
             (l.expiryOverrideReason ?? null) ===
               (o.expiry_override_reason ?? null)
-        : o.unit_price === l.price;
+        : o.unit_price === l.price &&
+            // The referrer earns the upsell credit: changing it re-records the visit.
+            (l.referrerId || null) === (o.referrer_staff_id ?? null);
     });
   const sameDiscount =
     discount === old.discount_amount &&

@@ -1,10 +1,16 @@
 // The cart's secondary pieces: the one-off service picker, and once a visit has lines the service
 // time (giờ làm, owner back-dating) and the one-off discount. Each is one aligned row — label · current value · one ghost action — that
 // opens its fields underneath. A lazy chunk prefetched after the first paint, off the startup bundle.
-import type { CustomerSummary, Service } from "@vpyd/api-client";
+import type {
+  Appointment,
+  CustomerSummary,
+  Service,
+  Visit,
+} from "@vpyd/api-client";
 import { useQuery } from "@tanstack/react-query";
 import { formatVnd } from "@vpyd/ui";
 import { useRef, useState } from "react";
+import { Icon } from "../../app/Icon";
 import { DateField } from "../../components/DateField";
 import { messageFor } from "../../lib/errors";
 import { categoriesQuery, servicesQuery } from "../catalog/api";
@@ -13,7 +19,99 @@ import {
   type Gender,
   discountPreview,
   priceFor,
+  timeOf,
 } from "./api";
+
+/**
+ * The bars above the cart lines: "Đang ghi cho lịch hẹn …" (⋯ → "Bỏ liên kết lịch hẹn") when the
+ * visit completes a booking, and "Đã khôi phục giỏ chưa lưu" (+ "Bỏ giỏ") after a draft came back.
+ */
+export function CartContextBars({
+  correcting,
+  onStopCorrecting,
+  appointment,
+  today,
+  restoredFor,
+  onUnlink,
+  onDiscard,
+}: {
+  /** "Sửa lượt": the recorded visit the cart corrects ("Bỏ sửa" leaves it). */
+  correcting: Visit | null;
+  onStopCorrecting: () => void;
+  appointment: Appointment | null;
+  today: string;
+  /** The customer whose unsaved cart was restored, or null. */
+  restoredFor: string | null;
+  onUnlink: () => void;
+  onDiscard: () => void;
+}) {
+  return (
+    <>
+      {correcting && (
+        <div className="context-bar">
+          <span>
+            Đang sửa lượt {timeOf(correcting.check_in_at)} ·{" "}
+            {dmy(correcting.business_date)} của {correcting.customer_name}
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost min-h-9 px-3"
+            onClick={onStopCorrecting}
+          >
+            Bỏ sửa
+          </button>
+        </div>
+      )}
+      {appointment && (
+        <div className="context-bar">
+          <span>
+            Đang ghi cho lịch hẹn {timeOf(appointment.starts_at)}
+            {appointment.business_date !== today
+              ? ` · ${dmy(appointment.business_date)}`
+              : ""}{" "}
+            · {appointment.customer_name}
+          </span>
+          <details
+            className="context-menu"
+            onKeyDown={(e) => {
+              const d = e.currentTarget;
+              if (e.key === "Escape" && d.open) {
+                e.stopPropagation();
+                d.open = false;
+                d.querySelector("summary")?.focus();
+              }
+            }}
+          >
+            <summary aria-label="Tùy chọn lịch hẹn">
+              <Icon name="dots" />
+            </summary>
+            <div className="context-menu-panel">
+              <button type="button" onClick={onUnlink}>
+                Bỏ liên kết lịch hẹn
+              </button>
+              <p>
+                Lịch hẹn vẫn mở (chưa hoàn tất). Lượt này được ghi riêng, như
+                khách đến không hẹn.
+              </p>
+            </div>
+          </details>
+        </div>
+      )}
+      {restoredFor !== null && (
+        <div role="status" className="context-bar">
+          <span>Đã khôi phục giỏ chưa lưu của {restoredFor}.</span>
+          <button
+            type="button"
+            className="btn btn-ghost min-h-9 px-3"
+            onClick={onDiscard}
+          >
+            Bỏ giỏ
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
 
 /** ISO day `days` before `day`. */
 function daysBefore(day: string, days: number): string {
@@ -227,6 +325,8 @@ export function AddOneOff({
   customer,
   onAdd,
   onProblem,
+  id = "one-off-service",
+  label = "Thêm dịch vụ lẻ",
 }: {
   customer: CustomerSummary;
   onAdd: (
@@ -236,6 +336,9 @@ export function AddOneOff({
     categoryName: string | undefined,
   ) => void;
   onProblem: (message: string) => void;
+  /** Field id (unique on the page) and visible label. */
+  id?: string;
+  label?: string;
 }) {
   const services = useQuery(servicesQuery(false));
   const categories = useQuery(categoriesQuery);
@@ -283,8 +386,8 @@ export function AddOneOff({
 
   return (
     <div className="grid gap-2">
-      <label htmlFor="one-off-service" className="section-label">
-        Thêm dịch vụ lẻ
+      <label htmlFor={id} className="section-label">
+        {label}
       </label>
       {services.isError && (
         <p role="alert" className="field-error">
@@ -318,9 +421,9 @@ export function AddOneOff({
           </span>
         )}
         <select
-          id="one-off-service"
+          id={id}
           value={pending}
-          aria-describedby={pending ? "one-off-pending" : undefined}
+          aria-describedby={pending ? `${id}-pending` : undefined}
           onPointerDown={() => {
             viaKeys.current = false;
           }}
@@ -367,7 +470,7 @@ export function AddOneOff({
         </select>
       </div>
       {pendingName ? (
-        <p id="one-off-pending" className="field-hint">
+        <p id={`${id}-pending`} className="field-hint">
           Nhấn Enter để thêm “{pendingName}”.
         </p>
       ) : (

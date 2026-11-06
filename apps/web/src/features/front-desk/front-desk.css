@@ -386,9 +386,27 @@
   .cart-line-staff {
     display: grid;
     grid-column: 1 / -1;
-    grid-template-columns: 3rem minmax(0, 1fr);
+    grid-template-columns: 5.5rem minmax(0, 1fr);
     align-items: center;
-    gap: 4px 8px;
+    gap: 8px;
+  }
+  /* A one-off line a package sold today covers: the listed price struck, 0đ. */
+  .cart-line-was {
+    margin-right: 8px;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 400;
+  }
+
+  .checkout-split {
+    margin-top: -8px;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    font-variant-numeric: tabular-nums;
+  }
+  .pkg-rebuy {
+    grid-column: 1 / -1;
+    justify-self: start;
   }
   .cart-line-staff > label {
     color: var(--text-muted);

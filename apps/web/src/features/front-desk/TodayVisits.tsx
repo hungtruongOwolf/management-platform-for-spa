@@ -12,7 +12,9 @@ import {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
+import type { UpsellMode } from "./VisitUpsell";
+import "./visits.css";
 import { formatVnd } from "@vpyd/ui";
 import { Suspense, lazy, useState } from "react";
 import { CustomerName } from "../../app/CustomerName";
@@ -29,18 +31,46 @@ import { customerQuery } from "../customers/api";
 import { HealthNote } from "../customers/HealthNote";
 import {
   VISITS_PAGE,
-  paymentText,
   timeOf,
   todayAllVisitsQuery,
   todayVisitsQuery,
   visitsOfDayQuery,
 } from "./api";
 
+const VisitUpsell = lazy(() =>
+  import("./VisitUpsell").then((m) => ({ default: m.VisitUpsell })),
+);
 const VoidVisitForm = lazy(() =>
   import("../corrections/VoidVisitForm").then((m) => ({
     default: m.VoidVisitForm,
   })),
 );
+
+type PaymentDto = Visit["payments"][number];
+
+/** "Tiền mặt" / "Chuyển khoản" / "Tiền mặt + CK" of some payments; "" when none. */
+function methodText(payments: PaymentDto[]): string {
+  const methods = new Set(
+    payments.filter((p) => p.kind === "payment").map((p) => p.method),
+  );
+  if (methods.size === 0) return "";
+  if (methods.size > 1) return "Tiền mặt + CK";
+  return methods.has("cash") ? "Tiền mặt" : "Chuyển khoản";
+}
+
+/** Packages sold in the visit that still stand (a voided visit keeps them, AC12.4). */
+function soldPackages(v: Visit) {
+  return v.package_sales.filter((p) => !p.voided);
+}
+
+/**
+ * The "Số tiền" of a visit: everything collected in it — one-off lines after discount plus the
+ * packages sold in it. A voided visit shows what its cancel gave back (the one-off part).
+ */
+export function visitAmount(v: Visit): number {
+  if (v.status === "voided") return v.total;
+  return v.total + soldPackages(v).reduce((s, p) => s + p.total, 0);
+}
 
 /** The "Thanh toán" cell: how it was paid, short (the amount has its own column). */
 function paymentShort(v: Visit): string {
@@ -48,96 +78,142 @@ function paymentShort(v: Visit): string {
   if (v.corrected_by_visit_id) return "Thay bằng lượt mới";
   if (v.status === "voided")
     return v.total > 0 ? "Đã hoàn tiền" : "Đã trả lại buổi";
-  if (v.total === 0) return "Trừ liệu trình";
-  const methods = new Set(
-    v.payments.filter((p) => p.kind === "payment").map((p) => p.method),
+  if (visitAmount(v) === 0) return "Trừ liệu trình";
+  return (
+    methodText([
+      ...v.payments,
+      ...soldPackages(v).flatMap((p) => p.payments),
+    ]) || "Đã thanh toán"
   );
-  if (methods.size === 0) return "Đã thanh toán";
-  if (methods.size > 1) return "Tiền mặt + CK";
-  return methods.has("cash") ? "Tiền mặt" : "Chuyển khoản";
 }
 
-/** Inline details of one visit: lines, technicians, payment, the customer's phone + a profile link. */
-function VisitDetails({
-  v,
-  onCorrect,
+/**
+ * One row of the details, on the table's own columns (time · customer · service · payment ·
+ * amount · ⋯) so each amount sits under "Số tiền". Phones: service + amount, meta underneath.
+ */
+function DetailRow({
+  who,
+  main,
+  meta,
+  pay,
+  amount,
+  strong = false,
 }: {
-  v: Visit;
-  /** Shown only when the caller may correct this visit. */
-  onCorrect: (() => void) | null;
+  who?: React.ReactNode;
+  main: React.ReactNode;
+  meta?: React.ReactNode;
+  pay?: React.ReactNode;
+  amount?: React.ReactNode;
+  strong?: boolean;
 }) {
-  const customer = useQuery(customerQuery(v.customer_id));
   return (
-    <div className="grid gap-2 rounded-[10px] bg-surface-2 p-3 text-sm">
-      {v.corrected_by_visit_id ? (
-        <p className="font-semibold">
-          Đã sửa → lượt mới.{" "}
-          <span className="font-normal text-text-muted">
-            {v.void_reason ?? ""}
-          </span>
-        </p>
-      ) : (
-        v.status === "voided" && (
-          <p className="font-semibold text-danger">
-            Lý do hủy: {v.void_reason ?? "không ghi"}
-          </p>
-        )
-      )}
-      {v.corrects_visit_id && (
-        <p className="text-text-muted">
-          Lượt đã sửa (thay cho lượt ghi trước).
-        </p>
-      )}
-      <ul className="grid gap-1">
-        {v.lines.map((l) => (
-          <li key={l.id} className="flex flex-wrap justify-between gap-2">
-            <span>
-              {serviceLabel(l.service_name, l.category_name)} ·{" "}
-              {l.source === "package"
-                ? `trừ buổi ${l.package_name ?? ""}${l.sessions_left_after != null ? ` (còn ${String(l.sessions_left_after)}/${String(l.sessions_total ?? "?")})` : ""}`
-                : "dịch vụ lẻ"}{" "}
-              · KTV {l.staff_name}
+    <div className={`vd-row ${strong ? "is-total" : ""}`}>
+      <span className="vd-who">{who}</span>
+      <span className="vd-main">
+        {main}
+        {meta && <span className="vd-meta">{meta}</span>}
+      </span>
+      <span className="vd-pay">{pay}</span>
+      <span className="vd-amount">{amount}</span>
+    </div>
+  );
+}
+
+/**
+ * Inline details of one visit as a flush sub-row (EM 2026-11-06: no card in the table, amounts
+ * under "Số tiền"): its lines with technician and referrer, the discount, the packages sold in it,
+ * what was collected, companions, and the status note. Actions live in the row's ⋯ menu.
+ */
+function VisitDetails({ v }: { v: Visit }) {
+  const customer = useQuery(customerQuery(v.customer_id));
+  const packages = v.package_sales;
+  const note = v.corrected_by_visit_id
+    ? `Đã sửa, thay bằng lượt mới. ${v.void_reason ?? ""}`
+    : v.status === "voided"
+      ? `Lý do hủy: ${v.void_reason ?? "không ghi"}`
+      : v.corrects_visit_id
+        ? "Lượt đã sửa (thay cho lượt ghi trước)."
+        : null;
+  const backdated = v.business_date < v.created_at.slice(0, 10);
+  const phone = customer.data ? `SĐT ${customer.data.phone}` : null;
+  return (
+    <div className="visit-details" data-testid="visit-details">
+      {note && (
+        <DetailRow
+          who={phone}
+          main={
+            <span
+              className={
+                v.status === "voided" && !v.corrected_by_visit_id
+                  ? "text-danger"
+                  : ""
+              }
+            >
+              {note}
             </span>
-            <span className="tabular-nums">
-              {l.source === "one_off" ? formatVnd(l.line_value) : "—"}
-            </span>
-          </li>
-        ))}
-      </ul>
+          }
+        />
+      )}
+      {v.lines.map((l, i) => (
+        <DetailRow
+          key={l.id}
+          who={i === 0 && !note ? phone : null}
+          main={serviceLabel(l.service_name, l.category_name)}
+          meta={`KTV ${l.staff_name}${l.source === "one_off" ? ` · Giới thiệu: ${l.referrer_name ?? "Khách tự chọn"}` : ""}`}
+          pay={
+            l.source === "package"
+              ? `Trừ buổi${l.sessions_left_after != null ? ` · còn ${String(l.sessions_left_after)}/${String(l.sessions_total ?? "?")}` : ""}`
+              : "Dịch vụ lẻ"
+          }
+          amount={
+            l.source === "one_off" ? formatVnd(l.unit_price * l.qty) : "—"
+          }
+        />
+      ))}
       {v.discount_amount > 0 && (
-        <p>
-          Giảm {formatVnd(v.discount_amount)}
-          {v.discount_reason ? ` · ${v.discount_reason}` : ""}
-        </p>
+        <DetailRow
+          main="Giảm giá dịch vụ lẻ"
+          meta={v.discount_reason ?? undefined}
+          amount={`−${formatVnd(v.discount_amount)}`}
+        />
       )}
-      <p>{paymentText(v, formatVnd)}</p>
-      {v.business_date < v.created_at.slice(0, 10) && (
-        <p className="text-text-muted">
-          Nhập bù lúc {new Date(v.created_at).toLocaleString("vi-VN")}
-        </p>
+      {packages.map((p) => (
+        <DetailRow
+          key={p.sale_id}
+          main={p.description}
+          meta={[
+            `Người chốt: ${p.closer_name ?? "Khách tự chọn"}`,
+            p.beneficiary_name ? `Mua cho ${p.beneficiary_name}` : "",
+            p.voided ? "Hóa đơn gói đã hủy" : "",
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+          pay={`Gói liệu trình${methodText(p.payments) ? ` · ${methodText(p.payments)}` : ""}`}
+          amount={p.voided ? <s>{formatVnd(p.total)}</s> : formatVnd(p.total)}
+        />
+      ))}
+      {visitAmount(v) > 0 && (
+        <DetailRow
+          strong
+          main={v.status === "voided" ? "Đã hoàn" : "Đã thanh toán"}
+          pay={paymentShort(v)}
+          amount={formatVnd(visitAmount(v))}
+        />
       )}
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        {customer.data && (
-          <span className="tabular-nums">SĐT {customer.data.phone}</span>
-        )}
-        <Link
-          to="/khach-hang/$customerId"
-          params={{ customerId: v.customer_id }}
-          className="font-semibold text-primary underline"
-        >
-          Mở hồ sơ khách
-        </Link>
-        {onCorrect && (
-          <button
-            type="button"
-            onClick={onCorrect}
-            className="btn btn-secondary"
-          >
-            Sửa lượt
-          </button>
-        )}
-      </p>
-      {customer.data && <HealthNote customer={customer.data} />}
+      {v.companions.length > 0 && (
+        <DetailRow main="Người đi cùng" meta={v.companions.join(", ")} />
+      )}
+      {backdated && (
+        <DetailRow
+          main="Nhập bù"
+          meta={`Ghi lúc ${new Date(v.created_at).toLocaleString("vi-VN")}`}
+        />
+      )}
+      {customer.data?.health_note && (
+        <div className="vd-row vd-wide">
+          <HealthNote customer={customer.data} />
+        </div>
+      )}
     </div>
   );
 }
@@ -184,7 +260,7 @@ function visitColumns({
             <CustomerName name={v.customer_name} gender={v.customer_gender} />
           </button>
           {v.corrected_by_visit_id ? (
-            <span className="badge">Đã sửa</span>
+            <span className="badge badge-muted">Đã sửa</span>
           ) : (
             v.status === "voided" && (
               <span className="badge badge-danger">Đã hủy</span>
@@ -228,7 +304,7 @@ function visitColumns({
       numeric: true,
       card: "aside",
       className: "visit-amount",
-      cell: (v) => (v.total ? formatVnd(v.total) : "—"),
+      cell: (v) => (visitAmount(v) ? formatVnd(visitAmount(v)) : "—"),
     },
     {
       id: "actions",
@@ -260,6 +336,10 @@ export function TodayVisits({
   const [voiding, setVoiding] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** The saved visit open for "Thêm dịch vụ / bán gói" or "Chuyển sang gói liệu trình". */
+  const [upsell, setUpsell] = useState<{ id: string; mode: UpsellMode } | null>(
+    null,
+  );
   // A busy day holds a hundred visits: the newest VISITS_PAGE first; "Xem tất cả" loads the day,
   // then shows it VISITS_PAGE at a time.
   const [all, setAll] = useState(false);
@@ -285,9 +365,29 @@ export function TodayVisits({
   const correctable = (v: Visit) =>
     onCorrect !== undefined &&
     mayCorrectVisit(me?.permissions ?? [], v, todayIso);
+  // Round 6 (UX only, the server decides): adding to a saved visit needs the same rights as
+  // recording one, a past day the owner's; converting also voids the one-off part.
+  const pastOk = isToday || can(me, "record.void_closed_day");
+  const mayAdd = (v: Visit) =>
+    v.status === "completed" &&
+    pastOk &&
+    can(me, "visit.record") &&
+    can(me, "payment.collect");
+  const mayConvert = (v: Visit) =>
+    mayAdd(v) &&
+    can(me, "package.sell") &&
+    can(me, "record.void_same_day") &&
+    v.lines.some((l) => l.source === "one_off");
   const toggle = (id: string) => {
     setExpanded((open) => (open === id ? null : id));
     if (voiding === id) setVoiding(null);
+    if (upsell?.id === id) setUpsell(null);
+  };
+  const openUpsell = (v: Visit, mode: UpsellMode) => {
+    setNotice(null);
+    setVoiding(null);
+    setExpanded(v.id);
+    setUpsell({ id: v.id, mode });
   };
   return (
     <section aria-labelledby="today-title" className="panel">
@@ -349,7 +449,7 @@ export function TodayVisits({
         </p>
       )}
       {today.data && today.data.length > 0 && (
-        <div className="rt-host overflow-hidden rounded-[10px] border border-border">
+        <div className="rt-host visits-host overflow-hidden rounded-[10px] border border-border">
           <ResponsiveTable
             caption={isToday ? "Lượt khách hôm nay" : "Lượt khách trong ngày"}
             rows={visible}
@@ -377,6 +477,26 @@ export function TodayVisits({
                         label: "Sửa lượt",
                         onSelect: () => {
                           onCorrect?.(v.id);
+                        },
+                      },
+                    ]
+                  : []),
+                ...(mayAdd(v)
+                  ? [
+                      {
+                        label: "Thêm dịch vụ / bán gói",
+                        onSelect: () => {
+                          openUpsell(v, "add");
+                        },
+                      },
+                    ]
+                  : []),
+                ...(mayConvert(v)
+                  ? [
+                      {
+                        label: "Chuyển sang gói liệu trình",
+                        onSelect: () => {
+                          openUpsell(v, "convert");
                         },
                       },
                     ]
@@ -434,17 +554,32 @@ export function TodayVisits({
                     }}
                   />
                 </Suspense>
-              ) : expanded === v.id ? (
-                <VisitDetails
-                  v={v}
-                  onCorrect={
-                    correctable(v)
-                      ? () => {
-                          onCorrect?.(v.id);
-                        }
-                      : null
+              ) : upsell?.id === v.id ? (
+                <Suspense
+                  fallback={
+                    <p
+                      role="status"
+                      className="visit-inline-form text-text-muted"
+                    >
+                      Đang mở…
+                    </p>
                   }
-                />
+                >
+                  <VisitUpsell
+                    visit={v}
+                    mode={upsell.mode}
+                    onCancel={() => {
+                      setUpsell(null);
+                    }}
+                    onDone={(saved, summary) => {
+                      setUpsell(null);
+                      setExpanded(saved.id);
+                      setNotice(summary);
+                    }}
+                  />
+                </Suspense>
+              ) : expanded === v.id ? (
+                <VisitDetails v={v} />
               ) : null
             }
           />

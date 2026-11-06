@@ -1,0 +1,154 @@
+/*
+ * "Lượt khách hôm nay" details (EM 2026-11-06: no card in the table, amounts under "Số tiền",
+ * the open row must not look glued to its details). Unlayered on purpose: it refines the shared
+ * table rules in components.css (also unlayered) for this table only.
+ *
+ * Desktop: the details are a flush sub-row whose rows use the table's own columns (80px · 24% ·
+ * rest · 16% · 112px · 60px, see TodayVisits `visitColumns`). The open row keeps its full cell
+ * padding; the sub-row starts with a hairline inset from the "Khách" column and 8px of air, and
+ * shares the open row's tint so the pair reads as one unit.
+ */
+.visits-host .data-table tr.rt-expanded > td {
+  padding: 0;
+  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+}
+.visits-host .data-table tr.rt-open > td {
+  border-bottom-color: transparent;
+}
+.visit-details {
+  display: grid;
+  padding: 8px 0 12px;
+  font-size: var(--fs-sm);
+}
+.vd-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "who who"
+    "main amount"
+    "pay pay";
+  align-items: baseline;
+  gap: 2px 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.vd-row:first-child {
+  border-top: 0;
+}
+.vd-who {
+  grid-area: who;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.vd-who:empty,
+.vd-pay:empty,
+.vd-amount:empty {
+  display: none;
+}
+.vd-main {
+  grid-area: main;
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--fs-base);
+  overflow-wrap: anywhere;
+}
+.vd-meta {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.vd-pay {
+  grid-area: pay;
+  color: var(--text-muted);
+}
+.vd-amount {
+  grid-area: amount;
+  font-size: var(--fs-base);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.vd-row.is-total .vd-main,
+.vd-row.is-total .vd-amount {
+  font-weight: 600;
+}
+.vd-wide {
+  display: block;
+}
+/* Desktop table: the same six columns as the row above; cells pad like `td` (0 14px). */
+.data-table .visit-details {
+  position: relative;
+}
+/* The divider starts at the "Khách" column, under the open row's content. */
+.data-table .visit-details::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 80px;
+  border-top: 1px solid var(--border);
+  content: "";
+}
+.data-table .vd-row {
+  grid-template-columns: 80px 24% minmax(0, 1fr) 16% 112px 60px;
+  grid-template-areas: ". who main pay amount .";
+  gap: 0;
+  padding: 8px 0;
+  border-top: 0;
+}
+.data-table .vd-row > * {
+  padding: 0 14px;
+}
+.data-table .vd-who:empty,
+.data-table .vd-pay:empty,
+.data-table .vd-amount:empty {
+  display: block;
+}
+.data-table .vd-wide {
+  padding: 4px 74px 4px calc(80px + 14px);
+}
+/* "Đã thanh toán": a hairline above, from the service column to the amount. */
+.data-table .vd-row.is-total {
+  padding-top: 4px;
+}
+.data-table .vd-row.is-total > * {
+  padding-top: 10px;
+}
+.data-table .vd-row.is-total::before {
+  grid-row: 1;
+  grid-column: 3 / 6;
+  align-self: start;
+  border-top: 1px solid var(--border);
+  content: "";
+}
+
+/* An inline form under a visit row ("Thêm dịch vụ / bán gói", "Chuyển sang gói liệu trình"). */
+.visit-inline-form {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+  padding: 16px 14px;
+  border-top: 1px solid var(--border);
+}
+.data-table .visit-inline-form {
+  max-width: calc(44rem + 80px);
+  padding-left: calc(80px + 14px);
+  border-top: 0;
+  background: linear-gradient(var(--border), var(--border)) no-repeat 80px 0 /
+    100% 1px;
+}
+.visit-inline-form > .btn,
+.visit-inline-form .button-row {
+  justify-self: start;
+}
+.upsell-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 44rem;
+}
+.upsell-total > span:first-child {
+  color: var(--text-muted);
+  font-weight: 600;
+}

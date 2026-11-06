@@ -578,7 +578,7 @@ describe("/quay", () => {
     });
   });
 
-  it("opens a visit row inline with its payment and a link to the profile (AC6.1)", async () => {
+  it("opens a visit row inline: its lines on the table's columns, no buttons in the details (AC6.1)", async () => {
     serve(MANAGER, undefined, [pkg("cp1")], [VISIT]);
     const user = userEvent.setup();
     at("/quay");
@@ -593,17 +593,16 @@ describe("/quay", () => {
     row.focus();
     await user.keyboard("{Enter}");
     expect(row).toHaveAttribute("aria-expanded", "true");
+    const details = within(list).getByTestId("visit-details");
+    // A package session: "Trừ buổi · còn 4/12" in the payment column, "—" under "Số tiền".
+    expect(within(details).getByText("Trừ buổi · còn 4/12")).toBeInTheDocument();
+    expect(within(details).getByText("KTV KTV Hoa")).toBeInTheDocument();
     expect(
-      within(list).getByText("Trừ liệu trình, không phát sinh tiền", {
-        selector: "p",
-      }),
+      await within(details).findByText(/SĐT 0905 111 222/),
     ).toBeInTheDocument();
-    expect(
-      within(list).getByRole("link", { name: "Mở hồ sơ khách" }),
-    ).toHaveAttribute("href", "/khach-hang/c1");
-    expect(
-      await within(list).findByText(/SĐT 0905 111 222/),
-    ).toBeInTheDocument();
+    // Actions live in the row's ⋯ menu only (design-system rule 8).
+    expect(within(details).queryAllByRole("button")).toHaveLength(0);
+    expect(within(details).queryAllByRole("link")).toHaveLength(0);
     expect(
       within(list).queryByRole("button", { name: /^Chi tiết/ }),
     ).toBeNull();
@@ -657,9 +656,12 @@ describe("/quay", () => {
     const menu = screen.getByRole("menu", {
       name: "Thao tác lượt 09:12 của Nguyễn Thị Hà",
     });
-    // A manager without record.void_same_day: only the profile, no "Hủy lượt".
+    // A manager without record.void_same_day: no "Hủy lượt"; adding to the visit is a sale.
     const items = within(menu).getAllByRole("menuitem");
-    expect(items.map((i) => i.textContent)).toEqual(["Mở hồ sơ khách"]);
+    expect(items.map((i) => i.textContent)).toEqual([
+      "Mở hồ sơ khách",
+      "Thêm dịch vụ / bán gói",
+    ]);
     expect(items[0]).toHaveFocus();
     // Opening the menu does not open the row.
     expect(
@@ -671,7 +673,9 @@ describe("/quay", () => {
     // ↓ on the button opens on the first item; Enter runs it.
     await user.keyboard("{ArrowDown}");
     expect(
-      within(screen.getByRole("menu")).getByRole("menuitem"),
+      within(screen.getByRole("menu")).getByRole("menuitem", {
+        name: "Mở hồ sơ khách",
+      }),
     ).toHaveFocus();
     await user.keyboard("{Enter}");
     await waitFor(() => {
