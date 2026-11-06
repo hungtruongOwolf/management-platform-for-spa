@@ -26,26 +26,44 @@ export function Delta({ now, before, label, onChrome = false }: { now: number; b
 }
 
 /**
- * One headline number (rulebook: work area stays quiet). Label + a muted icon, the number at
- * 24px, an optional footnote. `accent` is kept for callers but no longer paints a maroon tile:
- * brand colour lives in the app chrome, and "Thực thu" leads by position (first), not by fill.
+ * One headline number. Three looks (EM review 2026-11-06):
+ * - default: the dashboard's tile (gold icon disc), kept from before the redesign;
+ * - `accent`: the maroon "Thực thu" tile (dashboard and the report);
+ * - `plain`: the report's quiet tile (muted icon, no disc).
  */
 export function StatCard({
   label,
   icon,
   children,
   foot,
+  accent = false,
+  plain = false,
 }: {
   label: string;
   icon: IconName;
   children: ReactNode;
   foot?: ReactNode;
   accent?: boolean;
+  plain?: boolean;
 }) {
+  if (plain && !accent) {
+    return (
+      <div className="card stat-card">
+        <p className="stat-label">
+          <Icon name={icon} className="size-4" />
+          {label}
+        </p>
+        <p className="stat-value tabular">{children}</p>
+        {foot !== undefined && <div className="mt-auto">{foot}</div>}
+      </div>
+    );
+  }
   return (
-    <div className="card stat-card">
+    <div className={`card stat-card ${accent ? "stat-card-accent" : ""}`}>
       <p className="stat-label">
-        <Icon name={icon} className="size-4" />
+        <span aria-hidden="true" className="stat-disc">
+          <Icon name={icon} className="size-4" />
+        </span>
         {label}
       </p>
       <p className="stat-value tabular">{children}</p>

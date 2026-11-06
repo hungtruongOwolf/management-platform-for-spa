@@ -236,8 +236,8 @@ function Overview({ period, metric, onMetric }: { period: Period; metric: Metric
 function Kpis({ range, previous, compareLabel }: { range: RangeReport; previous: RangeReport | undefined; compareLabel: string }) {
   const c = range.totals;
   const p = previous?.totals;
-  const delta = (now: number, before: number | undefined) =>
-    before === undefined ? null : <Delta now={now} before={before} label={compareLabel} />;
+  const delta = (now: number, before: number | undefined, onChrome = false) =>
+    before === undefined ? null : <Delta now={now} before={before} label={compareLabel} onChrome={onChrome} />;
   // Cancelled and corrected visits are not counted above; said once, under the number.
   const notes = [
     c.voided_visits > 0 ? `${count(c.voided_visits)} đã hủy` : null,
@@ -247,15 +247,16 @@ function Kpis({ range, previous, compareLabel }: { range: RangeReport; previous:
     <>
       {range.revenue && (
         <div className="kpi-lead">
-          <StatCard label="Thực thu" icon="wallet" foot={delta(range.revenue.net.total, previous?.revenue?.net.total)}>
+          <StatCard label="Thực thu" icon="wallet" accent foot={delta(range.revenue.net.total, previous?.revenue?.net.total, true)}>
             {money(range.revenue.net.total)}
           </StatCard>
         </div>
       )}
-      <StatCard label="Khách" icon="users" foot={delta(c.customers, p?.customers)}>
+      <StatCard plain label="Khách" icon="users" foot={delta(c.customers, p?.customers)}>
         {count(c.customers)}
       </StatCard>
       <StatCard
+        plain
         label="Lượt khách"
         icon="desk"
         foot={
@@ -267,10 +268,10 @@ function Kpis({ range, previous, compareLabel }: { range: RangeReport; previous:
       >
         {count(c.visits)}
       </StatCard>
-      <StatCard label="Buổi liệu trình đã trừ" icon="package" foot={delta(c.sessions_used, p?.sessions_used)}>
+      <StatCard plain label="Buổi liệu trình đã trừ" icon="package" foot={delta(c.sessions_used, p?.sessions_used)}>
         {count(c.sessions_used)}
       </StatCard>
-      <StatCard label="Gói liệu trình bán ra" icon="layers" foot={delta(c.packages_sold, p?.packages_sold)}>
+      <StatCard plain label="Gói liệu trình bán ra" icon="layers" foot={delta(c.packages_sold, p?.packages_sold)}>
         {count(c.packages_sold)}
       </StatCard>
     </>

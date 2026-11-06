@@ -159,15 +159,15 @@
   display: grid;
   gap: 2px;
 }
+/* Gold small-caps group labels: the EM kept the old nav colour scheme (review 2026-11-06), the
+ * one exception to rulebook §1's "no uppercase eyebrow" (navigation chrome only). */
 .nav-group-label {
-  /* Rulebook §1: no uppercase letter-spaced eyebrow, even on the chrome. A sentence-case 13px
-   * label in the muted chrome text; gold stays for the active item and the logo. */
-  margin: 8px 12px 4px;
-  color: var(--chrome-text-muted);
-  font-size: var(--fs-sm);
+  margin: 6px 12px 2px;
+  color: var(--chrome-accent);
+  font-size: 11px;
   font-weight: 600;
-  line-height: 18px;
-  opacity: 0.85;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 .nav-item,
 .sidebar-toggle {
@@ -187,7 +187,7 @@
   color: var(--chrome-text);
 }
 .nav-item.active {
-  background: var(--chrome-hover);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--chrome-accent) 20%, transparent), var(--chrome-hover));
   color: var(--chrome-text);
 }
 /* Active indicator: a gold bar that grows from the centre (transform only). */
@@ -241,7 +241,7 @@
   bottom: 0;
   left: 0;
   height: 1px;
-  background: var(--border);
+  background: linear-gradient(90deg, var(--border), color-mix(in srgb, var(--accent) 60%, transparent), var(--border));
   content: "";
 }
 .topbar-brand {
@@ -274,6 +274,7 @@
   background: var(--surface);
   color: var(--text-muted);
   font-size: 14px;
+  box-shadow: var(--shadow-1);
 }
 @media (min-width: 640px) {
   .search-trigger {
@@ -1051,6 +1052,32 @@ h2 .gender-chip {
   font-size: var(--fs-sm);
   font-weight: 500;
   line-height: 18px;
+}
+/* Dashboard tile disc (gold) and the maroon "Thực thu" tile (EM review 2026-11-06). */
+.stat-disc {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.stat-card-accent {
+  border-color: transparent;
+  background-color: var(--chrome-bg);
+  background-image: linear-gradient(135deg, var(--chrome-bg-2), var(--chrome-bg));
+  color: var(--chrome-text);
+}
+.stat-card-accent .stat-label {
+  color: var(--chrome-text-muted);
+}
+.stat-card-accent .stat-disc {
+  background: var(--chrome-hover);
+  color: var(--chrome-accent);
+}
+.stat-card-accent .stat-value {
+  color: var(--chrome-accent);
 }
 .stat-value {
   color: var(--text);
