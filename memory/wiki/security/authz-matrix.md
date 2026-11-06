@@ -25,6 +25,8 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
 | `package.use_expired_override` | ✓ | ✓ | — | — |
 | `opening_balance.import` (luôn ghi vào ngày kinh doanh hôm nay; **chỉ còn route tạm**, team dùng CLI `app import-paper-book`) | ✓ | — (bỏ ở 0013) | — | — |
 | `visit.record` / `visit.read` | ✓ | ✓ | — | grant (read) |
+| `visit.backdate` (vòng 4, migration 0016: ghi lượt có giờ làm ở ngày đã qua, ≤ 366 ngày) | ✓ | — | — | — |
+| `appointment.manage` (vòng 4, migration 0016: xem + đặt/đổi/hủy lịch hẹn, khách đến, hoàn tất) | ✓ | ✓ | — (chưa nối tài khoản ↔ nhân viên, Q8) | — |
 | `payment.collect` | ✓ | ✓ | — | — |
 | `sale.read` | ✓ | ✓ | — | grant (read) |
 | `sale.discount` (≤ `manager_discount_max_pct`) | ✓ | ✓ | — | — |
@@ -34,6 +36,12 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
 | `report.read` (R1-2: dashboard ngày, báo cáo khoảng ngày, chỉ số đếm) | ✓ | ✓ | — | — |
 | `report.long_range` (vòng 3, migration 0015: báo cáo theo tháng/năm 3–5 năm; EM Q5) | ✓ | — | — | — |
 | `report.revenue.read` (R1-2: mọi con số tiền trong báo cáo + sổ doanh thu; mặc định bật cho quản lý, **câu hỏi Q1 cho EM**) | ✓ | ✓ | — | — |
+| `staff.manage` (migration 0017: hồ sơ nhân viên, gắn tài khoản; ghi lương cần thêm `payroll.read`) | ✓ | — | — | — |
+| `attendance.record` (0017: lưới chấm công, xem + ghi) | ✓ | ✓ | — | — |
+| `evaluation.record` (0017: đánh giá ngày, đánh giá tháng, sổ thưởng/phạt) | ✓ | ✓ | — | — |
+| `payroll.read` (0017: mọi con số lương; **mặc định không cho quản lý, Q-S1**) | ✓ | — | — | — |
+| `payroll.close` (0017: chốt tháng, sửa quy tắc lương) | ✓ | — | — | — |
+| `staff.read_own` (0016: `GET /me/staff`, tháng của chính mình) | ✓ | ✓ | ✓ | — |
 | `audit.read` | ✓ | — | — | — |
 | `support_grant.manage` | ✓ | — | — | — |
 | `platform.tenant.manage` | — | — | — | ✓ |
@@ -53,12 +61,28 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
   - `GET /customers/phone-check?phone=` cần `customer.read`; chỉ tra trong tenant của session (lọc tường minh + RLS); trả tên + id như `GET /customers?q=<số>` đã trả cho cùng người, nên không mở thêm bề mặt dò số. Chi phí: 1 lookup trên unique index; rate limit chung theo IP (5/s, burst 60). Số điện thoại nằm trong query string như `GET /customers?q=` (log truy cập không ghi query; xem threat-model).
   - `GET /reports/range` với khoảng tháng/năm > 732 ngày hoặc preset `last_3_years` / `last_5_years` cần thêm `report.long_range` (chủ spa); thiếu → `422 to range_too_long` (cố ý không phải 403: cùng mã lỗi với giới hạn thường, quản lý không thấy khác biệt). KTV không bao giờ có `customer.follow_up` (EM Q7; `roles.rs::technician_never_sees_customer_data` khẳng định).
   - Test: `app/tests/follow_ups.rs` (quyền chủ/quản lý/KTV/ẩn danh/spa khác, idempotency, append-only + RLS dưới app_rw), `authz_matrix.rs` (+3 dòng).
+- **Vòng 4 (EM 2026-11-05, [spec appointments](../product/specs/appointments.md), migration 0016):**
+  - 8 route `/appointments*` đều cần `appointment.manage` (Owner, Manager); `POST /appointments/{id}/complete` cần thêm `visit.record` và đi qua đúng use case `POST /visits` (`payment.collect`, `sale.discount*`, `customer.health_notes.write`, `package.use_expired_override` như lượt thường). KTV: không có quyền nào (KTV chỉ xem lịch của mình cần liên kết tài khoản ↔ nhân viên, chưa có → không "trivially safe").
+  - Ngày đã qua: mọi thay đổi lịch hẹn theo `kernel::corrections::authorize_closed_day` (Manager `403 day.locked`, Owner được, không reauth). Thứ tự kiểm: khóa + tìm lịch (spa khác → `404`) **trước** mọi kiểm tra body, nên ID spa khác luôn `404`.
+  - `visit.backdate` (chỉ Owner): `check_in_at` ở ngày đã qua (≤ 366 ngày) → lượt, hóa đơn dịch vụ lẻ, payment mang ngày của giờ làm; audit `visit.create` ghi `backdated`, `recorded_on`. Manager vẫn `422 visit.check_in_not_today`. Không có ngã nào cho client chọn ngày nghiệp vụ trực tiếp: server suy ngày từ giờ làm.
+  - Giảm giá lượt: cùng quy tắc D10 (`sale.discount` ≤ `manager_discount_max_pct`, vượt → `403 discount.limit_exceeded`; `sale.discount_unlimited` chủ spa); server tự tính số tiền từ % (làm tròn xuống); lý do bắt buộc.
+  - Khách mới trong lịch hẹn: SĐT đã có hồ sơ → `409 customer.phone_taken` + `existing_id` (tra trong tenant của session, như `phone-check`, không mở thêm bề mặt dò số).
+  - Dữ liệu: `appointment` + `appointment_service` có RLS tenant; app_rw không DELETE `appointment`; trigger `appointment_closed_is_final`; `EXCLUDE` (staff × khoảng giờ) chống trùng KTV. Ghi chú lịch hẹn **không** phải dữ liệu sức khỏe (UI ghi rõ), không mã hóa; ghi chú buổi vẫn ở lượt khách.
+  - Test: `app/tests/appointments.rs` (7 test: chồng giờ/sức chứa/ô giờ, đua đặt lịch, hoàn tất qua use case lượt + replay, hủy/không đến, ngày đã chốt, nhập bù, giảm giá), `authz_matrix.rs` (+8 dòng, `Target::Appointment`), `roles.rs` (KTV không có `appointment.manage`; Manager không có `visit.backdate`).
 - **Nhập sổ giấy (EM 2026-11-05, R1-2 §7):** quản lý mất `opening_balance.import` (migration 0013 xóa khỏi role hệ thống `manager`; `SystemRole::default_permissions` cũng vậy). `POST /opening-balances` còn tạm cho chủ spa tới khi web xóa màn `/nhap-so-cu`; team migrate bằng `app import-paper-book` (CLI, đi qua đúng use case với quyền của chủ spa). Test: `opening_balances.rs::only_the_owner_imports_today_without_a_window_or_reauth`, `paper_book.rs`.
 - **Spa bị tạm ngưng (M3):** `tenant.status = 'suspended'` → không cấp permission nào, kể cả cho session đang mở: route nghiệp vụ trả `403 auth.not_a_member` (cùng mã với membership bị tắt), `/me` trả `active_tenant: null`, `permissions: []`. Yêu cầu MFA **không** mất theo spa bị ngưng (migration 0011). Test: `app/tests/auth.rs::suspending_a_spa_cuts_off_its_open_sessions`.
 - **switch-tenant không phải re-auth (H1):** session mới sau `POST /auth/switch-tenant` giữ nguyên `recent_auth_at` và `absolute_expires_at` của session cũ (`app/tests/auth.rs::a_rotated_session_needs_a_real_reauth` kiểm trên session đã resolve, đúng cái guard 🔒 đọc; `auth.rs::switch_tenant_keeps_absolute_expiry_and_reauth_time`). Vẫn quan trọng: hạn tuyệt đối không được kéo dài, và guard 🔒 của thao tác bảo mật tài khoản dựa vào `recent_auth_at`.
 - **PlatformAdmin / support grant: ngoài phạm vi R1-1** (kiểm ở S10). Code chưa có role này (`identity::SystemRole` = Owner, Manager, Technician), chưa có bảng `support_grant` hay route nào cấp/thu hồi grant; permission `platform.tenant.manage` và `support_grant.manage` chỉ là hằng số trong `kernel::perm`. Cột PlatformAdmin và test #4 bên dưới chờ ticket thêm role (thêm vào `SystemRole::ALL` thì matrix tự kiểm). Tương tự `customer.anonymize` và `audit.read` chưa có route.
 - **grant** = chỉ khi có `support_grant` còn hiệu lực do chủ spa cấp; mọi truy cập đều audit. Platform admin **không bao giờ** đọc được ghi chú sức khỏe.
-- Technician ở R1-1 không có quyền thao tác quầy. Quyền "xem dữ liệu của chính mình" thuộc R2.
+- Technician ở R1-1 không có quyền thao tác quầy. Quyền "xem dữ liệu của chính mình" có từ 0016 (`staff.read_own`, chỉ tháng công/lương của mình).
+- **Quản lý nhân viên (0016, [spec](../product/specs/staff-management.md)):**
+  - **Lương chỉ gửi cho `payroll.read`.** `GET /staff/{id}` và `/staff/profiles` (`staff.manage`) chỉ có key `pay` khi có `payroll.read`; `pay_visible` báo cho UI. `PUT /staff/{id}/pay` cần cả hai. Test `staff.rs::salary_is_only_sent_to_payroll_readers` (cấp `staff.manage` cho quản lý → không có key lương nào; đã mutation-check).
+  - **KTV chỉ thấy của mình:** `GET /me/staff` lấy staff từ `staff.user_id = session.user` (unique theo tenant), không có tham số chọn người (`?staff_id=` → 400). Test `staff.rs::a_technician_sees_only_their_own_month`.
+  - **Spa khác:** id trên path → 404; `staff_id` trong body (chấm công, đánh giá, thưởng/phạt) → `422 …staff_id unknown`; RLS dưới `app_rw` không thấy dòng nào (`staff.rs::another_spa_cannot_reach_our_staff`).
+  - **Tháng đã chốt:** mọi ghi vào tháng → `409 payroll.period_closed` (service khóa `payroll_period` FOR SHARE / close FOR UPDATE) + trigger `reject_closed_period`; `payslip`, `staff_adjustment` chỉ thêm; tháng không mở lại (`payroll_period_forward_only`). Test `staff.rs::a_closed_month_is_locked_and_corrected_by_adjustments` (cả UPDATE/DELETE trực tiếp dưới app_rw bị từ chối).
+  - Người ghi luôn lấy từ session (`recorded_by`, `created_by`, `closed_by`, `updated_by`). Ghi chú chấm công/đánh giá không vào audit (`has_note`); audit điều kiện lương có số tiền (chỉ chủ spa đọc audit).
+  - Gắn tài khoản: chỉ thành viên đang hoạt động của spa, một tài khoản một hồ sơ (`409 staff.account_taken`). Lưu ý: chủ spa gắn nhầm tài khoản người khác vào hồ sơ thì người đó thấy phiếu lương của hồ sơ đó: đây là quyết định của chủ spa, có audit `staff.update`.
+  - Matrix: 20 route mới trong `authz_matrix.rs` (Target mới `Staff`).
 
 ## Ánh xạ endpoint → permission
 Danh sách đầy đủ ở [backend](../architecture/backend.md) §3 (cột "Permission"). CI fail nếu có route chưa khai báo permission (trừ `/auth/*` công khai và `/health`).

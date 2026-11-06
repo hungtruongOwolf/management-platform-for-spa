@@ -1,6 +1,6 @@
 -- 0018: money paid on paper is booked as a real sale (EM 2026-11-05,
--- memory/raw/2026-11-05-em-carried-over-is-revenue.md). Numbered 0018 because two open branches
--- both use 0016 (staff management, appointments); one of them will become 0017.
+-- memory/raw/2026-11-05-em-carried-over-is-revenue.md). Follows 0016 (appointments) and
+-- 0017 (staff management).
 -- Depends on 0005 (sale, sale_line, customer_package).
 --
 -- A paper-book package (origin = 'opening_balance') may be tied, once, to a sale that books what

@@ -1,0 +1,125 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT status, business_date, starts_at, ends_at, customer_id, staff_id, arrived_at, note, version\n           FROM app.appointment WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "business_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "business_date"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "starts_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "starts_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "ends_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "ends_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "customer_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "customer_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "staff_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "staff_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "arrived_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "arrived_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "note"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "version",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "version"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "7e25b37db1299cf96355da962e2652ab5ac3db1aef1cda268cccb4a6f0b87c15"
+}

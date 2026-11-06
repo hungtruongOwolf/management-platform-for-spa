@@ -72,6 +72,7 @@ Tiền ăn 300–600k/tháng · BHXH 308k/tháng từ tháng thứ 13 HĐ chính
 - Khiếu nại nghiêm trọng (Nhóm A #6).
 
 ## ⚠️ Mâu thuẫn / chỗ còn thiếu cần EM xác nhận
+Mặc định đã build và quy tắc chỉnh được cho từng mục: [spec staff-management §6](specs/staff-management.md) (2026-11-05). Vẫn chờ EM trả lời (Q-C1…Q-C8).
 1. **Thưởng cam kết 24 tháng (KTV có KN):** mục 1 ghi "trả 2tr ở mốc 12 + 2tr ở mốc 24", nhưng mục 3.5 và 4 ghi "chỉ trả khi đủ 24 tháng".
 2. **2 ngày nghỉ miễn trừ** áp dụng cho cả P, ĐX và K, hay K luôn bị trừ? Excel đang đếm chung cả ba.
 3. **Hoa hồng làm liệu trình**: một buổi lấy từ liệu trình trả trước được tính giá trị bao nhiêu (giá gói ÷ số buổi)? Chốt liệu trình mà khách trả góp/còn nợ thì tính hoa hồng trên tiền đã thu hay trên giá trị bán? Hai KTV cùng làm một khách thì chia thế nào?

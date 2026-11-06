@@ -117,9 +117,20 @@ Thứ tự ưu tiên đúng như trên. Không cần job cập nhật trạng th
 | `audit_log` *(append-only)* | tenant_id?, actor_user_id, actor_kind (`user`/`platform_admin`/`system`), action, entity_type, entity_id, before `jsonb`, after `jsonb`, reason?, ip, at | index `(tenant_id, entity_type, entity_id, at)`. Trường sức khỏe ghi `"[redacted]"` |
 
 ## Migrations (forward-only, `sqlx migrate`)
-`0001_kernel` ✅ (pg_trgm, schema `app`, `app.current_tenant()`, tenant, branch, audit_log, idempotency_record, RLS + grants) → `0002_identity_org` → `0003_catalog` → `0004_crm` ✅ → `0005_sales_packages` ✅ (staff, sale, sale_line, payment, customer_package, customer_package_item) → `0006_mfa` ✅ (S2b) → `0007_visits` ✅ (S7: visit, visit_line) → `0009_void_lifecycle` ✅ (S8) → `0011_security_review` ✅ (H1, M3; M2 window + `refund_cap`) → `0012_simplify_owner_and_opening_balance` (EM 2026-11-05: bỏ `opening_balance_window`, quyền `opening_balance.manage_window`, cột `refund_cap`; trigger `refund_within_paid` về lại `amount ≤ sold_price`) → `0013_management_views` (R1-2, xem mục Read models) → `0014_follow_ups_and_search` (vòng 3, xem mục Follow-up) → `0015_long_range_reports` (`report.long_range` cho chủ spa) → `0018_paper_book_sales` (tiền sổ giấy là hóa đơn; 0016/0017 để cho nhân sự / lịch hẹn đang làm). 0008, 0010 bỏ trống. 0011 đã có thể chạy trên staging nên không sửa, chỉ thêm 0012. Kế hoạch tách riêng migration RLS/grants ban đầu đã bỏ: mỗi migration tự bật RLS và cấp quyền cho bảng của nó.
+`0001_kernel` ✅ (pg_trgm, schema `app`, `app.current_tenant()`, tenant, branch, audit_log, idempotency_record, RLS + grants) → `0002_identity_org` → `0003_catalog` → `0004_crm` ✅ → `0005_sales_packages` ✅ (staff, sale, sale_line, payment, customer_package, customer_package_item) → `0006_mfa` ✅ (S2b) → `0007_visits` ✅ (S7: visit, visit_line) → `0009_void_lifecycle` ✅ (S8) → `0011_security_review` ✅ (H1, M3; M2 window + `refund_cap`) → `0012_simplify_owner_and_opening_balance` (EM 2026-11-05: bỏ `opening_balance_window`, quyền `opening_balance.manage_window`, cột `refund_cap`; trigger `refund_within_paid` về lại `amount ≤ sold_price`) → `0013_management_views` (R1-2, xem mục Read models) → `0014_follow_ups_and_search` (vòng 3, xem mục Follow-up) → `0015_long_range_reports` → `0016_appointments` (vòng 4, xem mục Lịch hẹn) → `0017_staff_management` (xem mục Quản lý nhân viên) → `0018_paper_book_sales` (tiền sổ giấy là hóa đơn, xem mục dưới). 0008, 0010 bỏ trống. Từ 0016 crate `kernel` có `build.rs` (`rerun-if-changed=../../migrations`): trước đó thêm file migration mới không làm build lại migrator nhúng, `app migrate` lặng lẽ bỏ qua nó. 0011 đã có thể chạy trên staging nên không sửa, chỉ thêm 0012. Kế hoạch tách riêng migration RLS/grants ban đầu đã bỏ: mỗi migration tự bật RLS và cấp quyền cho bảng của nó.
 
 Thay đổi về sau theo **expand → backfill theo lô → kiểm tra → contract**. Mỗi migration được test trên snapshot giống production.
+
+## Lịch hẹn, nhập bù, giảm giá lượt (0016, vòng 4, [spec](../product/specs/appointments.md))
+- **`app.appointment`**: id, tenant_id, branch_id, `customer_id?` **hoặc** (`guest_name`, `guest_phone` E.164) (CHECK đúng một), `business_date`, `starts_at`, `ends_at` (> starts, ≤ 8 giờ), `staff_id?`, `status` ∈ booked/arrived/done/no_show/cancelled, `note ≤ 500` (không phải dữ liệu sức khỏe), `status_reason` (bắt buộc với no_show/cancelled), `arrived_at` (bắt buộc khi arrived, cùng `staff_id`), `closed_at/closed_by` (đúng khi done/no_show/cancelled), `visit_id` (đúng khi done; `UNIQUE (tenant_id, visit_id)`, FK → visit), created_by/at, updated_at, `version`. FK tenant-scoped tới branch, customer, staff, visit.
+  - `EXCLUDE USING gist (tenant_id =, staff_id =, tstzrange(starts_at, ends_at) &&) WHERE status IN ('booked','arrived') AND staff_id IS NOT NULL` (extension `btree_gist`, trusted). Lớp thứ hai sau khóa advisory theo (spa, ngày) của service.
+  - Trigger `appointment_closed_is_final`: lịch đã done/no_show/cancelled không UPDATE được nữa.
+  - Index `(tenant_id, business_date, starts_at)` (lịch ngày/tuần), `(tenant_id, customer_id, starts_at DESC)`.
+  - app_rw: `SELECT, INSERT, UPDATE` (không DELETE). RLS `tenant_isolation`.
+- **`app.appointment_service`** (tenant_id, appointment_id, position 0–4, service_id, service_name_snapshot): app_rw `SELECT, INSERT, DELETE` (thay danh sách khi đổi lịch). RLS.
+- **`visit_line.discount_amount`** `bigint ≥ 0` (mặc định 0): phần giảm giá của lượt chia cho dòng lẻ. CHECK `visit_line_check` thay bằng bản mới: dòng gói `discount_amount = 0`; dòng lẻ `discount_amount ≤ qty × unit_price` và `line_value = qty × unit_price − discount_amount`. Dữ liệu cũ hợp lệ ngay (mặc định 0).
+- **Quyền:** `appointment.manage` cho role hệ thống owner + manager, `visit.backdate` cho owner.
+- Nhập bù không cần cột mới: `visit.check_in_at` vốn là giờ làm, `business_date` của visit/sale/payment = ngày của giờ làm; `created_at`/`paid_at` vẫn là lúc ghi thật.
 
 ## Tiền sổ giấy là hóa đơn (0018, EM 2026-11-05)
 - `sale.source` (`app` mặc định | `paper_book`): đánh dấu ẩn cho audit và chạy lại; API không bao giờ trả.
@@ -142,6 +153,21 @@ Không có bảng mới. 0013:
 - **Index** (bench 3 năm: mọi index mới đều được dùng, các index ngày cũ dẫn đầu bằng `branch_id` có 0 lượt quét): `sale/payment/visit/refund (tenant_id, business_date)`, `visit_line (tenant_id, customer_package_id) WHERE NOT NULL` (trang liệu trình, "dùng lần cuối"), `refund (tenant_id, customer_id)`.
 - `customer_package.origin` vẫn giữ trong DB (gói sổ giấy không có hóa đơn nên không bao giờ thành doanh thu), nhưng không còn trong API.
 - Dữ liệu demo: hóa đơn ghi lùi ngày (`create_sale_as_of`) có `created_at` = lúc seed, nên timeline khách sắp theo `business_date` trước rồi mới tới giờ.
+
+## Quản lý nhân viên (0017, [spec](../product/specs/staff-management.md))
+- `staff` + `user_id` (FK `user_account`, unique `(tenant_id, user_id)` khi khác NULL) + `shift_start`.
+- `staff_pay` (PK `(tenant_id, staff_id)`): `base_salary`, `commission_rate_bp`, `loyalty_bonus_monthly`, `meal_allowance`, `version`. Nhạy cảm.
+- `payroll_rules` (PK `tenant_id`, `rules jsonb`, `version`): hr::rules::PayrollRules, thiếu key = mặc định.
+- `payroll_period` (PK `(tenant_id, period)`, `period` = ngày 1): `open` → `closed` (trigger `payroll_period_forward_only`, không DELETE).
+- `attendance_day` (PK `(tenant_id, staff_id, work_date)`): `present|leave_p|leave_dx|absent_k`, giờ đến/về, `late_minutes`, ghi chú; CHECK giờ chỉ khi `present`.
+- `staff_daily_review` (PK như trên): khen, phàn nàn (0–99), ghi chú.
+- `staff_evaluation` (PK `(tenant_id, staff_id, work_date=ngày 1)`): `criteria jsonb` [{key,max,level,points}], `total_points`, `result_level`, CHECK Mức 3/Chưa đạt phải có `coaching_plan`.
+- `staff_adjustment`: chỉ thêm (`reject_mutation`), `amount` và/hoặc `points`, `reason`, `corrects_period` < tháng ghi.
+- `payslip`: bản chụp `detail jsonb` + `net_pay`, unique `(tenant_id, period, staff_id)`, chỉ thêm.
+- Trigger `reject_closed_period()` trên 4 bảng ghi theo ngày/tháng: từ chối INSERT/UPDATE/DELETE khi tháng của `work_date` đã chốt, và không cho đổi `work_date`.
+- Index: `visit_day_status_idx (tenant_id, business_date) WHERE completed`, `sale_closer_day_idx`.
+- Mọi bảng: RLS `tenant_isolation`; grant tối thiểu (`payslip`, `staff_adjustment`: SELECT, INSERT).
+- Seed demo (`app seed-demo`, lần đầu): ngày vào làm + lương cho 6 người, tài khoản KTV `0905000003` gắn vào "Nguyễn Thị Lan", chấm công từ ngày 1 tháng trước đến hôm qua, khen/phàn nàn ngẫu nhiên, đánh giá tháng trước cho 5 KTV (một người Chưa đạt có kế hoạch kèm), 5 khoản thưởng/phạt. Tháng trước để **mở** cho EM thử chốt.
 
 ## Seed
 Dữ liệu tenant Viên Phúc Y Đường: 1 chi nhánh (Phường Đông Hà), 10 nhóm và 35 dịch vụ từ [service-catalog](../product/service-catalog.md), role hệ thống, tài khoản chủ spa. Giá "Ôn ấm tử cung" và các gói liệu trình: chờ EM.

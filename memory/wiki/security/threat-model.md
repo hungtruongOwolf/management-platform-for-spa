@@ -82,5 +82,19 @@ sources: [architecture/system.md, product/specs/front-desk-and-packages.md]
 | L8 | Action CI không pin SHA; deploy job có `packages: write` và chuyển token đó lên VPS | Pin mọi action theo commit SHA (`# vX`); `packages: write` chỉ ở job build, job deploy `packages: read` | `actionlint` sạch |
 | INFO | `safeNextPath` nhận `/\t/evil.com`; hash idempotency không gắn route; `POST /sales` thu tiền không cần `payment.collect`; phân bổ giảm giá có thể vượt giá dòng | Chặn `[\x00-\x20\\]`; `kernel::idempotency::hash_route` (method + route + record + body) cho mọi endpoint idempotent (sales, packages, operations); `payment.collect` khi có payments; phần dư phân bổ không vượt giá dòng | `api.test.ts`, `idempotency::tests::route_hash_binds_method_route_and_record`, `sales.rs::taking_money_needs_payment_collect`, `domain::tests::shares_always_sum_to_the_discount_and_fit_their_lines` |
 
+## Quản lý nhân viên (0016, secure review 2026-11-05)
+| Lạm dụng | Kiểm soát (server) | Test |
+|---|---|---|
+| Quản lý/role tùy biến đọc lương qua hồ sơ | `pay` chỉ khi `payroll.read`; ghi lương cần cả hai quyền | `staff.rs::salary_is_only_sent_to_payroll_readers` (mutation-check) |
+| KTV đổi staff id để xem lương người khác | `/me/staff` không nhận id; staff từ `staff.user_id` của session | `a_technician_sees_only_their_own_month` |
+| Gửi `staff_id` của spa khác trong body | kiểm danh sách hồ sơ trong `TenantTx` → 422; FK `(tenant_id, staff_id)`; RLS | `another_spa_cannot_reach_our_staff` |
+| Sửa công/thưởng của tháng đã trả lương để đổi lịch sử | khóa `payroll_period` + trigger; bản chụp chỉ thêm; không mở lại | `a_closed_month_is_locked_and_corrected_by_adjustments` |
+| Ghi đúng lúc đang chốt (race) | ghi: FOR SHARE; chốt: FOR UPDATE trên cùng dòng | thiết kế `hr::period` (trigger là lớp chặn sau) |
+| Giả người ghi | `recorded_by/created_by/closed_by` lấy từ session; body có field lạ → 422 | matrix + DTO `deny_unknown_fields` |
+| Gửi lại lệnh chốt / thưởng | `Idempotency-Key` (replay giống hệt, khác body → 422) | `a_closed_month…` (replay) |
+| Quy tắc lương độc hại (số âm, key lạ) | `PayrollRules::validate`, `deny_unknown_fields` | `rules_and_attendance_drive_deductions` |
+| Lộ lương qua cache trình duyệt/proxy | `Cache-Control: no-store` mọi response hr/org-profile | `salary_is_only…` (header) |
+Không có Critical/High. Còn mở: quản lý thấy số tiền thưởng/phạt mình ghi (Q-S3); chủ spa gắn nhầm tài khoản → người đó thấy phiếu lương hồ sơ đó (có audit).
+
 ## Còn mở
 - Danh sách thao tác yêu cầu nhập lại mật khẩu: chỉ thao tác bảo mật tài khoản (đổi mật khẩu, cài đặt MFA), EM 2026-11-05. Khi thêm route đó: dùng `AuthUser::require_recent_auth` + test `401`.

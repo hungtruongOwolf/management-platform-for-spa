@@ -4,6 +4,134 @@
  */
 
 export interface paths {
+    "/api/v1/adjustments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_adjustments"];
+        put?: never;
+        post: operations["post_adjustment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/appointments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["calendar"];
+        put?: never;
+        post: operations["book"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/appointments/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["read_appointment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_appointment"];
+        trace?: never;
+    };
+    "/api/v1/appointments/{id}/arrive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["arrive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/appointments/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/appointments/{id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["complete"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/appointments/{id}/no-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["no_show"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/attendance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_attendance"];
+        put: operations["put_attendance"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -341,6 +469,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/daily-reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_daily_reviews"];
+        put: operations["put_daily_reviews"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evaluations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_evaluations"];
+        put: operations["put_evaluation"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me": {
         parameters: {
             query?: never;
@@ -349,6 +509,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["me"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/staff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_my_staff"];
         put?: never;
         post?: never;
         delete?: never;
@@ -414,6 +590,70 @@ export interface paths {
         };
         get: operations["list_packages"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/payroll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_payroll"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/payroll/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["close_payroll"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/payroll/payslips/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_payslip"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/payroll/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_rules"];
+        put: operations["put_rules"];
         post?: never;
         delete?: never;
         options?: never;
@@ -590,6 +830,70 @@ export interface paths {
         };
         get: operations["list_staff"];
         put?: never;
+        post: operations["create_staff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_accounts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_profiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_staff"];
+        put: operations["update_staff"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/{id}/pay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set_staff_pay"];
         post?: never;
         delete?: never;
         options?: never;
@@ -649,6 +953,283 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        Adjustment: {
+            /**
+             * Format: int64
+             * @description Đồng; `None` = points only.
+             */
+            amount?: number | null;
+            by_name: string;
+            /** @description `YYYY-MM` of the closed month this entry corrects. */
+            corrects_month?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["AdjustmentKind"];
+            /** Format: date */
+            occurred_on: string;
+            /** Format: int32 */
+            points?: number | null;
+            reason: string;
+            /** Format: uuid */
+            staff_id: string;
+        };
+        AdjustmentCreate: {
+            /**
+             * Format: int64
+             * @description Đồng, 1–100.000.000; give `amount`, `points` or both.
+             */
+            amount?: number | null;
+            /** @description `YYYY-MM` of a closed month this entry corrects. */
+            corrects_month?: string | null;
+            kind: components["schemas"]["AdjustmentKind"];
+            /**
+             * Format: date
+             * @description Default today; its month must be open.
+             */
+            occurred_on?: string | null;
+            /** Format: int32 */
+            points?: number | null;
+            reason: string;
+            /** Format: uuid */
+            staff_id: string;
+        };
+        /** @enum {string} */
+        AdjustmentKind: "bonus" | "penalty";
+        AdjustmentLog: {
+            closed: boolean;
+            items: components["schemas"]["Adjustment"][];
+            month: string;
+        };
+        /** @description Body of `POST /appointments/{id}/arrive`. */
+        AppointmentArrive: {
+            /**
+             * Format: uuid
+             * @description The technician serving the customer (required).
+             */
+            staff_id: string;
+        };
+        /** @description Body of `POST /appointments/{id}/cancel` and `/no-show`. */
+        AppointmentClose: {
+            /** @description Required, 1–500 characters. */
+            reason?: string | null;
+        };
+        /**
+         * @description Body of `POST /appointments/{id}/complete`: the visit, exactly as `POST /visits` minus the
+         *     customer (the appointment's). Same rules: server prices, full payment, discount (D10).
+         */
+        AppointmentComplete: {
+            /**
+             * Format: date-time
+             * @description When the service happened. Default: arrival time, else the booked start if already
+             *     past, else now. Same day rules as `POST /visits` (owner may back-date).
+             */
+            check_in_at?: string | null;
+            discount?: components["schemas"]["ServiceDiscountCreate"] | null;
+            lines: components["schemas"]["VisitLineCreate"][];
+            note?: string | null;
+            payments?: components["schemas"]["PaymentCreate"][];
+        };
+        /** @description `POST /appointments/{id}/complete`. */
+        AppointmentCompleted: {
+            appointment: components["schemas"]["AppointmentDto"];
+            visit: components["schemas"]["VisitDto"];
+        };
+        /** @description Body of `POST /appointments`. Exactly one of `customer_id` / `guest`. */
+        AppointmentCreate: {
+            /** Format: uuid */
+            customer_id?: string | null;
+            /**
+             * Format: int32
+             * @description Default: the services' durations (empty = 60) rounded up to the slot. 1 slot – 480.
+             */
+            duration_min?: number | null;
+            guest?: components["schemas"]["GuestCreate"] | null;
+            /** @description Booking note, ≤ 500 characters. Not for health data. */
+            note?: string | null;
+            /** @description 1–5 services, in the order they will be done. */
+            service_ids: string[];
+            /**
+             * Format: uuid
+             * @description Preferred technician (optional while booked).
+             */
+            staff_id?: string | null;
+            /**
+             * Format: date-time
+             * @description On the spa's slot grid, inside opening hours; today up to 90 days ahead (past days: owner).
+             */
+            starts_at: string;
+        };
+        AppointmentDto: {
+            /** Format: date-time */
+            arrived_at?: string | null;
+            /** Format: date */
+            business_date: string;
+            /** Format: date-time */
+            closed_at?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            customer_gender?: components["schemas"]["GenderDto"] | null;
+            /**
+             * Format: uuid
+             * @description Null for a newcomer not yet linked to a customer record.
+             */
+            customer_id?: string | null;
+            /** @description The customer's name, or the newcomer's. */
+            customer_name: string;
+            /** @description E.164. */
+            customer_phone: string;
+            /** Format: int64 */
+            duration_min: number;
+            /** Format: date-time */
+            ends_at: string;
+            /** Format: uuid */
+            id: string;
+            is_guest: boolean;
+            note?: string | null;
+            /**
+             * Format: int64
+             * @description Collected by the visit (after discount); 0 until done.
+             */
+            paid_amount: number;
+            payment_state: components["schemas"]["PaymentStateDto"];
+            services: components["schemas"]["AppointmentServiceDto"][];
+            /** Format: uuid */
+            staff_id?: string | null;
+            staff_name?: string | null;
+            /** Format: date-time */
+            starts_at: string;
+            status: components["schemas"]["AppointmentStatusDto"];
+            /** @description Why it was cancelled / missed. */
+            status_reason?: string | null;
+            /**
+             * Format: int64
+             * @description Send back as `If-Match` when editing.
+             */
+            version: number;
+            /** Format: uuid */
+            visit_id?: string | null;
+        };
+        AppointmentServiceDto: {
+            category_name: string;
+            /**
+             * Format: int32
+             * @description Current catalog duration; null = "theo tư vấn".
+             */
+            duration_min?: number | null;
+            /** Format: uuid */
+            service_id: string;
+            service_name: string;
+        };
+        /** @enum {string} */
+        AppointmentStatusDto: "booked" | "arrived" | "done" | "no_show" | "cancelled";
+        /** @description Body of `PATCH /appointments/{id}` (If-Match): reschedule or edit an open appointment. */
+        AppointmentUpdate: {
+            /**
+             * Format: uuid
+             * @description Link a newcomer to the customer record created for them (replaces the guest name/phone).
+             */
+            customer_id?: string | null;
+            /** Format: int32 */
+            duration_min?: number | null;
+            note?: string | null;
+            service_ids?: string[] | null;
+            /**
+             * Format: uuid
+             * @description Absent = unchanged, null = no preferred technician (not allowed once arrived).
+             */
+            staff_id?: string | null;
+            /** Format: date-time */
+            starts_at?: string | null;
+        };
+        /** @description One recorded day as the API shows it. */
+        AttendanceDay: {
+            /** @description `HH:MM`. */
+            check_in?: string | null;
+            check_out?: string | null;
+            /** Format: date */
+            date: string;
+            /** Format: int32 */
+            late_minutes: number;
+            note?: string | null;
+            /** Format: uuid */
+            staff_id: string;
+            status: components["schemas"]["AttendanceStatus"];
+        };
+        AttendanceEntryWrite: {
+            /** @description `HH:MM`, only when present. */
+            check_in?: string | null;
+            check_out?: string | null;
+            /** Format: date */
+            date: string;
+            note?: string | null;
+            /** Format: uuid */
+            staff_id: string;
+            status?: components["schemas"]["AttendanceStatus"] | null;
+        };
+        AttendanceSheet: {
+            closed: boolean;
+            /** Format: int32 */
+            days_in_month: number;
+            default_shift_start: string;
+            /** @description `YYYY-MM`. */
+            month: string;
+            staff: components["schemas"]["StaffSheet"][];
+            /** Format: date */
+            today: string;
+        };
+        /** @enum {string} */
+        AttendanceStatus: "present" | "leave_p" | "leave_dx" | "absent_k";
+        AttendanceTotals: {
+            /** Format: int32 */
+            absent_k: number;
+            /** Format: int32 */
+            late_count: number;
+            /** Format: int32 */
+            late_minutes: number;
+            /** Format: int32 */
+            leave_dx: number;
+            /** Format: int32 */
+            leave_p: number;
+            /** Format: int32 */
+            present: number;
+            /**
+             * Format: int32
+             * @description Employed days (up to yesterday in the current month) with nothing recorded.
+             */
+            unrecorded: number;
+        };
+        AttendanceWrite: {
+            /** @description 1–100 cells. */
+            entries: components["schemas"]["AttendanceEntryWrite"][];
+        };
+        /** @description `GET /appointments`: the spa's grid and its appointments over `from..=to`. */
+        CalendarDto: {
+            /** @description Every status, earliest first. */
+            appointments: components["schemas"]["AppointmentDto"][];
+            /** Format: int32 */
+            capacity: number;
+            closes_at: string;
+            /** Format: date */
+            from: string;
+            /** @description "HH:MM", spa time. */
+            opens_at: string;
+            /** Format: int32 */
+            slot_minutes: number;
+            /** @description Columns of the day view; their count is the spa's capacity per instant. */
+            technicians: components["schemas"]["CalendarTechnician"][];
+            time_zone: string;
+            /** Format: date */
+            to: string;
+            /** Format: date */
+            today: string;
+        };
+        CalendarTechnician: {
+            full_name: string;
+            /** Format: uuid */
+            id: string;
+        };
         CategoryCreate: {
             name: string;
         };
@@ -656,6 +1237,43 @@ export interface components {
             name: string;
             /** Format: int32 */
             sort_order: number;
+        };
+        /** @description Commission base of one service performed in the month. */
+        CommissionLine: {
+            /**
+             * Format: int64
+             * @description Same lines at full per-session value, gift sessions included.
+             */
+            full_value: number;
+            /**
+             * Format: int64
+             * @description Sessions / quantity performed.
+             */
+            qty: number;
+            service_name: string;
+            /** @description `one_off` or `package`. */
+            source: string;
+            /**
+             * Format: int64
+             * @description What the lines are worth (`visit_line.line_value`): gift sessions count 0.
+             */
+            value: number;
+        };
+        Criterion: {
+            key: string;
+            label: string;
+            /** Format: int32 */
+            max: number;
+        };
+        CriterionWrite: {
+            /** @description One of the six criterion keys (`GET /evaluations` → `criteria`). */
+            key: string;
+            level: components["schemas"]["Level"];
+            /**
+             * Format: int32
+             * @description Only for `fail`: a score below the 30 % ceiling.
+             */
+            points?: number | null;
         };
         CustomerCreate: {
             address?: string | null;
@@ -843,6 +1461,32 @@ export interface components {
             /** @description Technicians who worked that day, most visits first. */
             technicians: components["schemas"]["TechnicianDay"][];
         };
+        DailyReview: {
+            /** Format: int32 */
+            complaints: number;
+            /** Format: int32 */
+            compliments: number;
+            /** Format: date */
+            date: string;
+            note?: string | null;
+            /** Format: uuid */
+            staff_id: string;
+        };
+        DailyReviewEntryWrite: {
+            /** Format: int32 */
+            complaints?: number;
+            /** Format: int32 */
+            compliments?: number;
+            /** Format: date */
+            date: string;
+            note?: string | null;
+            /** Format: uuid */
+            staff_id: string;
+        };
+        DailyReviewWrite: {
+            /** @description 1–100 days; all zero and no note clears the day. */
+            entries: components["schemas"]["DailyReviewEntryWrite"][];
+        };
         DayComparison: {
             same_weekday_last_week: components["schemas"]["DayHeadline"];
             yesterday: components["schemas"]["DayHeadline"];
@@ -903,6 +1547,40 @@ export interface components {
             amount: number;
             /** @description Required when `amount` > 0. */
             reason?: string | null;
+        };
+        Evaluation: {
+            by_name: string;
+            coaching_plan?: string | null;
+            comment?: string | null;
+            criteria: components["schemas"]["ScoredCriterion"][];
+            month: string;
+            result: components["schemas"]["Level"];
+            serious_issue: boolean;
+            /** Format: uuid */
+            staff_id: string;
+            /** Format: int32 */
+            total_points: number;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: int64 */
+            version: number;
+        };
+        EvaluationSheet: {
+            closed: boolean;
+            criteria: components["schemas"]["Criterion"][];
+            month: string;
+            staff: components["schemas"]["StaffEvaluation"][];
+        };
+        EvaluationWrite: {
+            /** @description Required when the result is Mức 3 or Chưa đạt. */
+            coaching_plan?: string | null;
+            comment?: string | null;
+            criteria: components["schemas"]["CriterionWrite"][];
+            /** @description `YYYY-MM`, not after the current month. */
+            month: string;
+            serious_issue?: boolean;
+            /** Format: uuid */
+            staff_id: string;
         };
         /** @enum {string} */
         FollowUpChannelDto: "phone" | "zalo" | "in_person" | "other";
@@ -975,6 +1653,11 @@ export interface components {
         GenderDto: "female" | "male";
         /** @enum {string} */
         Granularity: "day" | "week" | "month" | "year";
+        /** @description A newcomer known only by name and phone until they arrive. */
+        GuestCreate: {
+            full_name: string;
+            phone: string;
+        };
         HealthNoteWrite: {
             /** @description null or empty clears the note. */
             health_note?: string | null;
@@ -1161,6 +1844,11 @@ export interface components {
             on: string;
             outcome: components["schemas"]["FollowUpOutcomeDto"];
         };
+        /**
+         * @description The absence codes, for rules that treat them differently (⚠️ #2).
+         * @enum {string}
+         */
+        LeaveCode: "leave_p" | "leave_dx" | "absent_k";
         /** @description Daily subtotal of the book, for every day of the range (not only the current page). */
         LedgerDay: {
             /** Format: int64 */
@@ -1229,6 +1917,11 @@ export interface components {
             /** @description The sale was voided later (its `void` row may be on another day). */
             voided: boolean;
         };
+        /**
+         * @description A level, ordered best (M1) to worst (Fail): `max` of two levels is the lower result.
+         * @enum {string}
+         */
+        Level: "m1" | "m2" | "m3" | "fail";
         /** @enum {string} */
         LineSource: "package" | "one_off";
         LoginBody: {
@@ -1282,6 +1975,20 @@ export interface components {
             manual_key: string;
             /** @description `otpauth://totp/...` URI; the client renders it as a QR code. */
             otpauth_uri: string;
+        };
+        MyMonth: {
+            adjustments: components["schemas"]["Adjustment"][];
+            attendance: components["schemas"]["StaffSheet"];
+            closed: boolean;
+            evaluation?: components["schemas"]["Evaluation"] | null;
+            month: string;
+            payslip?: components["schemas"]["Payslip"] | null;
+            reviews: components["schemas"]["DailyReview"][];
+        };
+        MyStaff: {
+            data?: components["schemas"]["MyMonth"] | null;
+            /** @description `false`: this login is not linked to a staff profile (ask the owner). */
+            linked: boolean;
         };
         OpeningBalanceCreate: {
             customer?: components["schemas"]["CustomerCreate"] | null;
@@ -1510,6 +2217,13 @@ export interface components {
         };
         /** @enum {string} */
         PaperMethodDto: "cash" | "bank_transfer";
+        /**
+         * @description How Thưởng gắn bó is accrued in a month the person did not work in full (⚠️ #7).
+         * @enum {string}
+         */
+        PartialMonthLoyalty: "prorate" | "full" | "none_if_partial";
+        /** @enum {string} */
+        PayFlag: "no_pay_terms" | "unrecorded_days" | "absent_k5_plus" | "evaluation_missing";
         PaymentCreate: {
             /**
              * Format: int64
@@ -1539,6 +2253,196 @@ export interface components {
         PaymentKindDto: "payment" | "reversal";
         /** @enum {string} */
         PaymentMethodDto: "cash" | "bank_transfer";
+        /**
+         * @description "Đã thanh toán chưa": R1 collects in full when the visit is recorded.
+         * @enum {string}
+         */
+        PaymentStateDto: "unpaid" | "paid" | "no_charge" | "voided" | "none";
+        PayrollClose: {
+            /** @description Close although some employed days have no attendance (default false → 422). */
+            allow_incomplete?: boolean;
+            /** @description `YYYY-MM` of an ended month. */
+            month: string;
+        };
+        PayrollMonth: {
+            closed: boolean;
+            /** Format: date-time */
+            closed_at?: string | null;
+            closed_by_name?: string | null;
+            /** @description The month has ended (it can be closed). */
+            ended: boolean;
+            month: string;
+            payslips: components["schemas"]["Payslip"][];
+            totals: components["schemas"]["PayrollTotals"];
+        };
+        PayrollRules: {
+            /**
+             * @description Pay the "chốt liệu trình mới" commission to the closer of a package sale (⚠️ #3; R1
+             *     always collects in full, so collected = sold value).
+             * @default true
+             */
+            closing_commission: boolean;
+            /**
+             * @description Count bonus (gift) package sessions at their per-session value for commission (⚠️ #3;
+             *     default false: a gift session earns nothing, as `visit_line.line_value`).
+             * @default false
+             */
+            commission_on_bonus_sessions: boolean;
+            /**
+             * @description Shift start used when a staff member has none (`HH:MM`, sheet: 09:00).
+             * @default 09:00:00
+             * @example 09:00
+             */
+            default_shift_start: string;
+            /**
+             * @description Which absence codes use up those free days (⚠️ #2). Default: P, ĐX and K, as the sheet
+             *     counts them; a code left out is always deducted.
+             * @default [
+             *       "leave_p",
+             *       "leave_dx",
+             *       "absent_k"
+             *     ]
+             */
+            free_leave_codes: components["schemas"]["LeaveCode"][];
+            /**
+             * Format: int32
+             * @description Leave days per month without a pay deduction (§4: 2).
+             * @default 2
+             */
+            free_leave_days: number;
+            /**
+             * Format: int32
+             * @description Minutes late that do not count as late (⚠️ #4; default 0: every minute is recorded).
+             * @default 0
+             */
+            late_grace_minutes: number;
+            /**
+             * Format: int64
+             * @description Deduction per late arrival beyond the grace (⚠️ #4; default 0đ: lateness is only recorded).
+             * @default 0
+             */
+            late_penalty_amount: number;
+            /**
+             * @description ⚠️ #7.
+             * @default prorate
+             */
+            loyalty_partial_month: components["schemas"]["PartialMonthLoyalty"];
+            /**
+             * @description Tết bonus recorded per month for Mức 1, 2, 3 (§6: 500k / 400k / 300k).
+             * @default [
+             *       500000,
+             *       400000,
+             *       300000
+             *     ]
+             */
+            tet_level_amounts: number[];
+        };
+        PayrollRulesDto: {
+            rules: components["schemas"]["PayrollRules"];
+            /**
+             * Format: int64
+             * @description 0 = never saved (all defaults).
+             */
+            version: number;
+        };
+        PayrollTotals: {
+            /** Format: int64 */
+            base_salary: number;
+            /** Format: int64 */
+            bonuses: number;
+            /** Format: int64 */
+            commission: number;
+            /** Format: int64 */
+            deductions: number;
+            /** Format: int64 */
+            net_pay: number;
+            /** Format: int64 */
+            penalties: number;
+            /** Format: int32 */
+            staff: number;
+        };
+        /** @description The computed payslip. Stored as JSON in `app.payslip.detail` when the month closes. */
+        Payslip: {
+            attendance: components["schemas"]["AttendanceTotals"];
+            /** Format: int64 */
+            base_salary: number;
+            /** Format: int64 */
+            bonus_points: number;
+            /** Format: int64 */
+            bonuses: number;
+            /** Format: int64 */
+            closing_commission: number;
+            /** Format: int64 */
+            closing_commission_base: number;
+            commission_lines: components["schemas"]["CommissionLine"][];
+            /** Format: int32 */
+            commission_rate_bp: number;
+            /**
+             * Format: int64
+             * @description base ÷ (days in month − free leave days), rounded.
+             */
+            day_rate: number;
+            /** Format: int32 */
+            days_in_month: number;
+            /**
+             * Format: int32
+             * @description Days deducted: counted days beyond the allowance + days of codes never free.
+             */
+            deducted_leave_days: number;
+            /** Format: int32 */
+            employed_days: number;
+            evaluation_level?: components["schemas"]["Level"] | null;
+            flags: components["schemas"]["PayFlag"][];
+            /** Format: int32 */
+            free_leave_days: number;
+            full_name: string;
+            /** Format: int64 */
+            late_deduction: number;
+            /**
+             * Format: int32
+             * @description Late arrivals beyond the grace minutes.
+             */
+            late_penalised: number;
+            /**
+             * Format: int32
+             * @description Leave days that use up the free allowance (codes in `free_leave_codes`).
+             */
+            leave_days_counted: number;
+            /** Format: int64 */
+            leave_deduction: number;
+            /**
+             * Format: int64
+             * @description Thưởng gắn bó recorded this month (paid at the milestone; not in `net_pay`).
+             */
+            loyalty_bonus_accrued: number;
+            /** Format: int64 */
+            meal_allowance: number;
+            /** @description `YYYY-MM`. */
+            month: string;
+            /** Format: int64 */
+            net_pay: number;
+            /** Format: int64 */
+            penalties: number;
+            /** Format: int64 */
+            penalty_points: number;
+            position: string;
+            /** Format: int64 */
+            service_commission: number;
+            /** Format: int64 */
+            service_commission_base: number;
+            /** Format: uuid */
+            staff_id: string;
+            /**
+             * Format: int64
+             * @description Tết bonus recorded for the month (not in `net_pay`).
+             */
+            tet_amount: number;
+            tet_level?: components["schemas"]["Level"] | null;
+        };
+        PayslipDto: {
+            closed: boolean;
+            payslip: components["schemas"]["Payslip"];
+        };
         /**
          * @description `GET /customers/phone-check`. `taken` → `existing_id` + `full_name` name the profile to open
          *     instead of creating a duplicate (create would answer `409 customer.phone_taken`).
@@ -1675,6 +2579,13 @@ export interface components {
             voids: components["schemas"]["MethodSplit"];
             voids_by_kind: components["schemas"]["KindSplit"];
         };
+        ReviewSheet: {
+            closed: boolean;
+            month: string;
+            staff: components["schemas"]["StaffReviews"][];
+            /** Format: date */
+            today: string;
+        };
         /**
          * @description Body of `POST /sales`. Prices are never read from the client: unknown fields such as
          *     `unit_price` or `total` are ignored and every amount is computed from the catalog.
@@ -1754,12 +2665,39 @@ export interface components {
         SaleLineTypeDto: "package" | "service";
         /** @enum {string} */
         SaleStatusDto: "open" | "voided";
+        /** @description One scored criterion, as stored in `staff_evaluation.criteria`. */
+        ScoredCriterion: {
+            key: string;
+            level: components["schemas"]["Level"];
+            /** Format: int32 */
+            max: number;
+            /** Format: int32 */
+            points: number;
+        };
         ServiceCategoryDto: {
             /** Format: uuid */
             id: string;
             name: string;
             /** Format: int32 */
             sort_order: number;
+        };
+        /**
+         * @description Discount on the one-off lines of a visit (spec appointments.md §5): **either** `percent` or
+         *     `amount`, never both. The server computes the amount (`percent` → floor of subtotal × % / 100).
+         */
+        ServiceDiscountCreate: {
+            /**
+             * Format: int64
+             * @description đồng, 1 ≤ amount ≤ subtotal of the one-off lines.
+             */
+            amount?: number | null;
+            /**
+             * Format: int32
+             * @description 1–100.
+             */
+            percent?: number | null;
+            /** @description Required (1–500 characters). */
+            reason?: string | null;
         };
         ServiceDto: {
             active: boolean;
@@ -1805,6 +2743,17 @@ export interface components {
             prices: components["schemas"]["PricesInput"];
             recommended: boolean;
         };
+        StaffAccountDto: {
+            full_name: string;
+            roles: string[];
+            /**
+             * Format: uuid
+             * @description Staff profile already linked to this login.
+             */
+            staff_id?: string | null;
+            /** Format: uuid */
+            user_id: string;
+        };
         /** @description Basic staff card: no phone or personal data (`staff.read_basic`). */
         StaffDto: {
             full_name: string;
@@ -1812,6 +2761,114 @@ export interface components {
             id: string;
             position: string;
             status: components["schemas"]["StaffStatusDto"];
+        };
+        StaffEvaluation: {
+            /** @description The month's attendance, as context for "Chuyên cần". */
+            attendance: components["schemas"]["AttendanceTotals"];
+            /** Format: int32 */
+            complaints: number;
+            /**
+             * Format: int32
+             * @description The month's daily reviews, as context for "Phản hồi khách hàng".
+             */
+            compliments: number;
+            evaluation?: components["schemas"]["Evaluation"] | null;
+            full_name: string;
+            position: string;
+            /** Format: uuid */
+            staff_id: string;
+        };
+        /** @description Pay terms (salary data). Only ever sent to holders of `payroll.read`. */
+        StaffPayDto: {
+            /** Format: int64 */
+            base_salary: number;
+            /**
+             * Format: int32
+             * @description Basis points: 500 = 5 %.
+             */
+            commission_rate_bp: number;
+            /** Format: int64 */
+            loyalty_bonus_monthly: number;
+            /** Format: int64 */
+            meal_allowance: number;
+        };
+        StaffPayWrite: {
+            /** Format: int64 */
+            base_salary: number;
+            /** Format: int32 */
+            commission_rate_bp: number;
+            /** Format: int64 */
+            loyalty_bonus_monthly?: number;
+            /** Format: int64 */
+            meal_allowance?: number;
+        };
+        /**
+         * @description A staff profile (`staff.manage`). `pay` is present only for `payroll.read` holders who have
+         *     set terms; `pay_visible` says whether the caller may see pay at all.
+         */
+        StaffProfileDto: {
+            full_name: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: date */
+            joined_on?: string | null;
+            /** Format: date */
+            left_on?: string | null;
+            pay?: components["schemas"]["StaffPayDto"] | null;
+            pay_visible: boolean;
+            /** @description National form, e.g. `0905 123 456`. */
+            phone?: string | null;
+            position: string;
+            /** @description `HH:MM`; `null` = the spa default (payroll rules). */
+            shift_start?: string | null;
+            status: components["schemas"]["StaffStatusDto"];
+            /** Format: uuid */
+            user_id?: string | null;
+            user_name?: string | null;
+            /** Format: int64 */
+            version: number;
+        };
+        StaffProfileWrite: {
+            full_name: string;
+            /** Format: date */
+            joined_on?: string | null;
+            /** Format: date */
+            left_on?: string | null;
+            phone?: string | null;
+            position: string;
+            /** @description `HH:MM`. */
+            shift_start?: string | null;
+            status?: components["schemas"]["StaffStatusDto"];
+            /**
+             * Format: uuid
+             * @description Login to link (an active member of this spa, not linked to anyone else).
+             */
+            user_id?: string | null;
+        };
+        StaffReviews: {
+            /** Format: int32 */
+            complaints: number;
+            /** Format: int32 */
+            compliments: number;
+            days: components["schemas"]["DailyReview"][];
+            full_name: string;
+            position: string;
+            /** Format: uuid */
+            staff_id: string;
+        };
+        StaffSheet: {
+            days: components["schemas"]["AttendanceDay"][];
+            full_name: string;
+            /** Format: date */
+            joined_on?: string | null;
+            /** Format: date */
+            left_on?: string | null;
+            position: string;
+            /** @description `HH:MM`, the person's own or the spa default. */
+            shift_start: string;
+            /** Format: uuid */
+            staff_id: string;
+            totals: components["schemas"]["AttendanceTotals"];
         };
         /** @enum {string} */
         StaffStatusDto: "active" | "left";
@@ -1905,11 +2962,14 @@ export interface components {
         VisitCreate: {
             /**
              * Format: date-time
-             * @description Defaults to now. At most 5 minutes ahead of the server and on today's business day.
+             * @description When the service happened (giờ làm), not when it is typed. Defaults to now. At most
+             *     5 minutes ahead of the server and on today's business day; with `visit.backdate` (owner)
+             *     up to 366 days back, and the visit, its sale and payments then belong to that day.
              */
             check_in_at?: string | null;
             /** Format: uuid */
             customer_id: string;
+            discount?: components["schemas"]["ServiceDiscountCreate"] | null;
             /** @description 1–20 service lines. */
             lines: components["schemas"]["VisitLineCreate"][];
             /** @description Session note incl. reactions (health data): needs `customer.health_notes.write`. */
@@ -1918,9 +2978,16 @@ export interface components {
             payments?: components["schemas"]["PaymentCreate"][];
         };
         VisitDto: {
-            /** Format: date */
+            /**
+             * Format: date
+             * @description Business day of the service (`check_in_at`), which may be before `created_at` when the
+             *     owner entered it late.
+             */
             business_date: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description When the service happened (giờ làm).
+             */
             check_in_at: string;
             /** Format: date-time */
             created_at: string;
@@ -1928,6 +2995,9 @@ export interface components {
             /** Format: uuid */
             customer_id: string;
             customer_name: string;
+            /** Format: int64 */
+            discount_amount: number;
+            discount_reason?: string | null;
             /** Format: uuid */
             id: string;
             lines: components["schemas"]["VisitLineDto"][];
@@ -1942,7 +3012,12 @@ export interface components {
             status: components["schemas"]["VisitStatusDto"];
             /**
              * Format: int64
-             * @description Amount collected in this visit (sum of one-off lines).
+             * @description Sum of the one-off lines before discount.
+             */
+            subtotal: number;
+            /**
+             * Format: int64
+             * @description Amount collected in this visit (one-off lines after discount).
              */
             total: number;
             /**
@@ -1986,12 +3061,18 @@ export interface components {
             customer_package_id?: string | null;
             /** Format: uuid */
             customer_package_item_id?: string | null;
+            /**
+             * Format: int64
+             * @description One-off: this line's share of the visit discount (0 for package lines).
+             */
+            discount_amount: number;
             expiry_override_reason?: string | null;
             /** Format: uuid */
             id: string;
             /**
              * Format: int64
-             * @description One-off: qty × unit price (paid now); package: value of the sessions taken (bonus = 0).
+             * @description One-off: qty × unit price − discount share (paid now); package: value of the sessions
+             *     taken (bonus = 0).
              */
             line_value: number;
             package_name?: string | null;
@@ -2050,6 +3131,644 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_adjustments: {
+        parameters: {
+            query?: {
+                /** @description `YYYY-MM`; default the current month (spa time zone). */
+                month?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdjustmentLog"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post_adjustment: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdjustmentCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Adjustment"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description payroll.period_closed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    calendar: {
+        parameters: {
+            query?: {
+                /** @description First business day `YYYY-MM-DD`; default today. */
+                from?: string;
+                /** @description Last business day (inclusive); default `from`. At most 14 days. */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description to before_from / range_too_long (max 14 days) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    book: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description One key per booking; a retry replays the first response */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppointmentCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentDto"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked (a past day, non-owner) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description customer or service not in this spa */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.staff_busy (existing_id = the overlapping appointment), appointment.slot_full, customer.phone_taken (newcomer's phone already has a record: existing_id) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed (starts_at not_on_slot / too_far, duration_min out_of_range, guest.*), appointment.outside_opening_hours, staff.inactive */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    read_appointment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_appointment: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppointmentUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.closed, appointment.staff_busy, appointment.slot_full */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    arrive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppointmentArrive"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.closed / already_arrived / staff_busy / slot_full */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.not_today, staff.inactive */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppointmentClose"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.closed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description reason required */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    complete: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description One key per completion; a retry replays the first response */
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppointmentComplete"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentCompleted"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked / discount.limit_exceeded */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.closed, package.no_sessions_left / expired / cancelled */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.customer_required, and every 422 of POST /visits */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    no_show: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppointmentClose"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.closed / already_arrived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description reason required, appointment.not_started */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_attendance: {
+        parameters: {
+            query?: {
+                /** @description `YYYY-MM`; default the current month (spa time zone). */
+                month?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendanceSheet"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_attendance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttendanceWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendanceDay"][];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description payroll.period_closed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     login: {
         parameters: {
             query?: never;
@@ -3121,6 +4840,182 @@ export interface operations {
             };
         };
     };
+    get_daily_reviews: {
+        parameters: {
+            query?: {
+                /** @description `YYYY-MM`; default the current month (spa time zone). */
+                month?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewSheet"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_daily_reviews: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DailyReviewWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyReview"][];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description payroll.period_closed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_evaluations: {
+        parameters: {
+            query?: {
+                /** @description `YYYY-MM`; default the current month (spa time zone). */
+                month?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvaluationSheet"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_evaluation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvaluationWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Evaluation"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description payroll.period_closed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     me: {
         parameters: {
             query?: never;
@@ -3139,6 +5034,46 @@ export interface operations {
                 };
             };
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_my_staff: {
+        parameters: {
+            query?: {
+                /** @description `YYYY-MM`; default the current month (spa time zone). */
+                month?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyStaff"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3378,6 +5313,224 @@ export interface operations {
                 content?: never;
             };
             /** @description validation_failed: q too_short / too_long, expiring_within_days out_of_range, cursor invalid, limit out_of_range */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_payroll: {
+        parameters: {
+            query?: {
+                /** @description `YYYY-MM`; default the current month (spa time zone). */
+                month?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollMonth"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    close_payroll: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayrollClose"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollMonth"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description payroll.period_closed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description payroll.month_not_ended | payroll.unrecorded_days */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_payslip: {
+        parameters: {
+            query?: {
+                /** @description `YYYY-MM`; default the current month (spa time zone). */
+                month?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Staff id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayslipDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_rules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollRulesDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_rules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayrollRules"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollRulesDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3949,6 +6102,266 @@ export interface operations {
                 content?: never;
             };
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_staff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffProfileWrite"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffProfileDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description staff.account_taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_accounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffAccountDto"][];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_profiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffProfileDto"][];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_staff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffProfileDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_staff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffProfileWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffProfileDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description staff.account_taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_staff_pay: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffPayWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffPayDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

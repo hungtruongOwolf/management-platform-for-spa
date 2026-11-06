@@ -76,6 +76,7 @@ const opt = (v: string) => (v.trim() === "" ? null : v.trim());
 export function CustomerForm({
   customer,
   typed = "",
+  prefill,
   canWriteHealth,
   onSaved,
   onOpenExisting,
@@ -83,6 +84,8 @@ export function CustomerForm({
 }: {
   customer?: Customer;
   typed?: string;
+  /** Name and phone already known (a newcomer booked by phone): wins over `typed`. */
+  prefill?: { full_name: string; phone: string };
   canWriteHealth: boolean;
   onSaved: (c: Customer) => void;
   onOpenExisting?: (id: string) => void;
@@ -94,7 +97,7 @@ export function CustomerForm({
     defaultValues: {
       ...(customer
         ? { full_name: customer.full_name, phone: customer.phone }
-        : prefillFrom(typed)),
+        : (prefill ?? prefillFrom(typed))),
       gender: customer?.gender ?? "",
       birth_year:
         customer?.birth_year != null ? String(customer.birth_year) : "",

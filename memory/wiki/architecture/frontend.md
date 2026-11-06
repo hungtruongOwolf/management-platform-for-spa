@@ -12,16 +12,16 @@ Stack ([ADR-0001](../decisions/ADR-0001-tech-stack.md)): TypeScript strict · Re
 | Route | Màn hình | Permission (UX gate) | Đợt |
 |---|---|---|---|
 | `/dang-nhap`, `/kich-hoat/:token`, `/dat-lai-mat-khau/:token` | Auth | public | R1 |
-| `/quay` | Màn hình quầy (mặc định của Quản lý) | `visit.record` | R1 |
+| `/quay?view=&ngay=&kieu=` | Màn hình quầy (mặc định của Quản lý): tab **Ghi lượt khách** (mặc định) / **Lịch hẹn** (`view=lich`, `ngay` = ngày, `kieu` = `ngay`/`tuan`/`ds`; `features/front-desk/search.ts`) | `visit.record` (tab lịch: `appointment.manage`) | R1 (lịch: vòng 4) |
 | `/khach-hang?q=`, `/khach-hang/:id?hq=&hkind=&hfrom=&hto=` | Danh sách / hồ sơ khách (breadcrumb `Khách hàng › Tên`) | `customer.read` | R1 |
 | ~~`/cong-no`~~ | Công nợ: **hoãn** (EM 2026-11-04, R1 thu đủ) | — | sau |
 | `/` | Tổng quan: chào, "Hôm nay", lối tắt (lazy) | session | R1 |
 | ~~`/nhap-so-cu`~~ | **Đã xóa** (EM 2026-11-05): dữ liệu sổ giấy nhập qua CLI `app import-paper-book`; `POST /opening-balances` chỉ chủ spa | — | — |
 | `/bao-cao?tab=&period=&from=&to=&metric=` | Báo cáo theo kỳ (Hôm nay … 12 tháng, Tùy chọn), so với kỳ trước, xu hướng dạng line, chi tiết theo ngày/tuần/tháng, KTV, top dịch vụ/gói; tab **Sổ doanh thu** | `report.read` (tiền + sổ: `report.revenue.read`) | R1 |
-| `/goi-lieu-trinh?status=&q=` | Theo dõi gói của khách: tìm (tên khách, tên gói, SĐT) + lọc trạng thái; gói không hạn hiện "Không hạn" | `report.read` | R1 |
+| `/goi-lieu-trinh?status=&q=` | Gói liệu trình của khách: tìm (tên khách, tên gói, SĐT) + lọc trạng thái; gói không hạn hiện "Không hạn" | `report.read` | R1 |
 | `/khach-lau-khong-quay-lai?follow=&days=&kind=&scope=&q=` | Khách liệu trình + khách lẻ lâu không quay lại: 3 tab Cần liên hệ / Đã hẹn / Tất cả, tìm, ngưỡng 7–90 ngày, loại khách, phạm vi; "Đã liên hệ" ghi follow-up | `report.read` (ghi: `customer.follow_up`) | R1 |
 | `/cai-dat` | Giao diện (theo thiết bị / sáng / tối) + tài khoản | session | R1 |
-| `/bang-gia`, `/bang-gia/goi` | Dịch vụ, gói | `catalog.read` (sửa: `catalog.manage`) | R1 |
+| `/bang-gia`, `/bang-gia/goi` | Bảng giá dịch vụ, Mẫu gói liệu trình (tên: [glossary](../product/glossary.md#tên-màn-hình-và-điều-hướng-em-vòng-4-mục-7-2026-11-05)) | `catalog.read` (sửa: `catalog.manage`) | R1 |
 | `/so-quy` | Sổ quỹ, chốt quỹ | spec #2 | R1 |
 | `/cai-dat/nhan-vien`, `/cai-dat/vai-tro` | Tài khoản, vai trò | spec #4 | R1 |
 | `/toi` | Trang của KTV (lịch, số khách, phiếu lương) | self | R2/R3 |
@@ -58,6 +58,13 @@ Kiểu từ `packages/api-client` (contract r3b của `feat/followup-and-reports
   - follow-up → `['customers','inactive']` + follow-ups + summary của khách đó;
   - ghi / hủy lượt, bán gói, hủy / gia hạn gói → `lib/invalidate.ts` `invalidateManagementViews`: `['reports']`, `['packages','overview']`, `['customers','inactive']`, history + summary của khách. Chỉ đánh dấu stale; trên `/quay` không có query nào trong số này đang mount nên không tốn request ở lần vẽ đầu.
 - **Test:** `fixtures.ts` + `testServer.ts` giả API đúng contract, gồm follow-up GET/POST giữ trong bộ nhớ, lọc và sắp xếp như server, phone-check. E2E `e2e/specs/management.spec.ts` dùng `support/db.ts` `backdateCustomer` để có khách vắng 20 ngày.
+
+## Mobile (vòng 4, EM mục 3)
+- Layout điện thoại quyết định bằng `matchMedia` (`usePhone()`, < 640px; bảng rộng 6+ cột: `cardsBelow={1024}`, thẻ 2 cột trên tablet) chứ không bằng CSS ẩn/hiện: chỉ **một** bản (bảng hoặc thẻ) nằm trong DOM và cây a11y, test jsdom (không có `matchMedia`) luôn thấy bản desktop. Đổi kích thước cửa sổ đổi ngay (listener `change`).
+- Thẻ dùng chung định nghĩa cột với bảng (`Column.card` = title / subtitle / aside / field / actions / hidden), nên thêm cột là thêm cả hai.
+- Form và bộ lọc mở trong `BottomSheet` (`<dialog>` + `showModal()`): focus trap, Esc, backdrop của trình duyệt; state vẫn ở chỗ cũ (URL cho bộ lọc, `useState` cho form). `SellPackageDialog`, `CustomerForm` (sửa hồ sơ), `FollowUpForm` đều nằm trong sheet.
+- `index.html` có `viewport-fit=cover`; top bar, tab bar, sheet footer cộng `env(safe-area-inset-*)`.
+- Ngân sách: các component này ~1,5 KB gzip, phần lớn nằm trong chunk lazy của màn quản lý; số đo ở § Perf budget.
 
 ## Rendering & data
 - **SPA tĩnh**, Caddy trả `index.html` cho mọi route không phải `/api/*`. Code-split theo route (`lazy`).
@@ -100,8 +107,17 @@ Lighthouse CI chặn merge khi LCP > 2,5 s (mobile, Slow 4G, CPU 4×, `/dang-nha
 - Ngân sách JS critical path: ≤ 125 KB gzip. **Một chunk khởi động** (2026-11-05): `vite.config.ts` `build.rolldownOptions.output.codeSplitting.groups = [{ name: "app", tags: ["$initial"] }]` gom mọi module của màn đầu vào `index-*.js`. Không có nó, khi thêm màn lazy dùng chung module, rolldown tách ~10 chunk nhỏ được preload, mỗi chunk gzip riêng nên tốn thêm ~2 KB. Số đo (gzip -9 tổng entry + modulepreload): trước UI overhaul 121.6 KB (3 file), sau **120.1 KB (1 file)** dù thêm sidebar/top bar/tab bar/drawer/theme. Kiểm bằng `vite build` rồi cộng entry + mọi `modulepreload` trong `dist/index.html`.
 - **Không đưa vào bundle chính:** trang chủ (lazy từ 2026-11-05), command palette (`React.lazy`, chỉ khi mở), mọi màn quản lý + chart (hand-rolled HTML, ~3 KB trong chunk `ReportsPage`). Icon: 1 sprite SVG file (`assets/icons.svg?no-inline`, `<use href>`), không thư viện icon. Logo: CSS mask từ file SVG, không inline vào JS. Chuỗi class dài viết thành class CSS (`components.css`) vì chuỗi trong JSX nằm trong JS.
 - Logo: **một** file `emblem.svg` (11.3 KB gzip, logo nguyên vẹn, EM vòng 3) dạng CSS mask ở mọi nơi (đăng nhập, shell, empty state); không phải ứng viên LCP, không chặn render, cache vĩnh viễn và dùng chung từ màn đăng nhập. Thay cho mark (2.4) + wordmark (3.7) của #29: +5.2 KB ảnh, 0 KB JS.
+- **Số đo vòng 4 (polish + mobile, 2026-11-05):** JS khởi động `main` 120.1 → **120.2 KB** (component mobile nằm trong chunk lazy; `useModalDialog` module riêng để drawer không kéo sheet vào bundle khởi động); CSS 11.9 → 13.1 KB. Lighthouse local: `/dang-nhap` 2.0–2.2 s; `/quay` 2.72 s (main cùng máy 2.47–3.88 s, máy local chậm hơn CI).
 - **Số đo vòng 3 (shell, 2026-11-05):** critical JS gzip -9 `main` 117.5 KB → `feat/ui-shell-r3` **119.2 KB** (+1.7: PageHeader, trail, searchState, UserMenu, ThemePicker, CustomerName); CSS 10.5 → 11.2 KB gzip.
+- **Vòng 4 (lịch hẹn, `feat/appointments-front-desk`):** baseline (main + `feat/ui-polish-mobile`) **123.0 KB** gzip -9 → **124.7 KB** (+1.7: tab, đồng hồ đếm ngược, giỏ từ lịch hẹn, giờ làm/giảm giá wiring, thông tin khách inline). Giữ dưới 125 KB bằng cách tách: lịch (`AppointmentsCalendar`, 7.4 KB gz + CSS 1.3 KB, chỉ tải khi mở tab), `TodayVisits` (2.6 KB gz) và `CartOptions` (giờ làm + giảm giá, 1.4 KB gz) là chunk lazy **prefetch ngay sau lần vẽ đầu** (`useAfterFirstPaint`), `front-desk/prefill.ts` (giỏ điền sẵn từ lịch hẹn) nằm trong chunk lịch, `appointments/complete.ts` tách khỏi `appointments/api.ts` để helper của lịch không vào bundle khởi động. Lần đo đầu (chưa tách) là 127.9 KB.
 - Đo trước/sau bằng `pnpm lhci` trên cùng một máy; local chậm hơn CI khoảng 0,3–0,4 s. Kết quả 2026-11-04: [log](../../log.md).
+
+## Màn Nhân viên (`/nhan-vien`, lazy chunk `StaffPage`, [spec](../product/specs/staff-management.md))
+- URL: `tab` (attendance|evaluation|adjustments|payroll|profiles), `month` (YYYY-MM), `day` (`features/staff/search.ts`). Tab hiện theo permission; KTV (chỉ `staff.read_own`) thấy "Công và lương của tôi".
+- Chấm công: phone = danh sách theo người cho một ngày (chạm mã ✓/P/ĐX/K là lưu); desktop có thêm lưới tháng (cột tên dính trái, gạch đỏ = muộn). Giờ đến/về + ghi chú trong `BottomSheet`. "Cả spa đi làm" = 1 PUT cho người chưa chấm.
+- Bảng lương, phiếu lương, sổ thưởng/phạt, hồ sơ: `ResponsiveTable` (thẻ trên phone); form trong `BottomSheet`.
+- CSS riêng `features/staff/staff.css` (chỉ tokens) đi cùng chunk lazy. Query key `["staff", …]`; mọi ghi invalidate `["staff"]` (gồm cả picker `["staff","active"]` của quầy).
+- Perf: chunk `StaffPage` 12.8 KB gzip; startup gzip -9 123.0 → 123.8 KB (ngân sách 125) do route + nav + thông báo lỗi.
 
 ## Auth & permission-aware UI
 - Session là cookie `__Host-session` HttpOnly ([ADR-0004](../decisions/ADR-0004-authentication.md)). **JS không bao giờ đọc hay lưu token.** Fetch dùng `credentials: 'same-origin'`.
@@ -131,6 +147,8 @@ CSP nonce-based do Caddy/API cấp (không `unsafe-inline` script); không `dang
 apps/web/
   src/
     app/            # router, providers (Query, Auth, Theme), AppShell, error boundary
+    components/     # shared UI patterns (vòng 4): ResponsiveTable, BottomSheet, StickyActions, DateField, usePhone
+                    # (CSS in src/mobile.css; API in design-system § Mobile patterns)
     routes/         # file-based routes (TanStack Router): quay/, khach-hang/, cong-no/, nhap-so-cu/, bang-gia/, ...
     features/       # theo bounded context, khớp với crate backend
       customers/  packages/  visits/  sales/  catalog/  auth/

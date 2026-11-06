@@ -104,7 +104,7 @@ export function PlanForm({
   });
   const { errors } = form.formState;
   const sellable = services.filter((s) => s.active);
-  const title = plan ? `Sửa gói: ${plan.name}` : "Tạo gói liệu trình";
+  const title = plan ? `Sửa mẫu gói: ${plan.name}` : "Tạo mẫu gói liệu trình";
 
   return (
     <form

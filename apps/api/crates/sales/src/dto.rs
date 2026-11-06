@@ -36,6 +36,19 @@ pub struct DiscountCreate {
     pub reason: Option<String>,
 }
 
+/// Discount on the one-off lines of a visit (spec appointments.md §5): **either** `percent` or
+/// `amount`, never both. The server computes the amount (`percent` → floor of subtotal × % / 100).
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ServiceDiscountCreate {
+    /// 1–100.
+    pub percent: Option<u32>,
+    /// đồng, 1 ≤ amount ≤ subtotal of the one-off lines.
+    pub amount: Option<i64>,
+    /// Required (1–500 characters).
+    pub reason: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum PaymentMethodDto {

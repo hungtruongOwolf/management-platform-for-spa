@@ -35,17 +35,34 @@ const MESSAGES: Record<string, string> = {
   "price.gender_required": "Chọn Nữ hoặc Nam để tính giá dịch vụ lẻ.",
   "price.variant_not_available":
     "Dịch vụ này không áp dụng cho giới tính của khách.",
-  "visit.check_in_in_future": "Giờ vào không được ở tương lai.",
-  "visit.check_in_not_today": "Giờ vào phải thuộc ngày hôm nay.",
+  "visit.check_in_in_future": "Giờ làm không được ở tương lai.",
+  "visit.check_in_not_today":
+    "Giờ làm phải thuộc ngày hôm nay. Chỉ chủ spa nhập bù được ngày đã qua.",
+  "visit.check_in_too_old": "Chỉ nhập bù được trong vòng 1 năm.",
+  "appointment.staff_busy": "KTV này đã có lịch trùng giờ.",
+  "appointment.slot_full": "Khung giờ này đã kín: mọi KTV đều có khách.",
+  "appointment.outside_opening_hours": "Lịch hẹn phải nằm trong giờ mở cửa.",
+  "appointment.closed": "Lịch hẹn này đã kết thúc (hoàn tất, hủy hoặc không đến).",
+  "appointment.already_arrived": "Khách đã được đánh dấu là đã đến.",
+  "appointment.not_today": "Chỉ làm được việc này vào đúng ngày của lịch hẹn.",
+  "appointment.not_started": "Chưa tới giờ hẹn, chưa đánh dấu không đến được.",
+  "appointment.customer_required":
+    "Khách mới: tạo hồ sơ khách trước rồi mới hoàn tất được.",
+  "customer.phone_taken": "Số điện thoại này đã có hồ sơ khách.",
   "visit.voided": "Lượt này đã bị hủy, không sửa được.",
   "day.locked": "Ngày đã chốt, liên hệ chủ spa.",
   "sale.voided": "Hóa đơn này đã được hủy trước đó.",
   "sale.has_used_sessions":
-    'Liệu trình đã dùng buổi nên không hủy hóa đơn được. Hãy dùng "Hủy liệu trình + hoàn tiền".',
+    'Gói đã dùng buổi nên không hủy hóa đơn được. Hãy dùng "Hủy gói và hoàn tiền".',
   "sale.void_via_visit": "Hóa đơn dịch vụ lẻ được hủy cùng lượt khách.",
   "refund.exceeds_paid": "Số tiền hoàn lớn hơn số khách đã trả cho liệu trình.",
   "package.restore_exceeds_total":
     "Buổi của lượt này đã được cộng lại trước đó. Vui lòng tải lại.",
+  "payroll.period_closed":
+    "Tháng này đã chốt lương nên không sửa được. Hãy ghi một khoản thưởng/phạt điều chỉnh vào tháng đang mở.",
+  "payroll.month_not_ended": "Tháng chưa kết thúc, chưa chốt lương được.",
+  "payroll.unrecorded_days": "Còn ngày chưa chấm công. Chấm đủ hoặc chọn chốt dù còn thiếu.",
+  "staff.account_taken": "Tài khoản này đã gắn với một nhân viên khác.",
   "idempotency.key_reuse_mismatch":
     "Hóa đơn này có thể đã được lưu. Vui lòng đóng hộp thoại và kiểm tra lại liệu trình.",
 };
@@ -73,6 +90,24 @@ const FIELD_MESSAGES: Record<string, string> = {
   in_past: "Không được là ngày đã qua.",
   package_has_no_expiry: "Liệu trình không có thời hạn, không cần gia hạn.",
   not_allowed: "Không dùng được ở đây.",
+  not_employed: "Ngày này nhân viên chưa vào làm hoặc đã nghỉ.",
+  only_when_present: "Chỉ ghi giờ khi đi làm.",
+  above_ceiling: "Chưa đạt tối đa 30% số điểm.",
+  only_for_fail: "Chỉ nhập điểm tay khi Chưa đạt.",
+  amount_or_points_required: "Nhập số tiền hoặc số điểm.",
+  not_closed: "Tháng này chưa chốt, không cần điều chỉnh.",
+  not_earlier: "Tháng điều chỉnh phải trước tháng ghi.",
+  invalid_time: "Giờ không hợp lệ (dạng 09:00).",
+  invalid_month: "Tháng không hợp lệ.",
+  unknown: "Không tìm thấy nhân viên.",
+  before_joined_on: "Ngày nghỉ việc trước ngày vào làm.",
+  must_be_empty: "Nhân viên đang làm thì không có ngày nghỉ việc.",
+  not_a_member: "Tài khoản không thuộc spa này.",
+  not_on_slot: "Giờ bắt đầu phải đúng ô 15 phút (ví dụ 10:00, 10:15).",
+  too_far: "Chỉ đặt lịch trước tối đa 90 ngày.",
+  customer_or_guest: "Chọn khách có hồ sơ hoặc nhập khách mới.",
+  percent_or_amount: "Chỉ nhập % hoặc số tiền, không cả hai.",
+  rounds_to_zero: "Mức giảm quá nhỏ.",
 };
 
 export function messageFor(error: unknown): string {

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT l.id, l.visit_id, l.service_id, l.service_name_snapshot, sc.name AS category_name,\n                  l.source, l.customer_package_id,\n                  l.customer_package_item_id, p.name_snapshot AS \"package_name?\", l.sessions_left_after,\n                  i.sessions_total AS \"sessions_total?\", l.staff_id, s.full_name AS staff_name, l.qty,\n                  l.price_variant, l.unit_price, l.line_value, l.expiry_override_reason\n           FROM app.visit_line l\n           JOIN app.staff s ON s.tenant_id = l.tenant_id AND s.id = l.staff_id\n           JOIN app.service sv ON sv.tenant_id = l.tenant_id AND sv.id = l.service_id\n           JOIN app.service_category sc ON sc.tenant_id = sv.tenant_id AND sc.id = sv.category_id\n           LEFT JOIN app.customer_package p ON p.tenant_id = l.tenant_id AND p.id = l.customer_package_id\n           LEFT JOIN app.customer_package_item i ON i.tenant_id = l.tenant_id AND i.id = l.customer_package_item_id\n           WHERE l.tenant_id = $1 AND l.visit_id = ANY($2)\n           ORDER BY l.visit_id, l.position",
+  "query": "SELECT l.id, l.visit_id, l.service_id, l.service_name_snapshot, sc.name AS category_name,\n                  l.source, l.customer_package_id,\n                  l.customer_package_item_id, p.name_snapshot AS \"package_name?\", l.sessions_left_after,\n                  i.sessions_total AS \"sessions_total?\", l.staff_id, s.full_name AS staff_name, l.qty,\n                  l.price_variant, l.unit_price, l.line_value, l.discount_amount, l.expiry_override_reason\n           FROM app.visit_line l\n           JOIN app.staff s ON s.tenant_id = l.tenant_id AND s.id = l.staff_id\n           JOIN app.service sv ON sv.tenant_id = l.tenant_id AND sv.id = l.service_id\n           JOIN app.service_category sc ON sc.tenant_id = sv.tenant_id AND sc.id = sv.category_id\n           LEFT JOIN app.customer_package p ON p.tenant_id = l.tenant_id AND p.id = l.customer_package_id\n           LEFT JOIN app.customer_package_item i ON i.tenant_id = l.tenant_id AND i.id = l.customer_package_item_id\n           WHERE l.tenant_id = $1 AND l.visit_id = ANY($2)\n           ORDER BY l.visit_id, l.position",
   "describe": {
     "columns": [
       {
@@ -192,6 +192,17 @@
       },
       {
         "ordinal": 17,
+        "name": "discount_amount",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "discount_amount"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
         "name": "expiry_override_reason",
         "type_info": "Text",
         "origin": {
@@ -226,8 +237,9 @@
       true,
       false,
       false,
+      false,
       true
     ]
   },
-  "hash": "b3a9a021d491481bbc725f530923c3233fe25ebeac33275d82fc46f47c045e35"
+  "hash": "b583ea9768db4aa9c958b6aa9dae5b8bcd3863b5134227de8cdd41729c3c8144"
 }

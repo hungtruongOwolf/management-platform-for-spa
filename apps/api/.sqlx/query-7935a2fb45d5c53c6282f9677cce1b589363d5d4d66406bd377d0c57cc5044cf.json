@@ -1,0 +1,79 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT staff_id, work_date, compliments, complaints, note\n           FROM app.staff_daily_review\n           WHERE tenant_id = $1 AND work_date BETWEEN $2 AND $3\n             AND ($4::uuid IS NULL OR staff_id = $4)\n           ORDER BY staff_id, work_date",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "staff_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.staff_daily_review",
+            "name": "staff_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "work_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "app.staff_daily_review",
+            "name": "work_date"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "compliments",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.staff_daily_review",
+            "name": "compliments"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "complaints",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.staff_daily_review",
+            "name": "complaints"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.staff_daily_review",
+            "name": "note"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "7935a2fb45d5c53c6282f9677cce1b589363d5d4d66406bd377d0c57cc5044cf"
+}

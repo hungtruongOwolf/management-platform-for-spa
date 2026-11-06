@@ -9,12 +9,12 @@ export function HealthNote({ customer }: { customer: Customer }) {
   return (
     <div
       role="note"
-      className="my-3 rounded-[10px] border border-warning-border bg-warning-bg p-3 font-medium text-warning-text"
+      className="health-note"
     >
-      <strong className="block text-xs uppercase tracking-wide">
-        ⚠ Lưu ý sức khỏe
+      <strong className="health-note-title">
+        <span aria-hidden="true">⚠</span> Lưu ý sức khỏe
       </strong>
-      {customer.health_note}
+      <span className="health-note-text">{customer.health_note}</span>
     </div>
   );
 }

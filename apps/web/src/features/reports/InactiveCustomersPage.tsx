@@ -1,7 +1,6 @@
 import type { FollowUpFilter, InactiveCustomer } from "@vpyd/api-client";
 import { useInfiniteQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Modal } from "../../app/AppShell";
 import { Icon } from "../../app/Icon";
 import { useSearchState } from "../../lib/searchState";
 import { can, meQuery } from "../auth/session";
@@ -9,7 +8,9 @@ import { spaToday } from "../corrections/api";
 import { CHANNEL_LABEL, OUTCOME_LABEL } from "../customers/followUps";
 import { FollowUpForm } from "../customers/FollowUpForm";
 import { inactiveCustomersQuery, relativeDay, shortDay, type InactiveFilter } from "./api";
-import { FilterBar, FilterSelect, SearchField } from "./filters";
+import { BottomSheet } from "../../components/BottomSheet";
+import { ResponsiveTable, type Column } from "../../components/ResponsiveTable";
+import { FilterSelect, ResponsiveFilters, SearchField } from "./filters";
 import { CustomerCell } from "./PackagesOverviewPage";
 import { THRESHOLDS, inactiveSearch } from "./search";
 import { EmptyState, ErrorState, ManagementOnly, PageHeader, RowsSkeleton } from "./ui";
@@ -64,19 +65,27 @@ function InactiveCustomersPageBody() {
 
   return (
     <section className="grid content-start gap-5">
-      <PageHeader eyebrow="Khách hàng" title="Khách lâu không quay lại" />
+      <PageHeader eyebrow="Khách hàng" title="Khách lâu chưa quay lại" />
       <p className="max-w-2xl text-text-muted">
         Khách liệu trình và khách lẻ chưa quay lại từ {filter.days} ngày trở lên. “Cần liên hệ” xếp người chưa gọi và người đến hạn gọi lại lên trước; gọi xong bấm “Đã liên hệ” để hẹn lần sau.
       </p>
-      <FilterBar label="Tìm và lọc khách">
-        <SearchField
-          label="Tìm theo tên hoặc số điện thoại"
-          placeholder="Tên khách, số điện thoại…"
-          value={filter.q}
-          onCommit={(q) => {
-            patch({ q });
-          }}
-        />
+      <ResponsiveFilters
+        label="Lọc khách vắng"
+        activeCount={[filter.days !== THRESHOLDS[0], filter.kind !== "all", filter.scope !== "all"].filter(Boolean).length}
+        onReset={() => {
+          patch({ days: THRESHOLDS[0], kind: "all", scope: "all" });
+        }}
+        search={
+          <SearchField
+            label="Tìm theo tên hoặc số điện thoại"
+            placeholder="Tên khách, SĐT…"
+            value={filter.q}
+            onCommit={(q) => {
+              patch({ q });
+            }}
+          />
+        }
+      >
         <FilterSelect
           label="Vắng từ"
           value={String(filter.days)}
@@ -101,8 +110,8 @@ function InactiveCustomersPageBody() {
             patch({ scope });
           }}
         />
-      </FilterBar>
-      <div className="segmented" role="group" aria-label="Tình trạng liên hệ">
+      </ResponsiveFilters>
+      <div className="segmented chip-row" role="group" aria-label="Tình trạng liên hệ">
         {FOLLOW_UPS.map(([f, label]) => (
           <button
             key={f}
@@ -119,7 +128,7 @@ function InactiveCustomersPageBody() {
       <p role="status" className="sr-only">
         {notice}
       </p>
-      <div className={`card overflow-hidden ${page.isPlaceholderData ? "is-refreshing" : ""}`}>
+      <div className={`card rt-host overflow-hidden ${page.isPlaceholderData ? "is-refreshing" : ""}`}>
         {page.isError && (
           <div className="p-4">
             <ErrorState error={page.error} onRetry={() => void page.refetch()} />
@@ -130,43 +139,14 @@ function InactiveCustomersPageBody() {
           <EmptyState title="Không có khách nào">{filter.q ? `Không thấy khách nào khớp “${filter.q}”.` : EMPTY[filter.followUp]}</EmptyState>
         )}
         {items.length > 0 && (
-          <div className="table-wrap" tabIndex={0} role="region" aria-label="Danh sách khách lâu không quay lại">
-            <table className="data-table">
-              <caption className="sr-only">Khách lâu không quay lại</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Khách</th>
-                  <th scope="col" className="num">
-                    Số ngày vắng
-                  </th>
-                  <th scope="col" className="hidden sm:table-cell">
-                    Lần cuối
-                  </th>
-                  <th scope="col" className="hidden sm:table-cell">
-                    Liên hệ gần nhất
-                  </th>
-                  <th scope="col" className="hidden sm:table-cell">
-                    Hẹn lại
-                  </th>
-                  <th scope="col" className="hidden sm:table-cell">
-                    <span className="sr-only">Thao tác</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((c) => (
-                  <InactiveRow
-                    key={c.customer_id}
-                    c={c}
-                    canFollowUp={canFollowUp}
-                    onContacted={() => {
-                      setContacting(c);
-                    }}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ResponsiveTable
+            caption="Khách lâu chưa quay lại"
+            rows={items}
+            rowKey={(c) => c.customer_id}
+            stretchLink
+            cardsBelow={1024}
+            columns={inactiveColumns(canFollowUp, setContacting)}
+          />
         )}
       </div>
       {page.hasNextPage && (
@@ -176,33 +156,30 @@ function InactiveCustomersPageBody() {
           </button>
         </div>
       )}
-      <Modal
+      <BottomSheet
         open={contacting !== null}
         onClose={() => {
           setContacting(null);
         }}
-        className="form-dialog"
-        label={contacting ? `Đã liên hệ với ${contacting.full_name}` : "Đã liên hệ"}
+        title="Đã liên hệ"
+        description={contacting?.full_name}
       >
         {contacting && (
-          <div className="grid gap-4">
-            <h2 className="font-brand text-xl text-primary">Đã liên hệ với {contacting.full_name}</h2>
-            <FollowUpForm
-              customerId={contacting.customer_id}
-              customerName={contacting.full_name}
-              onCancel={() => {
-                setContacting(null);
-              }}
-              onDone={(saved) => {
-                setNotice(
-                  `Đã ghi liên hệ với ${contacting.full_name}${saved.next_follow_up_on ? `, hẹn lại ${shortDay(saved.next_follow_up_on)}` : ""}.`,
-                );
-                setContacting(null);
-              }}
-            />
-          </div>
+          <FollowUpForm
+            customerId={contacting.customer_id}
+            customerName={contacting.full_name}
+            onCancel={() => {
+              setContacting(null);
+            }}
+            onDone={(saved) => {
+              setNotice(
+                `Đã ghi liên hệ với ${contacting.full_name}${saved.next_follow_up_on ? `, hẹn lại ${shortDay(saved.next_follow_up_on)}` : ""}.`,
+              );
+              setContacting(null);
+            }}
+          />
         )}
-      </Modal>
+      </BottomSheet>
     </section>
   );
 }
@@ -231,36 +208,47 @@ function RowActions({ c, canFollowUp, onContacted }: { c: InactiveCustomer; canF
   );
 }
 
-function InactiveRow({ c, canFollowUp, onContacted }: { c: InactiveCustomer; canFollowUp: boolean; onContacted: () => void }) {
+/** Columns of the absent-customer list: a table from 768 px, cards with the actions below that. */
+function inactiveColumns(canFollowUp: boolean, onContacted: (c: InactiveCustomer) => void): Column<InactiveCustomer>[] {
   const today = spaToday();
-  const f = c.last_follow_up;
-  return (
-    <tr>
-      <td>
-        <CustomerCell id={c.customer_id} name={c.full_name} phone={c.phone} gender={c.gender ?? null} />
-        <span className={`badge mt-1 ${c.kind === "package" ? "badge-gold" : "badge-muted"}`}>
-          {c.kind === "package" ? `Liệu trình · còn ${String(c.sessions_remaining)} buổi` : "Khách lẻ"}
-        </span>
-        {/* Phones: the hidden columns' essentials and the actions, inside the row. */}
-        <span className="mt-2 grid gap-2 sm:hidden">
-          <span className="text-xs text-text-muted">
-            {f ? `Liên hệ ${relativeDay(f.on).toLowerCase()} · ${OUTCOME_LABEL[f.outcome]}` : "Chưa liên hệ"}
+  return [
+    {
+      id: "customer",
+      header: "Khách",
+      card: "title",
+      cell: (c) => (
+        <>
+          <CustomerCell id={c.customer_id} name={c.full_name} phone={c.phone} gender={c.gender ?? null} />
+          <span className={`badge mt-1 ${c.kind === "package" ? "badge-gold" : "badge-muted"}`}>
+            {c.kind === "package" ? `Liệu trình · còn ${String(c.sessions_remaining)} buổi` : "Khách lẻ"}
           </span>
-          {c.next_follow_up_on && <NextBadge on={c.next_follow_up_on} today={today} />}
-          <span className="flex flex-wrap items-center gap-2">
-            <RowActions c={c} canFollowUp={canFollowUp} onContacted={onContacted} />
-          </span>
-        </span>
-      </td>
-      <td className="num">
-        <span className={`badge ${c.days_absent >= 30 ? "badge-danger" : "badge-warn"}`}>{c.days_absent} ngày</span>
-      </td>
-      <td className="hidden tabular sm:table-cell">
-        {relativeDay(c.last_seen_on)}
-        {!c.last_visit_on && <span className="block text-xs text-text-muted">Chưa đến lần nào</span>}
-      </td>
-      <td className="hidden sm:table-cell">
-        {f ? (
+        </>
+      ),
+    },
+    {
+      id: "days",
+      header: "Số ngày vắng",
+      numeric: true,
+      card: "aside",
+      cell: (c) => <span className={`badge ${c.days_absent >= 30 ? "badge-danger" : "badge-warn"}`}>{c.days_absent} ngày</span>,
+    },
+    {
+      id: "last",
+      header: "Lần cuối",
+      className: "tabular",
+      cell: (c) => (
+        <>
+          {relativeDay(c.last_seen_on)}
+          {!c.last_visit_on && <span className="block text-xs text-text-muted">Chưa đến lần nào</span>}
+        </>
+      ),
+    },
+    {
+      id: "contact",
+      header: "Liên hệ gần nhất",
+      cell: (c) => {
+        const f = c.last_follow_up;
+        return f ? (
           <>
             <span className="tabular">{relativeDay(f.on)}</span>
             <span className="block text-xs text-text-muted">
@@ -269,16 +257,31 @@ function InactiveRow({ c, canFollowUp, onContacted }: { c: InactiveCustomer; can
           </>
         ) : (
           <span className="text-text-muted">Chưa liên hệ</span>
-        )}
-      </td>
-      <td className="hidden tabular sm:table-cell">
-        {c.next_follow_up_on ? <NextBadge on={c.next_follow_up_on} today={today} /> : <span className="text-text-muted">—</span>}
-      </td>
-      <td className="hidden sm:table-cell">
+        );
+      },
+    },
+    {
+      id: "next",
+      header: "Hẹn lại",
+      className: "tabular",
+      cardOmit: (c) => !c.next_follow_up_on,
+      cell: (c) => (c.next_follow_up_on ? <NextBadge on={c.next_follow_up_on} today={today} /> : <span className="text-text-muted">—</span>),
+    },
+    {
+      id: "actions",
+      header: <span className="sr-only">Thao tác</span>,
+      card: "actions",
+      cell: (c) => (
         <span className="flex flex-wrap justify-end gap-2">
-          <RowActions c={c} canFollowUp={canFollowUp} onContacted={onContacted} />
+          <RowActions
+            c={c}
+            canFollowUp={canFollowUp}
+            onContacted={() => {
+              onContacted(c);
+            }}
+          />
         </span>
-      </td>
-    </tr>
-  );
+      ),
+    },
+  ];
 }

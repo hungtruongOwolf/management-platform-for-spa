@@ -106,6 +106,9 @@ function visit(extra: Partial<Visit> = {}): Visit {
     void_reason: null,
     voided_at: null,
     sale_id: null,
+    subtotal: 0,
+    discount_amount: 0,
+    discount_reason: null,
     total: 0,
     payments: [],
     version: 1,
@@ -128,6 +131,7 @@ function visit(extra: Partial<Visit> = {}): Visit {
         price_variant: null,
         unit_price: 150_000,
         line_value: 150_000,
+        discount_amount: 0,
         expiry_override_reason: null,
       },
     ],
@@ -227,7 +231,7 @@ describe("package actions on the customer profile", () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Gia hạn" })).toBeNull();
     expect(
-      screen.queryByRole("button", { name: "Hủy liệu trình + hoàn tiền" }),
+      screen.queryByRole("button", { name: "Hủy gói và hoàn tiền" }),
     ).toBeNull();
   });
 
@@ -326,10 +330,10 @@ describe("package actions on the customer profile", () => {
     const user = userEvent.setup();
     at("/khach-hang/c1");
     await user.click(
-      await screen.findByRole("button", { name: "Hủy liệu trình + hoàn tiền" }),
+      await screen.findByRole("button", { name: "Hủy gói và hoàn tiền" }),
     );
     const dialog = await screen.findByRole("dialog", {
-      name: /Hủy liệu trình/,
+      name: /Hủy gói/,
     });
     const amount = within(dialog).getByLabelText(/Số tiền hoàn/);
     await user.type(amount, "1.600.000");
@@ -383,7 +387,7 @@ describe("package actions on the customer profile", () => {
       within(dialog).getByRole("button", { name: "Hủy hóa đơn" }),
     );
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-      "Hủy liệu trình + hoàn tiền",
+      "Hủy gói và hoàn tiền",
     );
   });
 });
@@ -450,9 +454,10 @@ describe("voids in the /quay visit list", () => {
     serve(MANAGER);
     at("/quay");
     await screen.findByRole("list", { name: "Lượt khách hôm nay" });
-    fireEvent.change(screen.getByLabelText("Xem ngày"), {
-      target: { value: "2026-11-01" },
-    });
+    // DateField: always dd/mm/yyyy (round 4), committed on blur.
+    const dayField = screen.getByLabelText("Xem ngày");
+    fireEvent.change(dayField, { target: { value: "01/11/2026" } });
+    fireEvent.blur(dayField);
     expect(
       await screen.findByText(
         "Ngày đã chốt: chỉ chủ spa hủy được lượt của ngày này.",

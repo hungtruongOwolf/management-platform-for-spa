@@ -126,13 +126,49 @@ OpenAPI: struct query (`SearchQuery`, `ActiveFilter`, `VisitListQuery`, `StaffQu
   ],
   "payments": [ { "method": "bank_transfer", "amount": 100000, "reference": null } ] }
 ```
-- **Không có giờ ra** và **không có giảm giá** trong lượt ở R1 (EM 2026-11-04; giảm giá dịch vụ lẻ để sau, xem S7 "Kết quả").
+- **Không có giờ ra** (EM 2026-11-04). **Giảm giá dịch vụ lẻ có từ vòng 4** (xem §3c).
 - **Server tự quyết định giá:** `one_off` lấy giá của dịch vụ (khóa `FOR SHARE`) theo giới tính của khách. Khách chưa có giới tính: dịch vụ giá chung thì không cần gì, dịch vụ có giá Nữ/Nam thì bắt buộc gửi `price_variant` (thiếu → `422 price.gender_required`). Khách đã có giới tính mà gửi `price_variant` khác → `422 validation_failed` (`lines[i].price_variant`). Dịch vụ không có giá cho giới tính đó → `422 price.variant_not_available`. Field lạ (`unit_price`, `total`) bị bỏ qua.
 - `package`: `customer_package_item_id` bỏ trống → server chọn gói còn dùng được (chưa hủy, chưa hết hạn, còn buổi) chứa dịch vụ, **hết hạn sớm nhất trước, không thời hạn sau cùng, rồi mua sớm nhất** (AC4.3); không có → `422 package.item_not_found`. Item không chứa `service_id` của dòng → `422 validation_failed` (`not_in_package`). `unit_price` = `per_session_value`, `line_value` = giá trị buổi thực trừ (buổi tặng = 0).
 - Các item được trừ theo thứ tự `item_id` để hai lượt nhiều dòng tranh cùng các item không deadlock. Dòng `one_off` tạo một `sale` (không người chốt, `line_type='service'`) qua `sales::service::record_service_sale` trong cùng transaction; `sum(payments)` phải bằng tổng dòng lẻ (lượt chỉ trừ buổi mà gửi payment → `422 payment.amount_mismatch`).
 - Ghi chú buổi mã hóa AES-256-GCM (`kernel::crypto`, AAD `visit.note` + tenant + visit). Response lưu trong idempotency và audit **không bao giờ** chứa ghi chú.
 - `POST /sales` (S6): field lạ trong body (ví dụ `unit_price`, `total`) bị **bỏ qua**, không báo lỗi; mọi số tiền tính từ catalog. Request hash của idempotency = JSON đã parse rồi serialize lại (key đã sắp xếp), nên khác khoảng trắng hay thứ tự key vẫn là cùng một request.
-- `check_in_at` (mặc định = lúc lưu): quá 5 phút trong tương lai → `422 visit.check_in_in_future`; khác ngày nghiệp vụ hiện tại (theo múi giờ của spa) → `422 visit.check_in_not_today`. Ghi lượt cho ngày cũ chưa hỗ trợ (để S8 / sửa ngày đã chốt).
+- `check_in_at` = **giờ làm dịch vụ** (mặc định = lúc lưu; khác `created_at` = lúc ghi): quá 5 phút trong tương lai → `422 visit.check_in_in_future`; ngày trước hôm nay mà thiếu `visit.backdate` → `422 visit.check_in_not_today`; quá 366 ngày → `422 visit.check_in_too_old`. Ngày nghiệp vụ của lượt, hóa đơn và payment = ngày của giờ làm (`operations::domain::service_time`); hạn liệu trình xét tại ngày đó (vòng 4).
+
+### 3c. Vòng 4: lịch hẹn, nhập bù, giảm giá lượt ([spec](../product/specs/appointments.md), migration 0016)
+| Method & path | Mục đích | Permission | Idem |
+|---|---|---|---|
+| `GET /appointments?from=&to=` | `CalendarDto {from, to, today, opens_at, closes_at, slot_minutes, time_zone, technicians[]{id, full_name}, capacity, appointments[]}`; mặc định hôm nay, tối đa 14 ngày (`422 to range_too_long / before_from`) | `appointment.manage` | — |
+| `POST /appointments` | `{customer_id \| guest{full_name, phone}, service_ids[1–5], staff_id?, starts_at, duration_min?, note?}` → `201 AppointmentDto` | `appointment.manage` | ✓ |
+| `GET /appointments/{id}` · `PATCH /appointments/{id}` (If-Match) | xem / đổi giờ, thời lượng, KTV, dịch vụ, ghi chú, nối khách mới với hồ sơ (`customer_id`) | `appointment.manage` | — |
+| `POST /appointments/{id}/arrive` | `{staff_id}` booked → arrived (chỉ đúng ngày, KTV phải rảnh) | `appointment.manage` | — |
+| `POST /appointments/{id}/complete` | thân như `POST /visits` trừ `customer_id` → `200 AppointmentCompleted {appointment, visit}` | `appointment.manage` + `visit.record` | ✓ |
+| `POST /appointments/{id}/cancel` · `/no-show` | `{reason}` (no-show chỉ sau giờ hẹn) | `appointment.manage` | — |
+
+- `AppointmentDto`: `status` (`booked`/`arrived`/`done`/`no_show`/`cancelled`), `business_date`, `starts_at`, `ends_at`, `duration_min`, `customer_id?`, `customer_name`, `customer_phone` (E.164), `customer_gender?`, `is_guest`, `staff_id?`, `staff_name?`, `services[]{service_id, service_name, category_name, duration_min?}`, `note?`, `status_reason?`, `arrived_at?`, `closed_at?`, `visit_id?`, **`payment_state`** (`unpaid` / `paid` / `no_charge` / `voided` / `none`), `paid_amount`, `version`.
+- **Sức chứa** (`operations::appointments`): khóa `pg_advisory_xact_lock(hashtextextended('appointment:<tenant>:<ngày>'))` rồi đọc các lịch `booked`/`arrived` chồng khoảng `[starts_at, ends_at)`: cùng KTV → `409 appointment.staff_busy` + `existing_id`; đỉnh chồng + 1 > số KTV → `409 appointment.slot_full`. KTV = nhân viên đang làm có chức vụ chứa "kỹ thuật"/"KTV" (không ai → mọi nhân viên), đọc qua `org::service::active_in` (cùng nguồn với `GET /staff`). Lớp 2: `EXCLUDE USING gist (tenant_id =, staff_id =, tstzrange &&) WHERE open`. Giờ mở cửa / ô giờ: `tenant.settings.opening_hours {open, close}`, `slot_minutes` (mặc định 09:00–21:00, 15 phút; giá trị hỏng → mặc định).
+- **Hoàn tất = lượt khách:** `operations::service::record_in(tx, …)` là thân của `POST /visits` chạy trong transaction của người gọi (idempotency claim do route sở hữu). `complete` khóa lịch → kiểm ngày đã chốt → khách bắt buộc (`422 appointment.customer_required`) → `record_in` → `status = done, visit_id` → audit `appointment.complete` → lưu response idempotent (không có ghi chú buổi). Giờ làm mặc định: lúc khách đến, nếu không thì giờ hẹn (nếu đã qua), nếu không thì bây giờ.
+- **Giảm giá lượt:** `VisitCreate.discount {percent? | amount?, reason}` (đúng một). `sales::service::record_service_sale` tính `percent → floor(subtotal × % / 100)`, kiểm D10 như bán gói, chia cho từng dòng lẻ bằng `allocate_discount` → `visit_line.discount_amount`, `line_value = qty × unit_price − phần giảm` (CHECK 0016). `VisitDto` thêm `subtotal`, `discount_amount`, `discount_reason`; `VisitLineDto.discount_amount`. Sổ doanh thu hiện lý do giảm ở cột ghi chú (view `revenue_book` đã dùng `sale.discount_reason`).
+- Mã lỗi mới: `appointment.staff_busy` / `slot_full` / `closed` / `already_arrived` (409), `appointment.outside_opening_hours` / `not_today` / `not_started` / `customer_required` (422), `visit.check_in_too_old` (422); field: `starts_at not_on_slot / too_far`, `duration_min out_of_range`, `discount percent_or_amount`, `discount.percent out_of_range`.
+
+### 3c. Quản lý nhân viên (crate `org` + crate mới `hr`, [spec](../product/specs/staff-management.md), migration 0017)
+Mọi response `Cache-Control: no-store`; `?month=YYYY-MM` mặc định tháng hiện tại theo giờ spa.
+
+| Method + path | Mô tả | Permission | Ghi chú |
+|---|---|---|---|
+| `POST /staff`, `PUT /staff/{id}` (`If-Match`) | Hồ sơ: tên, vị trí, SĐT, trạng thái, ngày vào/nghỉ, `user_id`, `shift_start` | `staff.manage` | `409 staff.account_taken`, `412` |
+| `GET /staff/profiles`, `GET /staff/{id}` | Hồ sơ đầy đủ; `pay` chỉ khi có `payroll.read` | `staff.manage` | |
+| `PUT /staff/{id}/pay` | Lương cứng, `commission_rate_bp`, thưởng gắn bó, tiền ăn | `staff.manage` + `payroll.read` | audit `staff.pay_update` |
+| `GET /staff/accounts` | Tài khoản của spa để gắn | `staff.manage` | |
+| `GET/PUT /attendance` | Lưới tháng × người; PUT 1–100 ô/transaction, `status: null` xóa | `attendance.record` | phút muộn do server tính |
+| `GET/PUT /daily-reviews` | Khen/phàn nàn/ghi chú theo ngày | `evaluation.record` | |
+| `GET/PUT /evaluations` | Phiếu 6 tiêu chí tháng (upsert) | `evaluation.record` | `hr::evaluation::score` |
+| `GET /adjustments`, `POST /adjustments` (`Idempotency-Key`) | Sổ thưởng/phạt, chỉ thêm, `corrects_month` | `evaluation.record` | |
+| `GET /payroll`, `GET /payroll/payslips/{staff_id}` | Bảng lương; tạm tính hoặc bản chụp | `payroll.read` | |
+| `POST /payroll/close` (`Idempotency-Key`) | Chốt tháng đã kết thúc | `payroll.close` (+ `payroll.read`) | `422 payroll.month_not_ended / unrecorded_days`, `409 payroll.period_closed` |
+| `GET /payroll/rules`, `PUT /payroll/rules` | Quy tắc cho 8 mâu thuẫn | `payroll.read` / `payroll.close` | `deny_unknown_fields`, có giới hạn |
+| `GET /me/staff` | Tháng của chính mình | `staff.read_own` | `{linked:false}` nếu chưa gắn |
+
+Tính lương: bộ tính thuần `hr::calc::compute` (unit test theo ô Excel E55/K54, Tết, cờ). Hoa hồng: 1 query gom `visit_line` (lượt `completed`, theo `business_date`) theo (KTV, dịch vụ, nguồn) + `sale.total` theo `closer_staff_id` (không hủy). Khóa tháng: `hr::period` (FOR SHARE khi ghi, FOR UPDATE khi chốt) + trigger. Mã lỗi mới: `payroll.period_closed` (409), `payroll.month_not_ended`, `payroll.unrecorded_days` (422), `staff.account_taken` (409).
 
 ## 4. Use case & tính toàn vẹn dữ liệu (áp dụng [data-integrity](../../../.claude/skills/backend-design/data-integrity.md))
 Mọi use case chạy trong **một transaction**, mở bởi `kernel::TenantTx`. `TenantTx` chạy `SET LOCAL app.tenant_id` và `SET LOCAL statement_timeout = '5s'`, giữ `actor` và `business_date`, và **không gọi mạng ra ngoài** trong lúc transaction mở.

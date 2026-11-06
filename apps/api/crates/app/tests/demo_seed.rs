@@ -4,6 +4,7 @@
 mod common;
 
 use app::demo::{DemoOptions, DemoReport, MANAGER_PHONE, seed};
+use chrono::Datelike;
 use common::{PASSWORD, TestResult, call, harness, session_for};
 use kernel::testing::app_pool;
 use serde_json::Value;
@@ -48,6 +49,8 @@ async fn a_fresh_spa_gets_demo_data_on_every_screen_once(pool: PgPool) -> TestRe
         report.visits
     );
     assert!((8..=15).contains(&report.visits_today), "{report:?}");
+    // Round 4: the calendar has bookings ahead (a picked technician may already be busy: skipped).
+    assert!((5..=8).contains(&report.appointments), "{report:?}");
     assert_eq!(
         (
             report.voided_sales,
@@ -180,6 +183,103 @@ async fn a_fresh_spa_gets_demo_data_on_every_screen_once(pool: PgPool) -> TestRe
     assert_eq!(
         count(&h.owner, "SELECT count(*) FROM app.visit").await?,
         visits
+    );
+    Ok(())
+}
+
+/// Staff management demo: a month of attendance, evaluations and adjustments, a technician who
+/// sees only their own month, and payroll commission that reconciles with the seeded visits.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn demo_staff_month_and_commission_reconcile_with_visits(pool: PgPool) -> TestResult {
+    let h = harness(pool).await?;
+    let app = app_pool(&h.owner).await?;
+    let report = seed(&h.owner, &app, &h.cipher, &OPTIONS).await?;
+    let s = &report.staff_management;
+    assert!(s.technician_login);
+    assert!(s.attendance_days >= 6 * 28, "{s:?}");
+    assert!(s.daily_reviews > 0);
+    assert_eq!((s.evaluations, s.adjustments), (5, 5));
+
+    let owner = session_for(&h, common::OWNER_PHONE).await;
+    let today = chrono::Utc::now()
+        .with_timezone(&chrono_tz::Asia::Ho_Chi_Minh)
+        .date_naive();
+    let first = today.with_day(1).unwrap_or(today);
+    let last_month_start = (first - chrono::Duration::days(1))
+        .with_day(1)
+        .unwrap_or(first);
+    for (month_start, month_end) in [
+        (last_month_start, first - chrono::Duration::days(1)),
+        (first, today),
+    ] {
+        let payroll = call(
+            &h.app,
+            "GET",
+            &format!("/payroll?month={}", month_start.format("%Y-%m")),
+            Some(&owner),
+            None,
+        )
+        .await;
+        assert_eq!(
+            payroll.status,
+            axum::http::StatusCode::OK,
+            "{}",
+            payroll.body
+        );
+        let slips = list(&payroll.body["payslips"]);
+        assert_eq!(slips.len(), 6, "5 technicians + the manager");
+        let mut total = 0_i64;
+        for slip in &slips {
+            let staff = uuid::Uuid::parse_str(slip["staff_id"].as_str().unwrap_or_default())?;
+            let base: i64 = sqlx::query_scalar(
+                "SELECT COALESCE(SUM(vl.line_value), 0)::bigint FROM app.visit_line vl
+                 JOIN app.visit v ON v.tenant_id = vl.tenant_id AND v.id = vl.visit_id
+                 WHERE vl.staff_id = $1 AND v.status = 'completed'
+                   AND v.business_date BETWEEN $2 AND $3",
+            )
+            .bind(staff)
+            .bind(month_start)
+            .bind(month_end)
+            .fetch_one(&h.owner)
+            .await?;
+            assert_eq!(
+                slip["service_commission_base"], base,
+                "{}",
+                slip["full_name"]
+            );
+            let rate = slip["commission_rate_bp"].as_i64().unwrap_or_default();
+            assert_eq!(
+                slip["service_commission"].as_i64(),
+                Some((base * rate + 5_000) / 10_000),
+                "{}",
+                slip["full_name"]
+            );
+            total += base;
+        }
+        let visits: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(vl.line_value), 0)::bigint FROM app.visit_line vl
+             JOIN app.visit v ON v.tenant_id = vl.tenant_id AND v.id = vl.visit_id
+             WHERE v.status = 'completed' AND v.business_date BETWEEN $1 AND $2",
+        )
+        .bind(month_start)
+        .bind(month_end)
+        .fetch_one(&h.owner)
+        .await?;
+        assert_eq!(
+            total, visits,
+            "every completed line belongs to exactly one payslip"
+        );
+    }
+
+    let tech = session_for(&h, app::demo::TECHNICIAN_PHONE).await;
+    let mine = call(&h.app, "GET", "/me/staff", Some(&tech), None).await;
+    assert_eq!(mine.body["linked"], true, "{}", mine.body);
+    assert!(mine.body["data"]["payslip"]["base_salary"].is_number());
+    assert_eq!(
+        call(&h.app, "GET", "/payroll", Some(&tech), None)
+            .await
+            .status,
+        axum::http::StatusCode::FORBIDDEN
     );
     Ok(())
 }

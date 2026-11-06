@@ -16,6 +16,7 @@ chrono = { version = "0.4.45", default-features = false, features = ["std", "clo
 chrono-tz = "0.10.4"
 crm = { version = "0.1.0", path = "../crm" }
 dotenvy = "0.15.7"
+hr = { version = "0.1.0", path = "../hr" }
 governor = { version = "0.10.4", default-features = false, features = ["std", "dashmap", "quanta"] }
 identity = { version = "0.1.0", path = "../identity" }
 kernel = { version = "0.1.0", path = "../kernel" }
@@ -39,6 +40,7 @@ utoipa = { version = "6.0.0", features = ["uuid"] }
 uuid = "1.29.0"
 
 [dev-dependencies]
+hr = { path = "../hr" }
 catalog = { path = "../catalog" }
 chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
 chrono-tz = "0.10.4"

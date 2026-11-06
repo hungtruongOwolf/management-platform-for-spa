@@ -12,6 +12,7 @@ export type IconName =
   | "layers"
   | "settings"
   | "search"
+  | "filter"
   | "lock"
   | "chevron-left"
   | "chevron-right"
@@ -33,6 +34,7 @@ export type IconName =
   | "arrow-right"
   | "history"
   | "wallet"
+  | "id-card"
   | "sparkle"
   | "leaf"
   | "phone";

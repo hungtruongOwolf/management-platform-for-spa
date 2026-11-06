@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.staff_adjustment\n             (id, tenant_id, staff_id, work_date, kind, amount, points, reason, corrects_period, created_by)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Text",
+        "Int8",
+        "Int4",
+        "Text",
+        "Date",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a56a523778fc92adc707b2d0902f2554970f66504b2dffba43aa340532d6153d"
+}
