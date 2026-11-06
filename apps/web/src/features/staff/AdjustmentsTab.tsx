@@ -7,10 +7,13 @@ import { fieldMessage, messageFor } from "../../lib/errors";
 import { EmptyState, ErrorState, RowsSkeleton } from "../reports/ui";
 import { activeStaffQuery } from "../sales/api";
 import { adjustmentsQuery, createAdjustment, invalidateStaff, type Adjustment } from "./api";
-import { ClosedBanner, dayLabel, vnd } from "./ui";
+import { dayLabel, vnd } from "./ui";
 
-/** Thưởng / phạt: the month's log, newest first; recording is append-only (a mistake is offset). */
-export function AdjustmentsTab({ month, today }: { month: string; today: string }) {
+/**
+ * The month's bonus/penalty log (end of "Bảng công tháng"), newest first; recording is
+ * append-only (a mistake is offset). Day-to-day entries are made from the daily book.
+ */
+export function AdjustmentLogSection({ month, today, canWrite }: { month: string; today: string; canWrite: boolean }) {
   const log = useQuery(adjustmentsQuery(month));
   const staff = useQuery(activeStaffQuery);
   const [open, setOpen] = useState(false);
@@ -50,18 +53,22 @@ export function AdjustmentsTab({ month, today }: { month: string; today: string 
   ];
 
   return (
-    <div className="grid content-start gap-4">
-      {log.data.closed && <ClosedBanner />}
-      <div>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => {
-            setOpen(true);
-          }}
-        >
-          + Ghi thưởng / phạt
-        </button>
+    <section className="grid content-start gap-3" aria-labelledby="adjustment-log-title">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="adjustment-log-title" className="section-title">
+          Sổ thưởng, phạt của tháng
+        </h2>
+        {canWrite && (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => {
+              setOpen(true);
+            }}
+          >
+            + Ghi thưởng / phạt
+          </button>
+        )}
       </div>
       {log.data.items.length === 0 ? (
         <EmptyState title="Chưa có khoản thưởng hay phạt nào trong tháng này" />
@@ -78,29 +85,35 @@ export function AdjustmentsTab({ month, today }: { month: string; today: string 
           }}
         />
       )}
-    </div>
+    </section>
   );
 }
 
-function AdjustmentForm({
+/**
+ * Bonus / penalty form. From the daily book it opens for one person and one day (`fixed`): no
+ * person picker, the date pre-filled.
+ */
+export function AdjustmentForm({
   today,
   closedMonth,
   staff,
+  fixed,
   onClose,
 }: {
   today: string;
   closedMonth: string | null;
   staff: { id: string; full_name: string }[];
+  fixed?: { staffId: string; name: string; date: string };
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
   const [key] = useState(() => crypto.randomUUID());
-  const [staffId, setStaffId] = useState(staff[0]?.id ?? "");
+  const [staffId, setStaffId] = useState(fixed?.staffId ?? staff[0]?.id ?? "");
   const [kind, setKind] = useState<"bonus" | "penalty">("bonus");
   const [amount, setAmount] = useState("");
   const [points, setPoints] = useState("");
   const [reason, setReason] = useState("");
-  const [on, setOn] = useState(today);
+  const [on, setOn] = useState(fixed?.date ?? today);
   const save = useMutation({
     mutationFn: () =>
       createAdjustment(
@@ -127,7 +140,7 @@ function AdjustmentForm({
     <BottomSheet
       open
       onClose={onClose}
-      title="Ghi thưởng / phạt"
+      title={fixed ? `Thưởng / phạt · ${fixed.name}` : "Ghi thưởng / phạt"}
       description={closedMonth ? `Điều chỉnh cho tháng ${closedMonth} (đã chốt), ghi vào tháng hiện tại` : undefined}
       footer={
         <button type="submit" form={formId} className="btn btn-primary" disabled={save.isPending || !staffId || !reason.trim() || (!amount && !points)}>
@@ -143,21 +156,23 @@ function AdjustmentForm({
           save.mutate();
         }}
       >
-        <label className="filter-field">
-          Nhân viên
-          <select
-            value={staffId}
-            onChange={(e) => {
-              setStaffId(e.target.value);
-            }}
-          >
-            {staff.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.full_name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!fixed && (
+          <label className="filter-field">
+            Nhân viên
+            <select
+              value={staffId}
+              onChange={(e) => {
+                setStaffId(e.target.value);
+              }}
+            >
+              {staff.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.full_name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <div className="segmented" role="group" aria-label="Loại">
           {(
             [

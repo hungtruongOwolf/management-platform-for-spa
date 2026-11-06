@@ -42,7 +42,7 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
 | `evaluation.record` (0017: đánh giá ngày, đánh giá tháng, sổ thưởng/phạt) | ✓ | ✓ | — | — |
 | `payroll.read` (0017: mọi con số lương; **mặc định không cho quản lý, Q-S1**) | ✓ | — | — | — |
 | `payroll.close` (0017: chốt tháng, sửa quy tắc lương) | ✓ | — | — | — |
-| `staff.read_own` (0016: `GET /me/staff`, tháng của chính mình) | ✓ | ✓ | ✓ | — |
+| `staff.read_own` (0016: `GET /me/staff`, tháng của chính mình; vòng 5: `GET /me/work`, khách mình đã làm + lịch hẹn gán cho mình) | ✓ | ✓ | ✓ | — |
 | `audit.read` | ✓ | — | — | — |
 | `support_grant.manage` | ✓ | — | — | — |
 | `platform.tenant.manage` | — | — | — | ✓ |
@@ -89,6 +89,12 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
   - Người ghi luôn lấy từ session (`recorded_by`, `created_by`, `closed_by`, `updated_by`). Ghi chú chấm công/đánh giá không vào audit (`has_note`); audit điều kiện lương có số tiền (chỉ chủ spa đọc audit).
   - Gắn tài khoản: chỉ thành viên đang hoạt động của spa, một tài khoản một hồ sơ (`409 staff.account_taken`). Lưu ý: chủ spa gắn nhầm tài khoản người khác vào hồ sơ thì người đó thấy phiếu lương của hồ sơ đó: đây là quyết định của chủ spa, có audit `staff.update`.
   - Matrix: 20 route mới trong `authz_matrix.rs` (Target mới `Staff`).
+- **Vòng 5: "Khách của tôi" (`GET /me/work`, [spec](../product/specs/staff-management.md) §10 US9, không có migration):**
+  - Cùng permission `staff.read_own` (không thêm permission mới, không đổi seed). Staff lấy từ `staff.user_id = session.user` qua `org::profile::own_staff_id`; không có tham số chọn người (`?staff_id=` → `400`, `MonthQuery` `deny_unknown_fields`). Chưa gắn hồ sơ → `200 {linked:false}`.
+  - **Phạm vi hẹp hơn quyền đọc chung:** chỉ các dòng `visit_line.staff_id = mình` trong lượt `completed` (lượt có hai KTV: mỗi người chỉ thấy dòng của mình), chỉ lịch hẹn `booked`/`arrived` có `appointment.staff_id = mình`, hôm nay → +30 ngày.
+  - **Trường cho phép (allowlist trong SQL và DTO):** ngày, giờ, tên khách (hồ sơ hoặc tên khách mới của lịch hẹn), tên dịch vụ, số lượng, lẻ/gói, trạng thái lịch. **Không** có giá, giá trị dòng, doanh thu, SĐT, id khách, ghi chú buổi (dữ liệu sức khỏe, mã hóa), ghi chú sức khỏe, ghi chú hồ sơ, ghi chú lịch hẹn. KTV vẫn không có `customer.read` / `visit.read` / `appointment.manage` (403 trên `/customers`, `/visits`, `/appointments`).
+  - Lead's decision (EM to review): KTV thấy **tên** khách mình phục vụ (họ đã gặp khách trực tiếp; cần để chuẩn bị và đối chiếu hoa hồng), không thấy SĐT.
+  - Test: `staff.rs::a_technician_sees_only_the_customers_and_bookings_they_serve` (A không thấy lượt/lịch của B, dòng của B trong lượt chung, lượt đã hủy; tập key đúng allowlist; không lọt giá/SĐT/ghi chú/id khách; chưa gắn → `linked:false`; spa khác → `linked:false`; ẩn danh 401; tháng sai 422; `?staff_id=` 400; quản lý vẫn 200 trên route quầy). `authz_matrix.rs` +1 dòng (`StaffReadOwn`, mọi role).
 
 ## Ánh xạ endpoint → permission
 Danh sách đầy đủ ở [backend](../architecture/backend.md) §3 (cột "Permission"). CI fail nếu có route chưa khai báo permission (trừ `/auth/*` công khai và `/health`).

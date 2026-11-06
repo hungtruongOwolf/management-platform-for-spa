@@ -1869,6 +1869,41 @@
         }
       }
     },
+    "/api/v1/me/work": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "summary": "Customers I served in the month and appointments assigned to me (spec §10 US9). The person is\nthe session's own staff link; there is no parameter to pick anyone else (`?staff_id=` → 400).",
+        "operationId": "get_my_work",
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "description": "`YYYY-MM`; default the current month (spa time zone).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyWork"
+                }
+              }
+            }
+          },
+          "400": {},
+          "401": {},
+          "403": {},
+          "422": {}
+        }
+      }
+    },
     "/api/v1/opening-balances": {
       "post": {
         "tags": [
@@ -6600,6 +6635,60 @@
           }
         }
       },
+      "MyWork": {
+        "type": "object",
+        "required": [
+          "linked"
+        ],
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MyWorkData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "linked": {
+            "type": "boolean",
+            "description": "`false`: this login is not linked to a staff profile (ask the owner)."
+          }
+        }
+      },
+      "MyWorkData": {
+        "type": "object",
+        "required": [
+          "month",
+          "today",
+          "served",
+          "upcoming"
+        ],
+        "properties": {
+          "month": {
+            "type": "string"
+          },
+          "served": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServedVisit"
+            },
+            "description": "Newest first."
+          },
+          "today": {
+            "type": "string",
+            "format": "date"
+          },
+          "upcoming": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UpcomingAppointment"
+            },
+            "description": "Booked / arrived, from today to today + 30 days, earliest first."
+          }
+        }
+      },
       "OpeningBalanceCreate": {
         "type": "object",
         "required": [
@@ -8382,6 +8471,61 @@
           }
         }
       },
+      "ServedLine": {
+        "type": "object",
+        "required": [
+          "service_name",
+          "qty",
+          "from_package"
+        ],
+        "properties": {
+          "from_package": {
+            "type": "boolean",
+            "description": "`true`: a session of the customer's package; `false`: a one-off service."
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "service_name": {
+            "type": "string"
+          }
+        }
+      },
+      "ServedVisit": {
+        "type": "object",
+        "description": "A completed visit in which this person performed at least one line; `services` lists only\n**their** lines.",
+        "required": [
+          "visit_id",
+          "business_date",
+          "check_in_at",
+          "customer_name",
+          "services"
+        ],
+        "properties": {
+          "business_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "check_in_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "customer_name": {
+            "type": "string"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServedLine"
+            }
+          },
+          "visit_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "ServiceCategoryDto": {
         "type": "object",
         "required": [
@@ -9119,6 +9263,56 @@
             "format": "int64"
           }
         }
+      },
+      "UpcomingAppointment": {
+        "type": "object",
+        "required": [
+          "appointment_id",
+          "business_date",
+          "starts_at",
+          "ends_at",
+          "status",
+          "customer_name",
+          "services"
+        ],
+        "properties": {
+          "appointment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "customer_name": {
+            "type": "string",
+            "description": "The customer's profile name, or the newcomer's name given at booking."
+          },
+          "ends_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "starts_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/UpcomingStatus"
+          }
+        }
+      },
+      "UpcomingStatus": {
+        "type": "string",
+        "enum": [
+          "booked",
+          "arrived"
+        ]
       },
       "UserSummary": {
         "type": "object",

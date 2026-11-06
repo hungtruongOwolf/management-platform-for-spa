@@ -568,3 +568,84 @@ pub async fn insert_payslip(
     .await?;
     Ok(())
 }
+
+// ------------------------------------------------------------------------- self-service work
+
+pub struct ServedLineRow {
+    pub visit_id: Uuid,
+    pub business_date: NaiveDate,
+    pub check_in_at: DateTime<Utc>,
+    pub customer_name: String,
+    pub service_name: String,
+    pub qty: i32,
+    pub source: String,
+}
+
+/// The lines `staff` performed in completed visits of the period, newest visit first. Only the
+/// allowlisted columns of `work::ServedVisit` are selected.
+pub async fn served_lines(
+    tx: &mut TenantTx,
+    staff: Uuid,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<Vec<ServedLineRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        ServedLineRow,
+        r#"SELECT v.id AS visit_id, v.business_date, v.check_in_at, c.full_name AS customer_name,
+                  vl.service_name_snapshot AS service_name, vl.qty, vl.source
+           FROM app.visit v
+           JOIN app.visit_line vl ON vl.tenant_id = v.tenant_id AND vl.visit_id = v.id
+           JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id
+           WHERE v.tenant_id = $1 AND vl.staff_id = $2 AND v.status = 'completed'
+             AND v.business_date BETWEEN $3 AND $4
+           ORDER BY v.check_in_at DESC, v.id, vl.position"#,
+        tenant,
+        staff,
+        from,
+        to
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+pub struct UpcomingRow {
+    pub id: Uuid,
+    pub business_date: NaiveDate,
+    pub starts_at: DateTime<Utc>,
+    pub ends_at: DateTime<Utc>,
+    pub status: String,
+    pub customer_name: String,
+    pub services: Vec<String>,
+}
+
+/// Open appointments (booked / arrived) assigned to `staff` between two business dates.
+pub async fn upcoming_appointments(
+    tx: &mut TenantTx,
+    staff: Uuid,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<Vec<UpcomingRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        UpcomingRow,
+        r#"SELECT a.id, a.business_date, a.starts_at, a.ends_at, a.status,
+                  COALESCE(c.full_name, a.guest_name, '') AS "customer_name!",
+                  COALESCE(
+                    (SELECT array_agg(s.service_name_snapshot ORDER BY s.position)
+                     FROM app.appointment_service s
+                     WHERE s.tenant_id = a.tenant_id AND s.appointment_id = a.id),
+                    '{}'::text[]) AS "services!"
+           FROM app.appointment a
+           LEFT JOIN app.customer c ON c.tenant_id = a.tenant_id AND c.id = a.customer_id
+           WHERE a.tenant_id = $1 AND a.staff_id = $2 AND a.status IN ('booked', 'arrived')
+             AND a.business_date BETWEEN $3 AND $4
+           ORDER BY a.starts_at, a.id"#,
+        tenant,
+        staff,
+        from,
+        to
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}

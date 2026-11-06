@@ -3,9 +3,9 @@ import { PageHeader } from "../../app/PageHeader";
 import { useSearchState } from "../../lib/searchState";
 import { can, meQuery } from "../auth/session";
 import { spaToday } from "../corrections/api";
-import { AdjustmentsTab } from "./AdjustmentsTab";
-import { AttendanceTab } from "./AttendanceTab";
+import { DailyBook } from "./DailyBook";
 import { EvaluationTab } from "./EvaluationTab";
+import { MonthSheet } from "./MonthSheet";
 import { MyMonth } from "./MyMonth";
 import { PayrollTab } from "./PayrollTab";
 import { ProfilesTab } from "./ProfilesTab";
@@ -14,17 +14,18 @@ import { MonthPicker } from "./ui";
 import "./staff.css";
 
 const TAB_LABEL: Record<StaffTab, string> = {
-  attendance: "Chấm công",
-  evaluation: "Đánh giá",
-  adjustments: "Thưởng, phạt",
+  day: "Sổ hằng ngày",
+  month: "Bảng công tháng",
+  evaluation: "Đánh giá tháng",
   payroll: "Bảng lương",
   profiles: "Hồ sơ",
 };
 
 /**
- * /nhan-vien (spec staff-management): tabs by permission — Chấm công, Đánh giá, Thưởng/phạt
- * (attendance/evaluation.record), Bảng lương (payroll.read), Hồ sơ (staff.manage). A technician
- * without those sees only their own month. Tabs are UX only: each API answers 403 by itself.
+ * /nhan-vien (spec staff-management §10): the daily book first (attendance, praise/complaints and
+ * bonuses/penalties per person, in one pass), then the month grid, the monthly evaluation (the
+ * book prompts for it when due), payroll (payroll.read) and profiles (staff.manage). A
+ * technician without those sees only their own month. Tabs are UX only: each API answers 403.
  */
 export function StaffPage() {
   const { data: me } = useSuspenseQuery(meQuery);
@@ -32,11 +33,13 @@ export function StaffPage() {
   const today = spaToday();
   const current = today.slice(0, 7);
   const month = search.month || current;
+  const canAttendance = can(me, "attendance.record");
+  const canReview = can(me, "evaluation.record");
   const tabs = (
     [
-      ["attendance", can(me, "attendance.record")],
-      ["evaluation", can(me, "evaluation.record")],
-      ["adjustments", can(me, "evaluation.record")],
+      ["day", canAttendance || canReview],
+      ["month", canAttendance],
+      ["evaluation", canReview],
       ["payroll", can(me, "payroll.read")],
       ["profiles", can(me, "staff.manage")],
     ] as const
@@ -72,7 +75,7 @@ export function StaffPage() {
   }
 
   const onDay = (d: string) => {
-    patch({ day: d === today ? "" : d });
+    patch({ day: d === today ? "" : d, month: d.slice(0, 7) === current ? "" : d.slice(0, 7) });
   };
   return (
     <section className="grid content-start gap-5">
@@ -97,9 +100,21 @@ export function StaffPage() {
         ))}
       </div>
       <div id="staff-panel" role="tabpanel" aria-labelledby={`staff-tab-${tab}`} className="grid content-start gap-5">
-        {tab === "attendance" && <AttendanceTab month={month} day={search.day || today} today={today} onDay={onDay} />}
-        {tab === "evaluation" && <EvaluationTab month={month} day={search.day || today} today={today} onDay={onDay} />}
-        {tab === "adjustments" && <AdjustmentsTab month={month} today={today} />}
+        {tab === "day" && (
+          <DailyBook
+            month={month}
+            day={search.day || today}
+            today={today}
+            canAttendance={canAttendance}
+            canReview={canReview}
+            onDay={onDay}
+            onOpenEvaluation={(m) => {
+              patch({ tab: "evaluation", month: m === current ? "" : m, day: "" }, { push: true });
+            }}
+          />
+        )}
+        {tab === "month" && <MonthSheet month={month} today={today} canReview={canReview} />}
+        {tab === "evaluation" && <EvaluationTab month={month} />}
         {tab === "payroll" && <PayrollTab month={month} canClose={can(me, "payroll.close")} />}
         {tab === "profiles" && <ProfilesTab canPay={can(me, "payroll.read")} />}
       </div>

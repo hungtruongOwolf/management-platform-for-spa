@@ -14,7 +14,7 @@ import { customersSearch, historySearch } from "../features/customers/search";
 import { frontDeskSearch } from "../features/front-desk/search";
 import { FrontDeskPage } from "../features/front-desk/FrontDeskPage";
 import { inactiveSearch, packagesSearch, reportsSearch } from "../features/reports/search";
-import { staffSearch } from "../features/staff/search";
+import { myWorkSearch, staffSearch } from "../features/staff/search";
 import { safeNextPath } from "../lib/api";
 import { AppShell } from "./AppShell";
 import { recordLocation } from "./trail";
@@ -27,6 +27,7 @@ const reportsPage = () => import("../features/reports/ReportsPage");
 const packagesPage = () => import("../features/reports/PackagesOverviewPage");
 const inactivePage = () => import("../features/reports/InactiveCustomersPage");
 const staffPage = () => import("../features/staff/StaffPage");
+const myWorkPage = () => import("../features/staff/MyWorkPage");
 
 /** Shown while a lazy screen's chunk loads (after the router's pending delay): no spinner. */
 function PageSkeleton() {
@@ -179,6 +180,14 @@ const staffRoute = createRoute({
   component: lazyRouteComponent(staffPage, "StaffPage"),
 });
 
+/** A technician's own customers and bookings (spec staff-management §10 US9); `GET /me/work`. */
+const myWorkRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/khach-cua-toi",
+  validateSearch: myWorkSearch.validate,
+  component: lazyRouteComponent(myWorkPage, "MyWorkPage"),
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/cai-dat",
@@ -239,6 +248,7 @@ const routeTree = rootRoute.addChildren([
     packagesRoute,
     inactiveRoute,
     staffRoute,
+    myWorkRoute,
     settingsRoute,
   ]),
 ]);

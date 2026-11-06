@@ -419,6 +419,236 @@ async fn a_technician_sees_only_their_own_month(pool: PgPool) -> TestResult {
     Ok(())
 }
 
+/// Spec §10 US9: `GET /me/work` — technician A sees only the customers A served (only A's lines
+/// of a shared visit) and the appointments assigned to A; never B's, never prices, phones or
+/// notes; unlinked → `linked: false`; another spa sees nothing; managers' routes unchanged.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_technician_sees_only_the_customers_and_bookings_they_serve(pool: PgPool) -> TestResult {
+    const TECH_B_PHONE: &str = "0912100444";
+    let s = spa(pool).await?;
+    add_member(
+        &s.h.owner,
+        "vpyd",
+        TECH_B_PHONE,
+        "KTV Thu",
+        SystemRole::Technician,
+    )
+    .await?;
+    let tech_b = session_for(&s.h, TECH_B_PHONE).await;
+
+    // Not linked yet: no data, no error.
+    let unlinked = s.get(&tech_b, "/me/work").await;
+    assert_eq!(unlinked.status, StatusCode::OK, "{}", unlinked.body);
+    assert_eq!(unlinked.body, json!({"linked": false}));
+
+    let b_user: Uuid =
+        sqlx::query_scalar("SELECT id FROM app.user_account WHERE phone_e164 = '+84912100444'")
+            .fetch_one(&s.h.owner)
+            .await?;
+    let thu = call(
+        &s.h.app,
+        "POST",
+        "/staff",
+        Some(&s.owner),
+        Some(json!({"full_name": "Phạm Thu", "position": "Kỹ thuật viên", "user_id": b_user})),
+    )
+    .await;
+    assert_eq!(thu.status, StatusCode::CREATED, "{}", thu.body);
+    let thu = id(&thu);
+
+    let hang = s.customer("0905 222 001").await;
+    let binh = call(
+        &s.h.app,
+        "POST",
+        "/customers",
+        Some(&s.owner),
+        Some(
+            json!({"full_name": "Đỗ Văn Bình", "phone": "0905 222 002", "gender": "male",
+                    "note": "Ghi chú riêng của quầy"}),
+        ),
+    )
+    .await;
+    assert_eq!(binh.status, StatusCode::CREATED, "{}", binh.body);
+    let binh = id(&binh);
+    // Shared visit: one line by Lan (A), one by Thu (B).
+    let shared = s
+        .post(
+            &s.owner,
+            "/visits",
+            json!({
+                "customer_id": hang, "note": "Khách đau vai gáy",
+                "lines": [
+                    {"service_id": s.service, "source": "one_off", "staff_id": s.lan, "qty": 1},
+                    {"service_id": s.service, "source": "one_off", "staff_id": thu, "qty": 2}
+                ],
+                "payments": [{"method": "cash", "amount": PRICE * 3}]
+            }),
+        )
+        .await;
+    assert_eq!(shared.status, StatusCode::CREATED, "{}", shared.body);
+    let shared = id(&shared);
+    let b_only = s.one_off_visit(binh, thu, 1).await;
+    let voided = s.one_off_visit(binh, s.lan, 1).await;
+    let void = s
+        .post(
+            &s.owner,
+            &format!("/visits/{voided}/void"),
+            json!({"reason": "Ghi nhầm"}),
+        )
+        .await;
+    assert_eq!(void.status, StatusCode::OK, "{}", void.body);
+
+    let starts = format!("{}T10:00:00+07:00", today() + Duration::days(2));
+    let book_a = s
+        .post(
+            &s.manager,
+            "/appointments",
+            json!({
+                "customer_id": binh, "service_ids": [s.service], "staff_id": s.lan,
+                "starts_at": starts, "note": "Khách muốn phòng riêng"
+            }),
+        )
+        .await;
+    assert_eq!(book_a.status, StatusCode::CREATED, "{}", book_a.body);
+    let book_b = s
+        .post(
+            &s.manager,
+            "/appointments",
+            json!({
+                "guest": {"full_name": "Khách mới Yến", "phone": "0905 333 444"},
+                "service_ids": [s.service], "staff_id": thu, "starts_at": starts
+            }),
+        )
+        .await;
+    assert_eq!(book_b.status, StatusCode::CREATED, "{}", book_b.body);
+
+    // A (Lan).
+    let a = s.get(&s.tech, "/me/work").await;
+    assert_eq!(a.status, StatusCode::OK, "{}", a.body);
+    assert_eq!(
+        a.headers.get("cache-control").and_then(|v| v.to_str().ok()),
+        Some("no-store")
+    );
+    let data = &a.body["data"];
+    assert_eq!(a.body["linked"], true);
+    let served = data["served"].as_array().cloned().unwrap_or_default();
+    assert_eq!(
+        served.len(),
+        1,
+        "voided and B-only visits excluded: {}",
+        a.body
+    );
+    assert_eq!(served[0]["visit_id"], json!(shared));
+    assert_eq!(served[0]["customer_name"], "Nguyễn Thị Hằng");
+    assert_eq!(
+        served[0]["services"],
+        json!([{"service_name": "Gội đầu thảo dược", "qty": 1, "from_package": false}]),
+        "only A's own line of the shared visit"
+    );
+    let upcoming = data["upcoming"].as_array().cloned().unwrap_or_default();
+    assert_eq!(upcoming.len(), 1, "{}", a.body);
+    assert_eq!(upcoming[0]["appointment_id"], book_a.body["id"]);
+    assert_eq!(upcoming[0]["customer_name"], "Đỗ Văn Bình");
+    assert_eq!(upcoming[0]["status"], "booked");
+    assert_eq!(upcoming[0]["services"], json!(["Gội đầu thảo dược"]));
+    // Allowlist: exactly these keys, nothing about money, phones, notes or customer ids.
+    let keys = |v: &Value| {
+        let mut k: Vec<String> = v
+            .as_object()
+            .map(|o| o.keys().cloned().collect())
+            .unwrap_or_default();
+        k.sort();
+        k
+    };
+    assert_eq!(
+        keys(&served[0]),
+        [
+            "business_date",
+            "check_in_at",
+            "customer_name",
+            "services",
+            "visit_id"
+        ]
+    );
+    assert_eq!(
+        keys(&upcoming[0]),
+        [
+            "appointment_id",
+            "business_date",
+            "customer_name",
+            "ends_at",
+            "services",
+            "starts_at",
+            "status"
+        ]
+    );
+    let text = a.body.to_string();
+    for leak in [
+        thu.to_string(),
+        b_only.to_string(),
+        "Khách mới Yến".to_owned(),
+        "Phạm Thu".to_owned(),
+        "150000".to_owned(),
+        "+84905".to_owned(),
+        "đau vai gáy".to_owned(),
+        "phòng riêng".to_owned(),
+        "Ghi chú riêng".to_owned(),
+        hang.to_string(),
+        binh.to_string(),
+    ] {
+        assert!(!text.contains(&leak), "leaked {leak}: {text}");
+    }
+
+    // B (Thu): B's two visits (B's 2× line of the shared one), B's guest booking.
+    let b = s.get(&tech_b, "/me/work").await;
+    assert_eq!(b.status, StatusCode::OK, "{}", b.body);
+    let b_served = b.body["data"]["served"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(b_served.len(), 2, "{}", b.body);
+    assert_eq!(b_served[0]["visit_id"], json!(b_only), "newest first");
+    assert_eq!(b_served[1]["services"][0]["qty"], 2);
+    assert_eq!(
+        b.body["data"]["upcoming"][0]["customer_name"],
+        "Khách mới Yến"
+    );
+    assert!(!b.body.to_string().contains(&s.lan.to_string()));
+
+    // No way to pick someone else; bad month → 422; another month is empty.
+    let pick = s.get(&s.tech, &format!("/me/work?staff_id={thu}")).await;
+    assert_eq!(pick.status, StatusCode::BAD_REQUEST, "{}", pick.body);
+    assert_eq!(
+        s.get(&s.tech, "/me/work?month=2026-13").await.status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    let old = s.get(&s.tech, "/me/work?month=2021-01").await;
+    assert_eq!(old.body["data"]["served"], json!([]));
+
+    // Another spa's owner (not linked there) sees nothing of ours; anonymous → 401.
+    assert_eq!(
+        s.get(&s.other, "/me/work").await.body,
+        json!({"linked": false})
+    );
+    let anon = call(&s.h.app, "GET", "/me/work", None, None).await;
+    assert_eq!(anon.status, StatusCode::UNAUTHORIZED);
+
+    // Technicians still have no visit / customer / appointment access; managers keep theirs.
+    for path in ["/visits", "/customers", "/appointments"] {
+        assert_eq!(
+            s.get(&s.tech, path).await.status,
+            StatusCode::FORBIDDEN,
+            "{path}"
+        );
+        assert_eq!(
+            s.get(&s.manager, path).await.status,
+            StatusCode::OK,
+            "{path}"
+        );
+    }
+    Ok(())
+}
+
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn another_spa_cannot_reach_our_staff(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;

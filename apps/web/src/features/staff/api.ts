@@ -11,6 +11,8 @@ export type StaffSheet = Schemas["StaffSheet"];
 export type AttendanceDay = Schemas["AttendanceDay"];
 export type AttendanceEntryWrite = Schemas["AttendanceEntryWrite"];
 export type ReviewSheet = Schemas["ReviewSheet"];
+export type StaffReviews = Schemas["StaffReviews"];
+export type DailyReview = Schemas["DailyReview"];
 export type DailyReviewEntryWrite = Schemas["DailyReviewEntryWrite"];
 export type EvaluationSheet = Schemas["EvaluationSheet"];
 export type StaffEvaluation = Schemas["StaffEvaluation"];
@@ -86,6 +88,18 @@ export function myMonthQuery(month: string) {
   return queryOptions({
     queryKey: staffKeys.month("me", month),
     queryFn: async () => (await api(`/me/staff${q(month)}`)) as MyStaff,
+  });
+}
+
+export type MyWork = Schemas["MyWork"];
+export type ServedVisit = Schemas["ServedVisit"];
+export type UpcomingAppointment = Schemas["UpcomingAppointment"];
+
+/** "Khách của tôi": customers I served in the month + appointments assigned to me (`GET /me/work`). */
+export function myWorkQuery(month: string) {
+  return queryOptions({
+    queryKey: staffKeys.month("work", month),
+    queryFn: async () => (await api(`/me/work${q(month)}`)) as MyWork,
   });
 }
 
