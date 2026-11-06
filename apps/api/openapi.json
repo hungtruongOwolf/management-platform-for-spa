@@ -88,6 +88,42 @@
         }
       }
     },
+    "/api/v1/appointment-settings": {
+      "put": {
+        "tags": [
+          "appointments"
+        ],
+        "operationId": "update_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppointmentSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentSettingsDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden (owner only: appointment.settings)"
+          },
+          "422": {
+            "description": "max_per_slot required / out_of_range (1–200 or null)"
+          }
+        }
+      }
+    },
     "/api/v1/appointments": {
       "get": {
         "tags": [
@@ -179,10 +215,65 @@
             "description": "customer or service not in this spa"
           },
           "409": {
-            "description": "appointment.staff_busy (existing_id = the overlapping appointment), appointment.slot_full, customer.phone_taken (newcomer's phone already has a record: existing_id)"
+            "description": "appointment.staff_busy (existing_id = the overlapping appointment), customer.phone_taken (newcomer's phone already has a record: existing_id)"
           },
           "422": {
             "description": "validation_failed (starts_at not_on_slot / too_far, duration_min out_of_range, guest.*), appointment.outside_opening_hours, staff.inactive"
+          }
+        }
+      }
+    },
+    "/api/v1/appointments/group": {
+      "post": {
+        "tags": [
+          "appointments"
+        ],
+        "operationId": "book_group",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per group booking; a retry replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppointmentGroupCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentGroupDto"
+                }
+              }
+            }
+          },
+          "400": {},
+          "401": {},
+          "403": {
+            "description": "auth.forbidden / day.locked"
+          },
+          "404": {
+            "description": "a customer or service not in this spa"
+          },
+          "409": {
+            "description": "appointment.staff_busy (existing_id; also two people of the group on one technician), customer.phone_taken (existing_id)"
+          },
+          "422": {
+            "description": "validation_failed: people count_out_of_range (2–6), people[i].customer_id duplicate, people[i].starts_at not_same_day, and every 422 of POST /appointments under people[i].*"
           }
         }
       }
@@ -269,7 +360,7 @@
           },
           "404": {},
           "409": {
-            "description": "appointment.closed, appointment.staff_busy, appointment.slot_full"
+            "description": "appointment.closed, appointment.staff_busy"
           },
           "412": {},
           "422": {}
@@ -319,7 +410,7 @@
           },
           "404": {},
           "409": {
-            "description": "appointment.closed / already_arrived / staff_busy / slot_full"
+            "description": "appointment.closed / already_arrived / staff_busy"
           },
           "422": {
             "description": "appointment.not_today, staff.inactive"
@@ -3545,6 +3636,7 @@
         "required": [
           "id",
           "status",
+          "phase",
           "business_date",
           "starts_at",
           "ends_at",
@@ -3615,6 +3707,14 @@
             "type": "string",
             "format": "date-time"
           },
+          "group_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Shared by the people of one group (family) booking; null = booked alone."
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -3635,6 +3735,9 @@
           },
           "payment_state": {
             "$ref": "#/components/schemas/PaymentStateDto"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/PhaseDto"
           },
           "services": {
             "type": "array",
@@ -3683,6 +3786,57 @@
           }
         }
       },
+      "AppointmentGroupCreate": {
+        "type": "object",
+        "description": "Body of `POST /appointments/group`: a family booked at once, saved atomically. Each person\nbecomes an appointment of their own sharing one `group_id`.",
+        "required": [
+          "starts_at",
+          "people"
+        ],
+        "properties": {
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Booking note for everyone, ≤ 500 characters. Not for health data."
+          },
+          "people": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GroupPersonCreate"
+            },
+            "description": "2–6 people; an existing customer appears at most once."
+          },
+          "starts_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Shared start, same rules as `POST /appointments`."
+          }
+        },
+        "additionalProperties": false
+      },
+      "AppointmentGroupDto": {
+        "type": "object",
+        "description": "`POST /appointments/group` → 201.",
+        "required": [
+          "group_id",
+          "appointments"
+        ],
+        "properties": {
+          "appointments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppointmentDto"
+            },
+            "description": "In the order of `people`."
+          },
+          "group_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "AppointmentServiceDto": {
         "type": "object",
         "required": [
@@ -3710,6 +3864,39 @@
             "type": "string"
           }
         }
+      },
+      "AppointmentSettingsDto": {
+        "type": "object",
+        "properties": {
+          "max_per_slot": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Null = no limit.",
+            "minimum": 0
+          }
+        }
+      },
+      "AppointmentSettingsUpdate": {
+        "type": "object",
+        "description": "Body of `PUT /appointment-settings` (owner): the advisory \"số khách tối đa mỗi khung giờ\".",
+        "required": [
+          "max_per_slot"
+        ],
+        "properties": {
+          "max_per_slot": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "1–200, or `null` = no limit. Required (send `null` to clear).",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
       },
       "AppointmentStatusDto": {
         "type": "string",
@@ -3995,8 +4182,8 @@
           "slot_minutes",
           "time_zone",
           "technicians",
-          "capacity",
-          "appointments"
+          "appointments",
+          "visits"
         ],
         "properties": {
           "appointments": {
@@ -4006,17 +4193,21 @@
             },
             "description": "Every status, earliest first."
           },
-          "capacity": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
           "closes_at": {
             "type": "string"
           },
           "from": {
             "type": "string",
             "format": "date"
+          },
+          "max_per_slot": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The owner's advisory \"max customers per slot\"; null = no limit. Bookings are never\nrefused on it: the calendar shows \"n / max\" and warns.",
+            "minimum": 0
           },
           "opens_at": {
             "type": "string",
@@ -4032,7 +4223,7 @@
             "items": {
               "$ref": "#/components/schemas/CalendarTechnician"
             },
-            "description": "Columns of the day view; their count is the spa's capacity per instant."
+            "description": "Columns of the day view (active technicians)."
           },
           "time_zone": {
             "type": "string"
@@ -4044,6 +4235,13 @@
           "today": {
             "type": "string",
             "format": "date"
+          },
+          "visits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalendarVisitDto"
+            },
+            "description": "Visits of the days recorded without a booking (walk-ins), earliest first. Visits that\ncompleted an appointment are that appointment. Empty without `visit.read`."
           }
         }
       },
@@ -4060,6 +4258,91 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "CalendarVisitDto": {
+        "type": "object",
+        "description": "A walk-in visit on the timeline: when it was served, by whom, and where it stands. Carries no\nsession note (health data) and no phone.",
+        "required": [
+          "id",
+          "phase",
+          "business_date",
+          "starts_at",
+          "ends_at",
+          "duration_min",
+          "customer_id",
+          "customer_name",
+          "staff_id",
+          "staff_name",
+          "services",
+          "payment_state",
+          "paid_amount"
+        ],
+        "properties": {
+          "business_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "customer_gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "customer_name": {
+            "type": "string"
+          },
+          "duration_min": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ends_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "`starts_at` + the services' durations (empty = 60) rounded up to the slot, ≤ 8 h."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "paid_amount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "payment_state": {
+            "$ref": "#/components/schemas/PaymentStateDto",
+            "description": "`paid` / `no_charge` / `voided`."
+          },
+          "phase": {
+            "$ref": "#/components/schemas/PhaseDto"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppointmentServiceDto"
+            }
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The first line's technician (the calendar column)."
+          },
+          "staff_name": {
+            "type": "string"
+          },
+          "starts_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The service time (`check_in_at`)."
           }
         }
       },
@@ -5231,6 +5514,65 @@
           "month",
           "year"
         ]
+      },
+      "GroupPersonCreate": {
+        "type": "object",
+        "description": "One person of a group booking: like `AppointmentCreate`, without the shared note.",
+        "required": [
+          "service_ids"
+        ],
+        "properties": {
+          "customer_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "duration_min": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Default: this person's services' durations rounded up to the slot.",
+            "minimum": 0
+          },
+          "guest": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GuestCreate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "service_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "1–5 services, in the order they will be done."
+          },
+          "staff_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "starts_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Default: the group's `starts_at`. Must be on the same business day."
+          }
+        },
+        "additionalProperties": false
       },
       "GuestCreate": {
         "type": "object",
@@ -7357,6 +7699,18 @@
             "$ref": "#/components/schemas/Payslip"
           }
         }
+      },
+      "PhaseDto": {
+        "type": "string",
+        "description": "Where it stands on the desk's timeline (spec §10.1), derived when read: `waiting` (booked),\n`in_service` (arrived, or its visit is within its service time), `done`, `no_show`,\n`cancelled`, `voided` (the visit was voided).",
+        "enum": [
+          "waiting",
+          "in_service",
+          "done",
+          "no_show",
+          "cancelled",
+          "voided"
+        ]
       },
       "PhoneCheckDto": {
         "type": "object",

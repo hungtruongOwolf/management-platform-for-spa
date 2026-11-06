@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT max_per_slot FROM app.appointment_setting WHERE tenant_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "max_per_slot",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.appointment_setting",
+            "name": "max_per_slot"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "b1b7a030a47bae09c914a0c10202db1caf33b8b432de77e5c456ca27bf5090bc"
+}

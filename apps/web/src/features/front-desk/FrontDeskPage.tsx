@@ -161,7 +161,7 @@ export function FrontDeskPage() {
   const [note, setNote] = useState("");
   const [toast, setToast] = useState<Toast | null>(null);
   const [focusDeduct, setFocusDeduct] = useState(false);
-  /** The appointment this visit completes (calendar → "Hoàn tất & ghi lượt"); null = walk-in. */
+  /** The appointment this visit completes (calendar → "Khách đến · ghi lượt"); null = walk-in. */
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   /** "Giờ làm": "" = now. `serviceDay` "" = today (only owners pick another day). */
   const [serviceTime, setServiceTime] = useState("");
@@ -232,8 +232,8 @@ export function FrontDeskPage() {
           ? [visit, ...(old ?? []).filter((v) => v.id !== visit.id)]
           : old,
       );
-      if (appointment)
-        void queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      // Walk-ins are on the calendar too (spec appointments.md §10.1), not only completed bookings.
+      void queryClient.invalidateQueries({ queryKey: ["appointments"] });
       if (visit.business_date !== todayIso)
         void queryClient.invalidateQueries({
           queryKey: ["visits", visit.business_date],
@@ -358,7 +358,7 @@ export function FrontDeskPage() {
     focusLineKey.current = line.key;
   };
 
-  /** Calendar → "Hoàn tất & ghi lượt": the cart filled with the booked services and technician. */
+  /** Calendar → "Khách đến · ghi lượt": the cart filled with the booked services and technician. */
   const startFromAppointment = (a: Appointment, prefilled: CartLine[]) => {
     if (!a.customer_id) return;
     select({

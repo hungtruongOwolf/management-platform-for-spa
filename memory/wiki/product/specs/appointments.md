@@ -1,8 +1,8 @@
 ---
-title: "Spec R1-3: Lịch hẹn, giờ làm thực tế, nhập bù của chủ spa, giảm giá lượt (vòng 4)"
-status: draft (lead quyết mặc định; câu hỏi EM ở §9)
-updated: 2026-11-05
-sources: [raw/2026-11-05-em-review-round4.md, raw/2026-11-05-em-simplify-owner-and-opening-balance.md]
+title: "Spec R1-3: Lịch hẹn, giờ làm thực tế, nhập bù của chủ spa, giảm giá lượt (vòng 4 + vòng 5)"
+status: draft (lead quyết mặc định; câu hỏi EM ở §9 và §10.8)
+updated: 2026-11-06
+sources: [raw/2026-11-05-em-review-round4.md, raw/2026-11-05-em-simplify-owner-and-opening-balance.md, raw/2026-11-06-em-review-round5.md]
 related: [front-desk-and-packages.md, ../../design/front-desk-flows.md, ../../architecture/backend.md, ../../security/authz-matrix.md]
 ---
 
@@ -32,7 +32,7 @@ Phạm vi: mục **1, 5, 6, 8** của [EM review vòng 4](../../../raw/2026-11-0
 
 ### Sức chứa (capacity)
 - **KTV:** một KTV không có hai lịch `booked`/`arrived` chồng giờ. Vi phạm → `409 appointment.staff_busy`, `existing_id` = lịch hẹn đang chiếm chỗ (web nêu giờ + tên khách).
-- **Cả spa:** tại mọi thời điểm, số lịch `booked`/`arrived` (có hoặc chưa có KTV) ≤ số KTV đang làm. Vượt → `409 appointment.slot_full`.
+- ~~**Cả spa:** tại mọi thời điểm, số lịch `booked`/`arrived` ≤ số KTV đang làm. Vượt → `409 appointment.slot_full`.~~ **Bỏ ở vòng 5 (§10.4):** số khách tối đa mỗi khung giờ là cài đặt tùy chọn của chủ spa, chỉ cảnh báo.
 - **KTV** = nhân viên đang làm có chức vụ chứa "kỹ thuật" hoặc "KTV" (không phân biệt hoa thường); spa chưa ghi chức vụ nào như vậy thì mọi nhân viên đang làm. Danh sách lấy qua service của `GET /staff` (crate `org`).
 - Ô giờ **15 phút**; giờ mở cửa mặc định **09:00–21:00**, cấu hình theo spa ở `tenant.settings.opening_hours = {"open":"09:00","close":"21:00"}` và `settings.slot_minutes`. Giờ bắt đầu phải rơi đúng ô; lịch phải nằm trọn trong giờ mở cửa (`422 appointment.outside_opening_hours`, `starts_at not_on_slot`).
 - Hai lần đặt cùng lúc: khóa `pg_advisory_xact_lock` theo (spa, ngày) rồi mới kiểm, nên không lọt; ràng buộc `EXCLUDE USING gist` (staff + khoảng thời gian) ở DB là lớp thứ hai.
@@ -60,7 +60,7 @@ Phạm vi: mục **1, 5, 6, 8** của [EM review vòng 4](../../../raw/2026-11-0
 ## 6. Acceptance criteria
 - **AC9.1** Đặt lịch cho khách có hồ sơ, 1 dịch vụ 60 phút, 10:00 → lịch `booked` 10:00–11:00, hiện ở cột KTV đã chọn (hoặc "Chưa gán KTV").
 - **AC9.2 (neg)** KTV Lan đã có 10:00–11:00, đặt Lan 10:30 → `409 appointment.staff_busy` + `existing_id`; đặt 11:00 thì được.
-- **AC9.3 (neg)** 2 KTV, đã có 2 lịch 10:00–11:00 (chưa gán), đặt thêm lịch chồng → `409 appointment.slot_full`.
+- ~~**AC9.3 (neg)** 2 KTV, đã có 2 lịch 10:00–11:00 (chưa gán), đặt thêm lịch chồng → `409 appointment.slot_full`.~~ Thay bằng AC10.4 (vòng 5).
 - **AC9.4 (neg)** 08:30 khi mở cửa 09:00, hoặc 10:07 → `422`.
 - **AC9.5** Khách đến → chọn KTV → `arrived`; hoàn tất với giỏ trừ 1 buổi → lượt khách được ghi (còn 4/12), lịch `done` + `visit_id`; replay cùng `Idempotency-Key` không trừ thêm.
 - **AC9.6 (neg)** Hoàn tất lịch của khách mới chưa có hồ sơ → `422 appointment.customer_required`; hoàn tất lần hai → `409 appointment.closed`.
@@ -76,8 +76,8 @@ Phạm vi: mục **1, 5, 6, 8** của [EM review vòng 4](../../../raw/2026-11-0
 
 ## 7. UX (chi tiết ở [front-desk-flows](../../design/front-desk-flows.md#lịch-hẹn-vòng-4))
 - `/quay` có 2 tab: **Ghi lượt** (mặc định, fast path giữ nguyên) và **Lịch hẹn** (`?view=lich`, chunk lazy, không có trong lần vẽ đầu).
-- Lịch ngày kiểu Google Calendar: cột = KTV (+ "Chưa gán KTV"), hàng = ô 15 phút; dòng đầu mỗi giờ ghi số chỗ trống; bấm ô trống → đặt lịch; bấm lịch → panel: đổi trạng thái, khách đến, hoàn tất. Không kéo thả. Tuần: 7 ngày × số lịch + chỗ trống theo buổi. Điện thoại (< 768px): danh sách theo giờ thay cho lưới.
-- Màu trạng thái: Đã đặt (xanh dương), Đã đến (vàng hổ phách), Hoàn tất (xanh lá), Không đến (đỏ, mờ), Đã hủy (xám, gạch ngang). Luôn kèm chữ, không chỉ màu.
+- Lịch ngày kiểu Google Calendar: cột = KTV (+ "Chưa gán KTV"), hàng = ô 15 phút; ~~dòng đầu mỗi giờ ghi số chỗ trống~~ (vòng 5: mỗi giờ ghi số khách đang có, "n/max" khi chủ spa đặt tối đa, §10.4); bấm ô trống → đặt lịch; bấm lịch → panel: đổi trạng thái, khách đến, hoàn tất. Không kéo thả. Tuần: 7 ngày × số lịch + chỗ trống theo buổi. Điện thoại (< 768px): danh sách theo giờ thay cho lưới.
+- Màu trạng thái: Đã đặt (xanh dương), Đã đến (vàng hổ phách), Hoàn tất (xanh lá), Không đến (đỏ, mờ), Đã hủy (xám, gạch ngang). Luôn kèm chữ, không chỉ màu. Vòng 5: màu và nhãn theo `phase` (Chưa đến / Đang làm / Xong…), §10.7.
 
 ## 8. Out of scope
 Kéo thả · nhắc lịch Zalo/SMS · khách tự đặt online · lịch làm việc / nghỉ của từng KTV (thuộc quản lý nhân viên) · tài nguyên phòng/giường · công nợ.
@@ -88,8 +88,76 @@ Kéo thả · nhắc lịch Zalo/SMS · khách tự đặt online · lịch làm
 | Q1 | Có cần cho khách **trả sau / ghi nợ** khi hoàn tất không? | Không: thu đủ khi hoàn tất (R1) |
 | Q2 | Lịch `booked` đã qua ngày mà quầy quên đánh dấu: tự chuyển "Không đến" lúc 0 giờ? | Không tự động; hiện nhãn "Quá giờ" để quầy xử lý trong ngày |
 | Q3 | Giờ mở cửa & ô giờ: 09:00–21:00, 15 phút đúng chưa? Ai sửa (màn cài đặt)? | Mặc định trên; sửa bằng dữ liệu, chưa có màn |
-| Q4 | Sức chứa = số KTV đang làm. Có giường/phòng giới hạn thêm không? Quản lý có được "nhận quá chỗ" khi khách chịu chờ? | Chặn cứng, không ngoại lệ |
+| Q4 | ~~Sức chứa = số KTV đang làm…~~ EM trả lời ở vòng 5: không hard-code, chủ spa tự nhập | Xem §10.4: cài đặt tùy chọn, chỉ cảnh báo |
 | Q5 | Giảm giá trên **cả bill dịch vụ lẻ** đủ chưa, hay cần giảm từng dòng? | Cả bill, chia theo tỷ lệ cho từng dòng |
 | Q6 | Nhập bù của chủ spa: tối đa 366 ngày, không bắt lý do. Có cần lý do không? | Không bắt lý do; audit đánh dấu `backdated` |
 | Q7 | Một lịch hẹn có thể nhiều KTV (mỗi dịch vụ một người)? | Một KTV / lịch hẹn; lúc hoàn tất từng dòng vẫn chọn KTV riêng |
 | Q8 | KTV xem lịch của chính mình? Cần nối tài khoản ↔ nhân viên (thuộc quản lý nhân viên) | Chưa: KTV không xem lịch |
+## 10. Vòng 5: lịch = dòng thời gian của quầy (mục 3–7 của [EM review vòng 5](../../../raw/2026-11-06-em-review-round5.md))
+
+### 10.1 Lịch và lượt khách là một (mục 3)
+EM: lịch không chỉ để đặt; nó phải phản ánh cả lượt khách đã ghi để quầy biết **ai đang làm, ai chưa làm**.
+- Lịch ngày / tuần / danh sách hiện **hai loại thẻ** trên cùng trục giờ:
+  - **Lịch hẹn** (như vòng 4). Lịch `done` nối với lượt qua `appointment.visit_id`, lượt đó không hiện lần thứ hai.
+  - **Lượt ghi thẳng** (khách vãng lai ghi ở `/quay`, không qua lịch hẹn): hiện tại giờ làm (`visit.check_in_at`), ở cột KTV của dòng dịch vụ đầu tiên, dài bằng tổng thời lượng dịch vụ (trống = 60 phút, làm tròn lên ô giờ, ≤ 8 giờ), nhãn "Vãng lai". Không cần đặt lịch riêng.
+- **Trạng thái hiển thị** (`phase`, server tính mỗi lần đọc lịch):
+  | phase | Nhãn | Từ đâu |
+  |---|---|---|
+  | `waiting` | Chưa đến | lịch `booked` |
+  | `in_service` | Đang làm | lịch `arrived`; hoặc lượt (từ lịch hoặc ghi thẳng) mà **bây giờ < giờ làm + thời lượng** |
+  | `done` | Xong | lượt mà bây giờ ≥ giờ làm + thời lượng |
+  | `no_show` / `cancelled` | Không đến / Đã hủy | lịch đóng không có lượt |
+  | `voided` | Lượt đã hủy | lượt bị hủy (void) |
+- **Lead's decision — EM to review:** "Đang làm" **không thêm cột lưu trạng thái**. Dùng lại cột có sẵn: `appointment.arrived_at` (đã đến, chưa ghi lượt) và `visit.check_in_at` + thời lượng dịch vụ (đã ghi lượt). Lý do: không thêm thao tác "bấm xong" lúc cao điểm, không có trạng thái thứ hai phải đồng bộ với lượt (lượt là sự thật duy nhất về việc đã làm), không đổi máy trạng thái. Đánh đổi: quầy ghi lượt **lúc khách về** mà để giờ làm = bây giờ thì thẻ hiện "Đang làm" thêm một khoảng thời lượng; chọn "Giờ làm" đúng thì không sai. Muốn nút "Xong" thật thì thêm `visit.finished_at` sau (Q9).
+- **Khách đến → ghi lượt luôn:** nút chính của panel lịch hẹn là **"Khách đến · ghi lượt"**: mở giỏ ghi lượt điền sẵn khách, dịch vụ (trừ liệu trình nếu còn buổi, không thì dịch vụ lẻ theo giá), KTV; lưu = `POST /appointments/{id}/complete` (đúng use case `POST /visits`), lịch giữ `visit_id`. Nút phụ **"Chỉ báo đã đến (ghi lượt sau)"** = `arrive` (chọn KTV) → thẻ "Đang làm", chưa thanh toán; khi đó nút chính là "Ghi lượt".
+- Lịch có hôm nay tự làm mới mỗi 60 giây (phase đổi theo giờ) và ngay sau mỗi lần ghi / hủy lượt ở `/quay`.
+- Quyền: lượt ghi thẳng chỉ có trong lịch khi người xem có **`visit.read`** (Owner, Manager); thiếu quyền → `visits: []`. Lịch chỉ mang tên khách, giới tính, dịch vụ, KTV, trạng thái thanh toán; **không** mang ghi chú buổi (dữ liệu sức khỏe) hay SĐT của lượt.
+
+### 10.2 Thời lượng theo dịch vụ (mục 4)
+- Lỗi vòng 4: dịch vụ chỉ vào lịch khi bấm "Thêm" sau khi chọn trong danh sách; chọn xong mà không bấm thì thời lượng đứng yên ở 60 phút (và lịch không có dịch vụ nên không đặt được, xem 10.5).
+- Sửa: chọn một dịch vụ trong danh sách là **thêm ngay** (không còn nút "Thêm"). Thời lượng = tổng `duration_min` (trống = 60) làm tròn lên ô giờ, **tự tính lại mỗi lần thêm / bỏ dịch vụ** cho tới khi quầy tự chọn thời lượng; khi đó hiện "Đã chỉnh tay · theo dịch vụ: 90 phút · Dùng lại theo dịch vụ". Dòng tóm tắt luôn hiện "10:00–11:30 (90 phút)".
+
+### 10.3 Đặt lịch cho nhóm / gia đình (mục 5)
+- Form "Đặt lịch hẹn" có **"+ Thêm người (gia đình, nhóm)"** (tối đa 6 người). Mỗi người: khách có hồ sơ **hoặc** khách mới (tên + SĐT), dịch vụ riêng (1–5), KTV riêng (không bắt buộc), thời lượng riêng (theo dịch vụ). Ngày + giờ hẹn chung, ghi chú chung. Hai người cùng một KTV → cảnh báo ngay trên form.
+- 1 người → `POST /appointments` như cũ. ≥ 2 người → **`POST /appointments/group`** `{starts_at, note?, people[2–6]{customer_id | guest, service_ids, staff_id?, starts_at?, duration_min?}}` → `201 {group_id, appointments[]}`: **một transaction**, cùng khóa ngày, một `Idempotency-Key` (replay trả đúng response đầu). Một người sai → **không ai được lưu**; lỗi field trỏ đúng người (`people[1].service_ids`), `409 appointment.staff_busy` + `existing_id`, `409 customer.phone_taken` + `existing_id` (web tìm khách mới có SĐT đó và đổi sang hồ sơ có sẵn). `starts_at` riêng của một người phải cùng ngày (`people[i].starts_at not_same_day`).
+- Mỗi lịch trong nhóm mang `group_id` (cột mới, migration 0019). Đổi lịch / hủy từng người như lịch lẻ (nhóm không khóa nhau).
+- Trên lịch: thẻ cùng nhóm có nhãn **"Nhóm · n người"**; panel liệt kê cả nhóm (bấm tên để mở người khác).
+- **Khách đến cả nhóm:** panel của một lịch trong nhóm (hôm nay, còn mở ≥ 2 người) có **"Khách đến cả nhóm · ghi n lượt"** → bảng: mỗi người một dòng (giỏ điền sẵn như 10.1, KTV, tiền mặt / chuyển khoản, số phải thu) → một nút "Ghi n lượt". Mỗi người vẫn là **một lượt + một thanh toán riêng** (`/complete` của từng lịch, mỗi người một `Idempotency-Key` giữ qua các lần bấm lại).
+- **Lead's decision — EM to review:** ghi lượt cả nhóm **không gộp transaction**: người nào lỗi (hết buổi, ...) hiện lỗi ở dòng đó, người khác vẫn được ghi; bấm lại chỉ gửi người chưa ghi, không ghi trùng. Lý do: lúc cao điểm một người lỗi không được chặn cả gia đình. Khách mới chưa có hồ sơ, hoặc dịch vụ cần chọn giá theo giới tính → bảng bỏ qua người đó và nhắc ghi riêng (Q12).
+
+### 10.4 Không hard-code sức chứa (mục 6)
+- Con số "5" ở vòng 4 là **số KTV** (nhân viên đang làm có chức vụ KTV, `CalendarDto.capacity`), hiện ở **mọi ô 15 phút** ("còn 5") và trong danh sách giờ bắt đầu ("09:00 (còn 5)"), và server chặn `409 appointment.slot_full` theo nó. Bỏ cả ba.
+- Lưới ngày: mỗi **giờ** (không phải mỗi ô 15 phút) hiện một con số: số khách đông nhất trong giờ đó (lịch chưa hủy + lượt ghi thẳng), chỉ khi có khách. Danh sách giờ hẹn: "10:00 · 2 khách". Thẻ trên lưới bỏ dòng giờ lặp ("10:00–11:30 · Đã đặt"), chỉ còn tên + trạng thái (trục giờ đã có giờ; giờ chính xác ở panel và nhãn đọc màn hình). Nhãn "Giờ bắt đầu" đổi thành "Giờ hẹn".
+- **Số khách tối đa mỗi khung giờ** là cài đặt **tùy chọn của chủ spa**: nút "Số khách tối đa" trên lịch (chỉ chủ spa thấy) → `PUT /appointment-settings {max_per_slot: 1–200 | null}`, permission mới **`appointment.settings`** (Owner), audit `appointment.settings`. Trống = không giới hạn, không hiện gì thêm. Có giá trị → mỗi giờ hiện "n / max", giờ đầy tô cảnh báo, tuần hiện "k khung đủ khách", form đặt lịch cảnh báo "Khung 10:00 đã có 4/4 khách… Vẫn đặt được nếu khách chịu chờ".
+- **Lead's decision — EM to review:** server **không chặn** theo sức chứa nữa (bỏ `409 appointment.slot_full`); chỉ chặn trùng KTV (`staff_busy`). Lý do: EM nói số tối đa "spa tự biết"; khách chịu chờ thì quầy vẫn nhận; chặn theo số KTV từng làm quầy không đặt được lịch hợp lệ (KTV nghỉ / đi làm thêm). Sau này "hôm nay có bao nhiêu KTV đi làm" (chấm công) có thể gợi ý con số này (Q10).
+- Cột KTV giữ nguyên (KTV đang làm + "Chưa gán KTV"); tóm tắt ngày bỏ "· 5 KTV".
+
+### 10.5 "Đặt lịch" không phản hồi (mục 7)
+- **Nguyên nhân gốc** (tái hiện bằng Playwright trên stack dev, quản lý demo): chọn dịch vụ trong danh sách **chưa** thêm dịch vụ (phải bấm "Thêm" bên cạnh). Form coi như chưa có dịch vụ: nút "Đặt lịch" chỉ `aria-disabled` (trông vẫn bấm được), `onSubmit` thấy chưa đủ và **lặng lẽ return**. Không request nào tới server, không thông báo gì. Cùng lỗi làm thời lượng không đổi (mục 4). API không có lỗi.
+- Sửa: chọn = thêm (10.2); nút "Đặt lịch" luôn bấm được (chỉ khóa khi đang gửi); bấm khi thiếu → "Còn thiếu: khách, dịch vụ." (theo từng người với nhóm), không gửi gì; mọi lỗi server thành câu tiếng Việt ở form: mã lỗi → câu, lỗi field → "Người 2 (Bé Na): SĐT — giá trị không hợp lệ.", ngoài giờ mở cửa kèm giờ mở cửa, lỗi mạng → "Không kết nối được máy chủ…".
+
+### 10.6 Acceptance criteria vòng 5
+- **AC10.1** Lượt ghi thẳng lúc này (KTV Tuấn, dịch vụ 90 phút) → `GET /appointments` hôm nay có nó trong `visits[]`, 90 phút, cột Tuấn, `phase = in_service`, `payment_state = paid`; lượt nhập bù hôm qua 10:00 → `done`; lượt hoàn tất từ lịch hẹn **không** có trong `visits[]`. *(test `walk_in_visits_share_the_timeline_with_bookings`)*
+- **AC10.2 (neg)** Không có `visit.read` → `visits: []`; lượt bị hủy → `phase = voided`, `payment_state = voided`; không có ghi chú buổi / SĐT trong lượt của lịch; lượt của spa khác không xuất hiện (RLS + lọc tenant/branch). *(cùng test)*
+- **AC10.3** `booked` → `waiting`; `arrive` → `in_service`; `complete` ngay khi đến (dịch vụ 30 phút) → `in_service`; sau thời lượng → `done` (unit test `phases_follow_status_and_service_time`).
+- **AC10.4** Không có cài đặt: lịch chồng nhau (2 KTV, không gán, thêm cả lịch của Tuấn) đều `201`; `max_per_slot = null`, không còn `capacity`. Chủ spa đặt `2` → lịch trả `2`; lịch thứ 3 chồng giờ vẫn `201`; `null` xóa giới hạn; mỗi lần đổi có audit. *(tests `bookings_respect_technicians_and_the_grid`, `only_the_owner_sets_the_advisory_max_per_slot`)*
+- **AC10.5 (neg)** Quản lý `PUT /appointment-settings` → `403`; `0`, `201`, `{}` → `422`; `"abc"` → 4xx; chưa đăng nhập → `401`; KTV → `403` (authz matrix).
+- **AC10.6** Nhóm 3 người (Hà, Đức có hồ sơ, khách mới Bé Na) 10:00 → `201`, 3 lịch cùng `group_id`, ghi chú chung, thời lượng 90 / 30 / 60, KTV riêng; replay cùng key → cùng response, vẫn 3 lịch. *(test `a_family_is_booked_at_once_or_not_at_all`)*
+- **AC10.7 (neg)** Một người trùng KTV với lịch có sẵn → `409 staff_busy` + `existing_id`, không lịch nào được lưu; 2 người cùng KTV cùng giờ → `409`; 1 hoặc 7 người → `422 people`; khách có hồ sơ 2 lần → `422 people[1].customer_id`; SĐT sai ở người 2 → `422 people[1].guest.phone`; người 2 không có dịch vụ → `422 people[1].service_ids`; sau tất cả vẫn đúng 3 lịch; KTV / người ngoài / spa khác → `403` / `401` / `404` (authz matrix).
+- **AC10.8** Web (vitest): chọn dịch vụ là thêm; thời lượng 60 → 30 → 120 khi thêm dịch vụ 30 rồi 90 phút; chỉnh tay 45 rồi bỏ một dịch vụ → giữ 45 + "Đã chỉnh tay"; "Dùng lại theo dịch vụ" → 90.
+- **AC10.9** Web (Playwright, form thật, `regression (round 5 item 7)`): bấm "Đặt lịch" khi trống → "Còn thiếu: khách, dịch vụ."; tìm khách → chọn dịch vụ (không bấm gì thêm) → thời lượng theo dịch vụ; 20:45 + 60 phút → câu "Lịch hẹn phải nằm trọn trong giờ mở cửa…"; 15:00 → panel lịch hẹn mở, "Chưa đến".
+- **AC10.10** Web (Playwright): nhóm 2 người đặt bằng "+ Thêm người" → panel "Cùng nhóm (2 người)", thẻ "Nhóm · 2 người"; nhóm hôm nay → "Khách đến cả nhóm · ghi 2 lượt" → 2 dòng "Đã ghi lượt"; lượt ghi thẳng hiện "Vãng lai" trong danh sách; người của nhóm hiện "Đang làm"/"Xong".
+- **AC10.11** Web (Playwright): lưới ngày không còn số "còn N" / "Kín" ở mỗi ô; chủ spa đặt tối đa 3 → nút "Số khách tối đa: 3", mỗi giờ "n/3"; để trống → về không giới hạn. Quản lý không thấy nút (UI theo `appointment.settings`; server 403 là ranh giới thật).
+
+### 10.7 UX
+- Màu theo phase: Chưa đến (xanh dương), Đang làm (vàng hổ phách), Xong (xanh lá), Không đến (đỏ), Đã hủy / Lượt đã hủy (xám, gạch ngang ở danh sách). Lượt vãng lai có viền nét đứt + chữ "Vãng lai". Luôn kèm chữ, không chỉ màu.
+- Tóm tắt ngày: "Chưa đến n · Đang làm n · Xong n · Hủy/không đến n" (gồm cả lượt vãng lai).
+- Lưới ngày ẩn thẻ đã hủy / không đến / lượt đã hủy (giải phóng chỗ); danh sách và tuần vẫn hiện.
+
+### 10.8 Câu hỏi mới cho EM
+| # | Câu hỏi | Mặc định đang làm |
+|---|---|---|
+| Q9 | "Đang làm" suy ra từ giờ làm + thời lượng (không có nút "Xong"). Đủ chưa? | Đủ; thêm `visit.finished_at` nếu cần |
+| Q10 | Sức chứa chỉ cảnh báo, không chặn. Có muốn chặn cứng khi chủ spa đã đặt số tối đa? | Chỉ cảnh báo |
+| Q11 | Trẻ em / người nhà dùng chung SĐT với người đã có hồ sơ: vẫn báo "SĐT đã có hồ sơ" như lịch lẻ. Có cần cho khách nhóm không có SĐT? | Giữ quy tắc cũ |
+| Q12 | Ghi lượt cả nhóm: từng người riêng (một người lỗi không chặn người khác). Hay "tất cả hoặc không"? | Từng người riêng |

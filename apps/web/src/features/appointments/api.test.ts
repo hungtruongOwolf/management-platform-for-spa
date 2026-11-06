@@ -1,12 +1,15 @@
-import type { Appointment, Calendar } from "@vpyd/api-client";
+import type { Appointment, Calendar, CalendarVisit } from "@vpyd/api-client";
 import { describe, expect, it } from "vitest";
 import {
+  autoMinutes,
   daysFrom,
-  freeAt,
+  entriesOf,
   hhmm,
   instantAt,
   mondayOf,
   paymentLabel,
+  peakPeople,
+  peopleAt,
   spaMinutes,
 } from "./api";
 
@@ -14,6 +17,8 @@ function appt(over: Partial<Appointment>): Appointment {
   return {
     id: "a1",
     status: "booked",
+    phase: "waiting",
+    group_id: null,
     business_date: "2026-11-06",
     starts_at: "2026-11-06T03:00:00Z",
     ends_at: "2026-11-06T04:00:00Z",
@@ -39,7 +44,31 @@ function appt(over: Partial<Appointment>): Appointment {
   };
 }
 
-const cal = (appointments: Appointment[]): Calendar => ({
+function walkIn(over: Partial<CalendarVisit>): CalendarVisit {
+  return {
+    id: "v1",
+    phase: "in_service",
+    business_date: "2026-11-06",
+    starts_at: "2026-11-06T04:00:00Z",
+    ends_at: "2026-11-06T05:30:00Z",
+    duration_min: 90,
+    customer_id: "c2",
+    customer_name: "Trần Văn Đức",
+    customer_gender: "male",
+    staff_id: "st2",
+    staff_name: "KTV Thu",
+    services: [],
+    payment_state: "paid",
+    paid_amount: 399_000,
+    ...over,
+  };
+}
+
+const cal = (
+  appointments: Appointment[],
+  visits: CalendarVisit[] = [],
+  max: number | null = null,
+): Calendar => ({
   from: "2026-11-06",
   to: "2026-11-06",
   today: "2026-11-05",
@@ -51,8 +80,9 @@ const cal = (appointments: Appointment[]): Calendar => ({
     { id: "st1", full_name: "KTV Lan" },
     { id: "st2", full_name: "KTV Thu" },
   ],
-  capacity: 2,
+  max_per_slot: max,
   appointments,
+  visits,
 });
 
 describe("calendar helpers", () => {
@@ -62,25 +92,47 @@ describe("calendar helpers", () => {
     expect(instantAt("2026-11-06", 600)).toBe("2026-11-06T03:00:00.000Z");
   });
 
-  it("free places per slot mirror the server's capacity rule; closed ones free the slot", () => {
-    const c = cal([
-      appt({}),
-      appt({
-        id: "a2",
-        staff_id: null,
-        starts_at: "2026-11-06T03:30:00Z",
-        duration_min: 60,
-      }),
-      appt({
-        id: "a3",
-        status: "cancelled",
-        starts_at: "2026-11-06T03:00:00Z",
-      }),
+  it("counts people per slot from bookings and walk-ins; cancelled and voided free it", () => {
+    const c = cal(
+      [
+        appt({}),
+        appt({
+          id: "a2",
+          staff_id: null,
+          starts_at: "2026-11-06T03:30:00Z",
+          duration_min: 60,
+        }),
+        appt({
+          id: "a3",
+          status: "cancelled",
+          phase: "cancelled",
+          starts_at: "2026-11-06T03:00:00Z",
+        }),
+      ],
+      [walkIn({}), walkIn({ id: "v2", phase: "voided" })],
+    );
+    expect(peopleAt(c, "2026-11-06", 600)).toBe(1); // 10:00: a1
+    expect(peopleAt(c, "2026-11-06", 630)).toBe(2); // 10:30: a1 + a2
+    expect(peopleAt(c, "2026-11-06", 660)).toBe(2); // 11:00: a2 + walk-in
+    expect(peopleAt(c, "2026-11-06", 735)).toBe(1); // 12:15: walk-in
+    expect(peopleAt(c, "2026-11-06", 750)).toBe(0); // 12:30: ends are exclusive
+    expect(peakPeople(c, "2026-11-06", 600, 90)).toBe(2);
+    // One timeline, earliest first: bookings and walk-ins together.
+    expect(entriesOf(c, "2026-11-06").map((e) => e.id)).toEqual([
+      "a1",
+      "a3",
+      "a2",
+      "v1",
+      "v2",
     ]);
-    expect(freeAt(c, "2026-11-06", 600)).toBe(1); // 10:00: a1
-    expect(freeAt(c, "2026-11-06", 630)).toBe(0); // 10:30: a1 + a2
-    expect(freeAt(c, "2026-11-06", 660)).toBe(1); // 11:00: a2
-    expect(freeAt(c, "2026-11-06", 720)).toBe(2);
+  });
+
+  it("length follows the services, rounded up to the slot", () => {
+    expect(autoMinutes([], 15)).toBe(60);
+    expect(autoMinutes([30], 15)).toBe(30);
+    expect(autoMinutes([30, 90], 15)).toBe(120);
+    expect(autoMinutes([40, null], 15)).toBe(105);
+    expect(autoMinutes([5], 15)).toBe(15);
   });
 
   it("weeks start on Monday", () => {
