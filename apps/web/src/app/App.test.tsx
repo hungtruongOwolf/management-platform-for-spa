@@ -202,6 +202,19 @@ describe("auth flow", () => {
   });
 });
 
+describe("unknown address", () => {
+  it("says the page does not exist and offers the way home (rulebook §9)", async () => {
+    server((_method, path) =>
+      path === "/api/v1/me" ? Response.json(ME) : new Response(null, { status: 404 }),
+    );
+    renderAt("/khong-co-trang-nay");
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Không tìm thấy trang này" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Về trang tổng quan" })).toHaveAttribute("href", "/");
+  });
+});
+
 describe("home page", () => {
   it("offers a shortcut only to the screens the user's permissions open", async () => {
     server((_method, path) =>

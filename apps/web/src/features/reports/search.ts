@@ -7,7 +7,7 @@ import { param, searchSchema } from "../../lib/searchState";
 import type { PackageFilter } from "./api";
 
 /** Report periods (features/reports/period.ts resolves them); here so the router stays light. */
-export const PRESETS = ["today", "7d", "30d", "this_month", "last_month", "this_year", "12m", "custom"] as const;
+export const PRESETS = ["today", "7d", "30d", "this_month", "last_month", "this_year", "12m", "3y", "5y", "custom"] as const;
 export type Preset = (typeof PRESETS)[number];
 
 export const PACKAGE_FILTERS = ["expiring", "active", "expired", "exhausted", "cancelled", "all"] as const satisfies readonly PackageFilter[];

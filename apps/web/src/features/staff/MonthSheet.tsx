@@ -72,7 +72,7 @@ export function MonthGrid({
   const days = daysOf(month);
   return (
     <div className="grid gap-2">
-      <div className="table-wrap attendance-grid" role="region" tabIndex={0} aria-label={`Bảng công ${month}, cuộn ngang để xem các ngày`}>
+      <div className="card table-wrap attendance-grid" role="region" tabIndex={0} aria-label={`Bảng công ${month}, cuộn ngang để xem các ngày`}>
         <table className="data-table">
           <caption className="sr-only">Bảng chấm công {month}</caption>
           <thead>
@@ -126,7 +126,7 @@ export function MonthGrid({
                           <button
                             type="button"
                             className={`att-cell att-${cell?.status ?? "none"}${cell && cell.late_minutes > 0 ? " is-late" : ""}`}
-                            aria-label={`${s.full_name}, ${dayLabel(d)}: ${cell ? STATUS_LABEL[cell.status] : "chưa chấm"}${cell && cell.late_minutes > 0 ? `, muộn ${String(cell.late_minutes)} phút` : ""}`}
+                            aria-label={`${cell && cell.status !== "present" ? `${STATUS_CODE[cell.status]}, ` : ""}${s.full_name}, ${dayLabel(d)}: ${cell ? STATUS_LABEL[cell.status] : "chưa chấm"}${cell && cell.late_minutes > 0 ? `, muộn ${String(cell.late_minutes)} phút` : ""}`}
                             onClick={() => {
                               onCell(s, d);
                             }}

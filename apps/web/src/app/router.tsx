@@ -261,6 +261,9 @@ export function createAppRouter(
     routeTree,
     context: { queryClient },
     defaultPendingComponent: PageSkeleton,
+    // Off the startup bundle: rare pages in one small chunk of their own.
+    defaultNotFoundComponent: lazyRouteComponent(() => import("./StatusPage"), "NotFoundPage"),
+    defaultErrorComponent: lazyRouteComponent(() => import("./StatusPage"), "ErrorPage"),
     // Back/Forward land where the user was on a list, not at its top.
     scrollRestoration: true,
     ...(history ? { history } : {}),

@@ -175,13 +175,14 @@ export default function CommandPalette({
         {section("Màn hình", screens, people.length)}
       </ul>
       {searchable && customers.isFetching && people.length === 0 && (
-        <p role="status" className="px-5 pb-4 text-sm text-text-muted">
-          Đang tìm khách…
-        </p>
+        <div role="status" aria-label="Đang tìm khách" className="grid gap-2 px-3 pb-3">
+          <div className="skeleton h-12" />
+          <div className="skeleton h-12" />
+        </div>
       )}
       {options.length === 0 && !customers.isFetching && (
         <p className="px-5 pb-5 text-text-muted">
-          Không có kết quả cho “{text}”.
+          Không có kết quả cho “{text}”. Thử tên khác, 4 số cuối SĐT, hoặc tên màn hình như “Báo cáo”.
         </p>
       )}
       <p className="flex gap-4 border-t border-border bg-surface-2 px-4 py-2 text-xs text-text-muted">

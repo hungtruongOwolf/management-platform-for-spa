@@ -160,12 +160,14 @@
   gap: 2px;
 }
 .nav-group-label {
-  margin: 6px 12px 2px;
-  color: var(--chrome-accent);
-  font-size: 11px;
+  /* Rulebook §1: no uppercase letter-spaced eyebrow, even on the chrome. A sentence-case 13px
+   * label in the muted chrome text; gold stays for the active item and the logo. */
+  margin: 8px 12px 4px;
+  color: var(--chrome-text-muted);
+  font-size: var(--fs-sm);
   font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  line-height: 18px;
+  opacity: 0.85;
 }
 .nav-item,
 .sidebar-toggle {
@@ -185,7 +187,7 @@
   color: var(--chrome-text);
 }
 .nav-item.active {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--chrome-accent) 20%, transparent), var(--chrome-hover));
+  background: var(--chrome-hover);
   color: var(--chrome-text);
 }
 /* Active indicator: a gold bar that grows from the centre (transform only). */
@@ -239,7 +241,7 @@
   bottom: 0;
   left: 0;
   height: 1px;
-  background: linear-gradient(90deg, var(--border), color-mix(in srgb, var(--accent) 60%, transparent), var(--border));
+  background: var(--border);
   content: "";
 }
 .topbar-brand {
@@ -272,7 +274,6 @@
   background: var(--surface);
   color: var(--text-muted);
   font-size: 14px;
-  box-shadow: var(--shadow-1);
 }
 @media (min-width: 640px) {
   .search-trigger {
@@ -520,6 +521,10 @@ dialog::backdrop {
   padding: 0 12px;
   border-radius: var(--radius-md);
   cursor: pointer;
+}
+/* Esc closes the palette and clears nothing twice: no native blue "×" inside its field. */
+.palette input::-webkit-search-cancel-button {
+  appearance: none;
 }
 .palette-option[aria-selected="true"] {
   background: var(--primary-soft);
@@ -1033,14 +1038,78 @@ h2 .gender-chip {
 }
 .stat-card {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 4px;
-  padding: 14px 16px;
+  padding: 16px;
+}
+.stat-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 18px;
 }
 .stat-value {
-  font-size: 24px;
+  color: var(--text);
+  font-size: var(--fs-xl);
   font-weight: 600;
   line-height: 32px;
+  overflow-wrap: anywhere;
+}
+
+/* --- Empty state (features/reports/ui.tsx EmptyState): icon, what is missing, the next step ---- */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 24px;
+  text-align: center;
+}
+.empty-state-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+.empty-state-title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  line-height: 24px;
+}
+
+/* A heading inside a work screen (Hôm nay, Lối tắt): 17px 600, text colour (rulebook §1, §3). */
+.section-heading {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  line-height: 24px;
+}
+/* Home shortcuts: a muted icon tile, the title in text colour (colour is for actions/state). */
+.shortcut {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+}
+.shortcut-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+.shortcut:hover .shortcut-icon {
+  color: var(--primary);
 }
 
 /* --- Home welcome band ------------------------------------------------------------------------ */
@@ -1065,6 +1134,18 @@ h2 .gender-chip {
   .welcome-logo {
     width: 88px;
   }
+}
+
+/* --- Whole-page 404 / error (app/StatusPage.tsx) --------------------------------------------- */
+.status-page {
+  display: grid;
+  min-height: 100dvh;
+  place-content: center;
+  justify-items: center;
+  gap: 16px;
+  padding: 24px 16px;
+  color: var(--text);
+  text-align: center;
 }
 
 /* --- Skeletons: a sheen slides across (transform only); replaces spinners and pulses ---------- */
@@ -1674,13 +1755,64 @@ h2 .gender-chip {
 }
 .tabs > [role="tab"][aria-selected="true"] {
   color: var(--primary);
-  box-shadow: inset 0 -3px 0 var(--accent);
+  box-shadow: inset 0 -2px 0 var(--primary);
 }
 
 /* Ledger: negative void/refund rows and voided originals (spec R1-2 §4 "Sổ doanh thu"). */
-.ledger-day td {
+tr.ledger-day > :is(td, th) {
   background: var(--surface-2);
   font-weight: 600;
+}
+
+/* --- Report KPI row (ReportsPage Kpis): sized by the panel, not the window -------------------
+ * "Thực thu" is the widest number (up to "1.234.567.000đ" over five years), so it gets a wider
+ * first column on a laptop and a row of its own below that; the counts share the rest. */
+.kpi-wrap {
+  container-type: inline-size;
+}
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.kpi-lead {
+  grid-column: 1 / -1;
+  display: grid;
+}
+@container (min-width: 560px) {
+  .kpi-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+@container (min-width: 880px) {
+  .kpi-grid:has(> .kpi-lead) {
+    grid-template-columns: minmax(232px, 1.5fr) repeat(4, minmax(0, 1fr));
+  }
+  .kpi-lead {
+    grid-column: auto;
+  }
+}
+/* Eleven columns on a laptop card: tighter cells and 13px figures instead of a sideways scroll
+ * (the table still scrolls inside its card when the window is narrower). */
+.breakdown-table .data-table :is(th, td) {
+  padding-inline: 8px;
+  font-size: var(--fs-sm);
+}
+/* Ten period presets (with the owner's 3 and 5 years) on one row of a laptop panel. */
+.period-presets > button {
+  padding-inline: 10px;
+}
+/* Below ~920px (tablet with the sidebar open) the book scrolls sideways inside its card rather
+ * than squeezing the notes column to one letter per line. */
+.ledger-table {
+  min-width: 920px;
+}
+.ledger-table :is(th, td) {
+  padding-inline: 10px;
+}
+.ledger-table thead th.th-wrap {
+  white-space: normal;
 }
 .ledger-negative td {
   color: var(--danger);
