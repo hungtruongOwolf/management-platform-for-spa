@@ -6,25 +6,31 @@
   --appt-fg: var(--info);
   --appt-edge: var(--info);
 }
-.appt[data-status="arrived"] {
+.appt[data-phase="in_service"] {
   --appt-bg: var(--warning-bg);
   --appt-fg: var(--warning-text);
   --appt-edge: var(--warning-border);
 }
-.appt[data-status="done"] {
+.appt[data-phase="done"] {
   --appt-bg: var(--success-soft);
   --appt-fg: var(--success);
   --appt-edge: var(--success);
 }
-.appt[data-status="no_show"] {
+.appt[data-phase="no_show"] {
   --appt-bg: var(--danger-soft);
   --appt-fg: var(--danger);
   --appt-edge: var(--danger);
 }
-.appt[data-status="cancelled"] {
+.appt[data-phase="cancelled"],
+.appt[data-phase="voided"] {
   --appt-bg: var(--surface-2);
   --appt-fg: var(--text-muted);
   --appt-edge: var(--border-strong);
+}
+/* A walk-in (no booking) is drawn with a dashed edge; its label also says "Vãng lai". */
+.cal-event[data-kind="visit"] {
+  border-style: dashed;
+  border-left-style: solid;
 }
 
 .appt-badge {
@@ -60,9 +66,9 @@
   --slot-h: 26px;
   display: grid;
   position: relative;
-  grid-template-columns: 76px repeat(var(--cols), minmax(132px, 1fr));
+  grid-template-columns: 96px repeat(var(--cols), minmax(132px, 1fr));
   grid-template-rows: 44px repeat(var(--rows), var(--slot-h));
-  min-width: calc(76px + var(--cols) * 132px);
+  min-width: calc(96px + var(--cols) * 132px);
 }
 .cal-head {
   position: sticky;
@@ -105,17 +111,18 @@
   color: var(--text);
   font-weight: 600;
 }
-.cal-free {
-  min-width: 20px;
+/* People booked / in service in the slot (and "/ max" when the owner set one). */
+.cal-count {
   padding: 0 5px;
   border-radius: 999px;
-  background: var(--success-soft);
-  color: var(--success);
+  background: var(--surface-2);
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 700;
   text-align: center;
+  white-space: nowrap;
 }
-.cal-free.is-full {
+.cal-count.is-full {
   background: var(--danger-soft);
   color: var(--danger);
 }
@@ -168,7 +175,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cal-event .cal-event-time {
+.cal-event .cal-event-phase {
   color: var(--appt-fg);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -259,7 +266,8 @@
   background: var(--surface);
   text-align: left;
 }
-.cal-card[data-status="cancelled"] .cal-card-main {
+.cal-card[data-phase="cancelled"] .cal-card-main,
+.cal-card[data-phase="voided"] .cal-card-main {
   text-decoration: line-through;
   color: var(--text-muted);
 }

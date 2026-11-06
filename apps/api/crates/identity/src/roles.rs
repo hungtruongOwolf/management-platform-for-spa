@@ -113,6 +113,8 @@ mod tests {
             Permission::ReportLongRange,
             // Entering a past day's visits: owner only (EM round 4 item 5).
             Permission::VisitBackdate,
+            // The advisory "max customers per slot" is the owner's call (EM round 5 item 6).
+            Permission::AppointmentSettings,
             // Salaries: owner only by default (spec staff-management Q-S1).
             Permission::StaffManage,
             Permission::PayrollRead,

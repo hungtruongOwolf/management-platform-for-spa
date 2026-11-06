@@ -189,7 +189,7 @@ impl Spa {
 }
 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
-async fn bookings_respect_technicians_capacity_and_the_grid(pool: PgPool) -> TestResult {
+async fn bookings_respect_technicians_and_the_grid(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
     // AC9.1: 90-minute service → 10:00–11:30 on Lan's column.
     let first = s.book_ha(&s.manager, &at(1, "10:00"), Some(&s.lan)).await;
@@ -209,7 +209,8 @@ async fn bookings_respect_technicians_capacity_and_the_grid(pool: PgPool) -> Tes
     let later = s.book_ha(&s.manager, &at(1, "11:30"), Some(&s.lan)).await;
     assert_eq!(later.status, StatusCode::CREATED, "{}", later.body);
 
-    // AC9.3: two technicians ("Quản lý" does not count) → two at once, a third is refused.
+    // Columns: the two technicians ("Quản lý" is not one). No capacity derived from them
+    // (round 5, AC10.4): with no owner setting, overlapping bookings are all accepted.
     let calendar = call(
         &s.h.app,
         "GET",
@@ -219,22 +220,21 @@ async fn bookings_respect_technicians_capacity_and_the_grid(pool: PgPool) -> Tes
     )
     .await;
     assert_eq!(calendar.status, StatusCode::OK, "{}", calendar.body);
-    assert_eq!(calendar.body["capacity"], 2);
+    assert_eq!(
+        calendar.body["technicians"].as_array().map(Vec::len),
+        Some(2)
+    );
+    assert_eq!(calendar.body["max_per_slot"], Value::Null);
+    assert!(calendar.body.get("capacity").is_none());
     assert_eq!(calendar.body["opens_at"], "09:00");
     assert_eq!(calendar.body["slot_minutes"], 15);
-    let second = s.book_ha(&s.manager, &at(1, "10:30"), None).await;
-    assert_eq!(second.status, StatusCode::CREATED, "{}", second.body);
-    let full = s.book_ha(&s.manager, &at(1, "11:00"), None).await;
-    assert_eq!(
-        code(&full),
-        (StatusCode::CONFLICT, Some("appointment.slot_full"))
-    );
-    // Tuấn is a technician too, but the spa as a whole is full at 11:00.
-    let full_tuan = s.book_ha(&s.manager, &at(1, "11:15"), Some(&s.tuan)).await;
-    assert_eq!(
-        code(&full_tuan),
-        (StatusCode::CONFLICT, Some("appointment.slot_full"))
-    );
+    assert_eq!(calendar.body["appointments"][0]["phase"], "waiting");
+    for (hm, staff) in [("10:30", None), ("11:00", None), ("11:15", Some(&s.tuan))] {
+        let more = s
+            .book_ha(&s.manager, &at(1, hm), staff.map(String::as_str))
+            .await;
+        assert_eq!(more.status, StatusCode::CREATED, "{hm}: {}", more.body);
+    }
 
     // AC9.4: on the 15-minute grid, inside 09:00–21:00.
     let off_grid = s.book_ha(&s.manager, &at(1, "13:07"), None).await;
@@ -327,6 +327,9 @@ async fn an_appointment_becomes_a_visit_through_the_visit_rules(pool: PgPool) ->
     assert_eq!(arrived.status, StatusCode::OK, "{}", arrived.body);
     assert_eq!(arrived.body["status"], "arrived");
     assert!(arrived.body["arrived_at"].is_string());
+    // AC10.3: arrived = in service.
+    assert_eq!(booked.body["phase"], "waiting");
+    assert_eq!(arrived.body["phase"], "in_service");
 
     let cart = json!({"lines": [{"service_id": s.shampoo, "source": "package",
                                  "customer_package_item_id": s.ha_item, "staff_id": s.lan}]});
@@ -350,6 +353,8 @@ async fn an_appointment_becomes_a_visit_through_the_visit_rules(pool: PgPool) ->
         done.body["visit"]["id"]
     );
     assert_eq!(done.body["visit"]["lines"][0]["sessions_left_after"], 11);
+    // AC10.3: the visit started just now (on arrival) and lasts 30 minutes: still in service.
+    assert_eq!(done.body["appointment"]["phase"], "in_service");
     // The visit happened when the customer arrived, not when it was typed.
     assert_eq!(
         done.body["visit"]["check_in_at"],
@@ -449,6 +454,332 @@ async fn an_appointment_becomes_a_visit_through_the_visit_rules(pool: PgPool) ->
         .post(&s.manager, &format!("/appointments/{gid}/complete"), body)
         .await;
     assert_eq!(done.status, StatusCode::OK, "{}", done.body);
+    Ok(())
+}
+
+/// `GET /appointments` for `day` (today + `days`) as `who`.
+async fn calendar_of(s: &Spa, who: &str, days: i64) -> Reply {
+    call(
+        &s.h.app,
+        "GET",
+        &format!("/appointments?from={}", spa_today() + Duration::days(days)),
+        Some(who),
+        None,
+    )
+    .await
+}
+
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn walk_in_visits_share_the_timeline_with_bookings(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    s.open_all_day().await?;
+    // AC10.1: a walk-in recorded now (90 minutes, Tuấn) is on today's calendar, in service.
+    let walk_in = s
+        .post(
+            &s.manager,
+            "/visits",
+            json!({"customer_id": s.duc,
+                   "lines": [{"service_id": s.dai_thong_lac, "source": "one_off", "staff_id": s.tuan}],
+                   "payments": [{"method": "cash", "amount": 399_000}]}),
+        )
+        .await;
+    assert_eq!(walk_in.status, StatusCode::CREATED, "{}", walk_in.body);
+    // A booking completed into a visit is that booking, not a second walk-in.
+    let booked = s
+        .book(
+            &s.manager,
+            json!({"customer_id": s.ha, "service_ids": [s.shampoo], "starts_at": at(0, "00:00")}),
+        )
+        .await;
+    let completed = s
+        .post(
+            &s.manager,
+            &format!("/appointments/{}/complete", id_of(&booked)),
+            json!({"lines": [{"service_id": s.shampoo, "source": "package",
+                              "customer_package_item_id": s.ha_item, "staff_id": s.lan}]}),
+        )
+        .await;
+    assert_eq!(completed.status, StatusCode::OK, "{}", completed.body);
+
+    let today = calendar_of(&s, &s.manager, 0).await;
+    assert_eq!(today.status, StatusCode::OK, "{}", today.body);
+    let visits = today.body["visits"].as_array().cloned().unwrap_or_default();
+    assert_eq!(visits.len(), 1, "{}", today.body["visits"]);
+    let v = &visits[0];
+    assert_eq!(v["id"], walk_in.body["id"]);
+    assert_eq!(v["phase"], "in_service");
+    assert_eq!(v["duration_min"], 90);
+    assert_eq!(v["staff_name"], "KTV Tuấn");
+    assert_eq!(v["customer_name"], "Trần Văn Đức");
+    assert_eq!(v["payment_state"], "paid");
+    assert_eq!(v["paid_amount"], 399_000);
+    assert_eq!(v["services"][0]["service_name"], "Đại Thông Lạc");
+    assert!(v.get("note").is_none() && v.get("customer_phone").is_none());
+
+    // The owner back-dates a walk-in to yesterday 10:00: long over, so done.
+    let yesterday = s
+        .post(
+            &s.owner,
+            "/visits",
+            json!({"customer_id": s.duc, "check_in_at": at(-1, "10:00"),
+                   "lines": [{"service_id": s.dai_thong_lac, "source": "one_off", "staff_id": s.tuan}],
+                   "payments": [{"method": "cash", "amount": 399_000}]}),
+        )
+        .await;
+    assert_eq!(yesterday.status, StatusCode::CREATED, "{}", yesterday.body);
+    let past = calendar_of(&s, &s.owner, -1).await;
+    assert_eq!(past.body["visits"][0]["phase"], "done", "{}", past.body);
+    let shown = past.body["visits"][0]["starts_at"]
+        .as_str()
+        .unwrap_or_default();
+    assert_eq!(
+        chrono::DateTime::parse_from_rfc3339(shown)?,
+        chrono::DateTime::parse_from_rfc3339(&at(-1, "10:00"))?
+    );
+
+    // AC10.2: a voided walk-in stays, marked voided.
+    let void = s
+        .post(
+            &s.manager,
+            &format!("/visits/{}/void", id_of(&walk_in)),
+            json!({"reason": "Ghi nhầm"}),
+        )
+        .await;
+    assert!(void.status.is_success(), "{}", void.body);
+    let today = calendar_of(&s, &s.manager, 0).await;
+    assert_eq!(today.body["visits"][0]["phase"], "voided");
+    assert_eq!(today.body["visits"][0]["payment_state"], "voided");
+
+    // AC10.2: without visit.read the calendar carries no visits.
+    sqlx::query(
+        "DELETE FROM app.role_permission WHERE permission = 'visit.read'
+           AND role_id IN (SELECT id FROM app.role WHERE key = 'manager')",
+    )
+    .execute(&s.h.owner)
+    .await?;
+    let manager = session_for(&s.h, MANAGER_PHONE).await;
+    let blind = calendar_of(&s, &manager, 0).await;
+    assert_eq!(blind.status, StatusCode::OK, "{}", blind.body);
+    assert_eq!(blind.body["visits"], json!([]));
+    Ok(())
+}
+
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn only_the_owner_sets_the_advisory_max_per_slot(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let put = |who: &str, body: Value| {
+        let who = who.to_owned();
+        let app = s.h.app.clone();
+        async move { call(&app, "PUT", "/appointment-settings", Some(&who), Some(body)).await }
+    };
+    // AC10.5: managers cannot; bad values are refused.
+    let manager = put(&s.manager, json!({"max_per_slot": 2})).await;
+    assert_eq!(manager.status, StatusCode::FORBIDDEN);
+    for bad in [
+        json!({"max_per_slot": 0}),
+        json!({"max_per_slot": 201}),
+        json!({}),
+    ] {
+        let r = put(&s.owner, bad.clone()).await;
+        assert_eq!(
+            r.status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{bad}: {}",
+            r.body
+        );
+    }
+    let text = put(&s.owner, json!({"max_per_slot": "abc"})).await;
+    assert!(text.status.is_client_error(), "{}", text.body);
+    let anonymous = call(
+        &s.h.app,
+        "PUT",
+        "/appointment-settings",
+        None,
+        Some(json!({"max_per_slot": 2})),
+    )
+    .await;
+    assert_eq!(anonymous.status, StatusCode::UNAUTHORIZED);
+
+    // AC10.4: the owner sets 2; the calendar shows it; a third overlapping booking still goes in.
+    let set = put(&s.owner, json!({"max_per_slot": 2})).await;
+    assert_eq!(set.status, StatusCode::OK, "{}", set.body);
+    assert_eq!(set.body["max_per_slot"], 2);
+    for hm in ["10:00", "10:00", "10:15"] {
+        let r = s.book_ha(&s.manager, &at(1, hm), None).await;
+        assert_eq!(r.status, StatusCode::CREATED, "{hm}: {}", r.body);
+    }
+    assert_eq!(calendar_of(&s, &s.manager, 1).await.body["max_per_slot"], 2);
+    let cleared = put(&s.owner, json!({"max_per_slot": null})).await;
+    assert_eq!(cleared.status, StatusCode::OK, "{}", cleared.body);
+    assert_eq!(
+        calendar_of(&s, &s.manager, 1).await.body["max_per_slot"],
+        Value::Null
+    );
+    let audited: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM app.audit_log WHERE action = 'appointment.settings'",
+    )
+    .fetch_one(&s.h.owner)
+    .await?;
+    assert_eq!(audited, 2);
+    Ok(())
+}
+
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_family_is_booked_at_once_or_not_at_all(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let group = |people: Value| json!({"starts_at": at(1, "10:00"), "note": "Gia đình chị Hà", "people": people});
+    let family = group(json!([
+        {"customer_id": s.ha, "service_ids": [s.dai_thong_lac], "staff_id": s.lan},
+        {"customer_id": s.duc, "service_ids": [s.shampoo], "staff_id": s.tuan},
+        {"guest": {"full_name": "Bé Na", "phone": "0905 777 888"}, "service_ids": [s.shampoo],
+         "duration_min": 60},
+    ]));
+    // AC10.6: three appointments, one group, each with its own services / technician / length.
+    let k = key();
+    let headers = [("idempotency-key", k.as_str())];
+    let booked = call_with_headers(
+        &s.h.app,
+        "POST",
+        "/appointments/group",
+        Some(&s.manager),
+        Some(family.clone()),
+        &headers,
+    )
+    .await;
+    assert_eq!(booked.status, StatusCode::CREATED, "{}", booked.body);
+    let list = booked.body["appointments"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(list.len(), 3);
+    for a in &list {
+        assert_eq!(a["group_id"], booked.body["group_id"]);
+        assert_eq!(a["note"], "Gia đình chị Hà");
+        assert_eq!(a["status"], "booked");
+    }
+    assert_eq!(
+        list.iter()
+            .map(|a| a["duration_min"].clone())
+            .collect::<Vec<_>>(),
+        [json!(90), json!(30), json!(60)]
+    );
+    assert_eq!(list[1]["staff_name"], "KTV Tuấn");
+    assert_eq!(list[2]["is_guest"], true);
+    // Replay: the same answer, nothing added.
+    let replay = call_with_headers(
+        &s.h.app,
+        "POST",
+        "/appointments/group",
+        Some(&s.manager),
+        Some(family),
+        &headers,
+    )
+    .await;
+    assert_eq!(replay.body, booked.body);
+    let count = |s: &Spa| {
+        let pool = s.h.owner.clone();
+        async move {
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM app.appointment")
+                .fetch_one(&pool)
+                .await
+        }
+    };
+    assert_eq!(count(&s).await?, 3);
+
+    // AC10.7: one person clashing with an existing booking → nobody is saved.
+    let clash = s
+        .post(
+            &s.manager,
+            "/appointments/group",
+            json!({"starts_at": at(1, "10:30"), "people": [
+                {"customer_id": s.duc, "service_ids": [s.shampoo]},
+                {"customer_id": s.ha, "service_ids": [s.shampoo], "staff_id": s.lan},
+            ]}),
+        )
+        .await;
+    assert_eq!(
+        code(&clash),
+        (StatusCode::CONFLICT, Some("appointment.staff_busy"))
+    );
+    assert_eq!(clash.body["existing_id"], list[0]["id"]);
+    // Two people of the group on one technician at once.
+    let same_staff = s
+        .post(
+            &s.manager,
+            "/appointments/group",
+            json!({"starts_at": at(1, "14:00"), "people": [
+                {"customer_id": s.duc, "service_ids": [s.shampoo], "staff_id": s.tuan},
+                {"customer_id": s.ha, "service_ids": [s.shampoo], "staff_id": s.tuan},
+            ]}),
+        )
+        .await;
+    assert_eq!(
+        code(&same_staff),
+        (StatusCode::CONFLICT, Some("appointment.staff_busy"))
+    );
+    // Size, duplicates, a bad person: 422 naming the person; never a partial group.
+    let one = s
+        .post(
+            &s.manager,
+            "/appointments/group",
+            group(json!([{"customer_id": s.ha, "service_ids": [s.shampoo]}])),
+        )
+        .await;
+    assert_eq!(one.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(one.body["errors"][0]["field"], "people", "{}", one.body);
+    let seven: Vec<Value> = (0..7)
+        .map(|i| {
+            json!({"guest": {"full_name": format!("Khách {i}"), "phone": format!("090577700{i}")},
+                        "service_ids": [s.shampoo]})
+        })
+        .collect();
+    let too_many = s
+        .post(&s.manager, "/appointments/group", group(json!(seven)))
+        .await;
+    assert_eq!(too_many.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let twice = s
+        .post(
+            &s.manager,
+            "/appointments/group",
+            json!({"starts_at": at(2, "10:00"), "people": [
+                {"customer_id": s.ha, "service_ids": [s.shampoo]},
+                {"customer_id": s.ha, "service_ids": [s.shampoo]},
+            ]}),
+        )
+        .await;
+    assert_eq!(twice.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(twice.body["errors"][0]["field"], "people[1].customer_id");
+    let bad_second = s
+        .post(
+            &s.manager,
+            "/appointments/group",
+            json!({"starts_at": at(2, "10:00"), "people": [
+                {"customer_id": s.ha, "service_ids": [s.shampoo]},
+                {"guest": {"full_name": "Bé Bi", "phone": "abc"}, "service_ids": [s.shampoo]},
+            ]}),
+        )
+        .await;
+    assert_eq!(bad_second.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        bad_second.body["errors"][0]["field"],
+        "people[1].guest.phone"
+    );
+    let no_services = s
+        .post(
+            &s.manager,
+            "/appointments/group",
+            json!({"starts_at": at(2, "10:00"), "people": [
+                {"customer_id": s.ha, "service_ids": [s.shampoo]},
+                {"customer_id": s.duc, "service_ids": []},
+            ]}),
+        )
+        .await;
+    assert_eq!(no_services.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        no_services.body["errors"][0]["field"],
+        "people[1].service_ids"
+    );
+    assert_eq!(count(&s).await?, 3, "no partial group was saved");
     Ok(())
 }
 

@@ -367,3 +367,10 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - **"Đã chi":** một con số `net_spent`, bỏ chú thích "chưa gồm tiền gói trả trước khi dùng app" và không tách giấy/app; backend ghi gói sổ giấy thành hóa đơn thường theo ngày gốc (không đánh dấu gói chuyển từ sổ giấy ở UI).
 - **Viết hoa:** design-system quy tắc 3 ghi rõ tên dịch vụ/gói giữ cách viết của menu in (EM: "như trên menu nhé").
 - Tab bar "Lịch hẹn" thay "Trang chủ": agent lịch hẹn làm.
+
+## [2026-11-06] spec + build | EM vòng 5 mục 3–7: lịch = dòng thời gian của quầy
+- Source: [raw/2026-11-06-em-review-round5.md](raw/2026-11-06-em-review-round5.md). Spec [appointments §10](wiki/product/specs/appointments.md) (AC10.1–10.11, Q9–Q12); branch `feat/calendar-timeline-round5`. Backend-design + frontend-design gộp trong spec / backend.md §3c / data.md 0019 / front-desk-flows (không tách ticket: một slice).
+- Migration `0019_calendar_timeline`: `appointment.group_id`, bảng `appointment_setting (max_per_slot)`, quyền `appointment.settings` (Owner). `GET /appointments` bỏ `capacity`, thêm `max_per_slot`, `visits[]` (lượt vãng lai, cần `visit.read`), `phase` + `group_id` trên lịch; route mới `POST /appointments/group`, `PUT /appointment-settings`; bỏ `409 appointment.slot_full`.
+- Nguyên nhân "Đặt lịch không được": chọn dịch vụ chưa thêm dịch vụ (phải bấm "Thêm"), nút `aria-disabled` + submit im lặng return → không request, không thông báo. Sửa: chọn = thêm, nút luôn bấm được, "Còn thiếu: …", mọi lỗi server thành câu tiếng Việt. Regression Playwright chạy form thật.
+- Lead's decisions (EM review): "Đang làm" suy ra, không lưu (Q9); sức chứa chỉ cảnh báo (Q10); giữ quy tắc SĐT khách mới trong nhóm (Q11); ghi lượt cả nhóm từng người riêng (Q12).
+- Test: `appointments.rs` 10/10 (3 test mới), `authz_matrix.rs` 7/7, unit operations/identity/kernel, web vitest 176/176 (+`BookingSheet.test.tsx`), Playwright `appointments.spec.ts` 7 pass (+3 test) + `layout.spec.ts` 16 pass.

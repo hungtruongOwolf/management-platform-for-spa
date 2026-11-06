@@ -33,6 +33,58 @@ pub struct AppointmentCreate {
     pub note: Option<String>,
 }
 
+/// One person of a group booking: like `AppointmentCreate`, without the shared note.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GroupPersonCreate {
+    pub customer_id: Option<Uuid>,
+    pub guest: Option<GuestCreate>,
+    /// 1–5 services, in the order they will be done.
+    pub service_ids: Vec<Uuid>,
+    pub staff_id: Option<Uuid>,
+    /// Default: the group's `starts_at`. Must be on the same business day.
+    pub starts_at: Option<DateTime<Utc>>,
+    /// Default: this person's services' durations rounded up to the slot.
+    pub duration_min: Option<u32>,
+}
+
+/// Body of `POST /appointments/group`: a family booked at once, saved atomically. Each person
+/// becomes an appointment of their own sharing one `group_id`.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AppointmentGroupCreate {
+    /// Shared start, same rules as `POST /appointments`.
+    pub starts_at: DateTime<Utc>,
+    /// Booking note for everyone, ≤ 500 characters. Not for health data.
+    pub note: Option<String>,
+    /// 2–6 people; an existing customer appears at most once.
+    pub people: Vec<GroupPersonCreate>,
+}
+
+/// `POST /appointments/group` → 201.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AppointmentGroupDto {
+    pub group_id: Uuid,
+    /// In the order of `people`.
+    pub appointments: Vec<AppointmentDto>,
+}
+
+/// Body of `PUT /appointment-settings` (owner): the advisory "số khách tối đa mỗi khung giờ".
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AppointmentSettingsUpdate {
+    /// 1–200, or `null` = no limit. Required (send `null` to clear).
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<u32>, required = true)]
+    pub max_per_slot: Option<Option<u32>>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AppointmentSettingsDto {
+    /// Null = no limit.
+    pub max_per_slot: Option<u32>,
+}
+
 /// Absent = unchanged, `null` = cleared.
 fn present<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
 where
@@ -126,6 +178,20 @@ pub enum PaymentStateDto {
     None,
 }
 
+/// Where it stands on the desk's timeline (spec §10.1), derived when read: `waiting` (booked),
+/// `in_service` (arrived, or its visit is within its service time), `done`, `no_show`,
+/// `cancelled`, `voided` (the visit was voided).
+#[derive(Debug, Clone, Copy, Serialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PhaseDto {
+    Waiting,
+    InService,
+    Done,
+    NoShow,
+    Cancelled,
+    Voided,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AppointmentServiceDto {
     pub service_id: Uuid,
@@ -139,6 +205,9 @@ pub struct AppointmentServiceDto {
 pub struct AppointmentDto {
     pub id: Uuid,
     pub status: AppointmentStatusDto,
+    pub phase: PhaseDto,
+    /// Shared by the people of one group (family) booking; null = booked alone.
+    pub group_id: Option<Uuid>,
     pub business_date: NaiveDate,
     pub starts_at: DateTime<Utc>,
     pub ends_at: DateTime<Utc>,
@@ -185,11 +254,40 @@ pub struct CalendarDto {
     pub closes_at: String,
     pub slot_minutes: u32,
     pub time_zone: String,
-    /// Columns of the day view; their count is the spa's capacity per instant.
+    /// Columns of the day view (active technicians).
     pub technicians: Vec<CalendarTechnician>,
-    pub capacity: u32,
+    /// The owner's advisory "max customers per slot"; null = no limit. Bookings are never
+    /// refused on it: the calendar shows "n / max" and warns.
+    pub max_per_slot: Option<u32>,
     /// Every status, earliest first.
     pub appointments: Vec<AppointmentDto>,
+    /// Visits of the days recorded without a booking (walk-ins), earliest first. Visits that
+    /// completed an appointment are that appointment. Empty without `visit.read`.
+    pub visits: Vec<CalendarVisitDto>,
+}
+
+/// A walk-in visit on the timeline: when it was served, by whom, and where it stands. Carries no
+/// session note (health data) and no phone.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CalendarVisitDto {
+    pub id: Uuid,
+    pub phase: PhaseDto,
+    pub business_date: NaiveDate,
+    /// The service time (`check_in_at`).
+    pub starts_at: DateTime<Utc>,
+    /// `starts_at` + the services' durations (empty = 60) rounded up to the slot, ≤ 8 h.
+    pub ends_at: DateTime<Utc>,
+    pub duration_min: i64,
+    pub customer_id: Uuid,
+    pub customer_name: String,
+    pub customer_gender: Option<crm::http::GenderDto>,
+    /// The first line's technician (the calendar column).
+    pub staff_id: Uuid,
+    pub staff_name: String,
+    pub services: Vec<AppointmentServiceDto>,
+    /// `paid` / `no_charge` / `voided`.
+    pub payment_state: PaymentStateDto,
+    pub paid_amount: i64,
 }
 
 /// `POST /appointments/{id}/complete`.

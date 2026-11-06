@@ -1,16 +1,18 @@
-//! `GET/POST /appointments`, `GET/PATCH /appointments/{id}`,
-//! `POST /appointments/{id}/arrive|complete|cancel|no-show`.
+//! `GET/POST /appointments`, `POST /appointments/group`, `GET/PATCH /appointments/{id}`,
+//! `POST /appointments/{id}/arrive|complete|cancel|no-show`, `PUT /appointment-settings`.
 
 use super::dto::{
     AppointmentArrive, AppointmentClose, AppointmentComplete, AppointmentCompleted,
-    AppointmentCreate, AppointmentDto, AppointmentUpdate, CalendarDto, CalendarQuery,
+    AppointmentCreate, AppointmentDto, AppointmentGroupCreate, AppointmentGroupDto,
+    AppointmentSettingsDto, AppointmentSettingsUpdate, AppointmentUpdate, CalendarDto,
+    CalendarQuery,
 };
 use super::service::{self, Outcome};
 use axum::body::Bytes;
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use identity::AuthUser;
 use kernel::crypto::FieldCipher;
@@ -31,6 +33,8 @@ where
 {
     Router::new()
         .route("/appointments", get(calendar).post(book))
+        .route("/appointments/group", post(book_group))
+        .route("/appointment-settings", put(update_settings))
         .route(
             "/appointments/{id}",
             get(read_appointment).patch(update_appointment),
@@ -78,7 +82,7 @@ pub async fn calendar(
     responses((status = 201, body = AppointmentDto), (status = 400), (status = 401),
         (status = 403, description = "auth.forbidden / day.locked (a past day, non-owner)"),
         (status = 404, description = "customer or service not in this spa"),
-        (status = 409, description = "appointment.staff_busy (existing_id = the overlapping appointment), appointment.slot_full, customer.phone_taken (newcomer's phone already has a record: existing_id)"),
+        (status = 409, description = "appointment.staff_busy (existing_id = the overlapping appointment), customer.phone_taken (newcomer's phone already has a record: existing_id)"),
         (status = 422, description = "validation_failed (starts_at not_on_slot / too_far, duration_min out_of_range, guest.*), appointment.outside_opening_hours, staff.inactive")))]
 pub async fn book(
     State(pool): State<PgPool>,
@@ -103,6 +107,48 @@ pub async fn book(
     ))
 }
 
+#[utoipa::path(post, path = "/api/v1/appointments/group", tag = "appointments", request_body = AppointmentGroupCreate,
+    params(("Idempotency-Key" = Uuid, Header, description = "One key per group booking; a retry replays the first response")),
+    responses((status = 201, body = AppointmentGroupDto), (status = 400), (status = 401),
+        (status = 403, description = "auth.forbidden / day.locked"),
+        (status = 404, description = "a customer or service not in this spa"),
+        (status = 409, description = "appointment.staff_busy (existing_id; also two people of the group on one technician), customer.phone_taken (existing_id)"),
+        (status = 422, description = "validation_failed: people count_out_of_range (2–6), people[i].customer_id duplicate, people[i].starts_at not_same_day, and every 422 of POST /appointments under people[i].*")))]
+pub async fn book_group(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    IdempotencyKey(key): IdempotencyKey,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    let (input, canonical): (AppointmentGroupCreate, _) = parse_canonical(&body)?;
+    let (status, body) = service::book_group(
+        &pool,
+        &user.actor,
+        key,
+        hash_route("POST", "/appointments/group", None, &canonical),
+        &input,
+    )
+    .await?;
+    Ok(no_store(
+        StatusCode::from_u16(status).unwrap_or(StatusCode::CREATED),
+        body,
+        None,
+    ))
+}
+
+#[utoipa::path(put, path = "/api/v1/appointment-settings", tag = "appointments", request_body = AppointmentSettingsUpdate,
+    responses((status = 200, body = AppointmentSettingsDto), (status = 401),
+        (status = 403, description = "auth.forbidden (owner only: appointment.settings)"),
+        (status = 422, description = "max_per_slot required / out_of_range (1–200 or null)")))]
+pub async fn update_settings(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Json(input): Json<AppointmentSettingsUpdate>,
+) -> Result<Response, AppError> {
+    let settings = service::update_settings(&pool, &user.actor, &input).await?;
+    Ok(no_store(StatusCode::OK, settings, None))
+}
+
 #[utoipa::path(get, path = "/api/v1/appointments/{id}", tag = "appointments", params(("id" = Uuid, Path)),
     responses((status = 200, body = AppointmentDto), (status = 401), (status = 403), (status = 404)))]
 pub async fn read_appointment(
@@ -119,7 +165,7 @@ pub async fn read_appointment(
     params(("id" = Uuid, Path), ("If-Match" = String, Header)),
     responses((status = 200, body = AppointmentDto), (status = 401),
         (status = 403, description = "auth.forbidden / day.locked"), (status = 404),
-        (status = 409, description = "appointment.closed, appointment.staff_busy, appointment.slot_full"),
+        (status = 409, description = "appointment.closed, appointment.staff_busy"),
         (status = 412), (status = 422)))]
 pub async fn update_appointment(
     State(pool): State<PgPool>,
@@ -137,7 +183,7 @@ pub async fn update_appointment(
     params(("id" = Uuid, Path)),
     responses((status = 200, body = AppointmentDto), (status = 401),
         (status = 403, description = "auth.forbidden / day.locked"), (status = 404),
-        (status = 409, description = "appointment.closed / already_arrived / staff_busy / slot_full"),
+        (status = 409, description = "appointment.closed / already_arrived / staff_busy"),
         (status = 422, description = "appointment.not_today, staff.inactive")))]
 pub async fn arrive(
     State(pool): State<PgPool>,

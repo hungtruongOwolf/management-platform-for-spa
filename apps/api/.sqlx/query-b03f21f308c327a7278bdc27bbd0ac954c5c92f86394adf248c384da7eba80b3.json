@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.appointment_setting (tenant_id, max_per_slot, updated_by)\n           VALUES ($1, $2, $3)\n           ON CONFLICT (tenant_id) DO UPDATE\n             SET max_per_slot = EXCLUDED.max_per_slot, updated_by = EXCLUDED.updated_by,\n                 updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b03f21f308c327a7278bdc27bbd0ac954c5c92f86394adf248c384da7eba80b3"
+}
