@@ -105,3 +105,4 @@ secrets (luôn chạy)            ci-ok: needs tất cả, if: always()
 Khi `main` có migration mới mà DB dev chưa chạy, `pnpm db:migrate` không biên dịch được: macro `query!` kiểm tra SQL với DB còn thiếu bảng. Chạy với `SQLX_OFFLINE=true` để build từ `.sqlx` đã commit:
 `SQLX_OFFLINE=true pnpm db:migrate` (PowerShell: `$env:SQLX_OFFLINE='true'; pnpm db:migrate`).
 Trong worktree của agent, luôn đặt `DATABASE_URL` rõ ràng: `.env` của repo chính nằm ở thư mục cha và có thể bị đọc nhầm.
+
