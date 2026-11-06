@@ -76,8 +76,42 @@
   --chrome-text-muted: #e6cdb4;
   --chrome-accent: #e3b455;
   --chrome-hover: rgb(251 241 225 / 0.1);
-  --shadow-1: 0 1px 2px rgb(90 29 24 / 0.05), 0 2px 8px rgb(90 29 24 / 0.06);
-  --shadow-2: 0 12px 32px rgb(90 29 24 / 0.16), 0 2px 6px rgb(90 29 24 / 0.08);
+  /*
+   * Depth (design-system.md "Chiều sâu", polish pass 2026-11-06): shadows are layered — a tight
+   * contact shadow, a soft ambient one and, for raised layers, a long faint drop — tinted with the
+   * chrome maroon so they read warm on cream instead of grey. Each has one job:
+   * shadow-xs  outline controls at rest (secondary buttons)
+   * shadow-1   cards, panels, the chosen segment, the search pill
+   * shadow-lift a clickable card under the pointer
+   * shadow-2   floating layers: menus, popovers, toast, dialog, welcome band
+   * shadow-btn filled buttons (primary, danger): a lit top edge + a small drop
+   * shadow-press a pressed button or an inset well (segmented track)
+   * shadow-field a field's recessed top edge
+   * shadow-bar the sticky top bar's soft edge; shadow-chrome the sidebar's edge on the page
+   */
+  --highlight: rgb(255 255 255 / 0.7);
+  --shadow-xs: 0 1px 2px rgb(90 29 24 / 0.06);
+  --shadow-1: inset 0 1px 0 var(--highlight), 0 1px 2px rgb(90 29 24 / 0.05),
+    0 3px 10px -2px rgb(90 29 24 / 0.06), 0 14px 30px -18px rgb(90 29 24 / 0.16);
+  --shadow-lift: inset 0 1px 0 var(--highlight), 0 2px 4px rgb(90 29 24 / 0.06),
+    0 10px 24px -8px rgb(90 29 24 / 0.16), 0 24px 44px -24px rgb(90 29 24 / 0.22);
+  --shadow-2: 0 2px 6px rgb(90 29 24 / 0.08), 0 12px 32px -4px rgb(90 29 24 / 0.16),
+    0 32px 64px -32px rgb(90 29 24 / 0.24);
+  --shadow-btn: inset 0 1px 0 rgb(255 255 255 / 0.16), 0 1px 2px rgb(74 21 17 / 0.22),
+    0 4px 10px -4px rgb(74 21 17 / 0.32);
+  --shadow-press: inset 0 1px 3px rgb(58 20 14 / 0.18);
+  --shadow-field: inset 0 1px 2px rgb(90 29 24 / 0.07);
+  --shadow-bar: 0 12px 24px -22px rgb(90 29 24 / 0.5);
+  --shadow-chrome: 8px 0 28px -18px rgb(58 15 12 / 0.55);
+  /*
+   * Paper grain: a 160px fractal-noise tile (inline SVG, < 0.5 KB), warm brown specks at ≈ 4%
+   * opacity over the cream page, so the page reads as paper rather than flat colour; the dark page
+   * takes the cream-speck tile (texture-cream-grain). Only on the full-viewport fixed layer
+   * (styles.css body::before), which Chrome never takes as LCP: on a smaller element (the maroon
+   * chrome) the tile made that element /quay's LCP image (+400 ms in Lighthouse CI).
+   */
+  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .42 0 0 0 0 .26 0 0 0 0 .14 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --texture-cream-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .98 0 0 0 0 .9 0 0 0 0 .78 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -127,6 +161,51 @@
   --scrim: rgb(20 8 6 / 0.45);
   --shadow-up: 0 -6px 16px rgb(0 0 0 / 0.08);
 
+  /*
+   * Polish pass 2026-11-06 (EM: "hiệu ứng background mọi thứ cần cải thiện"): light, washes and
+   * hairlines, all derived from the colour tokens so dark mode follows without copies.
+   * - page: a soft gold wash from the top right and a faint maroon one from the bottom left;
+   * - chrome glow: gold light falling on the logo at the top of the sidebar / drawer;
+   * - welcome glow + accent glow: the same light behind the welcome logo and in the corner of the
+   *   maroon "Thực thu" tile, kept away from their text (contrast is tested on the flat colours);
+   * - gloss: a 10% white top-light on filled buttons; the fill colour under it still changes on
+   *   hover/press, so the transition stays smooth (contrast.test.ts checks text on the lit top);
+   * - table head: a band that deepens from surface into surface-2.
+   */
+  --gradient-page: radial-gradient(
+      1100px 560px at 100% 0%,
+      color-mix(in srgb, var(--accent) 10%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(900px 640px at 0% 100%, color-mix(in srgb, var(--primary) 5%, transparent), transparent 70%);
+  --gradient-chrome-glow: radial-gradient(
+    280px 240px at 50% 0%,
+    color-mix(in srgb, var(--chrome-accent) 15%, transparent),
+    transparent 75%
+  );
+  --gradient-welcome-glow: radial-gradient(
+    200px 160px at 76px 50%,
+    color-mix(in srgb, var(--chrome-accent) 14%, transparent),
+    transparent 75%
+  );
+  --gradient-accent-glow: radial-gradient(
+    260px 150px at 100% 0%,
+    color-mix(in srgb, var(--chrome-accent) 16%, transparent),
+    transparent 70%
+  );
+  --gradient-gloss: linear-gradient(180deg, rgb(255 255 255 / 0.1), rgb(255 255 255 / 0) 60%);
+  --gradient-table-head: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 45%, var(--surface)), var(--surface-2));
+  /* Derived tints (mix-*): one job each, theme-following. */
+  --mix-row-hover: color-mix(in srgb, var(--primary-soft) 55%, transparent);
+  --mix-row-open: color-mix(in srgb, var(--surface-2) 60%, transparent);
+  --mix-table-rule: color-mix(in srgb, var(--accent) 45%, var(--border));
+  --mix-gold-hairline: color-mix(in srgb, var(--chrome-accent) 30%, transparent);
+  --mix-chrome-edge: color-mix(in srgb, var(--chrome-text) 9%, transparent);
+  --mix-gold-glow: color-mix(in srgb, var(--chrome-accent) 60%, transparent);
+  --mix-chip-ring: inset 0 0 0 1px color-mix(in srgb, currentColor 18%, transparent);
+  --mix-tile-ring: inset 0 0 0 1px color-mix(in srgb, currentColor 14%, transparent);
+  --mix-secondary-hover: color-mix(in srgb, var(--primary-soft) 45%, var(--surface));
+
   --dur-fast: 120ms;
   --dur-base: 200ms;
   --dur-slow: 320ms;
@@ -173,8 +252,17 @@
     --chrome-text-muted: #d9c2ad;
     --chrome-accent: #e3b455;
     --chrome-hover: rgb(246 237 225 / 0.08);
-    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 8px rgb(0 0 0 / 0.25);
-    --shadow-2: 0 12px 32px rgb(0 0 0 / 0.5);
+    --highlight: rgb(255 240 225 / 0.05);
+    --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.3);
+    --shadow-1: inset 0 1px 0 var(--highlight), 0 1px 2px rgb(0 0 0 / 0.35), 0 4px 12px -2px rgb(0 0 0 / 0.28), 0 16px 32px -18px rgb(0 0 0 / 0.5);
+    --shadow-lift: inset 0 1px 0 var(--highlight), 0 2px 4px rgb(0 0 0 / 0.35), 0 12px 28px -8px rgb(0 0 0 / 0.45), 0 28px 48px -24px rgb(0 0 0 / 0.55);
+    --shadow-2: 0 2px 6px rgb(0 0 0 / 0.35), 0 14px 36px -4px rgb(0 0 0 / 0.5), 0 32px 64px -32px rgb(0 0 0 / 0.6);
+    --shadow-btn: inset 0 1px 0 rgb(255 255 255 / 0.3), 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 10px -4px rgb(0 0 0 / 0.5);
+    --shadow-press: inset 0 1px 3px rgb(0 0 0 / 0.3);
+    --shadow-field: inset 0 1px 2px rgb(0 0 0 / 0.25);
+    --shadow-bar: 0 12px 24px -20px rgb(0 0 0 / 0.8);
+    --shadow-chrome: 8px 0 28px -18px rgb(0 0 0 / 0.7);
+    --paper-grain: var(--texture-cream-grain);
     --scrim: rgb(0 0 0 / 0.6);
     --shadow-up: 0 -6px 16px rgb(0 0 0 / 0.4);
     color-scheme: dark;
@@ -215,8 +303,17 @@
   --chrome-text-muted: #d9c2ad;
   --chrome-accent: #e3b455;
   --chrome-hover: rgb(246 237 225 / 0.08);
-  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 8px rgb(0 0 0 / 0.25);
-  --shadow-2: 0 12px 32px rgb(0 0 0 / 0.5);
+  --highlight: rgb(255 240 225 / 0.05);
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-1: inset 0 1px 0 var(--highlight), 0 1px 2px rgb(0 0 0 / 0.35), 0 4px 12px -2px rgb(0 0 0 / 0.28), 0 16px 32px -18px rgb(0 0 0 / 0.5);
+  --shadow-lift: inset 0 1px 0 var(--highlight), 0 2px 4px rgb(0 0 0 / 0.35), 0 12px 28px -8px rgb(0 0 0 / 0.45), 0 28px 48px -24px rgb(0 0 0 / 0.55);
+  --shadow-2: 0 2px 6px rgb(0 0 0 / 0.35), 0 14px 36px -4px rgb(0 0 0 / 0.5), 0 32px 64px -32px rgb(0 0 0 / 0.6);
+  --shadow-btn: inset 0 1px 0 rgb(255 255 255 / 0.3), 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 10px -4px rgb(0 0 0 / 0.5);
+  --shadow-press: inset 0 1px 3px rgb(0 0 0 / 0.3);
+  --shadow-field: inset 0 1px 2px rgb(0 0 0 / 0.25);
+  --shadow-bar: 0 12px 24px -20px rgb(0 0 0 / 0.8);
+  --shadow-chrome: 8px 0 28px -18px rgb(0 0 0 / 0.7);
+  --paper-grain: var(--texture-cream-grain);
   --scrim: rgb(0 0 0 / 0.6);
   --shadow-up: 0 -6px 16px rgb(0 0 0 / 0.4);
   color-scheme: dark;

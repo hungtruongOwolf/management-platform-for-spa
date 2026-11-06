@@ -1,7 +1,7 @@
 ---
 title: Design system — internal app (R1)
 updated: 2026-11-06
-sources: [raw/2026-11-06-em-review-redesign-rollout.md, raw/2026-11-06-em-ui-redesign-direction.md, raw/2026-11-06-research-ui-skills-taste-impeccable.md, raw/2026-11-06-em-review-round5.md, raw/2026-11-05-em-ui-review-round3.md, "docs for reference/logo Viên phúc y đường transparent.png", "docs for reference/Menu mặt trước - mới.png", product/personas.md, raw/2026-11-05-em-brand-colors-and-demo-data.md, raw/2026-11-05-em-management-views-logo-ui.md]
+sources: [raw/2026-11-06-em-polish-and-chart-toggle.md, raw/2026-11-06-em-review-redesign-rollout.md, raw/2026-11-06-em-ui-redesign-direction.md, raw/2026-11-06-research-ui-skills-taste-impeccable.md, raw/2026-11-06-em-review-round5.md, raw/2026-11-05-em-ui-review-round3.md, "docs for reference/logo Viên phúc y đường transparent.png", "docs for reference/Menu mặt trước - mới.png", product/personas.md, raw/2026-11-05-em-brand-colors-and-demo-data.md, raw/2026-11-05-em-management-views-logo-ui.md]
 ---
 
 # Design system: app nội bộ
@@ -25,9 +25,9 @@ Utility Tailwind `text-xs…2xl` map đúng thang này (`styles.css` `@theme`, p
 
 **2. Khoảng cách.** Bước 4px; chỉ dùng **4 · 8 · 12 · 16 · 20 · 24 · 32**. Trong panel: 16 giữa các khối, 12 trong một khối, 8 giữa control cạnh nhau. Panel padding 16 (điện thoại) / 20. `gap`, không margin lẻ.
 
-**3. Màu theo vai trò.** Màu nhấn (`primary` nâu đỏ) chỉ cho **hành động, mục đang chọn, trạng thái**; không tô tiêu đề hay icon trang trí bằng nâu đỏ/vàng. Vàng (`accent`) chỉ ở khung app, focus ring, ★. Nền trang `bg` phẳng (**bỏ chấm vàng `--texture`**), panel `surface`, vùng phụ `surface-2`. Đỏ = lỗi/hủy, hổ phách = cần chú ý, xanh lá = đang dùng/đã thu, xanh dương = thông tin trung tính. Tương phản: chữ ≥ 4.5:1, viền control ≥ 3:1, kiểm tự động trong `contrast.test.ts` (thêm `on-primary` trên `primary-pressed` và `danger`).
+**3. Màu theo vai trò.** Màu nhấn (`primary` nâu đỏ) chỉ cho **hành động, mục đang chọn, trạng thái**; không tô tiêu đề hay icon trang trí bằng nâu đỏ/vàng. Vàng (`accent`) chỉ ở khung app, focus ring, ★. Nền trang `bg` + một lớp giấy rất nhẹ (vân hạt + hai vệt sáng, xem § Chiều sâu; chấm vàng `--texture` vẫn bỏ), panel `surface`, vùng phụ `surface-2`. Đỏ = lỗi/hủy, hổ phách = cần chú ý, xanh lá = đang dùng/đã thu, xanh dương = thông tin trung tính. Tương phản: chữ ≥ 4.5:1, viền control ≥ 3:1, kiểm tự động trong `contrast.test.ts` (thêm `on-primary` trên `primary-pressed` và `danger`).
 
-**4. Nút** (`.btn` + kiểu, `components.css`). Bốn kiểu, **phẳng** (không gradient, không bóng màu):
+**4. Nút** (`.btn` + kiểu, `components.css`). Bốn kiểu, **chiều sâu nhẹ, không trang trí** (từ polish 2026-11-06: nút đặc có ánh trên `--gradient-gloss` ≤ 10% trắng + `shadow-btn`, nhấn thì lún `shadow-press` và mất ánh; nút viền `shadow-xs`, hover nền `mix-secondary-hover`; không bóng màu, không glow — § Chiều sâu):
 
 | Kiểu | Dùng khi | Mặc định | Hover | Nhấn | 
 |---|---|---|---|---|
@@ -55,7 +55,7 @@ Utility Tailwind `text-xs…2xl` map đúng thang này (`styles.css` `@theme`, p
 **Áp dụng cho nhóm quản lý (2026-11-06, `redesign(quanly)`; EM: "ok áp dụng cho cả app"):**
 - **Khung app — EM giữ phối màu cũ** ([review](../../raw/2026-11-06-em-review-redesign-rollout.md): "cái màu phối menu Navbar bản cũ ok hơn"): nhãn nhóm sidebar CHỮ HOA 11px vàng `chrome-accent` giãn chữ (**ngoại lệ duy nhất của §1**, chỉ trong khung điều hướng), mục đang chọn nền gradient vàng nhạt + thanh vàng 3px, top bar kẻ đáy gradient vàng, ô tìm có bóng `shadow-1`. Bản thử sentence case 13px ở PR #60 đã quay lại. Nhãn nav vẫn một dòng ở 288px. Palette: đang tìm = skeleton, không kết quả = gợi ý bước tiếp, bỏ nút "×" xanh của `type=search`.
 - **`StatCard`** (dùng chung) ba kiểu theo review EM: mặc định = ô **Tổng quan** như trước redesign (chấm tròn vàng `accent-soft` quanh icon), `accent` = ô nâu đỏ "Thực thu" (Tổng quan **và** báo cáo: "nhớ đổi màu nâu đỏ cho cái thực thu"), `plain` = ô yên tĩnh của báo cáo (icon muted, không chấm). Class `.stat-disc`, `.stat-card-accent` (token, không hex). **Tổng quan** giữ nguyên bố cục cũ ("Tổng quan bản cũ ok hơn"; không CountUp). **`EmptyState`** (dùng chung): bỏ logo; icon muted trong vòng `surface-2` + tiêu đề 17px + câu bước tiếp; prop mới `icon`, `action`. `.section-heading` (17px 600) cho tiêu đề khối trong màn; `.tabs` chọn = gạch `primary` 2px (trước: vàng 3px).
-- **Báo cáo:** KPI theo container (`.kpi-wrap`/`.kpi-grid`: "Thực thu" cột rộng hơn ở ≥ 880px, hàng riêng khi hẹp; lượt "Không tính n đã hủy · n đã sửa" dưới số). Bỏ icon vàng trang trí ở tiêu đề card; hạng 1–5 muted; thanh KTV `primary`; cơ cấu thu = `primary` + `border-strong` (cặp nhấn/giảm nhấn như biểu đồ đường; validator dataviz: CVD ΔE 23, contrast ≥ 3:1 cả hai mode; "chroma floor" fail là chủ ý vì màu thứ hai là xám giảm nhấn, mọi giá trị có nhãn + %). Bảng chi tiết: cột ngày ngắn "T6 06/11", ô 8px + 13px để 11 cột vừa card laptop. Sổ doanh thu: cột cố định (`colgroup`), `min-width: 920px` (tablet cuộn ngang trong card thay vì bóp cột ghi chú). Hàng hai cột (biểu đồ + cơ cấu, ba danh sách) chỉ từ `xl` (1280). **Preset 3 năm / 5 năm** cho chủ spa (`report.long_range`; cùng khoảng với `last_3_years` theo tháng / `last_5_years` theo năm của API); người khác không thấy, link `?period=5y` mở "12 tháng".
+- **Báo cáo:** biểu đồ "Xu hướng …": đường "Kỳ trước" **tắt mặc định**, nút bật/tắt "So với kỳ trước" (`aria-pressed`, segment một nút có ký hiệu đường nét đứt) cạnh nút chọn chỉ số; tắt = không đường, chấm, chú giải, dòng tooltip, trục chỉ theo kỳ đang xem; lựa chọn nhớ theo thiết bị (`vpyd.report.previousLine`, `app/prefs.ts`) (EM 2026-11-06, [raw](../../raw/2026-11-06-em-polish-and-chart-toggle.md)). KPI theo container (`.kpi-wrap`/`.kpi-grid`: "Thực thu" cột rộng hơn ở ≥ 880px, hàng riêng khi hẹp; lượt "Không tính n đã hủy · n đã sửa" dưới số). Bỏ icon vàng trang trí ở tiêu đề card; hạng 1–5 muted; thanh KTV `primary`; cơ cấu thu = `primary` + `border-strong` (cặp nhấn/giảm nhấn như biểu đồ đường; validator dataviz: CVD ΔE 23, contrast ≥ 3:1 cả hai mode; "chroma floor" fail là chủ ý vì màu thứ hai là xám giảm nhấn, mọi giá trị có nhãn + %). Bảng chi tiết: cột ngày ngắn "T6 06/11", ô 8px + 13px để 11 cột vừa card laptop. Sổ doanh thu: cột cố định (`colgroup`), `min-width: 920px` (tablet cuộn ngang trong card thay vì bóp cột ghi chú). Hàng hai cột (biểu đồ + cơ cấu, ba danh sách) chỉ từ `xl` (1280). **Preset 3 năm / 5 năm** cho chủ spa (`report.long_range`; cùng khoảng với `last_3_years` theo tháng / `last_5_years` theo năm của API); người khác không thấy, link `?period=5y` mở "12 tháng".
 - **Nhân viên:** bảng lương, hồ sơ, bảng công, sổ thưởng/phạt nằm trong card; bảng lương cột cố định; "Tạm tính" = `badge-info` (trước `badge-gold`, sai §7). Đánh giá tháng: một panel, mỗi người một dòng kẻ mảnh; "Chưa đánh giá" = `badge-warn` (bỏ viền vàng cả thẻ). Banner "Đến hạn đánh giá" dùng màu `warning-*`. Ngày CN trong bảng công màu `text` (bỏ vàng). Ô bảng công: tên truy cập bắt đầu bằng mã hiện trên ô (P/ĐX/K) — axe `label-content-name-mismatch` (WCAG 2.5.3) trước đây báo ở ô ĐX. "Công và lương của tôi": khối Ngày công / Đánh giá là card, ô tổng là ô `surface-2` phẳng; bảng dịch vụ của phiếu lương trong khung `.payslip`. "Khách của tôi": hai card, dòng kẻ mảnh (bỏ card mỗi dòng), "Đã đặt" = `badge-info`. Nút lưu (đánh giá, hồ sơ "Lưu hồ sơ", chốt lương, quy tắc) dùng `aria-busy` thay `disabled` khi đang gửi; "+" chữ → icon `plus`.
 - **Đăng nhập / MFA:** ô `.input` 16px viền `border-strong` bo 6px trong `.field` (nhãn 14px 500, lỗi `.field-error`); nút chính `btn-lg btn-block` với `aria-busy` (nhãn giữ nguyên, spinner); link phụ = `btn-ghost` 44px; ô xác nhận đã lưu mã = `.choice`. Lora vẫn ở tiêu đề hai trang này.
 - **Trang toàn cục:** 404 "Không tìm thấy trang này" + lỗi màn hình "Màn hình này gặp lỗi" (`app/StatusPage.tsx`, chunk lazy qua `defaultNotFoundComponent` / `defaultErrorComponent`): nói chuyện gì + bước tiếp ("Về trang tổng quan", "Tải lại trang"). Trước: chữ "Not Found" mặc định của router.
@@ -87,6 +87,34 @@ EM sau vòng duyệt 2 ([raw](../../raw/2026-11-06-em-review-redesign-rollout.md
 **Rào chắn:** `apps/web/src/app/tokens-only.test.ts` (chạy trong `pnpm -r test` của CI) fail khi: CSS ngoài `tokens.css` có hex / `rgb()…oklch()` / tên màu / gradient / `font-size` không phải `--fs-*`; TSX có màu palette Tailwind (`bg-white`, `text-red-600`), màu/gradient/bo góc/cỡ chữ tùy ý (`bg-[#…]`, `rounded-[10px]`, `text-[14px]`), chuỗi hex. Ngoại lệ có lý do trong `ALLOWED` (QR đen-trắng, lời chào Lora 28px), test tự kiểm allowlist không cũ và bộ regex bắt đúng mẫu. `contrast.test.ts` thêm các cặp mà component chung giờ dùng ở mọi màn (chữ trên `warning-bg`/`info-soft`/`success-soft`/`danger-soft`, `primary` trên `surface-2`, `border-strong` trên `bg`, `surface` trên `danger`, vàng trên khung nâu đỏ) và coi `gradient-*` là token dẫn xuất.
 
 **Ngân sách** (cùng máy, `vite build`, gzip -9 entry + modulepreload): JS khởi động `main` 1fafa1b **127.42 KB** (đã vượt 125 trước PR này; số 124.39 KB ghi ở frontend.md là số đo trên nhánh vòng 6 trước khi #61 + #62 cùng vào `main`) → **127.05 KB** (thêm retry `/me` nhưng chuyển thông báo lỗi chỉ màn nhân viên / lịch hẹn gặp sang chunk của chúng, `addMessages`); CSS khởi động 15.33 → 15.24 KB; lazy: lịch 3.02 → 2.66, khách 1.51 → 1.02, nhân viên 2.33 → 2.26 KB. Đưa JS về ≤ 125 KB cần một bước tách chunk riêng (ứng viên: `lib/errors.ts` 6 KB thô, `FrontDeskPage` 16 KB thô) — việc của `perf`, không thuộc pass thống nhất. Ảnh trước/sau mọi màn ở scratchpad agent `unify/before`, `unify/after`.
+
+## Chiều sâu: nền, mặt, ánh sáng (polish 2026-11-06, `style(web)`)
+EM sau pass thống nhất ([raw](../../raw/2026-11-06-em-polish-and-chart-toggle.md)): "style các thứ bị đơn giản hóa và xấu quá … cách sắp xếp thì ổn rồi, những hiệu ứng background mọi thứ cần cải thiện". Bố cục, nhãn, hành vi **không đổi**; chỉ thêm chiều sâu qua token (`packages/ui/src/tokens/tokens.css`), CSS thuần, không ảnh, không JS. Ý: giấy dó ấm + sơn mài nâu đỏ + ánh vàng, yên tĩnh, không lấp lánh.
+
+| Token | Dùng khi | Ghi chú |
+|---|---|---|
+| `--paper-grain` + `--gradient-page` | nền **mọi** trang (kể cả đăng nhập), qua `body::before` cố định | vân hạt nâu ≈ 4% (SVG `feTurbulence` 160px inline) + vệt vàng 10% góc trên phải + vệt nâu đỏ 5% góc dưới trái; dark: hạt kem (`--texture-cream-grain`, tiền tố `texture-` dùng chung như `gradient-`/`mix-`). Lớp cố định → cuộn không vẽ lại; phủ cả viewport → Chrome không lấy làm LCP |
+| **Quy tắc LCP** | ảnh (kể cả tile SVG inline) **chỉ** ở lớp nền toàn viewport | bản đầu đặt hạt kem lên `.chrome` → tab bar thành phần tử LCP dạng ảnh của `/quay` (Lighthouse CI 2.11 → 2.51 s, fail). Khung nâu đỏ, khung chào, ô Thực thu chỉ dùng gradient |
+| `--gradient-chrome-glow` | `.chrome`: ánh vàng rơi trên logo ở đầu sidebar | tab bar dưới đáy không dùng (chỉ hạt + gradient) |
+| `--gradient-welcome-glow`, `--gradient-accent-glow` | ánh sau logo khung chào; góc trên phải ô "Thực thu" | đặt xa chữ; tương phản đo trên màu phẳng |
+| `--mix-gold-hairline` | viền vàng mảnh bên trong khung chào + ô Thực thu (inset) | |
+| `--shadow-1` | card, panel, segment đang chọn, ô tìm | 3 lớp ấm (tiếp xúc · tỏa · rơi dài) + vạch sáng trên (`--highlight`, thấy rõ ở dark) |
+| `--shadow-lift` | `.card-link` hover (cùng nhấc 2px) | |
+| `--shadow-2` | menu ⋯, panel tài khoản, toast, dialog, khung chào | |
+| `--shadow-btn` / `--gradient-gloss` | `btn-primary`, `btn-danger`, nút utility `bg-primary` | ánh trên ≤ 10% trắng; màu nền dưới vẫn đổi khi hover nên chuyển mượt. `contrast.test.ts` kiểm chữ trên phần sáng nhất ≥ 4.5 |
+| `--shadow-press` | nút đặc/viền đang nhấn; rãnh `.segmented` | lún vào, bỏ ánh |
+| `--shadow-xs` / `--mix-secondary-hover` | `btn-secondary` nghỉ / hover (nền hồng nhạt pha) | |
+| `--shadow-field` | mọi ô nhập/select/textarea (mép trên lõm) | focus giữ nguyên vòng vàng 2px sát viền (e2e layout) |
+| `--shadow-bar` | top bar dính: mép mềm dưới đường kẻ vàng | |
+| `--shadow-chrome` | mép phải sidebar đổ lên trang | sidebar `z-index: 11` để bóng liền qua top bar |
+| `--gradient-table-head`, `--mix-table-rule` | dải tiêu đề bảng (đậm dần `surface` → `surface-2`) + kẻ dưới pha vàng | |
+| `--mix-row-hover` / `--mix-row-open` | hover dòng bảng (ấm, `primary-soft` 55%) / dòng đang mở + dòng chi tiết | dòng mở không đổi màu khi hover (cặp dòng luôn một khối) |
+| `--mix-chip-ring`, `--mix-tile-ring` | viền 1px theo màu chữ của chip `.badge`; ô icon (chấm stat, ô lối tắt) | |
+| `--mix-chrome-edge`, `--mix-gold-glow` | mục nav đang chọn: vạch sáng trên + thanh vàng tỏa nhẹ | nav hover: icon chuyển vàng |
+
+Chuyển động thêm: icon ô lối tắt phóng 1.06 khi hover; còn lại giữ nguyên (menu pop-in, card nhấc). `prefers-reduced-motion` vẫn tắt transform, giữ màu. Không dùng: glow màu quanh nút, chữ gradient, glass, hoa văn ở màn làm việc (vẫn chỉ ở đăng nhập).
+
+**Ngân sách** (`vite build`, gzip -9 entry + modulepreload/stylesheet, cùng máy): JS khởi động 124.07 → 124.11 KB (+0.04, chỉ nút bật/tắt kỳ trước); CSS khởi động 14.88 → 16.20 KB (+1.3 KB: 2 tile SVG + bóng 3 theme). Ảnh trước/sau ở scratchpad agent `polish/before`, `polish/after`.
 
 ## Hướng thiết kế: "Trà thất Đông y" (2026-11-05, thay "Trà thất yên tĩnh")
 EM thấy UI cũ "hơi xấu" và giao việc phối 4 màu đặc trưng của spa: **nâu đỏ, vàng, trắng, kem**, sao cho "sinh động và tinh tế" ([raw](../../raw/2026-11-05-em-brand-colors-and-demo-data.md)). Hướng mới lấy cảm hứng trực tiếp từ menu in: **khung app (header, dải đầu trang đăng nhập, khung chào ở trang chủ) dùng nền nâu đỏ đậm + chữ kem + vàng kim**, còn **vùng làm việc** giữ nền kem + card trắng để đọc số tiền cả ngày không mỏi mắt.
@@ -327,7 +355,7 @@ Lưu ý hành vi: gói **hết buổi** không còn "Hủy gói và hoàn tiền
 ## Spacing, radius, elevation, z-index
 - Spacing (bước 4px): `1=4 · 2=8 · 3=12 · 4=16 · 5=20 · 6=24 · 8=32 · 10=40 · 12=48`.
 - Radius: `sm 6` (input) · `md 10` (nút, dòng) · `lg 14` (card) · `full` (badge).
-- Elevation: `shadow-1` (card) · `shadow-2` (toast, popover, dialog). Không dùng nhiều lớp đổ bóng.
+- Elevation: bóng nhiều lớp ấm theo § Chiều sâu (polish 2026-11-06): `shadow-xs` · `shadow-1` (card) · `shadow-lift` (card bấm được khi hover) · `shadow-2` (toast, popover, menu, dialog) · `shadow-btn` / `shadow-press` · `shadow-field` · `shadow-bar` · `shadow-chrome`.
 - Z-index: `base 0 · sticky 10 · dropdown 20 · overlay 30 · dialog 40 · toast 50`.
 - **Vùng chạm ≥ 44×44px** (WCAG 2.5.8 + dùng trên tablet).
 

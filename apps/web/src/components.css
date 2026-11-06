@@ -44,8 +44,15 @@
 .chrome {
   --focus: var(--chrome-accent);
   background-color: var(--chrome-bg);
-  background-image: var(--gradient-chrome);
+  /* Lacquer, not a flat fill (polish pass 2026-11-06): gold light falling on the logo at the top
+   * over the maroon gradient. Gradients only: an image (even the inline grain tile) would make the
+   * chrome an LCP image candidate — the tab bar became /quay's LCP at +400 ms in CI. */
+  background-image: var(--gradient-chrome-glow), var(--gradient-chrome);
   color: var(--chrome-text);
+}
+/* The phone tab bar sits at the bottom: no light from above. */
+.tabbar.chrome {
+  background-image: var(--gradient-chrome);
 }
 
 .shell {
@@ -86,7 +93,9 @@
     flex-direction: column;
     gap: 8px;
     padding: 16px 12px;
+    z-index: 11;
     border-right: 1px solid color-mix(in srgb, var(--chrome-accent) 35%, transparent);
+    box-shadow: var(--shadow-chrome);
     /* Scrolls down on short screens, never sideways (overflow-y alone makes x scroll too). */
     overflow: hidden auto;
     scrollbar-width: thin;
@@ -187,8 +196,15 @@
   background: var(--chrome-hover);
   color: var(--chrome-text);
 }
+.nav-item .icon {
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.nav-item:hover .icon {
+  color: var(--chrome-accent);
+}
 .nav-item.active {
   background: var(--gradient-nav-active);
+  box-shadow: inset 0 1px 0 var(--mix-chrome-edge);
   color: var(--chrome-text);
 }
 /* Active indicator: a gold bar that grows from the centre (transform only). */
@@ -200,6 +216,7 @@
   width: 3px;
   border-radius: 3px;
   background: var(--chrome-accent);
+  box-shadow: 0 0 10px var(--mix-gold-glow);
   content: "";
   transform: scaleY(0);
   transition: transform var(--dur-base) var(--ease-out);
@@ -234,6 +251,7 @@
   gap: 12px;
   padding: 0 16px;
   background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: var(--shadow-bar);
   backdrop-filter: blur(10px) saturate(1.2);
 }
 .topbar::after {
@@ -862,7 +880,7 @@ textarea.input,
 }
 .card-link:hover {
   border-color: var(--border-strong);
-  box-shadow: var(--shadow-2);
+  box-shadow: var(--shadow-lift);
   transform: translateY(-2px);
 }
 
@@ -897,7 +915,9 @@ textarea.input,
  * Buttons: four kinds, one height (44px; `btn-lg` 48px for the one primary of a task area), every
  * state styled: default · hover · focus-visible (global ring) · pressed · disabled (also
  * aria-disabled, which keeps focus) · loading (aria-busy: label kept, spinner, not clickable).
- * Flat fills: no gradient, no coloured glow.
+ * Depth, not decoration (polish pass 2026-11-06): filled buttons have a lit top (--gradient-gloss,
+ * ≤ 10% white, the fill colour under it still animates) and a small drop; outline buttons a hair
+ * of shadow; pressed buttons sink (inset shadow, no gloss). No coloured glow.
  */
 .btn {
   display: inline-flex;
@@ -922,6 +942,11 @@ textarea.input,
 .btn-block {
   width: 100%;
 }
+.btn-primary,
+.btn-danger {
+  background-image: var(--gradient-gloss);
+  box-shadow: var(--shadow-btn);
+}
 .btn-primary {
   background-color: var(--primary);
   color: var(--on-primary);
@@ -932,17 +957,24 @@ textarea.input,
 .btn-primary:not(:disabled, [aria-disabled="true"], [aria-busy="true"]):active {
   background-color: var(--primary-pressed);
 }
+:is(.btn-primary, .btn-danger):not(:disabled, [aria-disabled="true"], [aria-busy="true"]):active {
+  background-image: none;
+  box-shadow: var(--shadow-press);
+}
 .btn-secondary {
   border-color: var(--border-strong);
   background: var(--surface);
+  box-shadow: var(--shadow-xs);
   color: var(--text);
 }
 .btn-secondary:not(:disabled, [aria-disabled="true"], [aria-busy="true"]):hover {
   border-color: var(--primary);
+  background: var(--mix-secondary-hover);
   color: var(--primary);
 }
 .btn-secondary:not(:disabled, [aria-disabled="true"], [aria-busy="true"]):active {
   background: var(--primary-soft);
+  box-shadow: var(--shadow-press);
 }
 .btn-ghost {
   background: transparent;
@@ -1008,6 +1040,7 @@ textarea.input,
   gap: 5px;
   padding: 1px 10px;
   border-radius: 999px;
+  box-shadow: var(--mix-chip-ring);
   font-size: var(--fs-xs);
   font-weight: 600;
   line-height: 20px;
@@ -1236,12 +1269,16 @@ h2 .gender-chip {
   place-items: center;
   border-radius: 999px;
   background: var(--accent-soft);
+  box-shadow: var(--mix-tile-ring);
   color: var(--accent-text);
 }
 .stat-card-accent {
   border-color: transparent;
   background-color: var(--chrome-bg);
-  background-image: var(--gradient-chrome-band);
+  background-image: var(--gradient-accent-glow), var(--gradient-chrome-band);
+  box-shadow:
+    inset 0 0 0 1px var(--mix-gold-hairline),
+    var(--shadow-1);
   color: var(--chrome-text);
 }
 .stat-card-accent .stat-label {
@@ -1303,7 +1340,12 @@ h2 .gender-chip {
   place-items: center;
   border-radius: var(--radius-md);
   background: var(--primary-soft);
+  box-shadow: var(--mix-tile-ring);
   color: var(--primary);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.shortcut:hover .shortcut-icon {
+  transform: scale(1.06);
 }
 .shortcut-title {
   display: block;
@@ -1327,7 +1369,11 @@ h2 .gender-chip {
   padding: 16px 20px;
   overflow: hidden;
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-2);
+  /* Gold light behind the logo, a gold hairline inside the edge (brand spot, rulebook 1). */
+  background-image: var(--gradient-welcome-glow), var(--gradient-chrome);
+  box-shadow:
+    inset 0 0 0 1px var(--mix-gold-hairline),
+    var(--shadow-2);
 }
 .welcome-logo {
   width: 64px;
@@ -1396,8 +1442,9 @@ h2 .gender-chip {
 }
 .data-table th {
   padding: 10px 14px;
-  border-bottom: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--mix-table-rule);
   background: var(--surface-2);
+  background-image: var(--gradient-table-head);
   color: var(--text-muted);
   /* Sentence case like every other label (design-system § Chữ trên giao diện): ALL-CAPS is only
    * for the small eyebrows. */
@@ -1415,7 +1462,7 @@ h2 .gender-chip {
   transition: background-color var(--dur-fast) var(--ease-out);
 }
 .data-table tbody tr:hover {
-  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+  background: var(--mix-row-hover);
 }
 .data-table tbody tr:last-child td {
   border-bottom: 0;
@@ -1445,8 +1492,9 @@ h2 .gender-chip {
 .rt-card.rt-clickable {
   cursor: pointer;
 }
-.data-table tr.rt-open {
-  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+.data-table tr.rt-open,
+.data-table tbody tr.rt-open:hover {
+  background: var(--mix-row-open);
 }
 .data-table tr.rt-open > td {
   border-bottom-color: transparent;
@@ -1777,6 +1825,7 @@ h2 .gender-chip {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface-2);
+  box-shadow: var(--shadow-press);
 }
 .segmented > button {
   display: inline-flex;

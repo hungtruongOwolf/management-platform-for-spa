@@ -10,7 +10,7 @@
  */
 .visits-host .data-table tr.rt-expanded > td {
   padding: 0;
-  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+  background: var(--mix-row-open);
 }
 .visits-host .data-table tr.rt-open > td {
   border-bottom-color: transparent;

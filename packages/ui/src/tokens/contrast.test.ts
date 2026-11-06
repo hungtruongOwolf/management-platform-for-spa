@@ -116,14 +116,45 @@ describe.each([
   });
 });
 
+/** `hex` with `share` of white painted over it (an alpha layer such as --gradient-gloss). */
+function lighten(hex: string, share: number): string {
+  const channels = (hex.slice(1).match(/../g) ?? []).map((c) => {
+    const v = parseInt(c, 16);
+    return Math.round(v + (255 - v) * share)
+      .toString(16)
+      .padStart(2, "0");
+  });
+  return `#${channels.join("")}`;
+}
+
+describe.each([
+  ["light", light],
+  ["dark", dark],
+])("%s: filled buttons under the gloss", (_, tokens) => {
+  // Polish pass 2026-11-06: --gradient-gloss lays ≤ 10% white over the top of filled buttons.
+  const gloss = /rgb\(255 255 255 \/ ([0-9.]+)\)/.exec(light["gradient-gloss"] ?? "");
+  const share = Number(gloss?.[1]);
+  it.each([
+    ["on-primary", "primary"],
+    ["on-primary", "primary-hover"],
+    ["on-primary", "danger"],
+  ])("%s on the lit top of %s ≥ 4.5:1", (fg, bg) => {
+    expect(share).toBeGreaterThan(0);
+    expect(share).toBeLessThanOrEqual(0.12);
+    expect(contrast(tokens[fg] ?? "", lighten(tokens[bg] ?? "", share))).toBeGreaterThanOrEqual(TEXT);
+  });
+});
+
 describe("dark theme blocks", () => {
   it("the manual data-theme=dark block repeats the media-query block exactly", () => {
     expect(darkManual).toEqual(dark);
   });
 
   it("dark defines every light token except the shared scales", () => {
-    // Gradients are built from colour tokens (var()), so they follow the theme without a copy.
-    const shared = /^(radius|dur|ease|font|fs|gradient)-/;
+    // Gradients and mix-* tints are built from colour tokens (var()), so they follow the theme;
+    // texture-* tiles are the same in every theme (the cream-speck grain of the dark page).
+    // without a copy.
+    const shared = /^(radius|dur|ease|font|fs|gradient|mix|texture)-/;
     const missing = Object.keys(light).filter((k) => !shared.test(k) && !(k in dark));
     expect(missing).toEqual([]);
   });
