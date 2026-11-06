@@ -116,6 +116,72 @@ describe("Đặt lịch hẹn (spec appointments.md §10.2, §10.5)", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("sends companions as notes (round 6 Q-U5): trimmed, blanks dropped, at most 5", async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = renderSheet();
+    await user.click(
+      within(screen.getByRole("group", { name: "Loại khách Khách" })).getByRole(
+        "button",
+        { name: "Khách mới" },
+      ),
+    );
+    await user.type(screen.getByLabelText("Tên khách"), "Chị Hà");
+    await user.type(screen.getByLabelText("Số điện thoại"), "0905111222");
+    await user.selectOptions(screen.getByLabelText("Thêm dịch vụ"), "s1");
+    const add = () =>
+      user.click(
+        screen.getByRole("button", { name: /Người đi cùng \(ghi chú\)/ }),
+      );
+    await add();
+    await user.type(
+      screen.getByLabelText("Người đi cùng 1"),
+      "  Chồng của chị Hà ",
+    );
+    await add();
+    for (let i = 0; i < 3; i += 1) await add();
+    // Five notes at most: the add button is gone.
+    expect(
+      screen.queryByRole("button", { name: /Người đi cùng \(ghi chú\)/ }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Bỏ người đi cùng 5" }),
+    );
+    expect(screen.getByText(/1 người đi cùng/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Đặt lịch" }));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe("/api/v1/appointments");
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body["companions"]).toEqual(["Chồng của chị Hà"]);
+    expect(body["guest"]).toEqual({ full_name: "Chị Hà", phone: "0905111222" });
+  });
+
+  it("sends no companions field when none is noted", async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = renderSheet();
+    await user.click(
+      within(screen.getByRole("group", { name: "Loại khách Khách" })).getByRole(
+        "button",
+        { name: "Khách mới" },
+      ),
+    );
+    await user.type(screen.getByLabelText("Tên khách"), "Chị Hà");
+    await user.type(screen.getByLabelText("Số điện thoại"), "0905111222");
+    await user.selectOptions(screen.getByLabelText("Thêm dịch vụ"), "s1");
+    await user.click(
+      screen.getByRole("button", { name: /Người đi cùng \(ghi chú\)/ }),
+    );
+    await user.click(screen.getByRole("button", { name: "Đặt lịch" }));
+    const init = (
+      fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    )[1];
+    expect(JSON.parse(init.body as string)).not.toHaveProperty("companions");
+  });
+
   it("books a family: + Thêm người, one form per person", async () => {
     const user = userEvent.setup();
     renderSheet();

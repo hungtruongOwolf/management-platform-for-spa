@@ -33,7 +33,7 @@ Spec: [front-desk-and-packages §10](../product/specs/front-desk-and-packages.md
 | B1 | Giỏ 3 phần ở `/quay`: "Gói bán hôm nay" inline (mẫu gói, người giới thiệu mặc định KTV của dòng khớp, quà, giảm giá gói ≤ 10 %), "Dùng gói này cho buổi hôm nay" (tự bật khi gói chứa dịch vụ lẻ trong giỏ), cột "Người giới thiệu" cho dòng lẻ (mặc định Khách tự chọn), "Người đi cùng (ghi chú)"; tổng = lẻ + gói; lazy chunk | #56 |
 | B2 | Giỏ nháp: nối `draftCart.ts` vào giỏ (lưu mỗi lần đổi, xóa khi lưu / hủy / đăng xuất) | B1 |
 | B3 | "Lượt khách hôm nay" ⋯ → "Thêm dịch vụ / bán gói" (additions) và "Bán gói cho lượt này" + ô "Tính buổi hôm nay vào gói" (convert, chỉ hiện khi gói chứa dịch vụ lẻ của lượt; mặc định tắt) với dòng "Khách đưa thêm …" | B1 |
-| B4 | Hoàn tất lịch hẹn + "Khách đến cả nhóm": khối bán gói thu gọn mỗi người; đặt nhóm: "+ Người đi cùng (ghi chú)" | B1 |
+| B4 | Hoàn tất lịch hẹn + "Khách đến cả nhóm": khối bán gói thu gọn mỗi người; đặt nhóm: "+ Người đi cùng (ghi chú)" (**phần đặt lịch xong** ở PR redesign Lịch hẹn 2026-11-06: đặt lẻ + đặt nhóm gửi `companions`; khối bán gói còn chờ B1) | B1 |
 | B5 | Thẻ khách: "Bán gói liệu trình", "Mua lại gói này" (điền sẵn mẫu) | B1 |
 | B6 | Playwright + axe: bán gói trong giỏ dùng ngay, chuyển sang gói, thêm dịch vụ, giỏ nháp sau tải lại | B1–B5 |
 
