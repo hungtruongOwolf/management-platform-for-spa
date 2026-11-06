@@ -358,3 +358,73 @@ pub async fn insert_reversal(
     .await?;
     Ok(id)
 }
+
+pub struct PaperSaleInsert<'a> {
+    pub id: Uuid,
+    pub branch_id: Uuid,
+    pub customer_id: Uuid,
+    /// The paper date.
+    pub business_date: NaiveDate,
+    pub amount: i64,
+    pub plan_id: Option<Uuid>,
+    pub customer_package_id: Uuid,
+    pub description: &'a str,
+    pub method: &'a str,
+    /// Instant on the paper day (its noon in the spa's time zone).
+    pub at: chrono::DateTime<chrono::Utc>,
+    pub created_by: Uuid,
+}
+
+/// The sale, its one package line and its one payment for money paid on paper
+/// (`source = 'paper_book'`, collected in full like every R1 sale).
+pub async fn insert_paper_sale(tx: &mut TenantTx, s: &PaperSaleInsert<'_>) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"INSERT INTO app.sale
+             (id, tenant_id, branch_id, customer_id, business_date, subtotal, total, amount_paid,
+              created_by, created_at, source)
+           VALUES ($1, $2, $3, $4, $5, $6, $6, $6, $7, $8, 'paper_book')"#,
+        s.id,
+        tenant,
+        s.branch_id,
+        s.customer_id,
+        s.business_date,
+        s.amount,
+        s.created_by,
+        s.at
+    )
+    .execute(tx.conn())
+    .await?;
+    sqlx::query!(
+        r#"INSERT INTO app.sale_line
+             (id, tenant_id, sale_id, line_type, package_plan_id, customer_package_id,
+              description_snapshot, qty, unit_price, line_total, position)
+           VALUES ($1, $2, $3, 'package', $4, $5, $6, 1, $7, $7, 0)"#,
+        Uuid::now_v7(),
+        tenant,
+        s.id,
+        s.plan_id,
+        s.customer_package_id,
+        s.description,
+        s.amount
+    )
+    .execute(tx.conn())
+    .await?;
+    sqlx::query!(
+        r#"INSERT INTO app.payment
+             (id, tenant_id, branch_id, sale_id, business_date, kind, method, amount, paid_at, created_by)
+           VALUES ($1, $2, $3, $4, $5, 'payment', $6, $7, $8, $9)"#,
+        Uuid::now_v7(),
+        tenant,
+        s.branch_id,
+        s.id,
+        s.business_date,
+        s.method,
+        s.amount,
+        s.at,
+        s.created_by
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}

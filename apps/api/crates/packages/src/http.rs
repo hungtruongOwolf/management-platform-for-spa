@@ -3,7 +3,6 @@
 
 use crate::domain::{PackageStatus, RefundMethod};
 use crate::lifecycle::{self, PackageCancel, PackageExtend};
-use crate::opening_balance::{self, OpeningBalanceCreate, OpeningBalanceDto};
 use crate::service::{self, CustomerPackage, PackageItem, Refund};
 use axum::body::Bytes;
 use axum::extract::{FromRef, Path, State};
@@ -187,7 +186,6 @@ where
         .route("/customer-packages/{id}/extend", post(extend_package))
         .route("/customer-packages/{id}/cancel", post(cancel_package))
         .route("/customers/{id}/packages", get(list_customer_packages))
-        .route("/opening-balances", post(import_opening_balance))
 }
 
 fn no_store(body: impl Serialize) -> Response {
@@ -226,42 +224,6 @@ pub async fn list_customer_packages(
             .into_iter()
             .map(CustomerPackageDto::from)
             .collect::<Vec<_>>(),
-    ))
-}
-
-#[utoipa::path(post, path = "/api/v1/opening-balances", tag = "packages", request_body = OpeningBalanceCreate,
-    params(("Idempotency-Key" = Uuid, Header, description = "One key per import form; a retry with the same key replays the first response")),
-    responses(
-        (status = 201, body = OpeningBalanceDto, description = "Packages created without a sale or payment. Deprecated: owner-only until the import screen is gone; the team migrates with `app import-paper-book`"),
-        (status = 400, description = "idempotency.key_required / key_invalid"),
-        (status = 401), (status = 403),
-        (status = 404, description = "customer or plan not in this spa"),
-        (status = 409, description = "customer.phone_taken with existing_id"),
-        (status = 422, description = "validation_failed (fields prefixed customer. / packages[j].), idempotency.key_reuse_mismatch")))]
-pub async fn import_opening_balance(
-    State(pool): State<PgPool>,
-    State(cipher): State<Arc<FieldCipher>>,
-    user: AuthUser,
-    IdempotencyKey(key): IdempotencyKey,
-    body: Bytes,
-) -> Result<Response, AppError> {
-    let invalid = || AppError::Validation(vec![FieldError::new("body", "invalid")]);
-    let value: Value = serde_json::from_slice(&body).map_err(|_| invalid())?;
-    // Hash the parsed JSON re-serialized (sorted keys), as `POST /sales` does.
-    let canonical = serde_json::to_vec(&value).map_err(|e| AppError::Internal(e.to_string()))?;
-    let input: OpeningBalanceCreate = serde_json::from_value(value).map_err(|_| invalid())?;
-    let (status, body) = opening_balance::import(
-        &pool,
-        &cipher,
-        &user.actor,
-        key,
-        hash_route("POST", "/opening-balances", None, &canonical),
-        &input,
-    )
-    .await?;
-    Ok(no_store_status(
-        StatusCode::from_u16(status).unwrap_or(StatusCode::CREATED),
-        body,
     ))
 }
 

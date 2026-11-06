@@ -295,7 +295,7 @@ pub async fn lock_packages_of_sale(
     Ok(sqlx::query_as!(
         LockedOfSale,
         r#"SELECT id, (cancelled_at IS NOT NULL) AS "cancelled!"
-           FROM app.customer_package WHERE tenant_id = $1 AND sale_id = $2
+           FROM app.customer_package WHERE tenant_id = $1 AND sale_id = $2 AND origin = 'sale'
            ORDER BY id FOR UPDATE"#,
         tenant,
         sale_id
@@ -515,4 +515,50 @@ pub async fn refunds(tx: &mut TenantTx, package_ids: &[Uuid]) -> Result<Vec<Refu
     )
     .fetch_all(tx.conn())
     .await?)
+}
+
+pub struct PaperPackageRow {
+    pub customer_id: Uuid,
+    pub plan_id: Option<Uuid>,
+    pub name_snapshot: String,
+    pub origin: String,
+    pub sale_id: Option<Uuid>,
+    pub cancelled: bool,
+}
+
+/// Locks a package to book its paper money (package before sale rows, like voids).
+pub async fn lock_paper_package(
+    tx: &mut TenantTx,
+    id: Uuid,
+) -> Result<Option<PaperPackageRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        PaperPackageRow,
+        r#"SELECT customer_id, plan_id, name_snapshot, origin, sale_id,
+                  (cancelled_at IS NOT NULL) AS "cancelled!"
+           FROM app.customer_package WHERE tenant_id = $1 AND id = $2 FOR UPDATE"#,
+        tenant,
+        id
+    )
+    .fetch_optional(tx.conn())
+    .await?)
+}
+
+/// Links a paper-book package to the sale that books its paper money (once; DB trigger 0018).
+pub async fn attach_paper_sale(
+    tx: &mut TenantTx,
+    id: Uuid,
+    sale_id: Uuid,
+) -> Result<bool, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let done = sqlx::query!(
+        r#"UPDATE app.customer_package SET sale_id = $3, updated_at = now()
+           WHERE tenant_id = $1 AND id = $2 AND origin = 'opening_balance' AND sale_id IS NULL"#,
+        tenant,
+        id,
+        sale_id
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(done.rows_affected() == 1)
 }

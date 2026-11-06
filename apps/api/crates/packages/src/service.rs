@@ -438,7 +438,7 @@ async fn assemble(
         .collect()
 }
 
-pub(crate) async fn load(
+pub async fn load(
     tx: &mut TenantTx,
     id: Uuid,
     today: NaiveDate,
@@ -489,4 +489,42 @@ pub async fn for_customer(
     let packages = assemble(&mut tx, rows, today).await?;
     tx.commit().await?;
     Ok(packages)
+}
+
+/// A paper-book package as `sales::paper` needs it to book the paper money.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PaperPackage {
+    pub customer_id: Uuid,
+    pub plan_id: Option<Uuid>,
+    pub name: String,
+    pub from_paper_book: bool,
+    pub sale_id: Option<Uuid>,
+    pub cancelled: bool,
+}
+
+/// Locks the package (`FOR UPDATE`) inside the caller's transaction; `None` = not in this spa.
+/// The caller authorizes.
+pub async fn lock_paper_package(
+    tx: &mut TenantTx,
+    id: Uuid,
+) -> Result<Option<PaperPackage>, AppError> {
+    Ok(repo::lock_paper_package(tx, id)
+        .await?
+        .map(|r| PaperPackage {
+            customer_id: r.customer_id,
+            plan_id: r.plan_id,
+            name: r.name_snapshot,
+            from_paper_book: r.origin == "opening_balance",
+            sale_id: r.sale_id,
+            cancelled: r.cancelled,
+        }))
+}
+
+/// Ties a paper-book package to its paper-money sale; `false` = already tied (or not paper).
+pub async fn attach_paper_sale(
+    tx: &mut TenantTx,
+    id: Uuid,
+    sale_id: Uuid,
+) -> Result<bool, AppError> {
+    repo::attach_paper_sale(tx, id, sale_id).await
 }

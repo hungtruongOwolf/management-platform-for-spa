@@ -14,13 +14,14 @@ use chrono::NaiveDate;
 use kernel::crypto::FieldCipher;
 use kernel::idempotency::hash_request;
 use kernel::{PhoneE164, TenantId};
+use packages::opening_balance::PaperMethodDto;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use uuid::Uuid;
 
 /// Columns of the CSV, in any order (header row required).
-pub const COLUMNS: [&str; 12] = [
+pub const COLUMNS: [&str; 15] = [
     "phone",
     "full_name",
     "gender",
@@ -33,6 +34,10 @@ pub const COLUMNS: [&str; 12] = [
     "sessions_purchased",
     "sessions_bonus",
     "sessions_remaining",
+    // Optional money paid on paper for the package: booked as a sale on `paid_on`.
+    "paid_amount",
+    "paid_on",
+    "method",
 ];
 const REQUIRED: [&str; 7] = [
     "phone",
@@ -61,6 +66,8 @@ pub struct ImportReport {
     pub customers_created: usize,
     pub imported: usize,
     pub skipped_existing: usize,
+    /// Paper money booked as sales (new packages and already imported ones without money).
+    pub payments_booked: usize,
 }
 
 /// Splits CSV text into records (RFC 4180: quoted fields, `""` escapes, commas and line breaks
@@ -125,6 +132,8 @@ struct Package {
     gender: Option<String>,
     name: String,
     sold_price: i64,
+    /// Money paid on paper (0 = none): `(amount, paid_on, method)`.
+    paid: Option<(i64, NaiveDate, PaperMethodDto)>,
     starts_on: NaiveDate,
     expires_on: Option<NaiveDate>,
     gift_note: Option<String>,
@@ -189,6 +198,10 @@ fn packages_of(csv: &str) -> anyhow::Result<(usize, Vec<Package>)> {
         let number = |c: &str| get(c).parse::<u32>().ok();
         let date = |c: &str| NaiveDate::parse_from_str(get(c), "%Y-%m-%d").ok();
         let sold_price = get("sold_price").parse::<i64>().ok();
+        let paid = paid_of(get("paid_amount"), get("paid_on"), get("method"));
+        if let Err(what) = &paid {
+            problem(what.clone());
+        }
         let (purchased, remaining) = (number("sessions_purchased"), number("sessions_remaining"));
         let bonus = if get("sessions_bonus").is_empty() {
             Some(0)
@@ -228,11 +241,14 @@ fn packages_of(csv: &str) -> anyhow::Result<(usize, Vec<Package>)> {
         let (
             Ok(phone),
             Some(sold_price),
+            Ok(paid),
             Some(starts_on),
             Some(purchased),
             Some(bonus),
             Some(remaining),
-        ) = (phone, sold_price, starts_on, purchased, bonus, remaining)
+        ) = (
+            phone, sold_price, paid, starts_on, purchased, bonus, remaining,
+        )
         else {
             continue;
         };
@@ -247,7 +263,16 @@ fn packages_of(csv: &str) -> anyhow::Result<(usize, Vec<Package>)> {
             .iter_mut()
             .find(|p| p.phone == phone && p.name == name && p.starts_on == starts_on)
         {
-            Some(p) => p.items.push(item),
+            Some(p) => {
+                // One payment per package: repeat it on every row, or leave the later rows empty.
+                if paid.is_some() && paid != p.paid {
+                    errors.push(format!(
+                        "line {line}: paid_amount / paid_on / method differ from line {} for the same package",
+                        p.line
+                    ));
+                }
+                p.items.push(item);
+            }
             None => packages.push(Package {
                 line: *line,
                 phone,
@@ -255,6 +280,7 @@ fn packages_of(csv: &str) -> anyhow::Result<(usize, Vec<Package>)> {
                 gender,
                 name,
                 sold_price,
+                paid,
                 starts_on,
                 expires_on,
                 gift_note: optional(get("gift_note")),
@@ -269,6 +295,40 @@ fn packages_of(csv: &str) -> anyhow::Result<(usize, Vec<Package>)> {
         );
     }
     Ok((rows.len(), packages))
+}
+
+/// `paid_amount` (đồng, empty = 0), `paid_on` (YYYY-MM-DD, required when paid), `method`
+/// (`cash` default, `transfer` / `bank_transfer`). Range and "not in the future" are checked by
+/// the use case like any other request.
+fn paid_of(
+    amount: &str,
+    paid_on: &str,
+    method: &str,
+) -> Result<Option<(i64, NaiveDate, PaperMethodDto)>, String> {
+    let amount = if amount.is_empty() {
+        0
+    } else {
+        amount
+            .parse::<i64>()
+            .ok()
+            .filter(|a| *a >= 0)
+            .ok_or_else(|| {
+                format!("paid_amount {amount:?} is not a whole, non-negative number of đồng")
+            })?
+    };
+    let method = match method.to_lowercase().as_str() {
+        "" | "cash" => PaperMethodDto::Cash,
+        "transfer" | "bank_transfer" => PaperMethodDto::BankTransfer,
+        other => return Err(format!("method {other:?} must be cash, transfer or empty")),
+    };
+    match (amount, paid_on.is_empty()) {
+        (0, true) => Ok(None),
+        (0, false) => Err("paid_on is set but paid_amount is 0".into()),
+        (_, true) => Err("paid_on is required when paid_amount > 0".into()),
+        (_, false) => NaiveDate::parse_from_str(paid_on, "%Y-%m-%d")
+            .map(|d| Some((amount, d, method)))
+            .map_err(|_| "paid_on must be YYYY-MM-DD".into()),
+    }
 }
 
 fn package_json(p: &Package, services: &HashMap<String, Uuid>) -> anyhow::Result<Value> {
@@ -286,10 +346,14 @@ fn package_json(p: &Package, services: &HashMap<String, Uuid>) -> anyhow::Result
                       "sessions_bonus": i.bonus, "sessions_remaining": i.remaining}))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
-    Ok(
-        json!({"name": p.name, "sold_price": p.sold_price, "starts_on": p.starts_on,
-              "expires_on": p.expires_on, "gift_note": p.gift_note, "items": items}),
-    )
+    let mut body = json!({"name": p.name, "sold_price": p.sold_price, "starts_on": p.starts_on,
+              "expires_on": p.expires_on, "gift_note": p.gift_note, "items": items});
+    if let Some((amount, paid_on, method)) = p.paid {
+        body["paid_amount"] = json!(amount);
+        body["paid_on"] = json!(paid_on);
+        body["method"] = json!(method.as_str());
+    }
+    Ok(body)
 }
 
 /// Imports `options.csv` into the spa. `owner` is the schema-owner pool (lookups, as the other
@@ -310,6 +374,19 @@ pub async fn import(
             .with_context(|| format!("no spa with slug {slug:?}"))?,
     );
     let actor = member_actor(app, owner_of(owner, tenant).await?, tenant).await?;
+    // Paper money is back-dated, never post-dated: check every row before anything is written.
+    let today: NaiveDate = sqlx::query_scalar(
+        "SELECT (now() AT TIME ZONE timezone)::date FROM app.tenant WHERE id = $1",
+    )
+    .bind(tenant.as_uuid())
+    .fetch_one(owner)
+    .await?;
+    if let Some(p) = packages
+        .iter()
+        .find(|p| p.paid.is_some_and(|(_, on, _)| on > today))
+    {
+        bail!("line {}: paid_on is after today ({today})", p.line);
+    }
     let services: HashMap<String, Uuid> = sqlx::query_as::<_, (Uuid, String)>(
         "SELECT id, name FROM app.service WHERE tenant_id = $1",
     )
@@ -352,24 +429,48 @@ pub async fn import(
             .zip(&bodies)
             .filter(|(p, _)| &p.phone == phone)
         {
-            let already = match existing {
+            // An imported package (same customer, name, start day) is skipped; if it has no paper
+            // money yet and the file now carries it, the money is booked once ("add paid amount").
+            let already: Option<(Uuid, bool)> = match existing {
                 Some(customer) => {
-                    sqlx::query_scalar::<_, bool>(
-                        "SELECT EXISTS (SELECT 1 FROM app.customer_package
-                     WHERE tenant_id = $1 AND customer_id = $2 AND sale_id IS NULL
-                       AND name_snapshot = $3 AND starts_on = $4)",
+                    sqlx::query_as(
+                        "SELECT id, sale_id IS NULL FROM app.customer_package
+                         WHERE tenant_id = $1 AND customer_id = $2 AND origin = 'opening_balance'
+                           AND name_snapshot = $3 AND starts_on = $4
+                         ORDER BY created_at LIMIT 1",
                     )
                     .bind(tenant.as_uuid())
                     .bind(customer)
                     .bind(p.name.trim())
                     .bind(p.starts_on)
-                    .fetch_one(owner)
+                    .fetch_optional(owner)
                     .await?
                 }
-                None => false,
+                None => None,
             };
-            if already {
+            if let Some((package_id, unpaid)) = already {
                 report.skipped_existing += 1;
+                if let (true, Some((amount, paid_on, method))) = (unpaid, p.paid) {
+                    let payment = packages::opening_balance::paper_payment(
+                        amount,
+                        Some(paid_on),
+                        Some(method),
+                        today,
+                    )
+                    .map_err(|e| anyhow::anyhow!("line {}: {e:?}", p.line))?;
+                    if let (false, Some(payment)) = (options.dry_run, payment) {
+                        sales::paper::book(app, &actor, package_id, &payment)
+                            .await
+                            .map_err(|e| {
+                                anyhow::anyhow!(
+                                    "line {}: paid amount refused: {}",
+                                    p.line,
+                                    e.code()
+                                )
+                            })?;
+                    }
+                    report.payments_booked += 1;
+                }
             } else {
                 todo.push((p, body.clone()));
             }
@@ -387,6 +488,7 @@ pub async fn import(
         }
         if options.dry_run {
             report.imported += todo.len();
+            report.payments_booked += todo.iter().filter(|(p, _)| p.paid.is_some()).count();
             report.customers_created += usize::from(existing.is_none());
             continue;
         }
@@ -403,7 +505,7 @@ pub async fn import(
             }
             let input = serde_json::from_value(body).context("import body")?;
             let key = Uuid::now_v7();
-            let (_, created) = packages::opening_balance::import(
+            let (_, created) = sales::paper::import_opening_balance(
                 app,
                 cipher,
                 &actor,
@@ -422,6 +524,7 @@ pub async fn import(
                     .and_then(|s| Uuid::parse_str(s).ok());
             }
             report.imported += chunk.len();
+            report.payments_booked += chunk.iter().filter(|(p, _)| p.paid.is_some()).count();
         }
     }
     Ok(report)
@@ -446,6 +549,56 @@ mod tests {
             ]
         );
         assert!(parse_csv("a,\"b").is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn paper_money_columns_are_checked_per_row_and_per_package() -> anyhow::Result<()> {
+        let d = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap_or_default();
+        assert_eq!(paid_of("", "", ""), Ok(None));
+        assert_eq!(
+            paid_of("1500000", "2026-06-01", ""),
+            Ok(Some((1_500_000, d("2026-06-01"), PaperMethodDto::Cash)))
+        );
+        assert_eq!(
+            paid_of("1", "2026-06-01", "Transfer"),
+            Ok(Some((1, d("2026-06-01"), PaperMethodDto::BankTransfer)))
+        );
+        for (amount, on, method) in [
+            ("-5", "2026-06-01", ""),
+            ("abc", "2026-06-01", ""),
+            ("100", "", ""),
+            ("", "2026-06-01", ""),
+            ("100", "01/06/2026", ""),
+            ("100", "2026-06-01", "card"),
+        ] {
+            assert!(
+                paid_of(amount, on, method).is_err(),
+                "{amount} {on} {method}"
+            );
+        }
+        let header = format!("{HEADER},paid_amount,paid_on,method");
+        let differs = format!(
+            "{header}\n\
+             0905111001,Hà,,Gói A,1500000,2026-06-01,,,Gội,10,0,4,1500000,2026-06-01,cash\n\
+             0905111001,,,Gói A,1500000,2026-06-01,,,Massage,5,0,5,900000,2026-06-01,cash\n"
+        );
+        let error = packages_of(&differs)
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert!(error.contains("line 3: paid_amount"), "{error}");
+        let repeated_or_empty = format!(
+            "{header}\n\
+             0905111001,Hà,,Gói A,1500000,2026-06-01,,,Gội,10,0,4,1500000,2026-06-01,\n\
+             0905111001,,,Gói A,1500000,2026-06-01,,,Massage,5,0,5,,,\n\
+             0905111001,,,Gói A,1500000,2026-06-01,,,Thư Giãn,5,0,5,1500000,2026-06-01,\n"
+        );
+        let (_, packages) = packages_of(&repeated_or_empty)?;
+        assert_eq!(
+            packages[0].paid,
+            Some((1_500_000, d("2026-06-01"), PaperMethodDto::Cash))
+        );
         Ok(())
     }
 

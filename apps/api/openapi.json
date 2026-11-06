@@ -1808,7 +1808,7 @@
         },
         "responses": {
           "201": {
-            "description": "Packages created without a sale or payment. Deprecated: owner-only until the import screen is gone; the team migrates with `app import-paper-book`",
+            "description": "Paper-book packages; each `paid_amount` > 0 is booked as a sale + payment on its `paid_on` (revenue of that day). Owner-only; the team migrates with `app import-paper-book`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1829,7 +1829,7 @@
             "description": "customer.phone_taken with existing_id"
           },
           "422": {
-            "description": "validation_failed (fields prefixed customer. / packages[j].), idempotency.key_reuse_mismatch"
+            "description": "validation_failed (fields prefixed customer. / packages[j]., e.g. packages[0].paid_on required / in_future, packages[0].paid_amount negative / out_of_range), idempotency.key_reuse_mismatch"
           }
         }
       }
@@ -6377,6 +6377,17 @@
               "$ref": "#/components/schemas/OpeningItemCreate"
             }
           },
+          "method": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PaperMethodDto",
+                "description": "Default `cash`."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "name": {
             "type": [
               "string",
@@ -6392,10 +6403,23 @@
             "format": "uuid",
             "description": "The current plan this old package matches, if any (reference only: items and price are\nwhat the paper book says)."
           },
+          "paid_amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Money the customer paid for it on paper, in đồng (0 – 10 000 000 000, default 0). Above 0,\nit is booked as an ordinary sale + payment on `paid_on`: revenue of that day, in the\nledger, the reports, the history and \"Đã chi\", like any other sale."
+          },
+          "paid_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Day it was paid (the paper date), required when `paid_amount` > 0; not in the future."
+          },
           "sold_price": {
             "type": "integer",
             "format": "int64",
-            "description": "Price the customer originally paid, in đồng (for the per-session value; not revenue)."
+            "description": "Price of the package in the paper book, in đồng (per-session value, refund cap)."
           },
           "starts_on": {
             "type": "string",
@@ -6816,6 +6840,13 @@
             "description": "The visit was voided and its sessions were put back."
           }
         }
+      },
+      "PaperMethodDto": {
+        "type": "string",
+        "enum": [
+          "cash",
+          "bank_transfer"
+        ]
       },
       "PartialMonthLoyalty": {
         "type": "string",

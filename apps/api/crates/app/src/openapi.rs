@@ -56,7 +56,7 @@ use utoipa::OpenApi;
         hr::http::get_my_staff,
         packages::http::read_package,
         packages::http::list_customer_packages,
-        packages::http::import_opening_balance,
+        sales::http::import_opening_balance,
         packages::http::extend_package,
         packages::http::cancel_package,
         sales::http::create_sale,

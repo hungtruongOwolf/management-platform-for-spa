@@ -3,6 +3,7 @@
 pub mod domain;
 pub mod dto;
 pub mod http;
+pub mod paper;
 mod repo;
 pub mod service;
 pub mod voids;
