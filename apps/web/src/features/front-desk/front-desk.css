@@ -149,18 +149,14 @@
     font-weight: 400;
     line-height: 20px;
     text-align: left;
-    visibility: hidden;
-    opacity: 0;
-    transition:
-      opacity var(--dur-fast) var(--ease-out),
-      visibility var(--dur-fast);
+    /* Closed = not rendered at all: no invisible box over the controls under it. */
+    display: none;
   }
   /* Hover or an explicit open (click, tap, Enter/Space). Keyboard focus alone only announces it
    * (aria-describedby), so tabbing past never covers the content around the button. */
   .tip:hover .tip-body,
   .tip-button[aria-expanded="true"] + .tip-body {
-    visibility: visible;
-    opacity: 1;
+    display: block;
   }
   .tip-body.is-left {
     right: auto;
