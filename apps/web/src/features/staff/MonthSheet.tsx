@@ -157,7 +157,7 @@ export function MonthGrid({
         </table>
       </div>
       <p className="text-sm text-text-muted">
-        ✓ đi làm · P nghỉ có phép · ĐX nghỉ đột xuất · K nghỉ không lý do · – chưa chấm · gạch đỏ dưới ô: đi muộn. Bấm một ô để sửa.
+        ✓ đi làm · P nghỉ có phép · ĐX nghỉ đột xuất · K nghỉ không phép · – chưa chấm · gạch đỏ dưới ô: đi muộn. Bấm một ô để sửa.
       </p>
     </div>
   );

@@ -6,8 +6,11 @@
  */
 
 :root {
-  /* Wide enough for "Khách lâu chưa quay lại" on one line; longer labels wrap (EM round 5). */
-  --sidebar-w: 264px;
+  /* Every nav label on ONE line (EM round 6), measured in the browser: the longest, "Khách lâu
+   * chưa quay lại" (Be Vietnam Pro 500 16px), is 184.3px; + item padding 12 + icon 20 + gap 12 +
+   * padding 12 = 240.3; + sidebar padding 2×14 + border 1 = 269.3; + a thin scrollbar (≈ 11px,
+   * short screens) = 280.3 → 288 leaves ≈ 8px for font rendering differences. */
+  --sidebar-w: 288px;
   --sidebar-rail: 76px;
   --topbar-h: 64px;
 }
@@ -106,16 +109,15 @@
     width: var(--sidebar-w);
     padding-inline: 14px;
   }
-  /* EM round 5 item 2: a label is never cut. It wraps to a second line instead ("Gói liệu trình
-   * của khách"), and the rail's nowrap/overflow clipping is undone, not just its size. */
+  /* EM round 5 item 2 + round 6: a label is never cut and never wraps — --sidebar-w is sized for
+   * the longest one. The rail's clipping is undone, not just its size. */
   .sidebar:not([data-collapsed]) :is(.nav-label, .nav-group-label) {
     position: static;
     width: auto;
     height: auto;
-    min-width: 0;
     overflow: visible;
     clip-path: none;
-    white-space: normal;
+    white-space: nowrap;
   }
   .sidebar:not([data-collapsed]) :is(.nav-item, .sidebar-toggle) {
     padding-block: 7px;
@@ -1028,15 +1030,19 @@ h2 .gender-chip {
   border-spacing: 0;
   font-size: 14px;
 }
-/* Tables scroll inside their card, so the sticky header sticks to the card's top edge. */
+/*
+ * Tables grow with their rows and the PAGE scrolls (EM round 6: no scroll area inside a card on
+ * desktop). Only a table genuinely wider than its card scrolls sideways, inside the card.
+ * `position: relative` makes the wrapper the containing block of absolutely positioned
+ * descendants (the `.sr-only` ", Nữ" of every CustomerName): without it they escaped the
+ * scroller, their static position deep in the table stretched the document past the shell, and
+ * the sticky sidebar ran out of containing block half way down (the round 6 bug).
+ */
 .table-wrap {
-  max-height: min(70vh, 720px);
-  overflow: auto;
+  position: relative;
+  overflow-x: auto;
 }
 .data-table th {
-  position: sticky;
-  z-index: 1;
-  top: 0;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border-strong);
   background: var(--surface-2);
@@ -1426,16 +1432,43 @@ h2 .gender-chip {
   align-items: center;
   gap: 8px;
   padding: 0 14px;
+  /* Transparent until chosen, so choosing never changes the button's size. */
+  border: 1px solid transparent;
   border-radius: 8px;
   color: var(--text-muted);
   font-size: 14px;
   font-weight: 500;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
+.segmented > button:not(:disabled, [aria-pressed="true"]):hover {
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  color: var(--text);
+}
+.segmented > button:not(:disabled):active {
+  background: var(--surface);
+}
+/*
+ * Chosen: the whole segment is a raised tile (surface + strong 1px border + shadow) with the label
+ * in primary — one shape that follows the segment's own rounded corners. Round 5 (EM 2026-11-06)
+ * removed the inset gold underline: on a rounded segment it bent at the corners and read as a
+ * broken box. Same weight as the idle state: a bolder label would widen the button and shift its row.
+ */
 .segmented > button[aria-pressed="true"] {
+  border-color: var(--border-strong);
   background: var(--surface);
   color: var(--primary);
-  /* Same weight as the idle state: a bolder label would widen the button and shift its row. */
-  box-shadow: var(--shadow-1), inset 0 -2px 0 var(--accent);
+  box-shadow: var(--shadow-1);
+}
+.segmented > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+@media (prefers-reduced-motion: reduce) {
+  .segmented > button {
+    transition: none;
+  }
 }
 
 /* --- Filter row (features/reports/filters.tsx): search, selects, chips in one wrapping row ----- */
@@ -1529,22 +1562,33 @@ h2 .gender-chip {
 .form-dialog[open] {
   animation: pop-in var(--dur-base) var(--ease-out);
 }
-/* Radio as a tappable row (44px), the selected one marked by an inset gold line, not by weight. */
+/*
+ * Radio/checkbox as a tappable row (44px). Chosen = primary-soft fill + primary border all round
+ * (the native control's own check says it too), not by weight. Round 5 (EM 2026-11-06) dropped the
+ * 3px inset gold line on the left: on the rounded row it bent at the corners and looked broken.
+ */
 .choice {
   display: flex;
   min-height: 44px;
   align-items: center;
   gap: 10px;
-  padding: 0 12px;
+  padding: 6px 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
   font-size: 14px;
   cursor: pointer;
 }
+.choice:hover {
+  border-color: var(--border-strong);
+}
 .choice:has(input:checked) {
+  border-color: var(--primary);
   background: var(--primary-soft);
-  box-shadow: inset 3px 0 0 var(--accent);
+}
+.choice:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 /* --- Tabs (reports: Tổng quan / Sổ doanh thu)------------------------------------------------ */
