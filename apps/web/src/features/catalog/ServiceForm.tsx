@@ -159,7 +159,7 @@ export function ServiceForm({
       }}
       className="row-form"
     >
-      <h3 className="row-form-title">{title}</h3>
+      <h3 className="panel-title">{title}</h3>
       <div className="form-grid">
         <div className="field">
           <label htmlFor={`${id}-name`}>Tên dịch vụ</label>
@@ -243,11 +243,11 @@ export function ServiceForm({
           </label>
         </div>
         {mutation.isError && (
-          <p role="alert" className="form-error span-2">
+          <p role="alert" className="alert span-2">
             {messageFor(mutation.error)}
           </p>
         )}
-        <div className="form-actions span-2">
+        <div className="button-row span-2">
           <button type="submit" aria-busy={mutation.isPending || undefined} className="btn btn-primary">
             {service ? "Lưu dịch vụ" : "Thêm dịch vụ vào bảng giá"}
           </button>

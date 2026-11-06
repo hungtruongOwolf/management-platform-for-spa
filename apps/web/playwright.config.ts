@@ -70,6 +70,11 @@ export default defineConfig({
         APP_DATABASE_URL: stack.appDatabaseUrl(),
         APP_PUBLIC_ORIGIN: stack.webOrigin,
         APP_DATA_KEY: stack.dataKey(),
+        // One browser on 127.0.0.1 drives the whole suite: the production per-IP limit (5 rps,
+        // burst 60) made /me answer 429 mid-run. A test stack limit, accepted by the API only with
+        // APP_ENV=development (config.rs); /auth/* keeps its own strict limit.
+        APP_RATE_PER_SECOND: "200",
+        APP_RATE_BURST: "2000",
         RUST_LOG: process.env["RUST_LOG"] ?? "warn",
       },
     },

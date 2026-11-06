@@ -1,6 +1,31 @@
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import type { Schemas } from "@vpyd/api-client";
 import { api, ifMatch } from "../../lib/api";
+import { addMessages } from "../../lib/errors";
+
+// Error messages only the staff screens can meet: here, not in the startup chunk (lib/errors.ts).
+addMessages(
+  {
+    "payroll.period_closed":
+      "Tháng này đã chốt lương nên không sửa được. Hãy ghi một khoản thưởng/phạt điều chỉnh vào tháng đang mở.",
+    "payroll.month_not_ended": "Tháng chưa kết thúc, chưa chốt lương được.",
+    "payroll.unrecorded_days": "Còn ngày chưa chấm công. Chấm đủ hoặc chọn chốt dù còn thiếu.",
+    "staff.account_taken": "Tài khoản này đã gắn với một nhân viên khác.",
+  },
+  {
+    not_employed: "Ngày này nhân viên chưa vào làm hoặc đã nghỉ.",
+    only_when_present: "Chỉ ghi giờ khi đi làm.",
+    above_ceiling: "Chưa đạt tối đa 30% số điểm.",
+    only_for_fail: "Chỉ nhập điểm tay khi Chưa đạt.",
+    amount_or_points_required: "Nhập số tiền hoặc số điểm.",
+    not_closed: "Tháng này chưa chốt, không cần điều chỉnh.",
+    not_earlier: "Tháng điều chỉnh phải trước tháng ghi.",
+    invalid_month: "Tháng không hợp lệ.",
+    before_joined_on: "Ngày nghỉ việc trước ngày vào làm.",
+    must_be_empty: "Nhân viên đang làm thì không có ngày nghỉ việc.",
+    not_a_member: "Tài khoản không thuộc spa này.",
+  },
+);
 
 export type StaffProfile = Schemas["StaffProfileDto"];
 export type StaffProfileWrite = Schemas["StaffProfileWrite"];

@@ -21,7 +21,22 @@ pub struct Config {
     pub public_origin: String,
     /// AES-256 key (base64) for field encryption of health notes. Never stored in the database.
     pub data_key: SecretString,
+    /// A looser per-IP API rate limit for the local test stack (E2E, Lighthouse), where one
+    /// browser on 127.0.0.1 drives a whole suite. Accepted only in development: staging and
+    /// production always run the standard limit (`HttpPolicy::standard`).
+    pub rate_limit: Option<RateLimit>,
 }
+
+/// Per-IP API rate limit: sustained requests per second and the burst on top.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RateLimit {
+    pub per_second: u64,
+    pub burst: u32,
+}
+
+/// Environment variables of the development-only rate-limit override.
+pub const RATE_PER_SECOND_VAR: &str = "APP_RATE_PER_SECOND";
+pub const RATE_BURST_VAR: &str = "APP_RATE_BURST";
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ConfigError {
@@ -125,14 +140,61 @@ impl Config {
             });
         }
 
+        let rate_limit = rate_limit_override(&lookup, environment)?;
+
         Ok(Self {
             bind_addr,
             environment,
             app_database_url: SecretString::from(app_database_url),
             public_origin,
             data_key: SecretString::from(data_key),
+            rate_limit,
         })
     }
+}
+
+/// Reads `APP_RATE_PER_SECOND` + `APP_RATE_BURST` (both or neither). Outside development the
+/// variables are refused rather than ignored, so a deployed API can never start with a weakened
+/// limit by mistake.
+fn rate_limit_override(
+    lookup: &impl Fn(&str) -> Option<String>,
+    environment: Environment,
+) -> Result<Option<RateLimit>, ConfigError> {
+    let per_second = lookup(RATE_PER_SECOND_VAR).filter(|v| !v.trim().is_empty());
+    let burst = lookup(RATE_BURST_VAR).filter(|v| !v.trim().is_empty());
+    if per_second.is_none() && burst.is_none() {
+        return Ok(None);
+    }
+    if environment != Environment::Development {
+        return Err(ConfigError::Invalid {
+            name: RATE_PER_SECOND_VAR,
+            value: "(the rate-limit override is accepted only with APP_ENV=development)".to_owned(),
+        });
+    }
+    let (Some(per_second), Some(burst)) = (per_second, burst) else {
+        return Err(ConfigError::Invalid {
+            name: RATE_BURST_VAR,
+            value: format!("set both {RATE_PER_SECOND_VAR} and {RATE_BURST_VAR}, or neither"),
+        });
+    };
+    let parsed_rate = per_second.trim().parse::<u64>().ok().filter(|n| *n > 0);
+    let Some(per_second_n) = parsed_rate else {
+        return Err(ConfigError::Invalid {
+            name: RATE_PER_SECOND_VAR,
+            value: per_second,
+        });
+    };
+    let parsed_burst = burst.trim().parse::<u32>().ok().filter(|n| *n > 0);
+    let Some(burst_n) = parsed_burst else {
+        return Err(ConfigError::Invalid {
+            name: RATE_BURST_VAR,
+            value: burst,
+        });
+    };
+    Ok(Some(RateLimit {
+        per_second: per_second_n,
+        burst: burst_n,
+    }))
 }
 
 #[cfg(test)]
@@ -315,6 +377,67 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn the_rate_limit_override_is_read_in_development() {
+        assert_eq!(
+            Config::from_lookup(lookup(&valid())).map(|c| c.rate_limit),
+            Ok(None)
+        );
+        let mut pairs = valid();
+        pairs.extend([(RATE_PER_SECOND_VAR, "200"), (RATE_BURST_VAR, "2000")]);
+        assert_eq!(
+            Config::from_lookup(lookup(&pairs)).map(|c| c.rate_limit),
+            Ok(Some(RateLimit {
+                per_second: 200,
+                burst: 2000
+            }))
+        );
+    }
+
+    #[test]
+    fn the_rate_limit_override_is_refused_outside_development() {
+        for env in ["staging", "production"] {
+            let mut pairs = deployed(env);
+            pairs.extend([(RATE_PER_SECOND_VAR, "200"), (RATE_BURST_VAR, "2000")]);
+            assert!(
+                matches!(
+                    Config::from_lookup(lookup(&pairs)).err(),
+                    Some(ConfigError::Invalid {
+                        name: RATE_PER_SECOND_VAR,
+                        ..
+                    })
+                ),
+                "{env}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_rate_limit_override_needs_both_positive_values() {
+        let invalid = |extra: &[(&'static str, &'static str)]| {
+            let mut pairs = valid();
+            pairs.extend_from_slice(extra);
+            matches!(
+                Config::from_lookup(lookup(&pairs)).err(),
+                Some(ConfigError::Invalid { .. })
+            )
+        };
+        assert!(invalid(&[(RATE_PER_SECOND_VAR, "200")]));
+        assert!(invalid(&[(RATE_BURST_VAR, "2000")]));
+        assert!(invalid(&[
+            (RATE_PER_SECOND_VAR, "0"),
+            (RATE_BURST_VAR, "10")
+        ]));
+        assert!(invalid(&[
+            (RATE_PER_SECOND_VAR, "fast"),
+            (RATE_BURST_VAR, "10")
+        ]));
+        assert!(invalid(&[
+            (RATE_PER_SECOND_VAR, "10"),
+            (RATE_BURST_VAR, "-1")
+        ]));
     }
 
     #[test]

@@ -92,6 +92,40 @@
   --fs-md: 17px;
   --fs-lg: 20px;
   --fs-xl: 24px;
+  /* Off-scale sizes with one job each (design-system.md § Quy tắc 1, 5 and the nav exception). */
+  --fs-label: 14px; /* field labels, legends (rulebook 5), dense data-table cells */
+  --fs-nav: 16px; /* sidebar nav labels: --sidebar-w is measured at this size */
+  --fs-search: 18px; /* the customer search on /quay and /khach-hang, read from a distance */
+  --fs-nav-group: 11px; /* uppercase gold nav group labels: navigation chrome only */
+
+  /*
+   * Gradients, scrims and lifted shadows: tokens too, so no component writes a raw colour or a
+   * gradient of its own (scripts/check-tokens test). They are built from the colour tokens above,
+   * so the dark blocks need no copies.
+   */
+  --gradient-chrome: linear-gradient(180deg, var(--chrome-bg-2), var(--chrome-bg) 55%);
+  --gradient-chrome-band: linear-gradient(135deg, var(--chrome-bg-2), var(--chrome-bg));
+  --gradient-nav-active: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--chrome-accent) 20%, transparent),
+    var(--chrome-hover)
+  );
+  --gradient-rule: linear-gradient(
+    90deg,
+    var(--border),
+    color-mix(in srgb, var(--accent) 60%, transparent),
+    var(--border)
+  );
+  --gradient-rule-chrome: linear-gradient(90deg, transparent, var(--chrome-accent), transparent);
+  --gradient-timeline: linear-gradient(180deg, var(--accent), var(--border) 40%);
+  --gradient-sheen: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--surface) 65%, transparent),
+    transparent
+  );
+  --scrim: rgb(20 8 6 / 0.45);
+  --shadow-up: 0 -6px 16px rgb(0 0 0 / 0.08);
 
   --dur-fast: 120ms;
   --dur-base: 200ms;
@@ -141,7 +175,9 @@
     --chrome-hover: rgb(246 237 225 / 0.08);
     --shadow-1: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 8px rgb(0 0 0 / 0.25);
     --shadow-2: 0 12px 32px rgb(0 0 0 / 0.5);
-        color-scheme: dark;
+    --scrim: rgb(0 0 0 / 0.6);
+    --shadow-up: 0 -6px 16px rgb(0 0 0 / 0.4);
+    color-scheme: dark;
   }
 }
 
@@ -181,6 +217,8 @@
   --chrome-hover: rgb(246 237 225 / 0.08);
   --shadow-1: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 8px rgb(0 0 0 / 0.25);
   --shadow-2: 0 12px 32px rgb(0 0 0 / 0.5);
+  --scrim: rgb(0 0 0 / 0.6);
+  --shadow-up: 0 -6px 16px rgb(0 0 0 / 0.4);
   color-scheme: dark;
 }
 

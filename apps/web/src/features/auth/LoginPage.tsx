@@ -144,7 +144,7 @@ export function LoginPage({ next }: { next?: string | undefined }) {
         </div>
 
         {serverError && (
-          <p role="alert" className="rounded-[10px] bg-danger-soft p-3 text-sm text-danger">
+          <p role="alert" className="alert">
             {serverError}
           </p>
         )}

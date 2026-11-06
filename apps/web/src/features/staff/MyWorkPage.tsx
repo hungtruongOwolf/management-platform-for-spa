@@ -61,7 +61,7 @@ export function MyWorkPage() {
 function Upcoming({ items, today }: { items: UpcomingAppointment[]; today: string }) {
   return (
     <section className="card grid gap-3 p-4 sm:p-5" aria-labelledby="my-upcoming">
-      <h2 id="my-upcoming" className="section-title">
+      <h2 id="my-upcoming" className="panel-title">
         Lịch hẹn sắp tới
       </h2>
       {items.length === 0 ? (
@@ -95,7 +95,7 @@ function Served({ items, month }: { items: ServedVisit[]; month: string }) {
   const sessions = items.reduce((n, v) => n + v.services.reduce((m, s) => m + s.qty, 0), 0);
   return (
     <section className="card grid gap-3 p-4 sm:p-5" aria-labelledby="my-served">
-      <h2 id="my-served" className="section-title">
+      <h2 id="my-served" className="panel-title">
         Khách đã làm · {monthLabel(month)}
       </h2>
       {items.length === 0 ? (

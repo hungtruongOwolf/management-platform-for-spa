@@ -104,7 +104,7 @@ export function CustomerSearch({
             hits[active] ? `${listId}-${hits[active].id}` : undefined
           }
           placeholder="Không cần gõ dấu"
-          className="min-h-13 w-0 rounded-[10px] border-2 border-border bg-surface px-4 text-lg focus:border-primary"
+          className="input input-lg w-0"
         />
         <button
           type="button"
@@ -135,7 +135,7 @@ export function CustomerSearch({
               id={listId}
               role="listbox"
               aria-label="Kết quả tìm khách"
-              className="divide-y divide-border overflow-hidden rounded-[10px] border border-border"
+              className="divide-y divide-border overflow-hidden rounded-md border border-border"
             >
               {hits.map((c, i) => (
                 <li

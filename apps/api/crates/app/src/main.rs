@@ -75,7 +75,13 @@ async fn serve() -> anyhow::Result<()> {
         .context("refusing to start: APP_DATABASE_URL must be the app_rw role (RLS applies)")?;
     jobs::spawn_idempotency_purge(pool.clone());
 
-    let policy = HttpPolicy::standard(config.public_origin.clone());
+    let mut policy = HttpPolicy::standard(config.public_origin.clone());
+    if let Some(limit) = config.rate_limit {
+        // Development only (Config refuses it elsewhere): the E2E/Lighthouse stack.
+        tracing::warn!(?limit, "API rate limit overridden for the local test stack");
+        policy.rate_per_second = limit.per_second;
+        policy.rate_burst = limit.burst;
+    }
     let cipher = kernel::crypto::FieldCipher::from_base64(config.data_key.expose_secret())
         .map_err(|e| anyhow::anyhow!("APP_DATA_KEY: {e}"))?;
     let app = app::router(

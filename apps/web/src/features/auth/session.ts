@@ -73,9 +73,59 @@ const MFA_STEP_BY_CODE: Record<string, MfaStep> = {
   "auth.mfa_enrollment_required": "mfa_enroll",
 };
 
+/**
+ * A busy API (429 rate limit, 503) is not a broken session: `/me` is asked again with backoff
+ * (0.5 → 1 → 2 → 4 s, or the server's `Retry-After`, at most 8 s) before the error page. Every
+ * screen waits on `/me`, so one burst of requests must not crash the whole app. While it waits,
+ * `authRetry.get()` is true and the pending screen says "Đang thử lại…".
+ */
+export const ME_RETRY_DELAYS_MS = [500, 1000, 2000, 4000] as const;
+const RETRY_AFTER_CAP_MS = 8000;
+
+let retrying = false;
+const retryListeners = new Set<() => void>();
+function setRetrying(value: boolean): void {
+  if (retrying === value) return;
+  retrying = value;
+  for (const listener of retryListeners) listener();
+}
+/** For `useSyncExternalStore`: whether `/me` is being retried after a 429/503 right now. */
+export const authRetry = {
+  subscribe: (listener: () => void): (() => void) => {
+    retryListeners.add(listener);
+    return () => {
+      retryListeners.delete(listener);
+    };
+  },
+  get: (): boolean => retrying,
+};
+
+function isBusy(error: unknown): error is ApiError {
+  return error instanceof ApiError && (error.status === 429 || error.status === 503);
+}
+
+async function fetchMe(): Promise<unknown> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const reply = await api("/me");
+      setRetrying(false);
+      return reply;
+    } catch (error) {
+      const delay = ME_RETRY_DELAYS_MS[attempt];
+      if (!isBusy(error) || delay === undefined) {
+        setRetrying(false);
+        throw error;
+      }
+      setRetrying(true);
+      const wait = error.retryAfter === undefined ? delay : Math.min(error.retryAfter * 1000, RETRY_AFTER_CAP_MS);
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+  }
+}
+
 async function fetchAuthState(): Promise<AuthState> {
   try {
-    return { state: "signed_in", me: parseMe(await api("/me")) };
+    return { state: "signed_in", me: parseMe(await fetchMe()) };
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
       const step = MFA_STEP_BY_CODE[error.code];

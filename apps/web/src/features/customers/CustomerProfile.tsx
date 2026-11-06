@@ -49,11 +49,11 @@ function HealthNoteEditor({ customer, onSaved, onCancel }: { customer: Customer;
         </span>
       </div>
       {mutation.isError && (
-        <p role="alert" className="form-error">
+        <p role="alert" className="alert">
           {messageFor(mutation.error)}
         </p>
       )}
-      <div className="form-actions">
+      <div className="button-row">
         <button type="submit" aria-busy={mutation.isPending || undefined} className="btn btn-primary">
           Lưu lưu ý sức khỏe
         </button>
@@ -121,7 +121,7 @@ function HealthSection({ customer, canEdit, onChanged }: { customer: Customer; c
           </span>
         </div>
       ) : (
-        <p className="khach-empty">Chưa ghi lưu ý sức khỏe nào{canEdit ? ". Bấm “Thêm lưu ý sức khỏe” nếu khách có chống chỉ định." : "."}</p>
+        <p className="empty-note">Chưa ghi lưu ý sức khỏe nào{canEdit ? ". Bấm “Thêm lưu ý sức khỏe” nếu khách có chống chỉ định." : "."}</p>
       )}
     </section>
   );

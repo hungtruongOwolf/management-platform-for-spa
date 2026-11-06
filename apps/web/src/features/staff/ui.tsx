@@ -12,7 +12,7 @@ export function dayLabel(iso: string): string {
 
 export function ClosedBanner() {
   return (
-    <p role="status" className="flex items-center gap-2 rounded-[10px] bg-surface-2 p-3 text-sm text-text-muted">
+    <p role="status" className="note flex items-center gap-2">
       <Icon name="alert" className="size-4" />
       Tháng này đã chốt lương: chỉ xem. Cần sửa thì ghi một khoản thưởng/phạt điều chỉnh vào tháng đang mở.
     </p>

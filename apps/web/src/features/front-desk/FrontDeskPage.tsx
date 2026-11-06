@@ -837,7 +837,7 @@ export function FrontDeskPage() {
                   }}
                 />
               ) : (
-                <p className="desk-empty">
+                <p className="empty-note">
                   Chưa chọn khách. Tìm theo SĐT hoặc tên ở ô phía trên; khách
                   đặt trước thì mở tab “Lịch hẹn”.
                 </p>
@@ -875,10 +875,10 @@ export function FrontDeskPage() {
                 </Suspense>
               )}
               {!customer && (
-                <p className="desk-empty">Chọn khách để bắt đầu ghi lượt.</p>
+                <p className="empty-note">Chọn khách để bắt đầu ghi lượt.</p>
               )}
               {customer && lines.length === 0 && sales.length === 0 && (
-                <p className="desk-empty">
+                <p className="empty-note">
                   Chưa có dịch vụ. Bấm “Trừ 1 buổi” ở gói liệu trình, chọn dịch
                   vụ lẻ bên dưới, hoặc bán gói liệu trình.
                 </p>
@@ -1104,7 +1104,7 @@ export function FrontDeskPage() {
       <div
         role="status"
         aria-live="polite"
-        className={`desk-toast ${toast ? "is-shown" : ""} ${toast?.error ? "is-error" : ""}`}
+        className={`toast ${toast ? "is-shown" : ""} ${toast?.error ? "is-error" : ""}`}
       >
         {toast?.text}
       </div>

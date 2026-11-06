@@ -1,20 +1,6 @@
 /* Staff management screen (/nhan-vien). Loaded with the lazy chunk only; tokens only. */
 
 @layer components {
-  .section-title {
-    font-size: var(--fs-md);
-    font-weight: 600;
-    line-height: 24px;
-  }
-
-  .link-button {
-    color: var(--primary);
-    font-weight: 600;
-    text-align: left;
-    text-decoration: underline;
-    text-underline-offset: 3px;
-  }
-
   .tabs-scroll {
     overflow-x: auto;
     scrollbar-width: none;
@@ -86,14 +72,6 @@
     align-items: center;
     gap: 10px 12px;
     padding: 12px 14px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    background: var(--surface-2);
-  }
-  /* "Đến hạn đánh giá": needs attention = the warning colours (gold is for the chrome and ★). */
-  .book-banner-accent {
-    border-color: var(--warning-border);
-    background: var(--warning-bg);
   }
   /* Date field + progress: both are "label line, then a 44 px box", top-aligned, so the labels
      share one baseline and the boxes another. */
@@ -107,7 +85,7 @@
     display: grid;
     flex: 1 1 16rem;
     gap: 6px;
-    font-size: 14px;
+    font-size: var(--fs-sm);
   }
   .book-progress-label {
     font-weight: 500;
@@ -146,16 +124,17 @@
   .book-chip {
     display: inline-flex;
     align-items: center;
-    min-height: 36px;
-    padding: 4px 12px;
-    border: 1px solid var(--border);
+    min-height: 44px;
+    padding: 4px 14px;
+    border: 1px solid var(--border-strong);
     border-radius: 999px;
     background: var(--surface);
-    font-size: 0.875rem;
+    font-size: var(--fs-sm);
     font-weight: 600;
   }
   .book-chip:hover {
-    background: var(--surface-2);
+    border-color: var(--primary);
+    color: var(--primary);
   }
   /* One person's card: the same three bands in every card so they line up down the list. */
   .book-card {
@@ -182,7 +161,7 @@
     flex: 1 1 12rem;
   }
   .book-card-name {
-    font-size: 1rem;
+    font-size: var(--fs-md);
     font-weight: 600;
     line-height: 1.35;
     overflow-wrap: anywhere;
@@ -200,7 +179,7 @@
     align-items: center;
     gap: 6px;
     color: var(--danger);
-    font-size: 0.875rem;
+    font-size: var(--fs-sm);
   }
 
   /* Attendance choice (AttendanceChoice.tsx): four equal worded options filling the row; 2 × 2
@@ -211,7 +190,7 @@
     gap: 4px;
     padding: 4px;
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     background: var(--surface-2);
   }
   /* Narrow cards: 2 × 2, words only on one line (the code stays in the name and the tooltip). */
@@ -238,9 +217,9 @@
     gap: 6px;
     padding: 4px 10px;
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     color: var(--text);
-    font-size: 0.875rem;
+    font-size: var(--fs-base);
     font-weight: 500;
     line-height: 1.25;
     text-align: center;
@@ -314,9 +293,9 @@
   }
   .att-choice-code {
     padding: 0 6px;
-    border-radius: 6px;
+    border-radius: 999px;
     background: color-mix(in srgb, currentColor 10%, transparent);
-    font-size: 0.75rem;
+    font-size: var(--fs-xs);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
@@ -339,7 +318,7 @@
   }
   .book-record-title {
     color: var(--text-muted);
-    font-size: 0.8125rem;
+    font-size: var(--fs-sm);
     font-weight: 600;
   }
   .book-record-row {
@@ -363,7 +342,7 @@
   .book-log {
     display: grid;
     gap: 6px;
-    font-size: 0.875rem;
+    font-size: var(--fs-sm);
   }
   .book-log > li {
     display: flex;
@@ -374,7 +353,7 @@
   .book-log-label {
     min-width: 4.75rem;
     color: var(--text-muted);
-    font-size: 0.8125rem;
+    font-size: var(--fs-sm);
   }
   .book-log-amount {
     font-weight: 600;
@@ -393,7 +372,7 @@
   }
   .my-calendar-head {
     color: var(--text-muted);
-    font-size: 0.75rem;
+    font-size: var(--fs-xs);
     font-weight: 600;
     text-align: center;
   }
@@ -403,11 +382,11 @@
     padding: 4px;
     border-radius: var(--radius-sm);
     background: var(--surface-2);
-    font-size: 0.75rem;
+    font-size: var(--fs-xs);
     align-content: space-between;
   }
   .my-calendar-day .code {
-    font-size: 0.9375rem;
+    font-size: var(--fs-base);
     font-weight: 700;
     text-align: center;
   }
@@ -431,10 +410,10 @@
   }
   .my-totals dt {
     color: var(--text-muted);
-    font-size: 0.8125rem;
+    font-size: var(--fs-sm);
   }
   .my-totals dd {
-    font-size: 1.25rem;
+    font-size: var(--fs-lg);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
@@ -486,7 +465,7 @@
   }
   .counter-label {
     min-width: 4.5rem;
-    font-size: 0.875rem;
+    font-size: var(--fs-label);
     font-weight: 500;
   }
   .counter-box {

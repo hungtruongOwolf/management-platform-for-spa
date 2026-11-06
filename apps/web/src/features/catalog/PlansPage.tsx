@@ -126,7 +126,7 @@ export function PlansPage() {
           Đang bán
         </h2>
         {selling.length === 0 && (
-          <p className="khach-empty">
+          <p className="empty-note">
             Chưa có mẫu gói liệu trình nào đang bán.{canManage ? " Bấm “Tạo mẫu gói” để tạo gói đầu tiên (ví dụ: Gội đầu 10 buổi tặng 2)." : ""}
           </p>
         )}
@@ -136,9 +136,9 @@ export function PlansPage() {
           </ul>
         )}
         {stopped.length > 0 && (
-          <details className="closed-group">
+          <details className="disclosure">
             <summary>
-              <Icon name="chevron-right" className="size-4" /> Ngừng bán ({stopped.length})
+              Ngừng bán ({stopped.length})
             </summary>
             <ul className="row-list" aria-label="Mẫu gói ngừng bán">
               {stopped.map(row)}

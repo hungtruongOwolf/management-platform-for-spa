@@ -110,7 +110,7 @@ export function PersonDaySheet({
       >
         {canAttendance && (
           <fieldset className="grid gap-3">
-            <legend className="section-title mb-1">Chấm công</legend>
+            <legend className="panel-title mb-1">Chấm công</legend>
             <div className="grid gap-2">
               {STATUSES.map((st) => (
                 <label key={st} className="choice">
@@ -168,7 +168,7 @@ export function PersonDaySheet({
         )}
         {canReview && (
           <fieldset className="grid gap-3">
-            <legend className="section-title mb-1">Khen, phàn nàn (không bắt buộc)</legend>
+            <legend className="panel-title mb-1">Khen, phàn nàn (không bắt buộc)</legend>
             <div className="flex flex-wrap gap-4">
               <Counter label="Khen" value={compliments} disabled={false} onChange={setCompliments} />
               <Counter label="Phàn nàn" value={complaints} disabled={false} onChange={setComplaints} />

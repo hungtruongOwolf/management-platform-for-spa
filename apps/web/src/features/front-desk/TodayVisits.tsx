@@ -419,7 +419,7 @@ export function TodayVisits({
         </p>
       )}
       {notice && (
-        <p role="status" className="rounded-[10px] bg-primary-soft p-2 text-sm">
+        <p role="status" className="note text-text">
           {notice}
         </p>
       )}
@@ -449,7 +449,7 @@ export function TodayVisits({
         </p>
       )}
       {today.data && today.data.length > 0 && (
-        <div className="rt-host visits-host overflow-hidden rounded-[10px] border border-border">
+        <div className="rt-host visits-host overflow-hidden rounded-md border border-border">
           <ResponsiveTable
             caption={isToday ? "Lượt khách hôm nay" : "Lượt khách trong ngày"}
             rows={visible}

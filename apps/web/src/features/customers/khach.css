@@ -2,8 +2,9 @@
  * Customers, packages and the catalog on the redesign rulebook (design-system.md "Quy tắc"):
  * Danh sách khách hàng, hồ sơ khách, Khách mới, Bán gói liệu trình, Khách lâu chưa quay lại,
  * Gói liệu trình của khách, Mẫu gói liệu trình, Bảng giá dịch vụ. Loaded with those lazy screens.
- * Panels (`.panel`), fields (`.input`, `.field-error`) and `.section-label` are the shared rulebook
- * classes of front-desk.css; this file only adds what these screens need. Inside a panel rows are
+ * Panels, fields, alerts, the closed-items disclosure, the toast and the label/value grid are the
+ * shared classes of components.css (unification pass 2026-11-06); this file only adds what these
+ * screens need. Inside a panel rows are
  * divided by hairlines: no card in a card, no side stripes, no decorative icons.
  */
 @layer components {
@@ -111,61 +112,6 @@
     padding-block: 2px;
   }
 
-  /* Closed items (used-up or cancelled packages, plans and services no longer sold): one
-   * disclosure with a count, under the open ones. */
-  .closed-group {
-    border-top: 1px solid var(--border);
-  }
-  .closed-group > summary {
-    display: flex;
-    min-height: 44px;
-    align-items: center;
-    gap: 8px;
-    color: var(--text-muted);
-    font-size: var(--fs-sm);
-    font-weight: 600;
-    cursor: pointer;
-    list-style: none;
-  }
-  .closed-group > summary::-webkit-details-marker {
-    display: none;
-  }
-  .closed-group > summary .icon {
-    transition: transform var(--dur-fast) var(--ease-out);
-  }
-  .closed-group[open] > summary .icon {
-    transform: rotate(90deg);
-  }
-  .closed-group > summary:hover {
-    color: var(--text);
-  }
-  .closed-group > .row-list {
-    padding-bottom: 4px;
-  }
-
-  /* Empty states teach the next step. */
-  .khach-empty {
-    padding: 8px 0;
-    color: var(--text-muted);
-  }
-
-  /* --- Contact details ---------------------------------------------------------------------- */
-  .detail-grid {
-    display: grid;
-    gap: 8px;
-  }
-  .detail-grid > div {
-    display: grid;
-    grid-template-columns: 7rem minmax(0, 1fr);
-    gap: 12px;
-  }
-  .detail-grid dt {
-    color: var(--text-muted);
-  }
-  .detail-grid dd {
-    overflow-wrap: anywhere;
-    font-variant-numeric: tabular-nums;
-  }
   .panel-section {
     display: grid;
     min-width: 0;
@@ -195,22 +141,10 @@
   }
   .form-grid legend {
     margin-bottom: 6px;
-    font-size: 14px;
+    font-size: var(--fs-label);
     font-weight: 500;
   }
-  .field .field-hint,
-  .field .field-error {
-    font-weight: 400;
-  }
   .choice-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .choice-row > .choice {
-    font-size: var(--fs-base);
-  }
-  .form-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
@@ -221,30 +155,15 @@
     line-height: 32px;
     font-variant-numeric: tabular-nums;
   }
-  .form-total-label {
-    color: var(--text-muted);
-    font-size: var(--fs-sm);
-    font-weight: 600;
-  }
-  /* A notice under a field (the phone already has a profile): amber, with one action. */
+  /* A notice under a field (the phone already has a profile): the shared callout, one row with
+   * its action. */
   .field-notice {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 0 8px;
     padding: 4px 4px 4px 12px;
-    border-radius: var(--radius-sm);
-    background: var(--warning-bg);
-    color: var(--warning-text);
-    font-size: var(--fs-sm);
     font-weight: 400;
-  }
-  .form-error {
-    padding: 12px;
-    border-radius: var(--radius-md);
-    background: var(--danger-soft);
-    color: var(--danger);
-    font-size: var(--fs-sm);
   }
   /* An inline form opened under its row: a hairline above, no box. */
   .row-form {
@@ -260,11 +179,6 @@
     margin-top: 0;
     padding-top: 0;
     border-top: 0;
-  }
-  .row-form-title {
-    font-size: var(--fs-md);
-    font-weight: 600;
-    line-height: 24px;
   }
 
   /* --- Catalog rows: name + meta | prices | Sửa ---------------------------------------------- */
@@ -283,11 +197,6 @@
     font-variant-numeric: tabular-nums;
     text-align: right;
     white-space: nowrap;
-  }
-  .price-amounts .price-label {
-    margin-right: 4px;
-    color: var(--text-muted);
-    font-size: var(--fs-sm);
   }
   .price-amounts .price-value {
     font-weight: 600;
@@ -333,34 +242,6 @@
     color: var(--text-muted);
     font-size: var(--fs-xs);
     line-height: 16px;
-  }
-
-  /* --- Toast: top centre, never over the sticky actions -------------------------------------- */
-  .khach-toast {
-    position: fixed;
-    z-index: 60;
-    top: calc(env(safe-area-inset-top) + 72px);
-    left: 50%;
-    max-width: calc(100% - 32px);
-    padding: 12px 16px;
-    border-radius: var(--radius-md);
-    background: var(--chrome-bg);
-    box-shadow: var(--shadow-2);
-    color: var(--chrome-text);
-    opacity: 0;
-    pointer-events: none;
-    transform: translate(-50%, -8px);
-    transition:
-      opacity var(--dur-base) var(--ease-out),
-      transform var(--dur-base) var(--ease-out);
-  }
-  .khach-toast:empty {
-    padding: 0;
-    box-shadow: none;
-  }
-  .khach-toast.is-shown {
-    opacity: 1;
-    transform: translate(-50%, 0);
   }
 
   /* --- Package row: name + chip | trigger, meta below, the chosen form under it -------------- */

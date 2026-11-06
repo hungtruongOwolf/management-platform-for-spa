@@ -19,7 +19,7 @@ export function QrCode({ value, label }: { value: string; label: string }) {
       viewBox={`0 0 ${String(size)} ${String(size)}`}
       shapeRendering="crispEdges"
       // Always black on white, also in dark mode: scanners need that contrast.
-      className="h-48 w-48 rounded-[6px] bg-white text-black"
+      className="h-48 w-48 rounded-sm bg-white text-black"
     >
       <path d={cells.join("")} fill="currentColor" />
     </svg>

@@ -66,7 +66,7 @@ export function StaffPage() {
         {can(me, "staff.read_own") ? (
           <MyMonth month={month} />
         ) : (
-          <p role="alert" className="rounded-[10px] bg-surface-2 p-4 text-text-muted">
+          <p role="alert" className="note">
             Màn hình này chưa mở cho tài khoản của bạn.
           </p>
         )}

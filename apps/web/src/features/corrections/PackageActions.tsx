@@ -193,7 +193,7 @@ function ExtendForm({
       className="pkg-actions-form row-form"
     >
       <div>
-        <h3 id={titleId} className="row-form-title">
+        <h3 id={titleId} className="panel-title">
           Gia hạn "{pkg.name}"
         </h3>
         <p className="row-meta">
@@ -265,11 +265,11 @@ function ExtendForm({
           )}
         </div>
         {action.error != null && !fieldMessage(action.error, "reason") && !fieldMessage(action.error, "expires_on") && (
-          <p role="alert" className="form-error span-2">
+          <p role="alert" className="alert span-2">
             {messageFor(action.error)}
           </p>
         )}
-        <div className="form-actions span-2">
+        <div className="button-row span-2">
           <button type="submit" aria-busy={action.pending || undefined} className="btn btn-primary">
             Gia hạn
           </button>
@@ -334,7 +334,7 @@ function CancelForm({
       className="pkg-actions-form row-form"
     >
       <div>
-        <h3 id={titleId} className="row-form-title">
+        <h3 id={titleId} className="panel-title">
           Hủy gói "{pkg.name}"
         </h3>
         <p className="row-meta">
@@ -421,11 +421,11 @@ function CancelForm({
           )}
         </div>
         {action.error != null && !fieldMessage(action.error, "reason") && (
-          <p role="alert" className="form-error span-2">
+          <p role="alert" className="alert span-2">
             {messageFor(action.error)}
           </p>
         )}
-        <div className="form-actions span-2">
+        <div className="button-row span-2">
           <button type="submit" aria-busy={action.pending || undefined} className="btn btn-danger">
             {amount > 0 ? `Hủy và hoàn ${formatVnd(amount)}` : "Hủy gói"}
           </button>

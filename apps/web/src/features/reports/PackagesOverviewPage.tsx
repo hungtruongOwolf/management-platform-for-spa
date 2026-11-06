@@ -33,7 +33,7 @@ export function CustomerCell({
 }): ReactNode {
   return (
     <>
-      <Link to="/khach-hang/$customerId" params={{ customerId: id }} className="font-semibold text-primary hover:underline">
+      <Link to="/khach-hang/$customerId" params={{ customerId: id }} className="link">
         <CustomerName name={name} gender={gender} />
       </Link>
       {phone && <span className="mt-1 block text-xs text-text-muted tabular">{displayPhone(phone)}</span>}

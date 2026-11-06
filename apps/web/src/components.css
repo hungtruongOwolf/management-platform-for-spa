@@ -44,7 +44,7 @@
 .chrome {
   --focus: var(--chrome-accent);
   background-color: var(--chrome-bg);
-  background-image: linear-gradient(180deg, var(--chrome-bg-2), var(--chrome-bg) 55%);
+  background-image: var(--gradient-chrome);
   color: var(--chrome-text);
 }
 
@@ -164,7 +164,7 @@
 .nav-group-label {
   margin: 6px 12px 2px;
   color: var(--chrome-accent);
-  font-size: 11px;
+  font-size: var(--fs-nav-group);
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -179,6 +179,7 @@
   padding: 0 12px;
   border-radius: var(--radius-md);
   color: var(--chrome-text-muted);
+  font-size: var(--fs-nav);
   font-weight: 500;
 }
 .nav-item:hover,
@@ -187,7 +188,7 @@
   color: var(--chrome-text);
 }
 .nav-item.active {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--chrome-accent) 20%, transparent), var(--chrome-hover));
+  background: var(--gradient-nav-active);
   color: var(--chrome-text);
 }
 /* Active indicator: a gold bar that grows from the centre (transform only). */
@@ -214,7 +215,7 @@
   width: 100%;
   border-top: 1px solid color-mix(in srgb, var(--chrome-accent) 25%, transparent);
   border-radius: 0;
-  font-size: 14px;
+  font-size: var(--fs-sm);
 }
 @media (min-width: 1024px) {
   .sidebar-toggle {
@@ -241,7 +242,7 @@
   bottom: 0;
   left: 0;
   height: 1px;
-  background: linear-gradient(90deg, var(--border), color-mix(in srgb, var(--accent) 60%, transparent), var(--border));
+  background: var(--gradient-rule);
   content: "";
 }
 .topbar-brand {
@@ -273,7 +274,7 @@
   border-radius: 999px;
   background: var(--surface);
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: var(--fs-sm);
   box-shadow: var(--shadow-1);
 }
 @media (min-width: 640px) {
@@ -286,16 +287,20 @@
   border-color: var(--primary);
   color: var(--text);
 }
+/* One key cap for the app (top bar "Ctrl K", the /quay shortcut list). */
 kbd {
-  padding: 1px 6px;
-  border: 1px solid var(--border);
-  border-bottom-width: 2px;
-  border-radius: 6px;
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--text-muted);
   font-family: var(--font-ui);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 600;
+  line-height: 18px;
+  text-align: center;
 }
 /* Account menu: initial (+ name and role from 1024px) → panel with spa, theme, lock, sign out. */
 .user-menu {
@@ -343,7 +348,7 @@ kbd {
     max-width: 160px;
     height: auto;
     clip-path: none;
-    font-size: 14px;
+    font-size: var(--fs-sm);
     line-height: 18px;
   }
   .user-button-chevron {
@@ -385,7 +390,7 @@ kbd {
   justify-content: center;
   gap: 6px;
   padding: 0 6px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   white-space: nowrap;
 }
 .user-panel-actions {
@@ -450,7 +455,7 @@ kbd {
   gap: 2px;
   border-radius: var(--radius-md);
   color: var(--chrome-text-muted);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-weight: 500;
 }
 .tab.active {
@@ -474,7 +479,7 @@ kbd {
   margin-bottom: 8px;
 }
 dialog::backdrop {
-  background: rgb(20 8 6 / 0.45);
+  background: var(--scrim);
 }
 @keyframes drawer-in {
   from {
@@ -547,20 +552,62 @@ dialog::backdrop {
 }
 
 /* --- Form field: label on top, field, hint/error under it (one style for every form) --------- */
-.field {
+/* One label style (.field in forms, .filter-field / .filter-select in filter rows). */
+.field,
+.filter-field,
+.filter-select {
   display: grid;
   align-content: start;
   gap: 6px;
-  font-size: 14px;
+  color: var(--text);
+  font-size: var(--fs-label);
   font-weight: 500;
 }
-.field > :is(input, select, textarea) {
+:is(.field, .filter-field, .filter-select) > :is(input, select, textarea),
+.filter-field > .date-field > input {
   margin-top: 0;
+}
+/*
+ * ONE text field (rulebook 5; unification pass 2026-11-06). Before it there were three: `.input`
+ * (6px corners, 16px text), the filter fields (10px corners, 14px text) and the calendar's
+ * `.appt-input`. Every field now has the same box: 44px, 16px text (phones never zoom), 1px
+ * border-strong, 6px corners, surface fill. Hover/focus/invalid/disabled: styles.css.
+ */
+.input,
+:is(.field, .filter-field, .filter-select) > :is(input:not([type="checkbox"], [type="radio"]), select, textarea),
+.date-field > input[type="text"],
+.search-field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-field);
+  font-weight: 400;
+}
+textarea.input,
+:is(.field, .filter-field) > textarea {
+  min-height: 72px;
+  padding: 10px 12px;
+  line-height: 22px;
+}
+/* A larger field for the one search of a screen (customer search on /quay, /khach-hang). */
+.input-lg {
+  min-height: 52px;
+  padding: 0 16px;
+  font-size: var(--fs-search);
 }
 .field-hint {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 400;
+}
+.field-error {
+  color: var(--danger);
+  font-size: var(--fs-sm);
+  font-weight: 500;
 }
 
 /* --- Health note callout (customers/HealthNote.tsx) ------------------------------------------ */
@@ -575,67 +622,26 @@ dialog::backdrop {
   font-weight: 500;
 }
 .health-note-title {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 600;
 }
 
-/* --- Card heading: icon + title left, one action right (every card on the profile, reports) -- */
-.card-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
+/* --- Label/value grid (contact details, booking facts): labels in one muted column ---------- */
+/* Pairs may be wrapped in a <div> (profile) or sit directly in the <dl> (calendar sheets). */
+.detail-grid {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
   gap: 8px 12px;
 }
-.card-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 26px;
+.detail-grid > div {
+  display: contents;
 }
-
-/* --- Label/value list (contact details): labels in one column, values aligned ------------------ */
-.detail-list {
-  display: grid;
-  gap: 6px;
-  font-size: 14px;
-}
-.detail-row {
-  display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
-  gap: 12px;
-}
-.detail-row dt {
+.detail-grid dt {
   color: var(--text-muted);
 }
-.detail-row dd {
+.detail-grid dd {
+  min-width: 0;
   overflow-wrap: anywhere;
-  font-variant-numeric: tabular-nums;
-}
-
-/* --- Package row (profile): name + status, then sessions · expiry · gift, then actions -------- */
-.package-row {
-  display: grid;
-  gap: 4px;
-  padding: 12px 14px;
-}
-.package-row-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-.package-row-head > .badge {
-  flex-shrink: 0;
-}
-.package-row-meta {
-  color: var(--text-muted);
-  font-size: 14px;
-}
-.package-row-meta strong {
-  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 
@@ -643,7 +649,7 @@ dialog::backdrop {
 .timeline-month {
   margin: 8px 0 4px;
   color: var(--accent-text);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 600;
 }
 
@@ -672,11 +678,180 @@ dialog::backdrop {
 
 /* --- Cards, buttons, badges, type (design-system.md "Quy tắc") --------------------------------
  * One card style; a card never holds another card (rows inside a card are divided by hairlines). */
-.card {
+.card,
+.panel {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
   box-shadow: var(--shadow-1);
+}
+/* A panel = a card with the rulebook padding (16 phone / 20) and 16px between its blocks. */
+.panel {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 16px;
+  padding: 16px;
+}
+@media (min-width: 640px) {
+  .panel {
+    padding: 20px;
+  }
+}
+.panel-head {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+/* ONE block heading (panel, card, section; reverted old layouts included): 17/24 600, text colour.
+ * Was five: .card-title 18/26 (unused, deleted), .panel-title / .section-heading / .cal-title /
+ * .row-form-title 17/24, staff .section-title 16. */
+.panel-title,
+.section-heading {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  line-height: 24px;
+}
+/* ONE small group label (sentence case, rulebook 1): forms, sheets, command palette. */
+.section-label,
+.eyebrow {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 18px;
+}
+/* An empty list or panel: one muted sentence that teaches the next step (rulebook 9). */
+.empty-note {
+  padding: 8px 0;
+  color: var(--text-muted);
+}
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+/* A text link (to a profile, a report): primary, 600, underlined on hover. In-sentence links
+ * keep a permanent underline (the browser default) so they never rely on colour alone. */
+.link {
+  color: var(--primary);
+  font-weight: 600;
+  text-underline-offset: 3px;
+}
+.link:hover {
+  text-decoration: underline;
+}
+/* ONE error box (rulebook 9: what broke + how to fix + "Thử lại"), ONE warning callout, ONE quiet
+ * note. Were: .alert, .form-error, .cal-error, LoginPage utilities / .inline-form, .appt-callout,
+ * .appt-warn, .field-notice / .cal-note. */
+.alert {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  border-radius: var(--radius-md);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+.callout {
+  padding: 10px 12px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-md);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  font-size: var(--fs-sm);
+}
+/* A box that holds blocks (a message + its "Thử lại", a form) lays them out with gaps; one holding
+ * a sentence stays a text block, so inline words and <strong> never split into flex/grid items. */
+.alert:has(> :is(button, .btn, div)) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.callout:has(> :is(p, div, form, label, ul, .button-row)) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.note {
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+/* Closed items (used-up or cancelled packages, plans no longer sold, cancelled bookings) wait
+ * behind ONE disclosure: a muted 44px summary with its count and a chevron that turns down. */
+.disclosure > summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.disclosure > summary::before {
+  width: 7px;
+  height: 7px;
+  margin-inline: 4px 2px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  content: "";
+  transform: rotate(-45deg);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.disclosure[open] > summary::before {
+  transform: rotate(45deg);
+}
+.disclosure > summary:hover {
+  color: var(--text);
+}
+/* Toast: top centre (never over a sticky save bar), flat, chrome colours; errors in danger. */
+.toast {
+  position: fixed;
+  z-index: 60;
+  top: calc(env(safe-area-inset-top) + 72px);
+  left: 50%;
+  max-width: calc(100% - 32px);
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  background: var(--chrome-bg);
+  box-shadow: var(--shadow-2);
+  color: var(--chrome-text);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -8px);
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+/* The idle live region stays in the accessibility tree but has no box (axe target-size). */
+.toast:empty {
+  padding: 0;
+  box-shadow: none;
+}
+.toast.is-shown {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.toast.is-error {
+  background: var(--danger);
+  color: var(--surface);
+}
+/* A gold hairline on the maroon chrome (login band on phones). */
+.chrome-rule {
+  height: 2px;
+  background: var(--gradient-rule-chrome);
 }
 /* Clickable cards lift on hover (transform + shadow, no layout change). */
 .card-link {
@@ -911,7 +1086,7 @@ dialog::backdrop {
   padding: 0 10px 0 6px;
   border-radius: 999px;
   color: var(--primary);
-  font-size: 14px;
+  font-size: var(--fs-sm);
   font-weight: 600;
 }
 .back-link:hover {
@@ -926,7 +1101,7 @@ dialog::backdrop {
 .breadcrumbs {
   display: none;
   min-width: 0;
-  font-size: 14px;
+  font-size: var(--fs-sm);
 }
 @media (min-width: 640px) {
   .breadcrumbs {
@@ -1002,10 +1177,10 @@ dialog::backdrop {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
-  padding: 0 7px;
-  border-radius: 6px;
+  padding: 0 8px;
+  border-radius: 999px;
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0;
   line-height: 18px;
@@ -1027,7 +1202,7 @@ dialog::backdrop {
 .page-title .gender-chip,
 h1 .gender-chip,
 h2 .gender-chip {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   line-height: 20px;
 }
 
@@ -1066,7 +1241,7 @@ h2 .gender-chip {
 .stat-card-accent {
   border-color: transparent;
   background-color: var(--chrome-bg);
-  background-image: linear-gradient(135deg, var(--chrome-bg-2), var(--chrome-bg));
+  background-image: var(--gradient-chrome-band);
   color: var(--chrome-text);
 }
 .stat-card-accent .stat-label {
@@ -1111,13 +1286,8 @@ h2 .gender-chip {
   line-height: 24px;
 }
 
-/* A heading inside a work screen (Hôm nay, Lối tắt): 17px 600, text colour (rulebook §1, §3). */
-.section-heading {
-  font-size: var(--fs-md);
-  font-weight: 600;
-  line-height: 24px;
-}
-/* Home shortcuts: a muted icon tile, the title in text colour (colour is for actions/state). */
+/* Home shortcuts (Tổng quan, the layout the EM kept, review 2026-11-06): a tinted icon tile and the
+ * title in primary, on the shared card + card-link. */
 .shortcut {
   display: flex;
   min-height: 72px;
@@ -1132,11 +1302,20 @@ h2 .gender-chip {
   flex-shrink: 0;
   place-items: center;
   border-radius: var(--radius-md);
-  background: var(--surface-2);
-  color: var(--text-muted);
-}
-.shortcut:hover .shortcut-icon {
+  background: var(--primary-soft);
   color: var(--primary);
+}
+.shortcut-title {
+  display: block;
+  color: var(--primary);
+  font-weight: 600;
+}
+.shortcut-chevron {
+  color: var(--text-muted);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.shortcut:hover .shortcut-chevron {
+  transform: translateX(2px);
 }
 
 /* --- Home welcome band ------------------------------------------------------------------------ */
@@ -1185,7 +1364,7 @@ h2 .gender-chip {
 .skeleton::after {
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--surface) 65%, transparent), transparent);
+  background: var(--gradient-sheen);
   content: "";
   transform: translateX(-100%);
   animation: sheen 1.4s var(--ease-in-out) infinite;
@@ -1201,7 +1380,7 @@ h2 .gender-chip {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 14px;
+  font-size: var(--fs-label);
 }
 /*
  * Tables grow with their rows and the PAGE scrolls (EM round 6: no scroll area inside a card on
@@ -1222,7 +1401,7 @@ h2 .gender-chip {
   color: var(--text-muted);
   /* Sentence case like every other label (design-system § Chữ trên giao diện): ALL-CAPS is only
    * for the small eyebrows. */
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   text-align: left;
   white-space: nowrap;
@@ -1343,7 +1522,7 @@ h2 .gender-chip {
   flex-wrap: wrap;
   gap: 4px 16px;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .line-legend li {
   display: inline-flex;
@@ -1374,7 +1553,7 @@ h2 .gender-chip {
   position: relative;
   grid-row: 1;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
 .line-yaxis li {
@@ -1446,7 +1625,7 @@ h2 .gender-chip {
   right: 0;
   margin-bottom: 10px;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   pointer-events: none;
   white-space: nowrap;
@@ -1468,7 +1647,7 @@ h2 .gender-chip {
   gap: 4px;
   padding: 8px 12px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: var(--shadow-2);
   pointer-events: none;
@@ -1487,7 +1666,7 @@ h2 .gender-chip {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   white-space: nowrap;
 }
 .line-xaxis {
@@ -1495,7 +1674,7 @@ h2 .gender-chip {
   grid-row: 2;
   grid-column: 2;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 .line-xaxis li {
   position: absolute;
@@ -1522,7 +1701,7 @@ h2 .gender-chip {
   border-bottom: 1px solid var(--border);
   background: transparent;
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--fs-label);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -1572,7 +1751,7 @@ h2 .gender-chip {
   bottom: 8px;
   left: 9px;
   width: 2px;
-  background: linear-gradient(180deg, var(--accent), var(--border) 40%);
+  background: var(--gradient-timeline);
   content: "";
 }
 .timeline-dot {
@@ -1596,7 +1775,7 @@ h2 .gender-chip {
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--surface-2);
 }
 .segmented > button {
@@ -1607,9 +1786,9 @@ h2 .gender-chip {
   padding: 0 14px;
   /* Transparent until chosen, so choosing never changes the button's size. */
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: var(--fs-base);
   font-weight: 500;
   transition:
     background-color var(--dur-fast) var(--ease-out),
@@ -1659,12 +1838,7 @@ h2 .gender-chip {
   align-items: center;
 }
 .search-field input {
-  width: 100%;
-  min-height: 44px;
-  border: 1px solid var(--border-strong);
   padding: 0 40px;
-  border-radius: 10px;
-  background: var(--surface);
 }
 .search-field-icon {
   position: absolute;
@@ -1681,87 +1855,76 @@ h2 .gender-chip {
   width: 40px;
   height: 40px;
   place-items: center;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
 }
 .search-field-clear:hover {
   color: var(--text);
 }
-/* Same label style as `.field` (one label style in the app). */
-.filter-select,
-.filter-field {
-  display: grid;
-  align-content: start;
-  gap: 6px;
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 500;
-}
-.filter-select > select,
-.filter-field > :is(input, select, textarea),
-.filter-field > .date-field > input {
-  margin-top: 0;
-  font-weight: 400;
-}
-.filter-select select,
-.filter-field :is(input, select, textarea) {
-  border: 1px solid var(--border-strong);
-  min-height: 44px;
-  padding: 0 10px;
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: 14px;
-}
-.filter-field textarea {
-  min-height: 64px;
-  padding: 8px 10px;
-}
 
-/* --- Form dialog (follow-up "Đã liên hệ"): centred card, full-width sheet on phones ----------- */
-.form-dialog {
-  width: min(560px, calc(100vw - 32px));
-  max-width: none;
-  max-height: calc(100dvh - 32px);
-  margin: auto;
-  padding: 20px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--shadow-2);
-  overflow: auto;
-}
-.form-dialog[open] {
-  animation: pop-in var(--dur-base) var(--ease-out);
-}
 /*
  * Radio/checkbox as a tappable row (44px). Chosen = primary-soft fill + primary border all round
  * (the native control's own check says it too), not by weight. Round 5 (EM 2026-11-06) dropped the
  * 3px inset gold line on the left: on the rounded row it bent at the corners and looked broken.
  */
-.choice {
+.choice,
+.pay-choice {
   display: flex;
   min-height: 44px;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
   background: var(--surface);
-  font-size: 14px;
+  font-size: var(--fs-base);
+  line-height: 20px;
   cursor: pointer;
 }
-.choice:hover {
-  border-color: var(--border-strong);
+.choice:hover,
+.pay-choice:hover {
+  border-color: var(--primary);
 }
-.choice:has(input:checked) {
+.choice:has(input:checked),
+.pay-choice:has(input:checked) {
   border-color: var(--primary);
   background: var(--primary-soft);
 }
 .choice:has(input:disabled) {
   cursor: not-allowed;
   opacity: 0.6;
+}
+/* Payment method chips (/quay): centred, the radio hidden behind its face, a ✓ when chosen (never
+ * colour alone), the label in primary. */
+.pay-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+  gap: 8px;
+}
+.pay-choice {
+  position: relative;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  text-align: center;
+}
+.pay-choice:has(input:checked) {
+  color: var(--primary);
+  font-weight: 600;
+}
+.pay-choice:has(input:checked)::before {
+  content: "✓";
+}
+.pay-choice:has(input:focus-visible) {
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
+}
+.pay-choice > input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* --- Tabs (reports: Tổng quan / Sổ doanh thu)------------------------------------------------ */
@@ -1773,7 +1936,7 @@ h2 .gender-chip {
 .tabs > [role="tab"] {
   min-height: 44px;
   padding: 0 16px;
-  border-radius: 10px 10px 0 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
   color: var(--text-muted);
   font-weight: 600;
 }

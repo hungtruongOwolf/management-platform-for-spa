@@ -26,20 +26,20 @@ export function CorrectionPanel({
     return (
       <p
         role="status"
-        className="rounded-[10px] bg-surface-2 p-2 text-sm text-text-muted"
+        className="note"
       >
         Chưa có gì thay đổi so với lượt đã ghi.
       </p>
     );
   if (plan.kind === "direct")
     return (
-      <p role="status" className="rounded-[10px] bg-surface-2 p-2 text-sm">
+      <p role="status" className="note text-text">
         Chỉ đổi KTV, giờ làm hoặc ghi chú: lưu thẳng vào lượt này,{" "}
         <strong>không đổi tiền</strong> và buổi liệu trình.
       </p>
     );
   return (
-    <div className="grid gap-2 rounded-[10px] border border-warning-border bg-warning-bg p-3 text-sm text-warning-text">
+    <div className="callout">
       <p>
         Đổi dịch vụ, tiền hoặc khách: lượt cũ được hủy (buổi cộng lại, tiền ghi
         bút toán đảo) và ghi lại lượt mới.
@@ -51,8 +51,8 @@ export function CorrectionPanel({
       >
         {differenceText(plan.difference)}
       </p>
-      <label className="grid gap-1">
-        <span className="font-semibold">Lý do sửa (bắt buộc)</span>
+      <label className="field">
+        <span>Lý do sửa (bắt buộc)</span>
         <input
           value={draft.reason}
           maxLength={480}
@@ -63,10 +63,10 @@ export function CorrectionPanel({
             onReason(e.target.value);
           }}
           placeholder="Ví dụ: chọn nhầm dịch vụ"
-          className={`min-h-11 rounded-[6px] border bg-surface px-3 ${invalid ? "border-danger" : "border-border"}`}
+          className="input"
         />
         {invalid && (
-          <span id="correction-reason-error" className="text-danger">
+          <span id="correction-reason-error" className="field-error">
             Cần ghi lý do sửa
           </span>
         )}

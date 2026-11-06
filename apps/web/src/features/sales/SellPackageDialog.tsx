@@ -138,7 +138,7 @@ export function SellPackageDialog({
     // Hosted by a BottomSheet (CustomerPackages): the sheet is the dialog and carries the title.
     <div className="grid content-start gap-4">
       {(plans.isError || staff.isError) && (
-        <p role="alert" className="form-error">
+        <p role="alert" className="alert">
           {messageFor(plans.error ?? staff.error)}
         </p>
       )}
@@ -304,7 +304,7 @@ export function SellPackageDialog({
           Phải trả: {formatVnd(total)}
         </p>
         {mutation.isError && (
-          <p role="alert" className="form-error span-2">
+          <p role="alert" className="alert span-2">
             {messageFor(mutation.error)}
             {fieldMessage(mutation.error, "lines[0].package_plan_id") ? " Gói này đã ngừng bán." : ""}
           </p>

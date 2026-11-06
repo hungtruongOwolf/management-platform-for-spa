@@ -233,11 +233,11 @@ function NewCategory({ onDone }: { onDone: () => void }) {
         )}
       </div>
       {mutation.isError && !fieldMessage(mutation.error, "name") && (
-        <p role="alert" className="form-error">
+        <p role="alert" className="alert">
           {messageFor(mutation.error)}
         </p>
       )}
-      <div className="form-actions">
+      <div className="button-row">
         <button type="submit" aria-busy={mutation.isPending || undefined} className="btn btn-primary">
           Lưu nhóm dịch vụ
         </button>

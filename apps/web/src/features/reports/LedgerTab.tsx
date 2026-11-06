@@ -239,7 +239,7 @@ function LedgerCards({ rows, dayOf }: { rows: LedgerRow[]; dayOf: Map<string, Le
 
 function Figure({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div className={`rounded-[10px] p-3 ${strong ? "bg-primary-soft" : "bg-surface-2"}`}>
+    <div className={`rounded-md p-3 ${strong ? "bg-primary-soft" : "bg-surface-2"}`}>
       <dt className="text-xs text-text-muted">{label}</dt>
       <dd className={`mt-0.5 text-lg font-semibold tabular ${strong ? "text-primary" : ""}`}>{value}</dd>
     </div>

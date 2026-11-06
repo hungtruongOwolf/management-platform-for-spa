@@ -8,8 +8,9 @@ import {
   redirect,
   type RouterHistory,
 } from "@tanstack/react-router";
+import { useSyncExternalStore } from "react";
 import { LoginPage } from "../features/auth/LoginPage";
-import { authQuery } from "../features/auth/session";
+import { authQuery, authRetry } from "../features/auth/session";
 import { customersSearch, historySearch } from "../features/customers/search";
 import { frontDeskSearch } from "../features/front-desk/search";
 import { FrontDeskPage } from "../features/front-desk/FrontDeskPage";
@@ -41,6 +42,22 @@ function PageSkeleton() {
         <div className="skeleton h-28" />
       </div>
       <div className="skeleton h-64" />
+    </div>
+  );
+}
+
+/** Before the session is known (`/me`, outside the shell). While a busy API (429) makes `/me`
+ * wait, it says so calmly here instead of the error page (session.ts retries with backoff). */
+function SessionPending() {
+  const retrying = useSyncExternalStore(authRetry.subscribe, authRetry.get);
+  return (
+    <div className="mx-auto grid w-full max-w-6xl content-start gap-4 p-4 sm:p-8">
+      {retrying && (
+        <p role="status" className="note">
+          Đang thử lại… Máy chủ đang bận, chờ vài giây.
+        </p>
+      )}
+      <PageSkeleton />
     </div>
   );
 }
@@ -135,6 +152,7 @@ const authedRoute = createRoute({
         throw: true,
       });
   },
+  pendingComponent: SessionPending,
   component: AppShell,
 });
 

@@ -56,7 +56,7 @@ export function AdjustmentLogSection({ month, today, canWrite }: { month: string
   return (
     <section className="grid content-start gap-3" aria-labelledby="adjustment-log-title">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 id="adjustment-log-title" className="section-title">
+        <h2 id="adjustment-log-title" className="panel-title">
           Sổ thưởng, phạt của tháng
         </h2>
         {canWrite && (

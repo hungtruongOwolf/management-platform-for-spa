@@ -64,6 +64,9 @@ try {
         APP_DATABASE_URL: databaseUrl(),
         APP_PUBLIC_ORIGIN: webOrigin,
         APP_DATA_KEY: randomBytes(32).toString("base64"),
+        // Test stack only (accepted with APP_ENV=development): repeated audits from one IP.
+        APP_RATE_PER_SECOND: "200",
+        APP_RATE_BURST: "2000",
         RUST_LOG: "warn",
       },
     }),

@@ -196,7 +196,7 @@ export function FollowUpForm({
         {err("next_follow_up_on") && <span className="field-error">{err("next_follow_up_on")}</span>}
       </div>
       {mutation.isError && !err("contacted_on") && !err("next_follow_up_on") && (
-        <p role="alert" className="form-error">
+        <p role="alert" className="alert">
           {messageFor(mutation.error)}
         </p>
       )}
