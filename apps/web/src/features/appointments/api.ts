@@ -156,6 +156,31 @@ export const PHASE_LABEL: Record<TimelinePhase, string> = {
 };
 
 /**
+ * The app-wide status chip of each phase (design-system rulebook 7, one semantic set):
+ * waiting = neutral info, in service = needs attention, done = green (spec §10.7), missed = danger,
+ * cancelled / voided = muted. Every chip carries its label too.
+ */
+export const PHASE_BADGE: Record<TimelinePhase, string> = {
+  waiting: "badge-info",
+  in_service: "badge-warn",
+  done: "badge-ok",
+  no_show: "badge-danger",
+  cancelled: "badge-muted",
+  voided: "badge-muted",
+};
+
+/** Up to 5 companion notes, 1–100 characters each (server `app.valid_companions`). */
+export const MAX_COMPANIONS = 5;
+
+/** The companion notes to send: trimmed, blanks dropped (an empty note is a 422). */
+export function companionNotes(list: string[]): string[] {
+  return list
+    .map((c) => c.trim())
+    .filter((c) => c !== "")
+    .slice(0, MAX_COMPANIONS);
+}
+
+/**
  * One card on the desk's timeline: a booking, or a visit recorded without one (walk-in). A
  * booking that turned into a visit stays the booking (the server never sends it twice).
  */
