@@ -1,3 +1,4 @@
+// CI scope demo (web-only change); this PR is closed without merging.
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
