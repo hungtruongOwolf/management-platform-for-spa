@@ -56,6 +56,7 @@ permissions! {
     VisitRead => "visit.read",
     VisitBackdate => "visit.backdate",
     AppointmentManage => "appointment.manage",
+    AppointmentSettings => "appointment.settings",
     PaymentCollect => "payment.collect",
     SaleRead => "sale.read",
     SaleDiscount => "sale.discount",

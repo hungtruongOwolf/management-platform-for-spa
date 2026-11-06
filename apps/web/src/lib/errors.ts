@@ -40,8 +40,8 @@ const MESSAGES: Record<string, string> = {
     "Giờ làm phải thuộc ngày hôm nay. Chỉ chủ spa nhập bù được ngày đã qua.",
   "visit.check_in_too_old": "Chỉ nhập bù được trong vòng 1 năm.",
   "appointment.staff_busy": "KTV này đã có lịch trùng giờ.",
-  "appointment.slot_full": "Khung giờ này đã kín: mọi KTV đều có khách.",
-  "appointment.outside_opening_hours": "Lịch hẹn phải nằm trong giờ mở cửa.",
+  "appointment.outside_opening_hours":
+    "Lịch hẹn phải nằm trọn trong giờ mở cửa: chọn giờ sớm hơn hoặc rút ngắn thời lượng.",
   "appointment.closed": "Lịch hẹn này đã kết thúc (hoàn tất, hủy hoặc không đến).",
   "appointment.already_arrived": "Khách đã được đánh dấu là đã đến.",
   "appointment.not_today": "Chỉ làm được việc này vào đúng ngày của lịch hẹn.",
@@ -103,11 +103,16 @@ const FIELD_MESSAGES: Record<string, string> = {
   before_joined_on: "Ngày nghỉ việc trước ngày vào làm.",
   must_be_empty: "Nhân viên đang làm thì không có ngày nghỉ việc.",
   not_a_member: "Tài khoản không thuộc spa này.",
-  not_on_slot: "Giờ bắt đầu phải đúng ô 15 phút (ví dụ 10:00, 10:15).",
+  not_on_slot: "Giờ hẹn phải đúng ô 15 phút (ví dụ 10:00, 10:15).",
   too_far: "Chỉ đặt lịch trước tối đa 90 ngày.",
   customer_or_guest: "Chọn khách có hồ sơ hoặc nhập khách mới.",
   percent_or_amount: "Chỉ nhập % hoặc số tiền, không cả hai.",
   rounds_to_zero: "Mức giảm quá nhỏ.",
+  count_out_of_range: "Số lượng không hợp lệ.",
+  not_same_day: "Mọi người trong nhóm phải hẹn cùng một ngày.",
+  not_today: "Chỉ đổi sang ngày khác khi khách chưa đến.",
+  before_from: "Ngày kết thúc trước ngày bắt đầu.",
+  range_too_long: "Chỉ xem tối đa 14 ngày.",
 };
 
 export function messageFor(error: unknown): string {

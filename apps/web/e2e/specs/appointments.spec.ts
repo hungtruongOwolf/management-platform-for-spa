@@ -86,23 +86,21 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
       .getByRole("combobox", { name: "Tìm khách theo SĐT hoặc tên" })
       .pressSequentially(r.phone);
     await sheet.getByRole("option", { name: /Trần Thị Lịch Hẹn/ }).click();
+    // Picking a service adds it (round 5: no separate "Thêm" click).
     await sheet.getByLabel("Thêm dịch vụ").selectOption(r.service.id);
-    await sheet.getByRole("button", { name: "Thêm", exact: true }).click();
-    await sheet
-      .getByLabel("Giờ bắt đầu")
-      .selectOption({ value: String(10 * 60) });
+    await sheet.getByLabel("Giờ hẹn").selectOption({ value: String(10 * 60) });
     await sheet.getByLabel("KTV (không bắt buộc)").selectOption(r.staff.id);
     await expectAccessible(page, "lich-dat");
     await sheet.getByRole("button", { name: "Đặt lịch", exact: true }).click();
     const opened = page.getByRole("dialog", {
       name: /10:00.*Trần Thị Lịch Hẹn/,
     });
-    await expect(opened).toContainText("Đã đặt");
+    await expect(opened).toContainText("Chưa đến");
     await expect(opened).toContainText("Chưa thanh toán");
     await page.keyboard.press("Escape");
     await expect(opened).toBeHidden();
     await expect(
-      page.getByRole("button", { name: /10:00.*Trần Thị Lịch Hẹn, Đã đặt/ }),
+      page.getByRole("button", { name: /10:00.*Trần Thị Lịch Hẹn, Chưa đến/ }),
     ).toBeVisible();
 
     // The server refuses the same technician in an overlapping slot and names the booking.
@@ -132,15 +130,17 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     expect(today.status()).toBe(201);
     await page.goto("/quay?view=lich");
     await page
-      .getByRole("button", { name: /09:00.*Trần Thị Lịch Hẹn, Đã đặt/ })
+      .getByRole("button", { name: /09:00.*Trần Thị Lịch Hẹn, Chưa đến/ })
       .click();
     const panel = page.getByRole("dialog", {
       name: /09:00.*Trần Thị Lịch Hẹn/,
     });
     await panel.getByLabel("KTV làm").selectOption(r.staff.id);
-    await panel.getByRole("button", { name: "Khách đã đến" }).click();
-    await expect(panel).toContainText("Đã đến");
-    await panel.getByRole("button", { name: "Hoàn tất & ghi lượt" }).click();
+    await panel
+      .getByRole("button", { name: "Chỉ báo đã đến (ghi lượt sau)" })
+      .click();
+    await expect(panel).toContainText("Đang làm");
+    await panel.getByRole("button", { name: "Ghi lượt", exact: true }).click();
     await expect(page.getByText(/Hoàn tất lịch hẹn 09:00/)).toBeVisible();
     const cart = page.getByRole("list", { name: "Dịch vụ trong lượt" });
     await expect(cart).toContainText("Trừ liệu trình");
@@ -155,7 +155,173 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
 
     await page.getByRole("button", { name: "Lịch hẹn", exact: true }).click();
     await expect(
-      page.getByRole("button", { name: /09:00.*Trần Thị Lịch Hẹn, Hoàn tất/ }),
+      page.getByRole("button", {
+        name: /09:00.*Trần Thị Lịch Hẹn, (Đang làm|Xong)/,
+      }),
+    ).toBeVisible();
+  });
+
+  test("regression (round 5 item 7): the real booking form books, and every refusal is said", async ({
+    page,
+  }) => {
+    const r = await regular(page, "Phạm Thị Đặt Lịch");
+    await page.goto(`/quay?view=lich&ngay=${spaDay(2)}`);
+    await page.getByRole("button", { name: "Đặt lịch", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "Đặt lịch hẹn" });
+
+    // Pressing "Đặt lịch" too early is never a silent no-op.
+    await sheet.getByRole("button", { name: "Đặt lịch", exact: true }).click();
+    await expect(sheet.getByRole("alert")).toHaveText(
+      "Còn thiếu: khách, dịch vụ.",
+    );
+
+    await sheet
+      .getByRole("combobox", { name: "Tìm khách theo SĐT hoặc tên" })
+      .pressSequentially(r.phone);
+    await sheet.getByRole("option", { name: /Phạm Thị Đặt Lịch/ }).click();
+    // What the EM did: pick the service in the list, nothing else.
+    await sheet.getByLabel("Thêm dịch vụ").selectOption(r.service.id);
+    const minutes = String(
+      Math.max(15, Math.ceil((r.service.duration_min ?? 60) / 15) * 15),
+    );
+    await expect(sheet.getByLabel("Thời lượng")).toHaveValue(minutes);
+
+    // The server's 422 (outside opening hours) is shown in Vietnamese.
+    await sheet
+      .getByLabel("Giờ hẹn")
+      .selectOption({ value: String(20 * 60 + 45) });
+    await sheet.getByLabel("Thời lượng").selectOption("60");
+    await sheet.getByRole("button", { name: "Đặt lịch", exact: true }).click();
+    await expect(sheet.getByRole("alert")).toContainText(
+      "Lịch hẹn phải nằm trọn trong giờ mở cửa",
+    );
+
+    // Fixed: it books and opens the appointment.
+    await sheet.getByRole("button", { name: "Dùng lại theo dịch vụ" }).click();
+    await sheet.getByLabel("Giờ hẹn").selectOption({ value: String(15 * 60) });
+    await sheet.getByRole("button", { name: "Đặt lịch", exact: true }).click();
+    await expect(
+      page.getByRole("dialog", { name: /15:00.*Phạm Thị Đặt Lịch/ }),
+    ).toContainText("Chưa đến");
+  });
+
+  test("a family is booked in one go and checked in together; walk-ins are on the timeline", async ({
+    page,
+  }) => {
+    const mother = await regular(page, "Đỗ Thị Mẹ");
+    const child = await regular(page, "Đỗ Văn Con");
+
+    // Book both through the form: "+ Thêm người".
+    await page.goto(`/quay?view=lich&ngay=${spaDay(3)}`);
+    await page.getByRole("button", { name: "Đặt lịch", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "Đặt lịch hẹn" });
+    await sheet.getByRole("button", { name: /Thêm người/ }).click();
+    for (const [i, who, name] of [
+      [1, mother, "Đỗ Thị Mẹ"],
+      [2, child, "Đỗ Văn Con"],
+    ] as const) {
+      const person = sheet.getByRole("group", {
+        name: new RegExp(`^Người ${String(i)}`),
+      });
+      await person
+        .getByRole("combobox", { name: "Tìm khách theo SĐT hoặc tên" })
+        .pressSequentially(who.phone);
+      await person.getByRole("option", { name: new RegExp(name) }).click();
+      await person.getByLabel(/Thêm dịch vụ/).selectOption(who.service.id);
+    }
+    await sheet.getByLabel(/Giờ hẹn/).selectOption({ value: String(11 * 60) });
+    await expectAccessible(page, "lich-dat-nhom");
+    await sheet.getByRole("button", { name: "Đặt lịch 2 người" }).click();
+    await expect(
+      page.getByRole("dialog", { name: /11:00.*Đỗ Thị Mẹ/ }),
+    ).toContainText("Cùng nhóm (2 người)");
+    await page.keyboard.press("Escape");
+    await expect(
+      page.getByRole("button", {
+        name: /Đỗ Văn Con, Chưa đến, Nhóm · 2 người/,
+      }),
+    ).toBeVisible();
+
+    // Today: a group booked through the API, checked in together → two visits, two payments.
+    const group = await page.request.post("/api/v1/appointments/group", {
+      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+      data: {
+        starts_at: `${spaDay()}T09:00:00+07:00`,
+        people: [
+          { customer_id: mother.customer, service_ids: [mother.service.id] },
+          { customer_id: child.customer, service_ids: [child.service.id] },
+        ],
+      },
+    });
+    expect(group.status()).toBe(201);
+    await page.goto("/quay?view=lich&kieu=ds");
+    await page
+      .getByRole("button", { name: /Đỗ Thị Mẹ/ })
+      .first()
+      .click();
+    await page
+      .getByRole("button", { name: "Khách đến cả nhóm · ghi 2 lượt" })
+      .click();
+    const checkIn = page.getByRole("dialog", { name: /Khách đến cả nhóm/ });
+    for (const name of ["Đỗ Thị Mẹ", "Đỗ Văn Con"])
+      await checkIn
+        .getByRole("listitem", { name })
+        .getByLabel("KTV làm")
+        .selectOption(mother.staff.id);
+    await expectAccessible(page, "lich-nhom-den");
+    // Same technician for both is allowed here: visits are not bookings.
+    await checkIn.getByRole("button", { name: "Ghi 2 lượt" }).click();
+    await expect(checkIn.getByText("Đã ghi lượt")).toHaveCount(2);
+    await checkIn.getByRole("button", { name: "Xong" }).click();
+
+    // A walk-in recorded at the desk shows up on the timeline without a booking.
+    const walkIn = await page.request.post("/api/v1/visits", {
+      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+      data: {
+        customer_id: child.customer,
+        lines: [
+          {
+            service_id: child.service.id,
+            source: "one_off",
+            staff_id: child.staff.id,
+          },
+        ],
+        payments: [{ method: "cash", amount: child.service.prices.all ?? 0 }],
+      },
+    });
+    expect(walkIn.status()).toBe(201);
+    await page.reload();
+    const list = page.getByRole("list", { name: /Lịch hẹn ngày/ });
+    await expect(list.getByText(/Vãng lai/)).toBeVisible();
+    await expect(
+      list.getByRole("button", { name: /Đỗ Thị Mẹ.*(Đang làm|Xong)/ }),
+    ).toBeVisible();
+  });
+
+  test("no hard-coded capacity: the owner sets an optional max per slot", async ({
+    page,
+  }) => {
+    await page.goto(`/quay?view=lich&ngay=${spaDay(4)}`);
+    const grid = page.getByRole("group", { name: /Lịch theo KTV/ });
+    await expect(grid).toBeVisible();
+    // No "còn N chỗ" on every slot any more.
+    await expect(grid.getByText(/^Kín$|^\d+$/)).toHaveCount(0);
+    await page.getByRole("button", { name: /^Số khách tối đa/ }).click();
+    const limit = page.getByRole("dialog", {
+      name: "Số khách tối đa mỗi khung giờ",
+    });
+    await limit.getByLabel(/Số khách tối đa/).fill("3");
+    await limit.getByRole("button", { name: "Lưu" }).click();
+    await expect(
+      page.getByRole("button", { name: "Số khách tối đa: 3" }),
+    ).toBeVisible();
+    await expect(grid.getByText("0/3").first()).toBeVisible();
+    // Back to no limit (other specs share this spa).
+    await page.getByRole("button", { name: "Số khách tối đa: 3" }).click();
+    await limit.getByLabel(/Số khách tối đa/).fill("");
+    await limit.getByRole("button", { name: "Lưu" }).click();
+    await expect(
+      page.getByRole("button", { name: "Số khách tối đa", exact: true }),
     ).toBeVisible();
   });
 

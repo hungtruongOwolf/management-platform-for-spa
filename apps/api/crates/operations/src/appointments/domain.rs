@@ -1,5 +1,6 @@
-//! Pure booking rules (spec appointments.md §2): the spa's calendar settings, how long a booking
-//! lasts, whether it fits the opening hours and slot grid, and how many bookings overlap.
+//! Pure booking rules (spec appointments.md §2, §10): the spa's calendar settings, how long a
+//! booking lasts, whether it fits the opening hours and slot grid, and where each booking or visit
+//! stands on the desk's timeline (waiting / in service / done).
 
 use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Timelike, Utc};
 use chrono_tz::Tz;
@@ -16,6 +17,59 @@ pub const MAX_SERVICES: usize = 5;
 pub const MAX_DAYS_AHEAD: i64 = 90;
 /// Widest `from..to` of one calendar read.
 pub const MAX_RANGE_DAYS: i64 = 14;
+/// People in one group (family) booking.
+pub const MIN_GROUP: usize = 2;
+pub const MAX_GROUP: usize = 6;
+/// Upper bound of the owner's advisory "max customers per slot" (DB CHECK too).
+pub const MAX_PER_SLOT: u32 = 200;
+
+/// Where a booking or a visit stands on the desk's timeline (spec §10.1). Derived on every read
+/// from columns that already exist (`arrived_at`, `visit.check_in_at` + service durations): no
+/// stored state to keep in sync with the visit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    /// Booked, the customer has not arrived.
+    Waiting,
+    /// Arrived, or a recorded visit still inside its service time.
+    InService,
+    /// A recorded visit past its service time.
+    Done,
+    NoShow,
+    Cancelled,
+    /// The visit was voided since.
+    Voided,
+}
+
+/// A recorded visit (walk-in or from a booking): in service until `ends_at`, then done.
+pub fn served_phase(voided: bool, ends_at: DateTime<Utc>, now: DateTime<Utc>) -> Phase {
+    if voided {
+        Phase::Voided
+    } else if now < ends_at {
+        Phase::InService
+    } else {
+        Phase::Done
+    }
+}
+
+/// An appointment's phase. `visit` = (its visit's service start, voided) once done; the service
+/// lasts as long as the booking.
+pub fn appointment_phase(
+    status: Status,
+    visit: Option<(DateTime<Utc>, bool)>,
+    booked_minutes: i64,
+    now: DateTime<Utc>,
+) -> Phase {
+    match (status, visit) {
+        (Status::Booked, _) => Phase::Waiting,
+        (Status::Arrived, _) => Phase::InService,
+        (Status::NoShow, _) => Phase::NoShow,
+        (Status::Cancelled, _) => Phase::Cancelled,
+        (Status::Done, Some((start, voided))) => {
+            served_phase(voided, start + Duration::minutes(booked_minutes), now)
+        }
+        (Status::Done, None) => Phase::Done,
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
@@ -135,22 +189,32 @@ pub fn duration_minutes(
             }
             m
         }
-        None => {
-            let sum: u32 = service_minutes
-                .iter()
-                .map(|m| {
-                    m.and_then(|v| u32::try_from(v).ok())
-                        .filter(|v| *v > 0)
-                        .unwrap_or(DEFAULT_SERVICE_MINUTES)
-                })
-                .sum();
-            sum.div_ceil(slot) * slot
-        }
+        None => services_minutes(service_minutes, slot),
     };
     if minutes < slot || minutes > MAX_DURATION_MINUTES {
         return Err(SlotError::BadDuration);
     }
     Ok(minutes)
+}
+
+/// The services' durations (empty = 1 hour each) summed and rounded up to the slot grid.
+fn services_minutes(service_minutes: &[Option<i32>], slot: u32) -> u32 {
+    let sum: u32 = service_minutes
+        .iter()
+        .map(|m| {
+            m.and_then(|v| u32::try_from(v).ok())
+                .filter(|v| *v > 0)
+                .unwrap_or(DEFAULT_SERVICE_MINUTES)
+        })
+        .sum();
+    sum.div_ceil(slot) * slot
+}
+
+/// How long a recorded visit occupies the timeline: its services' durations like a booking,
+/// clamped to one slot..8 h (a visit is never refused for being long, it is already done).
+pub fn visit_minutes(service_minutes: &[Option<i32>], slot: u32) -> u32 {
+    let slot = slot.max(1);
+    services_minutes(service_minutes, slot).clamp(slot, MAX_DURATION_MINUTES)
 }
 
 /// The booking's end, its business day, and whether it fits the day's grid and opening hours.
@@ -180,30 +244,7 @@ pub fn place(
     Ok((ends_at, local.date_naive()))
 }
 
-/// Largest number of `others` running at the same instant inside `[from, to)`. Intervals are
-/// half-open, so a booking ending at 11:00 and one starting at 11:00 do not overlap.
-pub fn peak_overlap(
-    others: &[(DateTime<Utc>, DateTime<Utc>)],
-    from: DateTime<Utc>,
-    to: DateTime<Utc>,
-) -> usize {
-    // The count only rises at a start, so checking every start inside the window (and the window
-    // start itself) finds the peak.
-    let mut probes: Vec<DateTime<Utc>> = vec![from];
-    probes.extend(
-        others
-            .iter()
-            .map(|(s, _)| *s)
-            .filter(|s| *s > from && *s < to),
-    );
-    probes
-        .into_iter()
-        .map(|t| others.iter().filter(|(s, e)| *s <= t && t < *e).count())
-        .max()
-        .unwrap_or(0)
-}
-
-/// Who counts as a technician for capacity and calendar columns: position mentions "kỹ thuật"
+/// Who counts as a technician for the calendar columns: position mentions "kỹ thuật"
 /// or "KTV". A spa that names no one so counts every active staff member.
 pub fn is_technician(position: &str) -> bool {
     let p = position.to_lowercase();
@@ -285,16 +326,48 @@ mod tests {
     }
 
     #[test]
-    fn peak_overlap_counts_simultaneous_bookings_half_open() {
-        let others = [
-            (at(10, 0), at(11, 0)),
-            (at(10, 30), at(11, 30)),
-            (at(11, 0), at(12, 0)),
-        ];
-        assert_eq!(peak_overlap(&others, at(10, 0), at(12, 0)), 2);
-        assert_eq!(peak_overlap(&others, at(9, 0), at(10, 0)), 0);
-        assert_eq!(peak_overlap(&others, at(11, 30), at(12, 0)), 1);
-        assert_eq!(peak_overlap(&[], at(9, 0), at(10, 0)), 0);
+    fn a_visit_occupies_its_services_time_clamped_to_the_grid() {
+        assert_eq!(visit_minutes(&[Some(90)], 15), 90);
+        assert_eq!(visit_minutes(&[Some(40), None], 15), 105);
+        assert_eq!(visit_minutes(&[Some(5)], 15), 15);
+        assert_eq!(visit_minutes(&[], 15), 15);
+        assert_eq!(visit_minutes(&[Some(300), Some(300)], 15), 480);
+    }
+
+    #[test]
+    fn phases_follow_status_and_service_time() {
+        let (ten, half_past, noon) = (at(10, 0), at(10, 30), at(12, 0));
+        assert_eq!(
+            appointment_phase(Status::Booked, None, 60, noon),
+            Phase::Waiting
+        );
+        assert_eq!(
+            appointment_phase(Status::Arrived, None, 60, noon),
+            Phase::InService
+        );
+        // Done at 10:00 for 60 minutes: in service at 10:30, done by noon; voided wins.
+        assert_eq!(
+            appointment_phase(Status::Done, Some((ten, false)), 60, half_past),
+            Phase::InService
+        );
+        assert_eq!(
+            appointment_phase(Status::Done, Some((ten, false)), 60, noon),
+            Phase::Done
+        );
+        assert_eq!(
+            appointment_phase(Status::Done, Some((ten, true)), 60, half_past),
+            Phase::Voided
+        );
+        assert_eq!(
+            appointment_phase(Status::NoShow, None, 60, noon),
+            Phase::NoShow
+        );
+        assert_eq!(
+            appointment_phase(Status::Cancelled, None, 60, noon),
+            Phase::Cancelled
+        );
+        // The end is exclusive, like every interval on the grid.
+        assert_eq!(served_phase(false, at(11, 0), at(11, 0)), Phase::Done);
     }
 
     #[test]

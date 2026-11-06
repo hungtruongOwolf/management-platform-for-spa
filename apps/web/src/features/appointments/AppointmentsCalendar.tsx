@@ -1,4 +1,9 @@
-import type { Appointment, Calendar, CustomerSummary } from "@vpyd/api-client";
+import type {
+  Appointment,
+  Calendar,
+  CalendarVisit,
+  TimelinePhase,
+} from "@vpyd/api-client";
 import {
   keepPreviousData,
   useMutation,
@@ -17,34 +22,37 @@ import { DateField } from "../../components/DateField";
 import { StickyActions } from "../../components/StickyActions";
 import { usePhone } from "../../components/useMediaQuery";
 import { ApiError } from "../../lib/api";
-import { fieldMessage, messageFor } from "../../lib/errors";
+import { messageFor } from "../../lib/errors";
 import { useSearchState } from "../../lib/searchState";
 import { serviceLabel } from "../../lib/names";
 import { can, meQuery } from "../auth/session";
-import { categoriesQuery, servicesQuery } from "../catalog/api";
 import { spaToday } from "../corrections/api";
-import { CustomerSearch } from "../customers/CustomerSearch";
-import { customerQuery } from "../customers/api";
 import type { CartLine } from "../front-desk/api";
 import { cartFromAppointment } from "../front-desk/prefill";
 import { frontDeskSearch } from "../front-desk/search";
 import { activeStaffQuery, formatDate } from "../sales/api";
+import { BookingSheet, type Draft } from "./BookingSheet";
+import { GroupCheckIn } from "./GroupCheckIn";
 import {
-  STATUS_LABEL,
+  type Entry,
+  PHASE_LABEL,
   arriveAppointment,
-  bookAppointment,
   calendarQuery,
   closeAppointment,
+  counts,
   daysFrom,
-  freeAt,
+  entriesOf,
   hhmm,
-  instantAt,
   isOpen,
   minutesOf,
   mondayOf,
   paymentLabel,
+  peakPeople,
+  peopleAt,
+  saveSlotLimit,
   spaMinutes,
   updateAppointment,
+  view,
 } from "./api";
 
 const CustomerForm = lazy(() =>
@@ -61,33 +69,40 @@ function dayTitle(day: string): string {
   return `${WEEKDAY[d.getUTCDay()] ?? ""}, ${formatDate(day).slice(0, 5)}`;
 }
 
-function range(a: Appointment): string {
-  const s = spaMinutes(a.starts_at);
-  return `${hhmm(s)}–${hhmm(s + a.duration_min)}`;
+function range(start: number, minutes: number): string {
+  return `${hhmm(start)}–${hhmm(start + minutes)}`;
 }
 
-function services(a: Appointment): string {
-  return a.services
+function servicesText(
+  list: { service_name: string; category_name: string }[],
+): string {
+  return list
     .map((s) => serviceLabel(s.service_name, s.category_name))
     .join(", ");
 }
 
-function StatusBadge({ a }: { a: Appointment }) {
+function PhaseBadge({ phase }: { phase: TimelinePhase }) {
   return (
-    <span className="appt appt-badge" data-status={a.status}>
-      {STATUS_LABEL[a.status]}
+    <span className="appt appt-badge" data-phase={phase}>
+      {PHASE_LABEL[phase]}
     </span>
   );
 }
 
-type Draft =
-  | { mode: "new"; day: string; start: number; staffId: string }
-  | { mode: "edit"; appointment: Appointment };
+/** "Vãng lai" marks a visit recorded without a booking; "Nhóm · 3" a family booking. */
+function entryTag(e: Entry, cal: Calendar): string | null {
+  if (e.kind === "visit") return "Vãng lai";
+  const g = e.a.group_id;
+  if (!g) return null;
+  const n = cal.appointments.filter((x) => x.group_id === g).length;
+  return `Nhóm · ${String(n)} người`;
+}
 
 /**
- * The appointments tab of /quay (spec appointments.md §7): a day grid with technicians as columns,
- * a week overview, and a list (the phone layout). Click an empty slot to book, an appointment to
- * open it. Every rule (overlap, capacity, hours, closed days) is the server's; this only previews.
+ * The appointments tab of /quay (spec appointments.md §7, §10): the desk's timeline. Bookings and
+ * visits recorded without one (walk-ins) on one grid — technicians as columns, who is waiting, in
+ * service or done — a week overview, and a list (the phone layout). Click an empty slot to book,
+ * a card to open it. Every rule (overlap, hours, closed days) is the server's; this only previews.
  */
 export function AppointmentsCalendar({
   onComplete,
@@ -105,27 +120,47 @@ export function AppointmentsCalendar({
   const week = mondayOf(day);
   const [from, to] =
     layout === "tuan" ? [week, daysFrom(week, 7)[6] ?? week] : [day, day];
+  const showsToday = from <= today && today <= to;
   const cal = useQuery({
     ...calendarQuery(from, to),
     placeholderData: keepPreviousData,
+    // "Đang làm" turns into "Xong" with the clock (phases are derived on every read).
+    refetchInterval: showsToday ? 60_000 : false,
   });
   const [openId, setOpenId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
+  // Frozen when opened: members leave the "open" list as their visits are recorded.
+  const [groupMembers, setGroupMembers] = useState<Appointment[]>([]);
+  const [limitOpen, setLimitOpen] = useState(false);
   const isOwner = can(me, "record.void_closed_day");
   const locked = day < today && !isOwner;
 
-  const opened = cal.data?.appointments.find((a) => a.id === openId) ?? null;
+  const opened = cal.data
+    ? (entriesOf(cal.data).find((e) => e.id === openId) ?? null)
+    : null;
   const shift = (days: number) => {
     const d = new Date(`${day}T00:00:00Z`);
     d.setUTCDate(d.getUTCDate() + days);
-    setSearch({
-      ngay:
-        d.toISOString().slice(0, 10) === today
-          ? ""
-          : d.toISOString().slice(0, 10),
-    });
+    const iso = d.toISOString().slice(0, 10);
+    setSearch({ ngay: iso === today ? "" : iso });
   };
   const step = layout === "tuan" ? 7 : 1;
+  const startFrom = (a: Appointment) => {
+    setOpenId(null);
+    void cartFromAppointment(queryClient, a)
+      .catch(() => [])
+      .then((lines) => {
+        onComplete(a, lines);
+      });
+  };
+  const openGroup = (groupId: string) => {
+    setOpenId(null);
+    setGroupMembers(
+      (cal.data?.appointments ?? []).filter(
+        (a) => a.group_id === groupId && isOpen(a) && a.business_date <= today,
+      ),
+    );
+  };
 
   return (
     <section
@@ -141,7 +176,7 @@ export function AppointmentsCalendar({
               : dayTitle(day)}
           </h2>
           {cal.data && (
-            <DaySummary cal={cal.data} day={day} week={layout === "tuan"} />
+            <DaySummary cal={cal.data} day={layout === "tuan" ? null : day} />
           )}
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -213,6 +248,20 @@ export function AppointmentsCalendar({
               </button>
             ))}
           </div>
+          {can(me, "appointment.settings") && (
+            <button
+              type="button"
+              className="btn btn-secondary min-h-11"
+              onClick={() => {
+                setLimitOpen(true);
+              }}
+            >
+              Số khách tối đa
+              {cal.data?.max_per_slot
+                ? `: ${String(cal.data.max_per_slot)}`
+                : ""}
+            </button>
+          )}
         </div>
       </div>
       {locked && (
@@ -282,12 +331,12 @@ export function AppointmentsCalendar({
         </StickyActions>
       )}
 
-      {cal.data && opened && (
+      {cal.data && opened?.kind === "appointment" && (
         <AppointmentSheet
           key={opened.id}
-          a={opened}
+          a={opened.a}
           cal={cal.data}
-          locked={opened.business_date < today && !isOwner}
+          locked={opened.a.business_date < today && !isOwner}
           canCreateCustomer={can(me, "customer.write")}
           canWriteHealth={can(me, "customer.health_notes.write")}
           onClose={() => {
@@ -295,15 +344,20 @@ export function AppointmentsCalendar({
           }}
           onEdit={() => {
             setOpenId(null);
-            setDraft({ mode: "edit", appointment: opened });
+            setDraft({ mode: "edit", appointment: opened.a });
           }}
           onComplete={() => {
+            startFrom(opened.a);
+          }}
+          onOpenOther={setOpenId}
+          onGroupCheckIn={openGroup}
+        />
+      )}
+      {opened?.kind === "visit" && (
+        <VisitSheet
+          v={opened.v}
+          onClose={() => {
             setOpenId(null);
-            void cartFromAppointment(queryClient, opened)
-              .catch(() => [])
-              .then((lines) => {
-                onComplete(opened, lines);
-              });
           }}
         />
       )}
@@ -320,53 +374,71 @@ export function AppointmentsCalendar({
           }}
         />
       )}
+      {cal.data && groupMembers.length > 0 && (
+        <GroupCheckIn
+          cal={cal.data}
+          members={groupMembers}
+          onClose={() => {
+            setGroupMembers([]);
+          }}
+          onDone={() => {
+            setGroupMembers([]);
+          }}
+        />
+      )}
+      {limitOpen && cal.data && (
+        <SlotLimitSheet
+          current={cal.data.max_per_slot ?? null}
+          onClose={() => {
+            setLimitOpen(false);
+          }}
+        />
+      )}
     </section>
   );
 }
 
-function DaySummary({
-  cal,
-  day,
-  week,
-}: {
-  cal: Calendar;
-  day: string;
-  week: boolean;
-}) {
-  const list = week
-    ? cal.appointments
-    : cal.appointments.filter((a) => a.business_date === day);
-  const count = (s: Appointment["status"]) =>
-    list.filter((a) => a.status === s).length;
+/** "Chưa đến 3 · Đang làm 2 · Xong 5" for the day (or the week). */
+function DaySummary({ cal, day }: { cal: Calendar; day: string | null }) {
+  const list = entriesOf(cal, day ?? undefined).map(view);
+  const n = (...phases: TimelinePhase[]) =>
+    list.filter((e) => phases.includes(e.phase)).length;
+  const lost = n("no_show", "cancelled");
   return (
     <p className="text-sm text-text-muted" aria-live="polite">
-      {list.length} lịch · {count("booked")} đã đặt · {count("arrived")} đã đến
-      · {count("done")} hoàn tất
-      {count("no_show") + count("cancelled") > 0
-        ? ` · ${String(count("no_show") + count("cancelled"))} hủy/không đến`
-        : ""}{" "}
-      · {cal.capacity} KTV
+      Chưa đến {n("waiting")} · Đang làm {n("in_service")} · Xong {n("done")}
+      {lost > 0 ? ` · Hủy/không đến ${String(lost)}` : ""}
     </p>
   );
 }
 
-/** Greedy lanes: overlapping appointments of one column sit side by side. */
-function lanes(list: Appointment[]): Map<string, number> {
+interface Laid {
+  key: string;
+  title: string;
+  staffId: string;
+  items: ReturnType<typeof view>[];
+}
+
+/** Greedy lanes: overlapping cards of one column sit side by side. */
+function lanes(list: ReturnType<typeof view>[]): Map<string, number> {
   const ends: number[] = [];
   const lane = new Map<string, number>();
-  for (const a of [...list].sort((x, y) =>
-    x.starts_at < y.starts_at ? -1 : 1,
-  )) {
-    const s = spaMinutes(a.starts_at);
-    let i = ends.findIndex((e) => e <= s);
+  for (const e of [...list].sort((x, y) => x.start - y.start)) {
+    let i = ends.findIndex((end) => end <= e.start);
     if (i === -1) {
       i = ends.length;
       ends.push(0);
     }
-    ends[i] = s + a.duration_min;
-    lane.set(a.id, i);
+    ends[i] = e.start + e.minutes;
+    lane.set(e.id, i);
   }
   return lane;
+}
+
+/** "2 khách", or "2/4" against the owner's max; empty when nobody is there and no max is set. */
+function slotCount(n: number, max: number | null): string {
+  if (max !== null) return `${String(n)}/${String(max)}`;
+  return n > 0 ? `${String(n)} khách` : "";
 }
 
 function DayGrid({
@@ -386,25 +458,25 @@ function DayGrid({
   const closes = minutesOf(cal.closes_at);
   const slot = cal.slot_minutes;
   const rows = Math.max(1, Math.round((closes - opens) / slot));
-  const shown = cal.appointments.filter(
-    (a) =>
-      a.business_date === day &&
-      a.status !== "cancelled" &&
-      a.status !== "no_show",
-  );
+  const entries = entriesOf(cal, day);
+  const shown = entries
+    .map(view)
+    // Cancelled, missed and voided ones free their place; the list view still shows them.
+    .filter((e) => counts(e.phase));
+  const byId = new Map(entries.map((e) => [e.id, e]));
   const techIds = new Set(cal.technicians.map((t) => t.id));
-  const groups = [
+  const groups: Laid[] = [
     ...cal.technicians.map((t) => ({
       key: t.id,
       title: t.full_name,
       staffId: t.id,
-      items: shown.filter((a) => a.staff_id === t.id),
+      items: shown.filter((e) => e.staffId === t.id),
     })),
     {
       key: "none",
       title: "Chưa gán KTV",
       staffId: "",
-      items: shown.filter((a) => !a.staff_id || !techIds.has(a.staff_id)),
+      items: shown.filter((e) => !e.staffId || !techIds.has(e.staffId)),
     },
   ];
   let col = 2;
@@ -413,11 +485,11 @@ function DayGrid({
     const width = Math.max(1, ...[...l.values()].map((v) => v + 1));
     const first = col;
     col += width;
-    // Rows an appointment already covers get no slot button underneath (no stacked controls).
+    // Rows a card already covers get no slot button underneath (no stacked controls).
     const busy = new Set<number>();
-    for (const a of g.items) {
-      const s = Math.round((spaMinutes(a.starts_at) - opens) / slot);
-      for (let k = 0; k < Math.max(1, Math.round(a.duration_min / slot)); k++)
+    for (const e of g.items) {
+      const s = Math.round((e.start - opens) / slot);
+      for (let k = 0; k < Math.max(1, Math.round(e.minutes / slot)); k++)
         busy.add(s + k);
     }
     return { ...g, first, width, lane: l, busy };
@@ -425,6 +497,7 @@ function DayGrid({
   const now = spaMinutes(new Date().toISOString());
   const isToday = day === spaToday();
   const past = (m: number) => day < spaToday() || (isToday && m + slot <= now);
+  const max = cal.max_per_slot ?? null;
 
   return (
     <div className="cal-scroll">
@@ -445,7 +518,11 @@ function DayGrid({
         >
           <span
             className="text-xs text-text-muted"
-            title="Giờ và số chỗ còn trống"
+            title={
+              max === null
+                ? "Giờ và số khách trong khung"
+                : "Giờ và số khách / tối đa"
+            }
           >
             Giờ
           </span>
@@ -464,8 +541,13 @@ function DayGrid({
         ))}
         {Array.from({ length: rows }, (_, r) => {
           const m = opens + r * slot;
-          const free = freeAt(cal, day, m);
           const hour = m % 60 === 0;
+          // One number per hour (its busiest slot), not one per 15-minute row (EM round 5).
+          const n = hour
+            ? peakPeople(cal, day, m, Math.min(60, closes - m))
+            : 0;
+          const text = hour && (n > 0 || max !== null) ? slotCount(n, max) : "";
+          const full = max !== null && n >= max;
           return (
             <div
               key={`g${String(r)}`}
@@ -473,13 +555,19 @@ function DayGrid({
               style={{ gridColumn: 1, gridRow: r + 2 }}
             >
               <span>{hour ? hhmm(m) : ""}</span>
-              <span
-                className={`cal-free ${free === 0 ? "is-full" : ""}`}
-                title={free === 0 ? "Kín" : `Còn ${String(free)} chỗ`}
-              >
-                <span className="sr-only">{hhmm(m)}: </span>
-                {free === 0 ? "Kín" : free}
-              </span>
+              {text && (
+                <span
+                  className={`cal-count ${full ? "is-full" : ""}`}
+                  title={
+                    full
+                      ? "Đã đủ số khách tối đa"
+                      : "Số khách đông nhất trong giờ này"
+                  }
+                >
+                  <span className="sr-only">{hhmm(m)}: </span>
+                  {text}
+                </span>
+              )}
             </div>
           );
         })}
@@ -508,32 +596,33 @@ function DayGrid({
           }),
         )}
         {laid.flatMap((g) =>
-          g.items.map((a) => {
-            const s = Math.max(
-              0,
-              Math.round((spaMinutes(a.starts_at) - opens) / slot),
-            );
-            const span = Math.max(1, Math.round(a.duration_min / slot));
+          g.items.map((e) => {
+            const s = Math.max(0, Math.round((e.start - opens) / slot));
+            const span = Math.max(1, Math.round(e.minutes / slot));
+            const entry = byId.get(e.id);
+            const tag = entry ? entryTag(entry, cal) : null;
             return (
               <button
-                key={a.id}
+                key={e.id}
                 type="button"
                 className="appt cal-event"
-                data-status={a.status}
+                data-phase={e.phase}
+                data-kind={e.kind}
                 style={{
-                  gridColumn: g.first + (g.lane.get(a.id) ?? 0),
+                  gridColumn: g.first + (g.lane.get(e.id) ?? 0),
                   gridRow: `${String(s + 2)} / span ${String(span)}`,
                 }}
                 onClick={() => {
-                  onOpen(a.id);
+                  onOpen(e.id);
                 }}
-                aria-label={`${range(a)} ${a.customer_name}, ${STATUS_LABEL[a.status]}`}
+                aria-label={`${range(e.start, e.minutes)} ${e.customerName}, ${PHASE_LABEL[e.phase]}${tag ? `, ${tag}` : ""}`}
               >
-                <span className="cal-event-time">
-                  {range(a)} · {STATUS_LABEL[a.status]}
+                <strong>{e.customerName}</strong>
+                <span className="cal-event-phase">
+                  {PHASE_LABEL[e.phase]}
+                  {tag ? ` · ${tag}` : ""}
                 </span>
-                <strong>{a.customer_name}</strong>
-                {span > 1 && <span>{services(a)}</span>}
+                {span > 2 && <span>{servicesText(e.services)}</span>}
               </button>
             );
           }),
@@ -568,14 +657,16 @@ function WeekGrid({
   const today = spaToday();
   const opens = minutesOf(cal.opens_at);
   const closes = minutesOf(cal.closes_at);
+  const max = cal.max_per_slot ?? null;
   return (
     <div className="cal-week">
       {daysFrom(from, 7).map((d) => {
-        const items = cal.appointments.filter((a) => a.business_date === d);
-        const open = items.filter(isOpen);
+        const items = entriesOf(cal, d);
+        const live = items.map(view).filter((e) => counts(e.phase));
         let full = 0;
-        for (let m = opens; m < closes; m += cal.slot_minutes)
-          if (freeAt(cal, d, m) === 0) full += 1;
+        if (max !== null)
+          for (let m = opens; m < closes; m += cal.slot_minutes)
+            if (peopleAt(cal, d, m) >= max) full += 1;
         return (
           <div key={d} className={`cal-day ${d === today ? "is-today" : ""}`}>
             <button
@@ -588,31 +679,34 @@ function WeekGrid({
             >
               <strong>{dayTitle(d)}</strong>
               <span className="text-xs text-text-muted">
-                {items.length} lịch · {open.length} chưa xong
-                {full > 0 ? ` · ${String(full)} khung kín` : ""}
+                {live.length} khách
+                {full > 0 ? ` · ${String(full)} khung đủ khách` : ""}
               </span>
             </button>
-            {items.map((a) => (
-              <button
-                key={a.id}
-                type="button"
-                className="appt cal-chip"
-                data-status={a.status}
-                onClick={() => {
-                  onOpen(a.id);
-                }}
-              >
-                <span className="font-semibold tabular-nums">
-                  {hhmm(spaMinutes(a.starts_at))} · {STATUS_LABEL[a.status]}
-                </span>
-                <span>
-                  {a.customer_name}
-                  {a.staff_name ? ` · ${a.staff_name}` : ""}
-                </span>
-              </button>
-            ))}
+            {items.map((e) => {
+              const v = view(e);
+              return (
+                <button
+                  key={e.id}
+                  type="button"
+                  className="appt cal-chip"
+                  data-phase={v.phase}
+                  onClick={() => {
+                    onOpen(e.id);
+                  }}
+                >
+                  <span className="font-semibold tabular-nums">
+                    {hhmm(v.start)} · {PHASE_LABEL[v.phase]}
+                  </span>
+                  <span>
+                    {v.customerName}
+                    {e.kind === "visit" ? " · Vãng lai" : ""}
+                  </span>
+                </button>
+              );
+            })}
             {items.length === 0 && (
-              <p className="px-1 text-xs text-text-muted">Chưa có lịch.</p>
+              <p className="px-1 text-xs text-text-muted">Chưa có khách.</p>
             )}
           </div>
         );
@@ -630,45 +724,72 @@ function DayList({
   day: string;
   onOpen: (id: string) => void;
 }) {
-  const items = cal.appointments.filter((a) => a.business_date === day);
+  const items = entriesOf(cal, day);
   if (items.length === 0)
     return (
       <p className="rounded-[14px] border border-border bg-surface p-4 text-text-muted">
-        Chưa có lịch hẹn ngày này. Bấm “Đặt lịch” để thêm.
+        Chưa có khách ngày này. Bấm “Đặt lịch” để thêm.
       </p>
     );
   return (
     <ul className="cal-list" aria-label={`Lịch hẹn ngày ${formatDate(day)}`}>
-      {items.map((a) => (
-        <li key={a.id}>
-          <button
-            type="button"
-            className="appt cal-card"
-            data-status={a.status}
-            onClick={() => {
-              onOpen(a.id);
-            }}
-          >
-            <span className="cal-card-time">{range(a)}</span>
-            <span className="cal-card-main">
-              <strong>
-                <CustomerName
-                  name={a.customer_name}
-                  gender={a.customer_gender}
-                />
-              </strong>
-              <span className="text-sm text-text-muted">{services(a)}</span>
-              <span className="text-sm">
-                {a.staff_name ? `KTV ${a.staff_name}` : "Chưa gán KTV"} ·{" "}
-                {paymentLabel(a, formatVnd)}
+      {items.map((e) => {
+        const v = view(e);
+        const tag = entryTag(e, cal);
+        const staffName =
+          e.kind === "appointment" ? e.a.staff_name : e.v.staff_name;
+        const pay =
+          e.kind === "appointment"
+            ? paymentLabel(e.a, formatVnd)
+            : visitPayment(e.v);
+        return (
+          <li key={e.id}>
+            <button
+              type="button"
+              className="appt cal-card"
+              data-phase={v.phase}
+              onClick={() => {
+                onOpen(e.id);
+              }}
+            >
+              <span className="cal-card-time">{range(v.start, v.minutes)}</span>
+              <span className="cal-card-main">
+                <strong>
+                  <CustomerName
+                    name={v.customerName}
+                    gender={
+                      e.kind === "appointment"
+                        ? e.a.customer_gender
+                        : e.v.customer_gender
+                    }
+                  />
+                </strong>
+                <span className="text-sm text-text-muted">
+                  {servicesText(v.services)}
+                  {tag ? ` · ${tag}` : ""}
+                </span>
+                <span className="text-sm">
+                  {staffName ? `KTV ${staffName}` : "Chưa gán KTV"} · {pay}
+                </span>
               </span>
-            </span>
-            <StatusBadge a={a} />
-          </button>
-        </li>
-      ))}
+              <PhaseBadge phase={v.phase} />
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
+}
+
+function visitPayment(v: CalendarVisit): string {
+  switch (v.payment_state) {
+    case "paid":
+      return `Đã thanh toán ${formatVnd(v.paid_amount)}`;
+    case "voided":
+      return "Lượt đã hủy";
+    default:
+      return "Trừ liệu trình, không phát sinh tiền";
+  }
 }
 
 // ------------------------------------------------------------------------- appointment sheet
@@ -682,6 +803,8 @@ function AppointmentSheet({
   onClose,
   onEdit,
   onComplete,
+  onOpenOther,
+  onGroupCheckIn,
 }: {
   a: Appointment;
   cal: Calendar;
@@ -691,6 +814,8 @@ function AppointmentSheet({
   onClose: () => void;
   onEdit: () => void;
   onComplete: () => void;
+  onOpenOther: (id: string) => void;
+  onGroupCheckIn: (groupId: string) => void;
 }) {
   const queryClient = useQueryClient();
   const staff = useQuery(activeStaffQuery);
@@ -713,19 +838,25 @@ function AppointmentSheet({
   const open = isOpen(a);
   const [openedAt] = useState(() => Date.now());
   const started = new Date(a.starts_at).getTime() <= openedAt;
+  const start = spaMinutes(a.starts_at);
   const link = (customerId: string) => {
     setCreating(false);
     action.mutate(() => updateAppointment(a, { customer_id: customerId }));
   };
+  const group = a.group_id
+    ? cal.appointments.filter((x) => x.group_id === a.group_id)
+    : [];
+  const groupOpen = group.filter(isOpen);
+  const canServe = open && !locked && a.business_date <= today;
 
   return (
     <BottomSheet
       open
       onClose={onClose}
-      title={`${range(a)} · ${a.customer_name}`}
+      title={`${range(start, a.duration_min)} · ${a.customer_name}`}
       description={
         <>
-          {dayTitle(a.business_date)} · <StatusBadge a={a} />
+          {dayTitle(a.business_date)} · <PhaseBadge phase={a.phase} />
         </>
       }
       footer={
@@ -741,10 +872,10 @@ function AppointmentSheet({
             <button
               type="button"
               className="btn btn-primary"
-              disabled={a.is_guest || a.business_date > today}
+              disabled={a.is_guest || !canServe}
               onClick={onComplete}
             >
-              Hoàn tất &amp; ghi lượt
+              {a.status === "arrived" ? "Ghi lượt" : "Khách đến · ghi lượt"}
             </button>
           </>
         ) : (
@@ -778,7 +909,7 @@ function AppointmentSheet({
         </dd>
         <dt className="text-text-muted">Dịch vụ</dt>
         <dd>
-          {services(a)} ({a.duration_min} phút)
+          {servicesText(a.services)} ({a.duration_min} phút)
         </dd>
         <dt className="text-text-muted">KTV</dt>
         <dd>{a.staff_name ?? "Chưa gán"}</dd>
@@ -798,6 +929,43 @@ function AppointmentSheet({
         )}
       </dl>
 
+      {group.length > 1 && (
+        <div className="mt-3 grid gap-2 rounded-[10px] border border-border p-3 text-sm">
+          <p className="font-semibold">Cùng nhóm ({group.length} người)</p>
+          <ul className="grid gap-1">
+            {group.map((x) => (
+              <li key={x.id} className="flex flex-wrap items-center gap-2">
+                {x.id === a.id ? (
+                  <strong>{x.customer_name}</strong>
+                ) : (
+                  <button
+                    type="button"
+                    className="underline"
+                    onClick={() => {
+                      onOpenOther(x.id);
+                    }}
+                  >
+                    {x.customer_name}
+                  </button>
+                )}
+                <PhaseBadge phase={x.phase} />
+              </li>
+            ))}
+          </ul>
+          {groupOpen.length > 1 && canServe && a.group_id && (
+            <button
+              type="button"
+              className="btn btn-primary min-h-11 justify-self-start"
+              onClick={() => {
+                if (a.group_id) onGroupCheckIn(a.group_id);
+              }}
+            >
+              Khách đến cả nhóm · ghi {groupOpen.length} lượt
+            </button>
+          )}
+        </div>
+      )}
+
       {locked && open && (
         <p className="mt-3 text-sm text-text-muted">
           Ngày đã chốt, liên hệ chủ spa.
@@ -806,7 +974,7 @@ function AppointmentSheet({
 
       {open && !locked && a.is_guest && (
         <div className="mt-3 grid gap-2 rounded-[10px] bg-warning-bg p-3 text-sm text-warning-text">
-          <p>Khách mới: tạo hồ sơ (điền sẵn tên và SĐT) để hoàn tất được.</p>
+          <p>Khách mới: tạo hồ sơ (điền sẵn tên và SĐT) để ghi lượt được.</p>
           {canCreateCustomer && !creating && (
             <button
               type="button"
@@ -871,7 +1039,7 @@ function AppointmentSheet({
                 action.mutate(() => arriveAppointment(a.id, staffId));
               }}
             >
-              Khách đã đến
+              Chỉ báo đã đến (ghi lượt sau)
             </button>
           </div>
         )}
@@ -972,129 +1140,84 @@ function conflictMessage(error: unknown, cal: Calendar): string {
   ) {
     const other = cal.appointments.find((x) => x.id === error.existingId);
     if (other)
-      return `${other.staff_name ?? "KTV"} đã có lịch ${range(other)} (${other.customer_name}). Chọn giờ hoặc KTV khác.`;
+      return `${other.staff_name ?? "KTV"} đã có lịch ${range(spaMinutes(other.starts_at), other.duration_min)} (${other.customer_name}). Chọn KTV khác.`;
   }
-  if (error instanceof ApiError && error.code === "appointment.slot_full")
-    return `Khung giờ này đã kín (${String(cal.capacity)} KTV đều có khách). Chọn giờ khác.`;
   return messageFor(error);
 }
 
-// --------------------------------------------------------------------------- booking sheet
-
-function BookingSheet({
-  cal,
-  draft,
-  onClose,
-  onSaved,
-}: {
-  cal: Calendar;
-  draft: Draft;
-  onClose: () => void;
-  onSaved: (a: Appointment) => void;
-}) {
-  const queryClient = useQueryClient();
-  const editing = draft.mode === "edit" ? draft.appointment : null;
-  const allServices = useQuery(servicesQuery(false));
-  const categories = useQuery(categoriesQuery);
-  const [who, setWho] = useState<"customer" | "guest">("customer");
-  const [customer, setCustomer] = useState<CustomerSummary | null>(null);
-  const [guestName, setGuestName] = useState("");
-  const [guestPhone, setGuestPhone] = useState("");
-  const [serviceIds, setServiceIds] = useState<string[]>(
-    editing ? editing.services.map((s) => s.service_id) : [],
-  );
-  const [pick, setPick] = useState("");
-  const [staffId, setStaffId] = useState(
-    editing
-      ? (editing.staff_id ?? "")
-      : draft.mode === "new"
-        ? draft.staffId
-        : "",
-  );
-  const [day, setDay] = useState(
-    editing
-      ? editing.business_date
-      : draft.mode === "new"
-        ? draft.day
-        : spaToday(),
-  );
-  const [start, setStart] = useState(
-    editing
-      ? spaMinutes(editing.starts_at)
-      : draft.mode === "new"
-        ? draft.start
-        : minutesOf(cal.opens_at),
-  );
-  const [duration, setDuration] = useState<number | null>(
-    editing ? editing.duration_min : null,
-  );
-  const [note, setNote] = useState(editing?.note ?? "");
-  const [key] = useState(() => crypto.randomUUID());
-  const slot = cal.slot_minutes;
-  const opens = minutesOf(cal.opens_at);
-  const closes = minutesOf(cal.closes_at);
-
-  const chosen = serviceIds
-    .map((id) => allServices.data?.find((s) => s.id === id))
-    .filter((s) => s !== undefined);
-  const auto =
-    Math.ceil(
-      chosen.reduce((sum, s) => sum + (s.duration_min ?? 60), 0) / slot,
-    ) * slot || 60;
-  const minutes = duration ?? auto;
-  const save = useMutation({
-    mutationFn: async () => {
-      const starts_at = instantAt(day, start);
-      if (editing)
-        return updateAppointment(editing, {
-          starts_at,
-          duration_min: minutes,
-          staff_id: staffId || null,
-          service_ids: serviceIds,
-          note: note.trim() || null,
-        });
-      return bookAppointment(
-        {
-          ...(who === "customer"
-            ? { customer_id: customer?.id ?? null }
-            : { guest: { full_name: guestName, phone: guestPhone } }),
-          service_ids: serviceIds,
-          staff_id: staffId || null,
-          starts_at,
-          duration_min: minutes,
-          note: note.trim() || null,
-        },
-        key,
-      );
-    },
-    onSuccess: async (a) => {
-      await queryClient.invalidateQueries({ queryKey: ["appointments"] });
-      onSaved(a);
-    },
-  });
-  const taken =
-    save.error instanceof ApiError && save.error.code === "customer.phone_taken"
-      ? save.error.existingId
-      : undefined;
-  const ready =
-    serviceIds.length > 0 &&
-    (editing ||
-      (who === "customer"
-        ? customer !== null
-        : guestName.trim() !== "" && guestPhone.trim() !== ""));
-  const groups = (categories.data ?? []).map((c) => ({
-    c,
-    items: (allServices.data ?? []).filter((s) => s.category_id === c.id),
-  }));
-  const field =
-    "min-h-11 w-full rounded-[6px] border border-border bg-surface px-3";
-
+/** A walk-in visit on the timeline: who, what, by whom, paid how (no session note here). */
+function VisitSheet({ v, onClose }: { v: CalendarVisit; onClose: () => void }) {
+  const start = spaMinutes(v.starts_at);
   return (
     <BottomSheet
       open
-      wide
       onClose={onClose}
-      title={editing ? `Đổi lịch · ${editing.customer_name}` : "Đặt lịch hẹn"}
+      title={`${range(start, v.duration_min)} · ${v.customer_name}`}
+      description={
+        <>
+          {dayTitle(v.business_date)} · Vãng lai ·{" "}
+          <PhaseBadge phase={v.phase} />
+        </>
+      }
+      footer={
+        <button type="button" className="btn btn-secondary" onClick={onClose}>
+          Đóng
+        </button>
+      }
+    >
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+        <dt className="text-text-muted">Khách</dt>
+        <dd>
+          <CustomerName name={v.customer_name} gender={v.customer_gender} />
+          {" · "}
+          <Link
+            to="/khach-hang/$customerId"
+            params={{ customerId: v.customer_id }}
+            className="underline"
+          >
+            Mở hồ sơ
+          </Link>
+        </dd>
+        <dt className="text-text-muted">Dịch vụ</dt>
+        <dd>{servicesText(v.services)}</dd>
+        <dt className="text-text-muted">KTV</dt>
+        <dd>{v.staff_name}</dd>
+        <dt className="text-text-muted">Thanh toán</dt>
+        <dd>{visitPayment(v)}</dd>
+      </dl>
+      <p className="mt-3 text-sm text-text-muted">
+        Lượt ghi thẳng ở “Ghi lượt khách”. Sửa hoặc hủy lượt ở danh sách lượt
+        hôm nay.
+      </p>
+    </BottomSheet>
+  );
+}
+
+/** Owner only: "số khách tối đa mỗi khung giờ" (empty = no limit). Advisory, never blocks. */
+function SlotLimitSheet({
+  current,
+  onClose,
+}: {
+  current: number | null;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [text, setText] = useState(current === null ? "" : String(current));
+  const value = text.trim() === "" ? null : Number(text);
+  const valid =
+    value === null || (Number.isInteger(value) && value >= 1 && value <= 200);
+  const save = useMutation({
+    mutationFn: () => saveSlotLimit(value),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      onClose();
+    },
+  });
+  return (
+    <BottomSheet
+      open
+      onClose={onClose}
+      title="Số khách tối đa mỗi khung giờ"
       footer={
         <>
           <button type="button" className="btn btn-secondary" onClick={onClose}>
@@ -1102,312 +1225,47 @@ function BookingSheet({
           </button>
           <button
             type="submit"
-            form="booking-form"
+            form="slot-limit-form"
             className="btn btn-primary"
-            aria-disabled={!ready || save.isPending}
+            disabled={save.isPending}
           >
-            {save.isPending
-              ? "Đang lưu…"
-              : editing
-                ? "Lưu thay đổi"
-                : "Đặt lịch"}
+            Lưu
           </button>
         </>
       }
     >
       <form
-        id="booking-form"
-        className="grid gap-3"
+        id="slot-limit-form"
+        className="grid gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          if (ready && !save.isPending) save.mutate();
+          if (valid) save.mutate();
         }}
       >
-        {!editing && (
-          <fieldset className="grid gap-2">
-            <legend className="text-sm font-semibold">Khách</legend>
-            <div
-              role="group"
-              aria-label="Loại khách"
-              className="segmented justify-self-start"
-            >
-              <button
-                type="button"
-                aria-pressed={who === "customer"}
-                onClick={() => {
-                  setWho("customer");
-                }}
-              >
-                Khách có hồ sơ
-              </button>
-              <button
-                type="button"
-                aria-pressed={who === "guest"}
-                onClick={() => {
-                  setWho("guest");
-                }}
-              >
-                Khách mới
-              </button>
-            </div>
-            {who === "customer" &&
-              (customer ? (
-                <p className="flex flex-wrap items-center gap-2">
-                  <strong>
-                    <CustomerName
-                      name={customer.full_name}
-                      gender={customer.gender}
-                    />
-                  </strong>
-                  <span className="text-sm text-text-muted tabular-nums">
-                    {customer.phone}
-                  </span>
-                  <button
-                    type="button"
-                    className="underline"
-                    onClick={() => {
-                      setCustomer(null);
-                    }}
-                  >
-                    Đổi khách
-                  </button>
-                </p>
-              ) : (
-                <CustomerSearch
-                  onSelect={setCustomer}
-                  onCreate={(typed) => {
-                    setWho("guest");
-                    if (/\d/.test(typed)) setGuestPhone(typed);
-                    else setGuestName(typed);
-                  }}
-                />
-              ))}
-            {who === "guest" && (
-              <div className="grid gap-2 sm:grid-cols-2">
-                <label className="grid gap-1 text-sm">
-                  <span>Tên khách</span>
-                  <input
-                    className={field}
-                    value={guestName}
-                    maxLength={200}
-                    onChange={(e) => {
-                      setGuestName(e.target.value);
-                    }}
-                  />
-                </label>
-                <label className="grid gap-1 text-sm">
-                  <span>Số điện thoại</span>
-                  <input
-                    className={field}
-                    inputMode="tel"
-                    value={guestPhone}
-                    onChange={(e) => {
-                      setGuestPhone(e.target.value);
-                    }}
-                  />
-                  {fieldMessage(save.error, "guest.phone") && (
-                    <span className="text-xs text-danger">
-                      {fieldMessage(save.error, "guest.phone")}
-                    </span>
-                  )}
-                </label>
-              </div>
-            )}
-            {taken && (
-              <p
-                role="alert"
-                className="flex flex-wrap items-center gap-2 text-sm text-danger"
-              >
-                Số này đã có hồ sơ khách.
-                <button
-                  type="button"
-                  className="underline"
-                  onClick={() => {
-                    void queryClient.query(customerQuery(taken)).then((c) => {
-                      setWho("customer");
-                      setCustomer({
-                        id: c.id,
-                        full_name: c.full_name,
-                        phone: c.phone,
-                        gender: c.gender ?? null,
-                      });
-                      save.reset();
-                    });
-                  }}
-                >
-                  Dùng hồ sơ này
-                </button>
-              </p>
-            )}
-          </fieldset>
-        )}
-
-        <fieldset className="grid gap-2">
-          <legend className="text-sm font-semibold">Dịch vụ (tối đa 5)</legend>
-          {chosen.length > 0 && (
-            <ul className="flex flex-wrap gap-2" aria-label="Dịch vụ đã chọn">
-              {chosen.map((s, i) => (
-                <li key={`${s.id}-${String(i)}`} className="badge badge-muted">
-                  {s.name} ({s.duration_min ?? 60}′)
-                  <button
-                    type="button"
-                    aria-label={`Bỏ ${s.name}`}
-                    onClick={() => {
-                      setServiceIds((ids) => ids.filter((_, j) => j !== i));
-                      if (!editing) setDuration(null);
-                    }}
-                  >
-                    <Icon name="x" className="size-4" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {serviceIds.length < 5 && (
-            <div className="flex flex-wrap gap-2">
-              <label htmlFor="booking-service" className="sr-only">
-                Thêm dịch vụ
-              </label>
-              <select
-                id="booking-service"
-                className={`${field} w-56 min-w-0 flex-1`}
-                value={pick}
-                onChange={(e) => {
-                  setPick(e.target.value);
-                }}
-              >
-                <option value="">
-                  {allServices.isPending
-                    ? "Đang tải bảng giá…"
-                    : "Chọn dịch vụ…"}
-                </option>
-                {groups
-                  .filter((g) => g.items.length > 0)
-                  .map((g) => (
-                    <optgroup key={g.c.id} label={g.c.name}>
-                      {g.items.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                          {s.duration_min
-                            ? ` · ${String(s.duration_min)} phút`
-                            : ""}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-              </select>
-              <button
-                type="button"
-                className="btn btn-secondary min-h-11"
-                onClick={() => {
-                  if (pick) {
-                    setServiceIds((ids) => [...ids, pick]);
-                    setPick("");
-                    if (!editing) setDuration(null);
-                  }
-                }}
-              >
-                Thêm
-              </button>
-            </div>
-          )}
-        </fieldset>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <DateField
-            label="Ngày hẹn"
-            value={day}
-            min={spaToday()}
-            onChange={(iso) => {
-              if (iso) setDay(iso);
-            }}
-          />
-          <label className="grid gap-1 text-sm">
-            <span>Giờ bắt đầu</span>
-            <select
-              className={field}
-              value={start}
-              onChange={(e) => {
-                setStart(Number(e.target.value));
-              }}
-            >
-              {Array.from(
-                { length: Math.max(0, (closes - opens) / slot) },
-                (_, i) => opens + i * slot,
-              ).map((m) => {
-                const free = freeAt(cal, day, m);
-                return (
-                  <option key={m} value={m}>
-                    {hhmm(m)}
-                    {day >= cal.from && day <= cal.to
-                      ? free === 0
-                        ? " (kín)"
-                        : ` (còn ${String(free)})`
-                      : ""}
-                  </option>
-                );
-              })}
-            </select>
-          </label>
-          <label className="grid gap-1 text-sm">
-            <span>Thời lượng</span>
-            <select
-              className={field}
-              value={minutes}
-              onChange={(e) => {
-                setDuration(Number(e.target.value));
-              }}
-            >
-              {Array.from({ length: 480 / slot }, (_, i) => (i + 1) * slot).map(
-                (m) => (
-                  <option key={m} value={m}>
-                    {m} phút
-                    {duration === null && m === auto ? " (theo dịch vụ)" : ""}
-                  </option>
-                ),
-              )}
-            </select>
-          </label>
-          <label className="grid gap-1 text-sm">
-            <span>KTV (không bắt buộc)</span>
-            <select
-              className={field}
-              value={staffId}
-              onChange={(e) => {
-                setStaffId(e.target.value);
-              }}
-            >
-              <option value="">Chưa gán KTV</option>
-              {cal.technicians.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.full_name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
         <label className="grid gap-1 text-sm">
-          <span>Ghi chú lịch hẹn (không ghi thông tin sức khỏe)</span>
-          <textarea
-            rows={2}
-            maxLength={500}
-            value={note}
+          <span>Số khách tối đa (để trống = không giới hạn)</span>
+          <input
+            inputMode="numeric"
+            className="min-h-11 rounded-[6px] border border-border bg-surface px-3"
+            value={text}
             onChange={(e) => {
-              setNote(e.target.value);
+              setText(e.target.value);
             }}
-            className="rounded-[6px] border border-border bg-surface p-2"
+            aria-invalid={!valid}
           />
         </label>
         <p className="text-sm text-text-muted">
-          {formatDate(day)} · {hhmm(start)}–{hhmm(start + minutes)} · chưa thanh
-          toán (thu khi hoàn tất)
+          Lịch hiện “số khách / tối đa” ở mỗi khung giờ và cảnh báo khi đủ,
+          nhưng vẫn cho đặt khi khách chịu chờ.
         </p>
-        {save.isError && !taken && (
+        {!valid && (
           <p role="alert" className="text-sm text-danger">
-            {conflictMessage(save.error, cal)}
-            {fieldMessage(save.error, "starts_at")
-              ? ` ${fieldMessage(save.error, "starts_at") ?? ""}`
-              : ""}
+            Nhập số từ 1 đến 200, hoặc để trống.
+          </p>
+        )}
+        {save.isError && (
+          <p role="alert" className="text-sm text-danger">
+            {messageFor(save.error)}
           </p>
         )}
       </form>

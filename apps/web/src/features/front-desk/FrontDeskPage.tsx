@@ -91,6 +91,15 @@ const DiscountField = lazy(() =>
 const field = "min-h-11 rounded-[6px] border border-border bg-surface px-3";
 const card = "rounded-[14px] border border-border bg-surface p-4 shadow-card";
 
+// Placeholders for the lazy pieces until they are mounted after the first paint: the same boxes,
+// so swapping them in shifts nothing (CLS budget).
+const countdownBox = <span aria-hidden="true" className="block h-10 w-64" />;
+const todayVisitsSkeleton = (
+  <section aria-label="Lượt khách hôm nay" className={card}>
+    <div aria-hidden="true" className="h-24 skeleton" />
+  </section>
+);
+
 interface Toast {
   text: string;
   error: boolean;
@@ -127,9 +136,11 @@ export function FrontDeskPage() {
   const { data: me } = useSuspenseQuery(meQuery);
   const [search, setSearch] = useSearchState(frontDeskSearch);
   const queryClient = useQueryClient();
-  const staff = useQuery(activeStaffQuery);
+  // Everything below the search box waits for the first paint: Lighthouse's simulated LCP counts
+  // every request and script that runs before that paint, lazy chunks included (frontend.md
+  // "Perf budget"). The technician pickers need the staff only once a line is in the cart.
   const painted = useAfterFirstPaint();
-  // Secondary to the search box: fetched just after the first paint (see useAfterFirstPaint).
+  const staff = useQuery({ ...activeStaffQuery, enabled: painted });
   const today = useQuery({
     ...todayVisitsQuery,
     enabled: painted,
@@ -150,7 +161,7 @@ export function FrontDeskPage() {
   const [note, setNote] = useState("");
   const [toast, setToast] = useState<Toast | null>(null);
   const [focusDeduct, setFocusDeduct] = useState(false);
-  /** The appointment this visit completes (calendar → "Hoàn tất & ghi lượt"); null = walk-in. */
+  /** The appointment this visit completes (calendar → "Khách đến · ghi lượt"); null = walk-in. */
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   /** "Giờ làm": "" = now. `serviceDay` "" = today (only owners pick another day). */
   const [serviceTime, setServiceTime] = useState("");
@@ -221,8 +232,8 @@ export function FrontDeskPage() {
           ? [visit, ...(old ?? []).filter((v) => v.id !== visit.id)]
           : old,
       );
-      if (appointment)
-        void queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      // Walk-ins are on the calendar too (spec appointments.md §10.1), not only completed bookings.
+      void queryClient.invalidateQueries({ queryKey: ["appointments"] });
       if (visit.business_date !== todayIso)
         void queryClient.invalidateQueries({
           queryKey: ["visits", visit.business_date],
@@ -347,7 +358,7 @@ export function FrontDeskPage() {
     focusLineKey.current = line.key;
   };
 
-  /** Calendar → "Hoàn tất & ghi lượt": the cart filled with the booked services and technician. */
+  /** Calendar → "Khách đến · ghi lượt": the cart filled with the booked services and technician. */
   const startFromAppointment = (a: Appointment, prefilled: CartLine[]) => {
     if (!a.customer_id) return;
     select({
@@ -392,11 +403,13 @@ export function FrontDeskPage() {
             </button>
           )}
         </div>
-        <Suspense
-          fallback={<span aria-hidden="true" className="block h-10 w-64" />}
-        >
-          <DayCountdown owner={mayBackdate} />
-        </Suspense>
+        {painted ? (
+          <Suspense fallback={countdownBox}>
+            <DayCountdown owner={mayBackdate} />
+          </Suspense>
+        ) : (
+          countdownBox
+        )}
       </div>
 
       {search.view === "lich" && can(me, "appointment.manage") ? (
@@ -789,15 +802,13 @@ export function FrontDeskPage() {
             </section>
           </div>
 
-          <Suspense
-            fallback={
-              <section aria-label="Lượt khách hôm nay" className={card}>
-                <div aria-hidden="true" className="h-24 skeleton" />
-              </section>
-            }
-          >
-            <TodayVisits />
-          </Suspense>
+          {painted ? (
+            <Suspense fallback={todayVisitsSkeleton}>
+              <TodayVisits />
+            </Suspense>
+          ) : (
+            todayVisitsSkeleton
+          )}
         </>
       )}
 

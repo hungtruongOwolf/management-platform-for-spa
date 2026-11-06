@@ -26,7 +26,8 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
 | `opening_balance.import` (luôn ghi vào ngày kinh doanh hôm nay; **chỉ còn route tạm**, team dùng CLI `app import-paper-book`) | ✓ | — (bỏ ở 0013) | — | — |
 | `visit.record` / `visit.read` | ✓ | ✓ | — | grant (read) |
 | `visit.backdate` (vòng 4, migration 0016: ghi lượt có giờ làm ở ngày đã qua, ≤ 366 ngày) | ✓ | — | — | — |
-| `appointment.manage` (vòng 4, migration 0016: xem + đặt/đổi/hủy lịch hẹn, khách đến, hoàn tất) | ✓ | ✓ | — (chưa nối tài khoản ↔ nhân viên, Q8) | — |
+| `appointment.manage` (vòng 4, migration 0016: xem + đặt/đổi/hủy lịch hẹn, khách đến, hoàn tất; vòng 5: đặt nhóm `POST /appointments/group`) | ✓ | ✓ | — (chưa nối tài khoản ↔ nhân viên, Q8) | — |
+| `appointment.settings` (vòng 5, migration 0019: `PUT /appointment-settings`, số khách tối đa mỗi khung giờ, chỉ cảnh báo) | ✓ | — | — | — |
 | `payment.collect` | ✓ | ✓ | — | — |
 | `sale.read` | ✓ | ✓ | — | grant (read) |
 | `sale.discount` (≤ `manager_discount_max_pct`) | ✓ | ✓ | — | — |
@@ -69,6 +70,11 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
   - Khách mới trong lịch hẹn: SĐT đã có hồ sơ → `409 customer.phone_taken` + `existing_id` (tra trong tenant của session, như `phone-check`, không mở thêm bề mặt dò số).
   - Dữ liệu: `appointment` + `appointment_service` có RLS tenant; app_rw không DELETE `appointment`; trigger `appointment_closed_is_final`; `EXCLUDE` (staff × khoảng giờ) chống trùng KTV. Ghi chú lịch hẹn **không** phải dữ liệu sức khỏe (UI ghi rõ), không mã hóa; ghi chú buổi vẫn ở lượt khách.
   - Test: `app/tests/appointments.rs` (7 test: chồng giờ/sức chứa/ô giờ, đua đặt lịch, hoàn tất qua use case lượt + replay, hủy/không đến, ngày đã chốt, nhập bù, giảm giá), `authz_matrix.rs` (+8 dòng, `Target::Appointment`), `roles.rs` (KTV không có `appointment.manage`; Manager không có `visit.backdate`).
+- **Vòng 5 (EM 2026-11-06, [spec appointments §10](../product/specs/appointments.md), migration 0019):**
+  - `POST /appointments/group` cần `appointment.manage`; mỗi người kiểm như `POST /appointments` (khách / dịch vụ spa khác → `404`, ngày đã chốt → `403 day.locked` cho Manager); cả nhóm một transaction + một Idempotency-Key, không có nhóm lưu dở. Tối đa 6 người (chặn request phình).
+  - `PUT /appointment-settings` cần `appointment.settings` (chỉ Owner). 1–200 hoặc null, kiểm ở service + CHECK ở DB; audit before/after. Chỉ là cảnh báo, không đổi quyền đặt lịch của ai.
+  - `GET /appointments` thêm `visits[]` (lượt vãng lai) **chỉ khi** người gọi có `visit.read` (deny by default: thiếu → `[]`). Lượt trong lịch không mang ghi chú buổi (sức khỏe) và SĐT; chỉ tên, giới tính, dịch vụ, KTV, trạng thái thanh toán.
+  - Test: `appointments.rs` (`walk_in_visits_share_the_timeline_with_bookings` gồm nhánh thiếu `visit.read`, `only_the_owner_sets_the_advisory_max_per_slot`, `a_family_is_booked_at_once_or_not_at_all`), `authz_matrix.rs` (+2 dòng), `roles.rs` (Manager không có `appointment.settings`).
 - **Nhập sổ giấy (EM 2026-11-05, R1-2 §7):** quản lý mất `opening_balance.import` (migration 0013 xóa khỏi role hệ thống `manager`; `SystemRole::default_permissions` cũng vậy). `POST /opening-balances` còn tạm cho chủ spa tới khi web xóa màn `/nhap-so-cu`; team migrate bằng `app import-paper-book` (CLI, đi qua đúng use case với quyền của chủ spa). Test: `opening_balances.rs::only_the_owner_imports_today_without_a_window_or_reauth`, `paper_book.rs`.
 - **Spa bị tạm ngưng (M3):** `tenant.status = 'suspended'` → không cấp permission nào, kể cả cho session đang mở: route nghiệp vụ trả `403 auth.not_a_member` (cùng mã với membership bị tắt), `/me` trả `active_tenant: null`, `permissions: []`. Yêu cầu MFA **không** mất theo spa bị ngưng (migration 0011). Test: `app/tests/auth.rs::suspending_a_spa_cuts_off_its_open_sessions`.
 - **switch-tenant không phải re-auth (H1):** session mới sau `POST /auth/switch-tenant` giữ nguyên `recent_auth_at` và `absolute_expires_at` của session cũ (`app/tests/auth.rs::a_rotated_session_needs_a_real_reauth` kiểm trên session đã resolve, đúng cái guard 🔒 đọc; `auth.rs::switch_tenant_keeps_absolute_expiry_and_reauth_time`). Vẫn quan trọng: hạn tuyệt đối không được kéo dài, và guard 🔒 của thao tác bảo mật tài khoản dựa vào `recent_auth_at`.
