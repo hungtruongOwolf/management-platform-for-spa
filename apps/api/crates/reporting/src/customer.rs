@@ -121,8 +121,11 @@ async fn visits(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Visits, AppError> {
         });
     }
     let heads = sqlx::query!(
-        r#"SELECT v.id, v.status, v.check_in_at, v.void_reason, v.voided_at, v.sale_id
-           FROM app.visit v WHERE v.tenant_id = $1 AND v.id = ANY($2)"#,
+        r#"SELECT v.id, v.status, v.check_in_at, v.void_reason, v.voided_at, v.sale_id,
+                  v.corrects_visit_id, n.id AS "corrected_by_visit_id?"
+           FROM app.visit v
+           LEFT JOIN app.visit n ON n.tenant_id = v.tenant_id AND n.corrects_visit_id = v.id
+           WHERE v.tenant_id = $1 AND v.id = ANY($2)"#,
         tenant,
         ids
     )
@@ -151,6 +154,8 @@ async fn visits(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Visits, AppError> {
                     paid: money.paid,
                     void_reason: h.void_reason,
                     voided_at: h.voided_at,
+                    corrects_visit_id: h.corrects_visit_id,
+                    corrected_by_visit_id: h.corrected_by_visit_id,
                 },
             )
         })
@@ -524,7 +529,10 @@ pub async fn summary(
         r#"SELECT min(v.business_date) FILTER (WHERE v.status = 'completed') AS first_on,
                   max(v.business_date) FILTER (WHERE v.status = 'completed') AS last_on,
                   count(*) FILTER (WHERE v.status = 'completed') AS "visits!",
-                  count(*) FILTER (WHERE v.status = 'voided') AS "voided!",
+                  -- A visit replaced by "Sửa lượt" is not a cancellation.
+                  count(*) FILTER (WHERE v.status = 'voided' AND NOT EXISTS (
+                    SELECT 1 FROM app.visit n WHERE n.tenant_id = v.tenant_id AND n.corrects_visit_id = v.id
+                  )) AS "voided!",
                   coalesce((SELECT sum(l.qty) FROM app.visit_line l
                             JOIN app.visit v2 ON v2.tenant_id = l.tenant_id AND v2.id = l.visit_id
                             WHERE l.tenant_id = $1 AND v2.customer_id = $2

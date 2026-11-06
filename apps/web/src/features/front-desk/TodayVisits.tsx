@@ -1,7 +1,8 @@
 // Today's visits on /quay (full width, EM round 4 item 6; aligned table, EM round 5 item 1): one
 // row per visit with fixed columns (Giờ, Khách, Dịch vụ · KTV, Thanh toán, Số tiền, ⋯). A click on
 // the row (or the name, for keyboards) opens the details inline: lines, payment, phone, health
-// warning, profile link, and the reason of a cancelled visit. "Hủy lượt" lives in the ⋯ menu. A
+// warning, profile link, and the reason of a cancelled visit. "Sửa lượt" (also in the details) and
+// "Hủy lượt" live in the ⋯ menu, shown only when the server would allow them. A
 // lazy chunk: it renders after the first paint anyway (its query waits for it), so it stays off
 // the startup bundle.
 import type { Visit } from "@vpyd/api-client";
@@ -23,7 +24,7 @@ import { messageFor } from "../../lib/errors";
 import { invalidateManagementViews } from "../../lib/invalidate";
 import { serviceLabel } from "../../lib/names";
 import { can, meQuery } from "../auth/session";
-import { spaToday } from "../corrections/api";
+import { mayCorrectVisit, spaToday } from "../corrections/api";
 import { customerQuery } from "../customers/api";
 import { HealthNote } from "../customers/HealthNote";
 import {
@@ -46,7 +47,9 @@ const card = "rounded-[14px] border border-border bg-surface p-4 shadow-card";
 /** The "Thanh toán" cell: how it was paid, short (the amount has its own column). */
 function paymentShort(v: Visit): string {
   // The "Đã hủy" badge sits by the name; this says what the cancel gave back.
-  if (v.status === "voided") return v.total > 0 ? "Đã hoàn tiền" : "Đã trả lại buổi";
+  if (v.corrected_by_visit_id) return "Thay bằng lượt mới";
+  if (v.status === "voided")
+    return v.total > 0 ? "Đã hoàn tiền" : "Đã trả lại buổi";
   if (v.total === 0) return "Trừ liệu trình";
   const methods = new Set(
     v.payments.filter((p) => p.kind === "payment").map((p) => p.method),
@@ -57,13 +60,34 @@ function paymentShort(v: Visit): string {
 }
 
 /** Inline details of one visit: lines, technicians, payment, the customer's phone + a profile link. */
-function VisitDetails({ v }: { v: Visit }) {
+function VisitDetails({
+  v,
+  onCorrect,
+}: {
+  v: Visit;
+  /** Shown only when the caller may correct this visit. */
+  onCorrect: (() => void) | null;
+}) {
   const customer = useQuery(customerQuery(v.customer_id));
   return (
     <div className="grid gap-2 rounded-[10px] bg-surface-2 p-3 text-sm">
-      {v.status === "voided" && (
-        <p className="font-semibold text-danger">
-          Lý do hủy: {v.void_reason ?? "không ghi"}
+      {v.corrected_by_visit_id ? (
+        <p className="font-semibold">
+          Đã sửa → lượt mới.{" "}
+          <span className="font-normal text-text-muted">
+            {v.void_reason ?? ""}
+          </span>
+        </p>
+      ) : (
+        v.status === "voided" && (
+          <p className="font-semibold text-danger">
+            Lý do hủy: {v.void_reason ?? "không ghi"}
+          </p>
+        )
+      )}
+      {v.corrects_visit_id && (
+        <p className="text-text-muted">
+          Lượt đã sửa (thay cho lượt ghi trước).
         </p>
       )}
       <ul className="grid gap-1">
@@ -105,6 +129,15 @@ function VisitDetails({ v }: { v: Visit }) {
         >
           Mở hồ sơ khách
         </Link>
+        {onCorrect && (
+          <button
+            type="button"
+            onClick={onCorrect}
+            className="min-h-11 rounded-[10px] border border-border bg-surface px-3 font-semibold"
+          >
+            Sửa lượt
+          </button>
+        )}
       </p>
       {customer.data && <HealthNote customer={customer.data} />}
     </div>
@@ -152,8 +185,12 @@ function visitColumns({
           >
             <CustomerName name={v.customer_name} gender={v.customer_gender} />
           </button>
-          {v.status === "voided" && (
-            <span className="badge badge-danger">Đã hủy</span>
+          {v.corrected_by_visit_id ? (
+            <span className="badge">Đã sửa</span>
+          ) : (
+            v.status === "voided" && (
+              <span className="badge badge-danger">Đã hủy</span>
+            )
           )}
         </span>
       ),
@@ -211,7 +248,12 @@ function visitColumns({
   ];
 }
 
-export function TodayVisits() {
+export function TodayVisits({
+  onCorrect,
+}: {
+  /** "Sửa lượt": open the visit in the cart. */
+  onCorrect?: (visitId: string) => void;
+}) {
   const { data: me } = useSuspenseQuery(meQuery);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -242,6 +284,9 @@ export function TodayVisits() {
   const mayVoid =
     can(me, "record.void_same_day") &&
     (isToday || can(me, "record.void_closed_day"));
+  const correctable = (v: Visit) =>
+    onCorrect !== undefined &&
+    mayCorrectVisit(me?.permissions ?? [], v, todayIso);
   const toggle = (id: string) => {
     setExpanded((open) => (open === id ? null : id));
     if (voiding === id) setVoiding(null);
@@ -329,6 +374,16 @@ export function TodayVisits() {
                     });
                   },
                 },
+                ...(correctable(v)
+                  ? [
+                      {
+                        label: "Sửa lượt",
+                        onSelect: () => {
+                          onCorrect?.(v.id);
+                        },
+                      },
+                    ]
+                  : []),
                 ...(mayVoid && v.status === "completed"
                   ? [
                       {
@@ -383,7 +438,16 @@ export function TodayVisits() {
                   />
                 </Suspense>
               ) : expanded === v.id ? (
-                <VisitDetails v={v} />
+                <VisitDetails
+                  v={v}
+                  onCorrect={
+                    correctable(v)
+                      ? () => {
+                          onCorrect?.(v.id);
+                        }
+                      : null
+                  }
+                />
               ) : null
             }
           />

@@ -11,4 +11,6 @@ export const frontDeskSearch = searchSchema({
   ngay: param.day(),
   /** Calendar layout: day grid, week overview, or the list (default on phones). */
   kieu: param.oneOf(["ngay", "tuan", "ds"], "ngay"),
+  /** "Sửa lượt": id of the visit to open in the cart (from the day list or a customer's history). */
+  sua: param.text(40),
 });

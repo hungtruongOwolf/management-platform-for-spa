@@ -24,6 +24,9 @@ Code, DB và API dùng đúng tên tiếng Anh ở cột 2; giao diện dùng ti
 | Gói liệu trình của khách (nói gọn: gói liệu trình) | `CustomerPackage` | Gói khách đã mua: số buổi còn lại, hạn, trạng thái. **Không** gọi là "theo dõi gói" |
 | Lượt phục vụ / Buổi | `Visit` | Một lần khách đến: giờ vào/ra, các dịch vụ, KTV |
 | Dịch vụ dùng thêm | `Visit add-on` | Dịch vụ lẻ phát sinh trong một buổi |
+| Hủy lượt | `POST /visits/{id}/void` | Lượt ghi nhầm bị hủy hẳn: buổi cộng lại, tiền ghi bút toán đảo, lượt còn trong lịch sử "Đã hủy" |
+| Sửa lượt | `PATCH /visits/{id}` · `POST /visits/{id}/correct` | Chỉnh lượt đã ghi. Sửa trực tiếp (KTV, giờ làm, ghi chú) giữ lượt; đụng tiền/buổi thì **hủy-ghi lại**: lượt cũ "Đã sửa" (`corrected_by_visit_id`), lượt mới nối `corrects_visit_id`. Không gọi là "hủy" trong báo cáo |
+| Chênh lệch khi sửa | `VisitCorrected.difference` | "Thu thêm …" / "Hoàn …" / "Không đổi tiền" = tổng mới − tổng cũ |
 | Gói bán hôm nay *(draft vòng 6)* | `package_sales[]` của lượt | Gói bán ngay trong giỏ của lượt; "Dùng gói này cho buổi hôm nay" trừ buổi hôm nay từ gói đó ([spec §10](specs/front-desk-and-packages.md)) |
 | Chuyển sang gói liệu trình *(draft vòng 6)* | `convert-to-package` | Lượt lẻ đã trả được thay bằng lượt trừ buổi của gói vừa mua; khách đưa thêm phần chênh |
 | Thêm dịch vụ vào lượt *(draft vòng 6)* | visit addition | Thêm dòng / bán gói vào lượt đã lưu, hóa đơn mới nối `sale.visit_id`; không phải sửa sai |

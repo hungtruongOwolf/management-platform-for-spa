@@ -364,7 +364,7 @@ async fn the_daily_dashboard_nets_discounts_voids_and_refunds(pool: PgPool) -> T
     let b = &report.body;
     assert_eq!(
         b["counts"],
-        json!({"customers": 2, "visits": 3, "voided_visits": 1, "sessions_used": 2,
+        json!({"customers": 2, "visits": 3, "voided_visits": 1, "corrected_visits": 0, "sessions_used": 2,
                "one_off_services": 1, "packages_sold": 1}),
         "the cancelled package still was sold today (its sale is not voided)"
     );

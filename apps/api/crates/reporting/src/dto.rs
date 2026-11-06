@@ -149,7 +149,10 @@ pub struct DayCounts {
     pub customers: i64,
     /// Completed visits (voided ones are in `voided_visits`).
     pub visits: i64,
+    /// Visits cancelled ("Hủy lượt"); visits replaced by "Sửa lượt" are not cancellations.
     pub voided_visits: i64,
+    /// Visits replaced by "Sửa lượt" ("đã sửa"); their newest version counts in `visits`.
+    pub corrected_visits: i64,
     /// Package sessions taken by completed visits.
     pub sessions_used: i64,
     /// One-off services performed in completed visits.
@@ -165,6 +168,7 @@ impl DayCounts {
             customers: self.customers + o.customers,
             visits: self.visits + o.visits,
             voided_visits: self.voided_visits + o.voided_visits,
+            corrected_visits: self.corrected_visits + o.corrected_visits,
             sessions_used: self.sessions_used + o.sessions_used,
             one_off_services: self.one_off_services + o.one_off_services,
             packages_sold: self.packages_sold + o.packages_sold,
@@ -481,6 +485,10 @@ pub struct HistoryVisit {
     pub paid: MethodSplit,
     pub void_reason: Option<String>,
     pub voided_at: Option<DateTime<Utc>>,
+    /// "Sửa lượt": the voided visit this one replaces.
+    pub corrects_visit_id: Option<Uuid>,
+    /// "Sửa lượt": the visit that replaced this (voided) one.
+    pub corrected_by_visit_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
