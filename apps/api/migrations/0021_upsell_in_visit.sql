@@ -15,11 +15,6 @@
 
 -- ------------------------------------------------------------------------------ sale.visit_id
 ALTER TABLE app.sale ADD COLUMN visit_id uuid;
--- Deferred: a visit and the sales it makes are inserted in one transaction, and the visit row
--- itself points at its first sale (`visit.sale_id`).
-ALTER TABLE app.sale
-  ADD CONSTRAINT sale_visit_fk FOREIGN KEY (tenant_id, visit_id)
-    REFERENCES app.visit (tenant_id, id) DEFERRABLE INITIALLY DEFERRED;
 CREATE INDEX sale_visit_idx ON app.sale (tenant_id, visit_id) WHERE visit_id IS NOT NULL;
 
 -- Backfill: the one-off sale of every existing visit. Voided sales are final (0009), so lift that
@@ -29,6 +24,15 @@ UPDATE app.sale s SET visit_id = v.id
 FROM app.visit v
 WHERE v.tenant_id = s.tenant_id AND v.sale_id = s.id;
 ALTER TABLE app.sale ENABLE TRIGGER sale_voided_is_final;
+
+-- The foreign key is added only after the backfill: with a DEFERRED constraint already in place,
+-- the UPDATE above queues deferred checks, and ALTER TABLE app.sale then fails with "pending
+-- trigger events" on any database that has visits (CI's empty database never showed it).
+-- Deferred: a visit and the sales it makes are inserted in one transaction, and the visit row
+-- itself points at its first sale (`visit.sale_id`).
+ALTER TABLE app.sale
+  ADD CONSTRAINT sale_visit_fk FOREIGN KEY (tenant_id, visit_id)
+    REFERENCES app.visit (tenant_id, id) DEFERRABLE INITIALLY DEFERRED;
 
 -- The link is set once, at insert, to a visit of the same customer (the payer), and never moves.
 CREATE FUNCTION app.check_sale_visit_link() RETURNS trigger
