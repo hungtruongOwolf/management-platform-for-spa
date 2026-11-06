@@ -5,18 +5,23 @@ import type {
   Appointment,
   CustomerSummary,
   Service,
+  Staff,
   Visit,
 } from "@vpyd/api-client";
 import { useQuery } from "@tanstack/react-query";
 import { formatVnd } from "@vpyd/ui";
-import { useRef, useState } from "react";
+import { type RefObject, useRef, useState } from "react";
 import { Icon } from "../../app/Icon";
 import { DateField } from "../../components/DateField";
 import { messageFor } from "../../lib/errors";
+import { serviceLabel } from "../../lib/names";
 import { categoriesQuery, servicesQuery } from "../catalog/api";
+import { parseAmount } from "../sales/api";
 import {
+  type CartLine,
   type DiscountDraft,
   type Gender,
+  type PaymentMode,
   discountPreview,
   priceFor,
   timeOf,
@@ -481,5 +486,260 @@ export function AddOneOff({
         )
       )}
     </div>
+  );
+}
+
+/** "Người giới thiệu" options: khách tự chọn, then every active staff member with their role. */
+export function ReferrerOptions({ staff }: { staff: Staff[] }) {
+  return (
+    <>
+      <option value="">Khách tự chọn</option>
+      {staff.map((s) => (
+        <option key={s.id} value={s.id}>
+          {s.full_name} ({s.position})
+        </option>
+      ))}
+    </>
+  );
+}
+
+/** "Giới thiệu" on a one-off line: who recommended it ("" = khách tự chọn, Q-U2). */
+export function LineReferrer({
+  id,
+  serviceName,
+  value,
+  staff,
+  onChange,
+}: {
+  id: string;
+  serviceName: string;
+  value: string;
+  staff: Staff[];
+  onChange: (referrerId: string) => void;
+}) {
+  return (
+    <>
+      <label htmlFor={id}>Giới thiệu</label>
+      <select
+        id={id}
+        aria-label={`Người giới thiệu ${serviceName}`}
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+        }}
+        className="input"
+      >
+        <ReferrerOptions staff={staff} />
+      </select>
+    </>
+  );
+}
+
+/**
+ * The cart's service lines: name, where the session comes from (package, a package sold today,
+ * one-off) and its price, ✕, the technician (focus lands here after "Trừ 1 buổi", fast path step
+ * 3) and, for a one-off, who recommended it. Lives in this lazy chunk (prefetched after the first
+ * paint) so the startup bundle stays under budget.
+ */
+export function CartLines({
+  lines,
+  onLines,
+  covered,
+  planName,
+  attempted,
+  staff,
+  staffPending,
+  technicians,
+  staffSelects,
+  focusLineKey,
+}: {
+  lines: CartLine[];
+  onLines: (update: (ls: CartLine[]) => CartLine[]) => void;
+  /** Line key → `ref` of the package sold today that covers it. */
+  covered: ReadonlyMap<number, string>;
+  planName: (ref: string) => string;
+  attempted: boolean;
+  /** Everyone working here (the referrer may be any of them). */
+  staff: Staff[];
+  staffPending: boolean;
+  /** Technicians, busiest today first. */
+  technicians: Staff[];
+  /** The page focuses a missing technician picker on save. */
+  staffSelects: RefObject<Map<number, HTMLSelectElement>>;
+  /** Line whose technician picker takes focus when it mounts. */
+  focusLineKey: RefObject<number | null>;
+}) {
+  return (
+    <ul aria-label="Dịch vụ trong lượt" className="cart-lines">
+      {lines.map((l) => {
+        const invalid = attempted && l.staffId === "";
+        const selectId = `staff-${String(l.key)}`;
+        const coveredBy = covered.get(l.key);
+        return (
+          <li key={l.key} className="cart-line">
+            <div className="min-w-0">
+              <span className="cart-line-name">
+                {serviceLabel(l.serviceName, l.categoryName)}
+              </span>
+              <span className="cart-line-source">
+                {l.source === "package"
+                  ? `Trừ liệu trình · ${l.packageName}${l.expiryOverrideReason ? " · cho dùng tiếp" : ""}`
+                  : coveredBy
+                    ? `Trừ gói mua hôm nay · ${planName(coveredBy)}`
+                    : "Dịch vụ lẻ"}
+              </span>
+            </div>
+            <span className="cart-line-price">
+              {l.source === "one_off" &&
+                (coveredBy ? (
+                  <>
+                    <s className="cart-line-was">{formatVnd(l.price)}</s>
+                    {formatVnd(0)}
+                  </>
+                ) : (
+                  formatVnd(l.price)
+                ))}
+            </span>
+            <button
+              type="button"
+              aria-label={`Bỏ dòng ${l.serviceName}`}
+              onClick={() => {
+                onLines((ls) => ls.filter((x) => x.key !== l.key));
+              }}
+              className="btn btn-ghost btn-icon text-text-muted"
+            >
+              <Icon name="x" />
+            </button>
+            <div className="cart-line-staff">
+              <label htmlFor={selectId}>KTV</label>
+              <select
+                id={selectId}
+                ref={(el) => {
+                  if (!el) {
+                    staffSelects.current.delete(l.key);
+                    return;
+                  }
+                  staffSelects.current.set(l.key, el);
+                  if (focusLineKey.current === l.key) {
+                    focusLineKey.current = null;
+                    el.focus();
+                  }
+                }}
+                value={l.staffId}
+                aria-invalid={invalid}
+                aria-required="true"
+                aria-describedby={invalid ? `${selectId}-error` : undefined}
+                onChange={(e) => {
+                  const staffId = e.target.value;
+                  onLines((ls) =>
+                    ls.map((x) => (x.key === l.key ? { ...x, staffId } : x)),
+                  );
+                }}
+                className="input"
+              >
+                <option value="">
+                  {staffPending ? "Đang tải…" : "Chọn KTV…"}
+                </option>
+                {technicians.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.full_name}
+                  </option>
+                ))}
+              </select>
+              {invalid && (
+                <span id={`${selectId}-error`} className="field-error">
+                  Cần chọn KTV
+                </span>
+              )}
+              {l.source === "one_off" && !coveredBy && (
+                <LineReferrer
+                  id={`ref-${String(l.key)}`}
+                  serviceName={l.serviceName}
+                  value={l.referrerId ?? ""}
+                  staff={staff}
+                  onChange={(referrerId) => {
+                    onLines((ls) =>
+                      ls.map((x) =>
+                        x.key === l.key && x.source === "one_off"
+                          ? { ...x, referrerId }
+                          : x,
+                      ),
+                    );
+                  }}
+                />
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** "Thanh toán (thu đủ)": three radio chips, and the cash part when paid both ways. */
+export function PaymentChoices({
+  name,
+  mode,
+  onMode,
+  cashText,
+  onCashText,
+  total,
+  invalid,
+}: {
+  /** Radio group name, unique on the page. */
+  name: string;
+  mode: PaymentMode;
+  onMode: (mode: PaymentMode) => void;
+  cashText: string;
+  onCashText: (text: string) => void;
+  /** What must be collected (preview). */
+  total: number;
+  invalid: boolean;
+}) {
+  const cash = parseAmount(cashText);
+  return (
+    <fieldset className="grid gap-2">
+      <legend className="section-label mb-2">Thanh toán (thu đủ)</legend>
+      <div className="pay-choices">
+        {(
+          [
+            ["cash", "Tiền mặt"],
+            ["bank_transfer", "Chuyển khoản"],
+            ["mixed", "Tiền mặt + CK"],
+          ] as const
+        ).map(([value, label]) => (
+          <label key={value} className="pay-choice">
+            <input
+              type="radio"
+              name={name}
+              checked={mode === value}
+              onChange={() => {
+                onMode(value);
+              }}
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+      {mode === "mixed" && (
+        <label className="field max-w-xs">
+          <span>Tiền mặt (đ)</span>
+          <input
+            className="input"
+            inputMode="numeric"
+            value={cashText}
+            aria-invalid={invalid}
+            onChange={(e) => {
+              onCashText(e.target.value);
+            }}
+          />
+          {!Number.isNaN(cash) && cash > 0 && cash < total && (
+            <span className="field-hint">
+              Chuyển khoản: {formatVnd(total - cash)}
+            </span>
+          )}
+        </label>
+      )}
+    </fieldset>
   );
 }

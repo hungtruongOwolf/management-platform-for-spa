@@ -44,7 +44,8 @@ describe("search schemas", () => {
     // Every customer, "Cần liên hệ" first (EM round 3 items 4 and 16).
     expect(inactiveSearch.defaults).toEqual({ days: 7, scope: "all", kind: "all", follow: "due", q: "" });
     expect(inactiveSearch.validate({ days: "30", scope: "with_sessions", follow: "not_contacted" })).toEqual({ days: 30, scope: "with_sessions" });
-    expect(reportsSearch.validate({ period: "5y", from: "not-a-date" })).toEqual({});
+    expect(reportsSearch.validate({ period: "9y", from: "not-a-date" })).toEqual({});
+    expect(reportsSearch.validate({ period: "5y" })).toEqual({ period: "5y" });
     expect(customersSearch.validate({ q: "Hà" })).toEqual({ q: "Hà" });
   });
 });

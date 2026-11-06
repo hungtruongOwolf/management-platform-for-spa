@@ -305,7 +305,7 @@ describe("/quay round 6", () => {
     await pickHa(user);
     await addOneOff(user, "s5");
     await user.selectOptions(
-      screen.getByRole("combobox", { name: "KTV" }),
+      await screen.findByRole("combobox", { name: "KTV" }),
       "st1",
     );
     await user.click(
@@ -395,7 +395,7 @@ describe("/quay round 6", () => {
     await pickHa(user);
     await addOneOff(user, "s10");
     await user.selectOptions(
-      screen.getByRole("combobox", { name: "KTV" }),
+      await screen.findByRole("combobox", { name: "KTV" }),
       "st1",
     );
     const ref = await screen.findByRole("combobox", {

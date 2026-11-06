@@ -24,10 +24,12 @@ import {
   restoreCart,
   saveDraft,
 } from "./draftCart";
+import { ReferrerOptions } from "./CartOptions";
 import { defaultCloser } from "./upsell";
 import "./cart-packages.css";
 
 export { SELF_CHOSEN, packageSalesBody, sellPackageOnly } from "./checkout";
+export { LineReferrer, ReferrerOptions } from "./CartOptions";
 
 /** At most this many packages per checkout (server: 0–3). */
 export const MAX_PACKAGE_SALES = 3;
@@ -129,20 +131,6 @@ export function plansFor(
     p.items.some((i) => wanted.has(i.service_id)) ? 0 : 1;
   return [...plans].sort(
     (a, b) => hits(a) - hits(b) || a.name.localeCompare(b.name, "vi"),
-  );
-}
-
-/** "Người giới thiệu" options: khách tự chọn, then every active staff member with their role. */
-export function ReferrerOptions({ staff }: { staff: Staff[] }) {
-  return (
-    <>
-      <option value="">Khách tự chọn</option>
-      {staff.map((s) => (
-        <option key={s.id} value={s.id}>
-          {s.full_name} ({s.position})
-        </option>
-      ))}
-    </>
   );
 }
 
@@ -636,38 +624,6 @@ export function Companions({
         </p>
       )}
     </section>
-  );
-}
-
-/** "Giới thiệu" on a one-off line: who recommended it ("" = khách tự chọn, Q-U2). */
-export function LineReferrer({
-  id,
-  serviceName,
-  value,
-  staff,
-  onChange,
-}: {
-  id: string;
-  serviceName: string;
-  value: string;
-  staff: Staff[];
-  onChange: (referrerId: string) => void;
-}) {
-  return (
-    <>
-      <label htmlFor={id}>Giới thiệu</label>
-      <select
-        id={id}
-        aria-label={`Người giới thiệu ${serviceName}`}
-        value={value}
-        onChange={(e) => {
-          onChange(e.target.value);
-        }}
-        className="input"
-      >
-        <ReferrerOptions staff={staff} />
-      </select>
-    </>
   );
 }
 

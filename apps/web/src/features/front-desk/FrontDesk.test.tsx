@@ -595,7 +595,9 @@ describe("/quay", () => {
     expect(row).toHaveAttribute("aria-expanded", "true");
     const details = within(list).getByTestId("visit-details");
     // A package session: "Trừ buổi · còn 4/12" in the payment column, "—" under "Số tiền".
-    expect(within(details).getByText("Trừ buổi · còn 4/12")).toBeInTheDocument();
+    expect(
+      within(details).getByText("Trừ buổi · còn 4/12"),
+    ).toBeInTheDocument();
     expect(within(details).getByText("KTV KTV Hoa")).toBeInTheDocument();
     expect(
       await within(details).findByText(/SĐT 0905 111 222/),

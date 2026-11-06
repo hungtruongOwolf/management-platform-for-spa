@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Icon } from "../../app/Icon";
 import { BottomSheet } from "../../components/BottomSheet";
 import { DateField } from "../../components/DateField";
 import { ResponsiveTable, type Column } from "../../components/ResponsiveTable";
@@ -66,14 +67,21 @@ export function AdjustmentLogSection({ month, today, canWrite }: { month: string
               setOpen(true);
             }}
           >
-            + Ghi thưởng / phạt
+            <Icon name="plus" className="size-[18px]" />
+            Ghi thưởng / phạt
           </button>
         )}
       </div>
       {log.data.items.length === 0 ? (
-        <EmptyState title="Chưa có khoản thưởng hay phạt nào trong tháng này" />
+        <div className="card">
+          <EmptyState title="Chưa có khoản thưởng hay phạt nào trong tháng này" icon="menu-book">
+            {canWrite ? "Bấm “Ghi thưởng / phạt” để ghi một khoản; khoản ghi trong Sổ hằng ngày cũng hiện ở đây." : "Khoản ghi trong Sổ hằng ngày sẽ hiện ở đây."}
+          </EmptyState>
+        </div>
       ) : (
-        <ResponsiveTable caption="Sổ thưởng phạt" rows={log.data.items} rowKey={(a) => a.id} columns={columns} />
+        <div className="card overflow-hidden">
+          <ResponsiveTable caption="Sổ thưởng phạt" rows={log.data.items} rowKey={(a) => a.id} columns={columns} />
+        </div>
       )}
       {open && (
         <AdjustmentForm

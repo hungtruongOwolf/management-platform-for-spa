@@ -37,6 +37,7 @@ import { type Block, type Lane, blockOf, columnLanes, density } from "./layout";
 import {
   type Entry,
   type EntryView,
+  PHASE_BADGE,
   PHASE_LABEL,
   arriveAppointment,
   calendarQuery,
@@ -84,11 +85,10 @@ function servicesText(
     .join(", ");
 }
 
+/** The phase as the app's one status chip set (always with its words). */
 function PhaseBadge({ phase }: { phase: TimelinePhase }) {
   return (
-    <span className="appt appt-badge" data-phase={phase}>
-      {PHASE_LABEL[phase]}
-    </span>
+    <span className={`badge ${PHASE_BADGE[phase]}`}>{PHASE_LABEL[phase]}</span>
   );
 }
 
@@ -179,13 +179,10 @@ export function AppointmentsCalendar({
   };
 
   return (
-    <section
-      aria-labelledby="cal-title"
-      className="grid min-w-0 content-start gap-3"
-    >
+    <section aria-labelledby="cal-title" className="cal">
       <div className="cal-bar">
-        <div className="grid min-w-0 gap-1">
-          <h2 id="cal-title" className="text-lg font-semibold">
+        <div className="cal-heading">
+          <h2 id="cal-title" className="cal-title">
             Lịch hẹn ·{" "}
             {layout === "tuan"
               ? `tuần ${formatDate(from).slice(0, 5)}–${formatDate(to).slice(0, 5)}`
@@ -197,11 +194,7 @@ export function AppointmentsCalendar({
         </div>
         {/* The primary action, top right (EM round 6); phones keep it in the bottom bar. */}
         {!locked && !phone && (
-          <button
-            type="button"
-            className="btn btn-primary min-h-11"
-            onClick={book}
-          >
+          <button type="button" className="btn btn-primary" onClick={book}>
             <Icon name="plus" /> Đặt lịch
           </button>
         )}
@@ -215,7 +208,7 @@ export function AppointmentsCalendar({
           >
             <button
               type="button"
-              className="btn btn-secondary min-h-11 px-3"
+              className="btn btn-secondary btn-icon"
               onClick={() => {
                 shift(-step);
               }}
@@ -233,7 +226,7 @@ export function AppointmentsCalendar({
             />
             <button
               type="button"
-              className="btn btn-secondary min-h-11 px-3"
+              className="btn btn-secondary btn-icon"
               onClick={() => {
                 shift(step);
               }}
@@ -244,7 +237,7 @@ export function AppointmentsCalendar({
             {day !== today && (
               <button
                 type="button"
-                className="btn btn-secondary min-h-11"
+                className="btn btn-secondary"
                 onClick={() => {
                   setSearch({ ngay: "" });
                 }}
@@ -304,7 +297,7 @@ export function AppointmentsCalendar({
           {can(me, "appointment.settings") && (
             <button
               type="button"
-              className="btn btn-secondary min-h-11"
+              className="btn btn-secondary"
               onClick={() => {
                 setLimitOpen(true);
               }}
@@ -318,23 +311,40 @@ export function AppointmentsCalendar({
         </div>
       </div>
       {locked && (
-        <p className="rounded-[10px] bg-surface-2 p-2 text-sm text-text-muted">
+        <p className="cal-note">
           Ngày đã chốt: chỉ xem. Chủ spa sửa và nhập bù được.
         </p>
       )}
-      {cal.isPending && <div aria-hidden="true" className="h-64 skeleton" />}
-      {cal.isError && (
-        <p role="alert" className="text-danger">
-          {messageFor(cal.error)}{" "}
+      {cal.isPending && <CalendarSkeleton layout={layout} />}
+      {cal.isError && !cal.data && (
+        <div role="alert" className="cal-error">
+          <span>Không tải được lịch hẹn. {messageFor(cal.error)}</span>
           <button
             type="button"
-            className="underline"
+            className="btn btn-secondary"
             onClick={() => void cal.refetch()}
           >
             Thử lại
           </button>
-        </p>
+        </div>
       )}
+      {shown &&
+        // Not while the previous range stands in for the one being loaded.
+        !cal.isPlaceholderData &&
+        isEmpty(shown, layout === "tuan" ? null : day) && (
+          <EmptyHint
+            when={
+              layout === "tuan"
+                ? "tuần này"
+                : day === today
+                  ? "hôm nay"
+                  : "ngày này"
+            }
+            filtered={shown !== cal.data}
+            onGrid={layout === "ngay" && !locked}
+            canBook={!locked}
+          />
+        )}
       {cal.data && shown && (
         <div className={cal.isPlaceholderData ? "is-refreshing" : ""}>
           {layout === "ngay" && (
@@ -373,11 +383,7 @@ export function AppointmentsCalendar({
       {!locked && phone && (
         // Phones keep the primary action in thumb reach (design-system StickyActions).
         <StickyActions label="Đặt lịch">
-          <button
-            type="button"
-            className="btn btn-primary min-h-11"
-            onClick={book}
-          >
+          <button type="button" className="btn btn-primary" onClick={book}>
             <Icon name="plus" /> Đặt lịch
           </button>
         </StickyActions>
@@ -457,10 +463,86 @@ function DaySummary({ cal, day }: { cal: Calendar; day: string | null }) {
     list.filter((e) => phases.includes(e.phase)).length;
   const lost = n("no_show", "cancelled");
   return (
-    <p className="text-sm text-text-muted" aria-live="polite">
+    <p className="cal-summary" aria-live="polite">
       Chưa đến {n("waiting")} · Đang làm {n("in_service")} · Xong {n("done")}
       {lost > 0 ? ` · Hủy/không đến ${String(lost)}` : ""}
     </p>
+  );
+}
+
+/** Nothing on the day (or the loaded week) of this view. */
+function isEmpty(cal: Calendar, day: string | null): boolean {
+  return entriesOf(cal, day ?? undefined).length === 0;
+}
+
+/**
+ * An empty day teaches the next step (rulebook 9): "Chưa có lịch hẹn hôm nay" + where to book.
+ * A note only (EM review 2026-11-06): the toolbar's "Đặt lịch" is the one way in, no second button.
+ */
+function EmptyHint({
+  when,
+  filtered,
+  onGrid,
+  canBook,
+}: {
+  when: string;
+  /** Looking at one technician: say so, the others may have bookings. */
+  filtered: boolean;
+  /** The day grid is below: its free slots book too. */
+  onGrid: boolean;
+  canBook: boolean;
+}) {
+  return (
+    <p className="cal-empty">
+      <span>
+        <strong>
+          Chưa có lịch hẹn {when}
+          {filtered ? " của KTV đang xem" : ""}.
+        </strong>{" "}
+        {canBook &&
+          (onGrid
+            ? "Bấm một ô giờ trống bên dưới hoặc “Đặt lịch” để thêm."
+            : "Bấm “Đặt lịch” để thêm.")}
+      </span>
+    </p>
+  );
+}
+
+/** Loading: the shape of what is coming (a grid, seven days, or rows), never a spinner. */
+function CalendarSkeleton({ layout }: { layout: "ngay" | "tuan" | "ds" }) {
+  if (layout === "ngay")
+    return (
+      <div aria-hidden="true" className="cal-skel-grid">
+        {Array.from({ length: 5 * 8 }, (_, i) => (
+          <div
+            key={i}
+            className={i % 5 !== 0 && i % 3 === 0 ? "skeleton" : ""}
+          />
+        ))}
+      </div>
+    );
+  if (layout === "tuan")
+    return (
+      <div aria-hidden="true" className="cal-week">
+        {Array.from({ length: 7 }, (_, i) => (
+          <div key={i} className="cal-day">
+            <div className="cal-skel-rows">
+              {Array.from({ length: 4 }, (_, j) => (
+                <div key={j} className="skeleton cal-skel-line" />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  return (
+    <div aria-hidden="true" className="cal-panel">
+      <div className="cal-skel-rows">
+        {Array.from({ length: 5 }, (_, j) => (
+          <div key={j} className="skeleton cal-skel-line" />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -556,7 +638,6 @@ function DayGrid({
           style={{ gridColumn: 1, gridRow: 1 }}
         >
           <span
-            className="text-xs text-text-muted"
             title={
               max === null
                 ? "Giờ và số khách trong khung"
@@ -680,7 +761,7 @@ function DayGrid({
 }
 
 /** Gutter and minimum column width of the day grid (calendar.css `--gutter-w`, `--col-min`). */
-const GUTTER_PX = 96;
+const GUTTER_PX = 104;
 const COLUMN_MIN_PX = 168;
 
 /**
@@ -817,12 +898,14 @@ function WeekGrid({
               }}
               aria-label={`Xem ngày ${formatDate(d)}`}
             >
-              <strong>{dayTitle(d)}</strong>
-              <span className="text-xs text-text-muted">
+              <span className="cal-day-title">{dayTitle(d)}</span>
+              <span className="cal-day-meta">
                 {live.length} khách
                 {full > 0 ? ` · ${String(full)} khung đủ khách` : ""}
               </span>
             </button>
+            {/* The old week look (EM review 2026-11-06): one tinted block per booking, in the
+                phase's colours of the day grid; the phase is said in words on the first line. */}
             {items.map((e) => {
               const v = view(e);
               return (
@@ -831,14 +914,18 @@ function WeekGrid({
                   type="button"
                   className="appt cal-chip"
                   data-phase={v.phase}
+                  data-kind={e.kind}
                   onClick={() => {
                     onOpen(e.id);
                   }}
                 >
-                  <span className="font-semibold tabular-nums">
-                    {hhmm(v.start)} · {PHASE_LABEL[v.phase]}
+                  <span className="cal-chip-when">
+                    {hhmm(v.start)} ·{" "}
+                    <span className="cal-chip-phase">
+                      {PHASE_LABEL[v.phase]}
+                    </span>
                   </span>
-                  <span>
+                  <span className="cal-chip-who">
                     {v.customerName}
                     {e.kind === "visit" ? " · Vãng lai" : ""}
                   </span>
@@ -846,7 +933,7 @@ function WeekGrid({
               );
             })}
             {items.length === 0 && (
-              <p className="px-1 text-xs text-text-muted">Chưa có khách.</p>
+              <p className="cal-day-empty">Chưa có lịch hẹn.</p>
             )}
           </div>
         );
@@ -868,59 +955,77 @@ function DayList({
   onOpen: (id: string) => void;
 }) {
   const items = entriesOf(cal, day);
-  if (items.length === 0)
+  // The empty day is said above the views (EmptyHint), with the way to book.
+  if (items.length === 0) return null;
+  // Missed / cancelled / voided wait behind a disclosure with their count (rulebook 8).
+  const live = items.filter((e) => counts(view(e).phase));
+  const closed = items.filter((e) => !counts(view(e).phase));
+  const row = (e: Entry) => {
+    const v = view(e);
+    const tag = entryTag(e, everyone);
+    const staffName =
+      e.kind === "appointment" ? e.a.staff_name : e.v.staff_name;
+    const pay =
+      e.kind === "appointment"
+        ? paymentLabel(e.a, formatVnd)
+        : visitPayment(e.v);
     return (
-      <p className="rounded-[14px] border border-border bg-surface p-4 text-text-muted">
-        Chưa có khách ngày này. Bấm “Đặt lịch” để thêm.
-      </p>
+      <li key={e.id}>
+        <button
+          type="button"
+          className="cal-row"
+          data-closed={counts(v.phase) ? undefined : ""}
+          onClick={() => {
+            onOpen(e.id);
+          }}
+        >
+          <span className="cal-row-time">{range(v.start, v.minutes)}</span>
+          <span className="cal-row-main">
+            <strong>
+              <CustomerName
+                name={v.customerName}
+                gender={
+                  e.kind === "appointment"
+                    ? e.a.customer_gender
+                    : e.v.customer_gender
+                }
+              />
+            </strong>
+            <span>
+              {servicesText(v.services)}
+              {tag ? ` · ${tag}` : ""}
+            </span>
+            <span>
+              {staffName ? `KTV ${staffName}` : "Chưa gán KTV"} · {pay}
+            </span>
+          </span>
+          <PhaseBadge phase={v.phase} />
+        </button>
+      </li>
     );
+  };
   return (
-    <ul className="cal-list" aria-label={`Lịch hẹn ngày ${formatDate(day)}`}>
-      {items.map((e) => {
-        const v = view(e);
-        const tag = entryTag(e, everyone);
-        const staffName =
-          e.kind === "appointment" ? e.a.staff_name : e.v.staff_name;
-        const pay =
-          e.kind === "appointment"
-            ? paymentLabel(e.a, formatVnd)
-            : visitPayment(e.v);
-        return (
-          <li key={e.id}>
-            <button
-              type="button"
-              className="appt cal-card"
-              data-phase={v.phase}
-              onClick={() => {
-                onOpen(e.id);
-              }}
-            >
-              <span className="cal-card-time">{range(v.start, v.minutes)}</span>
-              <span className="cal-card-main">
-                <strong>
-                  <CustomerName
-                    name={v.customerName}
-                    gender={
-                      e.kind === "appointment"
-                        ? e.a.customer_gender
-                        : e.v.customer_gender
-                    }
-                  />
-                </strong>
-                <span className="text-sm text-text-muted">
-                  {servicesText(v.services)}
-                  {tag ? ` · ${tag}` : ""}
-                </span>
-                <span className="text-sm">
-                  {staffName ? `KTV ${staffName}` : "Chưa gán KTV"} · {pay}
-                </span>
-              </span>
-              <PhaseBadge phase={v.phase} />
-            </button>
-          </li>
-        );
-      })}
-    </ul>
+    <div className="cal-panel">
+      {live.length > 0 && (
+        <ul
+          className="cal-list"
+          aria-label={`Lịch hẹn ngày ${formatDate(day)}`}
+        >
+          {live.map(row)}
+        </ul>
+      )}
+      {closed.length > 0 && (
+        <details className="cal-closed" open={live.length === 0}>
+          <summary>Đã hủy / không đến ({closed.length})</summary>
+          <ul
+            className="cal-list"
+            aria-label={`Lịch đã hủy / không đến ngày ${formatDate(day)}`}
+          >
+            {closed.map(row)}
+          </ul>
+        </details>
+      )}
+    </div>
   );
 }
 
@@ -967,7 +1072,12 @@ function AppointmentSheet({
   );
   const [closing, setClosing] = useState<"cancel" | "no-show" | null>(null);
   const [reason, setReason] = useState("");
+  const [reasonTried, setReasonTried] = useState(false);
   const [creating, setCreating] = useState(false);
+  // Which button sent the running request (its spinner; the others wait).
+  const [running, setRunning] = useState<"arrive" | "close" | "link" | null>(
+    null,
+  );
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["appointments"] });
   const action = useMutation({
@@ -976,7 +1086,18 @@ function AppointmentSheet({
       setClosing(null);
       await refresh();
     },
+    onSettled: () => {
+      setRunning(null);
+    },
   });
+  const send = (
+    kind: "arrive" | "close" | "link",
+    run: () => Promise<Appointment>,
+  ) => {
+    if (action.isPending) return;
+    setRunning(kind);
+    action.mutate(run);
+  };
   const today = spaToday();
   const open = isOpen(a);
   const [openedAt] = useState(() => Date.now());
@@ -984,13 +1105,17 @@ function AppointmentSheet({
   const start = spaMinutes(a.starts_at);
   const link = (customerId: string) => {
     setCreating(false);
-    action.mutate(() => updateAppointment(a, { customer_id: customerId }));
+    send("link", () => updateAppointment(a, { customer_id: customerId }));
   };
   const group = a.group_id
     ? cal.appointments.filter((x) => x.group_id === a.group_id)
     : [];
   const groupOpen = group.filter(isOpen);
   const canServe = open && !locked && a.business_date <= today;
+  const canRecord = canServe && !a.is_guest;
+  const reasonMissing = reason.trim() === "";
+  const reasonLabel =
+    closing === "cancel" ? "Lý do hủy lịch" : "Ghi chú không đến";
 
   return (
     <BottomSheet
@@ -1015,8 +1140,11 @@ function AppointmentSheet({
             <button
               type="button"
               className="btn btn-primary"
-              disabled={a.is_guest || !canServe}
-              onClick={onComplete}
+              // aria-disabled keeps it focusable; the notice above says why it waits.
+              aria-disabled={!canRecord}
+              onClick={() => {
+                if (canRecord) onComplete();
+              }}
             >
               {a.status === "arrived" ? "Ghi lượt" : "Khách đến · ghi lượt"}
             </button>
@@ -1028,248 +1156,286 @@ function AppointmentSheet({
         )
       }
     >
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
-        <dt className="text-text-muted">Khách</dt>
-        <dd>
-          <CustomerName name={a.customer_name} gender={a.customer_gender} />
-          {a.is_guest ? " · khách mới, chưa có hồ sơ" : ""}
-          {a.customer_id && (
+      <div className="appt-sheet">
+        <dl className="appt-facts">
+          <dt>Khách</dt>
+          <dd>
+            <CustomerName name={a.customer_name} gender={a.customer_gender} />
+            {a.is_guest ? " · khách mới, chưa có hồ sơ" : ""}
+            {a.customer_id && (
+              <>
+                {" · "}
+                <Link
+                  to="/khach-hang/$customerId"
+                  params={{ customerId: a.customer_id }}
+                  className="underline"
+                >
+                  Mở hồ sơ
+                </Link>
+              </>
+            )}
+          </dd>
+          <dt>SĐT</dt>
+          <dd className="tabular-nums">
+            {a.customer_phone.replace(/^\+84/, "0")}
+          </dd>
+          <dt>Dịch vụ</dt>
+          <dd>
+            {servicesText(a.services)} ({a.duration_min} phút)
+          </dd>
+          <dt>KTV</dt>
+          <dd>{a.staff_name ?? "Chưa gán"}</dd>
+          <dt>Thanh toán</dt>
+          <dd>{paymentLabel(a, formatVnd)}</dd>
+          {a.companions.length > 0 && (
             <>
-              {" · "}
-              <Link
-                to="/khach-hang/$customerId"
-                params={{ customerId: a.customer_id }}
-                className="underline"
-              >
-                Mở hồ sơ
-              </Link>
+              <dt>Đi cùng</dt>
+              <dd>{a.companions.join(", ")}</dd>
             </>
           )}
-        </dd>
-        <dt className="text-text-muted">SĐT</dt>
-        <dd className="tabular-nums">
-          {a.customer_phone.replace(/^\+84/, "0")}
-        </dd>
-        <dt className="text-text-muted">Dịch vụ</dt>
-        <dd>
-          {servicesText(a.services)} ({a.duration_min} phút)
-        </dd>
-        <dt className="text-text-muted">KTV</dt>
-        <dd>{a.staff_name ?? "Chưa gán"}</dd>
-        <dt className="text-text-muted">Thanh toán</dt>
-        <dd>{paymentLabel(a, formatVnd)}</dd>
-        {a.note && (
-          <>
-            <dt className="text-text-muted">Ghi chú</dt>
-            <dd>{a.note}</dd>
-          </>
-        )}
-        {a.status_reason && (
-          <>
-            <dt className="text-text-muted">Lý do</dt>
-            <dd>{a.status_reason}</dd>
-          </>
-        )}
-      </dl>
-
-      {group.length > 1 && (
-        <div className="mt-3 grid gap-2 rounded-[10px] border border-border p-3 text-sm">
-          <p className="font-semibold">Cùng nhóm ({group.length} người)</p>
-          <ul className="grid gap-1">
-            {group.map((x) => (
-              <li key={x.id} className="flex flex-wrap items-center gap-2">
-                {x.id === a.id ? (
-                  <strong>{x.customer_name}</strong>
-                ) : (
-                  <button
-                    type="button"
-                    className="underline"
-                    onClick={() => {
-                      onOpenOther(x.id);
-                    }}
-                  >
-                    {x.customer_name}
-                  </button>
-                )}
-                <PhaseBadge phase={x.phase} />
-              </li>
-            ))}
-          </ul>
-          {groupOpen.length > 1 && canServe && a.group_id && (
-            <button
-              type="button"
-              className="btn btn-primary min-h-11 justify-self-start"
-              onClick={() => {
-                if (a.group_id) onGroupCheckIn(a.group_id);
-              }}
-            >
-              Khách đến cả nhóm · ghi {groupOpen.length} lượt
-            </button>
+          {a.note && (
+            <>
+              <dt>Ghi chú</dt>
+              <dd>{a.note}</dd>
+            </>
           )}
-        </div>
-      )}
-
-      {locked && open && (
-        <p className="mt-3 text-sm text-text-muted">
-          Ngày đã chốt, liên hệ chủ spa.
-        </p>
-      )}
-
-      {open && !locked && a.is_guest && (
-        <div className="mt-3 grid gap-2 rounded-[10px] bg-warning-bg p-3 text-sm text-warning-text">
-          <p>Khách mới: tạo hồ sơ (điền sẵn tên và SĐT) để ghi lượt được.</p>
-          {canCreateCustomer && !creating && (
-            <button
-              type="button"
-              className="btn btn-secondary justify-self-start"
-              onClick={() => {
-                setCreating(true);
-              }}
-            >
-              Tạo hồ sơ khách
-            </button>
+          {a.status_reason && (
+            <>
+              <dt>Lý do</dt>
+              <dd>{a.status_reason}</dd>
+            </>
           )}
-          {creating && (
-            <Suspense fallback={<p role="status">Đang mở biểu mẫu…</p>}>
-              <div className="text-text">
-                <CustomerForm
-                  prefill={{
-                    full_name: a.customer_name,
-                    phone: a.customer_phone.replace(/^\+84/, "0"),
-                  }}
-                  canWriteHealth={canWriteHealth}
-                  onSaved={(c) => {
-                    link(c.id);
-                  }}
-                  onOpenExisting={link}
-                  onCancel={() => {
-                    setCreating(false);
-                  }}
-                />
-              </div>
-            </Suspense>
-          )}
-        </div>
-      )}
+        </dl>
 
-      {open &&
-        !locked &&
-        a.status === "booked" &&
-        a.business_date === today && (
-          <div className="mt-3 flex flex-wrap items-end gap-2">
-            <label className="grid gap-1 text-sm">
-              <span className="font-semibold">KTV làm</span>
-              <select
-                className="min-h-11 rounded-[6px] border border-border bg-surface px-3"
-                value={staffId}
-                onChange={(e) => {
-                  setStaffId(e.target.value);
+        {group.length > 1 && (
+          <section className="appt-section" aria-label="Cùng nhóm">
+            <p className="appt-section-label">
+              Cùng nhóm ({group.length} người)
+            </p>
+            <ul className="appt-members">
+              {group.map((x) => (
+                <li key={x.id}>
+                  {x.id === a.id ? (
+                    <strong>{x.customer_name}</strong>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => {
+                        onOpenOther(x.id);
+                      }}
+                    >
+                      {x.customer_name}
+                    </button>
+                  )}
+                  <PhaseBadge phase={x.phase} />
+                </li>
+              ))}
+            </ul>
+            {groupOpen.length > 1 && canServe && a.group_id && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  if (a.group_id) onGroupCheckIn(a.group_id);
                 }}
               >
-                <option value="">Chọn KTV…</option>
-                {(staff.data ?? []).map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.full_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              className="btn btn-secondary min-h-11"
-              disabled={staffId === "" || action.isPending}
-              onClick={() => {
-                action.mutate(() => arriveAppointment(a.id, staffId));
-              }}
-            >
-              Chỉ báo đã đến (ghi lượt sau)
-            </button>
+                Khách đến cả nhóm · ghi {groupOpen.length} lượt
+              </button>
+            )}
+          </section>
+        )}
+
+        {locked && open && (
+          <p className="cal-note">Ngày đã chốt, liên hệ chủ spa.</p>
+        )}
+
+        {open && !locked && a.is_guest && (
+          <div className="appt-callout">
+            <p>Khách mới: tạo hồ sơ (điền sẵn tên và SĐT) để ghi lượt được.</p>
+            {canCreateCustomer && !creating && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                aria-busy={running === "link"}
+                onClick={() => {
+                  setCreating(true);
+                }}
+              >
+                Tạo hồ sơ khách
+              </button>
+            )}
+            {creating && (
+              <Suspense
+                fallback={
+                  <div aria-hidden="true" className="skeleton cal-skel-line" />
+                }
+              >
+                <div className="appt-callout-body">
+                  <CustomerForm
+                    prefill={{
+                      full_name: a.customer_name,
+                      phone: a.customer_phone.replace(/^\+84/, "0"),
+                    }}
+                    canWriteHealth={canWriteHealth}
+                    onSaved={(c) => {
+                      link(c.id);
+                    }}
+                    onOpenExisting={link}
+                    onCancel={() => {
+                      setCreating(false);
+                    }}
+                  />
+                </div>
+              </Suspense>
+            )}
           </div>
         )}
 
-      {open && !locked && (
-        <div className="mt-3 grid gap-2">
-          {closing === null ? (
-            <div className="flex flex-wrap gap-2">
-              {a.status === "booked" && started && (
+        {open &&
+          !locked &&
+          a.status === "booked" &&
+          a.business_date === today && (
+            <section className="appt-section" aria-label="Khách đã đến">
+              <div className="appt-actions">
+                <div className="field">
+                  <label htmlFor={`arrive-staff-${a.id}`}>KTV làm</label>
+                  <select
+                    id={`arrive-staff-${a.id}`}
+                    className="appt-input"
+                    value={staffId}
+                    onChange={(e) => {
+                      setStaffId(e.target.value);
+                    }}
+                  >
+                    <option value="">Chọn KTV…</option>
+                    {(staff.data ?? []).map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.full_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <button
                   type="button"
-                  className="btn btn-secondary min-h-11"
+                  className="btn btn-secondary"
+                  aria-disabled={staffId === "" || undefined}
+                  aria-busy={running === "arrive"}
                   onClick={() => {
-                    setClosing("no-show");
-                    setReason("");
+                    if (staffId !== "")
+                      send("arrive", () => arriveAppointment(a.id, staffId));
                   }}
                 >
-                  Không đến
-                </button>
-              )}
-              <button
-                type="button"
-                className="btn btn-secondary min-h-11 text-danger"
-                onClick={() => {
-                  setClosing("cancel");
-                  setReason("");
-                }}
-              >
-                Hủy lịch
-              </button>
-            </div>
-          ) : (
-            <form
-              className="grid gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (reason.trim() === "") return;
-                const outcome = closing;
-                action.mutate(() =>
-                  closeAppointment(a.id, outcome, reason.trim()),
-                );
-              }}
-            >
-              <label className="grid gap-1 text-sm">
-                <span className="font-semibold">
-                  {closing === "cancel"
-                    ? "Lý do hủy lịch"
-                    : "Ghi chú không đến"}{" "}
-                  (bắt buộc)
-                </span>
-                <input
-                  autoFocus
-                  value={reason}
-                  maxLength={500}
-                  onChange={(e) => {
-                    setReason(e.target.value);
-                  }}
-                  className="min-h-11 rounded-[6px] border border-border bg-surface px-3"
-                />
-              </label>
-              <div className="flex gap-2">
-                <button
-                  type="submit"
-                  className="btn btn-primary min-h-11"
-                  aria-disabled={reason.trim() === ""}
-                >
-                  {closing === "cancel" ? "Hủy lịch" : "Đánh dấu không đến"}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary min-h-11"
-                  onClick={() => {
-                    setClosing(null);
-                  }}
-                >
-                  Thôi
+                  Chỉ báo đã đến (ghi lượt sau)
                 </button>
               </div>
-            </form>
+            </section>
           )}
-        </div>
-      )}
-      {action.isError && (
-        <p role="alert" className="mt-2 text-sm text-danger">
-          {conflictMessage(action.error, cal)}
-        </p>
-      )}
+
+        {open && !locked && (
+          <section className="appt-section" aria-label="Hủy hoặc không đến">
+            {closing === null ? (
+              <div className="appt-actions">
+                {a.status === "booked" && started && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setClosing("no-show");
+                      setReason("");
+                      setReasonTried(false);
+                    }}
+                  >
+                    Không đến
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    setClosing("cancel");
+                    setReason("");
+                    setReasonTried(false);
+                  }}
+                >
+                  Hủy lịch
+                </button>
+              </div>
+            ) : (
+              <form
+                className="appt-form"
+                noValidate
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setReasonTried(true);
+                  if (reasonMissing) return;
+                  const outcome = closing;
+                  send("close", () =>
+                    closeAppointment(a.id, outcome, reason.trim()),
+                  );
+                }}
+              >
+                <div className="field">
+                  <label htmlFor={`close-reason-${a.id}`}>
+                    {reasonLabel} (bắt buộc)
+                  </label>
+                  <input
+                    id={`close-reason-${a.id}`}
+                    autoFocus
+                    value={reason}
+                    maxLength={500}
+                    onChange={(e) => {
+                      setReason(e.target.value);
+                    }}
+                    className="appt-input"
+                    aria-invalid={reasonTried && reasonMissing}
+                    aria-describedby={`close-reason-${a.id}-msg`}
+                  />
+                  {reasonTried && reasonMissing ? (
+                    <span
+                      id={`close-reason-${a.id}-msg`}
+                      className="appt-error"
+                    >
+                      Nhập {reasonLabel.toLowerCase()} rồi bấm lại.
+                    </span>
+                  ) : (
+                    <span id={`close-reason-${a.id}-msg`} className="appt-hint">
+                      Ghi vào lịch hẹn, ai mở lịch cũng thấy.
+                    </span>
+                  )}
+                </div>
+                <div className="appt-actions">
+                  <button
+                    type="submit"
+                    className={
+                      closing === "cancel"
+                        ? "btn btn-danger"
+                        : "btn btn-primary"
+                    }
+                    aria-busy={running === "close"}
+                  >
+                    {closing === "cancel" ? "Hủy lịch" : "Đánh dấu không đến"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => {
+                      setClosing(null);
+                    }}
+                  >
+                    Thôi
+                  </button>
+                </div>
+              </form>
+            )}
+          </section>
+        )}
+        {action.isError && (
+          <p role="alert" className="appt-error">
+            {conflictMessage(action.error, cal)}
+          </p>
+        )}
+      </div>
     </BottomSheet>
   );
 }
@@ -1308,30 +1474,32 @@ function VisitSheet({ v, onClose }: { v: CalendarVisit; onClose: () => void }) {
         </button>
       }
     >
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
-        <dt className="text-text-muted">Khách</dt>
-        <dd>
-          <CustomerName name={v.customer_name} gender={v.customer_gender} />
-          {" · "}
-          <Link
-            to="/khach-hang/$customerId"
-            params={{ customerId: v.customer_id }}
-            className="underline"
-          >
-            Mở hồ sơ
-          </Link>
-        </dd>
-        <dt className="text-text-muted">Dịch vụ</dt>
-        <dd>{servicesText(v.services)}</dd>
-        <dt className="text-text-muted">KTV</dt>
-        <dd>{v.staff_name}</dd>
-        <dt className="text-text-muted">Thanh toán</dt>
-        <dd>{visitPayment(v)}</dd>
-      </dl>
-      <p className="mt-3 text-sm text-text-muted">
-        Lượt ghi thẳng ở “Ghi lượt khách”. Sửa hoặc hủy lượt ở danh sách lượt
-        hôm nay.
-      </p>
+      <div className="appt-sheet">
+        <dl className="appt-facts">
+          <dt>Khách</dt>
+          <dd>
+            <CustomerName name={v.customer_name} gender={v.customer_gender} />
+            {" · "}
+            <Link
+              to="/khach-hang/$customerId"
+              params={{ customerId: v.customer_id }}
+              className="underline"
+            >
+              Mở hồ sơ
+            </Link>
+          </dd>
+          <dt>Dịch vụ</dt>
+          <dd>{servicesText(v.services)}</dd>
+          <dt>KTV</dt>
+          <dd>{v.staff_name}</dd>
+          <dt>Thanh toán</dt>
+          <dd>{visitPayment(v)}</dd>
+        </dl>
+        <p className="appt-hint">
+          Lượt ghi thẳng ở “Ghi lượt khách”. Sửa hoặc hủy lượt ở danh sách lượt
+          hôm nay.
+        </p>
+      </div>
     </BottomSheet>
   );
 }
@@ -1370,44 +1538,49 @@ function SlotLimitSheet({
             type="submit"
             form="slot-limit-form"
             className="btn btn-primary"
-            disabled={save.isPending}
+            aria-busy={save.isPending}
           >
-            Lưu
+            Lưu số khách tối đa
           </button>
         </>
       }
     >
       <form
         id="slot-limit-form"
-        className="grid gap-2"
+        className="appt-form"
+        noValidate
         onSubmit={(e) => {
           e.preventDefault();
-          if (valid) save.mutate();
+          if (valid && !save.isPending) save.mutate();
         }}
       >
-        <label className="grid gap-1 text-sm">
-          <span>Số khách tối đa (để trống = không giới hạn)</span>
+        <div className="field">
+          <label htmlFor="slot-limit">Số khách tối đa</label>
           <input
+            id="slot-limit"
             inputMode="numeric"
-            className="min-h-11 rounded-[6px] border border-border bg-surface px-3"
+            className="appt-input"
             value={text}
             onChange={(e) => {
               setText(e.target.value);
             }}
             aria-invalid={!valid}
+            aria-describedby="slot-limit-msg"
           />
-        </label>
-        <p className="text-sm text-text-muted">
-          Lịch hiện “số khách / tối đa” ở mỗi khung giờ và cảnh báo khi đủ,
-          nhưng vẫn cho đặt khi khách chịu chờ.
-        </p>
-        {!valid && (
-          <p role="alert" className="text-sm text-danger">
-            Nhập số từ 1 đến 200, hoặc để trống.
-          </p>
-        )}
+          {valid ? (
+            <span id="slot-limit-msg" className="appt-hint">
+              Để trống = không giới hạn. Lịch hiện “số khách / tối đa” ở mỗi
+              khung giờ và cảnh báo khi đủ, nhưng vẫn cho đặt khi khách chịu
+              chờ.
+            </span>
+          ) : (
+            <span id="slot-limit-msg" role="alert" className="appt-error">
+              Nhập số từ 1 đến 200, hoặc để trống.
+            </span>
+          )}
+        </div>
         {save.isError && (
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="appt-error">
             {messageFor(save.error)}
           </p>
         )}

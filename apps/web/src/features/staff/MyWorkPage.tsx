@@ -45,7 +45,7 @@ export function MyWorkPage() {
       ) : query.isError ? (
         <ErrorState error={query.error} onRetry={() => void query.refetch()} />
       ) : !query.data.linked || !query.data.data ? (
-        <EmptyState title="Tài khoản chưa gắn với hồ sơ nhân viên">
+        <EmptyState title="Tài khoản chưa gắn với hồ sơ nhân viên" icon="id-card">
           Nhờ chủ spa gắn tài khoản này vào hồ sơ của bạn để xem lịch hẹn và khách đã làm.
         </EmptyState>
       ) : (
@@ -60,19 +60,19 @@ export function MyWorkPage() {
 
 function Upcoming({ items, today }: { items: UpcomingAppointment[]; today: string }) {
   return (
-    <section className="grid gap-3" aria-labelledby="my-upcoming">
+    <section className="card grid gap-3 p-4 sm:p-5" aria-labelledby="my-upcoming">
       <h2 id="my-upcoming" className="section-title">
         Lịch hẹn sắp tới
       </h2>
       {items.length === 0 ? (
-        <p className="text-text-muted">Chưa có ai đặt lịch với bạn trong 30 ngày tới.</p>
+        <p className="text-text-muted">Chưa có ai đặt lịch với bạn trong 30 ngày tới. Lịch quầy đặt cho bạn sẽ hiện ở đây.</p>
       ) : (
         byDay(items).map(([day, list]) => (
           <div key={day} className="grid gap-2">
             <h3 className="text-sm font-semibold text-text-muted">{day === today ? `Hôm nay · ${dayLabel(day)}` : dayLabel(day)}</h3>
-            <ul className="grid gap-2">
+            <ul className="work-list">
               {list.map((a) => (
-                <li key={a.appointment_id} className="card flex flex-wrap items-start gap-x-4 gap-y-1 p-3">
+                <li key={a.appointment_id} className="work-row">
                   <span className="w-28 shrink-0 font-semibold tabular">
                     {timeOf(a.starts_at)}–{timeOf(a.ends_at)}
                   </span>
@@ -80,7 +80,7 @@ function Upcoming({ items, today }: { items: UpcomingAppointment[]; today: strin
                     <p className="font-semibold">{a.customer_name}</p>
                     <p className="text-sm text-text-muted">{a.services.join(", ")}</p>
                   </div>
-                  <span className={`badge ${a.status === "arrived" ? "badge-ok" : "badge-muted"}`}>{a.status === "arrived" ? "Khách đã đến" : "Đã đặt"}</span>
+                  <span className={`badge ${a.status === "arrived" ? "badge-ok" : "badge-info"}`}>{a.status === "arrived" ? "Khách đã đến" : "Đã đặt"}</span>
                 </li>
               ))}
             </ul>
@@ -94,12 +94,12 @@ function Upcoming({ items, today }: { items: UpcomingAppointment[]; today: strin
 function Served({ items, month }: { items: ServedVisit[]; month: string }) {
   const sessions = items.reduce((n, v) => n + v.services.reduce((m, s) => m + s.qty, 0), 0);
   return (
-    <section className="grid gap-3" aria-labelledby="my-served">
+    <section className="card grid gap-3 p-4 sm:p-5" aria-labelledby="my-served">
       <h2 id="my-served" className="section-title">
         Khách đã làm · {monthLabel(month)}
       </h2>
       {items.length === 0 ? (
-        <p className="text-text-muted">Chưa có lượt khách nào trong tháng này.</p>
+        <p className="text-text-muted">Chưa có lượt khách nào trong tháng này. Chọn tháng trước ở góc trên để xem lại.</p>
       ) : (
         <>
           <p className="text-sm">
@@ -108,9 +108,9 @@ function Served({ items, month }: { items: ServedVisit[]; month: string }) {
           {byDay(items).map(([day, list]) => (
             <div key={day} className="grid gap-2">
               <h3 className="text-sm font-semibold text-text-muted">{dayLabel(day)}</h3>
-              <ul className="grid gap-2">
+              <ul className="work-list">
                 {list.map((v) => (
-                  <li key={v.visit_id} className="card flex flex-wrap items-start gap-x-4 gap-y-1 p-3">
+                  <li key={v.visit_id} className="work-row">
                     <span className="w-14 shrink-0 font-semibold tabular">{timeOf(v.check_in_at)}</span>
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold">{v.customer_name}</p>

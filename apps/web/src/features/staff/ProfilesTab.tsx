@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { BottomSheet } from "../../components/BottomSheet";
 import { DateField, isoToDmy } from "../../components/DateField";
+import { Icon } from "../../app/Icon";
 import { ResponsiveTable, type Column } from "../../components/ResponsiveTable";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { ErrorState, RowsSkeleton } from "../reports/ui";
@@ -58,10 +59,13 @@ export function ProfilesTab({ canPay }: { canPay: boolean }) {
             setEditing("new");
           }}
         >
-          + Thêm nhân viên
+          <Icon name="plus" className="size-[18px]" />
+          Thêm nhân viên
         </button>
       </div>
-      <ResponsiveTable caption="Hồ sơ nhân viên" rows={query.data} rowKey={(p) => p.id} columns={columns} />
+      <div className="card overflow-hidden">
+        <ResponsiveTable caption="Hồ sơ nhân viên" rows={query.data} rowKey={(p) => p.id} columns={columns} />
+      </div>
       {editing && (
         <ProfileSheet
           canPay={canPay}
@@ -129,8 +133,8 @@ function ProfileSheet({ profile, canPay, onClose }: { profile: StaffProfile | nu
       onClose={onClose}
       title={profile ? `Hồ sơ ${profile.full_name}` : "Thêm nhân viên"}
       footer={
-        <button type="submit" form={formId} className="btn btn-primary" disabled={save.isPending || !name.trim()}>
-          Lưu
+        <button type="submit" form={formId} className="btn btn-primary" aria-busy={save.isPending || undefined} disabled={!name.trim()}>
+          Lưu hồ sơ
         </button>
       }
     >
@@ -139,7 +143,7 @@ function ProfileSheet({ profile, canPay, onClose }: { profile: StaffProfile | nu
         className="grid gap-4"
         onSubmit={(e) => {
           e.preventDefault();
-          save.mutate();
+          if (!save.isPending) save.mutate();
         }}
       >
         <div className="grid gap-4 sm:grid-cols-2">

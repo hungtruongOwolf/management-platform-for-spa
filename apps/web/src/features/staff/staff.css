@@ -2,8 +2,9 @@
 
 @layer components {
   .section-title {
-    font-size: 1.125rem;
+    font-size: var(--fs-md);
     font-weight: 600;
+    line-height: 24px;
   }
 
   .link-button {
@@ -89,9 +90,10 @@
     border-radius: var(--radius-md);
     background: var(--surface-2);
   }
+  /* "Đến hạn đánh giá": needs attention = the warning colours (gold is for the chrome and ★). */
   .book-banner-accent {
-    border-color: var(--accent);
-    background: var(--accent-soft);
+    border-color: var(--warning-border);
+    background: var(--warning-bg);
   }
   /* Date field + progress: both are "label line, then a 44 px box", top-aligned, so the labels
      share one baseline and the boxes another. */
@@ -421,11 +423,11 @@
     grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
     gap: 8px;
   }
+  /* Figures inside the "Ngày công" card: flat tiles on surface-2, never a card in the card. */
   .my-totals > div {
     padding: 10px 12px;
-    border: 1px solid var(--border);
     border-radius: var(--radius-md);
-    background: var(--surface);
+    background: var(--surface-2);
   }
   .my-totals dt {
     color: var(--text-muted);
@@ -436,8 +438,9 @@
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
+  /* Sundays read darker than the other day headers (colour carries no meaning here). */
   .attendance-grid .is-sunday {
-    color: var(--accent-text);
+    color: var(--text);
   }
   .att-cell {
     position: relative;
@@ -532,6 +535,42 @@
     .counter-box > button {
       transition: none;
     }
+  }
+
+  /* Monthly evaluation: one panel, one row per person (status by chip, never by a border). */
+  .eval-list {
+    display: grid;
+    padding: 0 16px;
+  }
+  .eval-row {
+    display: flex;
+    min-height: 64px;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .eval-row:last-child {
+    border-bottom: 0;
+  }
+
+  /* "Khách của tôi": rows inside one panel, split by hairlines (no card per row). */
+  .work-list {
+    display: grid;
+    border-top: 1px solid var(--border);
+  }
+  .work-row {
+    display: flex;
+    min-height: 48px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 4px 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .work-row:last-child {
+    border-bottom: 0;
   }
 
   .payslip {

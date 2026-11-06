@@ -15,7 +15,7 @@ import {
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import { formatVnd } from "@vpyd/ui";
-import { Suspense, lazy, useCallback, useRef, useState } from "react";
+import { Suspense, useCallback, useRef, useState } from "react";
 import { Icon } from "../../app/Icon";
 import { ApiError } from "../../lib/api";
 import { messageFor } from "../../lib/errors";
@@ -47,10 +47,7 @@ import {
   conversionMoney,
   coveredLines,
 } from "./upsell";
-
-const AddOneOff = lazy(() =>
-  import("./CartOptions").then((m) => ({ default: m.AddOneOff })),
-);
+import { AddOneOff, PaymentChoices } from "./CartOptions";
 
 export type UpsellMode = "add" | "convert";
 
@@ -385,44 +382,15 @@ export function VisitUpsell({
         </label>
       )}
       {!nothing && due > 0 && (
-        <fieldset className="grid gap-2">
-          <legend className="section-label mb-2">Thanh toán (thu đủ)</legend>
-          <div className="pay-choices">
-            {(
-              [
-                ["cash", "Tiền mặt"],
-                ["bank_transfer", "Chuyển khoản"],
-                ["mixed", "Tiền mặt + CK"],
-              ] as const
-            ).map(([value, label]) => (
-              <label key={value} className="pay-choice">
-                <input
-                  type="radio"
-                  name={`upsell-payment-${visit.id}`}
-                  checked={payMode === value}
-                  onChange={() => {
-                    setPayMode(value);
-                  }}
-                />
-                {label}
-              </label>
-            ))}
-          </div>
-          {payMode === "mixed" && (
-            <label className="field max-w-xs">
-              <span>Tiền mặt (đ)</span>
-              <input
-                className="input"
-                inputMode="numeric"
-                value={cashText}
-                aria-invalid={attempted && problems.cash}
-                onChange={(e) => {
-                  setCashText(e.target.value);
-                }}
-              />
-            </label>
-          )}
-        </fieldset>
+        <PaymentChoices
+          name={`upsell-payment-${visit.id}`}
+          mode={payMode}
+          onMode={setPayMode}
+          cashText={cashText}
+          onCashText={setCashText}
+          total={due}
+          invalid={attempted && problems.cash}
+        />
       )}
       <div className="upsell-total" aria-live="polite">
         <span>{conversion ? "Khách đưa thêm" : "Thu thêm"}</span>

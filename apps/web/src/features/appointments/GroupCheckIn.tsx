@@ -168,7 +168,6 @@ export function GroupCheckIn({
     ]);
   };
 
-  const field = "min-h-11 rounded-[6px] border border-border bg-surface px-3";
   return (
     <BottomSheet
       open
@@ -193,53 +192,63 @@ export function GroupCheckIn({
             <button
               type="button"
               className="btn btn-primary"
-              disabled={busy || carts.isPending || todo.length === 0}
+              aria-busy={busy}
+              aria-disabled={carts.isPending || todo.length === 0 || undefined}
               onClick={() => {
-                void recordAll();
+                if (!busy && !carts.isPending && todo.length > 0)
+                  void recordAll();
               }}
             >
-              {busy ? "Đang ghi…" : `Ghi ${String(todo.length)} lượt`}
+              {`Ghi ${String(todo.length)} lượt`}
             </button>
           </>
         )
       }
     >
       {carts.isPending && (
-        <p role="status" className="text-text-muted">
-          Đang chuẩn bị giỏ của từng người…
-        </p>
+        <div aria-hidden="true" className="cal-skel-rows">
+          {members.map((a) => (
+            <div key={a.id} className="skeleton cal-skel-line" />
+          ))}
+        </div>
       )}
       {carts.isError && (
-        <p role="alert" className="text-danger">
-          {messageFor(carts.error)}
-        </p>
+        <div role="alert" className="cal-error">
+          <span>
+            Không chuẩn bị được giỏ của từng người. {messageFor(carts.error)}
+          </span>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => void carts.refetch()}
+          >
+            Thử lại
+          </button>
+        </div>
       )}
-      <ul className="grid gap-3" aria-label="Người trong nhóm">
+      <ul className="appt-checkin" aria-label="Người trong nhóm">
         {members.map((a, i) => {
           const row = rows[a.id];
           const lines = linesOf(i);
           const skip = skipReason(a, lines);
           const due = lines ? dueOf(lines, row?.sale).due : 0;
           if (!row) return null;
+          const staffField = `checkin-staff-${a.id}`;
           return (
-            <li
-              key={a.id}
-              aria-label={a.customer_name}
-              className="grid gap-2 rounded-[10px] border border-border p-3"
-            >
-              <p className="flex flex-wrap items-baseline justify-between gap-2">
+            <li key={a.id} aria-label={a.customer_name}>
+              <p className="appt-checkin-head">
                 <strong>
                   <CustomerName
                     name={a.customer_name}
                     gender={a.customer_gender}
                   />
                 </strong>
-                <span className="text-sm text-text-muted tabular-nums">
+                <span className="appt-hint tabular-nums">
                   {hhmm(spaMinutes(a.starts_at))} · {a.duration_min} phút
                 </span>
               </p>
               {lines && (
-                <ul className="text-sm">
+                <ul className="appt-checkin-lines">
                   {lines.map((l) => (
                     <li key={l.key}>
                       {l.serviceName} ·{" "}
@@ -251,18 +260,20 @@ export function GroupCheckIn({
                 </ul>
               )}
               {row.state === "done" ? (
-                <p role="status" className="text-sm font-semibold text-success">
+                <span role="status" className="badge badge-ok">
                   Đã ghi lượt{due > 0 ? ` · đã thu ${formatVnd(due)}` : ""}
-                </p>
+                </span>
               ) : skip ? (
-                <p className="text-sm text-warning-text">{skip}</p>
+                <p className="appt-warn">{skip}</p>
               ) : (
-                <div className="flex flex-wrap items-end gap-2">
-                  <label className="grid gap-1 text-sm">
-                    <span>KTV làm</span>
+                <div className="appt-actions">
+                  <div className="field">
+                    <label htmlFor={staffField}>KTV làm</label>
                     <select
-                      className={field}
+                      id={staffField}
+                      className="appt-input"
                       value={row.staffId}
+                      aria-invalid={row.staffId === "" || undefined}
                       onChange={(e) => {
                         set(a.id, { staffId: e.target.value });
                       }}
@@ -274,7 +285,7 @@ export function GroupCheckIn({
                         </option>
                       ))}
                     </select>
-                  </label>
+                  </div>
                   {due > 0 ? (
                     <div
                       role="group"
@@ -300,10 +311,13 @@ export function GroupCheckIn({
                       ))}
                     </div>
                   ) : null}
-                  <span className="text-sm font-semibold tabular-nums">
+                  <span className="appt-due">
                     {due > 0 ? `Thu ${formatVnd(due)}` : "Không phát sinh tiền"}
                   </span>
                 </div>
+              )}
+              {row.state !== "done" && !skip && row.staffId === "" && (
+                <p className="appt-hint">Chọn KTV làm để ghi lượt người này.</p>
               )}
               {maySell && lines && !skip && row.state !== "done" && (
                 <GroupPackagePick
@@ -318,7 +332,7 @@ export function GroupCheckIn({
                 />
               )}
               {row.state === "error" && row.error && (
-                <p role="alert" className="text-sm text-danger">
+                <p role="alert" className="appt-error">
                   {row.error}
                 </p>
               )}

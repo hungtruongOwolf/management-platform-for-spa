@@ -23,13 +23,11 @@ import {
 import { useAfterFirstPaint } from "../../lib/afterFirstPaint";
 import { ApiError } from "../../lib/api";
 import { invalidateManagementViews } from "../../lib/invalidate";
-import { serviceLabel } from "../../lib/names";
 import { useSearchState } from "../../lib/searchState";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
 import { customerQuery } from "../customers/api";
 import { CustomerSearch } from "../customers/CustomerSearch";
-import { Icon } from "../../app/Icon";
 import { completeAppointment } from "../appointments/complete";
 import { activeStaffQuery, exceedsCap, parseAmount } from "../sales/api";
 import {
@@ -111,8 +109,11 @@ const PackageSales = lazy(() =>
 const Companions = lazy(() =>
   loadCartPackages().then((m) => ({ default: m.Companions })),
 );
-const LineReferrer = lazy(() =>
-  loadCartPackages().then((m) => ({ default: m.LineReferrer })),
+const CartLines = lazy(() =>
+  loadCartOptions().then((m) => ({ default: m.CartLines })),
+);
+const PaymentChoices = lazy(() =>
+  loadCartOptions().then((m) => ({ default: m.PaymentChoices })),
 );
 const DraftKeeper = lazy(() =>
   loadCartPackages().then((m) => ({ default: m.DraftKeeper })),
@@ -883,120 +884,20 @@ export function FrontDeskPage() {
                 </p>
               )}
               {lines.length > 0 && (
-                <ul aria-label="Dịch vụ trong lượt" className="cart-lines">
-                  {lines.map((l) => {
-                    const invalid = attempted && l.staffId === "";
-                    const selectId = `staff-${String(l.key)}`;
-                    const coveredBy = covered.get(l.key);
-                    return (
-                      <li key={l.key} className="cart-line">
-                        <div className="min-w-0">
-                          <span className="cart-line-name">
-                            {serviceLabel(l.serviceName, l.categoryName)}
-                          </span>
-                          <span className="cart-line-source">
-                            {l.source === "package"
-                              ? `Trừ liệu trình · ${l.packageName}${l.expiryOverrideReason ? " · cho dùng tiếp" : ""}`
-                              : coveredBy
-                                ? `Trừ gói mua hôm nay · ${planOf(coveredBy)}`
-                                : "Dịch vụ lẻ"}
-                          </span>
-                        </div>
-                        <span className="cart-line-price">
-                          {l.source === "one_off" &&
-                            (coveredBy ? (
-                              <>
-                                <s className="cart-line-was">
-                                  {formatVnd(l.price)}
-                                </s>
-                                {formatVnd(0)}
-                              </>
-                            ) : (
-                              formatVnd(l.price)
-                            ))}
-                        </span>
-                        <button
-                          type="button"
-                          aria-label={`Bỏ dòng ${l.serviceName}`}
-                          onClick={() => {
-                            setLines((ls) => ls.filter((x) => x.key !== l.key));
-                          }}
-                          className="btn btn-ghost btn-icon text-text-muted"
-                        >
-                          <Icon name="x" />
-                        </button>
-                        <div className="cart-line-staff">
-                          <label htmlFor={selectId}>KTV</label>
-                          <select
-                            id={selectId}
-                            ref={(el) => {
-                              if (!el) {
-                                staffSelects.current.delete(l.key);
-                                return;
-                              }
-                              staffSelects.current.set(l.key, el);
-                              if (focusLineKey.current === l.key) {
-                                focusLineKey.current = null;
-                                el.focus();
-                              }
-                            }}
-                            value={l.staffId}
-                            aria-invalid={invalid}
-                            aria-required="true"
-                            aria-describedby={
-                              invalid ? `${selectId}-error` : undefined
-                            }
-                            onChange={(e) => {
-                              const staffId = e.target.value;
-                              setLines((ls) =>
-                                ls.map((x) =>
-                                  x.key === l.key ? { ...x, staffId } : x,
-                                ),
-                              );
-                            }}
-                            className="input"
-                          >
-                            <option value="">
-                              {staff.isPending ? "Đang tải…" : "Chọn KTV…"}
-                            </option>
-                            {technicians.map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.full_name}
-                              </option>
-                            ))}
-                          </select>
-                          {invalid && (
-                            <span
-                              id={`${selectId}-error`}
-                              className="field-error"
-                            >
-                              Cần chọn KTV
-                            </span>
-                          )}
-                          {l.source === "one_off" && !coveredBy && (
-                            <Suspense fallback={null}>
-                              <LineReferrer
-                                id={`ref-${String(l.key)}`}
-                                serviceName={l.serviceName}
-                                value={l.referrerId ?? ""}
-                                staff={staff.data ?? []}
-                                onChange={(referrerId) => {
-                                  setLines((ls) =>
-                                    ls.map((x) =>
-                                      x.key === l.key && x.source === "one_off"
-                                        ? { ...x, referrerId }
-                                        : x,
-                                    ),
-                                  );
-                                }}
-                              />
-                            </Suspense>
-                          )}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
+                <Suspense fallback={null}>
+                  <CartLines
+                    lines={lines}
+                    onLines={setLines}
+                    covered={covered}
+                    planName={planOf}
+                    attempted={attempted}
+                    staff={staff.data ?? []}
+                    staffPending={staff.isPending}
+                    technicians={technicians}
+                    staffSelects={staffSelects}
+                    focusLineKey={focusLineKey}
+                  />
+                </Suspense>
               )}
 
               {customer && (
@@ -1086,53 +987,17 @@ export function FrontDeskPage() {
                     </Suspense>
                   </div>
                   {payable > 0 && (
-                    <fieldset className="grid gap-2">
-                      <legend className="section-label mb-2">
-                        Thanh toán (thu đủ)
-                      </legend>
-                      <div className="pay-choices">
-                        {(
-                          [
-                            ["cash", "Tiền mặt"],
-                            ["bank_transfer", "Chuyển khoản"],
-                            ["mixed", "Tiền mặt + CK"],
-                          ] as const
-                        ).map(([value, label]) => (
-                          <label key={value} className="pay-choice">
-                            <input
-                              type="radio"
-                              name="visit-payment"
-                              checked={mode === value}
-                              onChange={() => {
-                                setMode(value);
-                              }}
-                            />
-                            {label}
-                          </label>
-                        ))}
-                      </div>
-                      {mode === "mixed" && (
-                        <label className="field max-w-xs">
-                          <span>Tiền mặt (đ)</span>
-                          <input
-                            className="input"
-                            inputMode="numeric"
-                            value={cashText}
-                            aria-invalid={attempted && problems.cash}
-                            onChange={(e) => {
-                              setCashText(e.target.value);
-                            }}
-                          />
-                          {!Number.isNaN(cashPart) &&
-                            cashPart > 0 &&
-                            cashPart < payable && (
-                              <span className="field-hint">
-                                Chuyển khoản: {formatVnd(payable - cashPart)}
-                              </span>
-                            )}
-                        </label>
-                      )}
-                    </fieldset>
+                    <Suspense fallback={null}>
+                      <PaymentChoices
+                        name="visit-payment"
+                        mode={mode}
+                        onMode={setMode}
+                        cashText={cashText}
+                        onCashText={setCashText}
+                        total={payable}
+                        invalid={attempted && problems.cash}
+                      />
+                    </Suspense>
                   )}
                   {can(me, "customer.health_notes.write") && (
                     <label className="field">

@@ -21,6 +21,9 @@ async function boxes(page: Page): Promise<Boxes> {
     const out: Record<string, string> = {};
     let i = 0;
     for (const el of Array.from(document.querySelectorAll<HTMLElement>("main *, header *, nav *, aside *"))) {
+      // The front desk's day clock re-renders every second (its digits change width): that is the
+      // clock ticking, not a hover side effect (CI flake on main after #56, 13:00–21:00 spa time).
+      if (el.closest(".day-clock")) continue;
       const r = el.getBoundingClientRect();
       if (r.width === 0 && r.height === 0) continue;
       const id = el.dataset["layoutId"] ?? String(i++);

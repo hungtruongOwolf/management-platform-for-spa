@@ -27,6 +27,7 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
       id: "name",
       header: "Nhân viên",
       card: "title",
+      width: "20%",
       cell: (s) => (
         <button
           type="button"
@@ -39,15 +40,16 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
         </button>
       ),
     },
-    { id: "position", header: "Vị trí", card: "subtitle", cell: (s) => s.position },
-    { id: "base", header: "Lương cứng", numeric: true, cell: (s) => vnd(s.base_salary) },
-    { id: "deduct", header: "Trừ nghỉ, muộn", numeric: true, cell: (s) => (s.leave_deduction + s.late_deduction > 0 ? `−${vnd(s.leave_deduction + s.late_deduction)}` : "–") },
-    { id: "commission", header: "Hoa hồng", numeric: true, cell: (s) => vnd(s.service_commission + s.closing_commission) },
-    { id: "adjust", header: "Thưởng − phạt", numeric: true, cell: (s) => vnd(s.bonuses - s.penalties) },
-    { id: "net", header: "Thực lĩnh", numeric: true, card: "aside", cell: (s) => <strong>{vnd(s.net_pay)}</strong> },
+    { id: "position", header: "Vị trí", card: "subtitle", width: "13%", cell: (s) => s.position },
+    { id: "base", header: "Lương cứng", numeric: true, width: "11%", cell: (s) => vnd(s.base_salary) },
+    { id: "deduct", header: "Trừ nghỉ, muộn", numeric: true, width: "12%", cell: (s) => (s.leave_deduction + s.late_deduction > 0 ? `−${vnd(s.leave_deduction + s.late_deduction)}` : "–") },
+    { id: "commission", header: "Hoa hồng", numeric: true, width: "10%", cell: (s) => vnd(s.service_commission + s.closing_commission) },
+    { id: "adjust", header: "Thưởng − phạt", numeric: true, width: "11%", cell: (s) => vnd(s.bonuses - s.penalties) },
+    { id: "net", header: "Thực lĩnh", numeric: true, card: "aside", width: "11%", cell: (s) => <strong>{vnd(s.net_pay)}</strong> },
     {
       id: "flags",
       header: "Lưu ý",
+      width: "12%",
       cell: (s) => (s.flags.length === 0 ? "–" : s.flags.map((f) => FLAG_LABEL[f]).join(" · ")),
     },
   ];
@@ -55,7 +57,7 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
   return (
     <div className="grid content-start gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <span className={`badge ${p.closed ? "badge-muted" : "badge-gold"}`}>{p.closed ? "Đã chốt" : "Tạm tính"}</span>
+        <span className={`badge ${p.closed ? "badge-muted" : "badge-info"}`}>{p.closed ? "Đã chốt" : "Tạm tính"}</span>
         {p.closed && p.closed_by_name && <span className="text-sm text-text-muted">Chốt bởi {p.closed_by_name}</span>}
         <span className="flex-1" />
         {canClose && (
@@ -82,8 +84,11 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
         )}
       </div>
       {p.payslips.length === 0 ? (
-        <EmptyState title="Chưa có nhân viên nào trong tháng này" />
+        <EmptyState title="Chưa có nhân viên nào trong tháng này" icon="id-card">
+          Thêm người ở tab “Hồ sơ”, rồi chấm công ở “Sổ hằng ngày”: bảng lương tự tính từ đó.
+        </EmptyState>
       ) : (
+        <div className="card overflow-hidden">
         <ResponsiveTable
           caption={`Bảng lương ${monthLabel(p.month)}`}
           rows={p.payslips}
@@ -107,12 +112,13 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
               </tr>
             ),
             cards: (
-              <p className="mt-3 text-right font-semibold tabular">
+              <p className="rt-card text-right font-semibold tabular">
                 Tổng thực lĩnh {vnd(p.totals.net_pay)}
               </p>
             ),
           }}
         />
+        </div>
       )}
       {slip && (
         <PayslipSheet
@@ -216,23 +222,27 @@ export function PayslipView({ slip, closed }: { slip: Payslip; closed: boolean }
       {slip.commission_lines.length > 0 && (
         <section className="grid gap-2" aria-label="Dịch vụ đã làm">
           <h3 className="text-sm font-semibold">Dịch vụ đã làm</h3>
-          <ResponsiveTable
-            caption="Dịch vụ đã làm"
-            rows={slip.commission_lines}
-            rowKey={(l) => `${l.service_name}-${l.source}`}
-            columns={LINE_COLUMNS}
-          />
+          <div className="payslip overflow-hidden">
+            <ResponsiveTable
+              caption="Dịch vụ đã làm"
+              rows={slip.commission_lines}
+              rowKey={(l) => `${l.service_name}-${l.source}`}
+              columns={LINE_COLUMNS}
+            />
+          </div>
         </section>
       )}
       {(slip.upsell_lines ?? []).length > 0 && (
         <section className="grid gap-2" aria-label="Giới thiệu / chốt được">
           <h3 className="text-sm font-semibold">Giới thiệu / chốt được</h3>
-          <ResponsiveTable
-            caption="Giới thiệu / chốt được"
-            rows={slip.upsell_lines ?? []}
-            rowKey={(l) => `${l.kind}-${l.description}`}
-            columns={UPSELL_COLUMNS}
-          />
+          <div className="payslip overflow-hidden">
+            <ResponsiveTable
+              caption="Giới thiệu / chốt được"
+              rows={slip.upsell_lines ?? []}
+              rowKey={(l) => `${l.kind}-${l.description}`}
+              columns={UPSELL_COLUMNS}
+            />
+          </div>
         </section>
       )}
       {slip.flags.length > 0 && (
@@ -278,7 +288,15 @@ function CloseSheet({ month, incomplete, onClose }: { month: string; incomplete:
           <button type="button" className="btn btn-secondary" onClick={onClose}>
             Để sau
           </button>
-          <button type="button" className="btn btn-primary" disabled={close.isPending || (incomplete && !allow)} onClick={() => { close.mutate(); }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            aria-busy={close.isPending || undefined}
+            disabled={incomplete && !allow}
+            onClick={() => {
+              if (!close.isPending) close.mutate();
+            }}
+          >
             Chốt lương
           </button>
         </>
@@ -337,7 +355,7 @@ function RulesForm({ initial, onDone }: { initial: PayrollRules; onDone: () => v
       className="grid gap-4"
       onSubmit={(e) => {
         e.preventDefault();
-        save.mutate();
+        if (!save.isPending) save.mutate();
       }}
     >
       <label className="filter-field">
@@ -390,7 +408,7 @@ function RulesForm({ initial, onDone }: { initial: PayrollRules; onDone: () => v
         </p>
       )}
       <div className="flex justify-end">
-        <button type="submit" className="btn btn-primary" disabled={save.isPending}>
+        <button type="submit" className="btn btn-primary" aria-busy={save.isPending || undefined}>
           Lưu quy tắc
         </button>
       </div>
