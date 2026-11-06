@@ -11,7 +11,7 @@ test.describe("nhân viên", () => {
     const name = `KTV Hồng ${String(Date.now()).slice(-5)}`;
     await page.goto("/nhan-vien?tab=profiles");
     await expect(page.getByRole("heading", { level: 1, name: "Nhân viên" })).toBeVisible();
-    await page.getByRole("button", { name: "+ Thêm nhân viên" }).click();
+    await page.getByRole("button", { name: "Thêm nhân viên" }).click();
     const profile = page.getByRole("dialog", { name: "Thêm nhân viên" });
     await profile.getByLabel("Họ tên").fill(name);
     await profile.getByLabel("Lương cứng thực nhận / tháng (đ)").fill("5000000");

@@ -97,6 +97,32 @@ describe("/bao-cao", () => {
     expect(urls(spy)).toContain(`/api/v1/reports/range?from=${addDays(today, -2)}&to=${today}&granularity=day`);
   });
 
+  it("offers the 3- and 5-year presets to the owner only (report.long_range)", async () => {
+    const spy = serveManagement({ permissions: [...MANAGER, "report.long_range"] });
+    const user = userEvent.setup();
+    const { search } = at("/bao-cao");
+    await user.click(await screen.findByRole("button", { name: "5 năm" }));
+    await waitFor(() => {
+      expect(search()).toEqual({ period: "5y" });
+    });
+    const first = `${String(Number(today.slice(0, 4)) - 4)}-01-01`;
+    expect(urls(spy)).toContain(`/api/v1/reports/range?from=${first}&to=${today}&granularity=year`);
+    expect(await screen.findByRole("table", { name: /Chi tiết theo năm/ })).toBeInTheDocument();
+    cleanup();
+
+    // A manager never sees them; a shared link with one opens "12 tháng" instead of a 422.
+    const managerSpy = serveManagement({ permissions: MANAGER });
+    managerSpy.mockClear();
+    at("/bao-cao?period=5y");
+    expect(await screen.findByRole("button", { name: "12 tháng" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: "5 năm" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "3 năm" })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(urls(managerSpy).some((u) => u.includes("granularity=month"))).toBe(true);
+    });
+    expect(urls(managerSpy).some((u) => u.includes("granularity=year"))).toBe(false);
+  });
+
   it("restores the period and the metric from the URL (back button)", async () => {
     serveManagement({ permissions: MANAGER });
     at("/bao-cao?period=this_month&metric=visits");
@@ -139,6 +165,9 @@ describe("report periods", () => {
     expect(resolvePeriod("last_month", "2026-01-15")).toMatchObject({ from: "2025-12-01", to: "2025-12-31", previous: { from: "2025-11-01", to: "2025-11-30" } });
     expect(resolvePeriod("this_year", "2026-11-05")).toMatchObject({ from: "2026-01-01", bucket: "month", previous: { from: "2025-01-01", to: "2025-11-05" } });
     expect(resolvePeriod("12m", "2026-11-05")).toMatchObject({ from: "2025-12-01", bucket: "month", previous: { from: "2024-12-01", to: "2025-11-05" } });
+    // Owner presets: the API's last_3_years (by month) and last_5_years (by year).
+    expect(resolvePeriod("3y", "2026-11-05")).toMatchObject({ from: "2024-01-01", to: "2026-11-05", bucket: "month", previous: { from: "2021-01-01", to: "2023-11-05" } });
+    expect(resolvePeriod("5y", "2026-11-05")).toMatchObject({ from: "2022-01-01", bucket: "year", label: "5 năm qua", previous: { from: "2017-01-01", to: "2021-11-05" } });
     expect(resolvePeriod("custom", "2026-11-05", { from: "2026-10-01", to: "2026-11-05" })).toMatchObject({ bucket: "week", previous: { from: "2026-08-26", to: "2026-09-30" } });
     // A broken or future custom range falls back to 7 days instead of breaking the screen.
     expect(resolvePeriod("custom", "2026-11-05", { from: "2026-11-09", to: "2026-11-01" })).toMatchObject({ from: "2026-10-30", to: "2026-11-05" });

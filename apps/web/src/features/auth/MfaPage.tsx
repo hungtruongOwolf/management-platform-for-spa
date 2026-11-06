@@ -7,10 +7,9 @@ import { AuthFrame, bandTitle } from "./AuthFrame";
 import { QrCode } from "./QrCode";
 import { confirmMfaEnrollment, logout, setAuthState, startMfaEnrollment, verifyMfa, type Me, type MfaStep } from "./session";
 
-const input = "min-h-11 w-full rounded-[6px] border border-border bg-surface px-3";
-const primaryButton =
-  "min-h-12 w-full rounded-[10px] bg-primary font-semibold text-on-primary hover:bg-primary-hover disabled:opacity-60";
-const linkButton = "text-sm font-medium text-primary underline-offset-2 hover:underline";
+const input = "input";
+const primaryButton = "btn btn-primary btn-lg btn-block";
+const linkButton = "btn btn-ghost";
 
 function Card({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
@@ -87,6 +86,8 @@ function VerifyStep({ onDone, onRestart }: StepProps) {
 
   const submit = async (e: SyntheticEvent) => {
     e.preventDefault();
+    // The button stays focusable while busy (aria-busy): a second press does nothing.
+    if (busy) return;
     if (!code.trim()) {
       setError(useRecovery ? "Nhập mã khôi phục." : "Nhập mã 6 số.");
       return;
@@ -110,8 +111,8 @@ function VerifyStep({ onDone, onRestart }: StepProps) {
   return (
     <Card title="Xác thực hai bước" subtitle="Mở ứng dụng xác thực trên điện thoại và nhập mã đang hiển thị.">
       <form onSubmit={(e) => void submit(e)} noValidate className="space-y-4">
-        <div className="grid content-start gap-1">
-          <label htmlFor="mfa-code" className="block text-sm font-semibold">
+        <div className="field">
+          <label htmlFor="mfa-code">
             {useRecovery ? "Mã khôi phục" : "Mã xác thực (6 số)"}
           </label>
           <input
@@ -128,8 +129,8 @@ function VerifyStep({ onDone, onRestart }: StepProps) {
           />
         </div>
         <ErrorNote message={error} />
-        <button type="submit" disabled={busy} className={primaryButton}>
-          {busy ? "Đang kiểm tra…" : "Xác nhận"}
+        <button type="submit" aria-busy={busy || undefined} className={primaryButton}>
+          Xác nhận
         </button>
       </form>
       <div className="flex justify-between gap-2">
@@ -192,6 +193,8 @@ function EnrollStep({ onDone, onRestart }: StepProps) {
 
   const submit = async (e: SyntheticEvent) => {
     e.preventDefault();
+    // The button stays focusable while busy (aria-busy): a second press does nothing.
+    if (busy) return;
     if (!code.trim()) {
       setError("Nhập mã 6 số.");
       return;
@@ -237,8 +240,8 @@ function EnrollStep({ onDone, onRestart }: StepProps) {
             </code>
           </div>
           <form onSubmit={(e) => void submit(e)} noValidate className="space-y-4">
-            <div className="grid content-start gap-1">
-              <label htmlFor="enroll-code" className="block text-sm font-semibold">
+            <div className="field">
+              <label htmlFor="enroll-code">
                 Mã xác thực (6 số)
               </label>
               <input
@@ -254,8 +257,8 @@ function EnrollStep({ onDone, onRestart }: StepProps) {
               />
             </div>
             <ErrorNote message={error} />
-            <button type="submit" disabled={busy} className={primaryButton}>
-              {busy ? "Đang kiểm tra…" : "Bật xác thực hai bước"}
+            <button type="submit" aria-busy={busy || undefined} className={primaryButton}>
+              Bật xác thực hai bước
             </button>
           </form>
         </>
@@ -295,12 +298,12 @@ function RecoveryCodes({ codes, onContinue }: { codes: string[]; onContinue: () 
       </ul>
       <button
         type="button"
-        className="min-h-11 w-full rounded-[10px] border border-border font-semibold"
+        className="btn btn-secondary btn-block"
         onClick={() => void copy()}
       >
         {copied ? "Đã chép" : "Chép tất cả"}
       </button>
-      <label className="flex items-center gap-2 text-sm">
+      <label className="choice">
         <input type="checkbox" checked={saved} onChange={(e) => {
             setSaved(e.target.checked);
           }} />

@@ -71,7 +71,7 @@ export function MyMonth({ month }: { month: string }) {
   const data = query.data.data;
   if (!query.data.linked || !data) {
     return (
-      <EmptyState title="Tài khoản chưa gắn với hồ sơ nhân viên">
+      <EmptyState title="Tài khoản chưa gắn với hồ sơ nhân viên" icon="id-card">
         Nhờ chủ spa gắn tài khoản này vào hồ sơ của bạn để xem ngày công, đánh giá và phiếu lương.
       </EmptyState>
     );
@@ -83,7 +83,7 @@ export function MyMonth({ month }: { month: string }) {
   return (
     <div className="grid content-start gap-6">
       {data.closed && <ClosedBanner />}
-      <section className="grid gap-3" aria-labelledby="my-attendance">
+      <section className="card grid gap-3 p-4 sm:p-5" aria-labelledby="my-attendance">
         <h2 id="my-attendance" className="section-title">
           Ngày công
         </h2>
@@ -97,7 +97,7 @@ export function MyMonth({ month }: { month: string }) {
         <MonthCalendar month={data.month} today={today} days={data.attendance.days} />
         <p className="text-sm text-text-muted">✓ đi làm · P nghỉ có phép · ĐX nghỉ đột xuất · K nghỉ không phép · – chưa chấm · gạch đỏ: đi muộn</p>
       </section>
-      <section className="grid gap-2" aria-labelledby="my-evaluation">
+      <section className="card grid gap-2 p-4 sm:p-5" aria-labelledby="my-evaluation">
         <h2 id="my-evaluation" className="section-title">
           Đánh giá
         </h2>

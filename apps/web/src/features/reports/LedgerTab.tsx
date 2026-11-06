@@ -53,13 +53,26 @@ export function LedgerTab({ period }: { period: Period }) {
       </dl>
       <div className="card rt-host overflow-hidden">
         {rows.length === 0 ? (
-          <EmptyState title="Chưa có giao dịch nào">Hóa đơn, khoản hủy và hoàn tiền trong kỳ sẽ hiện ở đây.</EmptyState>
+          <EmptyState title="Chưa có giao dịch nào" icon="menu-book">
+            Hóa đơn, khoản hủy và hoàn tiền trong kỳ sẽ hiện ở đây. Chọn kỳ dài hơn, hoặc ghi lượt ở “Ghi lượt khách”.
+          </EmptyState>
         ) : phone ? (
           <LedgerCards rows={rows} dayOf={dayOf} />
         ) : (
           <div className="table-wrap" tabIndex={0} role="region" aria-label="Sổ doanh thu (cuộn ngang để xem đủ cột)">
-            <table className="data-table">
+            <table className="data-table data-table-fixed ledger-table">
               <caption className="sr-only">Sổ doanh thu, theo ngày rồi theo giờ ghi</caption>
+              {/* Fixed columns (rulebook §8): a long package name wraps inside its own column. */}
+              <colgroup>
+                <col style={{ width: "64px" }} />
+                <col style={{ width: "14%" }} />
+                <col style={{ width: "15%" }} />
+                <col style={{ width: "18%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "9%" }} />
+                <col />
+              </colgroup>
               <thead>
                 <tr>
                   <th scope="col">Giờ</th>
@@ -72,7 +85,7 @@ export function LedgerTab({ period }: { period: Period }) {
                   <th scope="col" className="num">
                     Tiền mặt
                   </th>
-                  <th scope="col" className="num">
+                  <th scope="col" className="num th-wrap">
                     Chưa thanh toán
                   </th>
                   <th scope="col">Ghi chú</th>

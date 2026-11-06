@@ -190,6 +190,6 @@ EM: dữ liệu sổ giấy là **migration một lần** do team tự điền s
   - Q3: tiền thực thu, khoản hủy ghi vào **ngày hủy**.
   - Q4: tạm thời **không giới hạn** số ngày quản lý được xem.
 - **Đã chốt vòng 3 (EM 2026-11-05, [raw](../../../raw/2026-11-05-em-answers-q5-q7.md)):**
-  - Q5: 2 năm cho mọi người; 3–5 năm **chỉ chủ spa**, lâu lâu mới xem nên tính tại chỗ (chậm hơn được), chưa làm bảng tổng hợp.
+  - Q5: 2 năm cho mọi người; 3–5 năm **chỉ chủ spa**, lâu lâu mới xem nên tính tại chỗ (chậm hơn được), chưa làm bảng tổng hợp. Web (2026-11-06, `redesign(quanly)`): preset "3 năm" (theo tháng) / "5 năm" (theo năm) chỉ hiện khi có `report.long_range`; link có preset này mở "12 tháng" cho người khác.
   - Q6: EM giao lead chốt và sẽ review bản build: AC5b.2 (+3 / +7 / nghỉ 90 ngày / không có).
   - Q7: KTV **không** follow-up.

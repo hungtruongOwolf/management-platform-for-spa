@@ -35,9 +35,9 @@ export function EvaluationTab({ month }: { month: string }) {
           </>
         )}
       </p>
-      <ul className="grid gap-2">
+      <ul className="card eval-list">
         {sheet.staff.map((s) => (
-          <li key={s.staff_id} className={`card flex flex-wrap items-center gap-3 p-3${s.evaluation ? "" : " book-card is-missing"}`}>
+          <li key={s.staff_id} className="eval-row">
             <div className="min-w-0 flex-1">
               <p className="font-semibold">{s.full_name}</p>
               <p className="text-sm text-text-muted">
@@ -50,7 +50,7 @@ export function EvaluationTab({ month }: { month: string }) {
                 {s.evaluation.total_points} điểm · {LEVEL_SHORT[s.evaluation.result]}
               </span>
             ) : (
-              <span className="badge badge-muted">Chưa đánh giá</span>
+              <span className="badge badge-warn">Chưa đánh giá</span>
             )}
             {!sheet.closed && (
               <button
@@ -108,7 +108,13 @@ function ScoreSheet({ sheet, staff, onClose }: { sheet: EvaluationSheet; staff: 
       title={`Đánh giá ${staff.full_name}`}
       description={`${total} điểm · ${LEVEL_LABEL[result]}`}
       footer={
-        <button type="submit" form={formId} className="btn btn-primary" disabled={save.isPending || (needsPlan && !plan.trim())}>
+        <button
+          type="submit"
+          form={formId}
+          className="btn btn-primary"
+          aria-busy={save.isPending || undefined}
+          disabled={needsPlan && !plan.trim()}
+        >
           Lưu đánh giá
         </button>
       }
@@ -118,6 +124,7 @@ function ScoreSheet({ sheet, staff, onClose }: { sheet: EvaluationSheet; staff: 
         className="grid gap-4"
         onSubmit={(e) => {
           e.preventDefault();
+          if (save.isPending) return;
           save.mutate({
             staff_id: staff.staff_id,
             month: sheet.month,

@@ -31,8 +31,17 @@ export const PRESET_LABEL: Record<Preset, string> = {
   last_month: "Tháng trước",
   this_year: "Năm nay",
   "12m": "12 tháng",
+  "3y": "3 năm",
+  "5y": "5 năm",
   custom: "Tùy chọn",
 };
+
+/**
+ * Owner only (`report.long_range`, spec R1-2 Q5): three years by month and five by year, the same
+ * spans as the API's `last_3_years` / `last_5_years`. Others never see them, and a shared link
+ * carrying one opens "12 tháng" instead (the API would answer 422).
+ */
+export const LONG_RANGE_PRESETS: readonly Preset[] = ["3y", "5y"];
 
 /**
  * Longest custom range: `/reports/range` serves 366 days by day or week and 732 days (2 years) by
@@ -191,6 +200,21 @@ export function resolvePeriod(preset: Preset, today: string, custom?: { from?: s
         previous: { from: make(y - 1, m - 11, 1), to: shiftMonths(today, 12) },
         label: "12 tháng qua",
         compareLabel: "so với 12 tháng trước đó",
+      };
+    }
+    case "3y":
+    case "5y": {
+      // Jan 1 of the first year → today; compared with the same span just before it.
+      const years = preset === "3y" ? 3 : 5;
+      const from = make(y - (years - 1), 0, 1);
+      return {
+        preset,
+        from,
+        to: today,
+        bucket: preset === "3y" ? "month" : "year",
+        previous: { from: make(y - (2 * years - 1), 0, 1), to: make(y - years, m, Math.min(d, lastDayOfMonth(y - years, m))) },
+        label: `${String(years)} năm qua`,
+        compareLabel: `so với ${String(years)} năm trước đó`,
       };
     }
     case "custom": {
