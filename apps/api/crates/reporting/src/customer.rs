@@ -71,7 +71,8 @@ async fn payments(tx: &mut TenantTx, sale_ids: &[Uuid]) -> Result<HashMap<Uuid, 
 
 struct Visits {
     visits: HashMap<Uuid, HistoryVisit>,
-    sale_of: HashMap<Uuid, Uuid>,
+    /// The one-off sales of each visit (its first sale and every addition).
+    sale_of: HashMap<Uuid, Vec<Uuid>>,
     sessions: HashMap<Uuid, i64>,
 }
 
@@ -79,10 +80,11 @@ async fn visits(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Visits, AppError> {
     let tenant = tx.tenant().as_uuid();
     let mut lines: HashMap<Uuid, Vec<HistoryVisitLine>> = HashMap::new();
     let mut sessions: HashMap<Uuid, i64> = HashMap::new();
+    let mut line_sales: Vec<(Uuid, Uuid)> = Vec::new();
     for l in sqlx::query!(
         r#"SELECT l.visit_id, l.service_name_snapshot, sc.name AS category_name, l.source,
                   l.customer_package_id, cp.name_snapshot AS "package_name?", l.qty,
-                  l.sessions_left_after, l.staff_id, st.full_name AS staff_name, l.line_value
+                  l.sessions_left_after, l.staff_id, st.full_name AS staff_name, l.line_value, l.sale_id
            FROM app.visit_line l
            JOIN app.staff st ON st.tenant_id = l.tenant_id AND st.id = l.staff_id
            JOIN app.service sv ON sv.tenant_id = l.tenant_id AND sv.id = l.service_id
@@ -97,6 +99,9 @@ async fn visits(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Visits, AppError> {
     .fetch_all(tx.conn())
     .await?
     {
+        if let Some(sale) = l.sale_id {
+            line_sales.push((l.visit_id, sale));
+        }
         let source = if l.source == "package" {
             *sessions.entry(l.visit_id).or_default() += i64::from(l.qty);
             LineSource::Package
@@ -131,19 +136,31 @@ async fn visits(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Visits, AppError> {
     )
     .fetch_all(tx.conn())
     .await?;
-    let sale_of: HashMap<Uuid, Uuid> = heads
+    let mut sale_of: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+    for (visit, sale) in heads
         .iter()
         .filter_map(|h| h.sale_id.map(|s| (h.id, s)))
-        .collect();
-    let sale_ids: Vec<Uuid> = sale_of.values().copied().collect();
+        .chain(line_sales)
+    {
+        let sales = sale_of.entry(visit).or_default();
+        if !sales.contains(&sale) {
+            sales.push(sale);
+        }
+    }
+    let sale_ids: Vec<Uuid> = sale_of.values().flatten().copied().collect();
     let paid = payments(tx, &sale_ids).await?;
     let visits = heads
         .into_iter()
         .map(|h| {
-            let money = h
-                .sale_id
-                .and_then(|s| paid.get(&s).copied())
-                .unwrap_or_default();
+            let money = sale_of.get(&h.id).map_or_else(Paid::default, |sales| {
+                sales
+                    .iter()
+                    .filter_map(|s| paid.get(s).copied())
+                    .fold(Paid::default(), |a, b| Paid {
+                        paid: a.paid.plus(b.paid),
+                        reversed: a.reversed.plus(b.reversed),
+                    })
+            });
             (
                 h.id,
                 HistoryVisit {
@@ -197,7 +214,12 @@ async fn purchases(
     let paid = payments(tx, ids).await?;
     let sales = sqlx::query!(
         r#"SELECT s.id, s.status, s.subtotal, s.discount_amount, s.discount_reason, s.total,
-                  s.void_reason, s.voided_at, st.full_name AS "closer_name?"
+                  s.void_reason, s.voided_at, st.full_name AS "closer_name?", s.visit_id,
+                  (SELECT string_agg(DISTINCT c.full_name, ', ')
+                   FROM app.customer_package cp
+                   JOIN app.customer c ON c.tenant_id = cp.tenant_id AND c.id = cp.customer_id
+                   WHERE cp.tenant_id = s.tenant_id AND cp.sale_id = s.id
+                     AND cp.customer_id <> s.customer_id) AS "beneficiary_name?"
            FROM app.sale s
            LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id
            WHERE s.tenant_id = $1 AND s.id = ANY($2)"#,
@@ -222,6 +244,8 @@ async fn purchases(
                 closer_name: s.closer_name,
                 void_reason: s.void_reason,
                 voided_at: s.voided_at,
+                visit_id: s.visit_id,
+                beneficiary_name: s.beneficiary_name,
             },
         )
     })
@@ -361,11 +385,13 @@ pub async fn history(
              FROM app.sale s
              WHERE s.tenant_id = $1 AND s.customer_id = $2
                AND NOT EXISTS (SELECT 1 FROM app.visit v WHERE v.tenant_id = s.tenant_id AND v.sale_id = s.id)
+               AND NOT EXISTS (SELECT 1 FROM app.visit_line l WHERE l.tenant_id = s.tenant_id AND l.sale_id = s.id)
              UNION ALL
              SELECT 'purchase_voided', 3, s.voided_at, (s.voided_at AT TIME ZONE $3)::date, s.id
              FROM app.sale s
              WHERE s.tenant_id = $1 AND s.customer_id = $2 AND s.status = 'voided'
                AND NOT EXISTS (SELECT 1 FROM app.visit v WHERE v.tenant_id = s.tenant_id AND v.sale_id = s.id)
+               AND NOT EXISTS (SELECT 1 FROM app.visit_line l WHERE l.tenant_id = s.tenant_id AND l.sale_id = s.id)
              UNION ALL
              SELECT 'package_cancelled', 4, cp.cancelled_at, (cp.cancelled_at AT TIME ZONE $3)::date, cp.id
              FROM app.customer_package cp
@@ -440,7 +466,7 @@ pub async fn history(
     let mut v = visits(&mut tx, &visit_ids).await?;
     let (sales, sale_money) = purchases(&mut tx, &sale_ids).await?;
     let mut cancels = cancellations(&mut tx, &cancel_ids).await?;
-    let visit_sale_ids: Vec<Uuid> = v.sale_of.values().copied().collect();
+    let visit_sale_ids: Vec<Uuid> = v.sale_of.values().flatten().copied().collect();
     let visit_money = payments(&mut tx, &visit_sale_ids).await?;
     tx.commit().await?;
 
@@ -475,8 +501,12 @@ pub async fn history(
                 let reversed = v
                     .sale_of
                     .get(&h.id)
-                    .and_then(|s| visit_money.get(s))
-                    .map(|p| p.reversed)
+                    .map(|sales| {
+                        sales
+                            .iter()
+                            .filter_map(|s| visit_money.get(s))
+                            .fold(MethodSplit::default(), |a, p| a.plus(p.reversed))
+                    })
                     .unwrap_or_default();
                 event.void = Some(HistoryVoid {
                     id: h.id,

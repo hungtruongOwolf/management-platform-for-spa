@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id, s.status, s.subtotal, s.discount_amount, s.discount_reason, s.total,\n                  s.void_reason, s.voided_at, st.full_name AS \"closer_name?\"\n           FROM app.sale s\n           LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id\n           WHERE s.tenant_id = $1 AND s.id = ANY($2)",
+  "query": "SELECT s.id, s.status, s.subtotal, s.discount_amount, s.discount_reason, s.total,\n                  s.void_reason, s.voided_at, st.full_name AS \"closer_name?\", s.visit_id,\n                  (SELECT string_agg(DISTINCT c.full_name, ', ')\n                   FROM app.customer_package cp\n                   JOIN app.customer c ON c.tenant_id = cp.tenant_id AND c.id = cp.customer_id\n                   WHERE cp.tenant_id = s.tenant_id AND cp.sale_id = s.id\n                     AND cp.customer_id <> s.customer_id) AS \"beneficiary_name?\"\n           FROM app.sale s\n           LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id\n           WHERE s.tenant_id = $1 AND s.id = ANY($2)",
   "describe": {
     "columns": [
       {
@@ -101,6 +101,23 @@
             "name": "full_name"
           }
         }
+      },
+      {
+        "ordinal": 9,
+        "name": "visit_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "visit_id"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "beneficiary_name?",
+        "type_info": "Text",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -118,8 +135,10 @@
       false,
       true,
       true,
-      true
+      true,
+      true,
+      null
     ]
   },
-  "hash": "e318a4cfeb7d58e9dfc8305f7592eb4b14d243506e194e886ab4b192f7fd5eb2"
+  "hash": "8b37e65fb5894e9371c0c2d30bdbedc3e3c28a50bde596be324a46f8529c47e4"
 }

@@ -396,6 +396,11 @@ pub struct LedgerRow {
     pub note: Option<String>,
     /// The sale was voided later (its `void` row may be on another day).
     pub voided: bool,
+    /// The visit the sale was made in (one-off lines, a package sold in the cart, an addition).
+    pub visit_id: Option<Uuid>,
+    /// Upsell attribution ("người giới thiệu / chốt"): the closer of a package sale, the
+    /// referrers of the one-off lines of a service sale; null = "khách tự chọn".
+    pub upsell_by: Option<String>,
 }
 
 /// Daily subtotal of the book, for every day of the range (not only the current page).
@@ -513,6 +518,10 @@ pub struct HistoryPurchase {
     pub closer_name: Option<String>,
     pub void_reason: Option<String>,
     pub voided_at: Option<DateTime<Utc>>,
+    /// The visit this package was sold in, if any.
+    pub visit_id: Option<Uuid>,
+    /// Bought for someone else (US13): who the packages belong to.
+    pub beneficiary_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]

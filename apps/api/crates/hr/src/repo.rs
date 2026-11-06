@@ -502,28 +502,58 @@ pub async fn commission_lines(
     .await?)
 }
 
-/// Σ total of package sales (not voided) closed by each person in the period.
-pub async fn closing_bases(
+pub struct UpsellRow {
+    pub staff_id: Uuid,
+    /// `package` or `service`.
+    pub kind: String,
+    pub description: String,
+    pub qty: i64,
+    pub value: i64,
+}
+
+/// Upsell credits of the period ("người giới thiệu / chốt", compensation-rules §3.2, EM Q-U3),
+/// per person and item:
+/// - packages: the price paid (after discount) of every package sold in an open sale of the
+///   period, credited to the sale's closer (Σ per sale = `sale.total`);
+/// - one-off services: `line_value` of the one-off lines of completed visits of the period,
+///   credited to the line's referrer.
+///
+/// "Khách tự chọn" (no closer / referrer) credits nobody.
+pub async fn upsell_lines(
     tx: &mut TenantTx,
     from: NaiveDate,
     to: NaiveDate,
-) -> Result<Vec<(Uuid, i64)>, AppError> {
+) -> Result<Vec<UpsellRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
-    Ok(sqlx::query!(
-        r#"SELECT s.closer_staff_id AS "staff_id!", SUM(s.total)::bigint AS "total!"
-           FROM app.sale s
-           WHERE s.tenant_id = $1 AND s.status = 'open' AND s.closer_staff_id IS NOT NULL
-             AND s.business_date BETWEEN $2 AND $3
-           GROUP BY s.closer_staff_id"#,
+    Ok(sqlx::query_as!(
+        UpsellRow,
+        r#"SELECT staff_id AS "staff_id!", kind AS "kind!", description AS "description!",
+                  qty AS "qty!", value AS "value!"
+           FROM (
+             SELECT s.closer_staff_id AS staff_id, 'package'::text AS kind,
+                    cp.name_snapshot AS description, count(*)::bigint AS qty,
+                    SUM(cp.sold_price)::bigint AS value
+             FROM app.sale s
+             JOIN app.customer_package cp ON cp.tenant_id = s.tenant_id AND cp.sale_id = s.id
+             WHERE s.tenant_id = $1 AND s.status = 'open' AND s.closer_staff_id IS NOT NULL
+               AND s.business_date BETWEEN $2 AND $3
+             GROUP BY s.closer_staff_id, cp.name_snapshot
+             UNION ALL
+             SELECT vl.referrer_staff_id, 'service', vl.service_name_snapshot,
+                    SUM(vl.qty)::bigint, SUM(vl.line_value)::bigint
+             FROM app.visit_line vl
+             JOIN app.visit v ON v.tenant_id = vl.tenant_id AND v.id = vl.visit_id
+             WHERE vl.tenant_id = $1 AND v.status = 'completed' AND vl.referrer_staff_id IS NOT NULL
+               AND v.business_date BETWEEN $2 AND $3
+             GROUP BY vl.referrer_staff_id, vl.service_name_snapshot
+           ) u
+           ORDER BY staff_id, kind, value DESC, description"#,
         tenant,
         from,
         to
     )
     .fetch_all(tx.conn())
-    .await?
-    .into_iter()
-    .map(|r| (r.staff_id, r.total))
-    .collect())
+    .await?)
 }
 
 // --------------------------------------------------------------------------------- payslips

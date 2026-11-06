@@ -21,6 +21,7 @@ function appt(over: Partial<Appointment>): Appointment {
     status: "booked",
     phase: "waiting",
     group_id: null,
+    companions: [],
     business_date: "2026-11-06",
     starts_at: "2026-11-06T03:00:00Z",
     ends_at: "2026-11-06T04:00:00Z",

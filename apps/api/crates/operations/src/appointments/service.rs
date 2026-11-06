@@ -233,6 +233,7 @@ fn dto(
         status: status_dto(status),
         phase: phase_dto(phase),
         group_id: r.group_id,
+        companions: r.companions,
         duration_min,
         is_guest: r.customer_id.is_none(),
         customer_gender: crm::http::gender_dto(r.customer_gender.as_deref()),
@@ -516,6 +517,17 @@ fn parse_who(customer_id: Option<Uuid>, guest: Option<&GuestCreate>) -> Result<W
     }
 }
 
+/// Companion notes of a booking (same rules as a visit's).
+fn companions(input: &[String]) -> Result<Vec<String>, AppError> {
+    let mut errors = Vec::new();
+    let c = crate::service::parse_companions(input, &mut errors);
+    if errors.is_empty() {
+        Ok(c)
+    } else {
+        Err(AppError::Validation(errors))
+    }
+}
+
 /// One person to book, parsed at the edge (single booking or one person of a group).
 struct Booking<'a> {
     who: Who,
@@ -547,6 +559,7 @@ async fn insert_booking(
     b: &Booking<'_>,
     note: Option<&str>,
     group_id: Option<Uuid>,
+    companions: &[String],
 ) -> Result<(Uuid, NaiveDate), AppError> {
     let customer_id = match &b.who {
         Who::Customer(id) => Some(
@@ -592,6 +605,7 @@ async fn insert_booking(
             staff_id: p.staff_id,
             note,
             group_id,
+            companions,
             created_by: actor.user_id.as_uuid(),
         },
     )
@@ -608,6 +622,7 @@ async fn insert_booking(
             "customer_id": customer_id, "guest": guest_name.is_some(),
             "starts_at": p.starts_at, "ends_at": p.ends_at, "staff_id": p.staff_id,
             "service_ids": b.service_ids, "has_note": note.is_some(), "group_id": group_id,
+            "companions": companions.len(),
         }),
         None,
     )
@@ -632,6 +647,7 @@ pub async fn book(
         duration_min: input.duration_min,
     };
     let note = clean_note(input.note.as_ref())?;
+    let companions = companions(&input.companions)?;
 
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     if let Claim::Replay { status, body } =
@@ -641,7 +657,16 @@ pub async fn book(
         return Ok((status, body));
     }
     let spa = spa(&mut tx).await?;
-    let (id, _) = insert_booking(&mut tx, actor, &spa, &booking, note.as_deref(), None).await?;
+    let (id, _) = insert_booking(
+        &mut tx,
+        actor,
+        &spa,
+        &booking,
+        note.as_deref(),
+        None,
+        &companions,
+    )
+    .await?;
     let body = serde_json::to_value(load_one(&mut tx, id).await?)
         .map_err(|e| AppError::Internal(e.to_string()))?;
     idempotency::complete(&mut tx, actor, key, 201, &body).await?;
@@ -660,7 +685,14 @@ pub async fn book_group(
     input: &AppointmentGroupCreate,
 ) -> Result<(u16, Value), AppError> {
     actor.require(Permission::AppointmentManage)?;
-    if !(domain::MIN_GROUP..=domain::MAX_GROUP).contains(&input.people.len()) {
+    let companions = companions(&input.companions)?;
+    // A family where only one person is served is still a group: the others are notes (Q-U5).
+    let min = if companions.is_empty() {
+        domain::MIN_GROUP
+    } else {
+        1
+    };
+    if !(min..=domain::MAX_GROUP).contains(&input.people.len()) {
         return Err(invalid("people", "count_out_of_range"));
     }
     let note = clean_note(input.note.as_ref())?;
@@ -694,9 +726,19 @@ pub async fn book_group(
     let mut ids = Vec::with_capacity(bookings.len());
     let mut group_day = None;
     for (i, b) in bookings.iter().enumerate() {
-        let (id, day) = insert_booking(&mut tx, actor, &spa, b, note.as_deref(), Some(group_id))
-            .await
-            .map_err(|e| in_person(i, e))?;
+        // The companions travel with the first person's booking.
+        let mine: &[String] = if i == 0 { &companions } else { &[] };
+        let (id, day) = insert_booking(
+            &mut tx,
+            actor,
+            &spa,
+            b,
+            note.as_deref(),
+            Some(group_id),
+            mine,
+        )
+        .await
+        .map_err(|e| in_person(i, e))?;
         if *group_day.get_or_insert(day) != day {
             return Err(invalid(format!("people[{i}].starts_at"), "not_same_day"));
         }
@@ -976,6 +1018,8 @@ pub async fn complete(
         note: input.note,
         lines: input.lines,
         payments: input.payments,
+        package_sales: input.package_sales,
+        companions: input.companions,
     };
     let now = Utc::now();
 
@@ -997,6 +1041,9 @@ pub async fn complete(
         code: "appointment.customer_required",
     })?;
     visit.customer_id = customer_id;
+    if visit.companions.is_empty() {
+        visit.companions.clone_from(&current.companions);
+    }
     if visit.check_in_at.is_none() {
         visit.check_in_at = Some(current.arrived_at.unwrap_or(if current.starts_at <= now {
             current.starts_at

@@ -11,9 +11,14 @@ use uuid::Uuid;
 /// `unit_price` or `total` are ignored and every amount is computed from the catalog.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SaleCreate {
+    /// Who pays.
     pub customer_id: Uuid,
-    /// The staff member who closed the sale (must be currently working here).
-    pub closer_staff_id: Uuid,
+    /// Who the packages belong to (US13: "mua cho người khác"); omitted = the payer. Must be a
+    /// customer of this spa (`404` otherwise).
+    pub beneficiary_customer_id: Option<Uuid>,
+    /// "Người giới thiệu / chốt" (gets the upsell credit): any staff member currently working
+    /// here (owner, manager, technician); null or omitted = "khách tự chọn" (nobody is credited).
+    pub closer_staff_id: Option<Uuid>,
     /// 1–10 packages.
     pub lines: Vec<SaleLineCreate>,
     pub discount: Option<DiscountCreate>,
@@ -126,6 +131,9 @@ pub struct SaleDto {
     pub voided_at: Option<DateTime<Utc>>,
     pub closer_staff_id: Option<Uuid>,
     pub closer_name: Option<String>,
+    /// The visit this sale was made in (its one-off lines, a package sold in the cart, an
+    /// addition); null = a sale at the desk without a visit.
+    pub visit_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub lines: Vec<SaleLineDto>,
     pub payments: Vec<PaymentDto>,

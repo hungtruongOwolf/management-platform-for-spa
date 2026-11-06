@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id, s.customer_id, s.business_date, s.subtotal, s.discount_amount, s.discount_reason, s.total,\n                  s.amount_paid, s.status, s.void_reason, s.voided_at, s.closer_staff_id, st.full_name AS \"closer_name?\", s.created_at\n           FROM app.sale s\n           LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id\n           WHERE s.tenant_id = $1 AND s.id = $2",
+  "query": "SELECT s.id, s.customer_id, s.business_date, s.subtotal, s.discount_amount, s.discount_reason, s.total,\n                  s.amount_paid, s.status, s.void_reason, s.voided_at, s.closer_staff_id, st.full_name AS \"closer_name?\", s.visit_id, s.created_at\n           FROM app.sale s\n           LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id\n           WHERE s.tenant_id = $1 AND s.id = $2",
   "describe": {
     "columns": [
       {
@@ -148,6 +148,17 @@
       },
       {
         "ordinal": 13,
+        "name": "visit_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "visit_id"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -178,8 +189,9 @@
       true,
       true,
       true,
+      true,
       false
     ]
   },
-  "hash": "7a1ff8dc893ef4a1b47e5eb81edfbf7f2c06eab5bdcdd4f21daa7a0a694d3f57"
+  "hash": "dffbd46e4a11f9f6a9705db99c600d6eedfcffce971c0872a954fa4defab8e9c"
 }

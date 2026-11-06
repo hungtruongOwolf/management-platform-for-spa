@@ -105,6 +105,8 @@ const staff = (id: string, name: string): Staff => ({
 });
 
 const VISIT: Visit = {
+  companions: [],
+  package_sales: [],
   id: "v1",
   customer_id: "c1",
   customer_name: "Nguyễn Thị Hà",

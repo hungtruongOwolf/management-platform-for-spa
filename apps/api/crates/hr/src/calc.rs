@@ -54,6 +54,20 @@ pub struct CommissionLine {
     pub full_value: i64,
 }
 
+/// Upsell credit of one item sold in the month ("người giới thiệu / chốt", compensation-rules
+/// §3.2, EM 2026-11-06 Q-U3): a package closed by this person or a one-off service they
+/// recommended. Performing the service is a separate credit ([`CommissionLine`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct UpsellLine {
+    /// `package` or `service`.
+    pub kind: String,
+    pub description: String,
+    /// Packages sold / services recommended.
+    pub qty: i64,
+    /// Price paid (packages, after discount) or `line_value` (services).
+    pub value: i64,
+}
+
 pub struct MonthInput<'a> {
     pub month: Month,
     /// Days before this one are not counted (unfinished current month); `None` = whole month.
@@ -63,8 +77,9 @@ pub struct MonthInput<'a> {
     pub pay: Option<PayTerms>,
     pub days: &'a [Day],
     pub commission_lines: &'a [CommissionLine],
-    /// Σ `sale.total` of package sales closed by this person (not voided).
-    pub closing_base: i64,
+    /// Upsell credits: packages closed (Σ = `sale.total` of open sales) and one-off services
+    /// recommended by this person.
+    pub upsell_lines: &'a [UpsellLine],
     pub bonuses: i64,
     pub penalties: i64,
     pub bonus_points: i64,
@@ -129,8 +144,15 @@ pub struct Payslip {
     pub late_deduction: i64,
     pub service_commission_base: i64,
     pub service_commission: i64,
+    /// Upsell base ("hoa hồng giới thiệu / chốt", §3.2) = packages + recommended services.
     pub closing_commission_base: i64,
     pub closing_commission: i64,
+    /// Part of the upsell base from packages closed.
+    #[serde(default)]
+    pub upsell_package_base: i64,
+    /// Part of the upsell base from one-off services recommended (Q-U3).
+    #[serde(default)]
+    pub upsell_service_base: i64,
     pub meal_allowance: i64,
     pub bonuses: i64,
     pub penalties: i64,
@@ -146,6 +168,9 @@ pub struct Payslip {
     /// Tết bonus recorded for the month (not in `net_pay`).
     pub tet_amount: i64,
     pub commission_lines: Vec<CommissionLine>,
+    /// What the upsell commission is computed from, item by item (older snapshots: empty).
+    #[serde(default)]
+    pub upsell_lines: Vec<UpsellLine>,
     pub flags: Vec<PayFlag>,
 }
 
@@ -286,11 +311,20 @@ pub fn compute(
         .sum();
     let rate = i64::from(pay.commission_rate_bp);
     let service_commission = mul_div_round(service_base, rate, 10_000);
-    let closing_base = if rules.closing_commission {
-        input.closing_base
-    } else {
-        0
+    let upsell_of = |kind: &str| -> i64 {
+        input
+            .upsell_lines
+            .iter()
+            .filter(|l| l.kind == kind)
+            .map(|l| l.value)
+            .sum()
     };
+    let (package_base, referred_base) = if rules.closing_commission {
+        (upsell_of("package"), upsell_of("service"))
+    } else {
+        (0, 0)
+    };
+    let closing_base = package_base + referred_base;
     let closing_commission = mul_div_round(closing_base, rate, 10_000);
 
     let meal = if employed_days > 0 {
@@ -361,6 +395,8 @@ pub fn compute(
         service_commission,
         closing_commission_base: closing_base,
         closing_commission,
+        upsell_package_base: package_base,
+        upsell_service_base: referred_base,
         meal_allowance: meal,
         bonuses: input.bonuses,
         penalties: input.penalties,
@@ -372,6 +408,7 @@ pub fn compute(
         tet_level,
         tet_amount,
         commission_lines: input.commission_lines.to_vec(),
+        upsell_lines: input.upsell_lines.to_vec(),
         flags,
     }
 }
@@ -425,7 +462,7 @@ mod tests {
             pay: Some(terms()),
             days,
             commission_lines: lines,
-            closing_base: 0,
+            upsell_lines: &[],
             bonuses: 0,
             penalties: 0,
             bonus_points: 0,
@@ -528,12 +565,19 @@ mod tests {
             },
         ];
         let ds = days(&[]);
+        let upsell = [UpsellLine {
+            kind: "package".into(),
+            description: "Gói Đại Thông Lạc".into(),
+            qty: 1,
+            value: 2_000_000,
+        }];
         let mut i = input(&ds, &lines);
-        i.closing_base = 2_000_000;
+        i.upsell_lines = &upsell;
         let s = slip(&i, &PayrollRules::default());
         assert_eq!(s.service_commission_base, 1_000_000);
         assert_eq!(s.service_commission, 50_000);
         assert_eq!(s.closing_commission, 100_000);
+        assert_eq!(s.upsell_package_base, 2_000_000);
         assert_eq!(s.net_pay, 5_000_000 + 50_000 + 100_000 + 300_000);
         let gifts = PayrollRules {
             commission_on_bonus_sessions: true,
@@ -611,5 +655,59 @@ mod tests {
             0,
             "future days"
         );
+    }
+
+    #[test]
+    fn upsell_counts_packages_and_recommended_services_apart_from_performing() {
+        // Q-U3: the upsell rate applies to packages AND one-off services recommended; performing
+        // a service is the "làm" credit, computed separately.
+        let ds = days(&[]);
+        let performed = [CommissionLine {
+            service_name: "Ngâm chân".into(),
+            source: "one_off".into(),
+            qty: 1,
+            value: 100_000,
+            full_value: 100_000,
+        }];
+        let upsell = [
+            UpsellLine {
+                kind: "package".into(),
+                description: "Gói Đại Thông Lạc".into(),
+                qty: 1,
+                value: 3_500_000,
+            },
+            UpsellLine {
+                kind: "service".into(),
+                description: "Ngâm chân".into(),
+                qty: 1,
+                value: 100_000,
+            },
+        ];
+        let mut i = input(&ds, &performed);
+        i.upsell_lines = &upsell;
+        let s = slip(&i, &PayrollRules::default());
+        assert_eq!(s.service_commission, 5_000);
+        assert_eq!(
+            (s.upsell_package_base, s.upsell_service_base),
+            (3_500_000, 100_000)
+        );
+        assert_eq!(s.closing_commission_base, 3_600_000);
+        assert_eq!(s.closing_commission, 180_000);
+        assert_eq!(s.upsell_lines.len(), 2);
+        assert_eq!(s.net_pay, 5_000_000 + 5_000 + 180_000 + 300_000);
+    }
+
+    #[test]
+    fn an_old_snapshot_without_upsell_fields_still_reads() {
+        let ds = days(&[]);
+        let s = slip(&input(&ds, &[]), &PayrollRules::default());
+        let mut json = serde_json::to_value(&s).unwrap_or_default();
+        if let Some(o) = json.as_object_mut() {
+            o.remove("upsell_lines");
+            o.remove("upsell_package_base");
+            o.remove("upsell_service_base");
+        }
+        let back: Result<Payslip, _> = serde_json::from_value(json);
+        assert!(back.is_ok_and(|b| b.upsell_lines.is_empty() && b.upsell_package_base == 0));
     }
 }

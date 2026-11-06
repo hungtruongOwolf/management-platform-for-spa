@@ -88,6 +88,7 @@ Thước đo: quản lý không phải cộng tay lương và hoa hồng ([perso
   - `tiền trừ đi muộn = số lần muộn quá ngưỡng × mức phạt` (mặc định 0đ).
   - `hoa hồng làm liệu trình = round(tỷ lệ × Σ visit_line.line_value)` trên các lượt **completed** của tháng mà người đó làm.
   - `hoa hồng chốt liệu trình = round(tỷ lệ × Σ sale.total)` trên các hóa đơn gói người đó chốt, không tính hóa đơn đã hủy.
+  - **Vòng 6 (EM 2026-11-06, Q-U3):** khoản này thành **hoa hồng giới thiệu / chốt (upsell)** = `round(tỷ lệ × (Σ giá gói đã thu mà người đó chốt + Σ line_value dịch vụ lẻ người đó giới thiệu trong lượt hoàn tất))`. Phiếu lương ghi `upsell_package_base`, `upsell_service_base`, `upsell_lines[]` (từng gói / dịch vụ); `closing_commission_base` = tổng. "Khách tự chọn" không tính cho ai. Hoa hồng làm không đổi.
   - `thực lĩnh = lương cứng − trừ nghỉ − trừ muộn + hoa hồng làm + hoa hồng chốt + tiền ăn + thưởng − phạt`.
   - **Ghi nhận, không cộng vào thực lĩnh**: Thưởng gắn bó của tháng (trả ở mốc 12/24) và mức Tết của tháng (mức thấp hơn giữa mức theo ngày nghỉ và mức theo đánh giá; số tiền theo `tet_level_amounts`).
 - AC5.3 Cờ trên phiếu lương:

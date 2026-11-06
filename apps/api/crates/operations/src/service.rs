@@ -1,6 +1,12 @@
 //! Visit use cases (US4). Recording a visit is one transaction: idempotency claim, technician
-//! checks, server-side pricing, atomic session consumption, the sale of the one-off lines with its
-//! payments, the visit and its lines, the audit trail and the stored response — or nothing at all.
+//! checks, server-side pricing, the packages sold in the checkout, atomic session consumption, the
+//! sale of the one-off lines with its payments, the visit and its lines, the audit trail and the
+//! stored response — or nothing at all.
+//!
+//! Round 6 (spec §10): one checkout sells packages too (`package_sales`, one sale per package,
+//! linked by `sale.visit_id`), a line may use today's session from a package sold in the same
+//! request, services and packages can be added to a saved visit (`add`), and a paid one-off visit
+//! can count today as the first session of a new package (`convert`).
 //!
 //! The session note is health data: encrypted at rest (AAD = tenant + visit), written only with
 //! `customer.health_notes.write`, returned only on a single visit and only with
@@ -8,8 +14,8 @@
 
 use crate::domain::{self, CheckInError};
 use crate::dto::{
-    VisitCorrected, VisitCreate, VisitDto, VisitLineDto, VisitLineSourceDto, VisitStatusDto,
-    VisitUpdate,
+    VisitConversion, VisitCorrected, VisitCreate, VisitDto, VisitLineCreate, VisitLineDto,
+    VisitLineSourceDto, VisitPackageSaleCreate, VisitPackageSaleDto, VisitStatusDto, VisitUpdate,
 };
 use crate::repo::{self, LineInsert, LineRow, VisitInsert, VisitRow};
 use catalog::{PriceLookupError, PriceVariant};
@@ -19,7 +25,10 @@ use kernel::crypto::FieldCipher;
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx};
 use packages::{Consume, Consumed};
-use sales::service::{Payment, ServiceDiscount, ServiceLine, ServiceSale};
+use sales::service::{
+    DiscountAsk, PackageLine, PackageOrder, Payment, PricedPackageSale, SaleAt, ServiceDiscount,
+    ServiceLine, ServiceSale,
+};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
@@ -27,6 +36,12 @@ use uuid::Uuid;
 
 pub const MAX_LINES: usize = 20;
 pub const MAX_QTY: u32 = 10;
+/// Packages sold in one checkout (spec §10.4.1).
+pub const MAX_PACKAGE_SALES: usize = 3;
+/// Companions (notes only) on one visit or booking.
+pub const MAX_COMPANIONS: usize = 5;
+const MAX_COMPANION_CHARS: usize = 100;
+const MAX_REF_CHARS: usize = 20;
 const MAX_NOTE: usize = 2000;
 const MAX_REASON: usize = 500;
 
@@ -49,10 +64,24 @@ struct LineOrder {
     service_id: Uuid,
     source: Source,
     item_id: Option<Uuid>,
+    /// Index into `Order::package_sales`: today's session comes from that new package.
+    new_package: Option<usize>,
     staff_id: Uuid,
+    /// One-off lines: "người giới thiệu" (upsell credit); `None` = "khách tự chọn".
+    referrer: Option<Uuid>,
     qty: u32,
     price_variant: Option<PriceVariant>,
     override_reason: Option<String>,
+}
+
+/// A package sold in the checkout, after shape validation.
+struct PackageSaleOrder {
+    /// The beneficiary as asked (`None` = the visit's customer).
+    beneficiary: Option<Uuid>,
+    closer_staff_id: Option<Uuid>,
+    line: PackageLine,
+    discount: Money,
+    discount_reason: Option<String>,
 }
 
 /// The request after shape validation; nothing is checked against the database yet.
@@ -63,6 +92,8 @@ pub(crate) struct Order {
     lines: Vec<LineOrder>,
     payments: Vec<Payment>,
     discount: Option<ServiceDiscount>,
+    package_sales: Vec<PackageSaleOrder>,
+    companions: Vec<String>,
     /// Set by "Sửa lượt": the voided visit this one replaces, whose business day it keeps.
     correction: Option<Replaces>,
 }
@@ -72,6 +103,15 @@ pub(crate) struct Order {
 struct Replaces {
     visit_id: Uuid,
     business_date: NaiveDate,
+}
+
+/// A saved visit that an addition appends to (locked, current and authorized by the caller).
+#[derive(Debug, Clone, Copy)]
+struct Existing {
+    id: Uuid,
+    customer_id: Uuid,
+    business_date: NaiveDate,
+    next_position: i32,
 }
 
 fn trimmed(s: Option<&String>) -> Option<String> {
@@ -88,14 +128,79 @@ fn clean_note(note: Option<&String>) -> Result<Option<String>, AppError> {
     Ok(note)
 }
 
-/// Shape validation of a visit and the permissions its content needs (note, expiry override).
-pub(crate) fn parse(actor: &Actor, input: &VisitCreate) -> Result<Order, AppError> {
-    let mut errors = Vec::new();
-    if input.lines.is_empty() || input.lines.len() > MAX_LINES {
-        errors.push(FieldError::new("lines", "count_out_of_range"));
+/// Shape rules of companion notes: 0–5, each 1–100 characters after trimming. Shared with
+/// bookings (`appointments`).
+pub(crate) fn parse_companions(input: &[String], errors: &mut Vec<FieldError>) -> Vec<String> {
+    if input.len() > MAX_COMPANIONS {
+        errors.push(FieldError::new("companions", "count_out_of_range"));
     }
-    let mut lines = Vec::with_capacity(input.lines.len());
-    for (i, l) in input.lines.iter().enumerate() {
+    input
+        .iter()
+        .enumerate()
+        .filter_map(|(i, c)| {
+            let c = c.trim();
+            if c.is_empty() || c.chars().count() > MAX_COMPANION_CHARS {
+                errors.push(FieldError::new(format!("companions[{i}]"), "invalid"));
+                None
+            } else {
+                Some(c.to_owned())
+            }
+        })
+        .collect()
+}
+
+/// Shape rules of `package_sales[]`; returns the sales and each `ref` → index.
+fn parse_package_sales(
+    input: &[VisitPackageSaleCreate],
+    errors: &mut Vec<FieldError>,
+) -> (Vec<PackageSaleOrder>, HashMap<String, usize>) {
+    if input.len() > MAX_PACKAGE_SALES {
+        errors.push(FieldError::new("package_sales", "count_out_of_range"));
+    }
+    let mut refs = HashMap::new();
+    let sales = input
+        .iter()
+        .enumerate()
+        .map(|(k, p)| {
+            let prefix = format!("package_sales[{k}]");
+            if let Some(r) = p.package_ref.as_deref().map(str::trim) {
+                if r.is_empty() || r.chars().count() > MAX_REF_CHARS {
+                    errors.push(FieldError::new(format!("{prefix}.ref"), "invalid"));
+                } else if refs.insert(r.to_owned(), k).is_some() {
+                    errors.push(FieldError::new(format!("{prefix}.ref"), "duplicate"));
+                }
+            }
+            let (discount, discount_reason) = sales::service::parse_package_discount(
+                p.discount.as_ref(),
+                &format!("{prefix}.discount"),
+                errors,
+            );
+            PackageSaleOrder {
+                beneficiary: p.beneficiary_customer_id,
+                closer_staff_id: p.closer_staff_id,
+                line: PackageLine {
+                    plan_id: p.package_plan_id,
+                    gift_note: sales::service::parse_gift_note(
+                        p.gift_note.as_ref(),
+                        &format!("{prefix}.gift_note"),
+                        errors,
+                    ),
+                },
+                discount,
+                discount_reason,
+            }
+        })
+        .collect();
+    (sales, refs)
+}
+
+fn parse_lines(
+    input: &[VisitLineCreate],
+    refs: &HashMap<String, usize>,
+    errors: &mut Vec<FieldError>,
+) -> Vec<LineOrder> {
+    let mut lines = Vec::with_capacity(input.len());
+    for (i, l) in input.iter().enumerate() {
         let source = match l.source {
             VisitLineSourceDto::Package => Source::Package,
             VisitLineSourceDto::OneOff => Source::OneOff,
@@ -118,30 +223,74 @@ pub(crate) fn parse(actor: &Actor, input: &VisitCreate) -> Result<Order, AppErro
                 "too_long",
             ));
         }
-        if source == Source::OneOff {
-            if l.customer_package_item_id.is_some() {
-                errors.push(FieldError::new(
-                    format!("lines[{i}].customer_package_item_id"),
-                    "not_allowed",
-                ));
+        let new_package = match l.package_ref.as_deref().map(str::trim) {
+            None => None,
+            Some(r) => match refs.get(r) {
+                Some(k) => Some(*k),
+                None => {
+                    errors.push(FieldError::new(
+                        format!("lines[{i}].package_ref"),
+                        "unknown",
+                    ));
+                    None
+                }
+            },
+        };
+        let mut not_allowed = |field: &str| {
+            errors.push(FieldError::new(
+                format!("lines[{i}].{field}"),
+                "not_allowed",
+            ));
+        };
+        match source {
+            Source::OneOff => {
+                if l.customer_package_item_id.is_some() {
+                    not_allowed("customer_package_item_id");
+                }
+                if override_reason.is_some() {
+                    not_allowed("expiry_override_reason");
+                }
+                if l.package_ref.is_some() {
+                    not_allowed("package_ref");
+                }
             }
-            if override_reason.is_some() {
-                errors.push(FieldError::new(
-                    format!("lines[{i}].expiry_override_reason"),
-                    "not_allowed",
-                ));
+            Source::Package => {
+                // A package line was sold with its package: that sale's closer has the credit.
+                if l.referrer_staff_id.is_some() {
+                    not_allowed("referrer_staff_id");
+                }
+                if l.package_ref.is_some() && l.customer_package_item_id.is_some() {
+                    not_allowed("customer_package_item_id");
+                }
+                if l.package_ref.is_some() && override_reason.is_some() {
+                    not_allowed("expiry_override_reason");
+                }
             }
         }
         lines.push(LineOrder {
             service_id: l.service_id,
             source,
             item_id: l.customer_package_item_id,
+            new_package,
             staff_id,
+            referrer: l.referrer_staff_id,
             qty,
             price_variant: l.price_variant,
             override_reason,
         });
     }
+    lines
+}
+
+/// Shape validation of a visit and the permissions its content needs (note, expiry override,
+/// packages sold). `min_lines` is 1 for a visit, 0 for an addition (which may only sell a package).
+fn parse_order(actor: &Actor, input: &VisitCreate, min_lines: usize) -> Result<Order, AppError> {
+    let mut errors = Vec::new();
+    if input.lines.len() < min_lines || input.lines.len() > MAX_LINES {
+        errors.push(FieldError::new("lines", "count_out_of_range"));
+    }
+    let (package_sales, refs) = parse_package_sales(&input.package_sales, &mut errors);
+    let lines = parse_lines(&input.lines, &refs, &mut errors);
     let note = match clean_note(input.note.as_ref()) {
         Ok(n) => n,
         Err(AppError::Validation(e)) => {
@@ -150,6 +299,7 @@ pub(crate) fn parse(actor: &Actor, input: &VisitCreate) -> Result<Order, AppErro
         }
         Err(e) => return Err(e),
     };
+    let companions = parse_companions(&input.companions, &mut errors);
     let payments = sales::service::parse_payments(&input.payments, &mut errors);
     let discount = input
         .discount
@@ -164,6 +314,9 @@ pub(crate) fn parse(actor: &Actor, input: &VisitCreate) -> Result<Order, AppErro
     if lines.iter().any(|l| l.override_reason.is_some()) {
         actor.require(Permission::PackageUseExpiredOverride)?;
     }
+    if !package_sales.is_empty() {
+        actor.require(Permission::PackageSell)?;
+    }
     Ok(Order {
         customer_id: input.customer_id,
         check_in_at: input.check_in_at,
@@ -171,8 +324,15 @@ pub(crate) fn parse(actor: &Actor, input: &VisitCreate) -> Result<Order, AppErro
         lines,
         payments,
         discount,
+        package_sales,
+        companions,
         correction: None,
     })
+}
+
+/// Shape validation of `POST /visits` (and of an appointment's completion, a correction).
+pub(crate) fn parse(actor: &Actor, input: &VisitCreate) -> Result<Order, AppError> {
+    parse_order(actor, input, 1)
 }
 
 /// Associated data for a visit note: a ciphertext copied to another visit or spa fails to decrypt.
@@ -195,6 +355,19 @@ fn line_error(i: usize, field: &str, code: &'static str) -> AppError {
     AppError::Validation(vec![FieldError::new(format!("lines[{i}].{field}"), code)])
 }
 
+/// Field errors of package sale `k` name `package_sales[k].…`.
+fn in_package_sale(k: usize, e: AppError) -> AppError {
+    match e {
+        AppError::Validation(errors) => AppError::Validation(
+            errors
+                .into_iter()
+                .map(|f| FieldError::new(format!("package_sales[{k}].{}", f.field), f.code))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
 /// A line once priced (one-off) or matched to a package item (package).
 enum Priced {
     OneOff {
@@ -205,12 +378,17 @@ enum Priced {
     Package {
         item_id: Uuid,
     },
+    /// Today's session of a package sold in this checkout (its item is known once it is written).
+    NewPackage {
+        sale: usize,
+    },
 }
 
 /// `POST /visits` (`visit.record`; `payment.collect` when money is taken,
-/// `customer.health_notes.write` for a note, `package.use_expired_override` for an override).
-/// Returns the HTTP status and body, also stored under the idempotency key: a retry with the same
-/// key and body replays them without consuming anything twice.
+/// `customer.health_notes.write` for a note, `package.use_expired_override` for an override,
+/// `package.sell` when packages are sold). Returns the HTTP status and body, also stored under the
+/// idempotency key: a retry with the same key and body replays them without consuming anything
+/// twice.
 pub async fn record(
     pool: &PgPool,
     cipher: &FieldCipher,
@@ -264,45 +442,53 @@ pub(crate) async fn record_in(
     order: Order,
     now: DateTime<Utc>,
 ) -> Result<Uuid, AppError> {
-    let tenant = kernel::tenant::profile_as_of(tx, now).await?;
-    let recorded_on = tenant.business_date.as_naive();
-    // A correction stays on the replaced visit's day; the caller already authorized that day
-    // (closed-day rule), so it needs no `visit.backdate` of its own.
-    let service = domain::service_time(
-        order.check_in_at,
-        now,
-        tenant.timezone,
-        recorded_on,
-        order.correction.is_some() || actor.can(Permission::VisitBackdate),
-    )
-    .map_err(|e: CheckInError| AppError::Unprocessable { code: e.code() })?;
-    if let Some(replaced) = order.correction
-        && service.business_date != replaced.business_date
-    {
-        return Err(AppError::Validation(vec![FieldError::new(
-            "check_in_at",
-            "not_visit_day",
-        )]));
-    }
-    let check_in_at = service.at;
-    // Everything below belongs to the day of the service: package expiry, the sale, payments.
-    let today = service.business_date;
-    let customer = crm::service::brief_in(tx, order.customer_id)
-        .await?
-        .ok_or(AppError::NotFound)?;
+    checkout(tx, cipher, actor, order, now, None).await
+}
 
-    let mut verified = HashSet::new();
-    for line in &order.lines {
-        if verified.insert(line.staff_id) {
-            org::service::require_active(tx, line.staff_id).await?;
-        }
+/// What a checkout sells, priced and checked, before anything is written.
+struct Priced2 {
+    lines: Vec<Priced>,
+    packages: Vec<PricedPackageSale>,
+    service_lines: Vec<ServiceLine>,
+    /// Payments per sale: `[0]` the one-off sale, then one per package sale.
+    split: Vec<Vec<Payment>>,
+}
+
+/// Prices every line and package of a checkout inside the transaction and splits the payments
+/// over the sales (`422 payment.amount_mismatch` when they do not add up).
+async fn price_checkout(
+    tx: &mut TenantTx,
+    actor: &Actor,
+    order: &Order,
+    customer: &crm::service::CustomerBrief,
+    today: NaiveDate,
+    manager_discount_max_pct: u32,
+) -> Result<Priced2, AppError> {
+    let mut packages = Vec::with_capacity(order.package_sales.len());
+    for (k, p) in order.package_sales.iter().enumerate() {
+        let priced = sales::service::price_package_sale(
+            tx,
+            actor,
+            &PackageOrder {
+                customer_id: customer.id,
+                beneficiary_customer_id: p.beneficiary,
+                closer_staff_id: p.closer_staff_id,
+                lines: vec![p.line.clone()],
+                discount: p.discount,
+                discount_reason: p.discount_reason.clone(),
+            },
+            manager_discount_max_pct,
+        )
+        .await
+        .map_err(|e| in_package_sale(k, e))?;
+        packages.push(priced);
     }
 
     // Every amount comes from the catalog or the package, read inside this transaction.
     let mut priced = Vec::with_capacity(order.lines.len());
     for (i, line) in order.lines.iter().enumerate() {
-        priced.push(match line.source {
-            Source::OneOff => {
+        priced.push(match (line.source, line.new_package) {
+            (Source::OneOff, _) => {
                 let service = catalog::service::service_snapshot(tx, line.service_id)
                     .await?
                     .ok_or(AppError::NotFound)?;
@@ -326,7 +512,18 @@ pub(crate) async fn record_in(
                     unit_price,
                 }
             }
-            Source::Package => {
+            (Source::Package, Some(k)) => {
+                let sale = &packages[k];
+                // Packages are not shared (D5): one bought for someone else is used by them.
+                if sale.beneficiary() != customer.id {
+                    return Err(line_error(i, "package_ref", "not_beneficiary"));
+                }
+                if !sale.covers(line.service_id) {
+                    return Err(line_error(i, "service_id", "not_in_package"));
+                }
+                Priced::NewPackage { sale: k }
+            }
+            (Source::Package, None) => {
                 let item_id = match line.item_id {
                     Some(id) => id,
                     None => {
@@ -342,23 +539,179 @@ pub(crate) async fn record_in(
         });
     }
 
-    // Consume in item order so two multi-line visits racing for the same items lock rows in the
-    // same order and cannot deadlock.
-    let mut package_lines: Vec<(usize, Uuid)> = priced
+    let service_lines: Vec<ServiceLine> = order
+        .lines
         .iter()
-        .enumerate()
-        .filter_map(|(i, p)| match p {
-            Priced::Package { item_id } => Some((i, *item_id)),
-            Priced::OneOff { .. } => None,
+        .zip(&priced)
+        .filter_map(|(line, p)| match p {
+            Priced::OneOff {
+                name, unit_price, ..
+            } => Some(ServiceLine {
+                service_id: line.service_id,
+                description: name.clone(),
+                qty: line.qty,
+                unit_price: *unit_price,
+            }),
+            Priced::Package { .. } | Priced::NewPackage { .. } => None,
         })
         .collect();
+    let services = sales::service::price_services(
+        actor,
+        &service_lines,
+        order.discount.as_ref(),
+        manager_discount_max_pct,
+    )?;
+    let dues: Vec<Money> = std::iter::once(services.total)
+        .chain(packages.iter().map(PricedPackageSale::total))
+        .collect();
+    let split = sales::service::allocate_payments(&dues, &order.payments).ok_or(
+        AppError::Unprocessable {
+            code: "payment.amount_mismatch",
+        },
+    )?;
+    if !order.payments.is_empty() {
+        actor.require(Permission::PaymentCollect)?;
+    }
+    Ok(Priced2 {
+        lines: priced,
+        packages,
+        service_lines,
+        split,
+    })
+}
+
+/// One checkout: a new visit (`existing` = `None`) or lines and sales added to a saved one.
+/// Order of writes: package sales (so their items exist) → sessions consumed in item order → the
+/// one-off sale → the visit (new only) and its lines → audit. Any failure rolls back everything.
+#[allow(clippy::too_many_lines)]
+async fn checkout(
+    tx: &mut TenantTx,
+    cipher: &FieldCipher,
+    actor: &Actor,
+    order: Order,
+    now: DateTime<Utc>,
+    existing: Option<Existing>,
+) -> Result<Uuid, AppError> {
+    let tenant = kernel::tenant::profile_as_of(tx, now).await?;
+    let recorded_on = tenant.business_date.as_naive();
+    let (visit_id, customer_id, today, check_in_at, backdated) = match existing {
+        Some(e) => (e.id, e.customer_id, e.business_date, None, false),
+        None => {
+            // A correction stays on the replaced visit's day; the caller already authorized that
+            // day (closed-day rule), so it needs no `visit.backdate` of its own.
+            let service = domain::service_time(
+                order.check_in_at,
+                now,
+                tenant.timezone,
+                recorded_on,
+                order.correction.is_some() || actor.can(Permission::VisitBackdate),
+            )
+            .map_err(|e: CheckInError| AppError::Unprocessable { code: e.code() })?;
+            if let Some(replaced) = order.correction
+                && service.business_date != replaced.business_date
+            {
+                return Err(AppError::Validation(vec![FieldError::new(
+                    "check_in_at",
+                    "not_visit_day",
+                )]));
+            }
+            (
+                Uuid::now_v7(),
+                order.customer_id,
+                service.business_date,
+                Some(service.at),
+                service.backdated,
+            )
+        }
+    };
+    // Everything below belongs to the day of the service: package expiry, the sale, payments.
+    // Except a package sold by a later correction ("convert to package" on another day): its
+    // money changes hands today, like the reversal of the one-off it replaces (Q-E1).
+    let package_day = if order.correction.is_some() {
+        recorded_on
+    } else {
+        today
+    };
+    let customer = crm::service::brief_in(tx, customer_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+
+    let mut verified = HashSet::new();
+    for line in &order.lines {
+        for staff in std::iter::once(line.staff_id).chain(line.referrer) {
+            if verified.insert(staff) {
+                org::service::require_active(tx, staff).await?;
+            }
+        }
+    }
+
+    let Priced2 {
+        lines: priced,
+        packages,
+        service_lines,
+        mut split,
+    } = price_checkout(
+        tx,
+        actor,
+        &order,
+        &customer,
+        today,
+        tenant.manager_discount_max_pct,
+    )
+    .await?;
+    let branch = tenant.branch.as_uuid();
+
+    // Package sales first: today's session may come from one of them.
+    let mut sold = Vec::with_capacity(packages.len());
+    for (k, priced_sale) in packages.iter().enumerate() {
+        let payments = std::mem::take(&mut split[k + 1]);
+        sold.push(
+            sales::service::record_package_sale(
+                tx,
+                actor,
+                priced_sale,
+                SaleAt {
+                    business_date: package_day,
+                    branch_id: branch,
+                    visit_id: Some(visit_id),
+                },
+                &payments,
+            )
+            .await
+            .map_err(|e| in_package_sale(k, e))?,
+        );
+    }
+    // Each line's package item: the chosen one, or the new package's item for the service.
+    let item_of = |i: usize, p: &Priced| -> Result<Option<Uuid>, AppError> {
+        Ok(match p {
+            Priced::Package { item_id } => Some(*item_id),
+            Priced::NewPackage { sale } => Some(
+                sold[*sale]
+                    .packages
+                    .iter()
+                    .flat_map(|pk| pk.items.iter())
+                    .find(|(_, service)| *service == order.lines[i].service_id)
+                    .map(|(item, _)| *item)
+                    .ok_or_else(|| line_error(i, "service_id", "not_in_package"))?,
+            ),
+            Priced::OneOff { .. } => None,
+        })
+    };
+    let mut package_lines: Vec<(usize, Uuid)> = Vec::new();
+    for (i, p) in priced.iter().enumerate() {
+        if let Some(item) = item_of(i, p)? {
+            package_lines.push((i, item));
+        }
+    }
+    // Consume in item order so two multi-line visits racing for the same items lock rows in the
+    // same order and cannot deadlock.
     package_lines.sort_by_key(|(i, item)| (*item, *i));
     // Packages before items, as voids and cancellations lock them (no deadlock with either).
     let items: Vec<Uuid> = package_lines.iter().map(|(_, item)| *item).collect();
     if !items.is_empty() {
         packages::service::lock_for_consumption(tx, &items).await?;
     }
-    let mut consumed: HashMap<usize, Consumed> = HashMap::new();
+    let mut consumed: HashMap<usize, (Uuid, Consumed)> = HashMap::new();
     for (i, item_id) in package_lines {
         let line = &order.lines[i];
         let c = packages::service::consume_session(
@@ -375,26 +728,9 @@ pub(crate) async fn record_in(
         if c.service_id != line.service_id {
             return Err(line_error(i, "service_id", "not_in_package"));
         }
-        consumed.insert(i, c);
+        consumed.insert(i, (item_id, c));
     }
 
-    let service_lines: Vec<ServiceLine> = order
-        .lines
-        .iter()
-        .zip(&priced)
-        .filter_map(|(line, p)| match p {
-            Priced::OneOff {
-                name, unit_price, ..
-            } => Some(ServiceLine {
-                service_id: line.service_id,
-                description: name.clone(),
-                qty: line.qty,
-                unit_price: *unit_price,
-            }),
-            Priced::Package { .. } => None,
-        })
-        .collect();
-    let branch = tenant.branch.as_uuid();
     let sale = sales::service::record_service_sale(
         tx,
         actor,
@@ -402,8 +738,9 @@ pub(crate) async fn record_in(
             customer_id: customer.id,
             business_date: today,
             branch_id: branch,
+            visit_id: Some(visit_id),
             lines: &service_lines,
-            payments: &order.payments,
+            payments: &split[0],
             discount: order.discount.as_ref(),
             manager_discount_max_pct: tenant.manager_discount_max_pct,
         },
@@ -416,26 +753,35 @@ pub(crate) async fn record_in(
         .unwrap_or_default()
         .into_iter();
 
-    let visit_id = Uuid::now_v7();
-    let note_ct = encrypt_note(cipher, tx, visit_id, order.note.as_deref())?;
-    repo::insert_visit(
-        tx,
-        &VisitInsert {
-            id: visit_id,
-            branch_id: branch,
-            customer_id: customer.id,
-            business_date: today,
-            check_in_at,
-            note_ct: note_ct.as_deref(),
-            sale_id: sale.as_ref().map(|s| s.sale_id),
-            created_by: actor.user_id.as_uuid(),
-            corrects_visit_id: order.correction.map(|c| c.visit_id),
-        },
-    )
-    .await?;
+    let first_position = match existing {
+        Some(e) => e.next_position,
+        None => {
+            let note_ct = encrypt_note(cipher, tx, visit_id, order.note.as_deref())?;
+            repo::insert_visit(
+                tx,
+                &VisitInsert {
+                    id: visit_id,
+                    branch_id: branch,
+                    customer_id: customer.id,
+                    business_date: today,
+                    check_in_at: check_in_at
+                        .ok_or_else(|| AppError::Internal("check-in time".into()))?,
+                    note_ct: note_ct.as_deref(),
+                    sale_id: sale.as_ref().map(|s| s.sale_id),
+                    created_by: actor.user_id.as_uuid(),
+                    corrects_visit_id: order.correction.map(|c| c.visit_id),
+                    companions: &order.companions,
+                },
+            )
+            .await?;
+            0
+        }
+    };
     let mut audit_lines = Vec::with_capacity(order.lines.len());
     let mut overrides = Vec::new();
-    for (position, (i, (line, p))) in (0_i32..).zip(order.lines.iter().zip(&priced).enumerate()) {
+    for (position, (i, (line, p))) in
+        (first_position..).zip(order.lines.iter().zip(&priced).enumerate())
+    {
         let qty = i32::try_from(line.qty).map_err(|_| AppError::Internal("qty".into()))?;
         let insert = match p {
             Priced::OneOff {
@@ -464,10 +810,12 @@ pub(crate) async fn record_in(
                         .as_i64(),
                     expiry_override_reason: None,
                     discount_amount: share.as_i64(),
+                    sale_id: sale.as_ref().map(|s| s.sale_id),
+                    referrer_staff_id: line.referrer,
                 }
             }
-            Priced::Package { item_id } => {
-                let c = consumed
+            Priced::Package { .. } | Priced::NewPackage { .. } => {
+                let (item_id, c) = consumed
                     .get(&i)
                     .ok_or_else(|| AppError::Internal("package line not consumed".into()))?;
                 // The reason is kept only when it was actually needed.
@@ -491,33 +839,43 @@ pub(crate) async fn record_in(
                     line_value: c.value.as_i64(),
                     expiry_override_reason: reason,
                     discount_amount: 0,
+                    sale_id: None,
+                    referrer_staff_id: None,
                 }
             }
         };
         audit_lines.push(json!({
             "service_id": insert.service_id, "source": insert.source,
             "customer_package_item_id": insert.customer_package_item_id, "staff_id": insert.staff_id,
+            "referrer_staff_id": insert.referrer_staff_id,
             "qty": insert.qty, "price_variant": insert.price_variant,
             "unit_price": insert.unit_price, "line_value": insert.line_value,
             "discount_amount": insert.discount_amount,
         }));
         repo::insert_line(tx, &insert).await?;
     }
+    let package_sale_ids: Vec<Uuid> = sold.iter().map(|s| s.sale_id).collect();
     audit::record(
         tx,
         actor,
         AuditEntry {
-            action: "visit.create",
+            action: if existing.is_some() {
+                "visit.addition"
+            } else {
+                "visit.create"
+            },
             entity_type: "visit",
             entity_id: visit_id,
             before: None,
             after: Some(json!({
                 "customer_id": customer.id, "check_in_at": check_in_at,
-                "business_date": today, "backdated": service.backdated, "recorded_on": recorded_on,
+                "business_date": today, "backdated": backdated, "recorded_on": recorded_on,
                 "sale_id": sale.as_ref().map(|s| s.sale_id),
                 "subtotal": sale.as_ref().map_or(0, |s| s.subtotal.as_i64()),
                 "discount_amount": sale.as_ref().map_or(0, |s| s.discount.as_i64()),
                 "total": sale.as_ref().map_or(0, |s| s.total.as_i64()),
+                "package_sale_ids": package_sale_ids,
+                "companions": order.companions.len(),
                 "note": order.note.as_ref().map(|_| REDACTED), "lines": audit_lines,
                 "corrects_visit_id": order.correction.map(|c| c.visit_id),
             })),
@@ -588,11 +946,15 @@ fn line_dto(l: LineRow) -> Result<VisitLineDto, AppError> {
         discount_amount: l.discount_amount,
         line_value: l.line_value,
         expiry_override_reason: l.expiry_override_reason,
+        sale_id: l.sale_id,
+        referrer_staff_id: l.referrer_staff_id,
+        referrer_name: l.referrer_name,
     })
 }
 
-/// Visits with their lines and payments in three queries (no N+1). `with_note` decrypts the
-/// note for callers holding `customer.health_notes.read`; otherwise the key is omitted.
+/// Visits with their lines, payments and package sales in a fixed number of queries (no N+1).
+/// `with_note` decrypts the note for callers holding `customer.health_notes.read`; otherwise the
+/// key is omitted.
 async fn load(
     tx: &mut TenantTx,
     cipher: &FieldCipher,
@@ -607,19 +969,47 @@ async fn load(
     for l in repo::lines(tx, &ids).await? {
         lines.entry(l.visit_id).or_default().push(line_dto(l)?);
     }
-    let sale_ids: Vec<Uuid> = rows.iter().filter_map(|r| r.sale_id).collect();
+    let service_sales = repo::service_sales_of(tx, &ids).await?;
+    let package_rows = repo::package_sales(tx, &ids).await?;
+    let sale_ids: Vec<Uuid> = service_sales
+        .iter()
+        .map(|(_, s)| *s)
+        .chain(package_rows.iter().map(|p| p.sale_id))
+        .collect();
     let mut payments = sales::service::payments_of(tx, &sale_ids).await?;
+    let mut sales_of: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+    for (visit, sale) in service_sales {
+        sales_of.entry(visit).or_default().push(sale);
+    }
+    let mut package_sales: HashMap<Uuid, Vec<VisitPackageSaleDto>> = HashMap::new();
+    for p in package_rows {
+        package_sales
+            .entry(p.visit_id)
+            .or_default()
+            .push(VisitPackageSaleDto {
+                payments: payments.remove(&p.sale_id).unwrap_or_default(),
+                sale_id: p.sale_id,
+                voided: p.status == "voided",
+                business_date: p.business_date,
+                description: p.description,
+                customer_package_ids: p.customer_package_ids,
+                total: p.total,
+                closer_staff_id: p.closer_staff_id,
+                closer_name: p.closer_name,
+                beneficiary_customer_id: p.beneficiary_customer_id,
+                beneficiary_name: p.beneficiary_name,
+            });
+    }
     let read_note = with_note && actor.can(Permission::CustomerHealthNotesRead);
     let tenant = tx.tenant().as_uuid();
     rows.into_iter()
         .map(|r| {
             let lines = lines.remove(&r.id).unwrap_or_default();
-            let total: i64 = lines
+            let one_off = lines
                 .iter()
-                .filter(|l| l.source == VisitLineSourceDto::OneOff)
-                .map(|l| l.line_value)
-                .sum();
-            let discount_amount = r.discount_amount.unwrap_or(0);
+                .filter(|l| l.source == VisitLineSourceDto::OneOff);
+            let total: i64 = one_off.clone().map(|l| l.line_value).sum();
+            let discount_amount: i64 = one_off.map(|l| l.discount_amount).sum();
             let note = if read_note {
                 Some(
                     r.note_ct
@@ -631,16 +1021,23 @@ async fn load(
             } else {
                 None
             };
+            let mut visit_sales = sales_of.remove(&r.id).unwrap_or_default();
+            visit_sales.sort_unstable();
+            visit_sales.dedup();
+            let mut visit_payments: Vec<_> = visit_sales
+                .iter()
+                .flat_map(|s| payments.remove(s).unwrap_or_default())
+                .collect();
+            visit_payments.sort_by_key(|p| (p.paid_at, p.id));
             Ok(VisitDto {
                 status: if r.status == "voided" {
                     VisitStatusDto::Voided
                 } else {
                     VisitStatusDto::Completed
                 },
-                payments: r
-                    .sale_id
-                    .and_then(|s| payments.remove(&s))
-                    .unwrap_or_default(),
+                payments: visit_payments,
+                package_sales: package_sales.remove(&r.id).unwrap_or_default(),
+                companions: r.companions,
                 void_reason: r.void_reason,
                 voided_at: r.voided_at,
                 corrects_visit_id: r.corrects_visit_id,
@@ -664,7 +1061,6 @@ async fn load(
         })
         .collect()
 }
-
 /// `GET /visits/{id}` (`visit.read`). Another spa's visit is `404`.
 pub async fn get(
     pool: &PgPool,
@@ -755,6 +1151,17 @@ pub async fn update(
             "count_out_of_range",
         )]));
     }
+    let companions = match &input.companions {
+        None => None,
+        Some(c) => {
+            let mut errors = Vec::new();
+            let c = parse_companions(c, &mut errors);
+            if !errors.is_empty() {
+                return Err(AppError::Validation(errors));
+            }
+            Some(c)
+        }
+    };
 
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let visit = repo::lock(&mut tx, id).await?.ok_or(AppError::NotFound)?;
@@ -801,6 +1208,7 @@ pub async fn update(
         version,
         note_ct.as_ref().map(Option::as_deref),
         moved,
+        companions.as_deref(),
     )
     .await?
     {
@@ -819,6 +1227,7 @@ pub async fn update(
             })),
             after: Some(json!({
                 "version": version + 1, "staff": staff_changes, "check_in_at": moved,
+                "companions": companions.as_ref().map(Vec::len),
                 "note": note.as_ref().map(|n| if n.is_some() { REDACTED } else { "cleared" }),
             })),
             reason: None,
@@ -907,14 +1316,18 @@ async fn void_locked(
             "qty": line.qty, "sessions_remaining": r.sessions_remaining,
         }));
     }
-    let reversals = match visit.sale_id {
-        Some(sale_id) => {
-            sales::voids::void_in(tx, actor, sale_id, reason, today)
-                .await?
-                .reversals
-        }
-        None => Vec::new(),
-    };
+    // Every one-off sale of the visit (its first sale and each addition). Packages sold in the
+    // visit stay: the package is the customer's, voided on its own (US6 on the sale) if needed.
+    let service_sales = repo::open_service_sales(tx, id).await?;
+    let mut reversed = 0_i64;
+    for sale_id in &service_sales {
+        reversed += sales::voids::void_in(tx, actor, *sale_id, reason, today)
+            .await?
+            .reversals
+            .iter()
+            .map(|(_, _, amount)| amount)
+            .sum::<i64>();
+    }
     audit::record(
         tx,
         actor,
@@ -925,7 +1338,7 @@ async fn void_locked(
             before: Some(json!({"status": "completed", "business_date": visit.business_date})),
             after: Some(json!({
                 "status": "voided", "restored": restored, "sale_id": visit.sale_id,
-                "reversed": reversals.iter().map(|(_, _, amount)| amount).sum::<i64>(),
+                "sale_ids": service_sales, "reversed": reversed,
             })),
             reason: Some(reason),
         },
@@ -1054,10 +1467,16 @@ pub(crate) async fn finish_correction(
     reason: &str,
 ) -> Result<VisitCorrected, AppError> {
     let StartedCorrection { id, old, old_note } = started;
-    // The desk changes only what was wrong: time and note default to the old visit's. The note is
-    // copied here (re-encrypted for the new visit), so it never travels through the browser.
+    // Like `POST /visits`, the stored response never carries a note.
+    let before = load_one(tx, cipher, actor, id, false).await?;
+    // The desk changes only what was wrong: time, note and companions default to the old visit's.
+    // The note is copied here (re-encrypted for the new visit), so it never travels through the
+    // browser.
     order.check_in_at = order.check_in_at.or(Some(old.check_in_at));
     order.note = new_note.unwrap_or(old_note);
+    if order.companions.is_empty() {
+        order.companions.clone_from(&before.companions);
+    }
     order.correction = Some(Replaces {
         visit_id: id,
         business_date: old.business_date,
@@ -1065,7 +1484,7 @@ pub(crate) async fn finish_correction(
     let new_id = record_in(tx, cipher, actor, order, Utc::now()).await?;
     let appointment = crate::appointments::repo::move_to_correction(tx, id, new_id).await?;
 
-    // Like `POST /visits`, the stored response never carries a note.
+    // Re-read: the old visit now shows the visit that replaced it.
     let voided = load_one(tx, cipher, actor, id, false).await?;
     let visit = load_one(tx, cipher, actor, new_id, false).await?;
     let difference = visit.total - voided.total;
@@ -1092,4 +1511,259 @@ pub(crate) async fn finish_correction(
         visit,
         difference,
     })
+}
+
+// ------------------------------------------------------------ round 6: additions, conversion
+
+/// Upsell on another day changes that month's commissions (Q-U4): refused once its payroll is
+/// closed (`409 payroll.period_closed`). Takes the month `FOR SHARE`, so a concurrent close
+/// waits for this transaction.
+async fn require_payroll_open(tx: &mut TenantTx, day: NaiveDate) -> Result<(), AppError> {
+    hr::period::require_open(tx, hr::month::Month::of(day)).await
+}
+
+/// `POST /visits/{id}/additions` (`visit.record`, plus what the content needs as on
+/// `POST /visits`; another day needs `record.void_closed_day`; Idempotency-Key): "Thêm dịch vụ
+/// vào lượt" (US12). The new lines join the visit, each new sale (one-off, packages) is a sale of
+/// its own linked to it; existing lines and sales are never touched and no reason is asked (a
+/// sale, not a correction). The visit's version moves on.
+pub async fn add(
+    pool: &PgPool,
+    cipher: &FieldCipher,
+    actor: &Actor,
+    key: Uuid,
+    request_hash: [u8; 32],
+    id: Uuid,
+    input: &VisitCreate,
+) -> Result<(u16, Value), AppError> {
+    actor.require(Permission::VisitRecord)?;
+    let order = parse_order(actor, input, 0)?;
+    if order.lines.is_empty() && order.package_sales.is_empty() {
+        return Err(AppError::Validation(vec![FieldError::new(
+            "lines",
+            "count_out_of_range",
+        )]));
+    }
+
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    if let Claim::Replay { status, body } =
+        idempotency::claim(&mut tx, actor, key, request_hash).await?
+    {
+        tx.commit().await?;
+        return Ok((status, body));
+    }
+    let visit = repo::lock(&mut tx, id).await?.ok_or(AppError::NotFound)?;
+    ensure_current(&visit)?;
+    let today = kernel::tenant::profile(&mut tx)
+        .await?
+        .business_date
+        .as_naive();
+    kernel::corrections::authorize_closed_day(actor, visit.business_date, today)?;
+    require_payroll_open(&mut tx, visit.business_date).await?;
+    let next_position = repo::next_position(&mut tx, id).await?;
+    checkout(
+        &mut tx,
+        cipher,
+        actor,
+        order,
+        Utc::now(),
+        Some(Existing {
+            id,
+            customer_id: visit.customer_id,
+            business_date: visit.business_date,
+            next_position,
+        }),
+    )
+    .await?;
+    repo::bump_version(&mut tx, id).await?;
+    let dto = load_one(&mut tx, cipher, actor, id, false).await?;
+    let body = serde_json::to_value(&dto).map_err(|e| AppError::Internal(e.to_string()))?;
+    idempotency::complete(&mut tx, actor, key, 201, &body).await?;
+    tx.commit().await?;
+    Ok((201, body))
+}
+
+/// One "Tính buổi hôm nay vào gói" request (`POST /visits/{id}/convert-to-package`).
+pub struct Conversion<'a> {
+    pub id: Uuid,
+    /// The visit's version as the desk saw it (`If-Match`).
+    pub version: i64,
+    pub input: &'a VisitConversion,
+}
+
+/// Prefix of the void reason a conversion leaves on the old visit.
+const CONVERSION_PREFIX: &str = "Chuyển sang gói ";
+
+/// `POST /visits/{id}/convert-to-package` (`visit.record` + `package.sell` +
+/// `record.void_same_day`, `payment.collect` for money; another day needs
+/// `record.void_closed_day`; a month whose payroll is closed is `409 payroll.period_closed`;
+/// If-Match + Idempotency-Key): today's one-off service becomes session 1 of a package bought
+/// now (US11, Q-U1 — the desk's explicit choice, never automatic).
+///
+/// One correction (US6b machinery): the old visit is voided ("Chuyển sang gói …", its one-off
+/// payments reversed on today's books, sessions given back), the package is sold and the visit is
+/// recorded again on its own day — the one-off lines the package covers now take its sessions,
+/// every other line is recorded unchanged (same technician, referrer, discount share).
+/// `difference` in the response = what the customer hands over now ("Khách đưa thêm").
+pub async fn convert(
+    pool: &PgPool,
+    cipher: &FieldCipher,
+    actor: &Actor,
+    key: Uuid,
+    request_hash: [u8; 32],
+    request: Conversion<'_>,
+) -> Result<(u16, Value), AppError> {
+    actor.require(Permission::VisitRecord)?;
+    actor.require(Permission::RecordVoidSameDay)?;
+    actor.require(Permission::PackageSell)?;
+    let mut errors = Vec::new();
+    let (mut package_sales, _) = parse_package_sales(
+        std::slice::from_ref(&request.input.package_sale),
+        &mut errors,
+    );
+    let payments = sales::service::parse_payments(&request.input.payments, &mut errors);
+    if !errors.is_empty() {
+        return Err(AppError::Validation(errors));
+    }
+    let id = request.id;
+
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    if let Claim::Replay { status, body } =
+        idempotency::claim(&mut tx, actor, key, request_hash).await?
+    {
+        tx.commit().await?;
+        return Ok((status, body));
+    }
+    let plan_id = request.input.package_sale.package_plan_id;
+    let plan = catalog::service::plan_snapshot(&mut tx, plan_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let covered: HashSet<Uuid> = plan.items.iter().map(|i| i.service_id).collect();
+    let reason: String = format!("{CONVERSION_PREFIX}{}", plan.name)
+        .chars()
+        .take(kernel::corrections::MAX_REASON)
+        .collect();
+
+    let started = begin_correction(&mut tx, cipher, actor, id, request.version, &reason).await?;
+    let old = load_one(&mut tx, cipher, actor, id, false).await?;
+    require_payroll_open(&mut tx, old.business_date).await?;
+    if package_sales[0]
+        .beneficiary
+        .is_some_and(|b| b != old.customer_id)
+    {
+        return Err(AppError::Validation(vec![FieldError::new(
+            "package_sale.beneficiary_customer_id",
+            "not_allowed",
+        )]));
+    }
+
+    // The old visit, line by line: covered one-off lines take the new package's session.
+    let keep_variant = old.customer_gender.is_none();
+    let mut converted = 0_usize;
+    let mut kept_discount = 0_i64;
+    let lines: Vec<LineOrder> = old
+        .lines
+        .iter()
+        .map(|l| {
+            let qty = u32::try_from(l.qty).unwrap_or(1);
+            match l.source {
+                VisitLineSourceDto::OneOff if covered.contains(&l.service_id) => {
+                    converted += 1;
+                    LineOrder {
+                        service_id: l.service_id,
+                        source: Source::Package,
+                        item_id: None,
+                        new_package: Some(0),
+                        staff_id: l.staff_id,
+                        referrer: None,
+                        qty,
+                        price_variant: None,
+                        override_reason: None,
+                    }
+                }
+                VisitLineSourceDto::OneOff => {
+                    kept_discount += l.discount_amount;
+                    LineOrder {
+                        service_id: l.service_id,
+                        source: Source::OneOff,
+                        item_id: None,
+                        new_package: None,
+                        staff_id: l.staff_id,
+                        referrer: l.referrer_staff_id,
+                        qty,
+                        price_variant: l.price_variant.filter(|_| keep_variant),
+                        override_reason: None,
+                    }
+                }
+                VisitLineSourceDto::Package => LineOrder {
+                    service_id: l.service_id,
+                    source: Source::Package,
+                    item_id: l.customer_package_item_id,
+                    new_package: None,
+                    staff_id: l.staff_id,
+                    referrer: None,
+                    qty,
+                    price_variant: None,
+                    override_reason: l.expiry_override_reason.clone(),
+                },
+            }
+        })
+        .collect();
+    if converted == 0 {
+        return Err(AppError::Unprocessable {
+            code: "visit.nothing_to_convert",
+        });
+    }
+    // The one-off lines kept keep their share of the old discount, with its reason.
+    let discount = Money::vnd(kept_discount)
+        .ok()
+        .filter(|d| *d > Money::ZERO)
+        .map(|amount| ServiceDiscount {
+            ask: DiscountAsk::Amount(amount),
+            reason: old
+                .discount_reason
+                .clone()
+                .unwrap_or_else(|| reason.clone()),
+        });
+    let order = Order {
+        customer_id: old.customer_id,
+        check_in_at: None,
+        note: None,
+        lines,
+        payments,
+        discount,
+        package_sales: vec![package_sales.remove(0)],
+        companions: old.companions.clone(),
+        correction: None,
+    };
+    let mut done = finish_correction(&mut tx, cipher, actor, started, order, None, &reason).await?;
+    // What the customer hands over now: the new package plus the one-off lines kept, minus what
+    // the old visit had collected for its one-off lines (reversed).
+    done.difference += done
+        .visit
+        .package_sales
+        .iter()
+        .map(|p| p.total)
+        .sum::<i64>();
+    audit::record(
+        &mut tx,
+        actor,
+        AuditEntry {
+            action: "visit.convert_to_package",
+            entity_type: "visit",
+            entity_id: id,
+            before: Some(json!({"visit_id": id, "total": old.total})),
+            after: Some(json!({
+                "visit_id": done.visit.id, "package_plan_id": plan_id,
+                "package_sale_ids": done.visit.package_sales.iter().map(|p| p.sale_id).collect::<Vec<_>>(),
+                "converted_lines": converted, "difference": done.difference,
+            })),
+            reason: Some(&reason),
+        },
+    )
+    .await?;
+    let body = serde_json::to_value(done).map_err(|e| AppError::Internal(e.to_string()))?;
+    idempotency::complete(&mut tx, actor, key, 201, &body).await?;
+    tx.commit().await?;
+    Ok((201, body))
 }

@@ -97,6 +97,8 @@ function pkg(
 
 function visit(extra: Partial<Visit> = {}): Visit {
   return {
+    companions: [],
+    package_sales: [],
     id: "v1",
     customer_id: "c1",
     customer_name: "Nguyễn Thị Hà",

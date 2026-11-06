@@ -2,13 +2,13 @@
 title: "Spec R1-1: Màn hình quầy & liệu trình khách hàng"
 status: approved
 updated: 2026-11-06
-sources: [raw/2026-11-04-idea-internal-platform.md, raw/2026-11-06-em-upsell-and-convert-to-package.md]
+sources: [raw/2026-11-04-idea-internal-platform.md, raw/2026-11-06-em-upsell-and-convert-to-package.md, raw/2026-11-06-em-answers-round6-upsell.md]
 related: [../vision.md, ../personas.md, ../glossary.md, ../paper-books-analysis.md]
 ---
 
 # Spec R1-1: Màn hình quầy & liệu trình khách hàng
 
-**Status: approved** (§1–§9; **§10 Vòng 6 là draft**, chờ EM trả lời Q-U1…Q-U9) (EM 2026-11-04; rev. 2026-11-04: bỏ công nợ và giờ ra). Các mặc định **[D1–D10]** đã được EM xác nhận. Bảng giá thật: [service-catalog](../service-catalog.md).
+**Status: approved** (§1–§9; **§10 Vòng 6 approved 2026-11-06** theo câu trả lời Q-U1…Q-U9 của EM, §10.8) (EM 2026-11-04; rev. 2026-11-04: bỏ công nợ và giờ ra). Các mặc định **[D1–D10]** đã được EM xác nhận. Bảng giá thật: [service-catalog](../service-catalog.md).
 
 ## 1. Goal
 Thay **sổ dịch vụ**, **sổ theo dõi liệu trình khách hàng** và phần bán hàng của **sổ doanh thu** bằng một màn hình quầy. Quản lý ghi một lượt khách kèm thanh toán trong **< 30 giây**, không ghi lại ở nơi khác. Phục vụ thước đo thành công R1 #1 (bỏ sổ giấy) và #3 (không quên khách hết liệu trình, vì dữ liệu buổi còn lại được tạo ra ở đây). Spec này cũng **ghi nhận người làm và người chốt** để R2 tính hoa hồng.
@@ -226,7 +226,7 @@ Sổ quỹ & chốt quỹ (spec #2; spec này chỉ phát sinh Payment/Refund ch
 
 ## 10. Vòng 6: upsell trong lượt và chuyển sang gói liệu trình
 
-**Status: draft — EM trả lời Q-U1…Q-U9 (§10.7) trước khi `/backend-design` + `/frontend-design`.** Nguồn: [raw/2026-11-06-em-upsell-and-convert-to-package.md](../../../raw/2026-11-06-em-upsell-and-convert-to-package.md). EM: "khi KTV upsell bán được dịch vụ mới cho khách thì lại chẳng được flow đấy ghi vào … hôm nay đến as khách lẻ nhưng sau khi làm liệu trình thì lại chọn mua nguyên gói liệu trình thì sao".
+**Status: approved (2026-11-06)** — EM trả lời Q-U1…Q-U9 ([raw/2026-11-06-em-answers-round6-upsell.md](../../../raw/2026-11-06-em-answers-round6-upsell.md)); quyết định cuối ở §10.8, thiết kế §10.4 đã sửa theo đó. Nguồn: [raw/2026-11-06-em-upsell-and-convert-to-package.md](../../../raw/2026-11-06-em-upsell-and-convert-to-package.md). EM: "khi KTV upsell bán được dịch vụ mới cho khách thì lại chẳng được flow đấy ghi vào … hôm nay đến as khách lẻ nhưng sau khi làm liệu trình thì lại chọn mua nguyên gói liệu trình thì sao".
 
 **Goal.** Mọi thứ khách mua trong một lần đến (dịch vụ lẻ, buổi trừ gói, **gói mới mua ngay hôm nay**, dịch vụ thêm do KTV tư vấn) được ghi trên **một màn hình thanh toán ở quầy**, một lần, không phải rời `/quay` và không phải nhập lại. Khách vừa trả buổi lẻ rồi quyết định mua gói thì được **chuyển sang gói** bằng một thao tác, tiền và buổi đúng, số liệu không bị hỏng. Mục này phục vụ thước đo R1 #1 (bỏ sổ giấy: sổ giấy ghi được mọi chuyện nên app không được hẹp hơn) và hoa hồng chốt gói đúng người ([compensation-rules §3](../compensation-rules.md)).
 
@@ -297,7 +297,7 @@ Giỏ ở `/quay` (và giỏ điền sẵn khi hoàn tất lịch hẹn) có ba 
 ```
 - **"+ Bán gói liệu trình"** trong giỏ mở một khối inline (mẫu gói, người chốt, quà, giảm giá gói). Tối đa 3 gói mỗi lượt. Không mất giỏ, không rời trang.
 - **"Dùng gói này cho buổi hôm nay"** tự bật khi mẫu gói chứa một dịch vụ đang có trong giỏ dưới dạng dịch vụ lẻ (hoặc dịch vụ đã đặt của lịch hẹn): dòng lẻ đó đổi thành dòng trừ buổi của gói mới, giá dòng về 0đ, gói hiện xem trước "còn 11/12". Bỏ chọn → dòng trở lại dịch vụ lẻ. Một dịch vụ có nhiều dòng thì đổi lần lượt theo số buổi của gói.
-- **Người tư vấn chốt** mặc định = KTV của dòng dịch vụ hôm nay khớp với gói (không có thì KTV của dòng đầu); quầy đổi được; vẫn bắt buộc (D9).
+- **Người tư vấn chốt** mặc định = KTV của dòng dịch vụ hôm nay khớp với gói (không có thì KTV của dòng đầu); quầy đổi được, kể cả "Khách tự chọn" (không ai được tính, §10.8 Q-U2).
 - Thẻ khách (cột trái) thêm nút "Bán gói liệu trình" (= mở khối trong giỏ), và trên dòng gói hết buổi / sắp hết hạn có "Mua lại gói này" (điền sẵn mẫu gói), thay cho chữ gợi ý cụt ở `CustomerCard.tsx:185`.
 - Khách chỉ mua gói, không làm dịch vụ (trường hợp a): giỏ chỉ có khối "Gói bán hôm nay", nút đổi thành "Lưu hóa đơn gói" và gọi `POST /sales` như hiện nay (không tạo lượt, không tính vào số khách của KTV).
 - Giỏ chưa lưu được giữ nháp theo khách trong `sessionStorage` (try/catch), để tải lại trang hoặc 401 không mất giỏ (đúng như flows đã hứa).
@@ -308,8 +308,9 @@ Giỏ ở `/quay` (và giỏ điền sẵn khi hoàn tất lịch hẹn) có ba 
 - **Mở rộng `POST /visits`** (và thân của `POST /appointments/{id}/complete`, check-in nhóm, vì cùng dùng `operations::service::record_in`) thêm `package_sales[]` (0–3):
   ```json
   { "customer_id": "…", "lines": [
-      { "service_id": "…", "source": "new_package", "package_ref": "p1", "staff_id": "…", "qty": 1 },
-      { "service_id": "…", "source": "one_off", "staff_id": "…", "qty": 1 } ],
+      { "service_id": "…", "source": "package", "package_ref": "p1", "staff_id": "…", "qty": 1 },
+      { "service_id": "…", "source": "one_off", "staff_id": "…", "referrer_staff_id": "…", "qty": 1 } ],
+    "companions": ["Chồng của chị Hà"],
     "package_sales": [ { "ref": "p1", "package_plan_id": "…", "closer_staff_id": "…", "gift_note": "…",
                          "discount": null, "beneficiary_customer_id": null } ],
     "payments": [ { "method": "cash", "amount": 3600000 } ] }
@@ -325,8 +326,8 @@ Giỏ ở `/quay` (và giỏ điền sẵn khi hoàn tất lịch hẹn) có ba 
 #### 10.4.3 "Chuyển sang gói liệu trình" sau khi đã trả lẻ (trường hợp c)
 - Ở "Lượt khách hôm nay", menu ⋯ của lượt có dòng lẻ → **"Chuyển sang gói liệu trình"**. Sheet: chọn mẫu gói (ưu tiên gói chứa dịch vụ lẻ của lượt), người chốt (mặc định KTV của dòng), quà, giảm giá gói; dòng tóm tắt "Hôm nay khách đã trả 399.000đ (Tiền mặt) cho Đại Thông Lạc".
 - **Cách A (đề xuất, Q-U1): buổi hôm nay thành buổi 1 của gói.** Server làm **một lệnh sửa lượt nguyên tử**, dùng cùng cơ chế "Sửa lượt" đang build (hủy + ghi lại có lý do trong một transaction): lượt cũ → `voided` với lý do tự sinh "Chuyển sang gói <tên>"; hóa đơn lẻ của nó được đảo (reversal cùng hình thức, cùng số tiền, như hủy hiện nay); ghi lại lượt mới cùng giờ làm, cùng KTV, các dòng khớp gói thành dòng trừ buổi của gói mới; dòng lẻ không khớp vẫn là dòng lẻ (hóa đơn lẻ mới, thu lại đúng số đã trả, cùng hình thức). Hóa đơn gói thu đủ giá gói; màn hình ghi rõ **"Khách đưa thêm 3.101.000đ"** (= giá gói − tiền lẻ đã trả hôm nay). Ví dụ: Đại Thông Lạc (Nam) 399.000đ → Gói 10 + tặng 2 giá 3.500.000đ: gói còn 11/12; sổ ngày: −399.000đ dịch vụ lẻ (đảo), +3.500.000đ liệu trình; thu ròng trong ngày từ khách 3.500.000đ.
-- **Cách B (nếu EM chọn): trừ tiền hôm nay vào giá gói.** Giữ lượt lẻ; hóa đơn gói có thêm khoản **"Trừ tiền lượt lẻ ngày dd/mm"** (`sale.credit_amount` + `credit_visit_id`, không phải giảm giá, không tính trần 10 %); gói đủ 12/12; khách đưa thêm 3.101.000đ. Spa chịu thêm một buổi. Mỗi lượt lẻ chỉ được trừ một lần (`UNIQUE credit_visit_id`).
-- `POST /visits/{id}/convert-to-package` `{package_sales[…như trên], reason_note?}` + `Idempotency-Key` (hash gồm `{id}`) + `If-Match` (version của lượt). `200 {voided_visit, visit, sales[]}`.
+- ~~**Cách B: trừ tiền hôm nay vào giá gói.**~~ **Không làm** (Q-U1: tùy case; trường hợp gói không liên quan thì chỉ bán gói mới qua `additions`). Giữ lượt lẻ; hóa đơn gói có thêm khoản **"Trừ tiền lượt lẻ ngày dd/mm"** (`sale.credit_amount` + `credit_visit_id`, không phải giảm giá, không tính trần 10 %); gói đủ 12/12; khách đưa thêm 3.101.000đ. Spa chịu thêm một buổi. Mỗi lượt lẻ chỉ được trừ một lần (`UNIQUE credit_visit_id`).
+- `POST /visits/{id}/convert-to-package` `{package_sale: {package_plan_id, closer_staff_id?, gift_note?, discount?}, payments[]}` + `Idempotency-Key` (hash gồm `{id}`) + `If-Match` (version của lượt). `201 {voided, visit, difference}` (`difference` = khách đưa thêm). Lý do hủy tự sinh: "Chuyển sang gói <tên>".
 - Một lượt chỉ chuyển được một lần (lượt cũ đã `voided` → `409 visit.voided`); lượt mới mang `corrects_visit_id` (dùng chung trường của Sửa lượt). Lượt không có dòng lẻ khớp gói → `422 visit.nothing_to_convert`.
 - **Thời hạn:** theo quy tắc ngày đã chốt hiện có (`kernel::corrections::authorize_void`): trong ngày → quản lý + chủ spa; ngày trước → chỉ chủ spa. Thêm (Q-U4): tháng đã chốt lương (ADR-0008) → `409 payroll.period_closed`, vì lệnh chuyển đổi hoa hồng của tháng đó.
 
@@ -404,4 +405,29 @@ Trả trước một phần / còn nợ / đặt cọc (US5, Q-U7) · một ngư
 | Q-U8 | Khách vãng lai: có cần "mở lượt" ngay lúc khách đến (hiện "đang làm" trên lịch) rồi thêm dần, hay giữ "ghi khi thanh toán"? | **Giữ ghi khi thanh toán** + giỏ nháp không mất + "Thêm dịch vụ vào lượt" (US12) | Giữ fast path < 30 s; "mở lượt" là thay đổi lớn (lượt chưa thanh toán, quên đóng) |
 | Q-U9 | Giảm giá gói trong lượt: trần 10 % của quản lý tính riêng cho từng hóa đơn gói, tách khỏi giảm giá dịch vụ lẻ? | **Có, tách riêng** | Mỗi hóa đơn một khoản giảm như hiện nay; báo cáo giảm giá rõ theo loại |
 
-**Tiếp theo** khi EM trả lời: cập nhật §10 → `approved`; `/backend-design` (migration `sale.visit_id`, người dùng gói ≠ người trả, `sell_in`, `allocate_payments`, chuyển gói + thêm dịch vụ dùng chung cơ chế Sửa lượt) → `/frontend-design` (giỏ 3 phần, sheet chuyển) → `/breakdown`.
+### 10.8 Quyết định cuối (EM 2026-11-06, lead's reading)
+| # | EM trả lời | Áp dụng trong vòng 6 |
+|---|---|---|
+| Q-U1 | "tùy case chứ đâu phải cứ muốn gộp là được" | **Không tự động.** Bán gói sau khi lượt đã lưu = hóa đơn gói mới (`POST /visits/{id}/additions`), lượt lẻ giữ nguyên (**mặc định**). Chỉ khi gói chứa dịch vụ đã làm hôm nay, quầy **chọn** "Tính buổi hôm nay vào gói" → `POST /visits/{id}/convert-to-package` (cách A: đảo tiền lẻ, buổi hôm nay = buổi 1 của gói). Không có cách B (`credit_amount`). |
+| Q-U2 | Một người duy nhất: chủ spa / quản lý / KTV / khách tự chọn | Mỗi **hóa đơn gói** có đúng một "người giới thiệu / chốt" (`sale.closer_staff_id`, bất kỳ nhân viên đang làm, kể cả chủ spa và quản lý vì họ là hồ sơ nhân viên), hoặc **"khách tự chọn" = null** (không ai được tính). D9 đổi: người chốt không còn bắt buộc. Mỗi **dòng dịch vụ lẻ** có đúng một người giới thiệu (`visit_line.referrer_staff_id`, null = khách tự chọn) — vì một giỏ thường có cả dịch vụ khách tự chọn lẫn dịch vụ KTV tư vấn thêm, gắn ở hóa đơn sẽ tính sai. |
+| Q-U3 + Q-U4 note | "hoa hồng upsell là tính cả gói liệu trình và liệu trình lẻ"; "làm thì tính là hoa hồng làm" | Hai khoản tách biệt, có thể cho hai người: **hoa hồng làm** (§3.1) = `% × line_value` cho KTV của dòng (`visit_line.staff_id`); **hoa hồng giới thiệu / chốt (upsell)** (§3.2, cùng %) = `% × (Σ giá gói đã thu mà người đó chốt + Σ line_value dịch vụ lẻ người đó giới thiệu)`. |
+| Q-U4 | "cứ ok đi" | Quản lý: trong ngày. Chủ spa: ngày trước. Tháng đã chốt lương → `409 payroll.period_closed` (cả chuyển sang gói lẫn thêm dịch vụ vào lượt của tháng đó). |
+| Q-U5 | Đồng ý + người đi cùng chỉ cần ghi chú | Mua cho người khác: `sale.customer_id` = người trả, `customer_package.customer_id` = người dùng; người trả không dùng được gói (D5). **Người đi cùng dạng ghi chú** ("chồng của …", "gia đình của …"): `companions text[]` (0–5, 1–100 ký tự) trên lịch hẹn và lượt; không phải khách, không được làm / tính tiền; nhóm chỉ có 1 khách thật + ghi chú vẫn hợp lệ. Muốn phục vụ thì quầy tạo hồ sơ khách như thường. |
+| Q-U6 | (không ý kiến) | Không ưu đãi tự động, "Mua lại gói này" = gói mới (điền sẵn mẫu). |
+| Q-U7 | "thường là sẽ thanh toán hết"; nợ thì phải trả, nên có nhắc ai chưa thanh toán | **Ngoài phạm vi vòng 6.** Khi làm: khách còn nợ **không** được dùng buổi; có danh sách nhắc hóa đơn chưa thanh toán. Hiếm gặp. |
+| Q-U8 | (không ý kiến) | Giữ "ghi khi thanh toán"; giỏ nháp giữ trong `sessionStorage` theo người dùng + khách (xóa khi lưu / hủy / đăng xuất); "Thêm dịch vụ vào lượt" (US12). |
+| Q-U9 | (không ý kiến) | Trần 10 % của quản lý tính **riêng** cho từng hóa đơn gói và cho hóa đơn dịch vụ lẻ. |
+| Q-E1, Q-E2 | (không ý kiến) | Như đề xuất ở US6b. Chuyển sang gói vào ngày sau: đảo tiền lẻ **và** hóa đơn gói ghi vào **ngày chuyển**; lượt mới giữ ngày cũ. |
+
+#### AC bổ sung (chốt)
+- AC9.12: dòng lẻ có `referrer_staff_id` (nhân viên đang làm, `422 staff.inactive` nếu không); dòng trừ gói không có người giới thiệu (`422 lines[i].referrer_staff_id not_allowed`).
+- AC9.13: `package_sales[k].beneficiary_customer_id` ≠ khách của lượt → gói thuộc người đó, nhưng dòng `package_ref` trỏ tới gói đó → `422 lines[i].package_ref not_beneficiary`.
+- AC10.4: `POST /sales` với `closer_staff_id: null` → hóa đơn "khách tự chọn", không ai được hoa hồng chốt.
+- AC12.4: hủy một lượt có thêm dịch vụ → đảo **mọi** hóa đơn lẻ của lượt; hóa đơn gói bán trong lượt **giữ nguyên** (hủy riêng nếu cần).
+- AC12.5: tháng đã chốt lương → `409 payroll.period_closed`.
+- AC11.9: lượt cũ không có dòng lẻ khớp gói → `422 visit.nothing_to_convert`, lượt cũ **không** bị hủy (rollback).
+- AC-P1 (lương): phiếu lương có `upsell_package_base`, `upsell_service_base`, `upsell_lines[]`; `closing_commission_base` = tổng hai phần; phiếu đã chốt cũ vẫn đọc được (trường mới mặc định 0 / rỗng).
+- AC-P2: hủy lượt → mất hoa hồng giới thiệu dịch vụ lẻ của lượt; hoa hồng chốt gói còn cho tới khi hóa đơn gói bị hủy.
+- AC-C1 (người đi cùng): `companions` 6 mục hoặc mục rỗng / > 100 ký tự → `422 companions` / `companions[i] invalid`; hoàn tất lịch hẹn không gửi `companions` → lượt lấy ghi chú của lịch hẹn; `PATCH /visits/{id}` sửa được danh sách.
+
+**Tiếp theo:** đã chạy `/backend-design` ([backend §3e](../../architecture/backend.md), [data 0021](../../architecture/data.md)) → `/frontend-design` ([front-desk-flows vòng 6](../../design/front-desk-flows.md)) → `/breakdown` ([plan r1-6-upsell](../../plans/r1-6-upsell.md)).

@@ -180,5 +180,13 @@ Không có bảng mới. 0013:
 - Mọi bảng: RLS `tenant_isolation`; grant tối thiểu (`payslip`, `staff_adjustment`: SELECT, INSERT).
 - Seed demo (`app seed-demo`, lần đầu): ngày vào làm + lương cho 6 người, tài khoản KTV `0905000003` gắn vào "Nguyễn Thị Lan", chấm công từ ngày 1 tháng trước đến hôm qua, khen/phàn nàn ngẫu nhiên, đánh giá tháng trước cho 5 KTV (một người Chưa đạt có kế hoạch kèm), 5 khoản thưởng/phạt. Tháng trước để **mở** cho EM thử chốt.
 
+## Upsell trong lượt (0021, vòng 6, [spec §10](../product/specs/front-desk-and-packages.md))
+- `sale.visit_id uuid NULL` → FK `(tenant_id, visit_id)` → `visit` **DEFERRABLE INITIALLY DEFERRED** (lượt và các hóa đơn của nó ghi trong một transaction, `visit.sale_id` trỏ ngược). Index `(tenant_id, visit_id)`. Backfill từ `visit.sale_id` (tạm tắt `sale_voided_is_final`). Trigger `sale_visit_link`: gắn một lần lúc insert, cùng khách (người trả) với lượt, không đổi sau đó.
+- `visit_line.sale_id` (hóa đơn đã thu dòng lẻ; backfill từ `visit.sale_id`) + `visit_line.referrer_staff_id` (người giới thiệu, upsell) — FK theo tenant; `CHECK (source = 'one_off' OR (sale_id IS NULL AND referrer_staff_id IS NULL))`. Index một phần cho cả hai.
+- `customer_package`: bỏ `CHECK (origin <> 'sale' OR (sale_id IS NOT NULL AND closer_staff_id IS NOT NULL))`, thay bằng `customer_package_sale_origin CHECK (origin <> 'sale' OR sale_id IS NOT NULL)` — "khách tự chọn" = người chốt null.
+- Mua cho người khác: không thêm cột; `customer_package.customer_id` (người dùng) có thể ≠ `sale.customer_id` (người trả).
+- `visit.companions`, `appointment.companions` `text[] NOT NULL DEFAULT '{}'`, `CHECK (app.valid_companions(...))` (0–5 mục, 1–100 ký tự).
+- `app.revenue_book` (CREATE OR REPLACE, thêm cột cuối): `visit_id`, `upsell_by` (người chốt của hóa đơn gói, hoặc người giới thiệu của các dòng lẻ).
+
 ## Seed
 Dữ liệu tenant Viên Phúc Y Đường: 1 chi nhánh (Phường Đông Hà), 10 nhóm và 35 dịch vụ từ [service-catalog](../product/service-catalog.md), role hệ thống, tài khoản chủ spa. Giá "Ôn ấm tử cung" và các gói liệu trình: chờ EM.

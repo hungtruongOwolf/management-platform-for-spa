@@ -90,6 +90,8 @@ pub struct AppointmentInsert<'a> {
     pub staff_id: Option<Uuid>,
     pub note: Option<&'a str>,
     pub group_id: Option<Uuid>,
+    /// Companions known only by a note ("chồng của chị Lan").
+    pub companions: &'a [String],
     pub created_by: Uuid,
 }
 
@@ -98,8 +100,8 @@ pub async fn insert(tx: &mut TenantTx, a: &AppointmentInsert<'_>) -> Result<(), 
     sqlx::query!(
         r#"INSERT INTO app.appointment
              (id, tenant_id, branch_id, customer_id, guest_name, guest_phone, business_date, starts_at,
-              ends_at, staff_id, note, created_by, group_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)"#,
+              ends_at, staff_id, note, created_by, group_id, companions)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)"#,
         a.id,
         tenant,
         a.branch_id,
@@ -112,7 +114,8 @@ pub async fn insert(tx: &mut TenantTx, a: &AppointmentInsert<'_>) -> Result<(), 
         a.staff_id,
         a.note,
         a.created_by,
-        a.group_id
+        a.group_id,
+        a.companions
     )
     .execute(tx.conn())
     .await?;
@@ -158,6 +161,7 @@ pub struct Locked {
     pub staff_id: Option<Uuid>,
     pub arrived_at: Option<DateTime<Utc>>,
     pub note: Option<String>,
+    pub companions: Vec<String>,
     pub version: i64,
 }
 
@@ -166,7 +170,8 @@ pub async fn lock(tx: &mut TenantTx, id: Uuid) -> Result<Option<Locked>, AppErro
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         Locked,
-        r#"SELECT status, business_date, starts_at, ends_at, customer_id, staff_id, arrived_at, note, version
+        r#"SELECT status, business_date, starts_at, ends_at, customer_id, staff_id, arrived_at, note,
+                  companions, version
            FROM app.appointment WHERE tenant_id = $1 AND id = $2 FOR UPDATE"#,
         tenant,
         id
@@ -281,6 +286,7 @@ pub struct AppointmentRow {
     pub visit_check_in_at: Option<DateTime<Utc>>,
     pub sale_total: Option<i64>,
     pub group_id: Option<Uuid>,
+    pub companions: Vec<String>,
     pub version: i64,
     pub created_at: DateTime<Utc>,
 }
@@ -301,12 +307,12 @@ pub async fn appointments(
                   c.gender AS "customer_gender?", a.staff_id, st.full_name AS "staff_name?",
                   a.note, a.status_reason, a.arrived_at, a.closed_at, a.visit_id,
                   v.status AS "visit_status?", v.check_in_at AS "visit_check_in_at?",
-                  s.total AS "sale_total?", a.group_id, a.version, a.created_at
+                  (SELECT sum(s.total) FROM app.sale s
+                   WHERE s.tenant_id = v.tenant_id AND s.visit_id = v.id AND s.status = 'open')::bigint AS "sale_total?", a.group_id, a.companions, a.version, a.created_at
            FROM app.appointment a
            LEFT JOIN app.customer c ON c.tenant_id = a.tenant_id AND c.id = a.customer_id
            LEFT JOIN app.staff st ON st.tenant_id = a.tenant_id AND st.id = a.staff_id
            LEFT JOIN app.visit v ON v.tenant_id = a.tenant_id AND v.id = a.visit_id
-           LEFT JOIN app.sale s ON s.tenant_id = v.tenant_id AND s.id = v.sale_id
            WHERE a.tenant_id = $1
              AND ($2::uuid IS NULL OR a.id = $2)
              AND ($3::date IS NULL OR a.business_date BETWEEN $3 AND $4)
@@ -369,10 +375,10 @@ pub async fn walk_ins(
     Ok(sqlx::query_as!(
         WalkInRow,
         r#"SELECT v.id, v.business_date, v.check_in_at, v.customer_id, c.full_name AS customer_name,
-                  c.gender AS "customer_gender?", v.status, s.total AS "sale_total?"
+                  c.gender AS "customer_gender?", v.status, (SELECT sum(s.total) FROM app.sale s
+                   WHERE s.tenant_id = v.tenant_id AND s.visit_id = v.id AND s.status = 'open')::bigint AS "sale_total?"
            FROM app.visit v
            JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id
-           LEFT JOIN app.sale s ON s.tenant_id = v.tenant_id AND s.id = v.sale_id
            WHERE v.tenant_id = $1 AND v.branch_id = $2 AND v.business_date BETWEEN $3 AND $4
              AND NOT EXISTS (
                SELECT 1 FROM app.appointment a WHERE a.tenant_id = v.tenant_id AND a.visit_id = v.id)
