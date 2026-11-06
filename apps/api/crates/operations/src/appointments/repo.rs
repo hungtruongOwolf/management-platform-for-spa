@@ -162,6 +162,7 @@ pub struct Locked {
     pub arrived_at: Option<DateTime<Utc>>,
     pub note: Option<String>,
     pub companions: Vec<String>,
+    pub group_id: Option<Uuid>,
     pub version: i64,
 }
 
@@ -171,7 +172,7 @@ pub async fn lock(tx: &mut TenantTx, id: Uuid) -> Result<Option<Locked>, AppErro
     Ok(sqlx::query_as!(
         Locked,
         r#"SELECT status, business_date, starts_at, ends_at, customer_id, staff_id, arrived_at, note,
-                  companions, version
+                  companions, group_id, version
            FROM app.appointment WHERE tenant_id = $1 AND id = $2 FOR UPDATE"#,
         tenant,
         id
@@ -188,6 +189,8 @@ pub struct Reschedule<'a> {
     pub note: Option<&'a str>,
     /// `Some` links a newcomer to a customer record (guest fields cleared).
     pub customer_id: Option<Uuid>,
+    /// Note-only companions (the full list).
+    pub companions: &'a [String],
 }
 
 pub async fn reschedule(
@@ -203,7 +206,7 @@ pub async fn reschedule(
                customer_id = coalesce($9, customer_id),
                guest_name = CASE WHEN $9::uuid IS NULL THEN guest_name END,
                guest_phone = CASE WHEN $9::uuid IS NULL THEN guest_phone END,
-               version = version + 1, updated_at = now()
+               companions = $10, version = version + 1, updated_at = now()
            WHERE tenant_id = $1 AND id = $2 AND version = $3 AND status IN ('booked', 'arrived')"#,
         tenant,
         id,
@@ -213,12 +216,42 @@ pub async fn reschedule(
         r.ends_at,
         r.staff_id,
         r.note,
-        r.customer_id
+        r.customer_id,
+        r.companions
     )
     .execute(tx.conn())
     .await?
     .rows_affected()
         == 1)
+}
+
+/// Opens a group on a booking that had none (a served companion joins it, spec §10.10).
+pub async fn open_group(tx: &mut TenantTx, id: Uuid, group: Uuid) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"UPDATE app.appointment
+           SET group_id = $3, version = version + 1, updated_at = now()
+           WHERE tenant_id = $1 AND id = $2 AND group_id IS NULL"#,
+        tenant,
+        id,
+        group
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+/// The customers already booked in a group (any status), to refuse a duplicate.
+pub async fn group_customers(tx: &mut TenantTx, group: Uuid) -> Result<Vec<Uuid>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_scalar!(
+        r#"SELECT customer_id AS "customer_id!" FROM app.appointment
+           WHERE tenant_id = $1 AND group_id = $2 AND customer_id IS NOT NULL"#,
+        tenant,
+        group
+    )
+    .fetch_all(tx.conn())
+    .await?)
 }
 
 pub async fn mark_arrived(tx: &mut TenantTx, id: Uuid, staff_id: Uuid) -> Result<bool, AppError> {
@@ -273,7 +306,7 @@ pub struct AppointmentRow {
     pub ends_at: DateTime<Utc>,
     pub customer_id: Option<Uuid>,
     pub customer_name: String,
-    pub customer_phone: String,
+    pub customer_phone: Option<String>,
     pub customer_gender: Option<String>,
     pub staff_id: Option<Uuid>,
     pub staff_name: Option<String>,
@@ -303,7 +336,7 @@ pub async fn appointments(
         AppointmentRow,
         r#"SELECT a.id, a.status, a.business_date, a.starts_at, a.ends_at, a.customer_id,
                   coalesce(c.full_name, a.guest_name) AS "customer_name!",
-                  coalesce(c.phone_e164, a.guest_phone) AS "customer_phone!",
+                  coalesce(c.phone_e164, a.guest_phone) AS "customer_phone?",
                   c.gender AS "customer_gender?", a.staff_id, st.full_name AS "staff_name?",
                   a.note, a.status_reason, a.arrived_at, a.closed_at, a.visit_id,
                   v.status AS "visit_status?", v.check_in_at AS "visit_check_in_at?",

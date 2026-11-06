@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT status, business_date, starts_at, ends_at, customer_id, staff_id, arrived_at, note,\n                  companions, version\n           FROM app.appointment WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
+  "query": "SELECT status, business_date, starts_at, ends_at, customer_id, staff_id, arrived_at, note,\n                  companions, group_id, version\n           FROM app.appointment WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -104,6 +104,17 @@
       },
       {
         "ordinal": 9,
+        "name": "group_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "group_id"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
         "name": "version",
         "type_info": "Int8",
         "origin": {
@@ -130,8 +141,9 @@
       true,
       true,
       false,
+      true,
       false
     ]
   },
-  "hash": "607ac2744404d0a94df3004b46de7d259706110d30b0a339a9007ce9f2032fe6"
+  "hash": "a5f10770c9db985aa36efa70b458b105e29cddda5e81ee08bcb384bb9450b865"
 }

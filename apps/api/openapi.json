@@ -3870,6 +3870,14 @@
             "description": "Default: the services' durations (empty = 60) rounded up to the slot. 1 slot – 480.",
             "minimum": 0
           },
+          "group_with": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Book a served companion of this open appointment (spec §10.10): the new appointment joins\nits group (one is opened if it had none) and must be on the same business day. The guest\nphone becomes optional."
+          },
           "guest": {
             "oneOf": [
               {
@@ -3923,7 +3931,6 @@
           "ends_at",
           "duration_min",
           "customer_name",
-          "customer_phone",
           "is_guest",
           "services",
           "payment_state",
@@ -3984,8 +3991,11 @@
             "description": "The customer's name, or the newcomer's."
           },
           "customer_phone": {
-            "type": "string",
-            "description": "E.164."
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "E.164; null for a served companion booked by name only (spec §10.10)."
           },
           "duration_min": {
             "type": "integer",
@@ -4207,6 +4217,16 @@
         "type": "object",
         "description": "Body of `PATCH /appointments/{id}` (If-Match): reschedule or edit an open appointment.",
         "properties": {
+          "companions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Note-only companions, the full list (absent = unchanged, `[]` = none). Same rules as\n`POST /appointments`."
+          },
           "customer_id": {
             "type": [
               "string",
@@ -5819,7 +5839,7 @@
       },
       "GroupPersonCreate": {
         "type": "object",
-        "description": "One person of a group booking: like `AppointmentCreate`, without the shared note.",
+        "description": "One person of a group booking: like `AppointmentCreate`, without the shared note.\n`people[1..]` are the served companions of `people[0]`: their guest phone is optional.",
         "required": [
           "service_ids"
         ],
@@ -5878,17 +5898,21 @@
       },
       "GuestCreate": {
         "type": "object",
-        "description": "A newcomer known only by name and phone until they arrive.",
+        "description": "A newcomer known by name (and phone) until they arrive and get a customer record.",
         "required": [
-          "full_name",
-          "phone"
+          "full_name"
         ],
         "properties": {
           "full_name": {
-            "type": "string"
+            "type": "string",
+            "description": "1–200 characters; for a companion it may be a description (\"Chồng của chị Hà\")."
           },
           "phone": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required for the person who books (`POST /appointments` without `group_with`, and\n`people[0]` of a group); optional for a served companion (`people[1..]`, `group_with`)."
           }
         },
         "additionalProperties": false

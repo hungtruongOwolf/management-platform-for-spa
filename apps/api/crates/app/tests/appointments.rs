@@ -1089,3 +1089,247 @@ async fn visit_discounts_follow_the_package_sale_rules(pool: PgPool) -> TestResu
     assert_eq!(package_only.status, StatusCode::UNPROCESSABLE_ENTITY);
     Ok(())
 }
+
+/// Spec §10.10 (EM 2026-11-07): a companion who gets a service is a booking of their own in the
+/// group, with their own technician and start, possibly known by name only; note-only
+/// companions stay as they were.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn served_companions_get_their_own_technician_and_block(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    s.open_all_day().await?;
+    let booked = s
+        .post(
+            &s.manager,
+            "/appointments/group",
+            json!({"starts_at": at(0, "01:00"), "companions": ["Bé Na (chỉ đi cùng)"], "people": [
+                {"customer_id": s.ha, "service_ids": [s.shampoo], "staff_id": s.lan},
+                {"guest": {"full_name": "Chồng của chị Hà", "phone": null},
+                 "service_ids": [s.dai_thong_lac], "staff_id": s.tuan, "starts_at": at(0, "01:30")},
+            ]}),
+        )
+        .await;
+    assert_eq!(booked.status, StatusCode::CREATED, "{}", booked.body);
+    let host = booked.body["appointments"][0].clone();
+    let husband = booked.body["appointments"][1].clone();
+    assert_eq!(host["companions"], json!(["Bé Na (chỉ đi cùng)"]));
+    assert_eq!(husband["customer_name"], "Chồng của chị Hà");
+    assert_eq!(husband["customer_phone"], Value::Null);
+    assert_eq!(husband["is_guest"], true);
+    assert_eq!(husband["staff_name"], "KTV Tuấn");
+    assert_eq!(husband["duration_min"], 90);
+    assert_eq!(husband["group_id"], host["group_id"]);
+    let starts = |a: &Value| a["starts_at"].as_str().unwrap_or_default().to_owned();
+    assert!(starts(&husband) > starts(&host), "offset start kept");
+
+    // Their block is in Tuấn's column on the calendar, and Tuấn is busy then.
+    let cal = calendar_of(&s, &s.manager, 0).await;
+    let on_cal = cal.body["appointments"]
+        .as_array()
+        .and_then(|l| l.iter().find(|a| a["id"] == husband["id"]).cloned())
+        .unwrap_or_default();
+    assert_eq!(on_cal["staff_id"], json!(s.tuan));
+    let busy = s
+        .book(
+            &s.manager,
+            json!({"customer_id": s.duc, "service_ids": [s.shampoo], "staff_id": s.tuan,
+                   "starts_at": at(0, "02:00")}),
+        )
+        .await;
+    assert_eq!(
+        code(&busy),
+        (StatusCode::CONFLICT, Some("appointment.staff_busy"))
+    );
+    assert_eq!(busy.body["existing_id"], husband["id"]);
+
+    // The person who books keeps a phone; only companions may go without.
+    let alone = s
+        .book(
+            &s.manager,
+            json!({"guest": {"full_name": "Chị Mai"}, "service_ids": [s.shampoo],
+                   "starts_at": at(1, "10:00")}),
+        )
+        .await;
+    assert_eq!(alone.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(alone.body["errors"][0]["field"], "guest.phone");
+    assert_eq!(alone.body["errors"][0]["code"], "required");
+    let first_without = s
+        .post(
+            &s.manager,
+            "/appointments/group",
+            json!({"starts_at": at(1, "10:00"), "people": [
+                {"guest": {"full_name": "Chị Mai", "phone": ""}, "service_ids": [s.shampoo]},
+                {"customer_id": s.duc, "service_ids": [s.shampoo]},
+            ]}),
+        )
+        .await;
+    assert_eq!(
+        first_without.body["errors"][0]["field"],
+        "people[0].guest.phone"
+    );
+    // The database is the second wall: a phone-less newcomer outside a group is refused.
+    let wall = sqlx::query("UPDATE app.appointment SET group_id = NULL WHERE id = $1::uuid")
+        .bind(husband["id"].as_str().unwrap_or_default())
+        .execute(&s.h.owner)
+        .await;
+    assert!(wall.is_err(), "appointment_guest_phone_or_group holds");
+
+    // Arrive with the technician, then record: a customer record is needed first.
+    let hid = husband["id"].as_str().unwrap_or_default().to_owned();
+    let arrived = call(
+        &s.h.app,
+        "POST",
+        &format!("/appointments/{hid}/arrive"),
+        Some(&s.manager),
+        Some(json!({"staff_id": s.tuan})),
+    )
+    .await;
+    assert_eq!(arrived.status, StatusCode::OK, "{}", arrived.body);
+    let cart = json!({"lines": [{"service_id": s.dai_thong_lac, "source": "one_off", "staff_id": s.tuan}],
+                      "payments": [{"method": "cash", "amount": 399_000}]});
+    let early = s
+        .post(
+            &s.manager,
+            &format!("/appointments/{hid}/complete"),
+            cart.clone(),
+        )
+        .await;
+    assert_eq!(
+        code(&early),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("appointment.customer_required")
+        )
+    );
+    let profile = call(
+        &s.h.app,
+        "POST",
+        "/customers",
+        Some(&s.manager),
+        Some(json!({"full_name": "Anh Minh", "phone": "0905123123", "gender": "male"})),
+    )
+    .await;
+    let version = format!("\"{}\"", arrived.body["version"]);
+    let linked = call_with_headers(
+        &s.h.app,
+        "PATCH",
+        &format!("/appointments/{hid}"),
+        Some(&s.manager),
+        Some(json!({"customer_id": id_of(&profile)})),
+        &[("if-match", version.as_str())],
+    )
+    .await;
+    assert_eq!(linked.status, StatusCode::OK, "{}", linked.body);
+    assert_eq!(linked.body["customer_phone"], "+84905123123");
+    let done = s
+        .post(&s.manager, &format!("/appointments/{hid}/complete"), cart)
+        .await;
+    assert_eq!(done.status, StatusCode::OK, "{}", done.body);
+    // The companion's work counts to Tuấn ("làm" credit = the visit line's technician).
+    let credited: Vec<Uuid> =
+        sqlx::query_scalar("SELECT staff_id FROM app.visit_line WHERE visit_id = $1::uuid")
+            .bind(done.body["visit"]["id"].as_str().unwrap_or_default())
+            .fetch_all(&s.h.owner)
+            .await?;
+    assert_eq!(credited, [Uuid::parse_str(&s.tuan)?]);
+    Ok(())
+}
+
+/// `group_with` adds a served companion to an existing booking; PATCH edits the note-only list.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn companions_are_added_and_edited_on_an_existing_booking(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let host = s.book_ha(&s.manager, &at(1, "10:00"), Some(&s.lan)).await;
+    assert_eq!(host.status, StatusCode::CREATED, "{}", host.body);
+    let host_id = id_of(&host);
+    assert_eq!(host.body["group_id"], Value::Null);
+
+    let joined = s
+        .book(
+            &s.manager,
+            json!({"group_with": host_id, "guest": {"full_name": "Chồng của chị Hà"},
+                   "service_ids": [s.shampoo], "staff_id": s.tuan, "starts_at": at(1, "10:00")}),
+        )
+        .await;
+    assert_eq!(joined.status, StatusCode::CREATED, "{}", joined.body);
+    let reread = call(
+        &s.h.app,
+        "GET",
+        &format!("/appointments/{host_id}"),
+        Some(&s.manager),
+        None,
+    )
+    .await;
+    assert!(reread.body["group_id"].is_string());
+    assert_eq!(reread.body["group_id"], joined.body["group_id"]);
+    assert_eq!(reread.body["version"], 2, "opening the group is a change");
+
+    // The host's customer is already in the group; another day is refused; unknown host = 404.
+    let dup = s
+        .book(
+            &s.manager,
+            json!({"group_with": host_id, "customer_id": s.ha, "service_ids": [s.shampoo],
+                   "starts_at": at(1, "12:00")}),
+        )
+        .await;
+    assert_eq!(
+        dup.body["errors"][0]["field"], "customer_id",
+        "{}",
+        dup.body
+    );
+    assert_eq!(dup.body["errors"][0]["code"], "duplicate");
+    let other_day = s
+        .book(
+            &s.manager,
+            json!({"group_with": host_id, "customer_id": s.duc, "service_ids": [s.shampoo],
+                   "starts_at": at(2, "10:00")}),
+        )
+        .await;
+    assert_eq!(other_day.body["errors"][0]["code"], "not_same_day");
+    let nobody = s
+        .book(
+            &s.manager,
+            json!({"group_with": Uuid::now_v7(), "customer_id": s.duc,
+                   "service_ids": [s.shampoo], "starts_at": at(1, "10:00")}),
+        )
+        .await;
+    assert_eq!(nobody.status, StatusCode::NOT_FOUND);
+    let rows = sqlx::query_scalar::<_, i64>("SELECT count(*) FROM app.appointment")
+        .fetch_one(&s.h.owner)
+        .await?;
+    assert_eq!(rows, 2, "refusals saved nothing");
+
+    // Note-only companions are edited with PATCH (full list).
+    let path = format!("/appointments/{host_id}");
+    let mut version = 2;
+    for (body, status, companions) in [
+        (
+            json!({"companions": [" Bé Na "]}),
+            StatusCode::OK,
+            json!(["Bé Na"]),
+        ),
+        (json!({"note": "Đến sớm"}), StatusCode::OK, json!(["Bé Na"])),
+        (
+            json!({"companions": ["a", "b", "c", "d", "e", "f"]}),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Value::Null,
+        ),
+        (json!({"companions": []}), StatusCode::OK, json!([])),
+    ] {
+        let tag = format!("\"{version}\"");
+        let r = call_with_headers(
+            &s.h.app,
+            "PATCH",
+            &path,
+            Some(&s.manager),
+            Some(body),
+            &[("if-match", tag.as_str())],
+        )
+        .await;
+        assert_eq!(r.status, status, "{}", r.body);
+        if status == StatusCode::OK {
+            assert_eq!(r.body["companions"], companions);
+            version += 1;
+        }
+    }
+    Ok(())
+}

@@ -7,12 +7,15 @@ use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-/// A newcomer known only by name and phone until they arrive.
+/// A newcomer known by name (and phone) until they arrive and get a customer record.
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GuestCreate {
+    /// 1–200 characters; for a companion it may be a description ("Chồng của chị Hà").
     pub full_name: String,
-    pub phone: String,
+    /// Required for the person who books (`POST /appointments` without `group_with`, and
+    /// `people[0]` of a group); optional for a served companion (`people[1..]`, `group_with`).
+    pub phone: Option<String>,
 }
 
 /// Body of `POST /appointments`. Exactly one of `customer_id` / `guest`.
@@ -35,9 +38,14 @@ pub struct AppointmentCreate {
     /// the booking, never a customer, never served or charged.
     #[serde(default)]
     pub companions: Vec<String>,
+    /// Book a served companion of this open appointment (spec §10.10): the new appointment joins
+    /// its group (one is opened if it had none) and must be on the same business day. The guest
+    /// phone becomes optional.
+    pub group_with: Option<Uuid>,
 }
 
 /// One person of a group booking: like `AppointmentCreate`, without the shared note.
+/// `people[1..]` are the served companions of `people[0]`: their guest phone is optional.
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GroupPersonCreate {
@@ -118,6 +126,9 @@ pub struct AppointmentUpdate {
     pub note: Option<Option<String>>,
     /// Link a newcomer to the customer record created for them (replaces the guest name/phone).
     pub customer_id: Option<Uuid>,
+    /// Note-only companions, the full list (absent = unchanged, `[]` = none). Same rules as
+    /// `POST /appointments`.
+    pub companions: Option<Vec<String>>,
 }
 
 /// Body of `POST /appointments/{id}/arrive`.
@@ -232,8 +243,8 @@ pub struct AppointmentDto {
     pub customer_id: Option<Uuid>,
     /// The customer's name, or the newcomer's.
     pub customer_name: String,
-    /// E.164.
-    pub customer_phone: String,
+    /// E.164; null for a served companion booked by name only (spec §10.10).
+    pub customer_phone: Option<String>,
     pub customer_gender: Option<crm::http::GenderDto>,
     pub is_guest: bool,
     pub staff_id: Option<Uuid>,
