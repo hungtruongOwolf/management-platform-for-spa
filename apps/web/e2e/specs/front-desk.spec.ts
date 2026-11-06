@@ -100,7 +100,7 @@ test.describe("màn hình quầy (US4)", () => {
       "Đã lưu lượt của Lê Thị Quầy",
     );
     await expect(page.getByRole("status")).toContainText("còn 11/12");
-    const today = page.getByRole("list", { name: "Lượt khách hôm nay" });
+    const today = page.getByRole("table", { name: "Lượt khách hôm nay" });
     await expect(today).toContainText("Lê Thị Quầy");
     await expect(today).toContainText("KTV KTV E2E");
     await expect(search).toBeFocused();

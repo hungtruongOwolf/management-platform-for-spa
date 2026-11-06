@@ -71,7 +71,7 @@ States: validation inline; thu > phải trả → lỗi tại ô tiền; lưu tr
 - Thu vượt số nợ → lỗi tại ô; payment không có nút sửa/xóa (chỉ hủy theo US6).
 
 ## US6: Hủy / sửa sai
-- Danh sách "Lượt khách hôm nay" → mở chi tiết → **Hủy lượt** → ReasonDialog (bắt buộc lý do) → lượt hiển thị gạch ngang + nhãn "Đã hủy: <lý do>", buổi đã trừ được cộng lại, toast xác nhận.
+- Danh sách "Lượt khách hôm nay" → ⋯ của dòng → **Hủy lượt** (vòng 5; form lý do mở ngay dưới dòng) → ReasonDialog (bắt buộc lý do) → lượt hiển thị gạch ngang + nhãn "Đã hủy: <lý do>", buổi đã trừ được cộng lại, toast xác nhận.
 - Hóa đơn bán gói chưa dùng buổi nào → **Hủy hóa đơn**; đã dùng → nút bị khóa, tooltip "Đã dùng buổi, dùng Hủy liệu trình (chủ spa)".
 - Ngày đã chốt → nút Hủy chỉ hiện với chủ spa (không hỏi lại mật khẩu, EM 2026-11-05); Quản lý thấy "Ngày đã chốt, liên hệ chủ spa".
 
@@ -117,7 +117,7 @@ Nguồn: [EM review vòng 4](../../raw/2026-11-05-em-review-round4.md) mục 1, 
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 - **Thông tin khách ngay dưới tên vừa chọn** (cùng ô tìm, không còn thẻ riêng): tên + giới tính, SĐT, "N gói liệu trình đang dùng, còn M buổi", lưu ý sức khỏe, gói + "Trừ 1 buổi", nút "Đổi khách" (= Esc).
-- **Lượt khách hôm nay** rộng toàn trang; nút "Chi tiết" (`aria-expanded`) mở/đóng chi tiết ngay dưới dòng; "Mở hồ sơ khách" đi qua trail nên nút quay lại trên hồ sơ ghi tên màn quầy. Ô ngày dùng `DateField` (luôn dd/mm/yyyy).
+- **Lượt khách hôm nay** rộng toàn trang. **Vòng 5 (EM mục 1: "không hàng không lối")**: bảng thật, cột cố định `Giờ 80px · Khách 24% · Dịch vụ · KTV (phần còn lại, tối đa 2 dòng + "…", KTV dòng dưới) · Thanh toán 16% (Tiền mặt / Chuyển khoản / Tiền mặt + CK / Trừ liệu trình / Đã hoàn tiền) · Số tiền 112px canh phải tabular · ⋯ 60px`. Bỏ nút "Chi tiết": **bấm vào dòng** (hoặc Enter trên tên khách, là nút `aria-expanded`) mở/đóng chi tiết ngay dưới dòng; ⋯ (`RowMenu`) gồm "Mở hồ sơ khách" và "Hủy lượt" (chỉ khi có quyền + lượt chưa hủy). Lượt đã hủy: dòng mờ, số tiền gạch ngang, badge "Đã hủy" cạnh tên, **lý do nằm trong chi tiết** (hủy xong chi tiết tự mở). Dưới 1024px: thẻ (tên, giờ · dịch vụ, số tiền, thanh toán, ⋯), bấm thẻ = mở chi tiết. "Mở hồ sơ khách" đi qua trail nên nút quay lại trên hồ sơ ghi tên màn quầy. Ô ngày dùng `DateField` (luôn dd/mm/yyyy).
 - **Giờ làm:** mặc định "bây giờ" (một dòng chữ, fast path không thêm thao tác). "Đổi giờ làm" mở ô giờ; chủ spa (`visit.backdate`) có thêm ô ngày (lùi ≤ 366 ngày) + ghi chú "Nhập bù: lượt, hóa đơn và tiền thu được ghi vào ngày …"; toast sau khi lưu ghi "nhập bù ngày …".
 - **Giảm giá:** chỉ hiện khi có dòng lẻ và có `sale.discount`; % hoặc số tiền + lý do; xem trước "Giảm X", tổng gạch giá cũ; quản lý vượt 10% thấy "cần chủ spa" (server quyết định).
 
