@@ -1,0 +1,440 @@
+/*
+ * Customers, packages and the catalog on the redesign rulebook (design-system.md "Quy tắc"):
+ * Danh sách khách hàng, hồ sơ khách, Khách mới, Bán gói liệu trình, Khách lâu chưa quay lại,
+ * Gói liệu trình của khách, Mẫu gói liệu trình, Bảng giá dịch vụ. Loaded with those lazy screens.
+ * Panels (`.panel`), fields (`.input`, `.field-error`) and `.section-label` are the shared rulebook
+ * classes of front-desk.css; this file only adds what these screens need. Inside a panel rows are
+ * divided by hairlines: no card in a card, no side stripes, no decorative icons.
+ */
+@layer components {
+  .khach-page {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: 16px;
+  }
+  .khach-lede {
+    max-width: 42rem;
+    color: var(--text-muted);
+  }
+  /* Profile: details + packages | follow-ups + history, side by side from 1280px. */
+  .khach-cols {
+    display: grid;
+    min-width: 0;
+    align-items: start;
+    gap: 16px;
+  }
+  @media (min-width: 1280px) {
+    .khach-cols {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+  }
+  .khach-stack {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: 16px;
+  }
+
+  /* --- Rows in a panel: hairlines, never boxes ------------------------------------------------ */
+  .row-list {
+    display: grid;
+    min-width: 0;
+  }
+  .row-list > li {
+    display: grid;
+    min-width: 0;
+    min-height: 44px;
+    align-content: center;
+    gap: 4px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .row-list > li:first-child {
+    padding-top: 0;
+  }
+  .row-list > li:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+  .row-head {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px 12px;
+  }
+  .row-title {
+    min-width: 0;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .row-side {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 8px;
+  }
+  .row-meta {
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    line-height: 18px;
+  }
+  .row-meta strong {
+    color: var(--text);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .row-list > li.is-muted {
+    color: var(--text-muted);
+  }
+  .row-list > li.is-muted .row-title {
+    color: var(--text-muted);
+  }
+  /* A link row (recent customers): the whole row is the target. */
+  .row-link {
+    display: flex;
+    min-height: 56px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-inline: -8px;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    transition: background-color var(--dur-fast) var(--ease-out);
+  }
+  .row-link:hover {
+    background: var(--surface-2);
+  }
+  .row-list > li:has(> .row-link) {
+    padding-block: 2px;
+  }
+
+  /* Closed items (used-up or cancelled packages, plans and services no longer sold): one
+   * disclosure with a count, under the open ones. */
+  .closed-group {
+    border-top: 1px solid var(--border);
+  }
+  .closed-group > summary {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+  }
+  .closed-group > summary::-webkit-details-marker {
+    display: none;
+  }
+  .closed-group > summary .icon {
+    transition: transform var(--dur-fast) var(--ease-out);
+  }
+  .closed-group[open] > summary .icon {
+    transform: rotate(90deg);
+  }
+  .closed-group > summary:hover {
+    color: var(--text);
+  }
+  .closed-group > .row-list {
+    padding-bottom: 4px;
+  }
+
+  /* Empty states teach the next step. */
+  .khach-empty {
+    padding: 8px 0;
+    color: var(--text-muted);
+  }
+
+  /* --- Summary numbers: one strip, hairline separated ---------------------------------------- */
+  .stat-strip {
+    display: grid;
+    /* Four across where the panel is wide enough, two otherwise (the panel, not the viewport). */
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    gap: 12px 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .stat-strip dt {
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+  }
+  .stat-strip .stat-num {
+    font-size: var(--fs-md);
+    font-weight: 600;
+    line-height: 24px;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-strip .stat-hint {
+    color: var(--text-muted);
+    font-size: var(--fs-xs);
+    line-height: 16px;
+  }
+
+  /* --- Contact details ---------------------------------------------------------------------- */
+  .detail-grid {
+    display: grid;
+    gap: 8px;
+  }
+  .detail-grid > div {
+    display: grid;
+    grid-template-columns: 7rem minmax(0, 1fr);
+    gap: 12px;
+  }
+  .detail-grid dt {
+    color: var(--text-muted);
+  }
+  .detail-grid dd {
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+  }
+  .panel-section {
+    display: grid;
+    min-width: 0;
+    gap: 8px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* --- Forms: label above, 44px fields, helper or error under ------------------------------- */
+  .form-grid {
+    display: grid;
+    min-width: 0;
+    gap: 16px;
+  }
+  @media (min-width: 640px) {
+    .form-grid {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+    .form-grid > .span-2 {
+      grid-column: 1 / -1;
+    }
+  }
+  .form-grid > fieldset {
+    display: grid;
+    min-width: 0;
+    gap: 6px;
+  }
+  .form-grid legend {
+    margin-bottom: 6px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .field .field-hint,
+  .field .field-error {
+    font-weight: 400;
+  }
+  .choice-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .choice-row > .choice {
+    font-size: var(--fs-base);
+  }
+  .form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .form-total {
+    font-size: var(--fs-xl);
+    font-weight: 600;
+    line-height: 32px;
+    font-variant-numeric: tabular-nums;
+  }
+  .form-total-label {
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+  }
+  /* A notice under a field (the phone already has a profile): amber, with one action. */
+  .field-notice {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 8px;
+    padding: 4px 4px 4px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--warning-bg);
+    color: var(--warning-text);
+    font-size: var(--fs-sm);
+    font-weight: 400;
+  }
+  .form-error {
+    padding: 12px;
+    border-radius: var(--radius-md);
+    background: var(--danger-soft);
+    color: var(--danger);
+    font-size: var(--fs-sm);
+  }
+  /* An inline form opened under its row: a hairline above, no box. */
+  .row-form {
+    display: grid;
+    gap: 16px;
+    padding: 16px 0 4px;
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
+  }
+  /* A form that opens at the top of a panel needs no hairline above it. */
+  .panel > .row-form:first-child,
+  .panel-head + .row-form {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+  }
+  .row-form-title {
+    font-size: var(--fs-md);
+    font-weight: 600;
+    line-height: 24px;
+  }
+
+  /* --- Catalog rows: name + meta | prices | Sửa ---------------------------------------------- */
+  .price-row {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px 16px;
+  }
+  .price-amounts {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 2px 16px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .price-amounts .price-label {
+    margin-right: 4px;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+  }
+  .price-amounts .price-value {
+    font-weight: 600;
+  }
+  @media (max-width: 639px) {
+    .price-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .price-row > .price-amounts {
+      grid-column: 1;
+      justify-content: flex-start;
+      text-align: left;
+    }
+    .price-row > .row-side {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+    }
+  }
+
+  /* Plan form: one line per service — service | sessions | bonus | remove. */
+  .plan-line {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) 5.5rem 5.5rem 44px;
+    align-items: end;
+    gap: 6px 8px;
+  }
+  .plan-line-error {
+    grid-column: 1 / -1;
+  }
+  @media (max-width: 639px) {
+    .plan-line {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px;
+    }
+    .plan-line > .field:first-child {
+      grid-column: 1 / -1;
+    }
+  }
+
+  /* Numbers in a table cell stack: value, then a muted note. */
+  .cell-note {
+    display: block;
+    color: var(--text-muted);
+    font-size: var(--fs-xs);
+    line-height: 16px;
+  }
+
+  /* --- Toast: top centre, never over the sticky actions -------------------------------------- */
+  .khach-toast {
+    position: fixed;
+    z-index: 60;
+    top: calc(env(safe-area-inset-top) + 72px);
+    left: 50%;
+    max-width: calc(100% - 32px);
+    padding: 12px 16px;
+    border-radius: var(--radius-md);
+    background: var(--chrome-bg);
+    box-shadow: var(--shadow-2);
+    color: var(--chrome-text);
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -8px);
+    transition:
+      opacity var(--dur-base) var(--ease-out),
+      transform var(--dur-base) var(--ease-out);
+  }
+  .khach-toast:empty {
+    padding: 0;
+    box-shadow: none;
+  }
+  .khach-toast.is-shown {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+
+  /* --- Package row: name + chip | trigger, meta below, the chosen form under it -------------- */
+  .row-list > li.pkg-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 8px;
+  }
+  .pkg-item > * {
+    grid-column: 1;
+  }
+  .pkg-item > .pkg-actions {
+    display: contents;
+  }
+  .pkg-actions-trigger {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+  .pkg-actions-form {
+    grid-column: 1 / -1;
+  }
+
+  /* --- History timeline: month headings between hairline rows ------------------------------- */
+  .row-list > li.row-month {
+    min-height: 0;
+    padding: 16px 0 4px;
+    border-bottom: 0;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+  }
+  .row-list > li.row-month:first-child {
+    padding-top: 0;
+  }
+  .event-line {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0 12px;
+  }
+  .event-amount {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .event-voided .event-amount {
+    text-decoration: line-through;
+  }
+  .row-list > li > .btn {
+    justify-self: start;
+  }
+}

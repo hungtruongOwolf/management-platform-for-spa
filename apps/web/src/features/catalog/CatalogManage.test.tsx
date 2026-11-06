@@ -147,7 +147,7 @@ describe("owner edits the price list", () => {
     const female = within(form).getByLabelText("Giá Nữ (đ)");
     await user.clear(female);
     await user.type(female, "89000");
-    await user.click(within(form).getByRole("button", { name: "Lưu" }));
+    await user.click(within(form).getByRole("button", { name: "Lưu dịch vụ" }));
 
     const put = calls.find((c) => c.method === "PUT");
     expect(put?.path).toBe("/api/v1/services/s1");
@@ -175,7 +175,7 @@ describe("owner edits the price list", () => {
     await user.click(
       within(
         screen.getByRole("form", { name: "Sửa: Cơ Bản – Dầu thảo dược" }),
-      ).getByRole("button", { name: "Lưu" }),
+      ).getByRole("button", { name: "Lưu dịch vụ" }),
     );
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Dữ liệu vừa được người khác sửa",
@@ -187,14 +187,14 @@ describe("owner edits the price list", () => {
     at("/bang-gia");
     const user = userEvent.setup();
     await user.click(
-      await screen.findByRole("button", { name: "+ Thêm dịch vụ" }),
+      await screen.findByRole("button", { name: "Thêm dịch vụ" }),
     );
     const form = screen.getByRole("form", { name: "Thêm dịch vụ" });
     await user.type(
       within(form).getByLabelText("Tên dịch vụ"),
       "Ngâm chân muối hồng",
     );
-    await user.click(within(form).getByRole("button", { name: "Lưu" }));
+    await user.click(within(form).getByRole("button", { name: "Thêm dịch vụ vào bảng giá" }));
     expect(
       await within(form).findByText("Nhập giá để bán dịch vụ."),
     ).toBeInTheDocument();
@@ -209,13 +209,13 @@ describe("owner edits the price list", () => {
     );
     at("/bang-gia/goi");
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "+ Tạo mẫu gói" }));
+    await user.click(await screen.findByRole("button", { name: "Tạo mẫu gói" }));
     const form = screen.getByRole("form", { name: "Tạo mẫu gói liệu trình" });
     await user.type(within(form).getByLabelText("Tên gói"), "Gội 10 + tặng 2");
     await user.type(within(form).getByLabelText("Giá gói (đ)"), "1500000");
     await user.selectOptions(within(form).getByLabelText("Dịch vụ 1"), "s2");
     await user.type(within(form).getByLabelText("Buổi tặng 1"), "{backspace}2");
-    await user.click(within(form).getByRole("button", { name: "Lưu gói" }));
+    await user.click(within(form).getByRole("button", { name: "Lưu mẫu gói" }));
 
     const post = calls.find((c) => c.method === "POST");
     expect(post?.body).toEqual({
@@ -238,7 +238,7 @@ describe("non-owners", () => {
       screen.queryByRole("button", { name: /Sửa/ }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "+ Thêm dịch vụ" }),
+      screen.queryByRole("button", { name: "Thêm dịch vụ" }),
     ).not.toBeInTheDocument();
   });
 });

@@ -14,6 +14,8 @@ import { FilterSelect, ResponsiveFilters, SearchField } from "./filters";
 import { CustomerCell } from "./PackagesOverviewPage";
 import { THRESHOLDS, inactiveSearch } from "./search";
 import { EmptyState, ErrorState, ManagementOnly, PageHeader, RowsSkeleton } from "./ui";
+import { useToast } from "../customers/Toast";
+import "../customers/khach.css";
 
 const FOLLOW_UPS: [FollowUpFilter, string][] = [
   ["due", "Cần liên hệ"],
@@ -33,10 +35,10 @@ const SCOPES = [
 ] as const;
 
 const EMPTY: Record<FollowUpFilter, string> = {
-  due: "Không còn ai cần liên hệ hôm nay.",
+  due: "Không còn ai cần liên hệ hôm nay. Chọn “Đã hẹn” để xem khách đã hẹn gọi lại.",
   not_contacted: "Khách vắng lâu nào cũng đã được liên hệ.",
-  scheduled: "Chưa hẹn liên hệ lại với khách nào.",
-  all: "Mọi khách đã quay lại trong khoảng này.",
+  scheduled: "Chưa hẹn liên hệ lại với khách nào. Gọi khách xong, bấm “Đã liên hệ” để hẹn ngày gọi lại.",
+  all: "Mọi khách đã quay lại trong khoảng này. Thử chọn “Vắng từ” ngắn hơn.",
 };
 
 /**
@@ -61,12 +63,12 @@ function InactiveCustomersPageBody() {
   const items = page.data?.pages.flatMap((p) => p.items) ?? [];
   const canFollowUp = can(me, "customer.follow_up");
   const [contacting, setContacting] = useState<InactiveCustomer | null>(null);
-  const [notice, setNotice] = useState("");
+  const [notify, toast] = useToast();
 
   return (
-    <section className="grid content-start gap-5">
+    <section className="khach-page">
       <PageHeader title="Khách lâu chưa quay lại" />
-      <p className="max-w-2xl text-text-muted">
+      <p className="khach-lede">
         Khách liệu trình và khách lẻ chưa quay lại từ {filter.days} ngày trở lên. “Cần liên hệ” xếp người chưa gọi và người đến hạn gọi lại lên trước; liên hệ xong bấm “Đã liên hệ” để hẹn lần sau.
       </p>
       <ResponsiveFilters
@@ -125,9 +127,7 @@ function InactiveCustomersPageBody() {
           </button>
         ))}
       </div>
-      <p role="status" className="sr-only">
-        {notice}
-      </p>
+      {toast}
       <div className={`card rt-host overflow-hidden ${page.isPlaceholderData ? "is-refreshing" : ""}`}>
         {page.isError && (
           <div className="p-4">
@@ -136,7 +136,7 @@ function InactiveCustomersPageBody() {
         )}
         {page.isPending && <RowsSkeleton rows={6} />}
         {page.isSuccess && items.length === 0 && (
-          <EmptyState title="Không có khách nào">{filter.q ? `Không thấy khách nào khớp “${filter.q}”.` : EMPTY[filter.followUp]}</EmptyState>
+          <EmptyState title="Không có khách nào">{filter.q ? `Không thấy khách nào khớp “${filter.q}”. Thử tìm bằng số điện thoại hoặc bỏ bớt bộ lọc.` : EMPTY[filter.followUp]}</EmptyState>
         )}
         {items.length > 0 && (
           <ResponsiveTable
@@ -172,7 +172,7 @@ function InactiveCustomersPageBody() {
               setContacting(null);
             }}
             onDone={(saved) => {
-              setNotice(
+              notify(
                 `Đã ghi liên hệ với ${contacting.full_name}${saved.next_follow_up_on ? `, hẹn lại ${shortDay(saved.next_follow_up_on)}` : ""}.`,
               );
               setContacting(null);
@@ -187,7 +187,7 @@ function InactiveCustomersPageBody() {
 function NextBadge({ on, today }: { on: string; today: string }) {
   const due = on <= today;
   return (
-    <span className={`badge ${due ? "badge-danger" : "badge-ok"}`}>
+    <span className={`badge ${due ? "badge-warn" : "badge-info"}`}>
       {due ? "Đến hạn" : "Hẹn"} {relativeDay(on)}
     </span>
   );
@@ -203,7 +203,10 @@ function MarkContacted({ c, onContacted }: { c: InactiveCustomer; onContacted: (
   );
 }
 
-/** Columns of the absent-customer list: a table from 768 px, cards with the actions below that. */
+/**
+ * Columns of the absent-customer list: four fixed columns from 1024 px (they fit beside the
+ * sidebar without scrolling sideways), cards with the action at the foot below that.
+ */
 function inactiveColumns(canFollowUp: boolean, onContacted: (c: InactiveCustomer) => void): Column<InactiveCustomer>[] {
   const today = spaToday();
   return [
@@ -214,53 +217,45 @@ function inactiveColumns(canFollowUp: boolean, onContacted: (c: InactiveCustomer
       cell: (c) => (
         <>
           <CustomerCell id={c.customer_id} name={c.full_name} phone={c.phone} gender={c.gender ?? null} />
-          <span className={`badge mt-1 ${c.kind === "package" ? "badge-gold" : "badge-muted"}`}>
-            {c.kind === "package" ? `Liệu trình · còn ${String(c.sessions_remaining)} buổi` : "Khách lẻ"}
-          </span>
+          <span className="cell-note">{c.kind === "package" ? `Liệu trình · còn ${String(c.sessions_remaining)} buổi` : "Khách lẻ"}</span>
         </>
       ),
     },
     {
       id: "days",
-      header: "Số ngày vắng",
+      header: "Vắng",
       numeric: true,
       card: "aside",
-      cell: (c) => <span className={`badge ${c.days_absent >= 30 ? "badge-danger" : "badge-warn"}`}>{c.days_absent} ngày</span>,
-    },
-    {
-      id: "last",
-      header: "Lần cuối",
-      className: "tabular",
+      width: "112px",
       cell: (c) => (
         <>
-          {relativeDay(c.last_seen_on)}
-          {!c.last_visit_on && <span className="block text-xs text-text-muted">Chưa đến lần nào</span>}
+          <span className="font-semibold">{c.days_absent} ngày</span>
+          <span className="cell-note">{c.last_visit_on ? `từ ${relativeDay(c.last_seen_on)}` : "Chưa đến lần nào"}</span>
         </>
       ),
     },
     {
       id: "contact",
-      header: "Liên hệ gần nhất",
+      header: "Liên hệ",
+      width: "30%",
       cell: (c) => {
         const f = c.last_follow_up;
-        return f ? (
-          <>
-            <span className="tabular">{relativeDay(f.on)}</span>
-            <span className="block text-xs text-text-muted">
-              {CHANNEL_LABEL[f.channel]} · {OUTCOME_LABEL[f.outcome]} · {f.by}
-            </span>
-          </>
-        ) : (
-          <span className="text-text-muted">Chưa liên hệ</span>
+        return (
+          <span className="grid justify-items-start gap-1">
+            {f ? (
+              <span>
+                <span className="tabular">{relativeDay(f.on)}</span>
+                <span className="cell-note">
+                  {CHANNEL_LABEL[f.channel]} · {OUTCOME_LABEL[f.outcome]} · {f.by}
+                </span>
+              </span>
+            ) : (
+              <span className="text-text-muted">Chưa liên hệ</span>
+            )}
+            {c.next_follow_up_on && <NextBadge on={c.next_follow_up_on} today={today} />}
+          </span>
         );
       },
-    },
-    {
-      id: "next",
-      header: "Hẹn lại",
-      className: "tabular",
-      cardOmit: (c) => !c.next_follow_up_on,
-      cell: (c) => (c.next_follow_up_on ? <NextBadge on={c.next_follow_up_on} today={today} /> : <span className="text-text-muted">—</span>),
     },
     // Without customer.follow_up the row has nothing to do: no empty actions column.
     ...(canFollowUp
@@ -269,6 +264,7 @@ function inactiveColumns(canFollowUp: boolean, onContacted: (c: InactiveCustomer
             id: "actions",
             header: <span className="sr-only">Thao tác</span>,
             card: "actions" as const,
+            width: "156px",
             cell: (c: InactiveCustomer) => (
               <span className="flex justify-end">
                 <MarkContacted

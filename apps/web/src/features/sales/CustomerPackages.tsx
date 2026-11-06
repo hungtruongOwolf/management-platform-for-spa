@@ -1,16 +1,15 @@
+import type { CustomerPackage } from "@vpyd/api-client";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { formatVnd } from "@vpyd/ui";
 import { Suspense, lazy, useState } from "react";
 import { Icon } from "../../app/Icon";
 import { BottomSheet } from "../../components/BottomSheet";
-import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
-import {
-  STATUS_BADGE,
-  STATUS_LABEL,
-  customerPackagesQuery,
-  formatDate,
-} from "./api";
+import { spaToday } from "../corrections/api";
+import { useToast } from "../customers/Toast";
+import { ErrorState } from "../reports/ui";
+import { customerPackagesQuery, formatDate } from "./api";
+import { PACKAGE_STATE, daysBetween, isClosedPackage, packageState } from "./packageState";
 import { SellPackageDialog } from "./SellPackageDialog";
 import { expiryText, serviceLabel } from "../../lib/names";
 
@@ -21,31 +20,71 @@ const PackageActions = lazy(() =>
   })),
 );
 
+function PackageRow({ p, today, canAct, onDone }: { p: CustomerPackage; today: string; canAct: boolean; onDone: (m: string) => void }) {
+  const state = packageState(p, today);
+  const { label, badge } = PACKAGE_STATE[state];
+  const days = p.expires_on ? daysBetween(today, p.expires_on) : null;
+  return (
+    <li className="pkg-item">
+      <div className="row-head">
+        <span className="row-title">{p.name}</span>
+        <span className={`badge ${badge}`}>{label}</span>
+      </div>
+      <p className="row-meta">
+        <strong>
+          Còn {String(p.sessions_remaining)}/{String(p.sessions_total)} buổi
+        </strong>
+        {" · "}
+        {expiryText(p.expires_on, formatDate)}
+        {state === "ending" && days != null && days >= 0 && days <= 30 ? ` (còn ${String(days)} ngày)` : ""}
+        {p.gift_note ? ` · Quà: ${p.gift_note}` : ""}
+      </p>
+      {p.items.length > 1 && (
+        <p className="row-meta">
+          {p.items.map((i) => `${serviceLabel(i.name, i.category_name)} ${String(i.sessions_remaining)}/${String(i.sessions_total)}`).join(" · ")}
+        </p>
+      )}
+      {p.status === "cancelled" && p.cancel_reason && (
+        <p className="row-meta">
+          Đã hủy: {p.cancel_reason}
+          {p.refund ? ` · Hoàn ${formatVnd(p.refund.amount)} ${p.refund.method === "cash" ? "tiền mặt" : "chuyển khoản"}` : ""}
+        </p>
+      )}
+      {canAct && (
+        <Suspense fallback={null}>
+          <PackageActions pkg={p} onDone={onDone} />
+        </Suspense>
+      )}
+    </li>
+  );
+}
+
 /**
- * Packages on the customer card: remaining / total sessions, expiry, status; "Bán gói liệu trình"
- * for sellers; lifecycle actions (extend, cancel + refund, void the sale) for those allowed.
+ * Packages on the customer profile: open packages first (one state chip each: đang dùng / sắp hết
+ * / hết hạn), used-up and cancelled ones behind "Gói đã hết / đã hủy (N)". "Bán gói liệu trình"
+ * for sellers; lifecycle actions for those allowed. Confirmations are a top toast.
  */
 export function CustomerPackages({ customerId }: { customerId: string }) {
   const { data: me } = useSuspenseQuery(meQuery);
   const packages = useQuery(customerPackagesQuery(customerId));
   const [selling, setSelling] = useState(false);
-  const [sold, setSold] = useState<string | null>(null);
-  const canAct =
-    can(me, "package.extend_expiry") ||
-    can(me, "package.cancel_refund") ||
-    can(me, "record.void_same_day");
+  const [notify, toast] = useToast();
+  const today = spaToday();
+  const canSell = can(me, "package.sell");
+  const canAct = can(me, "package.extend_expiry") || can(me, "package.cancel_refund") || can(me, "record.void_same_day");
+  const open = packages.data?.filter((p) => !isClosedPackage(p)) ?? [];
+  const closed = packages.data?.filter(isClosedPackage) ?? [];
 
   return (
-    <section aria-labelledby="packages-title" className="card grid content-start gap-3 p-4">
-      <div className="card-head">
-        <h2 id="packages-title" className="card-title">
-          <Icon name="package" className="size-5 text-accent" /> Gói liệu trình
+    <section aria-labelledby="packages-title" className="panel">
+      <div className="panel-head">
+        <h2 id="packages-title" className="panel-title">
+          Gói liệu trình
         </h2>
-        {can(me, "package.sell") && !selling && (
+        {canSell && (
           <button
             type="button"
             onClick={() => {
-              setSold(null);
               setSelling(true);
             }}
             className="btn btn-primary"
@@ -54,11 +93,7 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
           </button>
         )}
       </div>
-      {sold && (
-        <p role="status" className="rounded-[10px] bg-primary-soft p-2 text-sm">
-          {sold}
-        </p>
-      )}
+      {toast}
       <BottomSheet
         open={selling}
         onClose={() => {
@@ -75,72 +110,41 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
           onDone={(sale) => {
             setSelling(false);
             const p = sale.customer_packages[0];
-            setSold(
-              p
-                ? `Đã bán "${p.name}" — còn ${String(p.sessions_remaining)}/${String(p.sessions_total)} buổi.`
-                : "Đã lưu hóa đơn.",
-            );
+            notify(p ? `Đã bán "${p.name}" — còn ${String(p.sessions_remaining)}/${String(p.sessions_total)} buổi.` : "Đã lưu hóa đơn.");
           }}
         />
       </BottomSheet>
       {packages.isPending && (
-        <p role="status" className="text-text-muted">
-          Đang tải gói liệu trình…
-        </p>
+        <div role="status" aria-label="Đang tải gói liệu trình" className="grid gap-3">
+          <div className="skeleton h-14" />
+          <div className="skeleton h-14" />
+        </div>
       )}
-      {packages.isError && (
-        <p role="alert" className="text-danger">
-          {messageFor(packages.error)}
-        </p>
-      )}
+      {packages.isError && <ErrorState error={packages.error} onRetry={() => void packages.refetch()} />}
       {packages.data?.length === 0 && (
-        <p className="text-sm text-text-muted">Chưa có gói liệu trình nào.</p>
+        <p className="khach-empty">Chưa có gói liệu trình nào.{canSell ? " Bấm “Bán gói liệu trình” để bán gói đầu tiên cho khách." : ""}</p>
       )}
-      {packages.data && packages.data.length > 0 && (
-        <ul
-          aria-label="Gói liệu trình của khách"
-          className="divide-y divide-border rounded-[10px] border border-border"
-        >
-          {packages.data.map((p) => (
-            <li key={p.id} className="package-row">
-              <div className="package-row-head">
-                <span className="font-semibold">{p.name}</span>
-                <span className={`badge ${STATUS_BADGE[p.status]}`}>{STATUS_LABEL[p.status]}</span>
-              </div>
-              <p className="package-row-meta">
-                <strong>
-                  Còn {String(p.sessions_remaining)}/{String(p.sessions_total)} buổi
-                </strong>
-                {" · "}
-                {expiryText(p.expires_on, formatDate)}
-                {p.gift_note ? ` · Quà: ${p.gift_note}` : ""}
-              </p>
-              {p.items.length > 1 && (
-                <p className="package-row-meta">
-                  {p.items.map((i) => `${serviceLabel(i.name, i.category_name)} ${String(i.sessions_remaining)}/${String(i.sessions_total)}`).join(" · ")}
-                </p>
-              )}
-              {p.status === "cancelled" && p.cancel_reason && (
-                <p className="text-sm text-danger">
-                  Đã hủy: {p.cancel_reason}
-                  {p.refund
-                    ? ` · Hoàn ${formatVnd(p.refund.amount)} ${p.refund.method === "cash" ? "tiền mặt" : "chuyển khoản"}`
-                    : ""}
-                </p>
-              )}
-              {canAct && (
-                <Suspense fallback={null}>
-                  <PackageActions
-                    pkg={p}
-                    onDone={(message) => {
-                      setSold(message);
-                    }}
-                  />
-                </Suspense>
-              )}
-            </li>
+      {packages.data && packages.data.length > 0 && open.length === 0 && (
+        <p className="khach-empty">Không còn gói nào đang dùng.{canSell ? " Bấm “Bán gói liệu trình” để bán gói mới." : ""}</p>
+      )}
+      {open.length > 0 && (
+        <ul aria-label="Gói liệu trình của khách" className="row-list">
+          {open.map((p) => (
+            <PackageRow key={p.id} p={p} today={today} canAct={canAct} onDone={notify} />
           ))}
         </ul>
+      )}
+      {closed.length > 0 && (
+        <details className="closed-group">
+          <summary>
+            <Icon name="chevron-right" className="size-4" /> Gói đã hết / đã hủy ({closed.length})
+          </summary>
+          <ul aria-label="Gói đã hết hoặc đã hủy" className="row-list">
+            {closed.map((p) => (
+              <PackageRow key={p.id} p={p} today={today} canAct={false} onDone={notify} />
+            ))}
+          </ul>
+        </details>
       )}
     </section>
   );

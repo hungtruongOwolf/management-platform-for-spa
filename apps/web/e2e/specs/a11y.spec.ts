@@ -23,7 +23,7 @@ test("package plans and the plan form", async ({ page }) => {
     page.getByRole("heading", { name: "Mẫu gói liệu trình" }),
   ).toBeVisible();
   await expectAccessible(page, "plans");
-  await page.getByRole("button", { name: "+ Tạo mẫu gói" }).click();
+  await page.getByRole("button", { name: "Tạo mẫu gói" }).click();
   await expect(
     page.getByRole("form", { name: "Tạo mẫu gói liệu trình" }),
   ).toBeVisible();
@@ -32,7 +32,7 @@ test("package plans and the plan form", async ({ page }) => {
 
 test("service form on the price list", async ({ page }) => {
   await page.goto("/bang-gia");
-  await page.getByRole("button", { name: "+ Thêm dịch vụ" }).first().click();
+  await page.getByRole("button", { name: "Thêm dịch vụ", exact: true }).first().click();
   await expect(page.getByRole("form", { name: "Thêm dịch vụ" })).toBeVisible();
   await expectAccessible(page, "service-form");
 });

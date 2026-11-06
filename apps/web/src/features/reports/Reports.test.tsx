@@ -352,7 +352,7 @@ describe("customer history", () => {
     const user = userEvent.setup();
     at("/khach-hang/c1");
     const card = await screen.findByRole("region", { name: "Chăm sóc lại" });
-    expect(await within(card).findByText("Chưa liên hệ lần nào.")).toBeInTheDocument();
+    expect(await within(card).findByText(/Chưa liên hệ lần nào./)).toBeInTheDocument();
     await user.click(within(card).getByRole("button", { name: "Ghi lần liên hệ" }));
     await user.click(within(card).getByLabelText("Chưa có nhu cầu"));
     // No next try for "not interested": nothing suggested, nothing sent.

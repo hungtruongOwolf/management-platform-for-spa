@@ -6,7 +6,7 @@ import {
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import { formatVnd } from "@vpyd/ui";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { StickyActions } from "../../components/StickyActions";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
@@ -24,19 +24,16 @@ import { invalidateManagementViews } from "../../lib/invalidate";
 /** Select value for "Khách tự chọn": the customer chose the package, nobody is credited. */
 const SELF_CHOSEN = "self";
 
-const input =
-  "min-h-11 w-full rounded-[6px] border border-border bg-surface px-3";
-
 function sessionsOf(plan: PackagePlan): string {
   const paid = plan.items.reduce((n, i) => n + i.sessions, 0);
   const bonus = plan.items.reduce((n, i) => n + i.bonus_sessions, 0);
   const validity = plan.validity_months
     ? ` · HSD ${String(plan.validity_months)} tháng`
-    : "";
+    : " · không hạn";
   return `${String(paid)} buổi${bonus ? ` + tặng ${String(bonus)}` : ""}${validity}`;
 }
 
-/** US3: sell a package from the customer card. Totals shown here are previews; the server prices the sale. */
+/** US3: sell a package from the customer profile. Totals shown here are previews; the server prices the sale. */
 export function SellPackageDialog({
   customerId,
   onDone,
@@ -47,6 +44,7 @@ export function SellPackageDialog({
   onCancel: () => void;
 }) {
   const queryClient = useQueryClient();
+  const id = useId();
   const { data: me } = useSuspenseQuery(meQuery);
   const plans = useQuery(plansQuery(false));
   const staff = useQuery(activeStaffQuery);
@@ -71,6 +69,7 @@ export function SellPackageDialog({
     ? subtotal
     : Math.max(subtotal - discount, 0);
   const cashPart = parseAmount(cashText);
+  const overCap = exceedsCap(subtotal, discount, can(me, "sale.discount_unlimited"));
 
   const problems = {
     plan: plan ? undefined : "Chọn gói liệu trình.",
@@ -81,7 +80,7 @@ export function SellPackageDialog({
       ? "Nhập số tiền (chỉ chữ số)."
       : discount > subtotal
         ? "Giảm giá lớn hơn giá gói."
-        : exceedsCap(subtotal, discount, can(me, "sale.discount_unlimited"))
+        : overCap
           ? "Vượt 10% — cần chủ spa duyệt."
           : undefined,
     reason:
@@ -119,16 +118,27 @@ export function SellPackageDialog({
     },
   });
 
-  const show = (message: string | undefined) =>
-    touched && message ? (
-      <span className="text-sm text-danger">{message}</span>
+  type Key = keyof typeof problems;
+  // The 10% cap shows as soon as it is crossed; every other problem after the first submit.
+  const shown = (key: Key) =>
+    key === "discount" && overCap ? problems.discount : touched ? problems[key] : undefined;
+  const errorOf = (key: Key) => {
+    const message = shown(key);
+    return message ? (
+      <span id={`${id}-${key}-error`} className="field-error">
+        {message}
+      </span>
     ) : null;
+  };
+  const described = (key: Key, hint?: string) =>
+    [shown(key) ? `${id}-${key}-error` : undefined, hint].filter(Boolean).join(" ") || undefined;
+  const invalid = (key: Key) => (shown(key) ? true : undefined);
 
   return (
     // Hosted by a BottomSheet (CustomerPackages): the sheet is the dialog and carries the title.
-    <div className="grid content-start gap-3">
+    <div className="grid content-start gap-4">
       {(plans.isError || staff.isError) && (
-        <p role="alert" className="text-danger">
+        <p role="alert" className="form-error">
           {messageFor(plans.error ?? staff.error)}
         </p>
       )}
@@ -140,112 +150,112 @@ export function SellPackageDialog({
           setTouched(true);
           if (valid && !mutation.isPending) mutation.mutate();
         }}
-        className="grid gap-3 sm:grid-cols-2"
+        className="form-grid"
       >
-        <label className="block sm:col-span-2">
-          <span className="text-sm font-semibold">Gói liệu trình</span>
+        <div className="field span-2">
+          <label htmlFor={`${id}-plan`}>Gói liệu trình</label>
           <select
-            className={input}
+            id={`${id}-plan`}
+            className="input"
             value={planId}
+            aria-invalid={invalid("plan")}
+            aria-describedby={described("plan", plan ? `${id}-plan-hint` : undefined)}
             onChange={(e) => {
               setPlanId(e.target.value);
-              setGiftNote(
-                plans.data?.find((p) => p.id === e.target.value)?.gift_note ??
-                  "",
-              );
+              setGiftNote(plans.data?.find((p) => p.id === e.target.value)?.gift_note ?? "");
             }}
           >
-            <option value="">
-              {plans.isPending ? "Đang tải gói…" : "Chọn gói…"}
-            </option>
+            <option value="">{plans.isPending ? "Đang tải gói…" : "Chọn gói…"}</option>
             {plans.data?.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name} — {formatVnd(p.price)} ({sessionsOf(p)})
+                {p.name} — {formatVnd(p.price)}
               </option>
             ))}
           </select>
-          {show(problems.plan)}
-        </label>
-        <label className="block">
-          <span className="text-sm font-semibold">Quà tặng hiện vật</span>
+          {plan && (
+            <span id={`${id}-plan-hint`} className="field-hint">
+              {sessionsOf(plan)}
+            </span>
+          )}
+          {errorOf("plan")}
+        </div>
+        <div className="field">
+          <label htmlFor={`${id}-gift`}>Quà tặng hiện vật</label>
           <input
-            className={input}
+            id={`${id}-gift`}
+            className="input"
             value={giftNote}
+            placeholder="Không có"
             onChange={(e) => {
               setGiftNote(e.target.value);
             }}
           />
-        </label>
-        <label className="block">
-          <span className="text-sm font-semibold">Người tư vấn chốt</span>
+        </div>
+        <div className="field">
+          <label htmlFor={`${id}-closer`}>Người tư vấn chốt</label>
           <select
-            className={input}
+            id={`${id}-closer`}
+            className="input"
             value={closerId}
+            aria-invalid={invalid("closer")}
+            aria-describedby={described("closer")}
             onChange={(e) => {
               setCloserId(e.target.value);
             }}
           >
             <option value="">{staff.isPending ? "Đang tải…" : "Chọn…"}</option>
-            <option value={SELF_CHOSEN}>
-              Khách tự chọn (không tính cho ai)
-            </option>
+            <option value={SELF_CHOSEN}>Khách tự chọn (không tính cho ai)</option>
             {staff.data?.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.full_name} ({s.position})
               </option>
             ))}
           </select>
-          {show(problems.closer)}
-        </label>
+          {errorOf("closer")}
+        </div>
 
         {canDiscount && (
           <>
-            <label className="block">
-              <span className="text-sm font-semibold">
-                Giảm giá (đ, không bắt buộc)
-              </span>
+            <div className="field">
+              <label htmlFor={`${id}-discount`}>Giảm giá (đ, không bắt buộc)</label>
               <input
-                className={input}
+                id={`${id}-discount`}
+                className="input tabular"
                 inputMode="numeric"
                 value={discountText}
+                aria-invalid={invalid("discount")}
+                aria-describedby={described("discount", `${id}-discount-hint`)}
                 onChange={(e) => {
                   setDiscountText(e.target.value);
                 }}
               />
-              {discount > 0 && subtotal > 0 && !Number.isNaN(discount) && (
-                <span className="block text-xs text-text-muted">
-                  ≈ {String(Math.round((discount * 1000) / subtotal) / 10)}% giá
-                  gói
-                </span>
-              )}
-              {show(problems.discount) ??
-                (exceedsCap(
-                  subtotal,
-                  discount,
-                  can(me, "sale.discount_unlimited"),
-                ) && (
-                  <span className="text-sm text-danger">
-                    Vượt 10% — cần chủ spa duyệt.
-                  </span>
-                ))}
-            </label>
-            <label className="block">
-              <span className="text-sm font-semibold">Lý do giảm giá</span>
+              <span id={`${id}-discount-hint`} className="field-hint">
+                {discount > 0 && subtotal > 0 && !Number.isNaN(discount)
+                  ? `≈ ${String(Math.round((discount * 1000) / subtotal) / 10)}% giá gói`
+                  : "Quá 10% giá gói cần chủ spa duyệt."}
+              </span>
+              {errorOf("discount")}
+            </div>
+            <div className="field">
+              <label htmlFor={`${id}-reason`}>Lý do giảm giá</label>
               <input
-                className={input}
+                id={`${id}-reason`}
+                className="input"
                 value={reason}
+                aria-invalid={invalid("reason")}
+                aria-describedby={described("reason")}
                 onChange={(e) => {
                   setReason(e.target.value);
                 }}
               />
-              {show(problems.reason)}
-            </label>
+              {errorOf("reason")}
+            </div>
           </>
         )}
 
-        <fieldset className="grid content-start gap-2 sm:col-span-2">
-          <legend className="text-sm font-semibold">Thanh toán (thu đủ)</legend>
-          <div className="flex flex-wrap gap-3">
+        <fieldset className="span-2">
+          <legend>Thanh toán (thu đủ)</legend>
+          <div className="choice-row">
             {(
               [
                 ["cash", "Tiền mặt"],
@@ -253,10 +263,7 @@ export function SellPackageDialog({
                 ["mixed", "Tiền mặt + chuyển khoản"],
               ] as const
             ).map(([value, label]) => (
-              <label
-                key={value}
-                className="inline-flex min-h-11 items-center gap-2"
-              >
+              <label key={value} className="choice">
                 <input
                   type="radio"
                   name="payment-mode"
@@ -269,55 +276,45 @@ export function SellPackageDialog({
               </label>
             ))}
           </div>
-          {mode === "mixed" && (
-            <label className="block max-w-xs">
-              <span className="text-sm font-semibold">Tiền mặt (đ)</span>
-              <input
-                className={input}
-                inputMode="numeric"
-                value={cashText}
-                onChange={(e) => {
-                  setCashText(e.target.value);
-                }}
-              />
-              {!Number.isNaN(cashPart) && cashPart > 0 && cashPart < total && (
-                <span className="block text-xs text-text-muted">
-                  Chuyển khoản: {formatVnd(total - cashPart)}
-                </span>
-              )}
-              {show(problems.cash)}
-            </label>
-          )}
         </fieldset>
+        {mode === "mixed" && (
+          <div className="field">
+            <label htmlFor={`${id}-cash`}>Tiền mặt (đ)</label>
+            <input
+              id={`${id}-cash`}
+              className="input tabular"
+              inputMode="numeric"
+              value={cashText}
+              aria-invalid={invalid("cash")}
+              aria-describedby={described("cash", `${id}-cash-hint`)}
+              onChange={(e) => {
+                setCashText(e.target.value);
+              }}
+            />
+            <span id={`${id}-cash-hint`} className="field-hint">
+              {!Number.isNaN(cashPart) && cashPart > 0 && cashPart < total
+                ? `Chuyển khoản: ${formatVnd(total - cashPart)}`
+                : "Phần còn lại thu bằng chuyển khoản."}
+            </span>
+            {errorOf("cash")}
+          </div>
+        )}
 
-        <p className="text-lg font-semibold sm:col-span-2" aria-live="polite">
+        <p className="form-total span-2" aria-live="polite">
           Phải trả: {formatVnd(total)}
         </p>
         {mutation.isError && (
-          <p
-            role="alert"
-            className="rounded-[10px] bg-danger-soft p-3 text-sm text-danger sm:col-span-2"
-          >
+          <p role="alert" className="form-error span-2">
             {messageFor(mutation.error)}
-            {fieldMessage(mutation.error, "lines[0].package_plan_id")
-              ? " Gói này đã ngừng bán."
-              : ""}
+            {fieldMessage(mutation.error, "lines[0].package_plan_id") ? " Gói này đã ngừng bán." : ""}
           </p>
         )}
-        <StickyActions className="sm:col-span-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="btn btn-secondary"
-          >
+        <StickyActions className="span-2">
+          <button type="button" onClick={onCancel} className="btn btn-secondary">
             Hủy
           </button>
-          <button
-            type="submit"
-            disabled={mutation.isPending}
-            className="btn btn-primary"
-          >
-            {mutation.isPending ? "Đang lưu…" : "Lưu & thu tiền"}
+          <button type="submit" aria-busy={mutation.isPending || undefined} className="btn btn-primary">
+            Lưu & thu tiền
           </button>
         </StickyActions>
       </form>

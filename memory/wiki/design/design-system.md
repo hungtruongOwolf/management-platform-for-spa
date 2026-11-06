@@ -218,6 +218,19 @@ Một lớp CSS **không nằm trong layer** (thắng utility) cho vài thuộc 
 
 
 ## Trước / sau
+**Áp rulebook: khách hàng + gói + danh mục (`redesign/khach`, 2026-11-06, EM "ok áp dụng cho cả app"):** ảnh 8 màn × 1280/1024/390 × sáng/tối (API giả), scratchpad agent `rollout-khach/before`, `rollout-khach/after`; axe sạch 1280/390 cả hai theme, không cuộn ngang ở cả ba bề rộng. CSS chung các màn này: `features/customers/khach.css` (lazy) dùng lại `.panel`, `.input`, `.field-error`, `.section-label` của `front-desk.css`. Trạng thái gói một nguồn: `features/sales/packageState.ts` (`packageState`: đang dùng / **sắp hết** = còn ≤ 2 buổi hoặc hết hạn trong ≤ 30 ngày / hết hạn / hết buổi / đã hủy; `isClosedPackage`).
+| Màn | Trước | Sau |
+|---|---|---|
+| Hồ sơ khách | card trong card (mỗi gói, mỗi mục lịch sử, mỗi ô tóm tắt là một hộp); icon vàng trên tiêu đề; chấm màu timeline | panel phẳng, dòng cách bằng đường kẻ; tóm tắt 1 dải số; tiêu đề không icon; mục lịch sử có **một** chip (Đã hủy / Đã sửa / Lượt sửa lại), lượt hủy mờ + gạch số tiền; "Sửa lượt" là nút ghost |
+| Gói trên hồ sơ | "Đang dùng" cho gói còn 1/5 buổi; gói hết buổi vẫn có "Gia hạn", "Hủy gói và hoàn tiền"; 2–3 nút mỗi dòng | chip một trạng thái (có "Sắp hết"); gói hết buổi/đã hủy gom sau "Gói đã hết / đã hủy (N)", **không thao tác**; ≥ 2 thao tác → menu ⋯, 1 thao tác → nút ghost; form mở ngay dưới dòng; xác nhận = toast trên cùng |
+| Lưu ý sức khỏe | chỉ sửa trong sheet "Sửa hồ sơ" | mục riêng trong "Thông tin khách" (chỉ khi API gửi trường), "Thêm/Sửa lưu ý sức khỏe" mở tại chỗ |
+| Khách mới / Bán gói / Gia hạn / Hủy gói / Dịch vụ / Mẫu gói | ô 44px chữ 15px, viền nhạt, lỗi không nối `aria-describedby`, form trong hộp viền đứt/nền hồng | `.field` nhãn trên + `.input` 16px viền `border-strong`, gợi ý/lỗi dưới ô nối `aria-describedby` (nhãn không chứa gợi ý), radio = `.choice`, nút chính phẳng `aria-busy`; trùng SĐT báo ngay dưới ô + "Mở hồ sơ" |
+| Khách lâu chưa quay lại | 6 cột, ở 1024px bảng cuộn ngang trong card (875 > 678px) | 4 cột cố định (Khách · Vắng · Liên hệ + hẹn lại · Đã liên hệ) vừa khung; chip "liệu trình" vàng → chữ phụ; hẹn = `badge-info`, đến hạn = `badge-warn` |
+| Gói liệu trình của khách | chip 4 trạng thái, thanh tiến độ vàng | chip 5 trạng thái (có "Sắp hết"), cột cố định, gói đã đóng mờ |
+| Bảng giá / Mẫu gói | mỗi mẫu gói một card, "Ngừng bán" lẫn với đang bán, chữ "Đang tải…" | một panel, dịch vụ/mẫu ngừng bán gom "Ngừng bán (N)", skeleton, trống chỉ bước tiếp theo, "Sửa" ghost |
+
+Lưu ý hành vi: gói **hết buổi** không còn "Hủy gói và hoàn tiền" (trạng thái đóng, rule 7); muốn hoàn tiền gói đã dùng hết thì cần EM quyết định (server vẫn cho phép).
+
 **Vòng 5, Sổ hằng ngày (`feat/staff-daily-book-polish`):** ảnh 1280/1024/390 × sáng/tối + hover/focus + sheet "Giờ & ghi chú" + form thưởng/phạt, thư mục scratchpad của agent `shots/before-*`, `shots/after-*`.
 | Chỗ | Trước | Sau |
 |---|---|---|

@@ -1,6 +1,7 @@
 import type { Service, ServiceCategory, ServiceWrite } from "@vpyd/api-client";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useId } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { fieldMessage, messageFor } from "../../lib/errors";
@@ -91,10 +92,19 @@ function initialValues(
   };
 }
 
-const input =
-  "min-h-11 w-full rounded-[6px] border border-border bg-surface px-3";
+/** A field's error under it, linked by aria-describedby. */
+function FieldError({ id, message }: { id: string; message: string | undefined }) {
+  return message ? (
+    <span id={id} className="field-error">
+      {message}
+    </span>
+  ) : null;
+}
 
-/** Create or edit one service (owner, catalog.manage). Server re-validates everything. */
+/**
+ * Create or edit one service (owner, catalog.manage), inline under its row or at the top of its
+ * group: a hairline above, no box (no card in a card). Server re-validates everything.
+ */
 export function ServiceForm({
   categories,
   service,
@@ -107,6 +117,7 @@ export function ServiceForm({
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
+  const id = useId();
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: initialValues(service, defaultCategoryId),
@@ -122,6 +133,17 @@ export function ServiceForm({
   const mode = useWatch({ control: form.control, name: "mode" });
   const serverField = (field: string) => fieldMessage(mutation.error, field);
   const title = service ? `Sửa: ${service.name}` : "Thêm dịch vụ";
+  const err = {
+    name: errors.name?.message ?? serverField("name"),
+    duration: errors.duration?.message ?? serverField("duration_min"),
+    all: errors.all?.message ?? serverField("prices"),
+    female: errors.female?.message ?? serverField("prices"),
+    male: errors.male?.message,
+  };
+  const wire = (key: keyof typeof err, hint?: string) => ({
+    "aria-invalid": err[key] ? true : undefined,
+    "aria-describedby": [err[key] ? `${id}-${key}-error` : undefined, hint].filter(Boolean).join(" ") || undefined,
+  });
 
   return (
     <form
@@ -129,130 +151,110 @@ export function ServiceForm({
       noValidate
       onSubmit={(e) =>
         void form.handleSubmit((v) => {
-          mutation.mutate(v);
+          if (!mutation.isPending) mutation.mutate(v);
         })(e)
       }
-      className="mt-2 grid gap-3 rounded-[10px] border border-primary bg-primary-soft/40 p-3 sm:grid-cols-2"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onDone();
+      }}
+      className="row-form"
     >
-      <h3 className="font-semibold sm:col-span-2">{title}</h3>
-      <label className="block">
-        <span className="text-sm font-semibold">Tên dịch vụ</span>
-        <input
-          className={input}
-          {...form.register("name")}
-          aria-invalid={errors.name || serverField("name") ? true : undefined}
-        />
-        <span className="text-sm text-danger">
-          {errors.name?.message ?? serverField("name")}
-        </span>
-      </label>
-      <label className="block">
-        <span className="text-sm font-semibold">Nhóm</span>
-        <select className={input} {...form.register("category_id")}>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="block sm:col-span-2">
-        <span className="text-sm font-semibold">Mô tả / phần kèm theo</span>
-        <input className={input} {...form.register("description")} />
-      </label>
-      <label className="block">
-        <span className="text-sm font-semibold">Thời lượng (phút)</span>
-        <input
-          className={input}
-          inputMode="numeric"
-          placeholder="Để trống = theo tư vấn"
-          {...form.register("duration")}
-        />
-        <span className="text-sm text-danger">
-          {errors.duration?.message ?? serverField("duration_min")}
-        </span>
-      </label>
-      <fieldset className="block">
-        <legend className="text-sm font-semibold">Cách tính giá</legend>
-        <label className="mr-4 inline-flex min-h-11 items-center gap-2">
-          <input type="radio" value="all" {...form.register("mode")} /> Một giá
-          cho mọi khách
-        </label>
-        <label className="inline-flex min-h-11 items-center gap-2">
-          <input type="radio" value="gender" {...form.register("mode")} /> Theo
-          giới tính
-        </label>
-      </fieldset>
-      {mode === "all" ? (
-        <label className="block">
-          <span className="text-sm font-semibold">Giá (đ)</span>
+      <h3 className="row-form-title">{title}</h3>
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor={`${id}-name`}>Tên dịch vụ</label>
+          <input id={`${id}-name`} className="input" autoComplete="off" {...wire("name")} {...form.register("name")} />
+          <FieldError id={`${id}-name-error`} message={err.name} />
+        </div>
+        <div className="field">
+          <label htmlFor={`${id}-category`}>Nhóm</label>
+          <select id={`${id}-category`} className="input" {...form.register("category_id")}>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field span-2">
+          <label htmlFor={`${id}-description`}>Mô tả / phần kèm theo</label>
+          <input id={`${id}-description`} className="input" autoComplete="off" placeholder="Ví dụ: + Cạo gió đầu, đá nóng" {...form.register("description")} />
+        </div>
+        <div className="field">
+          <label htmlFor={`${id}-duration`}>Thời lượng (phút)</label>
           <input
-            className={input}
+            id={`${id}-duration`}
+            className="input tabular"
             inputMode="numeric"
-            {...form.register("all")}
+            {...wire("duration", `${id}-duration-hint`)}
+            {...form.register("duration")}
           />
-          <span className="text-sm text-danger">
-            {errors.all?.message ?? serverField("prices")}
+          <span id={`${id}-duration-hint`} className="field-hint">
+            Để trống = theo tư vấn.
           </span>
-        </label>
-      ) : (
-        <>
-          <label className="block">
-            <span className="text-sm font-semibold">Giá Nữ (đ)</span>
-            <input
-              className={input}
-              inputMode="numeric"
-              placeholder="Để trống = không áp dụng"
-              {...form.register("female")}
-            />
-            <span className="text-sm text-danger">
-              {errors.female?.message ?? serverField("prices")}
-            </span>
+          <FieldError id={`${id}-duration-error`} message={err.duration} />
+        </div>
+        <fieldset>
+          <legend>Cách tính giá</legend>
+          <div className="choice-row">
+            <label className="choice">
+              <input type="radio" value="all" {...form.register("mode")} /> Một giá cho mọi khách
+            </label>
+            <label className="choice">
+              <input type="radio" value="gender" {...form.register("mode")} /> Theo giới tính
+            </label>
+          </div>
+        </fieldset>
+        {mode === "all" ? (
+          <div className="field">
+            <label htmlFor={`${id}-all`}>Giá (đ)</label>
+            <input id={`${id}-all`} className="input tabular" inputMode="numeric" {...wire("all")} {...form.register("all")} />
+            <FieldError id={`${id}-all-error`} message={err.all} />
+          </div>
+        ) : (
+          <>
+            <div className="field">
+              <label htmlFor={`${id}-female`}>Giá Nữ (đ)</label>
+              <input
+                id={`${id}-female`}
+                className="input tabular"
+                inputMode="numeric"
+                {...wire("female", `${id}-gender-hint`)}
+                {...form.register("female")}
+              />
+              <span id={`${id}-gender-hint`} className="field-hint">
+                Để trống = không áp dụng.
+              </span>
+              <FieldError id={`${id}-female-error`} message={err.female} />
+            </div>
+            <div className="field">
+              <label htmlFor={`${id}-male`}>Giá Nam (đ)</label>
+              <input id={`${id}-male`} className="input tabular" inputMode="numeric" {...wire("male", `${id}-gender-hint`)} {...form.register("male")} />
+              <FieldError id={`${id}-male-error`} message={err.male} />
+            </div>
+          </>
+        )}
+        <div className="choice-row span-2">
+          <label className="choice">
+            <input type="checkbox" {...form.register("recommended")} /> ★ Khuyên dùng
           </label>
-          <label className="block">
-            <span className="text-sm font-semibold">Giá Nam (đ)</span>
-            <input
-              className={input}
-              inputMode="numeric"
-              placeholder="Để trống = không áp dụng"
-              {...form.register("male")}
-            />
-            <span className="text-sm text-danger">{errors.male?.message}</span>
+          <label className="choice">
+            <input type="checkbox" {...form.register("active")} /> Đang bán
           </label>
-        </>
-      )}
-      <div className="flex flex-wrap gap-4 sm:col-span-2">
-        <label className="inline-flex min-h-11 items-center gap-2">
-          <input type="checkbox" {...form.register("recommended")} /> ★ Khuyên
-          dùng
-        </label>
-        <label className="inline-flex min-h-11 items-center gap-2">
-          <input type="checkbox" {...form.register("active")} /> Đang bán
-        </label>
-      </div>
-      {mutation.isError && (
-        <p
-          role="alert"
-          className="rounded-[10px] bg-danger-soft p-3 text-sm text-danger sm:col-span-2"
-        >
-          {messageFor(mutation.error)}
-        </p>
-      )}
-      <div className="flex gap-2 sm:col-span-2">
-        <button
-          type="submit"
-          disabled={mutation.isPending}
-          className="min-h-11 rounded-[10px] bg-primary px-4 font-semibold text-on-primary disabled:opacity-60"
-        >
-          {mutation.isPending ? "Đang lưu…" : "Lưu"}
-        </button>
-        <button
-          type="button"
-          onClick={onDone}
-          className="min-h-11 rounded-[10px] border border-border px-4"
-        >
-          Hủy
-        </button>
+        </div>
+        {mutation.isError && (
+          <p role="alert" className="form-error span-2">
+            {messageFor(mutation.error)}
+          </p>
+        )}
+        <div className="form-actions span-2">
+          <button type="submit" aria-busy={mutation.isPending || undefined} className="btn btn-primary">
+            {service ? "Lưu dịch vụ" : "Thêm dịch vụ vào bảng giá"}
+          </button>
+          <button type="button" onClick={onDone} className="btn btn-secondary">
+            Hủy
+          </button>
+        </div>
       </div>
     </form>
   );
