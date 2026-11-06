@@ -1,5 +1,6 @@
 import type { HistoryKind } from "@vpyd/api-client";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { canSeeManagement } from "../../app/features";
 import { Icon, type IconName } from "../../app/Icon";
@@ -7,7 +8,7 @@ import { monthLabel } from "../../lib/format";
 import { serviceLabel } from "../../lib/names";
 import { useSearchState } from "../../lib/searchState";
 import { can, type Me } from "../auth/session";
-import { spaToday } from "../corrections/api";
+import { mayCorrectVisit, spaToday } from "../corrections/api";
 import { CHANNEL_LABEL, OUTCOME_LABEL, followUpsQuery } from "../customers/followUps";
 import { FollowUpForm } from "../customers/FollowUpForm";
 import { HISTORY_KINDS, historySearch } from "../customers/search";
@@ -67,8 +68,9 @@ function Summary({ customerId }: { customerId: string }) {
   );
 }
 
-function EventBody({ e }: { e: HistoryEvent }) {
+function EventBody({ e, correctable }: { e: HistoryEvent; correctable: boolean }) {
   if (e.visit) {
+    const v = e.visit;
     return (
       <ul className="mt-1 grid content-start gap-1 text-sm">
         {e.visit.lines.map((l, i) => (
@@ -82,7 +84,19 @@ function EventBody({ e }: { e: HistoryEvent }) {
             {l.amount > 0 && <span className="tabular">{money(l.amount)}</span>}
           </li>
         ))}
-        {e.visit.void_reason && <li className="text-text-muted">Lý do hủy: {e.visit.void_reason}</li>}
+        {v.corrected_by_visit_id ? (
+          <li className="text-text-muted">Đã sửa → lượt mới · {v.void_reason}</li>
+        ) : (
+          v.void_reason && <li className="text-text-muted">Lý do hủy: {v.void_reason}</li>
+        )}
+        {v.corrects_visit_id && <li className="text-text-muted">Lượt đã sửa (thay cho lượt ghi trước)</li>}
+        {correctable && (
+          <li>
+            <Link to="/quay" search={{ sua: v.id }} className="font-semibold text-primary underline">
+              Sửa lượt
+            </Link>
+          </li>
+        )}
       </ul>
     );
   }
@@ -171,8 +185,9 @@ function HistoryFilters() {
   );
 }
 
-function Timeline({ customerId }: { customerId: string }) {
+function Timeline({ customerId, permissions }: { customerId: string; permissions: readonly string[] }) {
   const [s] = useSearchState(historySearch);
+  const today = spaToday();
   const filtered = Boolean(s.hq || s.hkind || s.hfrom || s.hto);
   // A reversed range is not sent (the API would answer 422); the inputs' min/max make it rare.
   const range = s.hfrom && s.hto && s.hfrom > s.hto ? {} : { from: s.hfrom || undefined, to: s.hto || undefined };
@@ -210,7 +225,14 @@ function Timeline({ customerId }: { customerId: string }) {
                     {relativeDay(e.business_date)} · {time.format(new Date(e.at))}
                   </span>
                 </p>
-                <EventBody e={e} />
+                <EventBody
+                  e={e}
+                  correctable={
+                    e.kind === "visit" &&
+                    !!e.visit &&
+                    mayCorrectVisit(permissions, { business_date: e.business_date, voided: e.visit.voided }, today)
+                  }
+                />
               </div>
             </li>
           );
@@ -319,7 +341,7 @@ export function CustomerHistory({ customerId, customerName = "", me }: { custome
         </h2>
         <Summary customerId={customerId} />
         <HistoryFilters />
-        <Timeline customerId={customerId} />
+        <Timeline customerId={customerId} permissions={me?.permissions ?? []} />
       </section>
     </div>
   );

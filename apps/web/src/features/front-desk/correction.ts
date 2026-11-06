@@ -30,8 +30,8 @@ export interface CorrectionStart {
   /** The visit as read with `GET /visits/{id}` (note included when the caller may read it). */
   visit: Visit;
   customer: CustomerSummary;
-  /** Cart lines without keys (the page numbers them). */
-  lines: Omit<CartLine, "key">[];
+  /** Cart lines; keys are provisional (the page renumbers them). */
+  lines: CartLine[];
   mode: PaymentMode;
   cashText: string;
   discount: DiscountDraft | null;
@@ -42,12 +42,13 @@ export interface CorrectionStart {
 }
 
 /** One cart line per session: the desk records quantities as repeated lines. */
-export function cartFromVisit(v: Visit): Omit<CartLine, "key">[] {
-  const lines: Omit<CartLine, "key">[] = [];
+export function cartFromVisit(v: Visit): CartLine[] {
+  const lines: CartLine[] = [];
   for (const l of v.lines) {
     for (let i = 0; i < Math.max(1, l.qty); i++) {
       if (l.source === "package" && l.customer_package_item_id) {
         lines.push({
+          key: lines.length,
           source: "package",
           serviceId: l.service_id,
           serviceName: l.service_name,
@@ -62,6 +63,7 @@ export function cartFromVisit(v: Visit): Omit<CartLine, "key">[] {
       } else {
         const variant = l.price_variant;
         lines.push({
+          key: lines.length,
           source: "one_off",
           serviceId: l.service_id,
           serviceName: l.service_name,
@@ -81,13 +83,19 @@ export function cartFromVisit(v: Visit): Omit<CartLine, "key">[] {
 }
 
 /** How the visit was paid, as the payment picker shows it. */
-export function paymentModeOf(v: Visit): { mode: PaymentMode; cashText: string } {
+export function paymentModeOf(v: Visit): {
+  mode: PaymentMode;
+  cashText: string;
+} {
   const paid = v.payments.filter((p) => p.kind === "payment");
-  const cash = paid.filter((p) => p.method === "cash").reduce((s, p) => s + p.amount, 0);
+  const cash = paid
+    .filter((p) => p.method === "cash")
+    .reduce((s, p) => s + p.amount, 0);
   const transfer = paid
     .filter((p) => p.method === "bank_transfer")
     .reduce((s, p) => s + p.amount, 0);
-  if (cash > 0 && transfer > 0) return { mode: "mixed", cashText: String(cash) };
+  if (cash > 0 && transfer > 0)
+    return { mode: "mixed", cashText: String(cash) };
   return { mode: transfer > 0 ? "bank_transfer" : "cash", cashText: "" };
 }
 
@@ -99,18 +107,6 @@ export function discountOf(v: Visit): DiscountDraft | null {
     value: String(v.discount_amount),
     reason: v.discount_reason ?? "",
   };
-}
-
-/** Sessions the visit holds per package item: given back by a correction before it re-uses them. */
-export function heldSessions(v: Visit): Map<string, number> {
-  const held = new Map<string, number>();
-  for (const l of v.lines)
-    if (l.source === "package" && l.customer_package_item_id)
-      held.set(
-        l.customer_package_item_id,
-        (held.get(l.customer_package_item_id) ?? 0) + l.qty,
-      );
-  return held;
 }
 
 /** "2026-11-05" of an instant in the spa's zone. */
@@ -130,7 +126,7 @@ export async function loadCorrection(
   today: string,
 ): Promise<CorrectionStart> {
   const visit = (await api(`/visits/${visitId}`)) as Visit;
-  const customer = await queryClient.fetchQuery(customerQuery(visit.customer_id));
+  const customer = await queryClient.query(customerQuery(visit.customer_id));
   const { mode, cashText } = paymentModeOf(visit);
   const day = spaDay(visit.check_in_at);
   return {
@@ -198,11 +194,17 @@ export function planCorrection(
     d.lines.length === old.lines.length &&
     d.lines.every((l, i) => {
       const o = old.lines[i];
-      if (!o || o.qty !== 1 || o.service_id !== l.serviceId || o.source !== l.source)
+      if (
+        !o ||
+        o.qty !== 1 ||
+        o.service_id !== l.serviceId ||
+        o.source !== l.source
+      )
         return false;
       return l.source === "package"
         ? o.customer_package_item_id === l.itemId &&
-            (l.expiryOverrideReason ?? null) === (o.expiry_override_reason ?? null)
+            (l.expiryOverrideReason ?? null) ===
+              (o.expiry_override_reason ?? null)
         : o.unit_price === l.price;
     });
   const sameDiscount =
@@ -215,22 +217,28 @@ export function planCorrection(
     sameDiscount &&
     samePayments(d.payments, oldPaid);
   const noteChanged = d.canWriteNote && d.note.trim() !== oldNote.trim();
+  // The desk picks minutes; the recorded time has seconds.
+  const minute = (iso: string) => Math.floor(new Date(iso).getTime() / 60_000);
   const timeChanged =
-    d.checkInAt !== null &&
-    new Date(d.checkInAt).getTime() !== new Date(old.check_in_at).getTime();
+    d.checkInAt !== null && minute(d.checkInAt) !== minute(old.check_in_at);
 
   if (moneySame) {
     const staff = d.lines.flatMap((l, i) => {
       const o = old.lines[i];
-      return o && o.staff_id !== l.staffId ? [{ id: o.id, staff_id: l.staffId }] : [];
+      return o && o.staff_id !== l.staffId
+        ? [{ id: o.id, staff_id: l.staffId }]
+        : [];
     });
-    if (staff.length === 0 && !noteChanged && !timeChanged) return { kind: "none" };
+    if (staff.length === 0 && !noteChanged && !timeChanged)
+      return { kind: "none" };
     return {
       kind: "direct",
       patch: {
         ...(staff.length ? { lines: staff } : {}),
         ...(timeChanged && d.checkInAt ? { check_in_at: d.checkInAt } : {}),
-        ...(noteChanged ? { note: d.note.trim() === "" ? null : d.note.trim() } : {}),
+        ...(noteChanged
+          ? { note: d.note.trim() === "" ? null : d.note.trim() }
+          : {}),
       },
     };
   }
@@ -263,6 +271,12 @@ export interface CorrectionSaved {
   visit: Visit;
   /** Null for a direct edit (no money moved). */
   difference: number | null;
+  /** "Đã sửa lượt của Hà · Thu thêm 30.000đ" for the toast. */
+  summary: string;
+}
+
+function summaryOf(visit: Visit, difference: number | null): string {
+  return `Đã sửa lượt của ${visit.customer_name} · ${difference === null ? "không đổi tiền, buổi" : differenceText(difference)}`;
 }
 
 /** Sends the plan; `key` stays the same across retries so a resend never corrects twice. */
@@ -277,12 +291,16 @@ export async function saveCorrection(
       body: plan.patch,
       headers: ifMatch(old.version),
     })) as Visit;
-    return { visit, difference: null };
+    return { visit, difference: null, summary: summaryOf(visit, null) };
   }
   const done = (await api(`/visits/${old.id}/correct`, {
     method: "POST",
     body: plan.body,
     headers: { ...ifMatch(old.version), "Idempotency-Key": key },
   })) as VisitCorrected;
-  return { visit: done.visit, difference: done.difference };
+  return {
+    visit: done.visit,
+    difference: done.difference,
+    summary: summaryOf(done.visit, done.difference),
+  };
 }

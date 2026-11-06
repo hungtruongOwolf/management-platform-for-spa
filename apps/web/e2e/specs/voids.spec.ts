@@ -88,6 +88,66 @@ async function remaining(page: Page, customerId: string): Promise<number> {
 }
 
 test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () => {
+  test("Sửa lượt: a package session corrected into a one-off, money difference shown first (US6b)", async ({
+    page,
+  }) => {
+    const customerId = await customerWithVisit(
+      page,
+      uniquePhone(),
+      "Lý Thị Sửa",
+    );
+    expect(await remaining(page, customerId)).toBe(11);
+    const services = (await (
+      await page.request.get("/api/v1/services")
+    ).json()) as (Service & { name: string })[];
+    const oneOff = services.find((s) => s.active && s.prices.all != null);
+
+    await page.goto("/quay");
+    const today = page.getByRole("table", { name: "Lượt khách hôm nay" });
+    await today
+      .getByRole("button", { name: /^Thao tác lượt .* của Lý Thị Sửa$/ })
+      .click();
+    await page.getByRole("menuitem", { name: "Sửa lượt" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Sửa lượt khách" }),
+    ).toBeVisible();
+    await expect(page.getByText(/Đang sửa lượt .* của Lý Thị Sửa/)).toBeVisible();
+    await expect(
+      page.getByText("Chưa có gì thay đổi so với lượt đã ghi."),
+    ).toBeVisible();
+
+    // The session should have been a paid one-off.
+    const cart = page.getByRole("list", { name: "Dịch vụ trong lượt" });
+    await cart.getByRole("button", { name: /^Bỏ dòng / }).click();
+    await page.getByLabel("Dịch vụ lẻ").selectOption(oneOff?.id ?? "");
+    await page.getByRole("button", { name: "Thêm", exact: true }).click();
+    await cart.getByRole("combobox", { name: "KTV" }).selectOption({ index: 1 });
+    await expect(page.getByTestId("correction-difference")).toContainText(
+      "Thu thêm",
+    );
+    await page
+      .getByRole("textbox", { name: /^Lý do sửa/ })
+      .fill("Khách trả tiền lẻ, không trừ gói");
+    await expectAccessible(page, "quay-correction");
+    await page.getByRole("button", { name: "Lưu sửa lượt" }).click();
+
+    await expect(
+      page.getByRole("status").filter({ hasText: /Đã sửa lượt của Lý Thị Sửa · Thu thêm/ }),
+    ).toBeVisible();
+    const rows = today.getByRole("row").filter({ hasText: "Lý Thị Sửa" });
+    await expect(rows).toHaveCount(2);
+    await expect(rows.filter({ hasText: "Đã sửa" })).toHaveCount(1);
+    expect(await remaining(page, customerId)).toBe(12);
+    // The corrected visit is the one offered for further edits; the old one is not.
+    await rows
+      .filter({ hasText: "Đã sửa" })
+      .getByRole("button", { name: /^Thao tác lượt/ })
+      .click();
+    await expect(page.getByRole("menuitem", { name: "Sửa lượt" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expectAccessible(page, "quay-corrected");
+  });
+
   test("void a visit from the day list: the session comes back, the visit stays as voided", async ({
     page,
   }) => {
