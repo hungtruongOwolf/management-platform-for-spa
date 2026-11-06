@@ -1,35 +1,19 @@
 import type { Customer } from "@vpyd/api-client";
-import {
-  useMutation,
-  useQueryClient,
-  useSuspenseQuery,
-} from "@tanstack/react-query";
-import { useState } from "react";
-import { Icon } from "../../app/Icon";
+import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useId, useState } from "react";
 import { BottomSheet } from "../../components/BottomSheet";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
 import { setHealthNote } from "./api";
 import { CustomerPackages } from "../sales/CustomerPackages";
 import { CustomerForm } from "./CustomerForm";
-import { HealthNote } from "./HealthNote";
 
-function HealthNoteEditor({
-  customer,
-  onSaved,
-}: {
-  customer: Customer;
-  onSaved: (c: Customer) => void;
-}) {
+function HealthNoteEditor({ customer, onSaved, onCancel }: { customer: Customer; onSaved: (c: Customer) => void; onCancel: () => void }) {
   const queryClient = useQueryClient();
+  const id = useId();
   const [text, setText] = useState(customer.health_note ?? "");
   const mutation = useMutation({
-    mutationFn: () =>
-      setHealthNote(
-        customer.id,
-        customer.version,
-        text.trim() === "" ? null : text.trim(),
-      ),
+    mutationFn: () => setHealthNote(customer.id, customer.version, text.trim() === "" ? null : text.trim()),
     onSuccess: async (saved) => {
       await queryClient.invalidateQueries({ queryKey: ["customers"] });
       onSaved(saved);
@@ -40,37 +24,52 @@ function HealthNoteEditor({
       aria-label="Sửa lưu ý sức khỏe"
       onSubmit={(e) => {
         e.preventDefault();
-        mutation.mutate();
+        if (!mutation.isPending) mutation.mutate();
       }}
-      className="grid content-start gap-2 border-t border-border pt-4"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onCancel();
+      }}
+      className="grid gap-3"
     >
-      <label className="field">
-        Lưu ý sức khỏe
+      <div className="field">
+        <label htmlFor={`${id}-note`}>Lưu ý sức khỏe (chống chỉ định, tình trạng)</label>
         <textarea
+          id={`${id}-note`}
+          autoFocus
           value={text}
+          maxLength={1000}
+          aria-describedby={`${id}-hint`}
           onChange={(e) => {
             setText(e.target.value);
           }}
-          className="min-h-20 w-full rounded-[6px] border border-border bg-surface px-3 py-2"
+          className="input"
         />
-      </label>
+        <span id={`${id}-hint`} className="field-hint">
+          Để trống rồi lưu để xóa lưu ý.
+        </span>
+      </div>
       {mutation.isError && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="form-error">
           {messageFor(mutation.error)}
         </p>
       )}
-      <button type="submit" disabled={mutation.isPending} className="btn btn-secondary">
-        Lưu lưu ý sức khỏe
-      </button>
+      <div className="form-actions">
+        <button type="submit" aria-busy={mutation.isPending || undefined} className="btn btn-primary">
+          Lưu lưu ý sức khỏe
+        </button>
+        <button type="button" onClick={onCancel} className="btn btn-secondary">
+          Bỏ qua
+        </button>
+      </div>
     </form>
   );
 }
 
-/** One "label: value" line of the contact card; nothing when the value is empty. */
+/** One "label: value" line of the contact details; nothing when the value is empty. */
 function Detail({ label, children }: { label: string; children: string | null | undefined }) {
   if (!children) return null;
   return (
-    <div className="detail-row">
+    <div>
       <dt>{label}</dt>
       <dd>{children}</dd>
     </div>
@@ -78,26 +77,71 @@ function Detail({ label, children }: { label: string; children: string | null | 
 }
 
 /**
- * Left column of the profile: the contact card (details, health note, "Sửa hồ sơ" in a sheet)
- * and the customer's packages. Both cards share the heading style of the history column.
+ * The health note section: shown only when the API sent the field (the caller may read it). The
+ * warning is the amber callout (same as the front desk); editing opens inline for those allowed.
  */
-export function CustomerProfile({
-  customer,
-  onChanged,
-}: {
-  customer: Customer;
-  onChanged: (c: Customer) => void;
-}) {
+function HealthSection({ customer, canEdit, onChanged }: { customer: Customer; canEdit: boolean; onChanged: (c: Customer) => void }) {
+  const [editing, setEditing] = useState(false);
+  if (!("health_note" in customer)) return null;
+  const note = customer.health_note;
+  return (
+    <section aria-labelledby="health-title" className="panel-section">
+      <div className="row-head">
+        <h3 id="health-title" className="section-label">
+          Lưu ý sức khỏe
+        </h3>
+        {canEdit && !editing && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              setEditing(true);
+            }}
+          >
+            {note ? "Sửa lưu ý sức khỏe" : "Thêm lưu ý sức khỏe"}
+          </button>
+        )}
+      </div>
+      {editing ? (
+        <HealthNoteEditor
+          customer={customer}
+          onCancel={() => {
+            setEditing(false);
+          }}
+          onSaved={(c) => {
+            setEditing(false);
+            onChanged(c);
+          }}
+        />
+      ) : note ? (
+        <div role="note" aria-label="Lưu ý sức khỏe" className="health-note">
+          <span className="health-note-text">
+            <span aria-hidden="true">⚠ </span>
+            {note}
+          </span>
+        </div>
+      ) : (
+        <p className="khach-empty">Chưa ghi lưu ý sức khỏe nào{canEdit ? ". Bấm “Thêm lưu ý sức khỏe” nếu khách có chống chỉ định." : "."}</p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Left column of the profile: the contact details (+ "Sửa hồ sơ" in a sheet), the health note
+ * section, then the customer's packages.
+ */
+export function CustomerProfile({ customer, onChanged }: { customer: Customer; onChanged: (c: Customer) => void }) {
   const { data: me } = useSuspenseQuery(meQuery);
   const [editing, setEditing] = useState(false);
   const canWrite = can(me, "customer.write");
 
   return (
-    <div className="grid content-start gap-4">
-      <article aria-labelledby="customer-info-title" className="card grid content-start gap-3 p-4">
-        <div className="card-head">
-          <h2 id="customer-info-title" className="card-title">
-            <Icon name="users" className="size-5 text-accent" /> Thông tin khách
+    <div className="khach-stack">
+      <article aria-labelledby="customer-info-title" className="panel">
+        <div className="panel-head">
+          <h2 id="customer-info-title" className="panel-title">
+            Thông tin khách
           </h2>
           {canWrite && (
             <button
@@ -111,13 +155,13 @@ export function CustomerProfile({
             </button>
           )}
         </div>
-        <HealthNote customer={customer} />
-        <dl className="detail-list">
+        <dl className="detail-grid">
           <Detail label="Số điện thoại">{customer.phone}</Detail>
           <Detail label="Năm sinh">{customer.birth_year ? String(customer.birth_year) : null}</Detail>
           <Detail label="Địa chỉ">{customer.address}</Detail>
           <Detail label="Ghi chú">{customer.note}</Detail>
         </dl>
+        <HealthSection customer={customer} canEdit={can(me, "customer.health_notes.write")} onChanged={onChanged} />
       </article>
       <CustomerPackages customerId={customer.id} />
       <BottomSheet
@@ -140,9 +184,6 @@ export function CustomerProfile({
             setEditing(false);
           }}
         />
-        {can(me, "customer.health_notes.write") && (
-          <HealthNoteEditor customer={customer} onSaved={onChanged} />
-        )}
       </BottomSheet>
     </div>
   );

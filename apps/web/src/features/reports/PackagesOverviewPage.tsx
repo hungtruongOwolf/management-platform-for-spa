@@ -5,18 +5,13 @@ import { CustomerName } from "../../app/CustomerName";
 import { NO_EXPIRY } from "../../lib/names";
 import { useSearchState } from "../../lib/searchState";
 import { ResponsiveTable } from "../../components/ResponsiveTable";
+import { spaToday } from "../corrections/api";
+import { ENDING_DAYS, PACKAGE_STATE, packageState } from "../sales/packageState";
 import { SearchField } from "./filters";
 import { packagesSearch } from "./search";
 import { longDay, packagesOverviewQuery, relativeDay, type PackageFilter } from "./api";
-import type { PackageOverviewRow, PackageStatus } from "./contract";
+import type { PackageOverviewRow } from "./contract";
 import { EmptyState, ErrorState, ManagementOnly, PageHeader, RowsSkeleton } from "./ui";
-
-const STATUS: Record<PackageStatus, [string, string]> = {
-  active: ["Đang dùng", "badge-ok"],
-  expired: ["Hết hạn", "badge-warn"],
-  exhausted: ["Hết buổi", "badge-muted"],
-  cancelled: ["Đã hủy", "badge-danger"],
-};
 
 /** "+84905123456" → "0905 123 456" (design-system.md "Định dạng"); other shapes stay as they are. */
 export function displayPhone(phone: string): string {
@@ -46,16 +41,15 @@ export function CustomerCell({
   );
 }
 
-function Remaining({ p }: { p: PackageOverviewRow }) {
-  const low = p.status === "active" && p.sessions_remaining <= 2;
+function Remaining({ p, ending }: { p: PackageOverviewRow; ending: boolean }) {
   return (
     <span className="inline-flex flex-col items-end gap-1">
-      <span className={`font-semibold tabular ${low ? "text-danger" : ""}`}>
+      <span className={`font-semibold tabular ${ending ? "text-warning-text" : ""}`}>
         {p.sessions_remaining}/{p.sessions_total}
       </span>
       <span aria-hidden="true" className="split-bar block h-1.5 w-20">
         <span
-          className={`split-part block ${low ? "bg-danger" : "tone-accent"}`}
+          className={`split-part block ${ending ? "bg-warning-text" : "bg-primary"}`}
           style={{ width: `${String(p.sessions_total ? (p.sessions_remaining / p.sessions_total) * 100 : 0)}%` }}
         />
       </span>
@@ -63,7 +57,11 @@ function Remaining({ p }: { p: PackageOverviewRow }) {
   );
 }
 
-/** /goi-lieu-trinh — every customer package of the spa: what is running, expiring, finished. */
+/**
+ * /goi-lieu-trinh — every customer package of the spa: what is running, expiring, finished. Layout
+ * of round 5 (EM 2026-11-06 kept it); the status column shows the one shared package state
+ * (sales/packageState.ts), "Sắp hết" included.
+ */
 export function PackagesOverviewPage() {
   return (
     <ManagementOnly>
@@ -75,6 +73,7 @@ export function PackagesOverviewPage() {
 function PackagesOverviewPageBody() {
   const [{ status: filter, q }, patch] = useSearchState(packagesSearch);
   const page = useInfiniteQuery(packagesOverviewQuery(filter, q));
+  const today = spaToday();
   const counts = page.data?.pages[0]?.counts;
   const items = page.data?.pages.flatMap((p) => p.items) ?? [];
   const filters: [PackageFilter, string, number | undefined][] = [
@@ -99,19 +98,19 @@ function PackagesOverviewPageBody() {
           }}
         />
         <div className="segmented chip-row" role="group" aria-label="Lọc theo trạng thái">
-        {filters.map(([f, label, n]) => (
-          <button
-            key={f}
-            type="button"
-            aria-pressed={filter === f}
-            onClick={() => {
-              patch({ status: f });
-            }}
-          >
-            {label}
-            {n !== undefined && <span className="rounded-full bg-surface-2 px-2 text-xs tabular">{n}</span>}
-          </button>
-        ))}
+          {filters.map(([f, label, n]) => (
+            <button
+              key={f}
+              type="button"
+              aria-pressed={filter === f}
+              onClick={() => {
+                patch({ status: f });
+              }}
+            >
+              {label}
+              {n !== undefined && <span className="rounded-full bg-surface-2 px-2 text-xs tabular">{n}</span>}
+            </button>
+          ))}
         </div>
       </div>
       <div className={`card rt-host overflow-hidden ${page.isPlaceholderData ? "is-refreshing" : ""}`}>
@@ -139,13 +138,19 @@ function PackagesOverviewPageBody() {
                 cell: (p) => <CustomerCell id={p.customer_id} name={p.customer_name} phone={p.customer_phone} gender={p.customer_gender ?? null} />,
               },
               { id: "plan", header: "Gói", card: "subtitle", cell: (p) => p.name },
-              { id: "left", header: "Còn", numeric: true, card: "aside", cell: (p) => <Remaining p={p} /> },
+              {
+                id: "left",
+                header: "Còn",
+                numeric: true,
+                card: "aside",
+                cell: (p) => <Remaining p={p} ending={packageState(p, today) === "ending"} />,
+              },
               {
                 id: "expiry",
                 header: "Hạn dùng",
                 className: "tabular",
                 cell: (p) => {
-                  const soon = p.status === "active" && p.expires_on != null && p.days_to_expiry != null && p.days_to_expiry <= 30;
+                  const soon = p.status === "active" && p.expires_on != null && p.days_to_expiry != null && p.days_to_expiry <= ENDING_DAYS;
                   return (
                     <>
                       {p.expires_on ? longDay(p.expires_on) : <span className="badge badge-muted">{NO_EXPIRY}</span>}
@@ -160,8 +165,8 @@ function PackagesOverviewPageBody() {
                 header: "Trạng thái",
                 card: "aside",
                 cell: (p) => {
-                  const [label, tone] = STATUS[p.status];
-                  return <span className={`badge ${tone}`}>{label}</span>;
+                  const { label, badge } = PACKAGE_STATE[packageState(p, today)];
+                  return <span className={`badge ${badge}`}>{label}</span>;
                 },
               },
             ]}
@@ -170,12 +175,18 @@ function PackagesOverviewPageBody() {
       </div>
       {page.hasNextPage && (
         <div className="flex justify-center">
-          <button type="button" className="btn btn-secondary min-w-40" disabled={page.isFetchingNextPage} onClick={() => void page.fetchNextPage()}>
-            {page.isFetchingNextPage ? "Đang tải…" : "Xem thêm"}
+          <button
+            type="button"
+            className="btn btn-secondary min-w-40"
+            aria-busy={page.isFetchingNextPage || undefined}
+            onClick={() => {
+              if (!page.isFetchingNextPage) void page.fetchNextPage();
+            }}
+          >
+            Xem thêm
           </button>
         </div>
       )}
     </section>
   );
 }
-

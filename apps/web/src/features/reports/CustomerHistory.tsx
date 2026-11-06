@@ -18,23 +18,52 @@ import { BottomSheet } from "../../components/BottomSheet";
 import { DateField } from "../../components/DateField";
 import { FilterSelect, ResponsiveFilters, SearchField } from "./filters";
 import { EmptyState, ErrorState, RowsSkeleton, money } from "./ui";
+import "../customers/khach.css";
 
 const time = new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Ho_Chi_Minh" });
 
-const KIND: Record<HistoryKind, [string, IconName, string]> = {
-  visit: ["Lượt khách", "desk", "bg-primary"],
-  purchase: ["Mua gói liệu trình", "package", "bg-accent"],
-  visit_voided: ["Lượt đã hủy", "x", "bg-border-strong"],
-  purchase_voided: ["Hóa đơn đã hủy", "x", "bg-border-strong"],
-  package_cancelled: ["Hủy gói", "alert", "bg-danger"],
+/** Names of the history kinds (the "Loại" filter). */
+const KIND: Record<HistoryKind, string> = {
+  visit: "Lượt khách",
+  purchase: "Mua gói liệu trình",
+  visit_voided: "Lượt đã hủy",
+  purchase_voided: "Hóa đơn đã hủy",
+  package_cancelled: "Hủy gói",
 };
 
-const KIND_OPTIONS: readonly (readonly [HistoryKind | "", string])[] = [["", "Mọi loại"], ...HISTORY_KINDS.map((k) => [k, KIND[k][0]] as const)];
+const KIND_OPTIONS: readonly (readonly [HistoryKind | "", string])[] = [["", "Mọi loại"], ...HISTORY_KINDS.map((k) => [k, KIND[k]] as const)];
+
+/** Title and the one state chip of a timeline row (design-system.md "Quy tắc" 7). */
+function eventHead(e: HistoryEvent): { title: string; chip?: [string, string] } {
+  switch (e.kind) {
+    case "visit":
+      return e.visit?.corrects_visit_id ? { title: "Lượt khách", chip: ["Lượt sửa lại", "badge-info"] } : { title: "Lượt khách" };
+    case "visit_voided":
+      return e.visit?.corrected_by_visit_id
+        ? { title: "Lượt khách", chip: ["Đã sửa", "badge-muted"] }
+        : { title: "Lượt khách", chip: ["Đã hủy", "badge-danger"] };
+    case "purchase":
+      return { title: "Mua gói liệu trình" };
+    case "purchase_voided":
+      return { title: "Mua gói liệu trình", chip: ["Đã hủy", "badge-danger"] };
+    case "package_cancelled":
+      return { title: "Hủy gói", chip: ["Đã hủy", "badge-danger"] };
+  }
+}
+
+/** Dot colour and icon of each kind on the timeline (round-5 layout, kept by the EM 2026-11-06). */
+const DOT: Record<HistoryKind, [IconName, string]> = {
+  visit: ["desk", "bg-primary"],
+  purchase: ["package", "bg-accent"],
+  visit_voided: ["x", "bg-border-strong"],
+  purchase_voided: ["x", "bg-border-strong"],
+  package_cancelled: ["alert", "bg-danger"],
+};
 
 function Fact({ label, value, hint }: { label: string; value: string; hint?: string | undefined }) {
   return (
     <div className="rounded-[10px] bg-surface-2 p-3">
-      <dt className="text-xs text-text-muted">{label}</dt>
+      <dt className="text-sm text-text-muted">{label}</dt>
       <dd className="mt-0.5 text-lg font-semibold tabular">{value}</dd>
       {hint && <dd className="text-xs text-text-muted">{hint}</dd>}
     </div>
@@ -73,7 +102,7 @@ function EventBody({ e, correctable }: { e: HistoryEvent; correctable: boolean }
     const v = e.visit;
     return (
       <ul className="mt-1 grid content-start gap-1 text-sm">
-        {e.visit.lines.map((l, i) => (
+        {v.lines.map((l, i) => (
           <li key={i} className="flex flex-wrap justify-between gap-x-3">
             <span>
               {serviceLabel(l.service_name, l.category_name)}
@@ -81,18 +110,18 @@ function EventBody({ e, correctable }: { e: HistoryEvent; correctable: boolean }
                 {l.source === "package" ? ` · trừ buổi${l.sessions_left_after != null ? `, còn ${String(l.sessions_left_after)}` : ""}` : " · dịch vụ lẻ"} · KTV {l.staff_name}
               </span>
             </span>
-            {l.amount > 0 && <span className="tabular">{money(l.amount)}</span>}
+            {l.amount > 0 && <span className={`tabular ${v.voided ? "line-through" : ""}`}>{money(l.amount)}</span>}
           </li>
         ))}
         {v.corrected_by_visit_id ? (
-          <li className="text-text-muted">Đã sửa → lượt mới · {v.void_reason}</li>
+          <li className="text-text-muted">Đã sửa thành lượt mới · {v.void_reason}</li>
         ) : (
           v.void_reason && <li className="text-text-muted">Lý do hủy: {v.void_reason}</li>
         )}
-        {v.corrects_visit_id && <li className="text-text-muted">Lượt đã sửa (thay cho lượt ghi trước)</li>}
+        {v.corrects_visit_id && <li className="text-text-muted">Thay cho lượt ghi trước (đã sửa).</li>}
         {correctable && (
           <li>
-            <Link to="/quay" search={{ sua: v.id }} className="font-semibold text-primary underline">
+            <Link to="/quay" search={{ sua: v.id }} className="inline-flex min-h-11 items-center font-semibold text-primary underline">
               Sửa lượt
             </Link>
           </li>
@@ -107,9 +136,9 @@ function EventBody({ e, correctable }: { e: HistoryEvent; correctable: boolean }
           <p key={i}>{l.description}</p>
         ))}
         <p className="text-text-muted">
-          Thanh toán <span className="font-semibold text-text tabular">{money(e.purchase.total)}</span>
+          Thanh toán <span className={`font-semibold text-text tabular ${e.purchase.voided ? "line-through" : ""}`}>{money(e.purchase.total)}</span>
           {e.purchase.discount_amount > 0 && ` (giảm ${money(e.purchase.discount_amount)})`}
-          {e.purchase.closer_name && ` · thu bởi ${e.purchase.closer_name}`}
+          {e.purchase.closer_name && ` · chốt bởi ${e.purchase.closer_name}`}
         </p>
         {e.purchase.void_reason && <p className="text-text-muted">Lý do hủy: {e.purchase.void_reason}</p>}
       </div>
@@ -210,7 +239,9 @@ function Timeline({ customerId, permissions }: { customerId: string; permissions
           const m = monthOf(e);
           const prev = events[i - 1];
           const heading = !prev || monthOf(prev) !== m ? m : null;
-          const [label, icon, dot] = KIND[e.kind];
+          const [icon, dot] = DOT[e.kind];
+          // One chip per event (design-system.md "Quy tắc" 7); a voided entry reads muted.
+          const { title, chip } = eventHead(e);
           const voided = e.kind.endsWith("_voided");
           return (
             <li key={`${e.at}-${String(i)}`} className="relative">
@@ -220,7 +251,10 @@ function Timeline({ customerId, permissions }: { customerId: string; permissions
                   <Icon name={icon} className="size-2.5" />
                 </span>
                 <p className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className={`font-semibold ${voided ? "line-through" : ""}`}>{label}</span>
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">{title}</span>
+                    {chip && <span className={`badge ${chip[1]}`}>{chip[0]}</span>}
+                  </span>
                   <span className="text-xs text-text-muted tabular">
                     {relativeDay(e.business_date)} · {time.format(new Date(e.at))}
                   </span>
@@ -239,8 +273,15 @@ function Timeline({ customerId, permissions }: { customerId: string; permissions
         })}
       </ol>
       {history.hasNextPage && (
-        <button type="button" className="btn btn-secondary justify-self-center" disabled={history.isFetchingNextPage} onClick={() => void history.fetchNextPage()}>
-          {history.isFetchingNextPage ? "Đang tải…" : "Xem thêm lịch sử"}
+        <button
+          type="button"
+          className="btn btn-secondary justify-self-center"
+          aria-busy={history.isFetchingNextPage || undefined}
+          onClick={() => {
+            if (!history.isFetchingNextPage) void history.fetchNextPage();
+          }}
+        >
+          Xem thêm lịch sử
         </button>
       )}
     </div>
@@ -254,11 +295,18 @@ function FollowUps({ customerId, customerName, canRecord }: { customerId: string
   const today = spaToday();
   const next = list.data?.items[0]?.next_follow_up_on;
   return (
-    <section aria-labelledby="follow-title" className="card grid content-start gap-3 p-4">
-      <div className="card-head">
-        <h2 id="follow-title" className="card-title">
-          <Icon name="phone" className="size-5 text-accent" /> Chăm sóc lại
-        </h2>
+    <section aria-labelledby="follow-title" className="panel">
+      <div className="panel-head">
+        <span className="flex min-w-0 flex-wrap items-center gap-2">
+          <h2 id="follow-title" className="panel-title">
+            Chăm sóc lại
+          </h2>
+          {next && (
+            <span className={`badge ${next <= today ? "badge-warn" : "badge-info"}`}>
+              {next <= today ? "Đến hạn liên hệ" : "Hẹn liên hệ lại"} {relativeDay(next)}
+            </span>
+          )}
+        </span>
         {canRecord && (
           <button
             type="button"
@@ -271,11 +319,6 @@ function FollowUps({ customerId, customerName, canRecord }: { customerId: string
           </button>
         )}
       </div>
-      {next && (
-        <p className={`badge justify-self-start ${next <= today ? "badge-danger" : "badge-ok"}`}>
-          {next <= today ? "Đến hạn liên hệ" : "Hẹn liên hệ lại"} {relativeDay(next)}
-        </p>
-      )}
       <BottomSheet
         open={open}
         onClose={() => {
@@ -297,47 +340,44 @@ function FollowUps({ customerId, customerName, canRecord }: { customerId: string
       </BottomSheet>
       {list.isPending && <RowsSkeleton rows={2} />}
       {list.isError && <ErrorState error={list.error} onRetry={() => void list.refetch()} />}
-      {list.data && list.data.items.length === 0 && <p className="text-sm text-text-muted">Chưa liên hệ lần nào.</p>}
+      {list.data && list.data.items.length === 0 && (
+        <p className="khach-empty">Chưa liên hệ lần nào.{canRecord ? " Gọi hoặc nhắn khách xong, bấm “Ghi lần liên hệ” để hẹn lần sau." : ""}</p>
+      )}
       {list.data && list.data.items.length > 0 && (
-        <ol className="timeline" aria-label="Các lần liên hệ">
+        <ol className="row-list" aria-label="Các lần liên hệ">
           {list.data.items.map((f) => (
-            <li key={f.id} className="relative">
-              <div className="relative rounded-[10px] border border-border bg-surface p-3">
-                <span aria-hidden="true" className="timeline-dot bg-accent text-on-primary">
-                  <Icon name="phone" className="size-2.5" />
-                </span>
-                <p className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="font-semibold">{OUTCOME_LABEL[f.outcome]}</span>
-                  <span className="text-xs text-text-muted tabular">{relativeDay(f.contacted_on)}</span>
-                </p>
-                <p className="text-sm text-text-muted">
-                  {CHANNEL_LABEL[f.channel]} · {f.by_name}
-                  {f.next_follow_up_on && ` · hẹn lại ${relativeDay(f.next_follow_up_on)}`}
-                </p>
-                {f.note && <p className="mt-1 text-sm">{f.note}</p>}
+            <li key={f.id}>
+              <div className="row-head">
+                <span className="row-title">{OUTCOME_LABEL[f.outcome]}</span>
+                <span className="row-meta tabular">{relativeDay(f.contacted_on)}</span>
               </div>
+              <p className="row-meta">
+                {CHANNEL_LABEL[f.channel]} · {f.by_name}
+                {f.next_follow_up_on && ` · hẹn lại ${relativeDay(f.next_follow_up_on)}`}
+              </p>
+              {f.note && <p>{f.note}</p>}
             </li>
           ))}
         </ol>
       )}
-      {list.data?.has_more && <p className="text-xs text-text-muted">Chỉ hiện 100 lần gần nhất.</p>}
+      {list.data?.has_more && <p className="row-meta">Chỉ hiện 100 lần gần nhất.</p>}
     </section>
   );
 }
 
 /**
  * Customer profile, management side: the follow-up log, then the usage history (summary numbers,
- * a searchable timeline of visits, purchases, voids and cancellations, newest first). Shown only
- * where the management views exist (app/features.ts); the API decides each part.
+ * a searchable timeline of visits, purchases, voids, corrections and cancellations, newest
+ * first). Shown only where the management views exist (app/features.ts); the API decides each part.
  */
 export function CustomerHistory({ customerId, customerName = "", me }: { customerId: string; customerName?: string; me: Me | null }) {
   if (!canSeeManagement(me)) return null;
   return (
-    <div className="grid content-start gap-4">
+    <div className="khach-stack">
       <FollowUps customerId={customerId} customerName={customerName} canRecord={can(me, "customer.follow_up")} />
-      <section aria-labelledby="history-title" className="card grid content-start gap-4 p-4">
-        <h2 id="history-title" className="card-title">
-          <Icon name="history" className="size-5 text-accent" /> Lịch sử sử dụng
+      <section aria-labelledby="history-title" className="panel">
+        <h2 id="history-title" className="panel-title">
+          Lịch sử sử dụng
         </h2>
         <Summary customerId={customerId} />
         <HistoryFilters />
