@@ -3,9 +3,13 @@ import { can, type Me } from "../features/auth/session";
 import { Icon } from "./Icon";
 import { ThemePicker } from "./ThemePicker";
 
-/** Given name's initial: Vietnamese names end with it. */
+/**
+ * Given name's initial: Vietnamese names end with it. Only letters count, so a note in brackets
+ * ("Chủ spa (test)") gives "T", not "(".
+ */
 export function initialOf(name: string): string {
-  return name.trim().split(/\s+/).at(-1)?.charAt(0).toUpperCase() ?? "";
+  const word = name.trim().split(/\s+/).filter((w) => /\p{L}/u.test(w)).at(-1) ?? "";
+  return /\p{L}/u.exec(word)?.[0].toUpperCase() ?? "";
 }
 
 /**

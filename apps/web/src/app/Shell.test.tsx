@@ -10,7 +10,7 @@ import { canSeeManagement } from "./features";
 import { navFor, navKey, tabsFor } from "./nav";
 import { applyTheme, readSidebarCollapsed, readTheme, saveSidebarCollapsed } from "./prefs";
 import { ThemePicker } from "./ThemePicker";
-import { roleLabel } from "./UserMenu";
+import { initialOf, roleLabel } from "./UserMenu";
 
 const me = (permissions: string[]): Me => ({
   user: { id: "u1", full_name: "Nguyễn Thị Thu Hà", phone: "0905 123 456" },
@@ -60,6 +60,28 @@ describe("navigation model", () => {
     expect(tabs.map((t) => t.short)).toEqual(["Lịch hẹn", "Quầy", "Khách", "Báo cáo"]);
     // The record tab is only active without `view`, so the two never light up together.
     expect(tabs[1]?.search).toEqual({ view: undefined });
+  });
+});
+
+describe("top bar (round 2: date and account as visible components)", () => {
+  it("links today's date to the calendar for whoever books appointments", async () => {
+    serve([...MANAGER, "appointment.manage"]);
+    at("/bang-gia");
+    const chip = await screen.findByRole("link", { name: /mở lịch hẹn hôm nay$/ });
+    expect(chip).toHaveAttribute("href", "/quay?view=lich");
+  });
+
+  it("shows the date without a link to everyone else", async () => {
+    serve(MANAGER);
+    at("/bang-gia");
+    await screen.findByRole("navigation", { name: "Chính" });
+    expect(screen.queryByRole("link", { name: /mở lịch hẹn hôm nay$/ })).not.toBeInTheDocument();
+  });
+
+  it("takes the avatar initial from the last word with a letter", () => {
+    expect(initialOf("Nguyễn Thị Thu Hà")).toBe("H");
+    expect(initialOf("Chủ spa (test)")).toBe("T");
+    expect(initialOf("  ")).toBe("");
   });
 });
 

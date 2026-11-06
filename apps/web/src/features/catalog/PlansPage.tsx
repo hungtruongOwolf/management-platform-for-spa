@@ -130,7 +130,7 @@ export function PlansPage() {
           Đang bán
         </h2>
         {selling.length === 0 && (
-          <p className="py-2 text-sm text-text-muted">
+          <p className="empty-block">
             Chưa có mẫu gói liệu trình nào đang bán.{canManage ? " Bấm “Tạo mẫu gói” để tạo gói đầu tiên (ví dụ: Gội đầu 10 buổi tặng 2)." : ""}
           </p>
         )}

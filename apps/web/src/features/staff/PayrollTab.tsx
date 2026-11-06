@@ -31,7 +31,7 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
       cell: (s) => (
         <button
           type="button"
-          className="link"
+          className="name-link"
           onClick={() => {
             setSlip(s);
           }}
@@ -84,7 +84,7 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
         )}
       </div>
       {p.payslips.length === 0 ? (
-        <EmptyState title="Chưa có nhân viên nào trong tháng này" icon="id-card">
+        <EmptyState title="Chưa có nhân viên nào trong tháng này">
           Thêm người ở tab “Hồ sơ”, rồi chấm công ở “Sổ hằng ngày”: bảng lương tự tính từ đó.
         </EmptyState>
       ) : (

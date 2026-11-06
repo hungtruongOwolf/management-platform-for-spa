@@ -53,7 +53,7 @@ export function LedgerTab({ period }: { period: Period }) {
       </dl>
       <div className="card rt-host overflow-hidden">
         {rows.length === 0 ? (
-          <EmptyState title="Chưa có giao dịch nào" icon="menu-book">
+          <EmptyState title="Chưa có giao dịch nào">
             Hóa đơn, khoản hủy và hoàn tiền trong kỳ sẽ hiện ở đây. Chọn kỳ dài hơn, hoặc ghi lượt ở “Ghi lượt khách”.
           </EmptyState>
         ) : phone ? (

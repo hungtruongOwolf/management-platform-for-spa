@@ -305,6 +305,47 @@
   border-color: var(--primary);
   color: var(--text);
 }
+/* Today's date (AppShell TodayChip): a pill with a gold calendar icon; a link to today's calendar
+ * for whoever books appointments. Hidden on phones (the tab bar's "Hôm nay" is there). */
+.date-chip {
+  display: none;
+  min-height: var(--size-control-inner);
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--gradient-card), var(--surface);
+  box-shadow: var(--shadow-xs);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.date-chip .icon {
+  color: var(--accent);
+}
+@media (min-width: 768px) {
+  .date-chip {
+    display: inline-flex;
+  }
+}
+.date-chip.is-link {
+  position: relative;
+}
+/* 36px tall, 44px to the pointer (WCAG 2.5.8) without growing the bar. */
+.date-chip.is-link::after {
+  position: absolute;
+  inset: -4px 0;
+  content: "";
+}
+.date-chip.is-link:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-1);
+  color: var(--primary);
+}
+
 /* One key cap for the app (top bar "Ctrl K", the /quay shortcut list). */
 kbd {
   display: inline-block;
@@ -325,23 +366,29 @@ kbd {
   position: relative;
   flex-shrink: 0;
 }
+/* Round 2 (EM: "chủ spa … đang là text"): a visible account chip — avatar, name + role, chevron —
+ * that reads as a button at rest, not only on hover. */
 .user-button {
   display: flex;
   min-width: 44px;
   min-height: 44px;
   align-items: center;
   gap: 8px;
-  padding: 4px;
-  border: 1px solid transparent;
-  border-radius: 999px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--gradient-card), var(--surface);
+  box-shadow: var(--shadow-xs);
   color: var(--text);
   text-align: left;
 }
 .user-button:hover,
 .user-button[aria-expanded="true"] {
-  border-color: var(--border);
-  background: var(--surface);
+  border-color: var(--accent);
   box-shadow: var(--shadow-1);
+}
+.user-button[aria-expanded="true"] .user-button-chevron {
+  transform: rotate(180deg);
 }
 .user-button-text {
   position: absolute;
@@ -354,10 +401,11 @@ kbd {
 .user-button-chevron {
   display: none;
   color: var(--text-muted);
+  transition: transform var(--dur-fast) var(--ease-out);
 }
 @media (min-width: 1024px) {
   .user-button {
-    padding-right: 10px;
+    padding-right: 12px;
   }
   .user-button-text {
     position: static;
@@ -369,6 +417,8 @@ kbd {
     font-size: var(--fs-sm);
     line-height: 18px;
   }
+}
+@media (min-width: 640px) {
   .user-button-chevron {
     display: block;
   }
@@ -419,11 +469,11 @@ kbd {
 }
 .menu-item {
   display: flex;
-  min-height: 44px;
+  min-height: var(--size-control);
   align-items: center;
   gap: 12px;
   padding: 6px 10px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   font-weight: 600;
   text-align: left;
 }
@@ -594,12 +644,13 @@ dialog::backdrop {
 .input,
 :is(.field, .filter-field, .filter-select) > :is(input:not([type="checkbox"], [type="radio"]), select, textarea),
 .date-field > input[type="text"],
-.search-field input {
+.search-field input,
+:where(select:not([multiple], [size])) {
   width: 100%;
-  min-height: 44px;
+  min-height: var(--size-control);
   padding: 0 12px;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--text);
   font-size: var(--fs-field);
@@ -613,7 +664,7 @@ textarea.input,
 }
 /* A larger field for the one search of a screen (customer search on /quay, /khach-hang). */
 .input-lg {
-  min-height: 52px;
+  min-height: var(--size-control-lg);
   padding: 0 16px;
   font-size: var(--fs-search);
 }
@@ -683,14 +734,29 @@ textarea.input,
   grid-template-columns: minmax(0, 1fr);
 }
 
-/* --- Page transition ------------------------------------------------------------------------ */
-.page-enter {
-  animation: page-in var(--dur-slow) var(--ease-out);
+/* --- Page transition ------------------------------------------------------------------------
+ * After a navigation (never on the first paint: that would delay LCP) the blocks of the new screen
+ * rise in one after another, 45ms apart (round 2, EM: "hiệu ứng"). Reduced motion: no animation
+ * at all (tokens.css), the screen is simply there. */
+.page-enter > * > * {
+  animation: page-in var(--dur-slow) var(--ease-out) both;
+}
+.page-enter > * > :nth-child(2) {
+  animation-delay: 45ms;
+}
+.page-enter > * > :nth-child(3) {
+  animation-delay: 90ms;
+}
+.page-enter > * > :nth-child(4) {
+  animation-delay: 135ms;
+}
+.page-enter > * > :nth-child(n + 5) {
+  animation-delay: 180ms;
 }
 @keyframes page-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(8px);
   }
 }
 
@@ -700,7 +766,10 @@ textarea.input,
 .panel {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  /* Warm light on the top edge of every surface (round 2): a translucent wash, so a utility fill
+   * (bg-surface-2) under it still shows. */
+  background-color: var(--surface);
+  background-image: var(--gradient-card);
   box-shadow: var(--shadow-1);
 }
 /* A panel = a card with the rulebook padding (16 phone / 20) and 16px between its blocks. */
@@ -733,6 +802,21 @@ textarea.input,
   font-weight: 600;
   line-height: 24px;
 }
+/* Round 2 ornament: a small gold lotus opens every block heading, like the section marks of the
+ * printed menu. Decorative (a mask on a pseudo-element: no text, no image). */
+.panel-title::before,
+.section-heading::before {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  flex-shrink: 0;
+  background-color: var(--mix-ornament);
+  content: "";
+  vertical-align: -2px;
+  -webkit-mask: var(--texture-lotus) center / contain no-repeat;
+  mask: var(--texture-lotus) center / contain no-repeat;
+}
 /* ONE small group label (sentence case, rulebook 1): forms, sheets, command palette. */
 .section-label,
 .eyebrow {
@@ -741,10 +825,44 @@ textarea.input,
   font-weight: 600;
   line-height: 18px;
 }
-/* An empty list or panel: one muted sentence that teaches the next step (rulebook 9). */
+/* An empty part of a panel: one muted sentence that teaches the next step (rulebook 9), opened by
+ * a faint gold lotus. */
 .empty-note {
   padding: 8px 0;
   color: var(--text-muted);
+}
+.empty-note::before {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+  background-color: var(--mix-ornament);
+  content: "";
+  opacity: 0.7;
+  vertical-align: -3px;
+  -webkit-mask: var(--texture-lotus) center / contain no-repeat;
+  mask: var(--texture-lotus) center / contain no-repeat;
+}
+/* An empty list, table or chart (round 2, EM: "chưa có data thì hiện … logo cộng chữ"): the spa's
+ * logo, faint, above the sentence. EmptyState (reports/ui.tsx) is the same with a title. */
+.empty-block {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 24px 16px;
+  color: var(--text-muted);
+  text-align: center;
+  text-wrap: balance;
+}
+.empty-block::before,
+.empty-mark {
+  display: block;
+  width: 72px;
+  aspect-ratio: 923 / 943;
+  background-color: var(--mix-empty-mark);
+  content: "";
+  -webkit-mask: url("./assets/brand/emblem.svg") center / contain no-repeat;
+  mask: url("./assets/brand/emblem.svg") center / contain no-repeat;
 }
 .button-row {
   display: flex;
@@ -761,6 +879,24 @@ textarea.input,
 }
 .link:hover {
   text-decoration: underline;
+}
+/*
+ * Name colour rule (round 2, EM: "chỗ thì tên chữ trắng, chỗ thì màu hồng"): a NAME (customer,
+ * staff, package) is content, so it is always the text colour, 600 — in a table, a card, a heading,
+ * linked or not. A linked name says so on hover/focus (primary + underline) and through its row
+ * affordance; primary at rest is for actions ("Xem báo cáo", "Thêm lưu ý sức khỏe") only.
+ */
+.name-link {
+  color: var(--text);
+  font-weight: 600;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+}
+.name-link:hover {
+  color: var(--primary);
+  text-decoration-color: currentColor;
 }
 /* ONE error box (rulebook 9: what broke + how to fix + "Thử lại"), ONE warning callout, ONE quiet
  * note. Were: .alert, .form-error, .cal-error, LoginPage utilities / .inline-form, .appt-callout,
@@ -921,13 +1057,13 @@ textarea.input,
  */
 .btn {
   display: inline-flex;
-  min-height: 44px;
+  min-height: var(--size-control);
   align-items: center;
   justify-content: center;
   gap: 8px;
   padding: 0 16px;
   border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   font-size: var(--fs-base);
   font-weight: 600;
   line-height: 20px;
@@ -935,7 +1071,7 @@ textarea.input,
   cursor: pointer;
 }
 .btn-lg {
-  min-height: 48px;
+  min-height: var(--size-control-lg);
   padding: 0 20px;
   font-size: var(--fs-md);
 }
@@ -953,6 +1089,13 @@ textarea.input,
 }
 .btn-primary:not(:disabled, [aria-disabled="true"], [aria-busy="true"]):hover {
   background-color: var(--primary-hover);
+}
+/* Round 2: raised buttons rise a pixel under the pointer and sink when pressed. */
+:is(.btn-primary, .btn-danger, .btn-secondary):not(:disabled, [aria-disabled="true"], [aria-busy="true"]):hover {
+  transform: translateY(-1px);
+}
+:is(.btn-primary, .btn-danger):not(:disabled, [aria-disabled="true"], [aria-busy="true"]):hover {
+  box-shadow: var(--shadow-btn), var(--shadow-lift);
 }
 .btn-primary:not(:disabled, [aria-disabled="true"], [aria-busy="true"]):active {
   background-color: var(--primary-pressed);
@@ -995,7 +1138,7 @@ textarea.input,
 }
 /* An icon-only button: a square 44px hit area; it always carries an aria-label. */
 .btn-icon {
-  width: 44px;
+  width: var(--size-control);
   padding: 0;
 }
 .btn:is(:disabled, [aria-disabled="true"]) {
@@ -1077,6 +1220,10 @@ textarea.input,
   background: var(--accent-soft);
   color: var(--accent-text);
 }
+/* The ★ is the gold chip's mark: no status dot in front of it ("• ★ Khuyên dùng"). */
+.badge-gold::before {
+  display: none;
+}
 
 /* Work-screen titles use the UI family; Lora is for brand spots (logo, login, welcome band). */
 .page-title {
@@ -1084,6 +1231,22 @@ textarea.input,
   font-size: var(--fs-xl);
   font-weight: 600;
   line-height: 32px;
+}
+/* Round 2 ornament: a tapered gold rule with a lotus bud under every page title. */
+.page-title::after {
+  display: block;
+  width: 96px;
+  height: 10px;
+  margin-top: 6px;
+  background-color: var(--mix-ornament);
+  content: "";
+  -webkit-mask: var(--texture-flourish) left center / contain no-repeat;
+  mask: var(--texture-flourish) left center / contain no-repeat;
+}
+.status-page .page-title::after {
+  margin-inline: auto;
+  -webkit-mask-position: center;
+  mask-position: center;
 }
 /* A small sentence-case group label (command palette sections). Never uppercase, never a kicker
  * above a page title. */
@@ -1308,14 +1471,8 @@ h2 .gender-chip {
   padding: 32px 24px;
   text-align: center;
 }
-.empty-state-icon {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--text-muted);
+.empty-state .empty-mark {
+  margin-bottom: 4px;
 }
 .empty-state-title {
   font-size: var(--fs-md);
@@ -1532,10 +1689,10 @@ h2 .gender-chip {
 /* --- Row actions menu (components/RowMenu.tsx): the "⋯" of a table row ---------------------- */
 .row-menu-button {
   display: inline-grid;
-  width: 44px;
-  height: 44px;
+  width: var(--size-control);
+  height: var(--size-control);
   place-items: center;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   color: var(--text-muted);
 }
 .row-menu-button:hover,
@@ -1821,21 +1978,21 @@ h2 .gender-chip {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 4px;
-  padding: 4px;
+  padding: 3px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   background: var(--surface-2);
   box-shadow: var(--shadow-press);
 }
 .segmented > button {
   display: inline-flex;
-  min-height: 40px;
+  min-height: var(--size-control-inner);
   align-items: center;
   gap: 8px;
   padding: 0 14px;
   /* Transparent until chosen, so choosing never changes the button's size. */
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-inner);
   color: var(--text-muted);
   font-size: var(--fs-base);
   font-weight: 500;
@@ -1899,12 +2056,12 @@ h2 .gender-chip {
 }
 .search-field-clear {
   position: absolute;
-  right: 2px;
+  right: 4px;
   display: grid;
-  width: 40px;
-  height: 40px;
+  width: var(--size-control-inner);
+  height: var(--size-control-inner);
   place-items: center;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-inner);
   color: var(--text-muted);
 }
 .search-field-clear:hover {
@@ -1919,12 +2076,12 @@ h2 .gender-chip {
 .choice,
 .pay-choice {
   display: flex;
-  min-height: 44px;
+  min-height: var(--size-control);
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   background: var(--surface);
   font-size: var(--fs-base);
   line-height: 20px;

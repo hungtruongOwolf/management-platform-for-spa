@@ -27,7 +27,7 @@ export function MonthSheet({ month, today, canReview }: { month: string; today: 
     <div className="grid content-start gap-6">
       {sheet.closed && <ClosedBanner />}
       {sheet.staff.length === 0 ? (
-        <p className="text-text-muted">Chưa có nhân viên nào làm việc trong tháng này.</p>
+        <p className="empty-block">Chưa có nhân viên nào làm việc trong tháng này.</p>
       ) : (
         <MonthGrid
           month={sheet.month}

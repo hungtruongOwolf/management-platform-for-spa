@@ -101,6 +101,13 @@ const PAIRS: [string, string, number][] = [
   ["surface", "danger", TEXT],
   ["chrome-accent", "chrome-bg", TEXT],
   ["chrome-text-muted", "chrome-bg-2", TEXT],
+  // Round 2: the card wash (--gradient-card) tints the top of every card toward accent-soft, and
+  // the date / account chips sit on it; checked on the full accent-soft (the wash is ≤ 60%).
+  ["text", "accent-soft", TEXT],
+  ["text-muted", "accent-soft", TEXT],
+  ["primary", "accent-soft", TEXT],
+  // The gold lotus / flourish ornaments and the date chip's icon are decorative, but kept ≥ 3:1.
+  ["accent", "accent-soft", UI],
 ];
 
 describe.each([
@@ -152,9 +159,9 @@ describe("dark theme blocks", () => {
 
   it("dark defines every light token except the shared scales", () => {
     // Gradients and mix-* tints are built from colour tokens (var()), so they follow the theme;
-    // texture-* tiles are the same in every theme (the cream-speck grain of the dark page).
-    // without a copy.
-    const shared = /^(radius|dur|ease|font|fs|gradient|mix|texture)-/;
+    // texture-* tiles and masks are the same in every theme (the cream-speck grain of the dark
+    // page, the round 2 ornaments); size-* is the control scale (round 2).
+    const shared = /^(radius|size|dur|ease|font|fs|gradient|mix|texture)-/;
     const missing = Object.keys(light).filter((k) => !shared.test(k) && !(k in dark));
     expect(missing).toEqual([]);
   });

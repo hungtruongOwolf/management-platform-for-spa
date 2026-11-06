@@ -233,7 +233,7 @@ export function DailyBook({
       )}
 
       {working.length === 0 ? (
-        <p className="text-text-muted">Không có nhân viên nào làm việc ngày này.</p>
+        <p className="empty-block">Không có nhân viên nào làm việc ngày này.</p>
       ) : (
         <ul className="grid gap-3" aria-label={`Sổ ngày ${dayLabel(date)}`}>
           {working.map((s) => (

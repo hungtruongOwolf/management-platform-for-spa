@@ -71,7 +71,7 @@ export function MyMonth({ month }: { month: string }) {
   const data = query.data.data;
   if (!query.data.linked || !data) {
     return (
-      <EmptyState title="Tài khoản chưa gắn với hồ sơ nhân viên" icon="id-card">
+      <EmptyState title="Tài khoản chưa gắn với hồ sơ nhân viên">
         Nhờ chủ spa gắn tài khoản này vào hồ sơ của bạn để xem ngày công, đánh giá và phiếu lương.
       </EmptyState>
     );
@@ -107,7 +107,7 @@ export function MyMonth({ month }: { month: string }) {
             {data.evaluation.comment && <span className="block text-sm text-text-muted">{data.evaluation.comment}</span>}
           </p>
         ) : (
-          <p className="text-text-muted">Chưa có đánh giá tháng (quản lý chấm ngày 1–5 tháng sau).</p>
+          <p className="empty-block">Chưa có đánh giá tháng (quản lý chấm ngày 1–5 tháng sau).</p>
         )}
         {data.adjustments.length > 0 && (
           <ul className="grid gap-1 text-sm">

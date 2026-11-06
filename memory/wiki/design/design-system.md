@@ -38,9 +38,9 @@ Utility Tailwind `text-xs…2xl` map đúng thang này (`styles.css` `@theme`, p
 
 Đủ 7 trạng thái: mặc định · hover · focus-visible (vòng vàng toàn cục) · nhấn (đổi nền, dịch 1px) · disabled / `aria-disabled` (mờ 50%, `not-allowed`; ưu tiên `aria-disabled` để không mất focus) · đang tải `aria-busy="true"` (spinner trước nhãn, giữ nguyên bề rộng, không bấm lần 2) · lỗi (thông báo cạnh nút/ô, không đổi màu nút). Cao 44px; `btn-lg` 48px; `btn-block` rộng 100%; `btn-icon` vuông 44px luôn có `aria-label`. Nhãn = **động từ + đối tượng** ("Lưu lượt khách", "Thêm giảm giá", "Bỏ liên kết lịch hẹn"), không "OK", không "Thêm" trơn.
 
-**5. Ô nhập** (`.input`, `.field`). Nhãn **ở trên** (14px 500), ô cao 44px, chữ 16px, viền `border-strong`, bo 6px; dưới ô là gợi ý `.field-hint` (13px muted) hoặc lỗi `.field-error` (13px `danger`, có `aria-describedby`, ô `aria-invalid` viền đỏ). Placeholder không thay nhãn. Select chọn-là-thêm (dịch vụ lẻ, dịch vụ đặt lịch): chọn bằng chuột thêm ngay; bước qua bằng ↑/↓ khi danh sách đóng chỉ **chọn tạm** và hiện "Nhấn Enter để thêm …".
+**5. Ô nhập** (`.input`, `.field`). Nhãn **ở trên** (14px 500), ô cao 44px, chữ 16px, viền `border-strong`, bo 10px (`--radius-control`, cùng nút — vòng 2; trước 6px); dưới ô là gợi ý `.field-hint` (13px muted) hoặc lỗi `.field-error` (13px `danger`, có `aria-describedby`, ô `aria-invalid` viền đỏ). Placeholder không thay nhãn. Select chọn-là-thêm (dịch vụ lẻ, dịch vụ đặt lịch): chọn bằng chuột thêm ngay; bước qua bằng ↑/↓ khi danh sách đóng chỉ **chọn tạm** và hiện "Nhấn Enter để thêm …".
 
-**6. Card / panel.** Một kiểu: viền `border`, bo 14, `shadow-1`. **Không card trong card**: các dòng trong panel cách nhau bằng đường kẻ mảnh (`border-bottom`), không khung riêng. **Không viền sọc một bên** (border-left màu) ở nội dung: trạng thái nói bằng chip + chữ. Ngoại lệ duy nhất là thanh vàng mục nav đang chọn (chỉ báo điều hướng). Hoa văn góc (`.ornament`) chỉ ở panel đăng nhập.
+**6. Card / panel.** Một kiểu: viền `border`, bo 14, `shadow-1`, ánh ấm đỉnh `--gradient-card` (vòng 2). **Không card trong card**: các dòng trong panel cách nhau bằng đường kẻ mảnh (`border-bottom`), không khung riêng. **Không viền sọc một bên** (border-left màu) ở nội dung: trạng thái nói bằng chip + chữ. Ngoại lệ duy nhất là thanh vàng mục nav đang chọn (chỉ báo điều hướng). Hoa văn góc (`.ornament`) chỉ ở panel đăng nhập; ở màn làm việc chỉ có bộ hoa văn của § Vòng 2 (watermark, đường vàng dưới tiêu đề trang, bông sen trước tiêu đề khối, logo mờ ở trạng thái trống).
 
 **7. Chip trạng thái** (`.badge`, một bộ cho cả app, luôn có chữ): `badge-ok` đang dùng / đã thu · `badge-warn` cần chú ý (hết hạn, sắp hết buổi) · `badge-danger` đã hủy / lỗi · `badge-muted` đã xong / hết buổi · `badge-info` trung tính (đã đặt) · `badge-gold` chỉ cho ★ thương hiệu. Mỗi đối tượng **một** trạng thái hiển thị; không đặt hai chip mâu thuẫn ("Đã hủy" + "Đã hết buổi") và không cho hành động mà trạng thái đã cấm.
 
@@ -48,7 +48,7 @@ Utility Tailwind `text-xs…2xl` map đúng thang này (`styles.css` `@theme`, p
 
 **9. Trống / đang tải / lỗi.** Trống **dạy bước tiếp theo** ("Chưa có dịch vụ. Bấm “Trừ 1 buổi” … hoặc chọn dịch vụ lẻ bên dưới"; "Không tìm thấy khách nào. Bấm “Khách mới” …"). Đang tải = skeleton đúng hình (không spinner, trừ nút `aria-busy`). Lỗi = câu tiếng Việt nói cái gì hỏng + cách sửa + "Thử lại", giữ dữ liệu đã nhập. Thông tin phụ (phím tắt, ghi chú giờ khóa sổ) nằm sau một toggletip `Tip` (nút tròn "?"/"i", bấm/chạm mở, Esc đóng, nội dung là mô tả của nút).
 
-**10. Chuyển động.** 150–250 ms, **chỉ cho thay đổi trạng thái** (hover, mở/đóng, toast); chỉ `transform`/`opacity`/màu. **Bỏ `CountUp`** (số hiện ngay), không hiệu ứng tải trang, không lấp lánh trang trí (trừ skeleton). `prefers-reduced-motion`: tắt animation và chuyển động, **giữ** đổi màu/opacity để vẫn thấy phản hồi. Modal là lựa chọn cuối: ưu tiên mở ngay tại chỗ (inline, disclosure); toast nằm **trên cùng** giữa màn (không che thanh lưu dính đáy).
+**10. Chuyển động.** 150–250 ms, **chỉ cho thay đổi trạng thái** (hover, mở/đóng, toast); chỉ `transform`/`opacity`/màu. **Bỏ `CountUp`** (số hiện ngay), không lấp lánh trang trí (trừ skeleton); vòng 2: khối của màn hiện lần lượt **sau điều hướng** (không ở lần tải đầu). `prefers-reduced-motion`: tắt animation và chuyển động, **giữ** đổi màu/opacity để vẫn thấy phản hồi. Modal là lựa chọn cuối: ưu tiên mở ngay tại chỗ (inline, disclosure); toast nằm **trên cùng** giữa màn (không che thanh lưu dính đáy).
 
 **Kiểm tra mỗi màn trước khi xong:** 1280 / 1024 / 390, sáng + tối, các trạng thái (hover/focus/nhấn/disabled/đang tải/lỗi/trống), axe sạch, vùng chạm 44px, không chữ bị cắt, không cuộn ngang.
 
@@ -60,6 +60,32 @@ Utility Tailwind `text-xs…2xl` map đúng thang này (`styles.css` `@theme`, p
 - **Đăng nhập / MFA:** ô `.input` 16px viền `border-strong` bo 6px trong `.field` (nhãn 14px 500, lỗi `.field-error`); nút chính `btn-lg btn-block` với `aria-busy` (nhãn giữ nguyên, spinner); link phụ = `btn-ghost` 44px; ô xác nhận đã lưu mã = `.choice`. Lora vẫn ở tiêu đề hai trang này.
 - **Trang toàn cục:** 404 "Không tìm thấy trang này" + lỗi màn hình "Màn hình này gặp lỗi" (`app/StatusPage.tsx`, chunk lazy qua `defaultNotFoundComponent` / `defaultErrorComponent`): nói chuyện gì + bước tiếp ("Về trang tổng quan", "Tải lại trang"). Trước: chữ "Not Found" mặc định của router.
 - JS khởi động gzip -9 **123.66 KB, không đổi** so với `main` (đo cùng máy); ảnh trước/sau 1280/1024/390 × sáng/tối + axe (0 vi phạm sau, 6 trước) ở scratchpad agent `rollout-quanly/`.
+
+## Vòng 2 polish: hoa văn, watermark, một thang control (2026-11-06, `style(web)`)
+EM chấm UI ~5–6/10 ([raw](../../raw/2026-11-06-em-review-polish-round2.md)): bày dữ liệu ổn nhưng "minimalism quá", thiếu style, màu, "hoa lá cành", lớp ẩn, hiệu ứng; dropdown không cùng bo góc/chiều cao với nút; chữ chỗ to chỗ nhỏ; tên khách chỗ trắng chỗ hồng. Bố cục, nhãn, hành vi giữ nguyên; mọi thứ đi qua token. **Quy tắc mới (thay các dòng cũ "hoa văn chỉ ở đăng nhập", "không hiệu ứng tải trang"):**
+
+**A. Một thang control.** Mọi nút, ô nhập, select, ô ngày, rãnh segmented, nút chip đều **cao `--size-control` 44px, bo `--radius-control` 10px**; nút/ô lớn `--size-control-lg` 48px (`btn-lg`, `input-lg` — trước 48 vs 52). Phần nằm **trong** một control (nút của segmented, nút lịch trong ô ngày, nút xóa của ô tìm, dòng menu trong ô nhỏ) cao `--size-control-inner` 36px, bo `--radius-inner` 6px (đồng tâm). Segmented = viền 1 + đệm 3 + nút 36 = **44px** (trước 50px, lệch với select cạnh nó). Bề mặt (card, menu ⋯, panel tài khoản, palette, dialog) bo `--radius-lg` 14. Chip trạng thái và ô tìm toàn cục là viên thuốc `--radius-pill`. Select: **mọi `<select>`** (kể cả select trơn không class ở bảng lương/hồ sơ) có hộp ô chung (`:where(select)` trong `components.css`) và một mũi tên `--select-chevron` (SVG theo theme), bỏ mũi tên gốc của trình duyệt.
+
+**B. Thang chữ (không đổi token, áp lại):** tiêu đề trang 24/32 · tiêu đề panel/khối 17/24 (`.panel-title`/`.section-heading`; trang Cài đặt trước dùng 15px) · nhãn ô 14/500 · chữ thường 15/22 · meta 13/18 · chip 12. Hai panel cạnh nhau luôn cùng `.panel-title`.
+
+**C. Quy tắc màu tên.** **Tên (khách, nhân viên, gói) là nội dung → luôn màu `text`, 600**, có link hay không, ở bảng, thẻ, tiêu đề (`.name-link`: hover/focus mới chuyển `primary` + gạch chân). **`primary` lúc nghỉ chỉ dành cho hành động** ("Xem báo cáo", "Thêm lưu ý sức khỏe", "Sửa lượt", tên màn ở Lối tắt). Trước: tên trong Gói của khách / Khách vắng / Sổ doanh thu / bảng lương / hồ sơ NV là `.link` nâu đỏ (dark: hồng), còn tiêu đề hồ sơ và danh sách khách gần đây màu chữ. Tiền = `text` `tabular-nums`; chỉ ô "Thực thu" là vàng trên nâu đỏ (EM chọn). Chữ phụ = `text-muted`.
+
+**D. Hoa văn và lớp ẩn** (tất cả là **mask** tô bằng token màu: theo theme, không bao giờ là ảnh LCP):
+| Token | Ở đâu |
+|---|---|
+| `--watermark-ink` + `emblem.svg` | `body::after` cố định toàn viewport: **logo nguyên vẹn bản to (min(82vmin, 760px)) mờ** ở góc dưới phải, lấn ra mép như dấu triện; sáng: nâu đỏ 5%, tối: vàng 3.5%. Cùng file logo sidebar đã tải (0 byte thêm) |
+| `--texture-flourish` | `.page-title::after`: đường vàng thon hai đầu + nụ sen dưới **mọi** tiêu đề trang |
+| `--texture-lotus` | `.panel-title::before`/`.section-heading::before`: bông sen vàng 16px mở đầu mọi tiêu đề khối (như dấu mục của menu in); `.empty-note::before` bản mờ |
+| `--gradient-card` | ánh ấm (accent-soft 60% → trong suốt trong 96px) trên đỉnh mọi `.card`/`.panel`; trong suốt nên utility `bg-surface-2` dưới vẫn thấy |
+| `--mix-empty-mark` | `.empty-mark` / `.empty-block::before`: logo 72px mờ 20% |
+
+**E. Trạng thái trống đẹp.** Danh sách/bảng/biểu đồ trống = **logo mờ + câu chữ cũ** (`EmptyState` có tiêu đề; `.empty-block` chỉ câu, canh giữa). Đã áp: khách gần đây, gói của khách (hồ sơ), báo cáo (KTV/dịch vụ/mẫu gói), sổ doanh thu, gói của khách (trang), khách vắng, thưởng/phạt, bảng lương, bảng giá, mẫu gói, sổ hằng ngày, bảng công tháng, trang của KTV. Ô trống nhỏ trong một khối (lưu ý sức khỏe, chăm sóc lại, quầy chưa chọn khách) giữ `.empty-note` một dòng có bông sen nhỏ. `EmptyState` bỏ prop `icon`.
+
+**F. Top bar.** Ngày = chip viên thuốc `.date-chip` (icon lịch vàng + "Thứ 7, 07/11/2026"); với người đặt lịch nó là link tới lịch hẹn hôm nay (`/quay?view=lich`, tên truy cập "…, mở lịch hẹn hôm nay"). Tài khoản = chip có viền lúc nghỉ (avatar + tên + vai trò + mũi tên từ 640px), hover viền vàng, mở thì mũi tên xoay. Chữ cái avatar lấy từ từ cuối **có chữ cái** ("Chủ spa (test)" → T, trước là "(").
+
+**G. Hiệu ứng.** Sau khi điều hướng (không bao giờ ở lần vẽ đầu — LCP), các khối của màn mới hiện lần lượt cách nhau 45ms (`.page-enter > * > *`, tối đa 180ms). Nút đặc/viền nhấc 1px khi hover, lún khi nhấn. `prefers-reduced-motion`: không animation, không dịch chuyển.
+
+Sửa lẻ cùng đợt: chip "★ Khuyên dùng" bỏ chấm trạng thái (thành "• ★"); banner "Đến hạn đánh giá" (sổ hằng ngày) icon + câu + nút một hàng (`.callout` chung làm nó xếp dọc).
 
 ## Kiểm tra thống nhất 2026-11-06 (`redesign(unify)`)
 EM sau vòng duyệt 2 ([raw](../../raw/2026-11-06-em-review-redesign-rollout.md)): "bản cũ và bản mới chọn 2 option qua lại sẽ bị lẫn lộn về phối màu và style … cân đối lại … cho thống nhất 1 bản cuối". Bố cục EM chọn giữ nguyên (lịch sử sử dụng, lịch tuần, gói liệu trình của khách, bảng giá + "Thêm nhóm dịch vụ" ở đầu, Tổng quan, phối màu nav; "Thực thu" nâu đỏ); việc này chỉ thống nhất **token + component bên dưới**. Kiểm: mọi màn × 1280/1024/390 × sáng/tối trên API thật + `seed-demo`, quét thuộc tính tính toán của mọi ô nhập, quét CSS/TSX.
