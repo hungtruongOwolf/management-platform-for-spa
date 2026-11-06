@@ -9,11 +9,17 @@ import { invalidateManagementViews } from "../../lib/invalidate";
 import { spaToday } from "../corrections/api";
 import {
   type CartLine,
+  type PackageSaleDraft,
   amountDue,
+  coverage,
+  packagesDue,
   paymentsFor,
   visitBody,
 } from "../front-desk/api";
+import { packageSalesBody } from "../front-desk/checkout";
+import { GroupPackagePick } from "../front-desk/GroupPackagePick";
 import { cartFromAppointment } from "../front-desk/prefill";
+import { can, meQuery } from "../auth/session";
 import { activeStaffQuery } from "../sales/api";
 import { hhmm, spaMinutes } from "./api";
 import { completeAppointment } from "./complete";
@@ -27,6 +33,19 @@ interface Row {
   key: string;
   state: "ready" | "saving" | "done" | "error";
   error?: string | undefined;
+  /** A package this person buys in their checkout (round 6), or null. */
+  sale?: PackageSaleDraft | null;
+}
+
+/** What one person pays: their one-off lines (minus those their new package covers) + the package. */
+function dueOf(lines: CartLine[], sale: PackageSaleDraft | null | undefined) {
+  const sales = sale?.plan ? [sale] : [];
+  const covered = coverage(lines, sales);
+  return {
+    sales,
+    covered,
+    due: amountDue(lines, covered) + packagesDue(sales),
+  };
 }
 
 /** Why a member cannot be recorded from the group table (they are recorded on their own). */
@@ -60,6 +79,9 @@ export function GroupCheckIn({
 }) {
   const queryClient = useQueryClient();
   const staff = useQuery(activeStaffQuery);
+  const me = useQuery(meQuery).data;
+  // UX only: the server checks package.sell (AC9.4).
+  const maySell = can(me ?? null, "package.sell");
   const carts = useQuery({
     queryKey: ["group-carts", ...members.map((m) => m.id)],
     queryFn: () =>
@@ -112,16 +134,21 @@ export function GroupCheckIn({
       if (!row || !lines || !a.customer_id) continue;
       set(a.id, { state: "saving", error: undefined });
       const withStaff = lines.map((l) => ({ ...l, staffId: row.staffId }));
-      const due = amountDue(withStaff);
+      const { sales, covered, due } = dueOf(withStaff, row.sale);
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { customer_id, ...visit } = visitBody(
         a.customer_id,
         withStaff,
         paymentsFor(due, row.mode, 0),
         "",
-        a.business_date !== today
-          ? { checkInAt: a.arrived_at ?? a.starts_at }
-          : {},
+        {
+          ...(a.business_date !== today
+            ? { checkInAt: a.arrived_at ?? a.starts_at }
+            : {}),
+          ...(sales.length
+            ? { packageSales: packageSalesBody(sales), covered }
+            : {}),
+        },
       );
       try {
         await completeAppointment(a.id, visit, row.key);
@@ -204,7 +231,7 @@ export function GroupCheckIn({
           const row = rows[a.id];
           const lines = linesOf(i);
           const skip = skipReason(a, lines);
-          const due = lines ? amountDue(lines) : 0;
+          const due = lines ? dueOf(lines, row?.sale).due : 0;
           if (!row) return null;
           const staffField = `checkin-staff-${a.id}`;
           return (
@@ -291,6 +318,18 @@ export function GroupCheckIn({
               )}
               {row.state !== "done" && !skip && row.staffId === "" && (
                 <p className="appt-hint">Chọn KTV làm để ghi lượt người này.</p>
+              )}
+              {maySell && lines && !skip && row.state !== "done" && (
+                <GroupPackagePick
+                  person={a.customer_name}
+                  sale={row.sale ?? null}
+                  lines={lines}
+                  staffId={row.staffId}
+                  staff={staff.data ?? []}
+                  onChange={(sale) => {
+                    set(a.id, { sale });
+                  }}
+                />
               )}
               {row.state === "error" && row.error && (
                 <p role="alert" className="appt-error">

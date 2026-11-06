@@ -3,6 +3,7 @@ import type {
   Customer,
   CustomerSummary,
   Visit,
+  VisitPackageSaleCreate,
 } from "@vpyd/api-client";
 import {
   useMutation,
@@ -22,22 +23,23 @@ import {
 import { useAfterFirstPaint } from "../../lib/afterFirstPaint";
 import { ApiError } from "../../lib/api";
 import { invalidateManagementViews } from "../../lib/invalidate";
-import { serviceLabel } from "../../lib/names";
 import { useSearchState } from "../../lib/searchState";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
 import { customerQuery } from "../customers/api";
 import { CustomerSearch } from "../customers/CustomerSearch";
-import { Icon } from "../../app/Icon";
 import { completeAppointment } from "../appointments/complete";
 import { activeStaffQuery, exceedsCap, parseAmount } from "../sales/api";
 import {
   type CartLine,
   type DiscountDraft,
+  type PackageSaleDraft,
   type PaymentMode,
   amountDue,
+  coverage,
   discountPreview,
   inCart,
+  packagesDue,
   paymentsFor,
   recordVisit,
   savedSummary,
@@ -47,6 +49,7 @@ import {
   todayVisitsQuery,
   visitBody,
 } from "./api";
+import type { CartDraft } from "./draftCart";
 import { CustomerCard } from "./CustomerCard";
 import { Tip } from "./Tip";
 import "./front-desk.css";
@@ -94,6 +97,27 @@ const DiscountField = lazy(() =>
 const AddOneOff = lazy(() =>
   loadCartOptions().then((m) => ({ default: m.AddOneOff })),
 );
+const CartContextBars = lazy(() =>
+  loadCartOptions().then((m) => ({ default: m.CartContextBars })),
+);
+// Round 6: packages sold in the checkout + companion notes (spec §10.4.1), and the unsaved-cart
+// draft (Q-U8). Prefetched after the first paint, never on the startup path.
+const loadCartPackages = () => import("./CartPackages");
+const PackageSales = lazy(() =>
+  loadCartPackages().then((m) => ({ default: m.PackageSales })),
+);
+const Companions = lazy(() =>
+  loadCartPackages().then((m) => ({ default: m.Companions })),
+);
+const CartLines = lazy(() =>
+  loadCartOptions().then((m) => ({ default: m.CartLines })),
+);
+const PaymentChoices = lazy(() =>
+  loadCartOptions().then((m) => ({ default: m.PaymentChoices })),
+);
+const DraftKeeper = lazy(() =>
+  loadCartPackages().then((m) => ({ default: m.DraftKeeper })),
+);
 // "Sửa lượt" (US6b): only when a recorded visit is opened for correction.
 const loadCorrection = () => import("./correction");
 const CorrectionPanel = lazy(() =>
@@ -111,9 +135,8 @@ const todayVisitsSkeleton = (
 
 // The one-off picker's box (label + field) while its chunk loads: nothing shifts when it lands.
 const addOneOffBox = <div aria-hidden="true" className="h-[78px]" />;
-
-/** "yyyy-mm-dd" → "dd/mm/yyyy". */
-const dmyOf = (iso: string) => iso.split("-").reverse().join("/");
+// "Gói bán hôm nay" (label + one button) while its chunk loads.
+const packagesBox = <div aria-hidden="true" className="h-[70px]" />;
 
 /** "+84905111222" → "0905 111 222" (the booking carries E.164). */
 function localPhone(e164: string): string {
@@ -172,6 +195,7 @@ export function FrontDeskPage() {
     if (!painted) return;
     void loadTodayVisits();
     void loadCartOptions();
+    void loadCartPackages();
   }, [painted]);
   const todayIso = spaToday();
 
@@ -193,6 +217,19 @@ export function FrontDeskPage() {
   /** "Sửa lượt": the recorded visit this cart corrects (null = a new visit). */
   const [correcting, setCorrecting] = useState<CorrectionStart | null>(null);
   const [reason, setReason] = useState("");
+  /** "Gói bán hôm nay": packages sold in this checkout. */
+  const [sales, setSales] = useState<PackageSaleDraft[]>([]);
+  /** "Người đi cùng" notes. */
+  const [companions, setCompanions] = useState<string[]>([]);
+  /** The customer card asked for a package block ("" = empty block, else that plan). */
+  const [openPlan, setOpenPlan] = useState<string | null>(null);
+  /** The cart came back from an unsaved draft: say so, offer "Bỏ giỏ". */
+  const [restored, setRestored] = useState(false);
+  /** Picked for a fresh start (a booking, a correction, "Bỏ giỏ"): its draft is not restored. */
+  const [freshFor, setFreshFor] = useState<string | null>(null);
+  const clearOpenPlan = useCallback(() => {
+    setOpenPlan(null);
+  }, []);
   /** Line whose technician picker takes focus when it mounts (fast path step 2 → 3). */
   const focusLineKey = useRef<number | null>(null);
   // A fresh key per visit; kept across retries so a resend never records twice.
@@ -217,9 +254,14 @@ export function FrontDeskPage() {
     };
   }, [toast]);
 
-  const due = amountDue(lines);
+  // Lines a package sold today covers are today's session from it: 0đ (spec §10.4.1).
+  const covered = coverage(lines, sales);
+  const due = amountDue(lines, covered);
   const discountAmount = discountPreview(due, discount);
-  const payable = due - discountAmount;
+  const packagesTotal = packagesDue(sales);
+  const payable = due - discountAmount + packagesTotal;
+  const planOf = (ref: string | undefined) =>
+    sales.find((s) => s.ref === ref)?.plan?.name ?? "gói mua hôm nay";
   const cashPart = parseAmount(cashText);
   const technicians = staffByUse(staff.data ?? [], today.data ?? []);
   const mayBackdate = can(me, "visit.backdate");
@@ -237,9 +279,39 @@ export function FrontDeskPage() {
     setDiscount(null);
     setCorrecting(null);
     setReason("");
+    setSales([]);
+    setCompanions([]);
+    setOpenPlan(null);
+    setRestored(false);
     setIdempotencyKey(crypto.randomUUID());
     setSearchGeneration((g) => g + 1);
     setTimeout(() => searchInput.current?.focus(), 0);
+  };
+
+  /** Forget the saved draft of this customer (saved, abandoned). */
+  const forgetDraft = (customerId: string | undefined) => {
+    if (me && customerId)
+      void import("./draftCart").then((m) => {
+        m.clearDraft(me.user.id, customerId);
+      });
+  };
+  /** The cart of a stored draft, back on screen. */
+  const applyDraft = (d: CartDraft) => {
+    setCreating(null);
+    setCustomer(d.customer);
+    setLines(d.lines.map((l) => ({ ...l, key: nextKey.current++ })));
+    setSales(d.sales);
+    setMode(d.mode);
+    setCashText(d.cashText);
+    setDiscount(d.discount);
+    setServiceDay(d.serviceDay);
+    setServiceTime(d.serviceTime);
+    setCompanions(d.companions);
+    setAppointment(d.appointment);
+    setAttempted(false);
+    setIdempotencyKey(crypto.randomUUID());
+    setFocusDeduct(false);
+    setRestored(true);
   };
 
   const mutation = useMutation({
@@ -270,8 +342,15 @@ export function FrontDeskPage() {
         queryKey: ["customer-packages", visit.customer_id],
       });
       void invalidateManagementViews(queryClient, visit.customer_id);
+      for (const ps of visit.package_sales)
+        if (ps.beneficiary_customer_id)
+          void queryClient.invalidateQueries({
+            queryKey: ["customer-packages", ps.beneficiary_customer_id],
+          });
+      forgetDraft(visit.customer_id);
       showToast(
         savedSummary(visit) +
+          visit.package_sales.map((p) => ` · bán ${p.description}`).join("") +
           (visit.business_date !== todayIso
             ? ` · nhập bù ngày ${visit.business_date.split("-").reverse().join("/")}`
             : ""),
@@ -321,7 +400,33 @@ export function FrontDeskPage() {
       );
     },
   });
-  const saving = mutation.isPending || correction.isPending;
+  // A cart with only a package and no service is a plain package sale (spec §10.4.1, US10).
+  const packageOnly = useMutation({
+    mutationFn: async (sale: PackageSaleDraft) => {
+      if (!customer) throw new Error("no customer");
+      const m = await loadCartPackages();
+      return m.sellPackageOnly(
+        customer.id,
+        sale,
+        paymentsFor(payable, mode, cashPart),
+        idempotencyKey,
+      );
+    },
+    onSuccess: async (sale) => {
+      await queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
+      void invalidateManagementViews(queryClient, customer?.id);
+      forgetDraft(customer?.id);
+      showToast(
+        `Đã bán ${sale.lines.map((l) => l.description).join(", ")} · ${customer?.full_name ?? ""}`,
+      );
+      resetVisit();
+    },
+    onError: (error) => {
+      showToast(messageFor(error), true);
+    },
+  });
+  const saving =
+    mutation.isPending || correction.isPending || packageOnly.isPending;
   const correctionDraft: CorrectionDraft | null =
     correcting && customer
       ? {
@@ -354,8 +459,28 @@ export function FrontDeskPage() {
     time: serviceDay !== "" && serviceTime === "",
   };
 
+  /** `packageSales`: the cart's packages in wire form (built by the lazy cart chunk). */
+  const record = (packageSales?: VisitPackageSaleCreate[]) => {
+    if (!customer) return;
+    mutation.mutate(
+      visitBody(
+        customer.id,
+        lines,
+        paymentsFor(payable, mode, cashPart),
+        can(me, "customer.health_notes.write") ? note : "",
+        {
+          discount: due > 0 ? discount : null,
+          checkInAt: serviceInstant(serviceDay || todayIso, serviceTime),
+          ...(packageSales ? { packageSales, covered } : {}),
+          companions,
+        },
+      ),
+    );
+  };
+
   const save = () => {
-    if (!customer || lines.length === 0 || saving) return;
+    if (!customer || (lines.length === 0 && sales.length === 0) || saving)
+      return;
     setAttempted(true);
     if (problems.staff) {
       showToast("Mỗi dịch vụ cần chọn KTV thực hiện.", true);
@@ -391,18 +516,21 @@ export function FrontDeskPage() {
       });
       return;
     }
-    mutation.mutate(
-      visitBody(
-        customer.id,
-        lines,
-        paymentsFor(payable, mode, cashPart),
-        can(me, "customer.health_notes.write") ? note : "",
-        {
-          discount: due > 0 ? discount : null,
-          checkInAt: serviceInstant(serviceDay || todayIso, serviceTime),
-        },
-      ),
-    );
+    if (sales.length > 0) {
+      void loadCartPackages().then((m) => {
+        const problem = m.checkoutProblem(
+          sales,
+          lines.length,
+          appointment !== null,
+          can(me, "sale.discount_unlimited"),
+        );
+        if (problem) showToast(problem, true);
+        else if (lines.length > 0) record(m.packageSalesBody(sales));
+        else if (sales[0]) packageOnly.mutate(sales[0]);
+      });
+      return;
+    }
+    record();
   };
 
   // Keyboard: "/" → search, Ctrl+Enter → save, Esc → drop the selected customer.
@@ -413,6 +541,9 @@ export function FrontDeskPage() {
     setCreating(null);
     setAppointment(null);
     setDiscount(null);
+    setSales([]);
+    setCompanions([]);
+    setRestored(false);
     searchInput.current?.focus();
   };
   const saveRef = useRef(save);
@@ -440,16 +571,39 @@ export function FrontDeskPage() {
     };
   }, []);
 
-  const select = (c: CustomerSummary) => {
+  /** `fresh`: a booking, a correction or "Bỏ giỏ" starts clean (no draft comes back). */
+  const select = (c: CustomerSummary, fresh = false) => {
     setCreating(null);
     setCustomer(c);
     setLines([]);
     setAttempted(false);
     setDiscount(null);
     setAppointment(null);
+    setSales([]);
+    setCompanions([]);
+    setOpenPlan(null);
+    setRestored(false);
+    setFreshFor(fresh ? c.id : null);
     setIdempotencyKey(crypto.randomUUID());
     setFocusDeduct(true);
   };
+  // What DraftKeeper stores (not while correcting a recorded visit; never the session note).
+  const draft: CartDraft | null =
+    customer && !correcting
+      ? {
+          v: 1,
+          customer,
+          lines,
+          sales,
+          mode,
+          cashText,
+          discount,
+          serviceDay,
+          serviceTime,
+          companions,
+          appointment,
+        }
+      : null;
 
   const addLine = (line: CartLine) => {
     setLines((ls) => [...ls, line]);
@@ -459,14 +613,18 @@ export function FrontDeskPage() {
   /** Calendar → "Khách đến · ghi lượt": the cart filled with the booked services and technician. */
   const startFromAppointment = (a: Appointment, prefilled: CartLine[]) => {
     if (!a.customer_id) return;
-    select({
-      id: a.customer_id,
-      full_name: a.customer_name,
-      phone: localPhone(a.customer_phone),
-      gender: a.customer_gender ?? null,
-    });
+    select(
+      {
+        id: a.customer_id,
+        full_name: a.customer_name,
+        phone: localPhone(a.customer_phone),
+        gender: a.customer_gender ?? null,
+      },
+      true,
+    );
     setFocusDeduct(false);
     setAppointment(a);
+    setCompanions(a.companions);
     setLines(prefilled.map((l) => ({ ...l, key: nextKey.current++ })));
     setSearch({ view: "ghi" }, { push: true });
     if (a.business_date !== todayIso) {
@@ -477,7 +635,7 @@ export function FrontDeskPage() {
 
   /** "Sửa lượt": the cart filled with the recorded visit; the desk changes only what is wrong. */
   const startCorrection = (c: CorrectionStart) => {
-    select(c.customer);
+    select(c.customer, true);
     setFocusDeduct(false);
     setLines(c.lines.map((l) => ({ ...l, key: nextKey.current++ })));
     setMode(c.mode);
@@ -645,6 +803,21 @@ export function FrontDeskPage() {
                   canOverrideExpiry={can(me, "package.use_expired_override")}
                   focusFirst={focusDeduct}
                   onClear={dropCustomer}
+                  {...(can(me, "package.sell") && !correcting
+                    ? {
+                        onSellPackage: (planId: string | null) => {
+                          setOpenPlan(planId ?? "");
+                          setTimeout(() => {
+                            const el = document.getElementById(
+                              "cart-packages-title",
+                            );
+                            // jsdom has no scrollIntoView.
+                            if (el && "scrollIntoView" in el)
+                              el.scrollIntoView({ block: "center" });
+                          }, 0);
+                        },
+                      }
+                    : {})}
                   onBlocked={(m) => {
                     showToast(m, true);
                   }}
@@ -675,156 +848,56 @@ export function FrontDeskPage() {
               <h2 id="cart-title" className="panel-title scroll-mt-20">
                 {correcting ? "Sửa lượt khách" : "Lượt khách đang ghi"}
               </h2>
-              {correcting && (
-                <div className="context-bar">
-                  <span>
-                    Đang sửa lượt {timeOf(correcting.visit.check_in_at)} ·{" "}
-                    {dmyOf(correcting.visit.business_date)} của{" "}
-                    {correcting.visit.customer_name}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-ghost min-h-9 px-3"
-                    onClick={resetVisit}
-                  >
-                    Bỏ sửa
-                  </button>
-                </div>
-              )}
-              {appointment && (
-                <div className="context-bar">
-                  <span>
-                    Đang ghi cho lịch hẹn {timeOf(appointment.starts_at)}
-                    {appointment.business_date !== todayIso
-                      ? ` · ${dmyOf(appointment.business_date)}`
-                      : ""}{" "}
-                    · {appointment.customer_name}
-                  </span>
-                  <details
-                    className="context-menu"
-                    onKeyDown={(e) => {
-                      const d = e.currentTarget;
-                      if (e.key === "Escape" && d.open) {
-                        e.stopPropagation();
-                        d.open = false;
-                        d.querySelector("summary")?.focus();
-                      }
+              {(correcting || appointment || (restored && customer)) && (
+                <Suspense fallback={null}>
+                  <CartContextBars
+                    correcting={correcting?.visit ?? null}
+                    onStopCorrecting={resetVisit}
+                    appointment={appointment}
+                    today={todayIso}
+                    restoredFor={
+                      restored && !correcting
+                        ? (customer?.full_name ?? null)
+                        : null
+                    }
+                    onUnlink={() => {
+                      setAppointment(null);
+                      setServiceDay("");
+                      setServiceTime("");
                     }}
-                  >
-                    <summary aria-label="Tùy chọn lịch hẹn">
-                      <Icon name="dots" />
-                    </summary>
-                    <div className="context-menu-panel">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAppointment(null);
-                          setServiceDay("");
-                          setServiceTime("");
-                        }}
-                      >
-                        Bỏ liên kết lịch hẹn
-                      </button>
-                      <p>
-                        Lịch hẹn vẫn mở (chưa hoàn tất). Lượt này được ghi
-                        riêng, như khách đến không hẹn.
-                      </p>
-                    </div>
-                  </details>
-                </div>
+                    onDiscard={() => {
+                      if (!customer) return;
+                      forgetDraft(customer.id);
+                      select(customer, true);
+                      setFocusDeduct(false);
+                    }}
+                  />
+                </Suspense>
               )}
               {!customer && (
                 <p className="desk-empty">Chọn khách để bắt đầu ghi lượt.</p>
               )}
-              {customer && lines.length === 0 && (
+              {customer && lines.length === 0 && sales.length === 0 && (
                 <p className="desk-empty">
-                  Chưa có dịch vụ. Bấm “Trừ 1 buổi” ở gói liệu trình, hoặc chọn
-                  dịch vụ lẻ bên dưới.
+                  Chưa có dịch vụ. Bấm “Trừ 1 buổi” ở gói liệu trình, chọn dịch
+                  vụ lẻ bên dưới, hoặc bán gói liệu trình.
                 </p>
               )}
               {lines.length > 0 && (
-                <ul aria-label="Dịch vụ trong lượt" className="cart-lines">
-                  {lines.map((l) => {
-                    const invalid = attempted && l.staffId === "";
-                    const selectId = `staff-${String(l.key)}`;
-                    return (
-                      <li key={l.key} className="cart-line">
-                        <div className="min-w-0">
-                          <span className="cart-line-name">
-                            {serviceLabel(l.serviceName, l.categoryName)}
-                          </span>
-                          <span className="cart-line-source">
-                            {l.source === "package"
-                              ? `Trừ liệu trình · ${l.packageName}${l.expiryOverrideReason ? " · cho dùng tiếp" : ""}`
-                              : "Dịch vụ lẻ"}
-                          </span>
-                        </div>
-                        <span className="cart-line-price">
-                          {l.source === "one_off" ? formatVnd(l.price) : ""}
-                        </span>
-                        <button
-                          type="button"
-                          aria-label={`Bỏ dòng ${l.serviceName}`}
-                          onClick={() => {
-                            setLines((ls) => ls.filter((x) => x.key !== l.key));
-                          }}
-                          className="btn btn-ghost btn-icon text-text-muted"
-                        >
-                          <Icon name="x" />
-                        </button>
-                        <div className="cart-line-staff">
-                          <label htmlFor={selectId}>KTV</label>
-                          <select
-                            id={selectId}
-                            ref={(el) => {
-                              if (!el) {
-                                staffSelects.current.delete(l.key);
-                                return;
-                              }
-                              staffSelects.current.set(l.key, el);
-                              if (focusLineKey.current === l.key) {
-                                focusLineKey.current = null;
-                                el.focus();
-                              }
-                            }}
-                            value={l.staffId}
-                            aria-invalid={invalid}
-                            aria-required="true"
-                            aria-describedby={
-                              invalid ? `${selectId}-error` : undefined
-                            }
-                            onChange={(e) => {
-                              const staffId = e.target.value;
-                              setLines((ls) =>
-                                ls.map((x) =>
-                                  x.key === l.key ? { ...x, staffId } : x,
-                                ),
-                              );
-                            }}
-                            className="input"
-                          >
-                            <option value="">
-                              {staff.isPending ? "Đang tải…" : "Chọn KTV…"}
-                            </option>
-                            {technicians.map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.full_name}
-                              </option>
-                            ))}
-                          </select>
-                          {invalid && (
-                            <span
-                              id={`${selectId}-error`}
-                              className="field-error"
-                            >
-                              Cần chọn KTV
-                            </span>
-                          )}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
+                <Suspense fallback={null}>
+                  <CartLines
+                    lines={lines}
+                    onLines={setLines}
+                    covered={covered}
+                    planName={planOf}
+                    attempted={attempted}
+                    staff={staff.data ?? []}
+                    staffPending={staff.isPending}
+                    technicians={technicians}
+                    staffSelects={staffSelects}
+                    focusLineKey={focusLineKey}
+                  />
+                </Suspense>
               )}
 
               {customer && (
@@ -850,23 +923,52 @@ export function FrontDeskPage() {
                 </Suspense>
               )}
 
-              {customer && lines.length > 0 && (
+              {customer && !correcting && can(me, "package.sell") && (
+                <Suspense fallback={packagesBox}>
+                  <PackageSales
+                    sales={sales}
+                    onSales={setSales}
+                    lines={lines}
+                    covered={covered}
+                    staff={staff.data ?? []}
+                    customerId={customer.id}
+                    canDiscount={
+                      can(me, "sale.discount") ||
+                      can(me, "sale.discount_unlimited")
+                    }
+                    unlimitedDiscount={can(me, "sale.discount_unlimited")}
+                    attempted={attempted}
+                    serverError={mutation.error}
+                    openPlanId={openPlan}
+                    onOpened={clearOpenPlan}
+                  />
+                </Suspense>
+              )}
+              {customer && !correcting && lines.length > 0 && (
+                <Suspense fallback={null}>
+                  <Companions value={companions} onChange={setCompanions} />
+                </Suspense>
+              )}
+
+              {customer && (lines.length > 0 || sales.length > 0) && (
                 <>
                   <div className="cart-options">
                     <Suspense fallback={null}>
-                      <ServiceTime
-                        mayBackdate={mayBackdate}
-                        today={todayIso}
-                        day={serviceDay}
-                        time={serviceTime}
-                        invalid={attempted && problems.time}
-                        onDay={(d) => {
-                          setServiceDay(d === todayIso ? "" : d);
-                          if (d !== todayIso && serviceTime === "")
-                            setServiceTime(nowHm());
-                        }}
-                        onTime={setServiceTime}
-                      />
+                      {lines.length > 0 && (
+                        <ServiceTime
+                          mayBackdate={mayBackdate}
+                          today={todayIso}
+                          day={serviceDay}
+                          time={serviceTime}
+                          invalid={attempted && problems.time}
+                          onDay={(d) => {
+                            setServiceDay(d === todayIso ? "" : d);
+                            if (d !== todayIso && serviceTime === "")
+                              setServiceTime(nowHm());
+                          }}
+                          onTime={setServiceTime}
+                        />
+                      )}
                       {due > 0 && can(me, "sale.discount") && (
                         <DiscountField
                           due={due}
@@ -885,53 +987,17 @@ export function FrontDeskPage() {
                     </Suspense>
                   </div>
                   {payable > 0 && (
-                    <fieldset className="grid gap-2">
-                      <legend className="section-label mb-2">
-                        Thanh toán (thu đủ)
-                      </legend>
-                      <div className="pay-choices">
-                        {(
-                          [
-                            ["cash", "Tiền mặt"],
-                            ["bank_transfer", "Chuyển khoản"],
-                            ["mixed", "Tiền mặt + CK"],
-                          ] as const
-                        ).map(([value, label]) => (
-                          <label key={value} className="pay-choice">
-                            <input
-                              type="radio"
-                              name="visit-payment"
-                              checked={mode === value}
-                              onChange={() => {
-                                setMode(value);
-                              }}
-                            />
-                            {label}
-                          </label>
-                        ))}
-                      </div>
-                      {mode === "mixed" && (
-                        <label className="field max-w-xs">
-                          <span>Tiền mặt (đ)</span>
-                          <input
-                            className="input"
-                            inputMode="numeric"
-                            value={cashText}
-                            aria-invalid={attempted && problems.cash}
-                            onChange={(e) => {
-                              setCashText(e.target.value);
-                            }}
-                          />
-                          {!Number.isNaN(cashPart) &&
-                            cashPart > 0 &&
-                            cashPart < payable && (
-                              <span className="field-hint">
-                                Chuyển khoản: {formatVnd(payable - cashPart)}
-                              </span>
-                            )}
-                        </label>
-                      )}
-                    </fieldset>
+                    <Suspense fallback={null}>
+                      <PaymentChoices
+                        name="visit-payment"
+                        mode={mode}
+                        onMode={setMode}
+                        cashText={cashText}
+                        onCashText={setCashText}
+                        total={payable}
+                        invalid={attempted && problems.cash}
+                      />
+                    </Suspense>
                   )}
                   {can(me, "customer.health_notes.write") && (
                     <label className="field">
@@ -978,8 +1044,14 @@ export function FrontDeskPage() {
                         {formatVnd(payable)}
                       </span>
                     </p>
-                    {payable === 0 && (
-                      <p className="-mt-2 text-sm text-text-muted">
+                    {packagesTotal > 0 && (
+                      <p className="checkout-split">
+                        Dịch vụ lẻ {formatVnd(due - discountAmount)} + gói{" "}
+                        {formatVnd(packagesTotal)}
+                      </p>
+                    )}
+                    {payable === 0 && sales.length === 0 && (
+                      <p className="checkout-split">
                         Lượt này chỉ trừ buổi liệu trình, không phát sinh tiền.
                       </p>
                     )}
@@ -994,7 +1066,9 @@ export function FrontDeskPage() {
                         ? "Đang lưu…"
                         : correcting
                           ? "Lưu sửa lượt"
-                          : "Lưu lượt khách"}
+                          : lines.length === 0
+                            ? "Lưu hóa đơn gói"
+                            : "Lưu lượt khách"}
                     </button>
                   </div>
                 </>
@@ -1016,6 +1090,17 @@ export function FrontDeskPage() {
         </>
       )}
 
+      {painted && me && (
+        <Suspense fallback={null}>
+          <DraftKeeper
+            userId={me.user.id}
+            draft={draft}
+            customerId={customer?.id ?? null}
+            fresh={freshFor === customer?.id || search.sua !== ""}
+            onRestore={applyDraft}
+          />
+        </Suspense>
+      )}
       <div
         role="status"
         aria-live="polite"

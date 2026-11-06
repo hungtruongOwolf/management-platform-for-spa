@@ -107,9 +107,17 @@ function draft(over: Partial<CorrectionDraft> = {}): CorrectionDraft {
 
 describe("Sửa lượt: how the cart is saved", () => {
   it("opens the visit as it was recorded", () => {
-    const lines = cartFromVisit({ ...VISIT, lines: [{ ...first(VISIT.lines), qty: 2 }] });
+    const lines = cartFromVisit({
+      ...VISIT,
+      lines: [{ ...first(VISIT.lines), qty: 2 }],
+    });
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toMatchObject({ source: "one_off", price: 100_000, staffId: "st1", priceVariant: null });
+    expect(lines[0]).toMatchObject({
+      source: "one_off",
+      price: 100_000,
+      staffId: "st1",
+      priceVariant: null,
+    });
     expect(paymentModeOf(VISIT)).toEqual({ mode: "cash", cashText: "" });
   });
 
@@ -143,7 +151,17 @@ describe("Sửa lượt: how the cart is saved", () => {
       VISIT,
       "old",
       draft({
-        lines: [{ key: 1, source: "one_off", serviceId: "s5", serviceName: "Đại Thông Lạc", priceVariant: null, price: 349_000, staffId: "st1" }],
+        lines: [
+          {
+            key: 1,
+            source: "one_off",
+            serviceId: "s5",
+            serviceName: "Đại Thông Lạc",
+            priceVariant: null,
+            price: 349_000,
+            staffId: "st1",
+          },
+        ],
         payments: [{ method: "cash", amount: 349_000 }],
         note: "old",
         reason: " chọn nhầm ",
@@ -155,12 +173,27 @@ describe("Sửa lượt: how the cart is saved", () => {
     expect(dearer.body.reason).toBe("chọn nhầm");
     // The note is unchanged: absent, so the server keeps it without it ever reaching the browser.
     expect("note" in dearer.body).toBe(false);
-    expect(dearer.body.lines).toEqual([{ service_id: "s5", source: "one_off", staff_id: "st1", price_variant: null }]);
+    expect(dearer.body.lines).toEqual([
+      {
+        service_id: "s5",
+        source: "one_off",
+        staff_id: "st1",
+        price_variant: null,
+      },
+    ]);
 
-    const transfer = planCorrection(VISIT, "", draft({ payments: [{ method: "bank_transfer", amount: 100_000 }] }));
+    const transfer = planCorrection(
+      VISIT,
+      "",
+      draft({ payments: [{ method: "bank_transfer", amount: 100_000 }] }),
+    );
     expect(transfer).toMatchObject({ kind: "correct", difference: 0 });
-    expect(planCorrection(VISIT, "", draft({ customerId: "c2" })).kind).toBe("correct");
-    expect(planCorrection(VISIT, "", draft({ lines: [] })).kind).toBe("correct");
+    expect(planCorrection(VISIT, "", draft({ customerId: "c2" })).kind).toBe(
+      "correct",
+    );
+    expect(planCorrection(VISIT, "", draft({ lines: [] })).kind).toBe(
+      "correct",
+    );
   });
 
   it("says the difference in money words", () => {
@@ -173,12 +206,40 @@ describe("Sửa lượt: how the cart is saved", () => {
     const today = spaToday();
     const manager = ["visit.record", "record.void_same_day"];
     const owner = [...manager, "record.void_closed_day"];
-    expect(mayCorrectVisit(manager, { business_date: today, status: "completed" }, today)).toBe(true);
-    expect(mayCorrectVisit(manager, { business_date: "2020-01-01", status: "completed" }, today)).toBe(false);
-    expect(mayCorrectVisit(owner, { business_date: "2020-01-01", status: "completed" }, today)).toBe(true);
-    expect(mayCorrectVisit(owner, { business_date: today, status: "voided" }, today)).toBe(false);
-    expect(mayCorrectVisit(["visit.record"], { business_date: today, status: "completed" }, today)).toBe(false);
-    expect(mayCorrectVisit([], { business_date: today, voided: false }, today)).toBe(false);
+    expect(
+      mayCorrectVisit(
+        manager,
+        { business_date: today, status: "completed" },
+        today,
+      ),
+    ).toBe(true);
+    expect(
+      mayCorrectVisit(
+        manager,
+        { business_date: "2020-01-01", status: "completed" },
+        today,
+      ),
+    ).toBe(false);
+    expect(
+      mayCorrectVisit(
+        owner,
+        { business_date: "2020-01-01", status: "completed" },
+        today,
+      ),
+    ).toBe(true);
+    expect(
+      mayCorrectVisit(owner, { business_date: today, status: "voided" }, today),
+    ).toBe(false);
+    expect(
+      mayCorrectVisit(
+        ["visit.record"],
+        { business_date: today, status: "completed" },
+        today,
+      ),
+    ).toBe(false);
+    expect(
+      mayCorrectVisit([], { business_date: today, voided: false }, today),
+    ).toBe(false);
   });
 });
 
@@ -197,7 +258,12 @@ const PERMISSIONS = [
   "record.void_same_day",
 ];
 
-const staff = (id: string, name: string): Staff => ({ id, full_name: name, position: "KTV", status: "active" });
+const staff = (id: string, name: string): Staff => ({
+  id,
+  full_name: name,
+  position: "KTV",
+  status: "active",
+});
 
 interface Call {
   method: string;
@@ -209,12 +275,21 @@ interface Call {
 function serve() {
   const calls: Call[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
     const method = init?.method ?? "GET";
     const headers = (init?.headers ?? {}) as Record<string, string>;
-    const body = typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : undefined;
+    const body =
+      typeof init?.body === "string"
+        ? (JSON.parse(init.body) as unknown)
+        : undefined;
     calls.push({ method, url, body, headers });
-    const json = (v: unknown, status = 200) => Promise.resolve(Response.json(v, { status }));
+    const json = (v: unknown, status = 200) =>
+      Promise.resolve(Response.json(v, { status }));
     if (url === "/api/v1/me")
       return json({
         user: { id: "u1", full_name: "Quản lý Ngọc", phone: "0905 123 456" },
@@ -238,17 +313,31 @@ function serve() {
         created_at: "2026-11-01T00:00:00Z",
       });
     if (url === "/api/v1/customers/c1/packages") return json([]);
-    if (url === "/api/v1/staff") return json([staff("st1", "KTV Lan"), staff("st2", "KTV Hoa")]);
+    if (url === "/api/v1/staff")
+      return json([staff("st1", "KTV Lan"), staff("st2", "KTV Hoa")]);
     if (url === "/api/v1/services") return json([GAC_HOI, DAI_THONG_LAC]);
-    if (url === "/api/v1/service-categories") return json([{ id: "cat1", name: "Cổ vai gáy", sort_order: 0 }]);
-    if (url === "/api/v1/visits/v1" && method === "GET") return json({ ...VISIT, note: "Đau vai" });
+    if (url === "/api/v1/service-categories")
+      return json([{ id: "cat1", name: "Cổ vai gáy", sort_order: 0 }]);
+    if (url === "/api/v1/visits/v1" && method === "GET")
+      return json({ ...VISIT, note: "Đau vai" });
     if (url === "/api/v1/visits/v1" && method === "PATCH")
-      return json({ ...VISIT, version: 2, lines: [{ ...first(VISIT.lines), staff_id: "st2", staff_name: "KTV Hoa" }] });
+      return json({
+        ...VISIT,
+        version: 2,
+        lines: [
+          { ...first(VISIT.lines), staff_id: "st2", staff_name: "KTV Hoa" },
+        ],
+      });
     if (url === "/api/v1/visits/v1/correct")
       return json(
         {
           voided: { ...VISIT, status: "voided", corrected_by_visit_id: "v2" },
-          visit: { ...VISIT, id: "v2", total: 349_000, corrects_visit_id: "v1" },
+          visit: {
+            ...VISIT,
+            id: "v2",
+            total: 349_000,
+            corrects_visit_id: "v1",
+          },
           difference: 249_000,
         },
         201,
@@ -262,13 +351,22 @@ function serve() {
 async function openCorrection() {
   const user = userEvent.setup();
   render(<App history={createMemoryHistory({ initialEntries: ["/quay"] })} />);
-  const table = await screen.findByRole("table", { name: "Lượt khách hôm nay" });
-  const more = within(table).getByRole("button", { name: /^Thao tác lượt .* của Nguyễn Thị Hà$/ });
+  const table = await screen.findByRole("table", {
+    name: "Lượt khách hôm nay",
+  });
+  const more = within(table).getByRole("button", {
+    name: /^Thao tác lượt .* của Nguyễn Thị Hà$/,
+  });
   await user.click(more);
   const menu = screen.getByRole("menu");
-  expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
+  expect(
+    within(menu)
+      .getAllByRole("menuitem")
+      .map((i) => i.textContent),
+  ).toEqual([
     "Mở hồ sơ khách",
     "Sửa lượt",
+    "Thêm dịch vụ / bán gói",
     "Hủy lượt",
   ]);
   await user.click(within(menu).getByRole("menuitem", { name: "Sửa lượt" }));
@@ -280,13 +378,22 @@ describe("/quay Sửa lượt", () => {
   it("changes only the technician with a direct edit (If-Match, no money)", async () => {
     const calls = serve();
     const user = await openCorrection();
-    const cart = screen.getByRole("list", { name: "Dịch vụ trong lượt" });
+    const cart = await screen.findByRole("list", { name: "Dịch vụ trong lượt" });
     expect(within(cart).getByText(/Giác hơi/)).toBeInTheDocument();
     // The note was read with the visit and is in the cart.
-    expect(screen.getByLabelText("Ghi chú buổi (không bắt buộc)")).toHaveValue("Đau vai");
-    expect(await screen.findByText("Chưa có gì thay đổi so với lượt đã ghi.")).toBeInTheDocument();
-    await user.selectOptions(within(cart).getByRole("combobox", { name: "KTV" }), "st2");
-    expect(await screen.findByText(/Chỉ đổi KTV, giờ làm hoặc ghi chú/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Ghi chú buổi (không bắt buộc)")).toHaveValue(
+      "Đau vai",
+    );
+    expect(
+      await screen.findByText("Chưa có gì thay đổi so với lượt đã ghi."),
+    ).toBeInTheDocument();
+    await user.selectOptions(
+      within(cart).getByRole("combobox", { name: "KTV" }),
+      "st2",
+    );
+    expect(
+      await screen.findByText(/Chỉ đổi KTV, giờ làm hoặc ghi chú/),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Lưu sửa lượt" }));
     await waitFor(() => {
       expect(calls.some((c) => c.method === "PATCH")).toBe(true);
@@ -295,7 +402,9 @@ describe("/quay Sửa lượt", () => {
     expect(patch?.url).toBe("/api/v1/visits/v1");
     expect(patch?.headers["If-Match"]).toBe('"1"');
     expect(patch?.body).toEqual({ lines: [{ id: "l1", staff_id: "st2" }] });
-    expect(await screen.findByText(/Đã sửa lượt của Nguyễn Thị Hà · không đổi tiền/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Đã sửa lượt của Nguyễn Thị Hà · không đổi tiền/),
+    ).toBeInTheDocument();
     expect(calls.some((c) => c.url.endsWith("/correct"))).toBe(false);
   });
 
@@ -306,14 +415,23 @@ describe("/quay Sửa lượt", () => {
     // Picking is adding: no separate "Thêm".
     await user.selectOptions(screen.getByLabelText("Thêm dịch vụ lẻ"), "s5");
     const cart = screen.getByRole("list", { name: "Dịch vụ trong lượt" });
-    await user.selectOptions(within(cart).getByRole("combobox", { name: "KTV" }), "st1");
-    expect(await screen.findByTestId("correction-difference")).toHaveTextContent("Thu thêm 249.000đ");
+    await user.selectOptions(
+      within(cart).getByRole("combobox", { name: "KTV" }),
+      "st1",
+    );
+    expect(
+      await screen.findByTestId("correction-difference"),
+    ).toHaveTextContent("Thu thêm 249.000đ");
 
     await user.click(screen.getByRole("button", { name: "Lưu sửa lượt" }));
-    expect(await screen.findByText("Cần ghi lý do sửa lượt.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Cần ghi lý do sửa lượt."),
+    ).toBeInTheDocument();
     expect(calls.some((c) => c.url.endsWith("/correct"))).toBe(false);
 
-    const reason = screen.getByRole("textbox", { name: /^Lý do sửa \(bắt buộc\)/ });
+    const reason = screen.getByRole("textbox", {
+      name: /^Lý do sửa \(bắt buộc\)/,
+    });
     expect(reason).toHaveAttribute("aria-invalid", "true");
     await user.type(reason, "chọn nhầm dịch vụ");
     await user.click(screen.getByRole("button", { name: "Lưu sửa lượt" }));
@@ -331,6 +449,10 @@ describe("/quay Sửa lượt", () => {
       payments: [{ method: "cash", amount: 349_000 }],
     });
     expect(post?.body).not.toHaveProperty("note");
-    expect(await screen.findByText(/Đã sửa lượt của Nguyễn Thị Hà · Thu thêm 249.000đ/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        /Đã sửa lượt của Nguyễn Thị Hà · Thu thêm 249.000đ/,
+      ),
+    ).toBeInTheDocument();
   });
 });

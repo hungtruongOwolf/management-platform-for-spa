@@ -1,0 +1,85 @@
+/* Round 6 cart pieces (CartPackages chunk): "Gói bán hôm nay", checkboxes, companions.
+ * Loaded with the lazy chunk, off the startup CSS. */
+@layer components {
+  /* --- Round 6: packages sold in the checkout ("Gói bán hôm nay") --------------------------- */
+  .sale-list {
+    display: grid;
+    border-top: 1px solid var(--border);
+  }
+  /* One package = one block of rows, divided by a hairline like every other row (no card). */
+  .sale-block {
+    display: grid;
+    min-width: 0;
+    gap: 12px;
+    padding: 12px 0 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sale-block > .btn,
+  .sale-list + .btn {
+    justify-self: start;
+  }
+  .sale-head {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto 44px;
+    align-items: center;
+    gap: 12px;
+  }
+  .sale-title {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .sale-price {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .sale-price s {
+    margin-right: 8px;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 400;
+  }
+  .sale-fields {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+    gap: 12px;
+  }
+  .sale-wide {
+    grid-column: 1 / -1;
+  }
+  .sale-fields > .btn.sale-wide {
+    justify-self: start;
+  }
+  /* A checkbox with its label and a muted line under it; the whole row is the 44px target. */
+  .check-row {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    align-items: start;
+    gap: 2px 12px;
+    min-height: 44px;
+    padding: 10px 0 0;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .check-row > input {
+    width: 20px;
+    height: 20px;
+    margin: 1px 0 0;
+    accent-color: var(--primary);
+  }
+  .check-hint {
+    display: block;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 400;
+  }
+  .companion-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    align-items: center;
+    gap: 8px;
+  }
+}

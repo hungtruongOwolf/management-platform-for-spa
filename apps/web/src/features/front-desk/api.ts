@@ -1,11 +1,13 @@
 import type {
   CustomerPackage,
+  PackagePlan,
   PaymentCreate,
   Service,
   ServiceDiscountCreate,
   Staff,
   Visit,
   VisitCreate,
+  VisitPackageSaleCreate,
 } from "@vpyd/api-client";
 import { queryOptions } from "@tanstack/react-query";
 import { api } from "../../lib/api";
@@ -84,7 +86,71 @@ export type CartLine =
       priceVariant: Gender | null;
       price: number;
       staffId: string;
+      /** "Người giới thiệu" (upsell credit, spec §10.8 Q-U2); absent or "" = khách tự chọn. */
+      referrerId?: string;
     };
+
+/**
+ * A package sold in this checkout ("Gói bán hôm nay", spec §10.4.1). `plan` is a snapshot of the
+ * catalog entry for the preview; the server prices the sale from the catalog.
+ */
+export interface PackageSaleDraft {
+  /** `ref` on the wire: the lines that use today's session point at it. */
+  ref: string;
+  plan: Pick<PackagePlan, "id" | "name" | "price" | "items"> | null;
+  /** "" = not chosen yet, "self" = khách tự chọn (nobody credited), else a staff id. */
+  closer: string;
+  giftNote: string;
+  /** Raw text of the amount field ("" = no discount). */
+  discountText: string;
+  discountReason: string;
+  /** "Dùng gói này cho buổi hôm nay": covered one-off lines become today's session. */
+  useToday: boolean;
+  /** "Mua cho người khác" (US13): the package belongs to this customer, never used today. */
+  beneficiary: { id: string; full_name: string } | null;
+  /** "Mua cho người khác" is ticked (the beneficiary may not be picked yet). */
+  forOther?: boolean;
+}
+
+/** Amount typed as a package discount: 0 = none, NaN = not a number. */
+export function packageDiscount(p: PackageSaleDraft): number {
+  const t = p.discountText.replace(/[.\s,đ]/g, "");
+  if (t === "") return 0;
+  return /^\d+$/.test(t) ? Number(t) : Number.NaN;
+}
+
+/** What the packages of this checkout cost after their own discounts (previews). */
+export function packagesDue(sales: PackageSaleDraft[]): number {
+  return sales.reduce((s, p) => {
+    const d = packageDiscount(p);
+    return p.plan ? s + p.plan.price - (Number.isNaN(d) ? 0 : d) : s;
+  }, 0);
+}
+
+/**
+ * Which one-off lines a package sold today covers ("Dùng gói này cho buổi hôm nay"): line key →
+ * the package's `ref`. A package covers lines of its services in cart order, up to its paid +
+ * bonus sessions; a package bought for someone else covers nothing (packages are not shared, D5).
+ */
+export function coverage(
+  lines: CartLine[],
+  sales: PackageSaleDraft[],
+): Map<number, string> {
+  const covered = new Map<number, string>();
+  for (const p of sales) {
+    if (!p.useToday || !p.plan || p.beneficiary || p.forOther) continue;
+    const left = new Map(
+      p.plan.items.map((i) => [i.service_id, i.sessions + i.bonus_sessions]),
+    );
+    for (const l of lines) {
+      const n = left.get(l.serviceId) ?? 0;
+      if (l.source !== "one_off" || covered.has(l.key) || n <= 0) continue;
+      covered.set(l.key, p.ref);
+      left.set(l.serviceId, n - 1);
+    }
+  }
+  return covered;
+}
 
 export type PriceResult =
   | { ok: true; price: number; variant: "all" | Gender }
@@ -104,10 +170,14 @@ export function priceFor(service: Service, gender: Gender | null): PriceResult {
     : { ok: true, price, variant: gender };
 }
 
-/** Sum of the one-off lines: what the customer pays now. */
-export function amountDue(lines: CartLine[]): number {
+/** Sum of the one-off lines not covered by a package sold today: what they cost now. */
+export function amountDue(
+  lines: CartLine[],
+  covered: ReadonlyMap<number, string> = new Map(),
+): number {
   return lines.reduce(
-    (sum, l) => sum + (l.source === "one_off" ? l.price : 0),
+    (sum, l) =>
+      sum + (l.source === "one_off" && !covered.has(l.key) ? l.price : 0),
     0,
   );
 }
@@ -202,6 +272,14 @@ export interface VisitExtras {
   discount?: DiscountDraft | null;
   /** When the service happened (ISO instant); omitted = now. */
   checkInAt?: string | null;
+  /**
+   * Packages sold in this checkout, in wire form (`packageSalesBody`, lazy `checkout.ts`), and
+   * which lines they cover (`coverage`): those lines use today's session from them.
+   */
+  packageSales?: VisitPackageSaleCreate[];
+  covered?: ReadonlyMap<number, string>;
+  /** "Người đi cùng" notes (0–5); blanks are dropped, none = omitted. */
+  companions?: string[];
 }
 
 export function visitBody(
@@ -211,26 +289,42 @@ export function visitBody(
   note: string,
   extras: VisitExtras = {},
 ): VisitCreate {
+  const covered = extras.covered ?? new Map<number, string>();
+  const companions = (extras.companions ?? [])
+    .map((c) => c.trim())
+    .filter((c) => c !== "");
   return {
     customer_id: customerId,
     ...(extras.checkInAt ? { check_in_at: extras.checkInAt } : {}),
     ...(extras.discount ? { discount: discountBody(extras.discount) } : {}),
+    ...(extras.packageSales?.length
+      ? { package_sales: extras.packageSales }
+      : {}),
+    ...(companions.length > 0 ? { companions } : {}),
     note: note.trim() === "" ? null : note.trim(),
     lines: lines.map((l) =>
-      l.source === "package"
+      covered.has(l.key)
         ? {
             service_id: l.serviceId,
             source: "package",
-            customer_package_item_id: l.itemId,
+            package_ref: covered.get(l.key) ?? null,
             staff_id: l.staffId,
-            expiry_override_reason: l.expiryOverrideReason ?? null,
           }
-        : {
-            service_id: l.serviceId,
-            source: "one_off",
-            staff_id: l.staffId,
-            price_variant: l.priceVariant,
-          },
+        : l.source === "package"
+          ? {
+              service_id: l.serviceId,
+              source: "package",
+              customer_package_item_id: l.itemId,
+              staff_id: l.staffId,
+              expiry_override_reason: l.expiryOverrideReason ?? null,
+            }
+          : {
+              service_id: l.serviceId,
+              source: "one_off",
+              staff_id: l.staffId,
+              price_variant: l.priceVariant,
+              ...(l.referrerId ? { referrer_staff_id: l.referrerId } : {}),
+            },
     ),
     payments,
   };
@@ -245,20 +339,6 @@ export function savedSummary(visit: Visit): string {
         `${l.service_name} còn ${String(l.sessions_left_after)}/${String(l.sessions_total ?? "?")}`,
     );
   return [`Đã lưu lượt của ${visit.customer_name}`, ...left].join(" · ");
-}
-
-/** "Đã thanh toán 150.000đ (TM)" / "Không phát sinh tiền" / "Đã hủy" for a saved visit. */
-export function paymentText(v: Visit, money: (n: number) => string): string {
-  if (v.status === "voided") return "Đã hủy, đã hoàn tiền";
-  if (v.total === 0) return "Trừ liệu trình, không phát sinh tiền";
-  const methods = [
-    ...new Set(
-      v.payments
-        .filter((p) => p.kind === "payment")
-        .map((p) => (p.method === "cash" ? "TM" : "CK")),
-    ),
-  ].join(" + ");
-  return `Đã thanh toán ${money(v.total)}${methods ? ` (${methods})` : ""}`;
 }
 
 /**

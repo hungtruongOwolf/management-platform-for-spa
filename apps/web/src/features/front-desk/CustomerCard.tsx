@@ -55,6 +55,7 @@ export function CustomerCard({
   onDeduct,
   onBlocked,
   onClear,
+  onSellPackage,
 }: {
   summary: CustomerSummary;
   inCart: (itemId: string) => number;
@@ -65,6 +66,11 @@ export function CustomerCard({
   onBlocked: (message: string) => void;
   /** "Đổi khách" (same as Esc). */
   onClear?: () => void;
+  /**
+   * "Bán gói liệu trình" (null) / "Mua lại gói này" (that plan): opens a package block in the
+   * cart (spec §10.4.1, US10). Absent without `package.sell`.
+   */
+  onSellPackage?: (planId: string | null) => void;
 }) {
   const customer = useQuery(customerQuery(summary.id));
   const packages = useQuery(customerPackagesQuery(summary.id));
@@ -305,10 +311,35 @@ export function CustomerCard({
                   ) : (
                     <span className="badge badge-muted">Hết buổi</span>
                   )}
+                  {onSellPackage && p.status !== "cancelled" && (
+                    <button
+                      type="button"
+                      aria-label={`Mua lại gói này: ${p.name}`}
+                      className="btn btn-ghost pkg-rebuy"
+                      onClick={() => {
+                        onSellPackage(p.plan_id ?? null);
+                      }}
+                    >
+                      Mua lại gói này
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
           </details>
+        )}
+        {onSellPackage && packages.isSuccess && (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            aria-label="Bán gói liệu trình (mở trong giỏ)"
+            onClick={() => {
+              onSellPackage(null);
+            }}
+          >
+            <Icon name="plus" />
+            Bán gói liệu trình
+          </button>
         )}
       </div>
     </section>
