@@ -118,8 +118,11 @@ test("every screen holds from 320 to 1920 px and at 200 % zoom", async ({
   expect(problems).toEqual([]);
 });
 
-/** EM round 5 item 2: "navbar bên trái … bị mất chữ" — every label whole, no sideways scroll. */
-test("sidebar labels are never cut, open or folded, at 1024 / 1280 / 1440", async ({
+/**
+ * EM round 5 item 2: "navbar bên trái … bị mất chữ" — every label whole, no sideways scroll. EM
+ * round 6: and on ONE line — the open sidebar is wide enough for the longest label.
+ */
+test("sidebar labels are whole and on one line, open or folded, at 1024 / 1280 / 1440", async ({
   page,
 }) => {
   const cut = () =>
@@ -133,8 +136,10 @@ test("sidebar labels are never cut, open or folded, at 1024 / 1280 / 1440", asyn
       for (const label of Array.from(side.querySelectorAll<HTMLElement>(".nav-label, .nav-group-label"))) {
         const r = label.getBoundingClientRect();
         if (r.width <= 1) continue; // the folded rail keeps labels for screen readers only
-        if (label.scrollWidth > label.clientWidth + 1 || r.right > edge)
-          out.push(`cut: ${label.textContent.trim()}`);
+        const text = label.textContent.trim();
+        if (label.scrollWidth > label.clientWidth + 1 || r.right > edge) out.push(`cut: ${text}`);
+        const line = parseFloat(getComputedStyle(label).lineHeight);
+        if (r.height > line * 1.5) out.push(`wraps: ${text} (${String(Math.round(r.height))}px tall)`);
       }
       return out;
     });
@@ -149,6 +154,79 @@ test("sidebar labels are never cut, open or folded, at 1024 / 1280 / 1440", asyn
   await page.getByRole("button", { name: "Mở rộng thanh bên" }).click();
   await page.setViewportSize({ width: 900, height: 800 });
   expect(await cut(), "tablet rail @ 900px").toEqual([]);
+});
+
+/**
+ * EM round 6 item 1 (/quay scrolled down): the sidebar stopped half way with the page background
+ * under it, a phantom empty area followed the content, and the visits table scrolled inside its
+ * own card. With a full day of visits, scrolled to the bottom of every screen: the sidebar spans
+ * the viewport, the document is no taller than the shell, and no table scrolls vertically.
+ */
+test("the page scrolls as one: full-height sidebar, no phantom area, no nested table scroll", async ({
+  page,
+}) => {
+  test.setTimeout(3 * 60_000);
+  const services = (await (await page.request.get("/api/v1/services")).json()) as {
+    id: string;
+    active: boolean;
+    prices: { all?: number | null; female?: number | null };
+  }[];
+  const service = services.find((s) => s.active && (s.prices.female ?? s.prices.all) != null);
+  const staff = (await (await page.request.get("/api/v1/staff")).json()) as { id: string }[];
+  expect(service && staff[0], "seeded menu and a technician").toBeTruthy();
+  const price = service?.prices.female ?? service?.prices.all ?? 0;
+  for (let i = 0; i < 12; i++) {
+    const customer = await page.request.post("/api/v1/customers", {
+      headers: { Origin: stack.webOrigin },
+      data: { full_name: `Khách Cuộn Trang ${String(i + 1)}`, phone: uniquePhone(), gender: "female" },
+    });
+    expect(customer.status()).toBe(201);
+    const visit = await page.request.post("/api/v1/visits", {
+      headers: { Origin: stack.webOrigin, "Idempotency-Key": crypto.randomUUID() },
+      data: {
+        customer_id: ((await customer.json()) as { id: string }).id,
+        lines: [{ service_id: service?.id, source: "one_off", staff_id: staff[0]?.id }],
+        payments: [{ method: "cash", amount: price }],
+      },
+    });
+    expect(visit.status()).toBe(201);
+  }
+
+  const problems: string[] = [];
+  for (const size of [
+    { width: 1280, height: 800 },
+    { width: 1920, height: 965 },
+  ]) {
+    await page.setViewportSize(size);
+    for (const [name, path] of screens()) {
+      await open(page, path);
+      if (path === "/quay") await expect(page.locator("main tbody tr")).not.toHaveCount(0);
+      const at = `${name} @ ${String(size.width)}×${String(size.height)}`;
+      const found = await page.evaluate(async () => {
+        const out: string[] = [];
+        const root = document.documentElement;
+        window.scrollTo(0, root.scrollHeight);
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const shell = document.querySelector<HTMLElement>(".shell");
+        const side = document.querySelector<HTMLElement>(".sidebar");
+        if (!shell || !side) return ["no shell or sidebar"];
+        const extra = root.scrollHeight - shell.offsetHeight;
+        if (extra > 2) out.push(`document ${String(extra)}px taller than the shell`);
+        const r = side.getBoundingClientRect();
+        if (r.top > 0.5 || r.bottom < window.innerHeight - 0.5)
+          out.push(`sidebar spans ${String(Math.round(r.top))}→${String(Math.round(r.bottom))} of ${String(window.innerHeight)}`);
+        for (const el of Array.from(document.querySelectorAll<HTMLElement>("main *"))) {
+          const style = getComputedStyle(el);
+          if (!/auto|scroll/.test(style.overflowY)) continue;
+          if (el.scrollHeight > el.clientHeight + 1)
+            out.push(`<${el.tagName.toLowerCase()} class="${el.className}"> scrolls vertically (${String(el.scrollHeight)} > ${String(el.clientHeight)})`);
+        }
+        return out;
+      });
+      for (const p of found) problems.push(`${at}: ${p}`);
+    }
+  }
+  expect(problems).toEqual([]);
 });
 
 /**

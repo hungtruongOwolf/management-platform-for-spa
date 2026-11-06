@@ -6,8 +6,11 @@
  */
 
 :root {
-  /* Wide enough for "Khách lâu chưa quay lại" on one line; longer labels wrap (EM round 5). */
-  --sidebar-w: 264px;
+  /* Every nav label on ONE line (EM round 6), measured in the browser: the longest, "Khách lâu
+   * chưa quay lại" (Be Vietnam Pro 500 16px), is 184.3px; + item padding 12 + icon 20 + gap 12 +
+   * padding 12 = 240.3; + sidebar padding 2×14 + border 1 = 269.3; + a thin scrollbar (≈ 11px,
+   * short screens) = 280.3 → 288 leaves ≈ 8px for font rendering differences. */
+  --sidebar-w: 288px;
   --sidebar-rail: 76px;
   --topbar-h: 64px;
 }
@@ -106,16 +109,15 @@
     width: var(--sidebar-w);
     padding-inline: 14px;
   }
-  /* EM round 5 item 2: a label is never cut. It wraps to a second line instead ("Gói liệu trình
-   * của khách"), and the rail's nowrap/overflow clipping is undone, not just its size. */
+  /* EM round 5 item 2 + round 6: a label is never cut and never wraps — --sidebar-w is sized for
+   * the longest one. The rail's clipping is undone, not just its size. */
   .sidebar:not([data-collapsed]) :is(.nav-label, .nav-group-label) {
     position: static;
     width: auto;
     height: auto;
-    min-width: 0;
     overflow: visible;
     clip-path: none;
-    white-space: normal;
+    white-space: nowrap;
   }
   .sidebar:not([data-collapsed]) :is(.nav-item, .sidebar-toggle) {
     padding-block: 7px;
@@ -1028,15 +1030,19 @@ h2 .gender-chip {
   border-spacing: 0;
   font-size: 14px;
 }
-/* Tables scroll inside their card, so the sticky header sticks to the card's top edge. */
+/*
+ * Tables grow with their rows and the PAGE scrolls (EM round 6: no scroll area inside a card on
+ * desktop). Only a table genuinely wider than its card scrolls sideways, inside the card.
+ * `position: relative` makes the wrapper the containing block of absolutely positioned
+ * descendants (the `.sr-only` ", Nữ" of every CustomerName): without it they escaped the
+ * scroller, their static position deep in the table stretched the document past the shell, and
+ * the sticky sidebar ran out of containing block half way down (the round 6 bug).
+ */
 .table-wrap {
-  max-height: min(70vh, 720px);
-  overflow: auto;
+  position: relative;
+  overflow-x: auto;
 }
 .data-table th {
-  position: sticky;
-  z-index: 1;
-  top: 0;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border-strong);
   background: var(--surface-2);

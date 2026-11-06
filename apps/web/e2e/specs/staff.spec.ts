@@ -58,7 +58,8 @@ test.describe("nhân viên", () => {
     await page.getByRole("tab", { name: "Bảng công tháng" }).click();
     await expect(page.getByRole("table", { name: /Bảng chấm công/ })).toBeVisible();
     await expect(page.getByRole("button", { name: new RegExp(`^${name}, .*muộn 20 phút`) })).toBeVisible();
-    await expect(page.getByText("Khách khen đích danh")).toBeVisible();
+    // Scoped to this person's row: a retry adds a second "Khách khen đích danh" to the same month.
+    await expect(page.getByRole("row").filter({ hasText: name }).getByText("Khách khen đích danh")).toBeVisible();
 
     // Payroll: live payslip with every line.
     await page.getByRole("tab", { name: "Bảng lương" }).click();
