@@ -66,4 +66,21 @@ describe("RowMenu", () => {
     await user.tab();
     expect(screen.queryByRole("menu")).toBeNull();
   });
+
+  it("stays open on a scroll that does not move its row, closes when the row moves", async () => {
+    const { button } = setup();
+    const user = userEvent.setup();
+    let top = 500;
+    vi.spyOn(button, "getBoundingClientRect").mockImplementation(() => new DOMRect(10, top, 44, 44));
+    await user.click(button);
+    window.dispatchEvent(new Event("scroll"));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    top = 380;
+    window.dispatchEvent(new Event("scroll"));
+    expect(await screen.findByRole("button", { name: "Thao tác lượt 09:12 của Hà" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
 });

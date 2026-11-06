@@ -78,8 +78,14 @@ export function RowMenu({
       if (!menu.current?.contains(t) && !button.current?.contains(t))
         setAt(null);
     };
+    // Only a scroll that moves the row closes it: a scroll event queued before the menu opened
+    // (the page shrinking after a form closed clamps the scroll position) must not (e2e voids).
+    const anchor = button.current?.getBoundingClientRect();
     const onScroll = (e: Event) => {
-      if (!menu.current?.contains(e.target as Node)) setAt(null);
+      if (e.target instanceof Node && menu.current?.contains(e.target)) return;
+      const now = button.current?.getBoundingClientRect();
+      if (!anchor || !now || Math.abs(now.top - anchor.top) > 1 || Math.abs(now.left - anchor.left) > 1)
+        setAt(null);
     };
     const onResize = () => {
       setAt(null);
