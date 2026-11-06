@@ -18,7 +18,7 @@ test.describe("khách hàng (US2)", () => {
     const phone = uniquePhone();
     await expectAccessible(page, "customers");
 
-    await page.getByRole("button", { name: "+ Khách mới" }).click();
+    await page.getByRole("button", { name: "Khách mới", exact: true }).click();
     const form = page.getByRole("form", { name: "Khách mới" });
     await form.getByLabel("Họ tên").fill("Nguyễn Thị Hoà");
     await form.getByLabel("Số điện thoại").fill(phone);
@@ -53,7 +53,7 @@ test.describe("khách hàng (US2)", () => {
 
   test("search by the last digits of the phone", async ({ page }) => {
     const phone = uniquePhone();
-    await page.getByRole("button", { name: "+ Khách mới" }).click();
+    await page.getByRole("button", { name: "Khách mới", exact: true }).click();
     const form = page.getByRole("form", { name: "Khách mới" });
     await form.getByLabel("Họ tên").fill("Lê Văn Đức");
     await form.getByLabel("Số điện thoại").fill(phone);

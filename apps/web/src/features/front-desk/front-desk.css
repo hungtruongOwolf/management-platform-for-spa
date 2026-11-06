@@ -82,7 +82,7 @@
     min-height: 44px;
     align-items: center;
     justify-content: flex-end;
-    gap: 6px;
+    gap: 8px;
     color: var(--text-muted);
     font-size: var(--fs-sm);
   }
@@ -106,14 +106,14 @@
     position: relative;
     display: inline-flex;
   }
-  /* 44px target; the visible mark is a 28px ring drawn in the background (no layout growth:
-   * the negative margin keeps the row as tall as its text). */
+  /* 44px target; the visible mark is a 28px ring drawn in the background. Neighbours keep ≥ 8px
+   * so the 5px focus ring never covers their text. */
   .tip-button {
     --ring: var(--border-strong);
     display: inline-grid;
     width: 44px;
     height: 44px;
-    margin: -8px;
+    flex-shrink: 0;
     place-items: center;
     border-radius: 999px;
     background: radial-gradient(
@@ -155,8 +155,9 @@
       opacity var(--dur-fast) var(--ease-out),
       visibility var(--dur-fast);
   }
+  /* Hover or an explicit open (click, tap, Enter/Space). Keyboard focus alone only announces it
+   * (aria-describedby), so tabbing past never covers the content around the button. */
   .tip:hover .tip-body,
-  .tip-button:focus-visible + .tip-body,
   .tip-button[aria-expanded="true"] + .tip-body {
     visibility: visible;
     opacity: 1;

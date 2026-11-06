@@ -38,7 +38,7 @@ test.describe("bán liệu trình (US3)", () => {
   }) => {
     const planId = await createPlan(page);
     await page.goto("/khach-hang");
-    await page.getByRole("button", { name: "+ Khách mới" }).click();
+    await page.getByRole("button", { name: "Khách mới", exact: true }).click();
     const form = page.getByRole("form", { name: "Khách mới" });
     await form.getByLabel("Họ tên").fill("Phạm Thị Mai");
     await form.getByLabel("Số điện thoại").fill(uniquePhone());
