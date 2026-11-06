@@ -47,15 +47,19 @@
     color: var(--text-muted);
     font-size: var(--fs-sm);
   }
-  /* Be Vietnam Pro has no true tabular figures: a fixed box keeps the line still as the seconds
-   * tick (layout.spec "hover and press move nothing" caught the 4px jitter). */
+  /* Be Vietnam Pro has no true tabular figures: each digit gets a 1ch slot (DayCountdown) so the
+   * line stays still as the seconds tick (layout.spec "hover and press move nothing" caught the 4px
+   * jitter), and the time is exactly as wide as its characters: no gap after "Còn" (EM
+   * 2026-11-07; the 8.5ch box before was wider than 6 digits + 2 colons). */
   .day-clock-time {
-    display: inline-block;
-    min-width: 8.5ch;
     color: var(--text);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
-    text-align: right;
+  }
+  .day-clock-digit {
+    display: inline-block;
+    width: 1ch;
+    text-align: center;
   }
   .day-clock-time.is-late {
     color: var(--danger);

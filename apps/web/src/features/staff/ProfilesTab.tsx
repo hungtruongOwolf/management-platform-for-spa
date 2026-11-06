@@ -64,7 +64,7 @@ export function ProfilesTab({ canPay }: { canPay: boolean }) {
         </button>
       </div>
       <div className="card overflow-hidden">
-        <ResponsiveTable caption="Hồ sơ nhân viên" rows={query.data} rowKey={(p) => p.id} columns={columns} />
+        <ResponsiveTable caption="Hồ sơ nhân viên" className="profiles-table" rows={query.data} rowKey={(p) => p.id} columns={columns} />
       </div>
       {editing && (
         <ProfileSheet

@@ -38,7 +38,22 @@ export function DayCountdown({ owner }: { owner: boolean }) {
           // Announcing every second would drown a screen reader: the text is read on focus/visit.
           aria-live="off"
         >
-          {hms(left)}
+          <span className="sr-only">{hms(left)}</span>
+          {/* Be Vietnam Pro has no true tabular figures: each digit sits in its own 1ch slot, so the
+              line stays still as the seconds tick and the time hugs "Còn" (EM 2026-11-07: an
+              8.5ch box left a gap before the time). */}
+          <span aria-hidden="true">
+            {hms(left)
+              .split(":")
+              .map((pair, unit) => (
+                // Hours, minutes, seconds: a fixed position each, never reordered.
+                <span key={unit}>
+                  {unit > 0 && ":"}
+                  <span className="day-clock-digit">{pair.charAt(0)}</span>
+                  <span className="day-clock-digit">{pair.charAt(1)}</span>
+                </span>
+              ))}
+          </span>
         </strong>{" "}
         để nhập số liệu hôm nay
       </span>

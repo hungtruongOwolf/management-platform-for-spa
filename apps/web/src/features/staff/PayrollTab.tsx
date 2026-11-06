@@ -27,7 +27,7 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
       id: "name",
       header: "Nhân viên",
       card: "title",
-      width: "20%",
+      width: "16%",
       cell: (s) => (
         <button
           type="button"
@@ -40,7 +40,7 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
         </button>
       ),
     },
-    { id: "position", header: "Vị trí", card: "subtitle", width: "13%", cell: (s) => s.position },
+    { id: "position", header: "Vị trí", card: "subtitle", width: "12%", cell: (s) => s.position },
     { id: "base", header: "Lương cứng", numeric: true, width: "11%", cell: (s) => vnd(s.base_salary) },
     { id: "deduct", header: "Trừ nghỉ, muộn", numeric: true, width: "12%", cell: (s) => (s.leave_deduction + s.late_deduction > 0 ? `−${vnd(s.leave_deduction + s.late_deduction)}` : "–") },
     { id: "commission", header: "Hoa hồng", numeric: true, width: "10%", cell: (s) => vnd(s.service_commission + s.closing_commission) },
@@ -49,7 +49,7 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
     {
       id: "flags",
       header: "Lưu ý",
-      width: "12%",
+      width: "17%",
       cell: (s) => (s.flags.length === 0 ? "–" : s.flags.map((f) => FLAG_LABEL[f]).join(" · ")),
     },
   ];
@@ -102,7 +102,7 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
                   Tổng {p.totals.staff} người
                 </th>
                 <td className="num">{vnd(p.totals.base_salary)}</td>
-                <td className="num">−{vnd(p.totals.deductions)}</td>
+                <td className="num">{p.totals.deductions > 0 ? `−${vnd(p.totals.deductions)}` : "–"}</td>
                 <td className="num">{vnd(p.totals.commission)}</td>
                 <td className="num">{vnd(p.totals.bonuses - p.totals.penalties)}</td>
                 <td className="num">
