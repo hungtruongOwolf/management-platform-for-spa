@@ -1,6 +1,7 @@
 import { useQuery, useSuspenseQuery, type UseQueryResult } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { Icon } from "../../app/Icon";
+import { readPreviousLine, savePreviousLine } from "../../app/prefs";
 import { DateField } from "../../components/DateField";
 import { ResponsiveTable } from "../../components/ResponsiveTable";
 import { dayLabel } from "../../lib/format";
@@ -303,25 +304,45 @@ function TrendCard({
   const shown: Metric = metric === "revenue" && !hasMoney ? "visits" : metric;
   const metrics: Metric[] = hasMoney ? ["revenue", "customers", "visits"] : ["customers", "visits"];
   const isMoney = shown === "revenue";
+  // EM 2026-11-06: the previous-period line stays off until the viewer turns it on.
+  const [comparing, setComparing] = useState(readPreviousLine);
+  const showPrevious = comparing && previous !== undefined;
   return (
     <section aria-labelledby="trend-title" className="card grid content-start gap-3 p-4 xl:col-span-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="trend-title" className="section-heading">
           Xu hướng {METRIC_LABEL[shown].toLowerCase()}
         </h2>
-        <div className="segmented" role="group" aria-label="Chỉ số trên biểu đồ">
-          {metrics.map((m) => (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={shown === m}
-              onClick={() => {
-                onMetric(m);
-              }}
-            >
-              {METRIC_LABEL[m]}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          {previous && (
+            <div className="segmented">
+              <button
+                type="button"
+                aria-pressed={comparing}
+                onClick={() => {
+                  setComparing(!comparing);
+                  savePreviousLine(!comparing);
+                }}
+              >
+                <span aria-hidden="true" className="line-key line-key-previous" />
+                So với kỳ trước
+              </button>
+            </div>
+          )}
+          <div className="segmented" role="group" aria-label="Chỉ số trên biểu đồ">
+            {metrics.map((m) => (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={shown === m}
+                onClick={() => {
+                  onMetric(m);
+                }}
+              >
+                {METRIC_LABEL[m]}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       {range.isPending && (
@@ -333,7 +354,7 @@ function TrendCard({
         <LineChart
           label={`${METRIC_LABEL[shown]} theo ${period.bucket === "day" ? "ngày" : period.bucket === "week" ? "tuần" : period.bucket === "month" ? "tháng" : "năm"}, ${period.label}`}
           seriesLabel={period.label}
-          previousLabel={previous ? "Kỳ trước" : undefined}
+          previousLabel={showPrevious ? "Kỳ trước" : undefined}
           format={isMoney ? money : (n) => n.toLocaleString("vi-VN")}
           axisFormat={isMoney ? compactVnd : (n) => n.toLocaleString("vi-VN")}
           points={range.data.series.map((b, i) => ({
@@ -341,7 +362,8 @@ function TrendCard({
             label: bucketLabel(b.start, period.bucket),
             title: bucketTitle(b, period.bucket),
             value: valueOf(b, shown) ?? 0,
-            previous: valueOf(previous?.series[i], shown),
+            // Off: no previous values at all, so the axis fits the period alone.
+            previous: showPrevious ? valueOf(previous.series[i], shown) : undefined,
           }))}
         />
       )}

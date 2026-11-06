@@ -1,5 +1,6 @@
 /**
- * Per-device conveniences kept in localStorage: colour theme and the collapsed sidebar. Storage can
+ * Per-device conveniences kept in localStorage: colour theme, the collapsed sidebar and the
+ * report chart's previous-period line. Storage can
  * be missing or throw (private mode, blocked site data), so every access falls back to a default.
  */
 
@@ -7,6 +8,7 @@ export type Theme = "system" | "light" | "dark";
 
 const THEME_KEY = "vpyd.theme";
 const SIDEBAR_KEY = "vpyd.sidebar";
+const PREVIOUS_LINE_KEY = "vpyd.report.previousLine";
 
 function read(key: string): string | null {
   try {
@@ -59,4 +61,13 @@ export function readSidebarCollapsed(): boolean {
 
 export function saveSidebarCollapsed(collapsed: boolean): void {
   write(SIDEBAR_KEY, collapsed ? "collapsed" : null);
+}
+
+/** The "Kỳ trước" line on the report's trend chart: off unless this viewer turned it on. */
+export function readPreviousLine(): boolean {
+  return read(PREVIOUS_LINE_KEY) === "on";
+}
+
+export function savePreviousLine(on: boolean): void {
+  write(PREVIOUS_LINE_KEY, on ? "on" : null);
 }

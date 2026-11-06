@@ -70,6 +70,37 @@ describe("/bao-cao", () => {
     expect(urls(spy)).toContain(`/api/v1/reports/range?from=${addDays(today, -13)}&to=${addDays(today, -7)}&granularity=day`);
   });
 
+  it("shows the previous-period line only when turned on, and remembers the choice (EM 2026-11-06)", async () => {
+    localStorage.removeItem("vpyd.report.previousLine");
+    serveManagement({ permissions: MANAGER });
+    const user = userEvent.setup();
+    at("/bao-cao");
+    const toggle = await screen.findByRole("button", { name: "So với kỳ trước" });
+    const chart = await screen.findByRole("img", { name: /^Thực thu theo ngày/ });
+    const section = chart.closest("section");
+    expect(section).not.toBeNull();
+    if (!section) return;
+    // Off by default: no line, dots or legend key for the previous period.
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(within(section).queryByText("Kỳ trước")).not.toBeInTheDocument();
+    expect(section.querySelector(".line-previous, .line-dot-previous")).toBeNull();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(within(section).getByText("Kỳ trước")).toBeInTheDocument();
+    expect(section.querySelector(".line-previous")).not.toBeNull();
+    expect(localStorage.getItem("vpyd.report.previousLine")).toBe("on");
+
+    // A later visit on this device opens with the line on.
+    cleanup();
+    serveManagement({ permissions: MANAGER });
+    at("/bao-cao");
+    expect(await screen.findByRole("button", { name: "So với kỳ trước" })).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByRole("button", { name: "So với kỳ trước" }));
+    expect(localStorage.getItem("vpyd.report.previousLine")).toBeNull();
+  });
+
   it("keeps the period in the URL: presets, the year by month, a custom range", async () => {
     const spy = serveManagement({ permissions: MANAGER });
     const user = userEvent.setup();
