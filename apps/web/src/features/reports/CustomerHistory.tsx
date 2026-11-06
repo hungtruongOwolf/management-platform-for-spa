@@ -97,20 +97,22 @@ function Summary({ customerId }: { customerId: string }) {
   );
 }
 
-function EventBody({ e, correctable }: { e: HistoryEvent; correctable: boolean }) {
+function EventBody({ e }: { e: HistoryEvent }) {
   if (e.visit) {
     const v = e.visit;
     return (
       <ul className="mt-1 grid content-start gap-1 text-sm">
         {v.lines.map((l, i) => (
-          <li key={i} className="flex flex-wrap justify-between gap-x-3">
-            <span>
+          <li key={i} className="flex items-baseline justify-between gap-x-3">
+            <span className="min-w-0">
               {serviceLabel(l.service_name, l.category_name)}
               <span className="text-text-muted">
                 {l.source === "package" ? ` · trừ buổi${l.sessions_left_after != null ? `, còn ${String(l.sessions_left_after)}` : ""}` : " · dịch vụ lẻ"} · KTV {l.staff_name}
               </span>
             </span>
-            {l.amount > 0 && <span className={`tabular ${v.voided ? "line-through" : ""}`}>{money(l.amount)}</span>}
+            {l.amount > 0 && (
+              <span className={`shrink-0 whitespace-nowrap tabular ${v.voided ? "line-through" : ""}`}>{money(l.amount)}</span>
+            )}
           </li>
         ))}
         {v.corrected_by_visit_id ? (
@@ -119,13 +121,6 @@ function EventBody({ e, correctable }: { e: HistoryEvent; correctable: boolean }
           v.void_reason && <li className="text-text-muted">Lý do hủy: {v.void_reason}</li>
         )}
         {v.corrects_visit_id && <li className="text-text-muted">Thay cho lượt ghi trước (đã sửa).</li>}
-        {correctable && (
-          <li>
-            <Link to="/quay" search={{ sua: v.id }} className="link inline-flex min-h-11 items-center">
-              Sửa lượt
-            </Link>
-          </li>
-        )}
       </ul>
     );
   }
@@ -172,7 +167,7 @@ function HistoryFilters() {
         <SearchField
           label="Tìm dịch vụ, gói hoặc kỹ thuật viên"
           placeholder="Dịch vụ, KTV…"
-          className="basis-full"
+          className="history-search"
           value={s.hq}
           onCommit={(hq) => {
             set({ hq });
@@ -180,6 +175,8 @@ function HistoryFilters() {
         />
       }
     >
+      {/* The profile's column is narrow (~420px at 1280): search + kind on one row, the date range
+          on the next as two equal fields (EM polish round 2: one field per row before). */}
       <FilterSelect
         label="Loại"
         value={s.hkind}
@@ -188,23 +185,25 @@ function HistoryFilters() {
           set({ hkind });
         }}
       />
-      <DateField
-        label="Từ ngày"
-        value={s.hfrom}
-        max={s.hto || today}
-        onChange={(hfrom) => {
-          set({ hfrom });
-        }}
-      />
-      <DateField
-        label="Đến ngày"
-        value={s.hto}
-        min={s.hfrom || undefined}
-        max={today}
-        onChange={(hto) => {
-          set({ hto });
-        }}
-      />
+      <div className="history-filters">
+        <DateField
+          label="Từ ngày"
+          value={s.hfrom}
+          max={s.hto || today}
+          onChange={(hfrom) => {
+            set({ hfrom });
+          }}
+        />
+        <DateField
+          label="Đến ngày"
+          value={s.hto}
+          min={s.hfrom || undefined}
+          max={today}
+          onChange={(hto) => {
+            set({ hto });
+          }}
+        />
+      </div>
       {(s.hq || active > 0) && (
         <button type="button" className="btn btn-secondary max-sm:hidden" onClick={reset}>
           Xóa bộ lọc
@@ -243,6 +242,10 @@ function Timeline({ customerId, permissions }: { customerId: string; permissions
           // One chip per event (design-system.md "Quy tắc" 7); a voided entry reads muted.
           const { title, chip } = eventHead(e);
           const voided = e.kind.endsWith("_voided");
+          const correctable =
+            e.kind === "visit" &&
+            !!e.visit &&
+            mayCorrectVisit(permissions, { business_date: e.business_date, voided: e.visit.voided }, today);
           return (
             <li key={`${e.at}-${String(i)}`} className="relative">
               {heading && <p className="timeline-month">{heading}</p>}
@@ -250,23 +253,25 @@ function Timeline({ customerId, permissions }: { customerId: string; permissions
                 <span aria-hidden="true" className={`timeline-dot ${dot} text-on-primary`}>
                   <Icon name={icon} className="size-2.5" />
                 </span>
-                <p className="flex flex-wrap items-baseline justify-between gap-2">
+                {/* Title + chip left; when and "Sửa lượt" right, as the "Sửa" of the price list
+                    (EM polish round 2: it was a bare link under the lines). */}
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                   <span className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold">{title}</span>
                     {chip && <span className={`badge ${chip[1]}`}>{chip[0]}</span>}
                   </span>
-                  <span className="text-xs text-text-muted tabular">
-                    {relativeDay(e.business_date)} · {time.format(new Date(e.at))}
+                  <span className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+                    <span className="text-xs text-text-muted tabular">
+                      {relativeDay(e.business_date)} · {time.format(new Date(e.at))}
+                    </span>
+                    {e.visit && correctable && (
+                      <Link to="/quay" search={{ sua: e.visit.id }} className="btn btn-secondary">
+                        Sửa lượt
+                      </Link>
+                    )}
                   </span>
-                </p>
-                <EventBody
-                  e={e}
-                  correctable={
-                    e.kind === "visit" &&
-                    !!e.visit &&
-                    mayCorrectVisit(permissions, { business_date: e.business_date, voided: e.visit.voided }, today)
-                  }
-                />
+                </div>
+                <EventBody e={e} />
               </div>
             </li>
           );

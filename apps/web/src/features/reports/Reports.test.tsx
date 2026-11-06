@@ -382,6 +382,19 @@ describe("customer history", () => {
     expect(within(timeline).getAllByText(/^Gội đầu dưỡng sinh · /).length).toBeGreaterThan(0);
   });
 
+  it("puts “Sửa lượt” as a button in each correctable visit's header (EM polish round 2)", async () => {
+    serveManagement({ permissions: [...MANAGER, "record.void_same_day", "record.void_closed_day"] });
+    at("/khach-hang/c1");
+    const timeline = await screen.findByRole("list", { name: "Lịch sử sử dụng" });
+    const edits = await within(timeline).findAllByRole("link", { name: "Sửa lượt" });
+    // Nine visits in the fixture, one voided: no correction for that one.
+    expect(edits).toHaveLength(8);
+    expect(edits[0]).toHaveClass("btn", "btn-secondary");
+    expect(edits[0]).toHaveAttribute("href", "/quay?sua=mock-visit-0");
+    // In the header row, next to the time, not under the lines.
+    expect(edits[0]?.parentElement).toHaveTextContent(/\d{2}:\d{2}/);
+  });
+
   it("searches the history by kind and text; the filters stay in the profile URL", async () => {
     const spy = serveManagement({ permissions: MANAGER });
     const user = userEvent.setup();

@@ -94,17 +94,10 @@
 .cal-toolbar .segmented > button {
   min-height: 0;
 }
-/* The date field's label is for screen readers only: the buttons beside it say what it is. */
+/* The date field's label is for screen readers only (DateField `hideLabel`): the buttons beside
+   it say what it is. */
 .cal-date {
   display: block;
-}
-.cal-date > label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }
 .cal-date .date-field input {
   width: 9.25rem;
@@ -139,8 +132,10 @@
 .cal-scroll {
   max-width: 100%;
   /* The page scrolls as one (EM round 6, no nested vertical scroll): clip, not a scroll box, so the
-     header row sticks under the top bar while the page scrolls. */
-  overflow-x: clip;
+     header row sticks under the top bar while the page scrolls. Both axes (EM polish round 2): a
+     one-axis clip ignores the rounded corners, so the square header and gutter cells painted over
+     the frame's corners. */
+  overflow: clip;
 }
 /* More columns than fit: scroll sideways inside the frame, the time gutter stays (sticky left). */
 .cal-scroll.is-wide {
@@ -198,38 +193,48 @@
   color: var(--text-muted);
   font-size: var(--fs-xs);
 }
+/* One band per hour (DayGrid, layout.ts `gutterBands`): the hour on top, its count chip under it,
+   both left-aligned, so neither collides with the other in the 104 px column (EM polish round 2). */
 .cal-gutter {
   position: sticky;
   left: 0;
   z-index: 5;
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 4px;
-  padding: 2px 8px;
+  min-width: 0;
+  padding: 4px 8px;
   border-top: 1px solid transparent;
   border-right: 1px solid var(--border);
   background: var(--surface);
   color: var(--text-muted);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
-  line-height: 20px;
+  line-height: 16px;
 }
 .cal-gutter.is-hour {
   border-top-color: var(--border);
+}
+.cal-gutter.is-hour > span:first-child {
   color: var(--text);
+  font-size: var(--fs-sm);
   font-weight: 600;
+  line-height: 18px;
 }
 /* People booked / in service in the hour (and "/ max" when the owner set one). */
 .cal-count {
-  padding: 0 6px;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 2px 8px;
   border-radius: 999px;
   background: var(--surface-2);
+  box-shadow: var(--mix-chip-ring);
   color: var(--text-muted);
   font-size: var(--fs-xs);
   font-weight: 600;
-  line-height: 18px;
-  text-align: center;
+  line-height: 16px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .cal-count.is-full {
@@ -268,8 +273,10 @@
   z-index: 2;
   pointer-events: none;
 }
-/* One card: a block of the timeline, the same 1 px edge all round (no side stripe); the phase is
-   said in words on its second line. */
+/* One card: a block of the timeline, the same 1 px edge all round (no side stripe). Whole lines
+   only (layout.ts `cardLines`, passed as --name-lines / --meta-lines / --svc-lines): the name
+   wraps to two lines before it is cut, the phase is a dot + its word, the services take what is
+   left (EM polish round 2: three cut lines "Bùi Văn …", "Xong · Vã…" read as noise). */
 .cal-event {
   position: absolute;
   /* Exactly the real time span: --top / --span are in slots; 1 px gap above and below. */
@@ -277,9 +284,9 @@
   left: calc(var(--lane) * 100% / var(--lanes) + var(--inset));
   width: calc(100% / var(--lanes) - 2 * var(--inset));
   height: calc(var(--span) * var(--slot-h) - 2px);
-  display: grid;
-  align-content: start;
-  gap: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   min-width: 0;
   padding: 3px 8px;
   overflow: hidden;
@@ -307,34 +314,69 @@
   transform: none;
   box-shadow: inset 0 0 0 1px var(--appt-edge);
 }
-.cal-event strong,
-.cal-event > span,
-.cal-event-line {
+.cal-event-name {
+  display: -webkit-box;
+  flex-shrink: 0;
   min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 18px;
+  overflow-wrap: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--name-lines, 1);
+  line-clamp: var(--name-lines, 1);
+}
+.cal-event-name strong {
+  font-weight: 600;
+}
+/* Phase (dot + word), "quá giờ", the tag and maybe the services: word groups that wrap whole;
+   a group that finds no visible line is not drawn at all rather than cut. */
+.cal-event-meta {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  max-height: calc(var(--meta-lines, 1) * 16px);
+  min-width: 0;
+  overflow: hidden;
+}
+.cal-event-meta > span {
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cal-event strong {
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  line-height: 18px;
-}
 .cal-event .cal-event-phase {
   color: var(--appt-fg);
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
 }
-.cal-event .cal-event-more {
-  color: var(--text-muted);
-  font-weight: 400;
-}
-.cal-event > span:last-child:not(.cal-event-phase, .cal-event-line) {
+.cal-event-tag {
   color: var(--text-muted);
 }
-/* 15 minutes: one line, centred in the card. */
+/* The phase's colour as a dot before its word (day cards, week blocks). */
+.appt-dot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 999px;
+  background: var(--appt-fg);
+  vertical-align: 1px;
+}
+.cal-event-services {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--svc-lines, 1);
+  line-clamp: var(--svc-lines, 1);
+}
+/* 15 minutes: one line (dot + name), centred in the card. */
 .cal-event[data-fit="compact"] {
-  align-content: center;
+  justify-content: center;
   padding-block: 0;
 }
 /* Decorative and stacked over the grid: --top is in slots from the first row. */
@@ -357,15 +399,16 @@
 /* The previous week layout, kept by the EM (review 2026-11-06): seven day cards, each booking a
    tinted block in its phase's colours, on the shared tokens and type scale. The blocks share the
    day grid's card style (1 px edge all round, phase in words), so both views read as one app. */
+/* Seven days on one row while a day keeps 124 px; narrower (1024 px laptop with the sidebar open,
+   tablets, phones) the days wrap onto more rows instead of squeezing to ~90 px, where every
+   phase and name was cut (sweep, EM polish round 2). */
 .cal-week {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(max(124px, calc((100% - 6 * 8px) / 7)), 1fr)
+  );
   gap: 8px;
-}
-@media (max-width: 1023.98px) {
-  .cal-week {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  }
 }
 .cal-day {
   display: grid;
@@ -433,9 +476,29 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cal-chip-when {
+.cal-chip > .cal-chip-when {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  white-space: normal;
+}
+.cal-chip-when > span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A narrow day (laptop week: ~125 px): the phase gets its own line in every block of the day, so
+   the blocks keep one height instead of wrapping one by one. */
+.cal-day {
+  container-type: inline-size;
+}
+@container (max-width: 167.98px) {
+  .cal-chip > .cal-chip-when {
+    flex-direction: column;
+  }
 }
 .cal-chip-phase {
   color: var(--appt-fg);
@@ -558,6 +621,11 @@
   gap: 12px;
   padding-top: 16px;
   border-top: 1px solid var(--border);
+}
+/* A field with its label beside a button ("KTV làm" + "Chỉ báo đã đến"): the button lines up with
+   the field, not with the label above it (sweep, EM polish round 2). */
+.appt-section .button-row:has(> .field) {
+  align-items: flex-end;
 }
 .appt-members {
   display: grid;

@@ -32,6 +32,7 @@ export function DateField({
   describedBy,
   invalid: invalidFromForm = false,
   className = "filter-field",
+  hideLabel = false,
 }: {
   label: string;
   /** ISO day `yyyy-mm-dd`, or "" for none. */
@@ -44,6 +45,8 @@ export function DateField({
   /** The form knows the value is wrong (e.g. a server error). */
   invalid?: boolean;
   className?: string;
+  /** The label is for screen readers only: the field sits beside a heading that says what it is. */
+  hideLabel?: boolean;
 }) {
   const id = useId();
   const picker = useRef<HTMLInputElement>(null);
@@ -76,7 +79,9 @@ export function DateField({
 
   return (
     <div className={className}>
-      <label htmlFor={id}>{label}</label>
+      <label htmlFor={id} className={hideLabel ? "sr-only" : undefined}>
+        {label}
+      </label>
       <div className="date-field">
         <input
           id={id}
