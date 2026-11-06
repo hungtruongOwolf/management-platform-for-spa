@@ -3,7 +3,7 @@ import { useState } from "react";
 import { BottomSheet } from "../../components/BottomSheet";
 import { messageFor } from "../../lib/errors";
 import { invalidateStaff, saveAttendance, saveReviews, type AttendanceEntryWrite, type DailyReview, type StaffSheet } from "./api";
-import { STATUSES, STATUS_CODE, STATUS_HINT, STATUS_LABEL, type AttendanceStatus } from "./labels";
+import { STATUSES, STATUS_HINT, STATUS_LABEL, type AttendanceStatus } from "./labels";
 import { cellOf } from "./progress";
 import { Counter } from "./Counter";
 import { dayLabel } from "./ui";
@@ -123,9 +123,7 @@ export function PersonDaySheet({
                     }}
                   />
                   <span>
-                    <span className="font-semibold">
-                      {STATUS_CODE[st]} {STATUS_LABEL[st]}
-                    </span>
+                    <span className="font-semibold">{STATUS_LABEL[st]}</span>
                     <span className="block text-sm text-text-muted">{STATUS_HINT[st]}</span>
                   </span>
                 </label>
