@@ -985,6 +985,22 @@ export interface paths {
         patch: operations["update_visit"];
         trace?: never;
     };
+    "/api/v1/visits/{id}/correct": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["correct_visit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/visits/{id}/void": {
         parameters: {
             query?: never;
@@ -1637,6 +1653,11 @@ export interface components {
         DayCounts: {
             /**
              * Format: int64
+             * @description Visits replaced by "Sửa lượt" ("đã sửa"); their newest version counts in `visits`.
+             */
+            corrected_visits: number;
+            /**
+             * Format: int64
              * @description Distinct customers with at least one completed visit.
              */
             customers: number;
@@ -1660,7 +1681,10 @@ export interface components {
              * @description Completed visits (voided ones are in `voided_visits`).
              */
             visits: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Visits cancelled ("Hủy lượt"); visits replaced by "Sửa lượt" are not cancellations.
+             */
             voided_visits: number;
         };
         /** @description The headline numbers of another day, for "so với hôm qua / cùng thứ tuần trước". */
@@ -1890,6 +1914,16 @@ export interface components {
         HistoryVisit: {
             /** Format: date-time */
             check_in_at: string;
+            /**
+             * Format: uuid
+             * @description "Sửa lượt": the visit that replaced this (voided) one.
+             */
+            corrected_by_visit_id?: string | null;
+            /**
+             * Format: uuid
+             * @description "Sửa lượt": the voided visit this one replaces.
+             */
+            corrects_visit_id?: string | null;
             /** Format: uuid */
             id: string;
             lines: components["schemas"]["HistoryVisitLine"][];
@@ -3175,6 +3209,47 @@ export interface components {
             id: string;
             phone: string;
         };
+        /** @description Response of `POST /visits/{id}/correct`. */
+        VisitCorrected: {
+            /**
+             * Format: int64
+             * @description New total − old total: > 0 collect more ("Thu thêm"), < 0 give back ("Hoàn"), 0 = same.
+             */
+            difference: number;
+            /** @description The corrected visit (`corrects_visit_id` = the old one). */
+            visit: components["schemas"]["VisitDto"];
+            /** @description The old visit, now `voided`, with `corrected_by_visit_id` set. */
+            voided: components["schemas"]["VisitDto"];
+        };
+        /**
+         * @description Body of `POST /visits/{id}/correct` (with `If-Match` + `Idempotency-Key`): the visit as it
+         *     should have been recorded, plus the reason. The old visit is voided and this one recorded in
+         *     one transaction (spec US6b), with the rules and permissions of `POST /visits`. No amount is read
+         *     from the client.
+         */
+        VisitCorrection: {
+            /**
+             * Format: date-time
+             * @description Service time; absent = the old visit's. Must stay on the old visit's business day.
+             */
+            check_in_at?: string | null;
+            /**
+             * Format: uuid
+             * @description May differ from the old visit's customer (recorded for the wrong person).
+             */
+            customer_id: string;
+            discount?: components["schemas"]["ServiceDiscountCreate"] | null;
+            /** @description 1–20 service lines, as in `POST /visits`. */
+            lines: components["schemas"]["VisitLineCreate"][];
+            /**
+             * @description Absent = keep the old visit's note (copied on the server, never sent to the browser);
+             *     null or empty = no note; text = a new note (needs `customer.health_notes.write`).
+             */
+            note?: string | null;
+            payments?: components["schemas"]["PaymentCreate"][];
+            /** @description Why (1–490 characters); the old visit keeps it as "Sửa lượt: …". */
+            reason?: string | null;
+        };
         /**
          * @description Body of `POST /visits`. No amount is read from the client: unknown fields such as `unit_price`
          *     or `total` are ignored, one-off prices come from the catalog and the customer's gender.
@@ -3209,6 +3284,17 @@ export interface components {
              * @description When the service happened (giờ làm).
              */
             check_in_at: string;
+            /**
+             * Format: uuid
+             * @description Set on a voided visit that was corrected: the visit that replaced it. The newest version
+             *     of a visit is the one without this field.
+             */
+            corrected_by_visit_id?: string | null;
+            /**
+             * Format: uuid
+             * @description Set on a visit recorded by "Sửa lượt": the voided visit it replaces.
+             */
+            corrects_visit_id?: string | null;
             /** Format: date-time */
             created_at: string;
             customer_gender?: components["schemas"]["GenderDto"] | null;
@@ -3330,8 +3416,16 @@ export interface components {
         };
         /** @enum {string} */
         VisitStatusDto: "completed" | "voided";
-        /** @description Body of `PATCH /visits/{id}` (with `If-Match`): corrections that do not touch money or sessions. */
+        /**
+         * @description Body of `PATCH /visits/{id}` (with `If-Match`): corrections that do not touch money or
+         *     sessions ("Sửa lượt", direct edit, spec US6b).
+         */
         VisitUpdate: {
+            /**
+             * Format: date-time
+             * @description New service time (giờ làm): on the visit's own business day, not in the future.
+             */
+            check_in_at?: string | null;
             /** @description Technician corrections, by line id. */
             lines?: components["schemas"]["VisitLineUpdate"][];
             /** @description Absent = unchanged, null or empty = cleared. Needs `customer.health_notes.write`. */
@@ -6926,7 +7020,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description visit.voided */
+            /** @description visit.voided / visit.corrected (open the newest version) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6939,6 +7033,80 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description validation_failed (check_in_at not_visit_day), visit.check_in_in_future, staff.inactive */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    correct_visit: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Version of the visit being corrected */
+                "If-Match": string;
+                /** @description One key per correction; a retry replays the first response */
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisitCorrection"];
+            };
+        };
+        responses: {
+            /** @description Old visit voided (sessions back, payments reversed) and the corrected visit recorded, in one transaction (US6b) */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitCorrected"];
+                };
+            };
+            /** @description idempotency.key_required / precondition.if_match_required */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked (manager, a day before today) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description visit, customer or service not in this spa */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description visit.voided / visit.corrected (already corrected: open the newest version), package.* */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description conflict.stale_version */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed (reason required / too_long, check_in_at not_visit_day), payment.amount_mismatch and every rule of POST /visits */
             422: {
                 headers: {
                     [name: string]: unknown;

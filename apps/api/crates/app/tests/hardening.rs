@@ -777,6 +777,7 @@ async fn malformed_bodies_get_a_problem_json_4xx_on_every_write_route(pool: PgPo
         ("POST", "/visits".to_owned()),
         ("PATCH", format!("/visits/{id}")),
         ("POST", format!("/visits/{id}/void")),
+        ("POST", format!("/visits/{id}/correct")),
         ("POST", "/opening-balances".to_owned()),
         ("POST", format!("/customer-packages/{id}/extend")),
         ("POST", format!("/customer-packages/{id}/cancel")),

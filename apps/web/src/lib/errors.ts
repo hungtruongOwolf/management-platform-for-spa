@@ -50,6 +50,8 @@ const MESSAGES: Record<string, string> = {
     "Khách mới: tạo hồ sơ khách trước rồi mới hoàn tất được.",
   "customer.phone_taken": "Số điện thoại này đã có hồ sơ khách.",
   "visit.voided": "Lượt này đã bị hủy, không sửa được.",
+  "visit.corrected":
+    "Lượt này vừa được sửa (có thể ở máy khác). Mở lượt mới nhất để sửa tiếp.",
   "day.locked": "Ngày đã chốt, liên hệ chủ spa.",
   "sale.voided": "Hóa đơn này đã được hủy trước đó.",
   "sale.has_used_sessions":
@@ -113,6 +115,7 @@ const FIELD_MESSAGES: Record<string, string> = {
   not_today: "Chỉ đổi sang ngày khác khi khách chưa đến.",
   before_from: "Ngày kết thúc trước ngày bắt đầu.",
   range_too_long: "Chỉ xem tối đa 14 ngày.",
+  not_visit_day: "Giờ làm phải thuộc đúng ngày của lượt.",
 };
 
 export function messageFor(error: unknown): string {

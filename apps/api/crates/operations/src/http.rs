@@ -1,7 +1,9 @@
 //! `POST /visits`, `GET /visits?date=`, `GET /visits/{id}`, `PATCH /visits/{id}`,
-//! `POST /visits/{id}/void`.
+//! `POST /visits/{id}/void`, `POST /visits/{id}/correct`.
 
-use crate::dto::{VisitCreate, VisitDto, VisitListQuery, VisitUpdate};
+use crate::dto::{
+    VisitCorrected, VisitCorrection, VisitCreate, VisitDto, VisitListQuery, VisitUpdate,
+};
 use crate::service;
 use axum::body::Bytes;
 use axum::extract::{FromRef, Path, Query, State};
@@ -30,6 +32,7 @@ where
         .route("/visits", get(list_visits).post(create_visit))
         .route("/visits/{id}", get(read_visit).patch(update_visit))
         .route("/visits/{id}/void", post(void_visit))
+        .route("/visits/{id}/correct", post(correct_visit))
 }
 
 fn invalid_body() -> AppError {
@@ -123,7 +126,9 @@ pub async fn read_visit(
     params(("id" = Uuid, Path), ("If-Match" = String, Header)),
     responses((status = 200, body = VisitDto),
         (status = 403, description = "auth.forbidden / day.locked"), (status = 404),
-        (status = 409, description = "visit.voided"), (status = 412), (status = 422)))]
+        (status = 409, description = "visit.voided / visit.corrected (open the newest version)"),
+        (status = 412),
+        (status = 422, description = "validation_failed (check_in_at not_visit_day), visit.check_in_in_future, staff.inactive")))]
 pub async fn update_visit(
     State(pool): State<PgPool>,
     State(cipher): State<Arc<FieldCipher>>,
@@ -171,6 +176,53 @@ pub async fn void_visit(
     let version = body["version"].as_i64();
     Ok(no_store(
         StatusCode::from_u16(status).unwrap_or(StatusCode::OK),
+        body,
+        version,
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v1/visits/{id}/correct", tag = "visits", request_body = VisitCorrection,
+    params(("id" = Uuid, Path), ("If-Match" = String, Header, description = "Version of the visit being corrected"),
+        ("Idempotency-Key" = Uuid, Header, description = "One key per correction; a retry replays the first response")),
+    responses(
+        (status = 201, body = VisitCorrected, description = "Old visit voided (sessions back, payments reversed) and the corrected visit recorded, in one transaction (US6b)"),
+        (status = 400, description = "idempotency.key_required / precondition.if_match_required"),
+        (status = 403, description = "auth.forbidden / day.locked (manager, a day before today)"),
+        (status = 404, description = "visit, customer or service not in this spa"),
+        (status = 409, description = "visit.voided / visit.corrected (already corrected: open the newest version), package.*"),
+        (status = 412, description = "conflict.stale_version"),
+        (status = 422, description = "validation_failed (reason required / too_long, check_in_at not_visit_day), payment.amount_mismatch and every rule of POST /visits")))]
+pub async fn correct_visit(
+    State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+    IfMatch(version): IfMatch,
+    IdempotencyKey(key): IdempotencyKey,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    let value: Value = serde_json::from_slice(&body).map_err(|_| invalid_body())?;
+    let canonical = serde_json::to_vec(&value).map_err(|e| AppError::Internal(e.to_string()))?;
+    let input: VisitCorrection = serde_json::from_value(value).map_err(|_| invalid_body())?;
+    let (reason, note, visit) = input.into_parts();
+    let (status, body) = service::correct(
+        &pool,
+        &cipher,
+        &user.actor,
+        key,
+        hash_route("POST", "/visits/{id}/correct", Some(id), &canonical),
+        service::Correction {
+            id,
+            version,
+            reason: reason.as_deref(),
+            note,
+            visit: &visit,
+        },
+    )
+    .await?;
+    let version = body["visit"]["version"].as_i64();
+    Ok(no_store(
+        StatusCode::from_u16(status).unwrap_or(StatusCode::CREATED),
         body,
         version,
     ))

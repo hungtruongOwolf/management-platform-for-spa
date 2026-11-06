@@ -4,5 +4,5 @@
 pub mod domain;
 pub mod dto;
 pub mod http;
-mod repo;
+pub(crate) mod repo;
 pub mod service;

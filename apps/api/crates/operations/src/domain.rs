@@ -72,6 +72,30 @@ impl CheckInError {
     }
 }
 
+/// Why a recorded visit's service time cannot move to the requested instant ("Sửa lượt", direct
+/// edit): the sale and payments belong to the visit's business day, so the time stays on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MoveError {
+    InFuture,
+    OtherDay,
+}
+
+/// May a visit of business day `day` get the service time `at`, at server time `now`?
+pub fn moved_check_in(
+    at: DateTime<Utc>,
+    now: DateTime<Utc>,
+    tz: Tz,
+    day: NaiveDate,
+) -> Result<(), MoveError> {
+    if at > now + Duration::minutes(FUTURE_TOLERANCE_MINUTES) {
+        return Err(MoveError::InFuture);
+    }
+    if BusinessDate::of_instant(at, tz).as_naive() != day {
+        return Err(MoveError::OtherDay);
+    }
+    Ok(())
+}
+
 /// The requested `price_variant` contradicts the customer's recorded gender.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VariantConflict;
@@ -123,6 +147,24 @@ mod tests {
 
     fn day() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 11, 5).unwrap_or_default()
+    }
+
+    #[test]
+    fn a_recorded_visit_moves_only_within_its_day_and_not_ahead_of_now() {
+        let now = at(15, 0);
+        assert_eq!(moved_check_in(at(9, 30), now, vn(), day()), Ok(()));
+        assert_eq!(moved_check_in(at(15, 4), now, vn(), day()), Ok(()));
+        assert_eq!(
+            moved_check_in(at(15, 6), now, vn(), day()),
+            Err(MoveError::InFuture)
+        );
+        // 2026-11-04 23:50 in Vietnam is the day before, though the same UTC date as 05 06:00.
+        let yesterday = vn_at(2026, 11, 4, 23, 50);
+        assert_eq!(
+            moved_check_in(yesterday, now, vn(), day()),
+            Err(MoveError::OtherDay)
+        );
+        assert_eq!(moved_check_in(at(0, 0), now, vn(), day()), Ok(()));
     }
 
     fn check_in_at(

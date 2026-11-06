@@ -454,6 +454,16 @@ const ROUTES: &[Route] = &[
     .id(Target::Visit)
     .body(void_body)
     .idempotent(),
+    // "Sửa lượt" (US6b): also needs `visit.record`, checked first (technicians lack both).
+    route(
+        "POST",
+        "/api/v1/visits/{id}/correct",
+        Access::Perm(P::RecordVoidSameDay, OWNER_MANAGER),
+    )
+    .id(Target::Visit)
+    .body(correction_body)
+    .if_match()
+    .idempotent(),
     // appointments — operations (spec appointments.md)
     route(
         "GET",
@@ -712,6 +722,14 @@ fn complete_body(f: &Fixture) -> Option<Value> {
 }
 fn visit_update_body(_: &Fixture) -> Option<Value> {
     Some(json!({}))
+}
+fn correction_body(f: &Fixture) -> Option<Value> {
+    Some(json!({
+        "reason": "Chọn nhầm dịch vụ",
+        "customer_id": f.customer,
+        "lines": [{"service_id": f.service, "source": "one_off", "staff_id": f.staff}],
+        "payments": [{"method": "cash", "amount": 150_000}]
+    }))
 }
 fn void_body(_: &Fixture) -> Option<Value> {
     Some(json!({"reason": "Ghi nhầm"}))

@@ -3294,10 +3294,90 @@
           },
           "404": {},
           "409": {
-            "description": "visit.voided"
+            "description": "visit.voided / visit.corrected (open the newest version)"
           },
           "412": {},
-          "422": {}
+          "422": {
+            "description": "validation_failed (check_in_at not_visit_day), visit.check_in_in_future, staff.inactive"
+          }
+        }
+      }
+    },
+    "/api/v1/visits/{id}/correct": {
+      "post": {
+        "tags": [
+          "visits"
+        ],
+        "operationId": "correct_visit",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Version of the visit being corrected",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per correction; a retry replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisitCorrection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Old visit voided (sessions back, payments reversed) and the corrected visit recorded, in one transaction (US6b)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitCorrected"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required / precondition.if_match_required"
+          },
+          "403": {
+            "description": "auth.forbidden / day.locked (manager, a day before today)"
+          },
+          "404": {
+            "description": "visit, customer or service not in this spa"
+          },
+          "409": {
+            "description": "visit.voided / visit.corrected (already corrected: open the newest version), package.*"
+          },
+          "412": {
+            "description": "conflict.stale_version"
+          },
+          "422": {
+            "description": "validation_failed (reason required / too_long, check_in_at not_visit_day), payment.amount_mismatch and every rule of POST /visits"
+          }
         }
       }
     },
@@ -5140,11 +5220,17 @@
           "customers",
           "visits",
           "voided_visits",
+          "corrected_visits",
           "sessions_used",
           "one_off_services",
           "packages_sold"
         ],
         "properties": {
+          "corrected_visits": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Visits replaced by \"Sửa lượt\" (\"đã sửa\"); their newest version counts in `visits`."
+          },
           "customers": {
             "type": "integer",
             "format": "int64",
@@ -5172,7 +5258,8 @@
           },
           "voided_visits": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "Visits cancelled (\"Hủy lượt\"); visits replaced by \"Sửa lượt\" are not cancellations."
           }
         }
       },
@@ -5897,6 +5984,22 @@
           "check_in_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "corrected_by_visit_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "\"Sửa lượt\": the visit that replaced this (voided) one."
+          },
+          "corrects_visit_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "\"Sửa lượt\": the voided visit this one replaces."
           },
           "id": {
             "type": "string",
@@ -9334,6 +9437,90 @@
           }
         }
       },
+      "VisitCorrected": {
+        "type": "object",
+        "description": "Response of `POST /visits/{id}/correct`.",
+        "required": [
+          "voided",
+          "visit",
+          "difference"
+        ],
+        "properties": {
+          "difference": {
+            "type": "integer",
+            "format": "int64",
+            "description": "New total − old total: > 0 collect more (\"Thu thêm\"), < 0 give back (\"Hoàn\"), 0 = same."
+          },
+          "visit": {
+            "$ref": "#/components/schemas/VisitDto",
+            "description": "The corrected visit (`corrects_visit_id` = the old one)."
+          },
+          "voided": {
+            "$ref": "#/components/schemas/VisitDto",
+            "description": "The old visit, now `voided`, with `corrected_by_visit_id` set."
+          }
+        }
+      },
+      "VisitCorrection": {
+        "type": "object",
+        "description": "Body of `POST /visits/{id}/correct` (with `If-Match` + `Idempotency-Key`): the visit as it\nshould have been recorded, plus the reason. The old visit is voided and this one recorded in\none transaction (spec US6b), with the rules and permissions of `POST /visits`. No amount is read\nfrom the client.",
+        "required": [
+          "customer_id",
+          "lines"
+        ],
+        "properties": {
+          "check_in_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Service time; absent = the old visit's. Must stay on the old visit's business day."
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "May differ from the old visit's customer (recorded for the wrong person)."
+          },
+          "discount": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ServiceDiscountCreate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VisitLineCreate"
+            },
+            "description": "1–20 service lines, as in `POST /visits`."
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absent = keep the old visit's note (copied on the server, never sent to the browser);\nnull or empty = no note; text = a new note (needs `customer.health_notes.write`)."
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentCreate"
+            }
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why (1–490 characters); the old visit keeps it as \"Sửa lượt: …\"."
+          }
+        }
+      },
       "VisitCreate": {
         "type": "object",
         "description": "Body of `POST /visits`. No amount is read from the client: unknown fields such as `unit_price`\nor `total` are ignored, one-off prices come from the catalog and the customer's gender.",
@@ -9415,6 +9602,22 @@
             "type": "string",
             "format": "date-time",
             "description": "When the service happened (giờ làm)."
+          },
+          "corrected_by_visit_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Set on a voided visit that was corrected: the visit that replaced it. The newest version\nof a visit is the one without this field."
+          },
+          "corrects_visit_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Set on a visit recorded by \"Sửa lượt\": the voided visit it replaces."
           },
           "created_at": {
             "type": "string",
@@ -9720,8 +9923,16 @@
       },
       "VisitUpdate": {
         "type": "object",
-        "description": "Body of `PATCH /visits/{id}` (with `If-Match`): corrections that do not touch money or sessions.",
+        "description": "Body of `PATCH /visits/{id}` (with `If-Match`): corrections that do not touch money or\nsessions (\"Sửa lượt\", direct edit, spec US6b).",
         "properties": {
+          "check_in_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "New service time (giờ làm): on the visit's own business day, not in the future."
+          },
           "lines": {
             "type": "array",
             "items": {

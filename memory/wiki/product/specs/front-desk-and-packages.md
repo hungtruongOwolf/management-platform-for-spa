@@ -109,6 +109,38 @@ R1 coi mọi giao dịch là **thu đủ ngay**: không có ghi nợ, thu nợ h
 - AC6.3 (neg): Quản lý hủy bản ghi của **ngày đã chốt quỹ** → `403`; chủ spa thì được (`record.void_closed_day`). Ngày "đã chốt" do spec #2 định nghĩa; cho tới khi spec #2 xong, coi các ngày trước hôm nay là đã chốt.
 - AC6.4 (neg): Hủy hóa đơn gói đã dùng ≥ 1 buổi → `409`; phải dùng "hủy liệu trình kèm hoàn tiền" (US7).
 
+### US6b: Sửa lượt (EM 2026-11-06, [raw](../../../raw/2026-11-06-em-edit-visit.md))
+*Là quản lý, khi ghi lượt bị sai trong ngày (sai KTV, sai giờ, sai dịch vụ, sai tiền, nhầm khách), tôi muốn sửa ngay trên lượt đó thay vì hủy rồi ghi lại bằng tay.*
+
+**Lead's decision — EM to review.** Một nút "Sửa lượt", hai cách lưu do hệ thống tự chọn:
+- **Sửa trực tiếp (không đụng tiền / buổi):** KTV từng dòng, giờ làm (trong cùng ngày nghiệp vụ), ghi chú buổi. Lượt giữ nguyên, `version` tăng, audit `visit.update`.
+- **Sửa có hủy-ghi lại (đụng tiền hoặc buổi):** dịch vụ / dòng, nguồn (liệu trình ↔ dịch vụ lẻ), giảm giá (mức và lý do), hình thức / số tiền thanh toán, khách. Một thao tác nguyên tử trên server: lượt cũ bị hủy đúng như US6 (lý do "Sửa lượt: …", buổi cộng lại, tiền đảo bút toán) **và** lượt mới được ghi đúng như US4, nối với lượt cũ (`corrects_visit_id`). Một transaction, một `Idempotency-Key`; không có logic tiền riêng.
+- Quầy mở giỏ "Lượt khách đang ghi" đã điền sẵn lượt cũ, chỉ đổi chỗ sai; bắt buộc lý do ngắn khi đụng tiền/buổi; trước khi lưu thấy chênh lệch: "Thu thêm 50.000đ" / "Hoàn 50.000đ" / "Không đổi tiền".
+- Lượt cũ vẫn trong lịch sử, trạng thái đã hủy, kèm "Đã sửa → lượt mới"; lượt mới bình thường. Lịch hẹn đã hoàn tất bởi lượt cũ chuyển sang lượt mới.
+
+Quyền và ngày (theo `kernel::corrections`, giống AC6.3):
+| | Sửa trực tiếp | Sửa có hủy-ghi lại |
+|---|---|---|
+| Quyền gốc | `visit.record` (+ `customer.health_notes.write` khi sửa ghi chú) | `visit.record` + `record.void_same_day` (+ quyền của lượt mới như US4: `payment.collect`, `sale.discount*`, …) |
+| Hôm nay | Quản lý, Chủ spa | Quản lý, Chủ spa |
+| Ngày trước hôm nay | Chủ spa (`record.void_closed_day`); Quản lý → `403 day.locked` | như cột bên |
+| KTV | `403` | `403` |
+
+- AC6b.1: Given lượt hôm nay KTV Lan, when quản lý đổi sang KTV Mai (If-Match đúng) → `200`, lượt giữ id, `version` + 1, tiền và buổi không đổi, audit `visit.update` ghi KTV cũ → mới.
+- AC6b.2: Given lượt hôm nay giờ làm 09:00, when đổi giờ làm 10:30 cùng ngày → `200`; giờ sang ngày khác → `422 check_in_at not_visit_day`; giờ trong tương lai quá 5 phút → `422 visit.check_in_in_future`.
+- AC6b.3 (neg): Sửa với `version` cũ (máy khác vừa sửa) → `412 conflict.stale_version`, không đổi gì.
+- AC6b.4: Given lượt dịch vụ lẻ 100.000đ TM, when sửa thành dịch vụ 150.000đ (lý do "chọn nhầm dịch vụ") → lượt cũ `voided` (lý do "Sửa lượt: chọn nhầm dịch vụ"), payment cũ có reversal −100.000đ, lượt mới 150.000đ TM nối `corrects_visit_id`; phản hồi `difference = +50.000`. Báo cáo ngày: thu 250.000, đảo 100.000, **thực thu 150.000**.
+- AC6b.5: Sửa giảm tiền → `difference < 0` ("Hoàn …"); sửa chỉ đổi hình thức thanh toán → `difference = 0` ("Không đổi tiền") nhưng vẫn qua hủy-ghi lại (payment append-only).
+- AC6b.6: Given lượt trừ 1 buổi liệu trình (còn 11/12), when sửa thành dịch vụ lẻ → liệu trình về 12/12, lượt mới có tiền phải thu; ngược lại dịch vụ lẻ → trừ buổi: tiền cũ đảo, buổi bị trừ.
+- AC6b.7 (neg, đồng thời): Hai máy cùng sửa một lượt → **đúng một** thành công; máy còn lại `409 visit.corrected` (hoặc `412` nếu tới sau khi lượt đã đổi `version`). Buổi chỉ cộng/trừ đúng một lần.
+- AC6b.8: Gửi lại cùng `Idempotency-Key` + cùng body → trả lại đúng kết quả cũ, không tạo lượt thứ ba (G4).
+- AC6b.9 (neg): Sửa lượt đã hủy → `409 visit.voided`; sửa lượt đã được sửa → `409 visit.corrected` (giao diện chỉ tới lượt mới nhất).
+- AC6b.10 (neg): Quản lý sửa lượt ngày đã qua → `403 day.locked` (cả sửa trực tiếp lẫn hủy-ghi lại); chủ spa được, lượt mới giữ đúng ngày nghiệp vụ của lượt cũ.
+- AC6b.11 (neg): KTV gọi sửa → `403`; id lượt của spa khác → `404`; thiếu lý do khi hủy-ghi lại → `422 reason required`; thiếu `If-Match` → `400`.
+- AC6b.12: Audit: sửa trực tiếp → `visit.update`; hủy-ghi lại → `visit.void` + `sale.void` (nếu có tiền) + `visit.create` (lượt mới, có `corrects_visit_id`) + `visit.correct` (lượt cũ → mới, chênh lệch, lý do).
+- AC6b.13: Lượt ngày đã qua do chủ spa sửa: bút toán đảo ghi vào **ngày sửa** (như mọi lần hủy, US6), lượt mới và tiền mới ghi vào **ngày của lượt cũ** (như nhập bù). Xem câu hỏi Q-E1.
+- Câu hỏi cho EM (mặc định đang dùng): **Q-E1** sửa lượt ngày đã qua: đảo tiền ghi ngày sửa, tiền mới ghi ngày cũ (mặc định, ghép từ hai quy tắc đã có) hay cả hai cùng ngày cũ? **Q-E2** đổi riêng lý do giảm giá (không đổi mức) cũng đi qua hủy-ghi lại (mặc định; sổ doanh thu đọc lý do từ hóa đơn, hóa đơn chỉ thêm) — có cần sửa trực tiếp không? **Q-E3** đếm "lượt hủy" trong báo cáo ngày có tính lượt đã được sửa không (mặc định: có, vì nó đúng là một lần hủy)?
+
 ### US7: Vòng đời liệu trình
 *Là chủ spa, tôi muốn gia hạn hoặc hủy liệu trình kèm hoàn tiền, để xử lý các trường hợp đặc biệt mà không phải sửa dữ liệu bằng tay.*
 - Trạng thái: `active` → `exhausted` (hết buổi) / `expired` (quá hạn) / `cancelled`.
