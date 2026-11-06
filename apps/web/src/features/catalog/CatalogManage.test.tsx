@@ -147,7 +147,7 @@ describe("owner edits the price list", () => {
     const female = within(form).getByLabelText("Giá Nữ (đ)");
     await user.clear(female);
     await user.type(female, "89000");
-    await user.click(within(form).getByRole("button", { name: "Lưu" }));
+    await user.click(within(form).getByRole("button", { name: "Lưu dịch vụ" }));
 
     const put = calls.find((c) => c.method === "PUT");
     expect(put?.path).toBe("/api/v1/services/s1");
@@ -175,11 +175,32 @@ describe("owner edits the price list", () => {
     await user.click(
       within(
         screen.getByRole("form", { name: "Sửa: Cơ Bản – Dầu thảo dược" }),
-      ).getByRole("button", { name: "Lưu" }),
+      ).getByRole("button", { name: "Lưu dịch vụ" }),
     );
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Dữ liệu vừa được người khác sửa",
     );
+  });
+
+  it("adds a service group from the page header, the form at the top of the page", async () => {
+    const calls = serve(OWNER, (c) =>
+      c.method === "POST" && c.path === "/api/v1/service-categories"
+        ? Response.json({ id: "c9", name: "Chăm sóc tay chân", sort_order: 9 }, { status: 201 })
+        : undefined,
+    );
+    at("/bang-gia");
+    const user = userEvent.setup();
+    // Beside "Mẫu gói liệu trình", like "Tạo mẫu gói" on the plans page (EM 2026-11-06).
+    await user.click(await screen.findByRole("button", { name: "Thêm nhóm dịch vụ" }));
+    const form = screen.getByRole("form", { name: "Thêm nhóm dịch vụ" });
+    expect(screen.queryByRole("button", { name: "Thêm nhóm dịch vụ" })).not.toBeInTheDocument();
+    await user.click(within(form).getByRole("button", { name: "Lưu nhóm dịch vụ" }));
+    expect(within(form).getByText("Nhập tên nhóm.")).toBeInTheDocument();
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+    await user.type(within(form).getByLabelText("Tên nhóm dịch vụ mới"), "Chăm sóc tay chân");
+    await user.click(within(form).getByRole("button", { name: "Lưu nhóm dịch vụ" }));
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ name: "Chăm sóc tay chân" });
+    expect(await screen.findByRole("button", { name: "Thêm nhóm dịch vụ" })).toBeInTheDocument();
   });
 
   it("blocks an active service without a price before calling the API", async () => {
@@ -187,14 +208,14 @@ describe("owner edits the price list", () => {
     at("/bang-gia");
     const user = userEvent.setup();
     await user.click(
-      await screen.findByRole("button", { name: "+ Thêm dịch vụ" }),
+      await screen.findByRole("button", { name: "Thêm dịch vụ" }),
     );
     const form = screen.getByRole("form", { name: "Thêm dịch vụ" });
     await user.type(
       within(form).getByLabelText("Tên dịch vụ"),
       "Ngâm chân muối hồng",
     );
-    await user.click(within(form).getByRole("button", { name: "Lưu" }));
+    await user.click(within(form).getByRole("button", { name: "Thêm dịch vụ vào bảng giá" }));
     expect(
       await within(form).findByText("Nhập giá để bán dịch vụ."),
     ).toBeInTheDocument();
@@ -209,13 +230,13 @@ describe("owner edits the price list", () => {
     );
     at("/bang-gia/goi");
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "+ Tạo mẫu gói" }));
+    await user.click(await screen.findByRole("button", { name: "Tạo mẫu gói" }));
     const form = screen.getByRole("form", { name: "Tạo mẫu gói liệu trình" });
     await user.type(within(form).getByLabelText("Tên gói"), "Gội 10 + tặng 2");
     await user.type(within(form).getByLabelText("Giá gói (đ)"), "1500000");
     await user.selectOptions(within(form).getByLabelText("Dịch vụ 1"), "s2");
     await user.type(within(form).getByLabelText("Buổi tặng 1"), "{backspace}2");
-    await user.click(within(form).getByRole("button", { name: "Lưu gói" }));
+    await user.click(within(form).getByRole("button", { name: "Lưu mẫu gói" }));
 
     const post = calls.find((c) => c.method === "POST");
     expect(post?.body).toEqual({
@@ -238,7 +259,7 @@ describe("non-owners", () => {
       screen.queryByRole("button", { name: /Sửa/ }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "+ Thêm dịch vụ" }),
+      screen.queryByRole("button", { name: "Thêm dịch vụ" }),
     ).not.toBeInTheDocument();
   });
 });

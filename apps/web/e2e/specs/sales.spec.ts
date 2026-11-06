@@ -64,7 +64,7 @@ test.describe("bán liệu trình (US3)", () => {
     await expectAccessible(page, "sell-package");
 
     await dialog.getByRole("button", { name: "Lưu & thu tiền" }).dblclick();
-    await expect(page.getByRole("status")).toContainText("còn 12/12 buổi");
+    await expect(page.getByRole("status").filter({ hasText: "còn 12/12 buổi" })).toBeVisible();
     const list = page.getByRole("list", { name: "Gói liệu trình của khách" });
     await expect(list.getByRole("listitem")).toHaveCount(1);
     await expect(list).toContainText("Còn 12/12 buổi");

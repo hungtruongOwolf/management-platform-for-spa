@@ -224,6 +224,12 @@ describe("correction helpers", () => {
   });
 });
 
+/** Owners hold two or more package actions: they sit in the row's "⋯" menu (rule 8). */
+async function choose(user: ReturnType<typeof userEvent.setup>, action: string) {
+  await user.click(await screen.findByRole("button", { name: "Thao tác gói Gội đầu 10 + tặng 2" }));
+  await user.click(screen.getByRole("menuitem", { name: action }));
+}
+
 describe("package actions on the customer profile", () => {
   it("shows owners every action and managers only the sale void", async () => {
     serve(MANAGER);
@@ -243,13 +249,38 @@ describe("package actions on the customer profile", () => {
         ? Response.json([pkg(11)])
         : undefined,
     );
+    const user = userEvent.setup();
     at("/khach-hang/c1");
-    expect(
-      await screen.findByRole("button", { name: "Gia hạn" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Hủy hóa đơn bán gói" }),
-    ).toBeNull();
+    await user.click(await screen.findByRole("button", { name: "Thao tác gói Gội đầu 10 + tặng 2" }));
+    expect(screen.getByRole("menuitem", { name: "Gia hạn" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Hủy gói và hoàn tiền" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Hủy hóa đơn bán gói" })).toBeNull();
+  });
+
+  it("shows one state per package and closes used-up ones away, without actions", async () => {
+    serve(OWNER, (c) =>
+      c.url === "/api/v1/customers/c1/packages"
+        ? Response.json([
+            pkg(1, { id: "cp-low", name: "Gói sắp hết" }),
+            pkg(0, { id: "cp-done", name: "Gói đã dùng hết", status: "exhausted" }),
+            pkg(4, { id: "cp-old", name: "Gói quá hạn", status: "expired", expires_on: "2026-01-01" }),
+          ])
+        : undefined,
+    );
+    at("/khach-hang/c1");
+    const open = await screen.findByRole("list", { name: "Gói liệu trình của khách" });
+    const low = within(open).getByText("Gói sắp hết").closest("li");
+    const old = within(open).getByText("Gói quá hạn").closest("li");
+    expect(low).toHaveTextContent("Sắp hết");
+    expect(low).not.toHaveTextContent("Đang dùng");
+    expect(old).toHaveTextContent("Hết hạn");
+    // Expired with sessions left stays open: it may still be extended or cancelled.
+    expect(await within(old as HTMLElement).findByRole("button", { name: "Thao tác gói Gói quá hạn" })).toBeInTheDocument();
+    expect(within(open).queryByText("Gói đã dùng hết")).toBeNull();
+    expect(screen.getByText(/Gói đã hết \/ đã hủy \(1\)/)).toBeInTheDocument();
+    const closed = screen.getByRole("list", { name: "Gói đã hết hoặc đã hủy" });
+    expect(within(closed).getByText("Hết buổi")).toBeInTheDocument();
+    expect(within(closed).queryByRole("button")).toBeNull();
   });
 
   it("shows a cancelled package with its reason and refund, without actions", async () => {
@@ -286,7 +317,7 @@ describe("package actions on the customer profile", () => {
     );
     const user = userEvent.setup();
     at("/khach-hang/c1");
-    await user.click(await screen.findByRole("button", { name: "Gia hạn" }));
+    await choose(user, "Gia hạn");
     const dialog = await screen.findByRole("dialog", { name: /Gia hạn/ });
     await user.click(within(dialog).getByRole("button", { name: "+2 tháng" }));
     await user.click(within(dialog).getByRole("button", { name: "Gia hạn" }));
@@ -331,9 +362,7 @@ describe("package actions on the customer profile", () => {
     );
     const user = userEvent.setup();
     at("/khach-hang/c1");
-    await user.click(
-      await screen.findByRole("button", { name: "Hủy gói và hoàn tiền" }),
-    );
+    await choose(user, "Hủy gói và hoàn tiền");
     const dialog = await screen.findByRole("dialog", {
       name: /Hủy gói/,
     });

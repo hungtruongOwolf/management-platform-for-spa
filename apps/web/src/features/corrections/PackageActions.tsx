@@ -3,9 +3,11 @@ import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { formatVnd } from "@vpyd/ui";
 import { useEffect, useId, useRef, useState } from "react";
 import { DateField } from "../../components/DateField";
+import { RowMenu, type RowMenuItem } from "../../components/RowMenu";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
 import { formatDate, parseAmount } from "../sales/api";
+import { isClosedPackage } from "../sales/packageState";
 import {
   addMonths,
   cancelPackage,
@@ -18,17 +20,35 @@ import { useFormAction } from "./useFormAction";
 import { VoidForm } from "./VoidForm";
 import { invalidateManagementViews } from "../../lib/invalidate";
 
-const input =
-  "min-h-11 w-full rounded-[6px] border border-border bg-surface px-3";
-const secondary =
-  "min-h-11 rounded-[10px] border border-border px-3 text-sm font-medium";
-
 type Open = "extend" | "cancel" | "void" | null;
 
+const ACTION_LABEL: Record<Exclude<Open, null>, string> = {
+  extend: "Gia hạn",
+  cancel: "Hủy gói và hoàn tiền",
+  void: "Hủy hóa đơn bán gói",
+};
+
+/** The actions this caller may take on this package, in menu order (UX only — the server re-checks). */
+export function packageActionsFor(
+  pkg: CustomerPackage,
+  permissions: { extend: boolean; cancel: boolean; voidSale: boolean },
+): Exclude<Open, null>[] {
+  // A used-up or cancelled package is closed: nothing to extend, cancel or void (one state, and
+  // never an action that state forbids — design-system.md "Quy tắc" 7).
+  if (isClosedPackage(pkg)) return [];
+  const out: Exclude<Open, null>[] = [];
+  if (permissions.extend && pkg.expires_on != null) out.push("extend");
+  if (permissions.cancel) out.push("cancel");
+  if (permissions.voidSale && pkg.sale_id != null && isUnused(pkg)) out.push("void");
+  return out;
+}
+
 /**
- * Lifecycle actions on one package of the customer profile (US6, US7), shown only to the roles
- * that hold the permission (UX only — the server re-checks): extend (owner), cancel with refund
- * (owner), void the sale that created it while unused (manager or owner).
+ * Lifecycle actions on one open package of the customer profile (US6, US7): extend (owner),
+ * cancel with refund (owner), void the sale that created it while unused (manager or owner). One
+ * action is a ghost button; two or more sit in the row's "⋯" menu (rule 8). The chosen form opens
+ * under the row. Renders `display: contents` so the trigger and the form take their own grid
+ * cells of the package row.
  */
 export function PackageActions({
   pkg,
@@ -40,15 +60,12 @@ export function PackageActions({
   const { data: me } = useSuspenseQuery(meQuery);
   const queryClient = useQueryClient();
   const [open, setOpen] = useState<Open>(null);
-  if (pkg.status === "cancelled") return null;
-
-  const canExtend = can(me, "package.extend_expiry") && pkg.expires_on != null;
-  const canCancel = can(me, "package.cancel_refund");
-  const canVoidSale =
-    can(me, "record.void_same_day") &&
-    pkg.sale_id != null &&
-    isUnused(pkg);
-  if (!canExtend && !canCancel && !canVoidSale) return null;
+  const actions = packageActionsFor(pkg, {
+    extend: can(me, "package.extend_expiry"),
+    cancel: can(me, "package.cancel_refund"),
+    voidSale: can(me, "record.void_same_day"),
+  });
+  if (actions.length === 0) return null;
 
   const finish = (message: string) => {
     setOpen(null);
@@ -57,90 +74,80 @@ export function PackageActions({
     void invalidateManagementViews(queryClient, pkg.customer_id);
     onDone(message);
   };
+  const close = () => {
+    setOpen(null);
+  };
+  const [only] = actions;
 
   return (
-    <div className="w-full">
-      {open === null && (
-        <div className="flex flex-wrap gap-2 pt-1">
-          {canExtend && (
-            <button
-              type="button"
-              className={secondary}
-              onClick={() => {
-                setOpen("extend");
-              }}
-            >
-              Gia hạn
-            </button>
-          )}
-          {canCancel && (
-            <button
-              type="button"
-              className={secondary}
-              onClick={() => {
-                setOpen("cancel");
-              }}
-            >
-              Hủy gói và hoàn tiền
-            </button>
-          )}
-          {canVoidSale && (
-            <button
-              type="button"
-              className={secondary}
-              onClick={() => {
-                setOpen("void");
-              }}
-            >
-              Hủy hóa đơn bán gói
-            </button>
-          )}
-        </div>
-      )}
+    <div className="pkg-actions">
+      <div className="pkg-actions-trigger">
+        {actions.length === 1 && only ? (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            aria-expanded={open === only}
+            onClick={() => {
+              setOpen(open === only ? null : only);
+            }}
+          >
+            {ACTION_LABEL[only]}
+          </button>
+        ) : (
+          <RowMenu
+            label={`Thao tác gói ${pkg.name}`}
+            items={actions.map(
+              (a): RowMenuItem => ({
+                label: ACTION_LABEL[a],
+                danger: a !== "extend",
+                onSelect: () => {
+                  setOpen(a);
+                },
+              }),
+            )}
+          />
+        )}
+      </div>
       {open === "extend" && (
         <ExtendForm
           pkg={pkg}
-          onCancel={() => {
-            setOpen(null);
-          }}
+          onCancel={close}
           onDone={(p) => {
-            finish(
-              `Đã gia hạn "${p.name}" tới ${formatDate(p.expires_on ?? "")}.`,
-            );
+            finish(`Đã gia hạn "${p.name}" tới ${formatDate(p.expires_on ?? "")}.`);
           }}
         />
       )}
       {open === "cancel" && (
         <CancelForm
           pkg={pkg}
-          onCancel={() => {
-            setOpen(null);
-          }}
+          onCancel={close}
           onDone={(p) => {
-            finish(
-              p.refund
-                ? `Đã hủy "${p.name}" và hoàn ${formatVnd(p.refund.amount)}.`
-                : `Đã hủy "${p.name}".`,
-            );
+            finish(p.refund ? `Đã hủy "${p.name}" và hoàn ${formatVnd(p.refund.amount)}.` : `Đã hủy "${p.name}".`);
           }}
         />
       )}
       {open === "void" && pkg.sale_id != null && (
-        <VoidForm
-          title={`Hủy hóa đơn bán "${pkg.name}"`}
-          consequence="Liệu trình chưa dùng buổi nào sẽ bị hủy; tiền đã thu được ghi bút toán đảo (không xóa)."
-          confirmLabel="Hủy hóa đơn"
-          run={(reason, key) => voidSale(pkg.sale_id ?? "", reason, key)}
-          onCancel={() => {
-            setOpen(null);
-          }}
-          onDone={() => {
-            finish(`Đã hủy hóa đơn bán "${pkg.name}".`);
-          }}
-        />
+        <div className="pkg-actions-form">
+          <VoidForm
+            title={`Hủy hóa đơn bán "${pkg.name}"`}
+            consequence="Liệu trình chưa dùng buổi nào sẽ bị hủy; tiền đã thu được ghi bút toán đảo (không xóa)."
+            confirmLabel="Hủy hóa đơn"
+            run={(reason, key) => voidSale(pkg.sale_id ?? "", reason, key)}
+            onCancel={close}
+            onDone={() => {
+              finish(`Đã hủy hóa đơn bán "${pkg.name}".`);
+            }}
+          />
+        </div>
       )}
     </div>
   );
+}
+
+/** Field with its label above and its error below, wired with aria-describedby. */
+function useFieldIds() {
+  const id = useId();
+  return { input: `${id}-input`, error: `${id}-error`, hint: `${id}-hint` };
 }
 
 function ExtendForm({
@@ -153,34 +160,27 @@ function ExtendForm({
   onCancel: () => void;
 }) {
   const titleId = useId();
+  const reasonIds = useFieldIds();
+  const dateIds = useFieldIds();
   const dateRef = useRef<HTMLDivElement>(null);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const today = spaToday();
-  const base =
-    pkg.expires_on && pkg.expires_on > today ? pkg.expires_on : today;
+  const base = pkg.expires_on && pkg.expires_on > today ? pkg.expires_on : today;
   const [expiresOn, setExpiresOn] = useState(() => addMonths(base, 1));
   const [reason, setReason] = useState("");
   const [touched, setTouched] = useState(false);
   const action = useFormAction({
-    run: () =>
-      extendPackage(
-        pkg,
-        { expires_on: expiresOn, reason: reason.trim() },
-        idempotencyKey,
-      ),
+    run: () => extendPackage(pkg, { expires_on: expiresOn, reason: reason.trim() }, idempotencyKey),
     onSuccess: onDone,
   });
   useEffect(() => {
     dateRef.current?.querySelector<HTMLInputElement>("input[type=text]")?.focus();
   }, []);
 
-  const reasonProblem =
-    (touched && reason.trim() === "" ? "Bắt buộc ghi lý do." : undefined) ??
-    fieldMessage(action.error, "reason");
+  const reasonProblem = (touched && reason.trim() === "" ? "Bắt buộc ghi lý do." : undefined) ?? fieldMessage(action.error, "reason");
   const dateProblem =
-    (touched && pkg.expires_on && expiresOn <= pkg.expires_on
-      ? "Hạn mới phải sau hạn hiện tại."
-      : undefined) ?? fieldMessage(action.error, "expires_on");
+    (touched && pkg.expires_on && expiresOn <= pkg.expires_on ? "Hạn mới phải sau hạn hiện tại." : undefined) ??
+    fieldMessage(action.error, "expires_on");
 
   return (
     <section
@@ -190,92 +190,91 @@ function ExtendForm({
       onKeyDown={(e) => {
         if (e.key === "Escape") onCancel();
       }}
-      className="mt-2 space-y-2 rounded-[10px] border border-primary bg-primary-soft/40 p-3"
+      className="pkg-actions-form row-form"
     >
-      <h3 id={titleId} className="font-semibold">
-        Gia hạn "{pkg.name}"
-      </h3>
-      <p className="text-sm text-text-muted">
-        Hạn hiện tại:{" "}
-        {pkg.expires_on ? formatDate(pkg.expires_on) : "không hạn"} · còn{" "}
-        {String(pkg.sessions_remaining)}/{String(pkg.sessions_total)} buổi
-      </p>
+      <div>
+        <h3 id={titleId} className="row-form-title">
+          Gia hạn "{pkg.name}"
+        </h3>
+        <p className="row-meta">
+          Hạn hiện tại: {pkg.expires_on ? formatDate(pkg.expires_on) : "không hạn"} · còn {String(pkg.sessions_remaining)}/
+          {String(pkg.sessions_total)} buổi
+        </p>
+      </div>
       <form
+        noValidate
         onSubmit={(e) => {
           e.preventDefault();
           setTouched(true);
-          if (
-            reason.trim() !== "" &&
-            !(pkg.expires_on && expiresOn <= pkg.expires_on)
-          ) {
-            action.submit();
-          }
+          if (!action.pending && reason.trim() !== "" && !(pkg.expires_on && expiresOn <= pkg.expires_on)) action.submit();
         }}
-        className="space-y-2"
+        className="form-grid"
       >
-        <div ref={dateRef}>
+        <div ref={dateRef} className="field">
           <DateField
             label="Hạn mới"
             value={expiresOn}
             min={today}
             invalid={Boolean(dateProblem)}
+            {...(dateProblem ? { describedBy: dateIds.error } : {})}
             onChange={(iso) => {
               if (iso) setExpiresOn(iso);
             }}
           />
+          {dateProblem && (
+            <span id={dateIds.error} className="field-error">
+              {dateProblem}
+            </span>
+          )}
         </div>
-        <div
-          className="flex flex-wrap gap-2"
-          aria-label="Gia hạn nhanh"
-          role="group"
-        >
-          {[1, 2, 3, 6].map((m) => (
-            <button
-              key={m}
-              type="button"
-              className={secondary}
-              onClick={() => {
-                setExpiresOn(addMonths(base, m));
-              }}
-            >
-              +{m} tháng
-            </button>
-          ))}
+        <div className="field">
+          <span aria-hidden="true">Gia hạn nhanh</span>
+          <div className="choice-row" aria-label="Gia hạn nhanh" role="group">
+            {[1, 2, 3, 6].map((m) => (
+              <button
+                key={m}
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setExpiresOn(addMonths(base, m));
+                }}
+              >
+                +{m} tháng
+              </button>
+            ))}
+          </div>
         </div>
-        {dateProblem && <p className="text-sm text-danger">{dateProblem}</p>}
-        <label className="block">
-          <span className="text-sm font-medium">Lý do gia hạn</span>
+        <div className="field span-2">
+          <label htmlFor={reasonIds.input}>Lý do gia hạn</label>
           <textarea
+            id={reasonIds.input}
             value={reason}
             maxLength={500}
             rows={2}
             aria-invalid={reasonProblem ? true : undefined}
+            aria-describedby={reasonProblem ? reasonIds.error : undefined}
             onChange={(e) => {
               setReason(e.target.value);
             }}
-            className="w-full rounded-[6px] border border-border bg-surface px-3 py-2"
+            className="input"
           />
-        </label>
-        {reasonProblem && (
-          <p className="text-sm text-danger">{reasonProblem}</p>
-        )}
-        {action.error != null &&
-          !fieldMessage(action.error, "reason") &&
-          !fieldMessage(action.error, "expires_on") && (
-            <p role="alert" className="text-sm text-danger">
-              {messageFor(action.error)}
-            </p>
+          {reasonProblem && (
+            <span id={reasonIds.error} className="field-error">
+              {reasonProblem}
+            </span>
           )}
-        <div className="flex gap-2">
-          <button
-            type="submit"
-            disabled={action.pending}
-            className="min-h-11 rounded-[10px] bg-primary px-4 font-semibold text-on-primary disabled:opacity-60"
-          >
-            {action.pending ? "Đang lưu…" : "Gia hạn"}
+        </div>
+        {action.error != null && !fieldMessage(action.error, "reason") && !fieldMessage(action.error, "expires_on") && (
+          <p role="alert" className="form-error span-2">
+            {messageFor(action.error)}
+          </p>
+        )}
+        <div className="form-actions span-2">
+          <button type="submit" aria-busy={action.pending || undefined} className="btn btn-primary">
+            Gia hạn
           </button>
-          <button type="button" onClick={onCancel} className={secondary}>
-            Thôi
+          <button type="button" onClick={onCancel} className="btn btn-secondary">
+            Bỏ qua
           </button>
         </div>
       </form>
@@ -293,6 +292,8 @@ function CancelForm({
   onCancel: () => void;
 }) {
   const titleId = useId();
+  const amountIds = useFieldIds();
+  const reasonIds = useFieldIds();
   const amountRef = useRef<HTMLInputElement>(null);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [amountText, setAmountText] = useState("");
@@ -305,11 +306,7 @@ function CancelForm({
       cancelPackage(
         pkg.id,
         amount > 0
-          ? {
-              reason: reason.trim(),
-              refund_amount: amount,
-              refund_method: method,
-            }
+          ? { reason: reason.trim(), refund_amount: amount, refund_method: method }
           : { reason: reason.trim(), refund_amount: 0 },
         idempotencyKey,
       ),
@@ -324,9 +321,7 @@ function CancelForm({
     : amount > pkg.sold_price
       ? `Không hoàn quá số khách đã trả (${formatVnd(pkg.sold_price)}).`
       : undefined;
-  const reasonProblem =
-    (touched && reason.trim() === "" ? "Bắt buộc ghi lý do." : undefined) ??
-    fieldMessage(action.error, "reason");
+  const reasonProblem = (touched && reason.trim() === "" ? "Bắt buộc ghi lý do." : undefined) ?? fieldMessage(action.error, "reason");
 
   return (
     <section
@@ -336,29 +331,30 @@ function CancelForm({
       onKeyDown={(e) => {
         if (e.key === "Escape") onCancel();
       }}
-      className="mt-2 space-y-2 rounded-[10px] border border-danger/50 bg-surface p-3"
+      className="pkg-actions-form row-form"
     >
-      <h3 id={titleId} className="font-semibold">
-        Hủy gói "{pkg.name}"
-      </h3>
-      <p className="text-sm text-text-muted">
-        Còn {String(pkg.sessions_remaining)}/{String(pkg.sessions_total)} buổi
-        sẽ về 0. Khách đã trả {formatVnd(pkg.sold_price)}. Khoản hoàn ghi vào sổ
-        quỹ hôm nay.
-      </p>
+      <div>
+        <h3 id={titleId} className="row-form-title">
+          Hủy gói "{pkg.name}"
+        </h3>
+        <p className="row-meta">
+          Còn {String(pkg.sessions_remaining)}/{String(pkg.sessions_total)} buổi sẽ về 0. Khách đã trả {formatVnd(pkg.sold_price)}. Khoản hoàn ghi vào
+          sổ quỹ hôm nay.
+        </p>
+      </div>
       <form
+        noValidate
         onSubmit={(e) => {
           e.preventDefault();
           setTouched(true);
-          if (reason.trim() !== "" && !amountProblem) action.submit();
+          if (!action.pending && reason.trim() !== "" && !amountProblem) action.submit();
         }}
-        className="space-y-2"
+        className="form-grid"
       >
-        <label className="block">
-          <span className="text-sm font-medium">
-            Số tiền hoàn (để trống = không hoàn)
-          </span>
+        <div className="field">
+          <label htmlFor={amountIds.input}>Số tiền hoàn (để trống = không hoàn)</label>
           <input
+            id={amountIds.input}
             ref={amountRef}
             inputMode="numeric"
             value={amountText}
@@ -366,70 +362,75 @@ function CancelForm({
               setAmountText(e.target.value);
             }}
             aria-invalid={amountProblem ? true : undefined}
-            className={input}
+            aria-describedby={amountProblem ? amountIds.error : amountIds.hint}
+            className="input"
           />
-        </label>
-        {amountProblem && (
-          <p className="text-sm text-danger">{amountProblem}</p>
-        )}
+          {amountProblem ? (
+            <span id={amountIds.error} className="field-error">
+              {amountProblem}
+            </span>
+          ) : (
+            <span id={amountIds.hint} className="field-hint">
+              Tối đa {formatVnd(pkg.sold_price)}
+            </span>
+          )}
+        </div>
         {amount > 0 && (
-          <fieldset className="flex flex-wrap gap-3">
-            <legend className="text-sm font-medium">Hoàn bằng</legend>
-            {(
-              [
-                ["cash", "Tiền mặt"],
-                ["bank_transfer", "Chuyển khoản"],
-              ] as const
-            ).map(([value, label]) => (
-              <label key={value} className="flex min-h-11 items-center gap-2">
-                <input
-                  type="radio"
-                  name={`${titleId}-method`}
-                  checked={method === value}
-                  onChange={() => {
-                    setMethod(value);
-                  }}
-                />
-                {label}
-              </label>
-            ))}
+          <fieldset>
+            <legend>Hoàn bằng</legend>
+            <div className="choice-row">
+              {(
+                [
+                  ["cash", "Tiền mặt"],
+                  ["bank_transfer", "Chuyển khoản"],
+                ] as const
+              ).map(([value, label]) => (
+                <label key={value} className="choice">
+                  <input
+                    type="radio"
+                    name={`${titleId}-method`}
+                    checked={method === value}
+                    onChange={() => {
+                      setMethod(value);
+                    }}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
           </fieldset>
         )}
-        <label className="block">
-          <span className="text-sm font-medium">Lý do hủy</span>
+        <div className="field span-2">
+          <label htmlFor={reasonIds.input}>Lý do hủy</label>
           <textarea
+            id={reasonIds.input}
             value={reason}
             maxLength={500}
             rows={2}
             aria-invalid={reasonProblem ? true : undefined}
+            aria-describedby={reasonProblem ? reasonIds.error : undefined}
             onChange={(e) => {
               setReason(e.target.value);
             }}
-            className="w-full rounded-[6px] border border-border bg-surface px-3 py-2"
+            className="input"
           />
-        </label>
-        {reasonProblem && (
-          <p className="text-sm text-danger">{reasonProblem}</p>
-        )}
+          {reasonProblem && (
+            <span id={reasonIds.error} className="field-error">
+              {reasonProblem}
+            </span>
+          )}
+        </div>
         {action.error != null && !fieldMessage(action.error, "reason") && (
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="form-error span-2">
             {messageFor(action.error)}
           </p>
         )}
-        <div className="flex gap-2">
-          <button
-            type="submit"
-            disabled={action.pending}
-            className="min-h-11 rounded-[10px] bg-danger px-4 font-semibold text-on-primary disabled:opacity-60"
-          >
-            {action.pending
-              ? "Đang hủy…"
-              : amount > 0
-                ? `Hủy và hoàn ${formatVnd(amount)}`
-                : "Hủy gói"}
+        <div className="form-actions span-2">
+          <button type="submit" aria-busy={action.pending || undefined} className="btn btn-danger">
+            {amount > 0 ? `Hủy và hoàn ${formatVnd(amount)}` : "Hủy gói"}
           </button>
-          <button type="button" onClick={onCancel} className={secondary}>
-            Thôi
+          <button type="button" onClick={onCancel} className="btn btn-secondary">
+            Bỏ qua
           </button>
         </div>
       </form>

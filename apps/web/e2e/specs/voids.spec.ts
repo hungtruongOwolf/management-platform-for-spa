@@ -210,7 +210,10 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     await page.goto(`/khach-hang/${customerId}`);
     const packages = page.getByRole("list", { name: "Gói liệu trình của khách" });
 
-    await packages.getByRole("button", { name: "Gia hạn" }).click();
+    // Two or more actions on a row sit in its "⋯" menu (design-system.md "Quy tắc" 8).
+    const actions = packages.getByRole("button", { name: /^Thao tác gói/ }).first();
+    await actions.click();
+    await page.getByRole("menuitem", { name: "Gia hạn" }).click();
     const extend = page.getByRole("dialog", { name: /Gia hạn/ });
     await extend.getByRole("button", { name: "+2 tháng" }).click();
     await extend.getByLabel("Lý do gia hạn").fill("Khách đi công tác dài ngày");
@@ -220,9 +223,8 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
       page.getByRole("status").filter({ hasText: "Đã gia hạn" }),
     ).toBeVisible();
 
-    await packages
-      .getByRole("button", { name: "Hủy gói và hoàn tiền" })
-      .click();
+    await actions.click();
+    await page.getByRole("menuitem", { name: "Hủy gói và hoàn tiền" }).click();
     const cancel = page.getByRole("dialog", { name: /Hủy gói/ });
     await cancel.getByLabel(/Số tiền hoàn/).fill("300.000");
     await cancel.getByLabel("Lý do hủy").fill("Khách chuyển nhà");
@@ -240,7 +242,10 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     await expect(
       page.getByRole("dialog", { name: "Xác nhận lại mật khẩu" }),
     ).toHaveCount(0);
-    const row = packages.getByRole("listitem").first();
+    // A cancelled package leaves the open list for the "Gói đã hết / đã hủy" disclosure.
+    await page.getByText(/Gói đã hết \/ đã hủy \(\d+\)/).click();
+    const row = page.getByRole("list", { name: "Gói đã hết hoặc đã hủy" }).getByRole("listitem").first();
+    await expect(row).toContainText("Đã hủy");
     await expect(row).toContainText("Đã hủy: Khách chuyển nhà");
     await expect(row).toContainText("Còn 0/12 buổi");
     await expect(row.getByRole("button")).toHaveCount(0);

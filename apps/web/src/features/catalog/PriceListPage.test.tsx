@@ -76,7 +76,7 @@ describe("PriceListPage", () => {
     expect(thuGian).toHaveTextContent("45 phút · + Cạo gió đầu, đá nóng");
     expect(thuGian).toHaveTextContent("Nữ79.000đ");
     expect(thuGian).toHaveTextContent("Nam99.000đ");
-    expect(within(shampoo).getByLabelText("Khuyên dùng")).toBeInTheDocument();
+    expect(within(shampoo).getByText("★ Khuyên dùng")).toBeInTheDocument();
 
     const extras = screen.getByRole("region", { name: "Dịch vụ bổ sung" });
     const mask = within(extras).getByText("Mặt nạ thuốc bắc").closest("li");

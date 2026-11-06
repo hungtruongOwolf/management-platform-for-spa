@@ -1,13 +1,8 @@
-import {
-  useQuery,
-  useQueryClient,
-  useSuspenseQuery,
-} from "@tanstack/react-query";
+import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import { CustomerName } from "../../app/CustomerName";
 import { PageHeader } from "../../app/PageHeader";
-import { messageFor } from "../../lib/errors";
 import { useSearchState } from "../../lib/searchState";
 import { can, meQuery } from "../auth/session";
 import { customerQuery, recentQuery } from "./api";
@@ -16,6 +11,8 @@ import { CustomerProfile } from "./CustomerProfile";
 import { CustomerSearch } from "./CustomerSearch";
 import { customersSearch } from "./search";
 import { CustomerHistory } from "../reports/CustomerHistory";
+import { ErrorState } from "../reports/ui";
+import "./khach.css";
 
 /** The customers list, parent of every profile (breadcrumbs, back after a deep link). */
 const CUSTOMERS: { label: string; to: string } = { label: "Khách hàng", to: "/khach-hang" };
@@ -34,9 +31,9 @@ export function CustomersPage() {
     });
 
   return (
-    <section aria-labelledby="customers-title" className="grid content-start gap-4">
+    <section aria-labelledby="customers-title" className="khach-page">
       <PageHeader title="Danh sách khách hàng" titleId="customers-title" />
-      <div className="card p-4">
+      <div className="panel">
         <CustomerSearch
           query={search.q}
           onQueryChange={(q) => {
@@ -50,7 +47,8 @@ export function CustomersPage() {
           }}
         />
         {creating !== null && can(me, "customer.write") && (
-          <div className="mt-3">
+          <div className="panel-section">
+            <h2 className="panel-title">Khách mới</h2>
             <CustomerForm
               typed={creating}
               canWriteHealth={can(me, "customer.health_notes.write")}
@@ -66,52 +64,43 @@ export function CustomersPage() {
           </div>
         )}
       </div>
-      <section aria-labelledby="recent-title">
-        <h2 id="recent-title" className="mb-2 font-semibold">
+      <section aria-labelledby="recent-title" className="panel">
+        <h2 id="recent-title" className="panel-title">
           Khách gần đây
         </h2>
-        {recent.isError && (
-          <p role="alert" className="text-danger">
-            {messageFor(recent.error)}
-          </p>
-        )}
+        {recent.isError && <ErrorState error={recent.error} onRetry={() => void recent.refetch()} />}
         {recent.isPending && (
-          <div role="status" aria-label="Đang tải khách gần đây" className="card grid content-start gap-2 p-3">
+          <div role="status" aria-label="Đang tải khách gần đây" className="grid gap-3">
             {[0, 1, 2, 3].map((i) => (
               <div key={i} className="skeleton h-12" />
             ))}
           </div>
         )}
         {recent.data?.length === 0 && (
-          <p className="text-text-muted">Chưa có khách nào.</p>
+          <p className="khach-empty">Chưa có khách nào. Gõ tên hoặc số điện thoại vào ô tìm ở trên rồi bấm “Khách mới” để tạo hồ sơ đầu tiên.</p>
         )}
-        <ul className="divide-y divide-border overflow-hidden rounded-[14px] border border-border bg-surface shadow-card">
-          {recent.data?.map((c) => (
-            <li key={c.id}>
-              <Link
-                to="/khach-hang/$customerId"
-                params={{ customerId: c.id }}
-                className="flex min-h-14 items-center justify-between gap-2 px-4 py-2 hover:bg-surface-2"
-              >
-                <span className="flex min-w-0 items-center gap-3">
-                  {/* Given name's initial (Vietnamese names end with it), decorative. */}
-                  <span
-                    aria-hidden="true"
-                    className="avatar"
-                  >
-                    {c.full_name.trim().split(/\s+/).at(-1)?.charAt(0).toUpperCase()}
+        {recent.data && recent.data.length > 0 && (
+          <ul className="row-list">
+            {recent.data.map((c) => (
+              <li key={c.id}>
+                <Link to="/khach-hang/$customerId" params={{ customerId: c.id }} className="row-link">
+                  <span className="flex min-w-0 items-center gap-3">
+                    {/* Given name's initial (Vietnamese names end with it), decorative. */}
+                    <span aria-hidden="true" className="avatar">
+                      {c.full_name.trim().split(/\s+/).at(-1)?.charAt(0).toUpperCase()}
+                    </span>
+                    {/* Phones: the number goes under the name, so a long name keeps its chip on one line. */}
+                    <span className="grid min-w-0">
+                      <CustomerName name={c.full_name} gender={c.gender} className="font-semibold" />
+                      <span className="row-meta tabular sm:hidden">{c.phone}</span>
+                    </span>
                   </span>
-                  {/* Phones: the number goes under the name, so a long name keeps its chip on one line. */}
-                  <span className="grid min-w-0">
-                    <CustomerName name={c.full_name} gender={c.gender} className="font-semibold" />
-                    <span className="text-sm text-text-muted tabular sm:hidden">{c.phone}</span>
-                  </span>
-                </span>
-                <span className="shrink-0 text-sm whitespace-nowrap text-text-muted tabular max-sm:hidden">{c.phone}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+                  <span className="row-meta shrink-0 whitespace-nowrap tabular max-sm:hidden">{c.phone}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </section>
   );
@@ -131,31 +120,32 @@ export function CustomerPage({ customerId }: { customerId: string }) {
   // Loading and errors keep the header, so the way back is always there.
   if (customer.isPending)
     return (
-      <div className="grid content-start gap-4">
+      <div className="khach-page">
         <PageHeader breadcrumbs={[CUSTOMERS]} title={<span className="skeleton inline-block h-8 w-56 align-middle" />} />
-        <div role="status" aria-label="Đang tải hồ sơ…" className="skeleton h-48" />
+        <div role="status" aria-label="Đang tải hồ sơ…" className="khach-cols">
+          <div className="skeleton h-64" />
+          <div className="skeleton h-64" />
+        </div>
       </div>
     );
   if (customer.isError) {
     return (
-      <div className="grid content-start gap-4">
+      <div className="khach-page">
         <PageHeader breadcrumbs={[CUSTOMERS]} title="Hồ sơ khách hàng" />
-        <p role="alert" className="rounded-[10px] bg-danger-soft p-3 text-danger">
-          {messageFor(customer.error)}
-        </p>
+        <ErrorState error={customer.error} onRetry={() => void customer.refetch()} />
       </div>
     );
   }
   const c = customer.data;
   return (
-    <div className="grid content-start gap-4">
+    <div className="khach-page">
       <PageHeader
         breadcrumbs={[CUSTOMERS]}
         title={<CustomerName name={c.full_name} gender={c.gender} showUnknown />}
         label={c.full_name}
         titleId="customer-name"
       />
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div className="khach-cols">
         <CustomerProfile
           customer={customer.data}
           onChanged={(c) => {

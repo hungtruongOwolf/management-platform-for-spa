@@ -83,11 +83,11 @@ export function FollowUpForm({
       className="grid gap-4"
       onSubmit={(e) => {
         e.preventDefault();
-        if (!nextTooEarly && contactedOn) mutation.mutate();
+        if (!nextTooEarly && contactedOn && !mutation.isPending) mutation.mutate();
       }}
     >
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="grid content-start gap-1">
+        <div className="field">
           <DateField
             label="Ngày liên hệ"
             value={contactedOn}
@@ -97,11 +97,12 @@ export function FollowUpForm({
               setContactedOn(iso || today);
             }}
           />
-          {err("contacted_on") && <span className="text-sm text-danger">{err("contacted_on")}</span>}
+          {err("contacted_on") && <span className="field-error">{err("contacted_on")}</span>}
         </div>
-        <label className="filter-field">
+        <label className="field">
           Cách liên hệ
           <select
+            className="input"
             value={channel}
             onChange={(e) => {
               setChannel(e.target.value as FollowUpChannel);
@@ -116,7 +117,7 @@ export function FollowUpForm({
         </label>
       </div>
       <fieldset className="grid gap-2">
-        <legend className="mb-1 text-sm font-medium">Kết quả</legend>
+        <legend className="mb-1.5 text-sm font-medium">Kết quả</legend>
         <div className="grid gap-2 sm:grid-cols-2">
           {(Object.keys(OUTCOME_LABEL) as FollowUpOutcome[]).map((o) => (
             <label key={o} className="choice">
@@ -134,9 +135,10 @@ export function FollowUpForm({
           ))}
         </div>
       </fieldset>
-      <label className="filter-field">
+      <label className="field">
         Ghi chú (không bắt buộc)
         <textarea
+          className="input"
           value={note}
           maxLength={500}
           rows={2}
@@ -158,16 +160,16 @@ export function FollowUpForm({
             setNextChoice(iso);
           }}
         />
-        <p id={`${id}-next-hint`} className="flex flex-wrap items-center gap-2 text-sm text-text-muted">
+        <p id={`${id}-next-hint`} className="flex flex-wrap items-center gap-x-2 text-sm text-text-muted">
           {nextTooEarly ? (
-            <span className="text-danger">Ngày hẹn lại phải từ ngày liên hệ trở đi.</span>
+            <span className="field-error">Ngày hẹn lại phải từ ngày liên hệ trở đi.</span>
           ) : suggestion ? (
             <>
               Gợi ý: {shortDate(suggestion)} (sau {NEXT_TRY_DAYS[outcome]} ngày)
               {next !== suggestion && (
                 <button
                   type="button"
-                  className="font-semibold text-primary underline"
+                  className="btn btn-ghost"
                   onClick={() => {
                     setNextChoice(undefined);
                   }}
@@ -182,7 +184,7 @@ export function FollowUpForm({
           {next !== "" && (
             <button
               type="button"
-              className="font-semibold text-primary underline"
+              className="btn btn-ghost"
               onClick={() => {
                 setNextChoice("");
               }}
@@ -191,10 +193,10 @@ export function FollowUpForm({
             </button>
           )}
         </p>
-        {err("next_follow_up_on") && <span className="text-sm text-danger">{err("next_follow_up_on")}</span>}
+        {err("next_follow_up_on") && <span className="field-error">{err("next_follow_up_on")}</span>}
       </div>
       {mutation.isError && !err("contacted_on") && !err("next_follow_up_on") && (
-        <p role="alert" className="rounded-[10px] bg-danger-soft p-3 text-sm text-danger">
+        <p role="alert" className="form-error">
           {messageFor(mutation.error)}
         </p>
       )}
@@ -202,8 +204,8 @@ export function FollowUpForm({
         <button type="button" className="btn btn-secondary" onClick={onCancel}>
           Hủy
         </button>
-        <button type="submit" className="btn btn-primary" disabled={mutation.isPending || nextTooEarly}>
-          {mutation.isPending ? "Đang lưu…" : "Lưu lần liên hệ"}
+        <button type="submit" className="btn btn-primary" aria-busy={mutation.isPending || undefined} aria-disabled={nextTooEarly || undefined}>
+          Lưu lần liên hệ
         </button>
       </StickyActions>
     </form>

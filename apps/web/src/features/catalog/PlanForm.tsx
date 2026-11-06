@@ -1,7 +1,9 @@
 import type { PackagePlan, PlanWrite, Service } from "@vpyd/api-client";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useId } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
+import { Icon } from "../../app/Icon";
 import { z } from "zod";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { savePlan } from "./api";
@@ -76,10 +78,10 @@ function initialValues(plan?: PackagePlan): Values {
   };
 }
 
-const input =
-  "min-h-11 w-full rounded-[6px] border border-border bg-surface px-3";
-
-/** Create or edit a package plan: one or more `service × sessions (+ bonus)` lines (D1, D3). */
+/**
+ * Create or edit a package plan: one or more `service × sessions (+ bonus)` lines (D1, D3).
+ * Opens inline (under its row, or at the top of the page) with a hairline above: no box.
+ */
 export function PlanForm({
   services,
   plan,
@@ -90,6 +92,7 @@ export function PlanForm({
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
+  const id = useId();
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: initialValues(plan),
@@ -105,6 +108,10 @@ export function PlanForm({
   const { errors } = form.formState;
   const sellable = services.filter((s) => s.active);
   const title = plan ? `Sửa mẫu gói: ${plan.name}` : "Tạo mẫu gói liệu trình";
+  const nameError = errors.name?.message ?? fieldMessage(mutation.error, "name");
+  const priceError = errors.price?.message ?? fieldMessage(mutation.error, "price");
+  const validityError = errors.validity?.message;
+  const itemsError = errors.items?.root?.message ?? errors.items?.message ?? fieldMessage(mutation.error, "items");
 
   return (
     <form
@@ -112,152 +119,172 @@ export function PlanForm({
       noValidate
       onSubmit={(e) =>
         void form.handleSubmit((v) => {
-          mutation.mutate(v);
+          if (!mutation.isPending) mutation.mutate(v);
         })(e)
       }
-      className="grid gap-3 rounded-[10px] border border-primary bg-primary-soft/40 p-3 sm:grid-cols-2"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onDone();
+      }}
+      className="row-form"
     >
-      <h3 className="font-semibold sm:col-span-2">{title}</h3>
-      <label className="block">
-        <span className="text-sm font-semibold">Tên gói</span>
-        <input className={input} {...form.register("name")} />
-        <span className="text-sm text-danger">
-          {errors.name?.message ?? fieldMessage(mutation.error, "name")}
-        </span>
-      </label>
-      <label className="block">
-        <span className="text-sm font-semibold">Giá gói (đ)</span>
-        <input
-          className={input}
-          inputMode="numeric"
-          {...form.register("price")}
-        />
-        <span className="text-sm text-danger">
-          {errors.price?.message ?? fieldMessage(mutation.error, "price")}
-        </span>
-      </label>
-      <label className="block">
-        <span className="text-sm font-semibold">Hạn dùng (tháng)</span>
-        <input
-          className={input}
-          inputMode="numeric"
-          placeholder="Để trống = không thời hạn"
-          {...form.register("validity")}
-        />
-        <span className="text-sm text-danger">{errors.validity?.message}</span>
-      </label>
-      <label className="block">
-        <span className="text-sm font-semibold">Quà tặng hiện vật</span>
-        <input
-          className={input}
-          placeholder="Ví dụ: 1 lọ dầu gội thảo dược"
-          {...form.register("gift_note")}
-        />
-      </label>
+      <h3 className="row-form-title">{title}</h3>
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor={`${id}-name`}>Tên gói</label>
+          <input
+            id={`${id}-name`}
+            className="input"
+            autoComplete="off"
+            placeholder="Ví dụ: Gội đầu 10 + tặng 2"
+            aria-invalid={nameError ? true : undefined}
+            aria-describedby={nameError ? `${id}-name-error` : undefined}
+            {...form.register("name")}
+          />
+          {nameError && (
+            <span id={`${id}-name-error`} className="field-error">
+              {nameError}
+            </span>
+          )}
+        </div>
+        <div className="field">
+          <label htmlFor={`${id}-price`}>Giá gói (đ)</label>
+          <input
+            id={`${id}-price`}
+            className="input tabular"
+            inputMode="numeric"
+            aria-invalid={priceError ? true : undefined}
+            aria-describedby={priceError ? `${id}-price-error` : undefined}
+            {...form.register("price")}
+          />
+          {priceError && (
+            <span id={`${id}-price-error`} className="field-error">
+              {priceError}
+            </span>
+          )}
+        </div>
+        <div className="field">
+          <label htmlFor={`${id}-validity`}>Hạn dùng (tháng)</label>
+          <input
+            id={`${id}-validity`}
+            className="input tabular"
+            inputMode="numeric"
+            aria-invalid={validityError ? true : undefined}
+            aria-describedby={[validityError ? `${id}-validity-error` : undefined, `${id}-validity-hint`].filter(Boolean).join(" ")}
+            {...form.register("validity")}
+          />
+          <span id={`${id}-validity-hint`} className="field-hint">
+            Để trống = không thời hạn.
+          </span>
+          {validityError && (
+            <span id={`${id}-validity-error`} className="field-error">
+              {validityError}
+            </span>
+          )}
+        </div>
+        <div className="field">
+          <label htmlFor={`${id}-gift`}>Quà tặng hiện vật</label>
+          <input id={`${id}-gift`} className="input" autoComplete="off" placeholder="Ví dụ: 1 lọ dầu gội thảo dược" {...form.register("gift_note")} />
+        </div>
 
-      <fieldset className="grid content-start gap-2 sm:col-span-2">
-        <legend className="text-sm font-semibold">Dịch vụ trong gói</legend>
-        {items.fields.map((field, index) => (
-          <div
-            key={field.id}
-            className="grid grid-cols-[minmax(0,1fr)_6rem_6rem_auto] items-end gap-2"
-          >
-            <label className="block">
-              <span className="sr-only">Dịch vụ {index + 1}</span>
-              <select
-                className={input}
-                aria-label={`Dịch vụ ${String(index + 1)}`}
-                {...form.register(`items.${index}.service_id`)}
-              >
-                <option value="">Chọn dịch vụ…</option>
-                {sellable.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
-              <span className="text-xs text-text-muted">Số buổi</span>
-              <input
-                className={input}
-                inputMode="numeric"
-                aria-label={`Số buổi ${String(index + 1)}`}
-                {...form.register(`items.${index}.sessions`)}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-text-muted">Buổi tặng</span>
-              <input
-                className={input}
-                inputMode="numeric"
-                aria-label={`Buổi tặng ${String(index + 1)}`}
-                {...form.register(`items.${index}.bonus`)}
-              />
-            </label>
+        <fieldset className="span-2">
+          <legend>Dịch vụ trong gói</legend>
+          <div className="grid gap-3">
+            {items.fields.map((field, index) => {
+              const n = String(index + 1);
+              const lineError =
+                errors.items?.[index]?.service_id?.message ??
+                errors.items?.[index]?.sessions?.message ??
+                errors.items?.[index]?.bonus?.message ??
+                fieldMessage(mutation.error, `items[${String(index)}].service_id`);
+              return (
+                <div key={field.id} className="plan-line">
+                  <label className="field" htmlFor={`${id}-svc-${n}`}>
+                    <span aria-hidden="true">Dịch vụ</span>
+                    <select
+                      id={`${id}-svc-${n}`}
+                      className="input"
+                      aria-label={`Dịch vụ ${n}`}
+                      aria-invalid={lineError ? true : undefined}
+                      aria-describedby={lineError ? `${id}-line-${n}-error` : undefined}
+                      {...form.register(`items.${index}.service_id`)}
+                    >
+                      <option value="">Chọn dịch vụ…</option>
+                      {sellable.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field" htmlFor={`${id}-sessions-${n}`}>
+                    <span aria-hidden="true">Số buổi</span>
+                    <input
+                      id={`${id}-sessions-${n}`}
+                      className="input tabular"
+                      inputMode="numeric"
+                      aria-label={`Số buổi ${n}`}
+                      {...form.register(`items.${index}.sessions`)}
+                    />
+                  </label>
+                  <label className="field" htmlFor={`${id}-bonus-${n}`}>
+                    <span aria-hidden="true">Buổi tặng</span>
+                    <input
+                      id={`${id}-bonus-${n}`}
+                      className="input tabular"
+                      inputMode="numeric"
+                      aria-label={`Buổi tặng ${n}`}
+                      {...form.register(`items.${index}.bonus`)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      items.remove(index);
+                    }}
+                    className="btn btn-ghost btn-icon plan-line-remove"
+                    aria-label={`Bỏ dịch vụ ${n} khỏi gói`}
+                  >
+                    <Icon name="x" className="size-4" />
+                  </button>
+                  {lineError && (
+                    <span id={`${id}-line-${n}-error`} className="field-error plan-line-error">
+                      {lineError}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+            {itemsError && <span className="field-error">{itemsError}</span>}
             <button
               type="button"
               onClick={() => {
-                items.remove(index);
+                items.append({ service_id: "", sessions: "10", bonus: "0" });
               }}
-              className="min-h-11 rounded-[10px] border border-border px-3"
-              aria-label={`Bỏ dòng ${String(index + 1)}`}
+              className="btn btn-secondary"
             >
-              Bỏ
+              <Icon name="plus" className="size-4" /> Thêm dịch vụ vào gói
             </button>
-            <span className="col-span-4 text-sm text-danger">
-              {errors.items?.[index]?.service_id?.message ??
-                errors.items?.[index]?.sessions?.message ??
-                errors.items?.[index]?.bonus?.message ??
-                fieldMessage(
-                  mutation.error,
-                  `items[${String(index)}].service_id`,
-                )}
-            </span>
           </div>
-        ))}
-        <span className="text-sm text-danger">
-          {errors.items?.root?.message ??
-            errors.items?.message ??
-            fieldMessage(mutation.error, "items")}
-        </span>
-        <button
-          type="button"
-          onClick={() => {
-            items.append({ service_id: "", sessions: "10", bonus: "0" });
-          }}
-          className="min-h-11 rounded-[10px] border border-border px-3"
-        >
-          + Thêm dịch vụ vào gói
-        </button>
-      </fieldset>
+        </fieldset>
 
-      <label className="inline-flex min-h-11 items-center gap-2 sm:col-span-2">
-        <input type="checkbox" {...form.register("active")} /> Đang bán
-      </label>
-      {mutation.isError && (
-        <p
-          role="alert"
-          className="rounded-[10px] bg-danger-soft p-3 text-sm text-danger sm:col-span-2"
-        >
-          {messageFor(mutation.error)}
-        </p>
-      )}
-      <div className="flex gap-2 sm:col-span-2">
-        <button
-          type="submit"
-          disabled={mutation.isPending}
-          className="min-h-11 rounded-[10px] bg-primary px-4 font-semibold text-on-primary disabled:opacity-60"
-        >
-          {mutation.isPending ? "Đang lưu…" : "Lưu gói"}
-        </button>
-        <button
-          type="button"
-          onClick={onDone}
-          className="min-h-11 rounded-[10px] border border-border px-4"
-        >
-          Hủy
-        </button>
+        <div className="choice-row span-2">
+          <label className="choice">
+            <input type="checkbox" {...form.register("active")} /> Đang bán
+          </label>
+        </div>
+        {mutation.isError && (
+          <p role="alert" className="form-error span-2">
+            {messageFor(mutation.error)}
+          </p>
+        )}
+        <div className="form-actions span-2">
+          <button type="submit" aria-busy={mutation.isPending || undefined} className="btn btn-primary">
+            Lưu mẫu gói
+          </button>
+          <button type="button" onClick={onDone} className="btn btn-secondary">
+            Hủy
+          </button>
+        </div>
       </div>
     </form>
   );

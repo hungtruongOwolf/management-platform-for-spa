@@ -1,11 +1,12 @@
 import type { Customer } from "@vpyd/api-client";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { ApiError } from "../../lib/api";
 import { fieldMessage, messageFor } from "../../lib/errors";
+import "./khach.css";
 import { PHONE_CHECK_DEBOUNCE_MS, createCustomer, phoneCheckQuery, phoneDigits, updateCustomer } from "./api";
 
 const schema = z.object({
@@ -65,8 +66,6 @@ export function prefillFrom(
     : { full_name: t, phone: "" };
 }
 
-const input =
-  "min-h-11 w-full rounded-[6px] border border-border bg-surface px-3";
 const opt = (v: string) => (v.trim() === "" ? null : v.trim());
 
 /**
@@ -92,6 +91,7 @@ export function CustomerForm({
   onCancel: () => void;
 }) {
   const queryClient = useQueryClient();
+  const id = useId();
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -137,50 +137,69 @@ export function CustomerForm({
       ? mutation.error.existingId
       : undefined;
 
+  const err = {
+    full_name: errors.full_name?.message ?? fieldMessage(mutation.error, "full_name"),
+    phone: errors.phone?.message ?? fieldMessage(mutation.error, "phone"),
+    birth_year: errors.birth_year?.message ?? fieldMessage(mutation.error, "birth_year"),
+  };
+  const describe = (field: keyof typeof err, hint?: string) =>
+    [err[field] ? `${id}-${field}-error` : undefined, hint].filter(Boolean).join(" ") || undefined;
+
   return (
     <form
       aria-label={customer ? "Sửa hồ sơ khách" : "Khách mới"}
       noValidate
       onSubmit={(e) =>
         void form.handleSubmit((v) => {
-          mutation.mutate(v);
+          if (!mutation.isPending) mutation.mutate(v);
         })(e)
       }
-      className="grid gap-3 rounded-[10px] border border-dashed border-border p-3 sm:grid-cols-2"
+      className="form-grid"
     >
-      <label className="block">
-        <span className="text-sm font-semibold">Họ tên</span>
-        <input className={input} {...form.register("full_name")} />
-        <span className="text-sm text-danger">
-          {errors.full_name?.message ??
-            fieldMessage(mutation.error, "full_name")}
-        </span>
-      </label>
-      <div className="grid content-start">
-        <label className="block">
-          <span className="text-sm font-semibold">Số điện thoại</span>
-          <input
-            className={input}
-            type="tel"
-            inputMode="tel"
-            aria-describedby="phone-duplicate"
-            {...form.register("phone")}
-          />
-          <span className="text-sm text-danger">
-            {errors.phone?.message ?? fieldMessage(mutation.error, "phone")}
+      <div className="field">
+        <label htmlFor={`${id}-name`}>Họ tên</label>
+        <input
+          id={`${id}-name`}
+          className="input"
+          autoComplete="off"
+          aria-invalid={err.full_name ? true : undefined}
+          aria-describedby={describe("full_name")}
+          {...form.register("full_name")}
+        />
+        {err.full_name && (
+          <span id={`${id}-full_name-error`} className="field-error">
+            {err.full_name}
           </span>
-        </label>
+        )}
+      </div>
+      <div className="field">
+        <label htmlFor={`${id}-phone`}>Số điện thoại</label>
+        <input
+          id={`${id}-phone`}
+          className="input tabular"
+          type="tel"
+          inputMode="tel"
+          autoComplete="off"
+          aria-invalid={err.phone ? true : undefined}
+          aria-describedby={describe("phone", `${id}-phone-duplicate`)}
+          {...form.register("phone")}
+        />
+        {err.phone && (
+          <span id={`${id}-phone-error`} className="field-error">
+            {err.phone}
+          </span>
+        )}
         {/* Polite live region: announced once the check answers, before the user submits. */}
-        <p id="phone-duplicate" aria-live="polite" className="text-sm">
+        <span id={`${id}-phone-duplicate`} aria-live="polite" className="grid">
           {duplicate && !existingId && (
-            <span className="mt-1 flex flex-wrap items-center gap-x-2 rounded-[10px] bg-warning-bg px-3 py-2 text-warning-text">
+            <span className="field-notice">
               <span>
                 Số này đã có hồ sơ: <strong>{duplicate.name}</strong>
               </span>
               {onOpenExisting && (
                 <button
                   type="button"
-                  className="min-h-11 font-semibold underline"
+                  className="btn btn-ghost"
                   onClick={() => {
                     onOpenExisting(duplicate.id);
                   }}
@@ -190,57 +209,56 @@ export function CustomerForm({
               )}
             </span>
           )}
-        </p>
+        </span>
       </div>
       <fieldset>
-        <legend className="text-sm font-semibold">
-          Giới tính (để tính giá)
-        </legend>
-        {(["female", "male", ""] as const).map((g) => (
-          <label
-            key={g}
-            className="mr-4 inline-flex min-h-11 items-center gap-2"
-          >
-            <input type="radio" value={g} {...form.register("gender")} />{" "}
-            {g === "female" ? "Nữ" : g === "male" ? "Nam" : "Chưa rõ"}
-          </label>
-        ))}
+        <legend>Giới tính (để tính giá)</legend>
+        <div className="choice-row">
+          {(["female", "male", ""] as const).map((g) => (
+            <label key={g} className="choice">
+              <input type="radio" value={g} {...form.register("gender")} />
+              {g === "female" ? "Nữ" : g === "male" ? "Nam" : "Chưa rõ"}
+            </label>
+          ))}
+        </div>
       </fieldset>
-      <label className="block">
-        <span className="text-sm font-semibold">Năm sinh</span>
+      <div className="field">
+        <label htmlFor={`${id}-birth`}>Năm sinh</label>
         <input
-          className={input}
+          id={`${id}-birth`}
+          className="input tabular"
           inputMode="numeric"
+          autoComplete="off"
+          placeholder="Ví dụ: 1985"
+          aria-invalid={err.birth_year ? true : undefined}
+          aria-describedby={describe("birth_year")}
           {...form.register("birth_year")}
         />
-        <span className="text-sm text-danger">
-          {errors.birth_year?.message}
-        </span>
-      </label>
-      <label className="block sm:col-span-2">
-        <span className="text-sm font-semibold">Địa chỉ</span>
-        <input className={input} {...form.register("address")} />
-      </label>
-      <label className="block sm:col-span-2">
-        <span className="text-sm font-semibold">Ghi chú chung</span>
-        <input className={input} {...form.register("note")} />
-      </label>
-      {!customer && canWriteHealth && (
-        <label className="block sm:col-span-2">
-          <span className="text-sm font-semibold">
-            Lưu ý sức khỏe (chống chỉ định, tình trạng)
+        {err.birth_year && (
+          <span id={`${id}-birth_year-error`} className="field-error">
+            {err.birth_year}
           </span>
-          <textarea
-            className={`${input} min-h-20 py-2`}
-            {...form.register("health_note")}
-          />
-        </label>
+        )}
+      </div>
+      <div className="field span-2">
+        <label htmlFor={`${id}-address`}>Địa chỉ</label>
+        <input id={`${id}-address`} className="input" autoComplete="off" {...form.register("address")} />
+      </div>
+      <div className="field span-2">
+        <label htmlFor={`${id}-note`}>Ghi chú chung</label>
+        <input id={`${id}-note`} className="input" autoComplete="off" {...form.register("note")} />
+      </div>
+      {!customer && canWriteHealth && (
+        <div className="field span-2">
+          <label htmlFor={`${id}-health`}>Lưu ý sức khỏe (chống chỉ định, tình trạng)</label>
+          <textarea id={`${id}-health`} className="input" aria-describedby={`${id}-health-hint`} {...form.register("health_note")} />
+          <span id={`${id}-health-hint`} className="field-hint">
+            Hiện ở quầy mỗi lần khách đến. Không bắt buộc.
+          </span>
+        </div>
       )}
       {mutation.isError && (
-        <p
-          role="alert"
-          className="rounded-[10px] bg-danger-soft p-3 text-sm text-danger sm:col-span-2"
-        >
+        <p role="alert" className="form-error span-2">
           {existingId ? (
             <>
               Số điện thoại này đã có hồ sơ.{" "}
@@ -259,23 +277,11 @@ export function CustomerForm({
           )}
         </p>
       )}
-      <div className="flex gap-2 sm:col-span-2">
-        <button
-          type="submit"
-          disabled={mutation.isPending}
-          className="min-h-11 rounded-[10px] bg-primary px-4 font-semibold text-on-primary disabled:opacity-60"
-        >
-          {mutation.isPending
-            ? "Đang lưu…"
-            : customer
-              ? "Lưu thay đổi"
-              : "Lưu khách"}
+      <div className="form-actions span-2">
+        <button type="submit" aria-busy={mutation.isPending || undefined} className="btn btn-primary">
+          {customer ? "Lưu thay đổi" : "Lưu khách"}
         </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="min-h-11 rounded-[10px] border border-border px-4"
-        >
+        <button type="button" onClick={onCancel} className="btn btn-secondary">
           Hủy
         </button>
       </div>

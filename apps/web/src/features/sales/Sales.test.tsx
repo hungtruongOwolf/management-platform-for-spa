@@ -179,7 +179,7 @@ describe("sell package dialog", () => {
     const calls = serve(MANAGER);
     const { user, dialog } = await openDialog();
     expect(
-      await screen.findByText("Chưa có gói liệu trình nào."),
+      await screen.findByText(/^Chưa có gói liệu trình nào./),
     ).toBeInTheDocument();
     const [planSelect, closerSelect] = within(dialog).getAllByRole("combobox");
     if (!planSelect || !closerSelect) throw new Error("selects missing");
@@ -313,7 +313,7 @@ describe("sell package dialog", () => {
       await screen.findByRole("heading", { name: /^Nguyễn Thị Hà/ }),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText("Chưa có gói liệu trình nào."),
+      await screen.findByText(/^Chưa có gói liệu trình nào./),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Bán gói liệu trình" }),
