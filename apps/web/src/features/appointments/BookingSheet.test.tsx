@@ -7,10 +7,26 @@ import { ApiError } from "../../lib/api";
 import { categoriesQuery, servicesQuery } from "../catalog/api";
 import {
   BookingSheet,
+  type Draft,
   blank,
   bookingErrorText,
+  companion,
   missingParts,
+  noteCompanions,
 } from "./BookingSheet";
+
+/** The customer who books: a newcomer "Chị Hà" with a phone, one Gội đầu (30 phút). */
+async function fillGuest(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(
+    within(screen.getByRole("group", { name: "Loại khách Khách" })).getByRole(
+      "button",
+      { name: "Khách mới" },
+    ),
+  );
+  await user.type(screen.getByLabelText("Tên khách"), "Chị Hà");
+  await user.type(screen.getByLabelText("Số điện thoại"), "0905111222");
+  await user.selectOptions(screen.getByLabelText("Thêm dịch vụ"), "s1");
+}
 
 const service = (
   id: string,
@@ -49,7 +65,10 @@ const CAL: Calendar = {
   visits: [],
 };
 
-function renderSheet(cal: Calendar = CAL) {
+function renderSheet(
+  cal: Calendar = CAL,
+  draft: Draft = { mode: "new", day: "2026-11-07", start: 600, staffId: "" },
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -63,7 +82,7 @@ function renderSheet(cal: Calendar = CAL) {
     <QueryClientProvider client={client}>
       <BookingSheet
         cal={cal}
-        draft={{ mode: "new", day: "2026-11-07", start: 600, staffId: "" }}
+        draft={draft}
         onClose={() => undefined}
         onSaved={() => undefined}
       />
@@ -116,37 +135,20 @@ describe("Đặt lịch hẹn (spec appointments.md §10.2, §10.5)", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("sends companions as notes (round 6 Q-U5): trimmed, blanks dropped, at most 5", async () => {
+  it("sends a companion without a service as a note (round 6 Q-U5), trimmed", async () => {
     const user = userEvent.setup();
     const { fetchMock } = renderSheet();
-    await user.click(
-      within(screen.getByRole("group", { name: "Loại khách Khách" })).getByRole(
-        "button",
-        { name: "Khách mới" },
-      ),
-    );
-    await user.type(screen.getByLabelText("Tên khách"), "Chị Hà");
-    await user.type(screen.getByLabelText("Số điện thoại"), "0905111222");
-    await user.selectOptions(screen.getByLabelText("Thêm dịch vụ"), "s1");
-    const add = () =>
-      user.click(
-        screen.getByRole("button", { name: /Người đi cùng \(ghi chú\)/ }),
-      );
-    await add();
+    await fillGuest(user);
+    await user.click(screen.getByRole("button", { name: "Người đi cùng" }));
     await user.type(
-      screen.getByLabelText("Người đi cùng 1"),
+      screen.getByLabelText("Tên hoặc ghi chú · Người đi cùng 1"),
       "  Chồng của chị Hà ",
     );
-    await add();
-    for (let i = 0; i < 3; i += 1) await add();
-    // Five notes at most: the add button is gone.
+    // No service: no technician, length or start to fill.
     expect(
-      screen.queryByRole("button", { name: /Người đi cùng \(ghi chú\)/ }),
+      screen.queryByLabelText("KTV làm cho người đi cùng · Người đi cùng 1"),
     ).not.toBeInTheDocument();
-    await user.click(
-      screen.getByRole("button", { name: "Bỏ người đi cùng 5" }),
-    );
-    expect(screen.getByText(/1 người đi cùng/)).toBeInTheDocument();
+    expect(screen.getByText(/1 người đi cùng \(ghi chú\)/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Đặt lịch" }));
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -160,37 +162,159 @@ describe("Đặt lịch hẹn (spec appointments.md §10.2, §10.5)", () => {
     expect(body["guest"]).toEqual({ full_name: "Chị Hà", phone: "0905111222" });
   });
 
-  it("sends no companions field when none is noted", async () => {
+  it("books a companion with their own service, technician and start (EM 2026-11-07)", async () => {
     const user = userEvent.setup();
     const { fetchMock } = renderSheet();
-    await user.click(
-      within(screen.getByRole("group", { name: "Loại khách Khách" })).getByRole(
-        "button",
-        { name: "Khách mới" },
-      ),
+    await fillGuest(user);
+    await user.click(screen.getByRole("button", { name: "Người đi cùng" }));
+    await user.type(
+      screen.getByLabelText("Tên hoặc ghi chú · Người đi cùng 1"),
+      "Chồng của chị Hà",
     );
-    await user.type(screen.getByLabelText("Tên khách"), "Chị Hà");
-    await user.type(screen.getByLabelText("Số điện thoại"), "0905111222");
-    await user.selectOptions(screen.getByLabelText("Thêm dịch vụ"), "s1");
-    await user.click(
-      screen.getByRole("button", { name: /Người đi cùng \(ghi chú\)/ }),
+    await user.selectOptions(
+      screen.getByLabelText("Thêm dịch vụ · Người đi cùng 1"),
+      "s2",
     );
-    await user.click(screen.getByRole("button", { name: "Đặt lịch" }));
-    const init = (
-      fetchMock.mock.calls[0] as unknown as [string, RequestInit]
-    )[1];
-    expect(JSON.parse(init.body as string)).not.toHaveProperty("companions");
+    await user.selectOptions(
+      screen.getByLabelText("KTV làm cho người đi cùng · Người đi cùng 1"),
+      "st1",
+    );
+    await user.selectOptions(
+      screen.getByLabelText("Giờ bắt đầu · Người đi cùng 1"),
+      "630",
+    );
+    expect(screen.getByText(/10:00–12:00/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Đặt lịch 2 người" }));
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe("/api/v1/appointments/group");
+    const body = JSON.parse(init.body as string) as {
+      people: Record<string, unknown>[];
+    };
+    expect(body).not.toHaveProperty("companions");
+    expect(body.people).toHaveLength(2);
+    expect(body.people[1]).toEqual({
+      guest: { full_name: "Chồng của chị Hà", phone: null },
+      service_ids: ["s2"],
+      staff_id: "st1",
+      duration_min: 90,
+      starts_at: "2026-11-07T03:30:00.000Z",
+    });
+    // The person who books keeps the group's start.
+    expect(body.people[0]).not.toHaveProperty("starts_at");
   });
 
-  it("books a family: + Thêm người, one form per person", async () => {
+  it("warns when one technician serves two people at overlapping times only", async () => {
     const user = userEvent.setup();
     renderSheet();
-    await user.click(screen.getByRole("button", { name: /Thêm người/ }));
-    expect(screen.getByRole("group", { name: /^Người 1/ })).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: /^Người 2/ })).toBeInTheDocument();
+    await fillGuest(user);
+    await user.selectOptions(
+      screen.getByLabelText("KTV (không bắt buộc)"),
+      "st1",
+    );
+    await user.click(screen.getByRole("button", { name: "Người đi cùng" }));
+    await user.type(
+      screen.getByLabelText("Tên hoặc ghi chú · Người đi cùng 1"),
+      "Bé Na",
+    );
+    await user.selectOptions(
+      screen.getByLabelText("Thêm dịch vụ · Người đi cùng 1"),
+      "s1",
+    );
+    const staff = screen.getByLabelText(
+      "KTV làm cho người đi cùng · Người đi cùng 1",
+    );
+    await user.selectOptions(staff, "st1");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /Người đi cùng 1 \(Bé Na\) đang cùng KTV/,
+    );
+    // Gội đầu of the customer ends at 10:30: the same technician can take the companion then.
+    await user.selectOptions(
+      screen.getByLabelText("Giờ bắt đầu · Người đi cùng 1"),
+      "630",
+    );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("allows five companions and names a blank one as missing", async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = renderSheet();
+    await fillGuest(user);
+    for (let i = 0; i < 5; i += 1)
+      await user.click(screen.getByRole("button", { name: "Người đi cùng" }));
     expect(
-      screen.getByRole("button", { name: "Đặt lịch 2 người" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: /^\+? ?Người đi cùng$/ }),
+    ).not.toBeInTheDocument();
+    for (let i = 5; i > 1; i -= 1)
+      await user.click(
+        screen.getByRole("button", {
+          name: `Bỏ người này (Người đi cùng ${String(i)})`,
+        }),
+      );
+    await user.click(screen.getByRole("button", { name: "Đặt lịch" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Còn thiếu: tên hoặc ghi chú của Người đi cùng 1.",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("edits the companions of a booking: notes by PATCH, a served one joins it", async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = renderSheet(CAL, {
+      mode: "edit",
+      appointment: {
+        ...CAL_APPT,
+        companions: ["Bé Na"],
+        services: [
+          {
+            service_id: "s1",
+            service_name: "Gội đầu",
+            category_name: "Dưỡng sinh",
+            duration_min: 30,
+          },
+        ],
+      },
+    });
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify(CAL_APPT), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    expect(
+      screen.getByLabelText("Tên hoặc ghi chú · Người đi cùng 1"),
+    ).toHaveValue("Bé Na");
+    await user.click(screen.getByRole("button", { name: "Người đi cùng" }));
+    await user.type(
+      screen.getByLabelText("Tên hoặc ghi chú · Người đi cùng 2"),
+      "Chồng của chị Hà",
+    );
+    await user.selectOptions(
+      screen.getByLabelText("Thêm dịch vụ · Người đi cùng 2"),
+      "s1",
+    );
+    await user.click(screen.getByRole("button", { name: "Lưu thay đổi" }));
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
+    const [patchUrl, patchInit] = calls[0] ?? ["", {}];
+    expect(patchUrl).toBe("/api/v1/appointments/a1");
+    expect(patchInit.method).toBe("PATCH");
+    expect(JSON.parse(patchInit.body as string)).toMatchObject({
+      companions: ["Bé Na"],
+    });
+    const [postUrl, postInit] = calls[1] ?? ["", {}];
+    expect(postUrl).toBe("/api/v1/appointments");
+    expect(JSON.parse(postInit.body as string)).toMatchObject({
+      group_with: "a1",
+      guest: { full_name: "Chồng của chị Hà", phone: null },
+      service_ids: ["s1"],
+    });
   });
 
   it("shows n / max of the slot and warns, without blocking, when it is full", () => {
@@ -243,31 +367,45 @@ const CAL_APPT: Calendar["appointments"][number] = {
 };
 
 describe("booking messages", () => {
-  it("lists what is missing per person of a group", () => {
+  it("lists what is missing: the customer's services, a companion's name", () => {
     const people = [
       {
         ...blank(0),
-        serviceIds: ["s1"],
         customer: { id: "c1", full_name: "Hà", phone: "0905", gender: null },
       },
-      { ...blank(1), who: "guest" as const, guestName: "Bé Na" },
+      companion(1),
+      { ...blank(2), serviceIds: ["s1"] },
     ];
     expect(missingParts(people, false)).toEqual([
-      "SĐT khách mới của Người 2 (Bé Na)",
-      "dịch vụ của Người 2 (Bé Na)",
+      "dịch vụ",
+      "tên hoặc ghi chú của Người đi cùng 1",
+      "khách của Người đi cùng 2",
+    ]);
+  });
+
+  it("keeps companions without a service as notes: trimmed, blanks dropped, at most 5", () => {
+    const people = [
+      blank(0),
+      companion(1, " Chồng của chị Hà "),
+      { ...companion(2, "Bé Na"), serviceIds: ["s1"] },
+      ...["1", "2", "3", "4", "5"].map((n, i) => companion(3 + i, n)),
+    ];
+    expect(noteCompanions(people)).toEqual([
+      "Chồng của chị Hà",
+      "1",
+      "2",
+      "3",
+      "4",
     ]);
   });
 
   it("explains every server refusal in Vietnamese, naming the person", () => {
-    const people = [
-      blank(0),
-      { ...blank(1), who: "guest" as const, guestName: "Bé Na" },
-    ];
+    const people = [blank(0), companion(1, "Bé Na")];
     const phone = new ApiError(422, "validation_failed", [
       { field: "people[1].guest.phone", code: "invalid" },
     ]);
     expect(bookingErrorText(phone, CAL, people)).toBe(
-      "Người 2 (Bé Na): SĐT — giá trị không hợp lệ.",
+      "Người đi cùng 1 (Bé Na): SĐT — giá trị không hợp lệ.",
     );
     const hours = new ApiError(422, "appointment.outside_opening_hours");
     expect(bookingErrorText(hours, CAL, people)).toMatch(

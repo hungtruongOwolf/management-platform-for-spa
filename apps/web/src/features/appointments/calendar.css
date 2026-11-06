@@ -645,6 +645,14 @@
 .appt-members strong {
   font-weight: 600;
 }
+/* Time · services · technician of each person of the group, on its own line under the name. */
+.appt-member-meta {
+  flex-basis: 100%;
+  padding-bottom: 8px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
 /* Ghost buttons standing alone in a column (other members' names, "Dùng lại theo dịch vụ",
    "+ Người đi cùng"): their text lines up with the text above, the hover fill reaches out. */
 .appt-members .btn-ghost,
@@ -739,15 +747,6 @@
 .appt-companions {
   display: grid;
   gap: 8px;
-}
-.appt-companion {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-}
-.appt-companion > .field {
-  flex: 1;
-  min-width: 0;
 }
 .appt-recap {
   padding: 12px 16px;

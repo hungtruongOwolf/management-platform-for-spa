@@ -4,7 +4,6 @@ import {
   PHASE_BADGE,
   addedMinutes,
   autoMinutes,
-  companionNotes,
   daysFrom,
   entriesOf,
   forStaff,
@@ -203,12 +202,5 @@ describe("status chips and companions (redesign rulebook 7, round 6 Q-U5)", () =
       cancelled: "badge-muted",
       voided: "badge-muted",
     });
-  });
-
-  it("sends companion notes trimmed, without blanks, at most 5", () => {
-    expect(companionNotes([" Chồng của chị Hà ", "", "   "])).toEqual([
-      "Chồng của chị Hà",
-    ]);
-    expect(companionNotes(["1", "2", "3", "4", "5", "6"])).toHaveLength(5);
   });
 });
