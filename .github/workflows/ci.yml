@@ -1,5 +1,15 @@
 name: CI
 
+# Job graph (memory/wiki/conventions/testing.md §5):
+#   changes ─┬─ rust-lint                       fmt, clippy, doctests, cargo-deny      (scope full)
+#            ├─ rust-test-build ── rust-test×3  nextest archive once, 3 shards        (scope full)
+#            ├─ api-build ─┬─ e2e×2             Playwright desktop project, 2 shards  (scope web|full)
+#            │             └─ perf              API p95 + Lighthouse CI               (scope web|full)
+#            ├─ web, images                                                           (scope web|full)
+#   secrets (always)
+#   ci-ok: the one status to require — fails if any job failed or was cancelled; skipped is fine.
+# Scope comes from scripts/ci-changes.sh (same path buckets as the local gate); pushes to main run everything.
+
 on:
   pull_request:
   push:
@@ -7,16 +17,126 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read   # gitleaks lists PR commits
+  pull-requests: read   # gitleaks lists PR commits; `changes` lists PR files
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # No debuginfo in CI builds: smaller target dir, Rust cache and nextest archive. Panic messages
+  # still carry file:line; only symbolized backtraces are lost.
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_TERM_COLOR: always
+  # Compile-time query checks use the committed .sqlx data.
+  SQLX_OFFLINE: "true"
+
 jobs:
-  api:
-    name: API (Rust)
+  changes:
+    name: Changes
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      scope: ${{ steps.scope.outputs.scope }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          sparse-checkout: scripts
+      - name: Classifier self-test
+        run: |
+          bash scripts/ci-changes.test.sh
+          if [ -f scripts/gate-lib.test.sh ]; then bash scripts/gate-lib.test.sh; fi
+      - id: scope
+        name: Decide scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then
+            echo "scope=full" | tee -a "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Renames list the old path too. The files API stops at 3000 entries: treat that as unknown.
+          if ! files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)'); then
+            echo "::warning::could not list PR files; running everything"
+            echo "scope=full" | tee -a "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$(printf '%s\n' "$files" | grep -c .)" -ge 3000 ]; then
+            echo "scope=full" | tee -a "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          printf '%s\n' "$files" | bash scripts/ci-changes.sh | tee -a "$GITHUB_OUTPUT"
+
+  rust-lint:
+    name: Rust lint (fmt, clippy, doctests, deny)
+    needs: changes
+    if: needs.changes.outputs.scope == 'full'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: apps/api
+          shared-key: lint
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      # nextest does not run doctests; `cargo test` did, so they run here.
+      - run: cargo test --workspace --doc
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+        with:
+          manifest-path: apps/api/Cargo.toml
+          command: check advisories bans licenses sources
+
+  rust-test-build:
+    name: Rust tests (build)
+    needs: changes
+    if: needs.changes.outputs.scope == 'full'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: apps/api
+          shared-key: test
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: cargo-nextest@0.9
+      - name: Build every test binary once
+        run: cargo nextest archive --workspace --archive-file "$RUNNER_TEMP/nextest-archive.tar.zst"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nextest-archive
+          path: ${{ runner.temp }}/nextest-archive.tar.zst
+          compression-level: 0   # already zstd
+          retention-days: 1
+
+  rust-test:
+    name: Rust tests (shard ${{ matrix.partition }}/3)
+    needs: rust-test-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2, 3]
     services:
       postgres:
         image: postgres:16-alpine
@@ -29,37 +149,219 @@ jobs:
           --health-cmd "pg_isready -U vpyd -d vpyd"
           --health-interval 5s --health-timeout 3s --health-retries 20
     env:
-      # Compile-time query checks use the committed .sqlx data; tests use the live server (one fresh DB per test).
-      SQLX_OFFLINE: "true"
+      # One fresh database per test (#[sqlx::test]); tests also connect as app_rw (RLS).
       DATABASE_URL: postgres://vpyd:vpyd_ci_password@localhost:5432/vpyd
       APP_RW_PASSWORD: app_rw_dev_password
     defaults:
       run:
         working-directory: apps/api
     steps:
+      # Sources are needed at run time: authz_matrix.rs reads the router files.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Create runtime role app_rw
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../../infra/postgres-init/01-roles.sql
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: cargo-nextest@0.9
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: nextest-archive
+          path: ${{ runner.temp }}/nextest
+      # No retries: a flaky test fails the shard.
+      - name: cargo nextest (partition ${{ matrix.partition }}/3)
+        run: >-
+          cargo nextest run --no-fail-fast --retries 0
+          --archive-file "$RUNNER_TEMP/nextest/nextest-archive.tar.zst" --workspace-remap .
+          --partition count:${{ matrix.partition }}/3
+
+  api-build:
+    name: API binary + OpenAPI contract
+    needs: changes
+    if: needs.changes.outputs.scope != 'docs'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      # The binary only depends on apps/api and the toolchain: a web-only PR reuses main's build.
+      - id: key
+        name: Binary cache key
+        working-directory: apps/api
+        run: echo "key=api-bin-v1-debug${CARGO_PROFILE_DEV_DEBUG}-$(rustc --version | sha256sum | cut -c1-12)-${{ hashFiles('apps/api/**') }}" >> "$GITHUB_OUTPUT"
+      - id: bin
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: apps/api/target/debug/app
+          key: ${{ steps.key.outputs.key }}
+      - if: steps.bin.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: apps/api
-      - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
-      - name: OpenAPI contract is up to date
-        run: cargo run -q -p app -- openapi | diff -u openapi.json -
-      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+          shared-key: e2e
+      - name: Build API
+        if: steps.bin.outputs.cache-hit != 'true'
+        run: cargo build --manifest-path apps/api/Cargo.toml -p app
+      - if: steps.bin.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          manifest-path: apps/api/Cargo.toml
-          command: check advisories bans licenses sources
+          path: apps/api/target/debug/app
+          key: ${{ steps.key.outputs.key }}
+      - name: OpenAPI contract is up to date
+        run: apps/api/target/debug/app openapi | diff -u apps/api/openapi.json -
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: api-bin
+          path: apps/api/target/debug/app
+          retention-days: 1
+
+  e2e:
+    name: E2E + a11y (shard ${{ matrix.shard }}/2)
+    needs: api-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vpyd
+          POSTGRES_PASSWORD: vpyd_ci_password
+          POSTGRES_DB: vpyd_e2e
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vpyd -d vpyd_e2e"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      CI: "true"
+      E2E_API_BIN: ${{ github.workspace }}/apps/api/target/debug/app   # prebuilt by api-build
+      E2E_DATABASE_URL: postgres://vpyd:vpyd_ci_password@localhost:5432/vpyd_e2e
+      E2E_APP_DATABASE_URL: postgres://app_rw:app_rw_dev_password@localhost:5432/vpyd_e2e
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Create runtime role app_rw
+        run: psql "$E2E_DATABASE_URL" -v ON_ERROR_STOP=1 -f infra/postgres-init/01-roles.sql
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: api-bin
+          path: apps/api/target/debug
+      - run: chmod +x apps/api/target/debug/app
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - id: pw
+        name: Playwright version
+        run: echo "version=$(pnpm --filter web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - id: pw-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - name: Install Playwright Chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: pnpm --filter web exec playwright install --with-deps chromium
+      - name: Install Chromium system deps
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: pnpm --filter web exec playwright install-deps chromium
+      # Each shard provisions its own spa (setup project) on its own Postgres.
+      - name: E2E and axe (shard ${{ matrix.shard }}/2)
+        run: pnpm e2e --project=desktop --shard=${{ matrix.shard }}/2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: playwright-report-${{ matrix.shard }}
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          retention-days: 14
+
+  perf:
+    name: API p95 + Lighthouse CI
+    needs: api-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vpyd
+          POSTGRES_PASSWORD: vpyd_ci_password
+          POSTGRES_DB: vpyd_e2e
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vpyd -d vpyd_e2e"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      CI: "true"
+      E2E_API_BIN: ${{ github.workspace }}/apps/api/target/debug/app   # prebuilt by api-build
+      E2E_DATABASE_URL: postgres://vpyd:vpyd_ci_password@localhost:5432/vpyd_e2e
+      E2E_APP_DATABASE_URL: postgres://app_rw:app_rw_dev_password@localhost:5432/vpyd_e2e
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Create runtime role app_rw
+        run: psql "$E2E_DATABASE_URL" -v ON_ERROR_STOP=1 -f infra/postgres-init/01-roles.sql
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: api-bin
+          path: apps/api/target/debug
+      - run: chmod +x apps/api/target/debug/app
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - id: pw
+        name: Playwright version
+        run: echo "version=$(pnpm --filter web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - id: pw-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - name: Install Playwright Chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: pnpm --filter web exec playwright install --with-deps chromium
+      - name: Install Chromium system deps
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: pnpm --filter web exec playwright install-deps chromium
+      # Setup project provisions the spa (and the manager Lighthouse signs in as); the perf project
+      # seeds 300 customers and 100 visits, so /quay is audited with data on it, as before.
+      - name: API p95
+        run: pnpm e2e --project=perf
+      - name: Lighthouse CI (LCP < 2.5 s)
+        run: pnpm lhci
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: perf-failure-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+            apps/web/lighthouse-report
+          retention-days: 14
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: success()
+        with:
+          name: perf-report
+          path: |
+            apps/web/test-results/**/api-p95.json
+            apps/web/lighthouse-report
+          retention-days: 14
 
   web:
     name: Web (TypeScript)
+    needs: changes
+    if: needs.changes.outputs.scope != 'docs'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -78,7 +380,10 @@ jobs:
 
   images:
     name: Docker images (build only)
+    needs: changes
+    if: needs.changes.outputs.scope != 'docs'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
@@ -110,72 +415,10 @@ jobs:
           cache-from: type=gha,scope=backup
           cache-to: type=gha,mode=max,scope=backup
 
-  e2e:
-    name: E2E + a11y + perf (Playwright)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: vpyd
-          POSTGRES_PASSWORD: vpyd_ci_password
-          POSTGRES_DB: vpyd_e2e
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U vpyd -d vpyd_e2e"
-          --health-interval 5s --health-timeout 3s --health-retries 20
-    env:
-      CI: "true"
-      SQLX_OFFLINE: "true"
-      E2E_DATABASE_URL: postgres://vpyd:vpyd_ci_password@localhost:5432/vpyd_e2e
-      E2E_APP_DATABASE_URL: postgres://app_rw:app_rw_dev_password@localhost:5432/vpyd_e2e
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Create runtime role app_rw
-        run: psql "$E2E_DATABASE_URL" -v ON_ERROR_STOP=1 -f infra/postgres-init/01-roles.sql
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with:
-          workspaces: apps/api
-          shared-key: e2e
-      - name: Build API
-        run: cargo build --manifest-path apps/api/Cargo.toml -p app
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Install Playwright Chromium
-        run: pnpm --filter web exec playwright install --with-deps chromium
-      - name: E2E, axe and API p95
-        run: pnpm e2e
-      - name: Lighthouse CI (LCP < 2.5 s)
-        run: pnpm lhci
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: failure()
-        with:
-          name: playwright-report
-          path: |
-            apps/web/playwright-report
-            apps/web/test-results
-            apps/web/lighthouse-report
-          retention-days: 14
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: success()
-        with:
-          name: perf-report
-          path: |
-            apps/web/test-results/**/api-p95.json
-            apps/web/lighthouse-report
-          retention-days: 14
-
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -183,3 +426,24 @@ jobs:
       - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  ci-ok:
+    name: CI ok
+    if: always()
+    needs: [changes, rust-lint, rust-test-build, rust-test, api-build, e2e, perf, web, images, secrets]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every job that ran passed (skipped by scope is fine)
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          SCOPE: ${{ needs.changes.outputs.scope }}
+        run: |
+          echo "scope: ${SCOPE:-unknown}"
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if echo "$RESULTS" | jq -e 'any(.[]; .result == "failure" or .result == "cancelled")' >/dev/null; then
+            echo "::error::a CI job failed or was cancelled"
+            exit 1
+          fi
+          # `changes` must have run: if it was skipped nothing was decided.
+          [ "$(echo "$RESULTS" | jq -r '.changes.result')" = success ] || { echo "::error::changes did not succeed"; exit 1; }
