@@ -27,6 +27,8 @@ export function overlappingSiblings(page: Page): Promise<string[]> {
       if (cs.display === "table-column-group" || cs.display === "table-column") return null;
       if (cs.visibility === "hidden" || Number(cs.opacity) === 0) return null;
       if (cs.position === "absolute" || cs.position === "fixed") return null;
+      // A bottom action bar (StickyActions) floats over the content it scrolls past, by design.
+      if (cs.position === "sticky" && el.classList.contains("sticky-actions")) return null;
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0 ? r : null;
     };

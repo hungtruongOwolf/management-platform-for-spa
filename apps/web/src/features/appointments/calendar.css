@@ -283,3 +283,9 @@
 .cal-card-main > span {
   overflow-wrap: anywhere;
 }
+
+/* Events sit edge to edge with the hour gutter and each other: draw their focus ring inside. */
+.cal-event:focus-visible,
+.cal-chip:focus-visible {
+  outline-offset: -3px;
+}

@@ -310,6 +310,10 @@
   .sticky-actions-buttons > :is(button, a) {
     flex: 1;
   }
+  /* The bar's edge touches the content above it: keep the ring inside the button. */
+  .sticky-actions-buttons > :is(button, a):focus-visible {
+    outline-offset: -3px;
+  }
   /* In a sheet the footer already pins; inside the body the bar spans the body's padding. */
   .sheet-body .sticky-actions {
     bottom: 0;
