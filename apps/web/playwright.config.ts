@@ -2,6 +2,9 @@ import { defineConfig, devices } from "@playwright/test";
 import { repoRoot, stack, webRoot } from "./e2e/stack";
 
 const ci = Boolean(process.env["CI"]);
+// A prebuilt API binary (the local merge gate passes the one its `cargo test` just built): no
+// second `cargo run` build in another feature set.
+const apiBin = process.env["E2E_API_BIN"];
 
 /**
  * E2E against the real stack: Rust API (`cargo run -p app`) on a dedicated database + Vite dev
@@ -51,7 +54,9 @@ export default defineConfig({
   webServer: [
     {
       name: "api",
-      command: "cargo run --manifest-path apps/api/Cargo.toml -p app -- serve",
+      command: apiBin
+        ? `${JSON.stringify(apiBin)} serve`
+        : "cargo run --manifest-path apps/api/Cargo.toml -p app -- serve",
       cwd: repoRoot,
       url: `${stack.apiOrigin}/api/v1/health`,
       // A cold `cargo build` takes minutes; later runs start in seconds.

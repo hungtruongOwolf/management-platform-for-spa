@@ -1,10 +1,12 @@
 // Local mirror of the CI checks that `cargo test` / lint don't cover, so they fail before a push:
+//   0. contract files are present and parseable (an interrupted api:spec once committed an empty file)
 //   1. contract drift: openapi.json and the generated TS client must match the code
 //   2. cargo-deny (licenses, advisories, bans) — skipped with a hint when not installed
 import { execSync, spawnSync } from "node:child_process";
 
 const run = (cmd) => execSync(cmd, { stdio: "inherit" });
 
+run("node scripts/contract-files.mjs");
 run("pnpm -s api:gen");
 const drift = spawnSync(
   "git",

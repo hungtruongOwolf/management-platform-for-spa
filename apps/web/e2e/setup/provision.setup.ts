@@ -14,14 +14,17 @@ import { signIn } from "../support/run";
 import { ownerState, repoRoot, runFile, stack } from "../stack";
 
 /**
- * The binary the `api` web server just built. Not `cargo run`: a different DATABASE_URL would make
- * cargo rebuild (sqlx macros track it) and Windows cannot replace the running app.exe.
+ * The binary the `api` web server runs (`E2E_API_BIN`, or the one `cargo run` just built). Not
+ * `cargo run`: a different DATABASE_URL would make cargo rebuild (sqlx macros track it) and Windows
+ * cannot replace the running app.exe.
  */
-const appBinary = join(
-  process.env["CARGO_TARGET_DIR"] ?? join(repoRoot, "apps", "api", "target"),
-  "debug",
-  process.platform === "win32" ? "app.exe" : "app",
-);
+const appBinary =
+  process.env["E2E_API_BIN"] ??
+  join(
+    process.env["CARGO_TARGET_DIR"] ?? join(repoRoot, "apps", "api", "target"),
+    "debug",
+    process.platform === "win32" ? "app.exe" : "app",
+  );
 
 function cli(args: string[], extraEnv: Record<string, string> = {}): void {
   execFileSync(appBinary, args, {

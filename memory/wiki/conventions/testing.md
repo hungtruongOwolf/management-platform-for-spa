@@ -81,6 +81,8 @@ Connection string: `E2E_DATABASE_URL` / `E2E_APP_DATABASE_URL`. Nếu không đ�
 
 ## 5. CI
 
+> GitHub Actions đang tắt (2026-11-05): merge qua gate local theo thay đổi, xem [local-merge-gate](../runbooks/local-merge-gate.md).
+
 Job `e2e` trong `.github/workflows/ci.yml` dùng Postgres service `vpyd_e2e` và role `app_rw` từ `infra/postgres-init/01-roles.sql`. Các bước: build API, cài Chromium, chạy `pnpm e2e` (gồm axe + p95), rồi `pnpm lhci`. Khi fail thì upload `playwright-report`, `test-results` và `lighthouse-report`. Khi pass thì upload `perf-report`.
 
 ## Gotcha: DB dev cũ hơn `main`

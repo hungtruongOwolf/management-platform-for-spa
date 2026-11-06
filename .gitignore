@@ -11,6 +11,9 @@
 # Rust
 apps/api/target/
 
+# api:spec writes here first, then renames (scripts/api-spec.mjs)
+apps/api/openapi.json.tmp-*
+
 # Node
 node_modules/
 dist/
