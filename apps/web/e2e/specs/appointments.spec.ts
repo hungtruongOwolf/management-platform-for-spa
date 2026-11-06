@@ -325,6 +325,236 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     ).toBeVisible();
   });
 
+  test("regression (round 6): cards float over the grid at their real length; free slots stay bookable", async ({
+    page,
+  }) => {
+    const r = await regular(page, "Bùi Thị Lớp Lịch");
+    const services = (await (
+      await page.request.get("/api/v1/services")
+    ).json()) as Service[];
+    const short = services.find(
+      (s) => s.active && s.duration_min === 30 && s.prices.all != null,
+    );
+    // An add-on without a duration ("Mặt nạ thuốc bắc"): it used to add 60 minutes each.
+    const addOn = services.find(
+      (s) => s.active && s.duration_min === null && s.prices.all != null,
+    );
+    expect(
+      short && addOn,
+      "seeded menu: a 30-minute service and an add-on",
+    ).toBeTruthy();
+    if (!short || !addOn) return;
+    const day = spaDay(5);
+    const booked = await page.request.post("/api/v1/appointments", {
+      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+      data: {
+        customer_id: r.customer,
+        service_ids: [short.id, addOn.id],
+        staff_id: r.staff.id,
+        starts_at: `${day}T10:00:00+07:00`,
+      },
+    });
+    expect(booked.status()).toBe(201);
+    expect(
+      ((await booked.json()) as { duration_min: number }).duration_min,
+    ).toBe(30);
+
+    // A walk-in recorded yesterday 14:00 (owner backdate) with the same two services.
+    const yesterday = spaDay(-1);
+    const walkIn = await page.request.post("/api/v1/visits", {
+      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+      data: {
+        customer_id: r.customer,
+        check_in_at: `${yesterday}T14:00:00+07:00`,
+        lines: [short, addOn].map((s) => ({
+          service_id: s.id,
+          source: "one_off",
+          staff_id: r.staff.id,
+        })),
+        payments: [
+          {
+            method: "cash",
+            amount: (short.prices.all ?? 0) + (addOn.prices.all ?? 0),
+          },
+        ],
+      },
+    });
+    expect(walkIn.status(), await walkIn.text()).toBe(201);
+
+    const grid = page.getByRole("group", { name: /Lịch theo KTV/ });
+    const slotHeight = async () =>
+      (await grid.locator(".cal-cell").first().boundingBox())?.height ?? 0;
+
+    // Yesterday's walk-in: 30 minutes = 2 slots tall (±2 px per slot).
+    await page.goto(`/quay?view=lich&ngay=${yesterday}`);
+    const visit = grid.getByRole("button", {
+      name: /^14:00–14:30 Bùi Thị Lớp Lịch, Xong, Vãng lai/,
+    });
+    await expect(visit).toBeVisible();
+    const slot = await slotHeight();
+    expect(slot).toBeGreaterThan(10);
+    const visitBox = await visit.boundingBox();
+    expect(Math.abs((visitBox?.height ?? 0) - 2 * slot)).toBeLessThanOrEqual(4);
+
+    await page.goto(`/quay?view=lich&ngay=${day}`);
+    const card = grid.getByRole("button", {
+      name: /^10:00–10:30 Bùi Thị Lớp Lịch, Chưa đến/,
+    });
+    await expect(card).toBeVisible();
+    const box = await card.boundingBox();
+    if (!box) throw new Error("no card box");
+    expect(Math.abs(box.height - 2 * slot)).toBeLessThanOrEqual(4);
+
+    // The slot cells under the card are still there (they draw the lines) and the free time
+    // right below it in the same column is a slot, not the card.
+    const inColumn = async (name: RegExp) => {
+      for (const cell of await grid.getByRole("button", { name }).all()) {
+        const b = await cell.boundingBox();
+        if (
+          b &&
+          b.x <= box.x + box.width / 2 &&
+          box.x + box.width / 2 <= b.x + b.width
+        )
+          return { cell, b };
+      }
+      throw new Error(`no ${String(name)} cell in the card's column`);
+    };
+    const under = await inColumn(/^Đặt lịch 10:15/);
+    expect(under.b.y).toBeGreaterThanOrEqual(box.y - 1);
+    expect(under.b.y + under.b.height).toBeLessThanOrEqual(
+      box.y + box.height + 2,
+    );
+    const hits = await page.evaluate(
+      ({ x, inside, below }) => {
+        const at = (y: number) => document.elementFromPoint(x, y);
+        return {
+          inside: Boolean(at(inside)?.closest(".cal-event")),
+          below: at(below)?.classList.contains("cal-cell") ?? false,
+        };
+      },
+      {
+        x: box.x + box.width / 2,
+        inside: box.y + box.height / 2,
+        below: box.y + box.height + slot / 2,
+      },
+    );
+    expect(hits).toEqual({ inside: true, below: true });
+
+    // Free space in the same column books at its time; the card opens its own sheet.
+    const after = await inColumn(/^Đặt lịch 10:30/);
+    await after.cell.click();
+    const sheet = page.getByRole("dialog", { name: "Đặt lịch hẹn" });
+    await expect(sheet.getByLabel("Giờ hẹn")).toHaveValue(String(10 * 60 + 30));
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
+    await card.click();
+    await expect(
+      page.getByRole("dialog", { name: /10:00.*Bùi Thị Lớp Lịch/ }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    // Alignment (EM round 6): equal columns, first header whole, toolbar controls one height.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const heads = await grid.locator(".cal-head:not(.cal-corner)").all();
+    const widths = await Promise.all(
+      heads.map(async (h) => (await h.boundingBox())?.width ?? 0),
+    );
+    for (const w of widths)
+      expect(Math.abs(w - (widths[0] ?? 0))).toBeLessThanOrEqual(1);
+    const corner = await grid.locator(".cal-corner").boundingBox();
+    const first = await heads[0]?.boundingBox();
+    expect(first && corner && first.x >= corner.x + corner.width - 1).toBe(
+      true,
+    );
+    const name = heads[0]?.locator("span");
+    expect(
+      await name?.evaluate((el) => {
+        const own = el.getBoundingClientRect();
+        const cell = (el.parentElement as HTMLElement).getBoundingClientRect();
+        return own.left >= cell.left - 0.5 && own.right <= cell.right + 0.5;
+      }),
+      "the first column's name is not cut at its left edge",
+    ).toBe(true);
+    const controls = await page
+      .locator(".cal-toolbar")
+      .locator(
+        ":scope > button, :scope > .segmented, :scope > label select, .date-field",
+      )
+      .all();
+    const boxes = (
+      await Promise.all(controls.map((c) => c.boundingBox()))
+    ).filter((b): b is NonNullable<typeof b> => b !== null);
+    expect(boxes.length).toBeGreaterThanOrEqual(4);
+    for (const b of boxes) {
+      expect(Math.abs(b.height - 44)).toBeLessThanOrEqual(1);
+      // Controls on the same line share their top and bottom.
+      for (const o of boxes)
+        if (o.y < b.y + b.height && b.y < o.y + o.height)
+          expect(Math.abs(o.y - b.y)).toBeLessThanOrEqual(1);
+    }
+    // "Đặt lịch" is the toolbar's primary action, above the grid (no bottom bar on desktop).
+    const bookButton = page.getByRole("button", {
+      name: "Đặt lịch",
+      exact: true,
+    });
+    await expect(bookButton).toHaveCount(1);
+    expect(
+      ((await bookButton.boundingBox())?.y ?? 0) <
+        ((await grid.boundingBox())?.y ?? 0),
+    ).toBe(true);
+    await expectAccessible(page, "lich-lop-su-kien");
+  });
+
+  test("view one technician's day and week (EM round 6)", async ({ page }) => {
+    const r = await regular(page, "Mai Thị Theo Người");
+    const day = spaDay(6);
+    const booked = await page.request.post("/api/v1/appointments", {
+      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+      data: {
+        customer_id: r.customer,
+        service_ids: [r.service.id],
+        staff_id: null,
+        starts_at: `${day}T11:00:00+07:00`,
+      },
+    });
+    expect(booked.status()).toBe(201);
+    await page.goto(`/quay?view=lich&ngay=${day}`);
+    const grid = page.getByRole("group", { name: /Lịch theo KTV/ });
+    const picker = page.getByLabel("Xem theo KTV");
+    const options = await picker.locator("option").allTextContents();
+    expect(options[0]).toBe("Tất cả KTV");
+    expect(options.at(-1)).toBe("Chưa gán KTV");
+    const all = await grid.locator(".cal-head:not(.cal-corner)").count();
+    expect(all).toBe(options.length - 1);
+
+    // One technician: one full-width column, kept in the URL.
+    const person = options[1] ?? "";
+    await picker.selectOption({ label: person });
+    await expect(page).toHaveURL(/ktv=/);
+    const heads = grid.locator(".cal-head:not(.cal-corner)");
+    await expect(heads).toHaveCount(1);
+    await expect(heads).toHaveText(person);
+    await expect(grid.getByText("Mai Thị Theo Người")).toHaveCount(0);
+    await page.reload();
+    await expect(picker.locator("option:checked")).toHaveText(person);
+
+    // Unassigned only: the booking without a technician is there.
+    await picker.selectOption("none");
+    await expect(heads).toHaveText("Chưa gán KTV");
+    await expect(
+      grid.getByRole("button", { name: /11:00.*Mai Thị Theo Người/ }),
+    ).toBeVisible();
+
+    // The week of that filter: seven days, only its bookings.
+    await page.getByRole("button", { name: "Tuần", exact: true }).click();
+    await expect(page.locator(".cal-day")).toHaveCount(7);
+    await expect(page.getByText("Mai Thị Theo Người")).toBeVisible();
+    await picker.selectOption({ label: person });
+    await expect(page.getByText("Mai Thị Theo Người")).toHaveCount(0);
+    await picker.selectOption("");
+    await expect(page).not.toHaveURL(/ktv=/);
+  });
+
   test("phones get the list, the week overview works", async ({ page }) => {
     const r = await regular(page, "Lê Thị Điện Thoại");
     const booked = await page.request.post("/api/v1/appointments", {

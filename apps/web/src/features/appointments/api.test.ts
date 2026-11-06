@@ -1,9 +1,11 @@
 import type { Appointment, Calendar, CalendarVisit } from "@vpyd/api-client";
 import { describe, expect, it } from "vitest";
 import {
+  addedMinutes,
   autoMinutes,
   daysFrom,
   entriesOf,
+  forStaff,
   hhmm,
   instantAt,
   mondayOf,
@@ -86,6 +88,28 @@ const cal = (
 });
 
 describe("calendar helpers", () => {
+  it("shows one technician, the unassigned ones, or everyone", () => {
+    const all = cal(
+      [
+        appt({ id: "lan" }),
+        appt({ id: "free", staff_id: null, staff_name: null }),
+        appt({ id: "gone", staff_id: "left-the-spa" }),
+      ],
+      [walkIn({})],
+    );
+    const lan = forStaff(all, "st1");
+    expect(lan.technicians.map((t) => t.id)).toEqual(["st1"]);
+    expect(lan.appointments.map((a) => a.id)).toEqual(["lan"]);
+    expect(lan.visits).toEqual([]);
+    expect(forStaff(all, "st2").visits.map((v) => v.id)).toEqual(["v1"]);
+    const none = forStaff(all, "none");
+    expect(none.technicians).toEqual([]);
+    expect(none.appointments.map((a) => a.id)).toEqual(["free", "gone"]);
+    // Everyone, and an id that is no technician (stale link): the whole calendar.
+    expect(forStaff(all, "")).toBe(all);
+    expect(forStaff(all, "left-the-spa")).toBe(all);
+  });
+
   it("converts instants to spa minutes and back", () => {
     expect(spaMinutes("2026-11-06T03:00:00Z")).toBe(600);
     expect(hhmm(615)).toBe("10:15");
@@ -131,8 +155,18 @@ describe("calendar helpers", () => {
     expect(autoMinutes([], 15)).toBe(60);
     expect(autoMinutes([30], 15)).toBe(30);
     expect(autoMinutes([30, 90], 15)).toBe(120);
-    expect(autoMinutes([40, null], 15)).toBe(105);
+    // Round 6: an untimed add-on next to a timed service adds nothing (was 60 each: 30 → 150).
+    expect(autoMinutes([40, null], 15)).toBe(45);
+    expect(autoMinutes([30, null, null], 15)).toBe(30);
+    expect(autoMinutes([null], 15)).toBe(60);
+    expect(autoMinutes([null, null], 15)).toBe(120);
     expect(autoMinutes([5], 15)).toBe(15);
+  });
+
+  it("an untimed service shows what it adds", () => {
+    expect(addedMinutes(30, [30, null])).toBe(30);
+    expect(addedMinutes(null, [30, null])).toBe(0);
+    expect(addedMinutes(null, [null])).toBe(60);
   });
 
   it("weeks start on Monday", () => {

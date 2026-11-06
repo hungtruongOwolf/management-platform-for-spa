@@ -33,8 +33,10 @@ import { frontDeskSearch } from "../front-desk/search";
 import { activeStaffQuery, formatDate } from "../sales/api";
 import { BookingSheet, type Draft } from "./BookingSheet";
 import { GroupCheckIn } from "./GroupCheckIn";
+import { type Block, type Lane, blockOf, columnLanes, density } from "./layout";
 import {
   type Entry,
+  type EntryView,
   PHASE_LABEL,
   arriveAppointment,
   calendarQuery,
@@ -42,6 +44,7 @@ import {
   counts,
   daysFrom,
   entriesOf,
+  forStaff,
   hhmm,
   isOpen,
   minutesOf,
@@ -138,6 +141,18 @@ export function AppointmentsCalendar({
   const opened = cal.data
     ? (entriesOf(cal.data).find((e) => e.id === openId) ?? null)
     : null;
+  // "Xem theo KTV": a view filter on the loaded calendar (booking checks still see everyone).
+  const who = search.ktv;
+  const shown = cal.data ? forStaff(cal.data, who) : undefined;
+  const book = () => {
+    const now = spaMinutes(new Date().toISOString());
+    const slot = cal.data?.slot_minutes ?? 15;
+    const opens = minutesOf(cal.data?.opens_at ?? "09:00");
+    const start =
+      day === today ? Math.max(opens, Math.ceil(now / slot) * slot) : opens;
+    const staffId = shown && shown.technicians.length === 1 ? who : "";
+    setDraft({ mode: "new", day, start, staffId });
+  };
   const shift = (days: number) => {
     const d = new Date(`${day}T00:00:00Z`);
     d.setUTCDate(d.getUTCDate() + days);
@@ -167,23 +182,23 @@ export function AppointmentsCalendar({
       aria-labelledby="cal-title"
       className="grid min-w-0 content-start gap-3"
     >
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="grid gap-1">
+      <div className="cal-bar">
+        <div className="grid min-w-0 gap-1">
           <h2 id="cal-title" className="text-lg font-semibold">
             Lịch hẹn ·{" "}
             {layout === "tuan"
               ? `tuần ${formatDate(from).slice(0, 5)}–${formatDate(to).slice(0, 5)}`
               : dayTitle(day)}
           </h2>
-          {cal.data && (
-            <DaySummary cal={cal.data} day={layout === "tuan" ? null : day} />
+          {shown && (
+            <DaySummary cal={shown} day={layout === "tuan" ? null : day} />
           )}
         </div>
-        <div className="flex flex-wrap items-end gap-2">
+        <div className="cal-toolbar">
           <div
             role="group"
             aria-label="Chọn ngày"
-            className="flex items-end gap-1"
+            className="cal-toolbar-group"
           >
             <button
               type="button"
@@ -197,6 +212,7 @@ export function AppointmentsCalendar({
             </button>
             <DateField
               label="Ngày"
+              className="filter-field cal-date"
               value={day}
               onChange={(iso) => {
                 setSearch({ ngay: iso && iso !== today ? iso : "" });
@@ -248,6 +264,30 @@ export function AppointmentsCalendar({
               </button>
             ))}
           </div>
+          {cal.data && (
+            <label className="cal-who">
+              <span className="sr-only">Xem theo KTV</span>
+              <select
+                value={
+                  who === "none" ||
+                  cal.data.technicians.some((t) => t.id === who)
+                    ? who
+                    : ""
+                }
+                onChange={(e) => {
+                  setSearch({ ktv: e.target.value });
+                }}
+              >
+                <option value="">Tất cả KTV</option>
+                {cal.data.technicians.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.full_name}
+                  </option>
+                ))}
+                <option value="none">Chưa gán KTV</option>
+              </select>
+            </label>
+          )}
           {can(me, "appointment.settings") && (
             <button
               type="button"
@@ -260,6 +300,15 @@ export function AppointmentsCalendar({
               {cal.data?.max_per_slot
                 ? `: ${String(cal.data.max_per_slot)}`
                 : ""}
+            </button>
+          )}
+          {!locked && !phone && (
+            <button
+              type="button"
+              className="btn btn-primary min-h-11"
+              onClick={book}
+            >
+              <Icon name="plus" /> Đặt lịch
             </button>
           )}
         </div>
@@ -282,13 +331,15 @@ export function AppointmentsCalendar({
           </button>
         </p>
       )}
-      {cal.data && (
+      {cal.data && shown && (
         <div className={cal.isPlaceholderData ? "is-refreshing" : ""}>
           {layout === "ngay" && (
             <DayGrid
-              cal={cal.data}
+              cal={shown}
+              everyone={cal.data}
               day={day}
               canBook={!locked}
+              unassigned={shown.technicians.length !== 1}
               onOpen={setOpenId}
               onBook={(start, staffId) => {
                 setDraft({ mode: "new", day, start, staffId });
@@ -297,7 +348,7 @@ export function AppointmentsCalendar({
           )}
           {layout === "tuan" && (
             <WeekGrid
-              cal={cal.data}
+              cal={shown}
               from={from}
               onOpen={setOpenId}
               onDay={(d) => {
@@ -306,25 +357,22 @@ export function AppointmentsCalendar({
             />
           )}
           {layout === "ds" && (
-            <DayList cal={cal.data} day={day} onOpen={setOpenId} />
+            <DayList
+              cal={shown}
+              everyone={cal.data}
+              day={day}
+              onOpen={setOpenId}
+            />
           )}
         </div>
       )}
-      {!locked && (
+      {!locked && phone && (
+        // Phones keep the primary action in thumb reach (design-system StickyActions).
         <StickyActions label="Đặt lịch">
           <button
             type="button"
             className="btn btn-primary min-h-11"
-            onClick={() => {
-              const now = spaMinutes(new Date().toISOString());
-              const slot = cal.data?.slot_minutes ?? 15;
-              const opens = minutesOf(cal.data?.opens_at ?? "09:00");
-              const start =
-                day === today
-                  ? Math.max(opens, Math.ceil(now / slot) * slot)
-                  : opens;
-              setDraft({ mode: "new", day, start, staffId: "" });
-            }}
+            onClick={book}
           >
             <Icon name="plus" /> Đặt lịch
           </button>
@@ -412,27 +460,11 @@ function DaySummary({ cal, day }: { cal: Calendar; day: string | null }) {
   );
 }
 
-interface Laid {
+interface Column {
   key: string;
   title: string;
   staffId: string;
-  items: ReturnType<typeof view>[];
-}
-
-/** Greedy lanes: overlapping cards of one column sit side by side. */
-function lanes(list: ReturnType<typeof view>[]): Map<string, number> {
-  const ends: number[] = [];
-  const lane = new Map<string, number>();
-  for (const e of [...list].sort((x, y) => x.start - y.start)) {
-    let i = ends.findIndex((end) => end <= e.start);
-    if (i === -1) {
-      i = ends.length;
-      ends.push(0);
-    }
-    ends[i] = e.start + e.minutes;
-    lane.set(e.id, i);
-  }
-  return lane;
+  items: EntryView[];
 }
 
 /** "2 khách", or "2/4" against the owner's max; empty when nobody is there and no max is set. */
@@ -441,16 +473,28 @@ function slotCount(n: number, max: number | null): string {
   return n > 0 ? `${String(n)} khách` : "";
 }
 
+/**
+ * The day grid, in two layers (round 6, Google-Calendar style): the slot grid (hour lines, one
+ * "book here" button per slot and column, always all of them) and, above it, one event layer per
+ * technician column with absolutely placed cards. A card never replaces the cells under it, so the
+ * lines run on around it and the free time before and after it stays clickable.
+ */
 function DayGrid({
   cal,
   day,
+  everyone,
   canBook,
+  unassigned,
   onOpen,
   onBook,
 }: {
   cal: Calendar;
+  /** The unfiltered calendar: a group's size counts everyone in it. */
+  everyone: Calendar;
   day: string;
   canBook: boolean;
+  /** Draw the "Chưa gán KTV" column (everyone, or only the unassigned ones). */
+  unassigned: boolean;
   onOpen: (id: string) => void;
   onBook: (start: number, staffId: string) => void;
 }) {
@@ -465,7 +509,7 @@ function DayGrid({
     .filter((e) => counts(e.phase));
   const byId = new Map(entries.map((e) => [e.id, e]));
   const techIds = new Set(cal.technicians.map((t) => t.id));
-  const groups: Laid[] = [
+  const columns: Column[] = [
     ...cal.technicians.map((t) => ({
       key: t.id,
       title: t.full_name,
@@ -479,21 +523,11 @@ function DayGrid({
       items: shown.filter((e) => !e.staffId || !techIds.has(e.staffId)),
     },
   ];
-  let col = 2;
-  const laid = groups.map((g) => {
-    const l = lanes(g.items);
-    const width = Math.max(1, ...[...l.values()].map((v) => v + 1));
-    const first = col;
-    col += width;
-    // Rows a card already covers get no slot button underneath (no stacked controls).
-    const busy = new Set<number>();
-    for (const e of g.items) {
-      const s = Math.round((e.start - opens) / slot);
-      for (let k = 0; k < Math.max(1, Math.round(e.minutes / slot)); k++)
-        busy.add(s + k);
-    }
-    return { ...g, first, width, lane: l, busy };
-  });
+  // Equal columns, one grid track each; overlapping cards split their column into lanes.
+  const laid = columns
+    .filter((c) => c.staffId !== "" || unassigned)
+    .map((c, i) => ({ ...c, col: i + 2, lane: columnLanes(c.items) }));
+  const cols = laid.length;
   const now = spaMinutes(new Date().toISOString());
   const isToday = day === spaToday();
   const past = (m: number) => day < spaToday() || (isToday && m + slot <= now);
@@ -505,7 +539,7 @@ function DayGrid({
         className="cal-grid"
         style={
           {
-            "--cols": String(col - 2),
+            "--cols": String(cols),
             "--rows": String(rows),
           } as React.CSSProperties
         }
@@ -531,10 +565,8 @@ function DayGrid({
           <div
             key={g.key}
             className="cal-head"
-            style={{
-              gridColumn: `${String(g.first)} / span ${String(g.width)}`,
-              gridRow: 1,
-            }}
+            style={{ gridColumn: g.col, gridRow: 1 }}
+            title={g.title}
           >
             <span>{g.title}</span>
           </div>
@@ -573,7 +605,6 @@ function DayGrid({
         })}
         {laid.flatMap((g) =>
           Array.from({ length: rows }, (_, r) => {
-            if (g.busy.has(r)) return null;
             const m = opens + r * slot;
             const disabled = !canBook || past(m);
             return (
@@ -584,10 +615,7 @@ function DayGrid({
                 aria-label={`Đặt lịch ${hhmm(m)}${g.staffId ? ` với ${g.title}` : ""}`}
                 disabled={disabled}
                 className={`cal-cell ${m % 60 === 0 ? "is-hour" : ""} ${disabled ? "is-past" : ""}`}
-                style={{
-                  gridColumn: `${String(g.first)} / span ${String(g.width)}`,
-                  gridRow: r + 2,
-                }}
+                style={{ gridColumn: g.col, gridRow: r + 2 }}
                 onClick={() => {
                   onBook(m, g.staffId);
                 }}
@@ -595,51 +623,123 @@ function DayGrid({
             );
           }),
         )}
-        {laid.flatMap((g) =>
-          g.items.map((e) => {
-            const s = Math.max(0, Math.round((e.start - opens) / slot));
-            const span = Math.max(1, Math.round(e.minutes / slot));
-            const entry = byId.get(e.id);
-            const tag = entry ? entryTag(entry, cal) : null;
-            return (
-              <button
-                key={e.id}
-                type="button"
-                className="appt cal-event"
-                data-phase={e.phase}
-                data-kind={e.kind}
-                style={{
-                  gridColumn: g.first + (g.lane.get(e.id) ?? 0),
-                  gridRow: `${String(s + 2)} / span ${String(span)}`,
-                }}
-                onClick={() => {
-                  onOpen(e.id);
-                }}
-                aria-label={`${range(e.start, e.minutes)} ${e.customerName}, ${PHASE_LABEL[e.phase]}${tag ? `, ${tag}` : ""}`}
-              >
-                <strong>{e.customerName}</strong>
-                <span className="cal-event-phase">
-                  {PHASE_LABEL[e.phase]}
-                  {tag ? ` · ${tag}` : ""}
-                </span>
-                {span > 2 && <span>{servicesText(e.services)}</span>}
-              </button>
-            );
-          }),
-        )}
+        {laid.map((g) => (
+          // One column's event layer: spans its slots, lets clicks through except on the cards.
+          <div
+            key={`layer-${g.key}`}
+            className="cal-layer"
+            style={{ gridColumn: g.col, gridRow: `2 / span ${String(rows)}` }}
+          >
+            {g.items.map((e) => {
+              const block = blockOf(e.start, e.minutes, opens, closes, slot);
+              const entry = byId.get(e.id);
+              if (!block || !entry) return null;
+              return (
+                <DayEvent
+                  key={e.id}
+                  e={e}
+                  block={block}
+                  lane={g.lane.get(e.id) ?? { lane: 0, lanes: 1 }}
+                  tag={entryTag(entry, everyone)}
+                  late={
+                    isToday &&
+                    e.phase === "in_service" &&
+                    now >= e.start + e.minutes
+                  }
+                  onOpen={onOpen}
+                />
+              );
+            })}
+          </div>
+        ))}
         {isToday && now >= opens && now <= closes && (
           <div
             className="cal-now"
             aria-hidden="true"
-            style={{
-              gridColumn: `1 / span ${String(col - 1)}`,
-              gridRow: String(Math.floor((now - opens) / slot) + 2),
-              top: `${String((((now - opens) % slot) / slot) * 26)}px`,
-            }}
+            style={
+              {
+                gridColumn: `1 / span ${String(cols + 1)}`,
+                gridRow: `2 / span ${String(rows)}`,
+                "--top": String((now - opens) / slot),
+              } as React.CSSProperties
+            }
           />
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * One card of the event layer: as tall as its real time span, `1 / lanes` of the column wide.
+ * Name, phase and services, each line cut with "…"; the full text is the tooltip and the name.
+ */
+function DayEvent({
+  e,
+  block,
+  lane,
+  tag,
+  late,
+  onOpen,
+}: {
+  e: EntryView;
+  block: Block;
+  lane: Lane;
+  tag: string | null;
+  /** Arrived and still "Đang làm" after the booked end: keeps its span, says "quá giờ". */
+  late: boolean;
+  onOpen: (id: string) => void;
+}) {
+  const parts = [PHASE_LABEL[e.phase], late ? "quá giờ" : null, tag].filter(
+    (x): x is string => Boolean(x),
+  );
+  const phase = parts.join(" · ");
+  const services = servicesText(e.services);
+  const fit = density(block.height);
+  const when = range(e.start, e.minutes);
+  return (
+    <button
+      type="button"
+      className="appt cal-event"
+      data-phase={e.phase}
+      data-kind={e.kind}
+      data-fit={fit}
+      style={
+        {
+          "--top": String(block.top),
+          "--span": String(block.height),
+          "--lane": String(lane.lane),
+          "--lanes": String(lane.lanes),
+        } as React.CSSProperties
+      }
+      onClick={() => {
+        onOpen(e.id);
+      }}
+      aria-label={[`${when} ${e.customerName}`, ...parts, services]
+        .filter(Boolean)
+        .join(", ")}
+      title={[when, e.customerName, phase, services]
+        .filter(Boolean)
+        .join(" · ")}
+    >
+      {fit === "compact" ? (
+        <span className="cal-event-line">
+          <strong>{e.customerName}</strong>
+          <span className="cal-event-phase"> · {phase}</span>
+        </span>
+      ) : (
+        <>
+          <strong>{e.customerName}</strong>
+          <span className="cal-event-phase">
+            {phase}
+            {fit === "short" && services && (
+              <span className="cal-event-more"> · {services}</span>
+            )}
+          </span>
+          {fit === "full" && services && <span>{services}</span>}
+        </>
+      )}
+    </button>
   );
 }
 
@@ -717,10 +817,13 @@ function WeekGrid({
 
 function DayList({
   cal,
+  everyone,
   day,
   onOpen,
 }: {
   cal: Calendar;
+  /** The unfiltered calendar: a group's size counts everyone in it. */
+  everyone: Calendar;
   day: string;
   onOpen: (id: string) => void;
 }) {
@@ -735,7 +838,7 @@ function DayList({
     <ul className="cal-list" aria-label={`Lịch hẹn ngày ${formatDate(day)}`}>
       {items.map((e) => {
         const v = view(e);
-        const tag = entryTag(e, cal);
+        const tag = entryTag(e, everyone);
         const staffName =
           e.kind === "appointment" ? e.a.staff_name : e.v.staff_name;
         const pay =

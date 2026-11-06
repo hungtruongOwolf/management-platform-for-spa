@@ -54,26 +54,97 @@
   content: "";
 }
 
+/* ------------------------------------------------------------------ toolbar */
+/* Title + summary left, controls right; every control is 44 px tall on one line (round 6). */
+.cal-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.cal-toolbar,
+.cal-toolbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.cal-toolbar-group {
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+.cal-toolbar :is(.btn, .segmented, .date-field, select) {
+  height: 44px;
+  min-height: 44px;
+}
+.cal-toolbar .segmented {
+  flex-wrap: nowrap;
+  align-items: stretch;
+  padding: 3px;
+}
+.cal-toolbar .segmented > button {
+  min-height: 0;
+}
+/* The date field's label is for screen readers only: the buttons beside it say what it is. */
+.cal-date {
+  display: block;
+}
+.cal-date > label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.cal-date .date-field input {
+  width: 9.5rem;
+  min-height: 44px;
+}
+.cal-who select {
+  max-width: 14rem;
+  padding: 0 32px 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background-color: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+}
+
 /* ------------------------------------------------------------------ day grid */
+/* Two layers: the slot grid (gutter, headers, one cell per slot and column, every one drawn)
+   and per column an event layer above it. Cards are placed absolutely inside their layer, so
+   they never replace a cell: the lines run on around a card and the free time stays clickable. */
 .cal-scroll {
   max-width: 100%;
-  overflow-x: auto;
+  /* Scrolls both ways inside its frame: the header and the time gutter stay in view. */
+  max-height: max(420px, calc(100dvh - 220px));
+  overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
 }
 .cal-grid {
   --slot-h: 26px;
+  --gutter-w: 96px;
+  --col-min: 168px;
+  --inset: 3px;
   display: grid;
   position: relative;
-  grid-template-columns: 96px repeat(var(--cols), minmax(132px, 1fr));
-  grid-template-rows: 44px repeat(var(--rows), var(--slot-h));
-  min-width: calc(96px + var(--cols) * 132px);
+  /* Equal columns: one track per technician; overlapping cards split it into lanes. */
+  grid-template-columns: var(--gutter-w) repeat(
+      var(--cols),
+      minmax(var(--col-min), 1fr)
+    );
+  grid-template-rows: 48px repeat(var(--rows), var(--slot-h));
+  min-width: calc(var(--gutter-w) + var(--cols) * var(--col-min));
 }
 .cal-head {
   position: sticky;
   top: 0;
-  z-index: 3;
+  z-index: 6;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -86,21 +157,30 @@
   font-weight: 600;
   text-align: center;
 }
+/* min-width 0: a long name is cut with "…" instead of overflowing both edges of a centred box. */
 .cal-head span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .cal-corner {
+  left: 0;
+  z-index: 8;
   border-left: 0;
 }
 .cal-gutter {
+  position: sticky;
+  left: 0;
+  z-index: 5;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 4px;
   padding: 2px 6px;
   border-top: 1px solid transparent;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
   color: var(--text-muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -148,14 +228,25 @@
   background: var(--surface-2);
   cursor: default;
 }
-.cal-event {
+/* A column's event layer: over its cells, transparent to the pointer except on the cards. */
+.cal-layer {
+  position: relative;
   z-index: 2;
+  min-width: 0;
+  pointer-events: none;
+}
+.cal-event {
+  position: absolute;
+  /* Exactly the real time span: --top / --span are in slots; 1 px gap above and below. */
+  top: calc(var(--top) * var(--slot-h) + 1px);
+  left: calc(var(--lane) * 100% / var(--lanes) + var(--inset));
+  width: calc(100% / var(--lanes) - 2 * var(--inset));
+  height: calc(var(--span) * var(--slot-h) - 2px);
   display: grid;
   align-content: start;
   gap: 1px;
   min-width: 0;
-  margin: 1px 3px;
-  padding: 3px 6px;
+  padding: 3px 8px;
   overflow: hidden;
   border: 1px solid var(--appt-edge);
   border-left-width: 4px;
@@ -165,12 +256,16 @@
   font-size: 12px;
   line-height: 16px;
   text-align: left;
+  pointer-events: auto;
 }
 .cal-event:hover {
+  z-index: 1;
   box-shadow: var(--shadow-1);
 }
 .cal-event strong,
-.cal-event span {
+.cal-event > span,
+.cal-event-line {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -180,13 +275,21 @@
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-/* Decorative and stacked over the grid: absolute (its grid area is the containing block). */
+.cal-event .cal-event-more {
+  color: var(--text);
+  font-weight: 400;
+}
+/* 15 minutes: one line, centred in the card. */
+.cal-event[data-fit="compact"] {
+  align-content: center;
+  padding-block: 0;
+}
+/* Decorative and stacked over the grid: --top is in slots from the first row. */
 .cal-now {
-  position: absolute;
-  right: 0;
-  left: 0;
+  position: relative;
   z-index: 4;
   height: 0;
+  margin-top: calc(var(--top) * var(--slot-h));
   border-top: 2px solid var(--danger);
   pointer-events: none;
 }

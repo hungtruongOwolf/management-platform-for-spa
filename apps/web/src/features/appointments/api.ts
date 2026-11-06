@@ -242,16 +242,49 @@ export function peakPeople(
   return peak;
 }
 
-/** A booking's length from its services: sum of `duration_min` (none = 60), rounded up to the slot. */
+/**
+ * A booking's length from its services, rounded up to the slot (same rule as the server's
+ * `services_minutes`): the timed services' sum. A service without a duration ("theo tư vấn") is an
+ * hour only when nothing else is timed; next to a timed one it is an add-on done in that time.
+ * No services = 60.
+ */
 export function autoMinutes(
   durations: (number | null | undefined)[],
   slot: number,
 ): number {
+  const timed = durations.filter((d): d is number => d != null && d > 0);
   const sum =
-    durations.length === 0
-      ? 60
-      : durations.reduce<number>((t, d) => t + (d && d > 0 ? d : 60), 0);
+    timed.length > 0
+      ? timed.reduce((t, d) => t + d, 0)
+      : Math.max(1, durations.length) * 60;
   return Math.max(slot, Math.ceil(sum / slot) * slot);
+}
+
+/** Minutes a service adds to `autoMinutes` of its booking (0 = an add-on done meanwhile). */
+export function addedMinutes(
+  duration: number | null | undefined,
+  all: (number | null | undefined)[],
+): number {
+  if (duration != null && duration > 0) return duration;
+  return all.some((d) => d != null && d > 0) ? 0 : 60;
+}
+
+/**
+ * The calendar of one technician (`who` = staff id), of bookings nobody is assigned to
+ * (`"none"`), or everyone (`""`, or an id that is no technician any more). A view filter only:
+ * the server already sent what the viewer may see.
+ */
+export function forStaff(cal: Calendar, who: string): Calendar {
+  const techIds = new Set(cal.technicians.map((t) => t.id));
+  if (who !== "none" && !techIds.has(who)) return cal;
+  const keep = (staffId: string | null | undefined) =>
+    who === "none" ? !staffId || !techIds.has(staffId) : staffId === who;
+  return {
+    ...cal,
+    technicians: cal.technicians.filter((t) => t.id === who),
+    appointments: cal.appointments.filter((a) => keep(a.staff_id)),
+    visits: cal.visits.filter((v) => keep(v.staff_id)),
+  };
 }
 
 /** Days `from..from+n-1` (YYYY-MM-DD). */
