@@ -11,6 +11,7 @@ import { daysBetween, rangeLabel, resolvePeriod } from "./period";
 import { inactiveSearch, reportsSearch } from "./search";
 import { mockDaily, mockRange } from "./fixtures";
 import { displayPhone } from "./PackagesOverviewPage";
+import { isEmptyRange } from "./ReportsPage";
 import { serveManagement } from "./testServer";
 
 const MANAGER = ["visit.record", "customer.read", "catalog.read", "report.read", "report.revenue.read"];
@@ -48,6 +49,20 @@ describe("formatting helpers", () => {
     expect(rev.net.cash + rev.net.bank_transfer).toBe(rev.net.total);
     expect(d.technicians.reduce((s, t) => s + t.visits, 0)).toBe(d.counts.visits);
     expect(mockRange("2026-10-30", "2026-11-05").series).toHaveLength(7);
+  });
+});
+
+describe("empty period", () => {
+  it("is empty only with no visit, no package sold and no money (EM 2026-11-06: no wall of zeros)", () => {
+    const busy = mockRange("2026-10-30", "2026-11-05");
+    expect(isEmptyRange(busy)).toBe(false);
+    const blank = {
+      ...busy,
+      totals: { ...busy.totals, visits: 0, packages_sold: 0 },
+      revenue: busy.revenue ? { ...busy.revenue, net: { ...busy.revenue.net, total: 0 } } : null,
+    };
+    expect(isEmptyRange(blank)).toBe(true);
+    expect(isEmptyRange({ ...blank, totals: { ...blank.totals, packages_sold: 1 } })).toBe(false);
   });
 });
 

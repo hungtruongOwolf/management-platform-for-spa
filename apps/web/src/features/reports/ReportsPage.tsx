@@ -307,6 +307,11 @@ function TrendCard({
   // EM 2026-11-06: the previous-period line stays off until the viewer turns it on.
   const [comparing, setComparing] = useState(readPreviousLine);
   const showPrevious = comparing && previous !== undefined;
+  // Nothing to draw: an empty period, and no non-empty previous line turned on.
+  const blank =
+    range.data !== undefined &&
+    isEmptyRange(range.data) &&
+    !(showPrevious && !isEmptyRange(previous));
   return (
     <section aria-labelledby="trend-title" className="card grid content-start gap-3 p-4 xl:col-span-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -350,7 +355,12 @@ function TrendCard({
           <div className="skeleton h-[260px]" />
         </Loading>
       )}
-      {range.data && (
+      {blank && (
+        <EmptyState title="Chưa có số liệu để vẽ biểu đồ">
+          Biểu đồ sẽ hiện khi kỳ này có lượt khách hoặc doanh thu. Thử chọn kỳ dài hơn.
+        </EmptyState>
+      )}
+      {range.data && !blank && (
         <LineChart
           label={`${METRIC_LABEL[shown]} theo ${period.bucket === "day" ? "ngày" : period.bucket === "week" ? "tuần" : period.bucket === "month" ? "tháng" : "năm"}, ${period.label}`}
           seriesLabel={period.label}
@@ -420,9 +430,30 @@ function MoneyMix({ revenue, pending, title }: { revenue: Revenue | null | undef
 
 const PERIOD_COLUMN: Record<Bucket, string> = { day: "Ngày", week: "Tuần", month: "Tháng", year: "Năm" };
 
+/** Nothing happened in the period: no visit, no package sold, no money. */
+export function isEmptyRange(range: RangeReport): boolean {
+  return (
+    range.totals.visits === 0 &&
+    range.totals.packages_sold === 0 &&
+    (range.revenue?.net.total ?? 0) === 0
+  );
+}
+
 /** Per bucket, like the paper book's daily totals; also the table view of the chart (dataviz). */
 function Breakdown({ range, bucket }: { range: RangeReport; bucket: Bucket }) {
   const withMoney = range.revenue != null;
+  // An empty period is a wall of zeros (EM 2026-11-06: show something pleasant instead).
+  if (isEmptyRange(range))
+    return (
+      <section aria-labelledby="breakdown-title" className="card p-4">
+        <h2 id="breakdown-title" className="section-heading pb-3">
+          Chi tiết theo {PERIOD_COLUMN[bucket].toLowerCase()}
+        </h2>
+        <EmptyState title="Chưa có số liệu trong kỳ này">
+          Lượt khách và gói bán ra sẽ được cộng ở đây theo từng {PERIOD_COLUMN[bucket].toLowerCase()}. Thử chọn kỳ dài hơn.
+        </EmptyState>
+      </section>
+    );
   const rows = [...range.series].reverse();
   const cell = (n: number | undefined) => (n === undefined ? "" : money(n));
   return (
