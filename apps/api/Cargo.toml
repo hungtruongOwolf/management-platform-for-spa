@@ -15,3 +15,12 @@ unwrap_used = "deny"
 expect_used = "warn"
 dbg_macro = "deny"
 todo = "deny"
+
+# Argon2id (m = 19 MiB, t = 2) runs on every login and user creation: unoptimized, one hash takes on
+# the order of a second, which dominated `cargo test` and the debug e2e API. Only the hashing crates
+# are optimized, so debug builds stay quick to compile. Release builds are unaffected.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3

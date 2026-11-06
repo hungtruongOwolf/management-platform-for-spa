@@ -61,4 +61,4 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 
 ## Conventions
 - [coding-standards](wiki/conventions/coding-standards.md) — clean-code rules for Rust & TypeScript, git conventions
-- [testing](wiki/conventions/testing.md) — test layers; add a route to the authz matrix test; write an E2E/axe spec; p95 + Lighthouse; run locally/CI
+- [testing](wiki/conventions/testing.md) — test layers; add a route to the authz matrix test; write an E2E/axe spec; p95 + Lighthouse; run locally/CI; CI job graph (nextest shards, e2e split by duration, scope skipping, `CI ok`)

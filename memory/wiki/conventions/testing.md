@@ -81,9 +81,25 @@ Connection string: `E2E_DATABASE_URL` / `E2E_APP_DATABASE_URL`. Nếu không đ�
 
 ## 5. CI
 
-> GitHub Actions đang tắt (2026-11-05): merge qua gate local theo thay đổi, xem [local-merge-gate](../runbooks/local-merge-gate.md).
+> GitHub Actions tắt 2026-11-05 (hết phút, repo private) và chạy lại khi repo chuyển public (2026-11-06, run 42183885873 của PR #47). Gate local theo thay đổi vẫn dùng được: [local-merge-gate](../runbooks/local-merge-gate.md).
 
-Job `e2e` trong `.github/workflows/ci.yml` dùng Postgres service `vpyd_e2e` và role `app_rw` từ `infra/postgres-init/01-roles.sql`. Các bước: build API, cài Chromium, chạy `pnpm e2e` (gồm axe + p95), rồi `pnpm lhci`. Khi fail thì upload `playwright-report`, `test-results` và `lighthouse-report`. Khi pass thì upload `perf-report`.
+`.github/workflows/ci.yml` (từ 2026-11-06, PR #48) chạy song song theo đồ thị:
+
+```
+changes ─┬─ rust-lint                        fmt, clippy -D warnings, doctests, cargo-deny   (full)
+         ├─ rust-test-build ── rust-test×3   nextest archive một lần → 3 shard              (full)
+         ├─ api-build ─┬─ e2e×2              Playwright project desktop, chia theo thời gian (web|full)
+         │             └─ perf               setup + perf (API p95) rồi pnpm lhci           (web|full)
+         ├─ web, images                                                                     (web|full)
+secrets (luôn chạy)            ci-ok: needs tất cả, if: always()
+```
+
+- **Scope** (`changes`): `scripts/ci-changes.sh` đưa danh sách file của PR (API `pulls/N/files`, kể cả tên cũ khi rename) qua `gate_classify` của `scripts/gate-lib.sh` (một nguồn quy tắc với gate local) → `docs` (chỉ secret scan) | `web` (bỏ Rust lint/test; vẫn build API cho e2e/Lighthouse và kiểm OpenAPI) | `full`. Fail safe: Rust/migration/`.sqlx`/openapi/deny, `.github`, Dockerfile, `infra/`, script gate, file lạ, không đọc được danh sách file, hay push lên `main` → `full`. Test: `bash scripts/ci-changes.test.sh` (job `changes` chạy cả `gate-lib.test.sh`).
+- **Rust test**: `cargo nextest archive --workspace` build mọi test binary một lần; mỗi shard có Postgres riêng + role `app_rw`, chạy `cargo nextest run --archive-file … --workspace-remap . --partition count:i/3 --no-fail-fast --retries 0`. `#[sqlx::test]` chạy được dưới nextest (process-per-test): sqlx 0.9 đặt tên DB theo đường dẫn test và tự drop DB của chính test, không dọn chung khi khởi động. Shard cần checkout vì `authz_matrix.rs` đọc source router lúc chạy (đường dẫn `env!("CARGO_MANIFEST_DIR")` giống nhau trên mọi runner). Nextest không chạy doctest → `cargo test --doc` ở `rust-lint`. **Không bật retry** để che test flaky.
+- **API binary**: `api-build` build `app` (debug) một lần, cache theo `hashFiles('apps/api/**')` + phiên bản `rustc` (PR chỉ sửa web dùng lại binary của `main`), kiểm `app openapi | diff openapi.json`, upload artifact `api-bin`. Job e2e/perf tải về và đặt `E2E_API_BIN` (Playwright chạy binary thay vì `cargo run`).
+- **E2E**: mỗi shard chạy project `setup` của riêng nó (spa mới trên Postgres riêng), nên chia shard an toàn. Chia theo **thời gian đo được**, không dùng `--shard` (Playwright cắt theo số test ở mức file: `layout.spec.ts` ~110 s một mình, `--shard=1/2` cho 2,7 phút vs 36 s): `node apps/web/e2e/shard.mjs <i> <n>` in danh sách spec của shard i (LPT theo bảng `WEIGHTS`; spec mới chưa có trong bảng vẫn chạy với trọng số trung vị). Spec lớn lên nhiều thì cập nhật bảng. Job `perf` chạy `--project=perf` (setup + seed 300 khách / 100 lượt, đo p95) rồi `pnpm lhci` trên cùng DB, nên `/quay` vẫn được đo khi có dữ liệu. Ngân sách giữ nguyên (LCP ≤ 2,5 s median-run, CLS, a11y ≥ 0,95, p95). Fail → upload `playwright-report-<shard>` / `perf-failure-report`; pass → `perf-report`.
+- **Cache**: Playwright browser theo version Playwright (`~/.cache/ms-playwright`; hit thì bỏ qua cả bước apt vì image ubuntu-24.04 đã có thư viện của Chrome — thiếu thì browser không mở được, fail rõ ràng); rust-cache tách key `lint`, `test`, `e2e`; `CARGO_PROFILE_DEV_DEBUG=0` cho mọi build CI (target/cache/archive nhỏ; panic vẫn có file:line).
+- **Merge**: `ci-ok` là status duy nhất cần bắt buộc (fail nếu job nào `failure`/`cancelled`, `skipped` là ok, `changes` phải `success`). `scripts/merge-when-green.sh` chờ mọi check, chấp nhận `pass|skipping`, và đòi `CI ok: pass`.
 
 ## Gotcha: DB dev cũ hơn `main`
 Khi `main` có migration mới mà DB dev chưa chạy, `pnpm db:migrate` không biên dịch được: macro `query!` kiểm tra SQL với DB còn thiếu bảng. Chạy với `SQLX_OFFLINE=true` để build từ `.sqlx` đã commit:

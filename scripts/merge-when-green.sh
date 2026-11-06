@@ -28,6 +28,12 @@ if echo "$results" | grep -qvE ': (pass|skipping)$'; then
   echo "PR #$pr: not all checks passed — not merging"
   exit 1
 fi
+# CI skips jobs by change scope (scripts/ci-changes.sh), so "skipping" is normal; `CI ok` is the
+# job that checks every job which ran passed. Without it, the run did not finish.
+if ! echo "$results" | grep -qx 'CI ok: pass'; then
+  echo "PR #$pr: no passing 'CI ok' check — not merging"
+  exit 1
+fi
 # Delete the head branch through the API, not `--delete-branch`: that flag also checks out the base
 # branch locally, which fails when `main` is checked out in another worktree and then skips the
 # remote delete too (stale branches piled up on GitHub, 2026-11-05).
