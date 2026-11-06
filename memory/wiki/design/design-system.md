@@ -93,8 +93,8 @@ EM sau pass thống nhất ([raw](../../raw/2026-11-06-em-polish-and-chart-toggl
 
 | Token | Dùng khi | Ghi chú |
 |---|---|---|
-| `--paper-grain` + `--gradient-page` | nền **mọi** trang (kể cả đăng nhập), qua `body::before` cố định | vân hạt nâu ≈ 4% (SVG `feTurbulence` 160px inline) + vệt vàng 10% góc trên phải + vệt nâu đỏ 5% góc dưới trái; dark: hạt kem. Lớp cố định → cuộn không vẽ lại; phủ cả viewport + entropy thấp → không thành LCP |
-| `--texture-cream-grain` | khung nâu đỏ (`.chrome`: sidebar, drawer, tab bar, dải đăng nhập, khung chào, ô Thực thu) + nền dark | một tile cho mọi theme (tiền tố `texture-` dùng chung, như `gradient-`/`mix-`) |
+| `--paper-grain` + `--gradient-page` | nền **mọi** trang (kể cả đăng nhập), qua `body::before` cố định | vân hạt nâu ≈ 4% (SVG `feTurbulence` 160px inline) + vệt vàng 10% góc trên phải + vệt nâu đỏ 5% góc dưới trái; dark: hạt kem (`--texture-cream-grain`, tiền tố `texture-` dùng chung như `gradient-`/`mix-`). Lớp cố định → cuộn không vẽ lại; phủ cả viewport → Chrome không lấy làm LCP |
+| **Quy tắc LCP** | ảnh (kể cả tile SVG inline) **chỉ** ở lớp nền toàn viewport | bản đầu đặt hạt kem lên `.chrome` → tab bar thành phần tử LCP dạng ảnh của `/quay` (Lighthouse CI 2.11 → 2.51 s, fail). Khung nâu đỏ, khung chào, ô Thực thu chỉ dùng gradient |
 | `--gradient-chrome-glow` | `.chrome`: ánh vàng rơi trên logo ở đầu sidebar | tab bar dưới đáy không dùng (chỉ hạt + gradient) |
 | `--gradient-welcome-glow`, `--gradient-accent-glow` | ánh sau logo khung chào; góc trên phải ô "Thực thu" | đặt xa chữ; tương phản đo trên màu phẳng |
 | `--mix-gold-hairline` | viền vàng mảnh bên trong khung chào + ô Thực thu (inset) | |

@@ -152,7 +152,7 @@ describe("dark theme blocks", () => {
 
   it("dark defines every light token except the shared scales", () => {
     // Gradients and mix-* tints are built from colour tokens (var()), so they follow the theme;
-    // texture-* tiles are the same in every theme (cream specks: maroon chrome, dark page).
+    // texture-* tiles are the same in every theme (the cream-speck grain of the dark page).
     // without a copy.
     const shared = /^(radius|dur|ease|font|fs|gradient|mix|texture)-/;
     const missing = Object.keys(light).filter((k) => !shared.test(k) && !(k in dark));

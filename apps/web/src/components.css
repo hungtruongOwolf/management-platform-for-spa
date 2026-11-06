@@ -44,14 +44,15 @@
 .chrome {
   --focus: var(--chrome-accent);
   background-color: var(--chrome-bg);
-  /* Lacquered wood, not a flat fill (polish pass 2026-11-06): cream grain, gold light falling on
-   * the logo at the top, the maroon gradient underneath. */
-  background-image: var(--texture-cream-grain), var(--gradient-chrome-glow), var(--gradient-chrome);
+  /* Lacquer, not a flat fill (polish pass 2026-11-06): gold light falling on the logo at the top
+   * over the maroon gradient. Gradients only: an image (even the inline grain tile) would make the
+   * chrome an LCP image candidate — the tab bar became /quay's LCP at +400 ms in CI. */
+  background-image: var(--gradient-chrome-glow), var(--gradient-chrome);
   color: var(--chrome-text);
 }
-/* The phone tab bar sits at the bottom: grain and gradient, no light from above. */
+/* The phone tab bar sits at the bottom: no light from above. */
 .tabbar.chrome {
-  background-image: var(--texture-cream-grain), var(--gradient-chrome);
+  background-image: var(--gradient-chrome);
 }
 
 .shell {
@@ -1274,7 +1275,7 @@ h2 .gender-chip {
 .stat-card-accent {
   border-color: transparent;
   background-color: var(--chrome-bg);
-  background-image: var(--gradient-accent-glow), var(--texture-cream-grain), var(--gradient-chrome-band);
+  background-image: var(--gradient-accent-glow), var(--gradient-chrome-band);
   box-shadow:
     inset 0 0 0 1px var(--mix-gold-hairline),
     var(--shadow-1);
@@ -1369,7 +1370,7 @@ h2 .gender-chip {
   overflow: hidden;
   border-radius: var(--radius-lg);
   /* Gold light behind the logo, a gold hairline inside the edge (brand spot, rulebook 1). */
-  background-image: var(--gradient-welcome-glow), var(--texture-cream-grain), var(--gradient-chrome-band);
+  background-image: var(--gradient-welcome-glow), var(--gradient-chrome);
   box-shadow:
     inset 0 0 0 1px var(--mix-gold-hairline),
     var(--shadow-2);

@@ -105,9 +105,10 @@
   --shadow-chrome: 8px 0 28px -18px rgb(58 15 12 / 0.55);
   /*
    * Paper grain: a 160px fractal-noise tile (inline SVG, < 0.5 KB), warm brown specks at ≈ 4%
-   * opacity over the cream page, so the page reads as paper rather than flat colour. Cream specks
-   * (texture-cream-grain, one tile for every theme) lie on the maroon chrome and on the dark page.
-   * The page grain is painted once on a fixed layer (styles.css body::before).
+   * opacity over the cream page, so the page reads as paper rather than flat colour; the dark page
+   * takes the cream-speck tile (texture-cream-grain). Only on the full-viewport fixed layer
+   * (styles.css body::before), which Chrome never takes as LCP: on a smaller element (the maroon
+   * chrome) the tile made that element /quay's LCP image (+400 ms in Lighthouse CI).
    */
   --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .42 0 0 0 0 .26 0 0 0 0 .14 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   --texture-cream-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .98 0 0 0 0 .9 0 0 0 0 .78 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
