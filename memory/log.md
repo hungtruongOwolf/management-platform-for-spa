@@ -456,6 +456,7 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - **Tests:** vitest web (+ `round6.test.ts` 7, `CheckoutRound6.test.tsx` 7; cập nhật menu ⋯ / chi tiết trong `FrontDesk`, `Correction`; `test/setup.ts` xóa `sessionStorage` sau mỗi test); e2e mới `quay-upsell.spec.ts` (3, axe 4 trạng thái). Ảnh trước/sau: scratchpad `rollout-quay/before|after`.
 - Không skip stage (spec §10 + flows vòng 6 đã có). "+ Người đi cùng" ở form đặt lịch / đặt nhóm: làm ở #59 (redesign Lịch hẹn). Lead chốt: 1 gói / người ở "Khách đến cả nhóm" là đủ.
 - Merge main (#59 Lịch hẹn, #60 khung app/báo cáo/nhân viên): `GroupCheckIn` giữ markup mới của #59 + khối "+ Bán gói cho <tên>". Sau merge JS khởi động **125.00 KB** (vượt 1 B) → tách thêm danh sách dòng giỏ (`CartLines`) và chip thanh toán (`PaymentChoices`, dùng chung với `VisitUpsell`) vào chunk lazy `CartOptions`: **124.39 KB** (dư 629 B).
+- Merge thêm #61 (khách hàng/gói/danh mục; dùng lại `.panel`/`.input`/`.field-error`/`.section-label` của front-desk.css, không đổi): JS khởi động **124.34 KB** (dư 678 B), CSS 15.3 KB; vitest 255.
 - axe trên ảnh mock điện thoại báo `target-size` ở ô chọn mẫu gói / ô ngày: phần tử nằm dưới tab bar cố định / checkout dính đáy lúc chụp; axe trên CI sạch nên bỏ qua (lead đồng ý).
 - Sửa kèm: đồng hồ "Còn hh:mm:ss" rung 4px mỗi giây (Be Vietnam Pro không có số tabular thật, `tabular-nums` vô tác dụng) → ô cố định `min-width: 8.5ch`, canh phải. Đây là nguyên nhân `layout.spec` "hover and press move nothing else on quay" lúc fail lúc pass (main sau #58 cũng đỏ).
 
