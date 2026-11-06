@@ -333,7 +333,7 @@ function RulesForm({ initial, onDone }: { initial: PayrollRules; onDone: () => v
             setR({ ...r, free_leave_codes: e.target.checked ? ["leave_p", "leave_dx", "absent_k"] : ["leave_p", "leave_dx"] });
           }}
         />
-        <span>Nghỉ không lý do (K) cũng được tính vào số ngày không trừ lương (như file Excel)</span>
+        <span>Nghỉ không phép (K) cũng được tính vào số ngày không trừ lương (như file Excel)</span>
       </label>
       <div className="grid gap-4 sm:grid-cols-3">
         <label className="filter-field">

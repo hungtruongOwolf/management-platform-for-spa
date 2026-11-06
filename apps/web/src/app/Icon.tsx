@@ -26,6 +26,7 @@ export type IconName =
   | "moon"
   | "monitor"
   | "plus"
+  | "minus"
   | "x"
   | "check"
   | "alert"

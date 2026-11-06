@@ -94,22 +94,41 @@
     border-color: var(--accent);
     background: var(--accent-soft);
   }
+  /* Date field + progress: both are "label line, then a 44 px box", top-aligned, so the labels
+     share one baseline and the boxes another. */
   .book-head {
     display: flex;
     flex-wrap: wrap;
-    align-items: end;
+    align-items: start;
     gap: 12px 20px;
   }
   .book-progress {
     display: grid;
-    flex: 1 1 14rem;
+    flex: 1 1 16rem;
     gap: 6px;
+    font-size: 14px;
+  }
+  .book-progress-label {
+    font-weight: 500;
+  }
+  .book-progress-box {
+    display: flex;
+    min-height: 44px;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 16px;
+  }
+  .book-progress-box > p {
+    flex: none;
   }
   .book-progress-bar {
+    min-width: 8rem;
     height: 8px;
+    flex: 1 1 8rem;
     overflow: hidden;
     border-radius: 999px;
     background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px var(--border);
   }
   .book-progress-bar > span {
     display: block;
@@ -137,17 +156,232 @@
   .book-chip:hover {
     background: var(--surface-2);
   }
+  /* One person's card: the same three bands in every card so they line up down the list. */
   .book-card {
     display: grid;
-    gap: 12px;
-    padding: 14px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    padding: 16px;
     scroll-margin-top: 80px;
+    container-type: inline-size;
   }
+  /* Not recorded yet: a warm 1px border all round + the "Chưa chấm công" badge (no side stripe). */
   .book-card.is-missing {
-    box-shadow: inset 4px 0 0 var(--warning-text);
+    border-color: var(--warning-border);
   }
-  .book-status > button {
-    min-width: 3rem;
+  .book-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: start;
+    justify-content: space-between;
+    gap: 8px 12px;
+  }
+  .book-card-who {
+    min-width: min(100%, 12rem);
+    flex: 1 1 12rem;
+  }
+  .book-card-name {
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+  .book-card-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  .book-card-error {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--danger);
+    font-size: 0.875rem;
+  }
+
+  /* Attendance choice (AttendanceChoice.tsx): four equal worded options filling the row; 2 × 2
+     when the card is narrow (phones). Chosen = the status colour filled in + check icon. */
+  .att-choice {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-2);
+  }
+  /* Narrow cards: 2 × 2, words only on one line (the code stays in the name and the tooltip). */
+  @container (max-width: 560px) {
+    .att-choice {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .att-choice > button {
+      gap: 4px;
+      padding-inline: 6px;
+    }
+    .att-choice-code {
+      display: none;
+    }
+  }
+  .att-choice > button {
+    --att-fg: var(--primary);
+    --att-bg: var(--primary-soft);
+    --att-border: var(--primary);
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1.25;
+    text-align: center;
+    transition:
+      background-color var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out);
+  }
+  .att-choice > button[data-status="present"] {
+    --att-fg: var(--success);
+    --att-bg: var(--success-soft);
+    --att-border: var(--success);
+  }
+  .att-choice > button[data-status="leave_p"] {
+    --att-fg: var(--info);
+    --att-bg: var(--info-soft);
+    --att-border: var(--info);
+  }
+  .att-choice > button[data-status="leave_dx"] {
+    --att-fg: var(--warning-text);
+    --att-bg: var(--warning-bg);
+    --att-border: var(--warning-border);
+  }
+  .att-choice > button[data-status="absent_k"] {
+    --att-fg: var(--danger);
+    --att-bg: var(--danger-soft);
+    --att-border: var(--danger);
+  }
+  .att-choice > button:not(:disabled, [aria-checked="true"], [aria-disabled="true"]):hover {
+    border-color: var(--border-strong);
+    background: var(--surface);
+  }
+  .att-choice > button:not(:disabled, [aria-disabled="true"]):active {
+    background: var(--att-bg);
+  }
+  .att-choice > button[aria-checked="true"] {
+    border-color: var(--att-border);
+    background: var(--att-bg);
+    color: var(--att-fg);
+    font-weight: 600;
+  }
+  .att-choice > button:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: -3px;
+  }
+  .att-choice > button:disabled {
+    cursor: not-allowed;
+  }
+  .att-choice > button:disabled:not([aria-checked="true"]) {
+    opacity: 0.55;
+  }
+  .att-choice > button[aria-disabled="true"] {
+    cursor: progress;
+  }
+  .att-choice > button.is-pending {
+    animation: att-saving 900ms var(--ease-in-out) infinite alternate;
+  }
+  @keyframes att-saving {
+    to {
+      opacity: 0.6;
+    }
+  }
+  .att-choice-mark {
+    display: inline-grid;
+    width: 1rem;
+    flex: none;
+    place-items: center;
+  }
+  /* No check, no slot: the words stay centred in an unchosen option. */
+  .att-choice-mark:empty {
+    display: none;
+  }
+  .att-choice-code {
+    padding: 0 6px;
+    border-radius: 6px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .att-choice > button {
+      transition: none;
+    }
+    .att-choice > button.is-pending {
+      animation: none;
+      opacity: 0.75;
+    }
+  }
+
+  /* "Ghi nhận trong ngày": steppers + bonus/penalty on one row, the day's entries under it. */
+  .book-record {
+    display: grid;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .book-record-title {
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+  .book-record-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 24px;
+  }
+  .book-record-add {
+    margin-inline-start: auto;
+  }
+  @container (max-width: 560px) {
+    .book-record-row {
+      gap: 10px 16px;
+    }
+    .book-record-add {
+      width: 100%;
+      margin-inline-start: 0;
+    }
+  }
+  .book-log {
+    display: grid;
+    gap: 6px;
+    font-size: 0.875rem;
+  }
+  .book-log > li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+  }
+  .book-log-label {
+    min-width: 4.75rem;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+  }
+  .book-log-amount {
+    font-weight: 600;
+  }
+  .book-log-text {
+    min-width: 0;
+    flex: 1 1 12rem;
+    overflow-wrap: anywhere;
   }
 
   /* ---------------------------------------- technician's month as a calendar (round 5) */
@@ -242,20 +476,63 @@
     color: var(--danger);
   }
 
+  /* Stepper (Counter.tsx): label, then one bordered [− n +] group with 44 px buttons. */
   .counter {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 10px;
   }
   .counter-label {
     min-width: 4.5rem;
-    color: var(--text-muted);
     font-size: 0.875rem;
+    font-weight: 500;
+  }
+  .counter-box {
+    display: inline-flex;
+    align-items: stretch;
+    overflow: hidden;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+  }
+  .counter-box > button {
+    display: inline-grid;
+    width: 44px;
+    height: 44px;
+    place-items: center;
+    color: var(--text);
+    transition: background-color var(--dur-fast) var(--ease-out);
+  }
+  .counter-box > button:not(:disabled, [aria-disabled="true"]):hover {
+    background: var(--surface-2);
+    color: var(--primary);
+  }
+  .counter-box > button:not(:disabled, [aria-disabled="true"]):active {
+    background: var(--primary-soft);
+  }
+  .counter-box > button:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: -3px;
+  }
+  .counter-box > button:disabled {
+    cursor: not-allowed;
+    color: var(--text-muted);
+    opacity: 0.5;
+  }
+  .counter-box > button[aria-disabled="true"] {
+    cursor: progress;
   }
   .counter-value {
-    min-width: 1.5rem;
+    display: inline-grid;
+    min-width: 2.75rem;
+    place-items: center;
+    border-inline: 1px solid var(--border);
     font-weight: 600;
-    text-align: center;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .counter-box > button {
+      transition: none;
+    }
   }
 
   .payslip {

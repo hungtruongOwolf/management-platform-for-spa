@@ -16,7 +16,15 @@ export const STATUS_LABEL: Record<AttendanceStatus, string> = {
   present: "Đi làm",
   leave_p: "Nghỉ có phép (P)",
   leave_dx: "Nghỉ đột xuất (ĐX)",
-  absent_k: "Nghỉ không lý do (K)",
+  absent_k: "Nghỉ không phép (K)",
+};
+
+/** The words of the choice in the daily book (the code is shown beside them, never alone). */
+export const STATUS_WORD: Record<AttendanceStatus, string> = {
+  present: "Đi làm",
+  leave_p: "Nghỉ có phép",
+  leave_dx: "Nghỉ đột xuất",
+  absent_k: "Nghỉ không phép",
 };
 
 export const STATUS_HINT: Record<AttendanceStatus, string> = {
