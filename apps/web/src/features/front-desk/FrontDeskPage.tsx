@@ -25,7 +25,7 @@ import { ApiError } from "../../lib/api";
 import { invalidateManagementViews } from "../../lib/invalidate";
 import { serviceLabel } from "../../lib/names";
 import { useSearchState } from "../../lib/searchState";
-import { messageFor } from "../../lib/errors";
+import { fieldMessage, messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
 import { categoriesQuery, servicesQuery } from "../catalog/api";
 import { customerQuery } from "../customers/api";
@@ -52,6 +52,12 @@ import {
   visitBody,
 } from "./api";
 import { CustomerCard } from "./CustomerCard";
+import type {
+  CorrectionDraft,
+  CorrectionPlan,
+  CorrectionSaved,
+  CorrectionStart,
+} from "./correction";
 // The countdown ticks from just after the first paint (own chunk; its box is reserved meanwhile).
 const DayCountdown = lazy(() =>
   import("./DayCountdown").then((m) => ({ default: m.DayCountdown })),
@@ -86,6 +92,11 @@ const ServiceTime = lazy(() =>
 );
 const DiscountField = lazy(() =>
   loadCartOptions().then((m) => ({ default: m.DiscountField })),
+);
+// "Sửa lượt" (US6b): only when a recorded visit is opened for correction.
+const loadCorrection = () => import("./correction");
+const CorrectionPanel = lazy(() =>
+  import("./CorrectionPanel").then((m) => ({ default: m.CorrectionPanel })),
 );
 
 const field = "min-h-11 rounded-[6px] border border-border bg-surface px-3";
@@ -167,6 +178,9 @@ export function FrontDeskPage() {
   const [serviceTime, setServiceTime] = useState("");
   const [serviceDay, setServiceDay] = useState("");
   const [discount, setDiscount] = useState<DiscountDraft | null>(null);
+  /** "Sửa lượt": the recorded visit this cart corrects (null = a new visit). */
+  const [correcting, setCorrecting] = useState<CorrectionStart | null>(null);
+  const [reason, setReason] = useState("");
   /** Line whose technician picker takes focus when it mounts (fast path step 2 → 3). */
   const focusLineKey = useRef<number | null>(null);
   // A fresh key per visit; kept across retries so a resend never records twice.
@@ -209,6 +223,8 @@ export function FrontDeskPage() {
     setServiceTime("");
     setServiceDay("");
     setDiscount(null);
+    setCorrecting(null);
+    setReason("");
     setIdempotencyKey(crypto.randomUUID());
     setSearchGeneration((g) => g + 1);
     setTimeout(() => searchInput.current?.focus(), 0);
@@ -261,6 +277,60 @@ export function FrontDeskPage() {
     },
   });
 
+  const correction = useMutation({
+    mutationFn: async (
+      plan: Exclude<CorrectionPlan, { kind: "none" }>,
+    ): Promise<CorrectionSaved> => {
+      if (!correcting) throw new Error("no visit to correct");
+      const m = await loadCorrection();
+      return m.saveCorrection(correcting.visit, plan, idempotencyKey);
+    },
+    onSuccess: (saved) => {
+      const old = correcting?.visit;
+      void queryClient.invalidateQueries({ queryKey: ["visits"] });
+      void queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      void queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
+      void invalidateManagementViews(queryClient, saved.visit.customer_id);
+      if (old && old.customer_id !== saved.visit.customer_id)
+        void invalidateManagementViews(queryClient, old.customer_id);
+      showToast(saved.summary);
+      resetVisit();
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        void queryClient.invalidateQueries({ queryKey: ["visits"] });
+        void queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
+      }
+      showToast(
+        fieldMessage(error, "check_in_at") ??
+          fieldMessage(error, "reason") ??
+          messageFor(error),
+        true,
+      );
+    },
+  });
+  const saving = mutation.isPending || correction.isPending;
+  const correctionDraft: CorrectionDraft | null =
+    correcting && customer
+      ? {
+          customerId: customer.id,
+          lines,
+          payments: paymentsFor(payable, mode, cashPart),
+          discount: due > 0 ? discount : null,
+          checkInAt: serviceInstant(serviceDay || todayIso, serviceTime),
+          note,
+          canWriteNote: can(me, "customer.health_notes.write"),
+          reason,
+        }
+      : null;
+  /** Sessions the visit being corrected holds: given back before the correction re-uses them. */
+  const heldByCorrected = (itemId: string) =>
+    correcting && customer?.id === correcting.visit.customer_id
+      ? correcting.visit.lines
+          .filter((l) => l.customer_package_item_id === itemId)
+          .reduce((n, l) => n + l.qty, 0)
+      : 0;
+
   const discountProblem =
     discount !== null && (discountAmount <= 0 || discount.reason.trim() === "");
   const problems = {
@@ -273,7 +343,7 @@ export function FrontDeskPage() {
   };
 
   const save = () => {
-    if (!customer || lines.length === 0 || mutation.isPending) return;
+    if (!customer || lines.length === 0 || saving) return;
     setAttempted(true);
     if (problems.staff) {
       showToast("Mỗi dịch vụ cần chọn KTV thực hiện.", true);
@@ -291,6 +361,22 @@ export function FrontDeskPage() {
     }
     if (problems.time) {
       showToast("Chọn giờ làm cho ngày nhập bù.", true);
+      return;
+    }
+    if (correcting && correctionDraft) {
+      const old = correcting;
+      void loadCorrection().then((m) => {
+        const plan = m.planCorrection(old.visit, old.note, correctionDraft);
+        if (plan.kind === "none") {
+          showToast("Chưa có gì thay đổi so với lượt đã ghi.", true);
+          return;
+        }
+        if (plan.kind === "correct" && plan.body.reason === "") {
+          showToast("Cần ghi lý do sửa lượt.", true);
+          return;
+        }
+        correction.mutate(plan);
+      });
       return;
     }
     mutation.mutate(
@@ -376,6 +462,54 @@ export function FrontDeskPage() {
       setServiceTime(timeOf(a.arrived_at ?? a.starts_at));
     }
   };
+
+  /** "Sửa lượt": the cart filled with the recorded visit; the desk changes only what is wrong. */
+  const startCorrection = (c: CorrectionStart) => {
+    select(c.customer);
+    setFocusDeduct(false);
+    setLines(c.lines.map((l) => ({ ...l, key: nextKey.current++ })));
+    setMode(c.mode);
+    setCashText(c.cashText);
+    setDiscount(c.discount);
+    setServiceDay(c.serviceDay);
+    setServiceTime(c.serviceTime);
+    setNote(c.note);
+    setReason("");
+    setCorrecting(c);
+    setTimeout(() => {
+      const title = document.getElementById("cart-title");
+      // jsdom has no scrollIntoView.
+      if (title && "scrollIntoView" in title)
+        title.scrollIntoView({ block: "start" });
+    }, 0);
+  };
+  // `/quay?sua=<visit>` (the ⋯ menu of the day list, a customer's history) opens that visit.
+  const startCorrectionRef = useRef(startCorrection);
+  useEffect(() => {
+    startCorrectionRef.current = startCorrection;
+  });
+  const requested = search.sua;
+  useEffect(() => {
+    if (!requested || !painted) return;
+    setSearch({ sua: "" });
+    void loadCorrection()
+      .then((m) => m.loadCorrection(queryClient, requested, todayIso))
+      .then((c) => {
+        if (c.visit.status !== "completed") {
+          showToast(
+            c.visit.corrected_by_visit_id
+              ? "Lượt này đã được sửa. Mở lượt mới nhất để sửa tiếp."
+              : "Lượt này đã bị hủy, không sửa được.",
+            true,
+          );
+          return;
+        }
+        startCorrectionRef.current(c);
+      })
+      .catch((e: unknown) => {
+        showToast(messageFor(e), true);
+      });
+  }, [requested, painted, queryClient, todayIso, setSearch, showToast]);
 
   return (
     <div className="grid min-w-0 gap-4">
@@ -481,7 +615,9 @@ export function FrontDeskPage() {
                 <CustomerCard
                   key={customer.id}
                   summary={customer}
-                  inCart={(itemId) => inCart(lines, itemId)}
+                  inCart={(itemId) =>
+                    inCart(lines, itemId) - heldByCorrected(itemId)
+                  }
                   canOverrideExpiry={can(me, "package.use_expired_override")}
                   focusFirst={focusDeduct}
                   onClear={dropCustomer}
@@ -512,9 +648,28 @@ export function FrontDeskPage() {
             </section>
 
             <section aria-labelledby="cart-title" className={`${card} min-w-0`}>
-              <h2 id="cart-title" className="mb-3 font-semibold">
-                Lượt khách đang ghi
+              <h2 id="cart-title" className="mb-3 scroll-mt-20 font-semibold">
+                {correcting ? "Sửa lượt khách" : "Lượt khách đang ghi"}
               </h2>
+              {correcting && (
+                <p className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-[10px] bg-info-soft p-2 text-sm text-info">
+                  <span>
+                    Đang sửa lượt {timeOf(correcting.visit.check_in_at)} ·{" "}
+                    {correcting.visit.business_date
+                      .split("-")
+                      .reverse()
+                      .join("/")}{" "}
+                    của {correcting.visit.customer_name}
+                  </span>
+                  <button
+                    type="button"
+                    className="min-h-11 underline"
+                    onClick={resetVisit}
+                  >
+                    Bỏ sửa
+                  </button>
+                </p>
+              )}
               {appointment && (
                 <p className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-[10px] bg-info-soft p-2 text-sm text-info">
                   <span>
@@ -778,8 +933,20 @@ export function FrontDeskPage() {
                       />
                     </label>
                   )}
-                  {mutation.isError &&
-                    !(mutation.error instanceof ApiError) && (
+                  {correcting && correctionDraft && (
+                    <Suspense fallback={null}>
+                      <CorrectionPanel
+                        visit={correcting.visit}
+                        oldNote={correcting.note}
+                        draft={correctionDraft}
+                        invalid={attempted && reason.trim() === ""}
+                        onReason={setReason}
+                      />
+                    </Suspense>
+                  )}
+                  {(mutation.isError || correction.isError) &&
+                    !(mutation.error instanceof ApiError) &&
+                    !(correction.error instanceof ApiError) && (
                       <p
                         role="alert"
                         className="rounded-[10px] bg-danger-soft p-3 text-sm text-danger"
@@ -791,10 +958,14 @@ export function FrontDeskPage() {
                     <button
                       type="button"
                       onClick={save}
-                      disabled={mutation.isPending}
+                      disabled={saving}
                       className="min-h-13 w-full rounded-[10px] bg-primary text-lg font-semibold text-on-primary disabled:opacity-60"
                     >
-                      {mutation.isPending ? "Đang lưu…" : "Lưu lượt khách"}
+                      {saving
+                        ? "Đang lưu…"
+                        : correcting
+                          ? "Lưu sửa lượt"
+                          : "Lưu lượt khách"}
                     </button>
                   </StickyActions>
                 </div>
@@ -804,7 +975,11 @@ export function FrontDeskPage() {
 
           {painted ? (
             <Suspense fallback={todayVisitsSkeleton}>
-              <TodayVisits />
+              <TodayVisits
+                onCorrect={(id) => {
+                  setSearch({ sua: id });
+                }}
+              />
             </Suspense>
           ) : (
             todayVisitsSkeleton

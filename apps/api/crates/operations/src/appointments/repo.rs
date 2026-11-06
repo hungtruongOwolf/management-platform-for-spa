@@ -376,6 +376,9 @@ pub async fn walk_ins(
            WHERE v.tenant_id = $1 AND v.branch_id = $2 AND v.business_date BETWEEN $3 AND $4
              AND NOT EXISTS (
                SELECT 1 FROM app.appointment a WHERE a.tenant_id = v.tenant_id AND a.visit_id = v.id)
+             -- A visit replaced by "Sửa lượt" is not a second customer: only its newest version shows.
+             AND NOT EXISTS (
+               SELECT 1 FROM app.visit n WHERE n.tenant_id = v.tenant_id AND n.corrects_visit_id = v.id)
            ORDER BY v.check_in_at, v.id
            LIMIT 2000"#,
         tenant,
@@ -450,4 +453,24 @@ pub async fn set_max_per_slot(
     .execute(tx.conn())
     .await?;
     Ok(before)
+}
+
+/// "Sửa lượt": the appointment completed by visit `from` now points at `to`, the visit correcting
+/// it (0020 lets a done appointment change only this). Returns the appointment moved, if any.
+pub async fn move_to_correction(
+    tx: &mut TenantTx,
+    from: Uuid,
+    to: Uuid,
+) -> Result<Option<Uuid>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_scalar!(
+        r#"UPDATE app.appointment SET visit_id = $3, version = version + 1, updated_at = now()
+           WHERE tenant_id = $1 AND visit_id = $2
+           RETURNING id"#,
+        tenant,
+        from,
+        to
+    )
+    .fetch_optional(tx.conn())
+    .await?)
 }

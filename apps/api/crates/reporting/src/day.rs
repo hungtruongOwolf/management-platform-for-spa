@@ -136,7 +136,10 @@ impl Books {
             r#"WITH vl AS MATERIALIZED (
                  SELECT date_trunc($3, v.business_date::timestamp)::date AS bucket, v.id AS visit_id,
                         v.customer_id, v.status = 'completed' AS done, l.service_id, l.staff_id,
-                        l.source, l.qty, l.line_value
+                        l.source, l.qty, l.line_value,
+                        -- Replaced by "Sửa lượt": shown as "đã sửa", not as a cancellation.
+                        EXISTS (SELECT 1 FROM app.visit n
+                                WHERE n.tenant_id = v.tenant_id AND n.corrects_visit_id = v.id) AS corrected
                  FROM app.visit v
                  JOIN app.visit_line l ON l.tenant_id = v.tenant_id AND l.visit_id = v.id
                  WHERE v.tenant_id = $1 AND v.business_date BETWEEN $2 AND $4
@@ -144,24 +147,25 @@ impl Books {
                SELECT 'bucket' AS tag, bucket, NULL::uuid AS key,
                       count(DISTINCT visit_id) FILTER (WHERE done) AS visits,
                       count(DISTINCT customer_id) FILTER (WHERE done) AS customers,
-                      count(DISTINCT visit_id) FILTER (WHERE NOT done) AS voided,
+                      count(DISTINCT visit_id) FILTER (WHERE NOT done AND NOT corrected) AS voided,
+                      count(DISTINCT visit_id) FILTER (WHERE NOT done AND corrected) AS corrected,
                       coalesce(sum(qty) FILTER (WHERE done AND source = 'package'), 0)::bigint AS sessions,
                       coalesce(sum(qty) FILTER (WHERE done AND source = 'one_off'), 0)::bigint AS one_off,
                       coalesce(sum(line_value) FILTER (WHERE done AND source = 'one_off'), 0)::bigint AS revenue
                FROM vl GROUP BY bucket
                UNION ALL
-               SELECT 'service', NULL, service_id, 0, 0, 0,
+               SELECT 'service', NULL, service_id, 0, 0, 0, 0,
                       coalesce(sum(qty) FILTER (WHERE source = 'package'), 0)::bigint,
                       coalesce(sum(qty) FILTER (WHERE source = 'one_off'), 0)::bigint,
                       coalesce(sum(line_value) FILTER (WHERE source = 'one_off'), 0)::bigint
                FROM vl WHERE done GROUP BY service_id
                UNION ALL
-               SELECT 'staff', NULL, staff_id, count(DISTINCT visit_id), 0, 0,
+               SELECT 'staff', NULL, staff_id, count(DISTINCT visit_id), 0, 0, 0,
                       coalesce(sum(qty) FILTER (WHERE source = 'package'), 0)::bigint,
                       coalesce(sum(qty) FILTER (WHERE source = 'one_off'), 0)::bigint, 0
                FROM vl WHERE done GROUP BY staff_id
                UNION ALL
-               SELECT 'all', NULL, NULL, 0, count(DISTINCT customer_id), 0, 0, 0, 0
+               SELECT 'all', NULL, NULL, 0, count(DISTINCT customer_id), 0, 0, 0, 0, 0
                FROM vl WHERE done"#,
             tenant,
             from,
@@ -178,6 +182,7 @@ impl Books {
                     c.visits = n(r.visits);
                     c.customers = n(r.customers);
                     c.voided_visits = n(r.voided);
+                    c.corrected_visits = n(r.corrected);
                     c.sessions_used = n(r.sessions);
                     c.one_off_services = n(r.one_off);
                 }

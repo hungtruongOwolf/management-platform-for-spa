@@ -240,6 +240,7 @@ function Kpis({ range, previous, compareLabel }: { range: RangeReport; previous:
       <StatCard label="Lượt khách" icon="desk" foot={delta(c.visits, p?.visits)}>
         <CountUp value={c.visits} />
         {c.voided_visits > 0 && <span className="ml-2 text-sm font-normal text-text-muted">({c.voided_visits} đã hủy)</span>}
+        {c.corrected_visits > 0 && <span className="ml-2 text-sm font-normal text-text-muted">({c.corrected_visits} đã sửa)</span>}
       </StatCard>
       <StatCard label="Buổi liệu trình đã trừ" icon="package" foot={delta(c.sessions_used, p?.sessions_used)}>
         <CountUp value={c.sessions_used} />

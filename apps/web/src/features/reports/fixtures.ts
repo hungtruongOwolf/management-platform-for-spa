@@ -64,6 +64,7 @@ function counts(r: () => number, weekend: boolean): DayCounts {
     customers: visits - int(r, 0, 3),
     visits,
     voided_visits: int(r, 0, 1),
+    corrected_visits: 0,
     sessions_used: Math.round(visits * (0.55 + r() * 0.2)),
     one_off_services: Math.round(visits * (0.3 + r() * 0.2)),
     packages_sold: int(r, 0, 4),
@@ -148,13 +149,14 @@ function addRevenue(a: Revenue, b: Revenue): Revenue {
   };
 }
 
-const ZERO_COUNTS: DayCounts = { customers: 0, visits: 0, voided_visits: 0, sessions_used: 0, one_off_services: 0, packages_sold: 0 };
+const ZERO_COUNTS: DayCounts = { customers: 0, visits: 0, voided_visits: 0, corrected_visits: 0, sessions_used: 0, one_off_services: 0, packages_sold: 0 };
 
 function addCounts(a: DayCounts, b: DayCounts): DayCounts {
   return {
     customers: a.customers + b.customers,
     visits: a.visits + b.visits,
     voided_visits: a.voided_visits + b.voided_visits,
+    corrected_visits: a.corrected_visits + b.corrected_visits,
     sessions_used: a.sessions_used + b.sessions_used,
     one_off_services: a.one_off_services + b.one_off_services,
     packages_sold: a.packages_sold + b.packages_sold,

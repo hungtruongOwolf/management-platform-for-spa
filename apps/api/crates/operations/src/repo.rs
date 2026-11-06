@@ -14,14 +14,17 @@ pub struct VisitInsert<'a> {
     pub note_ct: Option<&'a [u8]>,
     pub sale_id: Option<Uuid>,
     pub created_by: Uuid,
+    /// "Sửa lượt": the voided visit this one replaces.
+    pub corrects_visit_id: Option<Uuid>,
 }
 
 pub async fn insert_visit(tx: &mut TenantTx, v: &VisitInsert<'_>) -> Result<(), AppError> {
     let tenant = tx.tenant().as_uuid();
     sqlx::query!(
         r#"INSERT INTO app.visit
-             (id, tenant_id, branch_id, customer_id, business_date, check_in_at, note_ct, sale_id, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#,
+             (id, tenant_id, branch_id, customer_id, business_date, check_in_at, note_ct, sale_id, created_by,
+              corrects_visit_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
         v.id,
         tenant,
         v.branch_id,
@@ -30,7 +33,8 @@ pub async fn insert_visit(tx: &mut TenantTx, v: &VisitInsert<'_>) -> Result<(), 
         v.check_in_at,
         v.note_ct,
         v.sale_id,
-        v.created_by
+        v.created_by,
+        v.corrects_visit_id
     )
     .execute(tx.conn())
     .await?;
@@ -100,6 +104,8 @@ pub struct VisitRow {
     pub sale_id: Option<Uuid>,
     pub discount_amount: Option<i64>,
     pub discount_reason: Option<String>,
+    pub corrects_visit_id: Option<Uuid>,
+    pub corrected_by_visit_id: Option<Uuid>,
     pub version: i64,
     pub created_at: DateTime<Utc>,
 }
@@ -116,10 +122,12 @@ pub async fn visits(
         r#"SELECT v.id, v.customer_id, c.full_name AS customer_name, c.gender AS customer_gender, v.business_date, v.check_in_at, v.note_ct,
                   v.status, v.void_reason, v.voided_at, v.sale_id,
                   s.discount_amount AS "discount_amount?", s.discount_reason AS "discount_reason?",
+                  v.corrects_visit_id, n.id AS "corrected_by_visit_id?",
                   v.version, v.created_at
            FROM app.visit v
            JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id
            LEFT JOIN app.sale s ON s.tenant_id = v.tenant_id AND s.id = v.sale_id
+           LEFT JOIN app.visit n ON n.tenant_id = v.tenant_id AND n.corrects_visit_id = v.id
            WHERE v.tenant_id = $1
              AND ($2::uuid IS NULL OR v.id = $2)
              AND ($3::date IS NULL OR v.business_date = $3)
@@ -133,20 +141,54 @@ pub async fn visits(
     .await?)
 }
 
-/// Locks the visit row for a correction; `None` = not in this tenant.
-pub async fn lock_visit(
-    tx: &mut TenantTx,
-    id: Uuid,
-) -> Result<Option<(NaiveDate, String, i64, Uuid)>, AppError> {
+pub struct LockedVisit {
+    pub business_date: NaiveDate,
+    pub check_in_at: DateTime<Utc>,
+    pub status: String,
+    pub sale_id: Option<Uuid>,
+    pub note_ct: Option<Vec<u8>>,
+    pub version: i64,
+    /// The visit that corrected this one, if any.
+    pub corrected_by: Option<Uuid>,
+}
+
+/// Locks a visit row: the first lock of every change (`PATCH`, void, correction), so two changes
+/// of one visit serialize here. `None` = not in this tenant.
+pub async fn lock(tx: &mut TenantTx, id: Uuid) -> Result<Option<LockedVisit>, AppError> {
     let tenant = tx.tenant().as_uuid();
-    Ok(sqlx::query!(
-        "SELECT business_date, status, version, customer_id FROM app.visit WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
+    let Some(row) = sqlx::query!(
+        r#"SELECT business_date, check_in_at, status, sale_id, note_ct, version
+           FROM app.visit WHERE tenant_id = $1 AND id = $2 FOR UPDATE"#,
         tenant,
         id
     )
     .fetch_optional(tx.conn())
     .await?
-    .map(|r| (r.business_date, r.status, r.version, r.customer_id)))
+    else {
+        return Ok(None);
+    };
+    // A statement of its own, after the lock: when this request waited for a concurrent
+    // correction, only a fresh snapshot sees the visit that correction inserted.
+    let corrected_by = if row.status == "voided" {
+        sqlx::query_scalar!(
+            "SELECT id FROM app.visit WHERE tenant_id = $1 AND corrects_visit_id = $2",
+            tenant,
+            id
+        )
+        .fetch_optional(tx.conn())
+        .await?
+    } else {
+        None
+    };
+    Ok(Some(LockedVisit {
+        business_date: row.business_date,
+        check_in_at: row.check_in_at,
+        status: row.status,
+        sale_id: row.sale_id,
+        note_ct: row.note_ct,
+        version: row.version,
+        corrected_by,
+    }))
 }
 
 pub struct LineRow {
@@ -195,12 +237,14 @@ pub async fn lines(tx: &mut TenantTx, visit_ids: &[Uuid]) -> Result<Vec<LineRow>
     .await?)
 }
 
-/// Bumps the version (and the note when `note` is `Some`) if the caller saw the current one.
+/// Bumps the version (and the note when `note` is `Some`, the service time when `check_in_at` is
+/// `Some`) if the caller saw the current one.
 pub async fn update_visit(
     tx: &mut TenantTx,
     id: Uuid,
     version: i64,
     note_ct: Option<Option<&[u8]>>,
+    check_in_at: Option<DateTime<Utc>>,
 ) -> Result<bool, AppError> {
     let tenant = tx.tenant().as_uuid();
     let (set_note, note) = match note_ct {
@@ -209,13 +253,16 @@ pub async fn update_visit(
     };
     Ok(sqlx::query!(
         r#"UPDATE app.visit
-           SET note_ct = CASE WHEN $4 THEN $5 ELSE note_ct END, version = version + 1, updated_at = now()
+           SET note_ct = CASE WHEN $4 THEN $5 ELSE note_ct END,
+               check_in_at = coalesce($6, check_in_at),
+               version = version + 1, updated_at = now()
            WHERE tenant_id = $1 AND id = $2 AND version = $3"#,
         tenant,
         id,
         version,
         set_note,
-        note
+        note,
+        check_in_at
     )
     .execute(tx.conn())
     .await?
@@ -247,25 +294,6 @@ pub async fn set_line_staff(
 }
 
 // ---------------------------------------------------------------- voids (S8)
-
-pub struct LockedVisit {
-    pub business_date: NaiveDate,
-    pub status: String,
-    pub sale_id: Option<Uuid>,
-}
-
-/// Locks a visit for a void (the first lock of `POST /visits/{id}/void`).
-pub async fn lock_for_void(tx: &mut TenantTx, id: Uuid) -> Result<Option<LockedVisit>, AppError> {
-    let tenant = tx.tenant().as_uuid();
-    Ok(sqlx::query_as!(
-        LockedVisit,
-        "SELECT business_date, status, sale_id FROM app.visit WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
-        tenant,
-        id
-    )
-    .fetch_optional(tx.conn())
-    .await?)
-}
 
 /// `completed` → `voided` with the reason. `false` = already voided: the `WHERE status =
 /// 'completed'` alone makes a second void impossible.

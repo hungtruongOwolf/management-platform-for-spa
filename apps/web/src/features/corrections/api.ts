@@ -76,6 +76,28 @@ export function addMonths(iso: string, months: number): string {
   return target.toISOString().slice(0, 10);
 }
 
+/**
+ * Show "Sửa lượt" for a visit of `businessDate`? Mirrors the server (UX only; it decides):
+ * `visit.record` + `record.void_same_day`, and an earlier day needs `record.void_closed_day`.
+ * Only the newest version of a visit, never a voided one.
+ */
+export function mayCorrectVisit(
+  permissions: readonly string[],
+  visit: { business_date: string; status?: string; voided?: boolean },
+  today: string,
+): boolean {
+  const has = (p: string) => permissions.includes(p);
+  const current = visit.status
+    ? visit.status === "completed"
+    : visit.voided === false;
+  return (
+    current &&
+    has("visit.record") &&
+    has("record.void_same_day") &&
+    (visit.business_date >= today || has("record.void_closed_day"))
+  );
+}
+
 /** Today in the spa's time zone, "YYYY-MM-DD". */
 export function spaToday(now: Date = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", {

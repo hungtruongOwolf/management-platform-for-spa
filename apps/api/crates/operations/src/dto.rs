@@ -64,7 +64,8 @@ where
     Option::<T>::deserialize(d).map(Some)
 }
 
-/// Body of `PATCH /visits/{id}` (with `If-Match`): corrections that do not touch money or sessions.
+/// Body of `PATCH /visits/{id}` (with `If-Match`): corrections that do not touch money or
+/// sessions ("Sửa lượt", direct edit, spec US6b).
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VisitUpdate {
@@ -72,6 +73,8 @@ pub struct VisitUpdate {
     #[serde(default, deserialize_with = "present")]
     #[schema(value_type = Option<String>)]
     pub note: Option<Option<String>>,
+    /// New service time (giờ làm): on the visit's own business day, not in the future.
+    pub check_in_at: Option<DateTime<Utc>>,
     /// Technician corrections, by line id.
     #[serde(default)]
     pub lines: Vec<VisitLineUpdate>,
@@ -82,6 +85,59 @@ pub struct VisitUpdate {
 pub struct VisitLineUpdate {
     pub id: Uuid,
     pub staff_id: Uuid,
+}
+
+/// Body of `POST /visits/{id}/correct` (with `If-Match` + `Idempotency-Key`): the visit as it
+/// should have been recorded, plus the reason. The old visit is voided and this one recorded in
+/// one transaction (spec US6b), with the rules and permissions of `POST /visits`. No amount is read
+/// from the client.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct VisitCorrection {
+    /// Why (1–490 characters); the old visit keeps it as "Sửa lượt: …".
+    pub reason: Option<String>,
+    /// May differ from the old visit's customer (recorded for the wrong person).
+    pub customer_id: Uuid,
+    /// Service time; absent = the old visit's. Must stay on the old visit's business day.
+    pub check_in_at: Option<DateTime<Utc>>,
+    pub discount: Option<sales::dto::ServiceDiscountCreate>,
+    /// Absent = keep the old visit's note (copied on the server, never sent to the browser);
+    /// null or empty = no note; text = a new note (needs `customer.health_notes.write`).
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<String>)]
+    pub note: Option<Option<String>>,
+    /// 1–20 service lines, as in `POST /visits`.
+    pub lines: Vec<VisitLineCreate>,
+    #[serde(default)]
+    pub payments: Vec<PaymentCreate>,
+}
+
+impl VisitCorrection {
+    /// The reason, the note change (absent = keep) and the new visit as `POST /visits` reads it.
+    pub fn into_parts(self) -> (Option<String>, Option<Option<String>>, VisitCreate) {
+        (
+            self.reason,
+            self.note,
+            VisitCreate {
+                customer_id: self.customer_id,
+                check_in_at: self.check_in_at,
+                discount: self.discount,
+                note: None,
+                lines: self.lines,
+                payments: self.payments,
+            },
+        )
+    }
+}
+
+/// Response of `POST /visits/{id}/correct`.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct VisitCorrected {
+    /// The old visit, now `voided`, with `corrected_by_visit_id` set.
+    pub voided: VisitDto,
+    /// The corrected visit (`corrects_visit_id` = the old one).
+    pub visit: VisitDto,
+    /// New total − old total: > 0 collect more ("Thu thêm"), < 0 give back ("Hoàn"), 0 = same.
+    pub difference: i64,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -150,6 +206,11 @@ pub struct VisitDto {
     /// Set when the visit was voided (US6): it stays in history with the reason.
     pub void_reason: Option<String>,
     pub voided_at: Option<DateTime<Utc>>,
+    /// Set on a visit recorded by "Sửa lượt": the voided visit it replaces.
+    pub corrects_visit_id: Option<Uuid>,
+    /// Set on a voided visit that was corrected: the visit that replaced it. The newest version
+    /// of a visit is the one without this field.
+    pub corrected_by_visit_id: Option<Uuid>,
     /// Present only on a single visit and only for `customer.health_notes.read`; null = no note.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<String>)]
