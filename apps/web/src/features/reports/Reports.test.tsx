@@ -256,6 +256,8 @@ describe("management lists", () => {
     at("/khach-lau-khong-quay-lai");
     const table = await screen.findByRole("table", { name: "Khách lâu chưa quay lại" });
     const [first] = within(table).getAllByRole("button", { name: /^Đã liên hệ với / });
+    // EM round 5 item 8: marking the contact is the only row action (no call button).
+    expect(within(table).queryByRole("link", { name: /^Gọi / })).not.toBeInTheDocument();
     const name = (first?.getAttribute("aria-label") ?? "").replace("Đã liên hệ với ", "");
     await user.click(first as HTMLElement);
     const form = await screen.findByRole("form", { name: /^Ghi lần liên hệ với / });
@@ -299,7 +301,9 @@ describe("management lists", () => {
     at("/khach-lau-khong-quay-lai");
     const table = await screen.findByRole("table", { name: "Khách lâu chưa quay lại" });
     expect(within(table).queryByRole("button", { name: /^Đã liên hệ/ })).not.toBeInTheDocument();
-    expect(within(table).getAllByRole("link", { name: /^Gọi / }).length).toBeGreaterThan(0);
+    // EM round 5 item 8: no call button; with nothing left to do, no actions column either.
+    expect(within(table).queryByRole("link", { name: /^Gọi / })).not.toBeInTheDocument();
+    expect(within(table).queryByRole("columnheader", { name: "Thao tác" })).not.toBeInTheDocument();
   });
 });
 

@@ -6,7 +6,8 @@
  */
 
 :root {
-  --sidebar-w: 248px;
+  /* Wide enough for "Khách lâu chưa quay lại" on one line; longer labels wrap (EM round 5). */
+  --sidebar-w: 264px;
   --sidebar-rail: 76px;
   --topbar-h: 64px;
 }
@@ -83,7 +84,9 @@
     gap: 8px;
     padding: 16px 12px;
     border-right: 1px solid color-mix(in srgb, var(--chrome-accent) 35%, transparent);
-    overflow-y: auto;
+    /* Scrolls down on short screens, never sideways (overflow-y alone makes x scroll too). */
+    overflow: hidden auto;
+    scrollbar-width: thin;
   }
   /* Icon rail on tablets (and when folded): labels stay for screen readers. */
   .sidebar :is(.nav-label, .nav-group-label) {
@@ -103,11 +106,20 @@
     width: var(--sidebar-w);
     padding-inline: 14px;
   }
+  /* EM round 5 item 2: a label is never cut. It wraps to a second line instead ("Gói liệu trình
+   * của khách"), and the rail's nowrap/overflow clipping is undone, not just its size. */
   .sidebar:not([data-collapsed]) :is(.nav-label, .nav-group-label) {
     position: static;
     width: auto;
     height: auto;
+    min-width: 0;
+    overflow: visible;
     clip-path: none;
+    white-space: normal;
+  }
+  .sidebar:not([data-collapsed]) :is(.nav-item, .sidebar-toggle) {
+    padding-block: 7px;
+    line-height: 1.3;
   }
   .sidebar:not([data-collapsed]) .sidebar-logo {
     width: 104px;
@@ -1061,6 +1073,85 @@ h2 .gender-chip {
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
+}
+/* Column widths from ResponsiveTable `Column.width` (EM round 5: "không hàng không lối"): every
+ * row on the same grid, long text wraps inside its own column instead of pushing the others. */
+.data-table-fixed {
+  table-layout: fixed;
+}
+.data-table-fixed td {
+  overflow-wrap: break-word;
+}
+/* Rows that open their details on click (the row's own button is the keyboard path). */
+.data-table tr.rt-clickable,
+.rt-card.rt-clickable {
+  cursor: pointer;
+}
+.data-table tr.rt-open {
+  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+}
+.data-table tr.rt-open > td {
+  border-bottom-color: transparent;
+}
+.data-table tbody tr.rt-expanded:hover {
+  background: none;
+}
+.data-table tr.rt-expanded > td {
+  padding-top: 0;
+}
+.row-toggle {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  /* Room for the inset focus ring (styles.css) without moving the name off its column edge. */
+  margin-inline: -6px;
+  padding-inline: 6px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  text-align: left;
+}
+.row-toggle:hover {
+  text-decoration: underline;
+}
+/* A cancelled visit stays in its row, muted, its amount struck through; the reason is in the details. */
+.visit-voided > :is(td, th),
+.rt-card.visit-voided {
+  color: var(--text-muted);
+}
+.visit-voided .visit-amount,
+.rt-card.visit-voided .rt-card-aside {
+  text-decoration: line-through;
+}
+
+/* --- Row actions menu (components/RowMenu.tsx): the "⋯" of a table row ---------------------- */
+.row-menu-button {
+  display: inline-grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+}
+.row-menu-button:hover,
+.row-menu-button[aria-expanded="true"] {
+  background: var(--surface-2);
+  color: var(--text);
+}
+/* A manual popover (top layer): reset the UA's centred placement; RowMenu sets top/right. */
+.row-menu {
+  position: fixed;
+  z-index: 30;
+  inset: auto;
+  display: grid;
+  min-width: 200px;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  color: var(--text);
+  animation: pop-in var(--dur-base) var(--ease-out);
 }
 
 /* --- Line chart (features/reports/LineChart.tsx; dataviz: 2px lines, hairline grid, 10% wash) - */
