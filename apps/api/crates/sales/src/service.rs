@@ -4,8 +4,8 @@
 
 use crate::domain::{self, DiscountAuthority, DiscountError, PaymentMethod};
 use crate::dto::{
-    PaymentCreate, PaymentDto, PaymentKindDto, PaymentMethodDto, SaleCreate, SaleDto, SaleLineDto,
-    SaleLineTypeDto, SaleStatusDto,
+    DiscountCreate, PaymentCreate, PaymentDto, PaymentKindDto, PaymentMethodDto, SaleCreate,
+    SaleDto, SaleLineDto, SaleLineTypeDto, SaleStatusDto,
 };
 use crate::repo::{self, PackageLineInsert, PaymentInsert, SaleInsert, ServiceLineInsert};
 use chrono::{DateTime, Months, NaiveDate, Utc};
@@ -33,24 +33,81 @@ pub struct Payment {
     pub reference: Option<String>,
 }
 
-struct Line {
-    plan_id: Uuid,
+/// One package of a sale, after shape validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageLine {
+    pub plan_id: Uuid,
     /// `None` = take the plan's; `Some(None)` = explicitly no gift.
-    gift_note: Option<Option<String>>,
+    pub gift_note: Option<Option<String>>,
 }
 
-/// The request after shape validation; amounts are still unchecked against the catalog.
+/// A package sale after shape validation; amounts are still unchecked against the catalog.
+/// The one shape of `POST /sales` and of a package sold in a visit (`package_sales[]`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageOrder {
+    /// Who pays (`sale.customer_id`).
+    pub customer_id: Uuid,
+    /// Who the packages belong to (`customer_package.customer_id`); default = the payer (US13).
+    pub beneficiary_customer_id: Option<Uuid>,
+    /// "Người giới thiệu / chốt": any active staff member (owner, manager, technician), or `None`
+    /// = "khách tự chọn" (nobody is credited).
+    pub closer_staff_id: Option<Uuid>,
+    pub lines: Vec<PackageLine>,
+    pub discount: Money,
+    pub discount_reason: Option<String>,
+}
+
 struct Order {
-    customer_id: Uuid,
-    closer_staff_id: Uuid,
-    lines: Vec<Line>,
-    discount: Money,
-    discount_reason: Option<String>,
+    package: PackageOrder,
     payments: Vec<Payment>,
 }
 
 fn trimmed(s: Option<&String>) -> Option<String> {
     s.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())
+}
+
+/// Shape rules of a gift note (`None` = the plan's, empty = none). Problems go to `errors`.
+pub fn parse_gift_note(
+    note: Option<&String>,
+    field: &str,
+    errors: &mut Vec<FieldError>,
+) -> Option<Option<String>> {
+    let gift = note.map(|g| trimmed(Some(g)));
+    if gift
+        .as_ref()
+        .and_then(Option::as_ref)
+        .is_some_and(|g| g.chars().count() > MAX_GIFT_NOTE)
+    {
+        errors.push(FieldError::new(field, "too_long"));
+    }
+    gift
+}
+
+/// Shape rules of a package discount (`amount` ≥ 0, reason ≤ 500; a reason without an amount is
+/// dropped). `prefix` is the field path, e.g. `discount` or `package_sales[0].discount`.
+pub fn parse_package_discount(
+    input: Option<&DiscountCreate>,
+    prefix: &str,
+    errors: &mut Vec<FieldError>,
+) -> (Money, Option<String>) {
+    match input {
+        None => (Money::ZERO, None),
+        Some(d) => {
+            let amount = Money::vnd(d.amount).unwrap_or_else(|_| {
+                errors.push(FieldError::new(format!("{prefix}.amount"), "negative"));
+                Money::ZERO
+            });
+            let reason = trimmed(d.reason.as_ref());
+            if reason
+                .as_ref()
+                .is_some_and(|r| r.chars().count() > MAX_REASON)
+            {
+                errors.push(FieldError::new(format!("{prefix}.reason"), "too_long"));
+            }
+            // A reason without a discount means nothing; drop it rather than store noise.
+            (amount, reason.filter(|_| amount > Money::ZERO))
+        }
+    }
 }
 
 fn parse(input: &SaleCreate) -> Result<Order, AppError> {
@@ -62,50 +119,29 @@ fn parse(input: &SaleCreate) -> Result<Order, AppError> {
         .lines
         .iter()
         .enumerate()
-        .map(|(i, l)| {
-            let gift = l.gift_note.as_ref().map(|g| trimmed(Some(g)));
-            if gift
-                .as_ref()
-                .and_then(Option::as_ref)
-                .is_some_and(|g| g.chars().count() > MAX_GIFT_NOTE)
-            {
-                errors.push(FieldError::new(format!("lines[{i}].gift_note"), "too_long"));
-            }
-            Line {
-                plan_id: l.package_plan_id,
-                gift_note: gift,
-            }
+        .map(|(i, l)| PackageLine {
+            plan_id: l.package_plan_id,
+            gift_note: parse_gift_note(
+                l.gift_note.as_ref(),
+                &format!("lines[{i}].gift_note"),
+                &mut errors,
+            ),
         })
         .collect();
-
-    let (discount, discount_reason) = match &input.discount {
-        None => (Money::ZERO, None),
-        Some(d) => {
-            let amount = Money::vnd(d.amount).unwrap_or_else(|_| {
-                errors.push(FieldError::new("discount.amount", "negative"));
-                Money::ZERO
-            });
-            let reason = trimmed(d.reason.as_ref());
-            if reason
-                .as_ref()
-                .is_some_and(|r| r.chars().count() > MAX_REASON)
-            {
-                errors.push(FieldError::new("discount.reason", "too_long"));
-            }
-            // A reason without a discount means nothing; drop it rather than store noise.
-            (amount, reason.filter(|_| amount > Money::ZERO))
-        }
-    };
-
+    let (discount, discount_reason) =
+        parse_package_discount(input.discount.as_ref(), "discount", &mut errors);
     let payments = parse_payments(&input.payments, &mut errors);
 
     if errors.is_empty() {
         Ok(Order {
-            customer_id: input.customer_id,
-            closer_staff_id: input.closer_staff_id,
-            lines,
-            discount,
-            discount_reason,
+            package: PackageOrder {
+                customer_id: input.customer_id,
+                beneficiary_customer_id: input.beneficiary_customer_id,
+                closer_staff_id: input.closer_staff_id,
+                lines,
+                discount,
+                discount_reason,
+            },
             payments,
         })
     } else {
@@ -236,16 +272,107 @@ pub async fn create_sale_as_of(
     }
     let tenant = kernel::tenant::profile_as_of(&mut tx, now).await?;
     let today = tenant.business_date.as_naive();
+    let priced = price_package_sale(
+        &mut tx,
+        actor,
+        &order.package,
+        tenant.manager_discount_max_pct,
+    )
+    .await?;
+    let sold = record_package_sale(
+        &mut tx,
+        actor,
+        &priced,
+        SaleAt {
+            business_date: today,
+            branch_id: tenant.branch.as_uuid(),
+            visit_id: None,
+        },
+        &order.payments,
+    )
+    .await?;
 
-    if !crm::service::exists_in(&mut tx, order.customer_id).await? {
+    let dto = load(&mut tx, sold.sale_id, today)
+        .await?
+        .ok_or_else(|| AppError::Internal("sale vanished".into()))?;
+    let body = serde_json::to_value(&dto).map_err(|e| AppError::Internal(e.to_string()))?;
+    idempotency::complete(&mut tx, actor, key, 201, &body).await?;
+    tx.commit().await?;
+    Ok((201, body))
+}
+
+/// A package sale priced from the catalog inside the caller's transaction: every rule checked,
+/// nothing written yet (so a visit can price all its sales before splitting the payments).
+#[derive(Debug, Clone)]
+pub struct PricedPackageSale {
+    order: PackageOrder,
+    beneficiary: Uuid,
+    closer: Option<Uuid>,
+    plans: Vec<catalog::service::PlanSnapshot>,
+    line_totals: Vec<Money>,
+    subtotal: Money,
+    total: Money,
+}
+
+impl PricedPackageSale {
+    /// What the customer pays for this sale (after discount).
+    pub const fn total(&self) -> Money {
+        self.total
+    }
+
+    /// Who the packages belong to.
+    pub const fn beneficiary(&self) -> Uuid {
+        self.beneficiary
+    }
+
+    /// Whether one of the packages sold covers `service_id` (a plan item).
+    pub fn covers(&self, service_id: Uuid) -> bool {
+        self.plans
+            .iter()
+            .any(|p| p.items.iter().any(|i| i.service_id == service_id))
+    }
+
+    /// Names of the plans sold, for audit and reasons ("Chuyển sang gói …").
+    pub fn plan_names(&self) -> Vec<&str> {
+        self.plans.iter().map(|p| p.name.as_str()).collect()
+    }
+}
+
+fn discount_error(e: DiscountError) -> AppError {
+    match e {
+        DiscountError::NotAllowed => AppError::forbidden(),
+        DiscountError::LimitExceeded => AppError::Forbidden {
+            code: "discount.limit_exceeded",
+        },
+    }
+}
+
+/// Prices a package sale (the caller holds `package.sell`): payer and beneficiary exist here
+/// (`404`), the closer is an active staff member (`422 staff.inactive`) or nobody, every plan is
+/// active (`422 inactive`), the discount follows D10 for this sale alone (Q-U9: the manager cap
+/// applies per sale, separately from a visit's one-off discount).
+pub async fn price_package_sale(
+    tx: &mut TenantTx,
+    actor: &Actor,
+    order: &PackageOrder,
+    manager_discount_max_pct: u32,
+) -> Result<PricedPackageSale, AppError> {
+    if !crm::service::exists_in(tx, order.customer_id).await? {
         return Err(AppError::NotFound);
     }
-    let closer = org::service::require_active(&mut tx, order.closer_staff_id).await?;
+    let beneficiary = order.beneficiary_customer_id.unwrap_or(order.customer_id);
+    if beneficiary != order.customer_id && !crm::service::exists_in(tx, beneficiary).await? {
+        return Err(AppError::NotFound);
+    }
+    let closer = match order.closer_staff_id {
+        Some(id) => Some(org::service::require_active(tx, id).await?.id),
+        None => None,
+    };
 
     // Every amount comes from the catalog, read and locked inside this transaction.
     let mut plans = Vec::with_capacity(order.lines.len());
     for (i, line) in order.lines.iter().enumerate() {
-        let plan = catalog::service::plan_snapshot(&mut tx, line.plan_id)
+        let plan = catalog::service::plan_snapshot(tx, line.plan_id)
             .await?
             .ok_or(AppError::NotFound)?;
         if !plan.active || plan.items.is_empty() {
@@ -273,45 +400,90 @@ pub async fn create_sale_as_of(
     domain::check_discount(
         subtotal,
         order.discount,
-        authority(actor, tenant.manager_discount_max_pct),
+        authority(actor, manager_discount_max_pct),
     )
-    .map_err(|e| match e {
-        DiscountError::NotAllowed => AppError::forbidden(),
-        DiscountError::LimitExceeded => AppError::Forbidden {
-            code: "discount.limit_exceeded",
-        },
-    })?;
+    .map_err(discount_error)?;
     let total = subtotal.checked_sub(order.discount).map_err(money_err)?;
-    let paid = Money::sum(order.payments.iter().map(|p| p.amount)).map_err(money_err)?;
-    if paid != total {
+    Ok(PricedPackageSale {
+        order: order.clone(),
+        beneficiary,
+        closer,
+        plans,
+        line_totals,
+        subtotal,
+        total,
+    })
+}
+
+/// Where and when a sale is booked.
+#[derive(Debug, Clone, Copy)]
+pub struct SaleAt {
+    pub business_date: NaiveDate,
+    pub branch_id: Uuid,
+    /// The visit it was made in, if any (`sale.visit_id`).
+    pub visit_id: Option<Uuid>,
+}
+
+/// A package created by a sale: its id and, per item, `(item id, service id)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SoldPackage {
+    pub customer_package_id: Uuid,
+    pub items: Vec<(Uuid, Uuid)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordedPackageSale {
+    pub sale_id: Uuid,
+    pub total: Money,
+    pub packages: Vec<SoldPackage>,
+}
+
+/// Writes a priced package sale inside the caller's transaction: the sale (payer, closer,
+/// `visit_id`), its package lines, the beneficiary's packages with their items, the payments
+/// (exactly the total, `422 payment.amount_mismatch`; taking money needs `payment.collect`) and
+/// the audit entry `sale.create`.
+pub async fn record_package_sale(
+    tx: &mut TenantTx,
+    actor: &Actor,
+    priced: &PricedPackageSale,
+    at: SaleAt,
+    payments: &[Payment],
+) -> Result<RecordedPackageSale, AppError> {
+    let paid = Money::sum(payments.iter().map(|p| p.amount)).map_err(money_err)?;
+    if paid != priced.total {
         return Err(AppError::Unprocessable {
             code: "payment.amount_mismatch",
         });
     }
-
+    if !payments.is_empty() {
+        actor.require(Permission::PaymentCollect)?;
+    }
+    let order = &priced.order;
+    let today = at.business_date;
     let sale_id = Uuid::now_v7();
-    let branch = tenant.branch.as_uuid();
     repo::insert_sale(
-        &mut tx,
+        tx,
         &SaleInsert {
             id: sale_id,
-            branch_id: branch,
+            branch_id: at.branch_id,
             customer_id: order.customer_id,
             business_date: today,
-            subtotal: subtotal.as_i64(),
+            subtotal: priced.subtotal.as_i64(),
             discount_amount: order.discount.as_i64(),
             discount_reason: order.discount_reason.as_deref(),
-            total: total.as_i64(),
+            total: priced.total.as_i64(),
             amount_paid: paid.as_i64(),
-            closer_staff_id: Some(closer.id),
+            closer_staff_id: priced.closer,
+            visit_id: at.visit_id,
             created_by: actor.user_id.as_uuid(),
         },
     )
     .await?;
 
-    let shares = domain::allocate_discount(&line_totals, order.discount);
+    let shares = domain::allocate_discount(&priced.line_totals, order.discount);
+    let mut packages = Vec::with_capacity(priced.plans.len());
     for (position, ((plan, line), share)) in
-        (0_i32..).zip(plans.iter().zip(&order.lines).zip(shares))
+        (0_i32..).zip(priced.plans.iter().zip(&order.lines).zip(shares))
     {
         let items = plan
             .items
@@ -329,22 +501,22 @@ pub async fn create_sale_as_of(
             })
             .collect::<Result<Vec<_>, AppError>>()?;
         // Collected in full (R1), so what was paid is also the refund cap.
-        let paid = plan.price.checked_sub(share).map_err(money_err)?;
+        let price_paid = plan.price.checked_sub(share).map_err(money_err)?;
         let package = packages::service::create(
-            &mut tx,
+            tx,
             actor,
             &NewPackage {
-                customer_id: order.customer_id,
+                customer_id: priced.beneficiary,
                 plan_id: Some(plan.id),
                 name: plan.name.clone(),
                 gift_note: line
                     .gift_note
                     .clone()
                     .unwrap_or_else(|| plan.gift_note.clone()),
-                sold_price: paid,
+                sold_price: price_paid,
                 origin: Origin::Sale {
                     sale_id,
-                    closer_staff_id: closer.id,
+                    closer_staff_id: priced.closer,
                 },
                 starts_on: today,
                 expires_on: expiry(today, plan.validity_months)?,
@@ -353,7 +525,7 @@ pub async fn create_sale_as_of(
         )
         .await?;
         repo::insert_package_line(
-            &mut tx,
+            tx,
             &PackageLineInsert {
                 sale_id,
                 position,
@@ -364,14 +536,53 @@ pub async fn create_sale_as_of(
             },
         )
         .await?;
+        packages.push(SoldPackage {
+            customer_package_id: package.id,
+            items: package.items.iter().map(|i| (i.id, i.service_id)).collect(),
+        });
     }
-    for p in &order.payments {
+    insert_payments(tx, actor, sale_id, at, payments).await?;
+    audit::record(
+        tx,
+        actor,
+        AuditEntry {
+            action: "sale.create",
+            entity_type: "sale",
+            entity_id: sale_id,
+            before: None,
+            after: Some(json!({
+                "customer_id": order.customer_id, "closer_staff_id": priced.closer,
+                "beneficiary_customer_id": priced.beneficiary, "visit_id": at.visit_id,
+                "plans": priced.plans.iter().map(|p| json!({"plan_id": p.id, "price": p.price.as_i64()})).collect::<Vec<_>>(),
+                "subtotal": priced.subtotal.as_i64(), "discount_amount": order.discount.as_i64(),
+                "total": priced.total.as_i64(),
+                "payments": payments.iter().map(|p| json!({"method": p.method.as_str(), "amount": p.amount.as_i64()})).collect::<Vec<_>>(),
+            })),
+            reason: order.discount_reason.as_deref(),
+        },
+    )
+    .await?;
+    Ok(RecordedPackageSale {
+        sale_id,
+        total: priced.total,
+        packages,
+    })
+}
+
+async fn insert_payments(
+    tx: &mut TenantTx,
+    actor: &Actor,
+    sale_id: Uuid,
+    at: SaleAt,
+    payments: &[Payment],
+) -> Result<(), AppError> {
+    for p in payments {
         repo::insert_payment(
-            &mut tx,
+            tx,
             &PaymentInsert {
-                branch_id: branch,
+                branch_id: at.branch_id,
                 sale_id,
-                business_date: today,
+                business_date: at.business_date,
                 method: p.method.as_str(),
                 amount: p.amount.as_i64(),
                 reference: p.reference.as_deref(),
@@ -380,32 +591,7 @@ pub async fn create_sale_as_of(
         )
         .await?;
     }
-    audit::record(
-        &mut tx,
-        actor,
-        AuditEntry {
-            action: "sale.create",
-            entity_type: "sale",
-            entity_id: sale_id,
-            before: None,
-            after: Some(json!({
-                "customer_id": order.customer_id, "closer_staff_id": closer.id,
-                "plans": plans.iter().map(|p| json!({"plan_id": p.id, "price": p.price.as_i64()})).collect::<Vec<_>>(),
-                "subtotal": subtotal.as_i64(), "discount_amount": order.discount.as_i64(), "total": total.as_i64(),
-                "payments": order.payments.iter().map(|p| json!({"method": p.method.as_str(), "amount": p.amount.as_i64()})).collect::<Vec<_>>(),
-            })),
-            reason: order.discount_reason.as_deref(),
-        },
-    )
-    .await?;
-
-    let dto = load(&mut tx, sale_id, today)
-        .await?
-        .ok_or_else(|| AppError::Internal("sale vanished".into()))?;
-    let body = serde_json::to_value(&dto).map_err(|e| AppError::Internal(e.to_string()))?;
-    idempotency::complete(&mut tx, actor, key, 201, &body).await?;
-    tx.commit().await?;
-    Ok((201, body))
+    Ok(())
 }
 
 pub(crate) async fn load(
@@ -473,6 +659,7 @@ pub(crate) async fn load(
         voided_at: s.voided_at,
         closer_staff_id: s.closer_staff_id,
         closer_name: s.closer_name,
+        visit_id: s.visit_id,
         created_at: s.created_at,
         lines,
         payments,
@@ -617,6 +804,8 @@ pub struct ServiceSale<'a> {
     pub customer_id: Uuid,
     pub business_date: NaiveDate,
     pub branch_id: Uuid,
+    /// The visit whose lines this sale charges (`sale.visit_id`).
+    pub visit_id: Option<Uuid>,
     pub lines: &'a [ServiceLine],
     pub payments: &'a [Payment],
     pub discount: Option<&'a ServiceDiscount>,
@@ -634,26 +823,31 @@ pub struct ServiceSaleRecorded {
     pub line_discounts: Vec<Money>,
 }
 
-/// Records the sale of one-off services inside the caller's transaction: sale, `service` lines,
-/// append-only payments and an audit entry. An optional discount follows D10 like a package sale
-/// (`sale.discount` up to the spa's cap, `sale.discount_unlimited` beyond, reason required).
-/// Payments must add up exactly to the server-computed total after discount
-/// (`422 payment.amount_mismatch`); taking money needs `payment.collect`.
-/// No lines → no sale (`Ok(None)`), and then any payment or discount is rejected.
-pub async fn record_service_sale(
-    tx: &mut TenantTx,
+/// One-off lines priced with their discount (D10), before anything is written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServicePricing {
+    pub line_totals: Vec<Money>,
+    pub subtotal: Money,
+    pub discount: Money,
+    pub total: Money,
+}
+
+/// Prices one-off lines and checks their discount against the caller's authority (D10:
+/// `sale.discount` up to the spa's cap, `sale.discount_unlimited` beyond). Pure apart from the
+/// actor's permissions, so a visit can know every sale's total before splitting its payments.
+pub fn price_services(
     actor: &Actor,
-    sale: ServiceSale<'_>,
-) -> Result<Option<ServiceSaleRecorded>, AppError> {
-    let paid = Money::sum(sale.payments.iter().map(|p| p.amount)).map_err(money_err)?;
-    let line_totals = sale
-        .lines
+    lines: &[ServiceLine],
+    discount: Option<&ServiceDiscount>,
+    manager_discount_max_pct: u32,
+) -> Result<ServicePricing, AppError> {
+    let line_totals = lines
         .iter()
         .map(|l| l.unit_price.checked_mul(l.qty))
         .collect::<Result<Vec<_>, _>>()
         .map_err(money_err)?;
     let subtotal = Money::sum(line_totals.iter().copied()).map_err(money_err)?;
-    let discount = match sale.discount {
+    let discount = match discount {
         None => Money::ZERO,
         Some(d) => {
             let amount = discount_amount(subtotal, d.ask)?;
@@ -663,21 +857,42 @@ pub async fn record_service_sale(
                     "exceeds_subtotal",
                 )]));
             }
-            domain::check_discount(
-                subtotal,
-                amount,
-                authority(actor, sale.manager_discount_max_pct),
-            )
-            .map_err(|e| match e {
-                DiscountError::NotAllowed => AppError::forbidden(),
-                DiscountError::LimitExceeded => AppError::Forbidden {
-                    code: "discount.limit_exceeded",
-                },
-            })?;
+            domain::check_discount(subtotal, amount, authority(actor, manager_discount_max_pct))
+                .map_err(discount_error)?;
             amount
         }
     };
     let total = subtotal.checked_sub(discount).map_err(money_err)?;
+    Ok(ServicePricing {
+        line_totals,
+        subtotal,
+        discount,
+        total,
+    })
+}
+
+/// Records the sale of one-off services inside the caller's transaction: sale, `service` lines,
+/// append-only payments and an audit entry. An optional discount follows D10 like a package sale
+/// (see [`price_services`]). Payments must add up exactly to the server-computed total after
+/// discount (`422 payment.amount_mismatch`); taking money needs `payment.collect`.
+/// No lines → no sale (`Ok(None)`), and then any payment or discount is rejected.
+pub async fn record_service_sale(
+    tx: &mut TenantTx,
+    actor: &Actor,
+    sale: ServiceSale<'_>,
+) -> Result<Option<ServiceSaleRecorded>, AppError> {
+    let paid = Money::sum(sale.payments.iter().map(|p| p.amount)).map_err(money_err)?;
+    let ServicePricing {
+        line_totals,
+        subtotal,
+        discount,
+        total,
+    } = price_services(
+        actor,
+        sale.lines,
+        sale.discount,
+        sale.manager_discount_max_pct,
+    )?;
     if paid != total {
         return Err(AppError::Unprocessable {
             code: "payment.amount_mismatch",
@@ -704,6 +919,7 @@ pub async fn record_service_sale(
             total: total.as_i64(),
             amount_paid: paid.as_i64(),
             closer_staff_id: None,
+            visit_id: sale.visit_id,
             created_by: actor.user_id.as_uuid(),
         },
     )
@@ -724,21 +940,18 @@ pub async fn record_service_sale(
         )
         .await?;
     }
-    for p in sale.payments {
-        repo::insert_payment(
-            tx,
-            &PaymentInsert {
-                branch_id: sale.branch_id,
-                sale_id,
-                business_date: sale.business_date,
-                method: p.method.as_str(),
-                amount: p.amount.as_i64(),
-                reference: p.reference.as_deref(),
-                created_by: actor.user_id.as_uuid(),
-            },
-        )
-        .await?;
-    }
+    insert_payments(
+        tx,
+        actor,
+        sale_id,
+        SaleAt {
+            business_date: sale.business_date,
+            branch_id: sale.branch_id,
+            visit_id: sale.visit_id,
+        },
+        sale.payments,
+    )
+    .await?;
     audit::record(
         tx,
         actor,
@@ -748,7 +961,7 @@ pub async fn record_service_sale(
             entity_id: sale_id,
             before: None,
             after: Some(json!({
-                "customer_id": sale.customer_id, "kind": "services",
+                "customer_id": sale.customer_id, "kind": "services", "visit_id": sale.visit_id,
                 "lines": sale.lines.iter().map(|l| json!({
                     "service_id": l.service_id, "qty": l.qty, "unit_price": l.unit_price.as_i64(),
                 })).collect::<Vec<_>>(),
@@ -769,7 +982,7 @@ pub async fn record_service_sale(
     }))
 }
 
-/// Payments of several sales, read inside the caller's transaction (`sale_id → payments`, oldest
+// Payments of several sales, read inside the caller's transaction (`sale_id → payments`, oldest
 /// first). The caller authorizes.
 pub async fn payments_of(
     tx: &mut TenantTx,
@@ -791,4 +1004,128 @@ pub async fn payments_of(
         )?);
     }
     Ok(out)
+}
+
+/// Splits one checkout's payments over its sales (spec §10.4.2). `dues[k]` is what sale `k` costs,
+/// in checkout order: the visit's one-off sale first, then the package sales in request order.
+/// Cash pays the sales in that order first, the rest is bank transfer; a sale due 0 gets nothing.
+/// Each sale then has payments of its own, so voiding one sale reverses exactly its money.
+/// `None` when the payments do not add up to the dues (`422 payment.amount_mismatch`).
+pub fn allocate_payments(dues: &[Money], payments: &[Payment]) -> Option<Vec<Vec<Payment>>> {
+    let due: i128 = dues.iter().map(|d| i128::from(d.as_i64())).sum();
+    let paid: i128 = payments.iter().map(|p| i128::from(p.amount.as_i64())).sum();
+    if due != paid {
+        return None;
+    }
+    let mut ordered: Vec<(Payment, i64)> = payments
+        .iter()
+        .map(|p| (p.clone(), p.amount.as_i64()))
+        .collect();
+    ordered.sort_by_key(|(p, _)| p.method != PaymentMethod::Cash);
+    let mut source = ordered.into_iter().peekable();
+    let mut out = Vec::with_capacity(dues.len());
+    for d in dues {
+        let mut need = d.as_i64();
+        let mut parts: Vec<Payment> = Vec::new();
+        while need > 0 {
+            let (payment, left) = source.peek_mut()?;
+            let take = need.min(*left);
+            parts.push(Payment {
+                method: payment.method,
+                amount: Money::vnd(take).ok()?,
+                reference: payment.reference.clone(),
+            });
+            need -= take;
+            *left -= take;
+            if *left == 0 {
+                source.next();
+            }
+        }
+        out.push(parts);
+    }
+    Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn vnd(v: i64) -> Money {
+        Money::vnd(v).unwrap_or_default()
+    }
+
+    fn pay(method: PaymentMethod, amount: i64) -> Payment {
+        Payment {
+            method,
+            amount: vnd(amount),
+            reference: None,
+        }
+    }
+
+    #[test]
+    fn one_method_pays_every_sale_with_that_method() {
+        let split = allocate_payments(
+            &[Money::ZERO, vnd(3_500_000)],
+            &[pay(PaymentMethod::Cash, 3_500_000)],
+        );
+        assert_eq!(
+            split,
+            Some(vec![vec![], vec![pay(PaymentMethod::Cash, 3_500_000)]])
+        );
+    }
+
+    #[test]
+    fn cash_pays_the_one_off_sale_first_then_packages_in_order() {
+        // AC9.2: one-off 100.000đ + package 3.500.000đ, paid TM 600.000đ + CK 3.000.000đ.
+        let transfer = Payment {
+            reference: Some("VCB 123".into()),
+            ..pay(PaymentMethod::BankTransfer, 3_000_000)
+        };
+        let split = allocate_payments(
+            &[vnd(100_000), vnd(3_500_000)],
+            &[transfer.clone(), pay(PaymentMethod::Cash, 600_000)],
+        );
+        assert_eq!(
+            split,
+            Some(vec![
+                vec![pay(PaymentMethod::Cash, 100_000)],
+                vec![pay(PaymentMethod::Cash, 500_000), transfer],
+            ])
+        );
+    }
+
+    #[test]
+    fn transfer_carries_over_to_later_sales() {
+        let split = allocate_payments(
+            &[vnd(200_000), vnd(1_000_000), vnd(2_000_000)],
+            &[
+                pay(PaymentMethod::Cash, 100_000),
+                pay(PaymentMethod::BankTransfer, 3_100_000),
+            ],
+        );
+        assert_eq!(
+            split,
+            Some(vec![
+                vec![
+                    pay(PaymentMethod::Cash, 100_000),
+                    pay(PaymentMethod::BankTransfer, 100_000)
+                ],
+                vec![pay(PaymentMethod::BankTransfer, 1_000_000)],
+                vec![pay(PaymentMethod::BankTransfer, 2_000_000)],
+            ])
+        );
+    }
+
+    #[test]
+    fn payments_must_add_up_to_the_dues() {
+        assert_eq!(
+            allocate_payments(&[vnd(100_000)], &[pay(PaymentMethod::Cash, 99_999)]),
+            None
+        );
+        assert_eq!(
+            allocate_payments(&[vnd(100_000)], &[pay(PaymentMethod::Cash, 100_001)]),
+            None
+        );
+        assert_eq!(allocate_payments(&[Money::ZERO], &[]), Some(vec![vec![]]));
+    }
 }

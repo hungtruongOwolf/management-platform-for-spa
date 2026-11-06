@@ -453,6 +453,8 @@ export function mockLedger(from: string, to: string): LedgerPage {
         bank_transfer: inCash ? 0 : sign * amount,
         unpaid: 0,
         note: entry === "void" ? "Ghi nhầm khách" : null,
+        upsell_by: entry === "sale" && i === 0 ? "KTV Lan" : null,
+        visit_id: null,
         voided: false,
       });
       if (inCash) cash += sign * amount;

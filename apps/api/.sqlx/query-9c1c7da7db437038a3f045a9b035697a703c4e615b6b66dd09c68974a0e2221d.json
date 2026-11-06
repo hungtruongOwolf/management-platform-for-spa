@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT b.id AS \"id!\", b.seq AS \"seq!\", b.entry AS \"entry!\",\n                  b.business_date AS \"business_date!\", b.at AS \"at!\",\n                  b.customer_id AS \"customer_id!\", c.full_name, c.gender, b.sale_kind AS \"sale_kind!\",\n                  b.one_off, b.package, b.bank_transfer AS \"bank_transfer!\", b.cash AS \"cash!\",\n                  b.unpaid AS \"unpaid!\", b.note, b.voided AS \"voided!\"\n           FROM app.revenue_book b\n           JOIN app.customer c ON c.tenant_id = b.tenant_id AND c.id = b.customer_id\n           WHERE b.tenant_id = $1 AND b.business_date BETWEEN $2 AND $3\n             AND ($4::date IS NULL OR (b.business_date, b.seq) > ($4, $5))\n           ORDER BY b.business_date, b.seq\n           LIMIT $6",
+  "query": "SELECT b.id AS \"id!\", b.seq AS \"seq!\", b.entry AS \"entry!\",\n                  b.business_date AS \"business_date!\", b.at AS \"at!\",\n                  b.customer_id AS \"customer_id!\", c.full_name, c.gender, b.sale_kind AS \"sale_kind!\",\n                  b.one_off, b.package, b.bank_transfer AS \"bank_transfer!\", b.cash AS \"cash!\",\n                  b.unpaid AS \"unpaid!\", b.note, b.voided AS \"voided!\", b.visit_id, b.upsell_by\n           FROM app.revenue_book b\n           JOIN app.customer c ON c.tenant_id = b.tenant_id AND c.id = b.customer_id\n           WHERE b.tenant_id = $1 AND b.business_date BETWEEN $2 AND $3\n             AND ($4::date IS NULL OR (b.business_date, b.seq) > ($4, $5))\n           ORDER BY b.business_date, b.seq\n           LIMIT $6",
   "describe": {
     "columns": [
       {
@@ -178,6 +178,28 @@
             "name": "voided"
           }
         }
+      },
+      {
+        "ordinal": 16,
+        "name": "visit_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.revenue_book",
+            "name": "visit_id"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "upsell_by",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.revenue_book",
+            "name": "upsell_by"
+          }
+        }
       }
     ],
     "parameters": {
@@ -206,8 +228,10 @@
       true,
       true,
       true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "a09390c9b5d6662eca06a53746ee52930f471f35893b37d5a96f1531dac4456d"
+  "hash": "9c1c7da7db437038a3f045a9b035697a703c4e615b6b66dd09c68974a0e2221d"
 }

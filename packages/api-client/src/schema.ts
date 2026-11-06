@@ -985,6 +985,38 @@ export interface paths {
         patch: operations["update_visit"];
         trace?: never;
     };
+    "/api/v1/visits/{id}/additions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["add_to_visit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/visits/{id}/convert-to-package": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["convert_visit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/visits/{id}/correct": {
         parameters: {
             query?: never;
@@ -1094,9 +1126,13 @@ export interface components {
              *     past, else now. Same day rules as `POST /visits` (owner may back-date).
              */
             check_in_at?: string | null;
+            /** @description Companions; omitted or empty = the booking's. */
+            companions?: string[];
             discount?: components["schemas"]["ServiceDiscountCreate"] | null;
             lines: components["schemas"]["VisitLineCreate"][];
             note?: string | null;
+            /** @description Packages sold in this checkout, as in `POST /visits` (spec §10.4.1, AC9.9). */
+            package_sales?: components["schemas"]["VisitPackageSaleCreate"][];
             payments?: components["schemas"]["PaymentCreate"][];
         };
         /** @description `POST /appointments/{id}/complete`. */
@@ -1106,6 +1142,11 @@ export interface components {
         };
         /** @description Body of `POST /appointments`. Exactly one of `customer_id` / `guest`. */
         AppointmentCreate: {
+            /**
+             * @description 0–5 companions known only by a note ("chồng của chị Lan", 1–100 characters): shown on
+             *     the booking, never a customer, never served or charged.
+             */
+            companions?: string[];
             /** Format: uuid */
             customer_id?: string | null;
             /**
@@ -1136,6 +1177,8 @@ export interface components {
             business_date: string;
             /** Format: date-time */
             closed_at?: string | null;
+            /** @description Companions known only by a note (never customers, never served or charged). */
+            companions: string[];
             /** Format: date-time */
             created_at: string;
             customer_gender?: components["schemas"]["GenderDto"] | null;
@@ -1190,9 +1233,14 @@ export interface components {
          *     becomes an appointment of their own sharing one `group_id`.
          */
         AppointmentGroupCreate: {
+            /**
+             * @description 0–5 people who come along known only by a note ("chồng của chị Lan", "gia đình của …",
+             *     Q-U5): kept on the first person's booking, never served or charged.
+             */
+            companions?: string[];
             /** @description Booking note for everyone, ≤ 500 characters. Not for health data. */
             note?: string | null;
-            /** @description 2–6 people; an existing customer appears at most once. */
+            /** @description 1–6 people; an existing customer appears at most once. With no `companions`, at least 2. */
             people: components["schemas"]["GroupPersonCreate"][];
             /**
              * Format: date-time
@@ -1877,6 +1925,8 @@ export interface components {
             next_cursor?: string | null;
         };
         HistoryPurchase: {
+            /** @description Bought for someone else (US13): who the packages belong to. */
+            beneficiary_name?: string | null;
             closer_name?: string | null;
             /** Format: int64 */
             discount_amount: number;
@@ -1890,6 +1940,11 @@ export interface components {
             subtotal: number;
             /** Format: int64 */
             total: number;
+            /**
+             * Format: uuid
+             * @description The visit this package was sold in, if any.
+             */
+            visit_id?: string | null;
             void_reason?: string | null;
             voided: boolean;
             /** Format: date-time */
@@ -2110,6 +2165,16 @@ export interface components {
              * @description "Chưa thanh toán": total − received (always 0 in R1, which collects in full).
              */
             unpaid: number;
+            /**
+             * @description Upsell attribution ("người giới thiệu / chốt"): the closer of a package sale, the
+             *     referrers of the one-off lines of a service sale; null = "khách tự chọn".
+             */
+            upsell_by?: string | null;
+            /**
+             * Format: uuid
+             * @description The visit the sale was made in (one-off lines, a package sold in the cart, an addition).
+             */
+            visit_id?: string | null;
             /** @description The sale was voided later (its `void` row may be on another day). */
             voided: boolean;
         };
@@ -2582,7 +2647,10 @@ export interface components {
             bonuses: number;
             /** Format: int64 */
             closing_commission: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Upsell base ("hoa hồng giới thiệu / chốt", §3.2) = packages + recommended services.
+             */
             closing_commission_base: number;
             commission_lines: components["schemas"]["CommissionLine"][];
             /** Format: int32 */
@@ -2648,6 +2716,18 @@ export interface components {
              */
             tet_amount: number;
             tet_level?: components["schemas"]["Level"] | null;
+            /** @description What the upsell commission is computed from, item by item (older snapshots: empty). */
+            upsell_lines?: components["schemas"]["UpsellLine"][];
+            /**
+             * Format: int64
+             * @description Part of the upsell base from packages closed.
+             */
+            upsell_package_base?: number;
+            /**
+             * Format: int64
+             * @description Part of the upsell base from one-off services recommended (Q-U3).
+             */
+            upsell_service_base?: number;
         };
         PayslipDto: {
             closed: boolean;
@@ -2810,10 +2890,20 @@ export interface components {
         SaleCreate: {
             /**
              * Format: uuid
-             * @description The staff member who closed the sale (must be currently working here).
+             * @description Who the packages belong to (US13: "mua cho người khác"); omitted = the payer. Must be a
+             *     customer of this spa (`404` otherwise).
              */
-            closer_staff_id: string;
-            /** Format: uuid */
+            beneficiary_customer_id?: string | null;
+            /**
+             * Format: uuid
+             * @description "Người giới thiệu / chốt" (gets the upsell credit): any staff member currently working
+             *     here (owner, manager, technician); null or omitted = "khách tự chọn" (nobody is credited).
+             */
+            closer_staff_id?: string | null;
+            /**
+             * Format: uuid
+             * @description Who pays.
+             */
             customer_id: string;
             discount?: components["schemas"]["DiscountCreate"] | null;
             /** @description 1–10 packages. */
@@ -2847,6 +2937,12 @@ export interface components {
             subtotal: number;
             /** Format: int64 */
             total: number;
+            /**
+             * Format: uuid
+             * @description The visit this sale was made in (its one-off lines, a package sold in the cart, an
+             *     addition); null = a sale at the desk without a visit.
+             */
+            visit_id?: string | null;
             /** @description Set when the sale was voided (US6); its payments then each have a `reversal`. */
             void_reason?: string | null;
             /** Format: date-time */
@@ -3203,11 +3299,61 @@ export interface components {
         };
         /** @enum {string} */
         UpcomingStatus: "booked" | "arrived";
+        /**
+         * @description Upsell credit of one item sold in the month ("người giới thiệu / chốt", compensation-rules
+         *     §3.2, EM 2026-11-06 Q-U3): a package closed by this person or a one-off service they
+         *     recommended. Performing the service is a separate credit ([`CommissionLine`]).
+         */
+        UpsellLine: {
+            description: string;
+            /** @description `package` or `service`. */
+            kind: string;
+            /**
+             * Format: int64
+             * @description Packages sold / services recommended.
+             */
+            qty: number;
+            /**
+             * Format: int64
+             * @description Price paid (packages, after discount) or `line_value` (services).
+             */
+            value: number;
+        };
         UserSummary: {
             full_name: string;
             /** Format: uuid */
             id: string;
             phone: string;
+        };
+        /**
+         * @description Body of `POST /visits/{id}/additions` (Idempotency-Key): services or packages sold after the
+         *     visit was saved ("Thêm dịch vụ vào lượt", US12). Adds lines and sales, never changes the
+         *     existing ones, needs no reason. Same rules as `POST /visits`.
+         */
+        VisitAdditions: {
+            discount?: components["schemas"]["ServiceDiscountCreate"] | null;
+            /** @description 0–20 new lines (one-off or package); at least one line or one package sale. */
+            lines?: components["schemas"]["VisitLineCreate"][];
+            /** @description 0–3 packages sold now, linked to the visit. */
+            package_sales?: components["schemas"]["VisitPackageSaleCreate"][];
+            /** @description Summing exactly to the new one-off lines plus the new packages. */
+            payments?: components["schemas"]["PaymentCreate"][];
+        };
+        /**
+         * @description Body of `POST /visits/{id}/convert-to-package` (If-Match + Idempotency-Key): "Tính buổi hôm
+         *     nay vào gói" (US11, Q-U1 case by case). The one-off lines of the visit whose service the new
+         *     package covers become today's session of that package and their charge is reversed; every
+         *     other line is recorded again unchanged. Without this choice the desk simply sells the package
+         *     with `POST /visits/{id}/additions` and today's one-off stays.
+         */
+        VisitConversion: {
+            /** @description The package (its `ref` is ignored); it must belong to the visit's customer. */
+            package_sale: components["schemas"]["VisitPackageSaleCreate"];
+            /**
+             * @description Summing exactly to the package plus the one-off lines kept (the old one-off payments are
+             *     reversed). The desk shows "Khách đưa thêm" = this − what was paid for the visit.
+             */
+            payments?: components["schemas"]["PaymentCreate"][];
         };
         /** @description Response of `POST /visits/{id}/correct`. */
         VisitCorrected: {
@@ -3233,6 +3379,8 @@ export interface components {
              * @description Service time; absent = the old visit's. Must stay on the old visit's business day.
              */
             check_in_at?: string | null;
+            /** @description Companions (notes only), as in `POST /visits`. */
+            companions?: string[];
             /**
              * Format: uuid
              * @description May differ from the old visit's customer (recorded for the wrong person).
@@ -3262,6 +3410,11 @@ export interface components {
              *     up to 366 days back, and the visit, its sale and payments then belong to that day.
              */
             check_in_at?: string | null;
+            /**
+             * @description 0–5 companions known only by a note ("chồng của chị Lan"), 1–100 characters each: shown
+             *     on the visit, never served or charged.
+             */
+            companions?: string[];
             /** Format: uuid */
             customer_id: string;
             discount?: components["schemas"]["ServiceDiscountCreate"] | null;
@@ -3269,7 +3422,17 @@ export interface components {
             lines: components["schemas"]["VisitLineCreate"][];
             /** @description Session note incl. reactions (health data): needs `customer.health_notes.write`. */
             note?: string | null;
-            /** @description For the one-off lines: 0–2 payments, one per method, summing exactly to their total. */
+            /**
+             * @description 0–3 packages sold in this checkout (spec §10.4.1, needs `package.sell`). Each becomes a
+             *     sale of its own linked to the visit (`sale.visit_id`); a line with `package_ref` uses
+             *     today's session from it ("Dùng gói này cho buổi hôm nay").
+             */
+            package_sales?: components["schemas"]["VisitPackageSaleCreate"][];
+            /**
+             * @description 0–2 payments, one per method, summing exactly to everything due: the one-off lines after
+             *     discount plus every package sold in `package_sales`. The server splits them over the
+             *     sales: cash pays the one-off sale first, then the packages in order; the rest is transfer.
+             */
             payments?: components["schemas"]["PaymentCreate"][];
         };
         VisitDto: {
@@ -3284,6 +3447,8 @@ export interface components {
              * @description When the service happened (giờ làm).
              */
             check_in_at: string;
+            /** @description Companions known only by a note (never served or charged). */
+            companions: string[];
             /**
              * Format: uuid
              * @description Set on a voided visit that was corrected: the visit that replaced it. The newest version
@@ -3309,10 +3474,14 @@ export interface components {
             lines: components["schemas"]["VisitLineDto"][];
             /** @description Present only on a single visit and only for `customer.health_notes.read`; null = no note. */
             note?: string | null;
+            /** @description Packages sold in this visit, each a sale of its own. */
+            package_sales: components["schemas"]["VisitPackageSaleDto"][];
+            /** @description Payments of the one-off sales (the first one and every addition). */
             payments: components["schemas"]["PaymentDto"][];
             /**
              * Format: uuid
-             * @description Sale of the one-off lines (none when the visit only used package sessions).
+             * @description First sale of the one-off lines (none when the visit only used package sessions); later
+             *     additions have sales of their own (`lines[].sale_id`).
              */
             sale_id?: string | null;
             status: components["schemas"]["VisitStatusDto"];
@@ -3323,7 +3492,8 @@ export interface components {
             subtotal: number;
             /**
              * Format: int64
-             * @description Amount collected in this visit (one-off lines after discount).
+             * @description Amount collected for the one-off lines (after discount), additions included. Packages sold
+             *     in the visit are in `package_sales`.
              */
             total: number;
             /**
@@ -3345,12 +3515,23 @@ export interface components {
             customer_package_item_id?: string | null;
             /** @description `package` lines: use an expired package anyway (needs `package.use_expired_override`, audited). */
             expiry_override_reason?: string | null;
+            /**
+             * @description `package` lines: take today's session from the package sold in this request under that
+             *     `ref` (instead of `customer_package_item_id`).
+             */
+            package_ref?: string | null;
             price_variant?: components["schemas"]["PriceVariant"] | null;
             /**
              * Format: int32
              * @description Sessions / times, 1–10 (default 1).
              */
             qty?: number | null;
+            /**
+             * Format: uuid
+             * @description `one_off` lines: who recommended this service ("người giới thiệu", upsell credit); null =
+             *     "khách tự chọn". The technician (`staff_id`) keeps the credit for performing it.
+             */
+            referrer_staff_id?: string | null;
             /** Format: uuid */
             service_id: string;
             source: components["schemas"]["VisitLineSourceDto"];
@@ -3385,6 +3566,17 @@ export interface components {
             price_variant?: components["schemas"]["PriceVariant"] | null;
             /** Format: int32 */
             qty: number;
+            referrer_name?: string | null;
+            /**
+             * Format: uuid
+             * @description `one_off` lines: who recommended it (upsell credit); null = "khách tự chọn".
+             */
+            referrer_staff_id?: string | null;
+            /**
+             * Format: uuid
+             * @description `one_off` lines: the sale that charged it (the visit's first sale or an addition).
+             */
+            sale_id?: string | null;
             /** Format: uuid */
             service_id: string;
             /** @description Service name at the visit (snapshot). */
@@ -3414,6 +3606,61 @@ export interface components {
             /** Format: uuid */
             staff_id: string;
         };
+        /**
+         * @description A package sold inside a checkout (`POST /visits`, `POST /appointments/{id}/complete`,
+         *     `POST /visits/{id}/additions`, `POST /visits/{id}/convert-to-package`). Same rules as
+         *     `POST /sales` for one package; the price comes from the catalog.
+         */
+        VisitPackageSaleCreate: {
+            /**
+             * Format: uuid
+             * @description Who the package belongs to (US13); omitted = the visit's customer (the payer). A package
+             *     for someone else cannot be used in this visit.
+             */
+            beneficiary_customer_id?: string | null;
+            /**
+             * Format: uuid
+             * @description "Người giới thiệu / chốt" (upsell credit): any staff member working here; null = "khách tự
+             *     chọn". The desk defaults to the technician serving the customer.
+             */
+            closer_staff_id?: string | null;
+            discount?: components["schemas"]["DiscountCreate"] | null;
+            /** @description Omitted = the plan's gift; empty = none. */
+            gift_note?: string | null;
+            /** Format: uuid */
+            package_plan_id: string;
+            /**
+             * @description Client-chosen name (1–20 characters, unique in the request) that lines point at with
+             *     `package_ref`; omitted when no line uses this package today.
+             */
+            ref?: string | null;
+        };
+        /** @description A package sold in a visit (`sale.visit_id`), as the visit shows it. */
+        VisitPackageSaleDto: {
+            /**
+             * Format: uuid
+             * @description Who the package belongs to when not the visit's customer (US13).
+             */
+            beneficiary_customer_id?: string | null;
+            beneficiary_name?: string | null;
+            /** Format: date */
+            business_date: string;
+            closer_name?: string | null;
+            /**
+             * Format: uuid
+             * @description "Người giới thiệu / chốt"; null = "khách tự chọn".
+             */
+            closer_staff_id?: string | null;
+            customer_package_ids: string[];
+            /** @description Package names, in sale order. */
+            description: string;
+            payments: components["schemas"]["PaymentDto"][];
+            /** Format: uuid */
+            sale_id: string;
+            /** Format: int64 */
+            total: number;
+            voided: boolean;
+        };
         /** @enum {string} */
         VisitStatusDto: "completed" | "voided";
         /**
@@ -3426,6 +3673,8 @@ export interface components {
              * @description New service time (giờ làm): on the visit's own business day, not in the future.
              */
             check_in_at?: string | null;
+            /** @description Absent = unchanged; otherwise the full list of companion notes (0–5). */
+            companions?: string[] | null;
             /** @description Technician corrections, by line id. */
             lines?: components["schemas"]["VisitLineUpdate"][];
             /** @description Absent = unchanged, null or empty = cleared. Needs `customer.health_notes.write`. */
@@ -7034,6 +7283,143 @@ export interface operations {
                 content?: never;
             };
             /** @description validation_failed (check_in_at not_visit_day), visit.check_in_in_future, staff.inactive */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    add_to_visit: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description One key per addition; a retry replays the first response */
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisitAdditions"];
+            };
+        };
+        responses: {
+            /** @description Lines and sales added (US12): each new sale is linked to the visit, nothing existing changes */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitDto"];
+                };
+            };
+            /** @description idempotency.key_required */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked (manager, a day before today) / discount.limit_exceeded */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description visit, service, plan or beneficiary not in this spa */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description visit.voided / visit.corrected, payroll.period_closed, package.* */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed, payment.amount_mismatch and every rule of POST /visits */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    convert_visit: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Version of the visit being converted */
+                "If-Match": string;
+                /** @description One key per conversion; a retry replays the first response */
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisitConversion"];
+            };
+        };
+        responses: {
+            /** @description Old visit voided (one-off payments reversed), package sold, visit recorded again with today's session from the package (US11); `difference` = what the customer hands over now */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitCorrected"];
+                };
+            };
+            /** @description idempotency.key_required / precondition.if_match_required */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked (manager, a day before today) / discount.limit_exceeded */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description visit or plan not in this spa */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description visit.voided / visit.corrected, payroll.period_closed, package.* */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description conflict.stale_version */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description visit.nothing_to_convert (no one-off line the package covers), validation_failed, payment.amount_mismatch */
             422: {
                 headers: {
                     [name: string]: unknown;

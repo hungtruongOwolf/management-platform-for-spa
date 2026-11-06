@@ -19,10 +19,11 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Origin {
-    /// Sold in `sale_id`, closed by an active staff member (validated by the caller).
+    /// Sold in `sale_id`, closed by an active staff member (validated by the caller), or by
+    /// nobody (`None`: "khách tự chọn", the customer chose it themselves).
     Sale {
         sale_id: Uuid,
-        closer_staff_id: Uuid,
+        closer_staff_id: Option<Uuid>,
     },
     /// Carried over from the paper books: no sale, no payment, no revenue (US8).
     OpeningBalance,
@@ -135,7 +136,7 @@ pub async fn create(
         Origin::Sale {
             sale_id,
             closer_staff_id,
-        } => (Some(sale_id), Some(closer_staff_id)),
+        } => (Some(sale_id), closer_staff_id),
         Origin::OpeningBalance => (None, None),
     };
     repo::insert_package(

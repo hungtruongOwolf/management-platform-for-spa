@@ -24,9 +24,42 @@ pub struct VisitCreate {
     pub note: Option<String>,
     /// 1–20 service lines.
     pub lines: Vec<VisitLineCreate>,
-    /// For the one-off lines: 0–2 payments, one per method, summing exactly to their total.
+    /// 0–2 payments, one per method, summing exactly to everything due: the one-off lines after
+    /// discount plus every package sold in `package_sales`. The server splits them over the
+    /// sales: cash pays the one-off sale first, then the packages in order; the rest is transfer.
     #[serde(default)]
     pub payments: Vec<PaymentCreate>,
+    /// 0–3 packages sold in this checkout (spec §10.4.1, needs `package.sell`). Each becomes a
+    /// sale of its own linked to the visit (`sale.visit_id`); a line with `package_ref` uses
+    /// today's session from it ("Dùng gói này cho buổi hôm nay").
+    #[serde(default)]
+    pub package_sales: Vec<VisitPackageSaleCreate>,
+    /// 0–5 companions known only by a note ("chồng của chị Lan"), 1–100 characters each: shown
+    /// on the visit, never served or charged.
+    #[serde(default)]
+    pub companions: Vec<String>,
+}
+
+/// A package sold inside a checkout (`POST /visits`, `POST /appointments/{id}/complete`,
+/// `POST /visits/{id}/additions`, `POST /visits/{id}/convert-to-package`). Same rules as
+/// `POST /sales` for one package; the price comes from the catalog.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct VisitPackageSaleCreate {
+    /// Client-chosen name (1–20 characters, unique in the request) that lines point at with
+    /// `package_ref`; omitted when no line uses this package today.
+    #[serde(rename = "ref")]
+    pub package_ref: Option<String>,
+    pub package_plan_id: Uuid,
+    /// "Người giới thiệu / chốt" (upsell credit): any staff member working here; null = "khách tự
+    /// chọn". The desk defaults to the technician serving the customer.
+    pub closer_staff_id: Option<Uuid>,
+    /// Omitted = the plan's gift; empty = none.
+    pub gift_note: Option<String>,
+    /// Discount on this package alone (D10; Q-U9: the manager cap applies per sale).
+    pub discount: Option<sales::dto::DiscountCreate>,
+    /// Who the package belongs to (US13); omitted = the visit's customer (the payer). A package
+    /// for someone else cannot be used in this visit.
+    pub beneficiary_customer_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
@@ -53,6 +86,12 @@ pub struct VisitLineCreate {
     pub price_variant: Option<PriceVariant>,
     /// `package` lines: use an expired package anyway (needs `package.use_expired_override`, audited).
     pub expiry_override_reason: Option<String>,
+    /// `package` lines: take today's session from the package sold in this request under that
+    /// `ref` (instead of `customer_package_item_id`).
+    pub package_ref: Option<String>,
+    /// `one_off` lines: who recommended this service ("người giới thiệu", upsell credit); null =
+    /// "khách tự chọn". The technician (`staff_id`) keeps the credit for performing it.
+    pub referrer_staff_id: Option<Uuid>,
 }
 
 /// Absent = unchanged, `null` = cleared.
@@ -78,6 +117,8 @@ pub struct VisitUpdate {
     /// Technician corrections, by line id.
     #[serde(default)]
     pub lines: Vec<VisitLineUpdate>,
+    /// Absent = unchanged; otherwise the full list of companion notes (0–5).
+    pub companions: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -109,6 +150,9 @@ pub struct VisitCorrection {
     pub lines: Vec<VisitLineCreate>,
     #[serde(default)]
     pub payments: Vec<PaymentCreate>,
+    /// Companions (notes only), as in `POST /visits`.
+    #[serde(default)]
+    pub companions: Vec<String>,
 }
 
 impl VisitCorrection {
@@ -124,9 +168,60 @@ impl VisitCorrection {
                 note: None,
                 lines: self.lines,
                 payments: self.payments,
+                package_sales: Vec::new(),
+                companions: self.companions,
             },
         )
     }
+}
+
+/// Body of `POST /visits/{id}/additions` (Idempotency-Key): services or packages sold after the
+/// visit was saved ("Thêm dịch vụ vào lượt", US12). Adds lines and sales, never changes the
+/// existing ones, needs no reason. Same rules as `POST /visits`.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct VisitAdditions {
+    /// 0–20 new lines (one-off or package); at least one line or one package sale.
+    #[serde(default)]
+    pub lines: Vec<VisitLineCreate>,
+    /// 0–3 packages sold now, linked to the visit.
+    #[serde(default)]
+    pub package_sales: Vec<VisitPackageSaleCreate>,
+    /// Discount on the new one-off lines.
+    pub discount: Option<sales::dto::ServiceDiscountCreate>,
+    /// Summing exactly to the new one-off lines plus the new packages.
+    #[serde(default)]
+    pub payments: Vec<PaymentCreate>,
+}
+
+impl VisitAdditions {
+    /// The addition as `POST /visits` reads a checkout (the customer is the visit's).
+    pub fn into_visit(self) -> VisitCreate {
+        VisitCreate {
+            customer_id: Uuid::nil(),
+            check_in_at: None,
+            discount: self.discount,
+            note: None,
+            lines: self.lines,
+            payments: self.payments,
+            package_sales: self.package_sales,
+            companions: Vec::new(),
+        }
+    }
+}
+
+/// Body of `POST /visits/{id}/convert-to-package` (If-Match + Idempotency-Key): "Tính buổi hôm
+/// nay vào gói" (US11, Q-U1 case by case). The one-off lines of the visit whose service the new
+/// package covers become today's session of that package and their charge is reversed; every
+/// other line is recorded again unchanged. Without this choice the desk simply sells the package
+/// with `POST /visits/{id}/additions` and today's one-off stays.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct VisitConversion {
+    /// The package (its `ref` is ignored); it must belong to the visit's customer.
+    pub package_sale: VisitPackageSaleCreate,
+    /// Summing exactly to the package plus the one-off lines kept (the old one-off payments are
+    /// reversed). The desk shows "Khách đưa thêm" = this − what was paid for the visit.
+    #[serde(default)]
+    pub payments: Vec<PaymentCreate>,
 }
 
 /// Response of `POST /visits/{id}/correct`.
@@ -189,6 +284,30 @@ pub struct VisitLineDto {
     /// taken (bonus = 0).
     pub line_value: i64,
     pub expiry_override_reason: Option<String>,
+    /// `one_off` lines: the sale that charged it (the visit's first sale or an addition).
+    pub sale_id: Option<Uuid>,
+    /// `one_off` lines: who recommended it (upsell credit); null = "khách tự chọn".
+    pub referrer_staff_id: Option<Uuid>,
+    pub referrer_name: Option<String>,
+}
+
+/// A package sold in a visit (`sale.visit_id`), as the visit shows it.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct VisitPackageSaleDto {
+    pub sale_id: Uuid,
+    pub voided: bool,
+    pub business_date: NaiveDate,
+    /// Package names, in sale order.
+    pub description: String,
+    pub customer_package_ids: Vec<Uuid>,
+    pub total: i64,
+    /// "Người giới thiệu / chốt"; null = "khách tự chọn".
+    pub closer_staff_id: Option<Uuid>,
+    pub closer_name: Option<String>,
+    /// Who the package belongs to when not the visit's customer (US13).
+    pub beneficiary_customer_id: Option<Uuid>,
+    pub beneficiary_name: Option<String>,
+    pub payments: Vec<PaymentDto>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -215,15 +334,22 @@ pub struct VisitDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<String>)]
     pub note: Option<Option<String>>,
-    /// Sale of the one-off lines (none when the visit only used package sessions).
+    /// First sale of the one-off lines (none when the visit only used package sessions); later
+    /// additions have sales of their own (`lines[].sale_id`).
     pub sale_id: Option<Uuid>,
     /// Sum of the one-off lines before discount.
     pub subtotal: i64,
     pub discount_amount: i64,
     pub discount_reason: Option<String>,
-    /// Amount collected in this visit (one-off lines after discount).
+    /// Amount collected for the one-off lines (after discount), additions included. Packages sold
+    /// in the visit are in `package_sales`.
     pub total: i64,
+    /// Payments of the one-off sales (the first one and every addition).
     pub payments: Vec<PaymentDto>,
+    /// Packages sold in this visit, each a sale of its own.
+    pub package_sales: Vec<VisitPackageSaleDto>,
+    /// Companions known only by a note (never served or charged).
+    pub companions: Vec<String>,
     pub lines: Vec<VisitLineDto>,
     /// Send back as `If-Match` when correcting.
     pub version: i64,

@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.visit_line\n             (id, tenant_id, visit_id, position, service_id, service_name_snapshot, source, customer_package_id,\n              customer_package_item_id, sessions_left_after, staff_id, qty, price_variant, unit_price, line_value,\n              expiry_override_reason, discount_amount, sale_id, referrer_staff_id)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Int4",
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid",
+        "Uuid",
+        "Int4",
+        "Uuid",
+        "Int4",
+        "Text",
+        "Int8",
+        "Int8",
+        "Text",
+        "Int8",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "81e864a059a5aee7e526728c0e97c5127bc71b61931be7d169b8ae3ebb208737"
+}

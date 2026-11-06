@@ -32,6 +32,8 @@ Nguồn: 2 văn bản chương trình (học viên, KTV có kinh nghiệm) + fil
 2. Chốt liệu trình mới: % × giá trị liệu trình mới **tư vấn và chốt**.
 3. Bán sản phẩm: % × giá trị sản phẩm bán.
 
+**EM 2026-11-06 (Q-U2, Q-U3, [raw](../../raw/2026-11-06-em-answers-round6-upsell.md)):** loại 2 hiểu là **hoa hồng giới thiệu / chốt (upsell)**, tính trên **cả gói liệu trình lẫn dịch vụ lẻ** do người đó giới thiệu được; loại 1 (**làm**) vẫn cho người trực tiếp làm. Hai khoản tách biệt, có thể là hai người. Mỗi thứ bán ra có **đúng một** người giới thiệu: chủ spa, quản lý, một KTV, hoặc "khách tự chọn" (không ai được tính). App: `sale.closer_staff_id` (gói), `visit_line.referrer_staff_id` (dịch vụ lẻ), xem [staff-management](specs/staff-management.md) AC5.2.
+
 ## 4. Ngày nghỉ & chấm công
 - Ký hiệu: ✓ đi làm; **P** có lý do, báo trước ≥ 3 ngày; **ĐX** đột xuất (bổ sung giấy tờ sau); **K** không lý do / không báo / không bổ sung giấy.
 - Mỗi tháng được nghỉ **2 ngày không trừ lương**. Mỗi ngày vượt quá bị trừ 1 ngày lương.

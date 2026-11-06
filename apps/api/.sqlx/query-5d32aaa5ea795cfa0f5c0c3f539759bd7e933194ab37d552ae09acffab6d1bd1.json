@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT coalesce(max(position) + 1, 0) AS \"next!\" FROM app.visit_line\n           WHERE tenant_id = $1 AND visit_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "next!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "5d32aaa5ea795cfa0f5c0c3f539759bd7e933194ab37d552ae09acffab6d1bd1"
+}
