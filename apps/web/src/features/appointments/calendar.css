@@ -128,16 +128,22 @@
    they never replace a cell: the lines run on around a card and the free time stays clickable. */
 .cal-scroll {
   max-width: 100%;
-  /* Scrolls both ways inside its frame: the header and the time gutter stay in view. */
-  max-height: max(420px, calc(100dvh - 220px));
-  overflow: auto;
-  overscroll-behavior: contain;
-  /* Scrolling a slot or card into view (focus, keyboard) keeps it clear of the sticky header and
-     time gutter, so focusing a card never nudges the grid. */
-  scroll-padding: 48px 0 0 96px;
+  /* The page scrolls as one (EM round 6, no nested vertical scroll): clip, not a scroll box, so the
+     header row sticks under the top bar while the page scrolls. */
+  overflow-x: clip;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
+}
+/* More columns than fit: scroll sideways inside the frame, the time gutter stays (sticky left). */
+.cal-scroll.is-wide {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  /* Scrolling a slot or card into view keeps it clear of the sticky time gutter. */
+  scroll-padding-left: 96px;
+}
+.cal-scroll.is-wide .cal-head {
+  top: 0;
 }
 .cal-grid {
   --slot-h: 26px;
@@ -156,7 +162,7 @@
 }
 .cal-head {
   position: sticky;
-  top: 0;
+  top: var(--topbar-h, 64px);
   z-index: 6;
   display: flex;
   align-items: center;

@@ -13,7 +13,7 @@ import {
 } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { formatVnd } from "@vpyd/ui";
-import { Suspense, lazy, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import "./calendar.css";
 import { CustomerName } from "../../app/CustomerName";
 import { Icon } from "../../app/Icon";
@@ -536,9 +536,10 @@ function DayGrid({
   const isToday = day === spaToday();
   const past = (m: number) => day < spaToday() || (isToday && m + slot <= now);
   const max = cal.max_per_slot ?? null;
+  const { frame, wide } = useFits(cols);
 
   return (
-    <div className="cal-scroll">
+    <div ref={frame} className={`cal-scroll ${wide ? "is-wide" : ""}`}>
       <div
         className="cal-grid"
         style={
@@ -676,6 +677,36 @@ function DayGrid({
       </div>
     </div>
   );
+}
+
+/** Gutter and minimum column width of the day grid (calendar.css `--gutter-w`, `--col-min`). */
+const GUTTER_PX = 96;
+const COLUMN_MIN_PX = 168;
+
+/**
+ * Whether `cols` technician columns overflow the grid's frame. Only then the frame scrolls
+ * sideways; otherwise it is no scroll box at all, so the page scrolls as one and the header row
+ * sticks under the top bar.
+ */
+function useFits(cols: number) {
+  const frame = useRef<HTMLDivElement | null>(null);
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const el = frame.current;
+    if (!el) return;
+    const check = () => {
+      // clientWidth excludes the 1 px borders, like the grid's own box.
+      setWide(GUTTER_PX + cols * COLUMN_MIN_PX > el.clientWidth);
+    };
+    check();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+    };
+  }, [cols]);
+  return { frame, wide };
 }
 
 /**
