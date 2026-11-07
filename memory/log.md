@@ -597,6 +597,12 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Ngân sách JS khởi động: route không có `validateSearch` (schema ở chunk lazy) + 5 thông báo lỗi chỉ màn lazy gặp chuyển ra `addMessages` → 124.93 KB (main 124.91).
 - Wiki: spec §10, authz-matrix (bảng quyền từng loại), threat-model (§ Nhật ký ghi chú), data (0027), backend/frontend (route + endpoint + số đo), design-system (dòng Nhật ký ghi chú).
 
+## [2026-11-07] ingest + build | Nhật ký ghi chú thêm 5 loại (EM Q-N1 có, Q-N2 không)
+- Raw: [2026-11-07-em-decisions-notes-journal-scope](raw/2026-11-07-em-decisions-notes-journal-scope.md).
+- `GET /notes` + màn: thêm ghi chú lịch hẹn (`appointment.manage`), nhận xét / kế hoạch kèm cặp đánh giá tháng (`evaluation.record`), ghi chú nhân sự `staff.note` (`staff.manage`, chủ spa; khớp allowlist 14 key của quản lý ở Nhân sự), lý do gia hạn gói (quy tắc lịch sử khách), lý do giảm giá (hóa đơn của lượt: `visit.read`; hóa đơn khác: `sale.read` + `customer.read`). Không nguồn nào thiếu quy tắc đọc nên không có loại "mặc định chỉ chủ spa"; đợt làm việc không có chữ tự do nào ngoài `end_reason`.
+- DTO thêm `about_date` (ngày hẹn / tháng đánh giá / hạn mới); lịch hẹn của khách chưa có hồ sơ hiện tên khách đặt. Migration 0028: 5 index một phần.
+- Q-N2: giữ một giá trị trên hồ sơ, hiện "Hồ sơ sửa lúc …" (cả ghi chú nhân sự), không đổi schema.
+- Test: `notes.rs` mở rộng (chủ spa 14 loại, quản lý 12, không lộ ghi chú nhân sự; từng loại × bỏ từng quyền; hai nhánh giảm giá; lọc theo khách / nhân viên).
 ## [2026-11-07] spec + build + secure + qa + pr-review + record | Giỏ chỉ có gói: nhiều gói một lần lưu (câu 4, `feat(quay)`)
 - Nguồn: raw 2026-11-07-em-decisions-hr-notes-group-region (follow-up câu 4: "ukm theo cái mới đi", ví dụ chị Lan). Spec [front-desk §10.13](wiki/product/specs/front-desk-and-packages.md); authz-matrix +1 mục. Không migration (0026 của PR #85, 0027 của agent sổ chấm công).
 - Đã làm: `POST /sales/checkout` (sales crate) dùng lại đúng mô hình `package_sales[]` của lượt: `price_package_sale` từng gói (người dùng, người chốt, giảm giá theo trần từng gói), `allocate_payments` (cash trước theo thứ tự giỏ), `record_package_sale` từng gói, một transaction, một Idempotency-Key. Web: giỏ không dịch vụ nhận tối đa 3 gói (bỏ `maxSales = 1`), lưu 1 gói vẫn `POST /sales`, 2–3 gói gọi checkout; logic lưu + câu thông báo nằm trong chunk lazy `checkout.ts` (`sellCart`), `FrontDeskPage` bớt một import.
