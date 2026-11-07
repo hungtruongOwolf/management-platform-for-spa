@@ -293,7 +293,7 @@ describe("staff helpers", () => {
 
   it("lists who is missing and the past days still incomplete", () => {
     const s = sheet();
-    expect(missingOn(s.staff, today).map((p) => p.staff_id)).toEqual(["s-mai"]);
+    expect(missingOn(s.staff, today).map((p) => p.staff_id)).toEqual(["s-mai", "s-hoa"]);
     const people = s.staff.map((p) => ({ ...p, days: p.days.map((d) => ({ ...d, date: "2026-03-02" })) }));
     expect(incompleteDays("2026-03", people, "2026-03-04")).toEqual(["2026-03-01", "2026-03-02", "2026-03-03"]);
     const joined = people.map((p) => ({ ...p, joined_on: "2026-03-03" }));

@@ -8,8 +8,7 @@
 //! "Supervises" comes from the data, not from the free-text position: a staff profile linked to a
 //! login whose roles grant `attendance.record`, `evaluation.record` or `staff.manage`. A profile
 //! not linked to any login cannot supervise anyone in the app and counts as a technician.
-//! Deny by default: a manager's own profile is always owner-only, linked or not to a role that
-//! still grants the permissions.
+//! The caller's own profile (the one linked to their login) is always owner-only.
 
 use crate::repo;
 use kernel::{Actor, AppError, Permission, TenantTx};

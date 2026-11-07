@@ -119,19 +119,14 @@ export function MonthGrid({
                     const off = !employedOn(s, d) || d > today;
                     return (
                       <td key={d} className="p-0 text-center">
-                        {off || !s.can_record ? (
-                          off ? (
-                            <span className="text-text-muted" aria-hidden="true">
-                              ·
-                            </span>
-                          ) : (
-                            <span className={`att-cell att-${cell?.status ?? "none"}${cell && cell.late_minutes > 0 ? " is-late" : ""}`}>
-                              {cell ? STATUS_CODE[cell.status] : "–"}
-                            </span>
-                          )
-                        ) : off ? (
+                        {off ? (
                           <span className="text-text-muted" aria-hidden="true">
                             ·
+                          </span>
+                        ) : !s.can_record ? (
+                          // Decision C: the owner's to write; shown, not editable.
+                          <span className={`att-cell att-${cell?.status ?? "none"}${cell && cell.late_minutes > 0 ? " is-late" : ""}`}>
+                            {cell ? STATUS_CODE[cell.status] : "–"}
                           </span>
                         ) : (
                           <button
