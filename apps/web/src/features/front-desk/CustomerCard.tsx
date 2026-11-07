@@ -186,8 +186,8 @@ export function CustomerCard({
         )}
         {packages.isSuccess && ordered.length === 0 && (
           <p className="text-text-muted">
-            Khách chưa có gói liệu trình. Chọn dịch vụ lẻ hoặc bán gói ở phần
-            “Lượt khách đang ghi”.
+            Khách chưa có gói liệu trình. Chọn dịch vụ lẻ ở phần “Lượt khách
+            đang ghi”.
           </p>
         )}
         {packages.isSuccess && ordered.length > 0 && open.length === 0 && (
