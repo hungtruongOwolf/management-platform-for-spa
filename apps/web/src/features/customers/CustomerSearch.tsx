@@ -104,51 +104,57 @@ export function CustomerSearch({
         {aside}
       </div>
       <div className="search-row">
-        <input
-          id={`${listId}-input`}
-          ref={inputRef}
-          type="search"
-          autoComplete="off"
-          // Mirrors the server's bound on `q` (crm::service::MAX_QUERY_CHARS).
-          maxLength={100}
-          autoFocus={autoFocus}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-          }}
-          onKeyDown={onKeyDown}
-          role="combobox"
-          aria-expanded={searchable && hits.length > 0}
-          aria-controls={listId}
-          aria-activedescendant={
-            hits[active] ? `${listId}-${hits[active].id}` : undefined
-          }
-          placeholder="Không cần gõ dấu"
-          className="input input-lg w-0"
-        />
-        <button
-          type="button"
-          onClick={() => {
-            onCreate(text);
-          }}
-          className="btn btn-secondary"
-        >
-          <Icon name="plus" className="size-[18px]" />
-          Khách mới
-        </button>
-        {onWalkIn && (
+        <div className="search-field">
+          <Icon name="search" className="search-field-icon" />
+          <input
+            id={`${listId}-input`}
+            ref={inputRef}
+            type="search"
+            autoComplete="off"
+            // Mirrors the server's bound on `q` (crm::service::MAX_QUERY_CHARS).
+            maxLength={100}
+            autoFocus={autoFocus}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+            }}
+            onKeyDown={onKeyDown}
+            role="combobox"
+            aria-expanded={searchable && hits.length > 0}
+            aria-controls={listId}
+            aria-activedescendant={
+              hits[active] ? `${listId}-${hits[active].id}` : undefined
+            }
+            placeholder="SĐT hoặc tên khách"
+            className="input input-lg w-full"
+          />
+        </div>
+        <div className="search-actions">
           <button
             type="button"
-            aria-busy={walkIn.isPending || undefined}
-            aria-describedby={`${listId}-walk-in-hint`}
             onClick={() => {
-              if (!walkIn.isPending) walkIn.mutate();
+              onCreate(text);
             }}
-            className="btn btn-ghost"
+            className="btn btn-secondary"
           >
-            Khách vãng lai
+            <Icon name="plus" className="size-[18px]" />
+            Khách mới
           </button>
-        )}
+          {onWalkIn && (
+            <button
+              type="button"
+              aria-busy={walkIn.isPending || undefined}
+              aria-describedby={`${listId}-walk-in-hint`}
+              onClick={() => {
+                if (!walkIn.isPending) walkIn.mutate();
+              }}
+              className="btn btn-secondary"
+            >
+              <Icon name="users" className="size-[18px]" />
+              Khách vãng lai
+            </button>
+          )}
+        </div>
       </div>
       {onWalkIn && (
         <span id={`${listId}-walk-in-hint`} className="sr-only">
@@ -199,7 +205,6 @@ export function CustomerSearch({
                   <span className="text-sm text-text-muted tabular">
                     {c.phone ?? "Chưa có SĐT"}
                   </span>
-
                 </li>
               ))}
             </ul>
