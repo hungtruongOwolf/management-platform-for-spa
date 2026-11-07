@@ -583,3 +583,7 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Quyết định (lead): mỗi gói một hóa đơn (giữ hoa hồng theo hóa đơn, ADR-0010; hủy từng gói được), sổ doanh thu một dòng mỗi hóa đơn → Q-M1 hỏi EM có cần một dòng "một lần thu" không.
 - Kiểm: `sales.rs` +2 test (chị Lan: 2 hóa đơn, chia tiền 1.000.000 cash + 400.000/1.500.000 CK, báo cáo ngày + sổ, replay; từ chối → không ghi gì), matrix +1 dòng; vitest `CheckoutRound6` +1; e2e `quay-upsell` +1 (CI chạy).
 
+## [2026-11-07] ingest + build | Sổ hằng ngày mỗi người một thẻ (EM ảnh 65)
+- Raw: [2026-11-07-em-daily-book-and-notes-review](raw/2026-11-07-em-daily-book-and-notes-review.md) (hai việc: thẻ sổ hằng ngày; chỗ xem lại ghi chú).
+- Việc 1 (PR riêng): bỏ mã P/ĐX/K trong sổ hằng ngày; `BookCard.tsx` mỗi người một thẻ trong lưới 1/2/3 cột (2 cột ở 1280); bốn lựa chọn chấm công thành bốn ô riêng, mỗi ô một màu + icon theo chú thích lịch tháng (#76); thứ tự trong thẻ: đầu thẻ → chấm công → Khen/Phàn nàn → Giờ & ghi chú + Ghi thưởng/phạt → dòng ghi nhận. Giữ: khóa quyết định C, xác nhận nghỉ khi có lượt, chip thưởng/phạt sửa/xóa, "Cả spa đi làm", `TimeField`. Design-system § K thay § J.
+- Kiểm: vitest staff + tokens-only xanh; e2e `staff.spec` đổi test bàn làm việc → "one card per person in a grid"; ảnh 1280/390 × sáng/tối tự xem (scratchpad `shots/book*`).
