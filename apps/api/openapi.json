@@ -2057,6 +2057,112 @@
         }
       }
     },
+    "/api/v1/notes": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "list_notes",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "First business day (inclusive). Default: 29 days before `to`.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Last business day (inclusive). Default: today. At most 366 days after `from`.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "Only notes of this kind (still only the kinds the caller may read).",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/NoteKind"
+            }
+          },
+          {
+            "name": "staff_id",
+            "in": "query",
+            "description": "Notes about this staff member, written by their login, or on visits they served.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "customer_id",
+            "in": "query",
+            "description": "Notes about this customer.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Accent-insensitive text in the note or the customer / staff name (2–100 characters).\nEncrypted notes are searched after decryption, within at most 500 scanned notes per page.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1–100, default 20.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every note the caller may read, newest first; each kind under its own permission (encrypted notes decrypted only for customer.health_notes.read)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotesPage"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: no report.read"
+          },
+          "422": {
+            "description": "validation_failed: q too_short / too_long, from after_to, to range_too_long (> 366 days), cursor invalid, limit out_of_range"
+          }
+        }
+      }
+    },
     "/api/v1/opening-balances": {
       "post": {
         "tags": [
@@ -7932,6 +8038,141 @@
           "linked": {
             "type": "boolean",
             "description": "`false`: this login is not linked to a staff profile (ask the owner)."
+          }
+        }
+      },
+      "NoteEntry": {
+        "type": "object",
+        "description": "One note. `customer_*` for notes about a customer, `staff_*` for notes about a staff member.",
+        "required": [
+          "kind",
+          "at",
+          "business_date",
+          "text"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When it was written (a profile / health note: the profile's last change; an end of\nemployment: the start of its last day)."
+          },
+          "author_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Who wrote it; absent when the source does not record it (profile and health notes)."
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date",
+            "description": "The business day it belongs to (the visit's, the attendance day, the contact day…)."
+          },
+          "customer_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "customer_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The profile's name, or \"Khách vãng lai\"."
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Extra context by kind: `adjustment` → `bonus` | `penalty`; `void` → `visit` |\n`visit_corrected` | `sale` | `package`; `attendance_note` → the day's status;\n`follow_up` → the call's outcome."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NoteKind"
+          },
+          "staff_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "staff_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "visit_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The visit, for `visit_note` and visit voids."
+          }
+        }
+      },
+      "NoteKind": {
+        "type": "string",
+        "description": "Where a note was written. Each kind keeps the read rule it already had on its own screen.",
+        "enum": [
+          "visit_note",
+          "customer_note",
+          "health_note",
+          "attendance_note",
+          "review_note",
+          "adjustment",
+          "follow_up",
+          "void",
+          "employment_end"
+        ]
+      },
+      "NotesPage": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "items",
+          "kinds",
+          "scan_capped"
+        ],
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NoteEntry"
+            }
+          },
+          "kinds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NoteKind"
+            },
+            "description": "The kinds this caller may read (the type filter offers only these)."
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scan_capped": {
+            "type": "boolean",
+            "description": "True when a search stopped after scanning its cap of notes before filling the page;\n`next_cursor` then continues the search further back."
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
           }
         }
       },

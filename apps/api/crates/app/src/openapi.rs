@@ -97,6 +97,7 @@ use utoipa::OpenApi;
         reporting::http::customer_summary,
         reporting::http::package_usage,
         reporting::http::list_packages,
+        reporting::http::list_notes,
     ),
     // Enums used only as query parameters are not reached from any body, so register them.
     components(schemas(
@@ -108,6 +109,7 @@ use utoipa::OpenApi;
         reporting::dto::CustomerKindFilter,
         reporting::dto::FollowUpFilter,
         reporting::dto::InactiveSort,
+        reporting::notes_dto::NoteKind,
     )),
     tags(
         (name = "auth", description = "Đăng nhập, phiên, đổi spa"),
@@ -243,6 +245,8 @@ mod tests {
             "FollowUpList",
             "RangePreset",
             "FollowUpFilter",
+            "NotesPage",
+            "NoteKind",
         ] {
             assert!(schemas.contains_key(schema), "{schema} missing");
         }

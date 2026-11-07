@@ -193,3 +193,46 @@ EM: dữ liệu sổ giấy là **migration một lần** do team tự điền s
   - Q5: 2 năm cho mọi người; 3–5 năm **chỉ chủ spa**, lâu lâu mới xem nên tính tại chỗ (chậm hơn được), chưa làm bảng tổng hợp. Web (2026-11-06, `redesign(quanly)`): preset "3 năm" (theo tháng) / "5 năm" (theo năm) chỉ hiện khi có `report.long_range`; link có preset này mở "12 tháng" cho người khác.
   - Q6: EM giao lead chốt và sẽ review bản build: AC5b.2 (+3 / +7 / nghỉ 90 ngày / không có).
   - Q7: KTV **không** follow-up.
+
+## 10. Nhật ký ghi chú (EM 2026-11-07, [raw](../../../raw/2026-11-07-em-daily-book-and-notes-review.md))
+EM: "mấy ghi chú các thứ sau này có quản lý hay chủ spa vào xem lại thì ở đâu?" Trước đây mỗi ghi chú chỉ đọc được ở màn nơi nó được ghi (lượt, hồ sơ, sổ ngày…), không có chỗ đọc lại tất cả. **Vì sao ở spec này:** đây là một màn *xem lại* chỉ đọc, cùng người dùng (chủ spa + quản lý, `report.read`) và cùng mẫu (khoảng ngày, bộ lọc trên URL, cursor) với báo cáo và lịch sử khách; nó gom cả ghi chú nhân viên lẫn ghi chú khách nên không thuộc riêng staff-management.
+
+### US10: Đọc lại mọi ghi chú ở một chỗ
+*Là chủ spa hoặc quản lý, tôi muốn đọc lại mọi ghi chú đã ghi trong app, mới nhất trước, để không phải mở từng lượt / hồ sơ / ngày mới biết đã có chuyện gì.*
+
+**10.1 Chỗ đặt.** Nav **Báo cáo → "Nhật ký ghi chú"** (`/nhat-ky-ghi-chu`, ngắn "Ghi chú"), ngay dưới "Báo cáo kinh doanh". Lý do: nhóm Báo cáo là chỗ "xem lại" (đã chỉ mở cho `report.read` = chủ spa + quản lý, KTV không thấy), không nằm trong Nhân viên vì một nửa ghi chú là về khách, và không nằm trong Khách hàng vì một nửa là về nhân viên. Màn là chunk lazy riêng (ngân sách JS khởi động ≤ 125 KiB).
+
+**10.2 Liệt kê gì, ai đọc được loại nào.** Mỗi loại giữ **đúng quy tắc đọc nó đã có** ở màn gốc (không nới quyền nào). Server bỏ cả nhánh SQL của loại người gọi không được đọc (deny by default); response có `kinds` = các loại được đọc, nên bộ lọc "Loại" chỉ hiện các loại đó.
+
+| Loại (`kind`) | Chip | Nguồn | Quyền đọc (như màn gốc) | Thời điểm / ngày | Tác giả |
+|---|---|---|---|---|---|
+| `visit_note` | Ghi chú buổi | `visit.note_ct` (mã hóa) | `visit.read` + `customer.health_notes.read` | giờ làm / ngày của lượt | người ghi lượt |
+| `customer_note` | Ghi chú hồ sơ | `customer.note` | `customer.read` | lần sửa hồ sơ cuối (`updated_at`) | — (hồ sơ không lưu người sửa) |
+| `health_note` | Lưu ý sức khỏe | `customer.health_note_ct` (mã hóa) | `customer.read` + `customer.health_notes.read` | như trên | — |
+| `attendance_note` | Chấm công | `attendance_day.note` | `attendance.record` | lần ghi / ngày công | người chấm |
+| `review_note` | Khen / phàn nàn | `staff_daily_review.note` | `evaluation.record` | lần ghi / ngày | người ghi |
+| `adjustment` | Thưởng / Phạt | `staff_adjustment.reason` (khoản chưa xóa) | `evaluation.record` | lúc ghi / ngày xảy ra | người ghi |
+| `follow_up` | Chăm sóc lại | `customer_follow_up.note` | `customer.read` | lúc ghi / ngày liên hệ | người ghi |
+| `void` | Hủy lượt / Sửa lượt / Hủy hóa đơn / Hủy gói | `visit.void_reason`, `sale.void_reason` (hóa đơn không thuộc lượt), `customer_package.cancel_reason` (gói không hủy theo hóa đơn) | `customer.read` + `visit.read` + `sale.read` (quy tắc lịch sử khách) | lúc hủy | người hủy |
+| `employment_end` | Nghỉ việc | `staff_employment.end_reason` | `staff.manage` (**chỉ chủ spa**) | ngày làm cuối | người cho nghỉ |
+
+Quản lý mặc định thấy mọi loại trừ "Nghỉ việc". Quản lý bị bỏ `customer.health_notes.read` thì không thấy ghi chú buổi và lưu ý sức khỏe, kể cả khi lọc đúng loại đó hay tìm đúng chữ trong đó. KTV: `403` (màn trả "Không có quyền").
+
+**10.3 Mỗi dòng.** Chip loại · giờ (hồ sơ: "Hồ sơ sửa lúc …"; nghỉ việc: "Ngày làm cuối") · tác giả; khách (link hồ sơ) hoặc nhân viên; chữ ghi chú (giữ xuống dòng); link về nguồn: ghi chú buổi → lịch sử khách lọc đúng ngày + "Lượt khách"; hủy/sửa lượt → lịch sử khách lọc ngày + "Hủy lượt"; hồ sơ / sức khỏe / chăm sóc lại / hủy hóa đơn / hủy gói → hồ sơ khách; chấm công / khen-phàn nàn / thưởng-phạt → sổ hằng ngày đúng ngày; nghỉ việc → Nhân sự ("Tất cả"). Gom theo ngày kinh doanh (tiêu đề ngày), mới nhất trước.
+
+**10.4 Bộ lọc** (đều trên URL: `from`, `to`, `kind`, `staff`, `customer`, `q`): khoảng ngày (mặc định **30 ngày gần nhất**, tối đa 366 ngày một lần), loại, nhân viên (ghi chú *về* người đó, ghi chú *do tài khoản* của người đó viết, và ghi chú buổi / hủy lượt của lượt người đó làm), khách ("Chỉ xem khách này" trên một dòng → chip bỏ lọc), tìm chữ (không dấu, 2–100 ký tự; khớp chữ ghi chú hoặc tên khách / nhân viên). Phân trang cursor 30 dòng, "Xem thêm".
+
+**Tìm trong ghi chú mã hóa (quyết định, lead's decision — EM to review).** Ghi chú buổi và lưu ý sức khỏe là dữ liệu sức khỏe, mã hóa AES-256-GCM ở tầng app; DB không tìm được trong ciphertext. Các cách: (a) giải mã mọi ghi chú của spa mỗi lần tìm — chi phí tăng theo cả lịch sử, bỏ; (b) chỉ tìm loại không mã hóa — người dùng tìm "đau lưng" sẽ không thấy đúng loại họ cần nhất, bỏ; (c) **chọn:** loại không mã hóa lọc bằng SQL; loại mã hóa *trong khoảng ngày đã lọc* được giải mã rồi so trên server, **mỗi request quét tối đa 500 ghi chú**. Hết 500 mà chưa đủ trang → trả số đã thấy + `scan_capped: true` + cursor đi tiếp; UI ghi "Đã tìm trong 500 ghi chú gần nhất…" và nút "Tìm tiếp". Chi phí: giải mã AES-GCM một ghi chú cỡ micro giây, 500 ghi chú < 5 ms CPU + vài lượt đọc 100 dòng; không index hay bản rõ nào mới trong DB, không blind index (blind index lộ tần suất từ và không hỗ trợ tìm một phần chữ). Chỉ người có `customer.health_notes.read` mới làm server giải mã; ghi chú đã giải mã không vào log, audit hay cache (response `private, no-store`).
+
+**10.5 Bảo mật.** Server là ranh giới tin cậy: `report.read` mở màn, từng loại kiểm quyền riêng (10.2); tenant lọc tường minh ở mọi nhánh + RLS; giải mã bằng đúng associated data của bên ghi (`visit.note` + tenant + lượt; `customer.health_note` + tenant + khách), lỗi chỉ ghi id bản ghi; `deny_unknown_fields` trên query (`?userId=` → 400); `customer_id` / `staff_id` của spa khác → danh sách trống; đọc không ghi audit (không có ghi chú nào trong `audit_log`).
+
+**10.6 Hiệu năng.** Migration 0027: index một phần theo ngày cho từng nguồn có ghi chú (`visit (tenant_id, business_date) WHERE note_ct IS NOT NULL`, `voided_at` của lượt / hóa đơn, `cancelled_at` của gói, `customer (tenant_id, updated_at)` khi có ghi chú, `customer_follow_up (tenant_id, contacted_on)`, `staff_employment (tenant_id, ended_on)`); sổ chấm công / khen / thưởng-phạt đã có `(tenant_id, work_date)` (0017).
+
+**AC**
+- AC10.1: chủ spa thấy cả 9 loại; quản lý mặc định thấy 8 (không "Nghỉ việc"); KTV `403`; chưa đăng nhập `401`.
+- AC10.2: bỏ bất kỳ một quyền nào trong cột "Quyền đọc" của một loại → loại đó biến mất (cả khi lọc `kind` hoặc tìm chữ trong nó), `kinds` không còn nó.
+- AC10.3: lọc khoảng ngày / loại / nhân viên / khách / chữ đúng như 10.4; trang 2 dòng đi hết danh sách một lần, không lặp.
+- AC10.4: chủ spa khác không thấy dòng nào của spa này, kể cả khi đưa id khách / nhân viên của spa này.
+- AC10.5: `Cache-Control: private, no-store`; màn ở chunk lazy; axe không lỗi serious/critical ở 1280 và 390, sáng và tối.
+
+**Câu hỏi cho EM:** Q-N1 thêm các ghi chú chưa có trong danh sách EM đưa: ghi chú lịch hẹn, nhận xét / kế hoạch kèm cặp của đánh giá tháng, ghi chú hồ sơ nhân viên (chủ spa), lý do gia hạn gói, lý do giảm giá? (mặc định: chưa). Q-N2 ghi chú hồ sơ khách chưa lưu người sửa và lúc sửa riêng ghi chú (dùng lúc sửa hồ sơ); có cần lưu riêng không?

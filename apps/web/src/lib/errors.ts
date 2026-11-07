@@ -61,13 +61,9 @@ const MESSAGES: Record<string, string> = {
 /** Messages for field-level validation codes. */
 const FIELD_MESSAGES: Record<string, string> = {
   required: "Bắt buộc nhập.",
-  taken: "Tên này đã được dùng.",
   too_long: "Quá dài.",
   out_of_range: "Giá trị không hợp lệ.",
   negative: "Không được là số âm.",
-  mixed_variants:
-    "Chọn một giá chung hoặc giá theo giới tính, không chọn cả hai.",
-  duplicate: "Dịch vụ bị trùng trong gói.",
   inactive: "Dịch vụ này đang ngừng bán.",
   not_found: "Không còn tồn tại.",
   exceeds_subtotal: "Lớn hơn số tiền phải trả.",
@@ -77,9 +73,7 @@ const FIELD_MESSAGES: Record<string, string> = {
   before_start: "Trước ngày bắt đầu.",
   invalid_format: "Sai định dạng.",
   invalid: "Giá trị không hợp lệ.",
-  not_later: "Hạn mới phải sau hạn hiện tại.",
   in_past: "Không được là ngày đã qua.",
-  package_has_no_expiry: "Liệu trình không có thời hạn, không cần gia hạn.",
   not_allowed: "Không dùng được ở đây.",
   invalid_time: "Giờ không hợp lệ (dạng 09:00).",
   unknown: "Không tìm thấy nhân viên.",

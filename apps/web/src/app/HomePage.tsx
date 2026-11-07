@@ -17,6 +17,7 @@ const HINTS: Record<string, string> = {
   "/khach-lau-khong-quay-lai": "Khách vắng từ 7 ngày, cần gọi nhắc",
   "/goi-lieu-trinh": "Gói sắp hết hạn, hết buổi, đã hủy",
   "/bao-cao": "Thực thu, khách, lượt theo kỳ; sổ doanh thu",
+  "/nhat-ky-ghi-chu": "Đọc lại mọi ghi chú: buổi, hồ sơ, chấm công, thưởng/phạt",
   "/khach-cua-toi": "Khách bạn đã làm, lịch hẹn gán cho bạn",
   "/bang-gia": "Dịch vụ theo nhóm, giá Nữ/Nam",
   "/bang-gia/goi": "Số buổi, giá, quà tặng, hạn dùng của từng gói",

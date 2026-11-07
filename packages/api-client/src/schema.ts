@@ -623,6 +623,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_notes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/opening-balances": {
         parameters: {
             query?: never;
@@ -2624,6 +2640,62 @@ export interface components {
             data?: components["schemas"]["MyMonth"] | null;
             /** @description `false`: this login is not linked to a staff profile (ask the owner). */
             linked: boolean;
+        };
+        /** @description One note. `customer_*` for notes about a customer, `staff_*` for notes about a staff member. */
+        NoteEntry: {
+            /**
+             * Format: date-time
+             * @description When it was written (a profile / health note: the profile's last change; an end of
+             *     employment: the start of its last day).
+             */
+            at: string;
+            /** @description Who wrote it; absent when the source does not record it (profile and health notes). */
+            author_name?: string | null;
+            /**
+             * Format: date
+             * @description The business day it belongs to (the visit's, the attendance day, the contact day…).
+             */
+            business_date: string;
+            /** Format: uuid */
+            customer_id?: string | null;
+            /** @description The profile's name, or "Khách vãng lai". */
+            customer_name?: string | null;
+            /**
+             * @description Extra context by kind: `adjustment` → `bonus` | `penalty`; `void` → `visit` |
+             *     `visit_corrected` | `sale` | `package`; `attendance_note` → the day's status;
+             *     `follow_up` → the call's outcome.
+             */
+            detail?: string | null;
+            kind: components["schemas"]["NoteKind"];
+            /** Format: uuid */
+            staff_id?: string | null;
+            staff_name?: string | null;
+            text: string;
+            /**
+             * Format: uuid
+             * @description The visit, for `visit_note` and visit voids.
+             */
+            visit_id?: string | null;
+        };
+        /**
+         * @description Where a note was written. Each kind keeps the read rule it already had on its own screen.
+         * @enum {string}
+         */
+        NoteKind: "visit_note" | "customer_note" | "health_note" | "attendance_note" | "review_note" | "adjustment" | "follow_up" | "void" | "employment_end";
+        NotesPage: {
+            /** Format: date */
+            from: string;
+            items: components["schemas"]["NoteEntry"][];
+            /** @description The kinds this caller may read (the type filter offers only these). */
+            kinds: components["schemas"]["NoteKind"][];
+            next_cursor?: string | null;
+            /**
+             * @description True when a search stopped after scanning its cap of notes before filling the page;
+             *     `next_cursor` then continues the search further back.
+             */
+            scan_capped: boolean;
+            /** Format: date */
+            to: string;
         };
         OpeningBalanceCreate: {
             customer?: components["schemas"]["CustomerCreate"] | null;
@@ -6430,6 +6502,65 @@ export interface operations {
                 content?: never;
             };
             /** @description date invalid_date */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_notes: {
+        parameters: {
+            query?: {
+                /** @description First business day (inclusive). Default: 29 days before `to`. */
+                from?: string;
+                /** @description Last business day (inclusive). Default: today. At most 366 days after `from`. */
+                to?: string;
+                /** @description Only notes of this kind (still only the kinds the caller may read). */
+                kind?: components["schemas"]["NoteKind"];
+                /** @description Notes about this staff member, written by their login, or on visits they served. */
+                staff_id?: string;
+                /** @description Notes about this customer. */
+                customer_id?: string;
+                /**
+                 * @description Accent-insensitive text in the note or the customer / staff name (2–100 characters).
+                 *     Encrypted notes are searched after decryption, within at most 500 scanned notes per page.
+                 */
+                q?: string;
+                cursor?: string;
+                /** @description 1–100, default 20. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every note the caller may read, newest first; each kind under its own permission (encrypted notes decrypted only for customer.health_notes.read) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotesPage"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: no report.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed: q too_short / too_long, from after_to, to range_too_long (> 366 days), cursor invalid, limit out_of_range */
             422: {
                 headers: {
                     [name: string]: unknown;
