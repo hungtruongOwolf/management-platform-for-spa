@@ -134,7 +134,8 @@ test.describe("KTV: màn của tôi", () => {
     await todayCell.click();
     const sheet = page.getByRole("dialog", { name: /^Ngày / });
     await expect(sheet.getByText(CUSTOMER)).toBeVisible();
-    await expect(sheet.getByText(serviceName, { exact: true })).toBeVisible();
+    // The row header is the service name, then its type ("Dịch vụ lẻ") on a second line.
+    await expect(sheet.getByRole("rowheader", { name: `${serviceName} Dịch vụ lẻ` })).toBeVisible();
     await expect(sheet.getByText("Dịch vụ lẻ")).toBeVisible();
     await expect(sheet.getByText(/^Muộn \d+ phút$/)).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`day=${spaDay()}`));
@@ -165,7 +166,8 @@ test.describe("KTV: màn của tôi", () => {
     const detail = page.getByRole("dialog", { name: new RegExp(`^10:00–.* · ${CUSTOMER}$`) });
     await expect(detail.getByText("Quầy đặt cho bạn")).toBeVisible();
     await expectAccessible(page, "my-calendar-entry");
-    await detail.getByRole("button", { name: "Đóng" }).click();
+    await page.keyboard.press("Escape");
+    await expect(detail).toBeHidden();
 
     // Today's visit sits on today's column (it may share the week with tomorrow).
     await page.goto("/khach-cua-toi?kieu=ngay");

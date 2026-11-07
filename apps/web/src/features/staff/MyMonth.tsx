@@ -66,12 +66,16 @@ export function MonthCalendar({
         {all.map((date, i) => {
           const d = byDate.get(date);
           const future = date > today;
-          const label = dayStatusText(date, today, d);
           const late = d && d.late_minutes > 0 ? d.late_minutes : 0;
+          const mark = d ? STATUS_CODE[d.status] : future ? "" : "–";
+          // The name starts with what the cell shows (WCAG 2.5.3, axe label-content-name-mismatch).
+          const shown = [String(Number(date.slice(8))), mark, late > 0 ? `${String(late)}′` : ""].filter(Boolean).join(" ");
+          const label = `${shown}: ${dayStatusText(date, today, d)}`;
           const cls = [
             "my-day",
             future ? "is-future" : `att-${d?.status ?? "none"}`,
             date === today ? "is-today" : "",
+            late > 0 ? "is-late" : "",
             (lead + i) % 7 === 6 ? "is-sunday" : "",
           ]
             .filter(Boolean)
@@ -82,7 +86,7 @@ export function MonthCalendar({
                 {Number(date.slice(8))}
               </span>
               <span aria-hidden="true" className="my-day-mark">
-                {d ? STATUS_CODE[d.status] : future ? "" : "–"}
+                {mark}
               </span>
               {late > 0 && (
                 <span aria-hidden="true" className="my-day-late">

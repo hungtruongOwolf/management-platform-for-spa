@@ -191,7 +191,7 @@ function DayDetail({ d, refreshing }: { d: MyDayData; refreshing: boolean }) {
                   <tr key={`${l.service_name}-${String(i)}`}>
                     <th scope="row">
                       {l.service_name}
-                      {l.qty > 1 ? ` ×${String(l.qty)}` : ""}
+                      {l.qty > 1 ? ` ×${String(l.qty)}` : ""}{" "}
                       <span className="block text-xs text-text-muted">{SOURCE_LABEL[l.source] ?? l.source}</span>
                     </th>
                     <td className="num">{vnd(l.value)}</td>
@@ -239,7 +239,7 @@ function DayDetail({ d, refreshing }: { d: MyDayData; refreshing: boolean }) {
                 <tr key={`${u.kind}-${u.description}-${String(i)}`}>
                   <th scope="row">
                     {u.description}
-                    {u.qty > 1 ? ` ×${String(u.qty)}` : ""}
+                    {u.qty > 1 ? ` ×${String(u.qty)}` : ""}{" "}
                     <span className="block text-xs text-text-muted">
                       {UPSELL_LABEL[u.kind] ?? u.kind} · {u.customer_name}
                     </span>
