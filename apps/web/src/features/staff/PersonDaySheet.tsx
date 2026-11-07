@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { BottomSheet } from "../../components/BottomSheet";
+import { TimeField } from "../../components/TimeField";
 import { messageFor } from "../../lib/errors";
 import { invalidateStaff, saveAttendance, saveReviews, type AttendanceEntryWrite, type DailyReview, type StaffSheet } from "./api";
 import { STATUSES, STATUS_HINT, STATUS_LABEL, type AttendanceStatus } from "./labels";
@@ -138,23 +139,11 @@ export function PersonDaySheet({
               <div className="grid grid-cols-2 gap-4">
                 <label className="filter-field">
                   Giờ đến
-                  <input
-                    type="time"
-                    value={checkIn}
-                    onChange={(e) => {
-                      setCheckIn(e.target.value);
-                    }}
-                  />
+                  <TimeField value={checkIn} onChange={setCheckIn} />
                 </label>
                 <label className="filter-field">
                   Giờ về
-                  <input
-                    type="time"
-                    value={checkOut}
-                    onChange={(e) => {
-                      setCheckOut(e.target.value);
-                    }}
-                  />
+                  <TimeField value={checkOut} onChange={setCheckOut} />
                 </label>
               </div>
             )}

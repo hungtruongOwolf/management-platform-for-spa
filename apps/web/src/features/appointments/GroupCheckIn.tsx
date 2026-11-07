@@ -4,7 +4,7 @@ import { formatVnd } from "@vpyd/ui";
 import { useState } from "react";
 import { CustomerName } from "../../app/CustomerName";
 import { BottomSheet } from "../../components/BottomSheet";
-import { messageFor } from "../../lib/errors";
+import { messageFor, retryable } from "../../lib/errors";
 import { invalidateManagementViews } from "../../lib/invalidate";
 import { spaToday } from "../corrections/api";
 import {
@@ -217,13 +217,15 @@ export function GroupCheckIn({
           <span>
             Không chuẩn bị được giỏ của từng người. {messageFor(carts.error)}
           </span>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => void carts.refetch()}
-          >
-            Thử lại
-          </button>
+          {retryable(carts.error) && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => void carts.refetch()}
+            >
+              Thử lại
+            </button>
+          )}
         </div>
       )}
       <ul className="appt-checkin" aria-label="Người trong nhóm">

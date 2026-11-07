@@ -76,10 +76,4 @@
     font-size: var(--fs-sm);
     font-weight: 400;
   }
-  .companion-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 44px;
-    align-items: center;
-    gap: 8px;
-  }
 }

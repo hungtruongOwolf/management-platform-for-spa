@@ -97,17 +97,17 @@ const DiscountField = lazy(() =>
 const AddOneOff = lazy(() =>
   loadCartOptions().then((m) => ({ default: m.AddOneOff })),
 );
+const LeaveCartConfirm = lazy(() =>
+  loadCartOptions().then((m) => ({ default: m.LeaveCartConfirm })),
+);
 const CartContextBars = lazy(() =>
   loadCartOptions().then((m) => ({ default: m.CartContextBars })),
 );
-// Round 6: packages sold in the checkout + companion notes (spec §10.4.1), and the unsaved-cart
+// Round 6: packages sold in the checkout (spec §10.4.1), and the unsaved-cart
 // draft (Q-U8). Prefetched after the first paint, never on the startup path.
 const loadCartPackages = () => import("./CartPackages");
 const PackageSales = lazy(() =>
   loadCartPackages().then((m) => ({ default: m.PackageSales })),
-);
-const Companions = lazy(() =>
-  loadCartPackages().then((m) => ({ default: m.Companions })),
 );
 const CartLines = lazy(() =>
   loadCartOptions().then((m) => ({ default: m.CartLines })),
@@ -120,8 +120,12 @@ const DraftKeeper = lazy(() =>
 );
 // "Sửa lượt" (US6b): only when a recorded visit is opened for correction.
 const loadCorrection = () => import("./correction");
+const loadCorrectionPanel = () => import("./CorrectionPanel");
 const CorrectionPanel = lazy(() =>
-  import("./CorrectionPanel").then((m) => ({ default: m.CorrectionPanel })),
+  loadCorrectionPanel().then((m) => ({ default: m.CorrectionPanel })),
+);
+const CorrectionTotal = lazy(() =>
+  loadCorrectionPanel().then((m) => ({ default: m.CorrectionTotal })),
 );
 
 // Placeholders for the lazy pieces until they are mounted after the first paint: the same boxes,
@@ -219,7 +223,10 @@ export function FrontDeskPage() {
   const [reason, setReason] = useState("");
   /** "Gói bán hôm nay": packages sold in this checkout. */
   const [sales, setSales] = useState<PackageSaleDraft[]>([]);
-  /** "Người đi cùng" notes. */
+  /**
+   * "Người đi cùng" notes of the booking this visit completes (ADR-0009: companions are entered on
+   * the booking; one who is served gets their own booking and visit). Shown, sent, not edited.
+   */
   const [companions, setCompanions] = useState<string[]>([]);
   /** The customer card asked for a package block ("" = empty block, else that plan). */
   const [openPlan, setOpenPlan] = useState<string | null>(null);
@@ -227,6 +234,8 @@ export function FrontDeskPage() {
   const [restored, setRestored] = useState(false);
   /** Picked for a fresh start (a booking, a correction, "Bỏ giỏ"): its draft is not restored. */
   const [freshFor, setFreshFor] = useState<string | null>(null);
+  /** A customer change waiting for "Đổi khách" (the cart holds items). */
+  const [leaving, setLeaving] = useState<(() => void) | null>(null);
   const clearOpenPlan = useCallback(() => {
     setOpenPlan(null);
   }, []);
@@ -283,6 +292,7 @@ export function FrontDeskPage() {
     setCompanions([]);
     setOpenPlan(null);
     setRestored(false);
+    setLeaving(null);
     setIdempotencyKey(crypto.randomUUID());
     setSearchGeneration((g) => g + 1);
     setTimeout(() => searchInput.current?.focus(), 0);
@@ -546,11 +556,20 @@ export function FrontDeskPage() {
     setRestored(false);
     searchInput.current?.focus();
   };
+  /** Runs `go` (a customer change), first asking when it would empty a cart with items. */
+  const leaveCart = (go: () => void) => {
+    if (customer && (lines.length > 0 || sales.length > 0))
+      setLeaving(() => go);
+    else go();
+  };
   const saveRef = useRef(save);
   const dropRef = useRef(dropCustomer);
   useEffect(() => {
     saveRef.current = save;
-    dropRef.current = dropCustomer;
+    dropRef.current = () => {
+      if (leaving) setLeaving(null);
+      else leaveCart(dropCustomer);
+    };
   });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -584,6 +603,7 @@ export function FrontDeskPage() {
     setOpenPlan(null);
     setRestored(false);
     setFreshFor(fresh ? c.id : null);
+    setLeaving(null);
     setIdempotencyKey(crypto.randomUUID());
     setFocusDeduct(true);
   };
@@ -759,7 +779,11 @@ export function FrontDeskPage() {
                 autoFocus
                 asHeading
                 aside={shortcuts}
-                onSelect={select}
+                onSelect={(c) => {
+                  leaveCart(() => {
+                    select(c);
+                  });
+                }}
                 onCreate={(typed) => {
                   setCreating(typed);
                 }}
@@ -794,6 +818,21 @@ export function FrontDeskPage() {
                   />
                 </Suspense>
               )}
+              {leaving && customer && (
+                <Suspense fallback={null}>
+                  <LeaveCartConfirm
+                    customerName={customer.full_name}
+                    correcting={correcting !== null}
+                    onLeave={() => {
+                      setLeaving(null);
+                      leaving();
+                    }}
+                    onStay={() => {
+                      setLeaving(null);
+                    }}
+                  />
+                </Suspense>
+              )}
               {customer ? (
                 <CustomerCard
                   key={customer.id}
@@ -803,7 +842,9 @@ export function FrontDeskPage() {
                   }
                   canOverrideExpiry={can(me, "package.use_expired_override")}
                   focusFirst={focusDeduct}
-                  onClear={dropCustomer}
+                  onClear={() => {
+                    leaveCart(dropCustomer);
+                  }}
                   {...(can(me, "package.sell") && !correcting
                     ? {
                         onSellPackage: (planId: string | null) => {
@@ -904,7 +945,9 @@ export function FrontDeskPage() {
               {customer && (
                 <Suspense fallback={addOneOffBox}>
                   <AddOneOff
+                    key={customer.id}
                     customer={customer}
+                    lines={lines}
                     onAdd={(service, priceVariant, price, categoryName) => {
                       addLine({
                         key: nextKey.current++,
@@ -945,10 +988,10 @@ export function FrontDeskPage() {
                   />
                 </Suspense>
               )}
-              {customer && !correcting && lines.length > 0 && (
-                <Suspense fallback={null}>
-                  <Companions value={companions} onChange={setCompanions} />
-                </Suspense>
+              {companions.length > 0 && (
+                <p className="field-hint">
+                  Người đi cùng (ghi chú của lịch hẹn): {companions.join(", ")}
+                </p>
               )}
 
               {customer && (lines.length > 0 || sales.length > 0) && (
@@ -1038,13 +1081,22 @@ export function FrontDeskPage() {
                       </p>
                     )}
                   <div role="group" aria-label="Lưu lượt" className="checkout">
-                    <p className="checkout-total" aria-live="polite">
-                      <span>Phải trả</span>
-                      <span className="checkout-amount">
-                        {discountAmount > 0 && <s>{formatVnd(due)}</s>}
-                        {formatVnd(payable)}
-                      </span>
-                    </p>
+                    {correcting ? (
+                      <Suspense fallback={null}>
+                        <CorrectionTotal
+                          total={payable}
+                          paid={correcting.visit.total}
+                        />
+                      </Suspense>
+                    ) : (
+                      <p className="checkout-total" aria-live="polite">
+                        <span>Phải trả</span>
+                        <span className="checkout-amount">
+                          {discountAmount > 0 && <s>{formatVnd(due)}</s>}
+                          {formatVnd(payable)}
+                        </span>
+                      </p>
+                    )}
                     {packagesTotal > 0 && (
                       <p className="checkout-split">
                         Dịch vụ lẻ {formatVnd(due - discountAmount)} + gói{" "}
@@ -1080,6 +1132,7 @@ export function FrontDeskPage() {
           {painted ? (
             <Suspense fallback={todayVisitsSkeleton}>
               <TodayVisits
+                resetSignal={searchGeneration}
                 onCorrect={(id) => {
                   setSearch({ sua: id });
                 }}

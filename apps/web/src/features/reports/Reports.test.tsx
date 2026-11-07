@@ -200,7 +200,7 @@ describe("/bao-cao", () => {
   it("is closed to users without report.read (UX gate; the API decides)", async () => {
     serveManagement({ permissions: ["catalog.read", "sale.read"] });
     at("/bao-cao");
-    expect(await screen.findByText("Màn hình này chưa mở cho tài khoản của bạn.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Không có quyền mở màn hình này" })).toBeInTheDocument();
   });
 });
 

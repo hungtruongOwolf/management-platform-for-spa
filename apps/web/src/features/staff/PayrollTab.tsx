@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { BottomSheet } from "../../components/BottomSheet";
+import { TimeField } from "../../components/TimeField";
 import { ResponsiveTable, type Column } from "../../components/ResponsiveTable";
 import { messageFor } from "../../lib/errors";
 import { EmptyState, ErrorState, RowsSkeleton } from "../reports/ui";
@@ -382,7 +383,7 @@ function RulesForm({ initial, onDone }: { initial: PayrollRules; onDone: () => v
       <div className="grid gap-4 sm:grid-cols-3">
         <label className="filter-field">
           Giờ vào ca mặc định
-          <input type="time" value={r.default_shift_start} onChange={(e) => { setR({ ...r, default_shift_start: e.target.value || "09:00" }); }} />
+          <TimeField value={r.default_shift_start} onChange={(hm) => { setR({ ...r, default_shift_start: hm || "09:00" }); }} />
         </label>
         <label className="filter-field">
           Muộn dưới (phút) không tính

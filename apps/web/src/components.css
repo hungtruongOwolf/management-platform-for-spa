@@ -1579,6 +1579,9 @@ h2 .gender-chip {
   color: var(--text);
   text-align: center;
 }
+.status-page.is-in-shell {
+  min-height: 60dvh;
+}
 
 /* --- Skeletons: a sheen slides across (transform only); replaces spinners and pulses ---------- */
 .skeleton {

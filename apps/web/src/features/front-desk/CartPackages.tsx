@@ -1,6 +1,6 @@
 // Round 6 (spec R1-1 §10.4.1): the cart's "Gói bán hôm nay" — packages sold in the same checkout,
 // each with its own "người giới thiệu / chốt", gift, discount and "Dùng gói này cho buổi hôm nay"
-// — and the "Người đi cùng" notes. A lazy chunk (prefetched after the first paint): the startup
+// — and the unsaved-cart draft. A lazy chunk (prefetched after the first paint): the startup
 // bundle only carries the draft type and the totals. Every amount here is a preview; the server
 // prices each package from the catalog.
 import type { CustomerSummary, PackagePlan, Staff } from "@vpyd/api-client";
@@ -33,8 +33,6 @@ export { LineReferrer, ReferrerOptions } from "./CartOptions";
 
 /** At most this many packages per checkout (server: 0–3). */
 export const MAX_PACKAGE_SALES = 3;
-/** At most this many companion notes (server: 0–5). */
-export const MAX_COMPANIONS = 5;
 
 /** "10 buổi + tặng 2 · HSD 6 tháng". */
 export function sessionsText(
@@ -475,8 +473,16 @@ export function PackageSales({
   useEffect(() => {
     latest.current = openedFrom;
   });
+  // One block per request: StrictMode (and a refetch of the plans) runs this effect again before
+  // `onOpened` has cleared the request, which opened "Gói thứ 2" empty (EM live test).
+  const handled = useRef(false);
   useEffect(() => {
-    if (openPlanId === null || !plans.isSuccess) return;
+    if (openPlanId === null) {
+      handled.current = false;
+      return;
+    }
+    if (!plans.isSuccess || handled.current) return;
+    handled.current = true;
     onOpened();
     if (full) return;
     const p = plans.data.find((x) => x.id === openPlanId);
@@ -484,20 +490,24 @@ export function PackageSales({
       ? { id: p.id, name: p.name, price: p.price, items: p.items }
       : null;
     const { context: ctx, lines: ls } = latest.current;
-    onSales((s) => [
-      ...s,
-      {
-        ...newSale(s, plan),
+    onSales((s) =>
+      s.length >= maxSales
+        ? s
+        : [
+            ...s,
+            {
+              ...newSale(s, plan),
         ...(plan
           ? {
               closer: defaultCloser(ctx, plan) ?? SELF_CHOSEN,
               giftNote: p?.gift_note ?? "",
               useToday: coversCart(plan, ls),
             }
-          : {}),
-      },
-    ]);
-  }, [openPlanId, plans.isSuccess, plans.data, full, onOpened, onSales]);
+                : {}),
+            },
+          ],
+    );
+  }, [openPlanId, plans.isSuccess, plans.data, full, maxSales, onOpened, onSales]);
 
   const update = (ref: string, patch: Partial<PackageSaleDraft>) => {
     onSales((s) => s.map((x) => (x.ref === ref ? { ...x, ...patch } : x)));
@@ -561,67 +571,6 @@ export function PackageSales({
             Bán thêm gói: thêm dịch vụ của lượt, hoặc lưu hóa đơn gói này trước.
           </p>
         )
-      )}
-    </section>
-  );
-}
-
-/** "Người đi cùng (ghi chú)": people known only by a note, never served or charged (Q-U5). */
-export function Companions({
-  value,
-  onChange,
-}: {
-  value: string[];
-  onChange: (next: string[]) => void;
-}) {
-  const id = useId();
-  return (
-    <section aria-labelledby={`${id}-t`} className="grid gap-2">
-      <h3 id={`${id}-t`} className="section-label">
-        Người đi cùng (ghi chú)
-      </h3>
-      {value.map((c, i) => (
-        <div key={i} className="companion-row">
-          <input
-            className="input"
-            aria-label={`Người đi cùng ${String(i + 1)}`}
-            placeholder="Ví dụ: chồng của chị Hà"
-            maxLength={100}
-            value={c}
-            autoFocus={c === ""}
-            onChange={(e) => {
-              onChange(value.map((x, j) => (j === i ? e.target.value : x)));
-            }}
-          />
-          <button
-            type="button"
-            aria-label={`Bỏ người đi cùng ${String(i + 1)}`}
-            className="btn btn-ghost btn-icon text-text-muted"
-            onClick={() => {
-              onChange(value.filter((_, j) => j !== i));
-            }}
-          >
-            <Icon name="x" />
-          </button>
-        </div>
-      ))}
-      {value.length < MAX_COMPANIONS && (
-        <button
-          type="button"
-          className="btn btn-ghost"
-          onClick={() => {
-            onChange([...value, ""]);
-          }}
-        >
-          <Icon name="plus" />
-          Thêm người đi cùng
-        </button>
-      )}
-      {value.length > 0 && (
-        <p className="field-hint">
-          Chỉ là ghi chú: không tính tiền, không chọn dịch vụ. Người đi cùng có
-          làm dịch vụ thì tạo hồ sơ khách riêng.
-        </p>
       )}
     </section>
   );

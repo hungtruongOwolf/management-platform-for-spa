@@ -431,6 +431,7 @@ EM: "check kĩ mấy cái viết hoa viết thường định dạng mọi thứ
 ## Định dạng
 - Tiền: `Intl.NumberFormat('vi-VN')` + `đ`, không khoảng trắng → `1.500.000đ`. Ô nhập tiền nhận số nguyên, bước 1.000. Trục biểu đồ rút gọn: `1,2 tr` · `850 k`.
 - **Ngày luôn `dd/mm/yyyy` có số 0 đầu** (`05/11/2026`), giờ `HH:mm` (24h), múi giờ `Asia/Ho_Chi_Minh`. Thứ viết bằng số như sổ giấy: **"Thứ 5, 05/11/2026"**, **"Chủ nhật, 08/11/2026"** (`lib/format.ts` `dayLabel`, `longDate`) ở top bar, khung chào, bảng chi tiết theo ngày, sổ doanh thu, tooltip biểu đồ. "Hôm nay"/"Hôm qua" cho ngày gần. Nhóm tháng: "Tháng 11/2026" (`monthLabel`).
+- **Ô nhập giờ = `TimeField`** (`components/TimeField.tsx`, 2026-11-07), không dùng `<input type="time">`: Chrome tiếng Anh hiện AM/PM và gõ "15:00" ra 15:58 (EM live test). Ô chữ `hh:mm` 24 giờ: "1500" tự chèn ":", "930" → 09:30, "9" → 09:00 khi rời ô, giờ sai (25:00) báo "Giờ dạng 24 giờ, ví dụ 15:00."; `""` = không có giờ (mỗi nơi tự định nghĩa). Dùng ở giờ làm / nhập bù / Sửa lượt (/quay), giờ đến / về (chấm công), giờ vào ca (hồ sơ, quy tắc lương).
 - **Ô nhập ngày = `DateField`**, không dùng `<input type="date">` hiển thị trực tiếp: Chrome tiếng Anh hiện `mm/dd/yyyy` (ảnh EM vòng 4). `DateField` là ô chữ `dd/mm/yyyy` (gõ "05112026" tự chèn "/"), nút lịch mở picker gốc; giá trị trong code/URL vẫn ISO `yyyy-mm-dd`. Màn `/quay` (appointments agent) còn một ô "Xem ngày" gốc: đã báo agent đó dùng `DateField`.
 - SĐT hiển thị `0905 123 456`; lưu chuẩn E.164 ở backend.
 - Giới tính: `Nữ` / `Nam` / `Chưa rõ`.

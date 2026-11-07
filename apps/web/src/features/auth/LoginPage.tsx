@@ -17,6 +17,11 @@ interface Values {
 
 type Errors = Partial<Record<keyof Values, string>>;
 
+/** Digits only; a pasted "+84 905 111 222" or "0905.111.222" becomes "0905111222". */
+export function phoneDigits(text: string): string {
+  return text.trim().replace(/^\+84/, "0").replace(/\D/g, "");
+}
+
 function validate({ phone, password }: Values): Errors {
   const errors: Errors = {};
   if (phone.trim().length < 9) errors.phone = "Nhập số điện thoại.";
@@ -101,12 +106,12 @@ export function LoginPage({ next }: { next?: string | undefined }) {
             id="phone"
             name="phone"
             type="tel"
-            inputMode="tel"
+            inputMode="numeric"
             autoComplete="username"
             className="input"
             value={values.phone}
             onChange={(e) => {
-              change("phone", e.target.value);
+              change("phone", phoneDigits(e.target.value));
             }}
             aria-invalid={errors.phone ? true : undefined}
             aria-describedby={errors.phone ? "phone-error" : undefined}

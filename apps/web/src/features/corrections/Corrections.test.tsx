@@ -494,6 +494,60 @@ describe("voids in the /quay visit list", () => {
     });
   });
 
+  it("the next cart save clears the “Đã hủy lượt” notice (EM live test)", async () => {
+    let voided = false;
+    serve(MANAGER, (c) => {
+      if (c.url === "/api/v1/visits/v1/void") {
+        voided = true;
+        return Response.json(visit({ status: "voided", void_reason: "Nhầm" }));
+      }
+      if (c.url.startsWith("/api/v1/visits") && c.method === "GET")
+        return Response.json([
+          voided ? visit({ status: "voided", void_reason: "Nhầm" }) : visit(),
+        ]);
+      if (c.url === "/api/v1/visits" && c.method === "POST")
+        return Response.json(visit({ id: "v3" }), { status: 201 });
+      if (c.url.startsWith("/api/v1/customers?q="))
+        return Response.json([
+          { id: "c1", full_name: HA.full_name, phone: HA.phone, gender: "female" },
+        ]);
+      if (c.url === "/api/v1/staff")
+        return Response.json([
+          { id: "st1", full_name: "KTV Lan", position: "KTV", status: "active" },
+        ]);
+      return undefined;
+    });
+    const user = userEvent.setup();
+    at("/quay");
+    const list = await screen.findByRole("table", { name: "Lượt khách hôm nay" });
+    await user.click(
+      await within(list).findByRole("button", { name: /Thao tác lượt .* của Nguyễn Thị Hà/ }),
+    );
+    await user.click(
+      within(screen.getByRole("menu")).getByRole("menuitem", { name: "Hủy lượt" }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: /Hủy lượt/ });
+    await user.type(within(dialog).getByLabelText("Lý do hủy"), "Nhầm");
+    await user.click(within(dialog).getByRole("button", { name: "Hủy lượt" }));
+    expect(await screen.findByText("Đã hủy lượt của Nguyễn Thị Hà.")).toBeInTheDocument();
+
+    await user.type(
+      screen.getByRole("combobox", { name: "Tìm khách theo SĐT hoặc tên" }),
+      "0905",
+    );
+    await user.click(await screen.findByRole("option", { name: /Nguyễn Thị Hà/ }));
+    await user.click(await screen.findByRole("button", { name: /Trừ 1 buổi/ }));
+    const cart = await screen.findByRole("list", { name: "Dịch vụ trong lượt" });
+    const ktv = within(cart).getByRole("combobox", { name: "KTV" });
+    await waitFor(() => {
+      expect(ktv.querySelector('option[value="st1"]')).not.toBeNull();
+    });
+    await user.selectOptions(ktv, "st1");
+    await user.click(screen.getByRole("button", { name: "Lưu lượt khách" }));
+    expect(await screen.findByText(/Đã lưu lượt của Nguyễn Thị Hà/)).toBeInTheDocument();
+    expect(screen.queryByText("Đã hủy lượt của Nguyễn Thị Hà.")).toBeNull();
+  });
+
   it("hides the void of a closed day from managers", async () => {
     serve(MANAGER);
     at("/quay");
