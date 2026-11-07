@@ -4452,7 +4452,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description validation_failed, appointment.outside_opening_hours, appointment.in_the_past (moved to a past day) */
+            /** @description validation_failed (customer_id duplicate: that profile is already in the group), appointment.outside_opening_hours, appointment.in_the_past (moved to a past day) */
             422: {
                 headers: {
                     [name: string]: unknown;

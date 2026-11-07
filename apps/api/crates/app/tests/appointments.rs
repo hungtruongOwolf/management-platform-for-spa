@@ -1522,6 +1522,147 @@ async fn served_companions_get_their_own_technician_and_block(pool: PgPool) -> T
     Ok(())
 }
 
+/// EM 2026-11-07 (group booking simplified): a group only says who comes together. Each member's
+/// technician is a plain update at any time before completion, each member arrives and is
+/// recorded on their own, and a companion linked to a profile becomes their own visit.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn group_members_are_served_one_by_one(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    s.open_all_day().await?;
+    let booked = s
+        .post(
+            &s.manager,
+            "/appointments/group",
+            json!({"starts_at": at(0, "01:00"), "people": [
+                {"customer_id": s.ha, "service_ids": [s.shampoo]},
+                {"guest": {"full_name": "Bạn của chị Hà", "phone": null}, "service_ids": [s.shampoo]},
+            ]}),
+        )
+        .await;
+    assert_eq!(booked.status, StatusCode::CREATED, "{}", booked.body);
+    let ha = booked.body["appointments"][0].clone();
+    let friend = booked.body["appointments"][1].clone();
+    let id = |a: &Value| a["id"].as_str().unwrap_or_default().to_owned();
+    let patch = |a: &Value, body: Value| {
+        let path = format!("/appointments/{}", id(a));
+        let version = format!("\"{}\"", a["version"]);
+        let app = s.h.app.clone();
+        let who = s.manager.clone();
+        async move {
+            call_with_headers(
+                &app,
+                "PATCH",
+                &path,
+                Some(&who),
+                Some(body),
+                &[("if-match", version.as_str())],
+            )
+            .await
+        }
+    };
+
+    // Same time, no technician: two people, never a clash with each other.
+    assert_eq!(ha["staff_id"], Value::Null);
+    assert_eq!(friend["staff_id"], Value::Null);
+
+    // Assigning a technician is a plain update, and the technician rule still holds.
+    let friend = patch(&friend, json!({"staff_id": s.tuan})).await;
+    assert_eq!(friend.status, StatusCode::OK, "{}", friend.body);
+    let friend = friend.body;
+    let clash = patch(&ha, json!({"staff_id": s.tuan})).await;
+    assert_eq!(
+        code(&clash),
+        (StatusCode::CONFLICT, Some("appointment.staff_busy"))
+    );
+    assert_eq!(clash.body["existing_id"], friend["id"]);
+    let ha = patch(&ha, json!({"staff_id": s.lan})).await;
+    assert_eq!(ha.status, StatusCode::OK, "{}", ha.body);
+    let ha = ha.body;
+
+    // Hà arrives alone; her friend is still waiting.
+    let arrived = s
+        .post(
+            &s.manager,
+            &format!("/appointments/{}/arrive", id(&ha)),
+            json!({"staff_id": s.lan}),
+        )
+        .await;
+    assert_eq!(arrived.status, StatusCode::OK, "{}", arrived.body);
+    let cal = calendar_of(&s, &s.manager, 0).await;
+    let status_of = |a: &Value| {
+        cal.body["appointments"]
+            .as_array()
+            .and_then(|l| l.iter().find(|x| x["id"] == a["id"]))
+            .map(|x| x["status"].clone())
+            .unwrap_or_default()
+    };
+    assert_eq!(status_of(&ha), "arrived");
+    assert_eq!(status_of(&friend), "booked");
+    // Changing who serves an arrived customer is still a plain update (not to "nobody").
+    let ha = arrived.body;
+    let nobody = patch(&ha, json!({"staff_id": null})).await;
+    assert_eq!(nobody.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // The friend cannot become Hà (one person twice in the group) ...
+    let twice = patch(&friend, json!({"customer_id": s.ha})).await;
+    assert_eq!(
+        twice.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{}",
+        twice.body
+    );
+    assert_eq!(twice.body["errors"][0]["field"], "customer_id");
+    assert_eq!(twice.body["errors"][0]["code"], "duplicate");
+    // ... but becomes an anonymous walk-in profile in one step (ADR-0011).
+    let walk_in = call(
+        &s.h.app,
+        "POST",
+        "/customers",
+        Some(&s.manager),
+        Some(json!({"full_name": null, "phone": null})),
+    )
+    .await;
+    assert_eq!(walk_in.status, StatusCode::CREATED, "{}", walk_in.body);
+    let linked = patch(&friend, json!({"customer_id": id_of(&walk_in)})).await;
+    assert_eq!(linked.status, StatusCode::OK, "{}", linked.body);
+    assert_eq!(linked.body["is_guest"], false);
+    assert_eq!(linked.body["staff_id"], json!(s.tuan), "technician kept");
+
+    // Each person is recorded on their own: two visits, each on its own customer.
+    let cart = |staff: &str| {
+        json!({"lines": [{"service_id": s.dai_thong_lac, "source": "one_off", "staff_id": staff,
+                          "price_variant": "female"}],
+               "payments": [{"method": "cash", "amount": 349_000}]})
+    };
+    let mut visits = Vec::new();
+    for (a, staff, customer) in [
+        (&friend, &s.tuan, id_of(&walk_in)),
+        (&ha, &s.lan, s.ha.clone()),
+    ] {
+        let done = s
+            .post(
+                &s.manager,
+                &format!("/appointments/{}/complete", id(a)),
+                cart(staff),
+            )
+            .await;
+        assert_eq!(done.status, StatusCode::OK, "{}", done.body);
+        let visit = done.body["visit"]["id"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        let owner: Uuid =
+            sqlx::query_scalar("SELECT customer_id FROM app.visit WHERE id = $1::uuid")
+                .bind(&visit)
+                .fetch_one(&s.h.owner)
+                .await?;
+        assert_eq!(owner, Uuid::parse_str(&customer)?);
+        visits.push(visit);
+    }
+    assert_ne!(visits[0], visits[1]);
+    Ok(())
+}
+
 /// `group_with` adds a served companion to an existing booking; PATCH edits the note-only list.
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn companions_are_added_and_edited_on_an_existing_booking(pool: PgPool) -> TestResult {

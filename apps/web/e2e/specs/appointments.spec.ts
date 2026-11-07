@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { ownerState, stack } from "../stack";
 import { expectAccessible, uniquePhone } from "../support/run";
 
@@ -135,10 +135,10 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     const panel = page.getByRole("dialog", {
       name: /09:00.*Trần Thị Lịch Hẹn/,
     });
+    // Picking the technician is a plain update, saved at once (EM 2026-11-07).
     await panel.getByLabel("KTV làm").selectOption(r.staff.id);
-    await panel
-      .getByRole("button", { name: "Chỉ báo đã đến (ghi lượt sau)" })
-      .click();
+    await expect(panel.getByText("Đã lưu KTV.")).toBeVisible();
+    await panel.getByRole("button", { name: "Chỉ báo đã đến" }).click();
     await expect(panel).toContainText("Đang làm");
     await panel.getByRole("button", { name: "Ghi lượt", exact: true }).click();
     await expect(page.getByText(/Đang ghi cho lịch hẹn 09:00/)).toBeVisible();
@@ -206,7 +206,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     ).toContainText("Chưa đến");
   });
 
-  test("a family is booked in one go and checked in together; walk-ins are on the timeline", async ({
+  test("a family is booked in one go, each person checked in on their own; walk-ins are on the timeline", async ({
     page,
   }) => {
     const mother = await regular(page, "Đỗ Thị Mẹ");
@@ -241,7 +241,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     await sheet.getByRole("button", { name: "Đặt lịch 2 người" }).click();
     await expect(
       page.getByRole("dialog", { name: /11:00.*Đỗ Thị Mẹ/ }),
-    ).toContainText("Cùng nhóm (2 người)");
+    ).toContainText("Cùng nhóm · 2 người");
     await page.keyboard.press("Escape");
     await expect(
       page.getByRole("button", {
@@ -249,7 +249,9 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
       }),
     ).toBeVisible();
 
-    // Today: a group booked through the API, checked in together → two visits, two payments.
+    // Today: a group booked through the API (mother, child, a friend known by name only). A group
+    // only says they come together: each person is checked in from their own sheet, like a single
+    // booking (EM 2026-11-07: no "Khách đến cả nhóm" step) → one visit and one payment each.
     const group = await page.request.post("/api/v1/appointments/group", {
       headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
       data: {
@@ -257,29 +259,58 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
         people: [
           { customer_id: mother.customer, service_ids: [mother.service.id] },
           { customer_id: child.customer, service_ids: [child.service.id] },
+          {
+            guest: { full_name: "Bạn của chị Mẹ", phone: null },
+            service_ids: [mother.service.id],
+          },
         ],
       },
     });
-    expect(group.status()).toBe(201);
-    await page.goto("/quay?view=lich&kieu=ds");
-    await page
-      .getByRole("button", { name: /Đỗ Thị Mẹ/ })
-      .first()
-      .click();
-    await page
-      .getByRole("button", { name: "Khách đến cả nhóm · ghi 2 lượt" })
-      .click();
-    const checkIn = page.getByRole("dialog", { name: /Khách đến cả nhóm/ });
-    for (const name of ["Đỗ Thị Mẹ", "Đỗ Văn Con"])
-      await checkIn
-        .getByRole("listitem", { name })
-        .getByLabel("KTV làm")
-        .selectOption(mother.staff.id);
-    await expectAccessible(page, "lich-nhom-den");
-    // Same technician for both is allowed here: visits are not bookings.
-    await checkIn.getByRole("button", { name: "Ghi 2 lượt" }).click();
-    await expect(checkIn.getByText("Đã ghi lượt")).toHaveCount(2);
-    await checkIn.getByRole("button", { name: "Xong" }).click();
+    expect(group.status(), await group.text()).toBe(201);
+    const checkIn = async (name: string, before?: (s: Locator) => Promise<void>) => {
+      await page.goto("/quay?view=lich&kieu=ds");
+      await page
+        .getByRole("list", { name: /Lịch hẹn ngày/ })
+        .getByRole("button", { name: new RegExp(name) })
+        .click();
+      await expect(
+        page.getByRole("dialog", { name: new RegExp(`09:00.*${name}`) }),
+      ).toBeVisible();
+      // By role only: a walk-in profile renames the sheet to "Khách vãng lai".
+      const sheet = page.getByRole("dialog");
+      await expect(sheet).toContainText("Cùng nhóm · 3 người");
+      await expect(sheet.getByText(/cả nhóm/)).toHaveCount(0);
+      if (before) await before(sheet);
+      // The technician is a plain update on this person's booking, saved when picked.
+      await sheet.getByLabel("KTV làm").selectOption(mother.staff.id);
+      await expect(sheet.getByText("Đã lưu KTV.")).toBeVisible();
+      await sheet.getByRole("button", { name: "Khách đến · ghi lượt" }).click();
+      await expect(page.getByText(/Đang ghi cho lịch hẹn 09:00/)).toBeVisible();
+      await expect(page.getByRole("combobox", { name: "KTV" })).toHaveValue(
+        mother.staff.id,
+      );
+      await page.getByRole("button", { name: "Lưu lượt khách" }).click();
+      await expect(page.locator(".toast")).toContainText("Đã lưu lượt");
+    };
+    // The mother first; the others still wait ("Chưa đến"), nobody is blocked by her.
+    await checkIn("Đỗ Thị Mẹ", async (sheet) => {
+      await expectAccessible(page, "lich-nhom-tung-nguoi");
+      const members = sheet.getByRole("list");
+      await expect(members.getByRole("listitem")).toHaveCount(3);
+    });
+    // Same technician later on is fine: the mother's booking is done.
+    await checkIn("Đỗ Văn Con");
+    // The friend has no profile: one tap records them as an anonymous walk-in (ADR-0011).
+    await checkIn("Bạn của chị Mẹ", async (sheet) => {
+      await expect(sheet).toContainText("Chưa có SĐT");
+      const profile = sheet.getByRole("group", { name: "Hồ sơ khách" });
+      await expectAccessible(page, "lich-nguoi-di-cung-chua-ho-so");
+      await profile
+        .getByRole("button", { name: "Ghi là khách vãng lai" })
+        .click();
+      await expect(profile).toBeHidden();
+      await expect(sheet.getByRole("link", { name: "Mở hồ sơ" })).toBeVisible();
+    });
 
     // A walk-in recorded at the desk shows up on the timeline without a booking.
     const walkIn = await page.request.post("/api/v1/visits", {
@@ -297,9 +328,9 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
       },
     });
     expect(walkIn.status()).toBe(201);
-    await page.reload();
+    await page.goto("/quay?view=lich&kieu=ds");
     const list = page.getByRole("list", { name: /Lịch hẹn ngày/ });
-    await expect(list.getByText(/Vãng lai/)).toBeVisible();
+    await expect(list.getByText(/Vãng lai/).first()).toBeVisible();
     await expect(
       list.getByRole("button", { name: /Đỗ Thị Mẹ.*(Đang làm|Xong)/ }),
     ).toBeVisible();
@@ -353,7 +384,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     await sheet.getByRole("button", { name: "Đặt lịch 2 người" }).click();
 
     const opened = page.getByRole("dialog", { name: /10:00.*Lê Thị Chủ Lịch/ });
-    await expect(opened).toContainText("Cùng nhóm (2 người)");
+    await expect(opened).toContainText("Cùng nhóm · 2 người");
     await expect(opened).toContainText("Bé Bin");
     await expect(opened).toContainText(tech.full_name);
     await page.keyboard.press("Escape");
@@ -369,16 +400,20 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
       tech.full_name,
     );
 
-    // Their sheet: no phone yet, a record is created before recording their visit.
+    // Their sheet: no phone yet; one tap makes a profile from the booked name (no banner, no
+    // form), and the technician stays on their booking.
     await block.click();
     const theirs = page.getByRole("dialog", {
       name: /14:00.*Chồng của chị Chủ Lịch/,
     });
-    await expect(theirs).toContainText("Chưa có");
-    await expect(theirs).toContainText("Người đi cùng chưa có hồ sơ");
-    await expect(
-      theirs.getByRole("button", { name: "Tạo hồ sơ khách" }),
-    ).toBeVisible();
+    await expect(theirs).toContainText("Chưa có SĐT");
+    await expect(theirs.getByLabel("KTV làm")).toHaveValue(tech.id);
+    const profile = theirs.getByRole("group", { name: "Hồ sơ khách" });
+    await expect(profile).toContainText("Chưa có hồ sơ khách.");
+    await profile.getByRole("button", { name: "Tạo hồ sơ" }).click();
+    await expect(profile).toBeHidden();
+    await expect(theirs.getByRole("link", { name: "Mở hồ sơ" })).toBeVisible();
+    await expect(theirs.getByLabel("KTV làm")).toHaveValue(tech.id);
   });
 
   test("no hard-coded capacity: the owner sets an optional max per slot", async ({
@@ -726,10 +761,10 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
       name: /09:00.*Nguyễn Thị Lan Anh/,
     });
     await expect(panel.getByLabel("KTV làm")).toHaveValue("");
-    await panel
-      .getByRole("button", { name: "Chỉ báo đã đến (ghi lượt sau)" })
-      .click();
-    await expect(panel).toContainText("Chọn KTV làm cho khách rồi bấm lại.");
+    await panel.getByRole("button", { name: "Chỉ báo đã đến" }).click();
+    await expect(panel).toContainText(
+      "Chọn KTV làm rồi bấm lại “Chỉ báo đã đến”.",
+    );
     await expect(panel).toContainText("Chưa đến");
 
     // "Hủy lịch" is a real button of the control scale, at 1280 and at 390 px.
@@ -861,7 +896,8 @@ test("companion screenshots (EM 2026-11-07)", async ({ page }) => {
   test.skip(!dir, "set COMPANION_SHOTS_DIR to capture");
   test.setTimeout(5 * 60_000);
   const host = await regular(page, "Nguyễn Thị Hà Ảnh");
-  const day = spaDay(2);
+  // Today: the sheets show arrival, the technician and the primary action.
+  const day = spaDay();
   const cal = (await (
     await page.request.get(`/api/v1/appointments?from=${day}`)
   ).json()) as { technicians: { id: string; full_name: string }[] };
@@ -953,6 +989,17 @@ test("companion screenshots (EM 2026-11-07)", async ({ page }) => {
       await page.waitForTimeout(300);
       await opened.screenshot({
         path: `${dir}/sheet-${String(width)}-${scheme}.png`,
+      });
+      // The companion's own sheet (no profile yet), opened from the group row.
+      await opened
+        .getByRole("button", { name: /Chồng của chị Hà/ })
+        .first()
+        .click();
+      const companion = page.getByRole("dialog", { name: /Chồng của chị Hà/ });
+      await expect(companion).toContainText("Chưa có hồ sơ khách.");
+      await page.waitForTimeout(300);
+      await companion.screenshot({
+        path: `${dir}/sheet-nguoi-di-cung-${String(width)}-${scheme}.png`,
       });
       await page.keyboard.press("Escape");
     }
