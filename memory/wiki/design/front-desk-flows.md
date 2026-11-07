@@ -4,6 +4,14 @@ updated: 2026-11-07
 sources: [product/specs/front-desk-and-packages.md, design/design-system.md, raw/2026-11-06-em-ui-redesign-direction.md]
 ---
 
+> **EM live test /quay (2026-11-07, [raw](../../raw/2026-11-07-em-live-test-desk.md)).**
+> - **Tiền mặt + CK:** ô tiền mặt báo lý do ngay khi gõ ("Tiền mặt phải nhỏ hơn số phải trả (349.000đ). Khách trả hết bằng tiền mặt thì chọn “Tiền mặt”."), không chỉ viền đỏ; bình thường hiện phần chuyển khoản. Chi tiết lượt có dòng "Thanh toán · Tiền mặt 20.000đ · CK 25.000đ" khi trả hai cách (dữ liệu `payments` đã có, không đổi API).
+> - **Sửa lượt đụng tiền:** chân giỏ hiện **"Thu thêm / Hoàn lại khách / Không đổi tiền" + số chênh lệch** (chữ to), dòng phụ "Tổng lượt sau sửa 349.000đ · đã thu 299.000đ"; không còn "Phải trả" khi đang sửa. Khung lý do chỉ giải thích hủy + ghi lại.
+> - **Đổi khách khi giỏ có món** (tìm khách khác, "Đổi khách", Esc): hỏi trước (`alertdialog` "Đổi khách? Giỏ của … chưa lưu." · Đổi khách / Ở lại); giỏ vẫn giữ làm giỏ nháp của khách cũ.
+> - **Người đi cùng:** bỏ ô ghi chú tự do trong giỏ (ADR-0009: người đi cùng nhập ở lịch hẹn; ai được làm có lịch + lượt riêng). Lượt từ lịch hẹn vẫn mang ghi chú của lịch (hiện một dòng chỉ đọc); chi tiết lượt cũ vẫn hiện "Người đi cùng".
+> - Nữ/Nam của khách chưa có giới tính theo dòng lẻ đã có trong giỏ (giỏ nháp khôi phục, Sửa lượt); "Chuyển sang gói" mở đúng một ô gói (hiệu ứng mở ô chạy hai lần dưới StrictMode); thông báo "Đã hủy lượt…" của danh sách lượt mất khi giỏ lưu / bỏ, khi mở dòng khác hay đổi ngày.
+> - **Màn không có quyền:** route guard (UX) theo cùng quy tắc với nav (`app/access.ts` `mayOpen`): /quay, khách hàng, báo cáo, gói, khách lâu chưa quay lại, nhân viên, khách của tôi, bảng giá → trang "Không có quyền mở màn hình này" trong khung app + "Về trang tổng quan". Lỗi 403 không có nút "Thử lại" (`retryable`). Ô SĐT đăng nhập chỉ nhận chữ số (`inputmode=numeric`, dán "+84 905.123.456" → 0905123456).
+
 > **Redesign pilot /quay (2026-11-06, [design-system § Quy tắc](design-system.md#quy-tắc-rulebook-2026-11-06--áp-cho-mọi-màn-làm-việc)).** EM: "quá xấu UI lỗi tùm lum và sao có cái vụ lưu như khách vãng lai là sao nhỉ". Thay đổi (hành vi, quyền, fast path giữ nguyên):
 > - **Thanh trên:** Ghi lượt khách | Lịch hẹn · bên phải **một dòng** "🕒 Còn hh:mm:ss để nhập số liệu hôm nay" + nút ⓘ (toggletip: quản lý khóa sau 0 giờ; chủ spa vẫn nhập bù; giờ máy khác giờ spa).
 > - **Hai panel từ 1024px:** trái = tìm khách + khách đang chọn + gói; phải = lượt đang ghi. Dưới 1024px xếp dọc. Ô tìm và **Khách mới** cùng một hàng; phím tắt nằm sau nút "?" (ẩn dưới 640px). Chọn khách xong danh sách kết quả ẩn (gõ lại thì hiện), Enter lần nữa không chọn lại.

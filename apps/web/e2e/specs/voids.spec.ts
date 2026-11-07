@@ -125,6 +125,8 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     await expect(page.getByTestId("correction-difference")).toContainText(
       "Thu thêm",
     );
+    // The amount to collect is the difference; the new total is secondary (EM live test).
+    await expect(page.getByText(/^Tổng lượt sau sửa .* · đã thu /)).toBeVisible();
     await page
       .getByRole("textbox", { name: /^Lý do sửa/ })
       .fill("Khách trả tiền lẻ, không trừ gói");

@@ -1,11 +1,8 @@
 // The "Sửa lượt" part of the cart: what saving will do (direct edit or void + record), the money
 // difference before saving, and the reason when money or sessions change. Lazy (own chunk).
 import type { Visit } from "@vpyd/api-client";
-import {
-  type CorrectionDraft,
-  differenceText,
-  planCorrection,
-} from "./correction";
+import { formatVnd } from "@vpyd/ui";
+import { type CorrectionDraft, planCorrection } from "./correction";
 
 export function CorrectionPanel({
   visit,
@@ -42,14 +39,8 @@ export function CorrectionPanel({
     <div className="callout">
       <p>
         Đổi dịch vụ, tiền hoặc khách: lượt cũ được hủy (buổi cộng lại, tiền ghi
-        bút toán đảo) và ghi lại lượt mới.
-      </p>
-      <p
-        className="text-base font-bold"
-        aria-live="polite"
-        data-testid="correction-difference"
-      >
-        {differenceText(plan.difference)}
+        bút toán đảo) và ghi lại lượt mới. Quầy chỉ thu hoặc hoàn phần chênh
+        lệch ở ô thanh toán bên dưới.
       </p>
       <label className="field">
         <span>Lý do sửa (bắt buộc)</span>
@@ -72,5 +63,45 @@ export function CorrectionPanel({
         )}
       </label>
     </div>
+  );
+}
+
+/**
+ * The checkout amount while correcting: what the desk collects or gives back, big; the corrected
+ * total only as context (EM live test: "Phải trả 349.000đ" next to "Thu thêm 50.000đ" read as
+ * "collect 349k").
+ */
+export function CorrectionTotal({
+  total,
+  paid,
+}: {
+  /** The corrected visit's total (preview). */
+  total: number;
+  /** What the recorded visit took. */
+  paid: number;
+}) {
+  const difference = total - paid;
+  return (
+    <>
+      <p
+        className="checkout-total"
+        aria-live="polite"
+        data-testid="correction-difference"
+      >
+        <span>
+          {difference > 0
+            ? "Thu thêm"
+            : difference < 0
+              ? "Hoàn lại khách"
+              : "Không đổi tiền"}
+        </span>
+        <span className="checkout-amount">
+          {formatVnd(Math.abs(difference))}
+        </span>
+      </p>
+      <p className="checkout-split">
+        Tổng lượt sau sửa {formatVnd(total)} · đã thu {formatVnd(paid)}
+      </p>
+    </>
   );
 }

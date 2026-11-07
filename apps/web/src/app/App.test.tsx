@@ -58,7 +58,7 @@ describe("auth flow", () => {
         return loggedIn ? Response.json(ME) : unauthorized();
       if (path === "/api/v1/auth/login" && method === "POST") {
         expect(body).toEqual({
-          phone: "0905 123 456",
+          phone: "0905123456",
           password: "mat-khau-dung",
         });
         loggedIn = true;
@@ -164,6 +164,36 @@ describe("auth flow", () => {
     );
   });
 
+  it("takes digits only in the phone field, a pasted formatted number included", async () => {
+    const fetchSpy = server((_method, path) =>
+      path === "/api/v1/auth/login"
+        ? new Response(
+            JSON.stringify({ status: 401, code: "auth.invalid_credentials" }),
+            { status: 401 },
+          )
+        : unauthorized(),
+    );
+    renderAt("/dang-nhap");
+    const user = userEvent.setup();
+    const phone = await screen.findByLabelText("Số điện thoại");
+    expect(phone).toHaveAttribute("inputmode", "numeric");
+    await user.type(phone, "09o5abc");
+    expect(phone).toHaveValue("095");
+    await user.clear(phone);
+    await user.click(phone);
+    await user.paste("+84 905.123.456");
+    expect(phone).toHaveValue("0905123456");
+    await user.type(screen.getByLabelText("Mật khẩu"), "pw");
+    await user.click(screen.getByRole("button", { name: "Đăng nhập" }));
+    await screen.findByRole("alert");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/v1/auth/login",
+      expect.objectContaining({
+        body: JSON.stringify({ phone: "0905123456", password: "pw" }),
+      }),
+    );
+  });
+
   it("an already signed-in user opening the login link goes straight to `next`", async () => {
     server((_method, path) => {
       if (path === "/api/v1/me") return Response.json(ME);
@@ -212,6 +242,46 @@ describe("unknown address", () => {
       await screen.findByRole("heading", { level: 1, name: "Không tìm thấy trang này" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Về trang tổng quan" })).toHaveAttribute("href", "/");
+  });
+});
+
+describe("screens a role may not open", () => {
+  it("a technician opening /quay by URL gets “Không có quyền”, not the desk and its 403s", async () => {
+    const fetchSpy = server((_method, path) =>
+      path === "/api/v1/me"
+        ? Response.json({
+            ...ME,
+            permissions: ["catalog.read", "staff.read_basic", "staff.read_own"],
+          })
+        : new Response(null, { status: 403 }),
+    );
+    renderAt("/quay");
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Không có quyền mở màn hình này",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Về trang tổng quan" })).toHaveAttribute("href", "/");
+    expect(screen.queryByRole("combobox", { name: /Tìm khách/ })).toBeNull();
+    // The desk never mounted: it asked the API for nothing.
+    expect(
+      fetchSpy.mock.calls.some(([input]) => typeof input === "string" && input.startsWith("/api/v1/visits")),
+    ).toBe(false);
+  });
+
+  it("every guarded screen refuses a role without its permission", async () => {
+    for (const path of ["/khach-hang", "/khach-hang/c1", "/bao-cao", "/goi-lieu-trinh", "/khach-lau-khong-quay-lai", "/khach-cua-toi"]) {
+      server((_method, p) =>
+        p === "/api/v1/me" ? Response.json(ME) : new Response(null, { status: 403 }),
+      );
+      const view = renderAt(path);
+      expect(
+        await screen.findByRole("heading", { name: "Không có quyền mở màn hình này" }),
+      ).toBeInTheDocument();
+      view.unmount();
+      vi.restoreAllMocks();
+    }
   });
 });
 

@@ -22,7 +22,7 @@ import { DateField } from "../../components/DateField";
 import { StickyActions } from "../../components/StickyActions";
 import { usePhone } from "../../components/useMediaQuery";
 import { ApiError } from "../../lib/api";
-import { messageFor } from "../../lib/errors";
+import { messageFor, retryable } from "../../lib/errors";
 import { useSearchState } from "../../lib/searchState";
 import { serviceLabel } from "../../lib/names";
 import { can, meQuery } from "../auth/session";
@@ -328,13 +328,15 @@ export function AppointmentsCalendar({
       {cal.isError && !cal.data && (
         <div role="alert" className="alert">
           <span>Không tải được lịch hẹn. {messageFor(cal.error)}</span>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => void cal.refetch()}
-          >
-            Thử lại
-          </button>
+          {retryable(cal.error) && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => void cal.refetch()}
+            >
+              Thử lại
+            </button>
+          )}
         </div>
       )}
       {shown &&
