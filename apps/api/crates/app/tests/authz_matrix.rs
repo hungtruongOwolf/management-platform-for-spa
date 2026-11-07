@@ -245,10 +245,11 @@ const ROUTES: &[Route] = &[
         Access::Perm(P::StaffManage, OWNER_ONLY),
     )
     .body(staff_body),
+    // Roster read (0025): owner + manager; details only with staff.manage (staff.rs).
     route(
         "GET",
         "/api/v1/staff/profiles",
-        Access::Perm(P::StaffManage, OWNER_ONLY),
+        Access::Perm(P::StaffRead, OWNER_MANAGER),
     ),
     route(
         "GET",
@@ -258,9 +259,42 @@ const ROUTES: &[Route] = &[
     route(
         "GET",
         "/api/v1/staff/{id}",
+        Access::Perm(P::StaffRead, OWNER_MANAGER),
+    )
+    .id(Target::Staff),
+    route(
+        "GET",
+        "/api/v1/staff/{id}/history",
         Access::Perm(P::StaffManage, OWNER_ONLY),
     )
     .id(Target::Staff),
+    route(
+        "PUT",
+        "/api/v1/staff/{id}/account",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    )
+    .id(Target::Staff)
+    .body(account_body)
+    .if_match(),
+    // Empty reason: the owner's call stops at 422 after the permission and tenant checks, so
+    // the fixture technician keeps working for the other rows.
+    route(
+        "POST",
+        "/api/v1/staff/{id}/end",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    )
+    .id(Target::Staff)
+    .body(end_body)
+    .if_match(),
+    // The fixture technician is working: the owner's call is 409 staff.already_active.
+    route(
+        "POST",
+        "/api/v1/staff/{id}/rehire",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    )
+    .id(Target::Staff)
+    .body(rehire_body)
+    .if_match(),
     route(
         "PUT",
         "/api/v1/staff/{id}",
@@ -672,6 +706,15 @@ fn health_note_body(_: &Fixture) -> Option<Value> {
 }
 fn staff_body(_: &Fixture) -> Option<Value> {
     Some(json!({"full_name": "KTV Hoa", "position": "Kỹ thuật viên"}))
+}
+fn account_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"user_id": null}))
+}
+fn end_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"ended_on": yesterday(), "reason": " "}))
+}
+fn rehire_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"started_on": yesterday()}))
 }
 fn pay_body(_: &Fixture) -> Option<Value> {
     Some(json!({"base_salary": 5_000_000, "commission_rate_bp": 500}))

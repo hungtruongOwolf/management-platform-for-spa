@@ -13,6 +13,12 @@ addMessages(
     "staff.account_taken": "Tài khoản này đã gắn với một nhân viên khác.",
     "staff.record_owner_only": "Chỉ chủ spa ghi được cho quản lý (quản lý không tự ghi cho mình).",
     "adjustment.voided": "Khoản này vừa được xóa hoặc sửa ở máy khác. Tải lại để xem mới nhất.",
+    "staff.already_left": "Nhân viên này đã nghỉ việc rồi. Tải lại để xem mới nhất.",
+    "staff.already_active": "Nhân viên này đang làm. Tải lại để xem mới nhất.",
+    "staff.has_upcoming_bookings":
+      "Nhân viên còn lịch hẹn sau ngày nghỉ việc. Hãy đổi KTV hoặc hủy các lịch đó ở Lịch hẹn trước.",
+    "staff.cannot_end_self": "Bạn không tự cho mình nghỉ việc được.",
+    "staff.linked_to_owner": "Hồ sơ này gắn với tài khoản chủ spa. Bỏ gắn tài khoản trước khi cho nghỉ việc.",
   },
   {
     not_employed: "Ngày này nhân viên chưa vào làm hoặc đã nghỉ.",
@@ -25,11 +31,18 @@ addMessages(
     before_joined_on: "Ngày nghỉ việc trước ngày vào làm.",
     must_be_empty: "Nhân viên đang làm thì không có ngày nghỉ việc.",
     not_a_member: "Tài khoản không thuộc spa này.",
+    has_later_records: "Sau ngày này nhân viên vẫn có chấm công hoặc lượt khách. Chọn ngày làm cuối cùng.",
+    period_ended: "Đợt làm việc này đã kết thúc. Dùng \u201cNhận lại làm\u201d để mở đợt mới.",
+    overlaps_previous: "Ngày vào làm phải sau ngày nghỉ của đợt trước.",
+    before_last_end: "Ngày nhận lại phải sau ngày nghỉ việc của đợt trước.",
   },
 );
 
 export type StaffProfile = Schemas["StaffProfileDto"];
 export type StaffProfileWrite = Schemas["StaffProfileWrite"];
+export type StaffCreate = Schemas["StaffCreate"];
+export type StaffHistoryEntry = Schemas["StaffHistoryEntryDto"];
+export type EmploymentPeriod = Schemas["EmploymentPeriodDto"];
 export type StaffPayWrite = Schemas["StaffPayWrite"];
 export type StaffAccount = Schemas["StaffAccountDto"];
 export type AttendanceSheet = Schemas["AttendanceSheet"];
@@ -102,10 +115,19 @@ export const rulesQuery = queryOptions({
   queryFn: async () => (await api("/payroll/rules")) as PayrollRulesDto,
 });
 
+/** The whole roster (working and former staff); the tab filters it on the client. */
 export const profilesQuery = queryOptions({
   queryKey: ["staff", "profiles"],
-  queryFn: async () => (await api("/staff/profiles")) as StaffProfile[],
+  queryFn: async () => (await api("/staff/profiles?status=all")) as StaffProfile[],
 });
+
+/** Who changed what on a profile (owner); pay changes only for payroll.read. */
+export function historyQuery(id: string) {
+  return queryOptions({
+    queryKey: ["staff", "history", id] as const,
+    queryFn: async () => (await api(`/staff/${id}/history`)) as StaffHistoryEntry[],
+  });
+}
 
 export const accountsQuery = queryOptions({
   queryKey: ["staff", "accounts"],
@@ -188,12 +210,31 @@ export async function saveRules(rules: PayrollRules): Promise<PayrollRulesDto> {
   return (await api("/payroll/rules", { method: "PUT", body: rules })) as PayrollRulesDto;
 }
 
-export async function createProfile(body: StaffProfileWrite): Promise<StaffProfile> {
+export async function createProfile(body: StaffCreate): Promise<StaffProfile> {
   return (await api("/staff", { method: "POST", body })) as StaffProfile;
 }
 
 export async function updateProfile(id: string, version: number, body: StaffProfileWrite): Promise<StaffProfile> {
   return (await api(`/staff/${id}`, { method: "PUT", body, headers: ifMatch(version) })) as StaffProfile;
+}
+
+/** Links a login to the profile, or unlinks it (`null`). Never touches passwords. */
+export async function setAccount(id: string, version: number, userId: string | null): Promise<StaffProfile> {
+  return (await api(`/staff/${id}/account`, { method: "PUT", body: { user_id: userId }, headers: ifMatch(version) })) as StaffProfile;
+}
+
+/** Nghỉ việc: closes the current period (soft; history stays) and locks the linked login. */
+export async function endEmployment(id: string, version: number, endedOn: string, reason: string): Promise<StaffProfile> {
+  return (await api(`/staff/${id}/end`, {
+    method: "POST",
+    body: { ended_on: endedOn, reason },
+    headers: ifMatch(version),
+  })) as StaffProfile;
+}
+
+/** Nhận lại làm: a new period after the last one. */
+export async function rehire(id: string, version: number, startedOn: string): Promise<StaffProfile> {
+  return (await api(`/staff/${id}/rehire`, { method: "POST", body: { started_on: startedOn }, headers: ifMatch(version) })) as StaffProfile;
 }
 
 export async function savePay(id: string, body: StaffPayWrite): Promise<unknown> {

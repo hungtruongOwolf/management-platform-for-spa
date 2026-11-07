@@ -1,9 +1,13 @@
 import type { AttendanceDay, StaffSheet } from "./api";
 import { daysOf, shiftMonth } from "./labels";
 
-/** Whether the person works for the spa on `date` (joined, not yet left). */
+/**
+ * Whether the person works for the spa on `date`: inside one of their employment periods (a
+ * rehired person's gap is not a workday, ADR-0012).
+ */
 export function employedOn(s: StaffSheet, date: string): boolean {
-  return (!s.joined_on || date >= s.joined_on) && (!s.left_on || date <= s.left_on);
+  if (s.periods.length === 0) return (!s.joined_on || date >= s.joined_on) && (!s.left_on || date <= s.left_on);
+  return s.periods.some((p) => (!p.started_on || date >= p.started_on) && (!p.ended_on || date <= p.ended_on));
 }
 
 export function cellOf(s: StaffSheet, date: string): AttendanceDay | undefined {

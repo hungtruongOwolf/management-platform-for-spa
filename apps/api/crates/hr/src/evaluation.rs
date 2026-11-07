@@ -299,8 +299,7 @@ pub async fn sheet(
                 attendance: calc::summarize(
                     month,
                     attendance::recorded_until(month, today),
-                    p.joined_on,
-                    p.left_on,
+                    &p.employment,
                     &mine,
                 ),
                 evaluation: evals.iter().find(|e| e.staff_id == p.id).cloned(),

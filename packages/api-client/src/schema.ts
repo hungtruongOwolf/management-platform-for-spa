@@ -975,6 +975,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/staff/{id}/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set_staff_account"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/{id}/end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["end_employment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/{id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["staff_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/staff/{id}/pay": {
         parameters: {
             query?: never;
@@ -985,6 +1033,22 @@ export interface paths {
         get?: never;
         put: operations["set_staff_pay"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/{id}/rehire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["rehire_staff"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1855,6 +1919,20 @@ export interface components {
             amount: number;
             /** @description Required when `amount` > 0. */
             reason?: string | null;
+        };
+        /** @description One employment period (ADR-0012). `end_reason` only for `staff.manage` holders. */
+        EmploymentPeriodDto: {
+            end_reason?: string | null;
+            /**
+             * Format: date
+             * @description `null` = still working.
+             */
+            ended_on?: string | null;
+            /**
+             * Format: date
+             * @description `null` = before the books (start date never recorded).
+             */
+            started_on?: string | null;
         };
         Evaluation: {
             by_name: string;
@@ -3316,6 +3394,47 @@ export interface components {
             /** Format: uuid */
             user_id: string;
         };
+        StaffAccountWrite: {
+            /**
+             * Format: uuid
+             * @description `null` unlinks.
+             */
+            user_id?: string | null;
+        };
+        StaffChangeDto: {
+            after: Record<string, never>;
+            before: Record<string, never>;
+            /** @description Audit key: `position`, `joined_on`, `left_on`, `status`, `user_id`, `base_salary`, … */
+            field: string;
+        };
+        /** @description Hire: a profile plus, optionally, the login to link right away. */
+        StaffCreate: {
+            full_name: string;
+            /**
+             * Format: date
+             * @description First day of work; `null` = not recorded (the UI fills in today).
+             */
+            joined_on?: string | null;
+            note?: string | null;
+            phone?: string | null;
+            position: string;
+            /** @description `HH:MM`. */
+            shift_start?: string | null;
+            /**
+             * Format: uuid
+             * @description Login to link (an active member of this spa, not linked to anyone else).
+             */
+            user_id?: string | null;
+        };
+        /** @description Personal details of a profile (`staff.manage` only). */
+        StaffDetailsDto: {
+            note?: string | null;
+            /** @description National form, e.g. `0905 123 456`. */
+            phone?: string | null;
+            /** Format: uuid */
+            user_id?: string | null;
+            user_name?: string | null;
+        };
         /** @description Basic staff card: no phone or personal data (`staff.read_basic`). */
         StaffDto: {
             full_name: string;
@@ -3323,6 +3442,14 @@ export interface components {
             id: string;
             position: string;
             status: components["schemas"]["StaffStatusDto"];
+        };
+        StaffEndWrite: {
+            /**
+             * Format: date
+             * @description Last working day (≤ today).
+             */
+            ended_on: string;
+            reason: string;
         };
         StaffEvaluation: {
             /** @description The month's attendance, as context for "Chuyên cần". */
@@ -3341,6 +3468,19 @@ export interface components {
             position: string;
             /** Format: uuid */
             staff_id: string;
+        };
+        StaffHistoryEntryDto: {
+            /**
+             * @description `staff.create`, `staff.update`, `staff.account_link`, `staff.end`, `staff.rehire`,
+             *     `staff.pay_update` (only for `payroll.read`).
+             */
+            action: string;
+            actor_name?: string | null;
+            /** Format: date-time */
+            at: string;
+            changes: components["schemas"]["StaffChangeDto"][];
+            /** @description End-of-employment reason. */
+            reason?: string | null;
         };
         /** @description Pay terms (salary data). Only ever sent to holders of `payroll.read`. */
         StaffPayDto: {
@@ -3367,47 +3507,74 @@ export interface components {
             meal_allowance?: number;
         };
         /**
-         * @description A staff profile (`staff.manage`). `pay` is present only for `payroll.read` holders who have
-         *     set terms; `pay_visible` says whether the caller may see pay at all.
+         * @description A roster entry / staff profile (`staff.read`). `details` only for `staff.manage`; `pay` only
+         *     for `payroll.read` holders who have set terms (`pay_visible` says whether pay is visible at
+         *     all). Absent means "not yours to see", never "hidden by the UI".
          */
         StaffProfileDto: {
+            details?: components["schemas"]["StaffDetailsDto"] | null;
+            /**
+             * Format: date
+             * @description Start of the first period ("vào làm lần đầu"), differs from `joined_on` after a rehire.
+             */
+            first_joined_on?: string | null;
             full_name: string;
             /** Format: uuid */
             id: string;
-            /** Format: date */
+            /**
+             * Format: date
+             * @description Start of the current (or, once left, the latest) period: "Ngày vào làm".
+             */
             joined_on?: string | null;
-            /** Format: date */
+            /**
+             * Format: date
+             * @description Last day of the latest period, once the person has left.
+             */
             left_on?: string | null;
+            /** @description Whether a login is linked (decision C: an unlinked manager counts as a technician). */
+            login_linked: boolean;
             pay?: components["schemas"]["StaffPayDto"] | null;
             pay_visible: boolean;
-            /** @description National form, e.g. `0905 123 456`. */
-            phone?: string | null;
+            /** @description Oldest first. */
+            periods: components["schemas"]["EmploymentPeriodDto"][];
             position: string;
             /** @description `HH:MM`; `null` = the spa default (payroll rules). */
             shift_start?: string | null;
             status: components["schemas"]["StaffStatusDto"];
-            /** Format: uuid */
-            user_id?: string | null;
-            user_name?: string | null;
+            /**
+             * Format: int64
+             * @description Days worked, summed over the periods up to today; `null` = a start date is unknown.
+             */
+            tenure_days?: number | null;
+            /**
+             * Format: int64
+             * @description Completed calendar months, summed over the periods.
+             */
+            tenure_months?: number | null;
             /** Format: int64 */
             version: number;
         };
+        /** @description Create (hire) or edit a profile. On edit, `joined_on` is the start of the current period. */
         StaffProfileWrite: {
             full_name: string;
-            /** Format: date */
+            /**
+             * Format: date
+             * @description Start of the current period; `null` = not recorded (tenure unknown).
+             */
             joined_on?: string | null;
-            /** Format: date */
-            left_on?: string | null;
+            /** @description HR note (≤ 1000), owner only. */
+            note?: string | null;
             phone?: string | null;
             position: string;
             /** @description `HH:MM`. */
             shift_start?: string | null;
-            status?: components["schemas"]["StaffStatusDto"];
+        };
+        StaffRehireWrite: {
             /**
-             * Format: uuid
-             * @description Login to link (an active member of this spa, not linked to anyone else).
+             * Format: date
+             * @description First day of the new period (after the last period's end).
              */
-            user_id?: string | null;
+            started_on: string;
         };
         StaffReviews: {
             /** @description Decision C: whether the caller may record this person's day. */
@@ -3431,10 +3598,15 @@ export interface components {
             can_record: boolean;
             days: components["schemas"]["AttendanceDay"][];
             full_name: string;
-            /** Format: date */
+            /**
+             * Format: date
+             * @description Start of the latest period (older clients; use `periods`).
+             */
             joined_on?: string | null;
             /** Format: date */
             left_on?: string | null;
+            /** @description Employment periods (dates only): days outside them are not workdays. */
+            periods: components["schemas"]["EmploymentPeriodDto"][];
             position: string;
             /** @description `HH:MM`, the person's own or the spa default. */
             shift_start: string;
@@ -7240,7 +7412,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["StaffProfileWrite"];
+                "application/json": components["schemas"]["StaffCreate"];
             };
         };
         responses: {
@@ -7312,7 +7484,10 @@ export interface operations {
     };
     list_profiles: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Default `all` (Đang làm / Đã nghỉ / Tất cả). */
+                status?: "active" | "left" | "all";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -7421,6 +7596,61 @@ export interface operations {
                 };
                 content?: never;
             };
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_staff_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffAccountWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffProfileDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description staff.account_taken */
             409: {
                 headers: {
@@ -7435,6 +7665,108 @@ export interface operations {
                 content?: never;
             };
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    end_employment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffEndWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffProfileDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description staff.already_left | staff.has_upcoming_bookings */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description staff.cannot_end_self | staff.linked_to_owner | field errors */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    staff_history: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffHistoryEntryDto"][];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7478,6 +7810,68 @@ export interface operations {
                 content?: never;
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    rehire_staff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffRehireWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffProfileDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description staff.already_active */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };

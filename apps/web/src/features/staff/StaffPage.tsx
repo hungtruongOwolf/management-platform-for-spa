@@ -8,7 +8,7 @@ import { EvaluationTab } from "./EvaluationTab";
 import { MonthSheet } from "./MonthSheet";
 import { MyMonth } from "./MyMonth";
 import { PayrollTab } from "./PayrollTab";
-import { ProfilesTab } from "./ProfilesTab";
+import { RosterTab } from "./RosterTab";
 import { staffSearch, type StaffTab } from "./search";
 import { MonthPicker } from "./ui";
 import "./staff.css";
@@ -18,13 +18,14 @@ const TAB_LABEL: Record<StaffTab, string> = {
   month: "Bảng công tháng",
   evaluation: "Đánh giá tháng",
   payroll: "Bảng lương",
-  profiles: "Hồ sơ",
+  profiles: "Nhân sự",
 };
 
 /**
  * /nhan-vien (spec staff-management §10): the daily book first (attendance, praise/complaints and
  * bonuses/penalties per person, in one pass), then the month grid, the monthly evaluation (the
- * book prompts for it when due), payroll (payroll.read) and profiles (staff.manage). A
+ * book prompts for it when due), payroll (payroll.read) and the roster "Nhân sự" (staff.read;
+ * hiring, editing and ending employment with staff.manage, spec §13). A
  * technician without those sees only their own month. Tabs are UX only: each API answers 403.
  */
 export function StaffPage() {
@@ -41,7 +42,7 @@ export function StaffPage() {
       ["month", canAttendance],
       ["evaluation", canReview],
       ["payroll", can(me, "payroll.read")],
-      ["profiles", can(me, "staff.manage")],
+      ["profiles", can(me, "staff.read")],
     ] as const
   )
     .filter(([, ok]) => ok)
@@ -123,7 +124,16 @@ export function StaffPage() {
         {tab === "month" && <MonthSheet month={month} today={today} canReview={canReview} />}
         {tab === "evaluation" && <EvaluationTab month={month} />}
         {tab === "payroll" && <PayrollTab month={month} canClose={can(me, "payroll.close")} />}
-        {tab === "profiles" && <ProfilesTab canPay={can(me, "payroll.read")} />}
+        {tab === "profiles" && (
+          <RosterTab
+            canManage={can(me, "staff.manage")}
+            canPay={can(me, "payroll.read")}
+            filter={search.roster}
+            onFilter={(f) => {
+              patch({ roster: f });
+            }}
+          />
+        )}
       </div>
     </section>
   );

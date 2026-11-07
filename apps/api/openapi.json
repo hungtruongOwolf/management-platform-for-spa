@@ -3070,7 +3070,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/StaffProfileWrite"
+                "$ref": "#/components/schemas/StaffCreate"
               }
             }
           },
@@ -3125,6 +3125,22 @@
           "staff"
         ],
         "operationId": "list_profiles",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Default `all` (Đang làm / Đã nghỉ / Tất cả).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "left",
+                "all"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -3214,11 +3230,142 @@
           "401": {},
           "403": {},
           "404": {},
+          "412": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/staff/{id}/account": {
+      "put": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "set_staff_account",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffAccountWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffProfileDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "404": {},
           "409": {
             "description": "staff.account_taken"
           },
           "412": {},
           "422": {}
+        }
+      }
+    },
+    "/api/v1/staff/{id}/end": {
+      "post": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "end_employment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffEndWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffProfileDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "404": {},
+          "409": {
+            "description": "staff.already_left | staff.has_upcoming_bookings"
+          },
+          "412": {},
+          "422": {
+            "description": "staff.cannot_end_self | staff.linked_to_owner | field errors"
+          }
+        }
+      }
+    },
+    "/api/v1/staff/{id}/history": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "staff_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StaffHistoryEntryDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "404": {}
         }
       }
     },
@@ -3262,6 +3409,54 @@
           "401": {},
           "403": {},
           "404": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/staff/{id}/rehire": {
+      "post": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "rehire_staff",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffRehireWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffProfileDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "404": {},
+          "409": {
+            "description": "staff.already_active"
+          },
+          "412": {},
           "422": {}
         }
       }
@@ -5725,6 +5920,34 @@
               "null"
             ],
             "description": "Required when `amount` > 0."
+          }
+        }
+      },
+      "EmploymentPeriodDto": {
+        "type": "object",
+        "description": "One employment period (ADR-0012). `end_reason` only for `staff.manage` holders.",
+        "properties": {
+          "end_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ended_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "`null` = still working."
+          },
+          "started_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "`null` = before the books (start date never recorded)."
           }
         }
       },
@@ -9638,6 +9861,124 @@
           }
         }
       },
+      "StaffAccountWrite": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "`null` unlinks."
+          }
+        },
+        "additionalProperties": false
+      },
+      "StaffChangeDto": {
+        "type": "object",
+        "required": [
+          "field",
+          "before",
+          "after"
+        ],
+        "properties": {
+          "after": {
+            "type": "object"
+          },
+          "before": {
+            "type": "object"
+          },
+          "field": {
+            "type": "string",
+            "description": "Audit key: `position`, `joined_on`, `left_on`, `status`, `user_id`, `base_salary`, …"
+          }
+        }
+      },
+      "StaffCreate": {
+        "type": "object",
+        "description": "Hire: a profile plus, optionally, the login to link right away.",
+        "required": [
+          "full_name",
+          "position"
+        ],
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "joined_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "First day of work; `null` = not recorded (the UI fills in today)."
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "position": {
+            "type": "string"
+          },
+          "shift_start": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`HH:MM`."
+          },
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Login to link (an active member of this spa, not linked to anyone else)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "StaffDetailsDto": {
+        "type": "object",
+        "description": "Personal details of a profile (`staff.manage` only).",
+        "properties": {
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "National form, e.g. `0905 123 456`."
+          },
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "user_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "StaffDto": {
         "type": "object",
         "description": "Basic staff card: no phone or personal data (`staff.read_basic`).",
@@ -9662,6 +10003,24 @@
             "$ref": "#/components/schemas/StaffStatusDto"
           }
         }
+      },
+      "StaffEndWrite": {
+        "type": "object",
+        "required": [
+          "ended_on",
+          "reason"
+        ],
+        "properties": {
+          "ended_on": {
+            "type": "string",
+            "format": "date",
+            "description": "Last working day (≤ today)."
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "StaffEvaluation": {
         "type": "object",
@@ -9713,6 +10072,43 @@
           "staff_id": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "StaffHistoryEntryDto": {
+        "type": "object",
+        "required": [
+          "at",
+          "action",
+          "changes"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "`staff.create`, `staff.update`, `staff.account_link`, `staff.end`, `staff.rehire`,\n`staff.pay_update` (only for `payroll.read`)."
+          },
+          "actor_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StaffChangeDto"
+            }
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "End-of-employment reason."
           }
         }
       },
@@ -9773,16 +10169,36 @@
       },
       "StaffProfileDto": {
         "type": "object",
-        "description": "A staff profile (`staff.manage`). `pay` is present only for `payroll.read` holders who have\nset terms; `pay_visible` says whether the caller may see pay at all.",
+        "description": "A roster entry / staff profile (`staff.read`). `details` only for `staff.manage`; `pay` only\nfor `payroll.read` holders who have set terms (`pay_visible` says whether pay is visible at\nall). Absent means \"not yours to see\", never \"hidden by the UI\".",
         "required": [
           "id",
           "full_name",
           "position",
           "status",
+          "periods",
+          "login_linked",
           "version",
           "pay_visible"
         ],
         "properties": {
+          "details": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StaffDetailsDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "first_joined_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Start of the first period (\"vào làm lần đầu\"), differs from `joined_on` after a rehire."
+          },
           "full_name": {
             "type": "string"
           },
@@ -9795,14 +10211,20 @@
               "string",
               "null"
             ],
-            "format": "date"
+            "format": "date",
+            "description": "Start of the current (or, once left, the latest) period: \"Ngày vào làm\"."
           },
           "left_on": {
             "type": [
               "string",
               "null"
             ],
-            "format": "date"
+            "format": "date",
+            "description": "Last day of the latest period, once the person has left."
+          },
+          "login_linked": {
+            "type": "boolean",
+            "description": "Whether a login is linked (decision C: an unlinked manager counts as a technician)."
           },
           "pay": {
             "oneOf": [
@@ -9817,12 +10239,12 @@
           "pay_visible": {
             "type": "boolean"
           },
-          "phone": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "National form, e.g. `0905 123 456`."
+          "periods": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EmploymentPeriodDto"
+            },
+            "description": "Oldest first."
           },
           "position": {
             "type": "string"
@@ -9837,18 +10259,21 @@
           "status": {
             "$ref": "#/components/schemas/StaffStatusDto"
           },
-          "user_id": {
+          "tenure_days": {
             "type": [
-              "string",
+              "integer",
               "null"
             ],
-            "format": "uuid"
+            "format": "int64",
+            "description": "Days worked, summed over the periods up to today; `null` = a start date is unknown."
           },
-          "user_name": {
+          "tenure_months": {
             "type": [
-              "string",
+              "integer",
               "null"
-            ]
+            ],
+            "format": "int64",
+            "description": "Completed calendar months, summed over the periods."
           },
           "version": {
             "type": "integer",
@@ -9858,6 +10283,7 @@
       },
       "StaffProfileWrite": {
         "type": "object",
+        "description": "Create (hire) or edit a profile. On edit, `joined_on` is the start of the current period.",
         "required": [
           "full_name",
           "position"
@@ -9871,14 +10297,15 @@
               "string",
               "null"
             ],
-            "format": "date"
+            "format": "date",
+            "description": "Start of the current period; `null` = not recorded (tenure unknown)."
           },
-          "left_on": {
+          "note": {
             "type": [
               "string",
               "null"
             ],
-            "format": "date"
+            "description": "HR note (≤ 1000), owner only."
           },
           "phone": {
             "type": [
@@ -9895,17 +10322,20 @@
               "null"
             ],
             "description": "`HH:MM`."
-          },
-          "status": {
-            "$ref": "#/components/schemas/StaffStatusDto"
-          },
-          "user_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "uuid",
-            "description": "Login to link (an active member of this spa, not linked to anyone else)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "StaffRehireWrite": {
+        "type": "object",
+        "required": [
+          "started_on"
+        ],
+        "properties": {
+          "started_on": {
+            "type": "string",
+            "format": "date",
+            "description": "First day of the new period (after the last period's end)."
           }
         },
         "additionalProperties": false
@@ -9961,6 +10391,7 @@
           "full_name",
           "position",
           "shift_start",
+          "periods",
           "days",
           "totals",
           "can_record",
@@ -9985,7 +10416,8 @@
               "string",
               "null"
             ],
-            "format": "date"
+            "format": "date",
+            "description": "Start of the latest period (older clients; use `periods`)."
           },
           "left_on": {
             "type": [
@@ -9993,6 +10425,13 @@
               "null"
             ],
             "format": "date"
+          },
+          "periods": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EmploymentPeriodDto"
+            },
+            "description": "Employment periods (dates only): days outside them are not workdays."
           },
           "position": {
             "type": "string"

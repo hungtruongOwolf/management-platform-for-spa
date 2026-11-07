@@ -865,6 +865,59 @@
     white-space: nowrap;
   }
 
+  /* Nhân sự (roster): filter left, "Thêm nhân viên" right; wraps on a phone. */
+  .roster-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .roster-toolbar > .segmented {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .roster-facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 12px 16px;
+  }
+  .roster-facts dt {
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+  }
+  .roster-facts dd {
+    margin: 2px 0 0;
+    font-weight: 600;
+  }
+  .roster-periods,
+  .roster-history {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .roster-periods > li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .roster-history > li {
+    display: grid;
+    gap: 2px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .roster-history ul {
+    margin: 0;
+    padding-left: 16px;
+  }
+
   /* Monthly evaluation: one panel, one row per person (status by chip, never by a border). */
   .eval-list {
     display: grid;

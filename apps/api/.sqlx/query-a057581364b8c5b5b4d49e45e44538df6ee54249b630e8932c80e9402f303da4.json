@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (EXISTS (SELECT 1 FROM app.attendance_day\n                           WHERE tenant_id = $1 AND staff_id = $2 AND work_date > $3)\n                OR EXISTS (SELECT 1 FROM app.visit_line l\n                           JOIN app.visit v ON v.tenant_id = l.tenant_id AND v.id = l.visit_id\n                           WHERE l.tenant_id = $1 AND l.staff_id = $2 AND v.status = 'completed'\n                             AND v.business_date > $3)) AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a057581364b8c5b5b4d49e45e44538df6ee54249b630e8932c80e9402f303da4"
+}

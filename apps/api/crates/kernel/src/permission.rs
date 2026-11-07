@@ -36,6 +36,7 @@ permissions! {
     CatalogManage => "catalog.manage",
     StaffReadBasic => "staff.read_basic",
     StaffManage => "staff.manage",
+    StaffRead => "staff.read",
     StaffReadOwn => "staff.read_own",
     AttendanceRecord => "attendance.record",
     EvaluationRecord => "evaluation.record",

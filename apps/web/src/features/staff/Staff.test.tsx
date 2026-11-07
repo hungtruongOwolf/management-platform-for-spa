@@ -6,7 +6,7 @@ import { App } from "../../app/App";
 import { navFor, tabsFor } from "../../app/nav";
 import { spaToday } from "../corrections/api";
 import { ME } from "../reports/testServer";
-import type { Adjustment, AdjustmentLog, AttendanceSheet, EvaluationSheet, MyCalendar, MyDay, MyStaff, Payslip, PayrollMonth, ReviewSheet } from "./api";
+import type { Adjustment, AdjustmentLog, AttendanceSheet, EvaluationSheet, MyCalendar, MyDay, MyStaff, Payslip, PayrollMonth, ReviewSheet, StaffProfile } from "./api";
 import { mondayOf } from "../appointments/api";
 import { weekSummary } from "./myCalendar";
 import { countsFullValue, serviceWork, upsellWork } from "./payslipWork";
@@ -14,9 +14,10 @@ import { dayTotals, shiftDay } from "./MyDaySheet";
 import { daysOf, monthLabel, percentOfBp, shiftMonth, weekdayShort } from "./labels";
 import { evaluationDueMonth, incompleteDays, missingOn } from "./progress";
 import { staffSearch } from "./search";
+import { managerWithoutLogin, tenureLabel } from "./roster";
 import { PayslipView } from "./PayrollTab";
 
-const MANAGER = ["catalog.read", "staff.read_basic", "attendance.record", "evaluation.record", "staff.read_own", "report.read"];
+const MANAGER = ["catalog.read", "staff.read_basic", "staff.read", "attendance.record", "evaluation.record", "staff.read_own", "report.read"];
 const OWNER = [...MANAGER, "staff.manage", "payroll.read", "payroll.close"];
 const TECH = ["catalog.read", "staff.read_basic", "staff.read_own"];
 
@@ -40,6 +41,7 @@ function sheet(options: ServeOptions = {}): AttendanceSheet {
         shift_start: "09:00",
         joined_on: null,
         left_on: null,
+        periods: [],
         days: [{ staff_id: "s-lan", date: today, status: "present", check_in: "09:12", check_out: null, late_minutes: 12, note: null }],
         totals: { ...totals, present: 1, late_count: 1, late_minutes: 12 },
         can_record: true,
@@ -52,6 +54,7 @@ function sheet(options: ServeOptions = {}): AttendanceSheet {
         shift_start: "09:00",
         joined_on: null,
         left_on: null,
+        periods: [],
         days: [],
         totals,
         can_record: true,
@@ -65,6 +68,7 @@ function sheet(options: ServeOptions = {}): AttendanceSheet {
         shift_start: "09:00",
         joined_on: null,
         left_on: null,
+        periods: [],
         days: [],
         totals,
         can_record: false,
@@ -72,6 +76,59 @@ function sheet(options: ServeOptions = {}): AttendanceSheet {
       },
     ],
   };
+}
+
+/** The roster as the server sends it: `details` only with staff.manage (manager: none). */
+function roster(details: boolean): StaffProfile[] {
+  const base = { shift_start: "09:00", version: 1, pay_visible: false };
+  const people: StaffProfile[] = [
+    {
+      ...base,
+      id: "s-lan",
+      full_name: "Lê Thị Lan",
+      position: "Kỹ thuật viên",
+      status: "active",
+      joined_on: "2025-03-01",
+      first_joined_on: "2025-03-01",
+      left_on: null,
+      periods: [{ started_on: "2025-03-01", ended_on: null }],
+      tenure_days: 615,
+      tenure_months: 20,
+      login_linked: true,
+      ...(details ? { details: { phone: "0905 111 222", note: null, user_id: "u-lan", user_name: "KTV Lan" } } : {}),
+    },
+    {
+      ...base,
+      id: "s-hoa",
+      full_name: "Phạm Thị Hoa",
+      position: "Quản lý",
+      status: "active",
+      joined_on: "2026-10-20",
+      first_joined_on: "2026-10-20",
+      left_on: null,
+      periods: [{ started_on: "2026-10-20", ended_on: null }],
+      tenure_days: 19,
+      tenure_months: 0,
+      login_linked: false,
+      ...(details ? { details: { phone: null, note: null, user_id: null, user_name: null } } : {}),
+    },
+    {
+      ...base,
+      id: "s-hang",
+      full_name: "Đỗ Thị Hằng",
+      position: "Kỹ thuật viên",
+      status: "left",
+      joined_on: "2025-01-06",
+      first_joined_on: "2025-01-06",
+      left_on: "2026-08-29",
+      periods: [{ started_on: "2025-01-06", ended_on: "2026-08-29", ...(details ? { end_reason: "Chuyển về quê" } : {}) }],
+      tenure_days: 601,
+      tenure_months: 19,
+      login_linked: false,
+      ...(details ? { details: { phone: null, note: null, user_id: null, user_name: null } } : {}),
+    },
+  ];
+  return people;
 }
 
 function lan() {
@@ -298,6 +355,10 @@ function serve(permissions: string[], options: ServeOptions = {}) {
     if (p.startsWith("/adjustments/") && method === "DELETE") return Promise.resolve(new Response(null, { status: 204 }));
     if (p === "/evaluations" && method === "PUT") return ok({});
     if (p === "/evaluations") return ok(evaluations(url.searchParams.get("month") ?? month));
+    if (p.startsWith("/staff/profiles")) return ok(roster(permissions.includes("staff.manage")));
+    if (p === "/staff/accounts") return ok([]);
+    if (/^\/staff\/[^/]+\/history$/.test(p)) return ok([]);
+    if (/^\/staff\/[^/]+\/end$/.test(p) && method === "POST") return ok(roster(true)[0]);
     if (p === "/staff") return ok([]);
     return ok([]);
   });
@@ -359,6 +420,15 @@ describe("staff helpers", () => {
     expect(incompleteDays("2026-03", people, "2026-03-04")).toEqual(["2026-03-01", "2026-03-02", "2026-03-03"]);
     const joined = people.map((p) => ({ ...p, joined_on: "2026-03-03" }));
     expect(incompleteDays("2026-03", joined, "2026-03-04")).toEqual(["2026-03-03"]);
+    // ADR-0012: a rehired person's gap (03-02 here) is not a workday, whatever was recorded.
+    const rehired = people.map((p) => ({
+      ...p,
+      periods: [
+        { started_on: "2026-01-05", ended_on: "2026-03-01" },
+        { started_on: "2026-03-03", ended_on: null },
+      ],
+    }));
+    expect(incompleteDays("2026-03", rehired, "2026-03-04")).toEqual(["2026-03-01", "2026-03-03"]);
   });
 
   it("names the nav entries by what the user may do; technicians get 'Khách của tôi' in the tab bar", () => {
@@ -383,7 +453,7 @@ describe("/nhan-vien", () => {
     expect(screen.getByRole("tab", { name: "Đánh giá tháng" })).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: /Thưởng/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Bảng lương" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Hồ sơ" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Nhân sự" })).toBeInTheDocument();
 
     const progress = await screen.findByRole("status", { name: "Tiến độ chấm công" });
     expect(progress).toHaveTextContent("Đã chấm công 1/3 người");
@@ -785,4 +855,61 @@ describe("/khach-cua-toi", () => {
     expect(weekSummary(entries, "2000-01-01")).toBe("Xong 0 · Đang làm 0 · Chưa đến 0");
   });
 
+});
+
+describe("Nhân sự (roster)", () => {
+  it("says how long someone has worked, from the server's tenure", () => {
+    expect(tenureLabel({ tenure_days: 615, tenure_months: 20 })).toBe("1 năm 8 tháng");
+    expect(tenureLabel({ tenure_days: 400, tenure_months: 12 })).toBe("1 năm");
+    expect(tenureLabel({ tenure_days: 19, tenure_months: 0 })).toBe("19 ngày");
+    expect(tenureLabel({ tenure_days: null, tenure_months: null })).toBe("Chưa rõ ngày vào làm");
+    expect(managerWithoutLogin({ position: "Quản lý", login_linked: false, status: "active" })).toBe(true);
+    expect(managerWithoutLogin({ position: "Quản lý", login_linked: true, status: "active" })).toBe(false);
+  });
+
+  it("manager: reads the roster (working first, former staff behind a filter) but changes nothing", async () => {
+    serve(MANAGER);
+    at("/nhan-vien?tab=profiles");
+    const table = await screen.findByRole("table", { name: "Danh sách nhân sự" });
+    expect(within(table).getByText("Lê Thị Lan")).toBeInTheDocument();
+    expect(within(table).getByText("1 năm 8 tháng")).toBeInTheDocument();
+    expect(within(table).queryByText("Đỗ Thị Hằng")).not.toBeInTheDocument();
+    expect(within(table).getAllByText("Đã gắn")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /Thêm nhân viên/ })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Đã nghỉ (1)" }));
+    const left = await screen.findByRole("table", { name: "Danh sách nhân sự" });
+    expect(within(left).getByText("Đỗ Thị Hằng")).toBeInTheDocument();
+    expect(within(left).getByText("Đã nghỉ từ 29/08/2026")).toBeInTheDocument();
+
+    await userEvent.click(within(left).getByRole("button", { name: "Đỗ Thị Hằng" }));
+    const sheet = await screen.findByRole("dialog", { name: "Đỗ Thị Hằng" });
+    expect(within(sheet).getByText("06/01/2025 – 29/08/2026")).toBeInTheDocument();
+    // No reason for a manager (the server never sends it), no write buttons.
+    expect(within(sheet).queryByText(/Chuyển về quê/)).not.toBeInTheDocument();
+    expect(within(sheet).queryByRole("button", { name: "Nhận lại làm" })).not.toBeInTheDocument();
+    expect(within(sheet).queryByRole("heading", { name: "Tài khoản đăng nhập" })).not.toBeInTheDocument();
+  });
+
+  it("owner: ends employment with a last day and a reason, confirmed", async () => {
+    const spy = serve(OWNER);
+    at("/nhan-vien?tab=profiles");
+    const table = await screen.findByRole("table", { name: "Danh sách nhân sự" });
+    expect(within(table).getByText("Chưa gắn: khi ghi công được tính như KTV")).toBeInTheDocument();
+    await userEvent.click(within(table).getByRole("button", { name: "Lê Thị Lan" }));
+    const sheet = await screen.findByRole("dialog", { name: "Lê Thị Lan" });
+    expect(within(sheet).getByRole("heading", { name: "Tài khoản đăng nhập" })).toBeInTheDocument();
+    await userEvent.click(within(sheet).getByRole("button", { name: "Cho nghỉ việc" }));
+    const confirm = await screen.findByRole("dialog", { name: "Cho Lê Thị Lan nghỉ việc" });
+    expect(within(confirm).getByText(/Tài khoản đăng nhập của Lê Thị Lan sẽ bị khóa/)).toBeInTheDocument();
+    const submit = within(confirm).getByRole("button", { name: "Xác nhận nghỉ việc" });
+    expect(submit).toBeDisabled();
+    await userEvent.type(within(confirm).getByLabelText("Lý do nghỉ việc"), "Chuyển công tác");
+    await userEvent.click(submit);
+    await waitFor(() => {
+      expect(requests(spy).some((r) => r.method === "POST" && r.url.endsWith("/staff/s-lan/end"))).toBe(true);
+    });
+    const post = requests(spy).find((r) => r.url.endsWith("/staff/s-lan/end"));
+    expect(post?.body).toEqual({ ended_on: today, reason: "Chuyển công tác" });
+  });
 });

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n             SELECT 1 FROM app.membership m\n             JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id\n             JOIN app.role_permission rp ON rp.tenant_id = mr.tenant_id AND rp.role_id = mr.role_id\n             WHERE m.tenant_id = $1 AND m.user_id = $2 AND rp.permission = 'staff.manage') AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "47eafab90d86461f4e7e2da9687e2e4959c9aa39aa8748c6123b281ec1470faa"
+}

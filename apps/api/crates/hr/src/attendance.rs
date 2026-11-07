@@ -11,6 +11,7 @@ use crate::scope::RecordScope;
 use chrono::{NaiveDate, NaiveTime, Timelike};
 use kernel::audit::{self, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
+use org::http::EmploymentPeriodDto;
 use org::profile::Profile;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -144,10 +145,7 @@ pub fn validate(entries: &[Entry], today: NaiveDate, staff: &[Profile]) -> Resul
         }
         match staff.iter().find(|p| p.id == e.staff_id) {
             None => errors.push(FieldError::new(f("staff_id"), "unknown")),
-            Some(p)
-                if p.joined_on.is_some_and(|j| e.date < j)
-                    || p.left_on.is_some_and(|l| e.date > l) =>
-            {
+            Some(p) if !p.employment.on(e.date) => {
                 errors.push(FieldError::new(f("date"), "not_employed"));
             }
             Some(_) => {}
@@ -185,8 +183,11 @@ pub struct StaffSheet {
     pub position: String,
     /// `HH:MM`, the person's own or the spa default.
     pub shift_start: String,
+    /// Start of the latest period (older clients; use `periods`).
     pub joined_on: Option<NaiveDate>,
     pub left_on: Option<NaiveDate>,
+    /// Employment periods (dates only): days outside them are not workdays.
+    pub periods: Vec<EmploymentPeriodDto>,
     pub days: Vec<AttendanceDay>,
     pub totals: AttendanceTotals,
     /// Whether the caller may record this person's attendance, praise / complaints, bonuses /
@@ -225,11 +226,16 @@ pub fn sheet_of(
         shift_start: hhmm(p.shift_start.unwrap_or(default_shift)),
         joined_on: p.joined_on,
         left_on: p.left_on,
+        periods: p
+            .employment
+            .periods()
+            .iter()
+            .map(EmploymentPeriodDto::dates)
+            .collect(),
         totals: calc::summarize(
             month,
             recorded_until(month, today),
-            p.joined_on,
-            p.left_on,
+            &p.employment,
             &calc_days,
         ),
         days,
@@ -411,7 +417,9 @@ mod tests {
             user_id: None,
             user_name: None,
             shift_start: None,
+            note: None,
             version: 1,
+            employment: org::Employment::between(Some(d("2026-11-03")), None),
         }
     }
 

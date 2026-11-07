@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.at, a.action, u.full_name AS \"actor_name?\", a.before, a.after, a.reason\n           FROM app.audit_log a LEFT JOIN app.user_account u ON u.id = a.actor_user_id\n           WHERE a.tenant_id = $1 AND a.entity_type = 'staff' AND a.entity_id = $2\n             AND a.action IN ('staff.create', 'staff.update', 'staff.account_link', 'staff.end',\n                              'staff.rehire', 'staff.pay_update')\n           ORDER BY a.at DESC, a.id DESC\n           LIMIT 200",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.audit_log",
+            "name": "at"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "action",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.audit_log",
+            "name": "action"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "actor_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.user_account",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "before",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "app.audit_log",
+            "name": "before"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "after",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "app.audit_log",
+            "name": "after"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.audit_log",
+            "name": "reason"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "460ad2efb83ffe1b8d5cc299a9a5606090c54bfc6cf2563529c72b75a124ae3f"
+}

@@ -1,6 +1,6 @@
 //! Staff SQL. Tenant-scoped explicitly; RLS is the second layer.
 
-use chrono::{NaiveDate, NaiveTime};
+use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use kernel::{AppError, TenantTx};
 use uuid::Uuid;
 
@@ -53,6 +53,7 @@ pub struct ProfileRow {
     pub user_id: Option<Uuid>,
     pub user_name: Option<String>,
     pub shift_start: Option<NaiveTime>,
+    pub note: Option<String>,
     pub version: i64,
 }
 
@@ -61,7 +62,7 @@ pub async fn profiles(tx: &mut TenantTx) -> Result<Vec<ProfileRow>, AppError> {
     Ok(sqlx::query_as!(
         ProfileRow,
         r#"SELECT s.id, s.full_name, s.position, s.phone_e164, s.status, s.joined_on, s.left_on,
-                  s.user_id, u.full_name AS "user_name?", s.shift_start, s.version
+                  s.user_id, u.full_name AS "user_name?", s.shift_start, s.note, s.version
            FROM app.staff s LEFT JOIN app.user_account u ON u.id = s.user_id
            WHERE s.tenant_id = $1
            ORDER BY s.status, s.full_name"#,
@@ -90,7 +91,7 @@ pub async fn profile(
     Ok(sqlx::query_as!(
         ProfileRow,
         r#"SELECT s.id, s.full_name, s.position, s.phone_e164, s.status, s.joined_on, s.left_on,
-                  s.user_id, u.full_name AS "user_name?", s.shift_start, s.version
+                  s.user_id, u.full_name AS "user_name?", s.shift_start, s.note, s.version
            FROM app.staff s LEFT JOIN app.user_account u ON u.id = s.user_id
            WHERE s.tenant_id = $1 AND s.id = $2"#,
         tenant,
@@ -104,42 +105,43 @@ pub struct ProfileWrite<'a> {
     pub full_name: &'a str,
     pub position: &'a str,
     pub phone_e164: Option<&'a str>,
-    pub status: &'a str,
+    /// Start of the current (latest) period, mirrored on the staff row.
     pub joined_on: Option<NaiveDate>,
-    pub left_on: Option<NaiveDate>,
-    pub user_id: Option<Uuid>,
     pub shift_start: Option<NaiveTime>,
+    pub note: Option<&'a str>,
 }
 
+/// Inserts an active profile; the 0025 trigger opens its first employment period.
 pub async fn insert_profile(
     tx: &mut TenantTx,
     id: Uuid,
     branch: Uuid,
     w: &ProfileWrite<'_>,
+    user_id: Option<Uuid>,
 ) -> Result<(), AppError> {
     let tenant = tx.tenant().as_uuid();
     sqlx::query!(
-        r#"INSERT INTO app.staff (id, tenant_id, branch_id, full_name, position, phone_e164, status,
-                                  joined_on, left_on, user_id, shift_start)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
+        r#"INSERT INTO app.staff (id, tenant_id, branch_id, full_name, position, phone_e164,
+                                  joined_on, user_id, shift_start, note)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
         id,
         tenant,
         branch,
         w.full_name,
         w.position,
         w.phone_e164,
-        w.status,
         w.joined_on,
-        w.left_on,
-        w.user_id,
-        w.shift_start
+        user_id,
+        w.shift_start,
+        w.note
     )
     .execute(tx.conn())
     .await?;
     Ok(())
 }
 
-/// Updates when `version` still matches; `false` = stale.
+/// Updates when `version` still matches; `false` = stale. Status, end date and login have their
+/// own use cases (end / rehire / link).
 pub async fn update_profile(
     tx: &mut TenantTx,
     id: Uuid,
@@ -148,8 +150,8 @@ pub async fn update_profile(
 ) -> Result<bool, AppError> {
     let tenant = tx.tenant().as_uuid();
     let done = sqlx::query!(
-        r#"UPDATE app.staff SET full_name = $4, position = $5, phone_e164 = $6, status = $7,
-                  joined_on = $8, left_on = $9, user_id = $10, shift_start = $11,
+        r#"UPDATE app.staff SET full_name = $4, position = $5, phone_e164 = $6,
+                  joined_on = $7, shift_start = $8, note = $9,
                   version = version + 1, updated_at = now()
            WHERE tenant_id = $1 AND id = $2 AND version = $3"#,
         tenant,
@@ -158,11 +160,56 @@ pub async fn update_profile(
         w.full_name,
         w.position,
         w.phone_e164,
-        w.status,
         w.joined_on,
-        w.left_on,
-        w.user_id,
-        w.shift_start
+        w.shift_start,
+        w.note
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
+/// Links (or unlinks, `None`) a login; `false` = stale version.
+pub async fn set_link(
+    tx: &mut TenantTx,
+    id: Uuid,
+    version: i64,
+    user_id: Option<Uuid>,
+) -> Result<bool, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let done = sqlx::query!(
+        r#"UPDATE app.staff SET user_id = $4, version = version + 1, updated_at = now()
+           WHERE tenant_id = $1 AND id = $2 AND version = $3"#,
+        tenant,
+        id,
+        version,
+        user_id
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
+/// Mirrors the latest period on the staff row (`status`, `joined_on`, `left_on`: what every
+/// picker filters on); `false` = stale version.
+pub async fn set_mirror(
+    tx: &mut TenantTx,
+    id: Uuid,
+    version: i64,
+    joined_on: Option<NaiveDate>,
+    left_on: Option<NaiveDate>,
+) -> Result<bool, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let done = sqlx::query!(
+        r#"UPDATE app.staff
+           SET status = CASE WHEN $5::date IS NULL THEN 'active' ELSE 'left' END,
+               joined_on = $4, left_on = $5, version = version + 1, updated_at = now()
+           WHERE tenant_id = $1 AND id = $2 AND version = $3"#,
+        tenant,
+        id,
+        version,
+        joined_on,
+        left_on
     )
     .execute(tx.conn())
     .await?;
@@ -216,6 +263,198 @@ pub async fn accounts(tx: &mut TenantTx) -> Result<Vec<AccountRow>, AppError> {
            GROUP BY m.tenant_id, m.user_id, u.full_name
            ORDER BY u.full_name"#,
         tenant
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+/// Locks (`disabled`) or unlocks (`active`) a login's membership of this spa. A disabled member
+/// gets no permission on their next request (`identity::repo::member_permissions`).
+pub async fn set_membership_active(
+    tx: &mut TenantTx,
+    user_id: Uuid,
+    active: bool,
+) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let status = if active { "active" } else { "disabled" };
+    sqlx::query!(
+        "UPDATE app.membership SET status = $3 WHERE tenant_id = $1 AND user_id = $2",
+        tenant,
+        user_id,
+        status
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+/// Whether the login holds `staff.manage` here: an owner's login is never locked by a roster
+/// action (unlink it first).
+pub async fn login_manages_staff(tx: &mut TenantTx, user_id: Uuid) -> Result<bool, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+             SELECT 1 FROM app.membership m
+             JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
+             JOIN app.role_permission rp ON rp.tenant_id = mr.tenant_id AND rp.role_id = mr.role_id
+             WHERE m.tenant_id = $1 AND m.user_id = $2 AND rp.permission = 'staff.manage') AS "e!""#,
+        tenant,
+        user_id
+    )
+    .fetch_one(tx.conn())
+    .await?)
+}
+
+// ------------------------------------------------------------------------ employment periods
+
+pub struct PeriodRow {
+    pub id: Uuid,
+    pub staff_id: Uuid,
+    pub started_on: Option<NaiveDate>,
+    pub ended_on: Option<NaiveDate>,
+    pub end_reason: Option<String>,
+}
+
+/// Periods of everyone (`None`) or one person, oldest first.
+pub async fn periods(tx: &mut TenantTx, staff: Option<Uuid>) -> Result<Vec<PeriodRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        PeriodRow,
+        r#"SELECT id, staff_id, started_on, ended_on, end_reason FROM app.staff_employment
+           WHERE tenant_id = $1 AND ($2::uuid IS NULL OR staff_id = $2)
+           ORDER BY staff_id, started_on NULLS FIRST"#,
+        tenant,
+        staff
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+pub async fn insert_period(
+    tx: &mut TenantTx,
+    staff: Uuid,
+    started_on: NaiveDate,
+) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        "INSERT INTO app.staff_employment (id, tenant_id, staff_id, started_on) VALUES ($1, $2, $3, $4)",
+        Uuid::now_v7(),
+        tenant,
+        staff,
+        started_on
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+/// Corrects the start of an open period.
+pub async fn set_period_start(
+    tx: &mut TenantTx,
+    period: Uuid,
+    started_on: Option<NaiveDate>,
+) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        "UPDATE app.staff_employment SET started_on = $3 WHERE tenant_id = $1 AND id = $2 AND ended_on IS NULL",
+        tenant,
+        period,
+        started_on
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+pub async fn end_period(
+    tx: &mut TenantTx,
+    period: Uuid,
+    ended_on: NaiveDate,
+    reason: &str,
+    by: Uuid,
+) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"UPDATE app.staff_employment SET ended_on = $3, end_reason = $4, ended_by = $5
+           WHERE tenant_id = $1 AND id = $2 AND ended_on IS NULL"#,
+        tenant,
+        period,
+        ended_on,
+        reason,
+        by
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+/// Whether anything was recorded for the person after `day`: attendance or a completed visit
+/// they served (ending employment before it would leave that record outside any period).
+pub async fn worked_after(
+    tx: &mut TenantTx,
+    staff: Uuid,
+    day: NaiveDate,
+) -> Result<bool, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_scalar!(
+        r#"SELECT (EXISTS (SELECT 1 FROM app.attendance_day
+                           WHERE tenant_id = $1 AND staff_id = $2 AND work_date > $3)
+                OR EXISTS (SELECT 1 FROM app.visit_line l
+                           JOIN app.visit v ON v.tenant_id = l.tenant_id AND v.id = l.visit_id
+                           WHERE l.tenant_id = $1 AND l.staff_id = $2 AND v.status = 'completed'
+                             AND v.business_date > $3)) AS "e!""#,
+        tenant,
+        staff,
+        day
+    )
+    .fetch_one(tx.conn())
+    .await?)
+}
+
+/// Open bookings (booked / arrived) assigned to the person after `day`.
+pub async fn bookings_after(
+    tx: &mut TenantTx,
+    staff: Uuid,
+    day: NaiveDate,
+) -> Result<i64, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_scalar!(
+        r#"SELECT count(*) AS "n!" FROM app.appointment
+           WHERE tenant_id = $1 AND staff_id = $2 AND status IN ('booked', 'arrived')
+             AND business_date > $3"#,
+        tenant,
+        staff,
+        day
+    )
+    .fetch_one(tx.conn())
+    .await?)
+}
+
+// --------------------------------------------------------------------------------- history
+
+pub struct HistoryRow {
+    pub at: DateTime<Utc>,
+    pub action: String,
+    pub actor_name: Option<String>,
+    pub before: Option<serde_json::Value>,
+    pub after: Option<serde_json::Value>,
+    pub reason: Option<String>,
+}
+
+/// The audit trail of one profile, newest first.
+pub async fn history(tx: &mut TenantTx, staff: Uuid) -> Result<Vec<HistoryRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        HistoryRow,
+        r#"SELECT a.at, a.action, u.full_name AS "actor_name?", a.before, a.after, a.reason
+           FROM app.audit_log a LEFT JOIN app.user_account u ON u.id = a.actor_user_id
+           WHERE a.tenant_id = $1 AND a.entity_type = 'staff' AND a.entity_id = $2
+             AND a.action IN ('staff.create', 'staff.update', 'staff.account_link', 'staff.end',
+                              'staff.rehire', 'staff.pay_update')
+           ORDER BY a.at DESC, a.id DESC
+           LIMIT 200"#,
+        tenant,
+        staff
     )
     .fetch_all(tx.conn())
     .await?)
