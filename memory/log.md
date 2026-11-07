@@ -577,12 +577,6 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 ## [2026-11-07] fix | ADR renumber
 - Hai ADR cùng số 0012 (perf #77 và nhân sự #82). Đổi ADR đợt làm việc thành **ADR-0013**; ADR-0012 giữ cho colocate Singapore. Migration 0025 giữ nguyên comment cũ (không đổi checksum).
 
-## [2026-11-07] spec + build + secure + qa + pr-review + record | Giỏ chỉ có gói: nhiều gói một lần lưu (câu 4, `feat(quay)`)
-- Nguồn: raw 2026-11-07-em-decisions-hr-notes-group-region (follow-up câu 4: "ukm theo cái mới đi", ví dụ chị Lan). Spec [front-desk §10.13](wiki/product/specs/front-desk-and-packages.md); authz-matrix +1 mục. Không migration (0026 của PR #85, 0027 của agent sổ chấm công).
-- Đã làm: `POST /sales/checkout` (sales crate) dùng lại đúng mô hình `package_sales[]` của lượt: `price_package_sale` từng gói (người dùng, người chốt, giảm giá theo trần từng gói), `allocate_payments` (cash trước theo thứ tự giỏ), `record_package_sale` từng gói, một transaction, một Idempotency-Key. Web: giỏ không dịch vụ nhận tối đa 3 gói (bỏ `maxSales = 1`), lưu 1 gói vẫn `POST /sales`, 2–3 gói gọi checkout; logic lưu + câu thông báo nằm trong chunk lazy `checkout.ts` (`sellCart`), `FrontDeskPage` bớt một import.
-- Quyết định (lead): mỗi gói một hóa đơn (giữ hoa hồng theo hóa đơn, ADR-0010; hủy từng gói được), sổ doanh thu một dòng mỗi hóa đơn → Q-M1 hỏi EM có cần một dòng "một lần thu" không.
-- Kiểm: `sales.rs` +2 test (chị Lan: 2 hóa đơn, chia tiền 1.000.000 cash + 400.000/1.500.000 CK, báo cáo ngày + sổ, replay; từ chối → không ghi gì), matrix +1 dòng; vitest `CheckoutRound6` +1; e2e `quay-upsell` +1 (CI chạy).
-
 ## [2026-11-07] ingest + spec + build + secure + qa + pr-review + record | Quyết định EM: người đã nghỉ xem lương cũ, ghi chú buổi cho KTV, hoàn tác đã đến, đổi lịch cả nhóm, vùng server (PR #85)
 - Nguồn: [raw](raw/2026-11-07-em-decisions-hr-notes-group-region.md) (EM trả lời 6 câu + follow-up câu 4). Làm câu 1, 2, 3, 5a, 5b, 5c, 6; câu 4 (nhiều gói một lần lưu) để PR riêng.
 - Câu 1 / 5b / 6 chỉ ghi: Q-S5 đã quyết (chỉ chủ spa sửa nhân sự, đúng như đang chạy); Q14 giữ SĐT bắt buộc khi đặt lịch khách mới; ADR-0012 update: staging ở Mỹ, production châu Á (vẫn Proposed), perf §5b.
@@ -602,3 +596,9 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Quyết định (lead's decision — EM to review): tìm chữ = SQL cho ghi chú thường + giải mã-rồi-so cho ghi chú mã hóa trong khoảng ngày, trần 500 ghi chú/request, `scan_capped` + "Tìm tiếp". Câu hỏi Q-N1 (thêm ghi chú lịch hẹn, đánh giá tháng, hồ sơ nhân viên, gia hạn, giảm giá?), Q-N2 (người/lúc sửa riêng ghi chú hồ sơ khách).
 - Ngân sách JS khởi động: route không có `validateSearch` (schema ở chunk lazy) + 5 thông báo lỗi chỉ màn lazy gặp chuyển ra `addMessages` → 124.93 KB (main 124.91).
 - Wiki: spec §10, authz-matrix (bảng quyền từng loại), threat-model (§ Nhật ký ghi chú), data (0027), backend/frontend (route + endpoint + số đo), design-system (dòng Nhật ký ghi chú).
+
+## [2026-11-07] spec + build + secure + qa + pr-review + record | Giỏ chỉ có gói: nhiều gói một lần lưu (câu 4, `feat(quay)`)
+- Nguồn: raw 2026-11-07-em-decisions-hr-notes-group-region (follow-up câu 4: "ukm theo cái mới đi", ví dụ chị Lan). Spec [front-desk §10.13](wiki/product/specs/front-desk-and-packages.md); authz-matrix +1 mục. Không migration (0026 của PR #85, 0027 của agent sổ chấm công).
+- Đã làm: `POST /sales/checkout` (sales crate) dùng lại đúng mô hình `package_sales[]` của lượt: `price_package_sale` từng gói (người dùng, người chốt, giảm giá theo trần từng gói), `allocate_payments` (cash trước theo thứ tự giỏ), `record_package_sale` từng gói, một transaction, một Idempotency-Key. Web: giỏ không dịch vụ nhận tối đa 3 gói (bỏ `maxSales = 1`), lưu 1 gói vẫn `POST /sales`, 2–3 gói gọi checkout; logic lưu + câu thông báo nằm trong chunk lazy `checkout.ts` (`sellCart`), `FrontDeskPage` bớt một import.
+- Quyết định (lead): mỗi gói một hóa đơn (giữ hoa hồng theo hóa đơn, ADR-0010; hủy từng gói được), sổ doanh thu một dòng mỗi hóa đơn → Q-M1 hỏi EM có cần một dòng "một lần thu" không.
+- Kiểm: `sales.rs` +2 test (chị Lan: 2 hóa đơn, chia tiền 1.000.000 cash + 400.000/1.500.000 CK, báo cáo ngày + sổ, replay; từ chối → không ghi gì), matrix +1 dòng; vitest `CheckoutRound6` +1; e2e `quay-upsell` +1 (CI chạy).
