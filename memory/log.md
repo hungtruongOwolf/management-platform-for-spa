@@ -576,3 +576,8 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 
 ## [2026-11-07] fix | ADR renumber
 - Hai ADR cùng số 0012 (perf #77 và nhân sự #82). Đổi ADR đợt làm việc thành **ADR-0013**; ADR-0012 giữ cho colocate Singapore. Migration 0025 giữ nguyên comment cũ (không đổi checksum).
+
+## [2026-11-07] ingest + build | Sổ hằng ngày mỗi người một thẻ (EM ảnh 65)
+- Raw: [2026-11-07-em-daily-book-and-notes-review](raw/2026-11-07-em-daily-book-and-notes-review.md) (hai việc: thẻ sổ hằng ngày; chỗ xem lại ghi chú).
+- Việc 1 (PR riêng): bỏ mã P/ĐX/K trong sổ hằng ngày; `BookCard.tsx` mỗi người một thẻ trong lưới 1/2/3 cột (2 cột ở 1280); bốn lựa chọn chấm công thành bốn ô riêng, mỗi ô một màu + icon theo chú thích lịch tháng (#76); thứ tự trong thẻ: đầu thẻ → chấm công → Khen/Phàn nàn → Giờ & ghi chú + Ghi thưởng/phạt → dòng ghi nhận. Giữ: khóa quyết định C, xác nhận nghỉ khi có lượt, chip thưởng/phạt sửa/xóa, "Cả spa đi làm", `TimeField`. Design-system § K thay § J.
+- Kiểm: vitest staff + tokens-only xanh; e2e `staff.spec` đổi test bàn làm việc → "one card per person in a grid"; ảnh 1280/390 × sáng/tối tự xem (scratchpad `shots/book*`).
