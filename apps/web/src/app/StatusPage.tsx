@@ -1,3 +1,4 @@
+import { ForbiddenRoute } from "./access";
 import { BrandLogo } from "./BrandLogo";
 
 /**
@@ -30,7 +31,27 @@ export function StatusPage({ title, body, retry = false }: { title: string; body
   );
 }
 
-export function ErrorPage() {
+/** Inside the shell (its nav still works): the role may not open this screen. */
+function ForbiddenPage() {
+  return (
+    <section aria-labelledby="forbidden-title" className="status-page is-in-shell">
+      <BrandLogo className="w-16" />
+      <h1 id="forbidden-title" className="page-title">
+        Không có quyền mở màn hình này
+      </h1>
+      <p className="max-w-md text-text-muted">
+        Tài khoản của bạn không dùng màn hình này. Các màn hình bạn dùng được nằm ở thanh bên; cần
+        thêm quyền thì báo chủ spa.
+      </p>
+      <a href="/" className="btn btn-primary">
+        Về trang tổng quan
+      </a>
+    </section>
+  );
+}
+
+export function ErrorPage({ error }: { error?: unknown }) {
+  if (error instanceof ForbiddenRoute) return <ForbiddenPage />;
   return (
     <StatusPage
       retry

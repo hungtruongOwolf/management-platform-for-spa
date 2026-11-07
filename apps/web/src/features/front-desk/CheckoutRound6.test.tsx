@@ -9,6 +9,7 @@ import type {
 } from "@vpyd/api-client";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../../app/App";
@@ -154,7 +155,11 @@ interface Call {
   headers: Record<string, string>;
 }
 
-function serve(dayVisits: Visit[] = [], packages: CustomerPackage[] = []) {
+function serve(
+  dayVisits: Visit[] = [],
+  packages: CustomerPackage[] = [],
+  customer: { gender: string | null } = HA,
+) {
   const calls: Call[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
     const url =
@@ -182,10 +187,12 @@ function serve(dayVisits: Visit[] = [], packages: CustomerPackage[] = []) {
         tenants: [{ id: "t1", name: "Viên Phúc Y Đường" }],
         permissions: PERMS,
       });
-    if (url.startsWith("/api/v1/customers?q=")) return json([HA]);
+    if (url.startsWith("/api/v1/customers?q="))
+      return json([{ ...HA, ...customer }]);
     if (url === "/api/v1/customers/c1")
       return json({
         ...HA,
+        ...customer,
         phone_e164: "+84905111222",
         birth_year: null,
         address: null,
@@ -555,5 +562,162 @@ describe("/quay round 6", () => {
       .map((i) => i.textContent);
     expect(items).not.toContain("Thêm dịch vụ / bán gói");
     expect(items).not.toContain("Chuyển sang gói liệu trình");
+  });
+
+  it("opens “Chuyển sang gói liệu trình” with one package slot, also under StrictMode (EM live test)", async () => {
+    serve([ONE_OFF_VISIT]);
+    const user = userEvent.setup();
+    render(
+      <StrictMode>
+        <App history={createMemoryHistory({ initialEntries: ["/quay"] })} />
+      </StrictMode>,
+    );
+    const table = await screen.findByRole("table", {
+      name: "Lượt khách hôm nay",
+    });
+    await user.click(
+      within(table).getByRole("button", {
+        name: /^Thao tác lượt .* của Nguyễn Thị Hà$/,
+      }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "Chuyển sang gói liệu trình" }),
+    );
+    await screen.findByRole("combobox", { name: "Mẫu gói" });
+    expect(screen.getAllByRole("combobox", { name: "Mẫu gói" })).toHaveLength(1);
+    expect(screen.queryByText("Gói thứ 2")).toBeNull();
+  });
+
+  it("explains a cash part that is not below the total, as it is typed", async () => {
+    serve();
+    const user = userEvent.setup();
+    render(
+      <App history={createMemoryHistory({ initialEntries: ["/quay"] })} />,
+    );
+    await pickHa(user);
+    await addOneOff(user, "s5");
+    await user.click(await screen.findByRole("radio", { name: "Tiền mặt + CK" }));
+    const cash = screen.getByRole("textbox", { name: "Tiền mặt (đ)" });
+    await user.type(cash, "500000");
+    expect(cash).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Tiền mặt phải nhỏ hơn số phải trả (349.000đ)",
+    );
+    await user.clear(cash);
+    await user.type(cash, "200000");
+    expect(cash).not.toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByText("Chuyển khoản: 149.000đ")).toBeInTheDocument();
+  });
+
+  it("brings the Nữ/Nam choice back with a restored draft (EM live test)", async () => {
+    serve([], [], { gender: null });
+    const user = userEvent.setup();
+    const first = render(
+      <App history={createMemoryHistory({ initialEntries: ["/quay"] })} />,
+    );
+    await pickHa(user);
+    const toggle = await screen.findByRole("group", {
+      name: "Giới tính để tính giá",
+    });
+    await user.click(within(toggle).getByRole("button", { name: "Nam" }));
+    await addOneOff(user, "s5");
+    expect(
+      within(screen.getByRole("list", { name: "Dịch vụ trong lượt" })).getByText(
+        "399.000đ",
+      ),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(sessionStorage.getItem("vpyd.cart.v1:u1:c1")).not.toBeNull();
+    });
+    first.unmount();
+    render(
+      <App history={createMemoryHistory({ initialEntries: ["/quay"] })} />,
+    );
+    await screen.findByText(/Đã khôi phục giỏ chưa lưu/);
+    const restored = await screen.findByRole("group", {
+      name: "Giới tính để tính giá",
+    });
+    expect(within(restored).getByRole("button", { name: "Nam" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(within(restored).getByRole("button", { name: "Nữ" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("asks before “Đổi khách” empties a cart; the cart stays as a draft (EM live test)", async () => {
+    serve();
+    const user = userEvent.setup();
+    render(
+      <App history={createMemoryHistory({ initialEntries: ["/quay"] })} />,
+    );
+    await pickHa(user);
+    await addOneOff(user, "s10");
+    // ADR-0009: companions are entered on the booking, not as free text in the cart.
+    expect(screen.queryByText("Người đi cùng (ghi chú)")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Đổi khách" }));
+    const ask = await screen.findByRole("alertdialog", {
+      name: /Đổi khách\? Giỏ của Nguyễn Thị Hà chưa lưu/,
+    });
+    await user.click(within(ask).getByRole("button", { name: "Ở lại" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(
+      screen.getByRole("list", { name: "Dịch vụ trong lượt" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Đổi khách" }));
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Đổi khách",
+      }),
+    );
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("list", { name: "Dịch vụ trong lượt" }),
+      ).toBeNull();
+    });
+    expect(sessionStorage.getItem("vpyd.cart.v1:u1:c1")).not.toBeNull();
+  });
+
+  it("shows how a visit paid both ways was split (EM live test)", async () => {
+    serve([
+      {
+        ...ONE_OFF_VISIT,
+        payments: [
+          {
+            id: "pay1",
+            kind: "payment",
+            method: "cash",
+            amount: 149_000,
+            paid_at: "2026-11-05T02:12:00Z",
+            reference: null,
+          },
+          {
+            id: "pay2",
+            kind: "payment",
+            method: "bank_transfer",
+            amount: 200_000,
+            paid_at: "2026-11-05T02:12:00Z",
+            reference: null,
+          },
+        ],
+      },
+    ]);
+    const user = userEvent.setup();
+    render(
+      <App history={createMemoryHistory({ initialEntries: ["/quay"] })} />,
+    );
+    const table = await screen.findByRole("table", {
+      name: "Lượt khách hôm nay",
+    });
+    expect(within(table).getByText("Tiền mặt + CK")).toBeInTheDocument();
+    await user.click(
+      within(table).getByRole("button", { name: /^Nguyễn Thị Hà/ }),
+    );
+    expect(
+      await within(table).findByText("Tiền mặt 149.000đ · CK 200.000đ"),
+    ).toBeInTheDocument();
   });
 });

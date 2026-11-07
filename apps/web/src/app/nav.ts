@@ -1,5 +1,5 @@
 import { can, type Me } from "../features/auth/session";
-import { canSeeManagement } from "./features";
+import { mayOpen } from "./access";
 import type { IconName } from "./Icon";
 
 export interface NavItem {
@@ -40,7 +40,9 @@ export interface NavGroup {
  * answers 403 on its own. One model feeds the sidebar, the phone drawer and the command palette.
  */
 export function navFor(me: Me | null): NavGroup[] {
-  const mgmt = canSeeManagement(me);
+  const mgmt = mayOpen.management(me);
+  const desk = mayOpen.frontDesk(me);
+  const catalog = mayOpen.catalog(me);
   const groups: [string, (NavItem | false)[]][] = [
     [
       "Quầy",
@@ -52,7 +54,7 @@ export function navFor(me: Me | null): NavGroup[] {
           icon: "home",
           exact: true,
         },
-        can(me, "visit.record") && {
+        desk && {
           to: "/quay",
           label: "Ghi lượt khách",
           short: "Quầy",
@@ -62,7 +64,7 @@ export function navFor(me: Me | null): NavGroup[] {
             ? { search: { view: undefined } }
             : {}),
         },
-        can(me, "visit.record") &&
+        desk &&
           can(me, "appointment.manage") && {
             to: "/quay",
             search: { view: "lich" },
@@ -75,7 +77,7 @@ export function navFor(me: Me | null): NavGroup[] {
     [
       "Khách hàng",
       [
-        can(me, "customer.read") && {
+        mayOpen.customers(me) && {
           to: "/khach-hang",
           label: "Danh sách khách hàng",
           short: "Khách",
@@ -113,13 +115,13 @@ export function navFor(me: Me | null): NavGroup[] {
     [
       "Danh mục",
       [
-        can(me, "catalog.read") && {
+        catalog && {
           to: "/bang-gia",
           label: "Bảng giá dịch vụ",
           icon: "menu-book",
           exact: true,
         },
-        can(me, "catalog.read") && {
+        catalog && {
           to: "/bang-gia/goi",
           label: "Mẫu gói liệu trình",
           icon: "layers",
@@ -141,9 +143,8 @@ export function navFor(me: Me | null): NavGroup[] {
 
 /** Staff management for those who keep the books; "my month" for everyone else linked to a profile. */
 function staffItem(me: Me | null): NavItem | false {
-  const manages = ["attendance.record", "evaluation.record", "payroll.read", "staff.manage"].some((p) => can(me, p));
-  if (manages) return { to: "/nhan-vien", label: "Nhân viên", icon: "id-card" };
-  return can(me, "staff.read_own") && { to: "/nhan-vien", label: "Công và lương của tôi", short: "Công lương", icon: "id-card" };
+  if (mayOpen.staffBooks(me)) return { to: "/nhan-vien", label: "Nhân viên", icon: "id-card" };
+  return mayOpen.myWork(me) && { to: "/nhan-vien", label: "Công và lương của tôi", short: "Công lương", icon: "id-card" };
 }
 
 /**
@@ -152,7 +153,7 @@ function staffItem(me: Me | null): NavItem | false {
  */
 function myWorkItem(me: Me | null): NavItem | false {
   return (
-    can(me, "staff.read_own") &&
+    mayOpen.myWork(me) &&
     !can(me, "visit.read") && {
       to: "/khach-cua-toi",
       label: "Khách của tôi",
