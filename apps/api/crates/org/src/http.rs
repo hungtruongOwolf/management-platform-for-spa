@@ -113,7 +113,7 @@ impl From<PayTerms> for StaffPayDto {
     }
 }
 
-/// One employment period (ADR-0012). `end_reason` only for `staff.manage` holders.
+/// One employment period (ADR-0013). `end_reason` only for `staff.manage` holders.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct EmploymentPeriodDto {
     /// `null` = before the books (start date never recorded).

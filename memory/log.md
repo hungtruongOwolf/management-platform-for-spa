@@ -573,3 +573,6 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Quyết định (lead's decision — EM to review): quản lý chỉ xem danh sách, mọi ghi chỉ chủ spa (Q-S5); nghỉ việc khóa tài khoản ngay (Q-S6); `joined_on` bỏ trống = chưa rõ (form điền sẵn hôm nay).
 - Secure: lương / chi tiết / lý do chỉ gửi đúng quyền (allowlist test), KTV 403 trên mọi route nhân sự, không tự cho mình nghỉ, không khóa tài khoản chủ spa qua hồ sơ, không xem / đặt mật khẩu; mutation-check: bỏ `worked_after` + bỏ khóa tài khoản → 2 test đỏ.
 - Kiểm: Rust workspace xanh (staff 11/11, +2; authz_matrix 7/7, +4 dòng, 2 dòng đổi quyền; unit employment + calc rehire gap; demo_seed), clippy sạch, `.sqlx` tái tạo; openapi.json ghép 3 chiều với main (build binary bị dừng vì thiếu RAM; CI so với binary) + schema.ts tái tạo; vitest web staff 34 (+3 roster, +1 khoảng nghỉ). e2e `staff.spec.ts` +2 (1280/390: thêm → nghỉ việc → Đã nghỉ, tối → nhận lại) chạy ở CI.
+
+## [2026-11-07] fix | ADR renumber
+- Hai ADR cùng số 0012 (perf #77 và nhân sự #82). Đổi ADR đợt làm việc thành **ADR-0013**; ADR-0012 giữ cho colocate Singapore. Migration 0025 giữ nguyên comment cũ (không đổi checksum).

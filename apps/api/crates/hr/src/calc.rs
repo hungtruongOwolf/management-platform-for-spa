@@ -635,7 +635,7 @@ mod tests {
         assert_eq!(s.net_pay, 5_000_000 + 300_000 + 200_000 - 50_000);
     }
 
-    /// ADR-0012: a person who left on the 10th and was rehired on the 21st worked 20 days; the gap
+    /// ADR-0013: a person who left on the 10th and was rehired on the 21st worked 20 days; the gap
     /// is neither missing attendance nor loyalty time.
     #[test]
     fn a_rehire_gap_is_neither_worked_nor_missing() {

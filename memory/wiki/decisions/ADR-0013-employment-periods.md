@@ -1,11 +1,11 @@
 ---
-title: ADR-0012 Employment is a list of periods; ending employment is soft
+title: ADR-0013 Employment is a list of periods; ending employment is soft
 status: accepted (lead's decision — EM to review)
 date: 2026-11-07
 deciders: agent, EM to confirm
 ---
 
-# ADR-0012: Quá trình làm việc là danh sách các đợt; nghỉ việc là hủy mềm
+# ADR-0013: Quá trình làm việc là danh sách các đợt; nghỉ việc là hủy mềm
 
 ## Context
 EM 2026-11-07 ([raw](../../raw/2026-11-07-em-flow-review-hr-latency.md) mục 9): "không có quản lý nhân sự… để sau này chúng tôi biết người đó làm bao lâu rồi cần remove hay add vào list của spa… bây giờ là như hardcode cứng".

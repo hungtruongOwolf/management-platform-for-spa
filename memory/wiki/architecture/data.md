@@ -200,7 +200,7 @@ Không có bảng mới. 0013:
 - `app.customer_package_extension` (chỉ thêm, trigger `reject_mutation`, RLS `tenant_isolation`, `GRANT SELECT, INSERT`): mỗi lần gia hạn = một dòng (hạn cũ, hạn mới, lý do, ngày nghiệp vụ, người làm); index `(tenant_id, customer_package_id, created_at)`. Migration copy các lần gia hạn cũ từ `audit_log`.
 - Danh sách gần đây (`GET /customers` không `q`) và "Khách lâu chưa quay lại" lọc `full_name IS NOT NULL`.
 
-## Nhân sự: đợt làm việc (0025, [ADR-0012](../decisions/ADR-0012-employment-periods.md))
+## Nhân sự: đợt làm việc (0025, [ADR-0013](../decisions/ADR-0013-employment-periods.md))
 - `app.staff_employment(id, tenant_id, staff_id, started_on?, ended_on?, end_reason?, ended_by?, created_at)`: mỗi đợt làm việc một dòng. `started_on NULL` = hồ sơ cũ không có ngày vào. CHECK `ended_on ≥ started_on`, `end_reason` chỉ khi đã kết thúc; `EXCLUDE USING gist (tenant_id =, staff_id =, daterange(coalesce(started_on, -infinity), ended_on, '[]') &&)` (không chồng đợt); unique partial `(tenant_id, staff_id) WHERE ended_on IS NULL` (một đợt mở); index `(tenant_id, staff_id, started_on)`.
 - Trigger `staff_employment_forward_only`: đợt đã kết thúc không đổi, đợt mở chỉ sửa ngày vào hoặc được đóng; không DELETE (app_rw chỉ `SELECT, INSERT, UPDATE`). Trigger `staff_first_period` (`AFTER INSERT ON app.staff`): mọi hồ sơ mới có đợt đầu. Backfill từ `joined_on/left_on`. RLS `tenant_isolation`.
 - `app.staff.status / joined_on / left_on` = **bản sao của đợt mới nhất** (service ghi cùng transaction), nên mọi picker vẫn lọc `status = 'active'`; index partial mới `staff_active_name_idx (tenant_id, full_name) WHERE status = 'active'`.
