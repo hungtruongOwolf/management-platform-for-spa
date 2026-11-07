@@ -48,6 +48,8 @@ use utoipa::OpenApi;
         hr::http::put_evaluation,
         hr::http::get_adjustments,
         hr::http::post_adjustment,
+        hr::http::put_adjustment,
+        hr::http::delete_adjustment,
         hr::http::get_payroll,
         hr::http::get_payslip,
         hr::http::close_payroll,

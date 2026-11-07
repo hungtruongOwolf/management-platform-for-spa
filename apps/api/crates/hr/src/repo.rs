@@ -5,6 +5,70 @@ use kernel::{AppError, TenantTx};
 use serde_json::Value;
 use uuid::Uuid;
 
+// ----------------------------------------------------------------------------- record scope
+
+/// Staff linked to a login whose roles in this spa grant any of `permissions` (decision C:
+/// people who supervise, whose records only the owner writes).
+pub async fn supervising_staff(
+    tx: &mut TenantTx,
+    permissions: &[String],
+) -> Result<Vec<Uuid>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_scalar!(
+        r#"SELECT DISTINCT s.id AS "id!"
+           FROM app.staff s
+           JOIN app.membership m ON m.tenant_id = s.tenant_id AND m.user_id = s.user_id
+           JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
+           JOIN app.role_permission rp ON rp.tenant_id = mr.tenant_id AND rp.role_id = mr.role_id
+           WHERE s.tenant_id = $1 AND rp.permission = ANY($2)"#,
+        tenant,
+        permissions
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+/// The staff profile linked to a login (at most one per spa).
+pub async fn staff_of_user(tx: &mut TenantTx, user: Uuid) -> Result<Option<Uuid>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_scalar!(
+        "SELECT id FROM app.staff WHERE tenant_id = $1 AND user_id = $2",
+        tenant,
+        user
+    )
+    .fetch_optional(tx.conn())
+    .await?)
+}
+
+pub struct VisitDayRow {
+    pub staff_id: Uuid,
+    pub day: NaiveDate,
+}
+
+/// Days on which each person performed a service of a completed visit (the attendance warning:
+/// "absent" on a day with visits recorded is likely a mistake).
+pub async fn visit_days(
+    tx: &mut TenantTx,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<Vec<VisitDayRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        VisitDayRow,
+        r#"SELECT DISTINCT vl.staff_id, v.business_date AS day
+           FROM app.visit_line vl
+           JOIN app.visit v ON v.tenant_id = vl.tenant_id AND v.id = vl.visit_id
+           WHERE vl.tenant_id = $1 AND v.status = 'completed'
+             AND v.business_date BETWEEN $2 AND $3
+           ORDER BY 1, 2"#,
+        tenant,
+        from,
+        to
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
 // ----------------------------------------------------------------------------------- rules
 
 pub async fn rules(tx: &mut TenantTx) -> Result<Option<(Value, i64)>, AppError> {
@@ -401,7 +465,7 @@ pub async fn adjustments_between(
         r#"SELECT a.id, a.staff_id, a.work_date, a.kind, a.amount, a.points, a.reason,
                   a.corrects_period, u.full_name AS by_name, a.created_at
            FROM app.staff_adjustment a JOIN app.user_account u ON u.id = a.created_by
-           WHERE a.tenant_id = $1 AND a.work_date BETWEEN $2 AND $3
+           WHERE a.tenant_id = $1 AND a.work_date BETWEEN $2 AND $3 AND a.voided_at IS NULL
              AND ($4::uuid IS NULL OR a.staff_id = $4)
            ORDER BY a.work_date DESC, a.created_at DESC"#,
         tenant,
@@ -426,6 +490,43 @@ pub async fn adjustment(tx: &mut TenantTx, id: Uuid) -> Result<Option<Adjustment
     )
     .fetch_optional(tx.conn())
     .await?)
+}
+
+pub struct AdjustmentLock {
+    pub staff_id: Uuid,
+    pub work_date: NaiveDate,
+    pub voided: bool,
+}
+
+/// Locks one entry (`FOR UPDATE`) so two removals serialize.
+pub async fn lock_adjustment(
+    tx: &mut TenantTx,
+    id: Uuid,
+) -> Result<Option<AdjustmentLock>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        AdjustmentLock,
+        r#"SELECT staff_id, work_date, voided_at IS NOT NULL AS "voided!"
+           FROM app.staff_adjustment WHERE tenant_id = $1 AND id = $2 FOR UPDATE"#,
+        tenant,
+        id
+    )
+    .fetch_optional(tx.conn())
+    .await?)
+}
+
+pub async fn void_adjustment(tx: &mut TenantTx, id: Uuid, by: Uuid) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"UPDATE app.staff_adjustment SET voided_at = now(), voided_by = $3
+           WHERE tenant_id = $1 AND id = $2 AND voided_at IS NULL"#,
+        tenant,
+        id,
+        by
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
 }
 
 pub struct AdjustmentInsert<'a> {
@@ -515,6 +616,9 @@ pub struct UpsellRow {
 /// per person and item:
 /// - packages: the price paid (after discount) of every package sold in an open sale of the
 ///   period, credited to the sale's closer (Σ per sale = `sale.total`);
+/// - package refunds (`package_refund`, negative): a package of such a sale cancelled with a
+///   refund in the period takes the refunded amount back from its closer (ADR-0010: commission
+///   follows the money the spa keeps), in the month of the refund — a closed month never changes;
 /// - one-off services: `line_value` of the one-off lines of completed visits of the period,
 ///   credited to the line's referrer.
 ///
@@ -537,6 +641,15 @@ pub async fn upsell_lines(
              JOIN app.customer_package cp ON cp.tenant_id = s.tenant_id AND cp.sale_id = s.id
              WHERE s.tenant_id = $1 AND s.status = 'open' AND s.closer_staff_id IS NOT NULL
                AND s.business_date BETWEEN $2 AND $3
+             GROUP BY s.closer_staff_id, cp.name_snapshot
+             UNION ALL
+             SELECT s.closer_staff_id, 'package_refund', cp.name_snapshot, count(*)::bigint,
+                    -SUM(r.amount)::bigint
+             FROM app.refund r
+             JOIN app.customer_package cp ON cp.tenant_id = r.tenant_id AND cp.id = r.customer_package_id
+             JOIN app.sale s ON s.tenant_id = cp.tenant_id AND s.id = cp.sale_id
+             WHERE r.tenant_id = $1 AND s.status = 'open' AND s.closer_staff_id IS NOT NULL
+               AND r.business_date BETWEEN $2 AND $3
              GROUP BY s.closer_staff_id, cp.name_snapshot
              UNION ALL
              SELECT vl.referrer_staff_id, 'service', vl.service_name_snapshot,

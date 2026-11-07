@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.staff_adjustment SET voided_at = now(), voided_by = $3\n           WHERE tenant_id = $1 AND id = $2 AND voided_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "98a983dd90c208c7e1db5f875c17f8b3d102751c94c463e136c1de2900993db5"
+}

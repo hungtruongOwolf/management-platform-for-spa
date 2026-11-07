@@ -11,12 +11,13 @@ addMessages(
     "payroll.month_not_ended": "Tháng chưa kết thúc, chưa chốt lương được.",
     "payroll.unrecorded_days": "Còn ngày chưa chấm công. Chấm đủ hoặc chọn chốt dù còn thiếu.",
     "staff.account_taken": "Tài khoản này đã gắn với một nhân viên khác.",
+    "staff.record_owner_only": "Chỉ chủ spa ghi được cho quản lý (quản lý không tự ghi cho mình).",
+    "adjustment.voided": "Khoản này vừa được xóa hoặc sửa ở máy khác. Tải lại để xem mới nhất.",
   },
   {
     not_employed: "Ngày này nhân viên chưa vào làm hoặc đã nghỉ.",
     only_when_present: "Chỉ ghi giờ khi đi làm.",
-    above_ceiling: "Chưa đạt tối đa 30% số điểm.",
-    only_for_fail: "Chỉ nhập điểm tay khi Chưa đạt.",
+    above_max: "Vượt điểm tối đa của tiêu chí.",
     amount_or_points_required: "Nhập số tiền hoặc số điểm.",
     not_closed: "Tháng này chưa chốt, không cần điều chỉnh.",
     not_earlier: "Tháng điều chỉnh phải trước tháng ghi.",
@@ -147,6 +148,16 @@ export async function saveEvaluation(body: EvaluationWrite): Promise<unknown> {
 
 export async function createAdjustment(body: AdjustmentCreate, key: string): Promise<Adjustment> {
   return (await api("/adjustments", { method: "POST", body, headers: { "Idempotency-Key": key } })) as Adjustment;
+}
+
+/** Edit = the old entry is voided and the corrected one recorded (new id), one transaction. */
+export async function updateAdjustment(id: string, body: AdjustmentCreate, key: string): Promise<Adjustment> {
+  return (await api(`/adjustments/${id}`, { method: "PUT", body, headers: { "Idempotency-Key": key } })) as Adjustment;
+}
+
+/** Removes an entry recorded by mistake (voided server-side, kept for the audit trail). */
+export async function deleteAdjustment(id: string): Promise<void> {
+  await api(`/adjustments/${id}`, { method: "DELETE" });
 }
 
 export async function closePayroll(month: string, allowIncomplete: boolean, key: string): Promise<PayrollMonth> {

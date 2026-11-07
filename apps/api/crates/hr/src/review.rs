@@ -5,6 +5,7 @@
 use crate::month::Month;
 use crate::period;
 use crate::repo::{self, ReviewRow};
+use crate::scope::RecordScope;
 use chrono::NaiveDate;
 use kernel::audit::{self, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
@@ -124,6 +125,8 @@ pub struct StaffReviews {
     pub compliments: u32,
     pub complaints: u32,
     pub days: Vec<DailyReview>,
+    /// Decision C: whether the caller may record this person's day.
+    pub can_record: bool,
 }
 
 /// `GET /daily-reviews?month=` (`evaluation.record`).
@@ -139,6 +142,7 @@ pub async fn sheet(
     let info = period::info(&mut tx, month).await?;
     let profiles = org::profile::profiles_in(&mut tx).await?;
     let all = reviews_in(&mut tx, month, None).await?;
+    let scope = RecordScope::load(&mut tx, actor).await?;
     tx.commit().await?;
     let staff = profiles
         .iter()
@@ -153,6 +157,7 @@ pub async fn sheet(
                 compliments: days.iter().map(|d| d.compliments).sum(),
                 complaints: days.iter().map(|d| d.complaints).sum(),
                 days,
+                can_record: scope.may_record(p.id),
             }
         })
         .collect();
@@ -164,7 +169,7 @@ pub async fn sheet(
     })
 }
 
-/// `PUT /daily-reviews` (`evaluation.record`).
+/// `PUT /daily-reviews` (`evaluation.record`; decision C scope, `403 staff.record_owner_only`).
 pub async fn record(
     pool: &PgPool,
     actor: &Actor,
@@ -174,6 +179,9 @@ pub async fn record(
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let today = period::today(&mut tx).await?;
     let profiles = org::profile::profiles_in(&mut tx).await?;
+    RecordScope::load(&mut tx, actor)
+        .await?
+        .require(entries.iter().map(|e| e.staff_id))?;
     validate(entries, today, &profiles)?;
     let months: BTreeSet<Month> = entries.iter().map(|e| Month::of(e.date)).collect();
     for m in months {
