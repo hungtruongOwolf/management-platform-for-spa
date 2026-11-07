@@ -45,6 +45,7 @@ const HA = {
   id: "c1",
   full_name: "Nguyễn Thị Hà",
   phone: "0905 111 222",
+  named: true,
   phone_e164: "+84905111222",
   gender: "female",
   birth_year: null,

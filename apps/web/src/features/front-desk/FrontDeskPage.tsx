@@ -101,6 +101,9 @@ const AddOneOff = lazy(() =>
 const LeaveCartConfirm = lazy(() =>
   loadCartOptions().then((m) => ({ default: m.LeaveCartConfirm })),
 );
+const WalkInInfo = lazy(() =>
+  loadCartOptions().then((m) => ({ default: m.WalkInInfo })),
+);
 const CartContextBars = lazy(() =>
   loadCartOptions().then((m) => ({ default: m.CartContextBars })),
 );
@@ -241,6 +244,10 @@ export function FrontDeskPage() {
   const [freshFor, setFreshFor] = useState<string | null>(null);
   /** A customer change waiting for "Đổi khách" (the cart holds items). */
   const [leaving, setLeaving] = useState<(() => void) | null>(null);
+  /** The one cart item open for editing ("l<key>" line, "s<ref>" package); the rest fold. */
+  const [openItem, setOpenItem] = useState<string | null>(null);
+  /** "Thêm thông tin khách" is open for the selected nameless walk-in. */
+  const [editingInfo, setEditingInfo] = useState(false);
   const clearOpenPlan = useCallback(() => {
     setOpenPlan(null);
   }, []);
@@ -297,6 +304,8 @@ export function FrontDeskPage() {
     setCompanions([]);
     setOpenPlan(null);
     setRestored(false);
+    setOpenItem(null);
+    setEditingInfo(false);
     setLeaving(null);
     setIdempotencyKey(crypto.randomUUID());
     setSearchGeneration((g) => g + 1);
@@ -341,10 +350,15 @@ export function FrontDeskPage() {
       );
       return done.visit;
     },
-    onSuccess: (visit: Visit) => {
+    onSuccess: (visit: Visit, body) => {
+      const sentNote = body.note;
       queryClient.setQueryData<Visit[]>(todayVisitsQuery.queryKey, (old) =>
         visit.business_date === todayIso
-          ? [visit, ...(old ?? []).filter((v) => v.id !== visit.id)]
+          ? [
+              // The saved response never carries the note (health data): show the one just typed.
+              { ...visit, ...(sentNote ? { note: sentNote } : {}) },
+              ...(old ?? []).filter((v) => v.id !== visit.id),
+            ]
           : old,
       );
       // Walk-ins are on the calendar too (spec appointments.md §10.1), not only completed bookings.
@@ -354,7 +368,7 @@ export function FrontDeskPage() {
           queryKey: ["visits", visit.business_date],
         });
       // Not awaited: the toast does not wait a round trip for the balance (perf page §4d). The
-      // balance refetches behind it and is staleTime 0, so the next open of this customer asks again.
+      // balance refetches behind it and has a 5 s staleTime, so the next open of this customer asks again.
       void queryClient.invalidateQueries({
         queryKey: ["customer-packages", visit.customer_id],
       });
@@ -554,6 +568,7 @@ export function FrontDeskPage() {
           lines.length,
           appointment !== null,
           can(me, "sale.discount_unlimited"),
+          customer.named,
         );
         if (problem) showToast(problem, true);
         else if (lines.length > 0) record(m.packageSalesBody(sales));
@@ -575,6 +590,8 @@ export function FrontDeskPage() {
     setSales([]);
     setCompanions([]);
     setRestored(false);
+    setOpenItem(null);
+    setEditingInfo(false);
     searchInput.current?.focus();
   };
   /** Runs `go` (a customer change), first asking when it would empty a cart with items. */
@@ -623,6 +640,8 @@ export function FrontDeskPage() {
     setCompanions([]);
     setOpenPlan(null);
     setRestored(false);
+    setOpenItem(null);
+    setEditingInfo(false);
     setFreshFor(fresh ? c.id : null);
     setLeaving(null);
     setIdempotencyKey(crypto.randomUUID());
@@ -648,6 +667,7 @@ export function FrontDeskPage() {
 
   const addLine = (line: CartLine) => {
     setLines((ls) => [...ls, line]);
+    setOpenItem(`l${String(line.key)}`);
     focusLineKey.current = line.key;
   };
 
@@ -878,6 +898,13 @@ export function FrontDeskPage() {
                   onClear={() => {
                     leaveCart(dropCustomer);
                   }}
+                  {...(can(me, "customer.write")
+                    ? {
+                        onEditInfo: () => {
+                          setEditingInfo(true);
+                        },
+                      }
+                    : {})}
                   {...(can(me, "package.sell") && !correcting
                     ? {
                         onSellPackage: (planId: string | null) => {
@@ -916,6 +943,22 @@ export function FrontDeskPage() {
                   Chưa chọn khách. Gõ SĐT hoặc tên ở ô phía trên (không cần
                   dấu); khách đặt trước thì mở tab “Lịch hẹn”.
                 </p>
+              )}
+              {editingInfo && customer && (
+                <Suspense fallback={null}>
+                  <WalkInInfo
+                    customerId={customer.id}
+                    canWriteHealth={can(me, "customer.health_notes.write")}
+                    onSaved={(c) => {
+                      setEditingInfo(false);
+                      setCustomer(summaryOf(c));
+                      queryClient.setQueryData(customerQuery(c.id).queryKey, c);
+                    }}
+                    onCancel={() => {
+                      setEditingInfo(false);
+                    }}
+                  />
+                </Suspense>
               )}
             </section>
 
@@ -971,6 +1014,8 @@ export function FrontDeskPage() {
                     technicians={technicians}
                     staffSelects={staffSelects}
                     focusLineKey={focusLineKey}
+                    openKey={openItem}
+                    onOpen={setOpenItem}
                   />
                 </Suspense>
               )}
@@ -1018,6 +1063,19 @@ export function FrontDeskPage() {
                     serverError={mutation.error}
                     openPlanId={openPlan}
                     onOpened={clearOpenPlan}
+                    ownerNamed={customer.named}
+                    openRef={openItem}
+                    onOpenRef={setOpenItem}
+                    onLines={setLines}
+                    onTodaySession={(saleRef, s) => {
+                      addLine({
+                        key: nextKey.current++,
+                        source: "new_package",
+                        saleRef,
+                        ...s,
+                        staffId: appointment?.staff_id ?? "",
+                      });
+                    }}
                   />
                 </Suspense>
               )}
@@ -1076,7 +1134,7 @@ export function FrontDeskPage() {
                       />
                     </Suspense>
                   )}
-                  {can(me, "customer.health_notes.write") && (
+                  {can(me, "customer.health_notes.write") && lines.length > 0 && (
                     <label className="field">
                       <span>
                         Ghi chú buổi{" "}

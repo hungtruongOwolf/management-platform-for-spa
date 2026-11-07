@@ -460,7 +460,9 @@ pub async fn package_sales(
         r#"SELECT s.visit_id AS "visit_id!", s.id AS sale_id, s.status, s.business_date,
                   d.description AS "description!", d.packages AS "customer_package_ids!",
                   s.total, s.closer_staff_id, st.full_name AS "closer_name?",
-                  b.id AS "beneficiary_customer_id?", app.customer_label(b.full_name) AS "beneficiary_name?"
+                  b.id AS "beneficiary_customer_id?",
+                  -- customer_label(NULL) reads "Khách vãng lai": only label a beneficiary that exists.
+                  CASE WHEN b.id IS NOT NULL THEN app.customer_label(b.full_name) END AS "beneficiary_name?"
 
            FROM app.sale s
            CROSS JOIN LATERAL (

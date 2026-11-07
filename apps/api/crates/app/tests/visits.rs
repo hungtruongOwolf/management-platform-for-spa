@@ -830,7 +830,7 @@ async fn payments_on_a_package_only_visit_are_rejected(pool: PgPool) -> TestResu
 }
 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
-async fn session_note_is_encrypted_and_only_shown_on_the_visit(pool: PgPool) -> TestResult {
+async fn session_note_is_encrypted_and_shown_only_to_health_readers(pool: PgPool) -> TestResult {
     let d = desk(pool).await?;
     let mut body = d.deduct(&d.ha, None);
     body["note"] = json!("Đỏ da vùng cổ sau buổi");
@@ -843,8 +843,15 @@ async fn session_note_is_encrypted_and_only_shown_on_the_visit(pool: PgPool) -> 
     );
     let one = d.get(&format!("/visits/{}", id_of(&v))).await;
     assert_eq!(one.body["note"], "Đỏ da vùng cổ sau buổi");
+    // EM 2026-11-07: the note is seen in the day list and in the customer's history too.
     let list = d.get("/visits").await;
-    assert_eq!(list.body[0].get("note"), None);
+    assert_eq!(list.body[0]["note"], "Đỏ da vùng cổ sau buổi");
+    let history = d.get(&format!("/customers/{}/history", d.ha)).await;
+    assert_eq!(history.status, StatusCode::OK, "{}", history.body);
+    assert_eq!(
+        history.body["events"][0]["visit"]["note"],
+        "Đỏ da vùng cổ sau buổi"
+    );
 
     let leaks = d
         .count(
@@ -871,14 +878,40 @@ async fn session_note_is_encrypted_and_only_shown_on_the_visit(pool: PgPool) -> 
         None,
     );
     let cipher = crm::FieldCipher::from_base64(TEST_DATA_KEY)?;
-    let seen = operations::service::get(
-        &app_pool(&d.h.owner).await?,
+    let app = app_pool(&d.h.owner).await?;
+    let seen =
+        operations::service::get(&app, &cipher, &reader, Uuid::parse_str(&id_of(&v))?).await?;
+    assert_eq!(seen.note, None);
+    let day = operations::service::for_day(&app, &cipher, &reader, None).await?;
+    assert_eq!(day.first().map(|v| v.note.clone()), Some(None));
+    let history_reader = Actor::new(
+        UserId::new(),
+        TenantId::from_uuid(tenant),
+        [
+            Permission::CustomerRead,
+            Permission::VisitRead,
+            Permission::SaleRead,
+        ],
+        None,
+    );
+    let page = reporting::customer::history(
+        &app,
         &cipher,
-        &reader,
-        Uuid::parse_str(&id_of(&v))?,
+        &history_reader,
+        Uuid::parse_str(&d.ha)?,
+        &reporting::dto::HistoryQuery {
+            q: None,
+            kind: None,
+            from: None,
+            to: None,
+            cursor: None,
+            limit: None,
+        },
     )
     .await?;
-    assert_eq!(seen.note, None);
+    let visit = page.events.first().and_then(|e| e.visit.as_ref());
+    assert!(visit.is_some(), "the visit is on the timeline");
+    assert_eq!(visit.and_then(|v| v.note.clone()), None);
     Ok(())
 }
 

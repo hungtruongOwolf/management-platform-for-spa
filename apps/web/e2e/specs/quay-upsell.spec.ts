@@ -3,8 +3,8 @@ import { ownerState, stack } from "../stack";
 import { expectAccessible, uniquePhone } from "../support/run";
 
 // Round 6 at /quay (spec R1-1 §10, plan r1-6-upsell B6): sell a package in the cart and use
-// today's session from it, the unsaved cart after a reload, "Chuyển sang gói liệu trình" and
-// "Thêm dịch vụ / bán gói" on a saved visit, and the visit details sub-row.
+// today's session from it ("Làm 1 buổi hôm nay"), the unsaved cart after a reload, converting and
+// adding to a saved visit ("Thêm dịch vụ / bán gói"), and the visit details sub-row.
 test.use({ storageState: ownerState });
 
 const write = { Origin: stack.webOrigin };
@@ -180,8 +180,10 @@ test.describe("vòng 6: bán gói trong giỏ, giỏ nháp, chuyển sang gói",
     await rowAction(
       page,
       today.getByRole("button", { name: new RegExp(`^Thao tác lượt .* của ${f.name}$`) }),
-      "Chuyển sang gói liệu trình",
+      "Thêm dịch vụ / bán gói",
     );
+    // EM 2026-11-07: one ⋯ entry; converting is the "Tính buổi hôm nay vào gói" choice inside.
+    await page.getByRole("button", { name: "Bán gói liệu trình", exact: true }).click();
     await page.getByRole("combobox", { name: "Mẫu gói" }).selectOption(f.planId);
     const count = page.getByRole("checkbox", { name: /Tính buổi hôm nay vào gói/ });
     await expect(count).not.toBeChecked();
@@ -212,5 +214,71 @@ test.describe("vòng 6: bán gói trong giỏ, giỏ nháp, chuyển sang gói",
     await extra.selectOption(f.serviceId);
     await page.getByRole("button", { name: "Lưu phần thêm" }).click();
     await expect(page.getByText(`Đã thêm vào lượt của ${f.name}`)).toBeVisible();
+  });
+});
+
+test.describe("EM 2026-11-07: Quầy flow review", () => {
+  test("buy a package and do today's session from it in one save; lines fold", async ({ page }) => {
+    const f = await fixture(page, "buổi");
+    await page.goto("/quay");
+    await pick(page, f);
+    // No one-off first: the package line itself offers today's session.
+    await page.getByRole("button", { name: "Bán gói liệu trình", exact: true }).click();
+    await page.getByRole("combobox", { name: "Mẫu gói" }).selectOption(f.planId);
+    await expect(page.getByText(/Bán thêm gói/)).toHaveCount(0);
+    await page.getByRole("button", { name: "Làm 1 buổi hôm nay" }).click();
+    const ktv = page.getByRole("combobox", { name: "KTV" });
+    await expect(ktv).toBeFocused();
+    await ktv.selectOption(f.staffId);
+    await expect(page.getByRole("button", { name: `Sửa gói ${f.planName}` })).toBeVisible();
+    await page.getByLabel("Ghi chú buổi (không bắt buộc)").fill("Mua gói, làm buổi 1");
+    await expectAccessible(page, "quay-package-today-session");
+    const checkout = page.getByRole("group", { name: "Lưu lượt" });
+    await expect(checkout).toContainText("1.200.000đ");
+    await checkout.getByRole("button", { name: "Lưu lượt khách" }).click();
+    await expect(toast(page)).toContainText(`Đã lưu lượt của ${f.name}`);
+    await expect(toast(page)).toContainText("còn 11/12");
+    await expect(toast(page)).toContainText(`bán ${f.planName}`);
+    // The note is on the day list and in the details.
+    const today = page.getByRole("table", { name: "Lượt khách hôm nay" });
+    const row = today.getByRole("row").filter({ hasText: f.name }).first();
+    await expect(row).toContainText("Ghi chú: Mua gói, làm buổi 1");
+  });
+
+  test("a walk-in gets a note and their details later, never a raw null", async ({ page }) => {
+    const services = (await (await page.request.get("/api/v1/services")).json()) as {
+      id: string;
+      active: boolean;
+      prices: { all?: number | null };
+    }[];
+    const service = services.find((s) => s.active && s.prices.all != null);
+    await page.goto("/quay");
+    await page.getByRole("button", { name: "Khách vãng lai" }).click();
+    await expect(page.getByRole("heading", { name: /Khách vãng lai/ })).toBeVisible();
+    await page.getByLabel("Thêm dịch vụ lẻ").selectOption(service?.id ?? "");
+    const staff = page.getByRole("combobox", { name: "KTV" });
+    await staff.selectOption({ index: 1 });
+    await page.getByLabel("Ghi chú buổi (không bắt buộc)").fill("Khách vãng lai, da nhạy cảm");
+    await page.getByRole("button", { name: "Thêm thông tin khách" }).click();
+    const form = page.getByRole("form", { name: "Sửa hồ sơ khách" });
+    const phone = uniquePhone();
+    await form.getByLabel("Họ tên").fill(`Chị Vãng ${phone.slice(-4)}`);
+    await form.getByLabel("Số điện thoại").fill(phone);
+    await expectAccessible(page, "quay-walk-in-info");
+    await form.getByRole("button", { name: "Lưu thay đổi" }).click();
+    await expect(
+      page.getByRole("heading", { name: new RegExp(`Chị Vãng ${phone.slice(-4)}`) }),
+    ).toBeVisible();
+    // Same cart, same profile.
+    await expect(page.getByRole("list", { name: "Dịch vụ trong lượt" })).toBeVisible();
+    await page.getByRole("group", { name: "Lưu lượt" }).getByRole("button", { name: "Lưu lượt khách" }).click();
+    await expect(toast(page)).toContainText(`Chị Vãng ${phone.slice(-4)}`);
+    const today = page.getByRole("table", { name: "Lượt khách hôm nay" });
+    const row = today.getByRole("row").filter({ hasText: `Chị Vãng ${phone.slice(-4)}` }).first();
+    await expect(row).toContainText("Ghi chú: Khách vãng lai, da nhạy cảm");
+    await row.getByRole("button", { name: /^Chị Vãng/ }).click();
+    const details = today.getByTestId("visit-details");
+    await expect(details).toContainText("Ghi chú buổi");
+    await expect(today).not.toContainText("null");
   });
 });
