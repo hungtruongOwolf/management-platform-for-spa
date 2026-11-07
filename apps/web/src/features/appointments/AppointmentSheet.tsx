@@ -16,6 +16,7 @@ import { messageFor } from "../../lib/errors";
 import { spaToday } from "../corrections/api";
 import { createCustomer, createWalkIn, customerQuery } from "../customers/api";
 import { activeStaffQuery, formatDate } from "../sales/api";
+import { putAppointment } from "./cache";
 import { range, servicesText } from "./TimeGrid";
 import {
   PHASE_BADGE,
@@ -124,11 +125,13 @@ export function AppointmentSheet({
     queryClient.invalidateQueries({ queryKey: ["appointments"] });
   const action = useMutation({
     mutationFn: (job: Job) => job.run(),
-    onSuccess: async (saved) => {
+    onSuccess: (saved) => {
       latest.current = saved;
       setClosing(null);
       setTaken(null);
-      await refresh();
+      // The answer shows at once (appointments/cache.ts); the range refetches behind it.
+      putAppointment(queryClient, saved);
+      void refresh();
     },
   });
   /** Which button sent the running request (its spinner; the others wait). */
@@ -149,10 +152,11 @@ export function AppointmentSheet({
       updateAppointment(latest.current, {
         staff_id: next === "" ? null : next,
       }),
-    onSuccess: async (saved) => {
+    onSuccess: (saved) => {
       latest.current = saved;
       // The calendar (and so the cart a press on the primary action fills) knows it first.
-      await refresh();
+      putAppointment(queryClient, saved);
+      void refresh();
     },
     onError: () => {
       // A refused technician goes back to the saved one; the message says why.

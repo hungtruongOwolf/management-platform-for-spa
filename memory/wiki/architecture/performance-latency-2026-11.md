@@ -15,7 +15,7 @@ EM thấy "API và UI đang rất chậm" ([raw](../../raw/2026-11-07-em-latency
 - **Đo từ Việt Nam thật:** dùng [Globalping](https://globalping.io) (probe ở TP.HCM, Hà Nội, Thanh Hóa; mạng VNPT, CMC, Saigon Postel, VNG, Viet Storage, 365 Online, Verichains). Chỉ gọi endpoint công khai (`/api/v1/health`, `/api/v1/me` không cookie → 401, file tĩnh). Không bao giờ gửi cookie cho bên thứ ba.
 - **Đã đăng nhập:** tài khoản quản lý demo `0905000002`, một kết nối HTTP/2 giữ sống như trình duyệt, 12 mẫu tuần tự cho mỗi endpoint, cách nhau 230 ms để không chạm rate limit 5 rps. Mật khẩu đọc từ `.env.staging` trong script, không in ra, không qua argv. Đăng xuất sau khi đo.
 - **Phía DB:** owner URL (chỉ đọc, `BEGIN READ ONLY`). Đọc `pg_stat_statements` trước và sau 5 lần gọi mỗi endpoint, lấy hiệu số để biết **số câu lệnh SQL mỗi request** và thời gian chạy thật trong Postgres.
-- Script đo nằm ở scratchpad của agent (`perf/auth.mjs`, `rts.mjs`, `gp.mjs`, `gaps.mjs`). Muốn chạy lại thì chuyển vào `infra/perf/` (việc E1 ở §6).
+- Script đo: `infra/perf/` (từ 2026-11-07: `endpoints.mjs` = §2b + đọc `Server-Timing` thay cho hiệu số `pg_stat_statements`, `gaps.mjs` = §2e, `globalping.mjs` = §2a; mật khẩu đọc từ `.env.staging` lúc chạy, xem README ở đó).
 
 ## 2. Số đo
 
@@ -109,7 +109,7 @@ Docs của Vercel nói container scale down sau 5 phút không có traffic. Như
 4. **Nhiều câu SQL nối tiếp mỗi request** (8–17, trong đó ~8 là "ống nước": tra session, BEGIN, `set_config`, membership, quyền, COMMIT, rồi BEGIN/`set_config`/COMMIT lần hai). Hiện tại chỉ ~25–40 ms vì API nằm cạnh DB. Nhưng nếu **chỉ dời API** sang Singapore mà DB vẫn ở Oregon, thì 17 × ~170 ms ≈ **3 s mỗi request**. Hai thứ phải dời cùng nhau.
 5. **Không phải nguyên nhân** (đã kiểm): thời gian chạy query (0,25–1,7 ms; bench 3 năm p95 ≤ 150 ms ở [backend §3b](backend.md)), N+1 (số câu lệnh cố định theo endpoint), kích thước response (≤ 21 KB JSON, br còn ≤ 4 KB), bundle JS, font, ảnh, nén (Vercel nén br cho response > ~1 KB), HTTP/2 (edge đã dùng h2).
 
-**Phát hiện phụ (bảo mật, chuyển `secure`):** endpoint không tự đặt `Cache-Control` (`/customers?q=`, `/services`, `/staff`, `/payroll` 403…) bị Vercel gắn mặc định `public, max-age=0, must-revalidate`. Dữ liệu cá nhân (tên + SĐT khách) không nên mang `public`. Đề xuất một layer mặc định `Cache-Control: private, no-store` (`if_not_present`) cho mọi `/api`.
+**Phát hiện phụ (bảo mật, chuyển `secure`):** endpoint không tự đặt `Cache-Control` (`/customers?q=`, `/services`, `/staff`, `/payroll` 403…) bị Vercel gắn mặc định `public, max-age=0, must-revalidate`. Dữ liệu cá nhân (tên + SĐT khách) không nên mang `public`. Đề xuất một layer mặc định `Cache-Control: private, no-store` (`if_not_present`) cho mọi `/api`. **Đã làm (2026-11-07, `fix/api-cache-control-default`):** layer ngoài cùng trong router Axum, test `cache_control.rs`. `vercel.json` không có rule header nào cho `/api` (rule `no-cache` chỉ thuộc service `web`), nên không cần thêm.
 
 ## 4. Phương án
 
@@ -163,6 +163,21 @@ Nguồn tra ngày 2026-11-07. Trang nào không ghi ngày cập nhật thì đá
 2. Mặc định `private, no-store` cho `/api` (secure).
 3. Web: staleTime mặc định + focus khi stale; bỏ waterfall hồ sơ khách; `defaultPreload: "intent"` + loader `ensureQueryData` cho các màn lazy; không await invalidate trước toast; tắt `/visits` ở tab lịch; optimistic cho chấm công, điểm ngày, follow-up, trạng thái lịch hẹn.
 4. API: gộp tra session + quyền thành một câu và dùng một transaction mỗi request.
+
+**Trạng thái giai đoạn 0 (2026-11-07, PR `fix/api-cache-control-default` #80 + `perf/phase0-quick-wins`):**
+
+| Việc | Trạng thái | Ghi chú / số đo |
+|---|---|---|
+| 1. `Server-Timing` + `infra/perf/` | ✅ | `db;dur;desc="n statements", total;dur` mọi response trừ `/auth/*` ([backend §5](backend.md)) |
+| 2. `private, no-store` mặc định | ✅ #80 | [threat-model](../security/threat-model.md) TB1 |
+| 3a. staleTime 30 s + focus khi stale | ✅ | gói của khách 5 s, lương 0; staff views vào `invalidateManagementViews` |
+| 3b. Hồ sơ khách song song | ✅ | 5 request cùng lúc từ id trong URL (test `profilePrefetch.test.tsx`); L4 → L3 |
+| 3c. `defaultPreload: "intent"` + loader | ✅ `/`, `/khach-hang`, `/khach-hang/$id`, `/bao-cao` | `/quay` cố ý không (LCP); `/nhan-vien` để sau (agent HR đang sửa) |
+| 3d. Toast không chờ refetch; ghi thẳng câu trả lời | ✅ | ghi lượt, bán gói lẻ, hồ sơ, chấm công, điểm ngày, liên hệ, lịch hẹn: −1 lượt đi về mỗi lần lưu |
+| 3e. Tab lịch không gọi `/visits` | ✅ | −1 request |
+| 4. Gộp ống nước auth | ✅ | quyền 2 câu → 1; `BEGIN`+`set_config` 2 → 1 mỗi `TenantTx` (2 tx/request): **−3 câu SQL mỗi request đăng nhập** |
+
+Bundle entry gzip -9: main sau #78 = 124,99 KiB; nhánh này thêm ~0,2 KiB rồi bù bằng cách tách panel tài khoản (`UserPanel`, lazy, nạp khi hover/focus nút) và chuyển 5 thông báo lỗi chỉ dùng ở form hủy/hoàn sang `corrections/messages.ts` (lazy) → **124,90 KiB** (ngân sách 125). Chưa đo lại từ VN trên staging (cần deploy).
 
 Mục tiêu đo lại (từ VN): số lượt nối tiếp mỗi màn ≤ 2, mỗi lần chuyển màn nhanh hơn ~0,3–0,5 s, không còn loạt request khi quay lại tab. Giai đoạn này **không** giải được phần ~200–400 ms mỗi request và cold start.
 

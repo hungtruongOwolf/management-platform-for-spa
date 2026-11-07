@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useSuspenseQuery, type QueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import { CustomerName } from "../../app/CustomerName";
@@ -13,6 +13,13 @@ import { customersSearch } from "./search";
 import { CustomerHistory } from "../reports/CustomerHistory";
 import { ErrorState } from "../reports/ui";
 import "./khach.css";
+
+/** For the route loaders (app/router.tsx): this chunk is the one the screens need anyway. */
+export { prefetchCustomerPage } from "../reports/CustomerHistory";
+
+export function prefetchCustomers(queryClient: QueryClient): void {
+  void queryClient.query(recentQuery).catch(() => undefined);
+}
 
 /** The customers list, parent of every profile (breadcrumbs, back after a deep link). */
 const CUSTOMERS: { label: string; to: string } = { label: "Khách hàng", to: "/khach-hang" };

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(\n                    array_agg(DISTINCT rp.permission) FILTER (WHERE rp.permission IS NOT NULL),\n                    '{}'\n                  ) AS \"permissions!\"\n           FROM app.membership m\n           JOIN app.tenant t ON t.id = m.tenant_id\n           LEFT JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id\n           LEFT JOIN app.role_permission rp ON rp.tenant_id = mr.tenant_id AND rp.role_id = mr.role_id\n           WHERE m.tenant_id = $1 AND m.user_id = $2 AND m.status = 'active' AND t.status = 'active'\n           GROUP BY m.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "permissions!",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c3877ec8b959e50b3bd4944f28bb2bd43a42c1215485ca6dc48b2b85567d5c37"
+}

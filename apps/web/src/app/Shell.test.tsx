@@ -197,7 +197,7 @@ describe("app shell", () => {
     const button = await screen.findByRole("button", { name: "Tài khoản: Quản lý Hà, Quản lý" });
     expect(button).toHaveAttribute("aria-expanded", "false");
     await user.click(button);
-    const panel = screen.getByRole("group", { name: "Tài khoản" });
+    const panel = await screen.findByRole("group", { name: "Tài khoản" });
     expect(within(panel).getByText("Quản lý · Viên Phúc Y Đường")).toBeInTheDocument();
     expect(within(panel).getByRole("group", { name: "Chế độ màu" })).toBeInTheDocument();
     expect(within(panel).getByRole("button", { name: /^Khóa nhanh/ })).toBeInTheDocument();

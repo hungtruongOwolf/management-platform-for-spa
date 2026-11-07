@@ -2,6 +2,7 @@ import type { Visit } from "@vpyd/api-client";
 import { timeOf } from "../front-desk/api";
 import { voidVisit } from "./api";
 import { VoidForm } from "./VoidForm";
+import "./messages";
 
 /** "Hủy lượt" form of the /quay day list. Lazily loaded so it stays off the front desk's first paint. */
 export function VoidVisitForm({

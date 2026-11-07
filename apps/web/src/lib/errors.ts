@@ -54,13 +54,6 @@ const MESSAGES: Record<string, string> = {
   "visit.corrected":
     "Lượt này vừa được sửa (có thể ở máy khác). Mở lượt mới nhất để sửa tiếp.",
   "day.locked": "Ngày đã chốt, liên hệ chủ spa.",
-  "sale.voided": "Hóa đơn này đã được hủy trước đó.",
-  "sale.has_used_sessions":
-    'Gói đã dùng buổi nên không hủy hóa đơn được. Hãy dùng "Hủy gói và hoàn tiền".',
-  "sale.void_via_visit": "Hóa đơn dịch vụ lẻ được hủy cùng lượt khách.",
-  "refund.exceeds_paid": "Số tiền hoàn lớn hơn số khách đã trả cho liệu trình.",
-  "package.restore_exceeds_total":
-    "Buổi của lượt này đã được cộng lại trước đó. Vui lòng tải lại.",
   "idempotency.key_reuse_mismatch":
     "Hóa đơn này có thể đã được lưu. Vui lòng đóng hộp thoại và kiểm tra lại liệu trình.",
 };
