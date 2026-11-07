@@ -278,6 +278,9 @@ async fn a_package_sold_in_the_cart_pays_for_todays_session(pool: PgPool) -> Tes
     let pkg = &b["package_sales"][0];
     assert_eq!(pkg["total"], PLAN_PRICE);
     assert_eq!(pkg["closer_name"], "KTV Lan");
+    // Bought for herself: no beneficiary (a NULL name once read "Khách vãng lai", EM 2026-11-07).
+    assert_eq!(pkg["beneficiary_name"], Value::Null);
+    assert_eq!(pkg["beneficiary_customer_id"], Value::Null);
     assert_eq!(
         pkg["payments"].as_array().map(|p| p
             .iter()
