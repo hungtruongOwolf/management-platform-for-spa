@@ -383,7 +383,11 @@ pub struct LedgerRow {
     pub customer_id: Uuid,
     pub customer_name: String,
     pub customer_gender: Option<GenderDto>,
+    /// Who got the package when it was bought for someone else (`sale` / `void` rows of a
+    /// package sale; comma-separated if several); null = the customer themself.
+    pub beneficiary_name: Option<String>,
     pub kind: SaleKind,
+
     /// "Dịch vụ 1 lần" column: the one-off services, comma-separated.
     pub one_off: Option<String>,
     /// "Liệu trình" column: the packages, comma-separated.
@@ -453,6 +457,8 @@ pub enum HistoryKind {
     /// Cancelled by the owner (US7), with or without a refund. Packages cancelled by a voided
     /// sale show as `purchase_voided` instead.
     PackageCancelled,
+    /// "Gia hạn": a package got a later expiry (US7, AC7.1).
+    PackageExtended,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
@@ -522,6 +528,21 @@ pub struct HistoryPurchase {
     pub visit_id: Option<Uuid>,
     /// Bought for someone else (US13): who the packages belong to.
     pub beneficiary_name: Option<String>,
+    /// Bought by someone else for this customer: who paid (the money fields are theirs). Null
+    /// on the payer's own timeline.
+    pub payer_name: Option<String>,
+}
+
+/// A package's expiry moved later ("Gia hạn").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct HistoryExtension {
+    pub customer_package_id: Uuid,
+    pub package_name: String,
+    pub previous_expires_on: NaiveDate,
+    pub expires_on: NaiveDate,
+    pub reason: String,
+    /// The user who extended it.
+    pub by_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
@@ -564,6 +585,8 @@ pub struct HistoryEvent {
     pub void: Option<HistoryVoid>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cancellation: Option<HistoryCancellation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extension: Option<HistoryExtension>,
 }
 
 /// `GET /customers/{id}/history`: newest first.
@@ -674,7 +697,8 @@ pub struct PackageOverviewRow {
     pub id: Uuid,
     pub customer_id: Uuid,
     pub customer_name: String,
-    pub customer_phone: String,
+    /// E.164 as stored; null = no phone recorded.
+    pub customer_phone: Option<String>,
     pub customer_gender: Option<GenderDto>,
     pub name: String,
     pub status: PackageStatusDto,
@@ -797,7 +821,8 @@ pub struct LastFollowUp {
 pub struct InactiveCustomer {
     pub customer_id: Uuid,
     pub full_name: String,
-    pub phone: String,
+    /// E.164 as stored; null = no phone recorded (call another way, or in person).
+    pub phone: Option<String>,
     pub gender: Option<GenderDto>,
     pub kind: CustomerKind,
     pub last_visit_on: Option<NaiveDate>,

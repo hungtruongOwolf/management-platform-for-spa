@@ -143,7 +143,7 @@ function route(
         (c) =>
           !term ||
           c.full_name.toLowerCase().includes(term) ||
-          c.phone.includes(term),
+          (c.phone ?? "").includes(term),
       );
     // Server default (overview.rs): by due date (never contacted first) for due/scheduled, else by absence.
     const follow = q.get("follow_up") ?? "all";

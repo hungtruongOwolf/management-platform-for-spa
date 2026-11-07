@@ -48,16 +48,19 @@ test.describe("bán liệu trình (US3)", () => {
 
     await page.getByRole("button", { name: "Bán gói liệu trình" }).click();
     const dialog = page.getByRole("dialog", { name: "Bán gói liệu trình" });
-    await dialog.getByRole("combobox", { name: "Gói liệu trình", exact: true }).selectOption(planId);
-    await expect(dialog.getByLabel("Quà tặng hiện vật")).toHaveValue(
+    // The same package block as the front desk's cart (EM 2026-11-07).
+    await dialog.getByRole("combobox", { name: "Mẫu gói", exact: true }).selectOption(planId);
+    await expect(dialog.getByLabel("Quà tặng", { exact: true })).toHaveValue(
       "Tặng dầu gội",
     );
     await dialog
-      .getByLabel("Người tư vấn chốt")
+      .getByLabel("Người giới thiệu / chốt")
       .selectOption({ label: "KTV E2E (Kỹ thuật viên)" });
-    await dialog
-      .getByRole("radio", { name: "Tiền mặt + chuyển khoản" })
-      .check();
+    // The Quầy payment chips (`.pay-choice`): the radio sits invisible under its chip face, so
+    // the click lands on the chip, exactly as a user's does; `force` only skips the visibility wait.
+    const split = dialog.getByRole("radio", { name: "Tiền mặt + CK" });
+    await split.check({ force: true });
+    await expect(split).toBeChecked();
     await dialog.getByLabel(/^Tiền mặt \(đ\)/).fill("500000");
     await expect(dialog.getByText("Chuyển khoản: 1.000.000đ")).toBeVisible();
     await expect(dialog.getByText("Phải trả: 1.500.000đ")).toBeVisible();

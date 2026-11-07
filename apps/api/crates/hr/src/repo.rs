@@ -735,7 +735,8 @@ pub async fn served_lines(
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         ServedLineRow,
-        r#"SELECT v.id AS visit_id, v.business_date, v.check_in_at, c.full_name AS customer_name,
+        r#"SELECT v.id AS visit_id, v.business_date, v.check_in_at,
+                  app.customer_label(c.full_name) AS "customer_name!",
                   vl.service_name_snapshot AS service_name, vl.qty, vl.source
            FROM app.visit v
            JOIN app.visit_line vl ON vl.tenant_id = v.tenant_id AND vl.visit_id = v.id
@@ -773,7 +774,9 @@ pub async fn upcoming_appointments(
     Ok(sqlx::query_as!(
         UpcomingRow,
         r#"SELECT a.id, a.business_date, a.starts_at, a.ends_at, a.status,
-                  COALESCE(c.full_name, a.guest_name, '') AS "customer_name!",
+                  CASE WHEN c.id IS NULL THEN COALESCE(a.guest_name, '')
+                       ELSE app.customer_label(c.full_name) END AS "customer_name!",
+
                   COALESCE(
                     (SELECT array_agg(s.service_name_snapshot ORDER BY s.position)
                      FROM app.appointment_service s

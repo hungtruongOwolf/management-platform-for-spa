@@ -94,7 +94,8 @@ export function VisitUpsell({
   const customer = {
     id: visit.customer_id,
     full_name: visit.customer_name,
-    phone: "",
+    phone: null,
+    named: true,
     gender: visit.customer_gender ?? null,
   };
   const context = visit.lines.map((l) => ({

@@ -505,7 +505,7 @@ describe("booking messages", () => {
     const people = [
       {
         ...blank(0),
-        customer: { id: "c1", full_name: "Hà", phone: "0905", gender: null },
+        customer: { id: "c1", full_name: "Hà", named: true, phone: "0905", gender: null },
       },
       companion(1),
       { ...blank(2), serviceIds: ["s1"] },

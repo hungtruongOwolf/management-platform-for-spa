@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 import { App } from "../../app/App";
 import { staffByUse } from "../front-desk/api";
 import { addMonths, isUnused, spaToday } from "./api";
+import { cancelLabel } from "./PackageActions";
 
 const OWNER = [
   "customer.read",
@@ -329,6 +330,15 @@ describe("package actions on the customer profile", () => {
       "Khách nằm viện",
     );
     await user.click(within(dialog).getByRole("button", { name: "Gia hạn" }));
+    // A review step first: old → new expiry and the reason, nothing sent yet.
+    const review = within(dialog).getByRole("group", { name: "Xác nhận gia hạn" });
+    expect(review).toHaveTextContent("Hạn cũ04/05/2027");
+    expect(review).toHaveTextContent("Hạn mới04/07/2027");
+    expect(review).toHaveTextContent("Lý doKhách nằm viện");
+    expect(posts(calls, "/customer-packages/cp1/extend")).toHaveLength(0);
+    const confirm = within(review).getByRole("button", { name: "Xác nhận gia hạn" });
+    expect(confirm).toHaveFocus();
+    await user.click(confirm);
     expect(
       await screen.findByText(
         'Đã gia hạn "Gội đầu 10 + tặng 2" tới 04/07/2027.',
@@ -341,6 +351,31 @@ describe("package actions on the customer profile", () => {
     });
     expect(sent?.headers["If-Match"]).toBe('"3"');
     expect(sent?.headers["Idempotency-Key"]).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("goes back from the extension review to edit the date without saving", async () => {
+    const calls = serve(OWNER);
+    const user = userEvent.setup();
+    at("/khach-hang/c1");
+    await choose(user, "Gia hạn");
+    const dialog = await screen.findByRole("dialog", { name: /Gia hạn/ });
+    await user.click(within(dialog).getByRole("button", { name: "+3 tháng" }));
+    await user.type(within(dialog).getByLabelText("Lý do gia hạn"), "Khách đi công tác");
+    await user.click(within(dialog).getByRole("button", { name: "Gia hạn" }));
+    expect(within(dialog).getByRole("group", { name: "Xác nhận gia hạn" })).toHaveTextContent("Hạn mới04/08/2027");
+    await user.click(within(dialog).getByRole("button", { name: "Sửa lại" }));
+    expect(within(dialog).queryByRole("group", { name: "Xác nhận gia hạn" })).toBeNull();
+    expect(within(dialog).getByLabelText("Lý do gia hạn")).toHaveValue("Khách đi công tác");
+    expect(posts(calls, "/customer-packages/cp1/extend")).toHaveLength(0);
+  });
+
+  it("names the refund on the cancel button only when that amount is valid", () => {
+    expect(cancelLabel("", 1_500_000)).toBe("Hủy gói");
+    expect(cancelLabel("0", 1_500_000)).toBe("Hủy gói");
+    expect(cancelLabel("300.000", 1_500_000)).toBe("Hủy và hoàn 300.000đ");
+    expect(cancelLabel("1.500.000", 1_500_000)).toBe("Hủy và hoàn 1.500.000đ");
+    expect(cancelLabel("1.600.000", 1_500_000)).toBe("Hủy gói và hoàn tiền");
+    expect(cancelLabel("abc", 1_500_000)).toBe("Hủy gói và hoàn tiền");
   });
 
   it("cancels with a refund in one request, without asking the owner for the password", async () => {
@@ -371,6 +406,9 @@ describe("package actions on the customer profile", () => {
     expect(
       within(dialog).getByText(/Không hoàn quá số khách đã trả/),
     ).toBeInTheDocument();
+    // Over the limit: the button does not promise that refund.
+    expect(within(dialog).queryByRole("button", { name: /Hủy và hoàn/ })).toBeNull();
+    expect(within(dialog).getByRole("button", { name: "Hủy gói và hoàn tiền" })).toBeInTheDocument();
     await user.clear(amount);
     await user.type(amount, "300.000");
     expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();

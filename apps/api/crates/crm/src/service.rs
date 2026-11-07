@@ -4,6 +4,7 @@
 use crate::cipher::{FieldCipher, customer_aad};
 use crate::repo::{self, CustomerFields, CustomerRow, SummaryRow};
 use crate::text::{clean_name, like_escape, search_key};
+use chrono::{Datelike, NaiveDate};
 use kernel::audit::{self, AuditEntry, REDACTED};
 use kernel::{Actor, AppError, FieldError, Permission, PhoneE164, TenantTx};
 use serde_json::json;
@@ -38,14 +39,30 @@ impl Gender {
 }
 
 pub struct ProfileInput {
-    pub full_name: String,
-    pub phone: String,
+    /// `None`/blank = a profile without a name: an anonymous walk-in ("Khách vãng lai").
+    pub full_name: Option<String>,
+    /// `None`/blank = no phone (decision E: optional on every profile).
+    pub phone: Option<String>,
     pub gender: Option<Gender>,
     pub birth_year: Option<i16>,
+    /// Date of birth (birthday promotions later). Sets `birth_year` when that is left out.
+    pub birth_date: Option<NaiveDate>,
     pub address: Option<String>,
     pub source: Option<String>,
     pub note: Option<String>,
 }
+
+/// How a profile without a name reads everywhere (lists, visits, reports, payroll). SQL read
+/// models use its twin `app.customer_label(full_name)` (migration 0023).
+pub const WALK_IN_LABEL: &str = "Khách vãng lai";
+
+/// The name a customer is shown by: the recorded name, or [`WALK_IN_LABEL`].
+pub fn label(full_name: Option<&str>) -> &str {
+    full_name.unwrap_or(WALK_IN_LABEL)
+}
+
+/// Oldest plausible age for a date of birth.
+const MAX_AGE_YEARS: i32 = 120;
 
 /// A customer as the caller may see it: `health_note` is `None` when the caller lacks permission
 /// (the field is then omitted from the response entirely, AC2.6).
@@ -55,35 +72,85 @@ pub struct CustomerView {
 }
 
 struct Clean {
-    full_name: String,
+    full_name: Option<String>,
     search_text: String,
-    phone: PhoneE164,
+    phone: Option<PhoneE164>,
+    birth_year: Option<i16>,
     address: Option<String>,
     source: Option<String>,
     note: Option<String>,
+}
+
+impl Clean {
+    fn fields<'a>(&'a self, input: &'a ProfileInput) -> CustomerFields<'a> {
+        CustomerFields {
+            full_name: self.full_name.as_deref(),
+            search_text: &self.search_text,
+            phone_e164: self.phone.as_ref().map(PhoneE164::as_str),
+            gender: input.gender.map(Gender::as_str),
+            birth_year: self.birth_year,
+            birth_date: input.birth_date,
+            address: self.address.as_deref(),
+            source: self.source.as_deref(),
+            note: self.note.as_deref(),
+        }
+    }
 }
 
 fn optional(text: Option<&String>) -> Option<String> {
     text.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty())
 }
 
-fn validate(input: &ProfileInput) -> Result<Clean, AppError> {
+/// Field rules of a profile. `today` is the spa's business day (a birth date is never after it).
+fn validate(input: &ProfileInput, today: NaiveDate) -> Result<Clean, AppError> {
     let mut errors = Vec::new();
-    let full_name = clean_name(&input.full_name);
-    match full_name.chars().count() {
-        0 => errors.push(FieldError::new("full_name", "required")),
-        n if n > 200 => errors.push(FieldError::new("full_name", "too_long")),
-        _ => {}
+    let full_name = input
+        .full_name
+        .as_deref()
+        .map(clean_name)
+        .filter(|n| !n.is_empty());
+    if full_name.as_ref().is_some_and(|n| n.chars().count() > 200) {
+        errors.push(FieldError::new("full_name", "too_long"));
     }
-    let phone = PhoneE164::parse(&input.phone);
-    if phone.is_err() {
-        errors.push(FieldError::new("phone", "invalid_format"));
-    }
+    let phone = match input
+        .phone
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
+        None => None,
+        Some(raw) => {
+            let parsed = PhoneE164::parse(raw).ok();
+            if parsed.is_none() {
+                errors.push(FieldError::new("phone", "invalid_format"));
+            }
+            parsed
+        }
+    };
     if input
         .birth_year
         .is_some_and(|y| !(1900..=2100).contains(&y))
     {
         errors.push(FieldError::new("birth_year", "out_of_range"));
+    }
+    let mut birth_year = input.birth_year;
+    if let Some(born) = input.birth_date {
+        let floor = today
+            .with_year(today.year() - MAX_AGE_YEARS)
+            .unwrap_or(today);
+        if born > today {
+            errors.push(FieldError::new("birth_date", "in_future"));
+        } else if born < floor {
+            errors.push(FieldError::new("birth_date", "too_old"));
+        }
+        let year = i16::try_from(born.year()).ok();
+        match input.birth_year {
+            None => birth_year = year,
+            Some(y) if Some(y) != year => {
+                errors.push(FieldError::new("birth_year", "conflicts_with_birth_date"));
+            }
+            Some(_) => {}
+        }
     }
     let (address, source, note) = (
         optional(input.address.as_ref()),
@@ -99,17 +166,23 @@ fn validate(input: &ProfileInput) -> Result<Clean, AppError> {
             errors.push(FieldError::new(field, "too_long"));
         }
     }
-    match phone {
-        Ok(phone) if errors.is_empty() => Ok(Clean {
-            search_text: search_key(&full_name),
-            full_name,
-            phone,
-            address,
-            source,
-            note,
-        }),
-        _ => Err(AppError::Validation(errors)),
+    if !errors.is_empty() {
+        return Err(AppError::Validation(errors));
     }
+    Ok(Clean {
+        // A nameless profile has no search key: no name search can match it.
+        search_text: full_name.as_deref().map(search_key).unwrap_or_default(),
+        full_name,
+        phone,
+        birth_year,
+        address,
+        source,
+        note,
+    })
+}
+
+async fn spa_today(tx: &mut TenantTx) -> Result<NaiveDate, AppError> {
+    Ok(kernel::tenant::profile(tx).await?.business_date.as_naive())
 }
 
 fn clean_health_note(note: Option<&str>) -> Result<Option<String>, AppError> {
@@ -148,7 +221,7 @@ fn view(cipher: &FieldCipher, actor: &Actor, row: CustomerRow) -> Result<Custome
 fn audit_snapshot(row: &CustomerRow) -> serde_json::Value {
     json!({
         "full_name": row.full_name, "phone_e164": row.phone_e164, "gender": row.gender,
-        "birth_year": row.birth_year, "health_note": row.health_note_ct.as_ref().map(|_| REDACTED),
+        "birth_year": row.birth_year, "birth_date": row.birth_date, "health_note": row.health_note_ct.as_ref().map(|_| REDACTED),
     })
 }
 
@@ -183,24 +256,14 @@ pub async fn create_in(
     if health_note.is_some() {
         actor.require(Permission::CustomerHealthNotesWrite)?;
     }
-    let c = validate(&input)?;
+    let c = validate(&input, spa_today(tx).await?)?;
     let id = Uuid::now_v7();
     let ct = health_note
         .as_deref()
         .map(|note| cipher.encrypt(note, &customer_aad(actor.tenant_id.as_uuid(), id)))
         .transpose()
         .map_err(|e| AppError::Internal(e.to_string()))?;
-    let fields = CustomerFields {
-        full_name: &c.full_name,
-        search_text: &c.search_text,
-        phone_e164: c.phone.as_str(),
-        gender: input.gender.map(Gender::as_str),
-        birth_year: input.birth_year,
-        address: c.address.as_deref(),
-        source: c.source.as_deref(),
-        note: c.note.as_deref(),
-    };
-    repo::insert(tx, id, &fields, ct.as_deref()).await?;
+    repo::insert(tx, id, &c.fields(&input), ct.as_deref()).await?;
     let row = repo::get(tx, id).await?.ok_or(AppError::NotFound)?;
     audit::record(
         tx,
@@ -240,20 +303,16 @@ pub async fn update(
     input: ProfileInput,
 ) -> Result<CustomerView, AppError> {
     actor.require(Permission::CustomerWrite)?;
-    let c = validate(&input)?;
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let c = validate(&input, spa_today(&mut tx).await?)?;
     let before = repo::get(&mut tx, id).await?.ok_or(AppError::NotFound)?;
-    let fields = CustomerFields {
-        full_name: &c.full_name,
-        search_text: &c.search_text,
-        phone_e164: c.phone.as_str(),
-        gender: input.gender.map(Gender::as_str),
-        birth_year: input.birth_year,
-        address: c.address.as_deref(),
-        source: c.source.as_deref(),
-        note: c.note.as_deref(),
-    };
-    if !repo::update(&mut tx, id, expected_version, &fields).await? {
+    // A package owner stays someone the spa can tell apart (same rule as selling one).
+    if c.full_name.is_none() && repo::owns_packages(&mut tx, id).await? {
+        return Err(AppError::Unprocessable {
+            code: "customer.name_required",
+        });
+    }
+    if !repo::update(&mut tx, id, expected_version, &c.fields(&input)).await? {
         return Err(if repo::exists(&mut tx, id).await? {
             AppError::StaleVersion
         } else {
@@ -330,8 +389,23 @@ pub async fn exists_in(tx: &mut TenantTx, id: Uuid) -> Result<bool, AppError> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CustomerBrief {
     pub id: Uuid,
-    pub full_name: String,
+    /// `None` = an anonymous walk-in profile (shown as [`WALK_IN_LABEL`]).
+    pub full_name: Option<String>,
     pub gender: Option<Gender>,
+}
+
+impl CustomerBrief {
+    /// Who may own a package: someone the spa can tell apart later (EM 2026-11-07). An anonymous
+    /// walk-in gets a name on the profile first.
+    pub fn require_named(&self) -> Result<(), AppError> {
+        if self.full_name.is_some() {
+            Ok(())
+        } else {
+            Err(AppError::Unprocessable {
+                code: "customer.name_required",
+            })
+        }
+    }
 }
 
 /// A live customer of the caller's tenant, read inside the caller's transaction (`None` = not
@@ -350,7 +424,9 @@ pub async fn phone_holder_in(
     tx: &mut TenantTx,
     phone: &PhoneE164,
 ) -> Result<Option<(Uuid, String)>, AppError> {
-    repo::phone_holder(tx, phone.as_str()).await
+    Ok(repo::phone_holder(tx, phone.as_str())
+        .await?
+        .map(|(id, name)| (id, label(name.as_deref()).to_owned())))
 }
 
 /// Result of a duplicate-phone check while the number is typed.
@@ -385,7 +461,7 @@ pub async fn phone_check(
         return Ok(PhoneCheck::Invalid);
     };
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
-    let holder = repo::phone_holder(&mut tx, phone.as_str()).await?;
+    let holder = phone_holder_in(&mut tx, &phone).await?;
     tx.commit().await?;
     Ok(match holder {
         Some((id, full_name)) => PhoneCheck::Taken { id, full_name },

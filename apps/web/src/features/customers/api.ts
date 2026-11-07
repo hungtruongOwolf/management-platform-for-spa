@@ -46,6 +46,25 @@ export async function createCustomer(body: CustomerCreate): Promise<Customer> {
   return (await api("/customers", { method: "POST", body })) as Customer;
 }
 
+/**
+ * An anonymous walk-in (EM 2026-11-07): a profile with neither name nor phone, shown everywhere
+ * as "Khách vãng lai", so the visit is recorded like any other. A name added later keeps the history.
+ */
+export async function createWalkIn(): Promise<Customer> {
+  return createCustomer({ full_name: null, phone: null });
+}
+
+/** Mirrors the server: a date of birth is not after today and at most 120 years back. */
+export function birthDateBounds(today: string): { min: string; max: string } {
+  const year = Number(today.slice(0, 4));
+  return { min: `${String(year - 120)}${today.slice(4)}`, max: today };
+}
+
+/** "Chưa có" for a profile without a phone (decision E: optional). */
+export function phoneText(phone: string | null | undefined): string {
+  return phone ?? "Chưa có SĐT";
+}
+
 export async function updateCustomer(
   id: string,
   version: number,

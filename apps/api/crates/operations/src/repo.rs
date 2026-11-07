@@ -128,7 +128,7 @@ pub async fn visits(
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         VisitRow,
-        r#"SELECT v.id, v.customer_id, c.full_name AS customer_name, c.gender AS customer_gender, v.business_date, v.check_in_at, v.note_ct,
+        r#"SELECT v.id, v.customer_id, app.customer_label(c.full_name) AS "customer_name!", c.gender AS customer_gender, v.business_date, v.check_in_at, v.note_ct,
                   v.status, v.void_reason, v.voided_at, v.sale_id,
                   s.discount_reason AS "discount_reason?",
                   v.corrects_visit_id, n.id AS "corrected_by_visit_id?", v.companions,
@@ -460,7 +460,8 @@ pub async fn package_sales(
         r#"SELECT s.visit_id AS "visit_id!", s.id AS sale_id, s.status, s.business_date,
                   d.description AS "description!", d.packages AS "customer_package_ids!",
                   s.total, s.closer_staff_id, st.full_name AS "closer_name?",
-                  b.id AS "beneficiary_customer_id?", b.full_name AS "beneficiary_name?"
+                  b.id AS "beneficiary_customer_id?", app.customer_label(b.full_name) AS "beneficiary_name?"
+
            FROM app.sale s
            CROSS JOIN LATERAL (
              SELECT string_agg(sl.description_snapshot, ', ' ORDER BY sl.position) AS description,

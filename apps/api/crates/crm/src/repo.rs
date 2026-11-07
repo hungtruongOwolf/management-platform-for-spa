@@ -6,10 +6,12 @@ use uuid::Uuid;
 
 pub struct CustomerRow {
     pub id: Uuid,
-    pub full_name: String,
-    pub phone_e164: String,
+    /// `None` = anonymous walk-in profile.
+    pub full_name: Option<String>,
+    pub phone_e164: Option<String>,
     pub gender: Option<String>,
     pub birth_year: Option<i16>,
+    pub birth_date: Option<NaiveDate>,
     pub address: Option<String>,
     pub source: Option<String>,
     pub note: Option<String>,
@@ -19,11 +21,12 @@ pub struct CustomerRow {
 }
 
 pub struct CustomerFields<'a> {
-    pub full_name: &'a str,
+    pub full_name: Option<&'a str>,
     pub search_text: &'a str,
-    pub phone_e164: &'a str,
+    pub phone_e164: Option<&'a str>,
     pub gender: Option<&'a str>,
     pub birth_year: Option<i16>,
+    pub birth_date: Option<NaiveDate>,
     pub address: Option<&'a str>,
     pub source: Option<&'a str>,
     pub note: Option<&'a str>,
@@ -60,8 +63,8 @@ pub async fn insert(
         .execute(tx.conn())
         .await?;
     let result = sqlx::query!(
-        r#"INSERT INTO app.customer (id, tenant_id, full_name, search_text, phone_e164, gender, birth_year, address, source, note, health_note_ct)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
+        r#"INSERT INTO app.customer (id, tenant_id, full_name, search_text, phone_e164, gender, birth_year, address, source, note, health_note_ct, birth_date)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
         id,
         tenant,
         f.full_name,
@@ -72,7 +75,8 @@ pub async fn insert(
         f.address,
         f.source,
         f.note,
-        health_note_ct
+        health_note_ct,
+        f.birth_date
     )
     .execute(tx.conn())
     .await;
@@ -82,9 +86,10 @@ pub async fn insert(
             sqlx::query("ROLLBACK TO SAVEPOINT customer_insert")
                 .execute(tx.conn())
                 .await?;
-            let existing = phone_owner(tx, f.phone_e164)
-                .await?
-                .ok_or(AppError::Database(e))?;
+            let Some(phone) = f.phone_e164 else {
+                return Err(AppError::Database(e));
+            };
+            let existing = phone_owner(tx, phone).await?.ok_or(AppError::Database(e))?;
             Err(AppError::ConflictWith {
                 code: "customer.phone_taken",
                 existing_id: existing,
@@ -108,7 +113,7 @@ pub async fn update(
     let result = sqlx::query!(
         r#"UPDATE app.customer
            SET full_name = $4, search_text = $5, phone_e164 = $6, gender = $7, birth_year = $8, address = $9,
-               source = $10, note = $11, version = version + 1, updated_at = now()
+               source = $10, note = $11, birth_date = $12, version = version + 1, updated_at = now()
            WHERE tenant_id = $1 AND id = $2 AND version = $3 AND anonymized_at IS NULL"#,
         tenant,
         id,
@@ -120,7 +125,8 @@ pub async fn update(
         f.birth_year,
         f.address,
         f.source,
-        f.note
+        f.note,
+        f.birth_date
     )
     .execute(tx.conn())
     .await;
@@ -130,9 +136,10 @@ pub async fn update(
             sqlx::query("ROLLBACK TO SAVEPOINT customer_update")
                 .execute(tx.conn())
                 .await?;
-            let existing = phone_owner(tx, f.phone_e164)
-                .await?
-                .ok_or(AppError::Database(e))?;
+            let Some(phone) = f.phone_e164 else {
+                return Err(AppError::Database(e));
+            };
+            let existing = phone_owner(tx, phone).await?.ok_or(AppError::Database(e))?;
             Err(AppError::ConflictWith {
                 code: "customer.phone_taken",
                 existing_id: existing,
@@ -166,7 +173,7 @@ pub async fn get(tx: &mut TenantTx, id: Uuid) -> Result<Option<CustomerRow>, App
     let tenant = tx.tenant().as_uuid();
     let row = sqlx::query_as!(
         CustomerRow,
-        r#"SELECT id, full_name, phone_e164, gender, birth_year, address, source, note, health_note_ct, version, created_at
+        r#"SELECT id, full_name, phone_e164, gender, birth_year, birth_date, address, source, note, health_note_ct, version, created_at
            FROM app.customer WHERE tenant_id = $1 AND id = $2 AND anonymized_at IS NULL"#,
         tenant,
         id
@@ -178,8 +185,8 @@ pub async fn get(tx: &mut TenantTx, id: Uuid) -> Result<Option<CustomerRow>, App
 
 pub struct SummaryRow {
     pub id: Uuid,
-    pub full_name: String,
-    pub phone_e164: String,
+    pub full_name: Option<String>,
+    pub phone_e164: Option<String>,
     pub gender: Option<String>,
 }
 
@@ -225,12 +232,15 @@ pub async fn search_name(
     .await?)
 }
 
+/// The most recently touched named profiles. Anonymous walk-in profiles stay out: a list of
+/// "Khách vãng lai" rows tells the desk nothing (they are reached from their visit instead).
 pub async fn recent(tx: &mut TenantTx, limit: i64) -> Result<Vec<SummaryRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         SummaryRow,
         r#"SELECT id, full_name, phone_e164, gender FROM app.customer
-           WHERE tenant_id = $1 AND anonymized_at IS NULL ORDER BY updated_at DESC LIMIT $2"#,
+           WHERE tenant_id = $1 AND anonymized_at IS NULL AND full_name IS NOT NULL
+           ORDER BY updated_at DESC LIMIT $2"#,
         tenant,
         limit
     )
@@ -250,8 +260,21 @@ pub async fn exists(tx: &mut TenantTx, id: Uuid) -> Result<bool, AppError> {
     .is_some())
 }
 
+/// Whether any package (open or closed) belongs to this customer.
+pub async fn owns_packages(tx: &mut TenantTx, id: Uuid) -> Result<bool, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM app.customer_package
+                          WHERE tenant_id = $1 AND customer_id = $2) AS "owns!""#,
+        tenant,
+        id
+    )
+    .fetch_one(tx.conn())
+    .await?)
+}
+
 pub struct BriefRow {
-    pub full_name: String,
+    pub full_name: Option<String>,
     pub gender: Option<String>,
 }
 
@@ -271,7 +294,7 @@ pub async fn brief(tx: &mut TenantTx, id: Uuid) -> Result<Option<BriefRow>, AppE
 pub async fn phone_holder(
     tx: &mut TenantTx,
     phone_e164: &str,
-) -> Result<Option<(Uuid, String)>, AppError> {
+) -> Result<Option<(Uuid, Option<String>)>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query!(
         "SELECT id, full_name FROM app.customer WHERE tenant_id = $1 AND phone_e164 = $2 AND anonymized_at IS NULL",

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -13,6 +16,7 @@ import { mockDaily, mockRange } from "./fixtures";
 import { displayPhone } from "./PackagesOverviewPage";
 import { isEmptyRange } from "./ReportsPage";
 import { serveManagement } from "./testServer";
+import { SearchField } from "./filters";
 
 const MANAGER = ["visit.record", "customer.read", "catalog.read", "report.read", "report.revenue.read"];
 
@@ -458,5 +462,34 @@ describe("customer history", () => {
     expect(await screen.findByRole("heading", { level: 1, name: /^Nguyễn Thị Hà/ })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Lịch sử sử dụng" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Chăm sóc lại" })).not.toBeInTheDocument();
+  });
+});
+
+describe("list search box", () => {
+  it("has exactly one clear button: the labelled one, the browser's native × is suppressed", async () => {
+    const user = userEvent.setup();
+    let committed = "";
+    render(
+      <SearchField
+        label="Tìm khách"
+        value=""
+        onCommit={(v) => {
+          committed = v;
+        }}
+      />,
+    );
+    const box = screen.getByRole("searchbox", { name: "Tìm khách" });
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    await user.type(box, "Hà Nội");
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    await waitFor(() => {
+      expect(committed).toBe("Hà Nội");
+    });
+    await user.click(screen.getByRole("button", { name: "Xóa ô tìm khách" }));
+    expect(box).toHaveValue("");
+    expect(committed).toBe("");
+    // jsdom draws no native controls: the stylesheet must hide WebKit's own cancel button.
+    const css = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../components.css"), "utf8");
+    expect(css).toMatch(/\.search-field input::-webkit-search-cancel-button\s*\{\s*appearance:\s*none;/);
   });
 });

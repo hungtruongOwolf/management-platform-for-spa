@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT b.id AS \"id!\", b.seq AS \"seq!\", b.entry AS \"entry!\",\n                  b.business_date AS \"business_date!\", b.at AS \"at!\",\n                  b.customer_id AS \"customer_id!\", c.full_name, c.gender, b.sale_kind AS \"sale_kind!\",\n                  b.one_off, b.package, b.bank_transfer AS \"bank_transfer!\", b.cash AS \"cash!\",\n                  b.unpaid AS \"unpaid!\", b.note, b.voided AS \"voided!\", b.visit_id, b.upsell_by\n           FROM app.revenue_book b\n           JOIN app.customer c ON c.tenant_id = b.tenant_id AND c.id = b.customer_id\n           WHERE b.tenant_id = $1 AND b.business_date BETWEEN $2 AND $3\n             AND ($4::date IS NULL OR (b.business_date, b.seq) > ($4, $5))\n           ORDER BY b.business_date, b.seq\n           LIMIT $6",
+  "query": "SELECT b.id AS \"id!\", b.seq AS \"seq!\", b.entry AS \"entry!\",\n                  b.business_date AS \"business_date!\", b.at AS \"at!\",\n                  b.customer_id AS \"customer_id!\", app.customer_label(c.full_name) AS \"full_name!\",\n                  c.gender, b.sale_kind AS \"sale_kind!\",\n                  (SELECT string_agg(DISTINCT app.customer_label(o.full_name), ', ')\n                   FROM app.customer_package cp\n                   JOIN app.customer o ON o.tenant_id = cp.tenant_id AND o.id = cp.customer_id\n                   WHERE cp.tenant_id = b.tenant_id AND cp.sale_id = b.sale_id\n                     AND cp.customer_id <> b.customer_id) AS \"beneficiary_name?\",\n                  b.one_off, b.package, b.bank_transfer AS \"bank_transfer!\", b.cash AS \"cash!\",\n                  b.unpaid AS \"unpaid!\", b.note, b.voided AS \"voided!\", b.visit_id, b.upsell_by\n           FROM app.revenue_book b\n           JOIN app.customer c ON c.tenant_id = b.tenant_id AND c.id = b.customer_id\n           WHERE b.tenant_id = $1 AND b.business_date BETWEEN $2 AND $3\n             AND ($4::date IS NULL OR (b.business_date, b.seq) > ($4, $5))\n           ORDER BY b.business_date, b.seq\n           LIMIT $6",
   "describe": {
     "columns": [
       {
@@ -71,14 +71,9 @@
       },
       {
         "ordinal": 6,
-        "name": "full_name",
+        "name": "full_name!",
         "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "app.customer",
-            "name": "full_name"
-          }
-        }
+        "origin": "Expression"
       },
       {
         "ordinal": 7,
@@ -104,6 +99,12 @@
       },
       {
         "ordinal": 9,
+        "name": "beneficiary_name?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
         "name": "one_off",
         "type_info": "Text",
         "origin": {
@@ -114,7 +115,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "package",
         "type_info": "Text",
         "origin": {
@@ -125,7 +126,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "bank_transfer!",
         "type_info": "Int8",
         "origin": {
@@ -136,7 +137,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "cash!",
         "type_info": "Int8",
         "origin": {
@@ -147,7 +148,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "unpaid!",
         "type_info": "Int8",
         "origin": {
@@ -158,7 +159,7 @@
         }
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "note",
         "type_info": "Text",
         "origin": {
@@ -169,7 +170,7 @@
         }
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "voided!",
         "type_info": "Bool",
         "origin": {
@@ -180,7 +181,7 @@
         }
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "visit_id",
         "type_info": "Uuid",
         "origin": {
@@ -191,7 +192,7 @@
         }
       },
       {
-        "ordinal": 17,
+        "ordinal": 18,
         "name": "upsell_by",
         "type_info": "Text",
         "origin": {
@@ -219,9 +220,10 @@
       true,
       true,
       true,
-      false,
+      null,
       true,
       true,
+      null,
       true,
       true,
       true,
@@ -233,5 +235,5 @@
       true
     ]
   },
-  "hash": "9c1c7da7db437038a3f045a9b035697a703c4e615b6b66dd09c68974a0e2221d"
+  "hash": "35e828234de7b9924ca52ec3691c63ace4f82c7fe6b60bbe7e73c88de8e6625d"
 }

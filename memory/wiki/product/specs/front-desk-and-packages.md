@@ -1,7 +1,7 @@
 ---
 title: "Spec R1-1: Màn hình quầy & liệu trình khách hàng"
 status: approved
-updated: 2026-11-06
+updated: 2026-11-07
 sources: [raw/2026-11-04-idea-internal-platform.md, raw/2026-11-06-em-upsell-and-convert-to-package.md, raw/2026-11-06-em-answers-round6-upsell.md]
 related: [../vision.md, ../personas.md, ../glossary.md, ../paper-books-analysis.md]
 ---
@@ -58,7 +58,7 @@ Thay **sổ dịch vụ**, **sổ theo dõi liệu trình khách hàng** và ph�
 
 ### US2: Hồ sơ khách hàng
 *Là quản lý, tôi muốn tìm và tạo hồ sơ khách trong vài giây, thấy ngay liệu trình còn lại, công nợ và lưu ý sức khỏe.*
-- **Trường:** họ tên (bắt buộc); **SĐT (bắt buộc, duy nhất trong một spa)** **[D6]**; giới tính; năm sinh; địa chỉ; nguồn biết đến spa; ghi chú chung; **ghi chú sức khỏe** (chống chỉ định, tình trạng).
+- **Trường:** họ tên (không bắt buộc từ 2026-11-07: không tên = "Khách vãng lai", §10.11); **SĐT (không bắt buộc từ 2026-11-07, quyết định E; khi có thì duy nhất trong một spa)** **[D6]**; giới tính; năm sinh; ngày sinh (tùy chọn, §10.11); địa chỉ; nguồn biết đến spa; ghi chú chung; **ghi chú sức khỏe** (chống chỉ định, tình trạng).
 - **Màn hình hồ sơ:** liệu trình đang có (còn X/Y buổi, hạn dùng), lịch sử buổi làm (mới nhất trước), ghi chú sức khỏe hiển thị nổi bật.
 - AC2.1: Given gõ ≥ 3 chữ số của SĐT hoặc ≥ 2 ký tự tên (có dấu hoặc không dấu, ví dụ "hà" tìm được "Hà") → gợi ý khách trong < 300 ms.
 - AC2.2: Given khách mới, when nhập tên + SĐT và lưu → hồ sơ được tạo và chọn luôn cho lượt đang ghi.
@@ -212,7 +212,7 @@ Sổ quỹ & chốt quỹ (spec #2; spec này chỉ phát sinh Payment/Refund ch
 | D3 | "Quà tặng" là gì? | Hai loại: **buổi tặng** (cộng vào số buổi) và **quà hiện vật** (ghi chú chữ) |
 | D4 | Giá trị một buổi (dùng cho hoa hồng R2)? | Giá sau giảm ÷ số buổi **mua**; buổi tặng có giá trị 0 |
 | D5 | Người nhà dùng chung liệu trình của khách? | **Không** trong R1 |
-| D6 | SĐT bắt buộc và duy nhất? | **Bắt buộc, duy nhất** trong một spa |
+| D6 | SĐT bắt buộc và duy nhất? | ~~Bắt buộc~~ → **không bắt buộc** (EM 2026-11-07, quyết định E, §10.11); khi có thì **duy nhất** trong một spa |
 | D7 | ~~Chưa trả hết tiền gói có được dùng buổi không?~~ | **Bỏ** (EM 2026-11-04): R1 mọi giao dịch thu đủ ngay, không có công nợ |
 | D8 | Một lượt dùng nhiều buổi của cùng dịch vụ? | Được, số lượng mặc định 1 |
 | D9 | Người tư vấn chốt gói có bắt buộc không? | **Bắt buộc** (cần cho hoa hồng R2); được chọn "Quản lý / Chủ spa" nếu không có KTV chốt |
@@ -452,3 +452,26 @@ EM ([raw](../../../raw/2026-11-07-em-review-round3-small.md)): *"trong cái đ�
 **Câu hỏi cho EM:** Q-C9 — người đi cùng chỉ có tên muốn ghi lượt thì vẫn cần hồ sơ có SĐT (SĐT là duy nhất mỗi spa). Có cần **hồ sơ khách không SĐT** (ví dụ chồng / con không muốn cho số) không? Mặc định: giữ quy tắc cũ (giống Q11 của spec lịch hẹn).
 
 **Tiếp theo:** đã chạy `/backend-design` ([backend §3e](../../architecture/backend.md), [data 0021](../../architecture/data.md)) → `/frontend-design` ([front-desk-flows vòng 6](../../design/front-desk-flows.md)) → `/breakdown` ([plan r1-6-upsell](../../plans/r1-6-upsell.md)).
+
+### 10.11 Danh tính khách: khách vãng lai không tên, SĐT không bắt buộc, ngày sinh (EM 2026-11-07)
+EM (raw `2026-11-07-em-decisions-after-live-test.md`): *"khách vãng lai mà vẫn phải nhập tên với nhập số điện thoại lỡ đâu người ta không muốn thì sao"*; **quyết định E**: SĐT không bắt buộc trên mọi hồ sơ, kể cả người đi cùng (trả lời Q-C9 / Q11). Ngày sinh tùy chọn "để sau này tặng ưu đãi sinh nhật". Thay **D6** (SĐT bắt buộc) và "họ tên (bắt buộc)" của US2. Mô hình: [ADR-0011](../../decisions/ADR-0011-anonymous-walk-in-and-optional-phone.md).
+
+- **Hồ sơ không tên = "Khách vãng lai"**: quầy bấm **"Khách vãng lai"** cạnh "Khách mới" → server tạo hồ sơ không tên, không SĐT, chọn luôn cho lượt. Form hồ sơ cho để trống tên và SĐT. Lượt, hóa đơn, lương "làm", lịch sử, báo cáo đi đường cũ; mọi nơi hiện tên thì hiện "Khách vãng lai".
+- **Không có ở**: danh sách khách gần đây (`/khach-hang` khi chưa gõ), tìm theo tên, "Khách lâu chưa quay lại" (không gọi lại được). Mở được từ lượt, lịch sử, sổ doanh thu. Khách cho tên lúc sau → "Sửa hồ sơ", lịch sử giữ nguyên.
+- **SĐT** khi nhập: vẫn chuẩn hóa, vẫn `422` nếu sai định dạng, vẫn `409 customer.phone_taken` nếu trùng (AC2.3–AC2.5 giữ nguyên). Không SĐT: hiện "Chưa có SĐT"; khách có tên mà không SĐT vẫn ở danh sách gọi lại.
+- **Gói liệu trình cần chủ gói có tên**: bán gói (hồ sơ, giỏ Quầy, mua cho người khác, nhập sổ cũ) cho hồ sơ không tên → `422 customer.name_required`. Khách vãng lai không tên được *trả tiền* mua gói cho người có tên. Không xóa được tên của hồ sơ đang có gói. Chủ gói không bắt buộc SĐT.
+- **Ngày sinh** (`birth_date`, dd/mm/yyyy): không sau hôm nay, không quá 120 tuổi; có ngày sinh thì năm sinh tự theo; "Năm sinh" vẫn nhập được khi không biết ngày.
+- **Người đi cùng chỉ có tên** ở check-in nhóm: nút "Tạo hồ sơ" ngay dòng đó, form hồ sơ điền sẵn tên, SĐT không bắt buộc (thay đoạn "thêm SĐT" ở §10.10).
+- **Mua cho người khác**: thông báo thành công, sổ doanh thu (`beneficiary_name`) và dòng thời gian ghi tên người dùng gói; dòng thời gian của người được mua hiện gói đó kèm người trả (`payer_name`).
+- **Gia hạn +3 tháng**: hỏi xác nhận (hạn cũ → hạn mới, lý do) trước khi lưu; dòng thời gian có mục "Gia hạn" (`package_extended`).
+- **Bán gói trên hồ sơ** dùng cùng thành phần bán gói với Quầy (có "Mua cho người khác", giới hạn giảm giá của quản lý giữ nguyên).
+
+**Quyết định EM (2026-11-07, [raw](../../../raw/2026-11-07-em-walkin-package-owner.md)):** chủ gói phải có tên, SĐT không bắt buộc, khách không tên được trả tiền mua cho người có tên — **ok**. **Mở (để vòng sau):** công cụ gộp hồ sơ khi một khách vãng lai không tên về sau cho tên trùng một hồ sơ có sẵn — EM: "cũng được" để sau, chưa làm.
+
+**AC:**
+- AC-I1: `POST /customers {}` → 201, `full_name` "Khách vãng lai", `named: false`, `phone: null`; ghi lượt cho hồ sơ đó → 201; báo cáo ngày đếm lượt; sổ doanh thu hiện "Khách vãng lai"; `GET /customers` (không `q`) và `/customers/inactive` không có hồ sơ đó; khách có tên không SĐT có ở `/customers/inactive` với `phone: null`.
+- AC-I2: bán gói cho hồ sơ không tên (`POST /sales` hoặc `package_sales` trong lượt) → `422 customer.name_required`; khách không tên trả cho Bình (có tên) → 201; đặt tên rồi bán → 201; xóa tên của chủ gói → `422 customer.name_required`.
+- AC-I3: hai hồ sơ không SĐT → 201 cả hai; SĐT trùng → `409` với `existing_id`; SĐT sai → `422 phone invalid_format`; bỏ SĐT của một hồ sơ → số đó dùng lại được.
+- AC-I4: `birth_date` ngày mai → `422 in_future`; 121 năm trước → `too_old`; lệch `birth_year` → `conflicts_with_birth_date`; hợp lệ → `birth_year` = năm của ngày sinh.
+- AC-I5: mua cho Bình → dòng sổ doanh thu có `beneficiary_name` "Bình"; lịch sử Bình có `purchase` với `payer_name`; gia hạn → lịch sử có `package_extended` (hạn cũ, hạn mới, lý do, người làm).
+

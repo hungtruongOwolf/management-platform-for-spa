@@ -34,6 +34,13 @@ const HA = {
   phone: "0905 111 222",
   gender: "female",
 };
+/** Hà's husband: the package she buys for him sits on his profile (US13). */
+const NAM = {
+  id: "c2",
+  full_name: "Trần Văn Nam",
+  phone: "0905 333 444",
+  gender: "male",
+};
 const DTL: Service = {
   id: "s5",
   category_id: "cat1",
@@ -187,8 +194,10 @@ function serve(
         tenants: [{ id: "t1", name: "Viên Phúc Y Đường" }],
         permissions: PERMS,
       });
+    if (url.startsWith("/api/v1/customers?q=Nam")) return json([NAM]);
     if (url.startsWith("/api/v1/customers?q="))
       return json([{ ...HA, ...customer }]);
+
     if (url === "/api/v1/customers/c1")
       return json({
         ...HA,
@@ -237,6 +246,14 @@ function serve(
               payments: [],
               total: 3_500_000,
               voided: false,
+              // Echo "Mua cho người khác" like the server does.
+              ...((
+                call.body as {
+                  package_sales?: { beneficiary_customer_id?: string | null }[];
+                }
+              ).package_sales?.[0]?.beneficiary_customer_id === "c2"
+                ? { beneficiary_customer_id: "c2", beneficiary_name: NAM.full_name }
+                : {}),
             },
           ],
         },
@@ -391,6 +408,87 @@ describe("/quay round 6", () => {
       lines: [{ package_plan_id: "pl1", gift_note: "Dầu thảo dược" }],
       payments: [{ method: "cash", amount: 3_500_000 }],
     });
+  });
+
+  it("names who gets a package bought for someone else, and who paid (US13)", async () => {
+    const calls = serve();
+    const user = userEvent.setup();
+    render(
+      <App history={createMemoryHistory({ initialEntries: ["/quay"] })} />,
+    );
+    await pickHa(user);
+    await user.click(
+      await screen.findByRole("button", { name: "Bán gói liệu trình" }),
+    );
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Mẫu gói" }),
+      "pl1",
+    );
+    await user.click(
+      screen.getByRole("checkbox", { name: /Mua cho người khác/ }),
+    );
+    const searches = screen.getAllByRole("combobox", {
+      name: "Tìm khách theo SĐT hoặc tên",
+    });
+    const beneficiarySearch = searches[searches.length - 1];
+    if (!beneficiarySearch) throw new Error("beneficiary search missing");
+    await user.type(beneficiarySearch, "Nam");
+    await user.click(
+      await screen.findByRole("option", { name: /Trần Văn Nam/ }),
+    );
+    await user.click(screen.getByRole("button", { name: "Lưu hóa đơn gói" }));
+    await waitFor(() => {
+      expect(posted(calls, "/api/v1/sales")).toHaveLength(1);
+    });
+    expect(posted(calls, "/api/v1/sales")[0]?.body).toMatchObject({
+      customer_id: "c1",
+      beneficiary_customer_id: "c2",
+    });
+    expect(
+      await screen.findByText(
+        `Đã bán "${PLAN.name}" cho Trần Văn Nam (Nguyễn Thị Hà trả tiền).`,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("names the beneficiary of a package sold for someone else within a visit", async () => {
+    const calls = serve();
+    const user = userEvent.setup();
+    render(
+      <App history={createMemoryHistory({ initialEntries: ["/quay"] })} />,
+    );
+    await pickHa(user);
+    await addOneOff(user, "s5");
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "KTV" }),
+      "st1",
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Bán gói liệu trình" }),
+    );
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Mẫu gói" }),
+      "pl1",
+    );
+    await user.click(
+      screen.getByRole("checkbox", { name: /Mua cho người khác/ }),
+    );
+    const searches = screen.getAllByRole("combobox", {
+      name: "Tìm khách theo SĐT hoặc tên",
+    });
+    const beneficiarySearch = searches[searches.length - 1];
+    if (!beneficiarySearch) throw new Error("beneficiary search missing");
+    await user.type(beneficiarySearch, "Nam");
+    await user.click(
+      await screen.findByRole("option", { name: /Trần Văn Nam/ }),
+    );
+    await user.click(screen.getByRole("button", { name: "Lưu lượt khách" }));
+    await waitFor(() => {
+      expect(posted(calls, "/api/v1/visits")).toHaveLength(1);
+    });
+    expect(
+      await screen.findByText(/bán Gói Đại Thông Lạc 10 \+ 2 cho Trần Văn Nam/),
+    ).toBeInTheDocument();
   });
 
   it("records who recommended a one-off line; khách tự chọn by default (Q-U2)", async () => {

@@ -10,8 +10,14 @@ import { useToast } from "../customers/Toast";
 import { ErrorState } from "../reports/ui";
 import { customerPackagesQuery, formatDate } from "./api";
 import { PACKAGE_STATE, daysBetween, isClosedPackage, packageState } from "./packageState";
-import { SellPackageDialog } from "./SellPackageDialog";
 import { expiryText, serviceLabel } from "../../lib/names";
+
+// The sale form reuses the front desk's package block: its own chunk, loaded when the sheet opens.
+const SellPackageDialog = lazy(() =>
+  import("./SellPackageDialog").then((m) => ({
+    default: m.SellPackageDialog,
+  })),
+);
 
 // Lifecycle forms (extend, cancel + refund, sale void) load only for users who can act.
 const PackageActions = lazy(() =>
@@ -102,17 +108,18 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
         title="Bán gói liệu trình"
         wide
       >
-        <SellPackageDialog
-          customerId={customerId}
-          onCancel={() => {
-            setSelling(false);
-          }}
-          onDone={(sale) => {
-            setSelling(false);
-            const p = sale.customer_packages[0];
-            notify(p ? `Đã bán "${p.name}" — còn ${String(p.sessions_remaining)}/${String(p.sessions_total)} buổi.` : "Đã lưu hóa đơn.");
-          }}
-        />
+        <Suspense fallback={<div aria-hidden="true" className="skeleton h-40" />}>
+          <SellPackageDialog
+            customerId={customerId}
+            onCancel={() => {
+              setSelling(false);
+            }}
+            onDone={(message) => {
+              setSelling(false);
+              notify(message);
+            }}
+          />
+        </Suspense>
       </BottomSheet>
       {packages.isPending && (
         <div role="status" aria-label="Đang tải gói liệu trình" className="grid gap-3">

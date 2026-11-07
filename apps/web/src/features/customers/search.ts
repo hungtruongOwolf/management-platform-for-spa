@@ -7,7 +7,7 @@ export const customersSearch = searchSchema({
   q: param.text(100),
 });
 
-export const HISTORY_KINDS = ["visit", "purchase", "visit_voided", "purchase_voided", "package_cancelled"] as const satisfies readonly HistoryKind[];
+export const HISTORY_KINDS = ["visit", "purchase", "visit_voided", "purchase_voided", "package_cancelled", "package_extended"] as const satisfies readonly HistoryKind[];
 
 /**
  * /khach-hang/:id — the usage history filters (EM round 3 item 6): search service, category,

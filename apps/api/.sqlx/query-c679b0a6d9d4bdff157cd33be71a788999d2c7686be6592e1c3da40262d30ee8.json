@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT v.id AS visit_id, v.business_date, v.check_in_at, c.full_name AS customer_name,\n                  vl.service_name_snapshot AS service_name, vl.qty, vl.source\n           FROM app.visit v\n           JOIN app.visit_line vl ON vl.tenant_id = v.tenant_id AND vl.visit_id = v.id\n           JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id\n           WHERE v.tenant_id = $1 AND vl.staff_id = $2 AND v.status = 'completed'\n             AND v.business_date BETWEEN $3 AND $4\n           ORDER BY v.check_in_at DESC, v.id, vl.position",
+  "query": "SELECT v.id AS visit_id, v.business_date, v.check_in_at,\n                  app.customer_label(c.full_name) AS \"customer_name!\",\n                  vl.service_name_snapshot AS service_name, vl.qty, vl.source\n           FROM app.visit v\n           JOIN app.visit_line vl ON vl.tenant_id = v.tenant_id AND vl.visit_id = v.id\n           JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id\n           WHERE v.tenant_id = $1 AND vl.staff_id = $2 AND v.status = 'completed'\n             AND v.business_date BETWEEN $3 AND $4\n           ORDER BY v.check_in_at DESC, v.id, vl.position",
   "describe": {
     "columns": [
       {
@@ -38,14 +38,9 @@
       },
       {
         "ordinal": 3,
-        "name": "customer_name",
+        "name": "customer_name!",
         "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "app.customer",
-            "name": "full_name"
-          }
-        }
+        "origin": "Expression"
       },
       {
         "ordinal": 4,
@@ -93,11 +88,11 @@
       false,
       false,
       false,
-      false,
+      null,
       false,
       false,
       false
     ]
   },
-  "hash": "499b84fc367b680b138d3cd51a1b67083a82affff0d929edfb1ab0a2a87dd7dc"
+  "hash": "c679b0a6d9d4bdff157cd33be71a788999d2c7686be6592e1c3da40262d30ee8"
 }

@@ -255,3 +255,100 @@ describe("customers page", () => {
     expect(calls.some((c) => c.method === "POST")).toBe(false);
   });
 });
+
+describe("customer identity (EM 2026-11-07, ADR-0011)", () => {
+  const WALK_IN = {
+    ...HA_FULL,
+    id: "w1",
+    full_name: "Khách vãng lai",
+    named: false,
+    phone: null,
+    phone_e164: null,
+    gender: null,
+    birth_year: null,
+    birth_date: null,
+  };
+
+  it("saves a profile with neither name nor phone (anonymous walk-in)", async () => {
+    const calls = serve(ALL, (c) =>
+      c.method === "POST" && c.url === "/api/v1/customers"
+        ? Response.json(WALK_IN, { status: 201 })
+        : c.url === "/api/v1/customers/w1"
+          ? Response.json(WALK_IN)
+          : undefined,
+    );
+    at("/khach-hang");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Khách mới" }));
+    const form = screen.getByRole("form", { name: "Khách mới" });
+    expect(within(form).getByLabelText("Họ tên")).toHaveAccessibleDescription(/Không bắt buộc/);
+    await user.click(within(form).getByRole("button", { name: "Lưu khách" }));
+    await vi.waitFor(() => {
+      expect(calls.some((c) => c.method === "POST")).toBe(true);
+    });
+    const post = calls.find((c) => c.method === "POST");
+    expect(post?.body).toMatchObject({ full_name: null, phone: null, birth_date: null });
+  });
+
+  it("sends a date of birth (and lets the server take the year from it)", async () => {
+    const calls = serve(ALL, (c) =>
+      c.method === "POST" && c.url === "/api/v1/customers"
+        ? Response.json({ ...HA_FULL, named: true, birth_date: "1990-03-14", birth_year: 1990 }, { status: 201 })
+        : undefined,
+    );
+    at("/khach-hang");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Khách mới" }));
+    const form = screen.getByRole("form", { name: "Khách mới" });
+    await user.type(within(form).getByLabelText("Họ tên"), "Lê Thị Mai");
+    const birth = within(form).getByLabelText("Ngày sinh");
+    await user.type(birth, "14031990");
+    await user.tab();
+    // Year field is for those who only know the year: hidden once a date is given.
+    expect(within(form).queryByLabelText(/Năm sinh/)).not.toBeInTheDocument();
+    await user.click(within(form).getByRole("button", { name: "Lưu khách" }));
+    await vi.waitFor(() => {
+      expect(calls.some((c) => c.method === "POST")).toBe(true);
+    });
+    expect(calls.find((c) => c.method === "POST")?.body).toMatchObject({
+      full_name: "Lê Thị Mai",
+      phone: null,
+      birth_date: "1990-03-14",
+      birth_year: null,
+    });
+  });
+
+  it("refuses a date of birth in the future before calling the API", async () => {
+    const calls = serve(ALL);
+    at("/khach-hang");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Khách mới" }));
+    const form = screen.getByRole("form", { name: "Khách mới" });
+    await user.type(within(form).getByLabelText("Ngày sinh"), "01012999");
+    await user.tab();
+    await user.click(within(form).getByRole("button", { name: "Lưu khách" }));
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+  });
+
+  it("shows a phone-less profile as “Chưa có SĐT” and its date of birth", async () => {
+    serve(ALL, (c) =>
+      c.url === "/api/v1/customers/c1"
+        ? Response.json({ ...HA_FULL, named: true, phone: null, phone_e164: null, birth_date: "1990-03-14", birth_year: 1990 })
+        : undefined,
+    );
+    at("/khach-hang/c1");
+    expect(await screen.findByText("Chưa có SĐT")).toBeInTheDocument();
+    expect(screen.getByText("14/03/1990")).toBeInTheDocument();
+  });
+
+  it("edits an anonymous walk-in starting from an empty name", async () => {
+    serve(ALL, (c) => (c.url === "/api/v1/customers/w1" ? Response.json(WALK_IN) : undefined));
+    at("/khach-hang/w1");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Sửa hồ sơ" }));
+    const form = await screen.findByRole("form", { name: "Sửa hồ sơ khách" });
+    expect(within(form).getByLabelText("Họ tên")).toHaveValue("");
+    expect(within(form).getByLabelText("Số điện thoại")).toHaveValue("");
+  });
+});
+

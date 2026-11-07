@@ -30,6 +30,7 @@ import { customerQuery } from "../customers/api";
 import { CustomerSearch } from "../customers/CustomerSearch";
 import { completeAppointment } from "../appointments/complete";
 import { activeStaffQuery, exceedsCap, parseAmount } from "../sales/api";
+import { boughtForOtherText } from "../sales/saleText";
 import {
   type CartLine,
   type DiscountDraft,
@@ -159,7 +160,8 @@ function summaryOf(c: Customer): CustomerSummary {
   return {
     id: c.id,
     full_name: c.full_name,
-    phone: c.phone,
+    named: c.named,
+    phone: c.phone ?? null,
     gender: c.gender ?? null,
   };
 }
@@ -360,7 +362,12 @@ export function FrontDeskPage() {
       forgetDraft(visit.customer_id);
       showToast(
         savedSummary(visit) +
-          visit.package_sales.map((p) => ` · bán ${p.description}`).join("") +
+          visit.package_sales
+            .map(
+              (p) =>
+                ` · bán ${p.description}${p.beneficiary_name ? ` cho ${p.beneficiary_name}` : ""}`,
+            )
+            .join("") +
           (visit.business_date !== todayIso
             ? ` · nhập bù ngày ${visit.business_date.split("-").reverse().join("/")}`
             : ""),
@@ -422,12 +429,21 @@ export function FrontDeskPage() {
         idempotencyKey,
       );
     },
-    onSuccess: async (sale) => {
+    onSuccess: async (sale, draft) => {
       await queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
       void invalidateManagementViews(queryClient, customer?.id);
+      if (draft.beneficiary)
+        void invalidateManagementViews(queryClient, draft.beneficiary.id);
       forgetDraft(customer?.id);
+      const sold = sale.lines.map((l) => l.description).join(", ");
       showToast(
-        `Đã bán ${sale.lines.map((l) => l.description).join(", ")} · ${customer?.full_name ?? ""}`,
+        draft.beneficiary
+          ? boughtForOtherText(
+              sold,
+              draft.beneficiary.full_name,
+              customer?.full_name ?? "",
+            )
+          : `Đã bán ${sold} · ${customer?.full_name ?? ""}`,
       );
       resetVisit();
     },
@@ -637,7 +653,9 @@ export function FrontDeskPage() {
       {
         id: a.customer_id,
         full_name: a.customer_name,
-        phone: localPhone(a.customer_phone ?? ""),
+        // A booking always carries the person's name (ADR-0009).
+        named: true,
+        phone: a.customer_phone ? localPhone(a.customer_phone) : null,
         gender: a.customer_gender ?? null,
       },
       true,
@@ -787,7 +805,17 @@ export function FrontDeskPage() {
                 onCreate={(typed) => {
                   setCreating(typed);
                 }}
+                {...(can(me, "customer.write")
+                  ? {
+                      onWalkIn: (c: Customer) => {
+                        leaveCart(() => {
+                          select(summaryOf(c));
+                        });
+                      },
+                    }
+                  : {})}
               />
+
               {creating !== null && can(me, "customer.write") && (
                 <Suspense
                   fallback={

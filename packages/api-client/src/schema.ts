@@ -1520,31 +1520,51 @@ export interface components {
         };
         CustomerCreate: {
             address?: string | null;
+            /**
+             * Format: date
+             * @description Not after today, at most 120 years back; sets `birth_year` when that is omitted, and must
+             *     agree with it otherwise (`birth_year conflicts_with_birth_date`).
+             */
+            birth_date?: string | null;
             /** Format: int32 */
             birth_year?: number | null;
-            full_name: string;
+            /**
+             * @description Omitted/null/blank = no name: an anonymous walk-in, shown as "Khách vãng lai". A package
+             *     can be sold to this profile only once it has a name (`422 customer.name_required`).
+             */
+            full_name?: string | null;
             gender?: components["schemas"]["GenderDto"] | null;
             /** @description Requires `customer.health_notes.write`. */
             health_note?: string | null;
             note?: string | null;
-            phone: string;
+            /**
+             * @description Omitted/null/blank = no phone. When given: format-checked (`422 phone invalid_format`)
+             *     and unique among live profiles (`409 customer.phone_taken`).
+             */
+            phone?: string | null;
             source?: string | null;
         };
         CustomerDto: {
             address?: string | null;
+            /** Format: date */
+            birth_date?: string | null;
             /** Format: int32 */
             birth_year?: number | null;
             /** Format: date-time */
             created_at: string;
+            /** @description The name to show: "Khách vãng lai" for an anonymous walk-in profile (`named` = false). */
             full_name: string;
             gender?: components["schemas"]["GenderDto"] | null;
             /** @description Present only for callers with `customer.health_notes.read`; null = no note. */
             health_note?: string | null;
             /** Format: uuid */
             id: string;
+            /** @description false = the profile has no name (an anonymous walk-in); edit forms start the name empty. */
+            named: boolean;
             note?: string | null;
-            phone: string;
-            phone_e164: string;
+            /** @description null = no phone recorded (decision E: optional). */
+            phone?: string | null;
+            phone_e164?: string | null;
             source?: string | null;
             /**
              * Format: int64
@@ -1677,21 +1697,38 @@ export interface components {
         };
         /** @description Search hit for the counter: never contains notes. */
         CustomerSummaryDto: {
+            /** @description The name to show: "Khách vãng lai" for an anonymous walk-in profile (`named` = false). */
             full_name: string;
             gender?: components["schemas"]["GenderDto"] | null;
             /** Format: uuid */
             id: string;
-            /** @description National display form, e.g. "0905 123 456". */
-            phone: string;
+            /** @description false = the profile has no name (an anonymous walk-in). */
+            named: boolean;
+            /** @description National display form, e.g. "0905 123 456"; null = no phone recorded. */
+            phone?: string | null;
         };
         CustomerUpdate: {
             address?: string | null;
+            /**
+             * Format: date
+             * @description Not after today, at most 120 years back; sets `birth_year` when that is omitted, and must
+             *     agree with it otherwise (`birth_year conflicts_with_birth_date`).
+             */
+            birth_date?: string | null;
             /** Format: int32 */
             birth_year?: number | null;
-            full_name: string;
+            /**
+             * @description Omitted/null/blank = no name: an anonymous walk-in, shown as "Khách vãng lai". A package
+             *     can be sold to this profile only once it has a name (`422 customer.name_required`).
+             */
+            full_name?: string | null;
             gender?: components["schemas"]["GenderDto"] | null;
             note?: string | null;
-            phone: string;
+            /**
+             * @description Omitted/null/blank = no phone. When given: format-checked (`422 phone invalid_format`)
+             *     and unique among live profiles (`409 customer.phone_taken`).
+             */
+            phone?: string | null;
             source?: string | null;
         };
         /** @description `GET /reports/daily`. */
@@ -1955,13 +1992,27 @@ export interface components {
             /** Format: date */
             business_date: string;
             cancellation?: components["schemas"]["HistoryCancellation"] | null;
+            extension?: components["schemas"]["HistoryExtension"] | null;
             kind: components["schemas"]["HistoryKind"];
             purchase?: components["schemas"]["HistoryPurchase"] | null;
             visit?: components["schemas"]["HistoryVisit"] | null;
             void?: components["schemas"]["HistoryVoid"] | null;
         };
+        /** @description A package's expiry moved later ("Gia hạn"). */
+        HistoryExtension: {
+            /** @description The user who extended it. */
+            by_name: string;
+            /** Format: uuid */
+            customer_package_id: string;
+            /** Format: date */
+            expires_on: string;
+            package_name: string;
+            /** Format: date */
+            previous_expires_on: string;
+            reason: string;
+        };
         /** @enum {string} */
-        HistoryKind: "visit" | "purchase" | "visit_voided" | "purchase_voided" | "package_cancelled";
+        HistoryKind: "visit" | "purchase" | "visit_voided" | "purchase_voided" | "package_cancelled" | "package_extended";
         /** @description `GET /customers/{id}/history`: newest first. */
         HistoryPage: {
             /** Format: uuid */
@@ -1979,6 +2030,11 @@ export interface components {
             lines: components["schemas"]["HistoryPurchaseLine"][];
             /** @description Money received (before any void). */
             paid: components["schemas"]["MethodSplit"];
+            /**
+             * @description Bought by someone else for this customer: who paid (the money fields are theirs). Null
+             *     on the payer's own timeline.
+             */
+            payer_name?: string | null;
             /** Format: uuid */
             sale_id: string;
             /** Format: int64 */
@@ -2106,7 +2162,8 @@ export interface components {
              * @description The date that follow-up planned for the next try (`null` = none planned).
              */
             next_follow_up_on?: string | null;
-            phone: string;
+            /** @description E.164 as stored; null = no phone recorded (call another way, or in person). */
+            phone?: string | null;
             /** Format: int64 */
             sessions_remaining: number;
         };
@@ -2184,6 +2241,11 @@ export interface components {
             at: string;
             /** Format: int64 */
             bank_transfer: number;
+            /**
+             * @description Who got the package when it was bought for someone else (`sale` / `void` rows of a
+             *     package sale; comma-separated if several); null = the customer themself.
+             */
+            beneficiary_name?: string | null;
             /** Format: date */
             business_date: string;
             /** Format: int64 */
@@ -2449,7 +2511,8 @@ export interface components {
             /** Format: uuid */
             customer_id: string;
             customer_name: string;
-            customer_phone: string;
+            /** @description E.164 as stored; null = no phone recorded. */
+            customer_phone?: string | null;
             /**
              * Format: int64
              * @description Days from today to `expires_on` (negative once expired).
@@ -5178,6 +5241,7 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Created; with no name and no phone it is an anonymous walk-in profile ("Khách vãng lai") */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -5199,6 +5263,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description validation_failed: full_name too_long, phone invalid_format, birth_date in_future / too_old, birth_year out_of_range / conflicts_with_birth_date */
             422: {
                 headers: {
                     [name: string]: unknown;

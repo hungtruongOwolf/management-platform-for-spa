@@ -1223,6 +1223,7 @@
         },
         "responses": {
           "201": {
+            "description": "Created; with no name and no phone it is an anonymous walk-in profile (\"Khách vãng lai\")",
             "content": {
               "application/json": {
                 "schema": {
@@ -1235,7 +1236,9 @@
           "409": {
             "description": "customer.phone_taken with existing_id"
           },
-          "422": {}
+          "422": {
+            "description": "validation_failed: full_name too_long, phone invalid_format, birth_date in_future / too_old, birth_year out_of_range / conflicts_with_birth_date"
+          }
         }
       }
     },
@@ -4875,16 +4878,20 @@
       },
       "CustomerCreate": {
         "type": "object",
-        "required": [
-          "full_name",
-          "phone"
-        ],
         "properties": {
           "address": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "birth_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Not after today, at most 120 years back; sets `birth_year` when that is omitted, and must\nagree with it otherwise (`birth_year conflicts_with_birth_date`)."
           },
           "birth_year": {
             "type": [
@@ -4894,7 +4901,11 @@
             "format": "int32"
           },
           "full_name": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted/null/blank = no name: an anonymous walk-in, shown as \"Khách vãng lai\". A package\ncan be sold to this profile only once it has a name (`422 customer.name_required`)."
           },
           "gender": {
             "oneOf": [
@@ -4920,7 +4931,11 @@
             ]
           },
           "phone": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted/null/blank = no phone. When given: format-checked (`422 phone invalid_format`)\nand unique among live profiles (`409 customer.phone_taken`)."
           },
           "source": {
             "type": [
@@ -4936,8 +4951,7 @@
         "required": [
           "id",
           "full_name",
-          "phone",
-          "phone_e164",
+          "named",
           "version",
           "created_at"
         ],
@@ -4947,6 +4961,13 @@
               "string",
               "null"
             ]
+          },
+          "birth_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
           },
           "birth_year": {
             "type": [
@@ -4960,7 +4981,8 @@
             "format": "date-time"
           },
           "full_name": {
-            "type": "string"
+            "type": "string",
+            "description": "The name to show: \"Khách vãng lai\" for an anonymous walk-in profile (`named` = false)."
           },
           "gender": {
             "oneOf": [
@@ -4983,6 +5005,10 @@
             "type": "string",
             "format": "uuid"
           },
+          "named": {
+            "type": "boolean",
+            "description": "false = the profile has no name (an anonymous walk-in); edit forms start the name empty."
+          },
           "note": {
             "type": [
               "string",
@@ -4990,10 +5016,17 @@
             ]
           },
           "phone": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "null = no phone recorded (decision E: optional)."
           },
           "phone_e164": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "source": {
             "type": [
@@ -5297,11 +5330,12 @@
         "required": [
           "id",
           "full_name",
-          "phone"
+          "named"
         ],
         "properties": {
           "full_name": {
-            "type": "string"
+            "type": "string",
+            "description": "The name to show: \"Khách vãng lai\" for an anonymous walk-in profile (`named` = false)."
           },
           "gender": {
             "oneOf": [
@@ -5317,24 +5351,35 @@
             "type": "string",
             "format": "uuid"
           },
+          "named": {
+            "type": "boolean",
+            "description": "false = the profile has no name (an anonymous walk-in)."
+          },
           "phone": {
-            "type": "string",
-            "description": "National display form, e.g. \"0905 123 456\"."
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "National display form, e.g. \"0905 123 456\"; null = no phone recorded."
           }
         }
       },
       "CustomerUpdate": {
         "type": "object",
-        "required": [
-          "full_name",
-          "phone"
-        ],
         "properties": {
           "address": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "birth_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Not after today, at most 120 years back; sets `birth_year` when that is omitted, and must\nagree with it otherwise (`birth_year conflicts_with_birth_date`)."
           },
           "birth_year": {
             "type": [
@@ -5344,7 +5389,11 @@
             "format": "int32"
           },
           "full_name": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted/null/blank = no name: an anonymous walk-in, shown as \"Khách vãng lai\". A package\ncan be sold to this profile only once it has a name (`422 customer.name_required`)."
           },
           "gender": {
             "oneOf": [
@@ -5363,7 +5412,11 @@
             ]
           },
           "phone": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted/null/blank = no phone. When given: format-checked (`422 phone invalid_format`)\nand unique among live profiles (`409 customer.phone_taken`)."
           },
           "source": {
             "type": [
@@ -6088,6 +6141,16 @@
               }
             ]
           },
+          "extension": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/HistoryExtension"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "kind": {
             "$ref": "#/components/schemas/HistoryKind"
           },
@@ -6123,6 +6186,42 @@
           }
         }
       },
+      "HistoryExtension": {
+        "type": "object",
+        "description": "A package's expiry moved later (\"Gia hạn\").",
+        "required": [
+          "customer_package_id",
+          "package_name",
+          "previous_expires_on",
+          "expires_on",
+          "reason",
+          "by_name"
+        ],
+        "properties": {
+          "by_name": {
+            "type": "string",
+            "description": "The user who extended it."
+          },
+          "customer_package_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expires_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "package_name": {
+            "type": "string"
+          },
+          "previous_expires_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "HistoryKind": {
         "type": "string",
         "enum": [
@@ -6130,7 +6229,8 @@
           "purchase",
           "visit_voided",
           "purchase_voided",
-          "package_cancelled"
+          "package_cancelled",
+          "package_extended"
         ]
       },
       "HistoryPage": {
@@ -6203,6 +6303,13 @@
           "paid": {
             "$ref": "#/components/schemas/MethodSplit",
             "description": "Money received (before any void)."
+          },
+          "payer_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Bought by someone else for this customer: who paid (the money fields are theirs). Null\non the payer's own timeline."
           },
           "sale_id": {
             "type": "string",
@@ -6448,7 +6555,6 @@
         "required": [
           "customer_id",
           "full_name",
-          "phone",
           "kind",
           "last_seen_on",
           "days_absent",
@@ -6524,7 +6630,11 @@
             "description": "The date that follow-up planned for the next try (`null` = none planned)."
           },
           "phone": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "E.164 as stored; null = no phone recorded (call another way, or in person)."
           },
           "sessions_remaining": {
             "type": "integer",
@@ -6739,6 +6849,13 @@
           "bank_transfer": {
             "type": "integer",
             "format": "int64"
+          },
+          "beneficiary_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Who got the package when it was bought for someone else (`sale` / `void` rows of a\npackage sale; comma-separated if several); null = the customer themself."
           },
           "business_date": {
             "type": "string",
@@ -7449,7 +7566,6 @@
           "id",
           "customer_id",
           "customer_name",
-          "customer_phone",
           "name",
           "status",
           "sessions_total",
@@ -7482,7 +7598,11 @@
             "type": "string"
           },
           "customer_phone": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "E.164 as stored; null = no phone recorded."
           },
           "days_to_expiry": {
             "type": [

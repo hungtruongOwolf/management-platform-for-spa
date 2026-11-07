@@ -369,7 +369,8 @@ pub async fn appointments(
     Ok(sqlx::query_as!(
         AppointmentRow,
         r#"SELECT a.id, a.status, a.business_date, a.starts_at, a.ends_at, a.customer_id,
-                  coalesce(c.full_name, a.guest_name) AS "customer_name!",
+                  CASE WHEN c.id IS NULL THEN a.guest_name
+                       ELSE app.customer_label(c.full_name) END AS "customer_name!",
                   coalesce(c.phone_e164, a.guest_phone) AS "customer_phone?",
                   c.gender AS "customer_gender?", a.staff_id, st.full_name AS "staff_name?",
                   a.note, a.status_reason, a.arrived_at, a.closed_at, a.visit_id,
@@ -441,7 +442,9 @@ pub async fn walk_ins(
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         WalkInRow,
-        r#"SELECT v.id, v.business_date, v.check_in_at, v.customer_id, c.full_name AS customer_name,
+        r#"SELECT v.id, v.business_date, v.check_in_at, v.customer_id,
+                  app.customer_label(c.full_name) AS "customer_name!",
+
                   c.gender AS "customer_gender?", v.status, (SELECT sum(s.total) FROM app.sale s
                    WHERE s.tenant_id = v.tenant_id AND s.visit_id = v.id AND s.status = 'open')::bigint AS "sale_total?"
            FROM app.visit v

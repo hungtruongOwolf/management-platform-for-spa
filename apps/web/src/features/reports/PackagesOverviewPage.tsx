@@ -28,7 +28,8 @@ export function CustomerCell({
 }: {
   id: string;
   name: string;
-  phone?: string;
+  /** null = no phone recorded ("Chưa có SĐT"); omitted = the column does not show phones. */
+  phone?: string | null | undefined;
   gender?: string | null;
 }): ReactNode {
   return (
@@ -36,7 +37,9 @@ export function CustomerCell({
       <Link to="/khach-hang/$customerId" params={{ customerId: id }} className="name-link">
         <CustomerName name={name} gender={gender} />
       </Link>
-      {phone && <span className="mt-1 block text-xs text-text-muted tabular">{displayPhone(phone)}</span>}
+      {phone !== undefined && (
+        <span className="mt-1 block text-xs text-text-muted tabular">{phone === null ? "Chưa có SĐT" : displayPhone(phone)}</span>
+      )}
     </>
   );
 }
@@ -135,7 +138,7 @@ function PackagesOverviewPageBody() {
                 id: "customer",
                 header: "Khách",
                 card: "title",
-                cell: (p) => <CustomerCell id={p.customer_id} name={p.customer_name} phone={p.customer_phone} gender={p.customer_gender ?? null} />,
+                cell: (p) => <CustomerCell id={p.customer_id} name={p.customer_name} phone={p.customer_phone ?? null} gender={p.customer_gender ?? null} />,
               },
               { id: "plan", header: "Gói", card: "subtitle", cell: (p) => p.name },
               {

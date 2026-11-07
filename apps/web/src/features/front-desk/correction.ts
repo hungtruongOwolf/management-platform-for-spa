@@ -135,7 +135,8 @@ export async function loadCorrection(
     customer: {
       id: customer.id,
       full_name: customer.full_name,
-      phone: customer.phone,
+      named: customer.named,
+      phone: customer.phone ?? null,
       gender: customer.gender ?? null,
     },
     lines: cartFromVisit(visit),

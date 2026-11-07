@@ -33,6 +33,7 @@ export function DateField({
   invalid: invalidFromForm = false,
   className = "filter-field",
   hideLabel = false,
+  onTextValidity,
 }: {
   label: string;
   /** ISO day `yyyy-mm-dd`, or "" for none. */
@@ -47,6 +48,9 @@ export function DateField({
   className?: string;
   /** The label is for screen readers only: the field sits beside a heading that says what it is. */
   hideLabel?: boolean;
+  /** Told whether the typed text is a usable date (false = shown as wrong, `value` unchanged), so
+   * a form can refuse to save while the field shows its error. */
+  onTextValidity?: (valid: boolean) => void;
 }) {
   const id = useId();
   const picker = useRef<HTMLInputElement>(null);
@@ -63,6 +67,7 @@ export function DateField({
   const commit = (text: string) => {
     if (text.trim() === "") {
       setInvalid(false);
+      onTextValidity?.(true);
       if (value !== "") onChange("");
       return;
     }
@@ -70,9 +75,12 @@ export function DateField({
     const outOfRange = iso !== null && ((min !== undefined && iso < min) || (max !== undefined && iso > max));
     if (iso === null || outOfRange) {
       setInvalid(true);
+      onTextValidity?.(false);
       return;
     }
     setInvalid(false);
+    onTextValidity?.(true);
+
     setDraft(isoToDmy(iso));
     if (iso !== value) onChange(iso);
   };
