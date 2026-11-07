@@ -109,6 +109,8 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
   - Lead's decision (EM to review): KTV thấy **tên** khách mình phục vụ (họ đã gặp khách trực tiếp; cần để chuẩn bị và đối chiếu hoa hồng), không thấy SĐT.
   - Test: `staff.rs::a_technician_sees_only_the_customers_and_bookings_they_serve` (A không thấy lượt/lịch của B, dòng của B trong lượt chung, lượt đã hủy; tập key đúng allowlist; không lọt giá/SĐT/ghi chú/id khách; chưa gắn → `linked:false`; spa khác → `linked:false`; ẩn danh 401; tháng sai 422; `?staff_id=` 400; quản lý vẫn 200 trên route quầy). `authz_matrix.rs` +1 dòng (`StaffReadOwn`, mọi role).
 
+- **Giỏ nhiều gói (EM 2026-11-07 câu 4, [spec](../product/specs/front-desk-and-packages.md) §10.13):** `POST /sales/checkout` cần `package.sell` (chủ spa, quản lý; KTV `403`), thêm `payment.collect` khi có `payments` (như `POST /sales`). Người trả, người dùng gói, mẫu gói của spa khác → `404`; người chốt không làm ở spa → `422 staff.inactive`; giảm giá theo D10 từng gói (`403 discount.limit_exceeded`). Giá luôn tính ở server; một transaction cho mọi gói. Matrix +1 dòng.
+
 ## Ánh xạ endpoint → permission
 Danh sách đầy đủ ở [backend](../architecture/backend.md) §3 (cột "Permission"). CI fail nếu có route chưa khai báo permission (trừ `/auth/*` công khai và `/health`).
 

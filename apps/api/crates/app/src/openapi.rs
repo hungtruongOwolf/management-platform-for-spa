@@ -67,6 +67,7 @@ use utoipa::OpenApi;
         packages::http::extend_package,
         packages::http::cancel_package,
         sales::http::create_sale,
+        sales::http::create_checkout,
         sales::http::read_sale,
         sales::http::void_sale,
         operations::http::create_visit,

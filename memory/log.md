@@ -576,3 +576,10 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 
 ## [2026-11-07] fix | ADR renumber
 - Hai ADR cùng số 0012 (perf #77 và nhân sự #82). Đổi ADR đợt làm việc thành **ADR-0013**; ADR-0012 giữ cho colocate Singapore. Migration 0025 giữ nguyên comment cũ (không đổi checksum).
+
+## [2026-11-07] spec + build + secure + qa + pr-review + record | Giỏ chỉ có gói: nhiều gói một lần lưu (câu 4, `feat(quay)`)
+- Nguồn: raw 2026-11-07-em-decisions-hr-notes-group-region (follow-up câu 4: "ukm theo cái mới đi", ví dụ chị Lan). Spec [front-desk §10.13](wiki/product/specs/front-desk-and-packages.md); authz-matrix +1 mục. Không migration (0026 của PR #85, 0027 của agent sổ chấm công).
+- Đã làm: `POST /sales/checkout` (sales crate) dùng lại đúng mô hình `package_sales[]` của lượt: `price_package_sale` từng gói (người dùng, người chốt, giảm giá theo trần từng gói), `allocate_payments` (cash trước theo thứ tự giỏ), `record_package_sale` từng gói, một transaction, một Idempotency-Key. Web: giỏ không dịch vụ nhận tối đa 3 gói (bỏ `maxSales = 1`), lưu 1 gói vẫn `POST /sales`, 2–3 gói gọi checkout; logic lưu + câu thông báo nằm trong chunk lazy `checkout.ts` (`sellCart`), `FrontDeskPage` bớt một import.
+- Quyết định (lead): mỗi gói một hóa đơn (giữ hoa hồng theo hóa đơn, ADR-0010; hủy từng gói được), sổ doanh thu một dòng mỗi hóa đơn → Q-M1 hỏi EM có cần một dòng "một lần thu" không.
+- Kiểm: `sales.rs` +2 test (chị Lan: 2 hóa đơn, chia tiền 1.000.000 cash + 400.000/1.500.000 CK, báo cáo ngày + sổ, replay; từ chối → không ghi gì), matrix +1 dòng; vitest `CheckoutRound6` +1; e2e `quay-upsell` +1 (CI chạy).
+

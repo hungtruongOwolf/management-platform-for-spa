@@ -148,6 +148,41 @@ test.describe("vòng 6: bán gói trong giỏ, giỏ nháp, chuyển sang gói",
     await expectAccessible(page, "quay-visit-details");
   });
 
+  test("chị Lan: two packages, no service, one for her mother: one save, one payment (EM 2026-11-07 item 4)", async ({ page }) => {
+    const f = await fixture(page, "hai gói");
+    const motherPhone = uniquePhone();
+    const motherName = `Mẹ của ${f.name}`;
+    const mother = await page.request.post("/api/v1/customers", {
+      headers: write,
+      data: { full_name: motherName, phone: motherPhone, gender: "female" },
+    });
+    expect(mother.status()).toBe(201);
+    const motherId = ((await mother.json()) as { id: string }).id;
+
+    await page.goto("/quay");
+    await pick(page, f);
+    await page.getByRole("button", { name: "Bán gói liệu trình", exact: true }).click();
+    await page.getByRole("combobox", { name: "Mẫu gói" }).selectOption(f.planId);
+    // A second package fits without a service; it is a gift for her mother.
+    await page.getByRole("button", { name: "Bán gói liệu trình", exact: true }).click();
+    await page.getByRole("combobox", { name: "Mẫu gói" }).selectOption(f.planId);
+    await page.getByRole("checkbox", { name: /Mua cho người khác/ }).last().check();
+    const who = page.getByRole("combobox", { name: "Tìm khách theo SĐT hoặc tên" }).last();
+    await who.pressSequentially(motherPhone);
+    await page.getByRole("option", { name: new RegExp(motherName) }).click();
+    const checkout = page.getByRole("group", { name: "Lưu lượt" });
+    await expect(checkout).toContainText("2.400.000đ");
+    await expectAccessible(page, "quay-two-packages");
+    await checkout.getByRole("button", { name: "Lưu hóa đơn gói" }).click();
+    await expect(toast(page)).toContainText(motherName);
+
+    // One package each, both paid by the payer in the one step.
+    for (const id of [f.customerId, motherId]) {
+      const packages = (await (await page.request.get(`/api/v1/customers/${id}/packages`)).json()) as unknown[];
+      expect(packages, id).toHaveLength(1);
+    }
+  });
+
   test("keeps the unsaved cart across a reload; “Bỏ giỏ” drops it", async ({ page }) => {
     const f = await fixture(page, "nháp");
     await page.goto("/quay");

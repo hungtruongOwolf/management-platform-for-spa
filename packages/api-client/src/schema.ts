@@ -815,6 +815,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sales/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_checkout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sales/{id}": {
         parameters: {
             query?: never;
@@ -1563,6 +1579,24 @@ export interface components {
             name: string;
             /** Format: int32 */
             sort_order: number;
+        };
+        /** @description One package of `POST /sales/checkout`: the same fields as a package sold in a visit. */
+        CheckoutPackageCreate: {
+            /**
+             * Format: uuid
+             * @description Who the package belongs to ("Mua cho người khác"); omitted = the payer.
+             */
+            beneficiary_customer_id?: string | null;
+            /**
+             * Format: uuid
+             * @description "Người giới thiệu / chốt": any staff member working here; null = "khách tự chọn".
+             */
+            closer_staff_id?: string | null;
+            discount?: components["schemas"]["DiscountCreate"] | null;
+            /** @description Omitted = the plan's gift; empty = none. */
+            gift_note?: string | null;
+            /** Format: uuid */
+            package_plan_id: string;
         };
         /** @description Commission base of one service performed in the month. */
         CommissionLine: {
@@ -3209,6 +3243,35 @@ export interface components {
             staff: components["schemas"]["StaffReviews"][];
             /** Format: date */
             today: string;
+        };
+        /**
+         * @description Body of `POST /sales/checkout` (EM 2026-11-07 item 4): a Quầy cart holding only packages,
+         *     saved at once. Each package is its own sale — its own plan, beneficiary, closer and discount,
+         *     exactly like `package_sales[]` of `POST /visits` — and one payment step pays them all.
+         */
+        SaleCheckoutCreate: {
+            /**
+             * Format: uuid
+             * @description Who pays (every sale's `customer_id`).
+             */
+            customer_id: string;
+            /** @description 1–3 packages, in cart order. */
+            package_sales: components["schemas"]["CheckoutPackageCreate"][];
+            /**
+             * @description 0–2 payments, one per method, summing exactly to every package's total. The server splits
+             *     them over the sales like a visit's checkout: cash pays the sales in order first, the rest is
+             *     bank transfer.
+             */
+            payments: components["schemas"]["PaymentCreate"][];
+        };
+        /** @description `POST /sales/checkout` → 201: the sales of the checkout, in request order. */
+        SaleCheckoutDto: {
+            sales: components["schemas"]["SaleDto"][];
+            /**
+             * Format: int64
+             * @description What the customer paid in all (the sum of the sales' totals).
+             */
+            total: number;
         };
         /**
          * @description Body of `POST /sales`. Prices are never read from the client: unknown fields such as
@@ -7028,6 +7091,67 @@ export interface operations {
                 content?: never;
             };
             /** @description validation_failed, payment.amount_mismatch, discount.reason_required, staff.inactive, idempotency.key_reuse_mismatch */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_checkout: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description One key per checkout attempt; a retry with the same key replays the first response */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaleCheckoutCreate"];
+            };
+        };
+        responses: {
+            /** @description one sale per package, in request order; every one or none was created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaleCheckoutDto"];
+                };
+            };
+            /** @description idempotency.key_required / key_invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / discount.limit_exceeded */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description customer, beneficiary or plan not in this spa */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed (package_sales[k].…, package_sales count_out_of_range), payment.amount_mismatch, discount.reason_required, customer.name_required, staff.inactive, idempotency.key_reuse_mismatch */
             422: {
                 headers: {
                     [name: string]: unknown;

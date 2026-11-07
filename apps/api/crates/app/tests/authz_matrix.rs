@@ -464,6 +464,13 @@ const ROUTES: &[Route] = &[
     .body(sell_body)
     .idempotent(),
     route(
+        "POST",
+        "/api/v1/sales/checkout",
+        Access::Perm(P::PackageSell, OWNER_MANAGER),
+    )
+    .body(checkout_body)
+    .idempotent(),
+    route(
         "GET",
         "/api/v1/sales/{id}",
         Access::Perm(P::SaleRead, OWNER_MANAGER),
@@ -845,6 +852,14 @@ fn sell_body(f: &Fixture) -> Option<Value> {
     Some(json!({
         "customer_id": f.customer, "closer_staff_id": f.staff,
         "lines": [{"package_plan_id": f.plan}],
+        "payments": [{"method": "cash", "amount": 1_200_000}]
+    }))
+}
+
+fn checkout_body(f: &Fixture) -> Option<Value> {
+    Some(json!({
+        "customer_id": f.customer,
+        "package_sales": [{"package_plan_id": f.plan, "closer_staff_id": f.staff}],
         "payments": [{"method": "cash", "amount": 1_200_000}]
     }))
 }
