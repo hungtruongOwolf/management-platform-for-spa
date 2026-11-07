@@ -5,7 +5,7 @@ import type {
 } from "@vpyd/api-client";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { messageFor } from "../../lib/errors";
+import { messageFor, retryable } from "../../lib/errors";
 import { customerQuery } from "../customers/api";
 import { CustomerName } from "../../app/CustomerName";
 import { Icon } from "../../app/Icon";
@@ -157,13 +157,15 @@ export function CustomerCard({
         {packages.isError && (
           <p role="alert" className="field-error">
             {messageFor(packages.error)}{" "}
-            <button
-              type="button"
-              className="btn btn-ghost min-h-9 px-2"
-              onClick={() => void packages.refetch()}
-            >
-              Thử lại
-            </button>
+            {retryable(packages.error) && (
+              <button
+                type="button"
+                className="btn btn-ghost min-h-9 px-2"
+                onClick={() => void packages.refetch()}
+              >
+                Thử lại
+              </button>
+            )}
           </p>
         )}
         {packages.isSuccess && ordered.length === 0 && (

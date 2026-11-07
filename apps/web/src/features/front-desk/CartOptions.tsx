@@ -10,9 +10,10 @@ import type {
 } from "@vpyd/api-client";
 import { useQuery } from "@tanstack/react-query";
 import { formatVnd } from "@vpyd/ui";
-import { type RefObject, useRef, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import { Icon } from "../../app/Icon";
 import { DateField } from "../../components/DateField";
+import { TimeField } from "../../components/TimeField";
 import { messageFor } from "../../lib/errors";
 import { serviceLabel } from "../../lib/names";
 import { categoriesQuery, servicesQuery } from "../catalog/api";
@@ -118,6 +119,64 @@ export function CartContextBars({
   );
 }
 
+/**
+ * "Đổi khách" while the cart holds items asks first (EM live test: the cart vanished on a click).
+ * A new visit's cart stays as that customer's draft; in "Sửa lượt" the lines go (the visit moves
+ * to the new customer only when saved).
+ */
+export function LeaveCartConfirm({
+  customerName,
+  correcting,
+  onLeave,
+  onStay,
+}: {
+  customerName: string;
+  correcting: boolean;
+  onLeave: () => void;
+  onStay: () => void;
+}) {
+  const leave = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    leave.current?.focus();
+  }, []);
+  return (
+    <div
+      role="alertdialog"
+      aria-labelledby="leave-cart-title"
+      aria-describedby="leave-cart-body"
+      className="callout"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          onStay();
+        }
+      }}
+    >
+      <p id="leave-cart-title" className="font-semibold">
+        Đổi khách? Giỏ của {customerName} chưa lưu.
+      </p>
+      <p id="leave-cart-body">
+        {correcting
+          ? "Dịch vụ trong giỏ sẽ bỏ, chọn lại cho khách mới. Lượt đã ghi chỉ đổi khi bấm “Lưu sửa lượt”."
+          : `Giỏ được giữ lại: chọn lại ${customerName} để ghi tiếp.`}
+      </p>
+      <div className="button-row">
+        <button
+          ref={leave}
+          type="button"
+          className="btn btn-primary"
+          onClick={onLeave}
+        >
+          Đổi khách
+        </button>
+        <button type="button" className="btn btn-secondary" onClick={onStay}>
+          Ở lại
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** ISO day `days` before `day`. */
 function daysBefore(day: string, days: number): string {
   const d = new Date(`${day}T00:00:00Z`);
@@ -195,14 +254,10 @@ export function ServiceTime({
             )}
             <label className="field">
               <span>Giờ (để trống = bây giờ)</span>
-              <input
-                type="time"
-                step={300}
+              <TimeField
                 value={time}
-                aria-invalid={invalid}
-                onChange={(e) => {
-                  onTime(e.target.value);
-                }}
+                invalid={invalid}
+                onChange={onTime}
                 className="input w-40"
               />
             </label>
@@ -332,8 +387,14 @@ export function AddOneOff({
   onProblem,
   id = "one-off-service",
   label = "Thêm dịch vụ lẻ",
+  lines = [],
 }: {
   customer: CustomerSummary;
+  /**
+   * The cart already holding lines priced Nữ/Nam: the toggle shows that choice until the desk
+   * picks again (a restored draft or "Sửa lượt" brought the Nam price back but not the toggle).
+   */
+  lines?: CartLine[];
   onAdd: (
     service: Service,
     priceVariant: Gender | null,
@@ -351,7 +412,11 @@ export function AddOneOff({
   const viaKeys = useRef(false);
   const [chosenGender, setChosenGender] = useState<Gender | null>(null);
   const known = customer.gender ?? null;
-  const gender = known ?? chosenGender;
+  const fromCart =
+    lines.flatMap((l) =>
+      l.source === "one_off" && l.priceVariant ? [l.priceVariant] : [],
+    )[0] ?? null;
+  const gender = known ?? chosenGender ?? fromCart;
 
   const groups = (categories.data ?? []).map((c) => ({
     category: c,
@@ -415,7 +480,7 @@ export function AddOneOff({
               <button
                 key={g}
                 type="button"
-                aria-pressed={chosenGender === g}
+                aria-pressed={gender === g}
                 onClick={() => {
                   setChosenGender(g);
                 }}
@@ -697,6 +762,16 @@ export function PaymentChoices({
   invalid: boolean;
 }) {
   const cash = parseAmount(cashText);
+  const typed = cashText.trim() !== "";
+  // Said as soon as it is typed, not only after "Lưu": a red border alone did not say why.
+  const problem =
+    typed && Number.isNaN(cash)
+      ? "Tiền mặt: chỉ nhập chữ số."
+      : typed && cash >= total
+        ? `Tiền mặt phải nhỏ hơn số phải trả (${formatVnd(total)}). Khách trả hết bằng tiền mặt thì chọn “Tiền mặt”.`
+        : invalid
+          ? "Nhập phần khách trả bằng tiền mặt (lớn hơn 0)."
+          : null;
   return (
     <fieldset className="grid gap-2">
       <legend className="section-label mb-2">Thanh toán (thu đủ)</legend>
@@ -722,23 +797,32 @@ export function PaymentChoices({
         ))}
       </div>
       {mode === "mixed" && (
-        <label className="field max-w-xs">
-          <span>Tiền mặt (đ)</span>
+        // The message sits outside the label: inside, it became part of the field's name.
+        <div className="field max-w-xs">
+          <label htmlFor={`${name}-cash`}>Tiền mặt (đ)</label>
           <input
+            id={`${name}-cash`}
             className="input"
             inputMode="numeric"
             value={cashText}
-            aria-invalid={invalid}
+            aria-invalid={invalid || problem !== null}
+            aria-describedby={`${name}-cash-msg`}
             onChange={(e) => {
               onCashText(e.target.value);
             }}
           />
-          {!Number.isNaN(cash) && cash > 0 && cash < total && (
-            <span className="field-hint">
-              Chuyển khoản: {formatVnd(total - cash)}
+          {problem ? (
+            <span id={`${name}-cash-msg`} role="alert" className="field-error">
+              {problem}
+            </span>
+          ) : (
+            <span id={`${name}-cash-msg`} className="field-hint">
+              {cash > 0 && cash < total
+                ? `Chuyển khoản: ${formatVnd(total - cash)}`
+                : `Phần còn lại của ${formatVnd(total)} là chuyển khoản.`}
             </span>
           )}
-        </label>
+        </div>
       )}
     </fieldset>
   );

@@ -10,13 +10,14 @@ import {
 } from "@tanstack/react-router";
 import { useSyncExternalStore } from "react";
 import { LoginPage } from "../features/auth/LoginPage";
-import { authQuery, authRetry } from "../features/auth/session";
+import { authQuery, authRetry, type Me } from "../features/auth/session";
 import { customersSearch, historySearch } from "../features/customers/search";
 import { frontDeskSearch } from "../features/front-desk/search";
 import { FrontDeskPage } from "../features/front-desk/FrontDeskPage";
 import { inactiveSearch, packagesSearch, reportsSearch } from "../features/reports/search";
 import { myWorkSearch, staffSearch } from "../features/staff/search";
 import { safeNextPath } from "../lib/api";
+import { ForbiddenRoute, mayOpen } from "./access";
 import { AppShell } from "./AppShell";
 import { recordLocation } from "./trail";
 
@@ -64,6 +65,17 @@ function SessionPending() {
 
 interface RouterContext {
   queryClient: QueryClient;
+}
+
+/**
+ * A screen's guard: a role that may not open it gets "Không có quyền" (StatusPage) instead of the
+ * screen and a wall of 403s (EM live test: a technician on /quay). UX only; the API decides.
+ */
+function only(allowed: (me: Me) => boolean) {
+  return async ({ context }: { context: RouterContext }) => {
+    const auth = await context.queryClient.query({ ...authQuery, staleTime: "static" });
+    if (auth.state === "signed_in" && !allowed(auth.me)) throw new ForbiddenRoute();
+  };
 }
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({
@@ -172,6 +184,7 @@ const homeRoute = createRoute({
 const reportsRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/bao-cao",
+  beforeLoad: only(mayOpen.management),
   validateSearch: reportsSearch.validate,
   component: lazyRouteComponent(reportsPage, "ReportsPage"),
 });
@@ -179,6 +192,7 @@ const reportsRoute = createRoute({
 const packagesRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/goi-lieu-trinh",
+  beforeLoad: only(mayOpen.management),
   validateSearch: packagesSearch.validate,
   component: lazyRouteComponent(packagesPage, "PackagesOverviewPage"),
 });
@@ -186,6 +200,7 @@ const packagesRoute = createRoute({
 const inactiveRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/khach-lau-khong-quay-lai",
+  beforeLoad: only(mayOpen.management),
   validateSearch: inactiveSearch.validate,
   component: lazyRouteComponent(inactivePage, "InactiveCustomersPage"),
 });
@@ -194,6 +209,7 @@ const inactiveRoute = createRoute({
 const staffRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/nhan-vien",
+  beforeLoad: only(mayOpen.staff),
   validateSearch: staffSearch.validate,
   component: lazyRouteComponent(staffPage, "StaffPage"),
 });
@@ -202,6 +218,7 @@ const staffRoute = createRoute({
 const myWorkRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/khach-cua-toi",
+  beforeLoad: only(mayOpen.myWork),
   validateSearch: myWorkSearch.validate,
   component: lazyRouteComponent(myWorkPage, "MyWorkPage"),
 });
@@ -215,6 +232,7 @@ const settingsRoute = createRoute({
 const priceListRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/bang-gia",
+  beforeLoad: only(mayOpen.catalog),
   component: lazyRouteComponent(
     () => import("../features/catalog/PriceListPage"),
     "PriceListPage",
@@ -224,6 +242,7 @@ const priceListRoute = createRoute({
 const plansRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/bang-gia/goi",
+  beforeLoad: only(mayOpen.catalog),
   component: lazyRouteComponent(
     () => import("../features/catalog/PlansPage"),
     "PlansPage",
@@ -234,6 +253,7 @@ const plansRoute = createRoute({
 const frontDeskRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/quay",
+  beforeLoad: only(mayOpen.frontDesk),
   validateSearch: frontDeskSearch.validate,
   component: FrontDeskPage,
 });
@@ -241,6 +261,7 @@ const frontDeskRoute = createRoute({
 const customersRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/khach-hang",
+  beforeLoad: only(mayOpen.customers),
   validateSearch: customersSearch.validate,
   component: lazyRouteComponent(customersModule, "CustomersPage"),
 });
@@ -248,6 +269,7 @@ const customersRoute = createRoute({
 const customerRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/khach-hang/$customerId",
+  beforeLoad: only(mayOpen.customers),
   validateSearch: historySearch.validate,
   component: lazyRouteComponent(customersModule, "CustomerRoutePage"),
 });

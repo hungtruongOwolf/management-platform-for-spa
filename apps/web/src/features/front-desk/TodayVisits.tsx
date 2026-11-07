@@ -22,7 +22,7 @@ import { DateField } from "../../components/DateField";
 import { ResponsiveTable, type Column } from "../../components/ResponsiveTable";
 import { RowMenu, type RowMenuItem } from "../../components/RowMenu";
 import { useAfterFirstPaint } from "../../lib/afterFirstPaint";
-import { messageFor } from "../../lib/errors";
+import { messageFor, retryable } from "../../lib/errors";
 import { invalidateManagementViews } from "../../lib/invalidate";
 import { serviceLabel } from "../../lib/names";
 import { can, meQuery } from "../auth/session";
@@ -56,6 +56,19 @@ function methodText(payments: PaymentDto[]): string {
   if (methods.size === 0) return "";
   if (methods.size > 1) return "Tiền mặt + CK";
   return methods.has("cash") ? "Tiền mặt" : "Chuyển khoản";
+}
+
+/** "Tiền mặt 20.000đ · CK 25.000đ" when paid both ways, else null (the row says the method). */
+export function splitText(payments: PaymentDto[]): string | null {
+  const paid = (method: PaymentDto["method"]) =>
+    payments
+      .filter((p) => p.kind === "payment" && p.method === method)
+      .reduce((s, p) => s + p.amount, 0);
+  const cash = paid("cash");
+  const transfer = paid("bank_transfer");
+  return cash > 0 && transfer > 0
+    ? `Tiền mặt ${formatVnd(cash)} · CK ${formatVnd(transfer)}`
+    : null;
 }
 
 type LineDto = Visit["lines"][number];
@@ -157,6 +170,13 @@ function VisitDetails({ v }: { v: Visit }) {
     v.lines.filter((l) => l.source === "one_off").length +
     packages.length +
     (v.discount_amount > 0 ? 1 : 0);
+  const split =
+    v.status === "voided"
+      ? null
+      : splitText([
+          ...v.payments,
+          ...soldPackages(v).flatMap((p) => p.payments),
+        ]);
   const only = v.lines[0];
   const single =
     !breakdown && only
@@ -244,6 +264,7 @@ function VisitDetails({ v }: { v: Visit }) {
           />
         )
       )}
+      {split && <DetailRow main="Thanh toán" meta={split} />}
       {v.companions.length > 0 && (
         <DetailRow main="Người đi cùng" meta={v.companions.join(", ")} />
       )}
@@ -368,9 +389,12 @@ function visitColumns({
 
 export function TodayVisits({
   onCorrect,
+  resetSignal = 0,
 }: {
   /** "Sửa lượt": open the visit in the cart. */
   onCorrect?: (visitId: string) => void;
+  /** Changes when the cart saved or was reset: an older notice here no longer applies. */
+  resetSignal?: number;
 }) {
   const { data: me } = useSuspenseQuery(meQuery);
   const queryClient = useQueryClient();
@@ -380,6 +404,12 @@ export function TodayVisits({
   const [voiding, setVoiding] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // "Đã hủy lượt…" stayed on after the next save (EM live test): a cart save or reset clears it.
+  const [seenSignal, setSeenSignal] = useState(resetSignal);
+  if (seenSignal !== resetSignal) {
+    setSeenSignal(resetSignal);
+    setNotice(null);
+  }
   /** The saved visit open for "Thêm dịch vụ / bán gói" or "Chuyển sang gói liệu trình". */
   const [upsell, setUpsell] = useState<{ id: string; mode: UpsellMode } | null>(
     null,
@@ -423,6 +453,7 @@ export function TodayVisits({
     can(me, "record.void_same_day") &&
     v.lines.some((l) => l.source === "one_off");
   const toggle = (id: string) => {
+    setNotice(null);
     setExpanded((open) => (open === id ? null : id));
     if (voiding === id) setVoiding(null);
     if (upsell?.id === id) setUpsell(null);
@@ -452,6 +483,7 @@ export function TodayVisits({
           max={todayIso}
           onChange={(iso) => {
             setDay(iso || todayIso);
+            setNotice(null);
             setVoiding(null);
             setExpanded(null);
             setAll(false);
@@ -478,13 +510,15 @@ export function TodayVisits({
       {today.isError && (
         <p role="alert" className="field-error">
           {messageFor(today.error)}{" "}
-          <button
-            type="button"
-            className="btn btn-ghost min-h-9 px-2"
-            onClick={() => void today.refetch()}
-          >
-            Thử lại
-          </button>
+          {retryable(today.error) && (
+            <button
+              type="button"
+              className="btn btn-ghost min-h-9 px-2"
+              onClick={() => void today.refetch()}
+            >
+              Thử lại
+            </button>
+          )}
         </p>
       )}
       {today.data?.length === 0 && (
@@ -522,6 +556,7 @@ export function TodayVisits({
                       {
                         label: "Sửa lượt",
                         onSelect: () => {
+                          setNotice(null);
                           onCorrect?.(v.id);
                         },
                       },

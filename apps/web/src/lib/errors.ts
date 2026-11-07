@@ -102,6 +102,11 @@ export function addMessages(codes: Record<string, string>, fields: Record<string
   Object.assign(FIELD_MESSAGES, fields);
 }
 
+/** Retrying cannot help a 403: the role lacks the permission ("Thử lại" is hidden). */
+export function retryable(error: unknown): boolean {
+  return !(error instanceof ApiError && error.status === 403);
+}
+
 export function messageFor(error: unknown): string {
   if (error instanceof ApiError) {
     return MESSAGES[error.code] ?? "Có lỗi xảy ra. Vui lòng thử lại.";
