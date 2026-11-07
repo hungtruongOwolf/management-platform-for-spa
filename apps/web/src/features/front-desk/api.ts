@@ -88,7 +88,22 @@ export type CartLine =
       staffId: string;
       /** "Người giới thiệu" (upsell credit, spec §10.8 Q-U2); absent or "" = khách tự chọn. */
       referrerId?: string;
+    }
+  | {
+      key: number;
+      /**
+       * "Làm 1 buổi hôm nay" on a package sold in this checkout (EM 2026-11-07): today's session
+       * comes from that package (`package_ref` on the wire), never charged.
+       */
+      source: "new_package";
+      serviceId: string;
+      serviceName: string;
+      categoryName?: string;
+      /** `ref` of the package sold today. */
+      saleRef: string;
+      staffId: string;
     };
+
 
 /**
  * A package sold in this checkout ("Gói bán hôm nay", spec §10.4.1). `plan` is a snapshot of the
@@ -310,7 +325,14 @@ export function visitBody(
             package_ref: covered.get(l.key) ?? null,
             staff_id: l.staffId,
           }
-        : l.source === "package"
+        : l.source === "new_package"
+          ? {
+              service_id: l.serviceId,
+              source: "package",
+              package_ref: l.saleRef,
+              staff_id: l.staffId,
+            }
+          : l.source === "package"
           ? {
               service_id: l.serviceId,
               source: "package",

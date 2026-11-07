@@ -340,6 +340,15 @@
   .cart-line-staff > .field-error {
     grid-column: 2;
   }
+  /* A finished line folds into one summary row: name + "KTV · source", price, Sửa, ✕. */
+  .cart-line.is-summary {
+    grid-template-columns: minmax(0, 1fr) auto auto 44px;
+    gap: 4px 8px;
+  }
+  .cart-line-staff > .cart-line-done {
+    grid-column: 2;
+    justify-self: start;
+  }
 
   /* --- Cart options (time, discount): label · value · one ghost action, aligned rows -------- */
   .cart-options {

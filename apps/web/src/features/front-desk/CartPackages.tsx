@@ -31,6 +31,32 @@ import "./cart-packages.css";
 export { SELF_CHOSEN, packageSalesBody, sellPackageOnly } from "./checkout";
 export { LineReferrer, ReferrerOptions } from "./CartOptions";
 
+/** Why a nameless walk-in cannot own the package (server: `422 customer.name_required`). */
+export const OWNER_NAME_NEEDED =
+  "Gói liệu trình cần chủ gói có tên: bấm “Thêm thông tin khách” để ghi tên, hoặc chọn “Mua cho người khác”.";
+
+/**
+ * Sessions of packages sold today that can no longer stand: their package left the cart, became
+ * "mua cho người khác" (not shared, D5), or no longer holds that service. Same array when none.
+ */
+export function pruneSessions(
+  lines: CartLine[],
+  sales: PackageSaleDraft[],
+): CartLine[] {
+  const keep = lines.filter((l) => {
+    if (l.source !== "new_package") return true;
+    const s = sales.find((x) => x.ref === l.saleRef);
+    return (
+      s !== undefined &&
+      !s.forOther &&
+      !s.beneficiary &&
+      s.plan !== null &&
+      s.plan.items.some((i) => i.service_id === l.serviceId)
+    );
+  });
+  return keep.length === lines.length ? lines : keep;
+}
+
 /** At most this many packages per checkout (server: 0–3). */
 export const MAX_PACKAGE_SALES = 3;
 
@@ -80,8 +106,11 @@ export function coversCart(
 export function saleProblem(
   p: PackageSaleDraft,
   unlimitedDiscount: boolean,
+  ownerNamed = true,
 ): string | null {
   if (!p.plan) return "Chọn mẫu gói liệu trình.";
+  // ADR-0011: a package belongs to a named person; a nameless walk-in may still pay for one.
+  if (!ownerNamed && !p.forOther) return OWNER_NAME_NEEDED;
   if (p.closer === "") return "Chọn người giới thiệu (hoặc Khách tự chọn).";
   if (p.forOther && !p.beneficiary) return "Chọn khách sẽ dùng gói.";
   const d = packageDiscount(p);
@@ -100,9 +129,10 @@ export function checkoutProblem(
   lineCount: number,
   forAppointment: boolean,
   unlimitedDiscount: boolean,
+  ownerNamed = true,
 ): string | null {
   for (const s of sales) {
-    const p = saleProblem(s, unlimitedDiscount);
+    const p = saleProblem(s, unlimitedDiscount, ownerNamed);
     if (p) return p;
   }
   if (lineCount === 0 && forAppointment)
@@ -149,7 +179,20 @@ function SaleBlock({
   serverError,
   onChange,
   onRemove,
+  ownerNamed,
+  folded,
+  onEdit,
+  onDone,
+  onTodaySession,
 }: {
+  /** The buyer has a name (a nameless walk-in may only buy for someone else, ADR-0011). */
+  ownerNamed: boolean;
+  /** Finished and not the item being edited: one summary row with Sửa / ✕. */
+  folded: boolean;
+  onEdit?: () => void;
+  onDone?: () => void;
+  /** "Làm 1 buổi hôm nay": today's session of this service from this package. */
+  onTodaySession?: (serviceId: string) => void;
   sale: PackageSaleDraft;
   index: number;
   lines: CartLine[];
@@ -172,15 +215,93 @@ function SaleBlock({
   const plan = sale.plan;
   const full = plans.find((p) => p.id === plan?.id);
   const discount = packageDiscount(sale);
-  const problem = saleProblem(sale, unlimitedDiscount);
+  const problem = saleProblem(sale, unlimitedDiscount, ownerNamed);
   const usesToday = [...covered.values()].filter((r) => r === sale.ref).length;
-  const canUseToday = coversCart(plan, lines) && !sale.beneficiary && !forOther;
+  const canUseToday =
+    coversCart(plan, lines) && !sale.beneficiary && !forOther && ownerNamed;
   const coveredNames = plan
     ? plan.items
         .map((i) => serviceNames.get(i.service_id))
         .filter((n): n is string => n !== undefined)
     : [];
   const inactive = plan !== null && !full;
+  // Today's sessions from this package: "Làm 1 buổi hôm nay" lines and covered one-off lines.
+  const todayIds = new Set(
+    lines
+      .filter(
+        (l) =>
+          (l.source === "new_package" && l.saleRef === sale.ref) ||
+          covered.get(l.key) === sale.ref,
+      )
+      .map((l) => l.serviceId),
+  );
+  const freeItems =
+    plan && onTodaySession && ownerNamed && !forOther && !sale.beneficiary
+      ? plan.items.filter((i) => !todayIds.has(i.service_id))
+      : [];
+  const todayNames = [...todayIds].map(
+    (s) => serviceNames.get(s) ?? "dịch vụ",
+  );
+  const shownPrice = plan
+    ? plan.price - (Number.isNaN(discount) ? 0 : Math.min(discount, plan.price))
+    : 0;
+  const price = (
+    <span className="sale-price">
+      {plan && discount > 0 && !Number.isNaN(discount) && (
+        <s>{formatVnd(plan.price)}</s>
+      )}
+      {plan ? formatVnd(shownPrice) : ""}
+    </span>
+  );
+  const remove = (
+    <button
+      type="button"
+      aria-label={`Bỏ ${plan ? plan.name : "gói này"}`}
+      className="btn btn-ghost btn-icon text-text-muted"
+      onClick={onRemove}
+    >
+      <Icon name="x" />
+    </button>
+  );
+
+  if (folded && plan) {
+    const closer =
+      sale.closer === SELF_CHOSEN || sale.closer === ""
+        ? "Khách tự chọn"
+        : (staff.find((s) => s.id === sale.closer)?.full_name ?? "…");
+    const meta = [
+      `Người giới thiệu: ${closer}`,
+      sale.beneficiary ? `Mua cho ${sale.beneficiary.full_name}` : "",
+      discount > 0 && !Number.isNaN(discount)
+        ? `Giảm ${formatVnd(discount)}`
+        : "",
+      todayIds.size > 0 ? `Hôm nay làm ${todayNames.join(", ")}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return (
+      <li className="sale-block is-summary" aria-labelledby={`${id}-title`}>
+        <div className="sale-head is-summary">
+          <span className="min-w-0">
+            <span id={`${id}-title`} className="sale-title">
+              {plan.name}
+            </span>
+            <span className="cart-line-source">{meta}</span>
+          </span>
+          {price}
+          <button
+            type="button"
+            aria-label={`Sửa gói ${plan.name}`}
+            className="btn btn-ghost"
+            onClick={onEdit}
+          >
+            Sửa
+          </button>
+          {remove}
+        </div>
+      </li>
+    );
+  }
 
   return (
     <li className="sale-block" aria-labelledby={`${id}-title`}>
@@ -188,26 +309,43 @@ function SaleBlock({
         <span id={`${id}-title`} className="sale-title">
           {plan ? plan.name : `Gói thứ ${String(index + 1)}`}
         </span>
-        <span className="sale-price">
-          {plan && discount > 0 && !Number.isNaN(discount) && (
-            <s>{formatVnd(plan.price)}</s>
-          )}
-          {plan
-            ? formatVnd(
-                plan.price -
-                  (Number.isNaN(discount) ? 0 : Math.min(discount, plan.price)),
-              )
-            : ""}
-        </span>
-        <button
-          type="button"
-          aria-label={`Bỏ ${plan ? plan.name : "gói này"}`}
-          className="btn btn-ghost btn-icon text-text-muted"
-          onClick={onRemove}
-        >
-          <Icon name="x" />
-        </button>
+        {price}
+        {remove}
       </div>
+      {freeItems.length > 0 && (
+        <div className="sale-today">
+          {freeItems.map((i) => (
+            <button
+              key={i.service_id}
+              type="button"
+              className="btn btn-secondary"
+              aria-label={
+                plan && plan.items.length > 1
+                  ? `Làm 1 buổi hôm nay: ${serviceNames.get(i.service_id) ?? "dịch vụ"}`
+                  : "Làm 1 buổi hôm nay"
+              }
+              onClick={() => {
+                onTodaySession?.(i.service_id);
+              }}
+            >
+              <Icon name="plus" />
+              {plan && plan.items.length > 1
+                ? `Làm 1 buổi hôm nay: ${serviceNames.get(i.service_id) ?? "dịch vụ"}`
+                : "Làm 1 buổi hôm nay"}
+            </button>
+          ))}
+          <span className="check-hint">
+            Khách mua gói và làm luôn hôm nay: buổi này trừ vào gói vừa mua
+            (0đ), lưu cùng một lần.
+          </span>
+        </div>
+      )}
+      {todayIds.size > 0 && (
+        <p className="field-hint">
+          Hôm nay làm {todayNames.join(", ")} từ gói này (0đ). KTV chọn ở
+          dòng dịch vụ phía trên.
+        </p>
+      )}
       <div className="sale-fields">
         <label className="field sale-wide">
           <span>Mẫu gói</span>
@@ -398,7 +536,16 @@ function SaleBlock({
         <p role="alert" className="field-error">
           {serverError ?? problem}
         </p>
-      ) : null}
+      ) : (
+        problem === OWNER_NAME_NEEDED && (
+          <p className="field-hint">{problem}</p>
+        )
+      )}
+      {onDone && plan && !problem && (
+        <button type="button" className="btn btn-ghost" onClick={onDone}>
+          Xong
+        </button>
+      )}
     </li>
   );
 }
@@ -424,7 +571,27 @@ export function PackageSales({
   maxSales = lines.length === 0 ? 1 : MAX_PACKAGE_SALES,
   titleId = "cart-packages-title",
   title = "Gói bán hôm nay",
+  ownerNamed = true,
+  openRef,
+  onOpenRef,
+  onTodaySession,
+  onLines,
 }: {
+  /** Lets the block drop today's sessions of a package that left the cart (`pruneSessions`). */
+  onLines?: (update: (ls: CartLine[]) => CartLine[]) => void;
+  /** The buyer has a name (else a package must be bought for someone else, ADR-0011). */
+  ownerNamed?: boolean;
+  /**
+   * The block open for editing (one item open at a time in the /quay cart); a finished block
+   * folds into a summary row. Absent = every block open (other screens).
+   */
+  openRef?: string | null;
+  onOpenRef?: (ref: string | null) => void;
+  /** "Làm 1 buổi hôm nay" on a block: add today's session of that service from it. */
+  onTodaySession?: (
+    ref: string,
+    service: { serviceId: string; serviceName: string; categoryName?: string },
+  ) => void;
   sales: PackageSaleDraft[];
   onSales: (update: (s: PackageSaleDraft[]) => PackageSaleDraft[]) => void;
   lines: CartLine[];
@@ -468,7 +635,7 @@ export function PackageSales({
   const full = sales.length >= maxSales;
 
   // Opened from the customer card: a new block, prefilled with that plan when it still sells.
-  const openedFrom = { context, lines };
+  const openedFrom = { context, lines, sales, open: onOpenRef };
   const latest = useRef(openedFrom);
   useEffect(() => {
     latest.current = openedFrom;
@@ -489,25 +656,24 @@ export function PackageSales({
     const plan = p
       ? { id: p.id, name: p.name, price: p.price, items: p.items }
       : null;
-    const { context: ctx, lines: ls } = latest.current;
-    onSales((s) =>
-      s.length >= maxSales
-        ? s
-        : [
-            ...s,
-            {
-              ...newSale(s, plan),
-        ...(plan
-          ? {
-              closer: defaultCloser(ctx, plan) ?? SELF_CHOSEN,
-              giftNote: p?.gift_note ?? "",
-              useToday: coversCart(plan, ls),
-            }
-                : {}),
-            },
-          ],
-    );
+    const { context: ctx, lines: ls, sales: current, open } = latest.current;
+    const added = {
+      ...newSale(current, plan),
+      ...(plan
+        ? {
+            closer: defaultCloser(ctx, plan) ?? SELF_CHOSEN,
+            giftNote: p?.gift_note ?? "",
+            useToday: coversCart(plan, ls),
+          }
+        : {}),
+    };
+    onSales((s) => (s.length >= maxSales ? s : [...s, added]));
+    open?.(added.ref);
   }, [openPlanId, plans.isSuccess, plans.data, full, maxSales, onOpened, onSales]);
+
+  useEffect(() => {
+    onLines?.((ls) => pruneSessions(ls, sales));
+  }, [sales, onLines]);
 
   const update = (ref: string, patch: Partial<PackageSaleDraft>) => {
     onSales((s) => s.map((x) => (x.ref === ref ? { ...x, ...patch } : x)));
@@ -541,6 +707,38 @@ export function PackageSales({
               unlimitedDiscount={unlimitedDiscount}
               attempted={attempted}
               serverError={saleErrorOf(serverError)}
+              ownerNamed={ownerNamed}
+              folded={
+                onOpenRef !== undefined &&
+                openRef !== s.ref &&
+                !saleErrorOf(serverError) &&
+                saleProblem(s, unlimitedDiscount, ownerNamed) === null
+              }
+              {...(onOpenRef
+                ? {
+                    onEdit: () => {
+                      onOpenRef(s.ref);
+                    },
+                    onDone: () => {
+                      onOpenRef(null);
+                    },
+                  }
+                : {})}
+              {...(onTodaySession
+                ? {
+                    onTodaySession: (serviceId: string) => {
+                      const sv = services.data?.find((x) => x.id === serviceId);
+                      const category = categories.data?.find(
+                        (c) => c.id === sv?.category_id,
+                      )?.name;
+                      onTodaySession(s.ref, {
+                        serviceId,
+                        serviceName: sv?.name ?? "Dịch vụ của gói",
+                        ...(category ? { categoryName: category } : {}),
+                      });
+                    },
+                  }
+                : {})}
               onChange={(patch) => {
                 update(s.ref, patch);
               }}
@@ -551,26 +749,19 @@ export function PackageSales({
           ))}
         </ul>
       )}
-      {!full ? (
+      {!full && (
         <button
           type="button"
           className="btn btn-secondary"
           onClick={() => {
-            onSales((s) => [...s, newSale(s)]);
+            const added = newSale(sales);
+            onSales((s) => [...s, added]);
+            onOpenRef?.(added.ref);
           }}
         >
           <Icon name="plus" />
           Bán gói liệu trình
         </button>
-      ) : (
-        lines.length === 0 &&
-        maxSales === 1 &&
-        context === lines &&
-        sales.length > 0 && (
-          <p className="field-hint">
-            Bán thêm gói: thêm dịch vụ của lượt, hoặc lưu hóa đơn gói này trước.
-          </p>
-        )
       )}
     </section>
   );

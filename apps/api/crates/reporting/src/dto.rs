@@ -500,6 +500,9 @@ pub struct HistoryVisit {
     pub corrects_visit_id: Option<Uuid>,
     /// "Sửa lượt": the visit that replaced this (voided) one.
     pub corrected_by_visit_id: Option<Uuid>,
+    /// The session note, only for `customer.health_notes.read` (absent otherwise or when empty).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]

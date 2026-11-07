@@ -13,7 +13,6 @@ import {
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import type { UpsellMode } from "./VisitUpsell";
 import "./visits.css";
 import { formatVnd } from "@vpyd/ui";
 import { Suspense, lazy, useState } from "react";
@@ -147,6 +146,18 @@ function DetailRow({
 }
 
 /**
+ * The phone in a visit's details: "SĐT 0905 …", "Chưa có SĐT" for a named customer without one
+ * (decision E), nothing for a nameless walk-in. Never a raw null (EM 2026-11-07).
+ */
+export function phoneLine(
+  c: { phone?: string | null; named: boolean } | undefined,
+): string | null {
+  if (!c) return null;
+  if (c.phone) return `SĐT ${c.phone}`;
+  return c.named === false ? null : "Chưa có SĐT";
+}
+
+/**
  * Inline details of one visit as a flush sub-row (EM 2026-11-06: no card in the table, amounts
  * under "Số tiền"): its lines with technician and referrer, the discount, the packages sold in it,
  * what was collected, companions, and the status note. Actions live in the row's ⋯ menu.
@@ -162,7 +173,7 @@ function VisitDetails({ v }: { v: Visit }) {
         ? "Lượt đã sửa (thay cho lượt ghi trước)."
         : null;
   const backdated = v.business_date < v.created_at.slice(0, 10);
-  const phone = customer.data ? `SĐT ${customer.data.phone}` : null;
+  const phone = phoneLine(customer.data);
   // A breakdown only when the visit has several parts; one line repeats the row (EM 2026-11-06).
   const breakdown =
     v.lines.length > 1 || packages.length > 0 || v.discount_amount > 0;
@@ -265,6 +276,7 @@ function VisitDetails({ v }: { v: Visit }) {
         )
       )}
       {split && <DetailRow main="Thanh toán" meta={split} />}
+      {v.note && <DetailRow main="Ghi chú buổi" meta={v.note} />}
       {v.companions.length > 0 && (
         <DetailRow main="Người đi cùng" meta={v.companions.join(", ")} />
       )}
@@ -352,6 +364,11 @@ function visitColumns({
               {services}
             </span>
             <span className="truncate text-text-muted">KTV {staff}</span>
+            {v.note && (
+              <span className="truncate text-text-muted" title={v.note}>
+                Ghi chú: {v.note}
+              </span>
+            )}
           </span>
         );
       },
@@ -410,10 +427,8 @@ export function TodayVisits({
     setSeenSignal(resetSignal);
     setNotice(null);
   }
-  /** The saved visit open for "Thêm dịch vụ / bán gói" or "Chuyển sang gói liệu trình". */
-  const [upsell, setUpsell] = useState<{ id: string; mode: UpsellMode } | null>(
-    null,
-  );
+  /** The saved visit open for "Thêm dịch vụ / bán gói" (which also converts, Q-U1). */
+  const [upsell, setUpsell] = useState<string | null>(null);
   // A busy day holds a hundred visits: the newest VISITS_PAGE first; "Xem tất cả" loads the day,
   // then shows it VISITS_PAGE at a time.
   const [all, setAll] = useState(false);
@@ -456,13 +471,13 @@ export function TodayVisits({
     setNotice(null);
     setExpanded((open) => (open === id ? null : id));
     if (voiding === id) setVoiding(null);
-    if (upsell?.id === id) setUpsell(null);
+    if (upsell === id) setUpsell(null);
   };
-  const openUpsell = (v: Visit, mode: UpsellMode) => {
+  const openUpsell = (v: Visit) => {
     setNotice(null);
     setVoiding(null);
     setExpanded(v.id);
-    setUpsell({ id: v.id, mode });
+    setUpsell(v.id);
   };
   return (
     <section aria-labelledby="today-title" className="panel">
@@ -567,17 +582,7 @@ export function TodayVisits({
                       {
                         label: "Thêm dịch vụ / bán gói",
                         onSelect: () => {
-                          openUpsell(v, "add");
-                        },
-                      },
-                    ]
-                  : []),
-                ...(mayConvert(v)
-                  ? [
-                      {
-                        label: "Chuyển sang gói liệu trình",
-                        onSelect: () => {
-                          openUpsell(v, "convert");
+                          openUpsell(v);
                         },
                       },
                     ]
@@ -635,7 +640,7 @@ export function TodayVisits({
                     }}
                   />
                 </Suspense>
-              ) : upsell?.id === v.id ? (
+              ) : upsell === v.id ? (
                 <Suspense
                   fallback={
                     <p
@@ -648,7 +653,7 @@ export function TodayVisits({
                 >
                   <VisitUpsell
                     visit={v}
-                    mode={upsell.mode}
+                    mayConvert={mayConvert(v)}
                     onCancel={() => {
                       setUpsell(null);
                     }}

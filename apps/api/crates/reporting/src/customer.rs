@@ -1,6 +1,7 @@
 //! One customer, looked back on: the timeline (visits, purchases, voids, cancellations with
 //! refunds), the summary stats and the per-package usage page (the paper "sổ theo dõi liệu trình").
-//! Visit notes (health data) are never read here.
+//! The timeline carries each visit's session note (health data) only for callers holding
+//! `customer.health_notes.read` (EM 2026-11-07: a visit's note is seen in the history too).
 
 use crate::cursor;
 use crate::dto::{
@@ -10,6 +11,7 @@ use crate::dto::{
     PackageUse,
 };
 use crm::text::{like_escape, search_key};
+use kernel::crypto::FieldCipher;
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use packages::http::CustomerPackageDto;
 use sqlx::PgPool;
@@ -77,7 +79,19 @@ struct Visits {
     sessions: HashMap<Uuid, i64>,
 }
 
-async fn visits(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Visits, AppError> {
+/// Associated data of a visit note: the very purpose and ids `operations` encrypts it under
+/// (`operations::service::visit_aad`); the history integration test reads a note written by
+/// `POST /visits`, so a drift fails there.
+fn visit_note_aad(tenant: Uuid, visit: Uuid) -> Vec<u8> {
+    kernel::crypto::record_aad("visit.note", &[tenant, visit])
+}
+
+/// `notes`: the cipher when the caller may read session notes; `None` leaves them out.
+async fn visits(
+    tx: &mut TenantTx,
+    ids: &[Uuid],
+    notes: Option<&FieldCipher>,
+) -> Result<Visits, AppError> {
     let tenant = tx.tenant().as_uuid();
     let mut lines: HashMap<Uuid, Vec<HistoryVisitLine>> = HashMap::new();
     let mut sessions: HashMap<Uuid, i64> = HashMap::new();
@@ -128,7 +142,7 @@ async fn visits(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Visits, AppError> {
     }
     let heads = sqlx::query!(
         r#"SELECT v.id, v.status, v.check_in_at, v.void_reason, v.voided_at, v.sale_id,
-                  v.corrects_visit_id, n.id AS "corrected_by_visit_id?"
+                  v.corrects_visit_id, n.id AS "corrected_by_visit_id?", v.note_ct
            FROM app.visit v
            LEFT JOIN app.visit n ON n.tenant_id = v.tenant_id AND n.corrects_visit_id = v.id
            WHERE v.tenant_id = $1 AND v.id = ANY($2)"#,
@@ -152,7 +166,15 @@ async fn visits(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Visits, AppError> {
     let paid = payments(tx, &sale_ids).await?;
     let visits = heads
         .into_iter()
-        .map(|h| {
+        .map(|h| -> Result<(Uuid, HistoryVisit), AppError> {
+            let note = match (notes, h.note_ct.as_deref()) {
+                (Some(cipher), Some(ct)) => Some(
+                    cipher
+                        .decrypt(ct, &visit_note_aad(tenant, h.id))
+                        .map_err(|e| AppError::Internal(format!("visit note of {}: {e}", h.id)))?,
+                ),
+                _ => None,
+            };
             let money = sale_of.get(&h.id).map_or_else(Paid::default, |sales| {
                 sales
                     .iter()
@@ -162,9 +184,10 @@ async fn visits(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Visits, AppError> {
                         reversed: a.reversed.plus(b.reversed),
                     })
             });
-            (
+            Ok((
                 h.id,
                 HistoryVisit {
+                    note,
                     id: h.id,
                     voided: h.status == "voided",
                     check_in_at: h.check_in_at,
@@ -175,9 +198,9 @@ async fn visits(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Visits, AppError> {
                     corrects_visit_id: h.corrects_visit_id,
                     corrected_by_visit_id: h.corrected_by_visit_id,
                 },
-            )
+            ))
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
     Ok(Visits {
         visits,
         sale_of,
@@ -386,6 +409,7 @@ fn kind_sql(kind: HistoryKind) -> &'static str {
 /// and closer, a cancellation by its package name.
 pub async fn history(
     pool: &PgPool,
+    cipher: &FieldCipher,
     actor: &Actor,
     customer_id: Uuid,
     query: &HistoryQuery,
@@ -526,7 +550,10 @@ pub async fn history(
     let sale_ids = ids_of(&["purchase", "purchase_voided"]);
     let cancel_ids = ids_of(&["package_cancelled"]);
     let extension_ids = ids_of(&["package_extended"]);
-    let mut v = visits(&mut tx, &visit_ids).await?;
+    let notes = actor
+        .can(Permission::CustomerHealthNotesRead)
+        .then_some(cipher);
+    let mut v = visits(&mut tx, &visit_ids, notes).await?;
     let (sales, sale_money) = purchases(&mut tx, customer_id, &sale_ids).await?;
     let mut cancels = cancellations(&mut tx, &cancel_ids).await?;
     let mut extended = extensions(&mut tx, &extension_ids).await?;

@@ -9,7 +9,7 @@
 //! can count today as the first session of a new package (`convert`).
 //!
 //! The session note is health data: encrypted at rest (AAD = tenant + visit), written only with
-//! `customer.health_notes.write`, returned only on a single visit and only with
+//! `customer.health_notes.write`, returned (on a visit and in the day list) only with
 //! `customer.health_notes.read`, never stored in the idempotent response nor in audit.
 
 use crate::domain::{self, CheckInError};
@@ -1086,7 +1086,8 @@ pub async fn get(
 }
 
 /// `GET /visits?date=` (`visit.read`): the visits of one business day (default today), latest
-/// first. Notes are never listed.
+/// first. Each carries its session note only for callers holding `customer.health_notes.read`
+/// (EM 2026-11-07: the note is seen in the day list, not only on the visit).
 pub async fn for_day(
     pool: &PgPool,
     cipher: &FieldCipher,
@@ -1102,7 +1103,7 @@ pub async fn for_day(
             .business_date
             .as_naive(),
     };
-    let visits = load(&mut tx, cipher, actor, None, Some(day), false).await?;
+    let visits = load(&mut tx, cipher, actor, None, Some(day), true).await?;
     tx.commit().await?;
     Ok(visits)
 }

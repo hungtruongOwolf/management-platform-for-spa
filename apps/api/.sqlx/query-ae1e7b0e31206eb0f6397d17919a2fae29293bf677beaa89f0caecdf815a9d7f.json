@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT v.id, v.status, v.check_in_at, v.void_reason, v.voided_at, v.sale_id,\n                  v.corrects_visit_id, n.id AS \"corrected_by_visit_id?\"\n           FROM app.visit v\n           LEFT JOIN app.visit n ON n.tenant_id = v.tenant_id AND n.corrects_visit_id = v.id\n           WHERE v.tenant_id = $1 AND v.id = ANY($2)",
+  "query": "SELECT v.id, v.status, v.check_in_at, v.void_reason, v.voided_at, v.sale_id,\n                  v.corrects_visit_id, n.id AS \"corrected_by_visit_id?\", v.note_ct\n           FROM app.visit v\n           LEFT JOIN app.visit n ON n.tenant_id = v.tenant_id AND n.corrects_visit_id = v.id\n           WHERE v.tenant_id = $1 AND v.id = ANY($2)",
   "describe": {
     "columns": [
       {
@@ -90,6 +90,17 @@
             "name": "id"
           }
         }
+      },
+      {
+        "ordinal": 8,
+        "name": "note_ct",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "note_ct"
+          }
+        }
       }
     ],
     "parameters": {
@@ -106,8 +117,9 @@
       true,
       true,
       true,
+      true,
       true
     ]
   },
-  "hash": "d5ec244cdedf55f9a9a81ac46b858d13e97b6103d06e22dfab76b315dfda763d"
+  "hash": "ae1e7b0e31206eb0f6397d17919a2fae29293bf677beaa89f0caecdf815a9d7f"
 }

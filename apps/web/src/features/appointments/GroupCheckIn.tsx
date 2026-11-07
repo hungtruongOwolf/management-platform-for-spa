@@ -320,7 +320,7 @@ export function GroupCheckIn({
                       {l.serviceName} ·{" "}
                       {l.source === "package"
                         ? `Trừ liệu trình (${l.packageName})`
-                        : formatVnd(l.price)}
+                        : formatVnd(l.source === "one_off" ? l.price : 0)}
                     </li>
                   ))}
                 </ul>

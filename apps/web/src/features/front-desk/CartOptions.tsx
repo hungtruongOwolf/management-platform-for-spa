@@ -3,6 +3,7 @@
 // opens its fields underneath. A lazy chunk prefetched after the first paint, off the startup bundle.
 import type {
   Appointment,
+  Customer,
   CustomerSummary,
   Service,
   Staff,
@@ -10,13 +11,21 @@ import type {
 } from "@vpyd/api-client";
 import { useQuery } from "@tanstack/react-query";
 import { formatVnd } from "@vpyd/ui";
-import { type RefObject, useEffect, useRef, useState } from "react";
+import {
+  type RefObject,
+  Suspense,
+  lazy,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Icon } from "../../app/Icon";
 import { DateField } from "../../components/DateField";
 import { TimeField } from "../../components/TimeField";
 import { messageFor } from "../../lib/errors";
 import { serviceLabel } from "../../lib/names";
 import { categoriesQuery, servicesQuery } from "../catalog/api";
+import { customerQuery } from "../customers/api";
 import { parseAmount } from "../sales/api";
 import {
   type CartLine,
@@ -27,6 +36,56 @@ import {
   priceFor,
   timeOf,
 } from "./api";
+
+const CustomerForm = lazy(() =>
+  import("../customers/CustomerForm").then((m) => ({
+    default: m.CustomerForm,
+  })),
+);
+
+/**
+ * "Thêm thông tin khách" (EM 2026-11-07): a nameless walk-in gets a name, phone, gender, birth date
+ * or a note later, in place. The profile keeps its id, so the visit and the cart stay theirs
+ * (ADR-0011: editing a nameless profile keeps its history).
+ */
+export function WalkInInfo({
+  customerId,
+  canWriteHealth,
+  onSaved,
+  onCancel,
+}: {
+  customerId: string;
+  canWriteHealth: boolean;
+  onSaved: (c: Customer) => void;
+  onCancel: () => void;
+}) {
+  const customer = useQuery(customerQuery(customerId));
+  const loading = (
+    <p role="status" className="text-text-muted">
+      Đang mở hồ sơ…
+    </p>
+  );
+  if (customer.isError)
+    return (
+      <p role="alert" className="field-error">
+        {messageFor(customer.error)}
+      </p>
+    );
+  if (!customer.data) return loading;
+  return (
+    <section aria-label="Thêm thông tin khách" className="grid gap-2">
+      <h3 className="section-label">Thêm thông tin khách (không bắt buộc)</h3>
+      <Suspense fallback={loading}>
+        <CustomerForm
+          customer={customer.data}
+          canWriteHealth={canWriteHealth}
+          onSaved={onSaved}
+          onCancel={onCancel}
+        />
+      </Suspense>
+    </section>
+  );
+}
 
 /**
  * The bars above the cart lines: "Đang ghi cho lịch hẹn …" (⋯ → "Bỏ liên kết lịch hẹn") when the
@@ -617,7 +676,15 @@ export function CartLines({
   technicians,
   staffSelects,
   focusLineKey,
+  openKey,
+  onOpen,
 }: {
+  /**
+   * The one line open for editing (EM 2026-11-07: a finished item folds into a summary row with
+   * Sửa / ✕). A line without its technician stays open; `undefined` = every line open.
+   */
+  openKey?: number | null;
+  onOpen?: (key: number | null) => void;
   lines: CartLine[];
   onLines: (update: (ls: CartLine[]) => CartLine[]) => void;
   /** Line key → `ref` of the package sold today that covers it. */
@@ -634,47 +701,91 @@ export function CartLines({
   /** Line whose technician picker takes focus when it mounts. */
   focusLineKey: RefObject<number | null>;
 }) {
+  const staffName = (id: string) =>
+    staff.find((s) => s.id === id)?.full_name ??
+    technicians.find((s) => s.id === id)?.full_name;
   return (
     <ul aria-label="Dịch vụ trong lượt" className="cart-lines">
       {lines.map((l) => {
         const invalid = attempted && l.staffId === "";
         const selectId = `staff-${String(l.key)}`;
         const coveredBy = covered.get(l.key);
+        const name = serviceLabel(l.serviceName, l.categoryName);
+        const sourceText =
+          l.source === "package"
+            ? `Trừ liệu trình · ${l.packageName}${l.expiryOverrideReason ? " · cho dùng tiếp" : ""}`
+            : l.source === "new_package"
+              ? `Buổi hôm nay của gói mua hôm nay · ${planName(l.saleRef)}`
+              : coveredBy
+                ? `Trừ gói mua hôm nay · ${planName(coveredBy)}`
+                : "Dịch vụ lẻ";
+        const price = (
+          <span className="cart-line-price">
+            {l.source === "one_off" ? (
+              coveredBy ? (
+                <>
+                  <s className="cart-line-was">{formatVnd(l.price)}</s>
+                  {formatVnd(0)}
+                </>
+              ) : (
+                formatVnd(l.price)
+              )
+            ) : l.source === "new_package" ? (
+              formatVnd(0)
+            ) : null}
+          </span>
+        );
+        const remove = (
+          <button
+            type="button"
+            aria-label={`Bỏ dòng ${l.serviceName}`}
+            onClick={() => {
+              onLines((ls) => ls.filter((x) => x.key !== l.key));
+            }}
+            className="btn btn-ghost btn-icon text-text-muted"
+          >
+            <Icon name="x" />
+          </button>
+        );
+        const folded =
+          onOpen !== undefined && openKey !== l.key && l.staffId !== "";
+        if (folded) {
+          const referrer =
+            l.source === "one_off" && !coveredBy
+              ? ` · Giới thiệu: ${l.referrerId ? (staffName(l.referrerId) ?? "…") : "Khách tự chọn"}`
+              : "";
+          return (
+            <li key={l.key} className="cart-line is-summary">
+              <div className="min-w-0">
+                <span className="cart-line-name">{name}</span>
+                <span className="cart-line-source">
+                  KTV {staffName(l.staffId) ?? "…"} · {sourceText}
+                  {referrer}
+                </span>
+              </div>
+              {price}
+              <button
+                type="button"
+                aria-label={`Sửa dòng ${l.serviceName}`}
+                className="btn btn-ghost"
+                onClick={() => {
+                  onOpen(l.key);
+                }}
+              >
+                Sửa
+              </button>
+              {remove}
+            </li>
+          );
+        }
         return (
           <li key={l.key} className="cart-line">
             <div className="min-w-0">
-              <span className="cart-line-name">
-                {serviceLabel(l.serviceName, l.categoryName)}
-              </span>
-              <span className="cart-line-source">
-                {l.source === "package"
-                  ? `Trừ liệu trình · ${l.packageName}${l.expiryOverrideReason ? " · cho dùng tiếp" : ""}`
-                  : coveredBy
-                    ? `Trừ gói mua hôm nay · ${planName(coveredBy)}`
-                    : "Dịch vụ lẻ"}
-              </span>
+              <span className="cart-line-name">{name}</span>
+              <span className="cart-line-source">{sourceText}</span>
             </div>
-            <span className="cart-line-price">
-              {l.source === "one_off" &&
-                (coveredBy ? (
-                  <>
-                    <s className="cart-line-was">{formatVnd(l.price)}</s>
-                    {formatVnd(0)}
-                  </>
-                ) : (
-                  formatVnd(l.price)
-                ))}
-            </span>
-            <button
-              type="button"
-              aria-label={`Bỏ dòng ${l.serviceName}`}
-              onClick={() => {
-                onLines((ls) => ls.filter((x) => x.key !== l.key));
-              }}
-              className="btn btn-ghost btn-icon text-text-muted"
-            >
-              <Icon name="x" />
-            </button>
+            {price}
+            {remove}
             <div className="cart-line-staff">
               <label htmlFor={selectId}>KTV</label>
               <select
@@ -732,6 +843,18 @@ export function CartLines({
                     );
                   }}
                 />
+              )}
+              {onOpen !== undefined && l.staffId !== "" && (
+                <button
+                  type="button"
+                  aria-label={`Xong dòng ${l.serviceName}`}
+                  className="btn btn-ghost cart-line-done"
+                  onClick={() => {
+                    onOpen(null);
+                  }}
+                >
+                  Xong
+                </button>
               )}
             </div>
           </li>

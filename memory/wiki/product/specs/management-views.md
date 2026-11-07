@@ -80,7 +80,7 @@ Thiếu `report.revenue.read` thì response **không chứa** các trường ti�
   - `purchase`: mua gói (dòng, tổng, giảm giá + lý do, thanh toán theo hình thức, người chốt);
   - `visit_voided` / `purchase_voided`: lúc hủy, lý do, tiền đảo, số buổi được cộng lại;
   - `package_cancelled`: chủ spa hủy gói, lý do, khoản hoàn (nếu có).
-  Lượt đã hủy vẫn nằm trong timeline (có cờ `voided`). **Không bao giờ** có ghi chú sức khỏe / ghi chú buổi.
+  Lượt đã hủy vẫn nằm trong timeline (có cờ `voided`). **Không bao giờ** có ghi chú sức khỏe. Ghi chú buổi (`visit.note`) chỉ khi người xem có `customer.health_notes.read` (EM 2026-11-07, front-desk §10.12).
 - AC4.2 Trang liệu trình (`GET /customer-packages/{id}/usage`): thông tin gói (tổng/còn lại, hạn, quà tặng, trạng thái) + **mỗi lần dùng** (STT theo thứ tự cũ → mới: ngày, giờ, dịch vụ, số buổi, còn lại sau, KTV, đã hủy hay chưa). Đây là một trang của sổ giấy.
 - AC4.3 Tóm tắt (`GET /customers/{id}/summary`): lần đến đầu, lần đến gần nhất, số ngày từ lần gần nhất, số lượt (hoàn tất / đã hủy), số buổi đã dùng, tiền đã trả / đã đảo / đã hoàn / **thực chi**, số gói theo trạng thái, số buổi còn lại của các gói đang dùng.
 - AC4.4 (neg): Khách của spa khác → `404`. Thiếu một trong `customer.read`, `visit.read`, `sale.read` → `403`. Cursor sửa tay → `422`.

@@ -475,3 +475,22 @@ EM (raw `2026-11-07-em-decisions-after-live-test.md`): *"khách vãng lai mà v�
 - AC-I4: `birth_date` ngày mai → `422 in_future`; 121 năm trước → `too_old`; lệch `birth_year` → `conflicts_with_birth_date`; hợp lệ → `birth_year` = năm của ngày sinh.
 - AC-I5: mua cho Bình → dòng sổ doanh thu có `beneficiary_name` "Bình"; lịch sử Bình có `purchase` với `payer_name`; gia hạn → lịch sử có `package_extended` (hạn cũ, hạn mới, lý do, người làm).
 
+### 10.12 Rà soát luồng Quầy (EM 2026-11-07)
+EM ([raw](../../../raw/2026-11-07-em-flow-review-hr-latency.md), ảnh 58, 59, 63): "SĐT null"; bán gói mà khách muốn làm luôn hôm nay thì không thấy cách; giỏ nhiều món kéo dài khó nhìn; khách vãng lai không ghi note / thêm thông tin được; lượt nào cũng phải có note; hai nút "Bán gói liệu trình"; "chỗ nên đơn giản thì phức tạp, chỗ chưa cover hết case". Giao diện: [front-desk-flows § EM flow review](../../design/front-desk-flows.md), [design-system § Món gập trong giỏ](../../design/design-system.md).
+
+**Quyết định (lead's reading, EM to review):**
+- **Không hiện `null`.** SĐT thiếu: "Chưa có SĐT" (khách có tên) hoặc bỏ hẳn (khách vãng lai không tên).
+- **"Làm 1 buổi hôm nay"** trên khối gói trong giỏ (thay cho việc phải thêm dịch vụ lẻ trước rồi tick "Dùng gói này…"). Dòng buổi hôm nay gửi `source: package` + `package_ref` như AC9.1 — không đổi API. Một lần lưu: hóa đơn gói + lượt, buổi trừ từ gói mới (còn 11/12).
+- **Giỏ gập món đã xong**, một món mở một lúc.
+- **Khách vãng lai**: "Thêm thông tin khách" sửa ngay hồ sơ không tên (tên, SĐT, giới tính, ngày sinh, ghi chú chung), lịch sử và giỏ giữ nguyên (ADR-0011). Gói của khách không tên bị chặn ở giỏ trước khi gửi (server vẫn `422 customer.name_required`).
+- **Ghi chú buổi mọi lượt**: API đã lưu `note` ở mọi đường ghi lượt (`POST /visits`, hoàn tất lịch hẹn, Sửa lượt giữ / đổi, chuyển sang gói giữ); không cần migration (0027 không dùng). Thay đổi: `GET /visits` (danh sách ngày) và `GET /customers/{id}/history` (`visit.note`) **trả ghi chú cho người có `customer.health_notes.read`** (trước đây chỉ `GET /visits/{id}`). Ghi chú vẫn mã hóa, không vào audit / phản hồi idempotent; KTV không có quyền này nên không thấy. Giỏ chỉ bán gói không có ô ghi chú (không có lượt để gắn).
+- **Một lối vào**: "Bán gói liệu trình" chỉ ở giỏ; menu ⋯ của lượt gộp "Chuyển sang gói liệu trình" vào "Thêm dịch vụ / bán gói" (ô "Tính buổi hôm nay vào gói" hiện khi chỉ bán một gói chứa dịch vụ lẻ của lượt; Q-U1 giữ nguyên: mặc định tắt).
+
+**AC:**
+- AC-F1: giỏ chỉ có gói Đại Thông Lạc 10 + 2 → "Làm 1 buổi hôm nay" → chọn KTV Lan → "Lưu lượt khách" → một `POST /visits` (dòng `package_ref: p1`, `package_sales[p1]`), không `POST /sales`; gói còn 11/12. Bỏ gói → dòng buổi hôm nay cũng bỏ.
+- AC-F2: dòng có KTV gập khi thêm món khác; "Sửa dòng X" mở lại và gập món kia; dòng thiếu KTV không gập.
+- AC-F3: khách vãng lai không tên: thẻ không có "null" / "Chưa có SĐT"; bán gói → thông báo cần tên, không gửi; "Thêm thông tin khách" → `PUT /customers/{id}` → tên mới trên thẻ, gói trong giỏ lưu được.
+- AC-F4: lượt có ghi chú → `GET /visits` có `note` cho quản lý / chủ spa, không có cho người thiếu `customer.health_notes.read`; lịch sử khách cùng quy tắc. Test: `visits.rs::session_note_is_encrypted_and_shown_only_to_health_readers`.
+- AC-F5: menu ⋯ không còn "Chuyển sang gói liệu trình"; chuyển đổi qua "Thêm dịch vụ / bán gói" → `convert-to-package` như AC11.1.
+
+**Ngoài phạm vi / còn mở:** giỏ chỉ bán gói vẫn tối đa 1 gói (một `POST /sales`); bán 2 gói không có lượt = lưu từng gói. Ghi chú cho hóa đơn gói không lượt (không có trường). Gộp hồ sơ khách vãng lai trùng người (ADR-0011, vòng sau).

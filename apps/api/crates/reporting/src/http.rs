@@ -14,6 +14,8 @@ use axum::routing::get;
 use axum::{Json, Router};
 use identity::AuthUser;
 use kernel::AppError;
+use kernel::crypto::FieldCipher;
+use std::sync::Arc;
 use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -21,6 +23,7 @@ use uuid::Uuid;
 pub fn routes<S>() -> Router<S>
 where
     PgPool: FromRef<S>,
+    Arc<FieldCipher>: FromRef<S>,
     S: Clone + Send + Sync + 'static,
 {
     Router::new()
@@ -114,12 +117,13 @@ pub async fn inactive_customers(
         (status = 404), (status = 422, description = "validation_failed: q too_short / too_long, from after_to, cursor invalid, limit out_of_range")))]
 pub async fn customer_history(
     State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
     Path(id): Path<Uuid>,
     Query(query): Query<HistoryQuery>,
 ) -> Result<Response, AppError> {
     Ok(no_store(
-        customer::history(&pool, &user.actor, id, &query).await?,
+        customer::history(&pool, &cipher, &user.actor, id, &query).await?,
     ))
 }
 
