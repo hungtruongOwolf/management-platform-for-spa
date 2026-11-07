@@ -31,6 +31,7 @@ import { cartFromAppointment } from "../front-desk/prefill";
 import { frontDeskSearch } from "../front-desk/search";
 import { activeStaffQuery, formatDate } from "../sales/api";
 import { BookingSheet, type Draft } from "./BookingSheet";
+import { putAppointment } from "./cache";
 import { GroupCheckIn } from "./GroupCheckIn";
 import { type TimeColumn, TimeGrid, range, servicesText } from "./TimeGrid";
 import {
@@ -866,9 +867,10 @@ function AppointmentSheet({
     queryClient.invalidateQueries({ queryKey: ["appointments"] });
   const action = useMutation({
     mutationFn: (run: () => Promise<Appointment>) => run(),
-    onSuccess: async () => {
+    onSuccess: (saved) => {
       setClosing(null);
-      await refresh();
+      putAppointment(queryClient, saved);
+      void refresh();
     },
     onSettled: () => {
       setRunning(null);

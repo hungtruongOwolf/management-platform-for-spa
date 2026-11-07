@@ -1,6 +1,6 @@
-import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery, type QueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { can, meQuery, type Me } from "../features/auth/session";
+import { authQuery, can, meQuery, type Me } from "../features/auth/session";
 import { spaToday } from "../features/corrections/api";
 import { dailyReportQuery } from "../features/reports/api";
 import { StatCard, StatSkeleton, count, money } from "../features/reports/ui";
@@ -42,6 +42,13 @@ function staffHint(me: Me | null): string {
 function hintFor(item: NavItem, me: Me | null): string | undefined {
   if (navKey(item) === "/nhan-vien") return staffHint(me);
   return HINTS[navKey(item)];
+}
+
+/** Route loader: today's numbers start with the chunk, for those who see them. */
+export function prefetchHome(queryClient: QueryClient): void {
+  const auth = queryClient.getQueryData(authQuery.queryKey);
+  if (auth?.state === "signed_in" && canSeeManagement(auth.me))
+    void queryClient.prefetchQuery(dailyReportQuery(spaToday()));
 }
 
 function Today() {

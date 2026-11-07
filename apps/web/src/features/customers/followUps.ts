@@ -54,6 +54,16 @@ export async function createFollowUp(customerId: string, body: FollowUpCreate, i
   })) as FollowUp;
 }
 
+/**
+ * The recorded contact on top of the customer's list at once, from the server's answer: the sheet
+ * closes after one round trip, not two (perf page §4d). The list is refetched behind it.
+ */
+export function putFollowUp(queryClient: QueryClient, customerId: string, saved: FollowUp): void {
+  queryClient.setQueryData<FollowUpList>(followUpsQuery(customerId).queryKey, (list) =>
+    list && { ...list, items: [saved, ...list.items.filter((f) => f.id !== saved.id)] },
+  );
+}
+
 /** After a contact is recorded: the overdue list (every filter) and that customer's profile. */
 export async function invalidateAfterFollowUp(queryClient: QueryClient, customerId: string): Promise<void> {
   await Promise.all([

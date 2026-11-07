@@ -22,6 +22,7 @@ import {
 } from "./api";
 import { AdjustmentActions, AdjustmentForm } from "./AdjustmentsTab";
 import { AttendanceChoice } from "./AttendanceChoice";
+import { putAttendance, putReviews } from "./cache";
 import { Counter } from "./Counter";
 import { STATUS_WORD, monthLabel, type AttendanceStatus } from "./labels";
 import { PersonDaySheet } from "./PersonDaySheet";
@@ -72,9 +73,23 @@ export function DailyBook({
   const onError = (e: unknown, entries: { staff_id: string }[]) => {
     setFailed({ staffId: entries.length === 1 ? (entries[0]?.staff_id ?? null) : null, message: messageFor(e) });
   };
-  const onSaved = () => invalidateStaff(queryClient);
-  const mark = useMutation({ mutationFn: saveAttendance, onSuccess: onSaved, onError });
-  const review = useMutation({ mutationFn: saveReviews, onSuccess: onSaved, onError });
+  // The answer goes into the sheets at once (staff/cache.ts); the refetch for the totals is not awaited.
+  const mark = useMutation({
+    mutationFn: saveAttendance,
+    onSuccess: (saved, written) => {
+      putAttendance(queryClient, written, saved);
+      void invalidateStaff(queryClient);
+    },
+    onError,
+  });
+  const review = useMutation({
+    mutationFn: saveReviews,
+    onSuccess: (_, written) => {
+      putReviews(queryClient, written);
+      void invalidateStaff(queryClient);
+    },
+    onError,
+  });
 
   const pending = (canAttendance && attendance.isPending) || (canReview && reviews.isPending);
   if (pending) return <RowsSkeleton rows={6} />;

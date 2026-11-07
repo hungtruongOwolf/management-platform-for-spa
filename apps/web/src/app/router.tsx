@@ -168,10 +168,19 @@ const authedRoute = createRoute({
   component: AppShell,
 });
 
+const homePage = () => import("./HomePage");
+
+/*
+ * Loaders start a screen's queries together with its chunk, from the URL alone (perf page §4d):
+ * on a click, and earlier on hover or touch (`defaultPreload: "intent"`). They import the screen's
+ * own module, so no feature code moves into the startup chunk, and they never wait for the data:
+ * each panel keeps its own loading and error states.
+ */
 const homeRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/",
-  component: lazyRouteComponent(() => import("./HomePage"), "HomePage"),
+  loader: ({ context }) => homePage().then((m) => m.prefetchHome(context.queryClient)),
+  component: lazyRouteComponent(homePage, "HomePage"),
 });
 
 /*
@@ -186,6 +195,8 @@ const reportsRoute = createRoute({
   path: "/bao-cao",
   beforeLoad: only(mayOpen.management),
   validateSearch: reportsSearch.validate,
+  loaderDeps: ({ search }) => search,
+  loader: ({ context, deps }) => reportsPage().then((m) => m.prefetchReports(context.queryClient, deps)),
   component: lazyRouteComponent(reportsPage, "ReportsPage"),
 });
 
@@ -263,6 +274,7 @@ const customersRoute = createRoute({
   path: "/khach-hang",
   beforeLoad: only(mayOpen.customers),
   validateSearch: customersSearch.validate,
+  loader: ({ context }) => customersModule().then((m) => m.prefetchCustomers(context.queryClient)),
   component: lazyRouteComponent(customersModule, "CustomersPage"),
 });
 
@@ -271,6 +283,9 @@ const customerRoute = createRoute({
   path: "/khach-hang/$customerId",
   beforeLoad: only(mayOpen.customers),
   validateSearch: historySearch.validate,
+  loaderDeps: ({ search }) => search,
+  loader: ({ context, params, deps }) =>
+    customersModule().then((m) => m.prefetchCustomerPage(context.queryClient, params.customerId, deps)),
   component: lazyRouteComponent(customersModule, "CustomerRoutePage"),
 });
 
@@ -301,6 +316,10 @@ export function createAppRouter(
     routeTree,
     context: { queryClient },
     defaultPendingComponent: PageSkeleton,
+    // Hover or touch on a link starts its chunk and its queries (loaders above).
+    defaultPreload: "intent",
+    // TanStack Query owns freshness: the router always asks the loader, which reuses fresh cache.
+    defaultPreloadStaleTime: 0,
     // Off the startup bundle: rare pages in one small chunk of their own.
     defaultNotFoundComponent: lazyRouteComponent(() => import("./StatusPage"), "NotFoundPage"),
     defaultErrorComponent: lazyRouteComponent(() => import("./StatusPage"), "ErrorPage"),
