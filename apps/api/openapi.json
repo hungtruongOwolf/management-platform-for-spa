@@ -2921,6 +2921,61 @@
         }
       }
     },
+    "/api/v1/sales/checkout": {
+      "post": {
+        "tags": [
+          "sales"
+        ],
+        "operationId": "create_checkout",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per checkout attempt; a retry with the same key replays the first response",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaleCheckoutCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "one sale per package, in request order; every one or none was created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaleCheckoutDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required / key_invalid"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden / discount.limit_exceeded"
+          },
+          "404": {
+            "description": "customer, beneficiary or plan not in this spa"
+          },
+          "422": {
+            "description": "validation_failed (package_sales[k].…, package_sales count_out_of_range), payment.amount_mismatch, discount.reason_required, customer.name_required, staff.inactive, idempotency.key_reuse_mismatch"
+          }
+        }
+      }
+    },
     "/api/v1/sales/{id}": {
       "get": {
         "tags": [
@@ -5297,6 +5352,53 @@
           }
         },
         "additionalProperties": false
+      },
+      "CheckoutPackageCreate": {
+        "type": "object",
+        "description": "One package of `POST /sales/checkout`: the same fields as a package sold in a visit.",
+        "required": [
+          "package_plan_id"
+        ],
+        "properties": {
+          "beneficiary_customer_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Who the package belongs to (\"Mua cho người khác\"); omitted = the payer."
+          },
+          "closer_staff_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "\"Người giới thiệu / chốt\": any staff member working here; null = \"khách tự chọn\"."
+          },
+          "discount": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DiscountCreate",
+                "description": "Discount on this package alone (D10; the manager cap applies per sale)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gift_note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted = the plan's gift; empty = none."
+          },
+          "package_plan_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
       },
       "CommissionLine": {
         "type": "object",
@@ -9770,6 +9872,57 @@
           "today": {
             "type": "string",
             "format": "date"
+          }
+        }
+      },
+      "SaleCheckoutCreate": {
+        "type": "object",
+        "description": "Body of `POST /sales/checkout` (EM 2026-11-07 item 4): a Quầy cart holding only packages,\nsaved at once. Each package is its own sale — its own plan, beneficiary, closer and discount,\nexactly like `package_sales[]` of `POST /visits` — and one payment step pays them all.",
+        "required": [
+          "customer_id",
+          "package_sales",
+          "payments"
+        ],
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Who pays (every sale's `customer_id`)."
+          },
+          "package_sales": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CheckoutPackageCreate"
+            },
+            "description": "1–3 packages, in cart order."
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentCreate"
+            },
+            "description": "0–2 payments, one per method, summing exactly to every package's total. The server splits\nthem over the sales like a visit's checkout: cash pays the sales in order first, the rest is\nbank transfer."
+          }
+        }
+      },
+      "SaleCheckoutDto": {
+        "type": "object",
+        "description": "`POST /sales/checkout` → 201: the sales of the checkout, in request order.",
+        "required": [
+          "sales",
+          "total"
+        ],
+        "properties": {
+          "sales": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SaleDto"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "What the customer paid in all (the sum of the sales' totals)."
           }
         }
       },

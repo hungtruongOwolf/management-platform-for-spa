@@ -894,7 +894,10 @@ describe("/khach-cua-toi", () => {
   it("the list view groups the week by day; the day view is one column", async () => {
     serve(TECH);
     at("/khach-cua-toi?kieu=ds");
-    const today_ = await screen.findByRole("region", { name: new RegExp(`${today.slice(8)}/${today.slice(5, 7)}`) });
+    // The day's own section ("CN, 08/11/2026"): on a Sunday the week's title also ends with today.
+    const today_ = await screen.findByRole("region", {
+      name: new RegExp(`^(T\\d|CN), ${today.slice(8)}/${today.slice(5, 7)}`),
+    });
     expect(within(today_).getAllByRole("button")).toHaveLength(2);
     await userEvent.click(screen.getByRole("button", { name: "Ngày" }));
     expect(await screen.findByRole("group", { name: /Lịch của tôi ngày/ })).toBeInTheDocument();

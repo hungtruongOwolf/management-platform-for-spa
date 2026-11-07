@@ -288,6 +288,13 @@ function serve(
         },
         201,
       );
+    if (url === "/api/v1/sales/checkout" && call.method === "POST") {
+      const sold = (call.body as { package_sales: unknown[] }).package_sales.map((_, i) => ({
+        id: `sale-c${String(i)}`,
+        lines: [{ id: `l${String(i)}`, description: PLAN.name, line_total: 3_500_000, line_type: "package", qty: 1, unit_price: 3_500_000 }],
+      }));
+      return json({ sales: sold, total: 3_500_000 * sold.length }, 201);
+    }
     if (url.endsWith("/additions")) return json(ONE_OFF_VISIT, 201);
     if (url.endsWith("/convert-to-package"))
       return json(
@@ -420,6 +427,56 @@ describe("/quay round 6", () => {
       lines: [{ package_plan_id: "pl1", gift_note: "Dầu thảo dược" }],
       payments: [{ method: "cash", amount: 3_500_000 }],
     });
+  });
+
+  it("sells several packages without a service in one save and one payment (EM 2026-11-07 item 4, chị Lan)", async () => {
+    const calls = serve();
+    const user = userEvent.setup();
+    render(
+      <App history={createMemoryHistory({ initialEntries: ["/quay"] })} />,
+    );
+    await pickHa(user);
+    // The first package, for the payer.
+    await user.click(
+      await screen.findByRole("button", { name: "Bán gói liệu trình" }),
+    );
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Mẫu gói" }),
+      "pl1",
+    );
+    // A second one fits although the cart has no service; it is a gift for someone else.
+    await user.click(screen.getByRole("button", { name: "Bán gói liệu trình" }));
+    // One block open at a time (#78): the first folds into its summary row, the new one opens.
+    const second = await screen.findByRole("combobox", { name: "Mẫu gói" });
+    expect(second).toHaveValue("");
+    await user.selectOptions(second, "pl1");
+    const gifts = screen.getAllByRole("checkbox", { name: /Mua cho người khác/ });
+    const gift = gifts[gifts.length - 1];
+    if (!gift) throw new Error("gift checkbox missing");
+    await user.click(gift);
+    const searches = screen.getAllByRole("combobox", { name: "Tìm khách theo SĐT hoặc tên" });
+    const beneficiarySearch = searches[searches.length - 1];
+    if (!beneficiarySearch) throw new Error("beneficiary search missing");
+    await user.type(beneficiarySearch, "Nam");
+    await user.click(await screen.findByRole("option", { name: /Trần Văn Nam/ }));
+    await user.click(screen.getByRole("button", { name: "Lưu hóa đơn gói" }));
+    await waitFor(() => {
+      expect(posted(calls, "/api/v1/sales/checkout")).toHaveLength(1);
+    });
+    expect(posted(calls, "/api/v1/sales")).toHaveLength(0);
+    expect(posted(calls, "/api/v1/visits")).toHaveLength(0);
+    const body = posted(calls, "/api/v1/sales/checkout")[0]?.body as Record<string, unknown>;
+    expect(body).toMatchObject({
+      customer_id: "c1",
+      package_sales: [
+        { package_plan_id: "pl1", beneficiary_customer_id: null },
+        { package_plan_id: "pl1", beneficiary_customer_id: "c2" },
+      ],
+      payments: [{ method: "cash", amount: 7_000_000 }],
+    });
+    expect(
+      await screen.findByText(/Đã bán .*Trần Văn Nam/),
+    ).toBeInTheDocument();
   });
 
   it("names who gets a package bought for someone else, and who paid (US13)", async () => {
