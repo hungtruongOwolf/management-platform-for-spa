@@ -221,7 +221,7 @@ describe("auth flow", () => {
     renderAt("/");
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: /^Tài khoản/ }));
-    await user.click(screen.getByRole("button", { name: /^Khóa nhanh/ }));
+    await user.click(await screen.findByRole("button", { name: /^Khóa nhanh/ }));
     expect(
       await screen.findByRole("button", { name: "Đăng nhập" }),
     ).toBeInTheDocument();

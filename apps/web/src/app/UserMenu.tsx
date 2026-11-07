@@ -1,7 +1,9 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useId, useRef, useState } from "react";
 import { can, type Me } from "../features/auth/session";
 import { Icon } from "./Icon";
-import { ThemePicker } from "./ThemePicker";
+
+const loadPanel = () => import("./UserPanel");
+const UserPanel = lazy(() => loadPanel().then((m) => ({ default: m.UserPanel })));
 
 /**
  * Given name's initial: Vietnamese names end with it. Only letters count, so a note in brackets
@@ -79,6 +81,13 @@ export function UserMenu({
         className="user-button"
         aria-expanded={open}
         aria-controls={panelId}
+        // The panel is a chunk of its own: fetch it as soon as the button may be used.
+        onPointerEnter={() => {
+          void loadPanel();
+        }}
+        onFocus={() => {
+          void loadPanel();
+        }}
         onClick={() => {
           setOpen((o) => !o);
         }}
@@ -96,50 +105,23 @@ export function UserMenu({
         <Icon name="chevron-down" className="user-button-chevron size-4" />
       </button>
       {open && (
-        <div id={panelId} className="user-panel" role="group" aria-label="Tài khoản">
-          <div className="user-panel-head">
-            <span aria-hidden="true" className="avatar size-11 text-lg">
-              {initialOf(name)}
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate font-semibold">{name}</span>
-              <span className="block truncate text-sm text-text-muted">
-                {role} · {spa}
-              </span>
-            </span>
-          </div>
-          <div className="user-panel-section">
-            <p className="text-xs font-semibold text-text-muted">Giao diện</p>
-            <ThemePicker className="w-full" />
-          </div>
-          <div className="user-panel-actions">
-            <button
-              type="button"
-              className="menu-item"
-              onClick={() => {
-                setOpen(false);
-                onLock();
-              }}
-            >
-              <Icon name="lock" className="size-[18px]" />
-              <span>
-                Khóa nhanh
-                <span className="block text-xs font-normal text-text-muted">Đăng nhập lại để quay về màn này</span>
-              </span>
-            </button>
-            <button
-              type="button"
-              className="menu-item"
-              onClick={() => {
-                setOpen(false);
-                onLogout();
-              }}
-            >
-              <Icon name="logout" className="size-[18px]" />
-              <span>Đăng xuất</span>
-            </button>
-          </div>
-        </div>
+        <Suspense fallback={null}>
+          <UserPanel
+            id={panelId}
+            name={name}
+            initial={initialOf(name)}
+            role={role}
+            spa={spa}
+            onLock={() => {
+              setOpen(false);
+              onLock();
+            }}
+            onLogout={() => {
+              setOpen(false);
+              onLogout();
+            }}
+          />
+        </Suspense>
       )}
     </div>
   );

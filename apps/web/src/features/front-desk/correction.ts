@@ -1,3 +1,4 @@
+import "../corrections/messages";
 // "Sửa lượt" (spec R1-1 US6b): the cart pre-filled from a recorded visit, and the decision of how
 // to save it. Changes that touch neither money nor sessions (technician, time, note) are a direct
 // PATCH; anything else is one server-side correction (old visit voided + corrected one recorded).

@@ -7,7 +7,7 @@ const seed = (qc: QueryClient, key: unknown[]) => {
 };
 
 describe("invalidateManagementViews", () => {
-  it("marks reports, overview, absent list and that customer's history stale; nothing else", async () => {
+  it("marks reports, overview, absent list, staff views from visits and that customer's history stale; nothing else", async () => {
     const qc = new QueryClient();
     const stale = [
       ["reports", "range", "2026-10-30", "2026-11-05", "day"],
@@ -16,11 +16,20 @@ describe("invalidateManagementViews", () => {
       ["customers", "inactive", 7, "all", "all", "due", ""],
       ["customers", "history", "c1", "", "", "", ""],
       ["customers", "summary", "c1"],
+      // commission and served days move with visits and sales
+      ["staff", "payroll", "2026-11"],
+      ["staff", "attendance", "2026-11"],
+      ["staff", "me", "2026-11"],
+      ["staff", "me-day", "2026-11-05"],
+      ["staff", "me-calendar", "2026-11-03", "2026-11-09"],
     ];
     const fresh = [
       ["customers", "history", "c2", "", "", "", ""],
       ["customers", "one", "c1"],
       ["catalog", "services"],
+      // the desk's technician picker is mounted on /quay: no refetch after every save
+      ["staff", "active"],
+      ["staff", "profiles"],
     ];
     for (const k of [...stale, ...fresh]) seed(qc, k);
     await invalidateManagementViews(qc, "c1");

@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { useFormAction } from "./useFormAction";
+import "./messages";
 
 const MAX_REASON = 500;
 

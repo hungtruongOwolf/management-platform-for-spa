@@ -15,8 +15,8 @@ function HealthNoteEditor({ customer, onSaved, onCancel }: { customer: Customer;
   const [text, setText] = useState(customer.health_note ?? "");
   const mutation = useMutation({
     mutationFn: () => setHealthNote(customer.id, customer.version, text.trim() === "" ? null : text.trim()),
-    onSuccess: async (saved) => {
-      await queryClient.invalidateQueries({ queryKey: ["customers"] });
+    onSuccess: (saved) => {
+      void queryClient.invalidateQueries({ queryKey: ["customers"] });
       onSaved(saved);
     },
   });

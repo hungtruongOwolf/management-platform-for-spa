@@ -4,7 +4,21 @@
 
 use crate::error::AppError;
 use crate::ids::TenantId;
-use sqlx::{PgConnection, PgPool, Postgres, Transaction};
+use sqlx::{AssertSqlSafe, PgConnection, PgPool, Postgres, Transaction};
+
+/// `BEGIN` and the transaction-local settings in one simple-query round trip (perf page §3.4:
+/// every request opened two transactions at two round trips each before its first real query).
+/// `set_config(..., true)` keeps RLS exactly as before: it lasts until this transaction ends and
+/// never leaks to the next user of the pooled connection. If a setting fails, the transaction
+/// is aborted and `begin_with` rolls it back. The tenant id is formatted from a typed UUID
+/// (hex and hyphens only), so it cannot carry SQL.
+fn begin_statement(tenant: TenantId) -> AssertSqlSafe<String> {
+    let id: uuid::Uuid = tenant.as_uuid();
+    AssertSqlSafe(format!(
+        "BEGIN; SELECT set_config('app.tenant_id', '{}', true), set_config('statement_timeout', '5s', true)",
+        id.hyphenated()
+    ))
+}
 
 pub struct TenantTx {
     tx: Transaction<'static, Postgres>,
@@ -13,13 +27,7 @@ pub struct TenantTx {
 
 impl TenantTx {
     pub async fn begin(pool: &PgPool, tenant: TenantId) -> Result<Self, AppError> {
-        let mut tx = pool.begin().await?;
-        sqlx::query!(
-            "SELECT set_config('app.tenant_id', $1, true) AS tenant, set_config('statement_timeout', '5s', true) AS timeout",
-            tenant.to_string()
-        )
-        .fetch_one(&mut *tx)
-        .await?;
+        let tx = pool.begin_with(begin_statement(tenant)).await?;
         Ok(Self { tx, tenant })
     }
 

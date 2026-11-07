@@ -456,7 +456,7 @@
           },
           "412": {},
           "422": {
-            "description": "validation_failed, appointment.outside_opening_hours, appointment.in_the_past (moved to a past day)"
+            "description": "validation_failed (customer_id duplicate: that profile is already in the group), appointment.outside_opening_hours, appointment.in_the_past (moved to a past day)"
           }
         }
       }
@@ -6488,6 +6488,13 @@
               "$ref": "#/components/schemas/HistoryVisitLine"
             }
           },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The session note, only for `customer.health_notes.read` (absent otherwise or when empty)."
+          },
           "paid": {
             "$ref": "#/components/schemas/MethodSplit",
             "description": "Money received for the one-off lines (before any void)."
@@ -10552,7 +10559,7 @@
               "string",
               "null"
             ],
-            "description": "Present only on a single visit and only for `customer.health_notes.read`; null = no note."
+            "description": "Present (on a visit and in the day list) only for `customer.health_notes.read`; null = no\nnote. Never in an idempotent replay."
           },
           "package_sales": {
             "type": "array",

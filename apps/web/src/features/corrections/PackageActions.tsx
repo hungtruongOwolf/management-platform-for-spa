@@ -19,6 +19,7 @@ import {
 import { useFormAction } from "./useFormAction";
 import { VoidForm } from "./VoidForm";
 import { invalidateManagementViews } from "../../lib/invalidate";
+import "./messages";
 
 type Open = "extend" | "cancel" | "void" | null;
 

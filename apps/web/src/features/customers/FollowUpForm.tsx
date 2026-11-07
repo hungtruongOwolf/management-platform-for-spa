@@ -14,6 +14,7 @@ import {
   OUTCOME_LABEL,
   createFollowUp,
   invalidateAfterFollowUp,
+  putFollowUp,
 } from "./followUps";
 
 /** "08/11" (vi-VN Intl would print "08-11"). */
@@ -69,8 +70,9 @@ export function FollowUpForm({
         },
         idempotencyKey,
       ),
-    onSuccess: async (saved) => {
-      await invalidateAfterFollowUp(queryClient, customerId);
+    onSuccess: (saved) => {
+      putFollowUp(queryClient, customerId, saved);
+      void invalidateAfterFollowUp(queryClient, customerId);
       onDone(saved);
     },
   });

@@ -2103,6 +2103,8 @@ export interface components {
             /** Format: uuid */
             id: string;
             lines: components["schemas"]["HistoryVisitLine"][];
+            /** @description The session note, only for `customer.health_notes.read` (absent otherwise or when empty). */
+            note?: string | null;
             /** @description Money received for the one-off lines (before any void). */
             paid: components["schemas"]["MethodSplit"];
             void_reason?: string | null;
@@ -3703,7 +3705,10 @@ export interface components {
             /** Format: uuid */
             id: string;
             lines: components["schemas"]["VisitLineDto"][];
-            /** @description Present only on a single visit and only for `customer.health_notes.read`; null = no note. */
+            /**
+             * @description Present (on a visit and in the day list) only for `customer.health_notes.read`; null = no
+             *     note. Never in an idempotent replay.
+             */
             note?: string | null;
             /** @description Packages sold in this visit, each a sale of its own. */
             package_sales: components["schemas"]["VisitPackageSaleDto"][];
@@ -4447,7 +4452,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description validation_failed, appointment.outside_opening_hours, appointment.in_the_past (moved to a past day) */
+            /** @description validation_failed (customer_id duplicate: that profile is already in the group), appointment.outside_opening_hours, appointment.in_the_past (moved to a past day) */
             422: {
                 headers: {
                     [name: string]: unknown;

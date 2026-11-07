@@ -245,7 +245,7 @@ Ký hiệu: **[CỤT]** = bế tắc, không có đường đi; **[THIẾU]** = 
 | 4 | Thanh toán | `POST /visits`: dòng trừ gói + dòng lẻ, giảm giá dòng lẻ, TM/CK/kết hợp, thu đủ | `operations::service::record_in` | [OK] |
 | 5 | Bán gói **ở quầy** | `/quay` không có nút bán gói. Thẻ khách chỉ hiện chữ "Đã hết buổi. Gợi ý: tư vấn bán gói mới." | `front-desk/CustomerCard.tsx:185`; `SellPackageDialog` chỉ gắn ở hồ sơ khách (`customers/CustomerProfile.tsx:122` → `sales/CustomerPackages.tsx`) | [CỤT] |
 | 5b | Bán gói **trong lượt** rồi dùng ngay buổi hôm nay | Phải rời `/quay` sang hồ sơ khách (mất giỏ), bán gói (`POST /sales`), quay lại `/quay`, dựng lại giỏ rồi mới trừ buổi. Hai transaction, hóa đơn gói và lượt không liên kết với nhau | `sales/src/http.rs:29`; `sale` không có `visit_id` | [NHẬP 2 LẦN] |
-| 5c | Hoàn tất lịch hẹn / cả nhóm | Giỏ điền sẵn (gói nếu còn buổi, không thì lẻ); sheet không bán gói được | `appointments/complete.ts`, `GroupCheckIn.tsx`, `front-desk/prefill.ts` | [CỤT] với bán gói |
+| 5c | Hoàn tất lịch hẹn / cả nhóm | Giỏ điền sẵn (gói nếu còn buổi, không thì lẻ); sheet không bán gói được | `appointments/complete.ts`, `front-desk/prefill.ts` (`GroupCheckIn.tsx` bỏ 2026-11-07) | [CỤT] với bán gói |
 | 6 | Khách trả lẻ rồi muốn mua gói | Không có đường. Cách vòng: hủy lượt (lý do giả) → bán gói ở hồ sơ → ghi lại lượt trừ gói. Quản lý không làm được với ngày trước (`403 day.locked`) | `POST /visits/{id}/void`, `POST /sales` | [CỤT] |
 | 7 | Mua gói cho người nhà | `POST /sales` tạo gói cho đúng `customer_id` của hóa đơn, nên người trả tiền = người dùng gói. Mua hộ thì phải tạo hóa đơn trên hồ sơ người dùng và không ghi được ai trả | `sales/src/service.rs:240` | [THIẾU] |
 | 8 | Mua lại / gia hạn | Bán gói mới từ hồ sơ (không điền sẵn gói cũ); gia hạn hạn dùng chỉ chủ spa làm được | `POST /customer-packages/{id}/extend` | [THIẾU] |
@@ -301,7 +301,7 @@ Giỏ ở `/quay` (và giỏ điền sẵn khi hoàn tất lịch hẹn) có ba 
 - Thẻ khách (cột trái) thêm nút "Bán gói liệu trình" (= mở khối trong giỏ), và trên dòng gói hết buổi / sắp hết hạn có "Mua lại gói này" (điền sẵn mẫu gói), thay cho chữ gợi ý cụt ở `CustomerCard.tsx:185`.
 - Khách chỉ mua gói, không làm dịch vụ (trường hợp a): giỏ chỉ có khối "Gói bán hôm nay", nút đổi thành "Lưu hóa đơn gói" và gọi `POST /sales` như hiện nay (không tạo lượt, không tính vào số khách của KTV).
 - Giỏ chưa lưu được giữ nháp theo khách trong `sessionStorage` (try/catch), để tải lại trang hoặc 401 không mất giỏ (đúng như flows đã hứa).
-- Sheet "Khách đến cả nhóm": mỗi người có thêm "+ Bán gói" (cùng khối, thu gọn). Vòng này chưa có một người trả cho cả nhóm.
+- ~~Sheet "Khách đến cả nhóm": mỗi người có thêm "+ Bán gói"~~ (bỏ 2026-11-07, spec lịch hẹn §10.12: mỗi người ghi lượt bằng giỏ riêng, bán gói trong giỏ). Vòng này chưa có một người trả cho cả nhóm.
 - States: đang lưu (nút khóa + spinner); lỗi ở khối gói hiện ngay tại khối (ví dụ "Vượt 10 %, cần chủ spa"), giỏ giữ nguyên; thành công → toast "Đã lưu lượt + bán Gói … (còn 11/12)".
 
 #### 10.4.2 API và dữ liệu
@@ -461,7 +461,7 @@ EM (raw `2026-11-07-em-decisions-after-live-test.md`): *"khách vãng lai mà v�
 - **SĐT** khi nhập: vẫn chuẩn hóa, vẫn `422` nếu sai định dạng, vẫn `409 customer.phone_taken` nếu trùng (AC2.3–AC2.5 giữ nguyên). Không SĐT: hiện "Chưa có SĐT"; khách có tên mà không SĐT vẫn ở danh sách gọi lại.
 - **Gói liệu trình cần chủ gói có tên**: bán gói (hồ sơ, giỏ Quầy, mua cho người khác, nhập sổ cũ) cho hồ sơ không tên → `422 customer.name_required`. Khách vãng lai không tên được *trả tiền* mua gói cho người có tên. Không xóa được tên của hồ sơ đang có gói. Chủ gói không bắt buộc SĐT.
 - **Ngày sinh** (`birth_date`, dd/mm/yyyy): không sau hôm nay, không quá 120 tuổi; có ngày sinh thì năm sinh tự theo; "Năm sinh" vẫn nhập được khi không biết ngày.
-- **Người đi cùng chỉ có tên** ở check-in nhóm: nút "Tạo hồ sơ" ngay dòng đó, form hồ sơ điền sẵn tên, SĐT không bắt buộc (thay đoạn "thêm SĐT" ở §10.10).
+- **Người đi cùng chỉ có tên** ở check-in nhóm: nút "Tạo hồ sơ" ngay dòng đó, form hồ sơ điền sẵn tên, SĐT không bắt buộc (thay đoạn "thêm SĐT" ở §10.10). *Từ 2026-11-07 (spec lịch hẹn §10.12): không còn check-in nhóm; "Tạo hồ sơ" / "Ghi là khách vãng lai" một chạm trên sheet lịch của người đó.*
 - **Mua cho người khác**: thông báo thành công, sổ doanh thu (`beneficiary_name`) và dòng thời gian ghi tên người dùng gói; dòng thời gian của người được mua hiện gói đó kèm người trả (`payer_name`).
 - **Gia hạn +3 tháng**: hỏi xác nhận (hạn cũ → hạn mới, lý do) trước khi lưu; dòng thời gian có mục "Gia hạn" (`package_extended`).
 - **Bán gói trên hồ sơ** dùng cùng thành phần bán gói với Quầy (có "Mua cho người khác", giới hạn giảm giá của quản lý giữ nguyên).
@@ -475,3 +475,22 @@ EM (raw `2026-11-07-em-decisions-after-live-test.md`): *"khách vãng lai mà v�
 - AC-I4: `birth_date` ngày mai → `422 in_future`; 121 năm trước → `too_old`; lệch `birth_year` → `conflicts_with_birth_date`; hợp lệ → `birth_year` = năm của ngày sinh.
 - AC-I5: mua cho Bình → dòng sổ doanh thu có `beneficiary_name` "Bình"; lịch sử Bình có `purchase` với `payer_name`; gia hạn → lịch sử có `package_extended` (hạn cũ, hạn mới, lý do, người làm).
 
+### 10.12 Rà soát luồng Quầy (EM 2026-11-07)
+EM ([raw](../../../raw/2026-11-07-em-flow-review-hr-latency.md), ảnh 58, 59, 63): "SĐT null"; bán gói mà khách muốn làm luôn hôm nay thì không thấy cách; giỏ nhiều món kéo dài khó nhìn; khách vãng lai không ghi note / thêm thông tin được; lượt nào cũng phải có note; hai nút "Bán gói liệu trình"; "chỗ nên đơn giản thì phức tạp, chỗ chưa cover hết case". Giao diện: [front-desk-flows § EM flow review](../../design/front-desk-flows.md), [design-system § Món gập trong giỏ](../../design/design-system.md).
+
+**Quyết định (lead's reading, EM to review):**
+- **Không hiện `null`.** SĐT thiếu: "Chưa có SĐT" (khách có tên) hoặc bỏ hẳn (khách vãng lai không tên).
+- **"Làm 1 buổi hôm nay"** trên khối gói trong giỏ (thay cho việc phải thêm dịch vụ lẻ trước rồi tick "Dùng gói này…"). Dòng buổi hôm nay gửi `source: package` + `package_ref` như AC9.1 — không đổi API. Một lần lưu: hóa đơn gói + lượt, buổi trừ từ gói mới (còn 11/12).
+- **Giỏ gập món đã xong**, một món mở một lúc.
+- **Khách vãng lai**: "Thêm thông tin khách" sửa ngay hồ sơ không tên (tên, SĐT, giới tính, ngày sinh, ghi chú chung), lịch sử và giỏ giữ nguyên (ADR-0011). Gói của khách không tên bị chặn ở giỏ trước khi gửi (server vẫn `422 customer.name_required`).
+- **Ghi chú buổi mọi lượt**: API đã lưu `note` ở mọi đường ghi lượt (`POST /visits`, hoàn tất lịch hẹn, Sửa lượt giữ / đổi, chuyển sang gói giữ); không cần migration (0027 không dùng). Thay đổi: `GET /visits` (danh sách ngày) và `GET /customers/{id}/history` (`visit.note`) **trả ghi chú cho người có `customer.health_notes.read`** (trước đây chỉ `GET /visits/{id}`). Ghi chú vẫn mã hóa, không vào audit / phản hồi idempotent; KTV không có quyền này nên không thấy. Giỏ chỉ bán gói không có ô ghi chú (không có lượt để gắn).
+- **Một lối vào**: "Bán gói liệu trình" chỉ ở giỏ; menu ⋯ của lượt gộp "Chuyển sang gói liệu trình" vào "Thêm dịch vụ / bán gói" (ô "Tính buổi hôm nay vào gói" hiện khi chỉ bán một gói chứa dịch vụ lẻ của lượt; Q-U1 giữ nguyên: mặc định tắt).
+
+**AC:**
+- AC-F1: giỏ chỉ có gói Đại Thông Lạc 10 + 2 → "Làm 1 buổi hôm nay" → chọn KTV Lan → "Lưu lượt khách" → một `POST /visits` (dòng `package_ref: p1`, `package_sales[p1]`), không `POST /sales`; gói còn 11/12. Bỏ gói → dòng buổi hôm nay cũng bỏ.
+- AC-F2: dòng có KTV gập khi thêm món khác; "Sửa dòng X" mở lại và gập món kia; dòng thiếu KTV không gập.
+- AC-F3: khách vãng lai không tên: thẻ không có "null" / "Chưa có SĐT"; bán gói → thông báo cần tên, không gửi; "Thêm thông tin khách" → `PUT /customers/{id}` → tên mới trên thẻ, gói trong giỏ lưu được.
+- AC-F4: lượt có ghi chú → `GET /visits` có `note` cho quản lý / chủ spa, không có cho người thiếu `customer.health_notes.read`; lịch sử khách cùng quy tắc. Test: `visits.rs::session_note_is_encrypted_and_shown_only_to_health_readers`.
+- AC-F5: menu ⋯ không còn "Chuyển sang gói liệu trình"; chuyển đổi qua "Thêm dịch vụ / bán gói" → `convert-to-package` như AC11.1.
+
+**Ngoài phạm vi / còn mở:** giỏ chỉ bán gói vẫn tối đa 1 gói (một `POST /sales`); bán 2 gói không có lượt = lưu từng gói. Ghi chú cho hóa đơn gói không lượt (không có trường). Gộp hồ sơ khách vãng lai trùng người (ADR-0011, vòng sau).

@@ -144,7 +144,8 @@ export function restoreCart(raw: unknown): CartDraft | null {
     isStr(l["serviceName"]) &&
     isStr(l["staffId"]) &&
     ((l["source"] === "package" && isStr(l["itemId"])) ||
-      (l["source"] === "one_off" && typeof l["price"] === "number"));
+      (l["source"] === "one_off" && typeof l["price"] === "number") ||
+      (l["source"] === "new_package" && isStr(l["saleRef"])));
   const okSale = (s: unknown) =>
     isObj(s) &&
     isStr(s["ref"]) &&

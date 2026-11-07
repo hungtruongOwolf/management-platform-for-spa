@@ -965,7 +965,8 @@ function WhoFields({
                 gender={p.customer.gender}
               />
             </strong>
-            <span className="field-hint tabular-nums">{p.customer.phone}</span>
+            {/* A profile without a phone (decision E) shows no empty hint. */}
+            {p.customer.phone && <span className="field-hint tabular-nums">{p.customer.phone}</span>}
             <button
               type="button"
               className="btn btn-ghost"

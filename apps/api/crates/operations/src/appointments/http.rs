@@ -182,7 +182,7 @@ pub async fn read_appointment(
         (status = 403, description = "auth.forbidden / day.locked"), (status = 404),
         (status = 409, description = "appointment.closed, appointment.staff_busy, appointment.customer_busy (checked when the booking moves or gets its customer record)"),
         (status = 412),
-        (status = 422, description = "validation_failed, appointment.outside_opening_hours, appointment.in_the_past (moved to a past day)")))]
+        (status = 422, description = "validation_failed (customer_id duplicate: that profile is already in the group), appointment.outside_opening_hours, appointment.in_the_past (moved to a past day)")))]
 pub async fn update_appointment(
     State(pool): State<PgPool>,
     user: AuthUser,

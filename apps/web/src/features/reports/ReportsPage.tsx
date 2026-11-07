@@ -1,5 +1,6 @@
-import { useQuery, useSuspenseQuery, type UseQueryResult } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
+import { canSeeManagement } from "../../app/features";
 import { Icon } from "../../app/Icon";
 import { readPreviousLine, savePreviousLine } from "../../app/prefs";
 import { DateField } from "../../components/DateField";
@@ -7,7 +8,7 @@ import { ResponsiveTable } from "../../components/ResponsiveTable";
 import { dayLabel } from "../../lib/format";
 import { serviceLabel } from "../../lib/names";
 import { useSearchState } from "../../lib/searchState";
-import { can, meQuery } from "../auth/session";
+import { authQuery, can, meQuery, type Me } from "../auth/session";
 import { spaToday } from "../corrections/api";
 import { compactVnd, rangeReportQuery, shortDay } from "./api";
 import { SplitBar } from "./charts";
@@ -49,16 +50,33 @@ export function ReportsPage() {
   );
 }
 
-function ReportsPageBody() {
-  const { data: me } = useSuspenseQuery(meQuery);
-  const [search, patch] = useSearchState(reportsSearch);
-  const today = spaToday();
+/** What the URL opens for this role: the period, the presets offered, the tab. */
+function reportView(me: Me | null, search: ReturnType<typeof reportsSearch.parse>, today: string) {
   const canLong = can(me, "report.long_range");
   const preset = LONG_RANGE_PRESETS.includes(search.period) && !canLong ? "12m" : search.period;
   const period = resolvePeriod(preset, today, { from: search.from, to: search.to });
   const presets = canLong ? PRESETS : PRESETS.filter((p) => !LONG_RANGE_PRESETS.includes(p));
   const canLedger = can(me, "report.revenue.read");
-  const tab = search.tab === "ledger" && canLedger ? "ledger" : "overview";
+  const tab: "ledger" | "overview" = search.tab === "ledger" && canLedger ? "ledger" : "overview";
+  return { period, presets, canLedger, tab };
+}
+
+/** Route loader: the overview's two ranges (this period and the one before) start with the chunk. */
+export function prefetchReports(queryClient: QueryClient, rawSearch: Record<string, unknown>): void {
+  const auth = queryClient.getQueryData(authQuery.queryKey);
+  const me = auth?.state === "signed_in" ? auth.me : null;
+  if (!canSeeManagement(me)) return;
+  const { period, tab } = reportView(me, reportsSearch.parse(rawSearch), spaToday());
+  if (tab !== "overview") return;
+  void queryClient.query(rangeReportQuery(period.from, period.to, period.bucket)).catch(() => undefined);
+  void queryClient.query(rangeReportQuery(period.previous.from, period.previous.to, period.bucket)).catch(() => undefined);
+}
+
+function ReportsPageBody() {
+  const { data: me } = useSuspenseQuery(meQuery);
+  const [search, patch] = useSearchState(reportsSearch);
+  const today = spaToday();
+  const { period, presets, canLedger, tab } = reportView(me, search, today);
 
   return (
     <section className="grid content-start gap-5">
