@@ -637,10 +637,6 @@ impl Shop {
         )
         .await
     }
-
-    async fn count(&self, sql: &str) -> Setup<i64> {
-        Ok(sqlx::query_scalar(sql).fetch_one(&self.h.owner).await?)
-    }
 }
 
 /// EM 2026-11-07 item 4 ("chị Lan"): two packages, no service — one for the payer, one bought
@@ -757,11 +753,8 @@ async fn a_cart_of_packages_is_one_save_and_one_payment(pool: PgPool) -> TestRes
     let replay = s.checkout(&s.manager, &key, body).await;
     assert_eq!(replay.status, StatusCode::CREATED);
     assert_eq!(replay.body, done.body);
-    assert_eq!(s.count("SELECT count(*) FROM app.sale").await?, 2);
-    assert_eq!(
-        s.count("SELECT count(*) FROM app.customer_package").await?,
-        2
-    );
+    assert_eq!(s.count("sale").await?, 2);
+    assert_eq!(s.count("customer_package").await?, 2);
     Ok(())
 }
 
@@ -836,12 +829,8 @@ async fn a_refused_package_saves_nothing_of_the_cart(pool: PgPool) -> TestResult
             .await;
         assert_eq!(r.body["errors"][0]["field"], "package_sales", "{n}");
     }
-    for table in ["app.sale", "app.customer_package", "app.payment"] {
-        assert_eq!(
-            s.count(&format!("SELECT count(*) FROM {table}")).await?,
-            0,
-            "{table}"
-        );
+    for table in ["sale", "customer_package", "payment"] {
+        assert_eq!(s.count(table).await?, 0, "{table}");
     }
     Ok(())
 }
