@@ -1050,6 +1050,14 @@ pub async fn update(
         crm::service::brief_in(&mut tx, c)
             .await?
             .ok_or(AppError::NotFound)?;
+        // A companion linked to a profile another member already has (a family sharing one
+        // phone) would put one person in the group twice: the same rule as `group_with`.
+        if let Some(g) = current.group_id
+            && current.customer_id.is_none()
+            && repo::group_customers(&mut tx, g).await?.contains(&c)
+        {
+            return Err(invalid("customer_id", "duplicate"));
+        }
     }
     let services = match &input.service_ids {
         Some(ids) => Some(resolve_services(&mut tx, ids).await?),

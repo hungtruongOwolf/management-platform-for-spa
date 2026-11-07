@@ -1,8 +1,8 @@
 ---
 title: "Spec R1-3: Lịch hẹn, giờ làm thực tế, nhập bù của chủ spa, giảm giá lượt (vòng 4 + vòng 5)"
-status: draft (lead quyết mặc định; câu hỏi EM ở §9 và §10.8; §10.11 theo quyết định EM 2026-11-07)
+status: draft (lead quyết mặc định; câu hỏi EM ở §9 và §10.8; §10.11 theo quyết định EM 2026-11-07; §10.12 nhóm đơn giản hóa 2026-11-07)
 updated: 2026-11-07
-sources: [raw/2026-11-05-em-review-round4.md, raw/2026-11-05-em-simplify-owner-and-opening-balance.md, raw/2026-11-06-em-review-round5.md, raw/2026-11-07-em-appointments-live-test.md]
+sources: [raw/2026-11-05-em-review-round4.md, raw/2026-11-05-em-simplify-owner-and-opening-balance.md, raw/2026-11-06-em-review-round5.md, raw/2026-11-07-em-appointments-live-test.md, raw/2026-11-07-em-flow-review-hr-latency.md]
 related: [front-desk-and-packages.md, ../../design/front-desk-flows.md, ../../architecture/backend.md, ../../security/authz-matrix.md]
 ---
 
@@ -123,8 +123,8 @@ EM: lịch không chỉ để đặt; nó phải phản ánh cả lượt khách
 - 1 người → `POST /appointments` như cũ. ≥ 2 người → **`POST /appointments/group`** `{starts_at, note?, people[2–6]{customer_id | guest, service_ids, staff_id?, starts_at?, duration_min?}}` → `201 {group_id, appointments[]}`: **một transaction**, cùng khóa ngày, một `Idempotency-Key` (replay trả đúng response đầu). Một người sai → **không ai được lưu**; lỗi field trỏ đúng người (`people[1].service_ids`), `409 appointment.staff_busy` + `existing_id`, `409 customer.phone_taken` + `existing_id` (web tìm khách mới có SĐT đó và đổi sang hồ sơ có sẵn). `starts_at` riêng của một người phải cùng ngày (`people[i].starts_at not_same_day`).
 - Mỗi lịch trong nhóm mang `group_id` (cột mới, migration 0019). Đổi lịch / hủy từng người như lịch lẻ (nhóm không khóa nhau).
 - Trên lịch: thẻ cùng nhóm có nhãn **"Nhóm · n người"**; panel liệt kê cả nhóm (bấm tên để mở người khác).
-- **Khách đến cả nhóm:** panel của một lịch trong nhóm (hôm nay, còn mở ≥ 2 người) có **"Khách đến cả nhóm · ghi n lượt"** → bảng: mỗi người một dòng (giỏ điền sẵn như 10.1, KTV, tiền mặt / chuyển khoản, số phải thu) → một nút "Ghi n lượt". Mỗi người vẫn là **một lượt + một thanh toán riêng** (`/complete` của từng lịch, mỗi người một `Idempotency-Key` giữ qua các lần bấm lại).
-- **Lead's decision — EM to review:** ghi lượt cả nhóm **không gộp transaction**: người nào lỗi (hết buổi, ...) hiện lỗi ở dòng đó, người khác vẫn được ghi; bấm lại chỉ gửi người chưa ghi, không ghi trùng. Lý do: lúc cao điểm một người lỗi không được chặn cả gia đình. Khách mới chưa có hồ sơ, hoặc dịch vụ cần chọn giá theo giới tính → bảng bỏ qua người đó và nhắc ghi riêng (Q12).
+- ~~**Khách đến cả nhóm:**~~ **Bỏ 2026-11-07 (§10.12):** mỗi người đến / ghi lượt từ sheet của chính họ. Bản cũ: panel của một lịch trong nhóm (hôm nay, còn mở ≥ 2 người) có **"Khách đến cả nhóm · ghi n lượt"** → bảng: mỗi người một dòng (giỏ điền sẵn như 10.1, KTV, tiền mặt / chuyển khoản, số phải thu) → một nút "Ghi n lượt". Mỗi người vẫn là **một lượt + một thanh toán riêng** (`/complete` của từng lịch, mỗi người một `Idempotency-Key` giữ qua các lần bấm lại).
+- *(Không còn áp dụng từ §10.12.)* **Lead's decision — EM to review:** ghi lượt cả nhóm **không gộp transaction**: người nào lỗi (hết buổi, ...) hiện lỗi ở dòng đó, người khác vẫn được ghi; bấm lại chỉ gửi người chưa ghi, không ghi trùng. Lý do: lúc cao điểm một người lỗi không được chặn cả gia đình. Khách mới chưa có hồ sơ, hoặc dịch vụ cần chọn giá theo giới tính → bảng bỏ qua người đó và nhắc ghi riêng (Q12).
 
 ### 10.4 Không hard-code sức chứa (mục 6)
 - Con số "5" ở vòng 4 là **số KTV** (nhân viên đang làm có chức vụ KTV, `CalendarDto.capacity`), hiện ở **mọi ô 15 phút** ("còn 5") và trong danh sách giờ bắt đầu ("09:00 (còn 5)"), và server chặn `409 appointment.slot_full` theo nó. Bỏ cả ba.
@@ -147,7 +147,7 @@ EM: lịch không chỉ để đặt; nó phải phản ánh cả lượt khách
 - **AC10.7 (neg)** Một người trùng KTV với lịch có sẵn → `409 staff_busy` + `existing_id`, không lịch nào được lưu; 2 người cùng KTV cùng giờ → `409`; 1 hoặc 7 người → `422 people`; khách có hồ sơ 2 lần → `422 people[1].customer_id`; SĐT sai ở người 2 → `422 people[1].guest.phone`; người 2 không có dịch vụ → `422 people[1].service_ids`; sau tất cả vẫn đúng 3 lịch; KTV / người ngoài / spa khác → `403` / `401` / `404` (authz matrix).
 - **AC10.8** Web (vitest): chọn dịch vụ là thêm; thời lượng 60 → 30 → 120 khi thêm dịch vụ 30 rồi 90 phút; chỉnh tay 45 rồi bỏ một dịch vụ → giữ 45 + "Đã chỉnh tay"; "Dùng lại theo dịch vụ" → 90.
 - **AC10.9** Web (Playwright, form thật, `regression (round 5 item 7)`): bấm "Đặt lịch" khi trống → "Còn thiếu: khách, dịch vụ."; tìm khách → chọn dịch vụ (không bấm gì thêm) → thời lượng theo dịch vụ; 20:45 + 60 phút → câu "Lịch hẹn phải nằm trọn trong giờ mở cửa…"; 15:00 → panel lịch hẹn mở, "Chưa đến".
-- **AC10.10** Web (Playwright): nhóm 2 người đặt bằng "+ Thêm người" → panel "Cùng nhóm (2 người)", thẻ "Nhóm · 2 người"; nhóm hôm nay → "Khách đến cả nhóm · ghi 2 lượt" → 2 dòng "Đã ghi lượt"; lượt ghi thẳng hiện "Vãng lai" trong danh sách; người của nhóm hiện "Đang làm"/"Xong".
+- **AC10.10** *(thay bằng AC12.1–12.4)* Web (Playwright): nhóm 2 người đặt bằng "+ Thêm người" → panel "Cùng nhóm (2 người)", thẻ "Nhóm · 2 người"; nhóm hôm nay → "Khách đến cả nhóm · ghi 2 lượt" → 2 dòng "Đã ghi lượt"; lượt ghi thẳng hiện "Vãng lai" trong danh sách; người của nhóm hiện "Đang làm"/"Xong".
 - **AC10.11** Web (Playwright): lưới ngày không còn số "còn N" / "Kín" ở mỗi ô; chủ spa đặt tối đa 3 → nút "Số khách tối đa: 3", mỗi giờ "n/3"; để trống → về không giới hạn. Quản lý không thấy nút (UI theo `appointment.settings`; server 403 là ranh giới thật).
 
 ### 10.7 UX
@@ -161,7 +161,7 @@ EM: lịch không chỉ để đặt; nó phải phản ánh cả lượt khách
 | Q9 | "Đang làm" suy ra từ giờ làm + thời lượng (không có nút "Xong"). Đủ chưa? | Đủ; thêm `visit.finished_at` nếu cần |
 | Q10 | Sức chứa chỉ cảnh báo, không chặn. Có muốn chặn cứng khi chủ spa đã đặt số tối đa? | Chỉ cảnh báo |
 | Q11 | Trẻ em / người nhà dùng chung SĐT với người đã có hồ sơ: vẫn báo "SĐT đã có hồ sơ" như lịch lẻ. Có cần cho khách nhóm không có SĐT? | Giữ quy tắc cũ |
-| Q12 | Ghi lượt cả nhóm: từng người riêng (một người lỗi không chặn người khác). Hay "tất cả hoặc không"? | Từng người riêng |
+| Q12 | *(Hết hiệu lực §10.12: không còn ghi lượt cả nhóm.)* Ghi lượt cả nhóm: từng người riêng (một người lỗi không chặn người khác). Hay "tất cả hoặc không"? | Từng người riêng |
 
 ### 10.9 Vòng 6: lưới ngày = lớp sự kiện, dịch vụ kèm không cộng giờ, xem theo KTV (EM 2026-11-06)
 EM: "khi 1 lịch được tạo thì UI lại bị lỗi… nó nên là 1 component trên cái calendar chứ sao lại phá đi mấy cái link"; "có option xem theo từng người không… nút đặt lịch đưa lên trên đầu"; "các component không thẳng hàng, sai width".
@@ -189,3 +189,38 @@ EM: "khi 1 lịch được tạo thì UI lại bị lỗi… nó nên là 1 comp
 - AC11.3 (neg) Quản lý và chủ spa đặt hôm qua → `422 appointment.in_the_past`; dời lịch sang ngày đã qua → `422`; lịch đã ở hôm qua: quản lý hủy / hoàn tất → `403 day.locked`, chủ spa hoàn tất → lượt mang ngày hôm qua. *(Rust `past_days_are_locked_for_managers_and_open_to_the_owner`)* Web: ngày đã qua → lỗi ở chân sheet, không gửi; 09:00 khi đã 10:00 → hỏi một lần rồi "Vẫn đặt lịch" mới gửi. *(vitest)*
 - AC11.4 Bấm "Đặt lịch" khi thiếu dịch vụ → "Còn thiếu: dịch vụ." ở chân sheet + ô "Thêm dịch vụ" có focus; lỗi khách trùng nằm trong khung nhìn. *(vitest, Playwright `toBeInViewport`)*
 - AC11.5 Lịch hôm nay chưa gán KTV → "KTV làm" trống; "Chỉ báo đã đến" khi trống → câu nhắc, vẫn "Chưa đến"; "Hủy lịch" cao ≥ 43px, bằng "Đổi lịch" ±1px, có viền, ở 1280 và 390px; axe sạch; hủy có lý do → "Đã hủy". *(Playwright)*
+
+### 10.12 Đặt nhóm = chỉ ghi "đi cùng nhau"; mỗi người phục vụ như một lịch lẻ (EM 2026-11-07, [raw](../../../raw/2026-11-07-em-flow-review-hr-latency.md))
+EM: *"sao không đặt lịch là 2 người rồi dừng ở đó ai muốn chọn KTV thì update, hoặc ghi lại người ta đến làm thì bấm từng cái một chỉ cần lưu thông tin 2 người đó đi cùng nhau là được"*; ảnh 61 ("Khách đến cả nhóm" chọn 2 người mà không cho chọn là ai, lệch UI), ảnh 62 (sheet lịch hẹn chật, không rõ thứ bậc). Mô hình: [ADR-0009 § Cập nhật 2026-11-07 (b)](../../decisions/ADR-0009-served-companions.md).
+
+- **Đặt lịch** (không đổi API): một nhóm = N lịch hẹn bình thường cùng `group_id`. Mỗi người có dịch vụ riêng, **KTV không bắt buộc**, giờ bắt đầu riêng. Nhóm chỉ để biết họ đi cùng nhau (nhãn "Nhóm · n người", danh sách "Cùng nhóm").
+- **Khách đến:** từng người, từ thẻ / sheet của chính họ, **y như lịch lẻ**: "Chỉ báo đã đến" và "Khách đến · ghi lượt" là của một người. **Bỏ sheet "Khách đến cả nhóm"** (bắt buộc, không chọn được ai đến) và không thay bằng lối tắt nào: bấm từng người đã đủ nhanh (một chạm mở sheet, một chạm ghi lượt), còn lối tắt nhóm phải lặp lại giỏ, thanh toán, bán gói của từng người.
+- **KTV = cập nhật thường** trên lịch của người đó: ô "KTV làm" trong sheet **lưu ngay khi chọn** (`PATCH /appointments/{id}` `{staff_id}`), sửa được bất cứ lúc nào trước khi ghi lượt (kể cả ngày sau, kể cả khi đã đến; đã đến thì không bỏ trống được — server `422 staff_id required`). Không còn phải vào "Đổi lịch". Lưu được → "Đã lưu KTV."; trùng → chọn lại KTV cũ + câu "KTV … đã có lịch 17:15–18:00 (…). Chọn KTV khác."
+- **Người đi cùng chưa có hồ sơ:** không còn banner + form hồ sơ. Một dòng nhẹ "Chưa có hồ sơ khách. Ghi lượt cần hồ sơ…" + hai nút: **"Tạo hồ sơ"** (một chạm: hồ sơ từ tên đã đặt, SĐT nếu có — ADR-0011 SĐT không bắt buộc) và **"Ghi là khách vãng lai"** (một chạm: hồ sơ không tên). KTV đã gán giữ nguyên. Bấm nút chính khi chưa chọn → focus "Tạo hồ sơ" + "Chọn “Tạo hồ sơ” hoặc “Ghi là khách vãng lai” rồi bấm lại." Thông tin thêm (giới tính, ngày sinh…) bổ sung sau ở "Mở hồ sơ".
+  - SĐT của khách mới đã thuộc **một người khác trong nhóm** (gia đình dùng chung số, Q11) → hồ sơ người đi cùng tạo **không SĐT**, không hỏi. Thuộc hồ sơ **ngoài nhóm** → hỏi: "SĐT … đã có hồ sơ X." · "Dùng hồ sơ này" / "Tạo hồ sơ không SĐT".
+  - **Server (mới):** gắn hồ sơ (`PATCH customer_id`) mà hồ sơ đó đã là một người khác trong nhóm → `422 customer_id duplicate` (cùng quy tắc với `group_with`). Trước đây chỉ bị chặn khi trùng giờ (`customer_busy`); khác giờ thì một người nằm hai lần trong nhóm.
+- **Sheet lịch hẹn (thứ tự mới):** tiêu đề (giờ · tên, ngày · trạng thái) → các dòng thông tin (Khách + "Mở hồ sơ", SĐT hoặc "Chưa có SĐT", Dịch vụ, Thanh toán, Đi cùng, Ghi chú, Lý do; dòng "KTV" chỉ khi lịch đã đóng / ngày đã chốt) → dòng hồ sơ (nếu chưa có) → **"Cùng nhóm · n người"**: mỗi người một hàng gọn (tên · chip trạng thái / giờ · dịch vụ · KTV), cả hàng là nút mở sheet của người đó, hàng đang xem có nền nhạt "· đang xem" → **"KTV làm"** + "Chỉ báo đã đến" (hôm nay, chưa đến) + một dòng trạng thái (trống: "Chưa gán KTV: chọn khi biết ai làm, đổi được tới lúc ghi lượt.") → "Không đến" / "Hủy lịch". Chân sheet: "Đổi lịch" + nút chính "Khách đến · ghi lượt" ("Ghi lượt" khi đã đến; không hiện cho ngày sau). Bỏ các câu trùng (dòng KTV + gợi ý + banner nói cùng một việc).
+- **Giữ nguyên quy tắc server:** trùng KTV (`staff_busy`, kể cả khi đổi KTV bằng PATCH và khi đến), `customer_busy` (người trong cùng nhóm không bao giờ trùng nhau), thời lượng đúng số phút, không đặt ngày đã qua, ghi lượt tạo lượt riêng cho từng người. Không migration. `POST /appointments/group`, `/arrive`, `/complete`, `PATCH` giữ nguyên; không có API nào chỉ dành cho sheet nhóm (sheet cũ gọi `/complete` từng người) nên không xóa API nào. Web xóa `GroupCheckIn.tsx`, `front-desk/GroupPackagePick.tsx` (chỉ sheet nhóm dùng): bán gói cho từng người vẫn có trong giỏ ghi lượt.
+
+**AC (2026-11-07):**
+- AC12.1 Nhóm hôm nay Mẹ + Con + "Bạn của chị Mẹ" (không hồ sơ): sheet của Mẹ có "Cùng nhóm · 3 người", không có "cả nhóm"; chọn KTV → "Đã lưu KTV." → "Khách đến · ghi lượt" → giỏ có KTV đó → lưu; Con rồi người bạn làm tương tự; người bạn: "Ghi là khách vãng lai" → "Mở hồ sơ" hiện → ghi lượt. *(Playwright "a family is booked in one go…"; axe `lich-nhom-tung-nguoi`, `lich-nguoi-di-cung-chua-ho-so`)*
+- AC12.2 KTV: PATCH `staff_id` trên một người trong nhóm → 200; người kia chọn cùng KTV cùng giờ → `409 staff_busy` (`existing_id` = người đầu); đã đến → `staff_id: null` → `422`; hai người cùng giờ không KTV không bao giờ `customer_busy`. *(Rust `group_members_are_served_one_by_one`; vitest "saves the technician…", "puts a refused technician back…")*
+- AC12.3 (neg) Gắn người đi cùng vào hồ sơ của chính khách chính → `422 customer_id duplicate`; gắn hồ sơ vãng lai mới → 200, `is_guest: false`, KTV giữ; ghi lượt từng người → hai lượt, mỗi lượt đúng `customer_id`. *(Rust `group_members_are_served_one_by_one`)*
+- AC12.4 Web: người đi cùng chưa hồ sơ → "Tạo hồ sơ" gửi `{full_name: tên đã đặt, phone: null}` rồi `PATCH customer_id`; SĐT trùng người trong nhóm → tạo lại không SĐT; nút chính khi chưa có hồ sơ không gửi gì, focus "Tạo hồ sơ". *(vitest `AppointmentSheet.test.tsx`; Playwright "a companion gets their own service…")*
+
+**Rà soát luồng lịch hẹn (2026-11-07):**
+| Luồng | Phức tạp thừa / thiếu case | Xử lý |
+|---|---|---|
+| Đến cả nhóm | Sheet bắt buộc cho cả nhóm, không chọn ai đến, người chưa hồ sơ bị bỏ qua | Bỏ; từng người từ sheet riêng |
+| Gán / đổi KTV | Phải vào "Đổi lịch" (form đầy đủ); ô "KTV làm" chỉ có khi hôm nay + chưa đến | Ô "KTV làm" lưu ngay, mọi lịch đang mở |
+| Người đi cùng chưa hồ sơ | Banner vàng + form hồ sơ đầy đủ ở hai nơi | Một dòng, hai nút một chạm |
+| Gắn hồ sơ | Hồ sơ của người khác trong nhóm (cùng SĐT) → một người hai lần trong nhóm | Server `422 duplicate`; web tạo không SĐT |
+| Sheet | Dòng KTV + gợi ý + banner nói trùng; tên thành viên chỉ là nút chữ | Một dòng trạng thái; hàng thành viên là nút cả hàng |
+| Báo đã đến | Bấm ngay sau khi đổi KTV có thể bị bỏ qua (một mutation chung) | KTV là mutation riêng; đến chạy song song được |
+| Ngày sau | Nút chính "Khách đến · ghi lượt" hiện nhưng không làm được | Ẩn cho ngày sau |
+| Chưa làm (để EM quyết) | Hoàn tác "đã đến" bấm nhầm; khách chính mới không SĐT (DB `appointment_guest_phone_or_group`); dời cả nhóm một lần; một người trả cho cả nhóm | Câu hỏi Q13–Q15 dưới |
+
+**Câu hỏi cho EM:**
+- Q13 — Bấm nhầm "Chỉ báo đã đến": hiện chỉ "Hủy lịch" rồi đặt lại. Có cần nút "Hoàn tác đã đến" (về Chưa đến) không? Mặc định: chưa làm.
+- Q14 — Khách **đặt lịch** (người đầu, khách mới) vẫn bắt buộc SĐT (để gọi nhắc); quyết định E chỉ áp cho hồ sơ. Có bỏ luôn ở đặt lịch không? Mặc định: giữ (cần migration bỏ CHECK `appointment_guest_phone_or_group`).
+- Q15 — Dời giờ khách chính có dời cả nhóm không? Mặc định: không (mỗi người dời riêng, như "đặt nhóm chỉ ghi đi cùng").
