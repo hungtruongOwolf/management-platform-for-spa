@@ -218,8 +218,10 @@ impl VisitAdditions {
 pub struct VisitConversion {
     /// The package (its `ref` is ignored); it must belong to the visit's customer.
     pub package_sale: VisitPackageSaleCreate,
-    /// Summing exactly to the package plus the one-off lines kept (the old one-off payments are
-    /// reversed). The desk shows "Khách đưa thêm" = this − what was paid for the visit.
+    /// Only the top-up ("Khách đưa thêm"), in the method(s) the customer uses now: summing exactly
+    /// to the package plus the one-off lines kept, minus what was already paid for the visit
+    /// (empty when that covers it). The money already paid is recorded again by the server in its
+    /// own method, so the day's cash / transfer split does not move.
     #[serde(default)]
     pub payments: Vec<PaymentCreate>,
 }

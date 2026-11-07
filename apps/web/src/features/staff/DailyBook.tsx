@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { BottomSheet } from "../../components/BottomSheet";
 import { DateField } from "../../components/DateField";
 import { messageFor } from "../../lib/errors";
 import { Icon } from "../../app/Icon";
@@ -19,10 +20,10 @@ import {
   type DailyReviewEntryWrite,
   type StaffSheet,
 } from "./api";
-import { AdjustmentForm } from "./AdjustmentsTab";
+import { AdjustmentActions, AdjustmentForm } from "./AdjustmentsTab";
 import { AttendanceChoice } from "./AttendanceChoice";
 import { Counter } from "./Counter";
-import { monthLabel, type AttendanceStatus } from "./labels";
+import { STATUS_WORD, monthLabel, type AttendanceStatus } from "./labels";
 import { PersonDaySheet } from "./PersonDaySheet";
 import { cellOf, employedOn, evaluationDueMonth, incompleteDays, missingOn } from "./progress";
 import { ClosedBanner, dayLabel, lastDayOrToday, vnd } from "./ui";
@@ -62,7 +63,9 @@ export function DailyBook({
   const dueMonth = canReview ? evaluationDueMonth(today) : null;
   const due = useQuery({ ...evaluationsQuery(dueMonth ?? month), enabled: dueMonth !== null });
   const [details, setDetails] = useState<StaffSheet | null>(null);
-  const [adjusting, setAdjusting] = useState<StaffSheet | null>(null);
+  const [adjusting, setAdjusting] = useState<{ staff: StaffSheet; entry?: Adjustment } | null>(null);
+  // A leave code for someone who served customers that day: confirm first (likely a mistake).
+  const [confirmLeave, setConfirmLeave] = useState<{ staff: StaffSheet; status: AttendanceStatus } | null>(null);
   // A failed save shows on the person's card; one covering several people ("Cả spa đi làm") on the
   // page. The card rolls back by itself: it renders the server's data, which did not change.
   const [failed, setFailed] = useState<{ staffId: string | null; message: string } | null>(null);
@@ -88,6 +91,8 @@ export function DailyBook({
       shift_start: "",
       days: [],
       totals: { present: 0, late_count: 0, late_minutes: 0, leave_p: 0, leave_dx: 0, absent_k: 0, unrecorded: 0 },
+      can_record: s.can_record,
+      visit_days: [],
     }));
   const closed = attendance.data?.closed ?? reviews.data?.closed ?? false;
   const date = day.startsWith(month) ? day : month === today.slice(0, 7) ? today : lastDayOrToday(month, today);
@@ -106,6 +111,8 @@ export function DailyBook({
     setFailed(null);
     mark.mutate(entries);
   };
+  // Only the rows the caller may write (decision C: a manager never for themselves or another manager).
+  const everyonePresent = missing.filter((s) => s.can_record);
   /** What is being saved for a person right now: shown at once, replaced by the server's answer. */
   const savingStatus = (id: string): AttendanceStatus | null =>
     (mark.isPending ? mark.variables.find((e) => e.staff_id === id)?.status : null) ?? null;
@@ -208,13 +215,13 @@ export function DailyBook({
               {s.full_name}
             </button>
           ))}
-          {!readOnly && (
+          {!readOnly && everyonePresent.length > 0 && (
             <button
               type="button"
               className="btn btn-secondary"
               disabled={mark.isPending}
               onClick={() => {
-                record(missing.map((s) => ({ staff_id: s.staff_id, date, status: "present" })));
+                record(everyonePresent.map((s) => ({ staff_id: s.staff_id, date, status: "present" })));
               }}
             >
               Cả spa đi làm
@@ -251,14 +258,18 @@ export function DailyBook({
               savingReview={savingReview(s.staff_id)}
               error={failed?.staffId === s.staff_id ? failed.message : ""}
               onStatus={(status) => {
+                if (status !== "present" && s.visit_days.includes(date)) {
+                  setConfirmLeave({ staff: s, status });
+                  return;
+                }
                 record([{ staff_id: s.staff_id, date, status }]);
               }}
               onReview={(compliments, complaints) => {
                 setFailed(null);
                 review.mutate([{ staff_id: s.staff_id, date, compliments, complaints, note: reviewOf(s.staff_id)?.note ?? null }]);
               }}
-              onAdjust={() => {
-                setAdjusting(s);
+              onAdjust={(entry) => {
+                setAdjusting(entry ? { staff: s, entry } : { staff: s });
               }}
               onDetails={() => {
                 setDetails(s);
@@ -285,11 +296,50 @@ export function DailyBook({
           today={today}
           closedMonth={null}
           staff={staff.data ?? []}
-          fixed={{ staffId: adjusting.staff_id, name: adjusting.full_name, date }}
+          fixed={{ staffId: adjusting.staff.staff_id, name: adjusting.staff.full_name, date: adjusting.entry?.occurred_on ?? date }}
+          {...(adjusting.entry ? { editing: adjusting.entry } : {})}
           onClose={() => {
             setAdjusting(null);
           }}
         />
+      )}
+      {confirmLeave && (
+        <BottomSheet
+          open
+          onClose={() => {
+            setConfirmLeave(null);
+          }}
+          title={`${confirmLeave.staff.full_name} có lượt khách ngày này`}
+          description={dayLabel(date)}
+          footer={
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setConfirmLeave(null);
+                }}
+              >
+                Thôi
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  record([{ staff_id: confirmLeave.staff.staff_id, date, status: confirmLeave.status }]);
+                  setConfirmLeave(null);
+                }}
+              >
+                Vẫn chấm {STATUS_WORD[confirmLeave.status]}
+              </button>
+            </>
+          }
+        >
+          <p className="text-sm">
+            Quầy đã ghi lượt khách do {confirmLeave.staff.full_name} làm trong ngày này. Chấm “{STATUS_WORD[confirmLeave.status]}” thì ngày
+            này tính là ngày nghỉ. Kiểm tra lại lượt khách hoặc chấm “Đi làm” nếu người này có đến làm.
+          </p>
+        </BottomSheet>
       )}
     </div>
   );
@@ -336,10 +386,14 @@ function PersonCard({
   error: string;
   onStatus: (status: AttendanceStatus) => void;
   onReview: (compliments: number, complaints: number) => void;
-  onAdjust: () => void;
+  /** Without an entry: record a new one; with one: edit it. */
+  onAdjust: (entry?: Adjustment) => void;
   onDetails: () => void;
 }) {
   const cell = cellOf(s, date);
+  // Decision C: a manager's own row and other managers' rows are the owner's to write.
+  const locked = !s.can_record;
+  const shut = readOnly || locked;
   // While a review save runs, show the counts being saved; the server's answer replaces them.
   const c = savingReview?.compliments ?? review?.compliments ?? 0;
   const k = savingReview?.complaints ?? review?.complaints ?? 0;
@@ -361,7 +415,7 @@ function PersonCard({
           </p>
         )}
       </div>
-      {!readOnly && (
+      {!shut && (
         <button type="button" className="btn btn-secondary book-row-details" onClick={onDetails}>
           <Icon name="clock" className="size-4" />
           Giờ & ghi chú
@@ -373,9 +427,15 @@ function PersonCard({
           value={cell?.status ?? null}
           pending={savingStatus}
           busy={busy}
-          disabled={readOnly}
+          disabled={shut}
           onChange={onStatus}
         />
+      )}
+      {locked && !readOnly && (canAttendance || canReview) && (
+        <p className="book-row-hint text-sm text-text-muted">
+          <Icon name="lock" className="size-4" />
+          Chỉ chủ spa chấm công, ghi khen/phàn nàn và thưởng/phạt cho quản lý.
+        </p>
       )}
       {error && (
         <p role="alert" className="book-row-error">
@@ -391,7 +451,7 @@ function PersonCard({
                 label="Khen"
                 name={s.full_name}
                 value={c}
-                disabled={readOnly}
+                disabled={shut}
                 busy={busy}
                 onChange={(v) => {
                   onReview(v, k);
@@ -401,14 +461,20 @@ function PersonCard({
                 label="Phàn nàn"
                 name={s.full_name}
                 value={k}
-                disabled={readOnly}
+                disabled={shut}
                 busy={busy}
                 onChange={(v) => {
                   onReview(c, v);
                 }}
               />
-              {!readOnly && (
-                <button type="button" className="btn btn-secondary book-record-add" onClick={onAdjust}>
+              {!shut && (
+                <button
+                  type="button"
+                  className="btn btn-secondary book-record-add"
+                  onClick={() => {
+                    onAdjust();
+                  }}
+                >
                   <Icon name="plus" className="size-4" />
                   Ghi thưởng / phạt
                 </button>
@@ -424,6 +490,15 @@ function PersonCard({
                     {[a.amount != null ? vnd(a.amount) : "", a.points != null ? `${String(a.points)} điểm` : ""].filter(Boolean).join(" · ")}
                   </span>
                   <span className="book-log-text">{a.reason}</span>
+                  {!readOnly && a.can_edit && (
+                    <AdjustmentActions
+                      entry={a}
+                      name={s.full_name}
+                      onEdit={() => {
+                        onAdjust(a);
+                      }}
+                    />
+                  )}
                 </li>
               ))}
               {cell?.note && (

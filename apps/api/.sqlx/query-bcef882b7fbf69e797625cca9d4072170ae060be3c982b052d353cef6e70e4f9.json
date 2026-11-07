@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT staff_id, work_date, voided_at IS NOT NULL AS \"voided!\"\n           FROM app.staff_adjustment WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "staff_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.staff_adjustment",
+            "name": "staff_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "work_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "app.staff_adjustment",
+            "name": "work_date"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "voided!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "bcef882b7fbf69e797625cca9d4072170ae060be3c982b052d353cef6e70e4f9"
+}

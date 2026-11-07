@@ -52,6 +52,7 @@ enum Target {
     Visit,
     Staff,
     Appointment,
+    Adjustment,
 }
 
 struct Route {
@@ -322,6 +323,20 @@ const ROUTES: &[Route] = &[
     )
     .body(adjustment_body)
     .idempotent(),
+    route(
+        "PUT",
+        "/api/v1/adjustments/{id}",
+        Access::Perm(P::EvaluationRecord, OWNER_MANAGER),
+    )
+    .id(Target::Adjustment)
+    .body(adjustment_body)
+    .idempotent(),
+    route(
+        "DELETE",
+        "/api/v1/adjustments/{id}",
+        Access::Perm(P::EvaluationRecord, OWNER_MANAGER),
+    )
+    .id(Target::Adjustment),
     route(
         "GET",
         "/api/v1/payroll",
@@ -677,9 +692,12 @@ fn evaluation_body(f: &Fixture) -> Option<Value> {
         "learning",
     ]
     .iter()
-    .map(|k| json!({"key": k, "level": "m1"}))
+    .map(|k| json!({"key": k, "points": 10}))
     .collect();
-    Some(json!({"staff_id": f.staff, "month": &yesterday()[..7], "criteria": criteria}))
+    Some(
+        json!({"staff_id": f.staff, "month": &yesterday()[..7], "criteria": criteria,
+                "coaching_plan": "Kèm cặp kỹ thuật"}),
+    )
 }
 fn adjustment_body(f: &Fixture) -> Option<Value> {
     Some(json!({"staff_id": f.staff, "kind": "bonus", "amount": 100_000, "reason": "Khách khen"}))
@@ -804,6 +822,7 @@ struct Fixture {
     customer_package: String,
     visit: String,
     appointment: String,
+    adjustment: String,
 }
 
 impl Fixture {
@@ -819,6 +838,7 @@ impl Fixture {
             Target::Visit => &self.visit,
             Target::Staff => &self.staff,
             Target::Appointment => &self.appointment,
+            Target::Adjustment => &self.adjustment,
         }
     }
 }
@@ -985,6 +1005,7 @@ async fn fixture(
         customer_package: String::new(),
         visit: String::new(),
         appointment: String::new(),
+        adjustment: String::new(),
     };
     f.service = created_id(
         app,
@@ -1052,6 +1073,24 @@ async fn fixture(
             format!(
                 "fixture POST /appointments → {} {}",
                 booked.status, booked.body
+            )
+        })?
+        .to_owned();
+    let adjusted = send(
+        app,
+        "POST",
+        "/adjustments",
+        Some(&owner),
+        adjustment_body(&f),
+        &[("Idempotency-Key", &uuid::Uuid::now_v7().to_string())],
+    )
+    .await;
+    f.adjustment = adjusted.body["id"]
+        .as_str()
+        .ok_or_else(|| {
+            format!(
+                "fixture POST /adjustments → {} {}",
+                adjusted.status, adjusted.body
             )
         })?
         .to_owned();

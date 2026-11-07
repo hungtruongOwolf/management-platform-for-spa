@@ -58,9 +58,10 @@ export function canCountToday(visit: Visit, plan: PackagePlan): boolean {
 }
 
 /**
- * Money of a conversion as the desk shows it, before sending: `due` is what the payments must add
- * up to (the package after its discount + the one-off lines kept), `handOver` what the customer
- * gives now ("Khách đưa thêm") once today's one-off payment is reversed.
+ * Money of a conversion as the desk shows it, before sending: `due` is what the conversion costs
+ * (the package after its discount + the one-off lines kept), `handOver` what the customer gives
+ * now ("Khách đưa thêm"): `due` minus what was paid today, which the server records again in its
+ * own method. The request's payments are `handOver` only (none when it is 0 or less).
  */
 export function conversionMoney(
   visit: Visit,

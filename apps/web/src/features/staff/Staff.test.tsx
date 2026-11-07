@@ -6,7 +6,7 @@ import { App } from "../../app/App";
 import { navFor, tabsFor } from "../../app/nav";
 import { spaToday } from "../corrections/api";
 import { ME } from "../reports/testServer";
-import type { AdjustmentLog, AttendanceSheet, EvaluationSheet, MyStaff, MyWork, Payslip, PayrollMonth, ReviewSheet } from "./api";
+import type { Adjustment, AdjustmentLog, AttendanceSheet, EvaluationSheet, MyStaff, MyWork, Payslip, PayrollMonth, ReviewSheet } from "./api";
 import { daysOf, monthLabel, percentOfBp, shiftMonth, weekdayShort } from "./labels";
 import { evaluationDueMonth, incompleteDays, missingOn } from "./progress";
 import { staffSearch } from "./search";
@@ -21,7 +21,7 @@ const month = today.slice(0, 7);
 
 const totals = { present: 0, late_count: 0, late_minutes: 0, leave_p: 0, leave_dx: 0, absent_k: 0, unrecorded: 0 };
 
-function sheet(): AttendanceSheet {
+function sheet(options: ServeOptions = {}): AttendanceSheet {
   return {
     month,
     days_in_month: daysOf(month).length,
@@ -38,8 +38,34 @@ function sheet(): AttendanceSheet {
         left_on: null,
         days: [{ staff_id: "s-lan", date: today, status: "present", check_in: "09:12", check_out: null, late_minutes: 12, note: null }],
         totals: { ...totals, present: 1, late_count: 1, late_minutes: 12 },
+        can_record: true,
+        visit_days: options.lanServedToday ? [today] : [],
       },
-      { staff_id: "s-mai", full_name: "Trần Thị Mai", position: "Kỹ thuật viên", shift_start: "09:00", joined_on: null, left_on: null, days: [], totals },
+      {
+        staff_id: "s-mai",
+        full_name: "Trần Thị Mai",
+        position: "Kỹ thuật viên",
+        shift_start: "09:00",
+        joined_on: null,
+        left_on: null,
+        days: [],
+        totals,
+        can_record: true,
+        visit_days: [],
+      },
+      // The signed-in manager's own row (decision C): the owner's to write.
+      {
+        staff_id: "s-hoa",
+        full_name: "Phạm Thị Hoa",
+        position: "Quản lý",
+        shift_start: "09:00",
+        joined_on: null,
+        left_on: null,
+        days: [],
+        totals,
+        can_record: false,
+        visit_days: [],
+      },
     ],
   };
 }
@@ -116,8 +142,10 @@ function reviews(): ReviewSheet {
         compliments: 2,
         complaints: 0,
         days: [{ staff_id: "s-lan", date: today, compliments: 2, complaints: 0, note: "Khách khen tay nghề" }],
+        can_record: true,
       },
-      { staff_id: "s-mai", full_name: "Trần Thị Mai", position: "Kỹ thuật viên", compliments: 0, complaints: 0, days: [] },
+      { staff_id: "s-mai", full_name: "Trần Thị Mai", position: "Kỹ thuật viên", compliments: 0, complaints: 0, days: [], can_record: true },
+      { staff_id: "s-hoa", full_name: "Phạm Thị Hoa", position: "Quản lý", compliments: 0, complaints: 0, days: [], can_record: false },
     ],
   };
 }
@@ -126,8 +154,14 @@ function evaluations(m: string): EvaluationSheet {
   return {
     month: m,
     closed: false,
-    criteria: [],
-    staff: [{ staff_id: "s-mai", full_name: "Trần Thị Mai", position: "Kỹ thuật viên", compliments: 0, complaints: 0, attendance: totals, evaluation: null }],
+    criteria: [
+      { key: "technique", label: "Kỹ thuật liệu trình", max: 40 },
+      { key: "attitude", label: "Thái độ và giao tiếp", max: 15 },
+    ],
+    staff: [
+      { staff_id: "s-mai", full_name: "Trần Thị Mai", position: "Kỹ thuật viên", compliments: 0, complaints: 0, attendance: totals, evaluation: null, can_record: true },
+      { staff_id: "s-hoa", full_name: "Phạm Thị Hoa", position: "Quản lý", compliments: 0, complaints: 0, attendance: totals, evaluation: null, can_record: false },
+    ],
   };
 }
 
@@ -165,7 +199,24 @@ function work(): MyWork {
 interface ServeOptions {
   closed?: boolean;
   attendancePut?: () => Promise<Response>;
+  adjustments?: Adjustment[];
+  /** Lan has a visit recorded today (the leave warning). */
+  lanServedToday?: boolean;
 }
+
+const PENALTY: Adjustment = {
+  id: "adj-1",
+  staff_id: "s-lan",
+  occurred_on: today,
+  kind: "penalty",
+  amount: 50_000,
+  points: null,
+  reason: "Đi muộn không báo",
+  corrects_month: null,
+  by_name: "Quản lý Hoa",
+  created_at: `${today}T03:00:00Z`,
+  can_edit: true,
+};
 
 function serve(permissions: string[], options: ServeOptions = {}) {
   return vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
@@ -176,13 +227,15 @@ function serve(permissions: string[], options: ServeOptions = {}) {
     const ok = (json: unknown, status = 200) => Promise.resolve(Response.json(json, { status }));
     if (p === "/me") return ok(ME(permissions));
     if (p === "/attendance" && method === "PUT") return options.attendancePut ? options.attendancePut() : ok([]);
-    if (p === "/attendance") return ok({ ...sheet(), closed: options.closed ?? false });
+    if (p === "/attendance") return ok({ ...sheet(options), closed: options.closed ?? false });
     if (p === "/payroll") return permissions.includes("payroll.read") ? ok(payroll()) : ok({ code: "auth.forbidden" }, 403);
     if (p === "/me/staff") return ok({ linked: true, data: { month, closed: false, attendance: lan(), reviews: [], evaluation: null, adjustments: [], payslip: slip() } } satisfies MyStaff);
     if (p === "/me/work") return ok(work());
     if (p === "/daily-reviews" && method === "PUT") return ok([]);
     if (p === "/daily-reviews") return ok(reviews());
-    if (p === "/adjustments" && method === "GET") return ok({ month, closed: false, items: [] } satisfies AdjustmentLog);
+    if (p === "/adjustments" && method === "GET") return ok({ month, closed: false, items: options.adjustments ?? [] } satisfies AdjustmentLog);
+    if (p.startsWith("/adjustments/") && method === "DELETE") return Promise.resolve(new Response(null, { status: 204 }));
+    if (p === "/evaluations" && method === "PUT") return ok({});
     if (p === "/evaluations") return ok(evaluations(url.searchParams.get("month") ?? month));
     if (p === "/staff") return ok([]);
     return ok([]);
@@ -240,7 +293,7 @@ describe("staff helpers", () => {
 
   it("lists who is missing and the past days still incomplete", () => {
     const s = sheet();
-    expect(missingOn(s.staff, today).map((p) => p.staff_id)).toEqual(["s-mai"]);
+    expect(missingOn(s.staff, today).map((p) => p.staff_id)).toEqual(["s-mai", "s-hoa"]);
     const people = s.staff.map((p) => ({ ...p, days: p.days.map((d) => ({ ...d, date: "2026-03-02" })) }));
     expect(incompleteDays("2026-03", people, "2026-03-04")).toEqual(["2026-03-01", "2026-03-02", "2026-03-03"]);
     const joined = people.map((p) => ({ ...p, joined_on: "2026-03-03" }));
@@ -272,7 +325,7 @@ describe("/nhan-vien", () => {
     expect(screen.queryByRole("tab", { name: "Hồ sơ" })).not.toBeInTheDocument();
 
     const progress = await screen.findByRole("status", { name: "Tiến độ chấm công" });
-    expect(progress).toHaveTextContent("Đã chấm công 1/2 người");
+    expect(progress).toHaveTextContent("Đã chấm công 1/3 người");
     expect(screen.getByRole("button", { name: "Tới Trần Thị Mai" })).toBeInTheDocument();
     expect(card("s-lan").getByText(/muộn 12 phút/)).toBeInTheDocument();
     expect(card("s-lan").getByText(/Khách khen tay nghề/)).toBeInTheDocument();
@@ -379,7 +432,109 @@ describe("/nhan-vien", () => {
     expect(within(grid).getByRole("rowheader", { name: "Lê Thị Lan" })).toBeInTheDocument();
     expect(within(grid).getAllByRole("columnheader")).toHaveLength(1 + daysOf(month).length + 5);
     expect(within(grid).getByRole("button", { name: /Lê Thị Lan, .*: Đi làm, muộn 12 phút/ })).toBeInTheDocument();
+    // Decision C: the manager's own row is read-only, with the reason.
+    expect(within(grid).getByRole("rowheader", { name: /Phạm Thị Hoa/ })).toHaveTextContent("Chủ spa chấm");
+    expect(within(grid).queryByRole("button", { name: /Phạm Thị Hoa/ })).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Sổ thưởng, phạt của tháng" })).toBeInTheDocument();
+  });
+
+  it("decision C: a manager's own row has no write controls, only the reason", async () => {
+    const spy = serve(MANAGER);
+    at("/nhan-vien");
+    const group = await waitFor(() => card("s-hoa").getByRole("radiogroup"));
+    for (const r of within(group).getAllByRole("radio")) expect(r).toBeDisabled();
+    expect(card("s-hoa").getByText(/Chỉ chủ spa chấm công, ghi khen\/phàn nàn và thưởng\/phạt cho quản lý/)).toBeInTheDocument();
+    expect(card("s-hoa").getByRole("button", { name: "Thêm khen cho Phạm Thị Hoa" })).toBeDisabled();
+    expect(card("s-hoa").queryByRole("button", { name: "Ghi thưởng / phạt" })).not.toBeInTheDocument();
+    expect(card("s-hoa").queryByRole("button", { name: "Giờ & ghi chú" })).not.toBeInTheDocument();
+    // "Cả spa đi làm" never includes a row the caller may not write.
+    await userEvent.click(screen.getByRole("button", { name: "Cả spa đi làm" }));
+    await waitFor(() => {
+      expect(puts(spy, "/attendance")).toHaveLength(1);
+    });
+    expect(puts(spy, "/attendance")[0]?.body).toEqual({ entries: [{ staff_id: "s-mai", date: today, status: "present" }] });
+  });
+
+  it("daily book: a leave code for someone with visits that day asks first", async () => {
+    const spy = serve(MANAGER, { lanServedToday: true });
+    at("/nhan-vien");
+    const group = await waitFor(() => card("s-lan").getByRole("radiogroup"));
+    await userEvent.click(within(group).getByRole("radio", { name: "Nghỉ không phép (K)" }));
+    const ask = await screen.findByRole("dialog", { name: "Lê Thị Lan có lượt khách ngày này" });
+    await userEvent.click(within(ask).getByRole("button", { name: "Thôi" }));
+    expect(puts(spy, "/attendance")).toHaveLength(0);
+    await userEvent.click(within(group).getByRole("radio", { name: "Nghỉ không phép (K)" }));
+    const again = await screen.findByRole("dialog", { name: "Lê Thị Lan có lượt khách ngày này" });
+    await userEvent.click(within(again).getByRole("button", { name: "Vẫn chấm Nghỉ không phép" }));
+    await waitFor(() => {
+      expect(puts(spy, "/attendance")).toHaveLength(1);
+    });
+    expect(puts(spy, "/attendance")[0]?.body).toEqual({ entries: [{ staff_id: "s-lan", date: today, status: "absent_k" }] });
+    // Someone without visits that day saves at once.
+    await userEvent.click(card("s-mai").getByRole("radio", { name: "Nghỉ có phép (P)" }));
+    await waitFor(() => {
+      expect(puts(spy, "/attendance")).toHaveLength(2);
+    });
+  });
+
+  it("bonus/penalty: Lưu says what is missing, and an entry can be removed after a confirm", async () => {
+    const spy = serve(MANAGER, { adjustments: [PENALTY] });
+    at("/nhan-vien");
+    await userEvent.click(await waitFor(() => card("s-mai").getByRole("button", { name: "Ghi thưởng / phạt" })));
+    const form = await screen.findByRole("dialog", { name: "Thưởng / phạt · Trần Thị Mai" });
+    expect(within(form).getByRole("button", { name: "Lưu" })).toBeDisabled();
+    expect(within(form).getByText("Để lưu, cần nhập số tiền hoặc số điểm, ghi lý do.")).toBeInTheDocument();
+    await userEvent.type(within(form).getByLabelText("Số tiền (đ)"), "100000");
+    expect(within(form).getByText("Để lưu, cần ghi lý do.")).toBeInTheDocument();
+    await userEvent.type(within(form).getByLabelText("Lý do"), "Khách khen");
+    expect(within(form).getByRole("button", { name: "Lưu" })).toBeEnabled();
+    await userEvent.click(within(form).getByRole("button", { name: "Đóng" }));
+
+    await userEvent.click(card("s-lan").getByRole("button", { name: "Xóa Phạt 50.000đ của Lê Thị Lan" }));
+    const confirm = await screen.findByRole("dialog", { name: /Xóa phạt 50\.000đ của Lê Thị Lan\?/ });
+    await userEvent.click(within(confirm).getByRole("button", { name: "Xóa khoản này" }));
+    await waitFor(() => {
+      expect(requests(spy).filter((r) => r.method === "DELETE").map((r) => new URL(r.url, "http://app.test").pathname)).toEqual([
+        "/api/v1/adjustments/adj-1",
+      ]);
+    });
+  });
+
+  it("monthly evaluation: starts empty, saves only when every criterion has a score, explains the levels", async () => {
+    const spy = serve(MANAGER);
+    at("/nhan-vien?tab=evaluation");
+    // Decision C: no scoring button on the manager's own row.
+    expect(await screen.findByText("Chỉ chủ spa chấm cho quản lý")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Chấm điểm" }));
+    const sheet = await screen.findByRole("dialog", { name: "Đánh giá Trần Thị Mai" });
+    const technique = within(sheet).getByLabelText(/Kỹ thuật liệu trình/);
+    expect(technique).toHaveValue("");
+    expect(within(sheet).getByText(/Mức 1 \(Xuất sắc\) = 100% điểm tối đa/)).toBeInTheDocument();
+    expect(within(sheet).getByText("Mức 1: 40 · Mức 2: 32 · Mức 3: 24 · Chưa đạt: ≤ 12")).toBeInTheDocument();
+    await userEvent.click(within(sheet).getByRole("button", { name: "Lưu đánh giá" }));
+    expect(within(sheet).getByRole("alert")).toHaveTextContent("Còn 2 tiêu chí chưa nhập điểm");
+    expect(puts(spy, "/evaluations")).toHaveLength(0);
+    await userEvent.type(technique, "45");
+    expect(within(sheet).getByText("Tối đa 40 điểm.")).toBeInTheDocument();
+    await userEvent.clear(technique);
+    await userEvent.type(technique, "36");
+    await userEvent.type(within(sheet).getByLabelText(/Thái độ và giao tiếp/), "12");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Lưu đánh giá" }));
+    // 48/100 here (two criteria in the fixture) → Chưa đạt: the coaching plan is asked for.
+    expect(within(sheet).getByRole("alert")).toHaveTextContent("cần ghi kế hoạch kèm cặp");
+    await userEvent.type(within(sheet).getByLabelText(/Kế hoạch kèm cặp/), "Kèm kỹ thuật");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Lưu đánh giá" }));
+    await waitFor(() => {
+      expect(puts(spy, "/evaluations")).toHaveLength(1);
+    });
+    expect(puts(spy, "/evaluations")[0]?.body).toMatchObject({
+      staff_id: "s-mai",
+      criteria: [
+        { key: "technique", points: 36 },
+        { key: "attitude", points: 12 },
+      ],
+      coaching_plan: "Kèm kỹ thuật",
+    });
   });
 
   it("owner: payroll with net pay and a payslip that shows every line", async () => {

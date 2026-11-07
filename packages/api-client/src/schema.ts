@@ -20,6 +20,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/adjustments/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Edit a bonus / penalty: the old entry is voided and the corrected one recorded (new id). */
+        put: operations["put_adjustment"];
+        post?: never;
+        /** Remove a bonus / penalty recorded by mistake (voided; kept for the audit trail). */
+        delete: operations["delete_adjustment"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/appointment-settings": {
         parameters: {
             query?: never;
@@ -1060,6 +1078,11 @@ export interface components {
              */
             amount?: number | null;
             by_name: string;
+            /**
+             * @description Whether the caller may remove or edit it (decision C scope, month open). Always false on
+             *     `/me/staff`.
+             */
+            can_edit: boolean;
             /** @description `YYYY-MM` of the closed month this entry corrects. */
             corrects_month?: string | null;
             /** Format: date-time */
@@ -1486,10 +1509,11 @@ export interface components {
         CriterionWrite: {
             /** @description One of the six criterion keys (`GET /evaluations` → `criteria`). */
             key: string;
-            level: components["schemas"]["Level"];
             /**
              * Format: int32
-             * @description Only for `fail`: a score below the 30 % ceiling.
+             * @description Typed by the evaluator: 0 to the criterion's `max` (decision D). Required: `null` or a
+             *     missing value → `422 criteria.<key>.points required`; above `max` → `above_max`. The
+             *     criterion's level is computed from it.
              */
             points?: number | null;
         };
@@ -2740,7 +2764,7 @@ export interface components {
             upsell_lines?: components["schemas"]["UpsellLine"][];
             /**
              * Format: int64
-             * @description Part of the upsell base from packages closed.
+             * @description Part of the upsell base from packages closed, minus packages refunded this month.
              */
             upsell_package_base?: number;
             /**
@@ -3119,6 +3143,8 @@ export interface components {
         StaffEvaluation: {
             /** @description The month's attendance, as context for "Chuyên cần". */
             attendance: components["schemas"]["AttendanceTotals"];
+            /** @description Decision C: whether the caller may score this person. */
+            can_record: boolean;
             /** Format: int32 */
             complaints: number;
             /**
@@ -3200,6 +3226,8 @@ export interface components {
             user_id?: string | null;
         };
         StaffReviews: {
+            /** @description Decision C: whether the caller may record this person's day. */
+            can_record: boolean;
             /** Format: int32 */
             complaints: number;
             /** Format: int32 */
@@ -3211,6 +3239,12 @@ export interface components {
             staff_id: string;
         };
         StaffSheet: {
+            /**
+             * @description Whether the caller may record this person's attendance, praise / complaints, bonuses /
+             *     penalties and evaluation (decision C: a manager never for themselves or another manager).
+             *     Always false on `/me/staff`.
+             */
+            can_record: boolean;
             days: components["schemas"]["AttendanceDay"][];
             full_name: string;
             /** Format: date */
@@ -3223,6 +3257,11 @@ export interface components {
             /** Format: uuid */
             staff_id: string;
             totals: components["schemas"]["AttendanceTotals"];
+            /**
+             * @description Days of the month this person performed a service of a completed visit (a leave code on
+             *     such a day gets a warning). Empty on `/me/staff`.
+             */
+            visit_days: string[];
         };
         /** @enum {string} */
         StaffStatusDto: "active" | "left";
@@ -3326,16 +3365,20 @@ export interface components {
          */
         UpsellLine: {
             description: string;
-            /** @description `package` or `service`. */
+            /**
+             * @description `package`, `package_refund` (a package closed earlier, cancelled with a refund this month)
+             *     or `service`.
+             */
             kind: string;
             /**
              * Format: int64
-             * @description Packages sold / services recommended.
+             * @description Packages sold or refunded / services recommended.
              */
             qty: number;
             /**
              * Format: int64
-             * @description Price paid (packages, after discount) or `line_value` (services).
+             * @description Price paid (packages, after discount), the refund as a negative amount (`package_refund`)
+             *     or `line_value` (services).
              */
             value: number;
         };
@@ -3370,8 +3413,10 @@ export interface components {
             /** @description The package (its `ref` is ignored); it must belong to the visit's customer. */
             package_sale: components["schemas"]["VisitPackageSaleCreate"];
             /**
-             * @description Summing exactly to the package plus the one-off lines kept (the old one-off payments are
-             *     reversed). The desk shows "Khách đưa thêm" = this − what was paid for the visit.
+             * @description Only the top-up ("Khách đưa thêm"), in the method(s) the customer uses now: summing exactly
+             *     to the package plus the one-off lines kept, minus what was already paid for the visit
+             *     (empty when that covers it). The money already paid is recorded again by the server in its
+             *     own method, so the day's cash / transfer split does not move.
              */
             payments?: components["schemas"]["PaymentCreate"][];
         };
@@ -3789,6 +3834,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description auth.forbidden, staff.record_owner_only */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3803,6 +3849,117 @@ export interface operations {
                 content?: never;
             };
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_adjustment: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdjustmentCreate"];
+            };
+        };
+        responses: {
+            /** @description The new entry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Adjustment"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden, staff.record_owner_only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description adjustment.voided, payroll.period_closed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_adjustment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden, staff.record_owner_only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description adjustment.voided, payroll.period_closed */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4440,6 +4597,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description auth.forbidden, staff.record_owner_only */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5599,6 +5757,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description auth.forbidden, staff.record_owner_only */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5687,6 +5846,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description auth.forbidden, staff.record_owner_only */
             403: {
                 headers: {
                     [name: string]: unknown;

@@ -7,6 +7,7 @@ use crate::month::Month;
 use crate::period;
 use crate::repo::{self, AttendanceRow};
 use crate::rules;
+use crate::scope::RecordScope;
 use chrono::{NaiveDate, NaiveTime, Timelike};
 use kernel::audit::{self, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
@@ -188,6 +189,13 @@ pub struct StaffSheet {
     pub left_on: Option<NaiveDate>,
     pub days: Vec<AttendanceDay>,
     pub totals: AttendanceTotals,
+    /// Whether the caller may record this person's attendance, praise / complaints, bonuses /
+    /// penalties and evaluation (decision C: a manager never for themselves or another manager).
+    /// Always false on `/me/staff`.
+    pub can_record: bool,
+    /// Days of the month this person performed a service of a completed visit (a leave code on
+    /// such a day gets a warning). Empty on `/me/staff`.
+    pub visit_days: Vec<NaiveDate>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
@@ -225,6 +233,8 @@ pub fn sheet_of(
             &calc_days,
         ),
         days,
+        can_record: false,
+        visit_days: Vec::new(),
     }
 }
 
@@ -255,6 +265,8 @@ pub async fn sheet(
     let info = period::info(&mut tx, month).await?;
     let profiles = org::profile::profiles_in(&mut tx).await?;
     let all_days = days_in(&mut tx, month, None).await?;
+    let visits = repo::visit_days(&mut tx, month.first_day(), month.last_day()).await?;
+    let scope = RecordScope::load(&mut tx, actor).await?;
     tx.commit().await?;
     let staff = profiles
         .iter()
@@ -265,7 +277,15 @@ pub async fn sheet(
                 .filter(|d| d.staff_id == p.id)
                 .cloned()
                 .collect();
-            sheet_of(p, month, today, rules.default_shift_start, days)
+            StaffSheet {
+                can_record: scope.may_record(p.id),
+                visit_days: visits
+                    .iter()
+                    .filter(|v| v.staff_id == p.id)
+                    .map(|v| v.day)
+                    .collect(),
+                ..sheet_of(p, month, today, rules.default_shift_start, days)
+            }
         })
         .collect();
     Ok(AttendanceSheet {
@@ -286,7 +306,8 @@ fn audit_value(d: Option<&AttendanceDay>) -> Option<serde_json::Value> {
 }
 
 /// `PUT /attendance` (`attendance.record`): records or clears up to [`MAX_ENTRIES`] cells in one
-/// transaction (a single edit, or "everyone present today"). Months touched must be open.
+/// transaction (a single edit, or "everyone present today"). Months touched must be open. A
+/// manager may not record themselves or another manager (`403 staff.record_owner_only`).
 pub async fn record(
     pool: &PgPool,
     actor: &Actor,
@@ -296,6 +317,9 @@ pub async fn record(
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let today = period::today(&mut tx).await?;
     let profiles = org::profile::profiles_in(&mut tx).await?;
+    RecordScope::load(&mut tx, actor)
+        .await?
+        .require(entries.iter().map(|e| e.staff_id))?;
     validate(entries, today, &profiles)?;
     // Lock months in a stable order so two batches never deadlock.
     let months: BTreeSet<Month> = entries.iter().map(|e| Month::of(e.date)).collect();

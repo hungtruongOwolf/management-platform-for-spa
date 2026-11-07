@@ -1,11 +1,14 @@
 //! Bonuses and penalties (spec staff-management US4): reason, amount and/or points, the day it
-//! happened and who recorded it. Append-only: a wrong entry is offset by one of the opposite kind.
-//! The month of `occurred_on` is the payroll month, which must be open; correcting a closed month
-//! means recording the entry in an open month with `corrects_month` set.
+//! happened and who recorded it. An entry recorded by mistake is removed (voided: it leaves the
+//! log and payroll, the row stays for the audit trail) or edited (void + a new entry, one
+//! transaction) while its month is open (EM 2026-11-07). The month of `occurred_on` is the payroll
+//! month, which must be open; correcting a closed month means recording the entry in an open
+//! month with `corrects_month` set. Who may write whose entries: [`crate::scope`] (decision C).
 
 use crate::month::Month;
 use crate::period;
 use crate::repo::{self, AdjustmentInsert, AdjustmentRow};
+use crate::scope::RecordScope;
 use chrono::{DateTime, NaiveDate, Utc};
 use kernel::audit::{self, AuditEntry};
 use kernel::idempotency::{self, Claim};
@@ -56,6 +59,9 @@ pub struct Adjustment {
     pub corrects_month: Option<String>,
     pub by_name: String,
     pub created_at: DateTime<Utc>,
+    /// Whether the caller may remove or edit it (decision C scope, month open). Always false on
+    /// `/me/staff`.
+    pub can_edit: bool,
 }
 
 impl TryFrom<AdjustmentRow> for Adjustment {
@@ -74,6 +80,7 @@ impl TryFrom<AdjustmentRow> for Adjustment {
             corrects_month: r.corrects_period.map(|d| Month::of(d).to_string()),
             by_name: r.by_name,
             created_at: r.created_at,
+            can_edit: false,
         })
     }
 }
@@ -120,7 +127,15 @@ pub async fn log(
     let today = period::today(&mut tx).await?;
     let month = month.unwrap_or_else(|| Month::of(today));
     let info = period::info(&mut tx, month).await?;
-    let items = adjustments_in(&mut tx, month, None).await?;
+    let scope = RecordScope::load(&mut tx, actor).await?;
+    let items = adjustments_in(&mut tx, month, None)
+        .await?
+        .into_iter()
+        .map(|a| Adjustment {
+            can_edit: !info.closed && scope.may_record(a.staff_id),
+            ..a
+        })
+        .collect();
     tx.commit().await?;
     Ok(AdjustmentLog {
         month: month.to_string(),
@@ -169,7 +184,112 @@ fn validate(input: &AdjustmentInput, today: NaiveDate) -> Result<Clean, AppError
     }
 }
 
+/// Checks an entry against the caller's scope and the books, then inserts it with its audit entry
+/// (`staff.adjustment`). Shared by create and edit.
+async fn insert_checked(
+    tx: &mut TenantTx,
+    actor: &Actor,
+    scope: &RecordScope,
+    input: &AdjustmentInput,
+) -> Result<Adjustment, AppError> {
+    scope.require([input.staff_id])?;
+    let today = period::today(tx).await?;
+    let c = validate(input, today)?;
+    let profiles = org::profile::profiles_in(tx).await?;
+    if !profiles.iter().any(|p| p.id == input.staff_id) {
+        return Err(AppError::Validation(vec![FieldError::new(
+            "staff_id", "unknown",
+        )]));
+    }
+    if let Some(corrected) = input.corrects_month
+        && !period::info(tx, corrected).await?.closed
+    {
+        return Err(AppError::Validation(vec![FieldError::new(
+            "corrects_month",
+            "not_closed",
+        )]));
+    }
+    period::require_open(tx, Month::of(c.occurred_on)).await?;
+    let id = Uuid::now_v7();
+    repo::insert_adjustment(
+        tx,
+        &AdjustmentInsert {
+            id,
+            staff_id: input.staff_id,
+            work_date: c.occurred_on,
+            kind: input.kind.as_str(),
+            amount: input.amount,
+            points: input.points.and_then(|p| i32::try_from(p).ok()),
+            reason: &c.reason,
+            corrects_period: input.corrects_month.map(Month::first_day),
+            created_by: actor.user_id.as_uuid(),
+        },
+    )
+    .await?;
+    audit::record(
+        tx,
+        actor,
+        AuditEntry {
+            action: "staff.adjustment",
+            entity_type: "staff",
+            entity_id: input.staff_id,
+            before: None,
+            after: Some(json!({
+                "adjustment_id": id, "kind": input.kind.as_str(), "amount": input.amount,
+                "points": input.points, "occurred_on": c.occurred_on,
+                "corrects_month": input.corrects_month.map(|m| m.to_string()),
+            })),
+            reason: Some(&c.reason),
+        },
+    )
+    .await?;
+    let row = repo::adjustment(tx, id)
+        .await?
+        .ok_or_else(|| AppError::Internal("adjustment vanished".into()))?;
+    Ok(Adjustment {
+        can_edit: true,
+        ..Adjustment::try_from(row)?
+    })
+}
+
+/// Voids one entry inside the caller's transaction: it must exist (`404`), be the caller's to
+/// write (decision C, `403`), not be voided yet (`409 adjustment.voided`) and its month must be
+/// open (`409 payroll.period_closed`). Audited as `staff.adjustment_void`.
+async fn void_checked(
+    tx: &mut TenantTx,
+    actor: &Actor,
+    scope: &RecordScope,
+    id: Uuid,
+) -> Result<(), AppError> {
+    let entry = repo::lock_adjustment(tx, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    scope.require([entry.staff_id])?;
+    if entry.voided {
+        return Err(AppError::Conflict {
+            code: "adjustment.voided",
+        });
+    }
+    period::require_open(tx, Month::of(entry.work_date)).await?;
+    repo::void_adjustment(tx, id, actor.user_id.as_uuid()).await?;
+    audit::record(
+        tx,
+        actor,
+        AuditEntry {
+            action: "staff.adjustment_void",
+            entity_type: "staff",
+            entity_id: entry.staff_id,
+            before: Some(json!({"adjustment_id": id, "occurred_on": entry.work_date})),
+            after: Some(json!({"adjustment_id": id, "voided": true})),
+            reason: None,
+        },
+    )
+    .await?;
+    Ok(())
+}
+
 /// `POST /adjustments` (`evaluation.record`, Idempotency-Key). The recorder is the session's user.
+/// A manager may not record for themselves or another manager (`403 staff.record_owner_only`).
 pub async fn record(
     pool: &PgPool,
     actor: &Actor,
@@ -186,63 +306,52 @@ pub async fn record(
         tx.commit().await?;
         return Ok((status, body));
     }
-    let today = period::today(&mut tx).await?;
-    let c = validate(input, today)?;
-    let profiles = org::profile::profiles_in(&mut tx).await?;
-    if !profiles.iter().any(|p| p.id == input.staff_id) {
-        return Err(AppError::Validation(vec![FieldError::new(
-            "staff_id", "unknown",
-        )]));
-    }
-    if let Some(corrected) = input.corrects_month
-        && !period::info(&mut tx, corrected).await?.closed
-    {
-        return Err(AppError::Validation(vec![FieldError::new(
-            "corrects_month",
-            "not_closed",
-        )]));
-    }
-    period::require_open(&mut tx, Month::of(c.occurred_on)).await?;
-    let id = Uuid::now_v7();
-    repo::insert_adjustment(
-        &mut tx,
-        &AdjustmentInsert {
-            id,
-            staff_id: input.staff_id,
-            work_date: c.occurred_on,
-            kind: input.kind.as_str(),
-            amount: input.amount,
-            points: input.points.and_then(|p| i32::try_from(p).ok()),
-            reason: &c.reason,
-            corrects_period: input.corrects_month.map(Month::first_day),
-            created_by: actor.user_id.as_uuid(),
-        },
-    )
-    .await?;
-    audit::record(
-        &mut tx,
-        actor,
-        AuditEntry {
-            action: "staff.adjustment",
-            entity_type: "staff",
-            entity_id: input.staff_id,
-            before: None,
-            after: Some(json!({
-                "adjustment_id": id, "kind": input.kind.as_str(), "amount": input.amount,
-                "points": input.points, "occurred_on": c.occurred_on,
-                "corrects_month": input.corrects_month.map(|m| m.to_string()),
-            })),
-            reason: Some(&c.reason),
-        },
-    )
-    .await?;
-    let row = repo::adjustment(&mut tx, id)
-        .await?
-        .ok_or_else(|| AppError::Internal("adjustment vanished".into()))?;
-    let body = to_body(Adjustment::try_from(row)?)?;
+    let scope = RecordScope::load(&mut tx, actor).await?;
+    let saved = insert_checked(&mut tx, actor, &scope, input).await?;
+    let body = to_body(saved)?;
     idempotency::complete(&mut tx, actor, key, 201, &body).await?;
     tx.commit().await?;
     Ok((201, body))
+}
+
+/// `PUT /adjustments/{id}` (`evaluation.record`, Idempotency-Key): edit = the old entry is voided
+/// and the corrected one recorded, in one transaction; the response is the new entry (new id).
+/// Both the old and the new person must be in the caller's scope.
+pub async fn replace(
+    pool: &PgPool,
+    actor: &Actor,
+    key: Uuid,
+    request_hash: [u8; 32],
+    id: Uuid,
+    input: &AdjustmentInput,
+    to_body: impl FnOnce(Adjustment) -> Result<Value, AppError>,
+) -> Result<(u16, Value), AppError> {
+    actor.require(Permission::EvaluationRecord)?;
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    if let Claim::Replay { status, body } =
+        idempotency::claim(&mut tx, actor, key, request_hash).await?
+    {
+        tx.commit().await?;
+        return Ok((status, body));
+    }
+    let scope = RecordScope::load(&mut tx, actor).await?;
+    void_checked(&mut tx, actor, &scope, id).await?;
+    let saved = insert_checked(&mut tx, actor, &scope, input).await?;
+    let body = to_body(saved)?;
+    idempotency::complete(&mut tx, actor, key, 200, &body).await?;
+    tx.commit().await?;
+    Ok((200, body))
+}
+
+/// `DELETE /adjustments/{id}` (`evaluation.record`): removes an entry recorded by mistake (voided,
+/// kept for the audit trail). Same scope as recording it.
+pub async fn remove(pool: &PgPool, actor: &Actor, id: Uuid) -> Result<(), AppError> {
+    actor.require(Permission::EvaluationRecord)?;
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let scope = RecordScope::load(&mut tx, actor).await?;
+    void_checked(&mut tx, actor, &scope, id).await?;
+    tx.commit().await?;
+    Ok(())
 }
 
 #[cfg(test)]
