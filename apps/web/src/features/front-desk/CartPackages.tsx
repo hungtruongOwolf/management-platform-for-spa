@@ -28,7 +28,7 @@ import { ReferrerOptions } from "./CartOptions";
 import { defaultCloser } from "./upsell";
 import "./cart-packages.css";
 
-export { SELF_CHOSEN, packageSalesBody, sellPackageOnly } from "./checkout";
+export { SELF_CHOSEN, packageSalesBody, sellCart, sellPackageOnly } from "./checkout";
 export { LineReferrer, ReferrerOptions } from "./CartOptions";
 
 /** Why a nameless walk-in cannot own the package (server: `422 customer.name_required`). */
@@ -551,8 +551,8 @@ function SaleBlock({
 }
 
 /**
- * "Gói bán hôm nay": the packages of this checkout and the "+ Bán gói liệu trình" action. With no
- * service in the cart only one package fits ("Lưu hóa đơn gói" is one sale).
+ * "Gói bán hôm nay": the packages of this checkout and the "+ Bán gói liệu trình" action. A cart
+ * without services holds up to three packages too (EM 2026-11-07 item 4): one save, one payment.
  */
 export function PackageSales({
   sales,
@@ -568,7 +568,7 @@ export function PackageSales({
   openPlanId,
   onOpened,
   context = lines,
-  maxSales = lines.length === 0 ? 1 : MAX_PACKAGE_SALES,
+  maxSales = MAX_PACKAGE_SALES,
   titleId = "cart-packages-title",
   title = "Gói bán hôm nay",
   ownerNamed = true,
@@ -601,7 +601,7 @@ export function PackageSales({
    * first. Defaults to the cart lines; a saved visit passes its own lines.
    */
   context?: { serviceId: string; staffId: string }[];
-  /** With no service in the cart only one package fits ("Lưu hóa đơn gói" is one sale). */
+  /** How many packages fit (3; converting a visit into a package fits one). */
   maxSales?: number;
   titleId?: string;
   title?: string;

@@ -624,3 +624,213 @@ async fn inactive_plans_and_unknown_customers_cannot_be_sold(pool: PgPool) -> Te
     );
     Ok(())
 }
+
+impl Shop {
+    async fn checkout(&self, session: &str, key: &str, body: Value) -> Reply {
+        call_with_headers(
+            &self.h.app,
+            "POST",
+            "/sales/checkout",
+            Some(session),
+            Some(body),
+            &[("idempotency-key", key)],
+        )
+        .await
+    }
+}
+
+/// EM 2026-11-07 item 4 ("chị Lan"): two packages, no service — one for the payer, one bought
+/// for her mother — saved at once. Each package is its own sale with its own closer, discount
+/// (manager cap per sale) and beneficiary; one payment step pays both, split cash first in cart
+/// order; the daily report shows the cash / transfer split as paid. A replay creates nothing new.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_cart_of_packages_is_one_save_and_one_payment(pool: PgPool) -> TestResult {
+    let s = shop(pool).await?;
+    let mother = call(
+        &s.h.app,
+        "POST",
+        "/customers",
+        Some(&s.manager),
+        Some(json!({"full_name": "Trần Thị Mẹ", "phone": "0905333444", "gender": "female"})),
+    )
+    .await;
+    assert_eq!(mother.status, StatusCode::CREATED, "{}", mother.body);
+    let mother = id_of(&mother);
+    let body = json!({
+        "customer_id": s.customer,
+        "package_sales": [
+            {"package_plan_id": s.plan, "closer_staff_id": s.lan,
+             "discount": {"amount": 100_000, "reason": "Khách quen"}},
+            {"package_plan_id": s.plan, "closer_staff_id": null, "beneficiary_customer_id": mother,
+             "gift_note": ""}
+        ],
+        "payments": [
+            {"method": "cash", "amount": 1_000_000},
+            {"method": "bank_transfer", "amount": 1_900_000, "reference": "VCB 9"}
+        ]
+    });
+    let key = Uuid::now_v7().to_string();
+    let done = s.checkout(&s.manager, &key, body.clone()).await;
+    assert_eq!(done.status, StatusCode::CREATED, "{}", done.body);
+    assert_eq!(done.body["total"], 2_900_000);
+    let sales = done.body["sales"].as_array().cloned().unwrap_or_default();
+    assert_eq!(sales.len(), 2);
+    assert_eq!(sales[0]["total"], 1_400_000);
+    assert_eq!(sales[0]["closer_staff_id"], json!(s.lan));
+    assert_eq!(sales[0]["discount_amount"], 100_000);
+    assert_eq!(sales[1]["total"], 1_500_000);
+    assert_eq!(sales[1]["closer_staff_id"], Value::Null, "khách tự chọn");
+    assert_eq!(
+        sales[1]["customer_id"],
+        json!(s.customer),
+        "the payer pays both"
+    );
+    assert_eq!(
+        sales[1]["customer_packages"][0]["customer_id"],
+        json!(mother)
+    );
+    assert_eq!(
+        sales[0]["customer_packages"][0]["customer_id"],
+        json!(s.customer)
+    );
+    // One payment step, split over the sales: cash first, in cart order.
+    let methods = |sale: &Value| -> Vec<(String, i64)> {
+        sale["payments"]
+            .as_array()
+            .map(|ps| {
+                ps.iter()
+                    .map(|p| {
+                        (
+                            p["method"].as_str().unwrap_or_default().to_owned(),
+                            p["amount"].as_i64().unwrap_or_default(),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    assert_eq!(
+        methods(&sales[0]),
+        [
+            ("cash".to_owned(), 1_000_000),
+            ("bank_transfer".to_owned(), 400_000)
+        ]
+    );
+    assert_eq!(
+        methods(&sales[1]),
+        [("bank_transfer".to_owned(), 1_500_000)]
+    );
+    let report = s.get(&s.owner, "/reports/daily").await;
+    assert_eq!(report.status, StatusCode::OK, "{}", report.body);
+    assert_eq!(
+        report.body["revenue"]["net"]["cash"], 1_000_000,
+        "{}",
+        report.body
+    );
+    assert_eq!(report.body["revenue"]["net"]["bank_transfer"], 1_900_000);
+    // The revenue book: one row per sale (per package), adding up to the one payment step.
+    let day = sales[0]["business_date"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    let book = s
+        .get(
+            &s.owner,
+            &format!("/reports/ledger?from={day}&to={day}&limit=100"),
+        )
+        .await;
+    assert_eq!(book.status, StatusCode::OK, "{}", book.body);
+    let rows = book.body["rows"].as_array().cloned().unwrap_or_default();
+    assert_eq!(rows.len(), 2, "{}", book.body);
+    let sum = |key: &str| {
+        rows.iter()
+            .map(|r| r[key].as_i64().unwrap_or(0))
+            .sum::<i64>()
+    };
+    assert_eq!((sum("cash"), sum("bank_transfer")), (1_000_000, 1_900_000));
+
+    // A retry with the same key replays the first answer and creates nothing more.
+    let replay = s.checkout(&s.manager, &key, body).await;
+    assert_eq!(replay.status, StatusCode::CREATED);
+    assert_eq!(replay.body, done.body);
+    assert_eq!(s.count("sale").await?, 2);
+    assert_eq!(s.count("customer_package").await?, 2);
+    Ok(())
+}
+
+/// All or nothing: one refused package (over the manager's discount cap, an unknown plan, a
+/// closer who does not work here) or payments that do not add up save no sale, package or payment.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_refused_package_saves_nothing_of_the_cart(pool: PgPool) -> TestResult {
+    let s = shop(pool).await?;
+    let ok = json!({"package_plan_id": s.plan, "closer_staff_id": s.lan});
+    let cash = |amount: i64| json!([{"method": "cash", "amount": amount}]);
+    for (second, payments, status, code) in [
+        (
+            json!({"package_plan_id": s.plan, "discount": {"amount": 300_000, "reason": "Quen"}}),
+            cash(2_700_000),
+            StatusCode::FORBIDDEN,
+            "discount.limit_exceeded",
+        ),
+        (
+            json!({"package_plan_id": Uuid::now_v7()}),
+            cash(3_000_000),
+            StatusCode::NOT_FOUND,
+            "not_found",
+        ),
+        (
+            json!({"package_plan_id": s.plan, "closer_staff_id": Uuid::now_v7()}),
+            cash(3_000_000),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "staff.inactive",
+        ),
+        (
+            json!({"package_plan_id": s.plan}),
+            cash(2_999_000),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "payment.amount_mismatch",
+        ),
+    ] {
+        let r = s
+            .checkout(
+                &s.manager,
+                &Uuid::now_v7().to_string(),
+                json!({"customer_id": s.customer, "package_sales": [ok.clone(), second], "payments": payments}),
+            )
+            .await;
+        assert_eq!(
+            (r.status, r.body["code"].as_str()),
+            (status, Some(code)),
+            "{}",
+            r.body
+        );
+    }
+    // Field errors name the package; an empty or oversized cart is refused.
+    let bad = s
+        .checkout(
+            &s.manager,
+            &Uuid::now_v7().to_string(),
+            json!({"customer_id": s.customer, "payments": cash(3_000_000), "package_sales": [
+                ok.clone(), {"package_plan_id": s.plan, "discount": {"amount": -1}}]}),
+        )
+        .await;
+    assert_eq!(
+        bad.body["errors"][0]["field"],
+        "package_sales[1].discount.amount"
+    );
+    for n in [0, 4] {
+        let r = s
+            .checkout(
+                &s.manager,
+                &Uuid::now_v7().to_string(),
+                json!({"customer_id": s.customer, "payments": [],
+                       "package_sales": vec![ok.clone(); n]}),
+            )
+            .await;
+        assert_eq!(r.body["errors"][0]["field"], "package_sales", "{n}");
+    }
+    for table in ["sale", "customer_package", "payment"] {
+        assert_eq!(s.count(table).await?, 0, "{table}");
+    }
+    Ok(())
+}

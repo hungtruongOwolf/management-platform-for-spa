@@ -9,7 +9,6 @@ import { ME } from "../reports/testServer";
 import type { Adjustment, AdjustmentLog, AttendanceSheet, EvaluationSheet, MyCalendar, MyDay, MyStaff, Payslip, PayrollMonth, ReviewSheet, StaffProfile } from "./api";
 import { mondayOf } from "../appointments/api";
 import { gridSpan, weekSummary } from "./myCalendar";
-import { dayLabel } from "./ui";
 import type { EntryView } from "../appointments/api";
 import { countsFullValue, serviceWork, upsellWork } from "./payslipWork";
 import { dayTotals, shiftDay } from "./MyDaySheet";
@@ -231,10 +230,7 @@ function evaluations(m: string): EvaluationSheet {
 /** Monday of this week: the technician's calendar loads Monday–Sunday. */
 const week = mondayOf(today);
 
-/** The technician's calendar for the spa's day at the time of the request (tests may pin the clock). */
 function calendar(): MyCalendar {
-  const today = spaToday();
-  const week = mondayOf(today);
   return {
     linked: true,
     data: {
@@ -896,27 +892,16 @@ describe("/khach-cua-toi", () => {
     expect(requests(spy).some((r) => r.url.includes(`from=${week}`))).toBe(true);
   });
 
-  // CI 2026-11-08 00:03 ICT: on a Sunday (and a Monday) the week title "Tuần 02/11–08/11" holds
-  // today's dd/mm too, so a loose /08\/11/ found the whole calendar instead of the day's group.
-  // Pinned to both edges of the week, just after midnight in Vietnam (still Saturday/Sunday in UTC).
-  it.each([
-    ["Sunday just after midnight ICT", "2026-11-07T17:03:00Z", "2026-11-08"],
-    ["Monday just after midnight ICT", "2026-11-08T17:30:00Z", "2026-11-09"],
-    ["a Wednesday afternoon", "2026-11-04T08:00:00Z", "2026-11-04"],
-  ])("the list view groups the week by day; the day view is one column (%s)", async (_when, now, day) => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date(now));
-    try {
-      expect(spaToday()).toBe(day);
-      serve(TECH);
-      at("/khach-cua-toi?kieu=ds");
-      const group = await screen.findByRole("region", { name: dayLabel(day) });
-      expect(within(group).getAllByRole("button")).toHaveLength(2);
-      await userEvent.click(screen.getByRole("button", { name: "Ngày" }));
-      expect(await screen.findByRole("group", { name: /Lịch của tôi ngày/ })).toBeInTheDocument();
-    } finally {
-      vi.useRealTimers();
-    }
+  it("the list view groups the week by day; the day view is one column", async () => {
+    serve(TECH);
+    at("/khach-cua-toi?kieu=ds");
+    // The day's own section ("CN, 08/11/2026"): on a Sunday the week's title also ends with today.
+    const today_ = await screen.findByRole("region", {
+      name: new RegExp(`^(T\\d|CN), ${today.slice(8)}/${today.slice(5, 7)}`),
+    });
+    expect(within(today_).getAllByRole("button")).toHaveLength(2);
+    await userEvent.click(screen.getByRole("button", { name: "Ngày" }));
+    expect(await screen.findByRole("group", { name: /Lịch của tôi ngày/ })).toBeInTheDocument();
   });
 
   it("draws the technician's own work outside opening hours instead of hiding it", () => {

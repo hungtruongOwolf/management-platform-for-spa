@@ -26,6 +26,43 @@ pub struct SaleCreate {
     pub payments: Vec<PaymentCreate>,
 }
 
+/// Body of `POST /sales/checkout` (EM 2026-11-07 item 4): a Quầy cart holding only packages,
+/// saved at once. Each package is its own sale — its own plan, beneficiary, closer and discount,
+/// exactly like `package_sales[]` of `POST /visits` — and one payment step pays them all.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SaleCheckoutCreate {
+    /// Who pays (every sale's `customer_id`).
+    pub customer_id: Uuid,
+    /// 1–3 packages, in cart order.
+    pub package_sales: Vec<CheckoutPackageCreate>,
+    /// 0–2 payments, one per method, summing exactly to every package's total. The server splits
+    /// them over the sales like a visit's checkout: cash pays the sales in order first, the rest is
+    /// bank transfer.
+    pub payments: Vec<PaymentCreate>,
+}
+
+/// One package of `POST /sales/checkout`: the same fields as a package sold in a visit.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CheckoutPackageCreate {
+    pub package_plan_id: Uuid,
+    /// "Người giới thiệu / chốt": any staff member working here; null = "khách tự chọn".
+    pub closer_staff_id: Option<Uuid>,
+    /// Omitted = the plan's gift; empty = none.
+    pub gift_note: Option<String>,
+    /// Discount on this package alone (D10; the manager cap applies per sale).
+    pub discount: Option<DiscountCreate>,
+    /// Who the package belongs to ("Mua cho người khác"); omitted = the payer.
+    pub beneficiary_customer_id: Option<Uuid>,
+}
+
+/// `POST /sales/checkout` → 201: the sales of the checkout, in request order.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SaleCheckoutDto {
+    pub sales: Vec<SaleDto>,
+    /// What the customer paid in all (the sum of the sales' totals).
+    pub total: i64,
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SaleLineCreate {
     pub package_plan_id: Uuid,

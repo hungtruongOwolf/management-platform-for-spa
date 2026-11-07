@@ -178,7 +178,9 @@ test.describe("KTV: màn của tôi", () => {
     await page.keyboard.press("Escape");
     await expect(detail).toBeHidden();
 
-    // Today's visit sits on today's column (it may share the week with tomorrow).
+    // Today's visit sits on today's column (it may share the week with tomorrow), whatever the
+    // hour: the grid widens past opening hours for the technician's own work (gridSpan), so a run
+    // after midnight in Vietnam still finds the 00:xx visit on the grid.
     await page.goto("/khach-cua-toi?kieu=ngay");
     await expect(page.getByRole("group", { name: /Lịch của tôi ngày/ })).toBeVisible();
     await expect(page.getByRole("button", { name: new RegExp(`${CUSTOMER}, (Đang làm|Xong), Vãng lai`) })).toBeVisible();
