@@ -1,8 +1,10 @@
 //! Monthly evaluation (spec staff-management US3b): the sheet's 100-point scorecard, done on
-//! days 1–5 of the next month. Six criteria, each scored at a level (Mức 1 = 100 %, Mức 2 = 80 %,
-//! Mức 3 = 60 %, Chưa đạt ≤ 30 %); the month's result follows the total (≥ 85 / 70 / 50), capped
-//! at Mức 3 after a serious complaint or repeated rule breaking. Mức 3 / Chưa đạt need a coaching
-//! plan.
+//! days 1–5 of the next month. Six criteria; the evaluator types each criterion's points, 0 to its
+//! maximum (EM decision D, 2026-11-07: no forced Mức 1/2/3 choice, a new form starts empty). The
+//! sheet's levels stay as the guide (Mức 1 = 100 %, Mức 2 = 80 %, Mức 3 = 60 %, Chưa đạt ≤ 30 % of
+//! the maximum) and each criterion's level is read from its points with the month's thresholds
+//! (≥ 85 / 70 / 50 %). The month's result follows the total, capped at Mức 3 after a serious
+//! complaint or repeated rule breaking. Mức 3 / Chưa đạt need a coaching plan.
 
 use crate::attendance;
 use crate::calc::AttendanceTotals;
@@ -11,6 +13,7 @@ use crate::month::Month;
 use crate::period;
 use crate::repo::{self, EvaluationRow, EvaluationWrite};
 use crate::review;
+use crate::scope::RecordScope;
 use chrono::{DateTime, Utc};
 use kernel::audit::{self, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
@@ -54,17 +57,7 @@ impl Level {
             .find(|l| l.as_str() == s)
     }
 
-    /// Share of a criterion's maximum, in percent (Phụ lục; Chưa đạt is the ceiling).
-    pub const fn percent(self) -> u32 {
-        match self {
-            Self::M1 => 100,
-            Self::M2 => 80,
-            Self::M3 => 60,
-            Self::Fail => 30,
-        }
-    }
-
-    /// Result of a total score.
+    /// Result of a total score (out of 100), or of a criterion's share of its maximum in percent.
     pub const fn of_total(total: u32) -> Self {
         match total {
             85.. => Self::M1,
@@ -128,8 +121,7 @@ pub struct ScoredCriterion {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CriterionInput {
     pub key: String,
-    pub level: Level,
-    /// Only for `fail`: a score below the 30 % ceiling.
+    /// Typed by the evaluator, 0 to the criterion's maximum; `None` = not filled in yet.
     pub points: Option<u32>,
 }
 
@@ -153,40 +145,34 @@ pub struct Score {
     pub result: Level,
 }
 
-/// Scores a full scorecard. Points = max × percent, rounded down (Chưa đạt is "at most 30 %").
+/// A criterion's level from its points: the share of its maximum, with the month's thresholds.
+pub const fn level_of(points: u32, max: u32) -> Level {
+    if max == 0 {
+        return Level::Fail;
+    }
+    Level::of_total(points * 100 / max)
+}
+
+/// Scores a full scorecard: every criterion filled in, each within its maximum.
 pub fn score(criteria: &[CriterionInput], serious_issue: bool) -> Result<Score, AppError> {
     let mut errors = Vec::new();
     let mut scored = Vec::new();
-    for (i, c) in CRITERIA.iter().enumerate() {
-        let Some(input) = criteria.iter().find(|x| x.key == c.key) else {
-            errors.push(FieldError::new(format!("criteria.{}", c.key), "required"));
-            continue;
-        };
-        let ceiling = c.max * input.level.percent() / 100;
-        let points = match (input.level, input.points) {
-            (_, None) => ceiling,
-            (Level::Fail, Some(p)) if p <= ceiling => p,
-            (Level::Fail, Some(_)) => {
-                errors.push(FieldError::new(
-                    format!("criteria[{i}].points"),
-                    "above_ceiling",
-                ));
-                ceiling
-            }
-            (_, Some(_)) => {
-                errors.push(FieldError::new(
-                    format!("criteria[{i}].points"),
-                    "only_for_fail",
-                ));
-                ceiling
-            }
-        };
-        scored.push(ScoredCriterion {
-            key: c.key.to_owned(),
-            max: c.max,
-            level: input.level,
-            points,
-        });
+    for c in &CRITERIA {
+        let field = format!("criteria.{}.points", c.key);
+        match criteria
+            .iter()
+            .find(|x| x.key == c.key)
+            .and_then(|x| x.points)
+        {
+            None => errors.push(FieldError::new(field, "required")),
+            Some(p) if p > c.max => errors.push(FieldError::new(field, "above_max")),
+            Some(points) => scored.push(ScoredCriterion {
+                key: c.key.to_owned(),
+                max: c.max,
+                level: level_of(points, c.max),
+                points,
+            }),
+        }
     }
     if criteria.len() != CRITERIA.len() {
         errors.push(FieldError::new("criteria", "count"));
@@ -196,6 +182,7 @@ pub fn score(criteria: &[CriterionInput], serious_issue: bool) -> Result<Score, 
     }
     let total = scored.iter().map(|c| c.points).sum();
     let by_total = Level::of_total(total);
+    // The cap only ever lowers a result (Mức 1/2 → Mức 3); Chưa đạt stays Chưa đạt.
     let result = if serious_issue {
         by_total.max(Level::M3)
     } else {
@@ -264,6 +251,8 @@ pub struct StaffEvaluation {
     /// The month's attendance, as context for "Chuyên cần".
     pub attendance: AttendanceTotals,
     pub evaluation: Option<Evaluation>,
+    /// Decision C: whether the caller may score this person.
+    pub can_record: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
@@ -289,6 +278,7 @@ pub async fn sheet(
     let evals = evaluations_in(&mut tx, month, None).await?;
     let reviews = review::reviews_in(&mut tx, month, None).await?;
     let days = attendance::days_in(&mut tx, month, None).await?;
+    let scope = RecordScope::load(&mut tx, actor).await?;
     tx.commit().await?;
     let staff = profiles
         .iter()
@@ -314,6 +304,7 @@ pub async fn sheet(
                     &mine,
                 ),
                 evaluation: evals.iter().find(|e| e.staff_id == p.id).cloned(),
+                can_record: scope.may_record(p.id),
             }
         })
         .collect();
@@ -338,7 +329,8 @@ fn clean_text(field: &str, raw: Option<&str>, errors: &mut Vec<FieldError>) -> O
     t
 }
 
-/// `PUT /evaluations` (`evaluation.record`): records or rescores one person's month.
+/// `PUT /evaluations` (`evaluation.record`; decision C scope, `403 staff.record_owner_only`):
+/// records or rescores one person's month.
 pub async fn record(
     pool: &PgPool,
     actor: &Actor,
@@ -357,6 +349,9 @@ pub async fn record(
     if input.month > Month::of(today) {
         errors.push(FieldError::new("month", "in_future"));
     }
+    RecordScope::load(&mut tx, actor)
+        .await?
+        .require([input.staff_id])?;
     let profiles = org::profile::profiles_in(&mut tx).await?;
     match profiles.iter().find(|p| p.id == input.staff_id) {
         None => errors.push(FieldError::new("staff_id", "unknown")),
@@ -418,60 +413,81 @@ pub async fn record(
 mod tests {
     use super::*;
 
-    fn card(levels: [Level; 6]) -> Vec<CriterionInput> {
+    fn card(points: [u32; 6]) -> Vec<CriterionInput> {
         CRITERIA
             .iter()
-            .zip(levels)
-            .map(|(c, level)| CriterionInput {
+            .zip(points)
+            .map(|(c, p)| CriterionInput {
                 key: c.key.into(),
-                level,
-                points: None,
+                points: Some(p),
             })
             .collect()
     }
 
+    fn errors(r: Result<Score, AppError>) -> Vec<String> {
+        match r {
+            Err(AppError::Validation(e)) => e
+                .iter()
+                .map(|f| format!("{} {}", f.field, f.code))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
     #[test]
-    fn levels_score_as_the_sheet() -> Result<(), AppError> {
+    fn typed_points_add_up_to_the_month_level() -> Result<(), AppError> {
         use Level::*;
-        let s = score(&card([M1; 6]), false)?;
+        let s = score(&card([40, 15, 15, 10, 10, 10]), false)?;
         assert_eq!((s.total, s.result), (100, M1));
-        // 40·0.8 + 15 + 15 + 10 + 10 + 10 = 92 → Mức 1.
-        let s = score(&card([M2, M1, M1, M1, M1, M1]), false)?;
-        assert_eq!((s.total, s.result), (92, M1));
-        // 32 + 12 + 12 + 8 + 8 + 8 = 80 → Mức 2.
-        let s = score(&card([M2; 6]), false)?;
+        // The sheet's Mức 2 everywhere: 32 + 12 + 12 + 8 + 8 + 8 = 80 → Mức 2.
+        let s = score(&card([32, 12, 12, 8, 8, 8]), false)?;
         assert_eq!((s.total, s.result), (80, M2));
-        // 24 + 9 + 9 + 6 + 6 + 6 = 60 → Mức 3.
-        assert_eq!(score(&card([M3; 6]), false)?.result, M3);
-        // 12 + 4 + 4 + 3 + 3 + 3 = 29 → Chưa đạt (15 × 30 % = 4.5 rounds down).
-        let s = score(&card([Fail; 6]), false)?;
-        assert_eq!((s.total, s.result), (29, Fail));
+        // Any value in between, not only the level anchors.
+        let s = score(&card([35, 13, 11, 9, 7, 10]), false)?;
+        assert_eq!((s.total, s.result), (85, M1));
+        assert_eq!(score(&card([24, 9, 9, 6, 6, 6]), false)?.result, M3);
+        let s = score(&card([0; 6]), false)?;
+        assert_eq!((s.total, s.result), (0, Fail));
         Ok(())
     }
 
     #[test]
+    fn each_criterion_reads_its_level_from_its_share() {
+        // The sheet's anchors land on their own level.
+        assert_eq!(level_of(40, 40), Level::M1);
+        assert_eq!(level_of(32, 40), Level::M2);
+        assert_eq!(level_of(24, 40), Level::M3);
+        assert_eq!(level_of(12, 40), Level::Fail);
+        assert_eq!(level_of(34, 40), Level::M1, "85 %");
+        assert_eq!(level_of(33, 40), Level::M2, "82 %");
+        assert_eq!(level_of(7, 10), Level::M2);
+        assert_eq!(level_of(4, 10), Level::Fail);
+    }
+
+    #[test]
     fn serious_issue_caps_the_result_at_m3() -> Result<(), AppError> {
-        let s = score(&card([Level::M1; 6]), true)?;
+        let s = score(&card([40, 15, 15, 10, 10, 10]), true)?;
         assert_eq!((s.by_total, s.result), (Level::M1, Level::M3));
-        let s = score(&card([Level::Fail; 6]), true)?;
+        let s = score(&card([10, 4, 4, 3, 3, 3]), true)?;
         assert_eq!(s.result, Level::Fail, "the cap never improves a result");
         Ok(())
     }
 
     #[test]
-    fn fail_may_score_lower_but_never_above_30_percent() {
-        let mut c = card([Level::Fail; 6]);
-        c[0].points = Some(5);
-        assert_eq!(score(&c, false).map(|s| s.total).ok(), Some(22));
-        c[0].points = Some(13);
-        assert!(score(&c, false).is_err(), "40 × 30 % = 12 is the ceiling");
-        let mut m1 = card([Level::M1; 6]);
-        m1[1].points = Some(3);
-        assert!(score(&m1, false).is_err(), "points only for Chưa đạt");
-        assert!(
-            score(&card([Level::M1; 6])[..5], false).is_err(),
-            "every criterion"
+    fn every_criterion_is_required_and_within_its_maximum() {
+        let mut c = card([40, 15, 15, 10, 10, 10]);
+        c[0].points = Some(41);
+        assert_eq!(
+            errors(score(&c, false)),
+            ["criteria.technique.points above_max"]
         );
+        c[0].points = None;
+        assert_eq!(
+            errors(score(&c, false)),
+            ["criteria.technique.points required"]
+        );
+        let five = &card([40, 15, 15, 10, 10, 10])[..5];
+        assert!(!errors(score(five, false)).is_empty(), "every criterion");
     }
 
     #[test]

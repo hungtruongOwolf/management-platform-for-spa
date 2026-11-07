@@ -107,7 +107,15 @@ impl StaffDemo<'_> {
                     status: p.status,
                     joined_on: Some(date(joined)?),
                     left_on: None,
-                    user_id: (i == 0).then_some(tech_user.as_uuid()),
+                    // The first technician and the manager sign in as themselves (decision C:
+                    // the manager's own records are the owner's to write).
+                    user_id: if i == 0 {
+                        Some(tech_user.as_uuid())
+                    } else if *staff == self.manager_staff {
+                        Some(self.manager.user_id.as_uuid())
+                    } else {
+                        None
+                    },
                     shift_start: time(9, 0),
                 },
             )
@@ -155,11 +163,17 @@ impl StaffDemo<'_> {
                     }
                 }
             }
-            if !entries.is_empty() {
-                report.attendance_days += hr::attendance::record(self.app, self.manager, &entries)
-                    .await
-                    .map_err(fail("record attendance"))?
-                    .len();
+            // The manager checks the technicians in; the owner checks the manager in (decision C).
+            let (own, team): (Vec<Entry>, Vec<Entry>) = entries
+                .into_iter()
+                .partition(|e| e.staff_id == self.manager_staff);
+            for (actor, batch) in [(self.manager, team), (self.owner, own)] {
+                if !batch.is_empty() {
+                    report.attendance_days += hr::attendance::record(self.app, actor, &batch)
+                        .await
+                        .map_err(fail("record attendance"))?
+                        .len();
+                }
             }
             if !reviews.is_empty() {
                 report.daily_reviews += hr::review::record(self.app, self.manager, &reviews)
@@ -232,8 +246,17 @@ impl StaffDemo<'_> {
                 .zip(card)
                 .map(|(c, level)| CriterionInput {
                     key: c.key.to_owned(),
-                    level,
-                    points: None,
+                    // Typed at the sheet's anchor of each level (decision D: points, not levels).
+                    points: Some(
+                        c.max
+                            * match level {
+                                M1 => 100,
+                                M2 => 80,
+                                M3 => 60,
+                                Fail => 30,
+                            }
+                            / 100,
+                    ),
                 })
                 .collect();
             let weak = card.contains(&Fail);

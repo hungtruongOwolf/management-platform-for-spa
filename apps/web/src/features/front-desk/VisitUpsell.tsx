@@ -5,7 +5,8 @@
 // - "Chuyển sang gói liệu trình" → one package for this visit's customer. By default it is just a
 //   new package sale (additions) and today's one-off stays; only when the plan covers a one-off
 //   service done today may the desk tick "Tính buổi hôm nay vào gói" (Q-U1, case by case, default
-//   off) → `POST /visits/{id}/convert-to-package`: today's one-off is reversed and becomes session 1.
+//   off) → `POST /visits/{id}/convert-to-package`: today's one-off becomes session 1. The money
+//   already paid keeps its method (the server records it again); the desk only takes the top-up.
 // A lazy chunk. Amounts are previews; the server prices everything.
 import type { Visit } from "@vpyd/api-client";
 import {
@@ -125,13 +126,14 @@ export function VisitUpsell({
       : false;
   const converting = mayCount && countToday;
   const pkgTotal = packagesDue(sales);
-  // A conversion pays the package + the one-off lines kept; the old payment is reversed.
+  // A conversion costs the package + the one-off lines kept. What was paid today counts towards it
+  // in its own method (cash stays cash on the day's books); the payment choice is only for the rest.
   const conversion =
     converting && plan && sale
       ? conversionMoney(visit, plan, plan.price - pkgTotal)
       : null;
   const due = conversion
-    ? conversion.due
+    ? Math.max(0, conversion.handOver)
     : amountDue(lines, covered) + pkgTotal;
   const cashPart = parseAmount(cashText);
   const nothing = lines.length === 0 && sales.length === 0;
@@ -375,7 +377,7 @@ export function VisitUpsell({
             Tính buổi hôm nay vào gói
             <span className="check-hint">
               {countToday && conversion
-                ? `Hôm nay khách đã trả ${formatVnd(visit.total)}${methodsOf(visit) ? ` (${methodsOf(visit)})` : ""} cho ${covers}: tiền lẻ được đảo, buổi hôm nay là buổi 1 của gói.`
+                ? `Hôm nay khách đã trả ${formatVnd(visit.total)}${methodsOf(visit) ? ` (${methodsOf(visit)})` : ""} cho ${covers}: số tiền này tính vào gói, giữ nguyên cách trả; buổi hôm nay là buổi 1 của gói.`
                 : "Mặc định không: lượt lẻ giữ nguyên, chỉ bán gói mới."}
             </span>
           </span>
@@ -393,9 +395,15 @@ export function VisitUpsell({
         />
       )}
       <div className="upsell-total" aria-live="polite">
-        <span>{conversion ? "Khách đưa thêm" : "Thu thêm"}</span>
+        <span>
+          {conversion
+            ? conversion.handOver < 0
+              ? "Trả lại khách"
+              : "Khách đưa thêm"
+            : "Thu thêm"}
+        </span>
         <span className="checkout-amount">
-          {formatVnd(conversion ? conversion.handOver : due)}
+          {formatVnd(conversion ? Math.abs(conversion.handOver) : due)}
         </span>
       </div>
       {conversion && (

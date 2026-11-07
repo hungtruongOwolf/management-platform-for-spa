@@ -7,17 +7,113 @@ import { ResponsiveTable, type Column } from "../../components/ResponsiveTable";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { EmptyState, ErrorState, RowsSkeleton } from "../reports/ui";
 import { activeStaffQuery } from "../sales/api";
-import { adjustmentsQuery, createAdjustment, invalidateStaff, type Adjustment } from "./api";
+import {
+  adjustmentsQuery,
+  createAdjustment,
+  deleteAdjustment,
+  invalidateStaff,
+  reviewsQuery,
+  updateAdjustment,
+  type Adjustment,
+} from "./api";
 import { dayLabel, vnd } from "./ui";
 
+/** "Thưởng" / "Phạt" + amount and points, as the chips and the log show an entry. */
+export function adjustmentText(a: Adjustment): string {
+  return [
+    a.kind === "bonus" ? "Thưởng" : "Phạt",
+    a.amount != null ? vnd(a.amount) : "",
+    a.points != null ? `${String(a.points)} điểm` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** "Sửa" / "Xóa" of one entry, shown only when the server says the caller may (`can_edit`). */
+export function AdjustmentActions({ entry, name, onEdit }: { entry: Adjustment; name: string; onEdit: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <span className="inline-flex gap-1">
+      <button type="button" className="btn btn-ghost" aria-label={`Sửa ${adjustmentText(entry)} của ${name}`} onClick={onEdit}>
+        Sửa
+      </button>
+      <button
+        type="button"
+        className="btn btn-ghost text-danger"
+        aria-label={`Xóa ${adjustmentText(entry)} của ${name}`}
+        onClick={() => {
+          setConfirming(true);
+        }}
+      >
+        Xóa
+      </button>
+      {confirming && (
+        <DeleteAdjustment
+          entry={entry}
+          name={name}
+          onClose={() => {
+            setConfirming(false);
+          }}
+        />
+      )}
+    </span>
+  );
+}
+
+/** Confirm before removing an entry: it leaves the log and the payslip (the server keeps a trace). */
+function DeleteAdjustment({ entry, name, onClose }: { entry: Adjustment; name: string; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const remove = useMutation({
+    mutationFn: () => deleteAdjustment(entry.id),
+    onSuccess: onClose,
+    onSettled: () => invalidateStaff(queryClient),
+  });
+  return (
+    <BottomSheet
+      open
+      onClose={onClose}
+      title={`Xóa ${adjustmentText(entry).toLowerCase()} của ${name}?`}
+      description={`${dayLabel(entry.occurred_on)} · ${entry.reason}`}
+      footer={
+        <>
+          <button type="button" className="btn btn-secondary" onClick={onClose}>
+            Thôi
+          </button>
+          <button
+            type="button"
+            className="btn btn-danger"
+            aria-busy={remove.isPending || undefined}
+            onClick={() => {
+              if (!remove.isPending) remove.mutate();
+            }}
+          >
+            Xóa khoản này
+          </button>
+        </>
+      }
+    >
+      <p className="text-sm">Khoản này sẽ không còn trong sổ thưởng/phạt và không tính vào lương tháng. Lịch sử thao tác vẫn giữ lại.</p>
+      {remove.isError && (
+        <p role="alert" className="text-sm text-danger">
+          {messageFor(remove.error)}
+        </p>
+      )}
+    </BottomSheet>
+  );
+}
+
 /**
- * The month's bonus/penalty log (end of "Bảng công tháng"), newest first; recording is
- * append-only (a mistake is offset). Day-to-day entries are made from the daily book.
+ * The month's bonus/penalty log (end of "Bảng công tháng"), newest first. An entry recorded by
+ * mistake can be edited or removed while the month is open, by whoever may record it (decision C:
+ * a manager never for themselves or another manager). Day-to-day entries come from the daily book.
  */
 export function AdjustmentLogSection({ month, today, canWrite }: { month: string; today: string; canWrite: boolean }) {
   const log = useQuery(adjustmentsQuery(month));
   const staff = useQuery(activeStaffQuery);
+  // Who the caller may record for (decision C), from the month's review sheet.
+  const reviews = useQuery(reviewsQuery(month));
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Adjustment | null>(null);
 
   if (log.isPending) return <RowsSkeleton rows={4} />;
   if (log.isError) return <ErrorState error={log.error} onRetry={() => void log.refetch()} />;
@@ -51,7 +147,23 @@ export function AdjustmentLogSection({ month, today, canWrite }: { month: string
       ),
     },
     { id: "by", header: "Người ghi", cell: (a) => a.by_name },
+    {
+      id: "actions",
+      header: "Thao tác",
+      card: "aside",
+      cell: (a) =>
+        canWrite && a.can_edit ? (
+          <AdjustmentActions
+            entry={a}
+            name={names.get(a.staff_id) ?? "nhân viên"}
+            onEdit={() => {
+              setEditing(a);
+            }}
+          />
+        ) : null,
+    },
   ];
+  const recordable = (reviews.data?.staff ?? []).filter((s) => s.can_record).map((s) => ({ id: s.staff_id, full_name: s.full_name }));
 
   return (
     <section className="grid content-start gap-3" aria-labelledby="adjustment-log-title">
@@ -87,9 +199,21 @@ export function AdjustmentLogSection({ month, today, canWrite }: { month: string
         <AdjustmentForm
           today={today}
           closedMonth={log.data.closed ? log.data.month : null}
-          staff={staff.data ?? []}
+          staff={recordable}
           onClose={() => {
             setOpen(false);
+          }}
+        />
+      )}
+      {editing && (
+        <AdjustmentForm
+          today={today}
+          closedMonth={null}
+          staff={recordable}
+          fixed={{ staffId: editing.staff_id, name: names.get(editing.staff_id) ?? "nhân viên", date: editing.occurred_on }}
+          editing={editing}
+          onClose={() => {
+            setEditing(null);
           }}
         />
       )}
@@ -97,63 +221,91 @@ export function AdjustmentLogSection({ month, today, canWrite }: { month: string
   );
 }
 
+/** What a bonus / penalty form still lacks before it can be saved ("" when complete). */
+export function adjustmentMissing(f: { staffId: string; amount: string; points: string; reason: string }): string {
+  const missing = [
+    f.staffId ? "" : "chọn nhân viên",
+    f.amount || f.points ? "" : "nhập số tiền hoặc số điểm",
+    f.reason.trim() ? "" : "ghi lý do",
+  ].filter(Boolean);
+  return missing.length ? `Để lưu, cần ${missing.join(", ")}.` : "";
+}
+
 /**
  * Bonus / penalty form. From the daily book it opens for one person and one day (`fixed`): no
- * person picker, the date pre-filled.
+ * person picker, the date pre-filled. With `editing` it corrects that entry (`PUT`: the old one
+ * is voided, the corrected one recorded).
  */
 export function AdjustmentForm({
   today,
   closedMonth,
   staff,
   fixed,
+  editing,
   onClose,
 }: {
   today: string;
   closedMonth: string | null;
   staff: { id: string; full_name: string }[];
   fixed?: { staffId: string; name: string; date: string };
+  editing?: Adjustment;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
   const [key] = useState(() => crypto.randomUUID());
   const [staffId, setStaffId] = useState(fixed?.staffId ?? staff[0]?.id ?? "");
-  const [kind, setKind] = useState<"bonus" | "penalty">("bonus");
-  const [amount, setAmount] = useState("");
-  const [points, setPoints] = useState("");
-  const [reason, setReason] = useState("");
+  const [kind, setKind] = useState<"bonus" | "penalty">(editing?.kind ?? "bonus");
+  const [amount, setAmount] = useState(editing?.amount != null ? String(editing.amount) : "");
+  const [points, setPoints] = useState(editing?.points != null ? String(editing.points) : "");
+  const [reason, setReason] = useState(editing?.reason ?? "");
   const [on, setOn] = useState(fixed?.date ?? today);
+  // The staff list may still be loading when the form opens without a fixed person.
+  const chosen = staffId || (fixed ? "" : (staff[0]?.id ?? ""));
   const save = useMutation({
-    mutationFn: () =>
-      createAdjustment(
-        {
-          staff_id: staffId,
-          kind,
-          amount: amount ? Number(amount.replace(/\D/g, "")) : null,
-          points: points ? Number(points) : null,
-          reason: reason.trim(),
-          occurred_on: on,
-          // Viewing a closed month: the entry goes into today's month and names the closed one.
-          corrects_month: closedMonth,
-        },
-        key,
-      ),
+    mutationFn: () => {
+      const body = {
+        staff_id: chosen,
+        kind,
+        amount: amount ? Number(amount.replace(/\D/g, "")) : null,
+        points: points ? Number(points) : null,
+        reason: reason.trim(),
+        occurred_on: on,
+        // Viewing a closed month: the entry goes into today's month and names the closed one.
+        corrects_month: editing ? (editing.corrects_month ?? null) : closedMonth,
+      };
+      return editing ? updateAdjustment(editing.id, body, key) : createAdjustment(body, key);
+    },
     onSuccess: async () => {
       await invalidateStaff(queryClient);
       onClose();
     },
   });
+  const missing = adjustmentMissing({ staffId: chosen, amount, points, reason });
   const err = (f: string) => fieldMessage(save.error, f);
   const formId = "adjustment-form";
   return (
     <BottomSheet
       open
       onClose={onClose}
-      title={fixed ? `Thưởng / phạt · ${fixed.name}` : "Ghi thưởng / phạt"}
+      title={editing ? `Sửa thưởng / phạt · ${fixed?.name ?? ""}` : fixed ? `Thưởng / phạt · ${fixed.name}` : "Ghi thưởng / phạt"}
       description={closedMonth ? `Điều chỉnh cho tháng ${closedMonth} (đã chốt), ghi vào tháng hiện tại` : undefined}
       footer={
-        <button type="submit" form={formId} className="btn btn-primary" disabled={save.isPending || !staffId || !reason.trim() || (!amount && !points)}>
-          Lưu
-        </button>
+        <>
+          {missing && (
+            <span id="adjustment-missing" className="text-sm text-text-muted">
+              {missing}
+            </span>
+          )}
+          <button
+            type="submit"
+            form={formId}
+            className="btn btn-primary"
+            disabled={save.isPending || missing !== ""}
+            aria-describedby={missing ? "adjustment-missing" : undefined}
+          >
+            Lưu
+          </button>
+        </>
       }
     >
       <form
@@ -161,6 +313,7 @@ export function AdjustmentForm({
         className="grid gap-4"
         onSubmit={(e) => {
           e.preventDefault();
+          if (missing || save.isPending) return;
           save.mutate();
         }}
       >
@@ -168,7 +321,7 @@ export function AdjustmentForm({
           <label className="filter-field">
             Nhân viên
             <select
-              value={staffId}
+              value={chosen}
               onChange={(e) => {
                 setStaffId(e.target.value);
               }}

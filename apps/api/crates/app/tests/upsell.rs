@@ -791,9 +791,10 @@ async fn a_paid_one_off_visit_converts_to_its_first_package_session(pool: PgPool
     let extra = json!({"service_id": s.cheaper, "source": "one_off", "staff_id": s.mai, "referrer_staff_id": s.lan});
     let v = s.one_off_visit(Some(extra)).await;
     let id = str_of(&v.body["id"]);
+    // Paid 88.000đ cash for both lines; the package is topped up by transfer: only the rest.
     let body = json!({
         "package_sale": {"package_plan_id": s.plan, "closer_staff_id": s.lan},
-        "payments": [{"method": "cash", "amount": PLAN_PRICE + CHEAPER}],
+        "payments": [{"method": "bank_transfer", "amount": PLAN_PRICE - SHAMPOO}],
     });
     let r = s.convert(&s.manager, &id, 1, body.clone()).await;
     assert_eq!(r.status, StatusCode::CREATED, "{}", r.body);
@@ -832,6 +833,12 @@ async fn a_paid_one_off_visit_converts_to_its_first_package_session(pool: PgPool
         .get(&s.owner, &format!("/reports/daily?date={}", spa_today()))
         .await;
     assert_eq!(report.body["revenue"]["net"]["total"], PLAN_PRICE + CHEAPER);
+    // The cash already paid stays cash: only the top-up is a transfer.
+    assert_eq!(report.body["revenue"]["net"]["cash"], SHAMPOO + CHEAPER);
+    assert_eq!(
+        report.body["revenue"]["net"]["bank_transfer"],
+        PLAN_PRICE - SHAMPOO
+    );
     assert_eq!(
         report.body["counts"]["voided_visits"], 0,
         "a conversion is not a void"
@@ -875,6 +882,88 @@ async fn a_paid_one_off_visit_converts_to_its_first_package_session(pool: PgPool
     Ok(())
 }
 
+/// Live test 2026-11-07 (regression): converting a paid single visit re-recorded the money paid
+/// as "−cash, +full package by transfer". The money already paid keeps its method; only the
+/// top-up takes the method chosen now, so the day's cash / transfer split does not move and the
+/// visit row reads "Tiền mặt + CK".
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_conversion_keeps_the_money_already_paid_in_its_method(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let path = format!("/reports/daily?date={}", spa_today());
+    // 49.000đ paid as 29.000đ cash + 20.000đ transfer.
+    let v = s
+        .post(
+            &s.manager,
+            "/visits",
+            json!({"customer_id": s.ha,
+                   "lines": [{"service_id": s.shampoo, "source": "one_off", "staff_id": s.lan}],
+                   "payments": [{"method": "cash", "amount": 29_000},
+                                {"method": "bank_transfer", "amount": 20_000}]}),
+        )
+        .await;
+    assert_eq!(v.status, StatusCode::CREATED, "{}", v.body);
+    let before = s.get(&s.owner, &path).await.body["revenue"]["net"].clone();
+    assert_eq!(before["cash"], 29_000);
+    assert_eq!(before["bank_transfer"], 20_000);
+
+    // The rest of the package is handed over in cash.
+    let r = s
+        .convert(
+            &s.manager,
+            &str_of(&v.body["id"]),
+            1,
+            json!({"package_sale": {"package_plan_id": s.plan},
+                   "payments": [{"method": "cash", "amount": PLAN_PRICE - SHAMPOO}]}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.body);
+    assert_eq!(r.body["difference"], PLAN_PRICE - SHAMPOO);
+    let paid: Vec<(String, i64)> = r.body["visit"]["package_sales"][0]["payments"]
+        .as_array()
+        .map(|ps| {
+            ps.iter()
+                .map(|p| (str_of(&p["method"]), p["amount"].as_i64().unwrap_or(0)))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert_eq!(
+        paid,
+        vec![
+            ("cash".to_owned(), 29_000 + PLAN_PRICE - SHAMPOO),
+            ("bank_transfer".to_owned(), 20_000),
+        ],
+        "the transfer already made stays a transfer; the cash top-up joins the cash"
+    );
+    let after = s.get(&s.owner, &path).await.body["revenue"]["net"].clone();
+    assert_eq!(after["total"], PLAN_PRICE);
+    assert_eq!(after["cash"], PLAN_PRICE - 20_000);
+    assert_eq!(after["bank_transfer"], 20_000, "the transfer did not move");
+
+    // The old contract (full package price as the top-up) now collects too much: refused, and
+    // nothing changes.
+    let v2 = s.one_off_visit(None).await;
+    let over = s
+        .convert(
+            &s.manager,
+            &str_of(&v2.body["id"]),
+            1,
+            json!({"package_sale": {"package_plan_id": s.plan},
+                   "payments": [{"method": "bank_transfer", "amount": PLAN_PRICE}]}),
+        )
+        .await;
+    assert_eq!(
+        code(&over),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("payment.amount_mismatch")
+        )
+    );
+    let unchanged = s.get(&s.owner, &path).await.body["revenue"]["net"].clone();
+    assert_eq!(unchanged["cash"], PLAN_PRICE - 20_000 + SHAMPOO);
+    assert_eq!(unchanged["bank_transfer"], 20_000);
+    Ok(())
+}
+
 /// AC11.4–11.7 + Q-U4: manager same day, owner later days unless the month's payroll is closed;
 /// stale `If-Match`; permissions.
 #[sqlx::test(migrations = "../../migrations")]
@@ -882,7 +971,7 @@ async fn converting_follows_the_closed_day_and_payroll_rules(pool: PgPool) -> Te
     let s = spa(pool).await?;
     let body = json!({
         "package_sale": {"package_plan_id": s.plan, "closer_staff_id": s.lan},
-        "payments": [{"method": "cash", "amount": PLAN_PRICE}],
+        "payments": [{"method": "cash", "amount": PLAN_PRICE - SHAMPOO}],
     });
     let v = s.one_off_visit(None).await;
     let id = str_of(&v.body["id"]);
@@ -899,8 +988,9 @@ async fn converting_follows_the_closed_day_and_payroll_rules(pool: PgPool) -> Te
             &s.manager,
             &id,
             1,
+            // The full package price would collect today's 49.000đ a second time.
             json!({"package_sale": {"package_plan_id": s.plan},
-                   "payments": [{"method": "cash", "amount": PLAN_PRICE - SHAMPOO}]}),
+                   "payments": [{"method": "cash", "amount": PLAN_PRICE}]}),
         )
         .await;
     assert_eq!(
@@ -1047,6 +1137,61 @@ async fn payroll_credits_upsell_and_performing_separately(pool: PgPool) -> TestR
         mai["upsell_package_base"], PLAN_PRICE,
         "the package sale stays until voided"
     );
+    Ok(())
+}
+
+/// Live test 2026-11-07 (ADR-0010): a package cancelled with a refund takes the refunded amount
+/// back from its closer's upsell base, in the month of the refund; a cancellation without refund
+/// keeps the credit (the spa kept the money).
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_refund_takes_its_share_of_the_upsell_credit_back(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    s.pay(&s.mai, 700).await;
+    // Hà's package is refunded 1.000.000đ, Bình's cancelled without refund.
+    for (customer, refund) in [(&s.ha, 1_000_000), (&s.binh, 0)] {
+        let sale = s
+            .post(
+                &s.manager,
+                "/sales",
+                json!({"customer_id": customer, "closer_staff_id": s.mai,
+                       "lines": [{"package_plan_id": s.plan}],
+                       "payments": [{"method": "cash", "amount": PLAN_PRICE}]}),
+            )
+            .await;
+        assert_eq!(sale.status, StatusCode::CREATED, "{}", sale.body);
+        let package = str_of(&sale.body["customer_packages"][0]["id"]);
+        let mut body = json!({"reason": "Khách chuyển nhà", "refund_amount": refund});
+        if refund > 0 {
+            body["refund_method"] = json!("cash");
+        }
+        let r = s
+            .post(
+                &s.owner,
+                &format!("/customer-packages/{package}/cancel"),
+                body,
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    }
+
+    let payroll = s.get(&s.owner, "/payroll").await;
+    assert_eq!(payroll.status, StatusCode::OK, "{}", payroll.body);
+    let mai = slip(&payroll.body, &s.mai);
+    assert_eq!(
+        mai["upsell_package_base"],
+        2 * PLAN_PRICE - 1_000_000,
+        "both packages, minus the refund"
+    );
+    assert_eq!(
+        mai["closing_commission"],
+        (2 * PLAN_PRICE - 1_000_000) * 7 / 100
+    );
+    let refund_line = mai["upsell_lines"]
+        .as_array()
+        .and_then(|ls| ls.iter().find(|l| l["kind"] == "package_refund"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    assert_eq!(refund_line["value"], -1_000_000, "{}", mai["upsell_lines"]);
     Ok(())
 }
 

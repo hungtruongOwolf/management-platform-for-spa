@@ -80,11 +80,103 @@
           },
           "400": {},
           "401": {},
-          "403": {},
+          "403": {
+            "description": "auth.forbidden, staff.record_owner_only"
+          },
           "409": {
             "description": "payroll.period_closed"
           },
           "422": {}
+        }
+      }
+    },
+    "/api/v1/adjustments/{id}": {
+      "put": {
+        "tags": [
+          "staff"
+        ],
+        "summary": "Edit a bonus / penalty: the old entry is voided and the corrected one recorded (new id).",
+        "operationId": "put_adjustment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustmentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The new entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Adjustment"
+                }
+              }
+            }
+          },
+          "400": {},
+          "401": {},
+          "403": {
+            "description": "auth.forbidden, staff.record_owner_only"
+          },
+          "404": {},
+          "409": {
+            "description": "adjustment.voided, payroll.period_closed"
+          },
+          "422": {}
+        }
+      },
+      "delete": {
+        "tags": [
+          "staff"
+        ],
+        "summary": "Remove a bonus / penalty recorded by mistake (voided; kept for the audit trail).",
+        "operationId": "delete_adjustment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {},
+          "401": {},
+          "403": {
+            "description": "auth.forbidden, staff.record_owner_only"
+          },
+          "404": {},
+          "409": {
+            "description": "adjustment.voided, payroll.period_closed"
+          }
         }
       }
     },
@@ -645,7 +737,9 @@
             }
           },
           "401": {},
-          "403": {},
+          "403": {
+            "description": "auth.forbidden, staff.record_owner_only"
+          },
           "409": {
             "description": "payroll.period_closed"
           },
@@ -1744,7 +1838,9 @@
             }
           },
           "401": {},
-          "403": {},
+          "403": {
+            "description": "auth.forbidden, staff.record_owner_only"
+          },
           "409": {
             "description": "payroll.period_closed"
           },
@@ -1810,7 +1906,9 @@
             }
           },
           "401": {},
-          "403": {},
+          "403": {
+            "description": "auth.forbidden, staff.record_owner_only"
+          },
           "409": {
             "description": "payroll.period_closed"
           },
@@ -3603,7 +3701,8 @@
           "kind",
           "reason",
           "by_name",
-          "created_at"
+          "created_at",
+          "can_edit"
         ],
         "properties": {
           "amount": {
@@ -3616,6 +3715,10 @@
           },
           "by_name": {
             "type": "string"
+          },
+          "can_edit": {
+            "type": "boolean",
+            "description": "Whether the caller may remove or edit it (decision C scope, month open). Always false on\n`/me/staff`."
           },
           "corrects_month": {
             "type": [
@@ -4751,16 +4854,12 @@
       "CriterionWrite": {
         "type": "object",
         "required": [
-          "key",
-          "level"
+          "key"
         ],
         "properties": {
           "key": {
             "type": "string",
             "description": "One of the six criterion keys (`GET /evaluations` → `criteria`)."
-          },
-          "level": {
-            "$ref": "#/components/schemas/Level"
           },
           "points": {
             "type": [
@@ -4768,7 +4867,7 @@
               "null"
             ],
             "format": "int32",
-            "description": "Only for `fail`: a score below the 30 % ceiling.",
+            "description": "Typed by the evaluator: 0 to the criterion's `max` (decision D). Required: `null` or a\nmissing value → `422 criteria.<key>.points required`; above `max` → `above_max`. The\ncriterion's level is computed from it.",
             "minimum": 0
           }
         },
@@ -8122,7 +8221,7 @@
           "upsell_package_base": {
             "type": "integer",
             "format": "int64",
-            "description": "Part of the upsell base from packages closed."
+            "description": "Part of the upsell base from packages closed, minus packages refunded this month."
           },
           "upsell_service_base": {
             "type": "integer",
@@ -9141,12 +9240,17 @@
           "position",
           "compliments",
           "complaints",
-          "attendance"
+          "attendance",
+          "can_record"
         ],
         "properties": {
           "attendance": {
             "$ref": "#/components/schemas/AttendanceTotals",
             "description": "The month's attendance, as context for \"Chuyên cần\"."
+          },
+          "can_record": {
+            "type": "boolean",
+            "description": "Decision C: whether the caller may score this person."
           },
           "complaints": {
             "type": "integer",
@@ -9383,9 +9487,14 @@
           "position",
           "compliments",
           "complaints",
-          "days"
+          "days",
+          "can_record"
         ],
         "properties": {
+          "can_record": {
+            "type": "boolean",
+            "description": "Decision C: whether the caller may record this person's day."
+          },
           "complaints": {
             "type": "integer",
             "format": "int32",
@@ -9422,9 +9531,15 @@
           "position",
           "shift_start",
           "days",
-          "totals"
+          "totals",
+          "can_record",
+          "visit_days"
         ],
         "properties": {
+          "can_record": {
+            "type": "boolean",
+            "description": "Whether the caller may record this person's attendance, praise / complaints, bonuses /\npenalties and evaluation (decision C: a manager never for themselves or another manager).\nAlways false on `/me/staff`."
+          },
           "days": {
             "type": "array",
             "items": {
@@ -9461,6 +9576,14 @@
           },
           "totals": {
             "$ref": "#/components/schemas/AttendanceTotals"
+          },
+          "visit_days": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Days of the month this person performed a service of a completed visit (a leave code on\nsuch a day gets a warning). Empty on `/me/staff`."
           }
         }
       },
@@ -9705,17 +9828,17 @@
           },
           "kind": {
             "type": "string",
-            "description": "`package` or `service`."
+            "description": "`package`, `package_refund` (a package closed earlier, cancelled with a refund this month)\nor `service`."
           },
           "qty": {
             "type": "integer",
             "format": "int64",
-            "description": "Packages sold / services recommended."
+            "description": "Packages sold or refunded / services recommended."
           },
           "value": {
             "type": "integer",
             "format": "int64",
-            "description": "Price paid (packages, after discount) or `line_value` (services)."
+            "description": "Price paid (packages, after discount), the refund as a negative amount (`package_refund`)\nor `line_value` (services)."
           }
         }
       },
@@ -9793,7 +9916,7 @@
             "items": {
               "$ref": "#/components/schemas/PaymentCreate"
             },
-            "description": "Summing exactly to the package plus the one-off lines kept (the old one-off payments are\nreversed). The desk shows \"Khách đưa thêm\" = this − what was paid for the visit."
+            "description": "Only the top-up (\"Khách đưa thêm\"), in the method(s) the customer uses now: summing exactly\nto the package plus the one-off lines kept, minus what was already paid for the visit\n(empty when that covers it). The money already paid is recorded again by the server in its\nown method, so the day's cash / transfer split does not move."
           }
         }
       },

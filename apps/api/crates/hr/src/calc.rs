@@ -59,12 +59,14 @@ pub struct CommissionLine {
 /// recommended. Performing the service is a separate credit ([`CommissionLine`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct UpsellLine {
-    /// `package` or `service`.
+    /// `package`, `package_refund` (a package closed earlier, cancelled with a refund this month)
+    /// or `service`.
     pub kind: String,
     pub description: String,
-    /// Packages sold / services recommended.
+    /// Packages sold or refunded / services recommended.
     pub qty: i64,
-    /// Price paid (packages, after discount) or `line_value` (services).
+    /// Price paid (packages, after discount), the refund as a negative amount (`package_refund`)
+    /// or `line_value` (services).
     pub value: i64,
 }
 
@@ -147,7 +149,7 @@ pub struct Payslip {
     /// Upsell base ("hoa hồng giới thiệu / chốt", §3.2) = packages + recommended services.
     pub closing_commission_base: i64,
     pub closing_commission: i64,
-    /// Part of the upsell base from packages closed.
+    /// Part of the upsell base from packages closed, minus packages refunded this month.
     #[serde(default)]
     pub upsell_package_base: i64,
     /// Part of the upsell base from one-off services recommended (Q-U3).
@@ -320,7 +322,11 @@ pub fn compute(
             .sum()
     };
     let (package_base, referred_base) = if rules.closing_commission {
-        (upsell_of("package"), upsell_of("service"))
+        // A refunded package takes its refund back (ADR-0010): commission on what the spa kept.
+        (
+            upsell_of("package") + upsell_of("package_refund"),
+            upsell_of("service"),
+        )
     } else {
         (0, 0)
     };
@@ -586,6 +592,41 @@ mod tests {
         };
         let s = slip(&i, &gifts);
         assert_eq!((s.service_commission, s.closing_commission), (60_000, 0));
+    }
+
+    #[test]
+    fn a_refunded_package_takes_its_refund_back_from_the_closer() {
+        // Live test 2026-11-07: Xông chân 1.290.000đ closed at 7 %, cancelled with a 1.000.000đ
+        // refund → the commission is on the 290.000đ the spa kept, not on 1.290.000đ.
+        let ds = days(&[]);
+        let upsell = [
+            UpsellLine {
+                kind: "package".into(),
+                description: "Xông chân".into(),
+                qty: 1,
+                value: 1_290_000,
+            },
+            UpsellLine {
+                kind: "package_refund".into(),
+                description: "Xông chân".into(),
+                qty: 1,
+                value: -1_000_000,
+            },
+        ];
+        let mut i = input(&ds, &[]);
+        i.upsell_lines = &upsell;
+        if let Some(p) = i.pay.as_mut() {
+            p.commission_rate_bp = 700;
+        }
+        let s = slip(&i, &PayrollRules::default());
+        assert_eq!(s.upsell_package_base, 290_000);
+        assert_eq!(s.closing_commission, 20_300);
+        // Refunded in a later month: that month's base goes below zero, so the commission paid
+        // earlier is taken back there.
+        let later = [upsell[1].clone()];
+        i.upsell_lines = &later;
+        let s = slip(&i, &PayrollRules::default());
+        assert_eq!(s.closing_commission, -70_000);
     }
 
     #[test]

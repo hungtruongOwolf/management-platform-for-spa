@@ -1,8 +1,8 @@
 ---
 title: "Spec: Quản lý nhân viên (chấm công, đánh giá, thưởng/phạt, bảng lương)"
 status: draft
-updated: 2026-11-06
-sources: [raw/2026-11-06-em-review-round5.md, raw/2026-11-05-em-review-round4.md, raw/2026-11-04-idea-internal-platform.md]
+updated: 2026-11-07
+sources: [raw/2026-11-07-em-decisions-after-live-test.md, raw/2026-11-06-em-review-round5.md, raw/2026-11-05-em-review-round4.md, raw/2026-11-04-idea-internal-platform.md]
 related: [../compensation-rules.md, ../personas.md, ../../architecture/backend.md, ../../architecture/data.md, ../../security/authz-matrix.md]
 ---
 
@@ -65,15 +65,16 @@ Thước đo: quản lý không phải cộng tay lương và hoa hồng ([perso
 
 ### US3b: Đánh giá tháng (quản lý, ngày 1–5 tháng sau)
 - AC3b.1 `PUT /evaluations {staff_id, month, criteria[6], serious_issue, coaching_plan?, comment?}`. Có 6 tiêu chí: `technique` 40, `attitude` 15, `customer_feedback` 15, `diligence` 10, `hygiene` 10, `learning` 10.
-  - Mỗi tiêu chí chấm theo mức: `m1` 100 %, `m2` 80 %, `m3` 60 %, `fail` 30 %, **làm tròn xuống**.
-  - Riêng `fail` được nhập điểm thấp hơn trần 30 %. Nhập cao hơn trần → `422 above_ceiling`. Nhập điểm cho mức khác `fail` → `422 only_for_fail`.
+  - **Quyết định D (EM 2026-11-07, thay cách chọn mức):** mỗi tiêu chí là `{key, points}`, người chấm **gõ điểm** 0 → tối đa. Thiếu điểm → `422 criteria.<key>.points required`; vượt tối đa → `422 criteria.<key>.points above_max`; thiếu tiêu chí → `criteria count`.
+  - Mức của từng tiêu chí do server tính từ tỷ lệ điểm/tối đa, cùng ngưỡng với xếp loại tháng (≥ 85 % Mức 1, 70–84 % Mức 2, 50–69 % Mức 3, < 50 % Chưa đạt). Các mốc của sheet rơi đúng mức của nó (100 % → Mức 1, 80 % → Mức 2, 60 % → Mức 3, ≤ 30 % → Chưa đạt). Bản ghi cũ (chọn mức) đọc như cũ.
+  - Form mới **để trống**, không điền sẵn Mức 1 / 100 điểm; chỉ lưu khi đủ 6 tiêu chí hợp lệ. Form có ghi chú giải thích các mức và mốc điểm (ví dụ Kỹ thuật: Mức 1: 40 · Mức 2: 32 · Mức 3: 24 · Chưa đạt: ≤ 12) và xếp loại theo tổng.
 - AC3b.2 Kết quả: ≥ 85 → Mức 1; 70–84 → Mức 2; 50–69 → Mức 3; < 50 → Chưa đạt. `serious_issue` giới hạn kết quả **tối đa Mức 3**, không bao giờ làm kết quả tốt lên. Kết quả Mức 3 hoặc Chưa đạt mà không có `coaching_plan` → `422 coaching_plan required`.
 - AC3b.3 Tháng sau tháng hiện tại → `422`. Tháng đã chốt → `409`. Ghi lại thì chấm lại (upsert, `version` tăng, có audit).
 - AC3b.4 `GET /evaluations?month=` trả về tiêu chí, phiếu của từng người (hoặc `null`), cùng tổng khen/phàn nàn và tổng chấm công của tháng làm ngữ cảnh.
 
 ### US4: Thưởng / phạt
 - AC4.1 `POST /adjustments` (`Idempotency-Key`): `staff_id`, `kind` (`bonus`/`penalty`), `amount?` (1–100tr), `points?` (1–100), cần ít nhất một trong hai. `reason` bắt buộc. `occurred_on` mặc định hôm nay, không được ở tương lai. Người ghi lấy từ session.
-- AC4.2 Chỉ thêm, không sửa hay xóa (trigger `reject_mutation`). Ghi sai thì ghi một dòng ngược loại để bù.
+- AC4.2 ~~Chỉ thêm, không sửa hay xóa~~ **(EM 2026-11-07, §11):** một khoản ghi nhầm được **xóa** (`DELETE /adjustments/{id}` → `204`, có hộp xác nhận) hoặc **sửa** (`PUT /adjustments/{id}` + `Idempotency-Key` → `200` khoản mới, id mới: khoản cũ bị hủy và khoản đúng được ghi trong một transaction). "Xóa" = hủy (`voided_at`, `voided_by`, migration 0024): ra khỏi sổ và bảng lương, dòng vẫn còn cho audit (`staff.adjustment_void`). Đã hủy → `409 adjustment.voided`; tháng đã chốt → `409 payroll.period_closed`; quyền như khi ghi (§11 quyết định C). DB: chỉ được đặt `voided_at` một lần, mọi thay đổi khác và DELETE bị trigger chặn.
 - AC4.3 Tháng của `occurred_on` đã chốt → `409`. Để sửa tháng đã chốt: ghi vào tháng đang mở, kèm `corrects_month` là tháng đã chốt (phải trước tháng ghi và đã chốt, nếu không → `422`).
 - AC4.4 `GET /adjustments?month=`: mới nhất trước, kèm tên người ghi.
 
@@ -192,3 +193,25 @@ Không đổi API hay quy tắc dữ liệu cho mục 9–10 (khóa tháng, quy�
 - AC9.4 **Chỉ các trường trên.** Không có giá, doanh thu, giá trị dòng, SĐT, ghi chú buổi, ghi chú sức khỏe, ghi chú lịch hẹn, id khách (test kiểm không có key nào khác). KTV vẫn không có `customer.read`/`visit.read`/`appointment.manage`. *(Lead's decision — EM to review: KTV thấy tên khách mình phục vụ, không thấy SĐT; tên dịch vụ đã có trên phiếu lương.)*
 - AC9.5 Âm: chưa đăng nhập → `401`; role không có `staff.read_own` → `403`; tham số lạ (`?staff_id=`) → `400`; tháng sai → `422`; KTV A không bao giờ thấy lượt/lịch của KTV B, kể cả lượt có cả hai cùng làm (A chỉ thấy dòng của A); spa khác không thấy gì (lọc tenant + RLS). Quản lý/chủ spa: các route quản lý không đổi.
 - AC9.6 UI: mục nav **"Khách của tôi"** (`/khach-cua-toi`, tab bar "Khách") cho người có `staff.read_own` mà không có `visit.read` (quản lý/chủ spa đã có màn quầy). Hai phần: "Lịch hẹn sắp tới" (nhóm theo ngày) và "Khách đã làm" của tháng (chọn tháng, nhóm theo ngày). Trạng thái: đang tải, trống, lỗi, chưa gắn hồ sơ.
+
+## 11. Sau test thật (EM 2026-11-07, [raw](../../../raw/2026-11-07-em-decisions-after-live-test.md))
+
+### Quyết định C: ai ghi cho ai (server bắt buộc)
+- Chủ spa (`staff.manage`) chấm công, ghi khen/phàn nàn, thưởng/phạt và đánh giá tháng cho **mọi người**.
+- Quản lý chỉ ghi cho KTV: **không bao giờ cho chính mình, không cho quản lý khác** (cũng không cho chủ spa). Sai → `403 staff.record_owner_only`, cả batch không ghi gì.
+- "Quản lý" lấy từ dữ liệu, không từ chữ "Vị trí": hồ sơ gắn với tài khoản có role mang `attendance.record`, `evaluation.record` hoặc `staff.manage`; cộng hồ sơ gắn với chính người gọi. Hồ sơ **chưa gắn tài khoản** tính như KTV (không đăng nhập thì không quản lý được ai). → Chủ spa cần gắn tài khoản cho hồ sơ quản lý ở tab Hồ sơ (dữ liệu demo đã gắn).
+- Route: `PUT /attendance`, `PUT /daily-reviews`, `PUT /evaluations`, `POST /adjustments`, `PUT /adjustments/{id}`, `DELETE /adjustments/{id}` (sửa: cả người cũ và người mới phải trong phạm vi). Code: `hr::scope::RecordScope`.
+- UI: các view tháng trả `can_record` mỗi người (`GET /attendance`, `/daily-reviews`, `/evaluations`) và `can_edit` mỗi khoản thưởng/phạt (`GET /adjustments`). Dòng không ghi được: nút chấm công, bộ đếm bị tắt, không có "Ghi thưởng / phạt", "Giờ & ghi chú", "Chấm điểm"; có câu "Chỉ chủ spa chấm công, ghi khen/phàn nàn và thưởng/phạt cho quản lý." / "Chỉ chủ spa chấm cho quản lý"; bảng công tháng ghi "Chủ spa chấm" dưới tên và ô không bấm được; "Cả spa đi làm" bỏ qua những dòng đó.
+
+### Quyết định D: phiếu đánh giá tháng gõ điểm
+Xem AC3b.1. Giữ tối đa 100 điểm. **Giới hạn Mức 3** giữ nguyên ý: tick "khiếu nại nghiêm trọng / vi phạm nhiều lần" thì kết quả tháng tối đa Mức 3, không bao giờ làm kết quả tốt lên; form ghi rõ "Tổng X điểm là Mức 1, nhưng có khiếu nại nghiêm trọng nên kết quả tháng tối đa Mức 3". Mức 3 / Chưa đạt vẫn bắt buộc kế hoạch kèm cặp.
+
+### Chấm nghỉ cho người đã có lượt khách
+`GET /attendance` trả `visit_days` mỗi người (ngày có dòng dịch vụ do người đó làm trong lượt hoàn tất). Chọn P/ĐX/K cho ngày có lượt → **hỏi xác nhận rồi mới lưu** ("Lan có lượt khách ngày này … Vẫn chấm Nghỉ không phép / Thôi"); trong sheet "Giờ & ghi chú" là cảnh báo cạnh lựa chọn, bấm Lưu là xác nhận. *(Lead's decision — EM to review: xác nhận chứ không chặn, vì lượt có thể ghi nhầm KTV hoặc người đó về giữa ca; server không chặn.)*
+
+### Thưởng/phạt
+- Nút "Lưu" tắt thì có câu nói thiếu gì: "Để lưu, cần chọn nhân viên, nhập số tiền hoặc số điểm, ghi lý do."
+- Khoản đã ghi có "Sửa" / "Xóa" (khi `can_edit`): trong sổ hằng ngày (dòng dưới người) và sổ thưởng/phạt cuối "Bảng công tháng". Xóa có hộp xác nhận. Xem AC4.2.
+
+### Hoa hồng chốt khi gói bị hủy có hoàn tiền
+[ADR-0010](../../decisions/ADR-0010-commission-follows-kept-money.md): khoản hoàn trừ vào cơ sở hoa hồng chốt của người chốt, ở tháng hoàn tiền (dòng `package_refund` âm trên phiếu lương). *(Lead's decision — EM to review.)*

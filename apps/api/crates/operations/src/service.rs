@@ -90,7 +90,11 @@ pub(crate) struct Order {
     check_in_at: Option<DateTime<Utc>>,
     note: Option<String>,
     lines: Vec<LineOrder>,
+    /// New money handed over in this request (its method is the desk's choice).
     payments: Vec<Payment>,
+    /// Money already paid for the visit this one replaces, just reversed by its void ("Tính buổi
+    /// hôm nay vào gói"): recorded again in its own method before `payments`, up to the new total.
+    carried: Vec<Payment>,
     discount: Option<ServiceDiscount>,
     package_sales: Vec<PackageSaleOrder>,
     companions: Vec<String>,
@@ -323,6 +327,7 @@ fn parse_order(actor: &Actor, input: &VisitCreate, min_lines: usize) -> Result<O
         note,
         lines,
         payments,
+        carried: Vec::new(),
         discount,
         package_sales,
         companions,
@@ -564,11 +569,14 @@ async fn price_checkout(
     let dues: Vec<Money> = std::iter::once(services.total)
         .chain(packages.iter().map(PricedPackageSale::total))
         .collect();
-    let split = sales::service::allocate_payments(&dues, &order.payments).ok_or(
-        AppError::Unprocessable {
+    let due = Money::sum(dues.iter().copied()).map_err(|_| AppError::Unprocessable {
+        code: "payment.amount_mismatch",
+    })?;
+    let payments = sales::service::with_carried(&order.carried, &order.payments, due);
+    let split =
+        sales::service::allocate_payments(&dues, &payments).ok_or(AppError::Unprocessable {
             code: "payment.amount_mismatch",
-        },
-    )?;
+        })?;
     if !order.payments.is_empty() {
         actor.require(Permission::PaymentCollect)?;
     }
@@ -1604,7 +1612,9 @@ const CONVERSION_PREFIX: &str = "Chuyển sang gói ";
 /// payments reversed on today's books, sessions given back), the package is sold and the visit is
 /// recorded again on its own day — the one-off lines the package covers now take its sessions,
 /// every other line is recorded unchanged (same technician, referrer, discount share).
-/// `difference` in the response = what the customer hands over now ("Khách đưa thêm").
+/// The money already paid for the visit is recorded again in its own method (a cash payment stays
+/// cash on the day's books); the request's `payments` are only the top-up, in the method the desk
+/// chose. `difference` in the response = what the customer hands over now ("Khách đưa thêm").
 pub async fn convert(
     pool: &PgPool,
     cipher: &FieldCipher,
@@ -1646,6 +1656,9 @@ pub async fn convert(
 
     let started = begin_correction(&mut tx, cipher, actor, id, request.version, &reason).await?;
     let old = load_one(&mut tx, cipher, actor, id, false).await?;
+    // What the customer already paid for the visit keeps its method (cash stays cash); the request's
+    // payments are only the top-up ("Khách đưa thêm").
+    let carried = sales::service::reversed_by_method(&old.payments);
     require_payroll_open(&mut tx, old.business_date).await?;
     if package_sales[0]
         .beneficiary
@@ -1731,6 +1744,7 @@ pub async fn convert(
         note: None,
         lines,
         payments,
+        carried,
         discount,
         package_sales: vec![package_sales.remove(0)],
         companions: old.companions.clone(),

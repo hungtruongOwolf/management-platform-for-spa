@@ -5,9 +5,7 @@
 use crate::adjustment::{self, Adjustment, AdjustmentInput, AdjustmentKind, AdjustmentLog};
 use crate::attendance::{self, AttendanceDay, AttendanceSheet, AttendanceStatus, Entry};
 use crate::calc::Payslip;
-use crate::evaluation::{
-    self, CriterionInput, Evaluation, EvaluationInput, EvaluationSheet, Level,
-};
+use crate::evaluation::{self, CriterionInput, Evaluation, EvaluationInput, EvaluationSheet};
 use crate::me::{self, MyStaff};
 use crate::month::Month;
 use crate::payroll::{self, CloseInput, PayrollMonth};
@@ -18,7 +16,7 @@ use axum::body::Bytes;
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use chrono::NaiveDate;
 use identity::AuthUser;
@@ -43,6 +41,10 @@ where
         )
         .route("/evaluations", get(get_evaluations).put(put_evaluation))
         .route("/adjustments", get(get_adjustments).post(post_adjustment))
+        .route(
+            "/adjustments/{id}",
+            put(put_adjustment).delete(delete_adjustment),
+        )
         .route("/payroll", get(get_payroll))
         .route("/payroll/payslips/{id}", get(get_payslip))
         .route("/payroll/close", post(close_payroll))
@@ -133,7 +135,7 @@ pub async fn get_attendance(
 }
 
 #[utoipa::path(put, path = "/api/v1/attendance", tag = "staff", request_body = AttendanceWrite,
-    responses((status = 200, body = [AttendanceDay]), (status = 401), (status = 403),
+    responses((status = 200, body = [AttendanceDay]), (status = 401), (status = 403, description = "auth.forbidden, staff.record_owner_only"),
               (status = 409, description = "payroll.period_closed"), (status = 422)))]
 pub async fn put_attendance(
     State(pool): State<PgPool>,
@@ -199,7 +201,7 @@ pub async fn get_daily_reviews(
 }
 
 #[utoipa::path(put, path = "/api/v1/daily-reviews", tag = "staff", request_body = DailyReviewWrite,
-    responses((status = 200, body = [DailyReview]), (status = 401), (status = 403),
+    responses((status = 200, body = [DailyReview]), (status = 401), (status = 403, description = "auth.forbidden, staff.record_owner_only"),
               (status = 409, description = "payroll.period_closed"), (status = 422)))]
 pub async fn put_daily_reviews(
     State(pool): State<PgPool>,
@@ -228,8 +230,9 @@ pub async fn put_daily_reviews(
 pub struct CriterionWrite {
     /// One of the six criterion keys (`GET /evaluations` → `criteria`).
     pub key: String,
-    pub level: Level,
-    /// Only for `fail`: a score below the 30 % ceiling.
+    /// Typed by the evaluator: 0 to the criterion's `max` (decision D). Required: `null` or a
+    /// missing value → `422 criteria.<key>.points required`; above `max` → `above_max`. The
+    /// criterion's level is computed from it.
     #[serde(default)]
     pub points: Option<u32>,
 }
@@ -262,7 +265,7 @@ pub async fn get_evaluations(
 }
 
 #[utoipa::path(put, path = "/api/v1/evaluations", tag = "staff", request_body = EvaluationWrite,
-    responses((status = 200, body = Evaluation), (status = 401), (status = 403),
+    responses((status = 200, body = Evaluation), (status = 401), (status = 403, description = "auth.forbidden, staff.record_owner_only"),
               (status = 409, description = "payroll.period_closed"), (status = 422)))]
 pub async fn put_evaluation(
     State(pool): State<PgPool>,
@@ -277,7 +280,6 @@ pub async fn put_evaluation(
             .into_iter()
             .map(|c| CriterionInput {
                 key: c.key,
-                level: c.level,
                 points: c.points,
             })
             .collect(),
@@ -323,7 +325,7 @@ pub async fn get_adjustments(
 
 #[utoipa::path(post, path = "/api/v1/adjustments", tag = "staff", request_body = AdjustmentCreate,
     params(("Idempotency-Key" = Uuid, Header)),
-    responses((status = 201, body = Adjustment), (status = 400), (status = 401), (status = 403),
+    responses((status = 201, body = Adjustment), (status = 400), (status = 401), (status = 403, description = "auth.forbidden, staff.record_owner_only"),
               (status = 409, description = "payroll.period_closed"), (status = 422)))]
 pub async fn post_adjustment(
     State(pool): State<PgPool>,
@@ -333,7 +335,13 @@ pub async fn post_adjustment(
 ) -> Result<Response, AppError> {
     let (b, bytes): (AdjustmentCreate, _) = canonical(&body)?;
     let hash = hash_route("POST", "/adjustments", None, &bytes);
-    let input = AdjustmentInput {
+    let input = adjustment_input(b)?;
+    let (status, body) = adjustment::record(&pool, &user.actor, key, hash, &input, to_json).await?;
+    Ok(stored(status, body))
+}
+
+fn adjustment_input(b: AdjustmentCreate) -> Result<AdjustmentInput, AppError> {
+    Ok(AdjustmentInput {
         staff_id: b.staff_id,
         kind: b.kind,
         amount: b.amount,
@@ -345,9 +353,47 @@ pub async fn post_adjustment(
             .as_deref()
             .map(|m| Month::parse("corrects_month", m))
             .transpose()?,
-    };
-    let (status, body) = adjustment::record(&pool, &user.actor, key, hash, &input, to_json).await?;
+    })
+}
+
+/// Edit a bonus / penalty: the old entry is voided and the corrected one recorded (new id).
+#[utoipa::path(put, path = "/api/v1/adjustments/{id}", tag = "staff", request_body = AdjustmentCreate,
+    params(("id" = Uuid, Path), ("Idempotency-Key" = Uuid, Header)),
+    responses((status = 200, body = Adjustment, description = "The new entry"), (status = 400), (status = 401),
+              (status = 403, description = "auth.forbidden, staff.record_owner_only"), (status = 404),
+              (status = 409, description = "adjustment.voided, payroll.period_closed"), (status = 422)))]
+pub async fn put_adjustment(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    IdempotencyKey(key): IdempotencyKey,
+    Path(id): Path<Uuid>,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    let (b, bytes): (AdjustmentCreate, _) = canonical(&body)?;
+    let hash = hash_route("PUT", "/adjustments/{id}", Some(id), &bytes);
+    let input = adjustment_input(b)?;
+    let (status, body) =
+        adjustment::replace(&pool, &user.actor, key, hash, id, &input, to_json).await?;
     Ok(stored(status, body))
+}
+
+/// Remove a bonus / penalty recorded by mistake (voided; kept for the audit trail).
+#[utoipa::path(delete, path = "/api/v1/adjustments/{id}", tag = "staff", params(("id" = Uuid, Path)),
+    responses((status = 204), (status = 401),
+              (status = 403, description = "auth.forbidden, staff.record_owner_only"), (status = 404),
+              (status = 409, description = "adjustment.voided, payroll.period_closed")))]
+pub async fn delete_adjustment(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    adjustment::remove(&pool, &user.actor, id).await?;
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    Ok(response)
 }
 
 // ---------------------------------------------------------------------------------- payroll

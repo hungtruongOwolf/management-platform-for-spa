@@ -4,7 +4,7 @@ import { BottomSheet } from "../../components/BottomSheet";
 import { messageFor } from "../../lib/errors";
 import { ErrorState, RowsSkeleton } from "../reports/ui";
 import { evaluationsQuery, invalidateStaff, saveEvaluation, type EvaluationSheet, type StaffEvaluation } from "./api";
-import { LEVELS, LEVEL_LABEL, LEVEL_SHORT, monthLabel, type Level } from "./labels";
+import { LEVEL_LABEL, LEVEL_SHORT, monthLabel, type Level } from "./labels";
 import { ClosedBanner } from "./ui";
 
 /**
@@ -52,7 +52,7 @@ export function EvaluationTab({ month }: { month: string }) {
             ) : (
               <span className="badge badge-warn">Chưa đánh giá</span>
             )}
-            {!sheet.closed && (
+            {!sheet.closed && s.can_record && (
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -63,6 +63,7 @@ export function EvaluationTab({ month }: { month: string }) {
                 {s.evaluation ? "Chấm lại" : "Chấm điểm"}
               </button>
             )}
+            {!sheet.closed && !s.can_record && <span className="text-sm text-text-muted">Chỉ chủ spa chấm cho quản lý</span>}
           </li>
         ))}
       </ul>
@@ -79,12 +80,47 @@ export function EvaluationTab({ month }: { month: string }) {
   );
 }
 
-const PERCENT: Record<Level, number> = { m1: 100, m2: 80, m3: 60, fail: 30 };
+/** The sheet's guide: each level as a share of a criterion's maximum (Chưa đạt is "at most"). */
+const ANCHORS: [Level, number][] = [
+  ["m1", 100],
+  ["m2", 80],
+  ["m3", 60],
+  ["fail", 30],
+];
 
+/** Level of a total out of 100, or of a criterion's share of its maximum in percent (as the API). */
+export function levelOf(percent: number): Level {
+  return percent >= 85 ? "m1" : percent >= 70 ? "m2" : percent >= 50 ? "m3" : "fail";
+}
+
+/** "Mức 1: 40 · Mức 2: 32 · Mức 3: 24 · Chưa đạt: ≤ 12" for a criterion of maximum 40. */
+export function anchorsOf(max: number): string {
+  return ANCHORS.map(([l, pct]) => `${LEVEL_SHORT[l]}: ${l === "fail" ? "≤ " : ""}${String(Math.floor((max * pct) / 100))}`).join(" · ");
+}
+
+/** A typed score: a whole number from 0 to `max`, or `null` while empty / invalid. */
+export function parsePoints(text: string, max: number): number | null {
+  if (!/^\d{1,3}$/.test(text.trim())) return null;
+  const n = Number(text.trim());
+  return n <= max ? n : null;
+}
+
+/**
+ * The 100-point scorecard (EM decision D, 2026-11-07): the evaluator types each criterion's points;
+ * a new form starts empty and saves only once every criterion has a valid score (the API checks the
+ * same). The sheet's levels stay as a guide under each field, and a serious issue still caps the
+ * month at Mức 3.
+ */
 function ScoreSheet({ sheet, staff, onClose }: { sheet: EvaluationSheet; staff: StaffEvaluation; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const initial = Object.fromEntries(sheet.criteria.map((c) => [c.key, staff.evaluation?.criteria.find((x) => x.key === c.key)?.level ?? "m1"])) as Record<string, Level>;
-  const [levels, setLevels] = useState(initial);
+  const initial = Object.fromEntries(
+    sheet.criteria.map((c) => {
+      const saved = staff.evaluation?.criteria.find((x) => x.key === c.key)?.points;
+      return [c.key, saved == null ? "" : String(saved)];
+    }),
+  ) as Record<string, string>;
+  const [texts, setTexts] = useState(initial);
+  const [attempted, setAttempted] = useState(false);
   const [serious, setSerious] = useState(staff.evaluation?.serious_issue ?? false);
   const [plan, setPlan] = useState(staff.evaluation?.coaching_plan ?? "");
   const [comment, setComment] = useState(staff.evaluation?.comment ?? "");
@@ -95,10 +131,18 @@ function ScoreSheet({ sheet, staff, onClose }: { sheet: EvaluationSheet; staff: 
       onClose();
     },
   });
-  const total = sheet.criteria.reduce((sum, c) => sum + Math.floor((c.max * PERCENT[levels[c.key] ?? "m1"]) / 100), 0);
-  const byTotal: Level = total >= 85 ? "m1" : total >= 70 ? "m2" : total >= 50 ? "m3" : "fail";
+  const points = sheet.criteria.map((c) => parsePoints(texts[c.key] ?? "", c.max));
+  const missing = sheet.criteria.filter((_, i) => points[i] == null);
+  const complete = missing.length === 0;
+  const total = points.reduce<number>((sum, p) => sum + (p ?? 0), 0);
+  const byTotal = levelOf(total);
   const result: Level = serious && (byTotal === "m1" || byTotal === "m2") ? "m3" : byTotal;
-  const needsPlan = result === "m3" || result === "fail";
+  const needsPlan = complete && (result === "m3" || result === "fail");
+  const problem = !complete
+    ? `Còn ${String(missing.length)} tiêu chí chưa nhập điểm: ${missing.map((c) => c.label).join(", ")}.`
+    : needsPlan && !plan.trim()
+      ? "Kết quả Mức 3 hoặc Chưa đạt: cần ghi kế hoạch kèm cặp tháng sau."
+      : null;
   const formId = "score-form";
   return (
     <BottomSheet
@@ -106,15 +150,9 @@ function ScoreSheet({ sheet, staff, onClose }: { sheet: EvaluationSheet; staff: 
       wide
       onClose={onClose}
       title={`Đánh giá ${staff.full_name}`}
-      description={`${total} điểm · ${LEVEL_LABEL[result]}`}
+      description={complete ? `${String(total)} điểm · ${LEVEL_LABEL[result]}` : `Đang chấm: ${String(total)}/100 điểm`}
       footer={
-        <button
-          type="submit"
-          form={formId}
-          className="btn btn-primary"
-          aria-busy={save.isPending || undefined}
-          disabled={needsPlan && !plan.trim()}
-        >
+        <button type="submit" form={formId} className="btn btn-primary" aria-busy={save.isPending || undefined} aria-describedby="score-problem">
           Lưu đánh giá
         </button>
       }
@@ -122,37 +160,57 @@ function ScoreSheet({ sheet, staff, onClose }: { sheet: EvaluationSheet; staff: 
       <form
         id={formId}
         className="grid gap-4"
+        noValidate
         onSubmit={(e) => {
           e.preventDefault();
-          if (save.isPending) return;
+          setAttempted(true);
+          if (save.isPending || problem) return;
           save.mutate({
             staff_id: staff.staff_id,
             month: sheet.month,
-            criteria: sheet.criteria.map((c) => ({ key: c.key, level: levels[c.key] ?? "m1" })),
+            criteria: sheet.criteria.map((c, i) => ({ key: c.key, points: points[i] ?? null })),
             serious_issue: serious,
             coaching_plan: plan.trim() || null,
             comment: comment.trim() || null,
           });
         }}
       >
+        <div className="note text-sm">
+          <p>
+            Nhập điểm từng tiêu chí, từ 0 đến điểm tối đa. Thang của bảng đánh giá: Mức 1 (Xuất sắc) = 100% điểm tối đa, Mức 2 (Tốt) = 80%,
+            Mức 3 (Đạt) = 60%, Chưa đạt ≤ 30%; điểm lẻ giữa các mức vẫn được.
+          </p>
+          <p>Xếp loại tháng theo tổng: từ 85 Mức 1 · 70–84 Mức 2 · 50–69 Mức 3 · dưới 50 Chưa đạt.</p>
+        </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          {sheet.criteria.map((c) => (
-            <label key={c.key} className="filter-field">
-              {c.label} (tối đa {c.max})
-              <select
-                value={levels[c.key]}
-                onChange={(e) => {
-                  setLevels({ ...levels, [c.key]: e.target.value as Level });
-                }}
-              >
-                {LEVELS.map((l) => (
-                  <option key={l} value={l}>
-                    {LEVEL_LABEL[l]} · {Math.floor((c.max * PERCENT[l]) / 100)} điểm
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
+          {sheet.criteria.map((c, i) => {
+            const text = texts[c.key] ?? "";
+            const p = points[i] ?? null;
+            const invalid = text.trim() !== "" && p == null;
+            const hintId = `score-hint-${c.key}`;
+            return (
+              <label key={c.key} className="filter-field">
+                {c.label} (tối đa {c.max})
+                <input
+                  inputMode="numeric"
+                  value={text}
+                  placeholder={`0–${String(c.max)}`}
+                  aria-invalid={invalid || (attempted && p == null) ? true : undefined}
+                  aria-describedby={hintId}
+                  onChange={(e) => {
+                    setTexts({ ...texts, [c.key]: e.target.value.replace(/\D/g, "").slice(0, 3) });
+                  }}
+                />
+                <span id={hintId} className={`text-xs ${invalid ? "text-danger" : "text-text-muted"}`}>
+                  {invalid
+                    ? `Tối đa ${String(c.max)} điểm.`
+                    : p != null
+                      ? `${LEVEL_SHORT[levelOf(Math.floor((p * 100) / c.max))]} · ${anchorsOf(c.max)}`
+                      : anchorsOf(c.max)}
+                </span>
+              </label>
+            );
+          })}
         </div>
         <label className="choice">
           <input
@@ -164,6 +222,11 @@ function ScoreSheet({ sheet, staff, onClose }: { sheet: EvaluationSheet; staff: 
           />
           <span>Có khiếu nại nghiêm trọng hoặc vi phạm nội quy nhiều lần (kết quả tối đa Mức 3)</span>
         </label>
+        {complete && serious && result !== byTotal && (
+          <p className="text-sm text-text-muted">
+            Tổng {total} điểm là {LEVEL_SHORT[byTotal]}, nhưng có khiếu nại nghiêm trọng nên kết quả tháng tối đa Mức 3.
+          </p>
+        )}
         <label className="filter-field">
           Kế hoạch kèm cặp tháng sau{needsPlan ? " (bắt buộc)" : ""}
           <textarea
@@ -187,6 +250,9 @@ function ScoreSheet({ sheet, staff, onClose }: { sheet: EvaluationSheet; staff: 
             }}
           />
         </label>
+        <p id="score-problem" role={attempted && problem ? "alert" : undefined} className={`text-sm ${attempted && problem ? "text-danger" : "text-text-muted"}`}>
+          {problem ?? ""}
+        </p>
         {save.isError && (
           <p role="alert" className="text-sm text-danger">
             {messageFor(save.error)}
