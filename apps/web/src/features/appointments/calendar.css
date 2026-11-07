@@ -649,35 +649,78 @@ button.cal-cell:not(:disabled):hover {
 .appt-section .button-row:has(> .field) {
   align-items: flex-end;
 }
+/* "Cùng nhóm": one compact row per person; another person's row is a link to their own sheet
+   (EM 2026-11-07: each person arrives and is recorded on their own). */
 .appt-members {
   display: grid;
+  border-top: 1px solid var(--border);
 }
 .appt-members > li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px 12px;
-  min-height: 44px;
   border-bottom: 1px solid var(--border);
 }
-.appt-members > li:last-child {
-  border-bottom: 0;
+.appt-member {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 2px 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
 }
-.appt-members strong {
+button.appt-member {
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+button.appt-member:hover {
+  background: var(--surface-2);
+}
+.appt-member[aria-current="true"] {
+  background: var(--surface-2);
+}
+.appt-member > svg {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  color: var(--text-muted);
+}
+.appt-member-name {
+  overflow-wrap: anywhere;
   font-weight: 600;
 }
-/* Time · services · technician of each person of the group, on its own line under the name. */
+.appt-member[aria-current="true"] .appt-member-name::after {
+  content: " · đang xem";
+  color: var(--text-muted);
+  font-weight: 400;
+}
+/* Time · services · technician of each person, on its own line under the name. */
 .appt-member-meta {
-  flex-basis: 100%;
-  padding-bottom: 8px;
+  grid-column: 1 / span 2;
   color: var(--text-muted);
   font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
 }
+/* A booking without a profile: one quiet line and two choices, not a banner (EM 2026-11-07). */
+.appt-profile {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+.appt-profile-text strong {
+  font-weight: 600;
+}
+.appt-profile-taken {
+  display: grid;
+  gap: 8px;
+}
 /* Ghost buttons standing alone in a column (other members' names, "Dùng lại theo dịch vụ",
    "+ Người đi cùng"): their text lines up with the text above, the hover fill reaches out. */
-.appt-members .btn-ghost,
 .appt-sheet .button-row > .btn-ghost:first-child,
 .field > .btn-ghost,
 .appt-companions > .btn-ghost {
@@ -804,41 +847,6 @@ button.cal-cell:not(:disabled):hover {
 .appt-recap strong {
   font-weight: 600;
 }
-/* "Khách đến cả nhóm": one row per person, divided by hairlines. */
-.appt-checkin {
-  display: grid;
-}
-.appt-checkin > li {
-  display: grid;
-  gap: 12px;
-  padding: 16px 0;
-  border-bottom: 1px solid var(--border);
-}
-.appt-checkin > li:first-child {
-  padding-top: 0;
-}
-.appt-checkin > li:last-child {
-  border-bottom: 0;
-}
-.appt-checkin-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 4px 12px;
-}
-.appt-checkin-lines {
-  display: grid;
-  gap: 2px;
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-}
-.appt-due {
-  font-size: var(--fs-base);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
 /* ------------------------------------------------------------------ stacks */
 /* Single-column stacks never grow past their container (a wide grid scrolls inside its frame),
    and a control keeps its own width unless it says otherwise (as `.grid` in components.css). */
@@ -848,8 +856,7 @@ button.cal-cell:not(:disabled):hover {
   .appt-section,
   .appt-form,
   .appt-person,
-  .appt-companions,
-  .appt-checkin > li
+  .appt-companions
 ) {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -861,7 +868,7 @@ button.cal-cell:not(:disabled):hover {
     .appt-person,
     .appt-companions,
     .callout,
-    .appt-checkin > li,
+    .appt-profile,
     .field
   )
   > :is(button, .segmented, .badge) {
