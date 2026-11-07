@@ -17,6 +17,7 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
   - Cùng key, khác body → `422 idempotency.key_reuse_mismatch`. Với lệnh trên một bản ghi (`/visits/{id}/void`, `/sales/{id}/void`, `/customer-packages/{id}/extend|cancel`), hash gồm cả `{id}` (`kernel::idempotency::hash_request_on`), nên dùng lại key cho bản ghi khác → `422`, không bao giờ replay nhầm (S8).
   - Request đầu vẫn đang chạy → request trùng **chờ** (khóa PK của Postgres) cho tới khi request đầu commit, rồi replay; nếu request đầu rollback thì request trùng chạy mới. (`409 idempotency.in_progress` chỉ là nhánh phòng thủ.) Hiện thực: `kernel::idempotency` (S1).
 - **Optimistic lock:** DTO có trường `version`; ghi xong trả về `ETag: "<version>"`. Lệnh sửa (`PUT`, thay toàn bộ bản ghi) bắt buộc `If-Match`: thiếu → `400 precondition.if_match_required`, lệch phiên bản → `412 conflict.stale_version` (S4 ✅).
+- **Cache:** mọi response `/api` mang `Cache-Control`. Handler không tự đặt → mặc định `private, no-store` (layer ngoài cùng, `app::middleware`, 2026-11-07). Endpoint nào muốn cache phải tự đặt `private, no-cache` + `ETag` (chưa có endpoint nào; `ETag` hiện chỉ cho `If-Match`). Không `public`/`s-maxage`: CDN sẽ chia dữ liệu giữa người dùng.
 - **Rate-limit classes:** `auth` (5/phút/tài khoản, 20/phút/IP) · `search` (120/phút/user) · `write` (60/phút/user) · `read` (300/phút/user). Vượt → `429 rate_limited`.
 
 ## 2. Mã lỗi nghiệp vụ

@@ -109,7 +109,7 @@ Docs của Vercel nói container scale down sau 5 phút không có traffic. Như
 4. **Nhiều câu SQL nối tiếp mỗi request** (8–17, trong đó ~8 là "ống nước": tra session, BEGIN, `set_config`, membership, quyền, COMMIT, rồi BEGIN/`set_config`/COMMIT lần hai). Hiện tại chỉ ~25–40 ms vì API nằm cạnh DB. Nhưng nếu **chỉ dời API** sang Singapore mà DB vẫn ở Oregon, thì 17 × ~170 ms ≈ **3 s mỗi request**. Hai thứ phải dời cùng nhau.
 5. **Không phải nguyên nhân** (đã kiểm): thời gian chạy query (0,25–1,7 ms; bench 3 năm p95 ≤ 150 ms ở [backend §3b](backend.md)), N+1 (số câu lệnh cố định theo endpoint), kích thước response (≤ 21 KB JSON, br còn ≤ 4 KB), bundle JS, font, ảnh, nén (Vercel nén br cho response > ~1 KB), HTTP/2 (edge đã dùng h2).
 
-**Phát hiện phụ (bảo mật, chuyển `secure`):** endpoint không tự đặt `Cache-Control` (`/customers?q=`, `/services`, `/staff`, `/payroll` 403…) bị Vercel gắn mặc định `public, max-age=0, must-revalidate`. Dữ liệu cá nhân (tên + SĐT khách) không nên mang `public`. Đề xuất một layer mặc định `Cache-Control: private, no-store` (`if_not_present`) cho mọi `/api`.
+**Phát hiện phụ (bảo mật, chuyển `secure`):** endpoint không tự đặt `Cache-Control` (`/customers?q=`, `/services`, `/staff`, `/payroll` 403…) bị Vercel gắn mặc định `public, max-age=0, must-revalidate`. Dữ liệu cá nhân (tên + SĐT khách) không nên mang `public`. Đề xuất một layer mặc định `Cache-Control: private, no-store` (`if_not_present`) cho mọi `/api`. **Đã làm (2026-11-07, `fix/api-cache-control-default`):** layer ngoài cùng trong router Axum, test `cache_control.rs`. `vercel.json` không có rule header nào cho `/api` (rule `no-cache` chỉ thuộc service `web`), nên không cần thêm.
 
 ## 4. Phương án
 

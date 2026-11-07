@@ -126,19 +126,21 @@ pub fn apply(router: Router, policy: &HttpPolicy) -> Router {
         }
     };
 
-    router.layer(
-        ServiceBuilder::new()
-            .layer(middleware::map_response(private_unless_set))
-            .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
-            .layer(PropagateRequestIdLayer::x_request_id())
-            .layer(TraceLayer::new_for_http().make_span_with(request_span))
-            .layer(middleware::from_fn(problem_for_bare_errors))
-            .layer(TimeoutLayer::with_status_code(
-                StatusCode::REQUEST_TIMEOUT,
-                policy.request_timeout,
-            ))
-            .layer(RequestBodyLimitLayer::new(policy.max_body_bytes)),
-    )
+    router
+        .layer(
+            ServiceBuilder::new()
+                .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
+                .layer(PropagateRequestIdLayer::x_request_id())
+                .layer(TraceLayer::new_for_http().make_span_with(request_span))
+                .layer(middleware::from_fn(problem_for_bare_errors))
+                .layer(TimeoutLayer::with_status_code(
+                    StatusCode::REQUEST_TIMEOUT,
+                    policy.request_timeout,
+                ))
+                .layer(RequestBodyLimitLayer::new(policy.max_body_bytes)),
+        )
+        // Outermost, so it also sees what the layers above build (429, 408, 413, problem+json).
+        .layer(middleware::map_response(private_unless_set))
 }
 
 /// Stricter per-IP limit for `/auth/*` (credential stuffing): one request per 3 s sustained, burst 10

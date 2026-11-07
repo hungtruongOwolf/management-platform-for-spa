@@ -56,9 +56,17 @@ async fn responses_without_their_own_policy_are_private_no_store(pool: PgPool) -
         ("/health", None, StatusCode::OK),
         // anonymous and forged sessions
         ("/customers?q=nguyen", None, StatusCode::UNAUTHORIZED),
-        ("/me", Some("forged-session-token"), StatusCode::UNAUTHORIZED),
+        (
+            "/me",
+            Some("forged-session-token"),
+            StatusCode::UNAUTHORIZED,
+        ),
         // salary is owner-only
-        ("/payroll?month=2026-11", Some(&manager), StatusCode::FORBIDDEN),
+        (
+            "/payroll?month=2026-11",
+            Some(&manager),
+            StatusCode::FORBIDDEN,
+        ),
     ];
     for (path, session, status) in cases {
         let reply = call(&h.app, "GET", path, session, None).await;
