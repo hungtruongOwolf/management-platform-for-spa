@@ -1,4 +1,4 @@
-import type { PackagePlan, Sale } from "@vpyd/api-client";
+import type { PaymentCreate, Sale } from "@vpyd/api-client";
 import {
   useMutation,
   useQuery,
@@ -6,318 +6,219 @@ import {
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import { formatVnd } from "@vpyd/ui";
-import { useId, useState } from "react";
+import { useCallback, useId, useState } from "react";
 import { StickyActions } from "../../components/StickyActions";
 import { fieldMessage, messageFor } from "../../lib/errors";
+import { invalidateManagementViews } from "../../lib/invalidate";
 import { can, meQuery } from "../auth/session";
-import { plansQuery } from "../catalog/api";
+import { customerQuery } from "../customers/api";
+// The same package-sale block as the front desk's cart (EM 2026-11-07): one form for selling a
+// package everywhere, "Mua cho người khác" included.
+import {
+  PackageSales,
+  checkoutProblem,
+  newSale,
+  saleErrorOf,
+  sellPackageOnly,
+} from "../front-desk/CartPackages";
+import { PaymentChoices } from "../front-desk/CartOptions";
+import {
+  type CartLine,
+  type PackageSaleDraft,
+  packagesDue,
+} from "../front-desk/api";
+import "../front-desk/front-desk.css";
 import {
   type PaymentMode,
   activeStaffQuery,
-  createSale,
-  exceedsCap,
   parseAmount,
   paymentsFor,
 } from "./api";
-import { invalidateManagementViews } from "../../lib/invalidate";
+import { boughtForOtherText } from "./saleText";
 
-/** Select value for "Khách tự chọn": the customer chose the package, nobody is credited. */
-const SELF_CHOSEN = "self";
+// A profile sale has no visit: no cart lines, nothing covered today, no technician to default to.
+// `context` is its own empty list (not `NO_LINES`), so the cart-only hint about adding services
+// stays hidden.
+const NO_LINES: CartLine[] = [];
+const NO_CONTEXT: { serviceId: string; staffId: string }[] = [];
+const NOTHING_COVERED: ReadonlyMap<number, string> = new Map();
 
-function sessionsOf(plan: PackagePlan): string {
-  const paid = plan.items.reduce((n, i) => n + i.sessions, 0);
-  const bonus = plan.items.reduce((n, i) => n + i.bonus_sessions, 0);
-  const validity = plan.validity_months
-    ? ` · HSD ${String(plan.validity_months)} tháng`
-    : " · không hạn";
-  return `${String(paid)} buổi${bonus ? ` + tặng ${String(bonus)}` : ""}${validity}`;
+/** What a successful sale tells the desk: who got the package, and who paid when it is a gift. */
+export function soldText(
+  sale: Sale,
+  draft: PackageSaleDraft,
+  payerName: string,
+): string {
+  const p = sale.customer_packages[0];
+  if (draft.beneficiary)
+    return boughtForOtherText(
+      p?.name ?? draft.plan?.name ?? "gói liệu trình",
+      draft.beneficiary.full_name,
+      payerName,
+    );
+  return p
+    ? `Đã bán "${p.name}" — còn ${String(p.sessions_remaining)}/${String(p.sessions_total)} buổi.`
+    : "Đã lưu hóa đơn.";
 }
 
-/** US3: sell a package from the customer profile. Totals shown here are previews; the server prices the sale. */
+/**
+ * US3: sell a package from the customer profile with the front desk's package block (plan, closer
+ * or "Khách tự chọn", gift, discount within the manager cap, "Mua cho người khác") and its payment
+ * choices. Totals are previews; the server prices the sale.
+ */
 export function SellPackageDialog({
   customerId,
   onDone,
   onCancel,
 }: {
   customerId: string;
-  onDone: (sale: Sale) => void;
+  /** `message` is the confirmation toast. */
+  onDone: (message: string) => void;
   onCancel: () => void;
 }) {
   const queryClient = useQueryClient();
   const id = useId();
   const { data: me } = useSuspenseQuery(meQuery);
-  const plans = useQuery(plansQuery(false));
   const staff = useQuery(activeStaffQuery);
+  const customer = useQuery(customerQuery(customerId));
   // One key for the life of this dialog: double submit or retry = the same sale (AC3.7).
   const [idempotencyKey] = useState(() => crypto.randomUUID());
-
-  const [planId, setPlanId] = useState("");
-  const [giftNote, setGiftNote] = useState("");
-  const [closerId, setCloserId] = useState("");
-  const [discountText, setDiscountText] = useState("");
-  const [reason, setReason] = useState("");
+  const [sales, setSales] = useState<PackageSaleDraft[]>(() => [newSale([])]);
   const [mode, setMode] = useState<PaymentMode>("cash");
   const [cashText, setCashText] = useState("");
-  const [touched, setTouched] = useState(false);
+  const [attempted, setAttempted] = useState(false);
+  const onSales = useCallback(
+    (update: (s: PackageSaleDraft[]) => PackageSaleDraft[]) => {
+      setSales(update);
+    },
+    [],
+  );
+  const onOpened = useCallback(() => undefined, []);
 
-  const canDiscount =
-    can(me, "sale.discount") || can(me, "sale.discount_unlimited");
-  const plan = plans.data?.find((p) => p.id === planId);
-  const subtotal = plan?.price ?? 0;
-  const discount = discountText.trim() === "" ? 0 : parseAmount(discountText);
-  const total = Number.isNaN(discount)
-    ? subtotal
-    : Math.max(subtotal - discount, 0);
+  const unlimited = can(me, "sale.discount_unlimited");
+  const total = packagesDue(sales);
   const cashPart = parseAmount(cashText);
-  const overCap = exceedsCap(subtotal, discount, can(me, "sale.discount_unlimited"));
-
-  const problems = {
-    plan: plan ? undefined : "Chọn gói liệu trình.",
-    closer: closerId
-      ? undefined
-      : "Chọn người tư vấn chốt (hoặc Khách tự chọn).",
-    discount: Number.isNaN(discount)
-      ? "Nhập số tiền (chỉ chữ số)."
-      : discount > subtotal
-        ? "Giảm giá lớn hơn giá gói."
-        : overCap
-          ? "Vượt 10% — cần chủ spa duyệt."
-          : undefined,
-    reason:
-      discount > 0 && reason.trim() === ""
-        ? "Giảm giá phải ghi lý do."
-        : undefined,
-    cash:
-      mode === "mixed" &&
-      (Number.isNaN(cashPart) || cashPart <= 0 || cashPart >= total)
-        ? "Tiền mặt phải lớn hơn 0 và nhỏ hơn số phải trả."
-        : undefined,
-  };
-  const valid = Object.values(problems).every((p) => p === undefined);
+  const cashProblem =
+    total > 0 &&
+    mode === "mixed" &&
+    (Number.isNaN(cashPart) || cashPart <= 0 || cashPart >= total);
 
   const mutation = useMutation({
-    mutationFn: () =>
-      createSale(
-        {
-          customer_id: customerId,
-          // "Khách tự chọn" credits nobody (EM 2026-11-06, Q-U2).
-          closer_staff_id: closerId === SELF_CHOSEN ? null : closerId,
-          lines: [{ package_plan_id: planId, gift_note: giftNote.trim() }],
-          discount:
-            discount > 0 ? { amount: discount, reason: reason.trim() } : null,
-          payments: paymentsFor(total, mode, cashPart),
-        },
-        idempotencyKey,
-      ),
-    onSuccess: async (sale) => {
-      await queryClient.invalidateQueries({
-        queryKey: ["customer-packages", customerId],
-      });
-      void invalidateManagementViews(queryClient, customerId);
-      onDone(sale);
+    mutationFn: ({
+      sale,
+      payments,
+    }: {
+      sale: PackageSaleDraft;
+      payments: PaymentCreate[];
+    }) => sellPackageOnly(customerId, sale, payments, idempotencyKey),
+    onSuccess: async (result, { sale }) => {
+      // The payer's profile and, for a gift, the beneficiary's: both package lists changed.
+      const owners = [customerId, sale.beneficiary?.id].filter(
+        (x): x is string => x !== undefined,
+      );
+      await Promise.all(
+        owners.map((owner) =>
+          queryClient.invalidateQueries({
+            queryKey: ["customer-packages", owner],
+          }),
+        ),
+      );
+      for (const owner of owners)
+        void invalidateManagementViews(queryClient, owner);
+      onDone(soldText(result, sale, customer.data?.full_name ?? "khách"));
     },
   });
 
-  type Key = keyof typeof problems;
-  // The 10% cap shows as soon as it is crossed; every other problem after the first submit.
-  const shown = (key: Key) =>
-    key === "discount" && overCap ? problems.discount : touched ? problems[key] : undefined;
-  const errorOf = (key: Key) => {
-    const message = shown(key);
-    return message ? (
-      <span id={`${id}-${key}-error`} className="field-error">
-        {message}
-      </span>
-    ) : null;
+  // Each block shows its own problem once a save was tried; only "no block at all" is shown here.
+  const save = () => {
+    setAttempted(true);
+    const first = sales[0];
+    if (
+      !first ||
+      checkoutProblem(sales, 0, false, unlimited) ||
+      cashProblem ||
+      mutation.isPending
+    )
+      return;
+    mutation.mutate({
+      sale: first,
+      payments: paymentsFor(total, mode, cashPart),
+    });
   };
-  const described = (key: Key, hint?: string) =>
-    [shown(key) ? `${id}-${key}-error` : undefined, hint].filter(Boolean).join(" ") || undefined;
-  const invalid = (key: Key) => (shown(key) ? true : undefined);
+  const generalError =
+    mutation.isError && !saleErrorOf(mutation.error) ? mutation.error : null;
 
   return (
     // Hosted by a BottomSheet (CustomerPackages): the sheet is the dialog and carries the title.
     <div className="grid content-start gap-4">
-      {(plans.isError || staff.isError) && (
+      {staff.isError && (
         <p role="alert" className="alert">
-          {messageFor(plans.error ?? staff.error)}
+          {messageFor(staff.error)}
         </p>
       )}
-      <form
-        noValidate
-        aria-label="Bán gói liệu trình"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setTouched(true);
-          if (valid && !mutation.isPending) mutation.mutate();
-        }}
-        className="form-grid"
-      >
-        <div className="field span-2">
-          <label htmlFor={`${id}-plan`}>Gói liệu trình</label>
-          <select
-            id={`${id}-plan`}
-            className="input"
-            value={planId}
-            aria-invalid={invalid("plan")}
-            aria-describedby={described("plan", plan ? `${id}-plan-hint` : undefined)}
-            onChange={(e) => {
-              setPlanId(e.target.value);
-              setGiftNote(plans.data?.find((p) => p.id === e.target.value)?.gift_note ?? "");
-            }}
-          >
-            <option value="">{plans.isPending ? "Đang tải gói…" : "Chọn gói…"}</option>
-            {plans.data?.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} — {formatVnd(p.price)}
-              </option>
-            ))}
-          </select>
-          {plan && (
-            <span id={`${id}-plan-hint`} className="field-hint">
-              {sessionsOf(plan)}
-            </span>
-          )}
-          {errorOf("plan")}
-        </div>
-        <div className="field">
-          <label htmlFor={`${id}-gift`}>Quà tặng hiện vật</label>
-          <input
-            id={`${id}-gift`}
-            className="input"
-            value={giftNote}
-            placeholder="Không có"
-            onChange={(e) => {
-              setGiftNote(e.target.value);
-            }}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor={`${id}-closer`}>Người tư vấn chốt</label>
-          <select
-            id={`${id}-closer`}
-            className="input"
-            value={closerId}
-            aria-invalid={invalid("closer")}
-            aria-describedby={described("closer")}
-            onChange={(e) => {
-              setCloserId(e.target.value);
-            }}
-          >
-            <option value="">{staff.isPending ? "Đang tải…" : "Chọn…"}</option>
-            <option value={SELF_CHOSEN}>Khách tự chọn (không tính cho ai)</option>
-            {staff.data?.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.full_name} ({s.position})
-              </option>
-            ))}
-          </select>
-          {errorOf("closer")}
-        </div>
-
-        {canDiscount && (
-          <>
-            <div className="field">
-              <label htmlFor={`${id}-discount`}>Giảm giá (đ, không bắt buộc)</label>
-              <input
-                id={`${id}-discount`}
-                className="input tabular"
-                inputMode="numeric"
-                value={discountText}
-                aria-invalid={invalid("discount")}
-                aria-describedby={described("discount", `${id}-discount-hint`)}
-                onChange={(e) => {
-                  setDiscountText(e.target.value);
-                }}
-              />
-              <span id={`${id}-discount-hint`} className="field-hint">
-                {discount > 0 && subtotal > 0 && !Number.isNaN(discount)
-                  ? `≈ ${String(Math.round((discount * 1000) / subtotal) / 10)}% giá gói`
-                  : "Quá 10% giá gói cần chủ spa duyệt."}
-              </span>
-              {errorOf("discount")}
-            </div>
-            <div className="field">
-              <label htmlFor={`${id}-reason`}>Lý do giảm giá</label>
-              <input
-                id={`${id}-reason`}
-                className="input"
-                value={reason}
-                aria-invalid={invalid("reason")}
-                aria-describedby={described("reason")}
-                onChange={(e) => {
-                  setReason(e.target.value);
-                }}
-              />
-              {errorOf("reason")}
-            </div>
-          </>
-        )}
-
-        <fieldset className="span-2">
-          <legend>Thanh toán (thu đủ)</legend>
-          <div className="choice-row">
-            {(
-              [
-                ["cash", "Tiền mặt"],
-                ["bank_transfer", "Chuyển khoản"],
-                ["mixed", "Tiền mặt + chuyển khoản"],
-              ] as const
-            ).map(([value, label]) => (
-              <label key={value} className="choice">
-                <input
-                  type="radio"
-                  name="payment-mode"
-                  checked={mode === value}
-                  onChange={() => {
-                    setMode(value);
-                  }}
-                />
-                {label}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-        {mode === "mixed" && (
-          <div className="field">
-            <label htmlFor={`${id}-cash`}>Tiền mặt (đ)</label>
-            <input
-              id={`${id}-cash`}
-              className="input tabular"
-              inputMode="numeric"
-              value={cashText}
-              aria-invalid={invalid("cash")}
-              aria-describedby={described("cash", `${id}-cash-hint`)}
-              onChange={(e) => {
-                setCashText(e.target.value);
-              }}
-            />
-            <span id={`${id}-cash-hint`} className="field-hint">
-              {!Number.isNaN(cashPart) && cashPart > 0 && cashPart < total
-                ? `Chuyển khoản: ${formatVnd(total - cashPart)}`
-                : "Phần còn lại thu bằng chuyển khoản."}
-            </span>
-            {errorOf("cash")}
-          </div>
-        )}
-
-        <p className="form-total span-2" aria-live="polite">
-          Phải trả: {formatVnd(total)}
+      <PackageSales
+        sales={sales}
+        onSales={onSales}
+        lines={NO_LINES}
+        context={NO_CONTEXT}
+        covered={NOTHING_COVERED}
+        maxSales={1}
+        titleId={`${id}-packages`}
+        title="Gói liệu trình"
+        staff={staff.data ?? []}
+        customerId={customerId}
+        canDiscount={can(me, "sale.discount") || unlimited}
+        unlimitedDiscount={unlimited}
+        attempted={attempted}
+        serverError={mutation.error}
+        openPlanId={null}
+        onOpened={onOpened}
+      />
+      {total > 0 && (
+        <PaymentChoices
+          name={`${id}-payment`}
+          mode={mode}
+          onMode={setMode}
+          cashText={cashText}
+          onCashText={setCashText}
+          total={total}
+          invalid={attempted && cashProblem}
+        />
+      )}
+      {attempted && cashProblem && (
+        <p role="alert" className="field-error">
+          Tiền mặt phải lớn hơn 0 và nhỏ hơn số phải trả.
         </p>
-        {mutation.isError && (
-          <p role="alert" className="alert span-2">
-            {messageFor(mutation.error)}
-            {fieldMessage(mutation.error, "lines[0].package_plan_id") ? " Gói này đã ngừng bán." : ""}
-          </p>
-        )}
-        <StickyActions className="span-2">
-          <button type="button" onClick={onCancel} className="btn btn-secondary">
-            Hủy
-          </button>
-          <button type="submit" aria-busy={mutation.isPending || undefined} className="btn btn-primary">
-            Lưu & thu tiền
-          </button>
-        </StickyActions>
-      </form>
+      )}
+      {attempted && sales.length === 0 && (
+        <p role="alert" className="field-error">
+          Bấm “Bán gói liệu trình” để chọn gói.
+        </p>
+      )}
+      <p className="form-total" aria-live="polite">
+        Phải trả: {formatVnd(total)}
+      </p>
+      {generalError !== null && (
+        <p role="alert" className="alert">
+          {messageFor(generalError)}
+          {fieldMessage(generalError, "lines[0].package_plan_id")
+            ? " Gói này đã ngừng bán."
+            : ""}
+        </p>
+      )}
+      <StickyActions>
+        <button type="button" onClick={onCancel} className="btn btn-secondary">
+          Hủy
+        </button>
+        <button
+          type="button"
+          onClick={save}
+          aria-busy={mutation.isPending || undefined}
+          className="btn btn-primary"
+        >
+          Lưu & thu tiền
+        </button>
+      </StickyActions>
     </div>
   );
 }

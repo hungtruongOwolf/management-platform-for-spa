@@ -2094,6 +2094,11 @@ h2 .gender-chip {
 .search-field input {
   padding: 0 40px;
 }
+/* One clear button: the labelled "Xóa ô …" (.search-field-clear), not the browser's native "×" too
+ * (same rule as the palette's field). */
+.search-field input::-webkit-search-cancel-button {
+  appearance: none;
+}
 .search-field-icon {
   position: absolute;
   left: 12px;
