@@ -288,6 +288,36 @@ pub async fn group_customers(tx: &mut TenantTx, group: Uuid) -> Result<Vec<Uuid>
     .await?)
 }
 
+/// Every appointment of a group, in id order (the order a whole-group move locks them in, so two
+/// moves of one group never deadlock).
+pub async fn group_member_ids(tx: &mut TenantTx, group: Uuid) -> Result<Vec<Uuid>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_scalar!(
+        "SELECT id FROM app.appointment WHERE tenant_id = $1 AND group_id = $2 ORDER BY id",
+        tenant,
+        group
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+/// arrived → booked ("Hoàn tác đã đến"): the arrival time is cleared, the serving technician
+/// stays as the booking's technician. `false` = no longer arrived.
+pub async fn unmark_arrived(tx: &mut TenantTx, id: Uuid) -> Result<bool, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query!(
+        r#"UPDATE app.appointment
+           SET status = 'booked', arrived_at = NULL, version = version + 1, updated_at = now()
+           WHERE tenant_id = $1 AND id = $2 AND status = 'arrived' AND visit_id IS NULL"#,
+        tenant,
+        id
+    )
+    .execute(tx.conn())
+    .await?
+    .rows_affected()
+        == 1)
+}
+
 pub async fn mark_arrived(tx: &mut TenantTx, id: Uuid, staff_id: Uuid) -> Result<bool, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query!(
@@ -508,10 +538,15 @@ pub struct MyAppointmentRow {
     pub visit_status: Option<String>,
     pub visit_check_in_at: Option<DateTime<Utc>>,
     pub group_size: Option<i64>,
+    pub visit_id: Option<Uuid>,
+    /// The session note of the booking's completed visit, only when `staff` performed a line of
+    /// it (EM 2026-11-07 item 3); never the booking's own note.
+    pub note_ct: Option<Vec<u8>>,
 }
 
 /// Appointments of `from..=to` assigned to `staff` (every status), earliest first. Only the
-/// allowlisted columns of `MyCalendarEntry` are selected: no phone, note or money.
+/// allowlisted columns of `MyCalendarEntry` are selected: no phone, booking note or money; the
+/// session note only of a visit `staff` worked on.
 pub async fn my_appointments(
     tx: &mut TenantTx,
     staff: Uuid,
@@ -528,7 +563,12 @@ pub async fn my_appointments(
                   CASE WHEN a.group_id IS NULL THEN NULL ELSE
                     (SELECT count(*) FROM app.appointment g
                      WHERE g.tenant_id = a.tenant_id AND g.group_id = a.group_id
-                       AND g.status <> 'cancelled') END AS "group_size?"
+                       AND g.status <> 'cancelled') END AS "group_size?",
+                  v.id AS "visit_id?",
+                  CASE WHEN v.status = 'completed' AND EXISTS (
+                         SELECT 1 FROM app.visit_line l
+                         WHERE l.tenant_id = v.tenant_id AND l.visit_id = v.id AND l.staff_id = $2)
+                       THEN v.note_ct END AS note_ct
            FROM app.appointment a
            LEFT JOIN app.customer c ON c.tenant_id = a.tenant_id AND c.id = a.customer_id
            LEFT JOIN app.visit v ON v.tenant_id = a.tenant_id AND v.id = a.visit_id
@@ -550,6 +590,8 @@ pub struct MyVisitRow {
     pub check_in_at: DateTime<Utc>,
     pub customer_name: String,
     pub walk_in: bool,
+    /// The session note: `staff` performed a line of this visit (the query's condition).
+    pub note_ct: Option<Vec<u8>>,
 }
 
 /// Completed visits of `from..=to` in which `staff` performed a line and that no booking assigned
@@ -566,7 +608,8 @@ pub async fn my_visits(
         r#"SELECT v.id, v.business_date, v.check_in_at,
                   app.customer_label(c.full_name) AS "customer_name!",
                   NOT EXISTS (SELECT 1 FROM app.appointment a
-                              WHERE a.tenant_id = v.tenant_id AND a.visit_id = v.id) AS "walk_in!"
+                              WHERE a.tenant_id = v.tenant_id AND a.visit_id = v.id) AS "walk_in!",
+                  v.note_ct
            FROM app.visit v
            JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id
            WHERE v.tenant_id = $1 AND v.status = 'completed' AND v.business_date BETWEEN $3 AND $4

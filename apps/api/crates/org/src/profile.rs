@@ -496,11 +496,15 @@ pub async fn set_account(
 pub struct EndInput {
     pub ended_on: NaiveDate,
     pub reason: String,
+    /// Also lock the linked login in this spa (the owner's choice, "Khóa tài khoản").
+    pub lock_login: bool,
 }
 
 /// `POST /staff/{id}/end` (`staff.manage`, `If-Match`): nghỉ việc. Closes the open period with
-/// its last day and reason; the person leaves every picker and every later month, keeps every
-/// past record, and their linked login is locked in this spa.
+/// its last day and reason; the person leaves every picker and every later month and keeps every
+/// past record. Their linked login stays, but from the next request it holds only
+/// `staff.read_own_past` (ADR-0014, derived from the roster in `identity::repo`), unless the
+/// owner also locks it (`lock_login`).
 pub async fn end(
     pool: &PgPool,
     actor: &Actor,
@@ -569,7 +573,10 @@ pub async fn end(
     {
         return Err(AppError::StaleVersion);
     }
-    if let Some(user) = before.user_id {
+    let locked = input.lock_login && before.user_id.is_some();
+    if input.lock_login
+        && let Some(user) = before.user_id
+    {
         repo::set_membership_active(&mut tx, user, false).await?;
     }
     let after = reread(&mut tx, actor, id).await?;
@@ -583,7 +590,8 @@ pub async fn end(
             before: Some(json!({"status": "active", "joined_on": current.started_on})),
             after: Some(json!({
                 "status": "left", "left_on": input.ended_on,
-                "login_locked": before.user_id.is_some(),
+                "login_locked": locked,
+                "login_former_staff": before.user_id.is_some() && !locked,
             })),
             reason: Some(reason),
         },
@@ -594,7 +602,8 @@ pub async fn end(
 }
 
 /// `POST /staff/{id}/rehire` (`staff.manage`, `If-Match`): opens a new period after the last one;
-/// the earlier periods stay as they were. A linked login is unlocked again.
+/// the earlier periods stay as they were. A linked login gets its roles back (it is no longer
+/// former staff) and is unlocked if the owner had locked it.
 pub async fn rehire(
     pool: &PgPool,
     actor: &Actor,

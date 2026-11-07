@@ -39,10 +39,8 @@ const MESSAGES: Record<string, string> = {
   "price.gender_required": "Chọn Nữ hoặc Nam để tính giá dịch vụ lẻ.",
   "price.variant_not_available":
     "Dịch vụ này không áp dụng cho giới tính của khách.",
-  "visit.check_in_in_future": "Giờ làm không được ở tương lai.",
   "visit.check_in_not_today":
     "Giờ làm phải thuộc ngày hôm nay. Chỉ chủ spa nhập bù được ngày đã qua.",
-  "visit.check_in_too_old": "Chỉ nhập bù được trong vòng 1 năm.",
   "appointment.closed": "Lịch hẹn này đã kết thúc (hoàn tất, hủy hoặc không đến).",
   "appointment.not_today": "Chỉ làm được việc này vào đúng ngày của lịch hẹn.",
   "appointment.customer_required":

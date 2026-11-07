@@ -18,6 +18,7 @@ addMessages(
     "staff.has_upcoming_bookings":
       "Nhân viên còn lịch hẹn sau ngày nghỉ việc. Hãy đổi KTV hoặc hủy các lịch đó ở Lịch hẹn trước.",
     "staff.cannot_end_self": "Bạn không tự cho mình nghỉ việc được.",
+    "staff.not_employed_in_month": "Tháng này bạn không làm ở spa: chỉ xem được các tháng đã làm.",
     "staff.linked_to_owner": "Hồ sơ này gắn với tài khoản chủ spa. Bỏ gắn tài khoản trước khi cho nghỉ việc.",
   },
   {
@@ -223,11 +224,20 @@ export async function setAccount(id: string, version: number, userId: string | n
   return (await api(`/staff/${id}/account`, { method: "PUT", body: { user_id: userId }, headers: ifMatch(version) })) as StaffProfile;
 }
 
-/** Nghỉ việc: closes the current period (soft; history stays) and locks the linked login. */
-export async function endEmployment(id: string, version: number, endedOn: string, reason: string): Promise<StaffProfile> {
+/**
+ * Nghỉ việc: closes the current period (soft; history stays). The linked login keeps only the
+ * person's own past pay (ADR-0014), unless `lockLogin` ("Khóa tài khoản") locks it outright.
+ */
+export async function endEmployment(
+  id: string,
+  version: number,
+  endedOn: string,
+  reason: string,
+  lockLogin = false,
+): Promise<StaffProfile> {
   return (await api(`/staff/${id}/end`, {
     method: "POST",
-    body: { ended_on: endedOn, reason },
+    body: { ended_on: endedOn, reason, lock_login: lockLogin },
     headers: ifMatch(version),
   })) as StaffProfile;
 }

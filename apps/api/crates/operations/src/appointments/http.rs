@@ -1,11 +1,12 @@
 //! `GET/POST /appointments`, `POST /appointments/group`, `GET/PATCH /appointments/{id}`,
-//! `POST /appointments/{id}/arrive|complete|cancel|no-show`, `PUT /appointment-settings`.
+//! `POST /appointments/{id}/arrive|undo-arrival|move-group|complete|cancel|no-show`,
+//! `PUT /appointment-settings`.
 
 use super::dto::{
     AppointmentArrive, AppointmentClose, AppointmentComplete, AppointmentCompleted,
     AppointmentCreate, AppointmentDto, AppointmentGroupCreate, AppointmentGroupDto,
-    AppointmentSettingsDto, AppointmentSettingsUpdate, AppointmentUpdate, CalendarDto,
-    CalendarQuery, MyCalendar,
+    AppointmentGroupMove, AppointmentGroupMoved, AppointmentSettingsDto, AppointmentSettingsUpdate,
+    AppointmentUpdate, CalendarDto, CalendarQuery, MyCalendar,
 };
 use super::service::{self, Outcome};
 use axum::body::Bytes;
@@ -41,6 +42,8 @@ where
             get(read_appointment).patch(update_appointment),
         )
         .route("/appointments/{id}/arrive", post(arrive))
+        .route("/appointments/{id}/undo-arrival", post(undo_arrival))
+        .route("/appointments/{id}/move-group", post(move_group))
         .route("/appointments/{id}/complete", post(complete))
         .route("/appointments/{id}/cancel", post(cancel))
         .route("/appointments/{id}/no-show", post(no_show))
@@ -85,10 +88,11 @@ pub async fn calendar(
         (status = 422, description = "to before_from / range_too_long (max 14 days)")))]
 pub async fn my_calendar(
     State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
     Query(query): Query<CalendarQuery>,
 ) -> Result<Response, AppError> {
-    let cal = service::my_calendar(&pool, &user.actor, &query).await?;
+    let cal = service::my_calendar(&pool, &cipher, &user.actor, &query).await?;
     Ok(no_store(StatusCode::OK, cal, None))
 }
 
@@ -210,6 +214,41 @@ pub async fn arrive(
     let a = service::arrive(&pool, &user.actor, id, &input).await?;
     let version = a.version;
     Ok(no_store(StatusCode::OK, a, Some(version)))
+}
+
+#[utoipa::path(post, path = "/api/v1/appointments/{id}/undo-arrival", tag = "appointments",
+    params(("id" = Uuid, Path)),
+    responses((status = 200, body = AppointmentDto), (status = 401),
+        (status = 403, description = "auth.forbidden / day.locked"), (status = 404),
+        (status = 409, description = "appointment.closed (done: a visit exists, or no-show / cancelled), appointment.not_arrived"),
+        (status = 422, description = "appointment.not_today")))]
+pub async fn undo_arrival(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let a = service::undo_arrival(&pool, &user.actor, id).await?;
+    let version = a.version;
+    Ok(no_store(StatusCode::OK, a, Some(version)))
+}
+
+#[utoipa::path(post, path = "/api/v1/appointments/{id}/move-group", tag = "appointments",
+    request_body = AppointmentGroupMove,
+    params(("id" = Uuid, Path), ("If-Match" = String, Header)),
+    responses((status = 200, body = AppointmentGroupMoved), (status = 401),
+        (status = 403, description = "auth.forbidden / day.locked"), (status = 404),
+        (status = 409, description = "appointment.closed, appointment.already_arrived ({id} is no longer booked)"),
+        (status = 412),
+        (status = 422, description = "appointment.not_in_group; validation_failed with errors[].field = appointments.<member id> and the member's refusal as code (appointment.staff_busy, appointment.customer_busy, appointment.in_the_past, appointment.outside_opening_hours, staff.inactive, …): nobody moved")))]
+pub async fn move_group(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+    IfMatch(version): IfMatch,
+    Json(input): Json<AppointmentGroupMove>,
+) -> Result<Response, AppError> {
+    let moved = service::move_group(&pool, &user.actor, id, version, &input).await?;
+    Ok(no_store(StatusCode::OK, moved, None))
 }
 
 #[utoipa::path(post, path = "/api/v1/appointments/{id}/complete", tag = "appointments", request_body = AppointmentComplete,

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.appointment\n           SET status = 'booked', arrived_at = NULL, version = version + 1, updated_at = now()\n           WHERE tenant_id = $1 AND id = $2 AND status = 'arrived' AND visit_id IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4b55dcf214c996d8a0b189c4aac6533600d62a4233128944477cd5a31e61c1b0"
+}

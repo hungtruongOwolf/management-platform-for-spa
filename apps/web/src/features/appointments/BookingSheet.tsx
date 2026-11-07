@@ -25,10 +25,12 @@ import {
   bookAppointment,
   bookGroup,
   customerClash,
+  groupMoveRefusal,
   hhmm,
   instantAt,
   lengthChoices,
   minutesOf,
+  moveGroup,
   peakPeople,
   peopleAt,
   spaMinutes,
@@ -296,6 +298,7 @@ export function BookingSheet({
   const [key] = useState(() => crypto.randomUUID());
   // Editing runs several requests: what already went through is not sent again on a retry.
   const patched = useRef<Appointment | null>(null);
+  const groupMoved = useRef<Appointment | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
   // The earlier-than-now start the desk confirmed ("Vẫn đặt lịch"), as `day|starts`.
   const [pastConfirmed, setPastConfirmed] = useState<string | null>(null);
@@ -360,6 +363,17 @@ export function BookingSheet({
   );
   const pastStart = day === today && earliest < slotNow;
   const pastKey = `${day}|${String(earliest)}`;
+
+  // "Đổi lịch" of one member of a group (EM 2026-11-07 item 5c): move the whole group by the same
+  // amount (all or none, on the server), or only this person. Members already arrived or done stay.
+  const groupMates = editing?.group_id
+    ? cal.appointments.filter((x) => x.group_id === editing.group_id && x.id !== editing.id)
+    : [];
+  const mateMoves = groupMates.filter((x) => x.status === "booked");
+  const mateStays = groupMates.filter((x) => x.status === "arrived" || x.status === "done");
+  const askGroup = editing !== null && moved && mateMoves.length > 0;
+  const [moveAll, setMoveAll] = useState(true);
+  const wholeGroup = askGroup && moveAll;
   // Asked once (footer + "Vẫn đặt lịch"); the next click books.
   const pastAsked = pastStart && pastConfirmed === pastKey;
 
@@ -422,7 +436,11 @@ export function BookingSheet({
       if (!first) throw new Error("no person");
       const withNotes = notes.length > 0 ? { companions: notes } : {};
       if (editing) {
-        patched.current ??= await updateAppointment(editing, {
+        // The whole group first (one server transaction); then this booking's other changes.
+        if (wholeGroup)
+          groupMoved.current ??=
+            (await moveGroup(editing, starts_at)).moved.find((x) => x.id === editing.id) ?? editing;
+        patched.current ??= await updateAppointment(groupMoved.current ?? editing, {
           starts_at,
           duration_min: minutesOfPerson(first),
           staff_id: first.staffId || null,
@@ -582,7 +600,13 @@ export function BookingSheet({
     save.isError && !taken
       ? {
           tone: "error",
-          text: bookingErrorText(
+          text:
+            (save.error instanceof ApiError &&
+              groupMoveRefusal(
+                save.error.errors,
+                (id) => cal.appointments.find((x) => x.id === id)?.customer_name ?? "Một người trong nhóm",
+              )) ||
+            bookingErrorText(
             save.error,
             cal,
             editing ? served.slice(1) : served,
@@ -873,6 +897,42 @@ export function BookingSheet({
             )}
           </div>
         </div>
+        {askGroup && (
+          <fieldset className="grid gap-2" aria-describedby="booking-group-move-hint">
+            <legend>Người cùng nhóm</legend>
+            <div className="choice-row">
+            <label className="choice">
+              <input
+                type="radio"
+                name="booking-group-move"
+                checked={moveAll}
+                onChange={() => {
+                  setMoveAll(true);
+                }}
+              />
+              Đổi cả nhóm ({String(mateMoves.length + 1)} người, cùng dời một khoảng)
+            </label>
+            <label className="choice">
+              <input
+                type="radio"
+                name="booking-group-move"
+                checked={!moveAll}
+                onChange={() => {
+                  setMoveAll(false);
+                }}
+              />
+              Chỉ người này
+            </label>
+            </div>
+            <span id="booking-group-move-hint" className="field-hint">
+              {moveAll
+                ? `Cùng dời: ${mateMoves.map((x) => x.customer_name).join(", ")}. Một người vướng thì không ai bị đổi.`
+                : `Giữ nguyên giờ của ${mateMoves.map((x) => x.customer_name).join(", ")}.`}
+              {mateStays.length > 0 &&
+                ` Không đổi: ${mateStays.map((x) => `${x.customer_name} (${x.status === "done" ? "đã xong" : "đã đến"})`).join(", ")}.`}
+            </span>
+          </fieldset>
+        )}
         <div className="field">
           <label htmlFor="booking-note">Ghi chú lịch hẹn</label>
           <textarea

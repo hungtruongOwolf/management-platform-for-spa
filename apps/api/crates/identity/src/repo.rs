@@ -366,18 +366,24 @@ pub async fn tenants_of_user(pool: &PgPool, user: UserId) -> Result<Vec<TenantRe
 
 /// Permissions of an active member of an active spa (the transaction's tenant). `None` = not an
 /// active member, or the spa is suspended: a suspended spa grants nothing, even to live sessions.
+/// A member whose linked staff profile has left holds only `kernel::permission::FORMER_STAFF`
+/// (ADR-0014): derived here on every request from the roster, never from the client.
 pub async fn member_permissions(
     tx: &mut TenantTx,
     user: UserId,
 ) -> Result<Option<Vec<Permission>>, AppError> {
     // One statement (perf page §3.4: every authenticated request paid two round trips here). A
     // member with no role still gets a row, with an empty list; no row = not an active member.
-    // `(tenant_id, user_id)` is unique, so at most one row.
-    let member = sqlx::query_scalar!(
+    // `(tenant_id, user_id)` is unique, so at most one row. `staff.status` mirrors the latest
+    // employment period (0025): `left` = no open period (`staff_user_idx` answers the lookup).
+    let member = sqlx::query!(
         r#"SELECT COALESCE(
                     array_agg(DISTINCT rp.permission) FILTER (WHERE rp.permission IS NOT NULL),
                     '{}'
-                  ) AS "permissions!"
+                  ) AS "permissions!",
+                  EXISTS (SELECT 1 FROM app.staff s
+                          WHERE s.tenant_id = m.tenant_id AND s.user_id = m.user_id
+                            AND s.status = 'left') AS "former_staff!"
            FROM app.membership m
            JOIN app.tenant t ON t.id = m.tenant_id
            LEFT JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
@@ -389,10 +395,11 @@ pub async fn member_permissions(
     )
     .fetch_optional(tx.conn())
     .await?;
-    let Some(names) = member else {
+    let Some(member) = member else {
         return Ok(None);
     };
-    let permissions = names
+    let roles = member
+        .permissions
         .iter()
         .filter_map(|name| match Permission::from_str(name) {
             Ok(p) => Some(p),
@@ -402,5 +409,8 @@ pub async fn member_permissions(
             }
         })
         .collect();
-    Ok(Some(permissions))
+    Ok(Some(kernel::permission::effective_permissions(
+        roles,
+        member.former_staff,
+    )))
 }

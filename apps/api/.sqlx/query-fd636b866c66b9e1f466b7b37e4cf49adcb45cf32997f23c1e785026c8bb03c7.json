@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT v.id AS visit_id, v.check_in_at,\n                  app.customer_label(c.full_name) AS \"customer_name!\",\n                  vl.service_name_snapshot AS service_name, vl.source,\n                  vl.qty::bigint AS \"qty!\", vl.line_value AS value,\n                  (vl.qty::bigint * vl.unit_price)::bigint AS \"full_value!\"\n           FROM app.visit v\n           JOIN app.visit_line vl ON vl.tenant_id = v.tenant_id AND vl.visit_id = v.id\n           JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id\n           WHERE v.tenant_id = $1 AND vl.staff_id = $2 AND v.status = 'completed'\n             AND v.business_date = $3\n           ORDER BY v.check_in_at, v.id, vl.position",
+  "query": "SELECT v.id AS visit_id, v.check_in_at,\n                  app.customer_label(c.full_name) AS \"customer_name!\",\n                  vl.service_name_snapshot AS service_name, vl.source,\n                  vl.qty::bigint AS \"qty!\", vl.line_value AS value,\n                  (vl.qty::bigint * vl.unit_price)::bigint AS \"full_value!\",\n                  v.note_ct, NULL::text AS note\n           FROM app.visit v\n           JOIN app.visit_line vl ON vl.tenant_id = v.tenant_id AND vl.visit_id = v.id\n           JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id\n           WHERE v.tenant_id = $1 AND vl.staff_id = $2 AND v.status = 'completed'\n             AND v.business_date = $3\n           ORDER BY v.check_in_at, v.id, vl.position",
   "describe": {
     "columns": [
       {
@@ -75,6 +75,23 @@
         "name": "full_value!",
         "type_info": "Int8",
         "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "note_ct",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "note_ct"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "note",
+        "type_info": "Text",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -92,8 +109,10 @@
       false,
       null,
       false,
+      null,
+      true,
       null
     ]
   },
-  "hash": "c92417040e7309953c59b3dd782c5378c2a2d0bfe88f95938bea8afeeb33d647"
+  "hash": "fd636b866c66b9e1f466b7b37e4cf49adcb45cf32997f23c1e785026c8bb03c7"
 }

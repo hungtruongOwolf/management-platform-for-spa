@@ -360,4 +360,35 @@ describe("Sheet lịch hẹn (EM 2026-11-07: mỗi người một lịch, không
       customer_id: "c3",
     });
   });
+  it("undoes a mistaken arrival after one confirm (EM 2026-11-07 item 5a)", async () => {
+    const user = userEvent.setup();
+    const arrived: Appointment = {
+      ...base,
+      status: "arrived",
+      staff_id: "st1",
+      staff_name: "Nguyễn Thị Lan",
+      arrived_at: "2026-11-07T08:00:00Z",
+      version: 3,
+    };
+    const { sent } = renderSheet(arrived, (s) =>
+      s.method === "POST" && s.url.endsWith("/undo-arrival")
+        ? Response.json({ ...arrived, status: "booked", arrived_at: null, version: 4 })
+        : undefined,
+    );
+    expect(screen.queryByRole("button", { name: "Chỉ báo đã đến" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Hoàn tác đã đến" }));
+    // Nothing is sent before the confirm.
+    expect(sent.filter((x) => x.method === "POST")).toHaveLength(0);
+    const confirm = screen.getByRole("group", { name: /Đưa lịch về Chưa đến/ });
+    await user.click(within(confirm).getByRole("button", { name: "Hoàn tác đã đến" }));
+    await vi.waitFor(() => {
+      expect(sent.some((x) => x.method === "POST" && x.url.endsWith("/appointments/a1/undo-arrival"))).toBe(true);
+    });
+  });
+
+  it("offers no undo for a booking that has not arrived", async () => {
+    renderSheet(base);
+    expect(await screen.findByRole("button", { name: "Chỉ báo đã đến" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Hoàn tác đã đến" })).not.toBeInTheDocument();
+  });
 });

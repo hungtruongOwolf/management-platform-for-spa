@@ -1,6 +1,6 @@
 ---
 title: ADR-0012 Đặt API và DB cùng ở Singapore, API luôn chạy
-status: proposed
+status: proposed (production plan); staging stays in the US — EM 2026-11-07
 date: 2026-11-07
 deciders: EM, agent
 ---
@@ -33,6 +33,12 @@ Thứ tự thuộc tính chất lượng ([system](../architecture/system.md)): 
 - Nếu EM muốn chỉ sửa cấu hình: A là bước trung gian chấp nhận được. Nó bỏ được ~150–350 ms mỗi request nhưng không bỏ được cold start.
 
 **Chờ EM quyết:** Q-P1 (vùng), Q-P2 (A/B/C), Q-P3 (Vercel Pro khi dùng thật).
+
+## Update 2026-11-07: staging ở Mỹ, production ở châu Á (EM câu 6)
+EM ([raw](../../raw/2026-11-07-em-decisions-hr-notes-group-region.md) câu 6): "vì tôi đang ở mỹ tôi chọn test server ở mỹ là đúng rồi sau này tôi public nó as product sử dụng chính thức và chạy prod thì mới cho chạy ở châu á".
+- **Staging giữ nguyên ở Mỹ** (Vercel `pdx1` + Supabase `us-west-2`): người test chính (EM) đang ở Mỹ, nên đây là vùng gần người dùng staging. Q-P1 cho staging = **không dời**; Q-P2 (A/B/C) cho staging = không áp dụng. Phương án B của staging ở trên **không làm**.
+- **Production** (khi công bố thành sản phẩm dùng thật) chạy ở **châu Á (Singapore)**, API + DB cùng vùng, API luôn chạy: phần "Decision (proposed)" ở trên vẫn là kế hoạch production; chọn B hay C lúc đó. ADR này vẫn **Proposed** cho production.
+- Hệ quả: số đo trễ từ Việt Nam trên staging (perf page) không còn là mục tiêu của staging; ngân sách p95 ở quầy đo lại trên production Singapore. Việc engineering giai đoạn 0 (đã làm) vẫn có ích ở mọi vùng. Cold start Vercel trên staging chấp nhận được (người test là EM).
 
 ## Consequences
 - Positive:

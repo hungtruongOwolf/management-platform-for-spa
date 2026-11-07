@@ -270,6 +270,10 @@ pub struct StaffEndWrite {
     /// Last working day (≤ today).
     pub ended_on: NaiveDate,
     pub reason: String,
+    /// `true` = also lock the linked login in this spa ("Khóa tài khoản"). Default `false`: the
+    /// login stays, reaching only the person's own past attendance and payslips (ADR-0014).
+    #[serde(default)]
+    pub lock_login: bool,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -509,6 +513,7 @@ pub async fn end_employment(
     let input = EndInput {
         ended_on: body.ended_on,
         reason: body.reason,
+        lock_login: body.lock_login,
     };
     let v = profile::end(&pool, &user.actor, id, version, &input).await?;
     Ok(profile_response(StatusCode::OK, v))

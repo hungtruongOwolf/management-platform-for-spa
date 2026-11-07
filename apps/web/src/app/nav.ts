@@ -150,7 +150,7 @@ export function navFor(me: Me | null): NavGroup[] {
 /** Staff management for those who keep the books; "my month" for everyone else linked to a profile. */
 function staffItem(me: Me | null): NavItem | false {
   if (mayOpen.staffBooks(me)) return { to: "/nhan-vien", label: "Nhân viên", icon: "id-card" };
-  return mayOpen.myWork(me) && { to: "/nhan-vien", label: "Công và lương của tôi", short: "Công lương", icon: "id-card" };
+  return mayOpen.myPay(me) && { to: "/nhan-vien", label: "Công và lương của tôi", short: "Công lương", icon: "id-card" };
 }
 
 /**

@@ -20,17 +20,20 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use chrono::NaiveDate;
 use identity::AuthUser;
+use kernel::crypto::FieldCipher;
 use kernel::http::IdempotencyKey;
 use kernel::idempotency::hash_route;
 use kernel::{AppError, FieldError};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use std::sync::Arc;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 pub fn routes<S>() -> Router<S>
 where
     PgPool: FromRef<S>,
+    Arc<FieldCipher>: FromRef<S>,
     S: Clone + Send + Sync + 'static,
 {
     Router::new()
@@ -488,7 +491,9 @@ pub async fn put_rules(
 // ------------------------------------------------------------------------------ self-service
 
 #[utoipa::path(get, path = "/api/v1/me/staff", tag = "staff", params(MonthQuery),
-    responses((status = 200, body = MyStaff), (status = 401), (status = 403), (status = 422)))]
+    responses((status = 200, body = MyStaff), (status = 401),
+        (status = 403, description = "auth.forbidden; staff.not_employed_in_month (a former staff member asked for a month they did not work in)"),
+        (status = 422)))]
 pub async fn get_my_staff(
     State(pool): State<PgPool>,
     user: AuthUser,
@@ -509,14 +514,16 @@ pub struct DayQuery {
 /// One day of my month in detail (EM 2026-11-07). The person is the session's own staff link;
 /// there is no parameter to pick anyone else (`?staff_id=` → 400).
 #[utoipa::path(get, path = "/api/v1/me/staff/day", tag = "staff", params(DayQuery),
-    responses((status = 200, body = MyDay), (status = 400), (status = 401), (status = 403),
+    responses((status = 200, body = MyDay), (status = 400), (status = 401),
+        (status = 403, description = "auth.forbidden; staff.not_employed_in_month (a former staff member, a day of a month they did not work in)"),
         (status = 422, description = "date invalid_date")))]
 pub async fn get_my_day(
     State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
     Query(q): Query<DayQuery>,
 ) -> Result<Response, AppError> {
     let date = q.date.as_deref().map(day::parse_date).transpose()?;
-    let mine = day::my_day(&pool, &user.actor, date).await?;
+    let mine = day::my_day(&pool, &cipher, &user.actor, date).await?;
     Ok(no_store(StatusCode::OK, mine))
 }

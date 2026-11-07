@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT a.id, a.status, a.business_date, a.starts_at, a.ends_at,\n                  CASE WHEN c.id IS NULL THEN a.guest_name\n                       ELSE app.customer_label(c.full_name) END AS \"customer_name!\",\n                  v.status AS \"visit_status?\", v.check_in_at AS \"visit_check_in_at?\",\n                  CASE WHEN a.group_id IS NULL THEN NULL ELSE\n                    (SELECT count(*) FROM app.appointment g\n                     WHERE g.tenant_id = a.tenant_id AND g.group_id = a.group_id\n                       AND g.status <> 'cancelled') END AS \"group_size?\"\n           FROM app.appointment a\n           LEFT JOIN app.customer c ON c.tenant_id = a.tenant_id AND c.id = a.customer_id\n           LEFT JOIN app.visit v ON v.tenant_id = a.tenant_id AND v.id = a.visit_id\n           WHERE a.tenant_id = $1 AND a.staff_id = $2 AND a.business_date BETWEEN $3 AND $4\n           ORDER BY a.starts_at, a.id\n           LIMIT 2000",
+  "query": "SELECT a.id, a.status, a.business_date, a.starts_at, a.ends_at,\n                  CASE WHEN c.id IS NULL THEN a.guest_name\n                       ELSE app.customer_label(c.full_name) END AS \"customer_name!\",\n                  v.status AS \"visit_status?\", v.check_in_at AS \"visit_check_in_at?\",\n                  CASE WHEN a.group_id IS NULL THEN NULL ELSE\n                    (SELECT count(*) FROM app.appointment g\n                     WHERE g.tenant_id = a.tenant_id AND g.group_id = a.group_id\n                       AND g.status <> 'cancelled') END AS \"group_size?\",\n                  v.id AS \"visit_id?\",\n                  CASE WHEN v.status = 'completed' AND EXISTS (\n                         SELECT 1 FROM app.visit_line l\n                         WHERE l.tenant_id = v.tenant_id AND l.visit_id = v.id AND l.staff_id = $2)\n                       THEN v.note_ct END AS note_ct\n           FROM app.appointment a\n           LEFT JOIN app.customer c ON c.tenant_id = a.tenant_id AND c.id = a.customer_id\n           LEFT JOIN app.visit v ON v.tenant_id = a.tenant_id AND v.id = a.visit_id\n           WHERE a.tenant_id = $1 AND a.staff_id = $2 AND a.business_date BETWEEN $3 AND $4\n           ORDER BY a.starts_at, a.id\n           LIMIT 2000",
   "describe": {
     "columns": [
       {
@@ -91,6 +91,23 @@
         "name": "group_size?",
         "type_info": "Int8",
         "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "visit_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "note_ct",
+        "type_info": "Bytea",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -110,8 +127,10 @@
       null,
       false,
       false,
+      null,
+      false,
       null
     ]
   },
-  "hash": "5c3bc8b09fb5c49f0310d219aec10ccb3b6009b9b6ab948c88f3e5a82a7d24a2"
+  "hash": "6260a40248f42fdb2a9cd28a96af4918c052d3cc9382f4f3662591269882f3b1"
 }

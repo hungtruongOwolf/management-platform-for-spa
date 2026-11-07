@@ -132,6 +132,24 @@ pub struct AppointmentUpdate {
     pub companions: Option<Vec<String>>,
 }
 
+/// Body of `POST /appointments/{id}/move-group` (If-Match of `{id}`): "Đổi cả nhóm".
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AppointmentGroupMove {
+    /// The new start of `{id}`; every other member still booked shifts by the same amount.
+    pub starts_at: DateTime<Utc>,
+}
+
+/// `POST /appointments/{id}/move-group` → 200.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AppointmentGroupMoved {
+    pub group_id: Uuid,
+    /// The members that moved (`{id}` included), earliest first.
+    pub moved: Vec<AppointmentDto>,
+    /// Members already arrived or done: left where they were.
+    pub not_moved: Vec<AppointmentDto>,
+}
+
 /// Body of `POST /appointments/{id}/arrive`.
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -336,8 +354,9 @@ pub struct MyEntryService {
     pub from_package: bool,
 }
 
-/// One block of a technician's own calendar. An allowlist: times, phase, the customer's name and
-/// the services — no phone, no note, no money, no customer or staff ids.
+/// One block of a technician's own calendar. An allowlist: times, phase, the customer's name, the
+/// services and the session note of a visit they worked on — no phone, no booking or customer
+/// note, no money, no customer or staff ids.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct MyCalendarEntry {
     pub id: Uuid,
@@ -355,6 +374,9 @@ pub struct MyCalendarEntry {
     pub group_size: Option<i64>,
     /// A visit recorded without any booking ("vãng lai").
     pub walk_in: bool,
+    /// The session note of the visit (EM 2026-11-07 item 3), sent only when I performed one of
+    /// its lines; `null` for a booking not yet done or a visit without a note.
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

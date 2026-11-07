@@ -1,7 +1,8 @@
 //! Self-service (spec staff-management US6): a staff member whose profile is linked to their
 //! login sees **their own** month — attendance, daily reviews, evaluation, bonuses/penalties and
 //! payslip — and nobody else's. The staff id comes from the session's user, never from the
-//! request (non-negotiable 3).
+//! request (non-negotiable 3). A former staff member (ADR-0014) still reads their own months,
+//! but only those they worked in.
 
 use crate::adjustment::{self, Adjustment};
 use crate::attendance::{self, StaffSheet};
@@ -12,10 +13,13 @@ use crate::payroll;
 use crate::period;
 use crate::review::{self, DailyReview};
 use crate::rules;
+use chrono::NaiveDate;
 use kernel::{Actor, AppError, Permission, TenantTx};
+use org::profile::Profile;
 use serde::Serialize;
 use sqlx::PgPool;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct MyMonth {
@@ -33,32 +37,87 @@ pub struct MyMonth {
 pub struct MyStaff {
     /// `false`: this login is not linked to a staff profile (ask the owner).
     pub linked: bool,
+    /// Present only for a former staff member (ADR-0014): the last day they worked. Months they
+    /// did not work in are `403 staff.not_employed_in_month`; the default month is this day's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_on: Option<NaiveDate>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<MyMonth>,
 }
 
-/// `GET /me/staff?month=` (`staff.read_own`).
+/// Who reads their own pay: a working member (`staff.read_own`), any month; a former staff
+/// member (`staff.read_own_past`, derived at request time), only the months they worked in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OwnScope {
+    Working,
+    Former,
+}
+
+pub(crate) fn own_scope(actor: &Actor) -> Result<OwnScope, AppError> {
+    if actor.can(Permission::StaffReadOwn) {
+        Ok(OwnScope::Working)
+    } else if actor.can(Permission::StaffReadOwnPast) {
+        Ok(OwnScope::Former)
+    } else {
+        Err(AppError::forbidden())
+    }
+}
+
+/// The last day a former staff member worked.
+pub(crate) fn last_day(profile: &Profile) -> Result<NaiveDate, AppError> {
+    profile
+        .employment
+        .latest()
+        .and_then(|p| p.ended_on)
+        .ok_or_else(|| AppError::Internal("former staff without an end date".into()))
+}
+
+/// A former staff member reads only a month they worked in; `None` = the month they left.
+pub(crate) fn former_month(profile: &Profile, asked: Option<Month>) -> Result<Month, AppError> {
+    let month = match asked {
+        Some(m) => m,
+        None => Month::of(last_day(profile)?),
+    };
+    if period::employed_in(profile, month) {
+        Ok(month)
+    } else {
+        Err(AppError::Forbidden {
+            code: "staff.not_employed_in_month",
+        })
+    }
+}
+
+/// The caller's own profile (the session's staff link).
+pub(crate) async fn own_profile(tx: &mut TenantTx, staff_id: Uuid) -> Result<Profile, AppError> {
+    org::profile::profiles_in(tx)
+        .await?
+        .into_iter()
+        .find(|p| p.id == staff_id)
+        .ok_or_else(|| AppError::Internal("linked staff vanished".into()))
+}
+
+/// `GET /me/staff?month=` (`staff.read_own`, or `staff.read_own_past` for the months worked).
 pub async fn my_month(
     pool: &PgPool,
     actor: &Actor,
     month: Option<Month>,
 ) -> Result<MyStaff, AppError> {
-    actor.require(Permission::StaffReadOwn)?;
+    let scope = own_scope(actor)?;
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let Some(staff_id) = org::profile::own_staff_id(&mut tx, actor).await? else {
         tx.commit().await?;
         return Ok(MyStaff {
             linked: false,
+            left_on: None,
             data: None,
         });
     };
-    let profile = org::profile::profiles_in(&mut tx)
-        .await?
-        .into_iter()
-        .find(|p| p.id == staff_id)
-        .ok_or_else(|| AppError::Internal("linked staff vanished".into()))?;
+    let profile = own_profile(&mut tx, staff_id).await?;
     let today = period::today(&mut tx).await?;
-    let month = month.unwrap_or_else(|| Month::of(today));
+    let (month, left_on) = match scope {
+        OwnScope::Working => (month.unwrap_or_else(|| Month::of(today)), None),
+        OwnScope::Former => (former_month(&profile, month)?, Some(last_day(&profile)?)),
+    };
     let (rules, _) = rules::load(&mut tx).await?;
     let info = period::info(&mut tx, month).await?;
     let days = attendance::days_in(&mut tx, month, Some(staff_id)).await?;
@@ -81,6 +140,7 @@ pub async fn my_month(
     tx.commit().await?;
     Ok(MyStaff {
         linked: true,
+        left_on,
         data: Some(MyMonth {
             month: month.to_string(),
             closed: info.closed,

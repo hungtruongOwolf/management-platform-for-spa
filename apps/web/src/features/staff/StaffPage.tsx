@@ -1,4 +1,5 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
+import { mayOpen } from "../../app/access";
 import { PageHeader } from "../../app/PageHeader";
 import { useSearchState } from "../../lib/searchState";
 import { can, meQuery } from "../auth/session";
@@ -59,14 +60,21 @@ export function StaffPage() {
   );
 
   if (!tab) {
+    // A leaver (ADR-0014): their own months only; the server picks the month they left by
+    // default and refuses the months they did not work in, so the picker lives with the data.
+    const former = can(me, "staff.read_own_past") && !can(me, "staff.read_own");
     return (
       <section className="grid content-start gap-5">
         <PageHeader title="Công và lương của tôi">
-          {picker}
+          {!former && picker}
         </PageHeader>
-        {can(me, "staff.read_own") ? (
+        {mayOpen.myPay(me) ? (
           <MyMonth
-            month={month}
+            month={former ? search.month : month}
+            former={former}
+            onMonth={(m) => {
+              patch({ month: m, day: "" });
+            }}
             day={search.day}
             onDay={(d) => {
               // The open day is in the URL (ADR-0007); its month follows it.

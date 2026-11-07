@@ -85,6 +85,8 @@ use utoipa::OpenApi;
         operations::appointments::http::read_appointment,
         operations::appointments::http::update_appointment,
         operations::appointments::http::arrive,
+        operations::appointments::http::undo_arrival,
+        operations::appointments::http::move_group,
         operations::appointments::http::complete,
         operations::appointments::http::cancel,
         operations::appointments::http::no_show,
