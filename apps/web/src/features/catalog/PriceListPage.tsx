@@ -16,6 +16,7 @@ import { categoriesQuery, createCategory, servicesQuery } from "./api";
 import { describeDuration, describePrices } from "./prices";
 import { ServiceForm } from "./ServiceForm";
 import "../customers/khach.css";
+import "./messages";
 
 type Editing =
   | { kind: "service"; service: Service }

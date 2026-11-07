@@ -97,5 +97,18 @@ sources: [architecture/system.md, product/specs/front-desk-and-packages.md]
 | Lộ lương qua cache trình duyệt/proxy | `Cache-Control: no-store` mọi response hr/org-profile | `salary_is_only…` (header) |
 Không có Critical/High. Còn mở: quản lý thấy số tiền thưởng/phạt mình ghi (Q-S3); chủ spa gắn nhầm tài khoản → người đó thấy phiếu lương hồ sơ đó (có audit).
 
+## Nhật ký ghi chú (`GET /notes`, secure review 2026-11-07, [spec §10](../product/specs/management-views.md))
+Một màn đọc mọi ghi chú gom nhiều nguồn, trong đó có dữ liệu sức khỏe (mã hóa) và lý do nghỉ việc: bề mặt "gom dữ liệu" mới, nên mỗi nguồn giữ quyền riêng.
+| Lạm dụng | Kiểm soát (server) | Test |
+|---|---|---|
+| Quản lý không có `customer.health_notes.read` đọc ghi chú buổi / sức khỏe qua màn gom | cờ quyền per-loại tắt nhánh SQL; không giải mã; `kind=health_note` hay `q=` cũng trống | `notes.rs::a_manager_without_the_health_permission_sees_no_health_notes` |
+| Một quyền "nhẹ" mở loại cần nhiều quyền | mỗi loại = AND đúng các quyền của màn gốc; bỏ một quyền → mất loại | `notes.rs::every_kind_keeps_its_own_read_rule` (9 loại × từng quyền) |
+| Quản lý đọc lý do nghỉ việc | loại `employment_end` cần `staff.manage` | `each_role_reads_exactly_the_notes_it_may` |
+| KTV mở màn | `report.read` | matrix + `each_role…` (403) |
+| Spa khác dò id khách / nhân viên | `tenant_id = $1` ở mọi nhánh + RLS; id lạ → danh sách trống | `another_spa_sees_none_of_our_notes` |
+| Giải mã hàng loạt (DoS) qua tìm chữ | khoảng ngày ≤ 366, quét ≤ 500 ghi chú / request, cursor đi tiếp; rate limit chung | `notes.rs::filters_search_and_pages_with_a_cursor` |
+| Bản rõ lọt ra log / audit / cache | đọc không ghi audit; lỗi giải mã chỉ ghi id; `private, no-store`; `q` ở query string (log truy cập không ghi query) | `each_role…` (audit trống, header) |
+Không có Critical/High. Còn mở: `q` có thể chứa chữ của ghi chú sức khỏe trong URL lịch sử trình duyệt của chính người dùng (như mọi ô tìm trên URL; chấp nhận).
+
 ## Còn mở
 - Danh sách thao tác yêu cầu nhập lại mật khẩu: chỉ thao tác bảo mật tài khoản (đổi mật khẩu, cài đặt MFA), EM 2026-11-05. Khi thêm route đó: dùng `AuthUser::require_recent_auth` + test `401`.

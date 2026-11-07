@@ -109,6 +109,12 @@ export function navFor(me: Me | null): NavGroup[] {
           short: "Báo cáo",
           icon: "chart",
         },
+        // Reading back what was written is a review, like the reports (spec management-views §10).
+        mgmt && {
+          to: "/nhat-ky-ghi-chu",
+          label: "Nhật ký ghi chú",
+          icon: "history",
+        },
       ],
     ],
     ["Nhân viên", [staffItem(me), myWorkItem(me)]],

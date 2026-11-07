@@ -59,6 +59,21 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
   - `GET /customers/{id}/history`, `/customers/{id}/summary` cần `customer.read` + `visit.read` + `sale.read`; `GET /customer-packages/{id}/usage`, `/customers/inactive` cần `customer.read` + `visit.read`; `GET /packages` cần `customer.read`. Matrix kiểm permission đầu tiên (các permission kèm theo có cùng người giữ mặc định).
   - Không bao giờ có ghi chú sức khỏe trong các response này. **Ghi chú buổi** (EM 2026-11-07, spec front-desk §10.12): chỉ `GET /customers/{id}/history` mang `visit.note`, và **chỉ** khi người gọi có `customer.health_notes.read` (không có quyền → không có key); `GET /visits` (danh sách ngày) cùng quy tắc. Test: `app/tests/visits.rs::session_note_is_encrypted_and_shown_only_to_health_readers`.
   - Test: `app/tests/reports.rs::money_is_only_sent_to_holders_of_report_revenue_read` (tắt quyền tiền của quản lý → không còn key tiền nào; KTV 403; ẩn danh 401; chủ spa khác chỉ thấy sổ trống của mình, ID khách → 404). Đã mutation-check: bỏ cổng quyền tiền → test đỏ.
+- **Nhật ký ghi chú (EM 2026-11-07, [spec §10](../product/specs/management-views.md), migration 0027 chỉ thêm index):** `GET /notes` cần `report.read` (chủ spa + quản lý; KTV `403`, ẩn danh `401`), rồi **mỗi loại ghi chú giữ quy tắc đọc của màn gốc**, kiểm trên server, không thêm permission:
+
+  | Loại | Quyền đọc | Owner | Manager | Technician |
+  |---|---|---|---|---|
+  | Ghi chú buổi (mã hóa) | `visit.read` + `customer.health_notes.read` | ✓ | ✓ | — |
+  | Ghi chú hồ sơ khách | `customer.read` | ✓ | ✓ | — |
+  | Lưu ý sức khỏe (mã hóa) | `customer.read` + `customer.health_notes.read` | ✓ | ✓ | — |
+  | Ghi chú chấm công | `attendance.record` | ✓ | ✓ | — |
+  | Ghi chú khen / phàn nàn | `evaluation.record` | ✓ | ✓ | — |
+  | Lý do thưởng / phạt | `evaluation.record` | ✓ | ✓ | — |
+  | Ghi chú chăm sóc lại | `customer.read` | ✓ | ✓ | — |
+  | Lý do hủy lượt / sửa lượt / hủy hóa đơn / hủy gói | `customer.read` + `visit.read` + `sale.read` | ✓ | ✓ | — |
+  | Lý do nghỉ việc | `staff.manage` | ✓ | — | — |
+
+  Loại không được đọc thì nhánh SQL của nó tắt (cờ bool), nên lọc `kind` hay tìm chữ cũng không mở được; `kinds` trong response chỉ liệt kê loại được đọc. Ghi chú mã hóa giải mã bằng đúng associated data của bên ghi, chỉ khi có `customer.health_notes.read`; không vào log/audit; `Cache-Control: private, no-store` (mặc định middleware). Tenant lọc tường minh ở mọi nhánh + RLS; id khách / nhân viên spa khác → danh sách trống. Query `deny_unknown_fields`. Test: `app/tests/notes.rs` (từng role, từng loại × bỏ từng quyền, quản lý không có quyền sức khỏe, spa khác, lọc + cursor + tìm trong ghi chú mã hóa), `authz_matrix.rs` +1 dòng (`ReportRead`, owner + manager).
 - **Vòng 3 (EM 2026-11-05, [spec](../product/specs/management-views.md) "Bổ sung vòng 3", migration 0014):**
   - `POST /customers/{id}/follow-ups` cần `customer.follow_up` + Idempotency-Key; người ghi lấy từ session (`created_by` = user, body có field lạ → `422`); bảng `customer_follow_up` chỉ thêm (trigger `reject_mutation`, app_rw chỉ `SELECT, INSERT`) + RLS tenant; audit `customer.follow_up` ghi `has_note`, không chép ghi chú. `GET /customers/{id}/follow-ups` cần `customer.read`. Khách spa khác → `404`.
   - `GET /customers/phone-check?phone=` cần `customer.read`; chỉ tra trong tenant của session (lọc tường minh + RLS); trả tên + id như `GET /customers?q=<số>` đã trả cho cùng người, nên không mở thêm bề mặt dò số. Chi phí: 1 lookup trên unique index; rate limit chung theo IP (5/s, burst 60). Số điện thoại nằm trong query string như `GET /customers?q=` (log truy cập không ghi query; xem threat-model).

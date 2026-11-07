@@ -18,6 +18,7 @@ const WEIGHTS = {
   "head.spec.ts": 1,
   "layout.spec.ts": 110,
   "management.spec.ts": 12,
+  "notes.spec.ts": 6,
   "quay-upsell.spec.ts": 8,
   "sales.spec.ts": 3,
   "staff.spec.ts": 7,
