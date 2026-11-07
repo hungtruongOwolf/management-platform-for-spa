@@ -332,7 +332,8 @@ pub struct VisitDto {
     /// Set on a voided visit that was corrected: the visit that replaced it. The newest version
     /// of a visit is the one without this field.
     pub corrected_by_visit_id: Option<Uuid>,
-    /// Present only on a single visit and only for `customer.health_notes.read`; null = no note.
+    /// Present (on a visit and in the day list) only for `customer.health_notes.read`; null = no
+    /// note. Never in an idempotent replay.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<String>)]
     pub note: Option<Option<String>>,

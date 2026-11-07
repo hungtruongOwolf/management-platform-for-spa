@@ -32,6 +32,7 @@ const HA = {
   id: "c1",
   full_name: "Nguyễn Thị Hà",
   phone: "0905 111 222",
+  named: true,
   gender: "female",
 };
 /** Hà's husband: the package she buys for him sits on his profile (US13). */
@@ -39,6 +40,7 @@ const NAM = {
   id: "c2",
   full_name: "Trần Văn Nam",
   phone: "0905 333 444",
+  named: true,
   gender: "male",
 };
 const DTL: Service = {
@@ -165,7 +167,7 @@ interface Call {
 function serve(
   dayVisits: Visit[] = [],
   packages: CustomerPackage[] = [],
-  customer: { gender: string | null } = HA,
+  customer: Record<string, unknown> & { gender?: string | null } = HA,
 ) {
   const calls: Call[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
@@ -198,6 +200,16 @@ function serve(
     if (url.startsWith("/api/v1/customers?q="))
       return json([{ ...HA, ...customer }]);
 
+    if (url === "/api/v1/customers/c1" && call.method === "PUT")
+      return json({
+        ...HA,
+        ...customer,
+        ...(call.body as object),
+        named: true,
+        phone_e164: null,
+        version: 2,
+        created_at: "2026-01-01T00:00:00Z",
+      });
     if (url === "/api/v1/customers/c1")
       return json({
         ...HA,
@@ -597,7 +609,7 @@ describe("/quay round 6", () => {
     });
   });
 
-  it("“Chuyển sang gói” sells a new package by default; “Tính buổi hôm nay vào gói” converts (Q-U1)", async () => {
+  it("“Thêm dịch vụ / bán gói” sells a new package by default; “Tính buổi hôm nay vào gói” converts (Q-U1)", async () => {
     const calls = serve([ONE_OFF_VISIT]);
     const user = userEvent.setup();
     render(
@@ -611,8 +623,12 @@ describe("/quay round 6", () => {
         name: /^Thao tác lượt .* của Nguyễn Thị Hà$/,
       }),
     );
+    // EM 2026-11-07: one entry on the ⋯ menu; converting is a choice inside it.
     await user.click(
-      screen.getByRole("menuitem", { name: "Chuyển sang gói liệu trình" }),
+      screen.getByRole("menuitem", { name: "Thêm dịch vụ / bán gói" }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Bán gói liệu trình" }),
     );
     await user.selectOptions(
       await screen.findByRole("combobox", { name: "Mẫu gói" }),
@@ -663,7 +679,7 @@ describe("/quay round 6", () => {
     expect(items).not.toContain("Chuyển sang gói liệu trình");
   });
 
-  it("opens “Chuyển sang gói liệu trình” with one package slot, also under StrictMode (EM live test)", async () => {
+  it("opens one package slot per click on a saved visit, also under StrictMode (EM live test)", async () => {
     serve([ONE_OFF_VISIT]);
     const user = userEvent.setup();
     render(
@@ -679,8 +695,15 @@ describe("/quay round 6", () => {
         name: /^Thao tác lượt .* của Nguyễn Thị Hà$/,
       }),
     );
+    const items = within(screen.getByRole("menu"))
+      .getAllByRole("menuitem")
+      .map((i) => i.textContent);
+    expect(items).not.toContain("Chuyển sang gói liệu trình");
     await user.click(
-      screen.getByRole("menuitem", { name: "Chuyển sang gói liệu trình" }),
+      screen.getByRole("menuitem", { name: "Thêm dịch vụ / bán gói" }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Bán gói liệu trình" }),
     );
     await screen.findByRole("combobox", { name: "Mẫu gói" });
     expect(screen.getAllByRole("combobox", { name: "Mẫu gói" })).toHaveLength(1);
@@ -818,5 +841,207 @@ describe("/quay round 6", () => {
     expect(
       await within(table).findByText("Tiền mặt 149.000đ · CK 200.000đ"),
     ).toBeInTheDocument();
+  });
+});
+
+describe("/quay EM flow review 2026-11-07", () => {
+  it("“Làm 1 buổi hôm nay” on a package sold in the cart: one save, today's session from it", async () => {
+    const calls = serve();
+    const user = userEvent.setup();
+    render(
+      <App history={createMemoryHistory({ initialEntries: ["/quay"] })} />,
+    );
+    await pickHa(user);
+    await user.click(
+      await screen.findByRole("button", { name: "Bán gói liệu trình" }),
+    );
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Mẫu gói" }),
+      "pl1",
+    );
+    expect(screen.queryByText(/Bán thêm gói/)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Làm 1 buổi hôm nay" }));
+    const ktv = await screen.findByRole("combobox", { name: "KTV" });
+    await waitFor(() => {
+      expect(ktv).toHaveFocus();
+    });
+    await user.selectOptions(ktv, "st1");
+    expect(
+      screen.getByText(/Buổi hôm nay của gói mua hôm nay/),
+    ).toBeInTheDocument();
+    // Only one item is open: the package folded into its summary row.
+    expect(
+      screen.getByRole("button", { name: `Sửa gói ${PLAN.name}` }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Mẫu gói" })).toBeNull();
+    const total = screen.getByRole("group", { name: "Lưu lượt" });
+    expect(within(total).getByText("3.500.000đ")).toBeInTheDocument();
+    await user.click(
+      within(total).getByRole("button", { name: "Lưu lượt khách" }),
+    );
+    await waitFor(() => {
+      expect(posted(calls, "/api/v1/visits")).toHaveLength(1);
+    });
+    expect(posted(calls, "/api/v1/sales")).toHaveLength(0);
+    const body = posted(calls, "/api/v1/visits")[0]?.body as Record<
+      string,
+      unknown
+    >;
+    expect(body["lines"]).toEqual([
+      { service_id: "s5", source: "package", package_ref: "p1", staff_id: "st1" },
+    ]);
+    expect(body["package_sales"]).toEqual([
+      expect.objectContaining({ ref: "p1", package_plan_id: "pl1" }),
+    ]);
+    expect(body["payments"]).toEqual([{ method: "cash", amount: 3_500_000 }]);
+  });
+
+  it("dropping the package drops today's session taken from it", async () => {
+    serve();
+    const user = userEvent.setup();
+    render(
+      <App history={createMemoryHistory({ initialEntries: ["/quay"] })} />,
+    );
+    await pickHa(user);
+    await user.click(
+      await screen.findByRole("button", { name: "Bán gói liệu trình" }),
+    );
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Mẫu gói" }),
+      "pl1",
+    );
+    await user.click(screen.getByRole("button", { name: "Làm 1 buổi hôm nay" }));
+    expect(
+      await screen.findByRole("list", { name: "Dịch vụ trong lượt" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: `Bỏ ${PLAN.name}` }));
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("list", { name: "Dịch vụ trong lượt" }),
+      ).toBeNull();
+    });
+  });
+
+  it("folds a finished line into a summary row; Sửa opens it and folds the other", async () => {
+    serve();
+    const user = userEvent.setup();
+    render(
+      <App history={createMemoryHistory({ initialEntries: ["/quay"] })} />,
+    );
+    await pickHa(user);
+    await addOneOff(user, "s10");
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "KTV" }),
+      "st1",
+    );
+    await addOneOff(user, "s5");
+    const lines = screen.getByRole("list", { name: "Dịch vụ trong lượt" });
+    // Giác hơi is done: one row with its technician, price, Sửa and ✕.
+    expect(
+      within(lines).getByRole("button", { name: "Sửa dòng Giác hơi" }),
+    ).toBeInTheDocument();
+    expect(within(lines).getByText(/KTV KTV Lan · Dịch vụ lẻ/)).toBeInTheDocument();
+    expect(within(lines).getAllByRole("combobox", { name: "KTV" })).toHaveLength(1);
+    await user.selectOptions(
+      within(lines).getByRole("combobox", { name: "KTV" }),
+      "st1",
+    );
+    await user.click(
+      within(lines).getByRole("button", { name: "Sửa dòng Giác hơi" }),
+    );
+    expect(
+      within(lines).getByRole("button", { name: "Sửa dòng Đại Thông Lạc" }),
+    ).toBeInTheDocument();
+    expect(
+      within(lines).getByRole("combobox", { name: "Người giới thiệu Giác hơi" }),
+    ).toBeInTheDocument();
+    await user.click(
+      within(lines).getByRole("button", { name: "Xong dòng Giác hơi" }),
+    );
+    expect(within(lines).queryAllByRole("combobox")).toHaveLength(0);
+    // Payment and the total stay in view.
+    expect(screen.getByRole("group", { name: "Lưu lượt" })).toHaveTextContent(
+      "449.000đ",
+    );
+  });
+
+  it("a nameless walk-in: no raw null, info added in place, a package needs a named owner", { timeout: 20_000 }, async () => {
+    const calls = serve([], [], {
+      full_name: "Khách vãng lai",
+      named: false,
+      phone: null,
+      gender: null,
+    });
+    const user = userEvent.setup();
+    render(
+      <App history={createMemoryHistory({ initialEntries: ["/quay"] })} />,
+    );
+    const search = await screen.findByRole("combobox", {
+      name: "Tìm khách theo SĐT hoặc tên",
+    });
+    await user.type(search, "0905");
+    await user.click(await screen.findByRole("option", { name: /Khách vãng lai/ }));
+    const card = await screen.findByRole("region", { name: /Khách vãng lai/ });
+    await waitFor(() => {
+      expect(card).toHaveTextContent("Chưa có gói liệu trình đang dùng");
+    });
+    expect(card.textContent).not.toMatch(/null|Chưa có SĐT/);
+    expect(card.querySelector(".customer-meta")?.textContent).not.toMatch(/^ ?·/);
+    // One way to sell a package: in the cart (EM: the card's duplicate is gone).
+    expect(
+      screen.getAllByRole("button", { name: /^Bán gói liệu trình/ }),
+    ).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Bán gói liệu trình" }));
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Mẫu gói" }),
+      "pl1",
+    );
+    expect(screen.getByText(/Gói liệu trình cần chủ gói có tên/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Làm 1 buổi hôm nay" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Lưu hóa đơn gói" }));
+    expect(posted(calls, "/api/v1/sales")).toHaveLength(0);
+
+    await user.click(screen.getByRole("button", { name: "Thêm thông tin khách" }));
+    const form = await screen.findByRole("form", { name: "Sửa hồ sơ khách" });
+    await user.type(within(form).getByLabelText("Họ tên"), "Chị Mai");
+    await user.click(within(form).getByRole("button", { name: "Lưu thay đổi" }));
+    await waitFor(() => {
+      expect(
+        calls.filter((c) => c.method === "PUT" && c.url === "/api/v1/customers/c1"),
+      ).toHaveLength(1);
+    });
+    expect(
+      await screen.findByRole("heading", { name: /Chị Mai/ }),
+    ).toBeInTheDocument();
+    // Same profile, same cart: the package is kept and can now be saved.
+    expect(
+      screen.queryByText(/Gói liệu trình cần chủ gói có tên/, { selector: ".field-hint" }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: "Làm 1 buổi hôm nay" })).toBeInTheDocument();
+  });
+
+  it("shows the session note in the day list and the details; a missing phone is never “null”", async () => {
+    serve([{ ...ONE_OFF_VISIT, note: "Đau vai trái, làm nhẹ tay" }], [], {
+      phone: null,
+    });
+    const user = userEvent.setup();
+    render(
+      <App history={createMemoryHistory({ initialEntries: ["/quay"] })} />,
+    );
+    const table = await screen.findByRole("table", {
+      name: "Lượt khách hôm nay",
+    });
+    expect(
+      within(table).getByText("Ghi chú: Đau vai trái, làm nhẹ tay"),
+    ).toBeInTheDocument();
+    await user.click(
+      within(table).getByRole("button", { name: /^Nguyễn Thị Hà/ }),
+    );
+    const details = await within(table).findByTestId("visit-details");
+    expect(details).toHaveTextContent("Ghi chú buổi");
+    await waitFor(() => {
+      expect(details).toHaveTextContent("Chưa có SĐT");
+    });
+    expect(details.textContent).not.toMatch(/null/);
   });
 });

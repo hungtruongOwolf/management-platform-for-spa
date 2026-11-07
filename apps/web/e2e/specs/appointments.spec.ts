@@ -144,9 +144,11 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     await expect(page.getByText(/Đang ghi cho lịch hẹn 09:00/)).toBeVisible();
     const cart = page.getByRole("list", { name: "Dịch vụ trong lượt" });
     await expect(cart).toContainText("Trừ liệu trình");
-    await expect(page.getByRole("combobox", { name: "KTV" })).toHaveValue(
-      r.staff.id,
-    );
+    // The booked technician is filled in, so the line is already folded (EM 2026-11-07).
+    await expect(cart).toContainText(`KTV ${r.staff.full_name}`);
+    await expect(
+      cart.getByRole("button", { name: /^Sửa dòng / }),
+    ).toBeVisible();
     await expectAccessible(page, "quay-tu-lich-hen");
     await page.getByRole("button", { name: "Lưu lượt khách" }).click();
     await expect(
@@ -284,9 +286,10 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
       await expect(sheet.getByText("Đã lưu KTV.")).toBeVisible();
       await sheet.getByRole("button", { name: "Khách đến · ghi lượt" }).click();
       await expect(page.getByText(/Đang ghi cho lịch hẹn 09:00/)).toBeVisible();
-      await expect(page.getByRole("combobox", { name: "KTV" })).toHaveValue(
-        mother.staff.id,
-      );
+      // The technician is filled in, so the cart line is already folded (EM 2026-11-07).
+      await expect(
+        page.getByRole("list", { name: "Dịch vụ trong lượt" }),
+      ).toContainText(`KTV ${mother.staff.full_name}`);
       await page.getByRole("button", { name: "Lưu lượt khách" }).click();
       await expect(page.locator(".toast")).toContainText("Đã lưu lượt");
     };

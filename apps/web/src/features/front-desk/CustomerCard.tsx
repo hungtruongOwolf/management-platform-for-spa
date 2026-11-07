@@ -56,7 +56,10 @@ export function CustomerCard({
   onBlocked,
   onClear,
   onSellPackage,
+  onEditInfo,
 }: {
+  /** "Thêm thông tin khách" on a nameless walk-in: edit the profile in place (ADR-0011). */
+  onEditInfo?: () => void;
   summary: CustomerSummary;
   inCart: (itemId: string) => number;
   canOverrideExpiry: boolean;
@@ -67,8 +70,9 @@ export function CustomerCard({
   /** "Đổi khách" (same as Esc). */
   onClear?: () => void;
   /**
-   * "Bán gói liệu trình" (null) / "Mua lại gói này" (that plan): opens a package block in the
-   * cart (spec §10.4.1, US10). Absent without `package.sell`.
+   * "Mua lại gói này" (that plan): opens a prefilled package block in the cart (spec §10.4.1,
+   * US10). Selling a new package starts in the cart only (one entry point, EM 2026-11-07).
+   * Absent without `package.sell`.
    */
   onSellPackage?: (planId: string | null) => void;
 }) {
@@ -127,15 +131,17 @@ export function CustomerCard({
             />
           </h2>
           <p className="customer-meta">
-            <span className="tabular">{summary.phone}</span>
-            {packages.isSuccess && (
-              <>
-                {" · "}
-                {active.length > 0
+            {[
+              // A nameless walk-in has no phone to speak of: say nothing rather than "Chưa có".
+              summary.phone ?? (summary.named ? "Chưa có SĐT" : null),
+              packages.isSuccess
+                ? active.length > 0
                   ? `${String(active.length)} gói liệu trình đang dùng, còn ${String(sessionsLeft)} buổi`
-                  : "Chưa có gói liệu trình đang dùng"}
-              </>
-            )}
+                  : "Chưa có gói liệu trình đang dùng"
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </p>
         </div>
         {onClear && (
@@ -144,6 +150,16 @@ export function CustomerCard({
           </button>
         )}
       </div>
+      {onEditInfo && !summary.named && (
+        <button
+          type="button"
+          onClick={onEditInfo}
+          className="btn btn-secondary justify-self-start"
+        >
+          <Icon name="plus" />
+          Thêm thông tin khách
+        </button>
+      )}
       {customer.data && <HealthNote customer={customer.data} />}
 
       <div className="grid gap-2">
@@ -328,19 +344,6 @@ export function CustomerCard({
               ))}
             </ul>
           </details>
-        )}
-        {onSellPackage && packages.isSuccess && (
-          <button
-            type="button"
-            className="btn btn-secondary"
-            aria-label="Bán gói liệu trình (mở trong giỏ)"
-            onClick={() => {
-              onSellPackage(null);
-            }}
-          >
-            <Icon name="plus" />
-            Bán gói liệu trình
-          </button>
         )}
       </div>
     </section>

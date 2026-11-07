@@ -25,6 +25,24 @@
     align-items: center;
     gap: 12px;
   }
+  /* A finished package folds to one row: name + meta, price, Sửa, ✕ (same grid as a line). */
+  .sale-block.is-summary {
+    padding: 12px 0;
+  }
+  .sale-head.is-summary {
+    grid-template-columns: minmax(0, 1fr) auto auto 44px;
+    gap: 4px 8px;
+  }
+  /* "Làm 1 buổi hôm nay": right under the package's name, the obvious next step. */
+  .sale-today {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+  }
+  .sale-today > .check-hint {
+    flex: 1 1 14rem;
+  }
   .sale-title {
     font-weight: 600;
     overflow-wrap: anywhere;

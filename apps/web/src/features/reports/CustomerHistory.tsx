@@ -126,6 +126,12 @@ function EventBody({ e }: { e: HistoryEvent }) {
           v.void_reason && <li className="text-text-muted">Lý do hủy: {v.void_reason}</li>
         )}
         {v.corrects_visit_id && <li className="text-text-muted">Thay cho lượt ghi trước (đã sửa).</li>}
+        {v.note && (
+          <li className="whitespace-pre-line">
+            <span className="text-text-muted">Ghi chú buổi: </span>
+            {v.note}
+          </li>
+        )}
       </ul>
     );
   }

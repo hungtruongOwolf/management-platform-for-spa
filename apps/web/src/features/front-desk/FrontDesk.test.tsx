@@ -254,6 +254,7 @@ const HA = {
   id: "c1",
   full_name: "Nguyễn Thị Hà",
   phone: "0905 111 222",
+  named: true,
   gender: "female",
 };
 

@@ -62,6 +62,14 @@ Utility Tailwind `text-xs…2xl` map đúng thang này (`styles.css` `@theme`, p
 - **Trang toàn cục:** 404 "Không tìm thấy trang này" + lỗi màn hình "Màn hình này gặp lỗi" (`app/StatusPage.tsx`, chunk lazy qua `defaultNotFoundComponent` / `defaultErrorComponent`): nói chuyện gì + bước tiếp ("Về trang tổng quan", "Tải lại trang"). Trước: chữ "Not Found" mặc định của router.
 - JS khởi động gzip -9 **123.66 KB, không đổi** so với `main` (đo cùng máy); ảnh trước/sau 1280/1024/390 × sáng/tối + axe (0 vi phạm sau, 6 trước) ở scratchpad agent `rollout-quanly/`.
 
+## Món gập trong giỏ (EM 2026-11-07, [raw](../../raw/2026-11-07-em-flow-review-hr-latency.md))
+Một giỏ nhiều dịch vụ / gói không được kéo dài thành một form dài.
+- **Món đã đủ = một hàng tóm tắt** cùng lưới với dòng mở (`minmax(0,1fr) auto auto 44px`): tên (đậm) + một dòng meta muted ("KTV Lan · Dịch vụ lẻ · Giới thiệu: Khách tự chọn" / "Người giới thiệu … · Mua cho … · Giảm … · Hôm nay làm …"), giá canh phải tabular, **Sửa** (`btn-ghost`, nhãn đọc "Sửa dòng X" / "Sửa gói X"), ✕ (`btn-icon`, "Bỏ dòng X" / "Bỏ X"). Không card, đường kẻ hairline như mọi hàng (`.cart-line.is-summary`, `.sale-block.is-summary`).
+- **Chỉ một món mở**: món vừa thêm hoặc món vừa bấm Sửa; nút "Xong" (`btn-ghost`) gập lại. Món **chưa đủ** (thiếu KTV, chưa chọn mẫu gói, đang lỗi — kể cả lỗi server của gói) luôn mở, để lỗi và focus luôn tới được ô thiếu.
+- Không tự gập khi chọn KTV (focus đang ở select sẽ mất); gập khi chuyển sang món khác.
+- Thanh toán, ghi chú buổi, "Phải trả" và nút Lưu không bao giờ gập.
+- Hành động chính của một khối nằm ngay dưới tên khối (ví dụ "+ Làm 1 buổi hôm nay" `btn-secondary` dưới tên gói, `.sale-today`, kèm một dòng `check-hint`).
+
 ## Màn của KTV (EM 2026-11-07, [raw](../../raw/2026-11-07-em-technician-pages.md), spec staff-management §12)
 
 - **Một cột đọc 56rem** cho "Công và lương của tôi" (`.my-month`): ô tổng, lịch và phiếu lương cùng bề rộng; ở 1280 không còn ô lịch rộng-thấp và cột bảng cách xa.

@@ -6488,6 +6488,13 @@
               "$ref": "#/components/schemas/HistoryVisitLine"
             }
           },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The session note, only for `customer.health_notes.read` (absent otherwise or when empty)."
+          },
           "paid": {
             "$ref": "#/components/schemas/MethodSplit",
             "description": "Money received for the one-off lines (before any void)."
@@ -10552,7 +10559,7 @@
               "string",
               "null"
             ],
-            "description": "Present only on a single visit and only for `customer.health_notes.read`; null = no note."
+            "description": "Present (on a visit and in the day list) only for `customer.health_notes.read`; null = no\nnote. Never in an idempotent replay."
           },
           "package_sales": {
             "type": "array",

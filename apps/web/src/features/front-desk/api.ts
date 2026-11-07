@@ -88,7 +88,22 @@ export type CartLine =
       staffId: string;
       /** "Người giới thiệu" (upsell credit, spec §10.8 Q-U2); absent or "" = khách tự chọn. */
       referrerId?: string;
+    }
+  | {
+      key: number;
+      /**
+       * "Làm 1 buổi hôm nay" on a package sold in this checkout (EM 2026-11-07): today's session
+       * comes from that package (`package_ref` on the wire), never charged.
+       */
+      source: "new_package";
+      serviceId: string;
+      serviceName: string;
+      categoryName?: string;
+      /** `ref` of the package sold today. */
+      saleRef: string;
+      staffId: string;
     };
+
 
 /**
  * A package sold in this checkout ("Gói bán hôm nay", spec §10.4.1). `plan` is a snapshot of the
@@ -138,6 +153,10 @@ export function coverage(
 ): Map<number, string> {
   const covered = new Map<number, string>();
   for (const p of sales) {
+    // "Làm 1 buổi hôm nay" lines belong to their package (pruned when it cannot hold them).
+    for (const l of lines)
+      if (l.source === "new_package" && l.saleRef === p.ref)
+        covered.set(l.key, p.ref);
     if (!p.useToday || !p.plan || p.beneficiary || p.forOther) continue;
     const left = new Map(
       p.plan.items.map((i) => [i.service_id, i.sessions + i.bonus_sessions]),
@@ -303,7 +322,7 @@ export function visitBody(
     ...(companions.length > 0 ? { companions } : {}),
     note: note.trim() === "" ? null : note.trim(),
     lines: lines.map((l) =>
-      covered.has(l.key)
+      covered.has(l.key) || l.source === "new_package"
         ? {
             service_id: l.serviceId,
             source: "package",
