@@ -218,9 +218,24 @@ EM: *"sao không đặt lịch là 2 người rồi dừng ở đó ai muốn ch
 | Sheet | Dòng KTV + gợi ý + banner nói trùng; tên thành viên chỉ là nút chữ | Một dòng trạng thái; hàng thành viên là nút cả hàng |
 | Báo đã đến | Bấm ngay sau khi đổi KTV có thể bị bỏ qua (một mutation chung) | KTV là mutation riêng; đến chạy song song được |
 | Ngày sau | Nút chính "Khách đến · ghi lượt" hiện nhưng không làm được | Ẩn cho ngày sau |
-| Chưa làm (để EM quyết) | Hoàn tác "đã đến" bấm nhầm; khách chính mới không SĐT (DB `appointment_guest_phone_or_group`); dời cả nhóm một lần; một người trả cho cả nhóm | Câu hỏi Q13–Q15 dưới |
+| Chưa làm (để EM quyết) | Hoàn tác "đã đến" bấm nhầm; khách chính mới không SĐT (DB `appointment_guest_phone_or_group`); dời cả nhóm một lần; một người trả cho cả nhóm | Q13–Q15 đã quyết 2026-11-07 (§10.13); một người trả cho cả nhóm vẫn để sau |
 
 **Câu hỏi cho EM:**
-- Q13 — Bấm nhầm "Chỉ báo đã đến": hiện chỉ "Hủy lịch" rồi đặt lại. Có cần nút "Hoàn tác đã đến" (về Chưa đến) không? Mặc định: chưa làm.
-- Q14 — Khách **đặt lịch** (người đầu, khách mới) vẫn bắt buộc SĐT (để gọi nhắc); quyết định E chỉ áp cho hồ sơ. Có bỏ luôn ở đặt lịch không? Mặc định: giữ (cần migration bỏ CHECK `appointment_guest_phone_or_group`).
-- Q15 — Dời giờ khách chính có dời cả nhóm không? Mặc định: không (mỗi người dời riêng, như "đặt nhóm chỉ ghi đi cùng").
+- Q13 — **đã quyết (EM 2026-11-07, [raw](../../../raw/2026-11-07-em-decisions-hr-notes-group-region.md) câu 5a): "ok"** → §10.13 "Hoàn tác đã đến".
+- Q14 — **đã quyết (câu 5b): "không cần"** bỏ SĐT: khách **đặt lịch** (người đầu, khách mới) vẫn bắt buộc SĐT. Không đổi code (CHECK `appointment_guest_phone_or_group` giữ nguyên).
+- Q15 — **đã quyết (câu 5c): "có thể cho phép đổi nếu đi cùng nhau hoặc có thể chỉnh riêng"** → §10.13 "Đổi cả nhóm" / "Chỉ người này".
+
+### 10.13 Hoàn tác đã đến, đổi lịch cả nhóm (EM 2026-11-07 câu 5a, 5c)
+**US-A13 Hoàn tác đã đến.** *Bấm nhầm "Chỉ báo đã đến" thì đưa lịch về Chưa đến.*
+- AC13.1 `POST /appointments/{id}/undo-arrival` (`appointment.manage`, cùng người được báo đã đến: chủ spa, quản lý): `arrived` → `booked`, xóa `arrived_at`, KTV làm giữ nguyên làm KTV của lịch; `version + 1`; audit `appointment.undo_arrival` (trước: giờ đến, KTV).
+- AC13.2 Từ chối: chưa đến → `409 appointment.not_arrived`; đã ghi lượt (`done`, có visit) / hủy / không đến → `409 appointment.closed`; không phải hôm nay → `422 appointment.not_today`; ngày đã qua theo quy tắc khóa ngày (`403 day.locked` cho quản lý).
+- AC13.3 UI: sheet lịch hẹn đã đến (hôm nay) có nút `btn-ghost` "Hoàn tác đã đến" dưới "KTV làm" → hỏi một lần ("Đưa lịch về Chưa đến? Giờ đến được xóa, KTV làm giữ nguyên." + "Hoàn tác đã đến" / "Thôi"), lỗi hiện ngay tại đó.
+- Test: `appointments.rs::a_mistaken_arrival_is_undone`; vitest `AppointmentSheet` ("undoes a mistaken arrival after one confirm", "offers no undo…"); authz matrix +1 dòng.
+
+**US-A14 Đổi lịch một người trong nhóm.** *Đổi giờ / ngày của một người đi cùng nhóm thì chọn dời cả nhóm hay chỉ người đó.*
+- AC14.1 Trong "Đổi lịch" của một lịch thuộc nhóm còn người khác **chưa đến**, khi giờ hoặc ngày đổi: hiện nhóm chọn "Người cùng nhóm" — **"Đổi cả nhóm (N người, cùng dời một khoảng)"** (mặc định) / **"Chỉ người này"**. Dòng phụ nói ai cùng dời, và ai **không đổi** (đã đến / đã xong).
+- AC14.2 `POST /appointments/{id}/move-group {starts_at}` (`appointment.manage`, `If-Match` của `{id}`): `{id}` tới `starts_at`, mọi người khác còn `booked` dời cùng một khoảng (giữ đúng số phút và KTV), **một transaction: tất cả hoặc không ai**. Người đã đến / đã xong không dời, trả trong `not_moved`; hủy / không đến bỏ qua. Mỗi người được kiểm như một lần dời lẻ: ô lưới, giờ mở cửa, không ngày đã qua, KTV rảnh (`staff_busy`), khách không có lịch khác (`customer_busy`), KTV còn làm. (Sức chứa vẫn chỉ cảnh báo, §10.4.)
+- AC14.3 Từ chối nêu tên người vướng: `422 validation_failed`, `errors[].field = "appointments.<id người đó>"`, `code` = lỗi của người đó (`appointment.staff_busy` …). Web: "Không đổi được cả nhóm. Chị Mai: KTV của người này đã có lịch khác vào giờ mới." `{id}` không còn `booked` → `409 appointment.already_arrived`; không có nhóm → `422 appointment.not_in_group`; version cũ → `412`.
+- AC14.4 Thứ tự khóa: mọi lịch của nhóm theo id; dời muộn hơn thì người muộn nhất đi trước (sớm hơn: người sớm nhất trước), nên không người nào tạm đè lên KTV mà người khác trong nhóm còn giữ. Audit mỗi người `appointment.update` kèm `group_move`.
+- AC14.5 Web: "Đổi cả nhóm" gọi `move-group` trước, rồi `PATCH` lịch này cho các thay đổi khác (dịch vụ, KTV, ghi chú); "Chỉ người này" = `PATCH` như cũ.
+- Test: `appointments.rs::a_group_moves_together_or_not_at_all`; vitest `BookingSheet` ("Đổi lịch một người trong nhóm", 3 test); authz matrix +1 dòng.

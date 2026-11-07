@@ -4,12 +4,15 @@
 //!
 //! Scope is the session's own staff link (`staff.user_id = session user`), never a staff id from
 //! the request (non-negotiable 3). The fields are those `GET /me/staff` already shows for the
-//! month, plus customer names and line values of the person's own work: no phone, no visit or
-//! customer notes, no customer ids, nothing of another staff member.
+//! month, plus customer names, line values and the session note (EM 2026-11-07 item 3) of the
+//! visits the person worked on: no phone, no customer profile or health notes, no customer ids,
+//! nothing of another staff member. A former staff member (ADR-0014) reads only days of the
+//! months they worked in, without session notes (they no longer serve those customers).
 
 use crate::adjustment::{self, Adjustment};
 use crate::attendance::{self, AttendanceDay};
 use crate::calc::mul_div_round;
+use crate::me::{self, OwnScope};
 use crate::month::Month;
 use crate::payroll;
 use crate::period;
@@ -17,7 +20,8 @@ use crate::repo::{self, DayLineRow, DayUpsellRow};
 use crate::review::{self, DailyReview};
 use crate::rules;
 use chrono::{DateTime, NaiveDate, Utc};
-use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
+use kernel::crypto::FieldCipher;
+use kernel::{Actor, AppError, FieldError, TenantTx};
 use serde::Serialize;
 use sqlx::PgPool;
 use utoipa::ToSchema;
@@ -44,6 +48,9 @@ pub struct MyDayVisit {
     pub visit_id: Uuid,
     pub check_in_at: DateTime<Utc>,
     pub customer_name: String,
+    /// The visit's session note (`null`: none written, or the caller is a former staff member).
+    /// Sent only because the person performed a line of this visit.
+    pub note: Option<String>,
     pub lines: Vec<MyDayLine>,
 }
 
@@ -97,13 +104,15 @@ pub fn parse_date(raw: &str) -> Result<NaiveDate, AppError> {
     Ok(date)
 }
 
-/// `GET /me/staff/day?date=` (`staff.read_own`). Default today.
+/// `GET /me/staff/day?date=` (`staff.read_own`; `staff.read_own_past`: a day of a month the
+/// former staff member worked in, default their last day). Default today.
 pub async fn my_day(
     pool: &PgPool,
+    cipher: &FieldCipher,
     actor: &Actor,
     date: Option<NaiveDate>,
 ) -> Result<MyDay, AppError> {
-    actor.require(Permission::StaffReadOwn)?;
+    let scope = me::own_scope(actor)?;
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let Some(staff_id) = org::profile::own_staff_id(&mut tx, actor).await? else {
         tx.commit().await?;
@@ -113,7 +122,18 @@ pub async fn my_day(
         });
     };
     let today = period::today(&mut tx).await?;
-    let date = date.unwrap_or(today);
+    let date = match scope {
+        OwnScope::Working => date.unwrap_or(today),
+        OwnScope::Former => {
+            let profile = me::own_profile(&mut tx, staff_id).await?;
+            let date = match date {
+                Some(d) => d,
+                None => me::last_day(&profile)?,
+            };
+            me::former_month(&profile, Some(Month::of(date)))?;
+            date
+        }
+    };
     let month = Month::of(date);
     let info = period::info(&mut tx, month).await?;
     let (rules, _) = rules::load(&mut tx).await?;
@@ -143,7 +163,17 @@ pub async fn my_day(
         .into_iter()
         .filter(|a| a.occurred_on == date)
         .collect();
-    let lines = repo::day_lines(&mut tx, staff_id, date).await?;
+    let mut lines = repo::day_lines(&mut tx, staff_id, date).await?;
+    let tenant = tx.tenant().as_uuid();
+    for l in &mut lines {
+        l.note = match scope {
+            OwnScope::Working => {
+                kernel::crypto::open_visit_note(cipher, tenant, l.visit_id, l.note_ct.as_deref())?
+            }
+            OwnScope::Former => None,
+        };
+        l.note_ct = None;
+    }
     let upsell = repo::day_upsell(&mut tx, staff_id, date).await?;
     tx.commit().await?;
     let commission = |value: i64| rate.map(|r| mul_div_round(value, i64::from(r), 10_000));
@@ -196,6 +226,7 @@ fn group_visits(
                 visit_id: r.visit_id,
                 check_in_at: r.check_in_at,
                 customer_name: r.customer_name,
+                note: r.note,
                 lines: vec![line],
             }),
         }
@@ -217,6 +248,8 @@ mod tests {
             qty: 1,
             value,
             full_value,
+            note_ct: None,
+            note: None,
         }
     }
 

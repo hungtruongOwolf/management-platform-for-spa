@@ -337,6 +337,47 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     ).toBeVisible();
   });
 
+  test("moving one member of a group offers 'Đổi cả nhóm' and moves everyone by the same amount (EM 2026-11-07 5c)", async ({
+    page,
+  }) => {
+    const mother = await regular(page, "Phan Thị Dời");
+    const child = await regular(page, "Phan Văn Theo");
+    const day = spaDay(4);
+    const group = await page.request.post("/api/v1/appointments/group", {
+      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+      data: {
+        starts_at: `${day}T10:00:00+07:00`,
+        people: [
+          { customer_id: mother.customer, service_ids: [mother.service.id] },
+          { customer_id: child.customer, service_ids: [child.service.id], starts_at: `${day}T10:30:00+07:00` },
+        ],
+      },
+    });
+    expect(group.status(), await group.text()).toBe(201);
+    const [first, second] = ((await group.json()) as { appointments: { id: string }[] }).appointments;
+
+    await page.goto(`/quay?view=lich&kieu=ds&ngay=${day}`);
+    await page
+      .getByRole("list", { name: /Lịch hẹn ngày/ })
+      .getByRole("button", { name: /Phan Thị Dời/ })
+      .click();
+    await page.getByRole("dialog").getByRole("button", { name: "Đổi lịch" }).click();
+    const sheet = page.getByRole("dialog", { name: /Đổi lịch · Phan Thị Dời/ });
+    await expect(sheet.getByRole("group", { name: "Người cùng nhóm" })).toHaveCount(0);
+    await sheet.getByLabel(/Giờ hẹn/).selectOption({ value: String(14 * 60) });
+    const choice = sheet.getByRole("group", { name: "Người cùng nhóm" });
+    await expect(choice.getByRole("radio", { name: /Đổi cả nhóm/ })).toBeChecked();
+    await expect(choice).toContainText("Cùng dời: Phan Văn Theo.");
+    await expectAccessible(page, "lich-doi-ca-nhom");
+    await sheet.getByRole("button", { name: "Lưu thay đổi" }).click();
+    await expect(sheet).toBeHidden();
+
+    const startOf = async (id: string | undefined) =>
+      ((await (await page.request.get(`/api/v1/appointments/${id ?? ""}`)).json()) as { starts_at: string }).starts_at;
+    expect(new Date(await startOf(first?.id)).getTime()).toBe(new Date(`${day}T14:00:00+07:00`).getTime());
+    expect(new Date(await startOf(second?.id)).getTime()).toBe(new Date(`${day}T14:30:00+07:00`).getTime());
+  });
+
   test("a companion gets their own service and technician, and their own block (EM 2026-11-07)", async ({
     page,
   }) => {

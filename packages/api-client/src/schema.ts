@@ -150,6 +150,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/appointments/{id}/move-group": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["move_group"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/appointments/{id}/no-show": {
         parameters: {
             query?: never;
@@ -160,6 +176,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["no_show"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/appointments/{id}/undo-arrival": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["undo_arrival"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1386,6 +1418,23 @@ export interface components {
             /** Format: uuid */
             group_id: string;
         };
+        /** @description Body of `POST /appointments/{id}/move-group` (If-Match of `{id}`): "Đổi cả nhóm". */
+        AppointmentGroupMove: {
+            /**
+             * Format: date-time
+             * @description The new start of `{id}`; every other member still booked shifts by the same amount.
+             */
+            starts_at: string;
+        };
+        /** @description `POST /appointments/{id}/move-group` → 200. */
+        AppointmentGroupMoved: {
+            /** Format: uuid */
+            group_id: string;
+            /** @description The members that moved (`{id}` included), earliest first. */
+            moved: components["schemas"]["AppointmentDto"][];
+            /** @description Members already arrived or done: left where they were. */
+            not_moved: components["schemas"]["AppointmentDto"][];
+        };
         AppointmentServiceDto: {
             category_name: string;
             /**
@@ -2482,8 +2531,9 @@ export interface components {
             today: string;
         };
         /**
-         * @description One block of a technician's own calendar. An allowlist: times, phase, the customer's name and
-         *     the services — no phone, no note, no money, no customer or staff ids.
+         * @description One block of a technician's own calendar. An allowlist: times, phase, the customer's name, the
+         *     services and the session note of a visit they worked on — no phone, no booking or customer
+         *     note, no money, no customer or staff ids.
          */
         MyCalendarEntry: {
             /** Format: date */
@@ -2502,6 +2552,11 @@ export interface components {
             /** Format: uuid */
             id: string;
             kind: components["schemas"]["MyEntryKind"];
+            /**
+             * @description The session note of the visit (EM 2026-11-07 item 3), sent only when I performed one of
+             *     its lines; `null` for a booking not yet done or a visit without a note.
+             */
+            note?: string | null;
             phase: components["schemas"]["PhaseDto"];
             /** @description Bookings: what was booked; visits: only the lines I performed. */
             services: components["schemas"]["MyEntryService"][];
@@ -2577,6 +2632,11 @@ export interface components {
             check_in_at: string;
             customer_name: string;
             lines: components["schemas"]["MyDayLine"][];
+            /**
+             * @description The visit's session note (`null`: none written, or the caller is a former staff member).
+             *     Sent only because the person performed a line of this visit.
+             */
+            note?: string | null;
             /** Format: uuid */
             visit_id: string;
         };
@@ -2604,6 +2664,12 @@ export interface components {
         };
         MyStaff: {
             data?: components["schemas"]["MyMonth"] | null;
+            /**
+             * Format: date
+             * @description Present only for a former staff member (ADR-0014): the last day they worked. Months they
+             *     did not work in are `403 staff.not_employed_in_month`; the default month is this day's.
+             */
+            left_on?: string | null;
             /** @description `false`: this login is not linked to a staff profile (ask the owner). */
             linked: boolean;
         };
@@ -3530,6 +3596,11 @@ export interface components {
              * @description Last working day (≤ today).
              */
             ended_on: string;
+            /**
+             * @description `true` = also lock the linked login in this spa ("Khóa tài khoản"). Default `false`: the
+             *     login stays, reaching only the person's own past attendance and payslips (ADR-0014).
+             */
+            lock_login?: boolean;
             reason: string;
         };
         StaffEvaluation: {
@@ -4897,6 +4968,72 @@ export interface operations {
             };
         };
     };
+    move_group: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppointmentGroupMove"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentGroupMoved"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.closed, appointment.already_arrived ({id} is no longer booked) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.not_in_group; validation_failed with errors[].field = appointments.<member id> and the member's refusal as code (appointment.staff_busy, appointment.customer_busy, appointment.in_the_past, appointment.outside_opening_hours, staff.inactive, …): nobody moved */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     no_show: {
         parameters: {
             query?: never;
@@ -4947,6 +5084,60 @@ export interface operations {
                 content?: never;
             };
             /** @description reason required, appointment.not_started */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    undo_arrival: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden / day.locked */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.closed (done: a visit exists, or no-show / cancelled), appointment.not_arrived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description appointment.not_today */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -6395,6 +6586,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description auth.forbidden; staff.not_employed_in_month (a former staff member asked for a month they did not work in) */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -6441,6 +6633,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description auth.forbidden; staff.not_employed_in_month (a former staff member, a day of a month they did not work in) */
             403: {
                 headers: {
                     [name: string]: unknown;

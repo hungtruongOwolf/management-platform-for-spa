@@ -8,10 +8,11 @@
 use super::domain::{self, CalendarSettings, Phase, SlotError, Status};
 use super::dto::{
     AppointmentArrive, AppointmentComplete, AppointmentCompleted, AppointmentCreate,
-    AppointmentDto, AppointmentGroupCreate, AppointmentGroupDto, AppointmentServiceDto,
-    AppointmentSettingsDto, AppointmentSettingsUpdate, AppointmentStatusDto, AppointmentUpdate,
-    CalendarDto, CalendarQuery, CalendarTechnician, CalendarVisitDto, GuestCreate, MyCalendar,
-    MyCalendarData, MyCalendarEntry, MyEntryKind, MyEntryService, PaymentStateDto, PhaseDto,
+    AppointmentDto, AppointmentGroupCreate, AppointmentGroupDto, AppointmentGroupMove,
+    AppointmentGroupMoved, AppointmentServiceDto, AppointmentSettingsDto,
+    AppointmentSettingsUpdate, AppointmentStatusDto, AppointmentUpdate, CalendarDto, CalendarQuery,
+    CalendarTechnician, CalendarVisitDto, GuestCreate, MyCalendar, MyCalendarData, MyCalendarEntry,
+    MyEntryKind, MyEntryService, PaymentStateDto, PhaseDto,
 };
 use super::repo::{self, AppointmentInsert, AppointmentRow, Reschedule};
 use crate::dto::VisitCreate;
@@ -475,9 +476,11 @@ pub async fn calendar(
 /// `GET /me/appointments?from=&to=` (`staff.read_own`): the signed-in technician's own calendar
 /// (EM 2026-11-07, "như Google Calendar"): bookings assigned to them and visits they served, as
 /// blocks at their real length. Read-only. The person is the session's staff link, never a
-/// request parameter (non-negotiable 3); entries carry no phone, note, money or ids of others.
+/// request parameter (non-negotiable 3); entries carry no phone, booking or customer note, money
+/// or ids of others — only the session note of a visit the person performed a line of.
 pub async fn my_calendar(
     pool: &PgPool,
+    cipher: &FieldCipher,
     actor: &Actor,
     query: &CalendarQuery,
 ) -> Result<MyCalendar, AppError> {
@@ -521,7 +524,12 @@ pub async fn my_calendar(
     for l in repo::my_visit_lines(&mut tx, staff, &ids).await? {
         lines.entry(l.visit_id).or_default().push(l);
     }
+    let tenant = tx.tenant().as_uuid();
     tx.commit().await?;
+    let note_of = |visit: Option<Uuid>, ct: Option<&[u8]>| match visit {
+        Some(v) => kernel::crypto::open_visit_note(cipher, tenant, v, ct),
+        None => Ok(None),
+    };
 
     let now = Utc::now();
     let mut entries = Vec::with_capacity(booked.len() + served.len());
@@ -540,6 +548,7 @@ pub async fn my_calendar(
             starts_at: a.starts_at,
             ends_at: a.ends_at,
             duration_min,
+            note: note_of(a.visit_id, a.note_ct.as_deref())?,
             customer_name: a.customer_name,
             group_size: a.group_size,
             walk_in: false,
@@ -558,6 +567,7 @@ pub async fn my_calendar(
             ends_at,
             duration_min: i64::from(minutes),
             phase: phase_dto(domain::served_phase(false, ends_at, now)),
+            note: note_of(Some(v.id), v.note_ct.as_deref())?,
             customer_name: v.customer_name,
             services: ls
                 .into_iter()
@@ -1194,6 +1204,192 @@ pub async fn arrive(
     let dto = load_one(&mut tx, id).await?;
     tx.commit().await?;
     Ok(dto)
+}
+
+/// `POST /appointments/{id}/undo-arrival` (`appointment.manage`, the same role that marks the
+/// arrival): "Hoàn tác đã đến" for a mistaken "Chỉ báo đã đến". Only an arrived appointment of
+/// today without a visit; once completed it is closed (`409 appointment.closed`), and a past day
+/// follows the closed-day rule. Audited.
+pub async fn undo_arrival(
+    pool: &PgPool,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<AppointmentDto, AppError> {
+    actor.require(Permission::AppointmentManage)?;
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let spa = spa(&mut tx).await?;
+    let current = lock_open(&mut tx, actor, &spa, id).await?;
+    if parse_status(&current.status)? != Status::Arrived {
+        return Err(AppError::Conflict {
+            code: "appointment.not_arrived",
+        });
+    }
+    if current.business_date != spa.today() {
+        return Err(AppError::Unprocessable {
+            code: "appointment.not_today",
+        });
+    }
+    if !repo::unmark_arrived(&mut tx, id).await? {
+        return Err(AppError::Conflict {
+            code: "appointment.not_arrived",
+        });
+    }
+    record_audit(
+        &mut tx,
+        actor,
+        "appointment.undo_arrival",
+        id,
+        Some(
+            json!({"status": "arrived", "arrived_at": current.arrived_at,
+                    "staff_id": current.staff_id}),
+        ),
+        json!({"status": "booked", "staff_id": current.staff_id}),
+        None,
+    )
+    .await?;
+    let dto = load_one(&mut tx, id).await?;
+    tx.commit().await?;
+    Ok(dto)
+}
+
+/// Errors of one member of a whole-group move name that member: `422 validation_failed` with
+/// `errors[].field = "appointments.<id>"` (and the member's field, for a field error) and the
+/// usual code (`appointment.staff_busy`, `appointment.customer_busy`, `appointment.in_the_past`,
+/// `appointment.outside_opening_hours`, `staff.inactive`, `not_on_slot`, `too_far`…).
+fn in_member(member: Uuid, e: AppError) -> AppError {
+    let field = format!("appointments.{member}");
+    match e {
+        AppError::Validation(fields) => AppError::Validation(
+            fields
+                .into_iter()
+                .map(|f| FieldError::new(format!("{field}.{}", f.field), f.code))
+                .collect(),
+        ),
+        AppError::ConflictWith { code, .. }
+        | AppError::Conflict { code }
+        | AppError::Unprocessable { code } => {
+            AppError::Validation(vec![FieldError::new(field, code)])
+        }
+        other => other,
+    }
+}
+
+/// `POST /appointments/{id}/move-group` (`appointment.manage`, If-Match of `{id}`): "Đổi cả nhóm"
+/// (EM 2026-11-07 item 5c). `{id}` moves to `starts_at` and every other member still booked
+/// shifts by the same amount, each keeping its exact length and technician, in one transaction:
+/// all move or none. Every member is checked like a single move (grid, opening hours, no past
+/// day, technician free, the person has no other booking then); a refusal names the member.
+/// Members already arrived or done stay where they are and come back in `not_moved`.
+pub async fn move_group(
+    pool: &PgPool,
+    actor: &Actor,
+    id: Uuid,
+    version: i64,
+    input: &AppointmentGroupMove,
+) -> Result<AppointmentGroupMoved, AppError> {
+    actor.require(Permission::AppointmentManage)?;
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let spa = spa(&mut tx).await?;
+    let anchor = lock_open(&mut tx, actor, &spa, id).await?;
+    if anchor.version != version {
+        return Err(AppError::StaleVersion);
+    }
+    if parse_status(&anchor.status)? != Status::Booked {
+        return Err(AppError::Conflict {
+            code: "appointment.already_arrived",
+        });
+    }
+    let group = anchor.group_id.ok_or(AppError::Unprocessable {
+        code: "appointment.not_in_group",
+    })?;
+    let delta = input.starts_at - anchor.starts_at;
+    let mut moving = Vec::new();
+    let mut staying = Vec::new();
+    for member in repo::group_member_ids(&mut tx, group).await? {
+        let row = repo::lock(&mut tx, member)
+            .await?
+            .ok_or_else(|| AppError::Internal("group member vanished".into()))?;
+        match parse_status(&row.status)? {
+            Status::Booked => {
+                kernel::corrections::authorize_closed_day(actor, row.business_date, spa.today())?;
+                moving.push((member, row));
+            }
+            Status::Arrived | Status::Done => staying.push(member),
+            Status::NoShow | Status::Cancelled => {}
+        }
+    }
+    // Later bookings first when moving later (earlier first when moving earlier): a member never
+    // lands on a technician's slot another member of the group still holds before it moves.
+    moving.sort_by_key(|(member, row)| (row.starts_at, *member));
+    if delta > Duration::zero() {
+        moving.reverse();
+    }
+    let mut moved = Vec::with_capacity(moving.len());
+    for (member, row) in &moving {
+        let minutes = u32::try_from((row.ends_at - row.starts_at).num_minutes())
+            .map_err(|_| AppError::Internal("appointment duration".into()))?;
+        let p = place(&spa, row.starts_at + delta, minutes, row.staff_id)
+            .map_err(|e| in_member(*member, e))?;
+        if p.business_date != row.business_date {
+            check_day(&spa, p.business_date).map_err(|e| in_member(*member, e))?;
+        }
+        let holder = Holder {
+            customer_id: row.customer_id,
+            guest_phone: row.guest_phone.as_deref(),
+            group_id: Some(group),
+        };
+        check_fits(&mut tx, &p, Some(*member), Some(holder))
+            .await
+            .map_err(|e| in_member(*member, e))?;
+        if !repo::reschedule(
+            &mut tx,
+            *member,
+            row.version,
+            &Reschedule {
+                business_date: p.business_date,
+                starts_at: p.starts_at,
+                ends_at: p.ends_at,
+                staff_id: row.staff_id,
+                note: row.note.as_deref(),
+                customer_id: None,
+                companions: &row.companions,
+            },
+        )
+        .await?
+        {
+            return Err(AppError::StaleVersion);
+        }
+        record_audit(
+            &mut tx,
+            actor,
+            "appointment.update",
+            *member,
+            Some(json!({
+                "version": row.version, "starts_at": row.starts_at, "ends_at": row.ends_at,
+            })),
+            json!({
+                "version": row.version + 1, "starts_at": p.starts_at, "ends_at": p.ends_at,
+                "group_move": {"group_id": group, "from": id},
+            }),
+            None,
+        )
+        .await?;
+        moved.push(*member);
+    }
+    let mut out = AppointmentGroupMoved {
+        group_id: group,
+        moved: Vec::with_capacity(moved.len()),
+        not_moved: Vec::with_capacity(staying.len()),
+    };
+    for member in moved {
+        out.moved.push(load_one(&mut tx, member).await?);
+    }
+    for member in staying {
+        out.not_moved.push(load_one(&mut tx, member).await?);
+    }
+    out.moved.sort_by_key(|a| (a.starts_at, a.id));
+    tx.commit().await?;
+    Ok(out)
 }
 
 /// `POST /appointments/{id}/cancel` / `/no-show` (`appointment.manage`): closes the appointment

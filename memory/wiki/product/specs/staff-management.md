@@ -2,7 +2,7 @@
 title: "Spec: Quản lý nhân viên (chấm công, đánh giá, thưởng/phạt, bảng lương)"
 status: draft
 updated: 2026-11-07
-sources: [raw/2026-11-07-em-flow-review-hr-latency.md, raw/2026-11-07-em-technician-pages.md, raw/2026-11-07-em-decisions-after-live-test.md, raw/2026-11-06-em-review-round5.md, raw/2026-11-05-em-review-round4.md, raw/2026-11-04-idea-internal-platform.md]
+sources: [raw/2026-11-07-em-decisions-hr-notes-group-region.md, raw/2026-11-07-em-flow-review-hr-latency.md, raw/2026-11-07-em-technician-pages.md, raw/2026-11-07-em-decisions-after-live-test.md, raw/2026-11-06-em-review-round5.md, raw/2026-11-05-em-review-round4.md, raw/2026-11-04-idea-internal-platform.md]
 related: [../compensation-rules.md, ../personas.md, ../../architecture/backend.md, ../../architecture/data.md, ../../security/authz-matrix.md]
 ---
 
@@ -283,9 +283,9 @@ Mô hình: [ADR-0013](../../decisions/ADR-0013-employment-periods.md) (đợt l�
   - không còn trong mọi picker (`GET /staff` mặc định `active`: KTV làm ở quầy, đặt lịch, người chốt, giỏ) và server từ chối gán (`422 staff.inactive`);
   - không còn trong sổ hằng ngày, bảng công, đánh giá, bảng lương của **các tháng sau ngày nghỉ**;
   - vẫn còn trong tháng có làm, phiếu lương đã chốt, lượt khách, báo cáo, hoa hồng, và trong lọc "Đã nghỉ";
-  - **tài khoản đã gắn bị khóa ở spa này** (request kế tiếp không có quyền).
+  - ~~tài khoản đã gắn bị khóa ở spa này~~ → **thay bởi §14 (Q-S6, 2026-11-07)**: tài khoản vẫn đăng nhập, request kế tiếp chỉ còn `staff.read_own_past` (công và lương của chính mình, các tháng có làm); chủ spa tick "Khóa tài khoản" (`lock_login: true`) thì khóa hẳn như trước.
   UI: hộp xác nhận nói rõ các điều trên; "Xác nhận nghỉ việc" là `btn-danger`, tắt khi chưa có lý do.
-- AC15.3 `POST /staff/{id}/rehire {started_on}` (`staff.manage`, `If-Match`): đợt mới, `started_on` phải sau ngày nghỉ của đợt trước (`422 before_last_end`); đang làm → `409 staff.already_active`. Mở khóa tài khoản đã gắn. Khoảng nghỉ giữa hai đợt không phải ngày làm (không "chưa chấm", không tính thưởng gắn bó).
+- AC15.3 `POST /staff/{id}/rehire {started_on}` (`staff.manage`, `If-Match`): đợt mới, `started_on` phải sau ngày nghỉ của đợt trước (`422 before_last_end`); đang làm → `409 staff.already_active`. Tài khoản đã gắn lấy lại quyền của role (không còn là người đã nghỉ) và được mở khóa nếu đã khóa. Khoảng nghỉ giữa hai đợt không phải ngày làm (không "chưa chấm", không tính thưởng gắn bó).
 - AC15.4 DB: đợt đã kết thúc không sửa được (trigger), không xóa đợt (app_rw không có DELETE), không chồng đợt (`EXCLUDE`), tối đa một đợt mở; hồ sơ không bao giờ bị xóa.
 
 ### US16: Tài khoản đăng nhập
@@ -297,5 +297,22 @@ Mô hình: [ADR-0013](../../decisions/ADR-0013-employment-periods.md) (đợt l�
 - Permission mới `staff.read` (chủ spa, quản lý). Test: `staff.rs::the_roster_hires_ends_and_rehires_without_losing_history`, `::ending_employment_locks_the_login_and_the_link_is_owner_only`; `authz_matrix.rs` +4 dòng, 2 dòng đổi quyền; vitest "Nhân sự (roster)"; e2e `staff.spec.ts` (thêm → nghỉ việc → Đã nghỉ → nhận lại).
 
 ### Câu hỏi cho EM
-- **Q-S5**: Quản lý có được thêm KTV mới / cho KTV nghỉ việc không? Mặc định: không, chỉ xem.
-- **Q-S6**: Tài khoản của người nghỉ việc bị khóa ngay (mặc định). Người đã nghỉ có cần tự xem lại phiếu lương cũ không?
+- **Q-S5 — đã quyết (EM 2026-11-07, [raw](../../../raw/2026-11-07-em-decisions-hr-notes-group-region.md) câu 1):** "không nhé chỉ spa mới có quyền edit". Chỉ chủ spa thêm, sửa, cho nghỉ, nhận lại, gắn tài khoản (`staff.manage`); quản lý chỉ xem (`staff.read`). Đúng như đang chạy, không đổi code.
+- **Q-S6 — đã quyết (EM 2026-11-07, câu 2): "có".** Người đã nghỉ vẫn đăng nhập để xem phiếu lương cũ: §14.
+
+## 14. Người đã nghỉ xem công và lương cũ (EM 2026-11-07 Q-S6, [ADR-0014](../../decisions/ADR-0014-former-staff-login.md), migration 0026)
+
+### US17: Người đã nghỉ tự xem phiếu lương cũ
+*Là người đã nghỉ việc, tôi muốn đăng nhập xem lại ngày công và phiếu lương các tháng tôi đã làm.*
+- AC17.1 Cho nghỉ việc không còn khóa tài khoản. Từ request kế tiếp, tài khoản gắn với hồ sơ đã nghỉ (`staff.status = 'left'`) chỉ có **`staff.read_own_past`**, bất kể role là KTV hay quản lý: quyền suy ra ở server mỗi request (`kernel::permission::effective_permissions`), không phải cờ client, không lưu vào role. Tài khoản có `staff.manage` (chủ spa) không bao giờ bị hạ quyền.
+- AC17.2 Hai endpoint nhận quyền này: `GET /me/staff` (tháng mặc định = tháng nghỉ việc; `left_on` = ngày làm cuối) và `GET /me/staff/day` (ngày mặc định = ngày làm cuối; không kèm ghi chú buổi). Tháng không có ngày làm (sau ngày nghỉ, trước ngày vào) → `403 staff.not_employed_in_month`. Mọi endpoint khác → `403 auth.forbidden` (khách, Quầy, lịch hẹn, danh mục, "Khách của tôi", sổ nhân viên…).
+- AC17.3 Nhận lại làm → quyền của role trở lại ngay request kế tiếp. Chủ spa tick **"Khóa tài khoản"** khi cho nghỉ (`POST /staff/{id}/end` với `lock_login: true`) → khóa hẳn (`401/403 auth.not_a_member`) như trước; nhận lại làm mở khóa.
+- AC17.4 Web: nav chỉ còn Tổng quan, "Công và lương của tôi", Cài đặt. Màn "Công và lương của tôi" có dòng "Bạn đã nghỉ việc từ …" và chọn tháng không qua tháng nghỉ việc; tháng không làm → trạng thái trống "Tháng này bạn không làm ở spa" + nút "Về tháng nghỉ việc".
+- AC17.5 Dữ liệu cũ: migration 0026 mở lại membership đã bị khóa theo quy tắc cũ (mọi `disabled` của người đã nghỉ, vì trước đây chỉ `end` ghi `disabled`).
+- Test: `staff.rs::a_leaver_keeps_only_their_own_past_pay`, `::the_owners_login_is_never_downgraded`, `authz_matrix.rs::a_former_staff_member_reaches_only_their_past_pay` (lớp người đã nghỉ qua mọi route), `kernel::permission` unit test; vitest "former staff (ADR-0014)", "owner: ends employment…" (checkbox Khóa tài khoản), App shortcut.
+
+### Ghi chú buổi cho KTV (EM 2026-11-07 câu 3)
+EM: "thêm cả KTV đi vì họ có thể xem làm cho ai mà chỉ là không được xem thông tin cá nhân của khách ngoài giới tính và tên thôi".
+- `GET /me/appointments` ("Khách của tôi") và `GET /me/staff/day` (chi tiết ngày) thêm **một key `note`**: ghi chú buổi (`visit.note`, mã hóa) của lượt **có dòng do chính KTV làm** (server lọc theo `own_staff_id`; lịch hẹn chưa xong hoặc lượt không có ghi chú → `null`). Không bao giờ ghi chú lịch hẹn, ghi chú hồ sơ khách, hồ sơ sức khỏe, SĐT, ngày sinh, địa chỉ.
+- Allowlist cũ giữ nguyên, chỉ thêm `note` (test kiểm tập key); test âm: ghi chú lượt chỉ của KTV khác không bao giờ xuất hiện (`staff.rs::a_technician_sees_only_their_own_calendar`, `::a_technician_sees_their_own_day_in_detail`). Thay AC9.2' (key list) và AC12.4 ("không ghi chú lượt").
+- UI: sheet của "Khách của tôi" có dòng "Ghi chú buổi"; chi tiết ngày ghi "Ghi chú buổi: …" dưới tên khách.

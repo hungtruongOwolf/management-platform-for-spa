@@ -96,6 +96,25 @@ pub fn record_aad(purpose: &str, ids: &[uuid::Uuid]) -> Vec<u8> {
     aad
 }
 
+/// Associated data of a visit's session note (`app.visit.note_ct`), the one purpose and ids every
+/// context encrypts and reads it under.
+pub fn visit_note_aad(tenant: uuid::Uuid, visit: uuid::Uuid) -> Vec<u8> {
+    record_aad("visit.note", &[tenant, visit])
+}
+
+/// Decrypts a visit's session note; a blob that does not open is an internal error (wrong key or
+/// a row moved between visits), never shown as an empty note.
+pub fn open_visit_note(
+    cipher: &FieldCipher,
+    tenant: uuid::Uuid,
+    visit: uuid::Uuid,
+    ct: Option<&[u8]>,
+) -> Result<Option<String>, crate::AppError> {
+    ct.map(|ct| cipher.decrypt(ct, &visit_note_aad(tenant, visit)))
+        .transpose()
+        .map_err(|e| crate::AppError::Internal(format!("visit note of {visit}: {e}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
