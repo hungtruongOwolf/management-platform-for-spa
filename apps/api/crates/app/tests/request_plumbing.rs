@@ -86,10 +86,11 @@ fn timing(reply: &Reply) -> Option<String> {
 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn responses_report_db_time_statement_count_and_total(pool: PgPool) -> TestResult {
-    // The same per-layer setup as `main`: only the timing layer listens to sqlx statements.
+    // The same per-layer setup as `main`, installed globally like `main` does: a thread-local
+    // default races with the other tests of this binary over sqlx's cached callsite interest.
     let subscriber =
         tracing_subscriber::registry().with(app::server_timing::DbTimingLayer::filtered());
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _ = tracing::subscriber::set_global_default(subscriber);
 
     let h = harness(pool).await?;
     add_member(

@@ -28,7 +28,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [backend](wiki/architecture/backend.md) — R1-1 API contract + §3b R1-2 report endpoints (shapes, money rules, p95 bench) (endpoints, errors, idempotency, ETag), use cases + integrity strategies, layering, jobs, AC trace
 - [data](wiki/architecture/data.md) — R1-1 Postgres schema + R1-2 read models (0013: package_status, revenue_book, day indexes) + 0014 customer_follow_up, search_fold + 0023 danh tính khách (tên/SĐT nullable, `birth_date`, `customer_label`, `customer_package_extension`) + ER,
  tenant FKs, RLS, constraints, indexes, migrations, seed
-- [performance-latency-2026-11](wiki/architecture/performance-latency-2026-11.md) — đo staging 2026-11-07 (VN qua Globalping + đã đăng nhập): mạng VN↔Oregon chiếm >80 % mỗi request, cold start ~1,3–1,8 s sau chỉ ~45 s nghỉ, DB 0,25–1,7 ms; waterfall + refetch UI; phương án vùng/host có giá; kế hoạch giai đoạn 0 (engineering) / 1 (Singapore, EM quyết)
+- [performance-latency-2026-11](wiki/architecture/performance-latency-2026-11.md) — đo staging 2026-11-07 (VN qua Globalping + đã đăng nhập): mạng VN↔Oregon chiếm >80 % mỗi request, cold start ~1,3–1,8 s sau chỉ ~45 s nghỉ, DB 0,25–1,7 ms; waterfall + refetch UI; phương án vùng/host có giá; kế hoạch giai đoạn 0 (engineering) / 1 (Singapore, EM quyết); **giai đoạn 0 đã làm (2026-11-07)**: `private, no-store`, `Server-Timing`, `infra/perf/`, staleTime 30 s, preload + loader, hồ sơ khách song song, ghi thẳng reply vào cache, auth −3 câu SQL/request
 - [principles](wiki/architecture/principles.md) — extensibility rules: modular monolith, permissions-as-data, tenant/branch, versioned policies, pure calculators
 
 ## Decisions (ADR)
