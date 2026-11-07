@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"n!\" FROM app.appointment\n           WHERE tenant_id = $1 AND staff_id = $2 AND status IN ('booked', 'arrived')\n             AND business_date > $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "167c6e83d1455da6ac14d7ab6e5f0056ae6eb98ea08cee1f872090b0c4b23492"
+}

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.staff_employment SET started_on = $3 WHERE tenant_id = $1 AND id = $2 AND ended_on IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Date"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c3b3abb067220754bd9e6cd04bb13ee4aefced53c44ff012946d4b9141994566"
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id, s.full_name, s.position, s.phone_e164, s.status, s.joined_on, s.left_on,\n                  s.user_id, u.full_name AS \"user_name?\", s.shift_start, s.version\n           FROM app.staff s LEFT JOIN app.user_account u ON u.id = s.user_id\n           WHERE s.tenant_id = $1 AND s.id = $2",
+  "query": "SELECT s.id, s.full_name, s.position, s.phone_e164, s.status, s.joined_on, s.left_on,\n                  s.user_id, u.full_name AS \"user_name?\", s.shift_start, s.note, s.version\n           FROM app.staff s LEFT JOIN app.user_account u ON u.id = s.user_id\n           WHERE s.tenant_id = $1 AND s.id = $2",
   "describe": {
     "columns": [
       {
@@ -115,6 +115,17 @@
       },
       {
         "ordinal": 10,
+        "name": "note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.staff",
+            "name": "note"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
         "name": "version",
         "type_info": "Int8",
         "origin": {
@@ -142,8 +153,9 @@
       true,
       true,
       true,
+      true,
       false
     ]
   },
-  "hash": "7dbb86b38a0fbd94cac7e2da62d2dbee84ca56abb44197cee0163965e47c04ac"
+  "hash": "7ff8ac06a45b71c1555040dcdc557c3fda98d80f973d1c62c68c7b01b7ce6154"
 }

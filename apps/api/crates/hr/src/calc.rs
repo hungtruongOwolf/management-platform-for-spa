@@ -660,7 +660,10 @@ mod tests {
         ]);
         let s = slip(&i, &PayrollRules::default());
         assert_eq!(s.employed_days, 20);
-        assert_eq!(s.attendance.unrecorded, 1, "only the unrecorded 1st, not the gap");
+        assert_eq!(
+            s.attendance.unrecorded, 1,
+            "only the unrecorded 1st, not the gap"
+        );
         assert_eq!(s.loyalty_bonus_accrued, 333_333, "20 / 30 of 500k");
     }
 

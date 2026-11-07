@@ -126,9 +126,15 @@ impl StaffDemo<'_> {
                 None
             };
             if login.is_some() {
-                org::profile::set_account(self.app, self.owner, *staff, updated.profile.version, login)
-                    .await
-                    .map_err(fail("link a staff login"))?;
+                org::profile::set_account(
+                    self.app,
+                    self.owner,
+                    *staff,
+                    updated.profile.version,
+                    login,
+                )
+                .await
+                .map_err(fail("link a staff login"))?;
             }
             org::profile::set_pay(
                 self.app,

@@ -129,7 +129,8 @@ impl Employment {
 /// Whole calendar months from `start` to `end_exclusive` (5 Jan → 5 Feb = 1).
 fn completed_months(start: NaiveDate, end_exclusive: NaiveDate) -> i64 {
     let months = i64::from(end_exclusive.year() - start.year()) * 12
-        + i64::from(end_exclusive.month()) - i64::from(start.month());
+        + i64::from(end_exclusive.month())
+        - i64::from(start.month());
     if end_exclusive.day() < start.day() {
         months - 1
     } else {
@@ -182,10 +183,19 @@ mod tests {
         ]);
         let t = e.tenure(d("2026-11-07"));
         // 2025: 360 days, 11 full months (6 Jan → 6 Dec) ; 2026: 182 days, 5 months (10 May → 10 Oct).
-        assert_eq!(t, Some(Tenure { days: 360 + 182, months: 11 + 5 }));
+        assert_eq!(
+            t,
+            Some(Tenure {
+                days: 360 + 182,
+                months: 11 + 5
+            })
+        );
         assert_eq!(
             Employment::between(Some(d("2026-01-05")), None).tenure(d("2026-02-04")),
-            Some(Tenure { days: 31, months: 1 }),
+            Some(Tenure {
+                days: 31,
+                months: 1
+            }),
             "5 Jan → 4 Feb inclusive is one month"
         );
         assert_eq!(

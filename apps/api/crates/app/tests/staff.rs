@@ -1754,7 +1754,11 @@ async fn the_roster_hires_ends_and_rehires_without_losing_history(pool: PgPool) 
     assert_eq!(blank.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(blank.body["errors"][0]["field"], "reason");
     let future = s.end(thu, tomorrow, "Chuyển công tác").await;
-    assert_eq!(future.body["errors"][0]["code"], "in_future", "{}", future.body);
+    assert_eq!(
+        future.body["errors"][0]["code"], "in_future",
+        "{}",
+        future.body
+    );
     let before_work = s.end(thu, yesterday(), "Chuyển công tác").await;
     assert_eq!(
         before_work.body["errors"][0]["code"], "has_later_records",
@@ -1892,7 +1896,10 @@ async fn the_roster_hires_ends_and_rehires_without_losing_history(pool: PgPool) 
     assert_eq!(back.body["joined_on"], json!(tomorrow));
     assert_eq!(back.body["first_joined_on"], json!(joined));
     assert_eq!(back.body["periods"].as_array().map(Vec::len), Some(2));
-    assert_eq!(back.body["tenure_days"], 41, "the new period starts tomorrow");
+    assert_eq!(
+        back.body["tenure_days"], 41,
+        "the new period starts tomorrow"
+    );
     assert_eq!(
         s.rehire(thu, tomorrow).await.body["code"],
         "staff.already_active"
@@ -1957,9 +1964,7 @@ async fn the_roster_hires_ends_and_rehires_without_losing_history(pool: PgPool) 
 /// count as a technician's for decision C. Mutation-checked: dropping the
 /// `set_membership_active(false)` call turns this red.
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
-async fn ending_employment_locks_the_login_and_the_link_is_owner_only(
-    pool: PgPool,
-) -> TestResult {
+async fn ending_employment_locks_the_login_and_the_link_is_owner_only(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
     assert_eq!(s.get(&s.tech, "/me/staff").await.status, StatusCode::OK);
     let ended = s.end(s.lan, today(), "Nghỉ sinh").await;

@@ -45,11 +45,12 @@ export function RosterTab({
   onFilter: (f: RosterFilter) => void;
 }) {
   const query = useQuery(profilesQuery);
-  const [openId, setOpenId] = useState<string | "new" | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
   if (query.isPending) return <RowsSkeleton rows={5} />;
   if (query.isError) return <ErrorState error={query.error} onRetry={() => void query.refetch()} />;
   const everyone = query.data;
   const rows = everyone.filter((p) => inFilter(p, filter));
+  // `"new"` = the add form; otherwise a profile id.
   const open = openId === "new" ? null : everyone.find((p) => p.id === openId);
   const columns: Column<StaffProfile>[] = [
     {
@@ -352,7 +353,7 @@ const ACTION_LABEL: Record<string, string> = {
 
 function shown(field: string, value: unknown): string {
   if (value === null || value === undefined) return "trống";
-  if (field === "has_phone" || field === "has_note") return value ? "có" : "không";
+  if (field === "has_phone" || field === "has_note") return value === true ? "có" : "không";
   if (field === "status") return value === "left" ? "Đã nghỉ" : "Đang làm";
   if (field === "user_id") return "đã gắn";
   if (field === "commission_rate_bp" && typeof value === "number") return percentOfBp(value);
@@ -363,7 +364,7 @@ function shown(field: string, value: unknown): string {
 
 /** Changes that say something to a person (audit keys like `login_locked` are left out). */
 function readable(entry: StaffHistoryEntry) {
-  return entry.changes.filter((c) => c.field in FIELD_LABEL && !(entry.action === "staff.create" && c.before === null && c.after === null));
+  return entry.changes.filter((c) => c.field in FIELD_LABEL);
 }
 
 function HistorySection({ id }: { id: string }) {

@@ -20,6 +20,7 @@ function attendanceSheet(days: AttendanceDay[]): AttendanceSheet {
     days: days.filter((d) => d.staff_id === staff_id),
     totals,
     can_record: true,
+    periods: [],
     visit_days: [],
   });
   return { month: "2026-11", today: "2026-11-07", days_in_month: 30, default_shift_start: "08:00", closed: false, staff: [person("a"), person("b")] };

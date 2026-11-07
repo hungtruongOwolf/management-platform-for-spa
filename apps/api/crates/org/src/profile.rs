@@ -81,8 +81,9 @@ async fn load(tx: &mut TenantTx, only: Option<Uuid>, lock: bool) -> Result<Vec<P
     let mut periods = repo::periods(tx, only).await?;
     rows.into_iter()
         .map(|r| {
-            let (mine, rest): (Vec<_>, Vec<_>) =
-                std::mem::take(&mut periods).into_iter().partition(|p| p.staff_id == r.id);
+            let (mine, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut periods)
+                .into_iter()
+                .partition(|p| p.staff_id == r.id);
             periods = rest;
             Profile::from_rows(r, mine.into_iter().map(period_of).collect())
         })
@@ -557,7 +558,15 @@ pub async fn end(
         actor.user_id.as_uuid(),
     )
     .await?;
-    if !repo::set_mirror(&mut tx, id, version, current.started_on, Some(input.ended_on)).await? {
+    if !repo::set_mirror(
+        &mut tx,
+        id,
+        version,
+        current.started_on,
+        Some(input.ended_on),
+    )
+    .await?
+    {
         return Err(AppError::StaleVersion);
     }
     if let Some(user) = before.user_id {

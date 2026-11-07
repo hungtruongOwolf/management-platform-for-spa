@@ -107,6 +107,7 @@ export function DailyBook({
       days: [],
       totals: { present: 0, late_count: 0, late_minutes: 0, leave_p: 0, leave_dx: 0, absent_k: 0, unrecorded: 0 },
       can_record: s.can_record,
+      periods: [],
       visit_days: [],
     }));
   const closed = attendance.data?.closed ?? reviews.data?.closed ?? false;
