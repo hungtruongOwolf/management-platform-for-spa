@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT status, business_date, starts_at, ends_at, customer_id, staff_id, arrived_at, note,\n                  companions, group_id, version\n           FROM app.appointment WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
+  "query": "SELECT status, business_date, starts_at, ends_at, customer_id, guest_phone, staff_id,\n                  arrived_at, note, companions, group_id, version\n           FROM app.appointment WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -60,6 +60,17 @@
       },
       {
         "ordinal": 5,
+        "name": "guest_phone",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "guest_phone"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
         "name": "staff_id",
         "type_info": "Uuid",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "arrived_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "note",
         "type_info": "Text",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "companions",
         "type_info": "TextArray",
         "origin": {
@@ -103,7 +114,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "group_id",
         "type_info": "Uuid",
         "origin": {
@@ -114,7 +125,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "version",
         "type_info": "Int8",
         "origin": {
@@ -140,10 +151,11 @@
       true,
       true,
       true,
+      true,
       false,
       true,
       false
     ]
   },
-  "hash": "a5f10770c9db985aa36efa70b458b105e29cddda5e81ee08bcb384bb9450b865"
+  "hash": "0f2c2f6452188519fc9304ebbfc00bc314aa12fe2193415fe96d7a4e1640dd08"
 }

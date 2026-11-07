@@ -209,16 +209,16 @@
           "400": {},
           "401": {},
           "403": {
-            "description": "auth.forbidden / day.locked (a past day, non-owner)"
+            "description": "auth.forbidden / day.locked (group_with: the host is on a past day, non-owner)"
           },
           "404": {
             "description": "customer or service not in this spa"
           },
           "409": {
-            "description": "appointment.staff_busy (existing_id = the overlapping appointment), customer.phone_taken (newcomer's phone already has a record: existing_id)"
+            "description": "appointment.staff_busy (existing_id = the overlapping appointment), appointment.customer_busy (the same customer, or newcomer phone outside the group, already has an open booking overlapping it: existing_id), customer.phone_taken (newcomer's phone already has a record: existing_id)"
           },
           "422": {
-            "description": "validation_failed (starts_at not_on_slot / too_far, duration_min out_of_range, guest.*), appointment.outside_opening_hours, staff.inactive"
+            "description": "validation_failed (starts_at not_on_slot / too_far, duration_min out_of_range, guest.*), appointment.outside_opening_hours, appointment.in_the_past (a past business day, owner too: record a back-dated visit instead), staff.inactive"
           }
         }
       }
@@ -270,7 +270,7 @@
             "description": "a customer or service not in this spa"
           },
           "409": {
-            "description": "appointment.staff_busy (existing_id; also two people of the group on one technician), customer.phone_taken (existing_id)"
+            "description": "appointment.staff_busy (existing_id; also two people of the group on one technician), appointment.customer_busy (existing_id), customer.phone_taken (existing_id)"
           },
           "422": {
             "description": "validation_failed: people count_out_of_range (2–6), people[i].customer_id duplicate, people[i].starts_at not_same_day, and every 422 of POST /appointments under people[i].*"
@@ -360,10 +360,12 @@
           },
           "404": {},
           "409": {
-            "description": "appointment.closed, appointment.staff_busy"
+            "description": "appointment.closed, appointment.staff_busy, appointment.customer_busy (checked when the booking moves or gets its customer record)"
           },
           "412": {},
-          "422": {}
+          "422": {
+            "description": "validation_failed, appointment.outside_opening_hours, appointment.in_the_past (moved to a past day)"
+          }
         }
       }
     },
@@ -3867,7 +3869,7 @@
               "null"
             ],
             "format": "int32",
-            "description": "Default: the services' durations (empty = 60) rounded up to the slot. 1 slot – 480.",
+            "description": "Default: the services' exact durations (untimed alone = 60). 5 – 480 minutes.",
             "minimum": 0
           },
           "group_with": {
@@ -3914,7 +3916,7 @@
           "starts_at": {
             "type": "string",
             "format": "date-time",
-            "description": "On the spa's slot grid, inside opening hours; today up to 90 days ahead (past days: owner)."
+            "description": "On the spa's slot grid, inside opening hours; today up to 90 days ahead (a past day is\n`422 appointment.in_the_past` for everyone: that is a back-dated visit)."
           }
         },
         "additionalProperties": false
@@ -4623,7 +4625,7 @@
           "ends_at": {
             "type": "string",
             "format": "date-time",
-            "description": "`starts_at` + the services' durations (empty = 60) rounded up to the slot, ≤ 8 h."
+            "description": "`starts_at` + the services' exact durations (untimed alone = 60), 5 min – 8 h."
           },
           "id": {
             "type": "string",
@@ -5857,7 +5859,7 @@
               "null"
             ],
             "format": "int32",
-            "description": "Default: this person's services' durations rounded up to the slot.",
+            "description": "Default: this person's services' exact durations.",
             "minimum": 0
           },
           "guest": {

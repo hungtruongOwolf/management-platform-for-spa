@@ -4,11 +4,13 @@ import {
   PHASE_BADGE,
   addedMinutes,
   autoMinutes,
+  customerClash,
   daysFrom,
   entriesOf,
   forStaff,
   hhmm,
   instantAt,
+  lengthChoices,
   mondayOf,
   paymentLabel,
   peakPeople,
@@ -153,16 +155,68 @@ describe("calendar helpers", () => {
     ]);
   });
 
-  it("length follows the services, rounded up to the slot", () => {
-    expect(autoMinutes([], 15)).toBe(60);
-    expect(autoMinutes([30], 15)).toBe(30);
-    expect(autoMinutes([30, 90], 15)).toBe(120);
+  it("length is the services' exact time (decision A), not rounded to the slot", () => {
+    expect(autoMinutes([])).toBe(60);
+    expect(autoMinutes([30])).toBe(30);
+    expect(autoMinutes([30, 90])).toBe(120);
+    // EM 2026-11-07: 70 minutes is 09:00–10:10, not 75.
+    expect(autoMinutes([70])).toBe(70);
     // Round 6: an untimed add-on next to a timed service adds nothing (was 60 each: 30 → 150).
-    expect(autoMinutes([40, null], 15)).toBe(45);
-    expect(autoMinutes([30, null, null], 15)).toBe(30);
-    expect(autoMinutes([null], 15)).toBe(60);
-    expect(autoMinutes([null, null], 15)).toBe(120);
-    expect(autoMinutes([5], 15)).toBe(15);
+    expect(autoMinutes([40, null])).toBe(40);
+    expect(autoMinutes([30, null, null])).toBe(30);
+    expect(autoMinutes([null])).toBe(60);
+    expect(autoMinutes([null, null])).toBe(120);
+    expect(autoMinutes([2])).toBe(5);
+    expect(autoMinutes([300, 300])).toBe(480);
+  });
+
+  it("offers the grid lengths plus the exact ones in between", () => {
+    const choices = lengthChoices(15, 70, 70);
+    expect(choices.slice(0, 6)).toEqual([15, 30, 45, 60, 70, 75]);
+    expect(choices.at(-1)).toBe(480);
+    expect(choices.filter((m) => m === 70)).toHaveLength(1);
+  });
+
+  it("finds the same person's open booking at the same time", () => {
+    const hold = appt({ id: "h", customer_id: "c1" }); // 10:00–11:00
+    const busy = cal([hold]);
+    const none = { id: null, groupId: null };
+    const ha = { customerId: "c1", guestPhone: null };
+    expect(
+      customerClash(busy, ha, "2026-11-06", 10 * 60 + 30, 30, none)?.id,
+    ).toBe("h");
+    // Back to back, another day, the booking itself or a closed one: no clash.
+    expect(customerClash(busy, ha, "2026-11-06", 11 * 60, 30, none)).toBeNull();
+    expect(customerClash(busy, ha, "2026-11-07", 10 * 60, 30, none)).toBeNull();
+    expect(
+      customerClash(busy, ha, "2026-11-06", 10 * 60, 30, {
+        id: "h",
+        groupId: null,
+      }),
+    ).toBeNull();
+    const closed = cal([{ ...hold, status: "cancelled" }]);
+    expect(
+      customerClash(closed, ha, "2026-11-06", 10 * 60, 30, none),
+    ).toBeNull();
+    // A newcomer by phone (0905… = +84905…), except inside their own group.
+    const guest = appt({
+      id: "g",
+      customer_id: null,
+      is_guest: true,
+      customer_phone: "+84905777001",
+      group_id: "grp",
+    });
+    const gcal = cal([guest]);
+    const yen = { customerId: null, guestPhone: "0905 777 001" };
+    expect(customerClash(gcal, yen, "2026-11-06", 10 * 60, 30, none)?.id).toBe(
+      "g",
+    );
+    expect(
+      customerClash(gcal, yen, "2026-11-06", 10 * 60, 30, {
+        id: null,
+        groupId: "grp",
+      }),
+    ).toBeNull();
   });
 
   it("an untimed service shows what it adds", () => {

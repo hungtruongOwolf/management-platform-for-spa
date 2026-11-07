@@ -441,9 +441,8 @@ export function AppointmentsCalendar({
           }}
         />
       )}
-      {cal.data && groupMembers.length > 0 && (
+      {groupMembers.length > 0 && (
         <GroupCheckIn
-          cal={cal.data}
           members={groupMembers}
           onClose={() => {
             setGroupMembers([]);
@@ -669,7 +668,9 @@ function DayGrid({
         {gutterBands(opens, closes, slot).map(({ row, span, m }) => {
           const hour = m % 60 === 0;
           // One number per hour (its busiest slot), not one per 15-minute row (EM round 5).
-          const n = hour ? peakPeople(cal, day, m, Math.min(60, closes - m)) : 0;
+          const n = hour
+            ? peakPeople(cal, day, m, Math.min(60, closes - m))
+            : 0;
           const text = hour && (n > 0 || max !== null) ? slotCount(n, max) : "";
           const full = max !== null && n >= max;
           // One gutter band per hour (EM polish round 2: the count chip collided with the hour on
@@ -678,7 +679,10 @@ function DayGrid({
             <div
               key={`g${String(row)}`}
               className={`cal-gutter ${hour ? "is-hour" : ""}`}
-              style={{ gridColumn: 1, gridRow: `${String(row + 2)} / span ${String(span)}` }}
+              style={{
+                gridColumn: 1,
+                gridRow: `${String(row + 2)} / span ${String(span)}`,
+              }}
             >
               {hour && <span>{hhmm(m)}</span>}
               {text && (
@@ -1092,9 +1096,10 @@ function AppointmentSheet({
 }) {
   const queryClient = useQueryClient();
   const staff = useQuery(activeStaffQuery);
-  const [staffId, setStaffId] = useState(
-    a.staff_id ?? cal.technicians[0]?.id ?? "",
-  );
+  // The booked technician, or nobody: the desk picks who serves (EM 2026-11-07, it defaulted to
+  // the first technician and checked in the wrong person).
+  const [staffId, setStaffId] = useState(a.staff_id ?? "");
+  const [arriveTried, setArriveTried] = useState(false);
   const [closing, setClosing] = useState<"cancel" | "no-show" | null>(null);
   const [reason, setReason] = useState("");
   const [reasonTried, setReasonTried] = useState(false);
@@ -1236,9 +1241,7 @@ function AppointmentSheet({
 
         {group.length > 1 && (
           <section className="appt-section" aria-label="Cùng nhóm">
-            <p className="section-label">
-              Cùng nhóm ({group.length} người)
-            </p>
+            <p className="section-label">Cùng nhóm ({group.length} người)</p>
             <ul className="appt-members">
               {group.map((x) => (
                 <li key={x.id}>
@@ -1346,6 +1349,8 @@ function AppointmentSheet({
                     id={`arrive-staff-${a.id}`}
                     className="input"
                     value={staffId}
+                    aria-invalid={(arriveTried && staffId === "") || undefined}
+                    aria-describedby={`arrive-staff-${a.id}-msg`}
                     onChange={(e) => {
                       setStaffId(e.target.value);
                     }}
@@ -1361,23 +1366,46 @@ function AppointmentSheet({
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  aria-disabled={staffId === "" || undefined}
                   aria-busy={running === "arrive"}
                   onClick={() => {
+                    setArriveTried(true);
                     if (staffId !== "")
                       send("arrive", () => arriveAppointment(a.id, staffId));
+                    else
+                      document.getElementById(`arrive-staff-${a.id}`)?.focus();
                   }}
                 >
                   Chỉ báo đã đến (ghi lượt sau)
                 </button>
               </div>
+              {arriveTried && staffId === "" ? (
+                <span id={`arrive-staff-${a.id}-msg`} className="field-error">
+                  Chọn KTV làm cho khách rồi bấm lại.
+                </span>
+              ) : (
+                <span id={`arrive-staff-${a.id}-msg`} className="field-hint">
+                  {a.staff_id
+                    ? "KTV đã gán khi đặt lịch; đổi nếu người khác làm."
+                    : "Lịch chưa gán KTV: chọn người làm."}
+                </span>
+              )}
             </section>
           )}
 
         {open && !locked && (
-          <section className="appt-section" aria-label="Hủy hoặc không đến">
+          <section
+            className="appt-section"
+            aria-labelledby={`close-title-${a.id}`}
+          >
+            <p id={`close-title-${a.id}`} className="section-label">
+              {a.status === "booked" && started
+                ? "Khách không đến hoặc hủy lịch"
+                : "Hủy lịch"}
+            </p>
             {closing === null ? (
-              <div className="button-row">
+              // Real buttons of the control scale (EM 2026-11-07: "Hủy lịch" was a bare text),
+              // the destructive one in the danger outline; each asks for its reason first.
+              <div className="appt-close-actions">
                 {a.status === "booked" && started && (
                   <button
                     type="button"
@@ -1393,14 +1421,14 @@ function AppointmentSheet({
                 )}
                 <button
                   type="button"
-                  className="btn btn-ghost"
+                  className="btn btn-danger-outline"
                   onClick={() => {
                     setClosing("cancel");
                     setReason("");
                     setReasonTried(false);
                   }}
                 >
-                  Hủy lịch
+                  <Icon name="x" /> Hủy lịch
                 </button>
               </div>
             ) : (
@@ -1441,7 +1469,10 @@ function AppointmentSheet({
                       Nhập {reasonLabel.toLowerCase()} rồi bấm lại.
                     </span>
                   ) : (
-                    <span id={`close-reason-${a.id}-msg`} className="field-hint">
+                    <span
+                      id={`close-reason-${a.id}-msg`}
+                      className="field-hint"
+                    >
                       Ghi vào lịch hẹn, ai mở lịch cũng thấy.
                     </span>
                   )}
@@ -1460,7 +1491,7 @@ function AppointmentSheet({
                   </button>
                   <button
                     type="button"
-                    className="btn btn-ghost"
+                    className="btn btn-secondary"
                     onClick={() => {
                       setClosing(null);
                     }}

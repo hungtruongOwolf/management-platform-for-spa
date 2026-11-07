@@ -80,10 +80,10 @@ pub async fn calendar(
 #[utoipa::path(post, path = "/api/v1/appointments", tag = "appointments", request_body = AppointmentCreate,
     params(("Idempotency-Key" = Uuid, Header, description = "One key per booking; a retry replays the first response")),
     responses((status = 201, body = AppointmentDto), (status = 400), (status = 401),
-        (status = 403, description = "auth.forbidden / day.locked (a past day, non-owner)"),
+        (status = 403, description = "auth.forbidden / day.locked (group_with: the host is on a past day, non-owner)"),
         (status = 404, description = "customer or service not in this spa"),
-        (status = 409, description = "appointment.staff_busy (existing_id = the overlapping appointment), customer.phone_taken (newcomer's phone already has a record: existing_id)"),
-        (status = 422, description = "validation_failed (starts_at not_on_slot / too_far, duration_min out_of_range, guest.*), appointment.outside_opening_hours, staff.inactive")))]
+        (status = 409, description = "appointment.staff_busy (existing_id = the overlapping appointment), appointment.customer_busy (the same customer, or newcomer phone outside the group, already has an open booking overlapping it: existing_id), customer.phone_taken (newcomer's phone already has a record: existing_id)"),
+        (status = 422, description = "validation_failed (starts_at not_on_slot / too_far, duration_min out_of_range, guest.*), appointment.outside_opening_hours, appointment.in_the_past (a past business day, owner too: record a back-dated visit instead), staff.inactive")))]
 pub async fn book(
     State(pool): State<PgPool>,
     user: AuthUser,
@@ -112,7 +112,7 @@ pub async fn book(
     responses((status = 201, body = AppointmentGroupDto), (status = 400), (status = 401),
         (status = 403, description = "auth.forbidden / day.locked"),
         (status = 404, description = "a customer or service not in this spa"),
-        (status = 409, description = "appointment.staff_busy (existing_id; also two people of the group on one technician), customer.phone_taken (existing_id)"),
+        (status = 409, description = "appointment.staff_busy (existing_id; also two people of the group on one technician), appointment.customer_busy (existing_id), customer.phone_taken (existing_id)"),
         (status = 422, description = "validation_failed: people count_out_of_range (2–6), people[i].customer_id duplicate, people[i].starts_at not_same_day, and every 422 of POST /appointments under people[i].*")))]
 pub async fn book_group(
     State(pool): State<PgPool>,
@@ -165,8 +165,9 @@ pub async fn read_appointment(
     params(("id" = Uuid, Path), ("If-Match" = String, Header)),
     responses((status = 200, body = AppointmentDto), (status = 401),
         (status = 403, description = "auth.forbidden / day.locked"), (status = 404),
-        (status = 409, description = "appointment.closed, appointment.staff_busy"),
-        (status = 412), (status = 422)))]
+        (status = 409, description = "appointment.closed, appointment.staff_busy, appointment.customer_busy (checked when the booking moves or gets its customer record)"),
+        (status = 412),
+        (status = 422, description = "validation_failed, appointment.outside_opening_hours, appointment.in_the_past (moved to a past day)")))]
 pub async fn update_appointment(
     State(pool): State<PgPool>,
     user: AuthUser,

@@ -1,6 +1,6 @@
 ---
 title: Design system — internal app (R1)
-updated: 2026-11-06
+updated: 2026-11-07
 sources: [raw/2026-11-06-em-polish-and-chart-toggle.md, raw/2026-11-06-em-review-redesign-rollout.md, raw/2026-11-06-em-ui-redesign-direction.md, raw/2026-11-06-research-ui-skills-taste-impeccable.md, raw/2026-11-06-em-review-round5.md, raw/2026-11-05-em-ui-review-round3.md, "docs for reference/logo Viên phúc y đường transparent.png", "docs for reference/Menu mặt trước - mới.png", product/personas.md, raw/2026-11-05-em-brand-colors-and-demo-data.md, raw/2026-11-05-em-management-views-logo-ui.md]
 ---
 
@@ -35,6 +35,7 @@ Utility Tailwind `text-xs…2xl` map đúng thang này (`styles.css` `@theme`, p
 | `btn-secondary` | hành động thường (Trừ 1 buổi, Đổi khách, Khách mới) | viền `border-strong`, nền `surface` | viền + chữ `primary` | nền `primary-soft` |
 | `btn-ghost` | hành động phụ trong dòng (Đổi giờ, Thêm giảm giá, Bỏ sửa, ✕) | trong suốt, chữ `primary` | nền `surface-2` | nền `primary-soft` |
 | `btn-danger` | hành động phá (Hủy lượt) | nền `danger` | tối hơn 14% | |
+| `btn-danger-outline` (2026-11-07) | **mở** một hành động phá, bước xác nhận sau đó mới là `btn-danger` ("Hủy lịch" → lý do → "Hủy lịch" đỏ đặc). Không dùng `btn-ghost` cho hành động phá: EM thấy "chỉ một cái text" | viền + chữ `danger`, nền `surface`, `shadow-xs` | nền `danger-soft`, dịch 1px | nền `danger-soft` + `shadow-press` |
 
 Đủ 7 trạng thái: mặc định · hover · focus-visible (vòng vàng toàn cục) · nhấn (đổi nền, dịch 1px) · disabled / `aria-disabled` (mờ 50%, `not-allowed`; ưu tiên `aria-disabled` để không mất focus) · đang tải `aria-busy="true"` (spinner trước nhãn, giữ nguyên bề rộng, không bấm lần 2) · lỗi (thông báo cạnh nút/ô, không đổi màu nút). Cao 44px; `btn-lg` 48px; `btn-block` rộng 100%; `btn-icon` vuông 44px luôn có `aria-label`. Nhãn = **động từ + đối tượng** ("Lưu lượt khách", "Thêm giảm giá", "Bỏ liên kết lịch hẹn"), không "OK", không "Thêm" trơn.
 

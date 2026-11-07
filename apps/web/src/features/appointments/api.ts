@@ -19,10 +19,15 @@ import { addMessages } from "../../lib/errors";
 addMessages(
   {
     "appointment.staff_busy": "KTV này đã có lịch trùng giờ.",
+    "appointment.customer_busy":
+      "Khách này đã có lịch hẹn trùng giờ: đổi giờ, hoặc mở lịch đã có để sửa.",
+    "appointment.in_the_past":
+      "Không đặt lịch cho ngày đã qua. Khách đã làm thì ghi lượt nhập bù ở Quầy.",
     "appointment.outside_opening_hours":
       "Lịch hẹn phải nằm trọn trong giờ mở cửa: chọn giờ sớm hơn hoặc rút ngắn thời lượng.",
     "appointment.already_arrived": "Khách đã được đánh dấu là đã đến.",
-    "appointment.not_started": "Chưa tới giờ hẹn, chưa đánh dấu không đến được.",
+    "appointment.not_started":
+      "Chưa tới giờ hẹn, chưa đánh dấu không đến được.",
   },
   {
     not_on_slot: "Giờ hẹn phải đúng ô 15 phút (ví dụ 10:00, 10:15).",
@@ -278,22 +283,75 @@ export function peakPeople(
   return peak;
 }
 
+/** Shortest and longest booking (server `MIN_DURATION_MINUTES` / `MAX_DURATION_MINUTES`). */
+export const MIN_MINUTES = 5;
+export const MAX_MINUTES = 480;
+
 /**
- * A booking's length from its services, rounded up to the slot (same rule as the server's
- * `services_minutes`): the timed services' sum. A service without a duration ("theo tư vấn") is an
- * hour only when nothing else is timed; next to a timed one it is an add-on done in that time.
+ * A booking's length from its services, exactly (same rule as the server's `services_minutes`;
+ * EM 2026-11-07 decision A: a 70-minute service is 70 minutes, no longer rounded up to the 15-minute
+ * grid). The timed services' sum; a service without a duration ("theo tư vấn") is an hour only
+ * when nothing else is timed, next to a timed one it is an add-on done in that time.
  * No services = 60.
  */
-export function autoMinutes(
-  durations: (number | null | undefined)[],
-  slot: number,
-): number {
+export function autoMinutes(durations: (number | null | undefined)[]): number {
   const timed = durations.filter((d): d is number => d != null && d > 0);
   const sum =
     timed.length > 0
       ? timed.reduce((t, d) => t + d, 0)
       : Math.max(1, durations.length) * 60;
-  return Math.max(slot, Math.ceil(sum / slot) * slot);
+  return Math.min(MAX_MINUTES, Math.max(MIN_MINUTES, sum));
+}
+
+/**
+ * Lengths the desk can pick: every slot multiple up to 8 hours, plus the services' own length and
+ * the current one when they fall between (70 next to 60 and 75), in order.
+ */
+export function lengthChoices(slot: number, ...exact: number[]): number[] {
+  const grid = Array.from(
+    { length: Math.floor(MAX_MINUTES / slot) },
+    (_, i) => (i + 1) * slot,
+  );
+  return [...new Set([...grid, ...exact])]
+    .filter((m) => m >= MIN_MINUTES && m <= MAX_MINUTES)
+    .sort((a, b) => a - b);
+}
+
+/** Same person: equal digits once a leading +84 / 84 is read as 0. */
+function samePhone(a: string, b: string): boolean {
+  const digits = (s: string) => s.replace(/\D/g, "").replace(/^84/, "0");
+  return digits(a) !== "" && digits(a) === digits(b);
+}
+
+/**
+ * The open booking that already holds this person over `[start, start + minutes)` of `day`: the
+ * same customer record, or a newcomer with the same phone outside `groupId` (a family may share a
+ * phone). Mirrors the server's `409 appointment.customer_busy`, so the form says it before sending.
+ */
+export function customerClash(
+  cal: Calendar,
+  who: { customerId: string | null; guestPhone: string | null },
+  day: string,
+  start: number,
+  minutes: number,
+  except: { id: string | null; groupId: string | null },
+): Appointment | null {
+  return (
+    cal.appointments.find(
+      (a) =>
+        isOpen(a) &&
+        a.id !== except.id &&
+        a.business_date === day &&
+        spaMinutes(a.starts_at) < start + minutes &&
+        start < spaMinutes(a.starts_at) + a.duration_min &&
+        ((who.customerId !== null && a.customer_id === who.customerId) ||
+          (who.guestPhone !== null &&
+            a.is_guest &&
+            !!a.customer_phone &&
+            samePhone(a.customer_phone, who.guestPhone) &&
+            (except.groupId === null || a.group_id !== except.groupId))),
+    ) ?? null
+  );
 }
 
 /** Minutes a service adds to `autoMinutes` of its booking (0 = an add-on done meanwhile). */

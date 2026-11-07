@@ -668,6 +668,30 @@
   display: grid;
   gap: 16px;
 }
+/* The message the desk must see now (missing part, refusal, warning), pinned in the sheet's
+   footer on its own row above the buttons: a long form never hides it below the fold (EM
+   2026-11-07). */
+.sheet-footer:has(> .appt-footer-note) {
+  flex-wrap: wrap;
+}
+.sheet-footer > .appt-footer-note {
+  flex: 1 1 100%;
+  margin: 0;
+}
+/* Cancel / no-show: two real buttons of the control scale, side by side; on a phone each takes
+   half the row and keeps its label on one line (EM 2026-11-07: "Hủy lịch" was a bare text). */
+.appt-close-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+@media (max-width: 639.98px) {
+  .appt-close-actions > .btn,
+  .appt-section .button-row > .btn {
+    flex: 1 1 auto;
+    white-space: nowrap;
+  }
+}
 
 /* ------------------------------------------------------------------ forms */
 /* Fields are the shared .field / .input / .field-hint / .field-error (components.css). */
