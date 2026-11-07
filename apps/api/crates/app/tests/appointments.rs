@@ -395,6 +395,45 @@ async fn a_booking_lasts_exactly_its_services_time(pool: PgPool) -> TestResult {
     Ok(())
 }
 
+/// Decision E (ADR-0011): a customer record without a phone books like any other; the
+/// "one person, one booking at a time" rule keys on the record, and two phone-less customers
+/// are never taken for the same person.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn phone_less_customers_book_and_the_overlap_rule_keys_on_the_record(
+    pool: PgPool,
+) -> TestResult {
+    let s = spa(pool).await?;
+    let mut ids = Vec::new();
+    for name in ["Chồng của chị Hà", "Con của chị Hà"] {
+        let c = call(
+            &s.h.app,
+            "POST",
+            "/customers",
+            Some(&s.manager),
+            Some(json!({"full_name": name, "gender": "male"})),
+        )
+        .await;
+        assert_eq!(c.status, StatusCode::CREATED, "{}", c.body);
+        ids.push(id_of(&c));
+    }
+    let book = |customer: &str, staff: &str| {
+        json!({"customer_id": customer, "service_ids": [s.dai_thong_lac], "staff_id": staff,
+               "starts_at": at(1, "10:00")})
+    };
+    let first = s.book(&s.manager, book(&ids[0], &s.lan)).await;
+    assert_eq!(first.status, StatusCode::CREATED, "{}", first.body);
+    assert_eq!(first.body["customer_phone"], Value::Null);
+    let other = s.book(&s.manager, book(&ids[1], &s.tuan)).await;
+    assert_eq!(other.status, StatusCode::CREATED, "another phone-less person: {}", other.body);
+    let twice = s.book(&s.manager, book(&ids[0], &s.tuan)).await;
+    assert_eq!(
+        code(&twice),
+        (StatusCode::CONFLICT, Some("appointment.customer_busy"))
+    );
+    assert_eq!(twice.body["existing_id"], first.body["id"]);
+    Ok(())
+}
+
 /// EM 2026-11-07 ("Nguyễn Thị Lan Anh 09:00 ×2"): one person cannot hold two open bookings at
 /// the same time. Same customer record, or the same newcomer phone outside one group (a family
 /// shares a phone); companions of one group are other people and never clash.
