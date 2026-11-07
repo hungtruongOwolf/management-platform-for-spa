@@ -73,6 +73,11 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
   | Ghi chú chăm sóc lại | `customer.read` | ✓ | ✓ | — |
   | Lý do hủy lượt / sửa lượt / hủy hóa đơn / hủy gói | `customer.read` + `visit.read` + `sale.read` | ✓ | ✓ | — |
   | Lý do nghỉ việc | `staff.manage` | ✓ | — | — |
+  | Ghi chú lịch hẹn (Q-N1) | `appointment.manage` | ✓ | ✓ | — |
+  | Nhận xét / kế hoạch kèm cặp đánh giá tháng (Q-N1) | `evaluation.record` | ✓ | ✓ | — |
+  | Ghi chú nhân sự `staff.note` (Q-N1) | `staff.manage` (như `details` ở Nhân sự; ngoài allowlist 14 key của quản lý) | ✓ | — | — |
+  | Lý do gia hạn gói (Q-N1) | `customer.read` + `visit.read` + `sale.read` | ✓ | ✓ | — |
+  | Lý do giảm giá (Q-N1) | hóa đơn của lượt: `visit.read`; hóa đơn khác: `sale.read` + `customer.read` | ✓ | ✓ | — |
 
   Loại không được đọc thì nhánh SQL của nó tắt (cờ bool), nên lọc `kind` hay tìm chữ cũng không mở được; `kinds` trong response chỉ liệt kê loại được đọc. Ghi chú mã hóa giải mã bằng đúng associated data của bên ghi, chỉ khi có `customer.health_notes.read`; không vào log/audit; `Cache-Control: private, no-store` (mặc định middleware). Tenant lọc tường minh ở mọi nhánh + RLS; id khách / nhân viên spa khác → danh sách trống. Query `deny_unknown_fields`. Test: `app/tests/notes.rs` (từng role, từng loại × bỏ từng quyền, quản lý không có quyền sức khỏe, spa khác, lọc + cursor + tìm trong ghi chú mã hóa), `authz_matrix.rs` +1 dòng (`ReportRead`, owner + manager).
 - **Vòng 3 (EM 2026-11-05, [spec](../product/specs/management-views.md) "Bổ sung vòng 3", migration 0014):**

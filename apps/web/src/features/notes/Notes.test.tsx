@@ -129,6 +129,51 @@ describe("/nhat-ky-ghi-chu", () => {
     });
   });
 
+  it("EM Q-N1: booking, evaluation, HR, extension and discount notes say what they are about and link back", async () => {
+    const more: NoteEntry[] = [
+      {
+        kind: "appointment_note", at: "2026-11-02T02:00:00Z", business_date: "2026-11-02", text: "Khách muốn phòng riêng",
+        customer_name: "Chị Mai (khách mới)", author_name: "Quản lý Hà", detail: "booked", about_date: "2026-11-05",
+      },
+      {
+        kind: "evaluation_note", at: "2026-11-02T03:00:00Z", business_date: "2026-11-02", text: "Kèm hai tuần",
+        staff_id: LAN, staff_name: "KTV Lan", author_name: "Quản lý Hà", detail: "coaching_plan", about_date: "2026-10-01",
+      },
+      {
+        kind: "staff_note", at: "2026-11-02T04:00:00Z", business_date: "2026-11-02", text: "Đang học khóa đá nóng",
+        staff_id: LAN, staff_name: "KTV Lan",
+      },
+      {
+        kind: "package_extension", at: "2026-11-02T05:00:00Z", business_date: "2026-11-02", text: "Khách ốm",
+        customer_id: CUSTOMER, customer_name: "Nguyễn Thị Hoa", author_name: "Chủ Spa", detail: "Gói 10 buổi", about_date: "2027-06-01",
+      },
+      {
+        kind: "discount", at: "2026-11-02T06:00:00Z", business_date: "2026-11-02", text: "Khách quen",
+        customer_id: CUSTOMER, customer_name: "Nguyễn Thị Hoa", author_name: "Chủ Spa", detail: "sale",
+      },
+    ];
+    serve(MANAGER, { items: more });
+    at("/nhat-ky-ghi-chu");
+    const rows = within(await screen.findByRole("region", { name: /02\/11\/2026/ })).getAllByRole("listitem");
+    const [booking, evaluation, hr, extension, discount] = rows;
+    if (!booking || !evaluation || !hr || !extension || !discount) throw new Error("rows");
+    // A guest booking: the guest's name (no profile link), the booked day, the calendar of that day.
+    expect(within(booking).getByText("Chị Mai (khách mới)")).toBeInTheDocument();
+    expect(within(booking).queryByRole("link", { name: "Chị Mai (khách mới)" })).not.toBeInTheDocument();
+    expect(within(booking).getByText("· Lịch hẹn 05/11/2026")).toBeInTheDocument();
+    expect(within(booking).getByRole("link", { name: "Mở lịch hẹn" }).getAttribute("href")).toContain("ngay=2026-11-05");
+    expect(within(evaluation).getByText("Kế hoạch kèm cặp")).toBeInTheDocument();
+    expect(within(evaluation).getByText("· Tháng 10/2026")).toBeInTheDocument();
+    expect(within(evaluation).getByRole("link", { name: "Mở đánh giá tháng" }).getAttribute("href")).toContain("month=2026-10");
+    // Q-N2: an HR note shows the profile's last change.
+    expect(within(hr).getByText(/^Hồ sơ sửa lúc/)).toBeInTheDocument();
+    expect(within(hr).getByRole("link", { name: "Mở Nhân sự" })).toBeInTheDocument();
+    expect(within(extension).getByText("Gói 10 buổi")).toBeInTheDocument();
+    expect(within(extension).getByRole("link", { name: "Xem trong lịch sử khách" }).getAttribute("href")).toContain("hkind=package_extended");
+    expect(within(discount).getByText("Giảm giá")).toBeInTheDocument();
+    expect(within(discount).getByRole("link", { name: "Xem trong lịch sử khách" }).getAttribute("href")).toContain("hkind=purchase");
+  });
+
   it("says when a search stopped at its cap and offers to search further", async () => {
     serve(MANAGER, { items: [], next_cursor: "abc", scan_capped: true });
     at("/nhat-ky-ghi-chu?q=vai");

@@ -215,8 +215,15 @@ EM: "mấy ghi chú các thứ sau này có quản lý hay chủ spa vào xem l�
 | `follow_up` | Chăm sóc lại | `customer_follow_up.note` | `customer.read` | lúc ghi / ngày liên hệ | người ghi |
 | `void` | Hủy lượt / Sửa lượt / Hủy hóa đơn / Hủy gói | `visit.void_reason`, `sale.void_reason` (hóa đơn không thuộc lượt), `customer_package.cancel_reason` (gói không hủy theo hóa đơn) | `customer.read` + `visit.read` + `sale.read` (quy tắc lịch sử khách) | lúc hủy | người hủy |
 | `employment_end` | Nghỉ việc | `staff_employment.end_reason` | `staff.manage` (**chỉ chủ spa**) | ngày làm cuối | người cho nghỉ |
+| `appointment_note` (Q-N1) | Ghi chú lịch hẹn | `appointment.note` | `appointment.manage` (lịch hẹn của spa; từ #85 KTV thấy ghi chú lịch hẹn **của chính mình** qua `GET /me/appointments` (`staff.read_own`), nhưng nhật ký cần `report.read` nên KTV và người đã nghỉ (`staff.read_own_past`, ADR-0014) không vào được) | lúc đặt / **ngày đặt**; ngày hẹn ở `about_date` | người đặt |
+| `evaluation_note` (Q-N1) | Nhận xét tháng / Kế hoạch kèm cặp | `staff_evaluation.comment`, `.coaching_plan` (hai dòng) | `evaluation.record` (`GET /evaluations`) | lần ghi cuối; tháng được đánh giá ở `about_date` | người chấm |
+| `staff_note` (Q-N1) | Ghi chú nhân sự | `staff.note` (chữ tự do duy nhất của hồ sơ nhân sự ngoài lý do nghỉ; đợt làm việc chỉ có `end_reason`) | `staff.manage` (**chỉ chủ spa**: nằm trong `details`, ngoài allowlist 14 key của quản lý ở Nhân sự) | lần sửa hồ sơ cuối (`staff.updated_at`, như Q-N2) | — (hồ sơ không lưu người sửa) |
+| `package_extension` (Q-N1) | Gia hạn gói | `customer_package_extension.reason` | `customer.read` + `visit.read` + `sale.read` (lịch sử khách hiện mục "Gia hạn") | lúc gia hạn / ngày gia hạn; hạn mới ở `about_date` | người gia hạn |
+| `discount` (Q-N1) | Giảm giá | `sale.discount_reason` | hóa đơn của lượt (`sale.visit_id`): `visit.read` (`GET /visits` hiện lý do giảm); hóa đơn khác: `sale.read` (`GET /sales/{id}`) + `customer.read` (tên khách) | lúc lập hóa đơn / ngày hóa đơn | người lập |
 
-Quản lý mặc định thấy mọi loại trừ "Nghỉ việc". Quản lý bị bỏ `customer.health_notes.read` thì không thấy ghi chú buổi và lưu ý sức khỏe, kể cả khi lọc đúng loại đó hay tìm đúng chữ trong đó. KTV: `403` (màn trả "Không có quyền").
+Không có nguồn mới nào thiếu quy tắc đọc, nên không loại nào phải "mặc định chỉ chủ spa". Ngoài phạm vi: lý do không đến / hủy lịch hẹn (`appointment.status_reason`) và người đi cùng dạng ghi chú (EM chưa hỏi).
+
+Quản lý mặc định thấy mọi loại trừ "Nghỉ việc" và "Ghi chú nhân sự". Quản lý bị bỏ `customer.health_notes.read` thì không thấy ghi chú buổi và lưu ý sức khỏe, kể cả khi lọc đúng loại đó hay tìm đúng chữ trong đó. KTV: `403` (màn trả "Không có quyền").
 
 **10.3 Mỗi dòng.** Chip loại · giờ (hồ sơ: "Hồ sơ sửa lúc …"; nghỉ việc: "Ngày làm cuối") · tác giả; khách (link hồ sơ) hoặc nhân viên; chữ ghi chú (giữ xuống dòng); link về nguồn: ghi chú buổi → lịch sử khách lọc đúng ngày + "Lượt khách"; hủy/sửa lượt → lịch sử khách lọc ngày + "Hủy lượt"; hồ sơ / sức khỏe / chăm sóc lại / hủy hóa đơn / hủy gói → hồ sơ khách; chấm công / khen-phàn nàn / thưởng-phạt → sổ hằng ngày đúng ngày; nghỉ việc → Nhân sự ("Tất cả"). Gom theo ngày kinh doanh (tiêu đề ngày), mới nhất trước.
 
@@ -229,10 +236,13 @@ Quản lý mặc định thấy mọi loại trừ "Nghỉ việc". Quản lý b
 **10.6 Hiệu năng.** Migration 0027: index một phần theo ngày cho từng nguồn có ghi chú (`visit (tenant_id, business_date) WHERE note_ct IS NOT NULL`, `voided_at` của lượt / hóa đơn, `cancelled_at` của gói, `customer (tenant_id, updated_at)` khi có ghi chú, `customer_follow_up (tenant_id, contacted_on)`, `staff_employment (tenant_id, ended_on)`); sổ chấm công / khen / thưởng-phạt đã có `(tenant_id, work_date)` (0017).
 
 **AC**
-- AC10.1: chủ spa thấy cả 9 loại; quản lý mặc định thấy 8 (không "Nghỉ việc"); KTV `403`; chưa đăng nhập `401`.
+- AC10.1: chủ spa thấy cả 14 loại; quản lý mặc định thấy 12 (không "Nghỉ việc", không "Ghi chú nhân sự"); KTV `403`; chưa đăng nhập `401`.
+- AC10.1b (Q-N1): giảm giá của hóa đơn trong lượt chỉ cần `visit.read`; hóa đơn khác cần `sale.read` + `customer.read`; chỉ `sale.read` → không thấy giảm giá nào.
 - AC10.2: bỏ bất kỳ một quyền nào trong cột "Quyền đọc" của một loại → loại đó biến mất (cả khi lọc `kind` hoặc tìm chữ trong nó), `kinds` không còn nó.
 - AC10.3: lọc khoảng ngày / loại / nhân viên / khách / chữ đúng như 10.4; trang 2 dòng đi hết danh sách một lần, không lặp.
 - AC10.4: chủ spa khác không thấy dòng nào của spa này, kể cả khi đưa id khách / nhân viên của spa này.
 - AC10.5: `Cache-Control: private, no-store`; màn ở chunk lazy; axe không lỗi serious/critical ở 1280 và 390, sáng và tối.
 
-**Câu hỏi cho EM:** Q-N1 thêm các ghi chú chưa có trong danh sách EM đưa: ghi chú lịch hẹn, nhận xét / kế hoạch kèm cặp của đánh giá tháng, ghi chú hồ sơ nhân viên (chủ spa), lý do gia hạn gói, lý do giảm giá? (mặc định: chưa). Q-N2 ghi chú hồ sơ khách chưa lưu người sửa và lúc sửa riêng ghi chú (dùng lúc sửa hồ sơ); có cần lưu riêng không?
+**Đã chốt (EM 2026-11-07, [raw](../../../raw/2026-11-07-em-decisions-notes-journal-scope.md)):**
+- **Q-N1: có.** Thêm ghi chú lịch hẹn, nhận xét / kế hoạch kèm cặp của đánh giá tháng, ghi chú nhân sự, lý do gia hạn gói, lý do giảm giá (5 dòng cuối bảng 10.2), mỗi loại giữ quy tắc đọc ở nơi nó được ghi / hiện. Migration 0028: index một phần cho 5 nguồn này.
+- **Q-N2: không.** Ghi chú hồ sơ khách, lưu ý sức khỏe (và ghi chú nhân sự) vẫn là một giá trị trên hồ sơ; nhật ký hiện lúc hồ sơ sửa lần cuối ("Hồ sơ sửa lúc …"), không lưu người ghi / lúc ghi riêng, không đổi schema.
