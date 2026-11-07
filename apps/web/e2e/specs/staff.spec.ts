@@ -120,4 +120,62 @@ test.describe("nhân viên", () => {
     expect(await sidewaysOverflow(page)).toBe(0);
     await expectAccessible(page, "staff-phone-payroll");
   });
+
+  // EM 2026-11-07 item 9 (spec §13): hire → end employment with a reason → "Đã nghỉ" → rehire.
+  for (const [label, viewport] of [
+    ["desktop", { width: 1280, height: 800 }],
+    ["phone", { width: 390, height: 844 }],
+  ] as const) {
+    test(`roster (${label}): hire, end employment, find under Đã nghỉ, rehire`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      const name = `KTV Nghỉ ${label} ${String(Date.now()).slice(-5)}`;
+      await page.goto("/nhan-vien?tab=profiles");
+      await expect(page.getByRole("tab", { name: "Nhân sự" })).toHaveAttribute("aria-selected", "true");
+      await page.getByRole("button", { name: "Thêm nhân viên" }).click();
+      const form = page.getByRole("dialog", { name: "Thêm nhân viên" });
+      await form.getByLabel("Họ tên").fill(name);
+      await form.getByRole("button", { name: "Lưu hồ sơ" }).click();
+      await expect(form).toBeHidden();
+      const row = page.getByRole("button", { name, exact: true });
+      await expect(row).toBeVisible();
+      await expect(page.getByRole("button", { name: /^Đang làm \(\d+\)$/ })).toHaveAttribute("aria-pressed", "true");
+      expect(await sidewaysOverflow(page)).toBe(0);
+      await expectAccessible(page, `roster-${label}`);
+
+      await row.click();
+      const sheet = page.getByRole("dialog", { name });
+      await expect(sheet.getByRole("heading", { name: "Quá trình làm việc" })).toBeVisible();
+      await sheet.getByRole("button", { name: "Cho nghỉ việc" }).click();
+      const confirm = page.getByRole("dialog", { name: `Cho ${name} nghỉ việc` });
+      await expect(confirm.getByRole("button", { name: "Xác nhận nghỉ việc" })).toBeDisabled();
+      await confirm.getByLabel("Lý do nghỉ việc").fill("Chuyển về quê");
+      await expectAccessible(page, `roster-end-${label}`);
+      await confirm.getByRole("button", { name: "Xác nhận nghỉ việc" }).click();
+      const after = page.getByRole("dialog", { name });
+      await expect(after.getByText("Nghỉ: Chuyển về quê")).toBeVisible();
+      await expect(after.getByRole("button", { name: "Nhận lại làm" })).toBeVisible();
+      await page.keyboard.press("Escape");
+
+      // Out of "Đang làm" and of the front desk's KTV picker, in "Đã nghỉ".
+      await expect(page.getByRole("button", { name, exact: true })).toBeHidden();
+      await page.getByRole("button", { name: /^Đã nghỉ \(\d+\)$/ }).click();
+      await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+      await page.emulateMedia({ colorScheme: "dark" });
+      await expectAccessible(page, `roster-left-${label}-dark`);
+      await page.emulateMedia({ colorScheme: "light" });
+      const picker = await page.request.get("/api/v1/staff");
+      expect(((await picker.json()) as { full_name: string }[]).some((s) => s.full_name === name)).toBe(false);
+
+      // Rehire: a second period; back under "Đang làm".
+      await page.getByRole("button", { name, exact: true }).click();
+      await page.getByRole("dialog", { name }).getByRole("button", { name: "Nhận lại làm" }).click();
+      const rehire = page.getByRole("dialog", { name: `Nhận ${name} lại làm` });
+      await rehire.getByRole("button", { name: "Nhận lại làm" }).click();
+      const back = page.getByRole("dialog", { name });
+      await expect(back.getByRole("button", { name: "Cho nghỉ việc" })).toBeVisible();
+      await expect(back.getByRole("listitem").filter({ hasText: "Nghỉ: Chuyển về quê" })).toBeVisible();
+      await expect(back.getByRole("heading", { name: "Lịch sử thay đổi" })).toBeVisible();
+      await expect(back.getByText("Nhận lại làm", { exact: true })).toBeVisible();
+    });
+  }
 });

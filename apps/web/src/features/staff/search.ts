@@ -1,5 +1,9 @@
 import { param, searchSchema, type Parser } from "../../lib/searchState";
 
+/** Nhân sự filter: "" = Đang làm (default), `left` = Đã nghỉ, `all` = Tất cả. */
+export const ROSTER_FILTERS = ["", "left", "all"] as const;
+export type RosterFilter = (typeof ROSTER_FILTERS)[number];
+
 export const STAFF_TABS = ["day", "month", "evaluation", "payroll", "profiles"] as const;
 export type StaffTab = (typeof STAFF_TABS)[number];
 
@@ -17,6 +21,8 @@ export const staffSearch = searchSchema({
   tab,
   month,
   day: param.day(),
+  /** Nhân sự filter: "" = Đang làm, `left` = Đã nghỉ, `all` = Tất cả. */
+  roster: param.oneOf(ROSTER_FILTERS, ""),
 });
 
 /** /khach-cua-toi: the calendar's day ("" = today) and view ("" = the device's default). */

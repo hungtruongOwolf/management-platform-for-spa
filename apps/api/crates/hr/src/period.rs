@@ -51,8 +51,7 @@ pub async fn require_open(tx: &mut TenantTx, month: Month) -> Result<(), AppErro
 
 /// Whether `p` worked at the spa on at least one day of `month`.
 pub fn employed_in(p: &Profile, month: Month) -> bool {
-    p.joined_on.is_none_or(|j| j <= month.last_day())
-        && p.left_on.is_none_or(|l| l >= month.first_day())
+    p.employment.overlaps(month.first_day(), month.last_day())
 }
 
 /// Today in the spa's time zone.

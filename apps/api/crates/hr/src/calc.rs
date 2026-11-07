@@ -12,6 +12,7 @@ use crate::evaluation::Level;
 use crate::month::Month;
 use crate::rules::{PartialMonthLoyalty, PayrollRules};
 use chrono::NaiveDate;
+use org::Employment;
 use org::profile::PayTerms;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -74,8 +75,8 @@ pub struct MonthInput<'a> {
     pub month: Month,
     /// Days before this one are not counted (unfinished current month); `None` = whole month.
     pub recorded_until: Option<NaiveDate>,
-    pub joined_on: Option<NaiveDate>,
-    pub left_on: Option<NaiveDate>,
+    /// The person's employment periods: days outside them are neither worked nor missing.
+    pub employment: Employment,
     pub pay: Option<PayTerms>,
     pub days: &'a [Day],
     pub commission_lines: &'a [CommissionLine],
@@ -177,19 +178,14 @@ pub struct Payslip {
 }
 
 fn employed(input: &MonthInput<'_>, day: NaiveDate) -> bool {
-    employed_on(input.joined_on, input.left_on, day)
-}
-
-fn employed_on(joined_on: Option<NaiveDate>, left_on: Option<NaiveDate>, day: NaiveDate) -> bool {
-    joined_on.is_none_or(|j| day >= j) && left_on.is_none_or(|l| day <= l)
+    input.employment.on(day)
 }
 
 fn totals(input: &MonthInput<'_>) -> AttendanceTotals {
     summarize(
         input.month,
         input.recorded_until,
-        input.joined_on,
-        input.left_on,
+        &input.employment,
         input.days,
     )
 }
@@ -199,8 +195,7 @@ fn totals(input: &MonthInput<'_>) -> AttendanceTotals {
 pub fn summarize(
     month: Month,
     recorded_until: Option<NaiveDate>,
-    joined_on: Option<NaiveDate>,
-    left_on: Option<NaiveDate>,
+    employment: &Employment,
     days: &[Day],
 ) -> AttendanceTotals {
     let mut t = AttendanceTotals::default();
@@ -223,7 +218,7 @@ pub fn summarize(
         month
             .iter_days()
             .filter(|d| recorded_until.is_none_or(|until| *d < until))
-            .filter(|d| employed_on(joined_on, left_on, *d) && !recorded.contains(d))
+            .filter(|d| employment.on(*d) && !recorded.contains(d))
             .count(),
     )
     .unwrap_or(u32::MAX);
@@ -463,8 +458,7 @@ mod tests {
         MonthInput {
             month: nov(),
             recorded_until: None,
-            joined_on: None,
-            left_on: None,
+            employment: Employment::always(),
             pay: Some(terms()),
             days,
             commission_lines: lines,
@@ -641,6 +635,35 @@ mod tests {
         assert_eq!(s.net_pay, 5_000_000 + 300_000 + 200_000 - 50_000);
     }
 
+    /// ADR-0012: a person who left on the 10th and was rehired on the 21st worked 20 days; the gap
+    /// is neither missing attendance nor loyalty time.
+    #[test]
+    fn a_rehire_gap_is_neither_worked_nor_missing() {
+        let ds: Vec<Day> = days(&[])
+            .into_iter()
+            .filter(|x| x.date <= d("2026-11-10") || x.date >= d("2026-11-21"))
+            .collect();
+        let mut i = input(&ds[1..], &[]);
+        i.employment = Employment::new(vec![
+            org::Period {
+                id: Uuid::nil(),
+                started_on: Some(d("2026-01-05")),
+                ended_on: Some(d("2026-11-10")),
+                end_reason: Some("Nghỉ sinh".into()),
+            },
+            org::Period {
+                id: Uuid::nil(),
+                started_on: Some(d("2026-11-21")),
+                ended_on: None,
+                end_reason: None,
+            },
+        ]);
+        let s = slip(&i, &PayrollRules::default());
+        assert_eq!(s.employed_days, 20);
+        assert_eq!(s.attendance.unrecorded, 1, "only the unrecorded 1st, not the gap");
+        assert_eq!(s.loyalty_bonus_accrued, 333_333, "20 / 30 of 500k");
+    }
+
     #[test]
     fn mid_month_joiners_are_prorated_by_rule_and_not_counted_as_absent() {
         let ds: Vec<Day> = days(&[])
@@ -648,7 +671,7 @@ mod tests {
             .filter(|x| x.date >= d("2026-11-16"))
             .collect();
         let mut i = input(&ds, &[]);
-        i.joined_on = Some(d("2026-11-16"));
+        i.employment = Employment::between(Some(d("2026-11-16")), None);
         let s = slip(&i, &PayrollRules::default());
         assert_eq!(s.employed_days, 15);
         assert_eq!(s.attendance.unrecorded, 0);

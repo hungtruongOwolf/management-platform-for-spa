@@ -12,7 +12,7 @@ use hr::evaluation::{CRITERIA, CriterionInput, EvaluationInput, Level};
 use hr::month::Month;
 use hr::review::ReviewEntry;
 use kernel::{Actor, TenantId};
-use org::profile::{PayInput, ProfileInput};
+use org::profile::{EndInput, PayInput, ProfileInput};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -28,7 +28,12 @@ pub struct StaffDemoReport {
     pub evaluations: usize,
     pub adjustments: usize,
     pub technician_login: bool,
+    /// A former technician (ended employment, reason recorded) for the "Đã nghỉ" filter.
+    pub former_staff: bool,
 }
+
+/// The demo's former technician: worked here for about a year and a half, left 10 weeks ago.
+const FORMER_NAME: &str = "Đỗ Thị Hằng";
 
 pub struct StaffDemo<'a> {
     pub owner_pool: &'a PgPool,
@@ -95,7 +100,7 @@ impl StaffDemo<'_> {
                 .await
                 .map_err(fail("read a staff profile"))?;
             let p = view.profile;
-            org::profile::update(
+            let updated = org::profile::update(
                 self.app,
                 self.owner,
                 *staff,
@@ -104,23 +109,27 @@ impl StaffDemo<'_> {
                     full_name: p.full_name,
                     position: p.position,
                     phone: p.phone.map(|ph| ph.as_str().to_owned()),
-                    status: p.status,
                     joined_on: Some(date(joined)?),
-                    left_on: None,
-                    // The first technician and the manager sign in as themselves (decision C:
-                    // the manager's own records are the owner's to write).
-                    user_id: if i == 0 {
-                        Some(tech_user.as_uuid())
-                    } else if *staff == self.manager_staff {
-                        Some(self.manager.user_id.as_uuid())
-                    } else {
-                        None
-                    },
                     shift_start: time(9, 0),
+                    note: p.note,
                 },
             )
             .await
             .map_err(fail("update a staff profile"))?;
+            // The first technician and the manager sign in as themselves (decision C: the
+            // manager's own records are the owner's to write).
+            let login = if i == 0 {
+                Some(tech_user.as_uuid())
+            } else if *staff == self.manager_staff {
+                Some(self.manager.user_id.as_uuid())
+            } else {
+                None
+            };
+            if login.is_some() {
+                org::profile::set_account(self.app, self.owner, *staff, updated.profile.version, login)
+                    .await
+                    .map_err(fail("link a staff login"))?;
+            }
             org::profile::set_pay(
                 self.app,
                 self.owner,
@@ -135,6 +144,8 @@ impl StaffDemo<'_> {
             .await
             .map_err(fail("set pay terms"))?;
         }
+
+        report.former_staff = self.former_technician().await?;
 
         let this_month = Month::of(self.today);
         let last_month = Month::of(this_month.first_day() - Duration::days(1));
@@ -191,6 +202,46 @@ impl StaffDemo<'_> {
 
     /// Mostly on time at 08:45–09:05; some late; the odd P / ĐX / K. Technician #3 (index 3)
     /// takes four days off last month so the payslip shows a deduction.
+    /// Hires and ends a former technician once (re-running the seed reuses her), through the
+    /// roster use cases: she is out of every picker and later month, still in the roster's
+    /// "Đã nghỉ" filter.
+    async fn former_technician(&self) -> anyhow::Result<bool> {
+        let roster = org::profile::list(self.app, self.owner, None)
+            .await
+            .map_err(fail("read the roster"))?;
+        if roster.iter().any(|v| v.profile.full_name == FORMER_NAME) {
+            return Ok(true);
+        }
+        let hired = org::profile::create(
+            self.app,
+            self.owner,
+            &ProfileInput {
+                full_name: FORMER_NAME.to_owned(),
+                position: "Kỹ thuật viên".to_owned(),
+                phone: None,
+                joined_on: Some(self.today - Duration::days(600)),
+                shift_start: time(9, 0),
+                note: None,
+            },
+            None,
+        )
+        .await
+        .map_err(fail("hire the former technician"))?;
+        org::profile::end(
+            self.app,
+            self.owner,
+            hired.profile.id,
+            hired.profile.version,
+            &EndInput {
+                ended_on: self.today - Duration::days(70),
+                reason: "Chuyển về quê".to_owned(),
+            },
+        )
+        .await
+        .map_err(fail("end the former technician's employment"))?;
+        Ok(true)
+    }
+
     fn attendance(&self, rng: &mut Rng, staff: Uuid, i: usize, day: NaiveDate) -> Entry {
         let last_month_day = day < Month::of(self.today).first_day();
         let forced = (i == 3 && last_month_day).then(|| match day.day() {

@@ -129,8 +129,7 @@ pub async fn compute_in(
             let input = MonthInput {
                 month,
                 recorded_until,
-                joined_on: p.joined_on,
-                left_on: p.left_on,
+                employment: p.employment.clone(),
                 pay: pays.iter().find(|(id, _)| *id == p.id).map(|(_, t)| *t),
                 days: &my_days,
                 commission_lines: &my_lines,

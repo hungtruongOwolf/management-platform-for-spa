@@ -1614,3 +1614,432 @@ async fn only_the_owner_records_for_a_manager(pool: PgPool) -> TestResult {
     assert!(deleted.is_err(), "never deleted");
     Ok(())
 }
+
+// ------------------------------------------------------------------------- roster (0025)
+
+impl Spa {
+    /// `method` with `If-Match: "<version>"` (roster writes are optimistic).
+    async fn versioned(
+        &self,
+        session: &str,
+        method: &str,
+        path: &str,
+        body: Value,
+        version: &Value,
+    ) -> Reply {
+        let tag = format!("\"{}\"", version.as_i64().unwrap_or_default());
+        call_with_headers(
+            &self.h.app,
+            method,
+            path,
+            Some(session),
+            Some(body),
+            &[("If-Match", tag.as_str())],
+        )
+        .await
+    }
+
+    async fn profile(&self, staff: Uuid) -> Value {
+        let r = self.get(&self.owner, &format!("/staff/{staff}")).await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+        r.body
+    }
+
+    /// Ends `staff`'s employment as the owner.
+    async fn end(&self, staff: Uuid, on: NaiveDate, reason: &str) -> Reply {
+        let p = self.profile(staff).await;
+        self.versioned(
+            &self.owner,
+            "POST",
+            &format!("/staff/{staff}/end"),
+            json!({"ended_on": on, "reason": reason}),
+            &p["version"],
+        )
+        .await
+    }
+
+    async fn rehire(&self, staff: Uuid, on: NaiveDate) -> Reply {
+        let p = self.profile(staff).await;
+        self.versioned(
+            &self.owner,
+            "POST",
+            &format!("/staff/{staff}/rehire"),
+            json!({"started_on": on}),
+            &p["version"],
+        )
+        .await
+    }
+}
+
+fn names(list: &Value) -> Vec<String> {
+    list.as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|p| p["full_name"].as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// EM 2026-11-07 item 9 (spec §13, ADR-0012): hire → work → end employment (soft) → rehire.
+/// Ending needs a reason, refuses a future date, a date before recorded work and open bookings;
+/// the person leaves every picker and is refused as KTV, but this month's attendance, payroll and
+/// visits keep them; rehiring opens a second period and tenure sums both. Mutation-checked:
+/// skipping `repo::worked_after` or `bookings_after` in `profile::end` turns this red.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_roster_hires_ends_and_rehires_without_losing_history(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let joined = today() - Duration::days(40);
+    let hired = s
+        .post(
+            &s.owner,
+            "/staff",
+            json!({"full_name": "Nguyễn Thu", "position": "Kỹ thuật viên", "joined_on": joined,
+                   "note": "Có chứng chỉ hành nghề"}),
+        )
+        .await;
+    assert_eq!(hired.status, StatusCode::CREATED, "{}", hired.body);
+    let thu = id(&hired);
+    assert_eq!(hired.body["status"], "active");
+    assert_eq!(hired.body["periods"].as_array().map(Vec::len), Some(1));
+    assert_eq!(hired.body["tenure_days"], 41);
+    assert_eq!(hired.body["tenure_months"], 1);
+    assert_eq!(hired.body["details"]["note"], "Có chứng chỉ hành nghề");
+    let picker = s.get(&s.manager, "/staff").await;
+    assert!(names(&picker.body).contains(&"Nguyễn Thu".to_owned()));
+
+    // Thu works: attendance yesterday, a visit today, a booking tomorrow.
+    assert_eq!(
+        s.attend(&s.owner, thu, yesterday(), "present").await.status,
+        StatusCode::OK
+    );
+    let customer = s.customer("0905123987").await;
+    s.one_off_visit(customer, thu, 1).await;
+    let tomorrow = today() + Duration::days(1);
+    let booking = s
+        .post(
+            &s.owner,
+            "/appointments",
+            json!({"customer_id": customer, "service_ids": [s.service], "staff_id": thu,
+                   "starts_at": format!("{tomorrow}T10:00:00+07:00")}),
+        )
+        .await;
+    assert_eq!(booking.status, StatusCode::CREATED, "{}", booking.body);
+
+    // Only the owner ends employment; the manager and the technician are refused.
+    let p = s.profile(thu).await;
+    for who in [&s.manager, &s.tech] {
+        let r = s
+            .versioned(
+                who,
+                "POST",
+                &format!("/staff/{thu}/end"),
+                json!({"ended_on": today(), "reason": "x"}),
+                &p["version"],
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::FORBIDDEN, "{}", r.body);
+    }
+    let stale = s
+        .versioned(
+            &s.owner,
+            "POST",
+            &format!("/staff/{thu}/end"),
+            json!({"ended_on": today(), "reason": "Chuyển công tác"}),
+            &json!(99),
+        )
+        .await;
+    assert_eq!(stale.status, StatusCode::PRECONDITION_FAILED);
+    let blank = s.end(thu, today(), "  ").await;
+    assert_eq!(blank.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(blank.body["errors"][0]["field"], "reason");
+    let future = s.end(thu, tomorrow, "Chuyển công tác").await;
+    assert_eq!(future.body["errors"][0]["code"], "in_future", "{}", future.body);
+    let before_work = s.end(thu, yesterday(), "Chuyển công tác").await;
+    assert_eq!(
+        before_work.body["errors"][0]["code"], "has_later_records",
+        "a visit today: {}",
+        before_work.body
+    );
+    let booked = s.end(thu, today(), "Chuyển công tác").await;
+    assert_eq!(booked.status, StatusCode::CONFLICT);
+    assert_eq!(booked.body["code"], "staff.has_upcoming_bookings");
+    sqlx::query("UPDATE app.appointment SET staff_id = NULL WHERE staff_id = $1")
+        .bind(thu)
+        .execute(&s.h.owner)
+        .await?;
+
+    let ended = s.end(thu, today(), "Chuyển công tác").await;
+    assert_eq!(ended.status, StatusCode::OK, "{}", ended.body);
+    assert_eq!(ended.body["status"], "left");
+    assert_eq!(ended.body["left_on"], json!(today()));
+    assert_eq!(ended.body["periods"][0]["end_reason"], "Chuyển công tác");
+    assert_eq!(
+        s.end(thu, today(), "again").await.body["code"],
+        "staff.already_left"
+    );
+
+    // Out of every picker, refused as KTV…
+    let picker = s.get(&s.manager, "/staff").await;
+    assert!(!names(&picker.body).contains(&"Nguyễn Thu".to_owned()));
+    let left = s.get(&s.manager, "/staff?status=left").await;
+    assert_eq!(names(&left.body), ["Nguyễn Thu"]);
+    let refused = s
+        .post(
+            &s.owner,
+            "/visits",
+            json!({
+                "customer_id": customer,
+                "lines": [{"service_id": s.service, "source": "one_off", "staff_id": thu}],
+                "payments": [{"method": "cash", "amount": PRICE}]
+            }),
+        )
+        .await;
+    assert_eq!(refused.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(refused.body["code"], "staff.inactive");
+    // …but this month's books keep them: attendance, payroll (the visit's commission), visits.
+    let sheet = s.get(&s.owner, "/attendance").await;
+    assert!(sheet.body.to_string().contains(&thu.to_string()));
+    s.pay(thu, 5_000_000, 500).await;
+    let payroll = s.get(&s.owner, "/payroll").await;
+    assert_eq!(slip(&payroll.body, thu)["service_commission_base"], PRICE);
+
+    // The roster: manager sees dates and tenure, never the note or the reason.
+    let roster = s.get(&s.manager, "/staff/profiles?status=left").await;
+    assert_eq!(roster.status, StatusCode::OK, "{}", roster.body);
+    assert_eq!(names(&roster.body), ["Nguyễn Thu"]);
+    let text = roster.body.to_string();
+    for leak in ["Chuyển công tác", "chứng chỉ", "\"details\"", "end_reason"] {
+        assert!(!text.contains(leak), "manager got {leak}: {text}");
+    }
+    // Exact allowlist for a manager (list and one profile): no pay, phone, note, login id or
+    // reason — only what pickers, the daily book and "làm bao lâu" need.
+    let one = s.get(&s.manager, &format!("/staff/{thu}")).await;
+    assert_eq!(one.status, StatusCode::OK, "{}", one.body);
+    for entry in [&roster.body[0], &one.body] {
+        assert_eq!(
+            keys(entry),
+            [
+                "first_joined_on",
+                "full_name",
+                "id",
+                "joined_on",
+                "left_on",
+                "login_linked",
+                "pay_visible",
+                "periods",
+                "position",
+                "shift_start",
+                "status",
+                "tenure_days",
+                "tenure_months",
+                "version"
+            ],
+            "{entry}"
+        );
+        assert_eq!(entry["pay_visible"], false);
+        for period in entry["periods"].as_array().into_iter().flatten() {
+            assert_eq!(keys(period), ["ended_on", "started_on"], "{period}");
+        }
+    }
+    // The owner gets the details; technicians get nothing from the roster at all.
+    let owner_view = s.profile(thu).await;
+    assert_eq!(owner_view["details"]["note"], "Có chứng chỉ hành nghề");
+    assert_eq!(owner_view["periods"][0]["end_reason"], "Chuyển công tác");
+    for path in [
+        "/staff/profiles".to_owned(),
+        format!("/staff/{thu}"),
+        format!("/staff/{thu}/history"),
+    ] {
+        assert_eq!(
+            s.get(&s.tech, &path).await.status,
+            StatusCode::FORBIDDEN,
+            "{path}"
+        );
+    }
+    let tech_link = s
+        .versioned(
+            &s.tech,
+            "PUT",
+            &format!("/staff/{thu}/account"),
+            json!({"user_id": null}),
+            &owner_view["version"],
+        )
+        .await;
+    assert_eq!(tech_link.status, StatusCode::FORBIDDEN);
+    let manager_pay = s
+        .put(
+            &s.manager,
+            &format!("/staff/{thu}/pay"),
+            json!({"base_salary": 1, "commission_rate_bp": 0}),
+        )
+        .await;
+    assert_eq!(manager_pay.status, StatusCode::FORBIDDEN);
+    let working = s.get(&s.owner, "/staff/profiles").await;
+    assert_eq!(
+        names(&working.body).len(),
+        3,
+        "default all: Lan, Mai, Thu: {}",
+        working.body
+    );
+
+    // Rehire: after the end only; a second period; tenure sums both.
+    let same_day = s.rehire(thu, today()).await;
+    assert_eq!(same_day.body["errors"][0]["code"], "before_last_end");
+    let back = s.rehire(thu, tomorrow).await;
+    assert_eq!(back.status, StatusCode::OK, "{}", back.body);
+    assert_eq!(back.body["status"], "active");
+    assert_eq!(back.body["joined_on"], json!(tomorrow));
+    assert_eq!(back.body["first_joined_on"], json!(joined));
+    assert_eq!(back.body["periods"].as_array().map(Vec::len), Some(2));
+    assert_eq!(back.body["tenure_days"], 41, "the new period starts tomorrow");
+    assert_eq!(
+        s.rehire(thu, tomorrow).await.body["code"],
+        "staff.already_active"
+    );
+    // The ended period can no longer change start: editing joined_on moves the new one only.
+    let p = s.profile(thu).await;
+    let overlap = s
+        .versioned(
+            &s.owner,
+            "PUT",
+            &format!("/staff/{thu}"),
+            json!({"full_name": "Nguyễn Thu", "position": "Quản lý", "joined_on": today()}),
+            &p["version"],
+        )
+        .await;
+    assert_eq!(overlap.body["errors"][0]["code"], "overlaps_previous");
+
+    // The history tells who did what (owner only).
+    let history = s.get(&s.owner, &format!("/staff/{thu}/history")).await;
+    let actions: Vec<&str> = history.body.as_array().map_or_else(Vec::new, |a| {
+        a.iter().filter_map(|h| h["action"].as_str()).collect()
+    });
+    assert_eq!(
+        actions,
+        [
+            "staff.rehire",
+            "staff.pay_update",
+            "staff.end",
+            "staff.create"
+        ]
+    );
+    assert_eq!(history.body[2]["reason"], "Chuyển công tác");
+    assert_eq!(
+        s.get(&s.manager, &format!("/staff/{thu}/history"))
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
+
+    // The database keeps history: an ended period never changes and nothing is deleted.
+    let app = app_pool(&s.h.owner).await?;
+    let mut tx = TenantTx::begin(&app, TenantId::from_uuid(s.tenant)).await?;
+    let tampered = sqlx::query(
+        "UPDATE app.staff_employment SET end_reason = 'x' WHERE staff_id = $1 AND ended_on IS NOT NULL",
+    )
+    .bind(thu)
+    .execute(tx.conn())
+    .await;
+    assert!(tampered.is_err(), "an ended period is final");
+    drop(tx);
+    let mut tx = TenantTx::begin(&app, TenantId::from_uuid(s.tenant)).await?;
+    let deleted = sqlx::query("DELETE FROM app.staff_employment")
+        .execute(tx.conn())
+        .await;
+    assert!(deleted.is_err(), "app_rw cannot delete periods");
+    Ok(())
+}
+
+/// Offboarding and the login link (owner only): ending employment locks the linked login in
+/// this spa (its next request has no permission), rehiring unlocks it; the owner never ends
+/// their own profile; linking checks membership and uniqueness; unlinking makes the profile
+/// count as a technician's for decision C. Mutation-checked: dropping the
+/// `set_membership_active(false)` call turns this red.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn ending_employment_locks_the_login_and_the_link_is_owner_only(
+    pool: PgPool,
+) -> TestResult {
+    let s = spa(pool).await?;
+    assert_eq!(s.get(&s.tech, "/me/staff").await.status, StatusCode::OK);
+    let ended = s.end(s.lan, today(), "Nghỉ sinh").await;
+    assert_eq!(ended.status, StatusCode::OK, "{}", ended.body);
+    assert_eq!(ended.body["login_linked"], true);
+    let locked = s.get(&s.tech, "/me/staff").await;
+    assert!(
+        matches!(
+            locked.status,
+            StatusCode::FORBIDDEN | StatusCode::UNAUTHORIZED
+        ),
+        "a former technician's login is locked: {}",
+        locked.status
+    );
+    let back = s.rehire(s.lan, today() + Duration::days(1)).await;
+    assert_eq!(back.status, StatusCode::OK, "{}", back.body);
+    assert_eq!(s.get(&s.tech, "/me/staff").await.status, StatusCode::OK);
+
+    // The owner's own profile: never ended by themselves.
+    let own = linked_profile(&s, common::OWNER_PHONE, "Chủ spa").await?;
+    let r = s.end(own, today(), "x").await;
+    assert_eq!(r.body["code"], "staff.cannot_end_self", "{}", r.body);
+
+    // Link: owner only, an active member, one profile per login.
+    let tech_user = s.profile(s.lan).await["details"]["user_id"].clone();
+    let mai = s.profile(s.mai).await;
+    let taken = s
+        .versioned(
+            &s.owner,
+            "PUT",
+            &format!("/staff/{}/account", s.mai),
+            json!({"user_id": tech_user}),
+            &mai["version"],
+        )
+        .await;
+    assert_eq!(taken.status, StatusCode::CONFLICT);
+    assert_eq!(taken.body["code"], "staff.account_taken");
+    let stranger = s
+        .versioned(
+            &s.owner,
+            "PUT",
+            &format!("/staff/{}/account", s.mai),
+            json!({"user_id": Uuid::now_v7()}),
+            &mai["version"],
+        )
+        .await;
+    assert_eq!(stranger.body["errors"][0]["code"], "not_a_member");
+    let by_manager = s
+        .versioned(
+            &s.manager,
+            "PUT",
+            &format!("/staff/{}/account", s.lan),
+            json!({"user_id": null}),
+            &json!(1),
+        )
+        .await;
+    assert_eq!(by_manager.status, StatusCode::FORBIDDEN);
+
+    // Decision C reads the link: Hoa's profile linked to the manager's login is the owner's to
+    // record; unlinked, it counts as a technician's.
+    let hoa = linked_profile(&s, MANAGER_PHONE, "Quản lý Hoa").await?;
+    let blocked = s.attend(&s.manager, hoa, today(), "present").await;
+    assert_eq!(blocked.status, StatusCode::FORBIDDEN);
+    let p = s.profile(hoa).await;
+    let unlinked = s
+        .versioned(
+            &s.owner,
+            "PUT",
+            &format!("/staff/{hoa}/account"),
+            json!({"user_id": null}),
+            &p["version"],
+        )
+        .await;
+    assert_eq!(unlinked.status, StatusCode::OK, "{}", unlinked.body);
+    assert_eq!(unlinked.body["login_linked"], false);
+    assert_eq!(
+        s.attend(&s.manager, hoa, today(), "present").await.status,
+        StatusCode::OK
+    );
+    let history = s.get(&s.owner, &format!("/staff/{hoa}/history")).await;
+    assert_eq!(history.body[0]["action"], "staff.account_link");
+    Ok(())
+}

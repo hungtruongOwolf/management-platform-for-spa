@@ -2,7 +2,7 @@
 title: "Spec: Quản lý nhân viên (chấm công, đánh giá, thưởng/phạt, bảng lương)"
 status: draft
 updated: 2026-11-07
-sources: [raw/2026-11-07-em-technician-pages.md, raw/2026-11-07-em-decisions-after-live-test.md, raw/2026-11-06-em-review-round5.md, raw/2026-11-05-em-review-round4.md, raw/2026-11-04-idea-internal-platform.md]
+sources: [raw/2026-11-07-em-flow-review-hr-latency.md, raw/2026-11-07-em-technician-pages.md, raw/2026-11-07-em-decisions-after-live-test.md, raw/2026-11-06-em-review-round5.md, raw/2026-11-05-em-review-round4.md, raw/2026-11-04-idea-internal-platform.md]
 related: [../compensation-rules.md, ../personas.md, ../../architecture/backend.md, ../../architecture/data.md, ../../security/authz-matrix.md]
 ---
 
@@ -22,7 +22,8 @@ Thước đo: quản lý không phải cộng tay lương và hoa hồng ([perso
 ## 2. Personas & quyền
 | Permission (mới, migration 0017) | Chủ spa | Quản lý | KTV | Dùng cho |
 |---|---|---|---|---|
-| `staff.manage` | ✓ | — | — | Hồ sơ nhân viên, liên kết tài khoản đăng nhập |
+| `staff.manage` | ✓ | — | — | Hồ sơ nhân viên: thêm, sửa, nghỉ việc, nhận lại, liên kết tài khoản (§13) |
+| `staff.read` (0025) | ✓ | ✓ | — | Danh sách "Nhân sự": tên, vị trí, các đợt làm việc, thâm niên (không SĐT, ghi chú, lý do nghỉ) |
 | `attendance.record` | ✓ | ✓ | — | Xem và ghi lưới chấm công |
 | `evaluation.record` | ✓ | ✓ | — | Đánh giá ngày, đánh giá tháng, sổ thưởng/phạt |
 | `payroll.read` | ✓ | — (**Q-S1**) | — | Mọi con số lương: điều kiện lương, bảng lương, phiếu lương, quy tắc |
@@ -38,11 +39,11 @@ Thước đo: quản lý không phải cộng tay lương và hoa hồng ([perso
 
 ### US1: Hồ sơ nhân viên (chủ spa)
 *Là chủ spa, tôi muốn ghi vị trí, ngày vào làm, lương cứng, tỷ lệ hoa hồng và trạng thái của từng người, để bảng lương tự tính.*
-- AC1.1 `POST /staff`, `PUT /staff/{id}` (`If-Match`) với `full_name`, `position`, `phone?`, `status` (`active`/`left`), `joined_on?`, `left_on?` (bắt buộc khi `left`, không được trước `joined_on`), `user_id?`, `shift_start?` (`HH:MM`). Sai → `422` theo từng field. Phiên bản cũ → `412`.
+- AC1.1 *(§13 thay phần trạng thái, ngày nghỉ, tài khoản: route riêng)* `POST /staff`, `PUT /staff/{id}` (`If-Match`) với `full_name`, `position`, `phone?`, `status` (`active`/`left`), `joined_on?`, `left_on?` (bắt buộc khi `left`, không được trước `joined_on`), `user_id?`, `shift_start?` (`HH:MM`). Sai → `422` theo từng field. Phiên bản cũ → `412`.
 - AC1.2 `user_id` phải là thành viên đang hoạt động của spa, chưa liên kết với ai khác. Đã liên kết → `409 staff.account_taken`. `GET /staff/accounts` liệt kê các tài khoản có thể liên kết.
 - AC1.3 `PUT /staff/{id}/pay`: `base_salary` 0–1 tỷ, `commission_rate_bp` 0–10000 (500 = 5 %: Lựa chọn 1; 700: LC2; 1000: LC3), `loyalty_bonus_monthly`, `meal_allowance`. Lần sửa áp dụng cho mọi tháng **chưa chốt**; tháng đã chốt giữ nguyên số đã dùng (test `a_closed_month_is_locked…`).
 - AC1.4 Có `staff.manage` nhưng thiếu `payroll.read` (role tùy biến) → hồ sơ trả về **không có** key `pay`, `pay_visible: false`; `PUT …/pay` → `403` (test `salary_is_only_sent_to_payroll_readers`, đã mutation-check).
-- AC1.5 Không xóa nhân viên. Nghỉ việc = `left` + `left_on`. Người đã nghỉ vẫn có trong các tháng họ còn làm.
+- AC1.5 Không xóa nhân viên. Nghỉ việc = đóng đợt làm việc (§13, ADR-0012). Người đã nghỉ vẫn có trong các tháng họ còn làm.
 
 ### US2: Chấm công hằng ngày (quản lý)
 *Là quản lý, tôi muốn chấm cả spa trong vài giây mỗi ngày, để cuối tháng không phải đếm lại.*
@@ -244,3 +245,57 @@ EM xem bằng tài khoản KTV: "cách sắp xếp chưa hợp lý" (phiếu lư
 - AC9.2' `entries[]` sớm nhất trước, mọi phase: lịch hẹn `staff_id = mình` (mọi trạng thái, thời lượng đúng số phút, phase như lịch của quầy, `group_size` = số người trong nhóm ADR-0009 trừ người đã hủy) + lượt `completed` có dòng của mình mà không phải lượt của một lịch hẹn của mình (`walk_in` = không lịch hẹn nào trỏ tới; dịch vụ = chỉ dòng của mình, thời lượng từ các dòng đó, `from_package`). Trường: `id, kind, business_date, starts_at, ends_at, duration_min, phase, customer_name, services[{service_name, category_name, from_package}], group_size, walk_in` — không gì khác (test kiểm tập key).
 - AC9.6' UI `/khach-cua-toi`: `TimeGrid` dùng chung với Lịch hẹn của quầy (thẻ đúng độ dài, chấm phase, "Vãng lai", "Nhóm · 3 người", vạch giờ hiện tại). Desktop: Ngày (một cột) / **Tuần (7 cột ngày, mặc định)** / Danh sách; điện thoại: Ngày (mặc định) / Danh sách tuần (nhóm theo ngày). Thanh: ‹ Hôm nay ›; chọn tháng ở đầu trang như "Công và lương của tôi" (tháng → ngày 1, tháng này → hôm nay; tới tháng sau vì lịch hẹn đặt trước tới 30 ngày). Bấm thẻ → sheet chỉ đọc (giờ, khách, dịch vụ + lẻ/gói, thời lượng, phase). Không có ô đặt lịch, không nút sửa. URL: `ngay`, `kieu`.
 - Test: `staff.rs::a_technician_sees_only_their_own_calendar`; vitest `/khach-cua-toi`; e2e `technician.spec.ts`.
+
+## 13. Nhân sự: danh sách, vào làm, nghỉ việc, nhận lại (EM 2026-11-07, [raw](../../../raw/2026-11-07-em-flow-review-hr-latency.md) mục 9)
+
+EM (đăng nhập quản lý): "mới có chấm công mới có đánh giá nhưng lại không có quản lý nhân sự… biết người đó làm bao lâu rồi cần remove hay add vào list của spa… bây giờ là như hardcode cứng".
+
+**Khoảng trống trước bản này.** Tab "Hồ sơ" có sẵn (thêm / sửa hồ sơ, gắn tài khoản, lương) nhưng:
+- chỉ chủ spa thấy (`staff.manage`), nên quản lý không thấy gì, đúng như EM nói;
+- nghỉ việc = điền ô "Ngày nghỉ việc" trong form: không lý do, không xác nhận, không kiểm lịch hẹn còn treo;
+- nhận lại làm = xóa ngày nghỉ, mất dấu đợt trước (tháng cũ thành `not_employed`);
+- không có thâm niên, không lọc Đang làm / Đã nghỉ, không lịch sử thay đổi;
+- tài khoản của người đã nghỉ vẫn đăng nhập được;
+- dữ liệu demo / CLI chỉ thêm người (`add-staff`).
+
+Không có quy tắc thưởng nào đang hard-code thâm niên: thưởng gắn bó chỉ tính theo tỷ lệ ngày làm trong tháng (Q-C7, nay theo các đợt làm việc thật), mốc 12/24 tháng vẫn ngoài phạm vi (§8) và sẽ đọc `Employment::tenure`.
+
+Mô hình: [ADR-0012](../../decisions/ADR-0012-employment-periods.md) (đợt làm việc, nghỉ việc hủy mềm), migration **0025**.
+
+### US13: Danh sách nhân sự
+- AC13.1 Tab **"Nhân sự"** (thay "Hồ sơ"; link cũ `?tab=profiles` vẫn mở) cho người có `staff.read` (chủ spa, quản lý). Bảng: Họ tên, Vị trí, chip trạng thái ("Đang làm" / "Đã nghỉ từ dd/mm/yyyy"), Ngày vào làm (đợt hiện tại), **Thâm niên** ("1 năm 8 tháng", "19 ngày", "Chưa rõ ngày vào làm"), Tài khoản (chủ spa: tên tài khoản / "Chưa gắn"; quản lý: "Đã gắn" / "Chưa gắn"), lương + hoa hồng nếu `payroll.read`. Lọc **Đang làm (mặc định) / Đã nghỉ / Tất cả** kèm số người, trên URL (`roster`).
+- AC13.2 `GET /staff/profiles?status=active|left|all` (mặc định `all`) và `GET /staff/{id}`: `staff.read`. Mỗi người có `periods[]` (cũ trước), `joined_on` (đầu đợt mới nhất), `first_joined_on`, `left_on`, `tenure_days`, `tenure_months` (cộng các đợt tới hôm nay theo giờ spa; `null` nếu thiếu ngày bắt đầu), `login_linked`. **Chỉ chủ spa (`staff.manage`)** nhận key `details` (SĐT, ghi chú, tài khoản) và `end_reason` của từng đợt; quản lý không nhận các key đó (không gửi rồi ẩn). Lương như AC1.4.
+- AC13.3 Sheet một người: trạng thái, thâm niên, ngày vào làm (+ "Vào làm lần đầu" khi đã nhận lại), giờ vào ca, **Quá trình làm việc** (mỗi đợt: từ – đến; lý do nghỉ cho chủ spa). Chủ spa có thêm: SĐT, ghi chú, **Tài khoản đăng nhập**, **Lịch sử thay đổi**, nút "Sửa hồ sơ", "Cho nghỉ việc" (`btn-danger-outline`) hoặc "Nhận lại làm".
+- AC13.4 Hồ sơ "Quản lý" đang làm mà chưa gắn tài khoản có dòng "Chưa gắn: khi ghi công được tính như KTV" (quyết định C đọc tài khoản, không đọc chữ "Vị trí").
+
+### US14: Thêm, sửa
+- AC14.1 `POST /staff` (`staff.manage`): `full_name`, `position` (gợi ý: Kỹ thuật viên, Quản lý, Thu ngân, Lễ tân, Học viên; vẫn gõ tự do), `phone?` (không bắt buộc), `joined_on?` (form điền sẵn hôm nay; bỏ trống = chưa rõ, thâm niên "Chưa rõ ngày vào làm"), `shift_start?`, `note?` (≤ 1000, chỉ chủ spa thấy, audit chỉ ghi `has_note`), `user_id?`. Mở đợt đầu. Lương ghi riêng (`PUT /staff/{id}/pay`, như AC1.3).
+- AC14.2 `PUT /staff/{id}` (`staff.manage`, `If-Match`): tên, vị trí, SĐT, giờ vào ca, ghi chú, `joined_on` = **ngày vào của đợt hiện tại** (sửa nhầm). Người đã nghỉ đổi `joined_on` → `422 joined_on period_ended`; trước ngày nghỉ của đợt trước → `422 overlaps_previous`. `status`, `left_on`, `user_id` không còn trong body (có route riêng). Mỗi lần sửa có audit before/after (vị trí, ngày, giờ vào ca; lương ở `staff.pay_update`).
+- AC14.3 `GET /staff/{id}/history` (`staff.manage`): mới nhất trước; mỗi mục = hành động (thêm, sửa, đổi tài khoản, nghỉ việc + lý do, nhận lại, đổi lương), người làm, ngày, các trường đổi (trước → sau). Đổi lương chỉ hiện cho `payroll.read`.
+
+### US15: Nghỉ việc (hủy mềm) và nhận lại
+- AC15.1 `POST /staff/{id}/end {ended_on, reason}` (`staff.manage`, `If-Match`) đóng đợt hiện tại. Lỗi:
+  - lý do trống → `422 reason required`; ngày sau hôm nay → `422 ended_on in_future`; trước ngày vào → `before_joined_on`;
+  - còn chấm công hoặc lượt khách hoàn tất **sau** ngày đó → `422 ended_on has_later_records`;
+  - còn lịch hẹn `booked`/`arrived` gán cho người đó sau ngày đó → `409 staff.has_upcoming_bookings` (đổi KTV / hủy lịch trước);
+  - đã nghỉ → `409 staff.already_left`; hồ sơ gắn tài khoản của chính người gọi → `422 staff.cannot_end_self`; gắn tài khoản có `staff.manage` → `422 staff.linked_to_owner`.
+- AC15.2 Sau khi nghỉ:
+  - không còn trong mọi picker (`GET /staff` mặc định `active`: KTV làm ở quầy, đặt lịch, người chốt, giỏ) và server từ chối gán (`422 staff.inactive`);
+  - không còn trong sổ hằng ngày, bảng công, đánh giá, bảng lương của **các tháng sau ngày nghỉ**;
+  - vẫn còn trong tháng có làm, phiếu lương đã chốt, lượt khách, báo cáo, hoa hồng, và trong lọc "Đã nghỉ";
+  - **tài khoản đã gắn bị khóa ở spa này** (request kế tiếp không có quyền).
+  UI: hộp xác nhận nói rõ các điều trên; "Xác nhận nghỉ việc" là `btn-danger`, tắt khi chưa có lý do.
+- AC15.3 `POST /staff/{id}/rehire {started_on}` (`staff.manage`, `If-Match`): đợt mới, `started_on` phải sau ngày nghỉ của đợt trước (`422 before_last_end`); đang làm → `409 staff.already_active`. Mở khóa tài khoản đã gắn. Khoảng nghỉ giữa hai đợt không phải ngày làm (không "chưa chấm", không tính thưởng gắn bó).
+- AC15.4 DB: đợt đã kết thúc không sửa được (trigger), không xóa đợt (app_rw không có DELETE), không chồng đợt (`EXCLUDE`), tối đa một đợt mở; hồ sơ không bao giờ bị xóa.
+
+### US16: Tài khoản đăng nhập
+- AC16.1 `PUT /staff/{id}/account {user_id | null}` (`staff.manage`, `If-Match`): gắn / bỏ gắn. Tài khoản phải là thành viên đang hoạt động (`422 user_id not_a_member`), một tài khoản một hồ sơ (`409 staff.account_taken`). Không bao giờ xem hay đặt mật khẩu ở đây (tạo tài khoản vẫn qua CLI `add-user`). Bỏ gắn hồ sơ quản lý → quản lý khác ghi được cho người đó như KTV (quyết định C).
+
+### Phân quyền (lead's decision — EM to review)
+- **Chủ spa** làm mọi thứ. **Quản lý chỉ xem** danh sách (tên, vị trí, các đợt, thâm niên, đã gắn tài khoản hay chưa). Quản lý không thêm, sửa, cho nghỉ, nhận lại hay gắn tài khoản. Lý do: US1 cho `staff.manage` chỉ chủ spa; nghỉ việc và đổi vị trí ảnh hưởng lương và quyền đăng nhập. Mở cho quản lý thêm / cho nghỉ KTV là **Q-S5** (nếu EM đồng ý: permission riêng, giới hạn theo `hr::scope` như quyết định C).
+- Vì sao quản lý được **xem**: quản lý là người chấm công, đánh giá, xếp KTV hằng ngày, và đã thấy tên + vị trí người đang làm qua picker và lưới chấm công; danh sách chỉ thêm người đã nghỉ, các đợt và thâm niên. Response của quản lý là allowlist (không lương, SĐT, ghi chú, id tài khoản, lý do nghỉ); KTV `403`. Lương, lịch sử, gắn tài khoản và mọi ghi vẫn chỉ chủ spa.
+- Permission mới `staff.read` (chủ spa, quản lý). Test: `staff.rs::the_roster_hires_ends_and_rehires_without_losing_history`, `::ending_employment_locks_the_login_and_the_link_is_owner_only`; `authz_matrix.rs` +4 dòng, 2 dòng đổi quyền; vitest "Nhân sự (roster)"; e2e `staff.spec.ts` (thêm → nghỉ việc → Đã nghỉ → nhận lại).
+
+### Câu hỏi cho EM
+- **Q-S5**: Quản lý có được thêm KTV mới / cho KTV nghỉ việc không? Mặc định: không, chỉ xem.
+- **Q-S6**: Tài khoản của người nghỉ việc bị khóa ngay (mặc định). Người đã nghỉ có cần tự xem lại phiếu lương cũ không?

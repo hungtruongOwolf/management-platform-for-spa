@@ -75,6 +75,9 @@ impl SystemRole {
                 P::AttendanceRecord,
                 P::EvaluationRecord,
                 P::StaffReadOwn,
+                // Roster read (EM 2026-11-07 item 9): who works here, since when. Adding, editing,
+                // ending employment and linking logins stay staff.manage (owner).
+                P::StaffRead,
             ],
             // Own attendance, evaluation and payslip only (`/me/staff/*`).
             Self::Technician => vec![P::CatalogRead, P::StaffReadBasic, P::StaffReadOwn],
