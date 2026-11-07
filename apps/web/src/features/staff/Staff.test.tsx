@@ -475,16 +475,19 @@ describe("/nhan-vien", () => {
     expect(card("s-lan").getByText(/muộn 12 phút/)).toBeInTheDocument();
     expect(card("s-lan").getByText(/Khách khen tay nghề/)).toBeInTheDocument();
     expect(card("s-mai").getByText("Chưa chấm công")).toBeInTheDocument();
+    // EM 2026-11-07 (image 65): a card per person, titled with the name.
+    expect(card("s-lan").getByRole("heading", { level: 2, name: "Lê Thị Lan" })).toBeInTheDocument();
+    expect(card("s-mai").getByRole("heading", { level: 2, name: "Trần Thị Mai" })).toBeInTheDocument();
 
     // Attendance in words, one radiogroup per person; the chosen option says it, no extra chip.
     const lanChoice = card("s-lan").getByRole("radiogroup", { name: "Chấm công Lê Thị Lan" });
-    expect(within(lanChoice).getAllByRole("radio").map((r) => r.textContent)).toEqual(["Đi làm", "Nghỉ có phépP", "Nghỉ đột xuấtĐX", "Nghỉ không phépK"]);
+    expect(within(lanChoice).getAllByRole("radio").map((r) => r.textContent)).toEqual(["Đi làm", "Nghỉ có phép", "Nghỉ đột xuất", "Nghỉ không phép"]);
     expect(within(lanChoice).getByRole("radio", { name: "Đi làm" })).toHaveAttribute("aria-checked", "true");
     expect(card("s-lan").getAllByText("Đi làm")).toHaveLength(1);
     expect(card("s-lan").getByText("Đi muộn 12 phút")).toBeInTheDocument();
     expect(within(card("s-mai").getByRole("radiogroup")).queryByRole("radio", { checked: true })).not.toBeInTheDocument();
 
-    await userEvent.click(card("s-mai").getByRole("radio", { name: "Nghỉ có phép (P)" }));
+    await userEvent.click(card("s-mai").getByRole("radio", { name: "Nghỉ có phép" }));
     await waitFor(() => {
       expect(puts(spy, "/attendance")).toHaveLength(1);
     });
@@ -544,9 +547,9 @@ describe("/nhan-vien", () => {
     });
     at("/nhan-vien");
     const group = await waitFor(() => card("s-mai").getByRole("radiogroup"));
-    await userEvent.click(within(group).getByRole("radio", { name: "Nghỉ đột xuất (ĐX)" }));
+    await userEvent.click(within(group).getByRole("radio", { name: "Nghỉ đột xuất" }));
     // Saving: the tapped option shows chosen at once, the others ignore taps but keep focus.
-    expect(within(group).getByRole("radio", { name: "Nghỉ đột xuất (ĐX)" })).toHaveAttribute("aria-checked", "true");
+    expect(within(group).getByRole("radio", { name: "Nghỉ đột xuất" })).toHaveAttribute("aria-checked", "true");
     expect(within(group).getByRole("radio", { name: "Đi làm" })).toHaveAttribute("aria-disabled", "true");
     expect(within(group).getByRole("radio", { name: "Đi làm" })).toBeEnabled();
     expect(card("s-mai").getByRole("status")).toHaveTextContent("Đang lưu chấm công Trần Thị Mai");
@@ -604,11 +607,11 @@ describe("/nhan-vien", () => {
     const spy = serve(MANAGER, { lanServedToday: true });
     at("/nhan-vien");
     const group = await waitFor(() => card("s-lan").getByRole("radiogroup"));
-    await userEvent.click(within(group).getByRole("radio", { name: "Nghỉ không phép (K)" }));
+    await userEvent.click(within(group).getByRole("radio", { name: "Nghỉ không phép" }));
     const ask = await screen.findByRole("dialog", { name: "Lê Thị Lan có lượt khách ngày này" });
     await userEvent.click(within(ask).getByRole("button", { name: "Thôi" }));
     expect(puts(spy, "/attendance")).toHaveLength(0);
-    await userEvent.click(within(group).getByRole("radio", { name: "Nghỉ không phép (K)" }));
+    await userEvent.click(within(group).getByRole("radio", { name: "Nghỉ không phép" }));
     const again = await screen.findByRole("dialog", { name: "Lê Thị Lan có lượt khách ngày này" });
     await userEvent.click(within(again).getByRole("button", { name: "Vẫn chấm Nghỉ không phép" }));
     await waitFor(() => {
@@ -616,7 +619,7 @@ describe("/nhan-vien", () => {
     });
     expect(puts(spy, "/attendance")[0]?.body).toEqual({ entries: [{ staff_id: "s-lan", date: today, status: "absent_k" }] });
     // Someone without visits that day saves at once.
-    await userEvent.click(card("s-mai").getByRole("radio", { name: "Nghỉ có phép (P)" }));
+    await userEvent.click(card("s-mai").getByRole("radio", { name: "Nghỉ có phép" }));
     await waitFor(() => {
       expect(puts(spy, "/attendance")).toHaveLength(2);
     });
