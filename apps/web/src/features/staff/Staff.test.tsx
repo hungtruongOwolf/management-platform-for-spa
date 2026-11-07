@@ -8,7 +8,8 @@ import { spaToday } from "../corrections/api";
 import { ME } from "../reports/testServer";
 import type { Adjustment, AdjustmentLog, AttendanceSheet, EvaluationSheet, MyCalendar, MyDay, MyStaff, Payslip, PayrollMonth, ReviewSheet, StaffProfile } from "./api";
 import { mondayOf } from "../appointments/api";
-import { weekSummary } from "./myCalendar";
+import { gridSpan, weekSummary } from "./myCalendar";
+import type { EntryView } from "../appointments/api";
 import { countsFullValue, serviceWork, upsellWork } from "./payslipWork";
 import { dayTotals, shiftDay } from "./MyDaySheet";
 import { daysOf, monthLabel, percentOfBp, shiftMonth, weekdayShort } from "./labels";
@@ -901,6 +902,16 @@ describe("/khach-cua-toi", () => {
     expect(within(today_).getAllByRole("button")).toHaveLength(2);
     await userEvent.click(screen.getByRole("button", { name: "Ngày" }));
     expect(await screen.findByRole("group", { name: /Lịch của tôi ngày/ })).toBeInTheDocument();
+  });
+
+  it("draws the technician's own work outside opening hours instead of hiding it", () => {
+    const at = (start: number, minutes: number) => ({ start, minutes }) as EntryView;
+    // Inside 09:00–21:00: the spa's hours.
+    expect(gridSpan(540, 1260, 15, [at(600, 60)])).toEqual({ opens: 540, closes: 1260 });
+    // A walk-in at 00:03 (VN midnight) and one ending 22:40: widened to whole slots around them.
+    expect(gridSpan(540, 1260, 15, [at(3, 70), at(1300, 60)])).toEqual({ opens: 0, closes: 1365 });
+    // Never past the day's edges.
+    expect(gridSpan(540, 1260, 15, [at(1430, 60)])).toEqual({ opens: 540, closes: 1440 });
   });
 
   it("summarises the phases of the shown day or week", () => {

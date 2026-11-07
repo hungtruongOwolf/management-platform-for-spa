@@ -72,13 +72,12 @@ async function seedTechnicianDay(page: Page): Promise<void> {
   const service = services.find((s) => s.active && s.prices.all != null);
   expect(service, "seeded menu has a flat-priced service").toBeDefined();
   serviceName = service?.name ?? "";
-  // The calendar draws the spa's opening hours only: a run after closing time (evening in
-  // Vietnam) records the walk-in at 09:30 so its block is on the grid (owner: nhập giờ làm).
-  const lateEvening = new Date(Date.now() + 7 * 3_600_000).getUTCHours() >= 20;
+  // The walk-in is recorded "now", whatever the hour: the technician's grid widens to show work
+  // outside opening hours (CI 2026-11-08 00:03 ICT hid a visit before 09:00; the old 20:00+
+  // workaround moved it to 09:30 instead of fixing the grid).
   const visit = await page.request.post("/api/v1/visits", {
     headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
     data: {
-      ...(lateEvening ? { check_in_at: `${spaDay()}T09:30:00+07:00` } : {}),
       customer_id: customerId,
       lines: [{ service_id: service?.id, source: "one_off", staff_id: staffId, qty: 1 }],
       payments: [{ method: "cash", amount: service?.prices.all ?? 0 }],
@@ -94,6 +93,12 @@ async function seedTechnicianDay(page: Page): Promise<void> {
       starts_at: `${spaDay(1)}T10:00:00+07:00`,
     },
   });
+  // A retried worker reruns this seed: tomorrow 10:00 is then already this technician's booking
+  // (same customer name), which the first attempt created. Anything else is a real failure.
+  if (booking.status() === 409) {
+    expect(((await booking.json()) as { code?: string }).code, "only our own earlier booking").toBe("appointment.staff_busy");
+    return;
+  }
   expect(booking.status(), await booking.text()).toBe(201);
 }
 
@@ -173,19 +178,12 @@ test.describe("KTV: màn của tôi", () => {
     await page.keyboard.press("Escape");
     await expect(detail).toBeHidden();
 
-    // Today's visit sits on today's column (it may share the week with tomorrow). The grid draws
-    // the opening hours only: a run before opening (after midnight in Vietnam) records the visit
-    // now, outside the grid, so it is checked in the list of the week instead.
-    const beforeOpening = new Date(Date.now() + 7 * 3_600_000).getUTCHours() < 9;
-    if (beforeOpening) {
-      await page.goto("/khach-cua-toi?kieu=ds");
-      await expect(page.getByRole("button", { name: new RegExp(CUSTOMER) }).first()).toBeVisible();
-      await expect(page.getByText("Vãng lai").first()).toBeVisible();
-    } else {
-      await page.goto("/khach-cua-toi?kieu=ngay");
-      await expect(page.getByRole("group", { name: /Lịch của tôi ngày/ })).toBeVisible();
-      await expect(page.getByRole("button", { name: new RegExp(`${CUSTOMER}, (Đang làm|Xong), Vãng lai`) })).toBeVisible();
-    }
+    // Today's visit sits on today's column (it may share the week with tomorrow), whatever the
+    // hour: the grid widens past opening hours for the technician's own work (gridSpan), so a run
+    // after midnight in Vietnam still finds the 00:xx visit on the grid.
+    await page.goto("/khach-cua-toi?kieu=ngay");
+    await expect(page.getByRole("group", { name: /Lịch của tôi ngày/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: new RegExp(`${CUSTOMER}, (Đang làm|Xong), Vãng lai`) })).toBeVisible();
     await expectAccessible(page, "my-calendar-day");
     await expect(page.getByText(phone)).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText("+84");

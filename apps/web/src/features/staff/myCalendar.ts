@@ -17,6 +17,22 @@ export function entryView(e: MyCalendarEntry): EntryView {
   };
 }
 
+/**
+ * The minutes the technician's grid draws: the spa's opening hours, widened to whole slots around
+ * any shown entry outside them. A walk-in served after closing (21:30) or past midnight used to sit
+ * outside the frame and vanish from the technician's own calendar (CI 2026-11-08 00:03 ICT).
+ */
+export function gridSpan(opens: number, closes: number, slot: number, shown: EntryView[]): { opens: number; closes: number } {
+  const step = Math.max(1, slot);
+  let from = opens;
+  let to = closes;
+  for (const v of shown) {
+    from = Math.min(from, Math.floor(v.start / step) * step);
+    to = Math.max(to, Math.ceil((v.start + Math.max(v.minutes, step)) / step) * step);
+  }
+  return { opens: Math.max(0, from), closes: Math.min(24 * 60, to) };
+}
+
 /** "Xong 3 · Đang làm 1 · Chưa đến 2" for `day` (the whole loaded week when `null`). */
 export function weekSummary(entries: MyCalendarEntry[], day: string | null): string {
   const list = entries.filter((e) => day === null || e.business_date === day);
