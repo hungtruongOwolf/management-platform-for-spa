@@ -160,7 +160,8 @@ function summaryOf(c: Customer): CustomerSummary {
   return {
     id: c.id,
     full_name: c.full_name,
-    phone: c.phone,
+    named: c.named,
+    phone: c.phone ?? null,
     gender: c.gender ?? null,
   };
 }
@@ -652,7 +653,9 @@ export function FrontDeskPage() {
       {
         id: a.customer_id,
         full_name: a.customer_name,
-        phone: localPhone(a.customer_phone ?? ""),
+        // A booking always carries the person's name (ADR-0009).
+        named: true,
+        phone: a.customer_phone ? localPhone(a.customer_phone) : null,
         gender: a.customer_gender ?? null,
       },
       true,
@@ -802,7 +805,17 @@ export function FrontDeskPage() {
                 onCreate={(typed) => {
                   setCreating(typed);
                 }}
+                {...(can(me, "customer.write")
+                  ? {
+                      onWalkIn: (c: Customer) => {
+                        leaveCart(() => {
+                          select(summaryOf(c));
+                        });
+                      },
+                    }
+                  : {})}
               />
+
               {creating !== null && can(me, "customer.write") && (
                 <Suspense
                   fallback={

@@ -483,7 +483,7 @@ export function BookingSheet({
     const digits = (s: string) => s.replace(/\D/g, "").replace(/^84/, "0");
     const guest =
       people.find(
-        (p) => p.who === "guest" && digits(p.guestPhone) === digits(c.phone),
+        (p) => p.who === "guest" && c.phone != null && digits(p.guestPhone) === digits(c.phone),
       ) ?? people.find((p) => p.who === "guest");
     if (guest)
       change(guest.key, {
@@ -491,7 +491,8 @@ export function BookingSheet({
         customer: {
           id: c.id,
           full_name: c.full_name,
-          phone: c.phone,
+          named: c.named,
+          phone: c.phone ?? null,
           gender: c.gender ?? null,
         },
       });

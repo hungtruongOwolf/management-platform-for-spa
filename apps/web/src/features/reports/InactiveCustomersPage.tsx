@@ -216,7 +216,7 @@ function inactiveColumns(canFollowUp: boolean, onContacted: (c: InactiveCustomer
       card: "title",
       cell: (c) => (
         <>
-          <CustomerCell id={c.customer_id} name={c.full_name} phone={c.phone} gender={c.gender ?? null} />
+          <CustomerCell id={c.customer_id} name={c.full_name} phone={c.phone ?? null} gender={c.gender ?? null} />
           <span className="cell-note">{c.kind === "package" ? `Liệu trình · còn ${String(c.sessions_remaining)} buổi` : "Khách lẻ"}</span>
         </>
       ),

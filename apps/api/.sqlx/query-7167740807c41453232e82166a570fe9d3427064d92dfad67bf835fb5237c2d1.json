@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.customer (id, tenant_id, full_name, search_text, phone_e164, gender, birth_year, address, source, note, health_note_ct, birth_date)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int2",
+        "Text",
+        "Text",
+        "Text",
+        "Bytea",
+        "Date"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7167740807c41453232e82166a570fe9d3427064d92dfad67bf835fb5237c2d1"
+}

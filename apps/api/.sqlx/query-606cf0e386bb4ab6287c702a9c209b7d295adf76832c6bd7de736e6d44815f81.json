@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, full_name, phone_e164, gender FROM app.customer\n           WHERE tenant_id = $1 AND anonymized_at IS NULL ORDER BY updated_at DESC LIMIT $2",
+  "query": "SELECT id, full_name, phone_e164, gender FROM app.customer\n           WHERE tenant_id = $1 AND anonymized_at IS NULL AND full_name IS NOT NULL\n           ORDER BY updated_at DESC LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -56,10 +56,10 @@
     },
     "nullable": [
       false,
-      false,
-      false,
+      true,
+      true,
       true
     ]
   },
-  "hash": "e20fedea2b5116105fbf5fc870b4b500a4f6ab3b5960dca36d26c3b35f714587"
+  "hash": "606cf0e386bb4ab6287c702a9c209b7d295adf76832c6bd7de736e6d44815f81"
 }

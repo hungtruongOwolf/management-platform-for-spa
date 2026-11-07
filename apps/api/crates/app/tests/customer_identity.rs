@@ -250,7 +250,9 @@ async fn only_a_named_customer_owns_a_package(pool: PgPool) -> TestResult {
     let cart = s
         .post(
             "/visits",
-            json!({"customer_id": id, "lines": [], "payments": [{"method": "cash", "amount": PLAN_PRICE}],
+            json!({"customer_id": id,
+                   "lines": [{"service_id": s.shampoo, "source": "one_off", "staff_id": s.staff}],
+                   "payments": [{"method": "cash", "amount": SHAMPOO + PLAN_PRICE}],
                    "package_sales": [{"ref": "p1", "package_plan_id": s.plan, "closer_staff_id": null}]}),
         )
         .await;

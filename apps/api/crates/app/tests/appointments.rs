@@ -416,16 +416,22 @@ async fn phone_less_customers_book_and_the_overlap_rule_keys_on_the_record(
         assert_eq!(c.status, StatusCode::CREATED, "{}", c.body);
         ids.push(id_of(&c));
     }
-    let book = |customer: &str, staff: &str| {
+    let book = |customer: &str, staff: Option<&str>| {
         json!({"customer_id": customer, "service_ids": [s.dai_thong_lac], "staff_id": staff,
                "starts_at": at(1, "10:00")})
     };
-    let first = s.book(&s.manager, book(&ids[0], &s.lan)).await;
+    let first = s.book(&s.manager, book(&ids[0], Some(&s.lan))).await;
     assert_eq!(first.status, StatusCode::CREATED, "{}", first.body);
     assert_eq!(first.body["customer_phone"], Value::Null);
-    let other = s.book(&s.manager, book(&ids[1], &s.tuan)).await;
-    assert_eq!(other.status, StatusCode::CREATED, "another phone-less person: {}", other.body);
-    let twice = s.book(&s.manager, book(&ids[0], &s.tuan)).await;
+    let other = s.book(&s.manager, book(&ids[1], Some(&s.tuan))).await;
+    assert_eq!(
+        other.status,
+        StatusCode::CREATED,
+        "another phone-less person: {}",
+        other.body
+    );
+    // No technician: only the person can clash.
+    let twice = s.book(&s.manager, book(&ids[0], None)).await;
     assert_eq!(
         code(&twice),
         (StatusCode::CONFLICT, Some("appointment.customer_busy"))

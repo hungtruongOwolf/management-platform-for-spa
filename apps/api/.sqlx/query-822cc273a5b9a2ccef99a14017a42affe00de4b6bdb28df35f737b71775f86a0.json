@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT ps.id AS \"id!\", ps.customer_id AS \"customer_id!\", c.full_name, c.phone_e164, c.gender,\n                      ps.name_snapshot AS \"name!\",\n                      app.package_status(ps.cancelled_at, ps.sessions_remaining, ps.expires_on, $2) AS \"status!\",\n                      ps.sessions_total AS \"sessions_total!\", ps.sessions_remaining AS \"sessions_remaining!\",\n                      ps.starts_on AS \"starts_on!\", ps.expires_on, ps.cancelled_at, ps.created_at AS \"created_at!\",\n                      (SELECT max(v.business_date) FROM app.visit_line l\n                       JOIN app.visit v ON v.tenant_id = l.tenant_id AND v.id = l.visit_id\n                       WHERE l.tenant_id = ps.tenant_id AND l.customer_package_id = ps.id\n                         AND v.status = 'completed') AS last_used_on\n               FROM app.customer_package_state ps\n               JOIN app.customer c ON c.tenant_id = ps.tenant_id AND c.id = ps.customer_id\n               WHERE ps.tenant_id = $1 AND c.anonymized_at IS NULL\n                 AND ($3::text IS NULL OR c.search_text LIKE $3\n                      OR app.search_fold(ps.name_snapshot) LIKE $3)\n                 AND ($4::text IS NULL OR c.phone_e164 LIKE $4)\n                 AND ($5::text IS NULL\n                      OR app.package_status(ps.cancelled_at, ps.sessions_remaining, ps.expires_on, $2) = $5)\n                 AND ($6::timestamptz IS NULL OR (ps.created_at, ps.id) < ($6, $7))\n               ORDER BY ps.created_at DESC, ps.id DESC\n               LIMIT $8",
+  "query": "SELECT ps.id AS \"id!\", ps.customer_id AS \"customer_id!\",\n                      app.customer_label(c.full_name) AS \"full_name!\", c.phone_e164, c.gender,\n                      ps.name_snapshot AS \"name!\",\n                      app.package_status(ps.cancelled_at, ps.sessions_remaining, ps.expires_on, $2) AS \"status!\",\n                      ps.sessions_total AS \"sessions_total!\", ps.sessions_remaining AS \"sessions_remaining!\",\n                      ps.starts_on AS \"starts_on!\", ps.expires_on, ps.cancelled_at, ps.created_at AS \"created_at!\",\n                      (SELECT max(v.business_date) FROM app.visit_line l\n                       JOIN app.visit v ON v.tenant_id = l.tenant_id AND v.id = l.visit_id\n                       WHERE l.tenant_id = ps.tenant_id AND l.customer_package_id = ps.id\n                         AND v.status = 'completed') AS last_used_on\n               FROM app.customer_package_state ps\n               JOIN app.customer c ON c.tenant_id = ps.tenant_id AND c.id = ps.customer_id\n               WHERE ps.tenant_id = $1 AND c.anonymized_at IS NULL\n                 AND ($3::text IS NULL OR c.search_text LIKE $3\n                      OR app.search_fold(ps.name_snapshot) LIKE $3)\n                 AND ($4::text IS NULL OR c.phone_e164 LIKE $4)\n                 AND app.package_status(ps.cancelled_at, ps.sessions_remaining, ps.expires_on, $2) = 'active'\n                 AND ps.expires_on <= $2 + $5::int\n                 AND ($6::date IS NULL OR (ps.expires_on, ps.id) > ($6, $7))\n               ORDER BY ps.expires_on, ps.id\n               LIMIT $8",
   "describe": {
     "columns": [
       {
@@ -27,14 +27,9 @@
       },
       {
         "ordinal": 2,
-        "name": "full_name",
+        "name": "full_name!",
         "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "app.customer",
-            "name": "full_name"
-          }
-        }
+        "origin": "Expression"
       },
       {
         "ordinal": 3,
@@ -154,8 +149,8 @@
         "Date",
         "Text",
         "Text",
-        "Text",
-        "Timestamptz",
+        "Int4",
+        "Date",
         "Uuid",
         "Int8"
       ]
@@ -163,8 +158,8 @@
     "nullable": [
       true,
       true,
-      false,
-      false,
+      null,
+      true,
       true,
       true,
       null,
@@ -177,5 +172,5 @@
       null
     ]
   },
-  "hash": "f294a758f0f09ab4a8312d9c4d5bfc1b01103d243b55432619e9bff3950c0661"
+  "hash": "822cc273a5b9a2ccef99a14017a42affe00de4b6bdb28df35f737b71775f86a0"
 }

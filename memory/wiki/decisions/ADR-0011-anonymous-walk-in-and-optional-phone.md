@@ -33,7 +33,8 @@ API: `CustomerCreate/Update.full_name`, `.phone`, `.birth_date` tùy chọn; `Cu
 ## Consequences
 - Positive: không đụng lượt / hóa đơn / lương / Sửa lượt / Hủy lượt; báo cáo đếm mỗi khách vãng lai là một khách (đúng: một người); ADR-0009 hết hạn chế "ghi lượt cần hồ sơ có SĐT" (người đi cùng chỉ có tên → "Tạo hồ sơ" không SĐT).
 - Negative / accepted: hồ sơ không tên tích lũy trong DB (một mỗi lượt vãng lai không tên); chúng không có trong danh sách gần đây (`GET /customers` rỗng `q`), không tìm được theo tên, không có trong "Khách lâu chưa quay lại" (không gọi lại được); mở được từ lượt / lịch sử / sổ doanh thu. Khách có tên mà không SĐT vẫn có trong danh sách gọi lại, hiện "Chưa có SĐT".
-- Follow-ups: gộp hồ sơ (người lạ quay lại và cho tên trùng một hồ sơ khác) chưa có; ưu đãi sinh nhật (index theo tháng/ngày khi làm tính năng).
+- EM 2026-11-07 ([raw](../../raw/2026-11-07-em-walkin-package-owner.md)): quy tắc chủ gói có tên / SĐT tùy chọn — ok; gộp hồ sơ — để vòng sau.
+- Follow-ups: gộp hồ sơ (người lạ quay lại và cho tên trùng một hồ sơ khác) — **mở, vòng sau** (EM đồng ý hoãn); ưu đãi sinh nhật (index theo tháng/ngày khi làm tính năng).
 
 ## Revisit when
 Hồ sơ không tên chiếm phần lớn bảng `customer` (hiệu năng / dọn dẹp), hoặc EM muốn gộp hồ sơ.

@@ -169,6 +169,7 @@ describe("round 6 cart", () => {
       customer: {
         id: "c1",
         full_name: "Nguyễn Thị Hà",
+        named: true,
         phone: "0905",
         gender: "female",
       },

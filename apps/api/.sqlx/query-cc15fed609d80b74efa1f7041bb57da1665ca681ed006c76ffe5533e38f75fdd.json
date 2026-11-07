@@ -34,7 +34,7 @@
     },
     "nullable": [
       false,
-      false
+      true
     ]
   },
   "hash": "cc15fed609d80b74efa1f7041bb57da1665ca681ed006c76ffe5533e38f75fdd"

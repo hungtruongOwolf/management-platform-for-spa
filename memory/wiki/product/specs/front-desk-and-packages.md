@@ -466,6 +466,8 @@ EM (raw `2026-11-07-em-decisions-after-live-test.md`): *"khách vãng lai mà v�
 - **Gia hạn +3 tháng**: hỏi xác nhận (hạn cũ → hạn mới, lý do) trước khi lưu; dòng thời gian có mục "Gia hạn" (`package_extended`).
 - **Bán gói trên hồ sơ** dùng cùng thành phần bán gói với Quầy (có "Mua cho người khác", giới hạn giảm giá của quản lý giữ nguyên).
 
+**Quyết định EM (2026-11-07, [raw](../../../raw/2026-11-07-em-walkin-package-owner.md)):** chủ gói phải có tên, SĐT không bắt buộc, khách không tên được trả tiền mua cho người có tên — **ok**. **Mở (để vòng sau):** công cụ gộp hồ sơ khi một khách vãng lai không tên về sau cho tên trùng một hồ sơ có sẵn — EM: "cũng được" để sau, chưa làm.
+
 **AC:**
 - AC-I1: `POST /customers {}` → 201, `full_name` "Khách vãng lai", `named: false`, `phone: null`; ghi lượt cho hồ sơ đó → 201; báo cáo ngày đếm lượt; sổ doanh thu hiện "Khách vãng lai"; `GET /customers` (không `q`) và `/customers/inactive` không có hồ sơ đó; khách có tên không SĐT có ở `/customers/inactive` với `phone: null`.
 - AC-I2: bán gói cho hồ sơ không tên (`POST /sales` hoặc `package_sales` trong lượt) → `422 customer.name_required`; khách không tên trả cho Bình (có tên) → 201; đặt tên rồi bán → 201; xóa tên của chủ gói → `422 customer.name_required`.

@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.customer_package_extension\n             (id, tenant_id, customer_package_id, previous_expires_on, expires_on, reason,\n              business_date, created_by)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Date",
+        "Text",
+        "Date",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8565d033a3c4b03563767971ba4687f6e113873a7424ffb5215e806f442b5c93"
+}

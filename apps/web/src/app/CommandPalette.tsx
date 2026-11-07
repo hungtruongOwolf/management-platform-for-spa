@@ -78,7 +78,7 @@ export default function CommandPalette({
     ? (customers.data ?? []).slice(0, 6).map((c) => ({
         id: `customer-${c.id}`,
         label: c.full_name,
-        hint: c.phone,
+        hint: c.phone ?? "Chưa có SĐT",
         icon: "users",
         go: () =>
           void navigate({

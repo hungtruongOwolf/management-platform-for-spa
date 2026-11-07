@@ -317,9 +317,11 @@ pub async fn import_in(
             if c.full_name.as_deref().is_none_or(|n| n.trim().is_empty()) {
                 // Report the profile's other mistakes in the same answer.
                 let mut errors = vec![FieldError::new("customer.full_name", "required")];
-                if c.phone.as_deref().map(str::trim).is_some_and(|p| {
-                    !p.is_empty() && kernel::PhoneE164::parse(p).is_err()
-                }) {
+                if c.phone
+                    .as_deref()
+                    .map(str::trim)
+                    .is_some_and(|p| !p.is_empty() && kernel::PhoneE164::parse(p).is_err())
+                {
                     errors.push(FieldError::new("customer.phone", "invalid_format"));
                 }
                 return Err(AppError::Validation(errors));
