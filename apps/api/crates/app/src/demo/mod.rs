@@ -1004,7 +1004,8 @@ impl Spa<'_> {
             .await
             {
                 Ok(_) => self.report.appointments += 1,
-                // A technician picked twice for overlapping slots: the rule worked, skip it.
+                // A technician or a customer picked twice for overlapping slots: the rule worked,
+                // skip it.
                 Err(AppError::Conflict { .. } | AppError::ConflictWith { .. }) => {}
                 Err(e) => return Err(fail("book an appointment")(e)),
             }

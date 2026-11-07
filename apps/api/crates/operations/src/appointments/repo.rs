@@ -58,6 +58,39 @@ pub async fn staff_overlap(
     .await?)
 }
 
+/// An open booking of the same person overlapping `[from, to)`: the same customer record, or the
+/// same newcomer phone outside `group` (one family may share a phone, spec Q11).
+pub async fn customer_overlap(
+    tx: &mut TenantTx,
+    customer: Option<Uuid>,
+    guest_phone: Option<&str>,
+    group: Option<Uuid>,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+    except: Option<Uuid>,
+) -> Result<Option<Uuid>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_scalar!(
+        r#"SELECT id FROM app.appointment
+           WHERE tenant_id = $1 AND status IN ('booked', 'arrived')
+             AND starts_at < $5 AND ends_at > $4
+             AND ($6::uuid IS NULL OR id <> $6)
+             AND (customer_id = $2
+                  OR (guest_phone = $3 AND ($7::uuid IS NULL OR group_id IS DISTINCT FROM $7)))
+           ORDER BY starts_at, id
+           LIMIT 1"#,
+        tenant,
+        customer,
+        guest_phone,
+        from,
+        to,
+        except,
+        group
+    )
+    .fetch_optional(tx.conn())
+    .await?)
+}
+
 pub struct ServiceInfo {
     pub id: Uuid,
     pub name: String,
@@ -158,6 +191,7 @@ pub struct Locked {
     pub starts_at: DateTime<Utc>,
     pub ends_at: DateTime<Utc>,
     pub customer_id: Option<Uuid>,
+    pub guest_phone: Option<String>,
     pub staff_id: Option<Uuid>,
     pub arrived_at: Option<DateTime<Utc>>,
     pub note: Option<String>,
@@ -171,8 +205,8 @@ pub async fn lock(tx: &mut TenantTx, id: Uuid) -> Result<Option<Locked>, AppErro
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         Locked,
-        r#"SELECT status, business_date, starts_at, ends_at, customer_id, staff_id, arrived_at, note,
-                  companions, group_id, version
+        r#"SELECT status, business_date, starts_at, ends_at, customer_id, guest_phone, staff_id,
+                  arrived_at, note, companions, group_id, version
            FROM app.appointment WHERE tenant_id = $1 AND id = $2 FOR UPDATE"#,
         tenant,
         id

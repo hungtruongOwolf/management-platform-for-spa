@@ -168,6 +168,14 @@ impl Spa {
         self.post(who, "/appointments", body).await
     }
 
+    /// The manager books `person` (`{"customer_id": …}` or `{"guest": …}`) with `rest` of the body.
+    async fn book_person(&self, person: Value, mut rest: Value) -> Reply {
+        if let (Some(body), Some(p)) = (rest.as_object_mut(), person.as_object()) {
+            body.extend(p.clone());
+        }
+        self.book(&self.manager, rest).await
+    }
+
     async fn book_ha(&self, who: &str, starts_at: &str, staff: Option<&str>) -> Reply {
         self.book(
             who,
@@ -229,9 +237,25 @@ async fn bookings_respect_technicians_and_the_grid(pool: PgPool) -> TestResult {
     assert_eq!(calendar.body["opens_at"], "09:00");
     assert_eq!(calendar.body["slot_minutes"], 15);
     assert_eq!(calendar.body["appointments"][0]["phase"], "waiting");
-    for (hm, staff) in [("10:30", None), ("11:00", None), ("11:15", Some(&s.tuan))] {
+    // Other people (Hà herself is busy then: `one_customer_is_never_booked_twice_at_once`).
+    for (hm, who, staff) in [
+        ("10:30", json!({"customer_id": s.duc}), None),
+        (
+            "11:00",
+            json!({"guest": {"full_name": "Chị Mai", "phone": "0905 999 001"}}),
+            None,
+        ),
+        (
+            "11:15",
+            json!({"guest": {"full_name": "Chị Lụa", "phone": "0905 999 002"}}),
+            Some(&s.tuan),
+        ),
+    ] {
         let more = s
-            .book_ha(&s.manager, &at(1, hm), staff.map(String::as_str))
+            .book_person(
+                who,
+                json!({"service_ids": [s.dai_thong_lac], "staff_id": staff, "starts_at": at(1, hm)}),
+            )
             .await;
         assert_eq!(more.status, StatusCode::CREATED, "{hm}: {}", more.body);
     }
@@ -299,6 +323,168 @@ async fn two_racing_bookings_of_one_technician_cannot_both_win(pool: PgPool) -> 
         a.body,
         b.body
     );
+    Ok(())
+}
+
+/// Decision A (EM 2026-11-07): a 70-minute service is 09:00–10:10, not 10:15. The technician is
+/// free again at 10:10, and the opening-hours check uses the exact end too.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_booking_lasts_exactly_its_services_time(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let services = call(&s.h.app, "GET", "/services", Some(&s.owner), None)
+        .await
+        .body;
+    let seventy = service_id(&services, "An Kiên Lạc");
+    let book = |who: Value, hm: &str, staff: Option<&str>| {
+        s.book_person(
+            who,
+            json!({"service_ids": [seventy], "staff_id": staff, "starts_at": at(1, hm)}),
+        )
+    };
+    let first = book(json!({"customer_id": s.ha}), "09:00", Some(&s.lan)).await;
+    assert_eq!(first.status, StatusCode::CREATED, "{}", first.body);
+    assert_eq!(first.body["duration_min"], 70);
+    let end = chrono::DateTime::parse_from_rfc3339(&at(1, "10:10"))?;
+    assert_eq!(
+        first.body["ends_at"]
+            .as_str()
+            .map(chrono::DateTime::parse_from_rfc3339)
+            .transpose()?,
+        Some(end)
+    );
+    // 10:00 is inside Hà's 70 minutes; 10:15 (the next start on the grid) is free.
+    let inside = book(json!({"customer_id": s.duc}), "10:00", Some(&s.lan)).await;
+    assert_eq!(
+        code(&inside),
+        (StatusCode::CONFLICT, Some("appointment.staff_busy"))
+    );
+    let after = book(json!({"customer_id": s.duc}), "10:15", Some(&s.lan)).await;
+    assert_eq!(after.status, StatusCode::CREATED, "{}", after.body);
+    // The desk's own length is exact too (5–480), and the end may fall off the grid before close.
+    let own = s
+        .book(
+            &s.manager,
+            json!({"guest": {"full_name": "Chị Mai", "phone": "0905 999 003"},
+                   "service_ids": [seventy], "starts_at": at(1, "19:45"), "duration_min": 70}),
+        )
+        .await;
+    assert_eq!(own.status, StatusCode::CREATED, "{}", own.body);
+    for bad in [4, 481] {
+        let r = s
+            .book(
+                &s.manager,
+                json!({"customer_id": s.ha, "service_ids": [seventy], "starts_at": at(2, "10:00"),
+                       "duration_min": bad}),
+            )
+            .await;
+        assert_eq!(
+            code(&r),
+            (StatusCode::UNPROCESSABLE_ENTITY, Some("validation_failed")),
+            "{bad}"
+        );
+    }
+    let late = book(json!({"customer_id": s.ha}), "20:00", None).await;
+    assert_eq!(
+        code(&late),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("appointment.outside_opening_hours")
+        ),
+        "20:00 + 70 minutes ends after 21:00"
+    );
+    Ok(())
+}
+
+/// EM 2026-11-07 ("Nguyễn Thị Lan Anh 09:00 ×2"): one person cannot hold two open bookings at
+/// the same time. Same customer record, or the same newcomer phone outside one group (a family
+/// shares a phone); companions of one group are other people and never clash.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn one_customer_is_never_booked_twice_at_once(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let first = s.book_ha(&s.manager, &at(1, "10:00"), Some(&s.lan)).await;
+    assert_eq!(first.status, StatusCode::CREATED, "{}", first.body);
+    // Another technician, or none, does not make it a different person.
+    for staff in [Some(s.tuan.as_str()), None] {
+        let twice = s.book_ha(&s.manager, &at(1, "10:30"), staff).await;
+        assert_eq!(
+            code(&twice),
+            (StatusCode::CONFLICT, Some("appointment.customer_busy"))
+        );
+        assert_eq!(twice.body["existing_id"], first.body["id"]);
+    }
+    // Right after the first one ends (11:30) is fine; so is another day.
+    let after = s.book_ha(&s.manager, &at(1, "11:30"), None).await;
+    assert_eq!(after.status, StatusCode::CREATED, "{}", after.body);
+    let other_day = s.book_ha(&s.manager, &at(2, "10:00"), None).await;
+    assert_eq!(other_day.status, StatusCode::CREATED, "{}", other_day.body);
+    // Moving the 11:30 booking into the first one is refused the same way.
+    let moved = call_with_headers(
+        &s.h.app,
+        "PATCH",
+        &format!("/appointments/{}", id_of(&after)),
+        Some(&s.manager),
+        Some(json!({"starts_at": at(1, "11:00")})),
+        &[("if-match", "\"1\"")],
+    )
+    .await;
+    assert_eq!(
+        code(&moved),
+        (StatusCode::CONFLICT, Some("appointment.customer_busy"))
+    );
+    // A group with Hà in it is refused too (person 0 is Hà).
+    let group = s
+        .post(
+            &s.manager,
+            "/appointments/group",
+            json!({"starts_at": at(1, "10:15"), "people": [
+                {"customer_id": s.ha, "service_ids": [s.shampoo]},
+                {"customer_id": s.duc, "service_ids": [s.shampoo]},
+            ]}),
+        )
+        .await;
+    assert_eq!(
+        code(&group),
+        (StatusCode::CONFLICT, Some("appointment.customer_busy"))
+    );
+    // Cancelled frees the person like it frees the slot.
+    let cancel = call(
+        &s.h.app,
+        "POST",
+        &format!("/appointments/{}/cancel", id_of(&first)),
+        Some(&s.manager),
+        Some(json!({"reason": "Khách đổi giờ"})),
+    )
+    .await;
+    assert_eq!(cancel.status, StatusCode::OK, "{}", cancel.body);
+    let again = s.book_ha(&s.manager, &at(1, "10:00"), None).await;
+    assert_eq!(again.status, StatusCode::CREATED, "{}", again.body);
+
+    // Newcomers: the same phone twice at once is one person...
+    let guest = |phone: &str, hm: &str| {
+        json!({"guest": {"full_name": "Chị Yến", "phone": phone},
+               "service_ids": [s.shampoo], "starts_at": at(3, hm)})
+    };
+    let yen = s.book(&s.manager, guest("0905 777 001", "10:00")).await;
+    assert_eq!(yen.status, StatusCode::CREATED, "{}", yen.body);
+    let yen_twice = s.book(&s.manager, guest("0905 777 001", "10:00")).await;
+    assert_eq!(
+        code(&yen_twice),
+        (StatusCode::CONFLICT, Some("appointment.customer_busy"))
+    );
+    assert_eq!(yen_twice.body["existing_id"], yen.body["id"]);
+    // ...but a family sharing one phone in one group is several people.
+    let family = s
+        .post(
+            &s.manager,
+            "/appointments/group",
+            json!({"starts_at": at(3, "14:00"), "people": [
+                {"guest": {"full_name": "Chị Thu", "phone": "0905 777 002"}, "service_ids": [s.shampoo]},
+                {"guest": {"full_name": "Bé Na", "phone": "0905 777 002"}, "service_ids": [s.shampoo]},
+                {"customer_id": s.duc, "service_ids": [s.shampoo]},
+            ]}),
+        )
+        .await;
+    assert_eq!(family.status, StatusCode::CREATED, "{}", family.body);
     Ok(())
 }
 
@@ -604,8 +790,20 @@ async fn only_the_owner_sets_the_advisory_max_per_slot(pool: PgPool) -> TestResu
     let set = put(&s.owner, json!({"max_per_slot": 2})).await;
     assert_eq!(set.status, StatusCode::OK, "{}", set.body);
     assert_eq!(set.body["max_per_slot"], 2);
-    for hm in ["10:00", "10:00", "10:15"] {
-        let r = s.book_ha(&s.manager, &at(1, hm), None).await;
+    for (hm, who) in [
+        ("10:00", json!({"customer_id": s.ha})),
+        ("10:00", json!({"customer_id": s.duc})),
+        (
+            "10:15",
+            json!({"guest": {"full_name": "Chị Mai", "phone": "0905 999 004"}}),
+        ),
+    ] {
+        let r = s
+            .book_person(
+                who,
+                json!({"service_ids": [s.dai_thong_lac], "starts_at": at(1, hm)}),
+            )
+            .await;
         assert_eq!(r.status, StatusCode::CREATED, "{hm}: {}", r.body);
     }
     assert_eq!(calendar_of(&s, &s.manager, 1).await.body["max_per_slot"], 2);
@@ -857,12 +1055,58 @@ async fn cancel_and_no_show_need_a_reason_and_free_the_slot(pool: PgPool) -> Tes
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn past_days_are_locked_for_managers_and_open_to_the_owner(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    // AC9.8: the manager cannot book into yesterday; the owner can (to enter it late).
-    let manager = s.book_ha(&s.manager, &at(-1, "10:00"), Some(&s.lan)).await;
-    assert_eq!(code(&manager), (StatusCode::FORBIDDEN, Some("day.locked")));
-    let owner = s.book_ha(&s.owner, &at(-1, "10:00"), Some(&s.lan)).await;
+    // EM 2026-11-07: nobody books into a past day, the owner neither: a service already done is
+    // a back-dated visit ("nhập bù" at Quầy).
+    for who in [&s.manager, &s.owner] {
+        let r = s.book_ha(who, &at(-1, "10:00"), Some(&s.lan)).await;
+        assert_eq!(
+            code(&r),
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Some("appointment.in_the_past")
+            )
+        );
+    }
+    // AC9.8: a booking left open on a day that has passed (booked back then, moved there by SQL
+    // here) is changed by the owner only.
+    let owner = s.book_ha(&s.owner, &at(1, "10:00"), Some(&s.lan)).await;
     assert_eq!(owner.status, StatusCode::CREATED, "{}", owner.body);
     let id = id_of(&owner);
+    sqlx::query(
+        "UPDATE app.appointment SET business_date = business_date - 2,
+                starts_at = starts_at - interval '2 days', ends_at = ends_at - interval '2 days'
+          WHERE id = $1",
+    )
+    .bind(Uuid::parse_str(&id)?)
+    .execute(&s.h.owner)
+    .await?;
+    let owner = call(
+        &s.h.app,
+        "GET",
+        &format!("/appointments/{id}"),
+        Some(&s.owner),
+        None,
+    )
+    .await;
+    let yesterday = (spa_today() - Duration::days(1)).to_string();
+    assert_eq!(owner.body["business_date"], json!(yesterday));
+    let moved = call_with_headers(
+        &s.h.app,
+        "PATCH",
+        &format!("/appointments/{id}"),
+        Some(&s.owner),
+        Some(json!({"starts_at": at(-2, "10:00")})),
+        &[("if-match", &format!("\"{}\"", owner.body["version"]))],
+    )
+    .await;
+    assert_eq!(
+        code(&moved),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("appointment.in_the_past")
+        ),
+        "moving it to another past day is booking into the past"
+    );
     for (path, body) in [
         (format!("/appointments/{id}/cancel"), json!({"reason": "x"})),
         (
@@ -892,7 +1136,6 @@ async fn past_days_are_locked_for_managers_and_open_to_the_owner(pool: PgPool) -
         .post(&s.owner, &format!("/appointments/{id}/complete"), complete)
         .await;
     assert_eq!(done.status, StatusCode::OK, "{}", done.body);
-    let yesterday = (spa_today() - Duration::days(1)).to_string();
     assert_eq!(done.body["visit"]["business_date"], json!(yesterday));
     assert_eq!(done.body["visit"]["check_in_at"], owner.body["starts_at"]);
     Ok(())

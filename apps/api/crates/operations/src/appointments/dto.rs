@@ -28,9 +28,10 @@ pub struct AppointmentCreate {
     pub service_ids: Vec<Uuid>,
     /// Preferred technician (optional while booked).
     pub staff_id: Option<Uuid>,
-    /// On the spa's slot grid, inside opening hours; today up to 90 days ahead (past days: owner).
+    /// On the spa's slot grid, inside opening hours; today up to 90 days ahead (a past day is
+    /// `422 appointment.in_the_past` for everyone: that is a back-dated visit).
     pub starts_at: DateTime<Utc>,
-    /// Default: the services' durations (empty = 60) rounded up to the slot. 1 slot – 480.
+    /// Default: the services' exact durations (untimed alone = 60). 5 – 480 minutes.
     pub duration_min: Option<u32>,
     /// Booking note, ≤ 500 characters. Not for health data.
     pub note: Option<String>,
@@ -56,7 +57,7 @@ pub struct GroupPersonCreate {
     pub staff_id: Option<Uuid>,
     /// Default: the group's `starts_at`. Must be on the same business day.
     pub starts_at: Option<DateTime<Utc>>,
-    /// Default: this person's services' durations rounded up to the slot.
+    /// Default: this person's services' exact durations.
     pub duration_min: Option<u32>,
 }
 
@@ -302,7 +303,7 @@ pub struct CalendarVisitDto {
     pub business_date: NaiveDate,
     /// The service time (`check_in_at`).
     pub starts_at: DateTime<Utc>,
-    /// `starts_at` + the services' durations (empty = 60) rounded up to the slot, ≤ 8 h.
+    /// `starts_at` + the services' exact durations (untimed alone = 60), 5 min – 8 h.
     pub ends_at: DateTime<Utc>,
     pub duration_min: i64,
     pub customer_id: Uuid,
