@@ -2,7 +2,7 @@
 
 use axum::Router;
 use axum::extract::{Request, State};
-use axum::http::{Method, StatusCode, header};
+use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use governor::clock::QuantaInstant;
@@ -108,7 +108,7 @@ fn client_limiter(replenish_ms: u64, burst: u32) -> Option<Arc<ClientLimiter>> {
     Some(config)
 }
 
-/// Wraps `router` with request ids, tracing, problem+json for bare errors, timeout,
+/// Wraps `router` with a private default `Cache-Control`, request ids, tracing, problem+json for bare errors, timeout,
 /// per-IP rate limiting, a body size cap and the CSRF Origin check (outermost first).
 pub fn apply(router: Router, policy: &HttpPolicy) -> Router {
     // tower_governor's `per_second(n)` is the *period* between tokens (n seconds), not a rate:
@@ -128,6 +128,7 @@ pub fn apply(router: Router, policy: &HttpPolicy) -> Router {
 
     router.layer(
         ServiceBuilder::new()
+            .layer(middleware::map_response(private_unless_set))
             .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
             .layer(PropagateRequestIdLayer::x_request_id())
             .layer(TraceLayer::new_for_http().make_span_with(request_span))
@@ -189,6 +190,21 @@ async fn check_origin(
         }
         .into_response()
     }
+}
+
+/// Default for every API response, errors and rate-limit rejections included.
+pub const DEFAULT_CACHE_CONTROL: &str = "private, no-store";
+
+/// Responses that set no `Cache-Control` would otherwise get the CDN's default
+/// (`public, max-age=0, must-revalidate` on Vercel), which marks customer names, phone numbers and
+/// salaries as shareable. Outermost layer, so it also covers responses built by inner layers
+/// (429, 408, 413, problem+json fallbacks). A handler that sets its own value keeps it.
+async fn private_unless_set(mut response: Response) -> Response {
+    response
+        .headers_mut()
+        .entry(header::CACHE_CONTROL)
+        .or_insert(HeaderValue::from_static(DEFAULT_CACHE_CONTROL));
+    response
 }
 
 /// Turns framework-generated errors (404 fallback, 405, 408, 413, 429, …) into problem+json,

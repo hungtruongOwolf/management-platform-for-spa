@@ -209,6 +209,33 @@ mod tests {
         );
     }
 
+    /// Responses built by the middleware itself (429, CSRF 403) are private too, not only handler responses.
+    #[tokio::test]
+    async fn middleware_rejections_are_private_no_store() {
+        let cache = |h: &axum::http::HeaderMap| {
+            h.get(header::CACHE_CONTROL)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned)
+        };
+        let mut p = policy();
+        p.rate_per_second = 1;
+        p.rate_burst = 1;
+        let app = router(lazy_state(), &p);
+        let (_, first, _) = send(app.clone(), get("/api/v1/health")).await;
+        let (limited, headers, _) = send(app, get("/api/v1/health")).await;
+        assert_eq!(limited, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(cache(&first).as_deref(), Some("private, no-store"));
+        assert_eq!(cache(&headers).as_deref(), Some("private, no-store"));
+
+        let (status, headers, _) = send(
+            router_with_echo(&policy()),
+            post_echo(Some("https://evil.example"), "x".into()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(cache(&headers).as_deref(), Some("private, no-store"));
+    }
+
     /// `rate_per_second` is a rate, not a period: at 10/s a drained bucket has a token again
     /// after ~100 ms (it used to take 10 s, which throttled a busy front desk to 12 requests/min).
     #[tokio::test]
