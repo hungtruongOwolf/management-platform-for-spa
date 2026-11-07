@@ -879,14 +879,19 @@ async fn session_note_is_encrypted_and_shown_only_to_health_readers(pool: PgPool
     );
     let cipher = crm::FieldCipher::from_base64(TEST_DATA_KEY)?;
     let app = app_pool(&d.h.owner).await?;
-    let seen = operations::service::get(&app, &cipher, &reader, Uuid::parse_str(&id_of(&v))?).await?;
+    let seen =
+        operations::service::get(&app, &cipher, &reader, Uuid::parse_str(&id_of(&v))?).await?;
     assert_eq!(seen.note, None);
     let day = operations::service::for_day(&app, &cipher, &reader, None).await?;
     assert_eq!(day.first().map(|v| v.note.clone()), Some(None));
     let history_reader = Actor::new(
         UserId::new(),
         TenantId::from_uuid(tenant),
-        [Permission::CustomerRead, Permission::VisitRead, Permission::SaleRead],
+        [
+            Permission::CustomerRead,
+            Permission::VisitRead,
+            Permission::SaleRead,
+        ],
         None,
     );
     let page = reporting::customer::history(

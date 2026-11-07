@@ -154,7 +154,7 @@ export function phoneLine(
 ): string | null {
   if (!c) return null;
   if (c.phone) return `SĐT ${c.phone}`;
-  return c.named === false ? null : "Chưa có SĐT";
+  return c.named ? "Chưa có SĐT" : null;
 }
 
 /**

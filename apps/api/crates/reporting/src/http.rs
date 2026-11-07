@@ -15,9 +15,9 @@ use axum::{Json, Router};
 use identity::AuthUser;
 use kernel::AppError;
 use kernel::crypto::FieldCipher;
-use std::sync::Arc;
 use serde::Serialize;
 use sqlx::PgPool;
+use std::sync::Arc;
 use uuid::Uuid;
 
 pub fn routes<S>() -> Router<S>

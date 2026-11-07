@@ -32,6 +32,7 @@ const HA = {
   id: "c1",
   full_name: "Nguyễn Thị Hà",
   phone: "0905 111 222",
+  named: true,
   gender: "female",
 };
 /** Hà's husband: the package she buys for him sits on his profile (US13). */
@@ -39,6 +40,7 @@ const NAM = {
   id: "c2",
   full_name: "Trần Văn Nam",
   phone: "0905 333 444",
+  named: true,
   gender: "male",
 };
 const DTL: Service = {

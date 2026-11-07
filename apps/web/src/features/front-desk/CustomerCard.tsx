@@ -133,7 +133,7 @@ export function CustomerCard({
           <p className="customer-meta">
             {[
               // A nameless walk-in has no phone to speak of: say nothing rather than "Chưa có".
-              summary.phone ?? (summary.named === false ? null : "Chưa có SĐT"),
+              summary.phone ?? (summary.named ? "Chưa có SĐT" : null),
               packages.isSuccess
                 ? active.length > 0
                   ? `${String(active.length)} gói liệu trình đang dùng, còn ${String(sessionsLeft)} buổi`
@@ -150,7 +150,7 @@ export function CustomerCard({
           </button>
         )}
       </div>
-      {onEditInfo && summary.named === false && (
+      {onEditInfo && !summary.named && (
         <button
           type="button"
           onClick={onEditInfo}

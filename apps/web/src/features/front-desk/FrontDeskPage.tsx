@@ -563,7 +563,7 @@ export function FrontDeskPage() {
           lines.length,
           appointment !== null,
           can(me, "sale.discount_unlimited"),
-          customer.named !== false,
+          customer.named,
         );
         if (problem) showToast(problem, true);
         else if (lines.length > 0) record(m.packageSalesBody(sales));
@@ -1062,7 +1062,7 @@ export function FrontDeskPage() {
                     serverError={mutation.error}
                     openPlanId={openPlan}
                     onOpened={clearOpenPlan}
-                    ownerNamed={customer.named !== false}
+                    ownerNamed={customer.named}
                     openRef={openItem?.startsWith("s") ? openItem.slice(1) : null}
                     onOpenRef={(r) => {
                       setOpenItem(r === null ? null : `s${r}`);
