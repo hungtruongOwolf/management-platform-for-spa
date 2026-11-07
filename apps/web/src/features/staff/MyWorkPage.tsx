@@ -52,7 +52,8 @@ function DayHead({ day, onDay }: { day: string; onDay: (day: string) => void }) 
  * style like the desk's "Lịch hẹn" — bookings assigned to them and visits they served, as blocks
  * at their real length on the shared `TimeGrid` (day or week), or a list. Read-only: nothing here
  * books or edits. The server picks the person from the session and sends names, times and
- * services only — no phone, note or money (`GET /me/appointments`).
+ * services and the session note of a visit they worked on — no phone, customer note or money
+ * (`GET /me/appointments`).
  */
 export function MyWorkPage() {
   const [search, patch] = useSearchState(myWorkSearch);
@@ -340,6 +341,13 @@ function EntrySheet({ e, onClose }: { e: MyCalendarEntry; onClose: () => void })
         <dd>{e.duration_min} phút</dd>
         <dt>{e.kind === "visit" ? "Lượt" : "Lịch hẹn"}</dt>
         <dd>{e.kind === "visit" ? (e.walk_in ? "Khách vãng lai, không đặt lịch" : "Lượt khách bạn làm cùng") : "Quầy đặt cho bạn"}</dd>
+        {/* The session note of a visit I worked on (EM 2026-11-07 item 3); the server sends no other. */}
+        {e.note && (
+          <>
+            <dt>Ghi chú buổi</dt>
+            <dd className="whitespace-pre-line">{e.note}</dd>
+          </>
+        )}
       </dl>
     </BottomSheet>
   );

@@ -723,10 +723,14 @@ pub struct DayLineRow {
     pub qty: i64,
     pub value: i64,
     pub full_value: i64,
+    /// The visit's encrypted session note; `note` is filled by the caller after decryption.
+    pub note_ct: Option<Vec<u8>>,
+    pub note: Option<String>,
 }
 
 /// The lines `staff` performed in completed visits of one business day, earliest visit first.
-/// Only the allowlisted columns of `day::MyDayVisit` are selected (no phone, note or ids).
+/// Only the allowlisted columns of `day::MyDayVisit` are selected (no phone, customer notes or
+/// customer ids); the session note comes with the visits the person worked on (item 3).
 pub async fn day_lines(
     tx: &mut TenantTx,
     staff: Uuid,
@@ -739,7 +743,8 @@ pub async fn day_lines(
                   app.customer_label(c.full_name) AS "customer_name!",
                   vl.service_name_snapshot AS service_name, vl.source,
                   vl.qty::bigint AS "qty!", vl.line_value AS value,
-                  (vl.qty::bigint * vl.unit_price)::bigint AS "full_value!"
+                  (vl.qty::bigint * vl.unit_price)::bigint AS "full_value!",
+                  v.note_ct, NULL::text AS note
            FROM app.visit v
            JOIN app.visit_line vl ON vl.tenant_id = v.tenant_id AND vl.visit_id = v.id
            JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id

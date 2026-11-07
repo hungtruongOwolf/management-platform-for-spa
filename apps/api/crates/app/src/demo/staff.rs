@@ -241,6 +241,7 @@ impl StaffDemo<'_> {
             &EndInput {
                 ended_on: self.today - Duration::days(70),
                 reason: "Chuyển về quê".to_owned(),
+                lock_login: false,
             },
         )
         .await

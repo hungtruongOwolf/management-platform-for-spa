@@ -361,6 +361,15 @@ describe("home page", () => {
         ["/cai-dat", "Giao diện & tài khoản"],
       ],
     ],
+    [
+      // ADR-0014: a leaver's login holds only their own past pay (derived by the server).
+      "former staff member",
+      ["staff.read_own_past"],
+      [
+        ["/nhan-vien", "Công và lương của tôi", "Ngày công, đánh giá, phiếu lương của bạn"],
+        ["/cai-dat", "Giao diện & tài khoản"],
+      ],
+    ],
   ])("gives the %s one shortcut per screen it can open", async (_role, permissions, expected) => {
     server((_method, path) =>
       path === "/api/v1/me" ? Response.json({ ...ME, permissions }) : new Response(null, { status: 404 }),

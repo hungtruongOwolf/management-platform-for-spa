@@ -508,7 +508,20 @@ async fn two_technicians_at_work(s: &Spa) -> Setup<Work> {
         .await;
     assert_eq!(shared.status, StatusCode::CREATED, "{}", shared.body);
     let shared = id(&shared);
-    let b_only = s.one_off_visit(binh, thu, 1).await;
+    // B alone, with a session note: never A's to read (item 3).
+    let b_only = s
+        .post(
+            &s.owner,
+            "/visits",
+            json!({
+                "customer_id": binh, "note": "Buổi riêng của Thu: đau lưng",
+                "lines": [{"service_id": s.service, "source": "one_off", "staff_id": thu, "qty": 1}],
+                "payments": [{"method": "cash", "amount": PRICE}]
+            }),
+        )
+        .await;
+    assert_eq!(b_only.status, StatusCode::CREATED, "{}", b_only.body);
+    let b_only = id(&b_only);
     let lan_own = s.one_off_visit(binh, s.lan, 1).await;
     let voided = s.one_off_visit(binh, s.lan, 1).await;
     let void = s
@@ -604,7 +617,11 @@ async fn a_technician_sees_only_their_own_calendar(pool: PgPool) -> TestResult {
     assert_eq!(booked["phase"], "waiting");
     assert_eq!(booked["customer_name"], "Đỗ Văn Bình");
     assert_eq!(booked["group_size"], Value::Null);
-    // Allowlist: exactly these keys, nothing about money, phones, notes or customer ids.
+    // EM 2026-11-07 item 3: the session note of a visit A worked on, never the booking's note.
+    assert_eq!(shared["note"], "Khách đau vai gáy");
+    assert_eq!(entries[1]["note"], Value::Null, "A's own visit has no note");
+    assert_eq!(booked["note"], Value::Null, "a booking's own note is not a session note");
+    // Allowlist: exactly these keys, nothing about money, phones, customer notes or ids.
     for e in &entries {
         assert_eq!(
             keys(e),
@@ -616,6 +633,7 @@ async fn a_technician_sees_only_their_own_calendar(pool: PgPool) -> TestResult {
                 "group_size",
                 "id",
                 "kind",
+                "note",
                 "phase",
                 "services",
                 "starts_at",
@@ -631,7 +649,7 @@ async fn a_technician_sees_only_their_own_calendar(pool: PgPool) -> TestResult {
         "Phạm Thu".to_owned(),
         "150000".to_owned(),
         "+84".to_owned(),
-        "đau vai gáy".to_owned(),
+        "đau lưng".to_owned(),
         "phòng riêng".to_owned(),
         "Ghi chú riêng".to_owned(),
         w.hang.to_string(),
@@ -652,6 +670,8 @@ async fn a_technician_sees_only_their_own_calendar(pool: PgPool) -> TestResult {
     assert_eq!(b_entries[0]["id"], json!(w.shared));
     assert_eq!(b_entries[0]["duration_min"], 60);
     assert_eq!(b_entries[1]["id"], json!(w.b_only));
+    assert_eq!(b_entries[0]["note"], "Khách đau vai gáy", "B worked on the shared visit too");
+    assert_eq!(b_entries[1]["note"], "Buổi riêng của Thu: đau lưng");
     assert_eq!(b_entries[2]["customer_name"], "Khách mới Yến");
     let b_text = b.body.to_string();
     for leak in [s.lan.to_string(), w.lan_own.to_string(), "+84".to_owned()] {
@@ -776,8 +796,10 @@ async fn a_technician_sees_their_own_day_in_detail(pool: PgPool) -> TestResult {
     );
     assert_eq!(
         keys(&visits[0]),
-        ["check_in_at", "customer_name", "lines", "visit_id"]
+        ["check_in_at", "customer_name", "lines", "note", "visit_id"]
     );
+    assert_eq!(visits[0]["note"], "Khách đau vai gáy", "A worked on it: the session note");
+    assert_eq!(visits[1]["note"], Value::Null);
     assert_eq!(
         d["upsell"],
         json!([{"kind": "package", "description": "Gói 10 buổi", "customer_name": "Nguyễn Thị Hằng",
@@ -790,7 +812,7 @@ async fn a_technician_sees_their_own_day_in_detail(pool: PgPool) -> TestResult {
         "Thưởng của Thu".to_owned(),
         "Phạm Thu".to_owned(),
         "+84".to_owned(),
-        "đau vai gáy".to_owned(),
+        "đau lưng".to_owned(),
         "Ghi chú riêng".to_owned(),
         w.hang.to_string(),
         w.binh.to_string(),
@@ -806,6 +828,7 @@ async fn a_technician_sees_their_own_day_in_detail(pool: PgPool) -> TestResult {
     assert_eq!(bd["visits"][0]["lines"][0]["qty"], 2);
     assert_eq!(bd["visits"][0]["lines"][0]["commission"], Value::Null);
     assert_eq!(bd["visits"][1]["visit_id"], json!(w.b_only));
+    assert_eq!(bd["visits"][1]["note"], "Buổi riêng của Thu: đau lưng");
     assert_eq!(bd["adjustments"][0]["reason"], "Thưởng của Thu");
     assert_eq!(bd["upsell"], json!([]));
     assert!(!b.body.to_string().contains("Ở lại dọn phòng"));
@@ -1958,31 +1981,153 @@ async fn the_roster_hires_ends_and_rehires_without_losing_history(pool: PgPool) 
     Ok(())
 }
 
-/// Offboarding and the login link (owner only): ending employment locks the linked login in
-/// this spa (its next request has no permission), rehiring unlocks it; the owner never ends
-/// their own profile; linking checks membership and uniqueness; unlinking makes the profile
-/// count as a technician's for decision C. Mutation-checked: dropping the
-/// `set_membership_active(false)` call turns this red.
+/// The permissions `GET /me` reports for a session.
+async fn permissions(s: &Spa, session: &str) -> Vec<String> {
+    let me = s.get(session, "/me").await;
+    assert_eq!(me.status, StatusCode::OK, "{}", me.body);
+    me.body["permissions"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|p| p.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn next_month_day() -> NaiveDate {
+    let t = today();
+    t - Duration::days(i64::from(t.day()) - 1) + Duration::days(40)
+}
+
+/// EM 2026-11-07 Q-S6 (ADR-0014): a leaver's login still signs in, but from the next request it
+/// holds only `staff.read_own_past`: their own month and day views, for months they worked in —
+/// nothing else (no customers, Quầy, appointments, catalog, "Khách của tôi"), no month after
+/// they left. Rehiring gives the role back. The owner may lock the login outright when ending
+/// employment. Mutation-checked: making `effective_permissions` ignore `former_staff` turns
+/// this red.
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
-async fn ending_employment_locks_the_login_and_the_link_is_owner_only(pool: PgPool) -> TestResult {
+async fn a_leaver_keeps_only_their_own_past_pay(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    assert_eq!(s.get(&s.tech, "/me/staff").await.status, StatusCode::OK);
+    s.pay(s.lan, 5_000_000, 500).await;
+    assert_eq!(
+        s.attend(&s.owner, s.lan, today(), "present").await.status,
+        StatusCode::OK
+    );
+    assert_eq!(s.get(&s.tech, "/me/appointments").await.status, StatusCode::OK);
     let ended = s.end(s.lan, today(), "Nghỉ sinh").await;
     assert_eq!(ended.status, StatusCode::OK, "{}", ended.body);
     assert_eq!(ended.body["login_linked"], true);
-    let locked = s.get(&s.tech, "/me/staff").await;
-    assert!(
-        matches!(
-            locked.status,
-            StatusCode::FORBIDDEN | StatusCode::UNAUTHORIZED
-        ),
-        "a former technician's login is locked: {}",
-        locked.status
-    );
+
+    // The live session and a fresh login both reach only their own past pay.
+    let fresh = session_for(&s.h, TECH_PHONE).await;
+    for session in [&s.tech, &fresh] {
+        assert_eq!(permissions(&s, session).await, ["staff.read_own_past"]);
+        let month = s.get(session, "/me/staff").await;
+        assert_eq!(month.status, StatusCode::OK, "{}", month.body);
+        assert_eq!(month.body["left_on"], json!(today()));
+        assert_eq!(month.body["data"]["month"], ym(today()), "defaults to the month they left");
+        assert_eq!(month.body["data"]["attendance"]["staff_id"], json!(s.lan));
+        assert_eq!(month.body["data"]["payslip"]["base_salary"], 5_000_000);
+        let day = s.get(session, "/me/staff/day").await;
+        assert_eq!(day.status, StatusCode::OK, "{}", day.body);
+        assert_eq!(day.body["data"]["date"], json!(today()), "defaults to their last day");
+        assert_eq!(day.body["data"]["attendance"]["status"], "present");
+    }
+    // No month after they left.
+    let later = next_month_day();
+    let after = s.get(&s.tech, &format!("/me/staff?month={}", ym(later))).await;
+    assert_eq!(after.status, StatusCode::FORBIDDEN, "{}", after.body);
+    assert_eq!(after.body["code"], "staff.not_employed_in_month");
+    let after_day = s.get(&s.tech, &format!("/me/staff/day?date={later}")).await;
+    assert_eq!(after_day.status, StatusCode::FORBIDDEN, "{}", after_day.body);
+    assert_eq!(after_day.body["code"], "staff.not_employed_in_month");
+    // Every other screen is refused, whatever the role said.
+    for path in [
+        "/me/appointments",
+        "/customers",
+        "/visits",
+        "/appointments",
+        "/services",
+        "/package-plans",
+        "/staff",
+        "/attendance",
+        "/reports/daily",
+    ] {
+        let r = s.get(&s.tech, path).await;
+        assert_eq!(r.status, StatusCode::FORBIDDEN, "{path}: {}", r.body);
+        assert_eq!(r.body["code"], "auth.forbidden", "{path}");
+    }
+
+    // Rehiring gives the role back.
     let back = s.rehire(s.lan, today() + Duration::days(1)).await;
     assert_eq!(back.status, StatusCode::OK, "{}", back.body);
-    assert_eq!(s.get(&s.tech, "/me/staff").await.status, StatusCode::OK);
+    let perms = permissions(&s, &s.tech).await;
+    assert!(perms.contains(&"staff.read_own".to_owned()), "{perms:?}");
+    assert!(!perms.contains(&"staff.read_own_past".to_owned()), "{perms:?}");
+    assert_eq!(s.get(&s.tech, "/me/appointments").await.status, StatusCode::OK);
+    let me = s.get(&s.tech, "/me/staff").await;
+    assert_eq!(me.body.get("left_on"), None, "{}", me.body);
 
+    // "Khóa tài khoản": the owner may lock the login outright when ending employment.
+    const HUONG_PHONE: &str = "0912100555";
+    add_member(&s.h.owner, "vpyd", HUONG_PHONE, "KTV Hương", SystemRole::Technician).await?;
+    let huong = linked_profile(&s, HUONG_PHONE, "Ngô Hương").await?;
+    let huong_session = session_for(&s.h, HUONG_PHONE).await;
+    let p = s.profile(huong).await;
+    let locked = s
+        .versioned(
+            &s.owner,
+            "POST",
+            &format!("/staff/{huong}/end"),
+            json!({"ended_on": today(), "reason": "Vi phạm nội quy", "lock_login": true}),
+            &p["version"],
+        )
+        .await;
+    assert_eq!(locked.status, StatusCode::OK, "{}", locked.body);
+    let r = s.get(&huong_session, "/me/staff").await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN, "{}", r.body);
+    assert_eq!(r.body["code"], "auth.not_a_member");
+    Ok(())
+}
+
+/// The owner's login is never downgraded: ending their own profile is refused, and a profile
+/// that has left, linked to the owner's login afterwards, leaves every owner permission intact.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_owners_login_is_never_downgraded(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let before = permissions(&s, &s.owner).await;
+    assert!(before.contains(&"staff.manage".to_owned()));
+    let ended = s.end(s.mai, today(), "Chuyển nơi khác").await;
+    assert_eq!(ended.status, StatusCode::OK, "{}", ended.body);
+    let owner_user: Uuid =
+        sqlx::query_scalar("SELECT id FROM app.user_account WHERE phone_e164 = '+84905123456'")
+            .fetch_one(&s.h.owner)
+            .await?;
+    let p = s.profile(s.mai).await;
+    let linked = s
+        .versioned(
+            &s.owner,
+            "PUT",
+            &format!("/staff/{}/account", s.mai),
+            json!({"user_id": owner_user}),
+            &p["version"],
+        )
+        .await;
+    assert_eq!(linked.status, StatusCode::OK, "{}", linked.body);
+    assert_eq!(permissions(&s, &s.owner).await, before);
+    for path in ["/staff/profiles", "/payroll", "/customers"] {
+        assert_eq!(s.get(&s.owner, path).await.status, StatusCode::OK, "{path}");
+    }
+    Ok(())
+}
+
+/// The login link (owner only): the owner never ends their own profile; linking checks
+/// membership and uniqueness; unlinking makes the profile count as a technician's for
+/// decision C.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_login_link_is_owner_only(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
     // The owner's own profile: never ended by themselves.
     let own = linked_profile(&s, common::OWNER_PHONE, "Chủ spa").await?;
     let r = s.end(own, today(), "x").await;

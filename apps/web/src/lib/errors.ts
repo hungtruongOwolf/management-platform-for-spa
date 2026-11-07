@@ -43,6 +43,8 @@ const MESSAGES: Record<string, string> = {
   "visit.check_in_not_today":
     "Giờ làm phải thuộc ngày hôm nay. Chỉ chủ spa nhập bù được ngày đã qua.",
   "visit.check_in_too_old": "Chỉ nhập bù được trong vòng 1 năm.",
+  "staff.not_employed_in_month":
+    "Tháng này bạn không làm ở spa: chỉ xem được các tháng đã làm.",
   "appointment.closed": "Lịch hẹn này đã kết thúc (hoàn tất, hủy hoặc không đến).",
   "appointment.not_today": "Chỉ làm được việc này vào đúng ngày của lịch hẹn.",
   "appointment.customer_required":

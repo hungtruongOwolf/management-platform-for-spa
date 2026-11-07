@@ -26,6 +26,7 @@ import {
   isOpen,
   paymentLabel,
   spaMinutes,
+  undoArrival,
   updateAppointment,
 } from "./api";
 
@@ -74,7 +75,7 @@ export function conflictMessage(error: unknown, cal: Calendar): string {
   return messageFor(error);
 }
 
-type Kind = "arrive" | "close" | "profile";
+type Kind = "arrive" | "undo" | "close" | "profile";
 
 /** One request of the sheet, tagged with the control that sent it. */
 interface Job {
@@ -117,6 +118,8 @@ export function AppointmentSheet({
   const [arriveTried, setArriveTried] = useState(false);
   const [profileTried, setProfileTried] = useState(false);
   const [closing, setClosing] = useState<"cancel" | "no-show" | null>(null);
+  // "Hoàn tác đã đến" asks once before it sends (EM 2026-11-07 item 5a).
+  const [undoAsked, setUndoAsked] = useState(false);
   const [reason, setReason] = useState("");
   const [reasonTried, setReasonTried] = useState(false);
   // A newcomer's phone already on a profile that is not in this group: use it, or go without.
@@ -129,6 +132,7 @@ export function AppointmentSheet({
       latest.current = saved;
       setClosing(null);
       setTaken(null);
+      setUndoAsked(false);
       // The answer shows at once (appointments/cache.ts); the range refetches behind it.
       putAppointment(queryClient, saved);
       void refresh();
@@ -177,6 +181,9 @@ export function AppointmentSheet({
   const canRecord = canServe && !a.is_guest;
   const canArrive =
     editable && a.status === "booked" && a.business_date === today;
+  // An arrival marked by mistake goes back to booked until the visit is recorded (server rule).
+  const canUndoArrival =
+    editable && a.status === "arrived" && a.business_date === today;
   const ids = {
     staff: `appt-staff-${a.id}`,
     staffMsg: `appt-staff-${a.id}-msg`,
@@ -532,6 +539,52 @@ export function AppointmentSheet({
               )}
             </div>
             <StaffNote id={ids.staffMsg} message={staffMessage} />
+            {canUndoArrival &&
+              (undoAsked ? (
+                <div role="group" aria-labelledby={`undo-${a.id}`} className="grid gap-2">
+                  <p id={`undo-${a.id}`}>
+                    Đưa lịch về <strong>Chưa đến</strong>? Giờ đến được xóa, KTV làm giữ nguyên.
+                  </p>
+                  <div className="button-row">
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      aria-busy={running === "undo" || undefined}
+                      onClick={() => {
+                        send("undo", () => undoArrival(a.id));
+                      }}
+                    >
+                      Hoàn tác đã đến
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        setUndoAsked(false);
+                      }}
+                    >
+                      Thôi
+                    </button>
+                  </div>
+                  {errorFor("undo") && (
+                    <p role="alert" className="field-error">
+                      {errorFor("undo")}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="button-row">
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => {
+                      setUndoAsked(true);
+                    }}
+                  >
+                    <Icon name="history" /> Hoàn tác đã đến
+                  </button>
+                </div>
+              ))}
           </section>
         )}
 

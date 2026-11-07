@@ -38,6 +38,7 @@ permissions! {
     StaffManage => "staff.manage",
     StaffRead => "staff.read",
     StaffReadOwn => "staff.read_own",
+    StaffReadOwnPast => "staff.read_own_past",
     AttendanceRecord => "attendance.record",
     EvaluationRecord => "evaluation.record",
     PayrollRead => "payroll.read",
@@ -70,6 +71,27 @@ permissions! {
     AuditRead => "audit.read",
     SupportGrantManage => "support_grant.manage",
     PlatformTenantManage => "platform.tenant.manage",
+}
+
+/// What a former staff member's login may do (EM 2026-11-07 Q-S6, ADR-0014): read their own
+/// attendance and payslips of the months they worked, nothing else. Never granted by a role: it
+/// is derived at request time from the employment state ([`effective_permissions`]).
+pub const FORMER_STAFF: &[Permission] = &[Permission::StaffReadOwnPast];
+
+/// The permissions a member actually holds: their roles', unless their linked staff profile has
+/// left (no open employment period), in which case only [`FORMER_STAFF`] — deny by default for
+/// everything else, whatever the roles say. A login that manages staff (the owner) is never
+/// downgraded: the roster refuses to end such a profile, and linking one later must not lock the
+/// spa out.
+pub fn effective_permissions(roles: Vec<Permission>, former_staff: bool) -> Vec<Permission> {
+    if former_staff && !roles.contains(&Permission::StaffManage) {
+        FORMER_STAFF.to_vec()
+    } else {
+        roles
+            .into_iter()
+            .filter(|p| *p != Permission::StaffReadOwnPast)
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -135,6 +157,36 @@ mod tests {
     #[test]
     fn unknown_names_are_rejected() {
         assert!(Permission::from_str("customer.delete_everything").is_err());
+    }
+
+    #[test]
+    fn a_former_staff_member_keeps_only_their_past_pay() {
+        let technician = vec![
+            Permission::CatalogRead,
+            Permission::StaffReadBasic,
+            Permission::StaffReadOwn,
+        ];
+        assert_eq!(
+            effective_permissions(technician.clone(), true),
+            [Permission::StaffReadOwnPast]
+        );
+        assert_eq!(effective_permissions(technician.clone(), false), technician);
+        let manager = vec![Permission::VisitRecord, Permission::CustomerRead];
+        assert_eq!(
+            effective_permissions(manager, true),
+            [Permission::StaffReadOwnPast]
+        );
+        let owner = vec![Permission::StaffManage, Permission::PayrollClose];
+        assert_eq!(
+            effective_permissions(owner.clone(), true),
+            owner,
+            "the owner is never downgraded"
+        );
+        assert_eq!(
+            effective_permissions(vec![Permission::StaffReadOwnPast], false),
+            [],
+            "a role cannot grant the derived permission"
+        );
     }
 
     #[test]

@@ -185,6 +185,8 @@ function DayDetail({ d, refreshing }: { d: MyDayData; refreshing: boolean }) {
                 <tr className="work-group">
                   <th scope="rowgroup" colSpan={3}>
                     <span className="tabular">{timeOf(v.check_in_at)}</span> · {v.customer_name}
+                    {/* The session note of a visit I worked on (EM 2026-11-07 item 3). */}
+                    {v.note && <span className="block text-sm font-normal text-text-muted">Ghi chú buổi: {v.note}</span>}
                   </th>
                 </tr>
                 {v.lines.map((l, i) => (

@@ -223,11 +223,20 @@ export async function setAccount(id: string, version: number, userId: string | n
   return (await api(`/staff/${id}/account`, { method: "PUT", body: { user_id: userId }, headers: ifMatch(version) })) as StaffProfile;
 }
 
-/** Nghỉ việc: closes the current period (soft; history stays) and locks the linked login. */
-export async function endEmployment(id: string, version: number, endedOn: string, reason: string): Promise<StaffProfile> {
+/**
+ * Nghỉ việc: closes the current period (soft; history stays). The linked login keeps only the
+ * person's own past pay (ADR-0014), unless `lockLogin` ("Khóa tài khoản") locks it outright.
+ */
+export async function endEmployment(
+  id: string,
+  version: number,
+  endedOn: string,
+  reason: string,
+  lockLogin = false,
+): Promise<StaffProfile> {
   return (await api(`/staff/${id}/end`, {
     method: "POST",
-    body: { ended_on: endedOn, reason },
+    body: { ended_on: endedOn, reason, lock_login: lockLogin },
     headers: ifMatch(version),
   })) as StaffProfile;
 }

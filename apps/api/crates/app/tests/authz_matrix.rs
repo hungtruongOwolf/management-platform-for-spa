@@ -69,6 +69,8 @@ struct Route {
     consumes_session: bool,
     /// The handler requires `Idempotency-Key`; every call sends a fresh one.
     idempotent: bool,
+    /// Open to a former staff member (ADR-0014: `staff.read_own_past`, derived, never a role).
+    former_staff: bool,
 }
 
 const ALL: &[SystemRole] = &[Owner, Manager, Technician];
@@ -86,6 +88,7 @@ const fn route(method: &'static str, path: &'static str, access: Access) -> Rout
         headers: &[],
         consumes_session: false,
         idempotent: false,
+        former_staff: false,
     }
 }
 
@@ -108,6 +111,10 @@ impl Route {
     }
     const fn idempotent(mut self) -> Self {
         self.idempotent = true;
+        self
+    }
+    const fn former_staff(mut self) -> Self {
+        self.former_staff = true;
         self
     }
 }
@@ -405,12 +412,14 @@ const ROUTES: &[Route] = &[
         "GET",
         "/api/v1/me/staff",
         Access::Perm(P::StaffReadOwn, ALL),
-    ),
+    )
+    .former_staff(),
     route(
         "GET",
         "/api/v1/me/staff/day",
         Access::Perm(P::StaffReadOwn, ALL),
-    ),
+    )
+    .former_staff(),
     route(
         "GET",
         "/api/v1/me/appointments",
@@ -589,6 +598,20 @@ const ROUTES: &[Route] = &[
     )
     .id(Target::Appointment)
     .body(arrive_body),
+    route(
+        "POST",
+        "/api/v1/appointments/{id}/undo-arrival",
+        Access::Perm(P::AppointmentManage, OWNER_MANAGER),
+    )
+    .id(Target::Appointment),
+    route(
+        "POST",
+        "/api/v1/appointments/{id}/move-group",
+        Access::Perm(P::AppointmentManage, OWNER_MANAGER),
+    )
+    .id(Target::Appointment)
+    .body(move_group_body)
+    .if_match(),
     // Also needs visit.record (same default holders).
     route(
         "POST",
@@ -799,6 +822,9 @@ fn appointment_group_body(f: &Fixture) -> Option<Value> {
 }
 fn appointment_settings_body(_: &Fixture) -> Option<Value> {
     Some(json!({"max_per_slot": 4}))
+}
+fn move_group_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"starts_at": tomorrow_at_ten()}))
 }
 fn arrive_body(f: &Fixture) -> Option<Value> {
     Some(json!({"staff_id": f.staff}))
@@ -1418,6 +1444,98 @@ async fn each_role_gets_exactly_what_the_matrix_grants(pool: PgPool) -> TestResu
         }
     }
     assert!(cells > 0);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
+}
+
+/// ADR-0014 (EM 2026-11-07 Q-S6): a former staff member — a manager or technician whose linked
+/// profile has left — holds only `staff.read_own_past`, whatever their role grants. Session
+/// routes and the rows marked `.former_staff()` (their own month and day) are allowed; every
+/// other route is `403 auth.forbidden`. The owner is never downgraded (`staff.rs`).
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_former_staff_member_reaches_only_their_past_pay(pool: PgPool) -> TestResult {
+    let w = world(pool).await?;
+    let owner = session(&w.h, OWNER_PHONE).await?;
+    for role in [Manager, Technician] {
+        let user: String =
+            sqlx::query_scalar("SELECT id::text FROM app.user_account WHERE phone_e164 = $1")
+                .bind(format!("+84{}", &phone_of(role)[1..]))
+                .fetch_one(&w.h.owner)
+                .await?;
+        let hired = send(
+            &w.app,
+            "POST",
+            "/staff",
+            Some(&owner),
+            Some(json!({"full_name": role.key(), "position": "Kỹ thuật viên", "user_id": user})),
+            &[],
+        )
+        .await;
+        let (Some(id), Some(version)) = (hired.body["id"].as_str(), hired.body["version"].as_i64())
+        else {
+            return Err(format!("hire {} → {} {}", role.key(), hired.status, hired.body).into());
+        };
+        let tag = format!("\"{version}\"");
+        let ended = send(
+            &w.app,
+            "POST",
+            &format!("/staff/{id}/end"),
+            Some(&owner),
+            Some(json!({"ended_on": "2025-12-31", "reason": "Nghỉ việc"})),
+            &[("If-Match", &tag)],
+        )
+        .await;
+        assert_eq!(ended.status, StatusCode::OK, "{}", ended.body);
+    }
+    let mut failures = Vec::new();
+    for role in [Manager, Technician] {
+        let mut shared = session(&w.h, phone_of(role)).await?;
+        for route in ROUTES {
+            let expected_allowed = match route.access {
+                Access::Public | Access::PendingMfa => continue,
+                Access::Session => true,
+                Access::Perm(..) => route.former_staff,
+            };
+            let token = if route.consumes_session {
+                session(&w.h, phone_of(role)).await?
+            } else {
+                shared.clone()
+            };
+            let reply = send_route(
+                &w.app,
+                route,
+                &concrete(route, &w.home),
+                Some(&token),
+                (route.body)(&w.home),
+            )
+            .await;
+            if route.consumes_session {
+                shared = session(&w.h, phone_of(role)).await?;
+            }
+            let ok = if expected_allowed {
+                !matches!(
+                    reply.status,
+                    StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+                ) && !reply.status.is_server_error()
+            } else {
+                reply.status == StatusCode::FORBIDDEN && reply.body["code"] == "auth.forbidden"
+            };
+            if !ok {
+                failures.push(format!(
+                    "{} as former {}: expected {}, got {} {}",
+                    label(route),
+                    role.key(),
+                    if expected_allowed {
+                        "allowed"
+                    } else {
+                        "403 auth.forbidden"
+                    },
+                    reply.status,
+                    reply.body
+                ));
+            }
+        }
+    }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     Ok(())
 }

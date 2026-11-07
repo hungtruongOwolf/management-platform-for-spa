@@ -252,6 +252,7 @@ function calendar(): MyCalendar {
           services: [{ service_name: "Gội đầu thảo dược", category_name: "Gội đầu", from_package: true }],
           group_size: null,
           walk_in: true,
+          note: "Khách đau vai gáy",
         },
         {
           id: "a-1",
@@ -265,6 +266,7 @@ function calendar(): MyCalendar {
           services: [{ service_name: "Massage cổ vai gáy", category_name: "Massage", from_package: false }],
           group_size: 3,
           walk_in: false,
+          note: null,
         },
       ],
     },
@@ -286,6 +288,7 @@ function myDay(date: string): MyDay {
           visit_id: "v-1",
           check_in_at: `${date}T03:00:00Z`,
           customer_name: "Nguyễn Thị Hằng",
+          note: "Khách đau vai gáy",
           lines: [
             { service_name: "Gội đầu thảo dược", source: "package", qty: 1, value: 120_000, commission: 6_000 },
             { service_name: "Ngâm chân", source: "one_off", qty: 2, value: 78_000, commission: 3_900 },
@@ -305,6 +308,8 @@ interface ServeOptions {
   adjustments?: Adjustment[];
   /** Lan has a visit recorded today (the leave warning). */
   lanServedToday?: boolean;
+  /** Lan left on this day (ADR-0014): `/me/staff` refuses later months. */
+  leftOn?: string;
 }
 
 const PENALTY_TEMPLATE: Adjustment = {
@@ -346,7 +351,16 @@ function serve(permissions: string[], options: ServeOptions = {}) {
     if (p === "/attendance" && method === "PUT") return options.attendancePut ? options.attendancePut() : ok([]);
     if (p === "/attendance") return ok({ ...sheet(options), closed: options.closed ?? false });
     if (p === "/payroll") return permissions.includes("payroll.read") ? ok(payroll()) : ok({ code: "auth.forbidden" }, 403);
-    if (p === "/me/staff") return ok({ linked: true, data: { month, closed: false, attendance: lan(), reviews: [], evaluation: null, adjustments: [], payslip: slip() } } satisfies MyStaff);
+    if (p === "/me/staff") {
+      const left = options.leftOn;
+      const asked = url.searchParams.get("month") ?? (left ? left.slice(0, 7) : month);
+      if (left && asked > left.slice(0, 7)) return ok({ code: "staff.not_employed_in_month" }, 403);
+      return ok({
+        linked: true,
+        ...(left ? { left_on: left } : {}),
+        data: { month: asked, closed: false, attendance: lan(), reviews: [], evaluation: null, adjustments: [], payslip: slip() },
+      } satisfies MyStaff);
+    }
     if (p === "/me/appointments") return ok(calendar());
     if (p === "/me/staff/day") return ok(myDay(url.searchParams.get("date") ?? today));
     if (p === "/daily-reviews" && method === "PUT") return ok([]);
@@ -744,6 +758,8 @@ describe("/nhan-vien", () => {
     expect(within(sheetDialog).getByText("Buổi liệu trình")).toBeInTheDocument();
     expect(within(sheetDialog).getByRole("row", { name: /Cộng 1 lượt khách 198\.000đ 9\.900đ/ })).toBeInTheDocument();
     expect(within(sheetDialog).getByText(/Chốt gói · Nguyễn Thị Hằng/)).toBeInTheDocument();
+    // EM 2026-11-07 item 3: the session note of a visit I worked on.
+    expect(within(sheetDialog).getByText("Ghi chú buổi: Khách đau vai gáy")).toBeInTheDocument();
     expect(within(sheetDialog).queryByText(/\+84|09\d{8}/)).not.toBeInTheDocument();
     // Next day is disabled on today; previous day reloads the sheet for that date.
     expect(within(sheetDialog).getByRole("button", { name: /Ngày sau/ })).toBeDisabled();
@@ -754,6 +770,38 @@ describe("/nhan-vien", () => {
     });
     const paths = requests(spy).map((r) => new URL(r.url, "http://app.test").pathname.replace(/^\/api\/v1/, ""));
     expect(paths.every((p) => p === "/me" || p.startsWith("/me/"))).toBe(true);
+  });
+});
+
+describe("former staff (ADR-0014)", () => {
+  const FORMER = ["staff.read_own_past"];
+  const left = `${shiftMonth(month, -1)}-20`;
+
+  it("sees only their own past months, from the month they left, with a minimal nav", async () => {
+    const spy = serve(FORMER, { leftOn: left });
+    at("/nhan-vien");
+    expect(await screen.findByRole("heading", { level: 1, name: "Công và lương của tôi" })).toBeInTheDocument();
+    expect(await screen.findByText(/Bạn đã nghỉ việc từ .*20\//)).toBeInTheDocument();
+    expect(screen.getByText(monthLabel(left.slice(0, 7)))).toBeInTheDocument();
+    // No month after they left.
+    expect(screen.getByRole("button", { name: "Tháng sau" })).toBeDisabled();
+    expect(navFor(ME(FORMER)).flatMap((g) => g.items.map((i) => i.to))).toEqual(["/", "/nhan-vien", "/cai-dat"]);
+    const paths = requests(spy).map((r) => new URL(r.url, "http://app.test").pathname.replace(/^\/api\/v1/, ""));
+    expect(paths.every((p) => p === "/me" || p.startsWith("/me/staff"))).toBe(true);
+    expect(requests(spy).some((r) => r.url.endsWith("/me/staff"))).toBe(true);
+  });
+
+  it("explains a month they did not work in", async () => {
+    serve(FORMER, { leftOn: left });
+    at(`/nhan-vien?month=${month}`);
+    expect(await screen.findByText("Tháng này bạn không làm ở spa")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Về tháng nghỉ việc" })).toBeInTheDocument();
+  });
+
+  it("cannot open Khách của tôi", async () => {
+    serve(FORMER, { leftOn: left });
+    at("/khach-cua-toi");
+    expect(await screen.findByText(/Không có quyền/)).toBeInTheDocument();
   });
 });
 
@@ -901,6 +949,9 @@ describe("Nhân sự (roster)", () => {
     expect(within(sheet).getByRole("heading", { name: "Tài khoản đăng nhập" })).toBeInTheDocument();
     await userEvent.click(within(sheet).getByRole("button", { name: "Cho nghỉ việc" }));
     const confirm = await screen.findByRole("dialog", { name: "Cho Lê Thị Lan nghỉ việc" });
+    // ADR-0014: the login stays, reaching only past pay, unless the owner locks it.
+    expect(within(confirm).getByText(/Lê Thị Lan vẫn đăng nhập được, nhưng chỉ xem ngày công và phiếu lương/)).toBeInTheDocument();
+    await userEvent.click(within(confirm).getByRole("checkbox", { name: /Khóa tài khoản/ }));
     expect(within(confirm).getByText(/Tài khoản đăng nhập của Lê Thị Lan sẽ bị khóa/)).toBeInTheDocument();
     const submit = within(confirm).getByRole("button", { name: "Xác nhận nghỉ việc" });
     expect(submit).toBeDisabled();
@@ -910,6 +961,6 @@ describe("Nhân sự (roster)", () => {
       expect(requests(spy).some((r) => r.method === "POST" && r.url.endsWith("/staff/s-lan/end"))).toBe(true);
     });
     const post = requests(spy).find((r) => r.url.endsWith("/staff/s-lan/end"));
-    expect(post?.body).toEqual({ ended_on: today, reason: "Chuyển công tác" });
+    expect(post?.body).toEqual({ ended_on: today, reason: "Chuyển công tác", lock_login: true });
   });
 });

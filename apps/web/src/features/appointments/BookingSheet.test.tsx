@@ -500,6 +500,85 @@ const CAL_APPT: Calendar["appointments"][number] = {
   created_at: "2026-11-06T03:00:00Z",
 };
 
+describe("Đổi lịch một người trong nhóm (EM 2026-11-07 item 5c)", () => {
+  const g = (id: string, name: string, extra: Partial<typeof CAL_APPT> = {}) => ({
+    ...CAL_APPT,
+    id,
+    customer_id: `c-${id}`,
+    customer_name: name,
+    group_id: "g1",
+    services: [{ service_id: "s1", service_name: "Gội đầu", category_name: "Dưỡng sinh", duration_min: 30 }],
+    duration_min: 30,
+    ends_at: "2026-11-07T03:30:00Z",
+    ...extra,
+  });
+  const HA = g("a1", "Nguyễn Thị Hà");
+  const MAI = g("a2", "Chị Mai", { starts_at: "2026-11-07T03:30:00Z", ends_at: "2026-11-07T04:30:00Z" });
+  const BINH = g("a3", "Anh Bình", { status: "arrived", phase: "in_service" as typeof CAL_APPT.phase });
+  const groupCal = { ...CAL, appointments: [HA, MAI, BINH] };
+  const json = (body: unknown, status = 200) =>
+    Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }));
+
+  it("asks only once the time moves; the whole group moves first, then this booking", async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = renderSheet(groupCal, { mode: "edit", appointment: HA });
+    expect(screen.queryByRole("group", { name: "Người cùng nhóm" })).not.toBeInTheDocument();
+    fetchMock.mockImplementation(((url: string) =>
+      url.endsWith("/move-group")
+        ? json({ group_id: "g1", moved: [{ ...HA, version: 2 }, MAI], not_moved: [BINH] })
+        : json({ ...HA, version: 3 })) as unknown as () => Promise<Response>);
+    await user.selectOptions(screen.getByLabelText("Giờ hẹn"), "720");
+    const choice = screen.getByRole("group", { name: "Người cùng nhóm" });
+    expect(within(choice).getByRole("radio", { name: /Đổi cả nhóm \(2 người/ })).toBeChecked();
+    expect(choice).toHaveTextContent("Cùng dời: Chị Mai.");
+    expect(choice).toHaveTextContent("Không đổi: Anh Bình (đã đến).");
+    await user.click(screen.getByRole("button", { name: "Lưu thay đổi" }));
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
+    const [moveUrl, moveInit] = calls[0] ?? ["", {}];
+    expect(moveUrl).toBe("/api/v1/appointments/a1/move-group");
+    expect(moveInit.method).toBe("POST");
+    expect(new Headers(moveInit.headers).get("If-Match")).toBe('"1"');
+    expect(JSON.parse(moveInit.body as string)).toEqual({ starts_at: "2026-11-07T05:00:00.000Z" });
+    const [patchUrl, patchInit] = calls[1] ?? ["", {}];
+    expect(patchUrl).toBe("/api/v1/appointments/a1");
+    expect(new Headers(patchInit.headers).get("If-Match")).toBe('"2"');
+  });
+
+  it("'Chỉ người này' moves only this booking", async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = renderSheet(groupCal, { mode: "edit", appointment: HA });
+    fetchMock.mockImplementation((() => json({ ...HA, version: 2 })) as unknown as () => Promise<Response>);
+    await user.selectOptions(screen.getByLabelText("Giờ hẹn"), "720");
+    await user.click(screen.getByRole("radio", { name: "Chỉ người này" }));
+    await user.click(screen.getByRole("button", { name: "Lưu thay đổi" }));
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
+    expect(calls[0]?.[0]).toBe("/api/v1/appointments/a1");
+    expect(calls[0]?.[1].method).toBe("PATCH");
+  });
+
+  it("names the member a refused group move clashed on; nobody moved", async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = renderSheet(groupCal, { mode: "edit", appointment: HA });
+    fetchMock.mockImplementation((() =>
+      json(
+        { code: "validation_failed", errors: [{ field: "appointments.a2", code: "appointment.staff_busy" }] },
+        422,
+      )) as unknown as () => Promise<Response>);
+    await user.selectOptions(screen.getByLabelText("Giờ hẹn"), "720");
+    await user.click(screen.getByRole("button", { name: "Lưu thay đổi" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Không đổi được cả nhóm. Chị Mai: KTV của người này đã có lịch khác vào giờ mới.",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("booking messages", () => {
   it("lists what is missing: the customer's services, a companion's name", () => {
     const people = [
