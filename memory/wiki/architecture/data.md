@@ -208,5 +208,10 @@ Không có bảng mới. 0013:
 - Permission mới `staff.read` cho role hệ thống owner + manager (spa mới: `SystemRole::default_permissions`).
 - Đọc: `org::employment::Employment` (đợt của một người) trả lời "ngày D / tháng M có làm" và thâm niên; `hr` (bảng công, đánh giá, bảng lương, `calc::summarize`) dùng nó thay `joined_on/left_on`. `StaffSheet.periods` (dates only) cho web.
 
+## Nhật ký ghi chú (0027, [spec management-views §10](../product/specs/management-views.md))
+- Không bảng mới, không chép ghi chú: `reporting::notes` UNION ALL 9 nguồn tại chỗ (lượt, hồ sơ khách ×2, chấm công, khen/phàn nàn, thưởng/phạt, chăm sóc lại, hủy lượt/hóa đơn/gói, đợt làm việc), mỗi nhánh có cờ quyền + `tenant_id = $1` + khoảng ngày trên cột có index; sắp `(business_date, at, kind, key) DESC` (ngày kinh doanh trước, nên nhóm theo ngày liền mạch), cursor keyset 4 phần.
+- 0027 chỉ thêm index một phần: `visit (tenant_id, business_date) WHERE note_ct IS NOT NULL`, `visit / sale (tenant_id, voided_at) WHERE status = 'voided'`, `customer_package (tenant_id, cancelled_at) WHERE cancelled_at IS NOT NULL`, `customer (tenant_id, updated_at) WHERE note IS NOT NULL OR health_note_ct IS NOT NULL`, `customer_follow_up (tenant_id, contacted_on) WHERE note IS NOT NULL`, `staff_employment (tenant_id, ended_on) WHERE end_reason IS NOT NULL`.
+- Ghi chú mã hóa giải mã ở Rust (tìm chữ: quét ≤ 500 / request); ghi chú hồ sơ khách dùng `customer.updated_at` (chưa có cột người/lúc sửa riêng, Q-N2).
+
 ## Seed
 Dữ liệu tenant Viên Phúc Y Đường: 1 chi nhánh (Phường Đông Hà), 10 nhóm và 35 dịch vụ từ [service-catalog](../product/service-catalog.md), role hệ thống, tài khoản chủ spa. Giá "Ôn ấm tử cung" và các gói liệu trình: chờ EM.

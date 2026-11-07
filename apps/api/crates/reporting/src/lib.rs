@@ -13,4 +13,6 @@ pub mod customer;
 pub mod day;
 pub mod dto;
 pub mod http;
+pub mod notes;
+pub mod notes_dto;
 pub mod overview;

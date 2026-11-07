@@ -30,6 +30,7 @@ const packagesPage = () => import("../features/reports/PackagesOverviewPage");
 const inactivePage = () => import("../features/reports/InactiveCustomersPage");
 const staffPage = () => import("../features/staff/StaffPage");
 const myWorkPage = () => import("../features/staff/MyWorkPage");
+const notesPage = () => import("../features/notes/NotesPage");
 
 /** Shown while a lazy screen's chunk loads (after the router's pending delay): no spinner. */
 function PageSkeleton() {
@@ -212,6 +213,18 @@ const packagesRoute = createRoute({
   component: lazyRouteComponent(packagesPage, "PackagesOverviewPage"),
 });
 
+/**
+ * "Nhật ký ghi chú" (spec management-views §10): report.read opens it; GET /notes decides per kind.
+ * No `validateSearch`: the screen parses its URL state itself (features/notes/search.ts), so the
+ * schema stays in its lazy chunk (startup JS budget ≤ 125 KB).
+ */
+const notesRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/nhat-ky-ghi-chu",
+  beforeLoad: only(mayOpen.management),
+  component: lazyRouteComponent(notesPage, "NotesPage"),
+});
+
 const inactiveRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/khach-lau-khong-quay-lai",
@@ -310,6 +323,7 @@ const routeTree = rootRoute.addChildren([
     reportsRoute,
     packagesRoute,
     inactiveRoute,
+    notesRoute,
     staffRoute,
     myWorkRoute,
     settingsRoute,

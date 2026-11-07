@@ -6,7 +6,8 @@ use crate::dto::{
     LedgerPage, LedgerQuery, PackageOverviewPage, PackageUsage, PackagesQuery, RangeQuery,
     RangeReport,
 };
-use crate::{customer, day, overview};
+use crate::notes_dto::{NotesPage, NotesQuery};
+use crate::{customer, day, notes, overview};
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::{HeaderValue, header};
 use axum::response::{IntoResponse, Response};
@@ -35,6 +36,7 @@ where
         .route("/customers/{id}/summary", get(customer_summary))
         .route("/customer-packages/{id}/usage", get(package_usage))
         .route("/packages", get(list_packages))
+        .route("/notes", get(list_notes))
 }
 
 fn no_store(body: impl Serialize) -> Response {
@@ -106,6 +108,23 @@ pub async fn inactive_customers(
 ) -> Result<Response, AppError> {
     Ok(no_store(
         overview::inactive(&pool, &user.actor, &query).await?,
+    ))
+}
+
+#[utoipa::path(get, path = "/api/v1/notes", tag = "reports", params(NotesQuery),
+    responses(
+        (status = 200, body = NotesPage, description = "Every note the caller may read, newest first; each kind under its own permission (encrypted notes decrypted only for customer.health_notes.read)"),
+        (status = 401), (status = 403, description = "auth.forbidden: no report.read"),
+        (status = 422, description = "validation_failed: q too_short / too_long, from after_to, to range_too_long (> 366 days), cursor invalid, limit out_of_range")))]
+pub async fn list_notes(
+    State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
+    user: AuthUser,
+    Query(query): Query<NotesQuery>,
+) -> Result<Json<NotesPage>, AppError> {
+    // No handler-set Cache-Control: the default `private, no-store` (middleware) applies.
+    Ok(Json(
+        notes::list(&pool, &cipher, &user.actor, &query).await?,
     ))
 }
 
