@@ -7,8 +7,8 @@ describe("createQueryClient", () => {
   it("serves an answer from cache for 30 s, then asks again", async () => {
     const qc = createQueryClient();
     const fetcher = vi.fn().mockResolvedValue("x");
-    await qc.prefetchQuery({ queryKey: ["k"], queryFn: fetcher });
-    await qc.prefetchQuery({ queryKey: ["k"], queryFn: fetcher });
+    await qc.query({ queryKey: ["k"], queryFn: fetcher });
+    await qc.query({ queryKey: ["k"], queryFn: fetcher });
     expect(fetcher).toHaveBeenCalledTimes(1);
     const query = qc.getQueryCache().find({ queryKey: ["k"] });
     expect(query?.isStaleByTime(DEFAULT_STALE_MS)).toBe(false);

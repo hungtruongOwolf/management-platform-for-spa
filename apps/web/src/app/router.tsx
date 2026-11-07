@@ -179,7 +179,9 @@ const homePage = () => import("./HomePage");
 const homeRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/",
-  loader: ({ context }) => homePage().then((m) => m.prefetchHome(context.queryClient)),
+  loader: ({ context }) => homePage().then((m) => {
+      m.prefetchHome(context.queryClient);
+    }),
   component: lazyRouteComponent(homePage, "HomePage"),
 });
 
@@ -196,7 +198,9 @@ const reportsRoute = createRoute({
   beforeLoad: only(mayOpen.management),
   validateSearch: reportsSearch.validate,
   loaderDeps: ({ search }) => search,
-  loader: ({ context, deps }) => reportsPage().then((m) => m.prefetchReports(context.queryClient, deps)),
+  loader: ({ context, deps }) => reportsPage().then((m) => {
+      m.prefetchReports(context.queryClient, deps);
+    }),
   component: lazyRouteComponent(reportsPage, "ReportsPage"),
 });
 
@@ -274,7 +278,9 @@ const customersRoute = createRoute({
   path: "/khach-hang",
   beforeLoad: only(mayOpen.customers),
   validateSearch: customersSearch.validate,
-  loader: ({ context }) => customersModule().then((m) => m.prefetchCustomers(context.queryClient)),
+  loader: ({ context }) => customersModule().then((m) => {
+      m.prefetchCustomers(context.queryClient);
+    }),
   component: lazyRouteComponent(customersModule, "CustomersPage"),
 });
 
@@ -285,7 +291,9 @@ const customerRoute = createRoute({
   validateSearch: historySearch.validate,
   loaderDeps: ({ search }) => search,
   loader: ({ context, params, deps }) =>
-    customersModule().then((m) => m.prefetchCustomerPage(context.queryClient, params.customerId, deps)),
+    customersModule().then((m) => {
+      m.prefetchCustomerPage(context.queryClient, params.customerId, deps);
+    }),
   component: lazyRouteComponent(customersModule, "CustomerRoutePage"),
 });
 

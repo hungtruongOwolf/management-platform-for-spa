@@ -256,12 +256,12 @@ export function historyFilterOf(s: ReturnType<typeof historySearch.parse>): Hist
 export function prefetchCustomerPage(queryClient: QueryClient, customerId: string, rawSearch: Record<string, unknown>): void {
   const auth = queryClient.getQueryData(authQuery.queryKey);
   const me = auth?.state === "signed_in" ? auth.me : null;
-  void queryClient.prefetchQuery(customerQuery(customerId));
-  void queryClient.prefetchQuery(customerPackagesQuery(customerId));
+  void queryClient.query(customerQuery(customerId)).catch(() => undefined);
+  void queryClient.query(customerPackagesQuery(customerId)).catch(() => undefined);
   if (!canSeeManagement(me)) return;
-  void queryClient.prefetchQuery(followUpsQuery(customerId));
-  void queryClient.prefetchQuery(customerStatsQuery(customerId));
-  void queryClient.prefetchInfiniteQuery(customerHistoryQuery(customerId, historyFilterOf(historySearch.parse(rawSearch))));
+  void queryClient.query(followUpsQuery(customerId)).catch(() => undefined);
+  void queryClient.query(customerStatsQuery(customerId)).catch(() => undefined);
+  void queryClient.infiniteQuery(customerHistoryQuery(customerId, historyFilterOf(historySearch.parse(rawSearch)))).catch(() => undefined);
 }
 
 function Timeline({ customerId, permissions }: { customerId: string; permissions: readonly string[] }) {

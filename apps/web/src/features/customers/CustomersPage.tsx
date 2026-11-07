@@ -18,7 +18,7 @@ import "./khach.css";
 export { prefetchCustomerPage } from "../reports/CustomerHistory";
 
 export function prefetchCustomers(queryClient: QueryClient): void {
-  void queryClient.prefetchQuery(recentQuery);
+  void queryClient.query(recentQuery).catch(() => undefined);
 }
 
 /** The customers list, parent of every profile (breadcrumbs, back after a deep link). */

@@ -68,8 +68,8 @@ export function prefetchReports(queryClient: QueryClient, rawSearch: Record<stri
   if (!canSeeManagement(me)) return;
   const { period, tab } = reportView(me, reportsSearch.parse(rawSearch), spaToday());
   if (tab !== "overview") return;
-  void queryClient.prefetchQuery(rangeReportQuery(period.from, period.to, period.bucket));
-  void queryClient.prefetchQuery(rangeReportQuery(period.previous.from, period.previous.to, period.bucket));
+  void queryClient.query(rangeReportQuery(period.from, period.to, period.bucket)).catch(() => undefined);
+  void queryClient.query(rangeReportQuery(period.previous.from, period.previous.to, period.bucket)).catch(() => undefined);
 }
 
 function ReportsPageBody() {

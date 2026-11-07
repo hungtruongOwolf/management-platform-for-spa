@@ -5,13 +5,7 @@ import type { QueryClient } from "@tanstack/react-query";
  * month, day and calendar). Not `["staff"]` as a whole: the desk's technician picker
  * (`["staff", "active"]`) is mounted on /quay and would refetch after every save for nothing.
  */
-const STAFF_VIEWS_FROM_VISITS: unknown[][] = [
-  ["staff", "payroll"],
-  ["staff", "attendance"],
-  ["staff", "me"],
-  ["staff", "me-day"],
-  ["staff", "me-calendar"],
-];
+const STAFF_VIEWS_FROM_VISITS: unknown[][] = ["payroll", "attendance", "me", "me-day", "me-calendar"].map((view) => ["staff", view]);
 
 /**
  * After any write that moves money, sessions or a visit (record / void a visit, sell / void /

@@ -48,7 +48,7 @@ function hintFor(item: NavItem, me: Me | null): string | undefined {
 export function prefetchHome(queryClient: QueryClient): void {
   const auth = queryClient.getQueryData(authQuery.queryKey);
   if (auth?.state === "signed_in" && canSeeManagement(auth.me))
-    void queryClient.prefetchQuery(dailyReportQuery(spaToday()));
+    void queryClient.query(dailyReportQuery(spaToday())).catch(() => undefined);
 }
 
 function Today() {

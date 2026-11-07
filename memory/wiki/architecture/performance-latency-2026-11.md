@@ -177,7 +177,7 @@ Nguồn tra ngày 2026-11-07. Trang nào không ghi ngày cập nhật thì đá
 | 3e. Tab lịch không gọi `/visits` | ✅ | −1 request |
 | 4. Gộp ống nước auth | ✅ | quyền 2 câu → 1; `BEGIN`+`set_config` 2 → 1 mỗi `TenantTx` (2 tx/request): **−3 câu SQL mỗi request đăng nhập** |
 
-Bundle entry gzip -9: 124,76 → **124,99 KiB** (ngân sách 125; hết dư, PR sau phải bù). Chưa đo lại từ VN trên staging (cần deploy).
+Bundle entry gzip -9: main sau #78 = 124,99 KiB; nhánh này thêm ~0,2 KiB rồi bù bằng cách tách panel tài khoản (`UserPanel`, lazy, nạp khi hover/focus nút) và chuyển 5 thông báo lỗi chỉ dùng ở form hủy/hoàn sang `corrections/messages.ts` (lazy) → **124,90 KiB** (ngân sách 125). Chưa đo lại từ VN trên staging (cần deploy).
 
 Mục tiêu đo lại (từ VN): số lượt nối tiếp mỗi màn ≤ 2, mỗi lần chuyển màn nhanh hơn ~0,3–0,5 s, không còn loạt request khi quay lại tab. Giai đoạn này **không** giải được phần ~200–400 ms mỗi request và cold start.
 
