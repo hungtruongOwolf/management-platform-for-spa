@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT l.visit_id, l.service_name_snapshot AS service_name, sc.name AS category_name,\n                  sv.duration_min, l.source\n           FROM app.visit_line l\n           JOIN app.service sv ON sv.tenant_id = l.tenant_id AND sv.id = l.service_id\n           JOIN app.service_category sc ON sc.tenant_id = sv.tenant_id AND sc.id = sv.category_id\n           WHERE l.tenant_id = $1 AND l.staff_id = $2 AND l.visit_id = ANY($3)\n           ORDER BY l.visit_id, l.position",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "visit_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "visit_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "service_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "service_name_snapshot"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "category_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.service_category",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "duration_min",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.service",
+            "name": "duration_min"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.visit_line",
+            "name": "source"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "df780343983445e3a1a61d696ffcc561e35860a78d9c82bc7864c34a9b49ffa2"
+}

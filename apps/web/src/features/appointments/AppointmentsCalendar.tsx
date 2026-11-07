@@ -13,7 +13,7 @@ import {
 } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { formatVnd } from "@vpyd/ui";
-import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import "./calendar.css";
 import { CustomerName } from "../../app/CustomerName";
 import { Icon } from "../../app/Icon";
@@ -24,7 +24,6 @@ import { usePhone } from "../../components/useMediaQuery";
 import { ApiError } from "../../lib/api";
 import { messageFor, retryable } from "../../lib/errors";
 import { useSearchState } from "../../lib/searchState";
-import { serviceLabel } from "../../lib/names";
 import { can, meQuery } from "../auth/session";
 import { spaToday } from "../corrections/api";
 import type { CartLine } from "../front-desk/api";
@@ -33,17 +32,9 @@ import { frontDeskSearch } from "../front-desk/search";
 import { activeStaffQuery, formatDate } from "../sales/api";
 import { BookingSheet, type Draft } from "./BookingSheet";
 import { GroupCheckIn } from "./GroupCheckIn";
-import {
-  type Block,
-  type Lane,
-  blockOf,
-  cardLines,
-  columnLanes,
-  gutterBands,
-} from "./layout";
+import { type TimeColumn, TimeGrid, range, servicesText } from "./TimeGrid";
 import {
   type Entry,
-  type EntryView,
   PHASE_BADGE,
   PHASE_LABEL,
   arriveAppointment,
@@ -78,18 +69,6 @@ const WEEKDAY = ["CN", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "T
 function dayTitle(day: string): string {
   const d = new Date(`${day}T00:00:00Z`);
   return `${WEEKDAY[d.getUTCDay()] ?? ""}, ${formatDate(day).slice(0, 5)}`;
-}
-
-function range(start: number, minutes: number): string {
-  return `${hhmm(start)}–${hhmm(start + minutes)}`;
-}
-
-function servicesText(
-  list: { service_name: string; category_name: string }[],
-): string {
-  return list
-    .map((s) => serviceLabel(s.service_name, s.category_name))
-    .join(", ");
 }
 
 /** The phase as the app's one status chip set (always with its words). */
@@ -556,13 +535,6 @@ function CalendarSkeleton({ layout }: { layout: "ngay" | "tuan" | "ds" }) {
   );
 }
 
-interface Column {
-  key: string;
-  title: string;
-  staffId: string;
-  items: EntryView[];
-}
-
 /** "2 khách", or "2/4" against the owner's max; empty when nobody is there and no max is set. */
 function slotCount(n: number, max: number | null): string {
   if (max !== null) return `${String(n)}/${String(max)}`;
@@ -570,10 +542,9 @@ function slotCount(n: number, max: number | null): string {
 }
 
 /**
- * The day grid, in two layers (round 6, Google-Calendar style): the slot grid (hour lines, one
- * "book here" button per slot and column, always all of them) and, above it, one event layer per
- * technician column with absolutely placed cards. A card never replaces the cells under it, so the
- * lines run on around it and the free time before and after it stays clickable.
+ * The desk's day grid (round 6, Google-Calendar style): one column per technician (+ "Chưa gán
+ * KTV") on the shared `TimeGrid`, every free slot a "book here" button, and per hour the busiest
+ * slot's people count against the owner's max.
  */
 function DayGrid({
   cal,
@@ -596,8 +567,6 @@ function DayGrid({
 }) {
   const opens = minutesOf(cal.opens_at);
   const closes = minutesOf(cal.closes_at);
-  const slot = cal.slot_minutes;
-  const rows = Math.max(1, Math.round((closes - opens) / slot));
   const entries = entriesOf(cal, day);
   const shown = entries
     .map(view)
@@ -605,290 +574,73 @@ function DayGrid({
     .filter((e) => counts(e.phase));
   const byId = new Map(entries.map((e) => [e.id, e]));
   const techIds = new Set(cal.technicians.map((t) => t.id));
-  const columns: Column[] = [
+  const head = (title: string) => <span>{title}</span>;
+  const columns: TimeColumn[] = [
     ...cal.technicians.map((t) => ({
       key: t.id,
+      head: head(t.full_name),
       title: t.full_name,
-      staffId: t.id,
+      day,
+      bookAs: t.id,
       items: shown.filter((e) => e.staffId === t.id),
     })),
-    {
-      key: "none",
-      title: "Chưa gán KTV",
-      staffId: "",
-      items: shown.filter((e) => !e.staffId || !techIds.has(e.staffId)),
-    },
-  ];
-  // Equal columns, one grid track each; overlapping cards split their column into lanes.
-  const laid = columns
-    .filter((c) => c.staffId !== "" || unassigned)
-    .map((c, i) => ({ ...c, col: i + 2, lane: columnLanes(c.items) }));
-  const cols = laid.length;
-  const now = spaMinutes(new Date().toISOString());
-  const isToday = day === spaToday();
-  const past = (m: number) => day < spaToday() || (isToday && m + slot <= now);
-  const max = cal.max_per_slot ?? null;
-  const { frame, wide } = useFits(cols);
-
-  return (
-    <div ref={frame} className={`card cal-scroll ${wide ? "is-wide" : ""}`}>
-      <div
-        className="cal-grid"
-        style={
+    ...(unassigned
+      ? [
           {
-            "--cols": String(cols),
-            "--rows": String(rows),
-          } as React.CSSProperties
-        }
-        aria-label={`Lịch theo KTV ngày ${formatDate(day)}`}
-        role="group"
-      >
-        <div
-          className="cal-head cal-corner"
-          style={{ gridColumn: 1, gridRow: 1 }}
-        >
-          <span
-            title={
-              max === null
-                ? "Giờ và số khách trong khung"
-                : "Giờ và số khách / tối đa"
-            }
-          >
-            Giờ
-          </span>
-        </div>
-        {laid.map((g) => (
-          <div
-            key={g.key}
-            className="cal-head"
-            style={{ gridColumn: g.col, gridRow: 1 }}
-            title={g.title}
-          >
-            <span>{g.title}</span>
-          </div>
-        ))}
-        {gutterBands(opens, closes, slot).map(({ row, span, m }) => {
-          const hour = m % 60 === 0;
-          // One number per hour (its busiest slot), not one per 15-minute row (EM round 5).
-          const n = hour
-            ? peakPeople(cal, day, m, Math.min(60, closes - m))
-            : 0;
-          const text = hour && (n > 0 || max !== null) ? slotCount(n, max) : "";
-          const full = max !== null && n >= max;
-          // One gutter band per hour (EM polish round 2: the count chip collided with the hour on
-          // one 26 px row): the hour on top, its count chip under it.
-          return (
-            <div
-              key={`g${String(row)}`}
-              className={`cal-gutter ${hour ? "is-hour" : ""}`}
-              style={{
-                gridColumn: 1,
-                gridRow: `${String(row + 2)} / span ${String(span)}`,
-              }}
-            >
-              {hour && <span>{hhmm(m)}</span>}
-              {text && (
-                <span
-                  className={`cal-count ${full ? "is-full" : ""}`}
-                  title={
-                    full
-                      ? "Đã đủ số khách tối đa"
-                      : "Số khách đông nhất trong giờ này"
-                  }
-                >
-                  <span className="sr-only">{hhmm(m)}: </span>
-                  {text}
-                </span>
-              )}
-            </div>
-          );
-        })}
-        {laid.flatMap((g) =>
-          Array.from({ length: rows }, (_, r) => {
-            const m = opens + r * slot;
-            const disabled = !canBook || past(m);
-            return (
-              <button
-                key={`${g.key}-${String(r)}`}
-                type="button"
-                tabIndex={-1}
-                aria-label={`Đặt lịch ${hhmm(m)}${g.staffId ? ` với ${g.title}` : ""}`}
-                disabled={disabled}
-                className={`cal-cell ${m % 60 === 0 ? "is-hour" : ""} ${disabled ? "is-past" : ""}`}
-                style={{ gridColumn: g.col, gridRow: r + 2 }}
-                onClick={() => {
-                  onBook(m, g.staffId);
-                }}
-              />
-            );
-          }),
-        )}
-        {laid.map((g) => (
-          // One column's event layer: spans its slots, lets clicks through except on the cards.
-          <div
-            key={`layer-${g.key}`}
-            className="cal-layer"
-            // Explicit "/ span 1": an absolute grid item with an auto end line would reach the grid edge.
-            style={{
-              gridColumn: `${String(g.col)} / span 1`,
-              gridRow: `2 / span ${String(rows)}`,
-            }}
-          >
-            {g.items.map((e) => {
-              const block = blockOf(e.start, e.minutes, opens, closes, slot);
-              const entry = byId.get(e.id);
-              if (!block || !entry) return null;
-              return (
-                <DayEvent
-                  key={e.id}
-                  e={e}
-                  block={block}
-                  lane={g.lane.get(e.id) ?? { lane: 0, lanes: 1 }}
-                  tag={entryTag(entry, everyone)}
-                  late={
-                    isToday &&
-                    e.phase === "in_service" &&
-                    now >= e.start + e.minutes
-                  }
-                  onOpen={onOpen}
-                />
-              );
-            })}
-          </div>
-        ))}
-        {isToday && now >= opens && now <= closes && (
-          <div
-            className="cal-now"
-            aria-hidden="true"
-            style={
-              {
-                gridColumn: `1 / span ${String(cols + 1)}`,
-                gridRow: `2 / span ${String(rows)}`,
-                "--top": String((now - opens) / slot),
-              } as React.CSSProperties
-            }
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** Gutter and minimum column width of the day grid (calendar.css `--gutter-w`, `--col-min`). */
-const GUTTER_PX = 104;
-const COLUMN_MIN_PX = 168;
-
-/**
- * Whether `cols` technician columns overflow the grid's frame. Only then the frame scrolls
- * sideways; otherwise it is no scroll box at all, so the page scrolls as one and the header row
- * sticks under the top bar.
- */
-function useFits(cols: number) {
-  const frame = useRef<HTMLDivElement | null>(null);
-  const [wide, setWide] = useState(false);
-  useEffect(() => {
-    const el = frame.current;
-    if (!el) return;
-    const check = () => {
-      // clientWidth excludes the 1 px borders, like the grid's own box.
-      setWide(GUTTER_PX + cols * COLUMN_MIN_PX > el.clientWidth);
-    };
-    check();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(check);
-    observer.observe(el);
-    return () => {
-      observer.disconnect();
-    };
-  }, [cols]);
-  return { frame, wide };
-}
-
-/**
- * One card of the event layer: as tall as its real time span, `1 / lanes` of the column wide.
- * Whole lines only (layout.ts `cardLines`): the name (up to two lines), then a phase dot + phase
- * word + tag, then the services with the room left. The full text is the tooltip and the name.
- */
-function DayEvent({
-  e,
-  block,
-  lane,
-  tag,
-  late,
-  onOpen,
-}: {
-  e: EntryView;
-  block: Block;
-  lane: Lane;
-  tag: string | null;
-  /** Arrived and still "Đang làm" after the booked end: keeps its span, says "quá giờ". */
-  late: boolean;
-  onOpen: (id: string) => void;
-}) {
-  const parts = [PHASE_LABEL[e.phase], late ? "quá giờ" : null, tag].filter(
-    (x): x is string => Boolean(x),
-  );
-  const phase = parts.join(" · ");
-  const services = servicesText(e.services);
-  const lines = cardLines(block.height, lane.lanes);
-  const when = range(e.start, e.minutes);
-  const dot = <span aria-hidden="true" className="appt-dot" />;
+            key: "none",
+            head: head("Chưa gán KTV"),
+            title: "Chưa gán KTV",
+            day,
+            bookAs: "",
+            items: shown.filter((e) => !e.staffId || !techIds.has(e.staffId)),
+          },
+        ]
+      : []),
+  ];
+  const max = cal.max_per_slot ?? null;
   return (
-    <button
-      type="button"
-      className="appt cal-event"
-      data-phase={e.phase}
-      data-kind={e.kind}
-      data-fit={lines.meta === 0 ? "compact" : undefined}
-      style={
-        {
-          "--top": String(block.top),
-          "--span": String(block.height),
-          "--lane": String(lane.lane),
-          "--lanes": String(lane.lanes),
-          "--name-lines": String(lines.name),
-          "--meta-lines": String(lines.meta),
-          "--svc-lines": String(lines.services),
-        } as React.CSSProperties
+    <TimeGrid
+      opens={opens}
+      closes={closes}
+      slot={cal.slot_minutes}
+      columns={columns}
+      label={`Lịch theo KTV ngày ${formatDate(day)}`}
+      cornerTitle={
+        max === null
+          ? "Giờ và số khách trong khung"
+          : "Giờ và số khách / tối đa"
       }
-      onClick={() => {
-        onOpen(e.id);
+      canBook={canBook}
+      onBook={(m, col) => {
+        onBook(m, col.bookAs ?? "");
       }}
-      aria-label={[`${when} ${e.customerName}`, ...parts, services]
-        .filter(Boolean)
-        .join(", ")}
-      title={[when, e.customerName, phase, services]
-        .filter(Boolean)
-        .join(" · ")}
-    >
-      {lines.meta === 0 ? (
-        <span className="cal-event-name">
-          {dot}
-          <strong>{e.customerName}</strong>
-        </span>
-      ) : (
-        <>
-          {/* The spaces keep the word groups apart in the text, so it reads inside the accessible
-              name (WCAG 2.5.3); flex layout ignores them on screen. */}
-          <strong className="cal-event-name">{e.customerName}</strong>{" "}
-          <span className="cal-event-meta">
-            <span className="cal-event-phase">
-              {dot}
-              {PHASE_LABEL[e.phase]}
-            </span>{" "}
-            {late && <span className="cal-event-phase">quá giờ</span>}{" "}
-            {tag && <span className="cal-event-tag">{tag}</span>}{" "}
-            {/* No services line: they follow as the last word group, where there is room. */}
-            {lines.services === 0 && services && (
-              <span className="cal-event-tag">{services}</span>
-            )}
-          </span>{" "}
-          {lines.services > 0 && services && (
-            <span className="cal-event-services">{services}</span>
-          )}
-        </>
-      )}
-    </button>
+      onOpen={onOpen}
+      tagOf={(e) => {
+        const entry = byId.get(e.id);
+        return entry ? entryTag(entry, everyone) : null;
+      }}
+      gutter={(m) => {
+        // One number per hour (its busiest slot), not one per 15-minute row (EM round 5).
+        const n = peakPeople(cal, day, m, Math.min(60, closes - m));
+        const text = n > 0 || max !== null ? slotCount(n, max) : "";
+        const full = max !== null && n >= max;
+        return (
+          text && (
+            <span
+              className={`cal-count ${full ? "is-full" : ""}`}
+              title={
+                full
+                  ? "Đã đủ số khách tối đa"
+                  : "Số khách đông nhất trong giờ này"
+              }
+            >
+              <span className="sr-only">{hhmm(m)}: </span>
+              {text}
+            </span>
+          )
+        );
+      }}
+    />
   );
 }
 

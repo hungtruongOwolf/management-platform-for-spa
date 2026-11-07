@@ -496,6 +496,128 @@ pub async fn visit_lines(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Vec<VisitLin
     .await?)
 }
 
+// ------------------------------------------------------------- a technician's own calendar
+
+pub struct MyAppointmentRow {
+    pub id: Uuid,
+    pub status: String,
+    pub business_date: NaiveDate,
+    pub starts_at: DateTime<Utc>,
+    pub ends_at: DateTime<Utc>,
+    pub customer_name: String,
+    pub visit_status: Option<String>,
+    pub visit_check_in_at: Option<DateTime<Utc>>,
+    pub group_size: Option<i64>,
+}
+
+/// Appointments of `from..=to` assigned to `staff` (every status), earliest first. Only the
+/// allowlisted columns of `MyCalendarEntry` are selected: no phone, note or money.
+pub async fn my_appointments(
+    tx: &mut TenantTx,
+    staff: Uuid,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<Vec<MyAppointmentRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        MyAppointmentRow,
+        r#"SELECT a.id, a.status, a.business_date, a.starts_at, a.ends_at,
+                  CASE WHEN c.id IS NULL THEN a.guest_name
+                       ELSE app.customer_label(c.full_name) END AS "customer_name!",
+                  v.status AS "visit_status?", v.check_in_at AS "visit_check_in_at?",
+                  CASE WHEN a.group_id IS NULL THEN NULL ELSE
+                    (SELECT count(*) FROM app.appointment g
+                     WHERE g.tenant_id = a.tenant_id AND g.group_id = a.group_id
+                       AND g.status <> 'cancelled') END AS "group_size?"
+           FROM app.appointment a
+           LEFT JOIN app.customer c ON c.tenant_id = a.tenant_id AND c.id = a.customer_id
+           LEFT JOIN app.visit v ON v.tenant_id = a.tenant_id AND v.id = a.visit_id
+           WHERE a.tenant_id = $1 AND a.staff_id = $2 AND a.business_date BETWEEN $3 AND $4
+           ORDER BY a.starts_at, a.id
+           LIMIT 2000"#,
+        tenant,
+        staff,
+        from,
+        to
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+pub struct MyVisitRow {
+    pub id: Uuid,
+    pub business_date: NaiveDate,
+    pub check_in_at: DateTime<Utc>,
+    pub customer_name: String,
+    pub walk_in: bool,
+}
+
+/// Completed visits of `from..=to` in which `staff` performed a line and that no booking assigned
+/// to `staff` stands for (that booking is the entry), earliest first.
+pub async fn my_visits(
+    tx: &mut TenantTx,
+    staff: Uuid,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<Vec<MyVisitRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        MyVisitRow,
+        r#"SELECT v.id, v.business_date, v.check_in_at,
+                  app.customer_label(c.full_name) AS "customer_name!",
+                  NOT EXISTS (SELECT 1 FROM app.appointment a
+                              WHERE a.tenant_id = v.tenant_id AND a.visit_id = v.id) AS "walk_in!"
+           FROM app.visit v
+           JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id
+           WHERE v.tenant_id = $1 AND v.status = 'completed' AND v.business_date BETWEEN $3 AND $4
+             AND EXISTS (SELECT 1 FROM app.visit_line l
+                         WHERE l.tenant_id = v.tenant_id AND l.visit_id = v.id AND l.staff_id = $2)
+             AND NOT EXISTS (SELECT 1 FROM app.appointment a
+                             WHERE a.tenant_id = v.tenant_id AND a.visit_id = v.id AND a.staff_id = $2)
+           ORDER BY v.check_in_at, v.id
+           LIMIT 2000"#,
+        tenant,
+        staff,
+        from,
+        to
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+pub struct MyVisitLineRow {
+    pub visit_id: Uuid,
+    pub service_name: String,
+    pub category_name: String,
+    pub duration_min: Option<i32>,
+    pub source: String,
+}
+
+/// `staff`'s own lines of the given visits, in order (no N+1; another technician's lines of a
+/// shared visit are never read).
+pub async fn my_visit_lines(
+    tx: &mut TenantTx,
+    staff: Uuid,
+    ids: &[Uuid],
+) -> Result<Vec<MyVisitLineRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        MyVisitLineRow,
+        r#"SELECT l.visit_id, l.service_name_snapshot AS service_name, sc.name AS category_name,
+                  sv.duration_min, l.source
+           FROM app.visit_line l
+           JOIN app.service sv ON sv.tenant_id = l.tenant_id AND sv.id = l.service_id
+           JOIN app.service_category sc ON sc.tenant_id = sv.tenant_id AND sc.id = sv.category_id
+           WHERE l.tenant_id = $1 AND l.staff_id = $2 AND l.visit_id = ANY($3)
+           ORDER BY l.visit_id, l.position"#,
+        tenant,
+        staff,
+        ids
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
 /// The owner's advisory "max customers per slot"; `None` = no limit (or never set).
 pub async fn max_per_slot(tx: &mut TenantTx) -> Result<Option<i32>, AppError> {
     let tenant = tx.tenant().as_uuid();

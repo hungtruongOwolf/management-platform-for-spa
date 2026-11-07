@@ -5,7 +5,7 @@ use super::dto::{
     AppointmentArrive, AppointmentClose, AppointmentComplete, AppointmentCompleted,
     AppointmentCreate, AppointmentDto, AppointmentGroupCreate, AppointmentGroupDto,
     AppointmentSettingsDto, AppointmentSettingsUpdate, AppointmentUpdate, CalendarDto,
-    CalendarQuery,
+    CalendarQuery, MyCalendar,
 };
 use super::service::{self, Outcome};
 use axum::body::Bytes;
@@ -33,6 +33,7 @@ where
 {
     Router::new()
         .route("/appointments", get(calendar).post(book))
+        .route("/me/appointments", get(my_calendar))
         .route("/appointments/group", post(book_group))
         .route("/appointment-settings", put(update_settings))
         .route(
@@ -74,6 +75,20 @@ pub async fn calendar(
     Query(query): Query<CalendarQuery>,
 ) -> Result<Response, AppError> {
     let cal = service::calendar(&pool, &user.actor, &query).await?;
+    Ok(no_store(StatusCode::OK, cal, None))
+}
+
+/// The signed-in technician's own calendar (read-only). The person is the session's staff link;
+/// there is no parameter to pick anyone else (`?staff_id=` → 400).
+#[utoipa::path(get, path = "/api/v1/me/appointments", tag = "appointments", params(CalendarQuery),
+    responses((status = 200, body = MyCalendar), (status = 400), (status = 401), (status = 403),
+        (status = 422, description = "to before_from / range_too_long (max 14 days)")))]
+pub async fn my_calendar(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Query(query): Query<CalendarQuery>,
+) -> Result<Response, AppError> {
+    let cal = service::my_calendar(&pool, &user.actor, &query).await?;
     Ok(no_store(StatusCode::OK, cal, None))
 }
 

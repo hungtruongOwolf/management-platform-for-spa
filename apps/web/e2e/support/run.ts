@@ -17,6 +17,9 @@ export interface RunCredentials {
   /** Manager account (no MFA): used by Lighthouse to audit the front desk `/quay`. */
   managerPhone?: string;
   managerPassword?: string;
+  /** Technician account (no MFA, no profile until a spec links one): the technician's own pages. */
+  techPhone?: string;
+  techPassword?: string;
 }
 
 export function credentials(): RunCredentials {

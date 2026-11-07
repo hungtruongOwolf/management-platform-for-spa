@@ -19,5 +19,8 @@ export const staffSearch = searchSchema({
   day: param.day(),
 });
 
-/** /khach-cua-toi: the month of "Khách đã làm". */
-export const myWorkSearch = searchSchema({ month });
+/** /khach-cua-toi: the calendar's day ("" = today) and view ("" = the device's default). */
+export const myWorkSearch = searchSchema({
+  ngay: param.day(),
+  kieu: param.oneOf(["", "ngay", "tuan", "ds"], ""),
+});

@@ -64,7 +64,14 @@ export function StaffPage() {
           {picker}
         </PageHeader>
         {can(me, "staff.read_own") ? (
-          <MyMonth month={month} />
+          <MyMonth
+            month={month}
+            day={search.day}
+            onDay={(d) => {
+              // The open day is in the URL (ADR-0007); its month follows it.
+              patch(d ? { day: d, month: d.slice(0, 7) === current ? "" : d.slice(0, 7) } : { day: "" });
+            }}
+          />
         ) : (
           <p role="alert" className="note">
             Màn hình này chưa mở cho tài khoản của bạn.

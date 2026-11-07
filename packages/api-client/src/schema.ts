@@ -567,6 +567,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/appointments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The signed-in technician's own calendar (read-only). The person is the session's staff link;
+         *     there is no parameter to pick anyone else (`?staff_id=` → 400).
+         */
+        get: operations["my_calendar"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/staff": {
         parameters: {
             query?: never;
@@ -583,7 +603,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/me/work": {
+    "/api/v1/me/staff/day": {
         parameters: {
             query?: never;
             header?: never;
@@ -591,10 +611,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Customers I served in the month and appointments assigned to me (spec §10 US9). The person is
-         *     the session's own staff link; there is no parameter to pick anyone else (`?staff_id=` → 400).
+         * One day of my month in detail (EM 2026-11-07). The person is the session's own staff link;
+         *     there is no parameter to pick anyone else (`?staff_id=` → 400).
          */
-        get: operations["get_my_work"];
+        get: operations["get_my_day"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2344,6 +2364,139 @@ export interface components {
             /** @description `otpauth://totp/...` URI; the client renders it as a QR code. */
             otpauth_uri: string;
         };
+        /** @description `GET /me/appointments`: the signed-in technician's own calendar. */
+        MyCalendar: {
+            data?: components["schemas"]["MyCalendarData"] | null;
+            /** @description `false`: this login is not linked to a staff profile (ask the owner). */
+            linked: boolean;
+        };
+        MyCalendarData: {
+            closes_at: string;
+            /** @description Every phase, earliest first. */
+            entries: components["schemas"]["MyCalendarEntry"][];
+            /** Format: date */
+            from: string;
+            /** @description "HH:MM", spa time. */
+            opens_at: string;
+            /** Format: int32 */
+            slot_minutes: number;
+            /** Format: date */
+            to: string;
+            /** Format: date */
+            today: string;
+        };
+        /**
+         * @description One block of a technician's own calendar. An allowlist: times, phase, the customer's name and
+         *     the services — no phone, no note, no money, no customer or staff ids.
+         */
+        MyCalendarEntry: {
+            /** Format: date */
+            business_date: string;
+            customer_name: string;
+            /** Format: int64 */
+            duration_min: number;
+            /** Format: date-time */
+            ends_at: string;
+            /**
+             * Format: int64
+             * @description People booked together in this booking's group (ADR-0009), this one included; `null` =
+             *     booked alone, or a visit.
+             */
+            group_size?: number | null;
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["MyEntryKind"];
+            phase: components["schemas"]["PhaseDto"];
+            /** @description Bookings: what was booked; visits: only the lines I performed. */
+            services: components["schemas"]["MyEntryService"][];
+            /** Format: date-time */
+            starts_at: string;
+            /** @description A visit recorded without any booking ("vãng lai"). */
+            walk_in: boolean;
+        };
+        MyDay: {
+            data?: components["schemas"]["MyDayData"] | null;
+            /** @description `false`: this login is not linked to a staff profile (ask the owner). */
+            linked: boolean;
+        };
+        MyDayData: {
+            /** @description Bonuses and penalties dated that day. */
+            adjustments: components["schemas"]["Adjustment"][];
+            attendance?: components["schemas"]["AttendanceDay"] | null;
+            /** @description The month's payroll is closed (figures are final). */
+            closed: boolean;
+            /**
+             * Format: int32
+             * @description The rate the payslip applies (basis points); `null` before pay terms are set.
+             */
+            commission_rate_bp?: number | null;
+            /** Format: date */
+            date: string;
+            review?: components["schemas"]["DailyReview"] | null;
+            /** Format: date */
+            today: string;
+            upsell: components["schemas"]["MyDayUpsell"][];
+            /** @description Earliest first. */
+            visits: components["schemas"]["MyDayVisit"][];
+        };
+        /** @description One service line the person performed. */
+        MyDayLine: {
+            /**
+             * Format: int64
+             * @description `value × commission rate`, rounded; `null` before the person's pay terms are set. The
+             *     payslip rounds the month's sum once, so the day's figures may differ from it by a đồng.
+             */
+            commission?: number | null;
+            /** Format: int64 */
+            qty: number;
+            service_name: string;
+            /** @description `one_off` (dịch vụ lẻ) or `package` (buổi liệu trình). */
+            source: string;
+            /**
+             * Format: int64
+             * @description What the line counts towards the commission base (the spa's rule decides whether gift
+             *     sessions count at full price).
+             */
+            value: number;
+        };
+        /** @description An upsell credit of the day ("giới thiệu / chốt"). */
+        MyDayUpsell: {
+            /** Format: int64 */
+            commission?: number | null;
+            customer_name: string;
+            description: string;
+            /**
+             * @description `package` (closed), `package_refund` (a package they closed, refunded today: negative) or
+             *     `service` (a one-off service they recommended).
+             */
+            kind: string;
+            /** Format: int64 */
+            qty: number;
+            /** Format: int64 */
+            value: number;
+        };
+        /** @description A completed visit in which the person performed at least one line; `lines` are only theirs. */
+        MyDayVisit: {
+            /** Format: date-time */
+            check_in_at: string;
+            customer_name: string;
+            lines: components["schemas"]["MyDayLine"][];
+            /** Format: uuid */
+            visit_id: string;
+        };
+        /**
+         * @description What an entry of "Lịch của tôi" is: a booking assigned to me, or a visit I served that no
+         *     booking of mine stands for.
+         * @enum {string}
+         */
+        MyEntryKind: "appointment" | "visit";
+        /** @description A service on a technician's own calendar entry. */
+        MyEntryService: {
+            category_name: string;
+            /** @description A session of the customer's package (visits only; bookings are always `false`). */
+            from_package: boolean;
+            service_name: string;
+        };
         MyMonth: {
             adjustments: components["schemas"]["Adjustment"][];
             attendance: components["schemas"]["StaffSheet"];
@@ -2357,20 +2510,6 @@ export interface components {
             data?: components["schemas"]["MyMonth"] | null;
             /** @description `false`: this login is not linked to a staff profile (ask the owner). */
             linked: boolean;
-        };
-        MyWork: {
-            data?: components["schemas"]["MyWorkData"] | null;
-            /** @description `false`: this login is not linked to a staff profile (ask the owner). */
-            linked: boolean;
-        };
-        MyWorkData: {
-            month: string;
-            /** @description Newest first. */
-            served: components["schemas"]["ServedVisit"][];
-            /** Format: date */
-            today: string;
-            /** @description Booked / arrived, from today to today + 30 days, earliest first. */
-            upcoming: components["schemas"]["UpcomingAppointment"][];
         };
         OpeningBalanceCreate: {
             customer?: components["schemas"]["CustomerCreate"] | null;
@@ -3095,27 +3234,6 @@ export interface components {
             /** Format: int32 */
             points: number;
         };
-        ServedLine: {
-            /** @description `true`: a session of the customer's package; `false`: a one-off service. */
-            from_package: boolean;
-            /** Format: int32 */
-            qty: number;
-            service_name: string;
-        };
-        /**
-         * @description A completed visit in which this person performed at least one line; `services` lists only
-         *     **their** lines.
-         */
-        ServedVisit: {
-            /** Format: date */
-            business_date: string;
-            /** Format: date-time */
-            check_in_at: string;
-            customer_name: string;
-            services: components["schemas"]["ServedLine"][];
-            /** Format: uuid */
-            visit_id: string;
-        };
         ServiceCategoryDto: {
             /** Format: uuid */
             id: string;
@@ -3406,22 +3524,6 @@ export interface components {
             /** Format: int64 */
             sessions_used: number;
         };
-        UpcomingAppointment: {
-            /** Format: uuid */
-            appointment_id: string;
-            /** Format: date */
-            business_date: string;
-            /** @description The customer's profile name, or the newcomer's name given at booking. */
-            customer_name: string;
-            /** Format: date-time */
-            ends_at: string;
-            services: string[];
-            /** Format: date-time */
-            starts_at: string;
-            status: components["schemas"]["UpcomingStatus"];
-        };
-        /** @enum {string} */
-        UpcomingStatus: "booked" | "arrived";
         /**
          * @description Upsell credit of one item sold in the month ("người giới thiệu / chốt", compensation-rules
          *     §3.2, EM 2026-11-06 Q-U3): a package closed by this person or a one-off service they
@@ -5960,6 +6062,55 @@ export interface operations {
             };
         };
     };
+    my_calendar: {
+        parameters: {
+            query?: {
+                /** @description First business day `YYYY-MM-DD`; default today. */
+                from?: string;
+                /** @description Last business day (inclusive); default `from`. At most 14 days. */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyCalendar"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description to before_from / range_too_long (max 14 days) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     get_my_staff: {
         parameters: {
             query?: {
@@ -6000,11 +6151,11 @@ export interface operations {
             };
         };
     };
-    get_my_work: {
+    get_my_day: {
         parameters: {
             query?: {
-                /** @description `YYYY-MM`; default the current month (spa time zone). */
-                month?: string;
+                /** @description `YYYY-MM-DD`; default today (spa time zone). */
+                date?: string;
             };
             header?: never;
             path?: never;
@@ -6017,7 +6168,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MyWork"];
+                    "application/json": components["schemas"]["MyDay"];
                 };
             };
             400: {
@@ -6038,6 +6189,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description date invalid_date */
             422: {
                 headers: {
                     [name: string]: unknown;

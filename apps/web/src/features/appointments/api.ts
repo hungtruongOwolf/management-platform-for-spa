@@ -214,7 +214,8 @@ export interface EntryView {
   staffId: string | null;
   customerName: string;
   groupId: string | null;
-  services: AppointmentService[];
+  /** What the card and the list say (names only: a read-only calendar carries no ids). */
+  services: Pick<AppointmentService, "service_name" | "category_name">[];
 }
 
 export function view(e: Entry): EntryView {

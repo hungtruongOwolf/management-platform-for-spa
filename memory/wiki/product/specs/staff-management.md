@@ -2,7 +2,7 @@
 title: "Spec: Quản lý nhân viên (chấm công, đánh giá, thưởng/phạt, bảng lương)"
 status: draft
 updated: 2026-11-07
-sources: [raw/2026-11-07-em-decisions-after-live-test.md, raw/2026-11-06-em-review-round5.md, raw/2026-11-05-em-review-round4.md, raw/2026-11-04-idea-internal-platform.md]
+sources: [raw/2026-11-07-em-technician-pages.md, raw/2026-11-07-em-decisions-after-live-test.md, raw/2026-11-06-em-review-round5.md, raw/2026-11-05-em-review-round4.md, raw/2026-11-04-idea-internal-platform.md]
 related: [../compensation-rules.md, ../personas.md, ../../architecture/backend.md, ../../architecture/data.md, ../../security/authz-matrix.md]
 ---
 
@@ -182,10 +182,10 @@ Không đổi API hay quy tắc dữ liệu cho mục 9–10 (khóa tháng, quy�
 ### US8: Bảng công tháng dạng lưới
 *Là quản lý, tôi muốn xem cả tháng trong một bảng (người × ngày), để nhìn là thấy ai nghỉ, ai muộn.*
 - AC8.1 Lưới: hàng = nhân viên, cột = ngày (thứ, CN tô màu), ô = mã ✓/P/ĐX/K (muộn có gạch đỏ, chưa chấm "–", ngoài thời gian làm / tương lai "·"), cột tổng cuối hàng (công, muộn, P/ĐX/K, khen/phàn nàn). Cột tên dính bên trái khi cuộn ngang; **dùng được ở 390 px** (không còn chỉ desktop). Bấm ô (tháng chưa chốt) → sheet sửa ô đó.
-- AC8.2 KTV ("Công và lương của tôi"): **lịch tháng thu gọn** (7 cột T2…CN, ô = ngày + mã) thay cho danh sách, kèm ô tổng (đi làm, muộn, P, ĐX, K, khen, phàn nàn). Không có thanh cuộn ngang ở 390 px.
+- AC8.2 *(thay bằng §12 US11)* KTV ("Công và lương của tôi"): **lịch tháng thu gọn** (7 cột T2…CN, ô = ngày + mã) thay cho danh sách, kèm ô tổng (đi làm, muộn, P, ĐX, K, khen, phàn nàn). Không có thanh cuộn ngang ở 390 px.
 - AC8.3 Âm: tháng chưa có người nào → trạng thái trống; lỗi tải → trạng thái lỗi có nút thử lại.
 
-### US9: KTV xem khách đã làm và lịch hẹn của mình
+### US9: KTV xem khách đã làm và lịch hẹn của mình *(AC9.1–9.3, 9.6 thay bằng §12; `GET /me/work` đã xóa)*
 *Là KTV, tôi muốn xem mình đã làm cho khách nào và ai đã đặt lịch với mình, để chuẩn bị và tự đối chiếu hoa hồng.*
 - AC9.1 `GET /me/work?month=YYYY-MM` (`staff.read_own`, `Cache-Control: no-store`). Staff lấy từ `staff.user_id = session.user` (như `/me/staff`); tài khoản chưa gắn → `200 {linked: false}`.
 - AC9.2 `served[]`: các lượt **completed** của tháng có ít nhất một dòng dịch vụ do chính người đó làm; mỗi lượt: `visit_id`, `business_date`, `check_in_at`, `customer_name`, `services[]` = **chỉ các dòng của người đó** (tên dịch vụ, số lượng, `source` lẻ/gói). Mới nhất trước. Lượt đã hủy không có.
@@ -215,3 +215,32 @@ Xem AC3b.1. Giữ tối đa 100 điểm. **Giới hạn Mức 3** giữ nguyên 
 
 ### Hoa hồng chốt khi gói bị hủy có hoàn tiền
 [ADR-0010](../../decisions/ADR-0010-commission-follows-kept-money.md): khoản hoàn trừ vào cơ sở hoa hồng chốt của người chốt, ở tháng hoàn tiền (dòng `package_refund` âm trên phiếu lương). *(Lead's decision — EM to review.)*
+
+
+## 12. Màn của KTV (EM 2026-11-07, [raw](../../../raw/2026-11-07-em-technician-pages.md))
+
+EM xem bằng tài khoản KTV: "cách sắp xếp chưa hợp lý" (phiếu lương), "UI xấu không cân đối" (lịch công), "hiện như google calendar giống trong chủ spa" (Khách của tôi), và "xem chi tiết hơn ngày hôm đó". Thay AC8.2 và US9 (AC9.1–AC9.3, AC9.6); AC9.4–AC9.5 (allowlist, âm) giữ nguyên ý cho endpoint mới.
+
+### US10: "Công và lương của tôi" sắp lại
+- AC10.1 Thứ tự: **Tổng quan tháng** (Thực lĩnh, Hoa hồng làm + giới thiệu/chốt, Thưởng/phạt, **trạng thái đánh giá tháng** dạng chip "Chưa đánh giá" / "80 điểm · Mức 2", chip "Tạm tính"/"Đã chốt lương", các cờ cần xem) → Ngày công → Đánh giá và thưởng/phạt → Phiếu lương. Dòng "⚠ Chưa đánh giá tháng" không còn nằm lẻ ở cuối trang; cờ của phiếu lương (cả sheet phiếu lương của chủ spa) là chip ngay dưới dòng trạng thái.
+- AC10.2 "Dịch vụ đã làm" **nhóm theo loại**: khối "Dịch vụ lẻ" và "Buổi liệu trình", mỗi dịch vụ một lần trong khối, xếp theo giá trị; mỗi khối có dòng "Cộng …" (lượt, giá trị); cuối bảng "Tổng tính hoa hồng" = `service_commission_base` và "Thành hoa hồng làm" = `tỷ lệ × tổng` = `service_commission` (khớp dòng "Hoa hồng làm liệu trình" của phiếu). Spa tính buổi tặng đủ giá (`commission_on_bonus_sessions`) thì bảng cộng `full_value` (nhận ra khi base = Σ full_value). *Lý do chọn nhóm theo loại thay vì theo dịch vụ:* KTV nghĩ "khách lẻ / khách gói", phiếu lương có dòng "làm liệu trình", và mỗi khối có tổng riêng; nhóm theo dịch vụ thì loại thành chữ phụ lặp lại ở mọi dòng.
+- AC10.3 "Giới thiệu / chốt được" cùng cách: "Gói liệu trình chốt được", "Dịch vụ lẻ giới thiệu", "Hoàn tiền gói (trừ lại)" (âm, ADR-0010, không đếm vào số lượng); tổng = `closing_commission_base`, "Thành hoa hồng giới thiệu / chốt" = `closing_commission`.
+- AC10.4 Bảng 3 cột cố định (tên | lượt | giá trị), số `tabular-nums` canh phải, trang một cột tối đa 56rem (không giãn cột ở 1280); 390 px giữ bảng, tên xuống dòng.
+
+### US11: Lịch Ngày công cân đối
+- AC11.1 7 cột T2…CN đều nhau; ô vuông ở điện thoại, 3:2 từ 640 px. Số ngày góc trên trái (nhỏ), mã ✓/P/ĐX/K giữa ô (lớn), **phút muộn là chip "12′" góc trên phải** (màu warning, thay gạch đỏ). Hôm nay viền primary; ngày tương lai chỉ có viền mảnh + số (không nền); chưa chấm "–". CN: tiêu đề và số ngày màu chữ chính, đậm (không mang nghĩa màu).
+- AC11.2 Chú thích là các chip nhỏ đúng màu ô (✓ Đi làm, P, ĐX, K, – Chưa chấm, 12′ Đi muộn), không còn một câu ký hiệu.
+- AC11.3 Ô tổng (Đi làm, Đi muộn "1 lần" + "14 phút", Nghỉ P/ĐX, Nghỉ K, Khen/Phàn nàn) ở trên lịch, cùng bề rộng cột đọc; điện thoại 2 cột (ô lẻ cuối chiếm cả hàng).
+
+### US12: Chi tiết một ngày
+*Là KTV, tôi muốn bấm một ngày để xem hôm đó mình làm gì và được bao nhiêu.*
+- AC12.1 Ngày ≤ hôm nay là nút (tên truy cập = "T5, 05/11/2026: Đi làm, muộn 12 phút"); bấm → sheet "Ngày T5, 05/11/2026" (bottom sheet ở điện thoại, dialog từ 640 px, có focus trap + Esc). "Ngày trước / Ngày sau" đổi ngày ngay trong sheet (sau hôm nay thì tắt). Ngày mở nằm trên URL (`?day=`), tháng đi theo ngày.
+- AC12.2 `GET /me/staff/day?date=YYYY-MM-DD` (`staff.read_own`, `no-store`, mặc định hôm nay). Người lấy từ session; `?staff_id=` → `400`; ngày sai/ngoài 2020–2100 → `422 invalid_date`; chưa gắn hồ sơ → `{linked:false}`.
+- AC12.3 Nội dung: chấm công (trạng thái, giờ vào/ra, phút muộn, ghi chú — cùng dữ liệu `/me/staff` đã cho), khen/phàn nàn + ghi chú, thưởng/phạt ghi ngày đó, **lượt đã làm** (giờ, tên khách, chỉ dòng của mình: dịch vụ, lẻ/buổi liệu trình, số lượng, giá trị tính hoa hồng, hoa hồng = tỷ lệ × giá trị làm tròn), **giới thiệu / chốt** của ngày (gói chốt, dịch vụ lẻ giới thiệu, hoàn tiền gói mình chốt; tên khách; hoa hồng). Tỷ lệ: tháng mở = điều kiện lương hiện tại, tháng đã chốt = tỷ lệ trong phiếu đã chốt; chưa có điều kiện lương → hoa hồng `null` ("chưa tính được"). Ghi chú cuối sheet: phiếu lương làm tròn một lần cho cả tháng, có thể lệch vài đồng.
+- AC12.4 Không SĐT, không ghi chú lượt/hồ sơ/sức khỏe, không id khách, không dữ liệu người khác (dòng của KTV khác trong lượt chung, thưởng của người khác). Test `staff.rs::a_technician_sees_their_own_day_in_detail`.
+
+### US9 (thay): "Khách của tôi" là lịch như Google Calendar
+- AC9.1' `GET /me/appointments?from=&to=` (`staff.read_own`, `no-store`, ≤ 14 ngày như `GET /appointments`, `to < from` / quá 14 ngày → `422`, `?staff_id=` → `400`). Thay `GET /me/work` (đã xóa).
+- AC9.2' `entries[]` sớm nhất trước, mọi phase: lịch hẹn `staff_id = mình` (mọi trạng thái, thời lượng đúng số phút, phase như lịch của quầy, `group_size` = số người trong nhóm ADR-0009 trừ người đã hủy) + lượt `completed` có dòng của mình mà không phải lượt của một lịch hẹn của mình (`walk_in` = không lịch hẹn nào trỏ tới; dịch vụ = chỉ dòng của mình, thời lượng từ các dòng đó, `from_package`). Trường: `id, kind, business_date, starts_at, ends_at, duration_min, phase, customer_name, services[{service_name, category_name, from_package}], group_size, walk_in` — không gì khác (test kiểm tập key).
+- AC9.6' UI `/khach-cua-toi`: `TimeGrid` dùng chung với Lịch hẹn của quầy (thẻ đúng độ dài, chấm phase, "Vãng lai", "Nhóm · 3 người", vạch giờ hiện tại). Desktop: Ngày (một cột) / **Tuần (7 cột ngày, mặc định)** / Danh sách; điện thoại: Ngày (mặc định) / Danh sách tuần (nhóm theo ngày). Thanh: ‹ Hôm nay ›; chọn tháng ở đầu trang như "Công và lương của tôi" (tháng → ngày 1, tháng này → hôm nay; tới tháng sau vì lịch hẹn đặt trước tới 30 ngày). Bấm thẻ → sheet chỉ đọc (giờ, khách, dịch vụ + lẻ/gói, thời lượng, phase). Không có ô đặt lịch, không nút sửa. URL: `ngay`, `kieu`.
+- Test: `staff.rs::a_technician_sees_only_their_own_calendar`; vitest `/khach-cua-toi`; e2e `technician.spec.ts`.

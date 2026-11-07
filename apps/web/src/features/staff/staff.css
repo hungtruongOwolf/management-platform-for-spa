@@ -433,46 +433,33 @@
     overflow-wrap: anywhere;
   }
 
-  /* ---------------------------------------- technician's month as a calendar (round 5) */
-  .my-calendar {
-    display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-    gap: 4px;
-  }
-  .my-calendar-head {
-    color: var(--text-muted);
-    font-size: var(--fs-xs);
-    font-weight: 600;
-    text-align: center;
-  }
-  .my-calendar-day {
-    display: grid;
-    min-height: 3.25rem;
-    padding: 4px;
-    border-radius: var(--radius-sm);
-    background: var(--surface-2);
-    font-size: var(--fs-xs);
-    align-content: space-between;
-  }
-  .my-calendar-day .code {
-    font-size: var(--fs-base);
-    font-weight: 700;
-    text-align: center;
-  }
-  .my-calendar-day.is-late {
-    box-shadow: inset 0 -3px 0 var(--danger);
-  }
-  .my-calendar-day.is-today {
-    outline: 2px solid var(--primary);
-    outline-offset: -2px;
+  /* ------------------------- "Công và lương của tôi" (technician, redesigned EM 2026-11-07) */
+  /* One reading column: the tiles, the calendar and the payslip share its width, so nothing
+     stretches into wide, short cells on a laptop and the numbers sit close to their labels. */
+  .my-month {
+    max-width: 56rem;
   }
   .my-totals {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
   }
-  /* Figures inside the "Ngày công" card: flat tiles on surface-2, never a card in the card. */
+  @media (min-width: 640px) {
+    .my-totals {
+      grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    }
+  }
+  /* An odd last tile on two columns takes the whole row instead of leaving a hole. */
+  @media (max-width: 639.98px) {
+    .my-totals > div:last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+    }
+  }
+  /* Figures inside a card: flat tiles on surface-2, never a card in the card. */
   .my-totals > div {
+    display: grid;
+    align-content: start;
+    gap: 2px;
     padding: 10px 12px;
     border-radius: var(--radius-md);
     background: var(--surface-2);
@@ -485,6 +472,277 @@
     font-size: var(--fs-lg);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
+    line-height: 26px;
+  }
+  .my-totals dd .badge {
+    font-size: var(--fs-sm);
+    vertical-align: 2px;
+  }
+  .my-tile-sub {
+    display: block;
+    color: var(--text-muted);
+    font-size: var(--fs-xs);
+    font-weight: 500;
+    line-height: 16px;
+  }
+
+  /* The month calendar: 7 equal columns of calm cells (square on phones, 3:2 from 640 px). */
+  .my-calendar {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .my-calendar-head {
+    padding-bottom: 2px;
+    color: var(--text-muted);
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    text-align: center;
+  }
+  /* Sunday: the week's end reads in the text colour (no colour meaning, design-system §7). */
+  .my-calendar-head.is-sunday {
+    color: var(--text);
+    font-weight: 700;
+  }
+  .my-calendar-cell {
+    display: grid;
+    min-width: 0;
+  }
+  .my-day {
+    position: relative;
+    display: grid;
+    place-items: center;
+    aspect-ratio: 1;
+    min-width: 0;
+    min-height: 40px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--text);
+    font: inherit;
+    transition:
+      box-shadow var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out);
+  }
+  @media (min-width: 640px) {
+    .my-day {
+      aspect-ratio: 3 / 2;
+      border-radius: var(--radius-md);
+    }
+  }
+  button.my-day {
+    cursor: pointer;
+  }
+  button.my-day:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-xs);
+  }
+  button.my-day:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  button.my-day[aria-current="date"] {
+    border-color: var(--accent);
+  }
+  /* The day number: top left, small; the status mark owns the centre. */
+  .my-day-num {
+    position: absolute;
+    top: 3px;
+    left: 5px;
+    color: var(--text-muted);
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 16px;
+  }
+  .my-day.is-sunday .my-day-num {
+    color: var(--text);
+  }
+  .my-day-mark {
+    padding-top: 8px;
+    font-size: var(--fs-md);
+    font-weight: 700;
+    line-height: 20px;
+  }
+  @media (min-width: 640px) {
+    .my-day-num {
+      top: 5px;
+      left: 8px;
+      font-size: var(--fs-sm);
+    }
+    .my-day-mark {
+      padding-top: 6px;
+      font-size: var(--fs-lg);
+    }
+  }
+  /* Minutes late: a small chip top right, in the warning roles (not a red line). */
+  .my-day-late {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    padding: 0 4px;
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius-pill);
+    background: var(--warning-bg);
+    color: var(--warning-text);
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 14px;
+  }
+  .my-day-late.is-inline {
+    position: static;
+    display: inline-block;
+  }
+  @media (min-width: 640px) {
+    .my-day-late {
+      top: 5px;
+      right: 6px;
+      padding: 1px 6px;
+    }
+  }
+  .my-day.att-none {
+    color: var(--text-muted);
+  }
+  /* Days still to come: no fill, a faint outline, the number only. */
+  .my-day.is-future {
+    border-color: var(--border);
+    background: transparent;
+  }
+  .my-day.is-today {
+    border-color: var(--primary);
+    box-shadow: inset 0 0 0 1px var(--primary);
+  }
+  /* The legend: each mark as a small chip of its cell's colours, then its word. */
+  .my-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+  }
+  .my-legend > li {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .my-legend-mark {
+    display: inline-grid;
+    place-items: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 4px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    font-size: var(--fs-xs);
+    font-weight: 700;
+  }
+
+  /* A payslip's work table: name | count | value, blocks by type with subtotals (EM 2026-11-07). */
+  .work-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--fs-sm);
+  }
+  .work-col-qty {
+    width: 5rem;
+  }
+  .work-col-value {
+    width: 8.5rem;
+  }
+  @media (max-width: 479.98px) {
+    .work-col-qty {
+      width: 3.5rem;
+    }
+    .work-col-value {
+      width: 6.75rem;
+    }
+  }
+  .work-table :is(th, td) {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+  }
+  .work-table tbody th {
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+  .work-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .work-table thead th {
+    background: var(--gradient-table-head);
+    color: var(--text-muted);
+    font-size: var(--fs-xs);
+    font-weight: 600;
+  }
+  .work-group th {
+    padding-top: 12px;
+    color: var(--accent-text);
+    font-size: var(--fs-xs);
+    font-weight: 700;
+  }
+  .work-subtotal :is(th, td) {
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .work-total :is(th, td) {
+    background: var(--surface-2);
+    font-weight: 700;
+  }
+  .work-commission :is(th, td) {
+    border-bottom: 0;
+    font-size: var(--fs-base);
+    font-weight: 700;
+  }
+  .work-table tr:last-child > :is(th, td) {
+    border-bottom: 0;
+  }
+
+  /* The day sheet: prev / next on one row, then flat blocks split by hairlines. */
+  .my-day-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .my-day-detail {
+    display: grid;
+    gap: 16px;
+  }
+  .my-day-block {
+    display: grid;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .my-day-block:first-child {
+    padding-top: 0;
+    border-top: 0;
+  }
+  .my-day-block > h3 {
+    font-size: var(--fs-sm);
+    font-weight: 700;
+  }
+  .my-day-block .work-table {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    border-collapse: separate;
+    border-spacing: 0;
+    overflow: hidden;
+  }
+
+  /* "Khách của tôi": the week list's day headings inside one panel. */
+  .my-cal-day + .my-cal-day {
+    border-top: 1px solid var(--border);
+  }
+  .my-cal-day-title {
+    padding: 12px 16px 0;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 600;
   }
   /* Sundays read darker than the other day headers (colour carries no meaning here). */
   .attendance-grid .is-sunday {

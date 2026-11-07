@@ -49,6 +49,8 @@ setup("migrate and provision a fresh spa", () => {
     fullName: "Chủ Spa E2E",
     managerPhone: `091${String(randomInt(0, 10_000_000)).padStart(7, "0")}`,
     managerPassword: randomBytes(18).toString("base64url"),
+    techPhone: `093${String(randomInt(0, 10_000_000)).padStart(7, "0")}`,
+    techPassword: randomBytes(18).toString("base64url"),
   };
 
   cli(["migrate"]);
@@ -91,6 +93,21 @@ setup("migrate and provision a fresh spa", () => {
       "manager",
     ],
     { APP_NEW_USER_PASSWORD: run.managerPassword ?? "" },
+  );
+  // Technician login: technician.spec.ts links it to a profile and checks their own pages.
+  cli(
+    [
+      "add-user",
+      "--tenant",
+      run.slug,
+      "--phone",
+      run.techPhone ?? "",
+      "--name",
+      "KTV Đăng Nhập E2E",
+      "--role",
+      "technician",
+    ],
+    { APP_NEW_USER_PASSWORD: run.techPassword ?? "" },
   );
   cli(["seed-catalog", "--tenant", run.slug]);
   // Closer for the sell-package flow (sales.spec.ts).

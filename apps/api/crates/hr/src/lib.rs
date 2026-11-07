@@ -6,6 +6,7 @@
 pub mod adjustment;
 pub mod attendance;
 pub mod calc;
+pub mod day;
 pub mod evaluation;
 pub mod http;
 pub mod me;
@@ -16,4 +17,3 @@ mod repo;
 pub mod review;
 pub mod rules;
 pub mod scope;
-pub mod work;

@@ -5,13 +5,13 @@
 use crate::adjustment::{self, Adjustment, AdjustmentInput, AdjustmentKind, AdjustmentLog};
 use crate::attendance::{self, AttendanceDay, AttendanceSheet, AttendanceStatus, Entry};
 use crate::calc::Payslip;
+use crate::day::{self, MyDay};
 use crate::evaluation::{self, CriterionInput, Evaluation, EvaluationInput, EvaluationSheet};
 use crate::me::{self, MyStaff};
 use crate::month::Month;
 use crate::payroll::{self, CloseInput, PayrollMonth};
 use crate::review::{self, DailyReview, ReviewEntry, ReviewSheet};
 use crate::rules::{self, PayrollRules};
-use crate::work::{self, MyWork};
 use axum::body::Bytes;
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::{StatusCode, header};
@@ -50,7 +50,7 @@ where
         .route("/payroll/close", post(close_payroll))
         .route("/payroll/rules", get(get_rules).put(put_rules))
         .route("/me/staff", get(get_my_staff))
-        .route("/me/work", get(get_my_work))
+        .route("/me/staff/day", get(get_my_day))
 }
 
 fn no_store(status: StatusCode, body: impl Serialize) -> Response {
@@ -498,15 +498,25 @@ pub async fn get_my_staff(
     Ok(no_store(StatusCode::OK, mine))
 }
 
-/// Customers I served in the month and appointments assigned to me (spec §10 US9). The person is
-/// the session's own staff link; there is no parameter to pick anyone else (`?staff_id=` → 400).
-#[utoipa::path(get, path = "/api/v1/me/work", tag = "staff", params(MonthQuery),
-    responses((status = 200, body = MyWork), (status = 400), (status = 401), (status = 403), (status = 422)))]
-pub async fn get_my_work(
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
+pub struct DayQuery {
+    /// `YYYY-MM-DD`; default today (spa time zone).
+    pub date: Option<String>,
+}
+
+/// One day of my month in detail (EM 2026-11-07). The person is the session's own staff link;
+/// there is no parameter to pick anyone else (`?staff_id=` → 400).
+#[utoipa::path(get, path = "/api/v1/me/staff/day", tag = "staff", params(DayQuery),
+    responses((status = 200, body = MyDay), (status = 400), (status = 401), (status = 403),
+        (status = 422, description = "date invalid_date")))]
+pub async fn get_my_day(
     State(pool): State<PgPool>,
     user: AuthUser,
-    Query(q): Query<MonthQuery>,
+    Query(q): Query<DayQuery>,
 ) -> Result<Response, AppError> {
-    let mine = work::my_work(&pool, &user.actor, month_of(&q)?).await?;
+    let date = q.date.as_deref().map(day::parse_date).transpose()?;
+    let mine = day::my_day(&pool, &user.actor, date).await?;
     Ok(no_store(StatusCode::OK, mine))
 }

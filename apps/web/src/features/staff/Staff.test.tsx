@@ -6,7 +6,11 @@ import { App } from "../../app/App";
 import { navFor, tabsFor } from "../../app/nav";
 import { spaToday } from "../corrections/api";
 import { ME } from "../reports/testServer";
-import type { Adjustment, AdjustmentLog, AttendanceSheet, EvaluationSheet, MyStaff, MyWork, Payslip, PayrollMonth, ReviewSheet } from "./api";
+import type { Adjustment, AdjustmentLog, AttendanceSheet, EvaluationSheet, MyCalendar, MyDay, MyStaff, Payslip, PayrollMonth, ReviewSheet } from "./api";
+import { mondayOf } from "../appointments/api";
+import { weekSummary } from "./myCalendar";
+import { countsFullValue, serviceWork, upsellWork } from "./payslipWork";
+import { dayTotals, shiftDay } from "./MyDaySheet";
 import { daysOf, monthLabel, percentOfBp, shiftMonth, weekdayShort } from "./labels";
 import { evaluationDueMonth, incompleteDays, missingOn } from "./progress";
 import { staffSearch } from "./search";
@@ -165,32 +169,74 @@ function evaluations(m: string): EvaluationSheet {
   };
 }
 
-function work(): MyWork {
+/** Monday of this week: the technician's calendar loads Monday–Sunday. */
+const week = mondayOf(today);
+
+function calendar(): MyCalendar {
   return {
     linked: true,
     data: {
-      month,
+      from: week,
+      to: week,
       today,
-      served: [
+      opens_at: "09:00",
+      closes_at: "21:00",
+      slot_minutes: 15,
+      entries: [
         {
-          visit_id: "v-1",
+          id: "v-1",
+          kind: "visit",
           business_date: today,
-          check_in_at: `${today}T03:00:00Z`,
+          starts_at: `${today}T03:00:00Z`,
+          ends_at: `${today}T04:10:00Z`,
+          duration_min: 70,
+          phase: "done",
           customer_name: "Nguyễn Thị Hằng",
-          services: [{ service_name: "Gội đầu thảo dược", qty: 2, from_package: true }],
+          services: [{ service_name: "Gội đầu thảo dược", category_name: "Gội đầu", from_package: true }],
+          group_size: null,
+          walk_in: true,
         },
-      ],
-      upcoming: [
         {
-          appointment_id: "a-1",
+          id: "a-1",
+          kind: "appointment",
           business_date: today,
           starts_at: `${today}T07:00:00Z`,
           ends_at: `${today}T08:00:00Z`,
-          status: "booked",
+          duration_min: 60,
+          phase: "waiting",
           customer_name: "Đỗ Văn Bình",
-          services: ["Massage cổ vai gáy"],
+          services: [{ service_name: "Massage cổ vai gáy", category_name: "Massage", from_package: false }],
+          group_size: 3,
+          walk_in: false,
         },
       ],
+    },
+  };
+}
+
+function myDay(date: string): MyDay {
+  return {
+    linked: true,
+    data: {
+      date,
+      today,
+      closed: false,
+      attendance: { staff_id: "s-lan", date, status: "present", check_in: "09:12", check_out: "18:00", late_minutes: 12, note: "Kẹt xe" },
+      review: { staff_id: "s-lan", date, compliments: 2, complaints: 1, note: "Khách khen tay nhẹ" },
+      adjustments: [{ ...PENALTY_TEMPLATE, occurred_on: date, kind: "bonus", amount: 100_000, reason: "Ở lại dọn phòng" }],
+      visits: [
+        {
+          visit_id: "v-1",
+          check_in_at: `${date}T03:00:00Z`,
+          customer_name: "Nguyễn Thị Hằng",
+          lines: [
+            { service_name: "Gội đầu thảo dược", source: "package", qty: 1, value: 120_000, commission: 6_000 },
+            { service_name: "Ngâm chân", source: "one_off", qty: 2, value: 78_000, commission: 3_900 },
+          ],
+        },
+      ],
+      upsell: [{ kind: "package", description: "Gói 10 buổi", customer_name: "Nguyễn Thị Hằng", qty: 1, value: 1_200_000, commission: 60_000 }],
+      commission_rate_bp: 500,
     },
   };
 }
@@ -203,6 +249,20 @@ interface ServeOptions {
   /** Lan has a visit recorded today (the leave warning). */
   lanServedToday?: boolean;
 }
+
+const PENALTY_TEMPLATE: Adjustment = {
+  id: "adj-day",
+  staff_id: "s-lan",
+  occurred_on: today,
+  kind: "penalty",
+  amount: 50_000,
+  points: null,
+  reason: "",
+  corrects_month: null,
+  by_name: "Quản lý Hoa",
+  created_at: `${today}T03:00:00Z`,
+  can_edit: false,
+};
 
 const PENALTY: Adjustment = {
   id: "adj-1",
@@ -230,7 +290,8 @@ function serve(permissions: string[], options: ServeOptions = {}) {
     if (p === "/attendance") return ok({ ...sheet(options), closed: options.closed ?? false });
     if (p === "/payroll") return permissions.includes("payroll.read") ? ok(payroll()) : ok({ code: "auth.forbidden" }, 403);
     if (p === "/me/staff") return ok({ linked: true, data: { month, closed: false, attendance: lan(), reviews: [], evaluation: null, adjustments: [], payslip: slip() } } satisfies MyStaff);
-    if (p === "/me/work") return ok(work());
+    if (p === "/me/appointments") return ok(calendar());
+    if (p === "/me/staff/day") return ok(myDay(url.searchParams.get("date") ?? today));
     if (p === "/daily-reviews" && method === "PUT") return ok([]);
     if (p === "/daily-reviews") return ok(reviews());
     if (p === "/adjustments" && method === "GET") return ok({ month, closed: false, items: options.adjustments ?? [] } satisfies AdjustmentLog);
@@ -569,7 +630,11 @@ describe("/nhan-vien", () => {
     const [region] = screen.getAllByRole("region", { name: "Giới thiệu / chốt được" });
     if (!region) throw new Error("upsell section missing");
     expect(within(region).getAllByText("Gội đầu 10 buổi + tặng 2").length).toBeGreaterThan(0);
-    expect(within(region).getAllByText("Dịch vụ lẻ").length).toBeGreaterThan(0);
+    expect(within(region).getByText("Dịch vụ lẻ giới thiệu")).toBeInTheDocument();
+    expect(within(region).getByText("Gói liệu trình chốt được")).toBeInTheDocument();
+    // The table ends in the payslip's base and the commission it becomes.
+    expect(within(region).getByRole("row", { name: /Tổng tính hoa hồng 2 1\.539\.000đ/ })).toBeInTheDocument();
+    expect(within(region).getByRole("row", { name: /Thành hoa hồng giới thiệu \/ chốt 5% × 1\.539\.000đ 76\.950đ/ })).toBeInTheDocument();
     expect(screen.getByText(/gói 1\.500\.000đ · dịch vụ lẻ 39\.000đ/)).toBeInTheDocument();
   });
 
@@ -577,28 +642,147 @@ describe("/nhan-vien", () => {
     const spy = serve(TECH);
     at("/nhan-vien");
     expect(await screen.findByRole("heading", { level: 1, name: "Công và lương của tôi" })).toBeInTheDocument();
-    expect(await screen.findByText(/5\.315\.000/)).toBeInTheDocument();
+    // Summary first: net pay, and the evaluation's status where it is read (not alone at the end).
+    const summary = await screen.findByRole("region", { name: "Tổng quan tháng" });
+    expect(within(summary).getByText(/5\.315\.000/)).toBeInTheDocument();
+    expect(within(summary).getByText("Chưa đánh giá")).toBeInTheDocument();
+    expect(screen.queryByText("⚠ Chưa đánh giá tháng")).not.toBeInTheDocument();
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
     const calendar = screen.getByRole("list", { name: /Lịch công/ });
-    expect(within(calendar).getAllByRole("listitem").filter((li) => li.getAttribute("aria-label"))).toHaveLength(daysOf(month).length);
-    expect(within(calendar).getByRole("listitem", { name: /Đi làm, muộn 12 phút/ })).toBeInTheDocument();
+    const cells = within(calendar).getAllByRole("listitem").filter((li) => li.childElementCount > 0);
+    expect(cells).toHaveLength(daysOf(month).length);
+    // Days up to today open their detail; later days are quiet, not controls.
+    const pastDays = daysOf(month).filter((d) => d <= today).length;
+    expect(within(calendar).getAllByRole("button")).toHaveLength(pastDays);
+    const late = within(calendar).getByRole("button", { name: /Đi làm, muộn 12 phút/ });
+    expect(late).toHaveTextContent("12′");
     const paths = requests(spy).map((r) => new URL(r.url, "http://app.test").pathname);
     expect(paths.some((p) => p.endsWith("/attendance") || p.endsWith("/payroll"))).toBe(false);
+  });
+
+  it("technician: a day opens its detail, with prev / next day, from /me/staff/day only", async () => {
+    const spy = serve(TECH);
+    at("/nhan-vien");
+    const calendar = await screen.findByRole("list", { name: /Lịch công/ });
+    await userEvent.click(within(calendar).getByRole("button", { name: /Đi làm, muộn 12 phút/ }));
+    const sheetDialog = await screen.findByRole("dialog", { name: new RegExp(`Ngày .*${today.slice(8)}/${today.slice(5, 7)}`) });
+    expect(await within(sheetDialog).findByText("Muộn 12 phút")).toBeInTheDocument();
+    expect(within(sheetDialog).getByText("09:12 / 18:00")).toBeInTheDocument();
+    expect(within(sheetDialog).getByText("Kẹt xe")).toBeInTheDocument();
+    expect(within(sheetDialog).getByText("Khách khen tay nhẹ")).toBeInTheDocument();
+    expect(within(sheetDialog).getByText("Ở lại dọn phòng")).toBeInTheDocument();
+    expect(within(sheetDialog).getByText("Buổi liệu trình")).toBeInTheDocument();
+    expect(within(sheetDialog).getByRole("row", { name: /Cộng 1 lượt khách 198\.000đ 9\.900đ/ })).toBeInTheDocument();
+    expect(within(sheetDialog).getByText(/Chốt gói · Nguyễn Thị Hằng/)).toBeInTheDocument();
+    expect(within(sheetDialog).queryByText(/\+84|09\d{8}/)).not.toBeInTheDocument();
+    // Next day is disabled on today; previous day reloads the sheet for that date.
+    expect(within(sheetDialog).getByRole("button", { name: /Ngày sau/ })).toBeDisabled();
+    await userEvent.click(within(sheetDialog).getByRole("button", { name: /Ngày trước/ }));
+    const yesterday = shiftDay(today, -1);
+    await waitFor(() => {
+      expect(requests(spy).some((r) => r.url.includes(`/me/staff/day?date=${yesterday}`))).toBe(true);
+    });
+    const paths = requests(spy).map((r) => new URL(r.url, "http://app.test").pathname.replace(/^\/api\/v1/, ""));
+    expect(paths.every((p) => p === "/me" || p.startsWith("/me/"))).toBe(true);
+  });
+});
+
+describe("payslip work tables", () => {
+  const lines = [
+    { service_name: "An Kiên Lạc", source: "package", qty: 2, value: 321_100, full_value: 321_100 },
+    { service_name: "An Kiên Lạc", source: "one_off", qty: 1, value: 249_000, full_value: 249_000 },
+    { service_name: "Thư Giãn", source: "package", qty: 3, value: 0, full_value: 237_000 },
+    { service_name: "Thư Giãn", source: "one_off", qty: 1, value: 79_000, full_value: 79_000 },
+  ];
+
+  it("groups by type, each service once per group, with subtotals adding up to the payslip base", () => {
+    const table = serviceWork({ ...slip(), commission_lines: lines, service_commission_base: 649_100, service_commission: 32_455 });
+    expect(table.groups.map((g) => [g.label, g.rows.map((r) => r.name), g.qty, g.value])).toEqual([
+      ["Dịch vụ lẻ", ["An Kiên Lạc", "Thư Giãn"], 2, 328_000],
+      ["Buổi liệu trình", ["An Kiên Lạc", "Thư Giãn"], 5, 321_100],
+    ]);
+    expect(table.groups.reduce((n, g) => n + g.value, 0)).toBe(table.value);
+    expect(table).toMatchObject({ qty: 7, value: 649_100, commission: 32_455, rateBp: 500 });
+  });
+
+  it("counts gift sessions at full price when the payslip's base says the spa does", () => {
+    expect(countsFullValue(lines, 886_100)).toBe(true);
+    expect(countsFullValue(lines, 649_100)).toBe(false);
+    const table = serviceWork({ ...slip(), commission_lines: lines, service_commission_base: 886_100 });
+    expect(table.groups[1]?.value).toBe(558_100);
+  });
+
+  it("upsell groups by kind; a refund is its own block and is not counted as an item sold", () => {
+    const table = upsellWork({
+      ...slip(),
+      closing_commission_base: 1_239_000,
+      upsell_lines: [
+        { kind: "service", description: "Ngâm chân", qty: 1, value: 39_000 },
+        { kind: "package", description: "Gói 10 buổi", qty: 1, value: 1_500_000 },
+        { kind: "package_refund", description: "Gói 5 buổi", qty: 1, value: -300_000 },
+      ],
+    });
+    expect(table.groups.map((g) => g.label)).toEqual(["Gói liệu trình chốt được", "Dịch vụ lẻ giới thiệu", "Hoàn tiền gói (trừ lại)"]);
+    expect(table.qty).toBe(2);
+    expect(table.groups.reduce((n, g) => n + g.value, 0)).toBe(table.value);
+  });
+
+  it("renders the groups as one table with fixed columns, tied to the payslip's commission", () => {
+    render(<PayslipView slip={{ ...slip(), commission_lines: lines, service_commission_base: 649_100, service_commission: 32_455 }} closed={false} />);
+    const region = screen.getByRole("region", { name: "Dịch vụ đã làm" });
+    expect(within(region).getAllByRole("rowgroup").length).toBeGreaterThanOrEqual(3);
+    expect(within(region).getByRole("row", { name: /Cộng dịch vụ lẻ 2 328\.000đ/ })).toBeInTheDocument();
+    expect(within(region).getByRole("row", { name: /Cộng buổi liệu trình 5 321\.100đ/ })).toBeInTheDocument();
+    expect(within(region).getByRole("row", { name: /Thành hoa hồng làm 5% × 649\.100đ 32\.455đ/ })).toBeInTheDocument();
+    // The pending evaluation is a chip with the status line, before the figures.
+    expect(screen.getByRole("list", { name: "Cần xem" })).toHaveTextContent("Chưa đánh giá tháng");
+  });
+
+  it("day totals add the lines; unknown commission stays unknown", () => {
+    const d = myDay(today).data;
+    if (!d) throw new Error("fixture");
+    expect(dayTotals(d)).toEqual({ value: 198_000, commission: 9_900, upsell: 1_200_000, upsellCommission: 60_000 });
+    expect(dayTotals({ ...d, commission_rate_bp: null }).commission).toBeNull();
+    expect(shiftDay("2026-03-01", -1)).toBe("2026-02-28");
   });
 });
 
 describe("/khach-cua-toi", () => {
-  it("technician: upcoming bookings and customers served, from /me/work only", async () => {
+  it("technician: own bookings and visits as blocks on a week calendar, read-only, from /me/appointments only", async () => {
     const spy = serve(TECH);
     at("/khach-cua-toi");
     expect(await screen.findByRole("heading", { level: 1, name: "Khách của tôi" })).toBeInTheDocument();
-    expect(await screen.findByText("Đỗ Văn Bình")).toBeInTheDocument();
-    expect(screen.getByText("Massage cổ vai gáy")).toBeInTheDocument();
-    expect(screen.getByText("14:00–15:00")).toBeInTheDocument();
-    expect(screen.getByText("Nguyễn Thị Hằng")).toBeInTheDocument();
-    expect(screen.getByText("Gội đầu thảo dược ×2 (gói)")).toBeInTheDocument();
+    const grid = await screen.findByRole("group", { name: "Lịch của tôi trong tuần" });
+    // Blocks at their real length: 10:00–11:10 (70 min), 14:00–15:00.
+    const visit = within(grid).getByRole("button", { name: /^10:00–11:10 Nguyễn Thị Hằng, Xong, Vãng lai/ });
+    expect(visit).toHaveAttribute("data-kind", "visit");
+    expect(within(grid).getByRole("button", { name: /^14:00–15:00 Đỗ Văn Bình, Chưa đến, Nhóm · 3 người/ })).toBeInTheDocument();
+    // Read-only: no booking anywhere, no slot buttons.
+    expect(screen.queryByRole("button", { name: /Đặt lịch/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/Xong 1 · Đang làm 0 · Chưa đến 1/)).toBeInTheDocument();
+    await userEvent.click(visit);
+    const detail = await screen.findByRole("dialog", { name: "10:00–11:10 · Nguyễn Thị Hằng" });
+    expect(within(detail).getByText("Buổi liệu trình", { exact: false })).toBeInTheDocument();
+    expect(within(detail).getByText("70 phút")).toBeInTheDocument();
     const paths = requests(spy).map((r) => new URL(r.url, "http://app.test").pathname.replace(/^\/api\/v1/, ""));
-    expect(paths.filter((p) => p !== "/me")).toEqual(expect.arrayContaining(["/me/work"]));
+    expect(paths.filter((p) => p !== "/me")).toEqual(expect.arrayContaining(["/me/appointments"]));
     expect(paths.some((p) => /^\/(visits|customers|appointments)/.test(p))).toBe(false);
+    expect(requests(spy).some((r) => r.url.includes(`from=${week}`))).toBe(true);
   });
+
+  it("the list view groups the week by day; the day view is one column", async () => {
+    serve(TECH);
+    at("/khach-cua-toi?kieu=ds");
+    const today_ = await screen.findByRole("region", { name: new RegExp(`${today.slice(8)}/${today.slice(5, 7)}`) });
+    expect(within(today_).getAllByRole("button")).toHaveLength(2);
+    await userEvent.click(screen.getByRole("button", { name: "Ngày" }));
+    expect(await screen.findByRole("group", { name: /Lịch của tôi ngày/ })).toBeInTheDocument();
+  });
+
+  it("summarises the phases of the shown day or week", () => {
+    const entries = calendar().data?.entries ?? [];
+    expect(weekSummary(entries, null)).toBe("Xong 1 · Đang làm 0 · Chưa đến 1");
+    expect(weekSummary(entries, "2000-01-01")).toBe("Xong 0 · Đang làm 0 · Chưa đến 0");
+  });
+
 });

@@ -1939,6 +1939,54 @@
         }
       }
     },
+    "/api/v1/me/appointments": {
+      "get": {
+        "tags": [
+          "appointments"
+        ],
+        "summary": "The signed-in technician's own calendar (read-only). The person is the session's staff link;\nthere is no parameter to pick anyone else (`?staff_id=` → 400).",
+        "operationId": "my_calendar",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "First business day `YYYY-MM-DD`; default today.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Last business day (inclusive); default `from`. At most 14 days.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyCalendar"
+                }
+              }
+            }
+          },
+          "400": {},
+          "401": {},
+          "403": {},
+          "422": {
+            "description": "to before_from / range_too_long (max 14 days)"
+          }
+        }
+      }
+    },
     "/api/v1/me/staff": {
       "get": {
         "tags": [
@@ -1972,18 +2020,18 @@
         }
       }
     },
-    "/api/v1/me/work": {
+    "/api/v1/me/staff/day": {
       "get": {
         "tags": [
           "staff"
         ],
-        "summary": "Customers I served in the month and appointments assigned to me (spec §10 US9). The person is\nthe session's own staff link; there is no parameter to pick anyone else (`?staff_id=` → 400).",
-        "operationId": "get_my_work",
+        "summary": "One day of my month in detail (EM 2026-11-07). The person is the session's own staff link;\nthere is no parameter to pick anyone else (`?staff_id=` → 400).",
+        "operationId": "get_my_day",
         "parameters": [
           {
-            "name": "month",
+            "name": "date",
             "in": "query",
-            "description": "`YYYY-MM`; default the current month (spa time zone).",
+            "description": "`YYYY-MM-DD`; default today (spa time zone).",
             "required": false,
             "schema": {
               "type": "string"
@@ -1995,7 +2043,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MyWork"
+                  "$ref": "#/components/schemas/MyDay"
                 }
               }
             }
@@ -2003,7 +2051,9 @@
           "400": {},
           "401": {},
           "403": {},
-          "422": {}
+          "422": {
+            "description": "date invalid_date"
+          }
         }
       }
     },
@@ -7114,6 +7164,369 @@
           }
         }
       },
+      "MyCalendar": {
+        "type": "object",
+        "description": "`GET /me/appointments`: the signed-in technician's own calendar.",
+        "required": [
+          "linked"
+        ],
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MyCalendarData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "linked": {
+            "type": "boolean",
+            "description": "`false`: this login is not linked to a staff profile (ask the owner)."
+          }
+        }
+      },
+      "MyCalendarData": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "today",
+          "opens_at",
+          "closes_at",
+          "slot_minutes",
+          "entries"
+        ],
+        "properties": {
+          "closes_at": {
+            "type": "string"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MyCalendarEntry"
+            },
+            "description": "Every phase, earliest first."
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "opens_at": {
+            "type": "string",
+            "description": "\"HH:MM\", spa time."
+          },
+          "slot_minutes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "today": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
+      "MyCalendarEntry": {
+        "type": "object",
+        "description": "One block of a technician's own calendar. An allowlist: times, phase, the customer's name and\nthe services — no phone, no note, no money, no customer or staff ids.",
+        "required": [
+          "id",
+          "kind",
+          "business_date",
+          "starts_at",
+          "ends_at",
+          "duration_min",
+          "phase",
+          "customer_name",
+          "services",
+          "walk_in"
+        ],
+        "properties": {
+          "business_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "customer_name": {
+            "type": "string"
+          },
+          "duration_min": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ends_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "group_size": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "People booked together in this booking's group (ADR-0009), this one included; `null` =\nbooked alone, or a visit."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MyEntryKind"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/PhaseDto"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MyEntryService"
+            },
+            "description": "Bookings: what was booked; visits: only the lines I performed."
+          },
+          "starts_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "walk_in": {
+            "type": "boolean",
+            "description": "A visit recorded without any booking (\"vãng lai\")."
+          }
+        }
+      },
+      "MyDay": {
+        "type": "object",
+        "required": [
+          "linked"
+        ],
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MyDayData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "linked": {
+            "type": "boolean",
+            "description": "`false`: this login is not linked to a staff profile (ask the owner)."
+          }
+        }
+      },
+      "MyDayData": {
+        "type": "object",
+        "required": [
+          "date",
+          "today",
+          "closed",
+          "adjustments",
+          "visits",
+          "upsell"
+        ],
+        "properties": {
+          "adjustments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Adjustment"
+            },
+            "description": "Bonuses and penalties dated that day."
+          },
+          "attendance": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AttendanceDay",
+                "description": "`null`: not recorded (yet)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "closed": {
+            "type": "boolean",
+            "description": "The month's payroll is closed (figures are final)."
+          },
+          "commission_rate_bp": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The rate the payslip applies (basis points); `null` before pay terms are set."
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "review": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DailyReview",
+                "description": "`null`: no compliments or complaints recorded."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "today": {
+            "type": "string",
+            "format": "date"
+          },
+          "upsell": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MyDayUpsell"
+            }
+          },
+          "visits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MyDayVisit"
+            },
+            "description": "Earliest first."
+          }
+        }
+      },
+      "MyDayLine": {
+        "type": "object",
+        "description": "One service line the person performed.",
+        "required": [
+          "service_name",
+          "source",
+          "qty",
+          "value"
+        ],
+        "properties": {
+          "commission": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "`value × commission rate`, rounded; `null` before the person's pay terms are set. The\npayslip rounds the month's sum once, so the day's figures may differ from it by a đồng."
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "service_name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "description": "`one_off` (dịch vụ lẻ) or `package` (buổi liệu trình)."
+          },
+          "value": {
+            "type": "integer",
+            "format": "int64",
+            "description": "What the line counts towards the commission base (the spa's rule decides whether gift\nsessions count at full price)."
+          }
+        }
+      },
+      "MyDayUpsell": {
+        "type": "object",
+        "description": "An upsell credit of the day (\"giới thiệu / chốt\").",
+        "required": [
+          "kind",
+          "description",
+          "customer_name",
+          "qty",
+          "value"
+        ],
+        "properties": {
+          "commission": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "customer_name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`package` (closed), `package_refund` (a package they closed, refunded today: negative) or\n`service` (a one-off service they recommended)."
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "value": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "MyDayVisit": {
+        "type": "object",
+        "description": "A completed visit in which the person performed at least one line; `lines` are only theirs.",
+        "required": [
+          "visit_id",
+          "check_in_at",
+          "customer_name",
+          "lines"
+        ],
+        "properties": {
+          "check_in_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "customer_name": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MyDayLine"
+            }
+          },
+          "visit_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "MyEntryKind": {
+        "type": "string",
+        "description": "What an entry of \"Lịch của tôi\" is: a booking assigned to me, or a visit I served that no\nbooking of mine stands for.",
+        "enum": [
+          "appointment",
+          "visit"
+        ]
+      },
+      "MyEntryService": {
+        "type": "object",
+        "description": "A service on a technician's own calendar entry.",
+        "required": [
+          "service_name",
+          "category_name",
+          "from_package"
+        ],
+        "properties": {
+          "category_name": {
+            "type": "string"
+          },
+          "from_package": {
+            "type": "boolean",
+            "description": "A session of the customer's package (visits only; bookings are always `false`)."
+          },
+          "service_name": {
+            "type": "string"
+          }
+        }
+      },
       "MyMonth": {
         "type": "object",
         "required": [
@@ -7187,60 +7600,6 @@
           "linked": {
             "type": "boolean",
             "description": "`false`: this login is not linked to a staff profile (ask the owner)."
-          }
-        }
-      },
-      "MyWork": {
-        "type": "object",
-        "required": [
-          "linked"
-        ],
-        "properties": {
-          "data": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/MyWorkData"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "linked": {
-            "type": "boolean",
-            "description": "`false`: this login is not linked to a staff profile (ask the owner)."
-          }
-        }
-      },
-      "MyWorkData": {
-        "type": "object",
-        "required": [
-          "month",
-          "today",
-          "served",
-          "upcoming"
-        ],
-        "properties": {
-          "month": {
-            "type": "string"
-          },
-          "served": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ServedVisit"
-            },
-            "description": "Newest first."
-          },
-          "today": {
-            "type": "string",
-            "format": "date"
-          },
-          "upcoming": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/UpcomingAppointment"
-            },
-            "description": "Booked / arrived, from today to today + 30 days, earliest first."
           }
         }
       },
@@ -9066,61 +9425,6 @@
           }
         }
       },
-      "ServedLine": {
-        "type": "object",
-        "required": [
-          "service_name",
-          "qty",
-          "from_package"
-        ],
-        "properties": {
-          "from_package": {
-            "type": "boolean",
-            "description": "`true`: a session of the customer's package; `false`: a one-off service."
-          },
-          "qty": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "service_name": {
-            "type": "string"
-          }
-        }
-      },
-      "ServedVisit": {
-        "type": "object",
-        "description": "A completed visit in which this person performed at least one line; `services` lists only\n**their** lines.",
-        "required": [
-          "visit_id",
-          "business_date",
-          "check_in_at",
-          "customer_name",
-          "services"
-        ],
-        "properties": {
-          "business_date": {
-            "type": "string",
-            "format": "date"
-          },
-          "check_in_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "customer_name": {
-            "type": "string"
-          },
-          "services": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ServedLine"
-            }
-          },
-          "visit_id": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      },
       "ServiceCategoryDto": {
         "type": "object",
         "required": [
@@ -9882,56 +10186,6 @@
             "format": "int64"
           }
         }
-      },
-      "UpcomingAppointment": {
-        "type": "object",
-        "required": [
-          "appointment_id",
-          "business_date",
-          "starts_at",
-          "ends_at",
-          "status",
-          "customer_name",
-          "services"
-        ],
-        "properties": {
-          "appointment_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "business_date": {
-            "type": "string",
-            "format": "date"
-          },
-          "customer_name": {
-            "type": "string",
-            "description": "The customer's profile name, or the newcomer's name given at booking."
-          },
-          "ends_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "services": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "starts_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "status": {
-            "$ref": "#/components/schemas/UpcomingStatus"
-          }
-        }
-      },
-      "UpcomingStatus": {
-        "type": "string",
-        "enum": [
-          "booked",
-          "arrived"
-        ]
       },
       "UpsellLine": {
         "type": "object",
