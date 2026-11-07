@@ -11,7 +11,7 @@ import { spaToday } from "../corrections/api";
 import { EmptyState, ErrorState } from "../reports/ui";
 import { myCalendarQuery, type MyCalendarData, type MyCalendarEntry } from "./api";
 import { shiftMonth, weekdayShort } from "./labels";
-import { entryView, weekSummary } from "./myCalendar";
+import { entryView, gridSpan, weekSummary } from "./myCalendar";
 import { myWorkSearch } from "./search";
 import { MonthPicker, dayLabel } from "./ui";
 import "./staff.css";
@@ -239,10 +239,17 @@ function MyCalendarView({
     // Cancelled and missed bookings free their place; the list still shows them.
     items: inRange.filter((v) => v.day === d && counts(v.phase)),
   }));
+  // Never hide the technician's own work outside opening hours (a late walk-in, past midnight).
+  const span = gridSpan(
+    minutesOf(data.opens_at),
+    minutesOf(data.closes_at),
+    data.slot_minutes,
+    columns.flatMap((c) => c.items),
+  );
   return (
     <TimeGrid
-      opens={minutesOf(data.opens_at)}
-      closes={minutesOf(data.closes_at)}
+      opens={span.opens}
+      closes={span.closes}
       slot={data.slot_minutes}
       columns={columns}
       colMin={layout === "ngay" ? 168 : 112}
