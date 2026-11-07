@@ -1293,7 +1293,7 @@ function AppointmentSheet({
             <p>
               {a.customer_phone
                 ? "Khách mới: tạo hồ sơ (điền sẵn tên và SĐT) để ghi lượt được."
-                : "Người đi cùng chưa có hồ sơ: tạo hồ sơ (điền sẵn tên, thêm SĐT) để ghi lượt cho họ; KTV đã gán vẫn giữ."}
+                : "Người đi cùng chưa có hồ sơ: tạo hồ sơ (điền sẵn tên, SĐT không bắt buộc) để ghi lượt cho họ; KTV đã gán vẫn giữ."}
             </p>
             {canCreateCustomer && !creating && (
               <button

@@ -410,6 +410,37 @@ pub async fn set_expiry(
         == 1)
 }
 
+/// One "Gia hạn" of a package, for the customer timeline (append-only book, 0023).
+pub struct ExtensionInsert<'a> {
+    pub customer_package_id: Uuid,
+    pub previous_expires_on: NaiveDate,
+    pub expires_on: NaiveDate,
+    pub reason: &'a str,
+    pub business_date: NaiveDate,
+    pub created_by: Uuid,
+}
+
+pub async fn insert_extension(tx: &mut TenantTx, e: &ExtensionInsert<'_>) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"INSERT INTO app.customer_package_extension
+             (id, tenant_id, customer_package_id, previous_expires_on, expires_on, reason,
+              business_date, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
+        Uuid::now_v7(),
+        tenant,
+        e.customer_package_id,
+        e.previous_expires_on,
+        e.expires_on,
+        e.reason,
+        e.business_date,
+        e.created_by
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
 pub struct ItemPackage {
     pub customer_package_id: Uuid,
     pub cancelled: bool,

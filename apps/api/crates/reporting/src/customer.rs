@@ -4,9 +4,10 @@
 
 use crate::cursor;
 use crate::dto::{
-    CustomerStats, HistoryCancellation, HistoryEvent, HistoryKind, HistoryPage, HistoryPurchase,
-    HistoryPurchaseLine, HistoryQuery, HistoryRefund, HistoryVisit, HistoryVisitLine, HistoryVoid,
-    LineSource, MethodSplit, PackageCounts, PackageUsage, PackageUse,
+    CustomerStats, HistoryCancellation, HistoryEvent, HistoryExtension, HistoryKind, HistoryPage,
+    HistoryPurchase, HistoryPurchaseLine, HistoryQuery, HistoryRefund, HistoryVisit,
+    HistoryVisitLine, HistoryVoid, LineSource, MethodSplit, PackageCounts, PackageUsage,
+    PackageUse,
 };
 use crm::text::{like_escape, search_key};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
@@ -184,8 +185,11 @@ async fn visits(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Visits, AppError> {
     })
 }
 
+/// Package sales `ids`, seen from `viewer`'s timeline: the payer sees who the packages went to,
+/// the beneficiary sees who paid.
 async fn purchases(
     tx: &mut TenantTx,
+    viewer: Uuid,
     ids: &[Uuid],
 ) -> Result<(HashMap<Uuid, HistoryPurchase>, HashMap<Uuid, Paid>), AppError> {
     let tenant = tx.tenant().as_uuid();
@@ -215,16 +219,20 @@ async fn purchases(
     let sales = sqlx::query!(
         r#"SELECT s.id, s.status, s.subtotal, s.discount_amount, s.discount_reason, s.total,
                   s.void_reason, s.voided_at, st.full_name AS "closer_name?", s.visit_id,
-                  (SELECT string_agg(DISTINCT c.full_name, ', ')
+                  (SELECT string_agg(DISTINCT app.customer_label(c.full_name), ', ')
                    FROM app.customer_package cp
                    JOIN app.customer c ON c.tenant_id = cp.tenant_id AND c.id = cp.customer_id
                    WHERE cp.tenant_id = s.tenant_id AND cp.sale_id = s.id
-                     AND cp.customer_id <> s.customer_id) AS "beneficiary_name?"
+                     AND cp.customer_id <> s.customer_id) AS "beneficiary_name?",
+                  CASE WHEN s.customer_id <> $3 THEN app.customer_label(p.full_name) END
+                    AS "payer_name?"
            FROM app.sale s
+           JOIN app.customer p ON p.tenant_id = s.tenant_id AND p.id = s.customer_id
            LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id
            WHERE s.tenant_id = $1 AND s.id = ANY($2)"#,
         tenant,
-        ids
+        ids,
+        viewer
     )
     .fetch_all(tx.conn())
     .await?
@@ -246,6 +254,7 @@ async fn purchases(
                 voided_at: s.voided_at,
                 visit_id: s.visit_id,
                 beneficiary_name: s.beneficiary_name,
+                payer_name: s.payer_name,
             },
         )
     })
@@ -292,6 +301,41 @@ async fn cancellations(
     .collect())
 }
 
+async fn extensions(
+    tx: &mut TenantTx,
+    ids: &[Uuid],
+) -> Result<HashMap<Uuid, HistoryExtension>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query!(
+        r#"SELECT e.id, e.customer_package_id, cp.name_snapshot, e.previous_expires_on,
+                  e.expires_on, e.reason, u.full_name AS by_name
+           FROM app.customer_package_extension e
+           JOIN app.customer_package cp
+             ON cp.tenant_id = e.tenant_id AND cp.id = e.customer_package_id
+           JOIN app.user_account u ON u.id = e.created_by
+           WHERE e.tenant_id = $1 AND e.id = ANY($2)"#,
+        tenant,
+        ids
+    )
+    .fetch_all(tx.conn())
+    .await?
+    .into_iter()
+    .map(|e| {
+        (
+            e.id,
+            HistoryExtension {
+                customer_package_id: e.customer_package_id,
+                package_name: e.name_snapshot,
+                previous_expires_on: e.previous_expires_on,
+                expires_on: e.expires_on,
+                reason: e.reason,
+                by_name: e.by_name,
+            },
+        )
+    })
+    .collect())
+}
+
 fn kind(s: &str) -> Result<HistoryKind, AppError> {
     Ok(match s {
         "visit" => HistoryKind::Visit,
@@ -299,6 +343,7 @@ fn kind(s: &str) -> Result<HistoryKind, AppError> {
         "purchase" => HistoryKind::Purchase,
         "purchase_voided" => HistoryKind::PurchaseVoided,
         "package_cancelled" => HistoryKind::PackageCancelled,
+        "package_extended" => HistoryKind::PackageExtended,
         other => return Err(AppError::Internal(format!("history kind {other}"))),
     })
 }
@@ -326,6 +371,7 @@ fn kind_sql(kind: HistoryKind) -> &'static str {
         HistoryKind::Purchase => "purchase",
         HistoryKind::PurchaseVoided => "purchase_voided",
         HistoryKind::PackageCancelled => "package_cancelled",
+        HistoryKind::PackageExtended => "package_extended",
     }
 }
 
@@ -383,13 +429,17 @@ pub async fn history(
              UNION ALL
              SELECT 'purchase', 2, s.created_at, s.business_date, s.id
              FROM app.sale s
-             WHERE s.tenant_id = $1 AND s.customer_id = $2
+             WHERE s.tenant_id = $1 AND (s.customer_id = $2 OR EXISTS (
+                     SELECT 1 FROM app.customer_package cp
+                     WHERE cp.tenant_id = s.tenant_id AND cp.sale_id = s.id AND cp.customer_id = $2))
                AND NOT EXISTS (SELECT 1 FROM app.visit v WHERE v.tenant_id = s.tenant_id AND v.sale_id = s.id)
                AND NOT EXISTS (SELECT 1 FROM app.visit_line l WHERE l.tenant_id = s.tenant_id AND l.sale_id = s.id)
              UNION ALL
              SELECT 'purchase_voided', 3, s.voided_at, (s.voided_at AT TIME ZONE $3)::date, s.id
              FROM app.sale s
-             WHERE s.tenant_id = $1 AND s.customer_id = $2 AND s.status = 'voided'
+             WHERE s.tenant_id = $1 AND s.status = 'voided' AND (s.customer_id = $2 OR EXISTS (
+                     SELECT 1 FROM app.customer_package cp
+                     WHERE cp.tenant_id = s.tenant_id AND cp.sale_id = s.id AND cp.customer_id = $2))
                AND NOT EXISTS (SELECT 1 FROM app.visit v WHERE v.tenant_id = s.tenant_id AND v.sale_id = s.id)
                AND NOT EXISTS (SELECT 1 FROM app.visit_line l WHERE l.tenant_id = s.tenant_id AND l.sale_id = s.id)
              UNION ALL
@@ -398,6 +448,12 @@ pub async fn history(
              LEFT JOIN app.sale s ON s.tenant_id = cp.tenant_id AND s.id = cp.sale_id
              WHERE cp.tenant_id = $1 AND cp.customer_id = $2 AND cp.cancelled_at IS NOT NULL
                AND (s.id IS NULL OR s.status <> 'voided')
+             UNION ALL
+             SELECT 'package_extended', 5, e.created_at, e.business_date, e.id
+             FROM app.customer_package_extension e
+             JOIN app.customer_package cp
+               ON cp.tenant_id = e.tenant_id AND cp.id = e.customer_package_id
+             WHERE e.tenant_id = $1 AND cp.customer_id = $2
            )
            SELECT kind AS "kind!", rank AS "rank!", at AS "at!", business_date AS "business_date!",
                   id AS "id!"
@@ -427,6 +483,12 @@ pub async fn history(
                      SELECT 1 FROM app.sale s
                      JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id
                      WHERE s.tenant_id = $1 AND s.id = ev.id AND app.search_fold(st.full_name) LIKE $12)
+                   WHEN kind = 'package_extended' THEN EXISTS (
+                     SELECT 1 FROM app.customer_package_extension e
+                     JOIN app.customer_package cp
+                       ON cp.tenant_id = e.tenant_id AND cp.id = e.customer_package_id
+                     WHERE e.tenant_id = $1 AND e.id = ev.id
+                       AND app.search_fold(cp.name_snapshot) LIKE $12)
                    ELSE EXISTS (
                      SELECT 1 FROM app.customer_package cp
                      WHERE cp.tenant_id = $1 AND cp.id = ev.id
@@ -463,9 +525,11 @@ pub async fn history(
     let visit_ids = ids_of(&["visit", "visit_voided"]);
     let sale_ids = ids_of(&["purchase", "purchase_voided"]);
     let cancel_ids = ids_of(&["package_cancelled"]);
+    let extension_ids = ids_of(&["package_extended"]);
     let mut v = visits(&mut tx, &visit_ids).await?;
-    let (sales, sale_money) = purchases(&mut tx, &sale_ids).await?;
+    let (sales, sale_money) = purchases(&mut tx, customer_id, &sale_ids).await?;
     let mut cancels = cancellations(&mut tx, &cancel_ids).await?;
+    let mut extended = extensions(&mut tx, &extension_ids).await?;
     let visit_sale_ids: Vec<Uuid> = v.sale_of.values().flatten().copied().collect();
     let visit_money = payments(&mut tx, &visit_sale_ids).await?;
     tx.commit().await?;
@@ -489,6 +553,7 @@ pub async fn history(
             purchase: None,
             void: None,
             cancellation: None,
+            extension: None,
         };
         match kind {
             HistoryKind::Visit => event.visit = v.visits.get(&h.id).cloned(),
@@ -531,6 +596,7 @@ pub async fn history(
                 });
             }
             HistoryKind::PackageCancelled => event.cancellation = cancels.remove(&h.id),
+            HistoryKind::PackageExtended => event.extension = extended.remove(&h.id),
         }
         events.push(event);
     }

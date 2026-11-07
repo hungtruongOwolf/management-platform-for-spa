@@ -1,10 +1,10 @@
-import type { CustomerSummary } from "@vpyd/api-client";
-import { useQuery } from "@tanstack/react-query";
+import type { Customer, CustomerSummary } from "@vpyd/api-client";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { CustomerName } from "../../app/CustomerName";
 import { Icon } from "../../app/Icon";
 import { messageFor } from "../../lib/errors";
-import { isSearchable, searchQuery } from "./api";
+import { createWalkIn, isSearchable, searchQuery } from "./api";
 
 /** Debounced phone/name search with keyboard selection. Reused by the front desk (S7). */
 export function CustomerSearch({
@@ -16,9 +16,13 @@ export function CustomerSearch({
   onQueryChange,
   aside,
   asHeading = false,
+  onWalkIn,
 }: {
   onSelect: (c: CustomerSummary) => void;
   onCreate: (typed: string) => void;
+  /** Shows "Khách vãng lai": records an anonymous profile (no name, no phone) and hands it back
+   * (front desk, for those with `customer.write`). */
+  onWalkIn?: (c: Customer) => void;
   /** Lets a screen move focus back to the search box (front desk: after saving, on "/"). */
   inputRef?: React.Ref<HTMLInputElement>;
   /** Focus the search box on mount (continuous data entry, front desk). */
@@ -41,6 +45,14 @@ export function CustomerSearch({
   // shows below; a second Enter must not re-pick and reset what was started).
   const [pickedAt, setPickedAt] = useState<string | null>(null);
   const listId = useId();
+  const queryClient = useQueryClient();
+  const walkIn = useMutation({
+    mutationFn: createWalkIn,
+    onSuccess: async (c) => {
+      await queryClient.invalidateQueries({ queryKey: ["customers"] });
+      onWalkIn?.(c);
+    },
+  });
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -124,7 +136,30 @@ export function CustomerSearch({
           <Icon name="plus" className="size-[18px]" />
           Khách mới
         </button>
+        {onWalkIn && (
+          <button
+            type="button"
+            aria-busy={walkIn.isPending || undefined}
+            aria-describedby={`${listId}-walk-in-hint`}
+            onClick={() => {
+              if (!walkIn.isPending) walkIn.mutate();
+            }}
+            className="btn btn-ghost"
+          >
+            Khách vãng lai
+          </button>
+        )}
       </div>
+      {onWalkIn && (
+        <span id={`${listId}-walk-in-hint`} className="sr-only">
+          Ghi lượt cho khách không cho tên và số điện thoại
+        </span>
+      )}
+      {walkIn.isError && (
+        <p role="alert" className="text-sm text-danger">
+          {messageFor(walkIn.error)}
+        </p>
+      )}
       {searchable && results.isError && (
         <p role="alert" className="text-sm text-danger">
           {messageFor(results.error)}
@@ -162,8 +197,9 @@ export function CustomerSearch({
                     className="font-semibold"
                   />
                   <span className="text-sm text-text-muted tabular">
-                    {c.phone}
+                    {c.phone ?? "Chưa có SĐT"}
                   </span>
+
                 </li>
               ))}
             </ul>

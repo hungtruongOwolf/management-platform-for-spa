@@ -1,6 +1,7 @@
 ---
 title: Glossary — ubiquitous language (draft)
-updated: 2026-11-06
+updated: 2026-11-07
+
 sources: [raw/2026-11-04-idea-internal-platform.md, raw/2026-11-05-em-review-round4.md, raw/2026-11-06-em-upsell-and-convert-to-package.md]
 ---
 
@@ -32,8 +33,11 @@ Code, DB và API dùng đúng tên tiếng Anh ở cột 2; giao diện dùng ti
 | Thêm dịch vụ vào lượt *(draft vòng 6)* | visit addition | Thêm dòng / bán gói vào lượt đã lưu, hóa đơn mới nối `sale.visit_id`; không phải sửa sai |
 | Người trả / người dùng gói *(draft vòng 6)* | `sale.customer_id` / `customer_package.customer_id` | Mua gói cho người khác: hóa đơn ghi người trả, gói thuộc người dùng; không dùng chung (D5) |
 | Lịch hẹn | `Appointment` | Hẹn trước một buổi: Đã đặt (`booked`) → Đã đến (`arrived`) → Hoàn tất (`done`, thành một lượt khách); hoặc Không đến (`no_show`) / Đã hủy (`cancelled`) kèm lý do ([spec](specs/appointments.md)) |
-| Khách vãng lai | walk-in | Khách đến không hẹn trước: ghi thẳng lượt khách, không qua lịch |
-| Khách mới (trong lịch hẹn) | `guest` | Người hẹn chỉ có tên + SĐT, chưa có hồ sơ; tạo hồ sơ khi đến |
+| Khách vãng lai | walk-in | Khách đến không hẹn trước: ghi thẳng lượt khách, không qua lịch. Khách không cho tên / SĐT → **hồ sơ không tên** (dưới) |
+| Hồ sơ không tên ("Khách vãng lai") | customer with `full_name` NULL (`named: false`) | Hồ sơ của khách vãng lai không cho tên và SĐT (EM 2026-11-07, [ADR-0010](../decisions/ADR-0010-anonymous-walk-in-and-optional-phone.md)); mọi nơi hiện "Khách vãng lai" (`app.customer_label`). Không có trong danh sách gần đây / gọi lại; không là chủ gói được (`customer.name_required`) |
+| Ngày sinh | `customer.birth_date` | Tùy chọn (ưu đãi sinh nhật sau này); không sau hôm nay, ≤ 120 tuổi; năm sinh theo ngày sinh |
+| Gia hạn | `POST /customer-packages/{id}/extend` · `customer_package_extension` | Dời hạn gói về sau, có lý do; một mục "Gia hạn" (`package_extended`) trên dòng thời gian khách |
+| Khách mới (trong lịch hẹn) | `guest` | Người hẹn chỉ có tên (+ SĐT nếu có), chưa có hồ sơ; tạo hồ sơ khi đến (SĐT không bắt buộc từ 2026-11-07) |
 | Giờ làm | `visit.check_in_at` | Lúc dịch vụ được làm (khác lúc ghi `created_at`); quyết định ngày nghiệp vụ của lượt |
 | Nhập bù | back-dating (`visit.backdate`) | Chủ spa ghi lượt của ngày đã qua; mọi số liệu về đúng ngày làm |
 | Sức chứa / chỗ trống | capacity | Số KTV đang làm trừ số lịch đang mở trong cùng khung giờ |

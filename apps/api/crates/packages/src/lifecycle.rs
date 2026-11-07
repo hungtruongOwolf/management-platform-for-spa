@@ -13,7 +13,7 @@
 
 use crate::domain::RefundMethod;
 use crate::http::{CustomerPackageDto, RefundMethodDto};
-use crate::repo::{self, RefundInsert};
+use crate::repo::{self, ExtensionInsert, RefundInsert};
 use crate::service;
 use chrono::NaiveDate;
 use kernel::audit::{self, AuditEntry};
@@ -196,6 +196,18 @@ pub async fn extend(
     if !repo::set_expiry(&mut tx, id, version, input.expires_on).await? {
         return Err(AppError::StaleVersion);
     }
+    repo::insert_extension(
+        &mut tx,
+        &ExtensionInsert {
+            customer_package_id: id,
+            previous_expires_on: current,
+            expires_on: input.expires_on,
+            reason: &reason,
+            business_date: today,
+            created_by: actor.user_id.as_uuid(),
+        },
+    )
+    .await?;
     audit::record(
         &mut tx,
         actor,

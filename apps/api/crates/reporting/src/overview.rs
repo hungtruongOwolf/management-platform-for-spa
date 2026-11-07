@@ -77,7 +77,7 @@ struct Row {
     id: Uuid,
     customer_id: Uuid,
     full_name: String,
-    phone_e164: String,
+    phone_e164: Option<String>,
     gender: Option<String>,
     name: String,
     status: String,
@@ -151,7 +151,8 @@ pub async fn packages(
         };
         sqlx::query_as!(
             Row,
-            r#"SELECT ps.id AS "id!", ps.customer_id AS "customer_id!", c.full_name, c.phone_e164, c.gender,
+            r#"SELECT ps.id AS "id!", ps.customer_id AS "customer_id!",
+                      app.customer_label(c.full_name) AS "full_name!", c.phone_e164, c.gender,
                       ps.name_snapshot AS "name!",
                       app.package_status(ps.cancelled_at, ps.sessions_remaining, ps.expires_on, $2) AS "status!",
                       ps.sessions_total AS "sessions_total!", ps.sessions_remaining AS "sessions_remaining!",
@@ -189,7 +190,8 @@ pub async fn packages(
         };
         sqlx::query_as!(
             Row,
-            r#"SELECT ps.id AS "id!", ps.customer_id AS "customer_id!", c.full_name, c.phone_e164, c.gender,
+            r#"SELECT ps.id AS "id!", ps.customer_id AS "customer_id!",
+                      app.customer_label(c.full_name) AS "full_name!", c.phone_e164, c.gender,
                       ps.name_snapshot AS "name!",
                       app.package_status(ps.cancelled_at, ps.sessions_remaining, ps.expires_on, $2) AS "status!",
                       ps.sessions_total AS "sessions_total!", ps.sessions_remaining AS "sessions_remaining!",
@@ -367,7 +369,8 @@ pub async fn inactive(
              LEFT JOIN last_visit lv ON lv.customer_id = c.id
              LEFT JOIN last_sale ls ON ls.customer_id = c.id
              LEFT JOIN pk ON pk.customer_id = c.id
-             WHERE c.tenant_id = $1 AND c.anonymized_at IS NULL
+             -- An anonymous walk-in profile cannot be called back: it is not on this list.
+             WHERE c.tenant_id = $1 AND c.anonymized_at IS NULL AND c.full_name IS NOT NULL
                AND ($8::text IS NULL OR c.search_text LIKE $8)
                AND ($9::text IS NULL OR c.phone_e164 LIKE $9)
            ), absent AS (
@@ -409,7 +412,8 @@ pub async fn inactive(
                     OR ($11 = 'due' AND (f_on IS NULL OR due_on <= $2))
                     OR ($11 = 'scheduled' AND f_next > $2))
            )
-           SELECT id AS "id!", full_name AS "full_name!", phone_e164 AS "phone!", gender, last_on,
+           SELECT id AS "id!", full_name AS "full_name!", phone_e164 AS "phone?", gender, last_on,
+
                   last_seen AS "last_seen!", active AS "active!", remaining AS "remaining!",
                   is_package AS "is_package!", f_on AS "f_on?", f_channel AS "f_channel?",
                   f_outcome AS "f_outcome?", f_next AS "f_next?", f_by AS "f_by?",

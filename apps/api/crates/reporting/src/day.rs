@@ -580,7 +580,13 @@ pub async fn ledger(
     let mut rows = sqlx::query!(
         r#"SELECT b.id AS "id!", b.seq AS "seq!", b.entry AS "entry!",
                   b.business_date AS "business_date!", b.at AS "at!",
-                  b.customer_id AS "customer_id!", c.full_name, c.gender, b.sale_kind AS "sale_kind!",
+                  b.customer_id AS "customer_id!", app.customer_label(c.full_name) AS "full_name!",
+                  c.gender, b.sale_kind AS "sale_kind!",
+                  (SELECT string_agg(DISTINCT app.customer_label(o.full_name), ', ')
+                   FROM app.customer_package cp
+                   JOIN app.customer o ON o.tenant_id = cp.tenant_id AND o.id = cp.customer_id
+                   WHERE cp.tenant_id = b.tenant_id AND cp.sale_id = b.sale_id
+                     AND cp.customer_id <> b.customer_id) AS "beneficiary_name?",
                   b.one_off, b.package, b.bank_transfer AS "bank_transfer!", b.cash AS "cash!",
                   b.unpaid AS "unpaid!", b.note, b.voided AS "voided!", b.visit_id, b.upsell_by
            FROM app.revenue_book b
@@ -650,7 +656,9 @@ pub async fn ledger(
                 customer_id: r.customer_id,
                 customer_name: r.full_name,
                 customer_gender: gender_dto(r.gender.as_deref()),
+                beneficiary_name: r.beneficiary_name,
                 kind: SaleKind::parse(&r.sale_kind),
+
                 one_off: r.one_off,
                 package: r.package,
                 bank_transfer: r.bank_transfer,

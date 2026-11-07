@@ -357,13 +357,20 @@ pub async fn price_package_sale(
     order: &PackageOrder,
     manager_discount_max_pct: u32,
 ) -> Result<PricedPackageSale, AppError> {
-    if !crm::service::exists_in(tx, order.customer_id).await? {
-        return Err(AppError::NotFound);
-    }
+    let payer = crm::service::brief_in(tx, order.customer_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
     let beneficiary = order.beneficiary_customer_id.unwrap_or(order.customer_id);
-    if beneficiary != order.customer_id && !crm::service::exists_in(tx, beneficiary).await? {
-        return Err(AppError::NotFound);
-    }
+    let owner = if beneficiary == payer.id {
+        payer
+    } else {
+        crm::service::brief_in(tx, beneficiary)
+            .await?
+            .ok_or(AppError::NotFound)?
+    };
+    // A package is kept, used and refunded over months: its owner must be someone the spa can
+    // tell apart (an anonymous walk-in may still pay for a named person).
+    owner.require_named()?;
     let closer = match order.closer_staff_id {
         Some(id) => Some(org::service::require_active(tx, id).await?.id),
         None => None,

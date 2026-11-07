@@ -106,7 +106,10 @@ export function LedgerTab({ period }: { period: Period }) {
                           {r.voided && <span className="sr-only"> (đã hủy sau đó)</span>}
                         </td>
                         <td>{r.one_off ?? ""}</td>
-                        <td>{r.package ?? ""}</td>
+                        <td>
+                          {r.package ?? ""}
+                          {r.beneficiary_name && <span className="block text-text-muted">Mua cho {r.beneficiary_name}</span>}
+                        </td>
                         <td className="num">{r.bank_transfer ? money(r.bank_transfer) : ""}</td>
                         <td className="num">{r.cash ? money(r.cash) : ""}</td>
                         <td className="num">{r.unpaid ? money(r.unpaid) : ""}</td>
@@ -216,9 +219,16 @@ function LedgerCards({ rows, dayOf }: { rows: LedgerRow[]; dayOf: Map<string, Le
                     <dd className="tabular">{money(r.unpaid)}</dd>
                   </div>
                 ) : null}
+                {r.beneficiary_name && (
+                  <div>
+                    <dt>Mua cho</dt>
+                    <dd>{r.beneficiary_name}</dd>
+                  </div>
+                )}
                 {r.upsell_by && (
                   <div>
                     <dt>Giới thiệu</dt>
+
                     <dd>{r.upsell_by}</dd>
                   </div>
                 )}

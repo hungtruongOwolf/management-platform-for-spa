@@ -1,7 +1,7 @@
 import type { Appointment, Calendar } from "@vpyd/api-client";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatVnd } from "@vpyd/ui";
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { CustomerName } from "../../app/CustomerName";
 import { BottomSheet } from "../../components/BottomSheet";
 import { messageFor } from "../../lib/errors";
@@ -21,8 +21,70 @@ import { GroupPackagePick } from "../front-desk/GroupPackagePick";
 import { cartFromAppointment } from "../front-desk/prefill";
 import { can, meQuery } from "../auth/session";
 import { activeStaffQuery } from "../sales/api";
-import { hhmm, spaMinutes } from "./api";
+import { hhmm, spaMinutes, updateAppointment } from "./api";
 import { completeAppointment } from "./complete";
+
+const CustomerForm = lazy(() =>
+  import("../customers/CustomerForm").then((m) => ({ default: m.CustomerForm })),
+);
+
+/**
+ * A companion known only by a name (ADR-0009) gets a profile right here: the profile form with
+ * the name filled in and the phone optional (decision E, ADR-0010), then the booking is linked to
+ * it, so the person joins "Ghi N lượt" without leaving the group sheet.
+ */
+function GuestProfile({ a, onLinked }: { a: Appointment; onLinked: (linked: Appointment) => void }) {
+  const me = useQuery(meQuery).data ?? null;
+  const [creating, setCreating] = useState(false);
+  const link = useMutation({
+    mutationFn: (customerId: string) => updateAppointment(a, { customer_id: customerId }),
+    onSuccess: (linked) => {
+      setCreating(false);
+      onLinked(linked);
+    },
+  });
+  if (!can(me, "customer.write")) return null;
+  return (
+    <div className="grid gap-2">
+      {!creating && (
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => {
+            setCreating(true);
+          }}
+        >
+          Tạo hồ sơ
+        </button>
+      )}
+      {creating && (
+        <Suspense fallback={<div aria-hidden="true" className="skeleton cal-skel-line" />}>
+          <CustomerForm
+            prefill={{
+              full_name: a.customer_name,
+              phone: (a.customer_phone ?? "").replace(/^\+84/, "0"),
+            }}
+            canWriteHealth={can(me, "customer.health_notes.write")}
+            onSaved={(c) => {
+              link.mutate(c.id);
+            }}
+            onOpenExisting={(id) => {
+              link.mutate(id);
+            }}
+            onCancel={() => {
+              setCreating(false);
+            }}
+          />
+        </Suspense>
+      )}
+      {link.isError && (
+        <p role="alert" className="field-error">
+          {messageFor(link.error)}
+        </p>
+      )}
+    </div>
+  );
+}
 
 type Mode = "cash" | "bank_transfer";
 
@@ -53,7 +115,7 @@ export function skipReason(
   a: Appointment,
   lines: CartLine[] | undefined,
 ): string | null {
-  if (a.is_guest) return "Khách mới: mở lịch của người này để tạo hồ sơ trước.";
+  if (a.is_guest) return "Chưa có hồ sơ: tạo hồ sơ (SĐT không bắt buộc) để ghi lượt cùng nhóm.";
   if (lines && lines.length < a.services.length)
     return "Có dịch vụ cần chọn giá theo giới tính: ghi riêng cho người này.";
   return null;
@@ -68,7 +130,7 @@ export function skipReason(
  */
 export function GroupCheckIn({
   cal,
-  members,
+  members: opened,
   onClose,
   onDone,
 }: {
@@ -78,12 +140,14 @@ export function GroupCheckIn({
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
+  // The group as opened, with each companion linked to a new profile here replaced in place.
+  const [members, setMembers] = useState(opened);
   const staff = useQuery(activeStaffQuery);
   const me = useQuery(meQuery).data;
   // UX only: the server checks package.sell (AC9.4).
   const maySell = can(me ?? null, "package.sell");
   const carts = useQuery({
-    queryKey: ["group-carts", ...members.map((m) => m.id)],
+    queryKey: ["group-carts", ...members.map((m) => `${m.id}:${m.customer_id ?? ""}`)],
     queryFn: () =>
       Promise.all(members.map((a) => cartFromAppointment(queryClient, a))),
     staleTime: 0,
@@ -264,8 +328,21 @@ export function GroupCheckIn({
                   Đã ghi lượt{due > 0 ? ` · đã thu ${formatVnd(due)}` : ""}
                 </span>
               ) : skip ? (
-                <p className="callout">{skip}</p>
+                <div className="callout">
+                  <p>{skip}</p>
+                  {a.is_guest && (
+                    <GuestProfile
+                      a={a}
+                      onLinked={(linked) => {
+                        setMembers((ms) => ms.map((m) => (m.id === linked.id ? linked : m)));
+                        void queryClient.invalidateQueries({ queryKey: ["appointments"] });
+                      }}
+
+                    />
+                  )}
+                </div>
               ) : (
+
                 <div className="button-row">
                   <div className="field">
                     <label htmlFor={staffField}>KTV làm</label>

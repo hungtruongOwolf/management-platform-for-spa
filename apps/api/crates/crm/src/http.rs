@@ -51,13 +51,21 @@ fn national(phone_e164: &str) -> String {
         .unwrap_or_else(|_| phone_e164.to_owned())
 }
 
+/// National display form of an optional stored number.
+pub fn national_opt(phone_e164: Option<&str>) -> Option<String> {
+    phone_e164.map(national)
+}
+
 /// Search hit for the counter: never contains notes.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CustomerSummaryDto {
     pub id: Uuid,
+    /// The name to show: "Khách vãng lai" for an anonymous walk-in profile (`named` = false).
     pub full_name: String,
-    /// National display form, e.g. "0905 123 456".
-    pub phone: String,
+    /// false = the profile has no name (an anonymous walk-in).
+    pub named: bool,
+    /// National display form, e.g. "0905 123 456"; null = no phone recorded.
+    pub phone: Option<String>,
     pub gender: Option<GenderDto>,
 }
 
@@ -65,8 +73,9 @@ impl From<SummaryRow> for CustomerSummaryDto {
     fn from(r: SummaryRow) -> Self {
         Self {
             id: r.id,
-            phone: national(&r.phone_e164),
-            full_name: r.full_name,
+            phone: national_opt(r.phone_e164.as_deref()),
+            named: r.full_name.is_some(),
+            full_name: service::label(r.full_name.as_deref()).to_owned(),
             gender: gender_dto(r.gender.as_deref()),
         }
     }
@@ -75,11 +84,16 @@ impl From<SummaryRow> for CustomerSummaryDto {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CustomerDto {
     pub id: Uuid,
+    /// The name to show: "Khách vãng lai" for an anonymous walk-in profile (`named` = false).
     pub full_name: String,
-    pub phone: String,
-    pub phone_e164: String,
+    /// false = the profile has no name (an anonymous walk-in); edit forms start the name empty.
+    pub named: bool,
+    /// null = no phone recorded (decision E: optional).
+    pub phone: Option<String>,
+    pub phone_e164: Option<String>,
     pub gender: Option<GenderDto>,
     pub birth_year: Option<i16>,
+    pub birth_date: Option<NaiveDate>,
     pub address: Option<String>,
     pub source: Option<String>,
     pub note: Option<String>,
@@ -97,11 +111,13 @@ impl From<CustomerView> for CustomerDto {
         let r = v.row;
         Self {
             id: r.id,
-            phone: national(&r.phone_e164),
+            phone: national_opt(r.phone_e164.as_deref()),
             phone_e164: r.phone_e164,
             gender: gender_dto(r.gender.as_deref()),
-            full_name: r.full_name,
+            named: r.full_name.is_some(),
+            full_name: service::label(r.full_name.as_deref()).to_owned(),
             birth_year: r.birth_year,
+            birth_date: r.birth_date,
             address: r.address,
             source: r.source,
             note: r.note,
@@ -115,10 +131,20 @@ impl From<CustomerView> for CustomerDto {
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CustomerCreate {
-    pub full_name: String,
-    pub phone: String,
+    /// Omitted/null/blank = no name: an anonymous walk-in, shown as "Khách vãng lai". A package
+    /// can be sold to this profile only once it has a name (`422 customer.name_required`).
+    #[serde(default)]
+    pub full_name: Option<String>,
+    /// Omitted/null/blank = no phone. When given: format-checked (`422 phone invalid_format`)
+    /// and unique among live profiles (`409 customer.phone_taken`).
+    #[serde(default)]
+    pub phone: Option<String>,
     pub gender: Option<GenderDto>,
     pub birth_year: Option<i16>,
+    /// Not after today, at most 120 years back; sets `birth_year` when that is omitted, and must
+    /// agree with it otherwise (`birth_year conflicts_with_birth_date`).
+    #[serde(default)]
+    pub birth_date: Option<NaiveDate>,
     pub address: Option<String>,
     pub source: Option<String>,
     pub note: Option<String>,
@@ -129,10 +155,20 @@ pub struct CustomerCreate {
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CustomerUpdate {
-    pub full_name: String,
-    pub phone: String,
+    /// Omitted/null/blank = no name: an anonymous walk-in, shown as "Khách vãng lai". A package
+    /// can be sold to this profile only once it has a name (`422 customer.name_required`).
+    #[serde(default)]
+    pub full_name: Option<String>,
+    /// Omitted/null/blank = no phone. When given: format-checked (`422 phone invalid_format`)
+    /// and unique among live profiles (`409 customer.phone_taken`).
+    #[serde(default)]
+    pub phone: Option<String>,
     pub gender: Option<GenderDto>,
     pub birth_year: Option<i16>,
+    /// Not after today, at most 120 years back; sets `birth_year` when that is omitted, and must
+    /// agree with it otherwise (`birth_year conflicts_with_birth_date`).
+    #[serde(default)]
+    pub birth_date: Option<NaiveDate>,
     pub address: Option<String>,
     pub source: Option<String>,
     pub note: Option<String>,
@@ -339,23 +375,33 @@ pub struct FollowUpList {
     pub not_interested_pause_days: u64,
 }
 
-fn profile(
-    full_name: String,
-    phone: String,
-    gender: Option<GenderDto>,
-    birth_year: Option<i16>,
-    address: Option<String>,
-    source: Option<String>,
-    note: Option<String>,
-) -> ProfileInput {
-    ProfileInput {
-        full_name,
-        phone,
-        gender: gender.map(Into::into),
-        birth_year,
-        address,
-        source,
-        note,
+impl From<CustomerCreate> for ProfileInput {
+    fn from(b: CustomerCreate) -> Self {
+        Self {
+            full_name: b.full_name,
+            phone: b.phone,
+            gender: b.gender.map(Into::into),
+            birth_year: b.birth_year,
+            birth_date: b.birth_date,
+            address: b.address,
+            source: b.source,
+            note: b.note,
+        }
+    }
+}
+
+impl From<CustomerUpdate> for ProfileInput {
+    fn from(b: CustomerUpdate) -> Self {
+        Self {
+            full_name: b.full_name,
+            phone: b.phone,
+            gender: b.gender.map(Into::into),
+            birth_year: b.birth_year,
+            birth_date: b.birth_date,
+            address: b.address,
+            source: b.source,
+            note: b.note,
+        }
     }
 }
 
@@ -486,23 +532,22 @@ pub async fn search(
 }
 
 #[utoipa::path(post, path = "/api/v1/customers", tag = "customers", request_body = CustomerCreate,
-    responses((status = 201, body = CustomerDto), (status = 403), (status = 409, description = "customer.phone_taken with existing_id"), (status = 422)))]
+    responses((status = 201, body = CustomerDto, description = "Created; with no name and no phone it is an anonymous walk-in profile (\"Khách vãng lai\")"), (status = 403), (status = 409, description = "customer.phone_taken with existing_id"), (status = 422, description = "validation_failed: full_name too_long, phone invalid_format, birth_date in_future / too_old, birth_year out_of_range / conflicts_with_birth_date")))]
 pub async fn create(
     State(pool): State<PgPool>,
     State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
-    Json(b): Json<CustomerCreate>,
+    Json(mut b): Json<CustomerCreate>,
 ) -> Result<Response, AppError> {
-    let input = profile(
-        b.full_name,
-        b.phone,
-        b.gender,
-        b.birth_year,
-        b.address,
-        b.source,
-        b.note,
-    );
-    let v = service::create(&pool, &cipher, &user.actor, input, b.health_note.as_deref()).await?;
+    let health_note = b.health_note.take();
+    let v = service::create(
+        &pool,
+        &cipher,
+        &user.actor,
+        b.into(),
+        health_note.as_deref(),
+    )
+    .await?;
     Ok(versioned(StatusCode::CREATED, v.into()))
 }
 
@@ -529,16 +574,7 @@ pub async fn update(
     IfMatch(version): IfMatch,
     Json(b): Json<CustomerUpdate>,
 ) -> Result<Response, AppError> {
-    let input = profile(
-        b.full_name,
-        b.phone,
-        b.gender,
-        b.birth_year,
-        b.address,
-        b.source,
-        b.note,
-    );
-    let v = service::update(&pool, &cipher, &user.actor, id, version, input).await?;
+    let v = service::update(&pool, &cipher, &user.actor, id, version, b.into()).await?;
     Ok(versioned(StatusCode::OK, v.into()))
 }
 

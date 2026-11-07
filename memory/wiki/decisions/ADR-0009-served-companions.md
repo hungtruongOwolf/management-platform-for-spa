@@ -24,7 +24,8 @@ Chọn **A**. Migration `0022_served_companions`: bỏ `appointment_check1`, tha
 ## Consequences
 - Positive: không có kiểu dữ liệu mới; mọi quy tắc trùng KTV, sức chứa, ngày chốt, RLS, audit, idempotency giữ nguyên; hoa hồng "làm" đúng KTV vì lượt của người đi cùng là lượt riêng.
 - Negative / accepted trade-offs: người đi cùng chỉ có tên phải được tạo hồ sơ (có SĐT) trước khi ghi lượt. `group_with` là hai bước khi sửa lịch (PATCH rồi POST); web giữ kết quả bước đã xong và dùng `Idempotency-Key` riêng cho từng người nên gửi lại không đặt trùng.
-- Follow-ups: Q-C9 (hồ sơ không SĐT) nếu EM muốn; tách / rời nhóm chưa có (hủy lịch của người đó là đủ).
+- **Cập nhật 2026-11-07 ([ADR-0010](ADR-0010-anonymous-walk-in-and-optional-phone.md), quyết định E):** hồ sơ khách không bắt buộc SĐT, nên người đi cùng chỉ có tên được "Tạo hồ sơ" ngay ở check-in nhóm mà không cần SĐT; Q-C9 đã trả lời.
+- Follow-ups: tách / rời nhóm chưa có (hủy lịch của người đó là đủ).
 
 ## Revisit when
 EM muốn ghi lượt cho người không SĐT, hoặc một người cần nhiều KTV trong một lịch (Q7 của spec lịch hẹn).

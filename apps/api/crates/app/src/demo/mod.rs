@@ -564,10 +564,12 @@ impl Spa<'_> {
                     self.cipher,
                     &self.manager,
                     crm::service::ProfileInput {
-                        full_name: c.full_name.to_owned(),
-                        phone: demo_phone(run, i),
+                        full_name: Some(c.full_name.to_owned()),
+                        phone: Some(demo_phone(run, i)),
                         gender: recorded.then_some(crm_gender(sex)),
                         birth_year: c.birth_year,
+                        birth_date: None,
+
                         address: c.address.map(str::to_owned),
                         source: c.source.map(str::to_owned),
                         note: None,

@@ -6,6 +6,7 @@ import { canSeeManagement } from "../../app/features";
 import { Icon, type IconName } from "../../app/Icon";
 import { monthLabel } from "../../lib/format";
 import { serviceLabel } from "../../lib/names";
+import { formatDate } from "../sales/api";
 import { useSearchState } from "../../lib/searchState";
 import { can, type Me } from "../auth/session";
 import { mayCorrectVisit, spaToday } from "../corrections/api";
@@ -29,6 +30,7 @@ const KIND: Record<HistoryKind, string> = {
   visit_voided: "Lượt đã hủy",
   purchase_voided: "Hóa đơn đã hủy",
   package_cancelled: "Hủy gói",
+  package_extended: "Gia hạn gói",
 };
 
 const KIND_OPTIONS: readonly (readonly [HistoryKind | "", string])[] = [["", "Mọi loại"], ...HISTORY_KINDS.map((k) => [k, KIND[k]] as const)];
@@ -48,6 +50,8 @@ function eventHead(e: HistoryEvent): { title: string; chip?: [string, string] } 
       return { title: "Mua gói liệu trình", chip: ["Đã hủy", "badge-danger"] };
     case "package_cancelled":
       return { title: "Hủy gói", chip: ["Đã hủy", "badge-danger"] };
+    case "package_extended":
+      return { title: "Gia hạn gói" };
   }
 }
 
@@ -58,6 +62,7 @@ const DOT: Record<HistoryKind, [IconName, string]> = {
   visit_voided: ["x", "bg-border-strong"],
   purchase_voided: ["x", "bg-border-strong"],
   package_cancelled: ["alert", "bg-danger"],
+  package_extended: ["calendar", "bg-accent"],
 };
 
 function Fact({ label, value, hint }: { label: string; value: string; hint?: string | undefined }) {
@@ -130,6 +135,12 @@ function EventBody({ e }: { e: HistoryEvent }) {
         {e.purchase.lines.map((l, i) => (
           <p key={i}>{l.description}</p>
         ))}
+        {/* Buy-for-other (US13): the payer sees who uses it; the user sees who paid. */}
+        {e.purchase.payer_name ? (
+          <p>{e.purchase.payer_name} mua tặng</p>
+        ) : (
+          e.purchase.beneficiary_name && <p>Mua cho {e.purchase.beneficiary_name}</p>
+        )}
         <p className="text-text-muted">
           Thanh toán <span className={`font-semibold text-text tabular ${e.purchase.voided ? "line-through" : ""}`}>{money(e.purchase.total)}</span>
           {e.purchase.discount_amount > 0 && ` (giảm ${money(e.purchase.discount_amount)})`}
@@ -139,7 +150,16 @@ function EventBody({ e }: { e: HistoryEvent }) {
       </div>
     );
   }
+  if (e.extension) {
+    return (
+      <p className="mt-1 text-sm">
+        {e.extension.package_name} · hạn {formatDate(e.extension.previous_expires_on)} → {formatDate(e.extension.expires_on)}
+        <span className="text-text-muted"> · {e.extension.reason} · {e.extension.by_name}</span>
+      </p>
+    );
+  }
   if (e.cancellation) {
+
     return (
       <p className="mt-1 text-sm">
         {e.cancellation.package_name} · {e.cancellation.reason}

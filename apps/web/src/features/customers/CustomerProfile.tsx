@@ -4,7 +4,8 @@ import { useId, useState } from "react";
 import { BottomSheet } from "../../components/BottomSheet";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
-import { setHealthNote } from "./api";
+import { formatDate } from "../sales/api";
+import { phoneText, setHealthNote } from "./api";
 import { CustomerPackages } from "../sales/CustomerPackages";
 import { CustomerForm } from "./CustomerForm";
 
@@ -156,8 +157,12 @@ export function CustomerProfile({ customer, onChanged }: { customer: Customer; o
           )}
         </div>
         <dl className="detail-grid">
-          <Detail label="Số điện thoại">{customer.phone}</Detail>
-          <Detail label="Năm sinh">{customer.birth_year ? String(customer.birth_year) : null}</Detail>
+          <Detail label="Số điện thoại">{phoneText(customer.phone)}</Detail>
+          {customer.birth_date ? (
+            <Detail label="Ngày sinh">{formatDate(customer.birth_date)}</Detail>
+          ) : (
+            <Detail label="Năm sinh">{customer.birth_year ? String(customer.birth_year) : null}</Detail>
+          )}
           <Detail label="Địa chỉ">{customer.address}</Detail>
           <Detail label="Ghi chú">{customer.note}</Detail>
         </dl>

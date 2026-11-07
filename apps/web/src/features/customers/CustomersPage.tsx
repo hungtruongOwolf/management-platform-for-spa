@@ -5,7 +5,7 @@ import { CustomerName } from "../../app/CustomerName";
 import { PageHeader } from "../../app/PageHeader";
 import { useSearchState } from "../../lib/searchState";
 import { can, meQuery } from "../auth/session";
-import { customerQuery, recentQuery } from "./api";
+import { customerQuery, phoneText, recentQuery } from "./api";
 import { CustomerForm } from "./CustomerForm";
 import { CustomerProfile } from "./CustomerProfile";
 import { CustomerSearch } from "./CustomerSearch";
@@ -93,10 +93,10 @@ export function CustomersPage() {
                     {/* Phones: the number goes under the name, so a long name keeps its chip on one line. */}
                     <span className="grid min-w-0">
                       <CustomerName name={c.full_name} gender={c.gender} className="font-semibold" />
-                      <span className="row-meta tabular sm:hidden">{c.phone}</span>
+                      <span className="row-meta tabular sm:hidden">{phoneText(c.phone)}</span>
                     </span>
                   </span>
-                  <span className="row-meta shrink-0 whitespace-nowrap tabular max-sm:hidden">{c.phone}</span>
+                  <span className="row-meta shrink-0 whitespace-nowrap tabular max-sm:hidden">{phoneText(c.phone)}</span>
                 </Link>
               </li>
             ))}

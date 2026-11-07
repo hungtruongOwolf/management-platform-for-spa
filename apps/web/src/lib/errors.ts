@@ -48,6 +48,8 @@ const MESSAGES: Record<string, string> = {
   "appointment.customer_required":
     "Khách mới: tạo hồ sơ khách trước rồi mới hoàn tất được.",
   "customer.phone_taken": "Số điện thoại này đã có hồ sơ khách.",
+  "customer.name_required":
+    "Gói liệu trình cần tên khách. Mở “Sửa hồ sơ”, thêm tên rồi bán gói.",
   "visit.voided": "Lượt này đã bị hủy, không sửa được.",
   "visit.corrected":
     "Lượt này vừa được sửa (có thể ở máy khác). Mở lượt mới nhất để sửa tiếp.",
@@ -94,6 +96,8 @@ const FIELD_MESSAGES: Record<string, string> = {
   not_today: "Chỉ đổi sang ngày khác khi khách chưa đến.",
   before_from: "Ngày kết thúc trước ngày bắt đầu.",
   not_visit_day: "Giờ làm phải thuộc đúng ngày của lượt.",
+  too_old: "Ngày quá xa trong quá khứ.",
+  conflicts_with_birth_date: "Năm sinh khác năm của ngày sinh.",
 };
 
 /** Registers the messages of a lazy feature (called once at the top of its module). */

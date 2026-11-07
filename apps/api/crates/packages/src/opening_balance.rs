@@ -162,7 +162,9 @@ fn profile(c: &CustomerCreate) -> ProfileInput {
         phone: c.phone.clone(),
         gender: c.gender.map(Into::into),
         birth_year: c.birth_year,
+        birth_date: c.birth_date,
         address: c.address.clone(),
+
         source: c.source.clone(),
         note: c.note.clone(),
     }
@@ -304,12 +306,20 @@ pub async fn import_in(
     }
     let (customer_id, customer_created) = match (&input.customer_id, &input.customer) {
         (Some(id), _) => {
-            if !crm::service::exists_in(tx, *id).await? {
-                return Err(AppError::NotFound);
-            }
+            crm::service::brief_in(tx, *id)
+                .await?
+                .ok_or(AppError::NotFound)?
+                .require_named()?;
             (*id, false)
         }
         (None, Some(c)) => {
+            // Packages need an owner the spa can tell apart (no anonymous walk-in here).
+            if c.full_name.as_deref().is_none_or(|n| n.trim().is_empty()) {
+                return Err(AppError::Validation(vec![FieldError::new(
+                    "customer.full_name",
+                    "required",
+                )]));
+            }
             let created =
                 crm::service::create_in(tx, cipher, actor, profile(c), c.health_note.as_deref())
                     .await
