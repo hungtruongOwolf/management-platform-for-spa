@@ -388,6 +388,8 @@ describe("/quay Sửa lượt", () => {
     expect(
       await screen.findByText("Chưa có gì thay đổi so với lượt đã ghi."),
     ).toBeInTheDocument();
+    // The recorded line is complete, so it starts folded (EM 2026-11-07): Sửa opens it.
+    await user.click(within(cart).getByRole("button", { name: "Sửa dòng Giác hơi" }));
     await user.selectOptions(
       within(cart).getByRole("combobox", { name: "KTV" }),
       "st2",

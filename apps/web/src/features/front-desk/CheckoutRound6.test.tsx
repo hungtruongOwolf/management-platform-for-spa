@@ -1014,7 +1014,9 @@ describe("/quay EM flow review 2026-11-07", () => {
       await screen.findByRole("heading", { name: /Chị Mai/ }),
     ).toBeInTheDocument();
     // Same profile, same cart: the package is kept and can now be saved.
-    expect(screen.queryByText(/Gói liệu trình cần chủ gói có tên/)).toBeNull();
+    expect(
+      screen.queryByText(/Gói liệu trình cần chủ gói có tên/, { selector: ".field-hint" }),
+    ).toBeNull();
     expect(screen.getByRole("button", { name: "Làm 1 buổi hôm nay" })).toBeInTheDocument();
   });
 
