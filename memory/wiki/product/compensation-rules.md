@@ -1,7 +1,7 @@
 ---
 title: Quy tắc chấm công, đánh giá, lương thưởng (trích từ tài liệu Spa)
-updated: 2026-11-04
-sources: [raw/2026-11-04-idea-internal-platform.md]
+updated: 2026-11-07
+sources: [raw/2026-11-04-idea-internal-platform.md, raw/2026-11-07-em-decisions-after-live-test.md]
 ---
 
 # Quy tắc lương thưởng hiện hành
@@ -34,6 +34,8 @@ Nguồn: 2 văn bản chương trình (học viên, KTV có kinh nghiệm) + fil
 
 **EM 2026-11-06 (Q-U2, Q-U3, [raw](../../raw/2026-11-06-em-answers-round6-upsell.md)):** loại 2 hiểu là **hoa hồng giới thiệu / chốt (upsell)**, tính trên **cả gói liệu trình lẫn dịch vụ lẻ** do người đó giới thiệu được; loại 1 (**làm**) vẫn cho người trực tiếp làm. Hai khoản tách biệt, có thể là hai người. Mỗi thứ bán ra có **đúng một** người giới thiệu: chủ spa, quản lý, một KTV, hoặc "khách tự chọn" (không ai được tính). App: `sale.closer_staff_id` (gói), `visit_line.referrer_staff_id` (dịch vụ lẻ), xem [staff-management](specs/staff-management.md) AC5.2.
 
+**Gói bị hủy có hoàn tiền (2026-11-07, lead's decision — EM to review, [ADR-0010](../decisions/ADR-0010-commission-follows-kept-money.md)):** hoa hồng chốt tính trên tiền spa **giữ lại**: khoản hoàn trừ vào cơ sở hoa hồng chốt của người chốt, ở tháng hoàn tiền. Hủy không hoàn thì giữ nguyên. Ví dụ: Xông chân 1.290.000đ, 7 %, hoàn 1.000.000đ cùng tháng → 7 % × 290.000 = 20.300đ.
+
 ## 4. Ngày nghỉ & chấm công
 - Ký hiệu: ✓ đi làm; **P** có lý do, báo trước ≥ 3 ngày; **ĐX** đột xuất (bổ sung giấy tờ sau); **K** không lý do / không báo / không bổ sung giấy.
 - Mỗi tháng được nghỉ **2 ngày không trừ lương**. Mỗi ngày vượt quá bị trừ 1 ngày lương.
@@ -43,6 +45,7 @@ Nguồn: 2 văn bản chương trình (học viên, KTV có kinh nghiệm) + fil
 ## 5. Đánh giá năng lực tháng (100 điểm), chấm ngày 1–5 tháng sau
 Tiêu chí (điểm tối đa): Kỹ thuật liệu trình 40 · Thái độ & giao tiếp 15 · Phản hồi khách 15 · Chuyên cần 10 · Vệ sinh & tác phong 10 · Tinh thần học hỏi 10.
 - Mức cho từng tiêu chí: Mức 1 = 100%, Mức 2 = 80%, Mức 3 = 60%, Chưa đạt ≤ 30% (có thể chấm thấp hơn).
+- **EM 2026-11-07 (quyết định D):** người chấm gõ điểm từng tiêu chí (0 → tối đa), không bắt chọn Mức 1/2/3; các mức trên chỉ là mốc hướng dẫn hiện trên form. Mức của tiêu chí = tỷ lệ điểm theo cùng ngưỡng xếp loại tháng (≥ 85 / 70 / 50 %). Form mới để trống.
 - Xếp loại tháng: ≥ 85 **Mức 1**; 70–84 **Mức 2**; 50–69 **Mức 3**; < 50 **Chưa đạt**.
 - Có khiếu nại nghiêm trọng hoặc vi phạm nội quy nhiều lần trong tháng → kết quả tối đa **Mức 3**.
 - Mức 3 / Chưa đạt → **bắt buộc** ghi kế hoạch kèm cặp tháng sau.

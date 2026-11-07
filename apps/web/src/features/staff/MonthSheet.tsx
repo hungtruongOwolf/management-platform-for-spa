@@ -35,7 +35,7 @@ export function MonthSheet({ month, today, canReview }: { month: string; today: 
           people={sheet.staff}
           reviewsOf={canReview ? reviewsOf : undefined}
           onCell={(staff, date) => {
-            if (!sheet.closed) setEditing({ staff, date });
+            if (!sheet.closed && staff.can_record) setEditing({ staff, date });
           }}
         />
       )}
@@ -112,13 +112,24 @@ export function MonthGrid({
                 <tr key={s.staff_id}>
                   <th scope="row" className="sticky-col">
                     {s.full_name}
+                    {!s.can_record && <span className="block text-xs font-normal text-text-muted">Chủ spa chấm</span>}
                   </th>
                   {days.map((d) => {
                     const cell = cellOf(s, d);
                     const off = !employedOn(s, d) || d > today;
                     return (
                       <td key={d} className="p-0 text-center">
-                        {off ? (
+                        {off || !s.can_record ? (
+                          off ? (
+                            <span className="text-text-muted" aria-hidden="true">
+                              ·
+                            </span>
+                          ) : (
+                            <span className={`att-cell att-${cell?.status ?? "none"}${cell && cell.late_minutes > 0 ? " is-late" : ""}`}>
+                              {cell ? STATUS_CODE[cell.status] : "–"}
+                            </span>
+                          )
+                        ) : off ? (
                           <span className="text-text-muted" aria-hidden="true">
                             ·
                           </span>

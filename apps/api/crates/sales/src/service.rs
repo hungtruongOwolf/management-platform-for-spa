@@ -1046,6 +1046,79 @@ pub fn allocate_payments(dues: &[Money], payments: &[Payment]) -> Option<Vec<Vec
     Some(out)
 }
 
+/// Money a void just handed back, per method (cash first): the payments of `payments` that now
+/// have a reversal. Used when the voided sale is recorded again (convert to package), so the money
+/// already paid keeps its own method instead of being re-entered with the method of the top-up.
+pub fn reversed_by_method(payments: &[PaymentDto]) -> Vec<Payment> {
+    let reversed: HashSet<Uuid> = payments
+        .iter()
+        .filter(|p| p.kind == PaymentKindDto::Reversal)
+        .filter_map(|p| p.reversal_of)
+        .collect();
+    let mut out: Vec<Payment> = Vec::new();
+    for p in payments
+        .iter()
+        .filter(|p| p.kind == PaymentKindDto::Payment && reversed.contains(&p.id))
+    {
+        let method = match p.method {
+            PaymentMethodDto::Cash => PaymentMethod::Cash,
+            PaymentMethodDto::BankTransfer => PaymentMethod::BankTransfer,
+        };
+        let Ok(amount) = Money::vnd(p.amount) else {
+            continue;
+        };
+        match out.iter_mut().find(|c| c.method == method) {
+            Some(c) => {
+                c.amount = Money::vnd(c.amount.as_i64() + amount.as_i64()).unwrap_or(c.amount)
+            }
+            None => out.push(Payment {
+                method,
+                amount,
+                reference: p.reference.clone(),
+            }),
+        }
+    }
+    out.sort_by_key(|p| p.method != PaymentMethod::Cash);
+    out
+}
+
+/// The payments of a checkout that re-records money already paid (`carried`, e.g. a one-off
+/// visit converted to a package) plus what the customer hands over now (`top_up`).
+///
+/// The carried money counts first, in its own method, up to `due`; whatever of it exceeds `due`
+/// stays given back (the void's reversal). The top-up is added on top, merged per method (one
+/// payment per method). `allocate_payments` then checks the sum: the top-up must be exactly
+/// `due − carried` (none when the carried money already covers `due`).
+pub fn with_carried(carried: &[Payment], top_up: &[Payment], due: Money) -> Vec<Payment> {
+    let mut left = due.as_i64();
+    let mut out: Vec<Payment> = Vec::new();
+    for c in carried {
+        let take = c.amount.as_i64().min(left);
+        if take <= 0 {
+            break;
+        }
+        left -= take;
+        out.push(Payment {
+            method: c.method,
+            amount: Money::vnd(take).unwrap_or(c.amount),
+            reference: c.reference.clone(),
+        });
+    }
+    for t in top_up {
+        match out.iter_mut().find(|p| p.method == t.method) {
+            Some(p) => {
+                p.amount = Money::vnd(p.amount.as_i64().saturating_add(t.amount.as_i64()))
+                    .unwrap_or(p.amount);
+                if t.reference.is_some() {
+                    p.reference.clone_from(&t.reference);
+                }
+            }
+            None => out.push(t.clone()),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1127,5 +1200,88 @@ mod tests {
             None
         );
         assert_eq!(allocate_payments(&[Money::ZERO], &[]), Some(vec![vec![]]));
+    }
+
+    fn dto(
+        id: u128,
+        kind: PaymentKindDto,
+        of: Option<u128>,
+        method: PaymentMethodDto,
+        amount: i64,
+    ) -> PaymentDto {
+        PaymentDto {
+            id: Uuid::from_u128(id),
+            kind,
+            reversal_of: of.map(Uuid::from_u128),
+            method,
+            amount,
+            reference: None,
+            paid_at: DateTime::<Utc>::UNIX_EPOCH,
+        }
+    }
+
+    #[test]
+    fn reversed_money_keeps_its_method() {
+        use PaymentKindDto::{Payment as P, Reversal as R};
+        use PaymentMethodDto::{BankTransfer as Ck, Cash as Tm};
+        let payments = [
+            dto(1, P, None, Ck, 20_000),
+            dto(2, P, None, Tm, 99_000),
+            dto(3, P, None, Tm, 20_000),
+            dto(4, R, Some(1), Ck, 20_000),
+            dto(5, R, Some(2), Tm, 99_000),
+            dto(6, R, Some(3), Tm, 20_000),
+            // Not reversed: not handed back, so not carried.
+            dto(7, P, None, Ck, 5_000),
+        ];
+        assert_eq!(
+            reversed_by_method(&payments),
+            vec![
+                pay(PaymentMethod::Cash, 119_000),
+                pay(PaymentMethod::BankTransfer, 20_000)
+            ]
+        );
+    }
+
+    #[test]
+    fn carried_money_counts_first_and_the_top_up_adds_on_top() {
+        // Live test 2026-11-07: 119.000đ paid cash, converted to a 739.000đ package, top-up by
+        // transfer → TM 119.000đ + CK 620.000đ (not −119.000đ TM + 739.000đ CK).
+        let carried = [pay(PaymentMethod::Cash, 119_000)];
+        let top_up = [pay(PaymentMethod::BankTransfer, 620_000)];
+        let all = with_carried(&carried, &top_up, vnd(739_000));
+        assert_eq!(
+            all,
+            vec![
+                pay(PaymentMethod::Cash, 119_000),
+                pay(PaymentMethod::BankTransfer, 620_000)
+            ]
+        );
+        assert!(allocate_payments(&[Money::ZERO, vnd(739_000)], &all).is_some());
+        // Same method: one payment.
+        let cash_top_up = [pay(PaymentMethod::Cash, 620_000)];
+        assert_eq!(
+            with_carried(&carried, &cash_top_up, vnd(739_000)),
+            vec![pay(PaymentMethod::Cash, 739_000)]
+        );
+        // The old money covers more than the new total: only `due` is carried, no top-up.
+        let both = [
+            pay(PaymentMethod::Cash, 100_000),
+            pay(PaymentMethod::BankTransfer, 50_000),
+        ];
+        assert_eq!(
+            with_carried(&both, &[], vnd(120_000)),
+            vec![
+                pay(PaymentMethod::Cash, 100_000),
+                pay(PaymentMethod::BankTransfer, 20_000)
+            ]
+        );
+        // A top-up that is not exactly the rest does not add up.
+        let wrong = with_carried(
+            &carried,
+            &[pay(PaymentMethod::BankTransfer, 739_000)],
+            vnd(739_000),
+        );
+        assert_eq!(allocate_payments(&[vnd(739_000)], &wrong), None);
     }
 }

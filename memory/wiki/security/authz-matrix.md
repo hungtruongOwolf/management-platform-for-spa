@@ -1,6 +1,6 @@
 ---
 title: Authorization matrix (R1-1)
-updated: 2026-11-05
+updated: 2026-11-07
 sources: [product/specs/front-desk-and-packages.md, product/specs/management-views.md, decisions/ADR-0003-multi-tenancy.md, decisions/ADR-0004-authentication.md]
 ---
 
@@ -89,6 +89,7 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
   - **Spa khác:** id trên path → 404; `staff_id` trong body (chấm công, đánh giá, thưởng/phạt) → `422 …staff_id unknown`; RLS dưới `app_rw` không thấy dòng nào (`staff.rs::another_spa_cannot_reach_our_staff`).
   - **Tháng đã chốt:** mọi ghi vào tháng → `409 payroll.period_closed` (service khóa `payroll_period` FOR SHARE / close FOR UPDATE) + trigger `reject_closed_period`; `payslip`, `staff_adjustment` chỉ thêm; tháng không mở lại (`payroll_period_forward_only`). Test `staff.rs::a_closed_month_is_locked_and_corrected_by_adjustments` (cả UPDATE/DELETE trực tiếp dưới app_rw bị từ chối).
   - Người ghi luôn lấy từ session (`recorded_by`, `created_by`, `closed_by`, `updated_by`). Ghi chú chấm công/đánh giá không vào audit (`has_note`); audit điều kiện lương có số tiền (chỉ chủ spa đọc audit).
+  - **Quyết định C (EM 2026-11-07, [spec §11](../product/specs/staff-management.md)):** ngoài permission, mọi ghi chấm công / khen-phàn nàn / đánh giá tháng / thưởng-phạt (`PUT /attendance`, `PUT /daily-reviews`, `PUT /evaluations`, `POST /adjustments`, `PUT|DELETE /adjustments/{id}`) kiểm **phạm vi người được ghi** (`hr::scope::RecordScope`): có `staff.manage` (chủ spa) → mọi người; không có → không được ghi cho hồ sơ gắn tài khoản có `attendance.record`/`evaluation.record`/`staff.manage` hoặc hồ sơ của chính mình → `403 staff.record_owner_only`, cả batch không ghi gì. Danh tính từ session, người được ghi đọc từ DB (role của tài khoản gắn hồ sơ), không tin client. View tháng trả `can_record`/`can_edit` chỉ để UI ẩn nút. Test `staff.rs::only_the_owner_records_for_a_manager` (mọi route ghi, batch lẫn, sửa chuyển sang quản lý, xóa của chủ spa, KTV 403, spa khác 404, DB chỉ cho hủy một lần). `authz_matrix.rs` +2 dòng (`PUT`/`DELETE /adjustments/{id}`, `EvaluationRecord`, owner+manager, `Target::Adjustment`).
   - Gắn tài khoản: chỉ thành viên đang hoạt động của spa, một tài khoản một hồ sơ (`409 staff.account_taken`). Lưu ý: chủ spa gắn nhầm tài khoản người khác vào hồ sơ thì người đó thấy phiếu lương của hồ sơ đó: đây là quyết định của chủ spa, có audit `staff.update`.
   - Matrix: 20 route mới trong `authz_matrix.rs` (Target mới `Staff`).
 - **Vòng 5: "Khách của tôi" (`GET /me/work`, [spec](../product/specs/staff-management.md) §10 US9, không có migration):**

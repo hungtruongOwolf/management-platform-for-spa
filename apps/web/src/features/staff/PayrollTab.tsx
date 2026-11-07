@@ -168,10 +168,17 @@ const LINE_COLUMNS: Column<Payslip["commission_lines"][number]>[] = [
   { id: "value", header: "Giá trị", numeric: true, card: "aside", cell: (l) => vnd(l.value) },
 ];
 
+/** A package refunded this month takes its refund back from whoever closed it (ADR-0010). */
+const UPSELL_KIND: Record<string, string> = {
+  package: "Gói liệu trình",
+  package_refund: "Hoàn tiền gói (trừ lại)",
+  service: "Dịch vụ lẻ",
+};
+
 /** Upsell credits (EM 2026-11-06, Q-U3): packages closed and one-off services recommended. */
 const UPSELL_COLUMNS: Column<NonNullable<Payslip["upsell_lines"]>[number]>[] = [
   { id: "item", header: "Gói / dịch vụ", card: "title", cell: (l) => l.description },
-  { id: "kind", header: "Loại", card: "subtitle", cell: (l) => (l.kind === "package" ? "Gói liệu trình" : "Dịch vụ lẻ") },
+  { id: "kind", header: "Loại", card: "subtitle", cell: (l) => UPSELL_KIND[l.kind] ?? "Dịch vụ lẻ" },
   { id: "qty", header: "Số lượng", numeric: true, cell: (l) => l.qty },
   { id: "value", header: "Giá trị", numeric: true, card: "aside", cell: (l) => vnd(l.value) },
 ];

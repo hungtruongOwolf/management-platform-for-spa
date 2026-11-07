@@ -129,6 +129,11 @@ export function PersonDaySheet({
                 </label>
               ))}
             </div>
+            {status !== null && status !== "present" && staff.visit_days.includes(date) && (
+              <p role="alert" className="callout text-sm">
+                {staff.full_name} có lượt khách được ghi trong ngày này. Kiểm tra lại trước khi lưu ngày nghỉ.
+              </p>
+            )}
             {present && (
               <div className="grid grid-cols-2 gap-4">
                 <label className="filter-field">

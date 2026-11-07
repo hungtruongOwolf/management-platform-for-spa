@@ -66,18 +66,25 @@ fn id(reply: &Reply) -> Uuid {
         .unwrap_or_default()
 }
 
+/// A scorecard with every criterion typed at the sheet's anchor of `level` (Mức 1 = 100 %,
+/// Mức 2 = 80 %, Mức 3 = 60 % of its maximum).
 fn criteria(level: &str) -> Value {
+    let percent = match level {
+        "m1" => 100,
+        "m2" => 80,
+        _ => 60,
+    };
     json!(
         [
-            "technique",
-            "attitude",
-            "customer_feedback",
-            "diligence",
-            "hygiene",
-            "learning"
+            ("technique", 40),
+            ("attitude", 15),
+            ("customer_feedback", 15),
+            ("diligence", 10),
+            ("hygiene", 10),
+            ("learning", 10)
         ]
         .iter()
-        .map(|k| json!({"key": k, "level": level}))
+        .map(|(k, max)| json!({"key": k, "points": max * percent / 100}))
         .collect::<Vec<_>>()
     )
 }
@@ -828,6 +835,36 @@ async fn a_closed_month_is_locked_and_corrected_by_adjustments(pool: PgPool) -> 
         );
     }
 
+    // An entry of a closed month can no longer be removed or edited either.
+    let bonus_path = format!("/adjustments/{}", id(&bonus));
+    let removed = call(&s.h.app, "DELETE", &bonus_path, Some(&s.owner), None).await;
+    assert_eq!(
+        (removed.status, removed.body["code"].clone()),
+        (StatusCode::CONFLICT, json!("payroll.period_closed"))
+    );
+    let edited = call_with_headers(
+        &s.h.app,
+        "PUT",
+        &bonus_path,
+        Some(&s.owner),
+        Some(json!({"staff_id": s.lan, "kind": "bonus", "amount": 1_000, "reason": "x"})),
+        &[("Idempotency-Key", &Uuid::now_v7().to_string())],
+    )
+    .await;
+    assert_eq!(
+        edited.body["code"], "payroll.period_closed",
+        "{}",
+        edited.body
+    );
+    let voided =
+        sqlx::query("UPDATE app.staff_adjustment SET voided_at = now(), voided_by = created_by")
+            .execute(&s.h.owner)
+            .await;
+    assert!(
+        voided.is_err(),
+        "the database keeps a closed month's entries too"
+    );
+
     // The frozen payslip does not follow later pay changes.
     s.pay(s.lan, 9_000_000, 1000).await;
     let after = s.get(&s.owner, &format!("/payroll?month={month}")).await;
@@ -929,6 +966,16 @@ async fn commission_reconciles_with_visits(pool: PgPool) -> TestResult {
         "customer_id": hang, "lines": [{"service_id": s.service, "source": "package", "staff_id": s.mai}]
     })).await;
     assert_eq!(pkg.status, StatusCode::CREATED, "{}", pkg.body);
+
+    // The attendance sheet knows who served customers today (the leave warning).
+    let sheet = s.get(&s.owner, "/attendance").await;
+    for staff in [s.lan, s.mai] {
+        let days = sheet.body["staff"]
+            .as_array()
+            .and_then(|a| a.iter().find(|x| x["staff_id"] == json!(staff)))
+            .map(|x| x["visit_days"].clone());
+        assert_eq!(days, Some(json!([today()])), "{staff}");
+    }
 
     let payroll = s.get(&s.owner, "/payroll").await;
     assert_eq!(payroll.status, StatusCode::OK, "{}", payroll.body);
@@ -1078,5 +1125,306 @@ async fn rules_and_attendance_drive_deductions(pool: PgPool) -> TestResult {
         )
         .await;
     assert_eq!(fail_no_plan.body["errors"][0]["field"], "coaching_plan");
+    Ok(())
+}
+
+// ------------------------------------------------------------------- decision C (2026-11-07)
+
+const SECOND_MANAGER_PHONE: &str = "0912100444";
+
+/// A staff profile linked to the login with this phone.
+async fn linked_profile(s: &Spa, phone: &str, name: &str) -> Setup<Uuid> {
+    let user: Uuid = sqlx::query_scalar("SELECT id FROM app.user_account WHERE phone_e164 = $1")
+        .bind(format!("+84{}", &phone[1..]))
+        .fetch_one(&s.h.owner)
+        .await?;
+    let r = call(
+        &s.h.app,
+        "POST",
+        "/staff",
+        Some(&s.owner),
+        Some(json!({"full_name": name, "position": "Quản lý", "user_id": user})),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.body);
+    Ok(id(&r))
+}
+
+/// Decision C, every write route: a manager records attendance, praise/complaints,
+/// bonuses/penalties and evaluations for technicians only, never for themselves or another
+/// manager (`403 staff.record_owner_only`, nothing written); the owner records them for anyone.
+/// The month views say which rows the caller may write. Mutation-checked: making
+/// `RecordScope::may_record` return true turns this red.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn only_the_owner_records_for_a_manager(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    add_member(
+        &s.h.owner,
+        "vpyd",
+        SECOND_MANAGER_PHONE,
+        "Quản lý Thu",
+        SystemRole::Manager,
+    )
+    .await?;
+    let hoa = linked_profile(&s, MANAGER_PHONE, "Quản lý Hoa").await?;
+    let thu = linked_profile(&s, SECOND_MANAGER_PHONE, "Quản lý Thu").await?;
+    let day = yesterday();
+    let month = ym(day);
+    let owner_only = |r: &Reply| {
+        assert_eq!(
+            (r.status, r.body["code"].clone()),
+            (StatusCode::FORBIDDEN, json!("staff.record_owner_only")),
+            "{}",
+            r.body
+        );
+    };
+
+    for supervisor in [hoa, thu] {
+        owner_only(&s.attend(&s.manager, supervisor, day, "present").await);
+        owner_only(
+            &s.put(
+                &s.manager,
+                "/daily-reviews",
+                json!({"entries": [
+                    {"staff_id": supervisor, "date": day, "compliments": 1}
+                ]}),
+            )
+            .await,
+        );
+        owner_only(
+            &s.put(
+                &s.manager,
+                "/evaluations",
+                json!({
+                    "staff_id": supervisor, "month": month, "criteria": criteria("m1")
+                }),
+            )
+            .await,
+        );
+        owner_only(
+            &s.post(&s.manager, "/adjustments", json!({
+                "staff_id": supervisor, "kind": "bonus", "amount": 100_000, "reason": "Tự thưởng"
+            }))
+            .await,
+        );
+    }
+    // A batch with one forbidden row writes nothing at all.
+    owner_only(
+        &s.put(
+            &s.manager,
+            "/attendance",
+            json!({"entries": [
+                {"staff_id": s.lan, "date": day, "status": "present"},
+                {"staff_id": hoa, "date": day, "status": "present"}
+            ]}),
+        )
+        .await,
+    );
+    let written: i64 = sqlx::query_scalar(
+        "SELECT (SELECT count(*) FROM app.attendance_day) + (SELECT count(*) FROM app.staff_daily_review)
+              + (SELECT count(*) FROM app.staff_evaluation) + (SELECT count(*) FROM app.staff_adjustment)",
+    )
+    .fetch_one(&s.h.owner)
+    .await?;
+    assert_eq!(written, 0, "every refusal wrote nothing");
+
+    // Technicians: the manager records everything.
+    assert_eq!(
+        s.attend(&s.manager, s.lan, day, "present").await.status,
+        StatusCode::OK
+    );
+    let review = s
+        .put(
+            &s.manager,
+            "/daily-reviews",
+            json!({"entries": [
+                {"staff_id": s.lan, "date": day, "compliments": 1}
+            ]}),
+        )
+        .await;
+    assert_eq!(review.status, StatusCode::OK, "{}", review.body);
+    let eval = s
+        .put(
+            &s.manager,
+            "/evaluations",
+            json!({
+                "staff_id": s.mai, "month": month, "criteria": criteria("m1")
+            }),
+        )
+        .await;
+    assert_eq!(eval.status, StatusCode::OK, "{}", eval.body);
+
+    // The owner records for the managers.
+    assert_eq!(
+        s.attend(&s.owner, hoa, day, "present").await.status,
+        StatusCode::OK
+    );
+    let review = s
+        .put(
+            &s.owner,
+            "/daily-reviews",
+            json!({"entries": [
+                {"staff_id": thu, "date": day, "complaints": 1}
+            ]}),
+        )
+        .await;
+    assert_eq!(review.status, StatusCode::OK, "{}", review.body);
+    let eval = s
+        .put(
+            &s.owner,
+            "/evaluations",
+            json!({
+                "staff_id": hoa, "month": month, "criteria": criteria("m1")
+            }),
+        )
+        .await;
+    assert_eq!(eval.status, StatusCode::OK, "{}", eval.body);
+    let owners_bonus = s
+        .post(
+            &s.owner,
+            "/adjustments",
+            json!({
+                "staff_id": hoa, "kind": "bonus", "amount": 300_000, "reason": "Quản lý tốt"
+            }),
+        )
+        .await;
+    assert_eq!(
+        owners_bonus.status,
+        StatusCode::CREATED,
+        "{}",
+        owners_bonus.body
+    );
+
+    // Removing or editing an entry follows the same rule as recording it.
+    let theirs = format!("/adjustments/{}", id(&owners_bonus));
+    owner_only(&call(&s.h.app, "DELETE", &theirs, Some(&s.manager), None).await);
+    let app = &s.h.app;
+    let edit = |session: &str, path: &str, staff: Uuid, amount: i64| {
+        let (session, path) = (session.to_owned(), path.to_owned());
+        async move {
+            let key = Uuid::now_v7().to_string();
+            call_with_headers(
+                app,
+                "PUT",
+                &path,
+                Some(&session),
+                Some(json!({"staff_id": staff, "kind": "penalty", "amount": amount, "reason": "Đi muộn"})),
+                &[("Idempotency-Key", &key)],
+            )
+            .await
+        }
+    };
+    owner_only(&edit(&s.manager, &theirs, s.lan, 50_000).await);
+
+    // The views tell the UI which rows the caller may write.
+    let flags = |body: &Value, key: &str| -> Vec<(Uuid, bool)> {
+        body["staff"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .map(|x| {
+                        (
+                            x["staff_id"]
+                                .as_str()
+                                .and_then(|v| Uuid::parse_str(v).ok())
+                                .unwrap_or_default(),
+                            x[key].as_bool().unwrap_or(true),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    for path in [
+        format!("/attendance?month={month}"),
+        format!("/daily-reviews?month={month}"),
+        format!("/evaluations?month={month}"),
+    ] {
+        let as_manager = flags(&s.get(&s.manager, &path).await.body, "can_record");
+        for (staff, can) in &as_manager {
+            assert_eq!(*can, *staff != hoa && *staff != thu, "{path} {staff}");
+        }
+        assert_eq!(as_manager.len(), 4, "{path}");
+        let as_owner = flags(&s.get(&s.owner, &path).await.body, "can_record");
+        assert!(as_owner.iter().all(|(_, can)| *can), "{path}");
+    }
+    let log = s
+        .get(&s.manager, &format!("/adjustments?month={}", ym(today())))
+        .await;
+    assert_eq!(log.body["items"][0]["can_edit"], false, "{}", log.body);
+
+    // A manager's own entry for a technician: edited (void + new) and removed once.
+    let mine = s
+        .post(
+            &s.manager,
+            "/adjustments",
+            json!({
+                "staff_id": s.lan, "kind": "penalty", "amount": 20_000, "reason": "Đi muộn"
+            }),
+        )
+        .await;
+    assert_eq!(mine.status, StatusCode::CREATED, "{}", mine.body);
+    let path = format!("/adjustments/{}", id(&mine));
+    // Moving it onto a manager is the same as recording it for them.
+    owner_only(&edit(&s.manager, &path, hoa, 20_000).await);
+    let edited = edit(&s.manager, &path, s.lan, 30_000).await;
+    assert_eq!(edited.status, StatusCode::OK, "{}", edited.body);
+    assert_ne!(id(&edited), id(&mine), "an edit is a new entry");
+    assert_eq!(edited.body["amount"], 30_000);
+    let stale = edit(&s.manager, &path, s.lan, 40_000).await;
+    assert_eq!(
+        (stale.status, stale.body["code"].clone()),
+        (StatusCode::CONFLICT, json!("adjustment.voided"))
+    );
+    let new_path = format!("/adjustments/{}", id(&edited));
+    let removed = call(&s.h.app, "DELETE", &new_path, Some(&s.manager), None).await;
+    assert_eq!(removed.status, StatusCode::NO_CONTENT, "{}", removed.body);
+    let again = call(&s.h.app, "DELETE", &new_path, Some(&s.manager), None).await;
+    assert_eq!(again.body["code"], "adjustment.voided");
+    let missing = call(
+        &s.h.app,
+        "DELETE",
+        &format!("/adjustments/{}", Uuid::now_v7()),
+        Some(&s.manager),
+        None,
+    )
+    .await;
+    assert_eq!(missing.status, StatusCode::NOT_FOUND);
+    let tech = call(&s.h.app, "DELETE", &theirs, Some(&s.tech), None).await;
+    assert_eq!(tech.status, StatusCode::FORBIDDEN);
+    // The other spa cannot see, let alone remove, our entries.
+    let other = call(&s.h.app, "DELETE", &theirs, Some(&s.other), None).await;
+    assert_eq!(other.status, StatusCode::NOT_FOUND);
+
+    // Removed entries leave the log and the payslip; the row stays for the audit trail.
+    let log = s
+        .get(&s.owner, &format!("/adjustments?month={}", ym(today())))
+        .await;
+    let amounts: Vec<i64> = log.body["items"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|x| x["amount"].as_i64()).collect())
+        .unwrap_or_default();
+    assert_eq!(amounts, [300_000]);
+    assert_eq!(log.body["items"][0]["can_edit"], true);
+    s.pay(s.lan, 5_000_000, 500).await;
+    let payroll = s.get(&s.owner, "/payroll").await;
+    assert_eq!(slip(&payroll.body, s.lan)["penalties"], 0);
+    let kept: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM app.staff_adjustment WHERE staff_id = $1 AND voided_at IS NOT NULL",
+    )
+    .bind(s.lan)
+    .fetch_one(&s.h.owner)
+    .await?;
+    assert_eq!(kept, 2, "voided, not deleted");
+    // The database refuses any other change, even from the schema owner.
+    let tampered = sqlx::query("UPDATE app.staff_adjustment SET amount = 1 WHERE staff_id = $1")
+        .bind(s.lan)
+        .execute(&s.h.owner)
+        .await;
+    assert!(tampered.is_err(), "only voiding is allowed");
+    let deleted = sqlx::query("DELETE FROM app.staff_adjustment")
+        .execute(&s.h.owner)
+        .await;
+    assert!(deleted.is_err(), "never deleted");
     Ok(())
 }

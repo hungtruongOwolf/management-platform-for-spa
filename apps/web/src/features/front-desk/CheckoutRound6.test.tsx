@@ -531,7 +531,8 @@ describe("/quay round 6", () => {
     expect(call?.headers["If-Match"]).toBe('"3"');
     expect(call?.body).toMatchObject({
       package_sale: { package_plan_id: "pl1", closer_staff_id: "st1" },
-      payments: [{ method: "cash", amount: 3_500_000 }],
+      // Only the top-up: the 349.000đ paid today keeps its method (the server records it again).
+      payments: [{ method: "cash", amount: 3_151_000 }],
     });
     expect(posted(calls, "/api/v1/visits/v1/additions")).toHaveLength(0);
   });
