@@ -36,7 +36,7 @@ Chọn **C**.
 ## Consequences
 - Positive: không có trạng thái thứ hai phải đồng bộ; test authz matrix có một lớp "former staff" chạy qua mọi route (`a_former_staff_member_reaches_only_their_past_pay`).
 - Negative / accepted: tài khoản đã nghỉ vẫn đăng nhập được (bề mặt tấn công nhỏ: hai endpoint chỉ đọc dữ liệu của chính họ). Muốn chặn hẳn thì chủ spa chọn "Khóa tài khoản" lúc cho nghỉ. Chưa có nút khóa / mở khóa riêng sau khi đã cho nghỉ (nhận lại làm thì mở).
-- Follow-ups: nếu sau này có role tùy biến, `staff.manage` vẫn là ranh giới "không bao giờ hạ quyền". Nút "Khóa / mở khóa tài khoản" độc lập (Q-S7).
+- Follow-ups: nếu sau này có role tùy biến, `staff.manage` vẫn là ranh giới "không bao giờ hạ quyền". Nút "Khóa / mở khóa tài khoản" độc lập (Q-S7) — **đã quyết (EM 2026-11-08, [raw](../../raw/2026-11-08-em-decisions-evaluation-history.md)): không cần**; khóa chỉ qua "Khóa tài khoản" khi cho nghỉ.
 
 ## Revisit when
 Có nhiều chi nhánh (người nghỉ ở một chi nhánh nhưng còn làm ở chi nhánh khác), hoặc pháp lý yêu cầu thời hạn giữ quyền xem phiếu lương.

@@ -4,16 +4,44 @@ import { BottomSheet } from "../../components/BottomSheet";
 import { messageFor } from "../../lib/errors";
 import { ErrorState, RowsSkeleton } from "../reports/ui";
 import { evaluationsQuery, invalidateStaff, saveEvaluation, type EvaluationSheet, type StaffEvaluation } from "./api";
+import { EvaluationHistoryView, ResultChip, ScoreCard } from "./EvaluationViews";
 import { LEVEL_LABEL, LEVEL_SHORT, monthLabel, type Level } from "./labels";
 import { ClosedBanner } from "./ui";
 
 /**
  * "Đánh giá tháng": the month's 100-point scorecard per person. Daily praise/complaints live in
  * the daily book; the book prompts for this step only while it is due (spec §10 AC7.4).
+ * EM 2026-11-08: every scored row opens its scorecard read-only ("Xem"), closed months and rows
+ * the viewer may not rescore included; a name opens that person's history across months
+ * (`staff` in the URL). "Chấm điểm / Chấm lại" keeps its rule.
  */
-export function EvaluationTab({ month }: { month: string }) {
+export function EvaluationTab({
+  month,
+  staffId,
+  onPerson,
+}: {
+  month: string;
+  /** A person's history instead of the month list ("" = the month list). */
+  staffId: string;
+  onPerson: (id: string) => void;
+}) {
+  if (staffId) {
+    return (
+      <EvaluationHistoryView
+        staffId={staffId}
+        onBack={() => {
+          onPerson("");
+        }}
+      />
+    );
+  }
+  return <MonthList month={month} onPerson={onPerson} />;
+}
+
+function MonthList({ month, onPerson }: { month: string; onPerson: (id: string) => void }) {
   const evals = useQuery(evaluationsQuery(month));
   const [scoring, setScoring] = useState<StaffEvaluation | null>(null);
+  const [viewing, setViewing] = useState<StaffEvaluation | null>(null);
 
   if (evals.isPending) return <RowsSkeleton rows={6} />;
   if (evals.isError) return <ErrorState error={evals.error} onRetry={() => void evals.refetch()} />;
@@ -39,18 +67,33 @@ export function EvaluationTab({ month }: { month: string }) {
         {sheet.staff.map((s) => (
           <li key={s.staff_id} className="eval-row">
             <div className="min-w-0 flex-1">
-              <p className="font-semibold">{s.full_name}</p>
+              <button
+                type="button"
+                className="name-link font-semibold"
+                aria-label={`${s.full_name}: lịch sử đánh giá các tháng`}
+                onClick={() => {
+                  onPerson(s.staff_id);
+                }}
+              >
+                {s.full_name}
+              </button>
               <p className="text-sm text-text-muted">
                 {s.compliments} khen · {s.complaints} phàn nàn · nghỉ {s.attendance.leave_p + s.attendance.leave_dx + s.attendance.absent_k} ngày ·
                 muộn {s.attendance.late_count} lần
               </p>
             </div>
-            {s.evaluation ? (
-              <span className={`badge ${s.evaluation.result === "fail" ? "badge-danger" : s.evaluation.result === "m3" ? "badge-warn" : "badge-ok"}`}>
-                {s.evaluation.total_points} điểm · {LEVEL_SHORT[s.evaluation.result]}
-              </span>
-            ) : (
-              <span className="badge badge-warn">Chưa đánh giá</span>
+            {s.evaluation ? <ResultChip evaluation={s.evaluation} /> : <span className="badge badge-warn">Chưa đánh giá</span>}
+            {s.evaluation && (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                aria-label={`Xem phiếu đánh giá ${s.full_name}`}
+                onClick={() => {
+                  setViewing(s);
+                }}
+              >
+                Xem
+              </button>
             )}
             {!sheet.closed && s.can_record && (
               <button
@@ -67,6 +110,30 @@ export function EvaluationTab({ month }: { month: string }) {
           </li>
         ))}
       </ul>
+      {viewing?.evaluation && (
+        <ScoreCard
+          name={viewing.full_name}
+          month={sheet.month}
+          evaluation={viewing.evaluation}
+          onClose={() => {
+            setViewing(null);
+          }}
+          footer={
+            !sheet.closed && viewing.can_record ? (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setScoring(viewing);
+                  setViewing(null);
+                }}
+              >
+                Chấm lại
+              </button>
+            ) : undefined
+          }
+        />
+      )}
       {scoring && (
         <ScoreSheet
           sheet={sheet}

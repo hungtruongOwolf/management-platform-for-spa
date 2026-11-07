@@ -1,19 +1,33 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { Icon } from "../../app/Icon";
 import { ErrorState, RowsSkeleton } from "../reports/ui";
 import { AdjustmentLogSection } from "./AdjustmentsTab";
-import { attendanceQuery, reviewsQuery, type StaffReviews, type StaffSheet } from "./api";
-import { STATUS_CODE, STATUS_LABEL, daysOf, weekdayShort } from "./labels";
+import { adjustmentsQuery, attendanceQuery, reviewsQuery, type StaffReviews, type StaffSheet } from "./api";
+import { STATUS_CODE, STATUS_LABEL, STATUS_WORD, daysOf, weekdayShort } from "./labels";
 import { PersonDaySheet } from "./PersonDaySheet";
 import { cellOf, employedOn } from "./progress";
-import { ClosedBanner, dayLabel } from "./ui";
+import { ClosedBanner, dayLabel, vnd } from "./ui";
 
 /**
  * "Bảng công tháng" (spec §10 US8): the sheet's month grid — rows = staff, columns = days, totals
  * per person — usable at 390 px (horizontal scroll, sticky names), then the month's bonus/penalty
  * log. A cell opens the same person-day sheet as the daily book.
  */
-export function MonthSheet({ month, today, canReview }: { month: string; today: string; canReview: boolean }) {
+export function MonthSheet({
+  month,
+  today,
+  canReview,
+  staffId = "",
+  onAll,
+}: {
+  month: string;
+  today: string;
+  canReview: boolean;
+  /** One person's month (EM 2026-11-08, from their evaluation history): their row and their days. */
+  staffId?: string;
+  onAll?: () => void;
+}) {
   const attendance = useQuery(attendanceQuery(month));
   const reviews = useQuery({ ...reviewsQuery(month), enabled: canReview });
   const [editing, setEditing] = useState<{ staff: StaffSheet; date: string } | null>(null);
@@ -22,24 +36,36 @@ export function MonthSheet({ month, today, canReview }: { month: string; today: 
   if (attendance.isError) return <ErrorState error={attendance.error} onRetry={() => void attendance.refetch()} />;
   const sheet = attendance.data;
   const reviewsOf = (id: string) => reviews.data?.staff.find((s) => s.staff_id === id);
+  const person = staffId ? sheet.staff.find((s) => s.staff_id === staffId) : undefined;
+  const people = staffId ? (person ? [person] : []) : sheet.staff;
 
   return (
     <div className="grid content-start gap-6">
       {sheet.closed && <ClosedBanner />}
-      {sheet.staff.length === 0 ? (
-        <p className="empty-block">Chưa có nhân viên nào làm việc trong tháng này.</p>
+      {staffId && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-text-muted">Chỉ xem:</span>
+          <button type="button" className="book-chip" aria-label={`Xem cả spa thay vì ${person?.full_name ?? "một người"}`} onClick={onAll}>
+            {person?.full_name ?? "Nhân viên đã chọn"}
+            <Icon name="x" className="size-4" />
+          </button>
+        </div>
+      )}
+      {people.length === 0 ? (
+        <p className="empty-block">{staffId ? "Người này không làm việc trong tháng này." : "Chưa có nhân viên nào làm việc trong tháng này."}</p>
       ) : (
         <MonthGrid
           month={sheet.month}
           today={today}
-          people={sheet.staff}
+          people={people}
           reviewsOf={canReview ? reviewsOf : undefined}
           onCell={(staff, date) => {
             if (!sheet.closed && staff.can_record) setEditing({ staff, date });
           }}
         />
       )}
-      {canReview && <AdjustmentLogSection month={month} today={today} canWrite={!sheet.closed} />}
+      {person && <PersonDays person={person} reviews={reviewsOf(person.staff_id)} month={month} canReview={canReview} />}
+      {canReview && !staffId && <AdjustmentLogSection month={month} today={today} canWrite={!sheet.closed} />}
       {editing && (
         <PersonDaySheet
           staff={editing.staff}
@@ -166,5 +192,82 @@ export function MonthGrid({
         ✓ đi làm · P nghỉ có phép · ĐX nghỉ đột xuất · K nghỉ không phép · – chưa chấm · gạch đỏ dưới ô: đi muộn. Bấm một ô để sửa.
       </p>
     </div>
+  );
+}
+
+/**
+ * One person's month, day by day, read-only (EM 2026-11-08): only the days with something
+ * recorded — attendance (times, minutes late, note), praise / complaints with their note, and the
+ * day's bonuses / penalties. Built from the month queries the page already holds; the grid above
+ * still opens a day to edit where allowed.
+ */
+function PersonDays({
+  person,
+  reviews,
+  month,
+  canReview,
+}: {
+  person: StaffSheet;
+  reviews: StaffReviews | undefined;
+  month: string;
+  canReview: boolean;
+}) {
+  const adjustments = useQuery({ ...adjustmentsQuery(month), enabled: canReview });
+  const mine = (adjustments.data?.items ?? []).filter((a) => a.staff_id === person.staff_id);
+  const days = daysOf(month).filter(
+    (d) =>
+      person.days.some((c) => c.date === d) ||
+      reviews?.days.some((r) => r.date === d && (r.compliments > 0 || r.complaints > 0 || r.note)) ||
+      mine.some((a) => a.occurred_on === d),
+  );
+  return (
+    <section className="grid gap-2" aria-labelledby="person-days">
+      <h2 id="person-days" className="panel-title">
+        Từng ngày · {person.full_name}
+      </h2>
+      {days.length === 0 ? (
+        <p className="empty-block">Chưa có ngày nào được ghi trong tháng này.</p>
+      ) : (
+        <ol className="card person-days">
+          {days.map((d) => {
+            const cell = cellOf(person, d);
+            const review = reviews?.days.find((r) => r.date === d);
+            const adj = mine.filter((a) => a.occurred_on === d);
+            const times = [cell?.check_in && `đến ${cell.check_in}`, cell?.check_out && `về ${cell.check_out}`].filter(Boolean).join(" · ");
+            return (
+              <li key={d} className="person-day">
+                <p className="person-day-date">{dayLabel(d)}</p>
+                <div className="grid gap-1 text-sm">
+                  {cell && (
+                    <p>
+                      <span className={`att-cell att-${cell.status}`} aria-hidden="true">
+                        {STATUS_CODE[cell.status]}
+                      </span>{" "}
+                      {STATUS_WORD[cell.status]}
+                      {times && ` · ${times}`}
+                      {cell.late_minutes > 0 && <span className="text-danger"> · muộn {cell.late_minutes} phút</span>}
+                      {cell.note && <span className="block text-text-muted">{cell.note}</span>}
+                    </p>
+                  )}
+                  {review && (review.compliments > 0 || review.complaints > 0 || review.note) && (
+                    <p>
+                      {review.compliments} khen · {review.complaints} phàn nàn
+                      {review.note && <span className="block text-text-muted">{review.note}</span>}
+                    </p>
+                  )}
+                  {adj.map((a) => (
+                    <p key={a.id}>
+                      <span className={`badge ${a.kind === "bonus" ? "badge-ok" : "badge-danger"}`}>{a.kind === "bonus" ? "Thưởng" : "Phạt"}</span>{" "}
+                      {[a.amount != null ? vnd(a.amount) : "", a.points != null ? `${String(a.points)} điểm` : ""].filter(Boolean).join(" · ")} ·{" "}
+                      {a.reason}
+                    </p>
+                  ))}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
   );
 }

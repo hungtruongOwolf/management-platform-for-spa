@@ -2020,6 +2020,66 @@
         }
       }
     },
+    "/api/v1/evaluations/history": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "get_evaluation_history",
+        "parameters": [
+          {
+            "name": "staff_id",
+            "in": "query",
+            "description": "Required (`422 staff_id required`); optional in the type so a caller without the\npermission gets `403` before any parsing of what it asked for.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "`YYYY-MM`; default 11 months before `to`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "`YYYY-MM`; default (and at most) the current month. At most 24 months from `from`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One person's months, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationHistory"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: no evaluation.record"
+          },
+          "404": {
+            "description": "unknown staff_id or another spa's"
+          },
+          "422": {
+            "description": "validation_failed: from after_to, to range_too_long (> 24 months), month invalid"
+          }
+        }
+      }
+    },
     "/api/v1/me": {
       "get": {
         "tags": [
@@ -6371,6 +6431,55 @@
           }
         }
       },
+      "EvaluationHistory": {
+        "type": "object",
+        "description": "`GET /evaluations/history`.",
+        "required": [
+          "staff_id",
+          "full_name",
+          "position",
+          "from",
+          "to",
+          "criteria",
+          "months",
+          "can_record"
+        ],
+        "properties": {
+          "can_record": {
+            "type": "boolean",
+            "description": "Decision C: whether the caller may score this person (an open month's \"Chấm lại\")."
+          },
+          "criteria": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Criterion"
+            }
+          },
+          "from": {
+            "type": "string"
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "months": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoryMonth"
+            },
+            "description": "Newest month first; only the months the person was employed in."
+          },
+          "position": {
+            "type": "string"
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "to": {
+            "type": "string"
+          }
+        }
+      },
       "EvaluationSheet": {
         "type": "object",
         "required": [
@@ -6862,6 +6971,50 @@
           "package_cancelled",
           "package_extended"
         ]
+      },
+      "HistoryMonth": {
+        "type": "object",
+        "description": "One month of a person's evaluation history: the month sheet's row for them.",
+        "required": [
+          "month",
+          "closed",
+          "compliments",
+          "complaints",
+          "attendance"
+        ],
+        "properties": {
+          "attendance": {
+            "$ref": "#/components/schemas/AttendanceTotals"
+          },
+          "closed": {
+            "type": "boolean",
+            "description": "Payroll closed for the month: read-only."
+          },
+          "complaints": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "compliments": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "evaluation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Evaluation",
+                "description": "The full scorecard, when scored (same data as `GET /evaluations?month=`)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "month": {
+            "type": "string"
+          }
+        }
       },
       "HistoryPage": {
         "type": "object",

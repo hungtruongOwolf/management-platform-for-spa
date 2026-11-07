@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { spaToday } from "../corrections/api";
 import { EmptyState, ErrorState, RowsSkeleton } from "../reports/ui";
 import { myMonthQuery, type AttendanceDay, type MyStaff } from "./api";
 import { FLAG_LABEL, LEVEL_SHORT, STATUS_CODE, STATUS_LABEL, daysOf } from "./labels";
+import { ScoreCard } from "./EvaluationViews";
 import { MyDaySheet } from "./MyDaySheet";
 import { PayslipView } from "./PayrollTab";
 import { ApiError } from "../../lib/api";
@@ -221,6 +223,7 @@ export function MyMonth({
   onMonth?: (month: string) => void;
 }) {
   const query = useQuery(myMonthQuery(month));
+  const [card, setCard] = useState(false);
   const today = spaToday();
   if (query.isPending) return <RowsSkeleton rows={5} />;
   if (query.isError) {
@@ -301,10 +304,32 @@ export function MyMonth({
           Đánh giá và thưởng / phạt
         </h2>
         {data.evaluation ? (
-          <p>
-            Tháng này: <strong>{data.evaluation.total_points} điểm · {LEVEL_SHORT[data.evaluation.result]}</strong>
-            {data.evaluation.comment && <span className="block text-sm text-text-muted">{data.evaluation.comment}</span>}
-          </p>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <p className="min-w-0 flex-1">
+              Tháng này: <strong>{data.evaluation.total_points} điểm · {LEVEL_SHORT[data.evaluation.result]}</strong>
+              {data.evaluation.comment && <span className="block text-sm text-text-muted">{data.evaluation.comment}</span>}
+            </p>
+            {/* EM 2026-11-08: the scorecard itself, read-only, for any month of their own. */}
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                setCard(true);
+              }}
+            >
+              Xem phiếu đánh giá
+            </button>
+            {card && (
+              <ScoreCard
+                name="của bạn"
+                month={data.month}
+                evaluation={data.evaluation}
+                onClose={() => {
+                  setCard(false);
+                }}
+              />
+            )}
+          </div>
         ) : (
           <p className="text-sm text-text-muted">Chưa có đánh giá tháng (quản lý chấm ngày 1–5 tháng sau).</p>
         )}

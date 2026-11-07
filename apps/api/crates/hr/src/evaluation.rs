@@ -315,6 +315,137 @@ pub async fn sheet(
     })
 }
 
+/// Longest history in one request: two years of months.
+pub const HISTORY_MAX_MONTHS: usize = 24;
+/// Default history: the last 12 months, the current one included.
+const HISTORY_DEFAULT_MONTHS: usize = 12;
+
+/// One month of a person's evaluation history: the month sheet's row for them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct HistoryMonth {
+    pub month: String,
+    /// Payroll closed for the month: read-only.
+    pub closed: bool,
+    pub compliments: u32,
+    pub complaints: u32,
+    pub attendance: AttendanceTotals,
+    /// The full scorecard, when scored (same data as `GET /evaluations?month=`).
+    pub evaluation: Option<Evaluation>,
+}
+
+/// `GET /evaluations/history`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct EvaluationHistory {
+    pub staff_id: Uuid,
+    pub full_name: String,
+    pub position: String,
+    pub from: String,
+    pub to: String,
+    pub criteria: Vec<Criterion>,
+    /// Newest month first; only the months the person was employed in.
+    pub months: Vec<HistoryMonth>,
+    /// Decision C: whether the caller may score this person (an open month's "Chấm lại").
+    pub can_record: bool,
+}
+
+/// The month `n` months before `m`.
+fn months_back(m: Month, n: usize) -> Month {
+    let mut out = m;
+    for _ in 0..n {
+        out = Month::of(out.first_day() - chrono::Duration::days(1));
+    }
+    out
+}
+
+/// `GET /evaluations/history?staff_id=&from=&to=` (`evaluation.record`, the rule of
+/// `GET /evaluations`, which already shows every person's scorecard to its holders): one person's
+/// months, newest first — total and level, the month's praise / complaints and attendance. One
+/// transaction, three queries per month at most (a two-year cap); another spa's or an unknown
+/// `staff_id` is `404`.
+pub async fn history(
+    pool: &PgPool,
+    actor: &Actor,
+    staff_id: Option<Uuid>,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Result<EvaluationHistory, AppError> {
+    actor.require(Permission::EvaluationRecord)?;
+    let from = from.map(|m| Month::parse("from", m)).transpose()?;
+    let to = to.map(|m| Month::parse("to", m)).transpose()?;
+    let staff_id = staff_id
+        .ok_or_else(|| AppError::Validation(vec![FieldError::new("staff_id", "required")]))?;
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let today = period::today(&mut tx).await?;
+    let current = Month::of(today);
+    let to = to.unwrap_or(current).min(current);
+    let from = from.unwrap_or_else(|| months_back(to, HISTORY_DEFAULT_MONTHS - 1));
+    if from > to {
+        return Err(AppError::Validation(vec![FieldError::new(
+            "from", "after_to",
+        )]));
+    }
+    if from < months_back(to, HISTORY_MAX_MONTHS - 1) {
+        return Err(AppError::Validation(vec![FieldError::new(
+            "to",
+            "range_too_long",
+        )]));
+    }
+    let person = org::profile::profile_in(&mut tx, staff_id).await?;
+    let reviews = repo::reviews_between(&mut tx, from.first_day(), to.last_day(), Some(staff_id))
+        .await?
+        .into_iter()
+        .map(review::DailyReview::from)
+        .collect::<Vec<_>>();
+    let days = repo::attendance_between(&mut tx, from.first_day(), to.last_day(), Some(staff_id))
+        .await?
+        .into_iter()
+        .map(attendance::AttendanceDay::try_from)
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut months = Vec::new();
+    let mut m = to;
+    loop {
+        if period::employed_in(&person, m) {
+            let info = period::info(&mut tx, m).await?;
+            let evaluation = evaluations_in(&mut tx, m, Some(staff_id)).await?.pop();
+            let mine: Vec<Day> = days
+                .iter()
+                .filter(|d| m.contains(d.date))
+                .map(attendance::AttendanceDay::as_calc)
+                .collect();
+            let rs = reviews.iter().filter(|r| m.contains(r.date));
+            months.push(HistoryMonth {
+                month: m.to_string(),
+                closed: info.closed,
+                compliments: rs.clone().map(|r| r.compliments).sum(),
+                complaints: rs.map(|r| r.complaints).sum(),
+                attendance: calc::summarize(
+                    m,
+                    attendance::recorded_until(m, today),
+                    &person.employment,
+                    &mine,
+                ),
+                evaluation,
+            });
+        }
+        if m <= from {
+            break;
+        }
+        m = months_back(m, 1);
+    }
+    let scope = RecordScope::load(&mut tx, actor).await?;
+    tx.commit().await?;
+    Ok(EvaluationHistory {
+        staff_id,
+        full_name: person.full_name.clone(),
+        position: person.position.clone(),
+        from: from.to_string(),
+        to: to.to_string(),
+        criteria: CRITERIA.to_vec(),
+        months,
+        can_record: scope.may_record(staff_id),
+    })
+}
+
 fn clean_text(field: &str, raw: Option<&str>, errors: &mut Vec<FieldError>) -> Option<String> {
     let t = raw
         .map(str::trim)

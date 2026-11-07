@@ -346,6 +346,13 @@ const ROUTES: &[Route] = &[
         "/api/v1/evaluations",
         Access::Perm(P::EvaluationRecord, OWNER_MANAGER),
     ),
+    // One person's months (EM 2026-11-08): the rule of GET /evaluations. Without `staff_id` an
+    // entitled caller gets 422; `tests/staff.rs` covers ids, other spas and every role.
+    route(
+        "GET",
+        "/api/v1/evaluations/history",
+        Access::Perm(P::EvaluationRecord, OWNER_MANAGER),
+    ),
     route(
         "PUT",
         "/api/v1/evaluations",
