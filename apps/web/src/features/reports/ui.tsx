@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { canSeeManagement } from "../../app/features";
 import { meQuery } from "../auth/session";
 import { Icon, type IconName } from "../../app/Icon";
-import { messageFor } from "../../lib/errors";
+import { messageFor, retryable } from "../../lib/errors";
 
 export const money = (n: number) => formatVnd(n);
 
@@ -135,9 +135,11 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => 
     <div role="alert" className="alert">
       <Icon name="alert" />
       <span className="flex-1">{messageFor(error)}</span>
-      <button type="button" className="btn btn-secondary" onClick={onRetry}>
-        Thử lại
-      </button>
+      {retryable(error) && (
+        <button type="button" className="btn btn-secondary" onClick={onRetry}>
+          Thử lại
+        </button>
+      )}
     </div>
   );
 }

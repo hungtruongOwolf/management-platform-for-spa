@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { BottomSheet } from "../../components/BottomSheet";
 import { DateField, isoToDmy } from "../../components/DateField";
+import { TimeField } from "../../components/TimeField";
 import { Icon } from "../../app/Icon";
 import { ResponsiveTable, type Column } from "../../components/ResponsiveTable";
 import { fieldMessage, messageFor } from "../../lib/errors";
@@ -162,7 +163,7 @@ function ProfileSheet({ profile, canPay, onClose }: { profile: StaffProfile | nu
           </label>
           <label className="filter-field">
             Giờ vào ca
-            <input type="time" value={shift} onChange={(e) => { setShift(e.target.value); }} />
+            <TimeField value={shift} onChange={setShift} />
           </label>
           <DateField label="Ngày vào làm" value={joined} onChange={setJoined} />
           <DateField label="Ngày nghỉ việc (nếu đã nghỉ)" value={left} onChange={setLeft} />

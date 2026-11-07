@@ -421,7 +421,16 @@ describe("/quay Sửa lượt", () => {
     );
     expect(
       await screen.findByTestId("correction-difference"),
-    ).toHaveTextContent("Thu thêm 249.000đ");
+    ).toHaveTextContent(/Thu thêm\s*249\.000đ/);
+    // The amount to collect is the difference; the new total is only context (EM live test).
+    expect(
+      screen.getByText("Tổng lượt sau sửa 349.000đ · đã thu 100.000đ"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("group", { name: "Lưu lượt" })).queryByText(
+        "Phải trả",
+      ),
+    ).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Lưu sửa lượt" }));
     expect(
