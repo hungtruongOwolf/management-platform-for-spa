@@ -288,8 +288,10 @@ async fn text_limits_count_characters_not_bytes(pool: PgPool) -> TestResult {
     let long = create("Ễ".repeat(201), "0905333777").await;
     assert_eq!(long.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(field_codes(&long), ["full_name:too_long"]);
+    // Blank (any Unicode spaces) is no name at all: an anonymous walk-in (ADR-0011).
     let blank = create(" \u{3000} \t".to_owned(), "0905333777").await;
-    assert_eq!(field_codes(&blank), ["full_name:required"]);
+    assert_eq!(blank.status, StatusCode::CREATED, "{}", blank.body);
+    assert_eq!(blank.body["named"], false);
     Ok(())
 }
 

@@ -30,7 +30,7 @@ const CustomerForm = lazy(() =>
 
 /**
  * A companion known only by a name (ADR-0009) gets a profile right here: the profile form with
- * the name filled in and the phone optional (decision E, ADR-0010), then the booking is linked to
+ * the name filled in and the phone optional (decision E, ADR-0011), then the booking is linked to
  * it, so the person joins "Ghi N lượt" without leaving the group sheet.
  */
 function GuestProfile({ a, onLinked }: { a: Appointment; onLinked: (linked: Appointment) => void }) {

@@ -315,10 +315,14 @@ pub async fn import_in(
         (None, Some(c)) => {
             // Packages need an owner the spa can tell apart (no anonymous walk-in here).
             if c.full_name.as_deref().is_none_or(|n| n.trim().is_empty()) {
-                return Err(AppError::Validation(vec![FieldError::new(
-                    "customer.full_name",
-                    "required",
-                )]));
+                // Report the profile's other mistakes in the same answer.
+                let mut errors = vec![FieldError::new("customer.full_name", "required")];
+                if c.phone.as_deref().map(str::trim).is_some_and(|p| {
+                    !p.is_empty() && kernel::PhoneE164::parse(p).is_err()
+                }) {
+                    errors.push(FieldError::new("customer.phone", "invalid_format"));
+                }
+                return Err(AppError::Validation(errors));
             }
             let created =
                 crm::service::create_in(tx, cipher, actor, profile(c), c.health_note.as_deref())

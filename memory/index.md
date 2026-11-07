@@ -40,8 +40,8 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [ADR-0006 repo & module layout](wiki/decisions/ADR-0006-repo-and-module-layout.md) — **accepted**: monorepo, Cargo workspace crate per bounded context
 - [ADR-0007 navigation & URL state](wiki/decisions/ADR-0007-navigation-and-url-state.md) — **accepted**: breadcrumb = cây, nút quay lại = lịch sử có tên đích (fallback về cha), trạng thái danh sách trên URL (`useSearchState`)
 - [ADR-0008 payroll close snapshots](wiki/decisions/ADR-0008-payroll-close-snapshots.md) — **proposed**: chốt lương một lần → phiếu lương jsonb chỉ thêm, khóa tháng 2 lớp, không mở lại, sửa bằng điều chỉnh tháng sau
-- [ADR-0009 served companions](wiki/decisions/ADR-0009-served-companions.md) — **accepted**: người đi cùng được làm = lịch hẹn trong nhóm (0022: khách mới không SĐT chỉ trong nhóm), ghi lượt vẫn cần hồ sơ (từ ADR-0010: hồ sơ không cần SĐT); không cột mới
-- [ADR-0010 anonymous walk-in + optional phone](wiki/decisions/ADR-0010-anonymous-walk-in-and-optional-phone.md) — **accepted**: khách vãng lai không tên = hồ sơ không tên (`full_name NULL`, nhãn `app.customer_label`), SĐT tùy chọn mọi hồ sơ, ngày sinh, chủ gói phải có tên (`customer.name_required`), sổ gia hạn (0023)
+- [ADR-0009 served companions](wiki/decisions/ADR-0009-served-companions.md) — **accepted**: người đi cùng được làm = lịch hẹn trong nhóm (0022: khách mới không SĐT chỉ trong nhóm), ghi lượt vẫn cần hồ sơ (từ ADR-0011: hồ sơ không cần SĐT); không cột mới
+- [ADR-0011 anonymous walk-in + optional phone](wiki/decisions/ADR-0011-anonymous-walk-in-and-optional-phone.md) — **accepted**: khách vãng lai không tên = hồ sơ không tên (`full_name NULL`, nhãn `app.customer_label`), SĐT tùy chọn mọi hồ sơ, ngày sinh, chủ gói phải có tên (`customer.name_required`), sổ gia hạn (0023)
 
 ## Security
 - [authz-matrix](wiki/security/authz-matrix.md) — R1-1 + R1-2 (report.read, report.revenue.read) + 0016 staff (staff.manage, attendance.record, evaluation.record, payroll.read/close, staff.read_own) permissions × roles, re-auth, support grants, mandatory authz tests

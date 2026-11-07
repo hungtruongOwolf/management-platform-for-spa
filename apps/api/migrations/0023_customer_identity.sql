@@ -1,4 +1,4 @@
--- Customer identity (EM 2026-11-07, ADR-0010; spec front-desk-and-packages §10.11).
+-- Customer identity (EM 2026-11-07, ADR-0011; spec front-desk-and-packages §10.11).
 --
 -- 1. Decision E: the phone is optional on every profile. A number, when given, keeps its
 --    format CHECK and stays unique among live profiles of a spa: `customer_phone_uq` is a plain

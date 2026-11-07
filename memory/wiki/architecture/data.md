@@ -193,7 +193,7 @@ Không có bảng mới. 0013:
 - Không có cột mới; người đi cùng được làm là một dòng `appointment` cùng `group_id`. `EXCLUDE` theo KTV áp dụng như mọi lịch.
 - Kiểm trên dữ liệu giống thật: DB mới migrate tới 0021 → `seed-demo` (8 lịch, 1 khách mới) → 0022 áp dụng sạch (6 ms).
 
-## Danh tính khách (0023, [ADR-0010](../decisions/ADR-0010-anonymous-walk-in-and-optional-phone.md))
+## Danh tính khách (0023, [ADR-0011](../decisions/ADR-0011-anonymous-walk-in-and-optional-phone.md))
 - `customer.full_name`, `customer.phone_e164` bỏ `NOT NULL` (CHECK độ dài / định dạng giữ nguyên, chỉ áp khi có giá trị). `full_name NULL` = hồ sơ không tên ("Khách vãng lai"), `search_text = ''`. `customer_phone_uq` không đổi: NULL khác nhau nên nhiều hồ sơ không SĐT cùng tồn tại, SĐT có giá trị vẫn duy nhất trong hồ sơ còn hiệu lực.
 - `customer.birth_date date` + `customer_birth_date_plausible` (≥ 1900-01-01; "không sau hôm nay" và "≤ 120 tuổi" do service kiểm vì phụ thuộc đồng hồ) + `customer_birth_year_matches_date`.
 - `app.customer_label(text)` IMMUTABLE: `coalesce(full_name, 'Khách vãng lai')`; mọi read model đọc tên khách qua hàm này (lượt, lịch hẹn, "Khách của tôi", sổ doanh thu, danh sách gói, lịch sử). Twin Rust `crm::service::WALK_IN_LABEL`.

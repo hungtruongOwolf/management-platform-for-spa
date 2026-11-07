@@ -1,11 +1,11 @@
 ---
-title: ADR-0010 Anonymous walk-in = a nameless customer profile; phone optional
+title: ADR-0011 Anonymous walk-in = a nameless customer profile; phone optional
 status: accepted
 date: 2026-11-07
 deciders: EM (problem, decision E), agent (model)
 ---
 
-# ADR-0010: Khách vãng lai không tên = hồ sơ khách không tên; SĐT không bắt buộc
+# ADR-0011: Khách vãng lai không tên = hồ sơ khách không tên; SĐT không bắt buộc
 
 ## Context
 EM 2026-11-07 (raw `2026-11-07-em-decisions-after-live-test.md`): "khách vãng lai mà vẫn phải nhập tên với nhập số điện thoại lỡ đâu người ta không muốn thì sao". Quyết định E: SĐT không bắt buộc trên mọi hồ sơ (kể cả người đi cùng). Thêm ngày sinh tùy chọn (ưu đãi sinh nhật sau này).

@@ -256,7 +256,7 @@ describe("customers page", () => {
   });
 });
 
-describe("customer identity (EM 2026-11-07, ADR-0010)", () => {
+describe("customer identity (EM 2026-11-07, ADR-0011)", () => {
   const WALK_IN = {
     ...HA_FULL,
     id: "w1",

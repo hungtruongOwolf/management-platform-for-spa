@@ -1,4 +1,4 @@
-//! Customer identity (EM 2026-11-07, ADR-0010, spec R1-1 §10.11): an anonymous walk-in profile
+//! Customer identity (EM 2026-11-07, ADR-0011, spec R1-1 §10.11): an anonymous walk-in profile
 //! ("Khách vãng lai"), the phone optional on every profile (decision E), an optional date of
 //! birth, packages owned only by named customers, the beneficiary in the ledger and timelines,
 //! and "Gia hạn" on the timeline.
