@@ -72,9 +72,13 @@ async function seedTechnicianDay(page: Page): Promise<void> {
   const service = services.find((s) => s.active && s.prices.all != null);
   expect(service, "seeded menu has a flat-priced service").toBeDefined();
   serviceName = service?.name ?? "";
+  // The calendar draws the spa's opening hours only: a run after closing time (evening in
+  // Vietnam) records the walk-in at 09:30 so its block is on the grid (owner: nhập giờ làm).
+  const lateEvening = new Date(Date.now() + 7 * 3_600_000).getUTCHours() >= 20;
   const visit = await page.request.post("/api/v1/visits", {
     headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
     data: {
+      ...(lateEvening ? { check_in_at: `${spaDay()}T09:30:00+07:00` } : {}),
       customer_id: customerId,
       lines: [{ service_id: service?.id, source: "one_off", staff_id: staffId, qty: 1 }],
       payments: [{ method: "cash", amount: service?.prices.all ?? 0 }],
