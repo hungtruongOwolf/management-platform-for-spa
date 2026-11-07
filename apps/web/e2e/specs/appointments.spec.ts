@@ -286,9 +286,10 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
       await expect(sheet.getByText("Đã lưu KTV.")).toBeVisible();
       await sheet.getByRole("button", { name: "Khách đến · ghi lượt" }).click();
       await expect(page.getByText(/Đang ghi cho lịch hẹn 09:00/)).toBeVisible();
-      await expect(page.getByRole("combobox", { name: "KTV" })).toHaveValue(
-        mother.staff.id,
-      );
+      // The technician is filled in, so the cart line is already folded (EM 2026-11-07).
+      await expect(
+        page.getByRole("list", { name: "Dịch vụ trong lượt" }),
+      ).toContainText(`KTV ${mother.staff.full_name}`);
       await page.getByRole("button", { name: "Lưu lượt khách" }).click();
       await expect(page.locator(".toast")).toContainText("Đã lưu lượt");
     };
