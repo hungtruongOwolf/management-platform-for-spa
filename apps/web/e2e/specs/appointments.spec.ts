@@ -204,7 +204,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     ).toContainText("Chưa đến");
   });
 
-  test("a family is booked in one go and checked in together; walk-ins are on the timeline", async ({
+  test("a family is booked in one go, each person checked in on their own; walk-ins are on the timeline", async ({
     page,
   }) => {
     const mother = await regular(page, "Đỗ Thị Mẹ");
@@ -326,9 +326,9 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
       },
     });
     expect(walkIn.status()).toBe(201);
-    await page.reload();
+    await page.goto("/quay?view=lich&kieu=ds");
     const list = page.getByRole("list", { name: /Lịch hẹn ngày/ });
-    await expect(list.getByText(/Vãng lai/)).toBeVisible();
+    await expect(list.getByText(/Vãng lai/).first()).toBeVisible();
     await expect(
       list.getByRole("button", { name: /Đỗ Thị Mẹ.*(Đang làm|Xong)/ }),
     ).toBeVisible();
