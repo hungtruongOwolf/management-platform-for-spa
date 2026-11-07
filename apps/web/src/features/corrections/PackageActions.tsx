@@ -144,6 +144,19 @@ export function PackageActions({
   );
 }
 
+/**
+ * The cancel button names the refund only when that amount would really be sent: a number,
+ * above 0 and within what the customer paid. An empty field cancels without a refund; anything
+ * else (not a number, over the maximum) gets a neutral label while the field shows the error.
+ */
+export function cancelLabel(amountText: string, refundableMax: number): string {
+  const amount = amountText.trim() === "" ? 0 : parseAmount(amountText);
+  if (amount === 0) return "Hủy gói";
+  return !Number.isNaN(amount) && amount <= refundableMax
+    ? `Hủy và hoàn ${formatVnd(amount)}`
+    : "Hủy gói và hoàn tiền";
+}
+
 /** Field with its label above and its error below, wired with aria-describedby. */
 function useFieldIds() {
   const id = useId();
@@ -169,13 +182,15 @@ function ExtendForm({
   const [expiresOn, setExpiresOn] = useState(() => addMonths(base, 1));
   const [reason, setReason] = useState("");
   const [touched, setTouched] = useState(false);
+  // Extending changes what the customer is owed: the owner reviews old → new expiry first.
+  const [confirming, setConfirming] = useState(false);
   const action = useFormAction({
     run: () => extendPackage(pkg, { expires_on: expiresOn, reason: reason.trim() }, idempotencyKey),
     onSuccess: onDone,
   });
   useEffect(() => {
-    dateRef.current?.querySelector<HTMLInputElement>("input[type=text]")?.focus();
-  }, []);
+    if (!confirming) dateRef.current?.querySelector<HTMLInputElement>("input[type=text]")?.focus();
+  }, [confirming]);
 
   const reasonProblem = (touched && reason.trim() === "" ? "Bắt buộc ghi lý do." : undefined) ?? fieldMessage(action.error, "reason");
   const dateProblem =
@@ -201,84 +216,163 @@ function ExtendForm({
           {String(pkg.sessions_total)} buổi
         </p>
       </div>
-      <form
-        noValidate
-        onSubmit={(e) => {
-          e.preventDefault();
-          setTouched(true);
-          if (!action.pending && reason.trim() !== "" && !(pkg.expires_on && expiresOn <= pkg.expires_on)) action.submit();
-        }}
-        className="form-grid"
-      >
-        <div ref={dateRef} className="field">
-          <DateField
-            label="Hạn mới"
-            value={expiresOn}
-            min={today}
-            invalid={Boolean(dateProblem)}
-            {...(dateProblem ? { describedBy: dateIds.error } : {})}
-            onChange={(iso) => {
-              if (iso) setExpiresOn(iso);
-            }}
-          />
-          {dateProblem && (
-            <span id={dateIds.error} className="field-error">
-              {dateProblem}
-            </span>
-          )}
-        </div>
-        <div className="field">
-          <span aria-hidden="true">Gia hạn nhanh</span>
-          <div className="choice-row" aria-label="Gia hạn nhanh" role="group">
-            {[1, 2, 3, 6].map((m) => (
-              <button
-                key={m}
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => {
-                  setExpiresOn(addMonths(base, m));
-                }}
-              >
-                +{m} tháng
-              </button>
-            ))}
+      {confirming ? (
+        <ExtendReview
+          oldExpiry={pkg.expires_on}
+          newExpiry={expiresOn}
+          reason={reason.trim()}
+          pending={action.pending}
+          error={action.error}
+          onConfirm={action.submit}
+          onEdit={() => {
+            setConfirming(false);
+          }}
+        />
+      ) : (
+        <form
+          noValidate
+          onSubmit={(e) => {
+            e.preventDefault();
+            setTouched(true);
+            if (reason.trim() !== "" && !(pkg.expires_on && expiresOn <= pkg.expires_on)) setConfirming(true);
+          }}
+          className="form-grid"
+        >
+          <div ref={dateRef} className="field">
+            <DateField
+              label="Hạn mới"
+              value={expiresOn}
+              min={today}
+              invalid={Boolean(dateProblem)}
+              {...(dateProblem ? { describedBy: dateIds.error } : {})}
+              onChange={(iso) => {
+                if (iso) setExpiresOn(iso);
+              }}
+            />
+            {dateProblem && (
+              <span id={dateIds.error} className="field-error">
+                {dateProblem}
+              </span>
+            )}
           </div>
-        </div>
-        <div className="field span-2">
-          <label htmlFor={reasonIds.input}>Lý do gia hạn</label>
-          <textarea
-            id={reasonIds.input}
-            value={reason}
-            maxLength={500}
-            rows={2}
-            aria-invalid={reasonProblem ? true : undefined}
-            aria-describedby={reasonProblem ? reasonIds.error : undefined}
-            onChange={(e) => {
-              setReason(e.target.value);
-            }}
-            className="input"
-          />
-          {reasonProblem && (
-            <span id={reasonIds.error} className="field-error">
-              {reasonProblem}
-            </span>
+          <div className="field">
+            <span aria-hidden="true">Gia hạn nhanh</span>
+            <div className="choice-row" aria-label="Gia hạn nhanh" role="group">
+              {[1, 2, 3, 6].map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setExpiresOn(addMonths(base, m));
+                  }}
+                >
+                  +{m} tháng
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="field span-2">
+            <label htmlFor={reasonIds.input}>Lý do gia hạn</label>
+            <textarea
+              id={reasonIds.input}
+              value={reason}
+              maxLength={500}
+              rows={2}
+              aria-invalid={reasonProblem ? true : undefined}
+              aria-describedby={reasonProblem ? reasonIds.error : undefined}
+              onChange={(e) => {
+                setReason(e.target.value);
+              }}
+              className="input"
+            />
+            {reasonProblem && (
+              <span id={reasonIds.error} className="field-error">
+                {reasonProblem}
+              </span>
+            )}
+          </div>
+          {action.error != null && !fieldMessage(action.error, "reason") && !fieldMessage(action.error, "expires_on") && (
+            <p role="alert" className="alert span-2">
+              {messageFor(action.error)}
+            </p>
           )}
-        </div>
-        {action.error != null && !fieldMessage(action.error, "reason") && !fieldMessage(action.error, "expires_on") && (
-          <p role="alert" className="alert span-2">
-            {messageFor(action.error)}
-          </p>
-        )}
-        <div className="button-row span-2">
-          <button type="submit" aria-busy={action.pending || undefined} className="btn btn-primary">
-            Gia hạn
-          </button>
-          <button type="button" onClick={onCancel} className="btn btn-secondary">
-            Bỏ qua
-          </button>
-        </div>
-      </form>
+          <div className="button-row span-2">
+            <button type="submit" className="btn btn-primary">
+              Gia hạn
+            </button>
+            <button type="button" onClick={onCancel} className="btn btn-secondary">
+              Bỏ qua
+            </button>
+          </div>
+        </form>
+      )}
     </section>
+  );
+}
+
+/** The confirmation step of an extension: old → new expiry and the reason, before anything is saved. */
+function ExtendReview({
+  oldExpiry,
+  newExpiry,
+  reason,
+  pending,
+  error,
+  onConfirm,
+  onEdit,
+}: {
+  oldExpiry: string | null | undefined;
+  newExpiry: string;
+  reason: string;
+  pending: boolean;
+  error: unknown;
+  onConfirm: () => void;
+  onEdit: () => void;
+}) {
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    confirmRef.current?.focus();
+  }, []);
+  return (
+    <div role="group" aria-label="Xác nhận gia hạn" className="grid gap-3">
+      <dl className="detail-grid">
+        <div>
+          <dt>Hạn cũ</dt>
+          <dd>{oldExpiry ? formatDate(oldExpiry) : "không hạn"}</dd>
+        </div>
+        <div>
+          <dt>Hạn mới</dt>
+          <dd>
+            <strong>{formatDate(newExpiry)}</strong>
+          </dd>
+        </div>
+        <div>
+          <dt>Lý do</dt>
+          <dd>{reason}</dd>
+        </div>
+      </dl>
+      {error != null && (
+        <p role="alert" className="alert">
+          {messageFor(error)}
+        </p>
+      )}
+      <div className="button-row">
+        <button
+          ref={confirmRef}
+          type="button"
+          aria-busy={pending || undefined}
+          onClick={() => {
+            if (!pending) onConfirm();
+          }}
+          className="btn btn-primary"
+        >
+          Xác nhận gia hạn
+        </button>
+        <button type="button" onClick={onEdit} className="btn btn-secondary">
+          Sửa lại
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -427,7 +521,7 @@ function CancelForm({
         )}
         <div className="button-row span-2">
           <button type="submit" aria-busy={action.pending || undefined} className="btn btn-danger">
-            {amount > 0 ? `Hủy và hoàn ${formatVnd(amount)}` : "Hủy gói"}
+            {cancelLabel(amountText, pkg.sold_price)}
           </button>
           <button type="button" onClick={onCancel} className="btn btn-secondary">
             Bỏ qua

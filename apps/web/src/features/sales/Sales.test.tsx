@@ -32,6 +32,13 @@ const HA = {
   version: 1,
   created_at: "2026-11-04T00:00:00Z",
 };
+/** Hà's husband: a package she pays for can sit on his profile ("Mua cho người khác"). */
+const NAM = {
+  id: "c2",
+  full_name: "Trần Văn Nam",
+  phone: "0905 333 444",
+  gender: "male",
+};
 const PLAN = {
   id: "p1",
   name: "Gội đầu 10 + tặng 2",
@@ -112,6 +119,8 @@ function serve(
       return Promise.resolve(Response.json(HA));
     if (url === "/api/v1/customers/c1/packages")
       return Promise.resolve(Response.json(sold ? [PACKAGE] : []));
+    if (url.startsWith("/api/v1/customers?q="))
+      return Promise.resolve(Response.json([NAM, { ...HA, id: "c1" }]));
     if (url === "/api/v1/package-plans")
       return Promise.resolve(Response.json([PLAN]));
     if (url === "/api/v1/staff")
@@ -145,12 +154,21 @@ async function openDialog() {
     await screen.findByRole("button", { name: "Bán gói liệu trình" }),
   );
   const dialog = screen.getByRole("dialog", { name: "Bán gói liệu trình" });
+  // The same package block as the front desk's cart (EM 2026-11-07).
   await within(dialog).findByRole("option", {
-    name: /Gội đầu 10 \+ tặng 2 — 1\.500\.000/,
+    name: /Gội đầu 10 \+ tặng 2 · 1\.500\.000/,
   });
   await within(dialog).findByRole("option", { name: /KTV Lan/ });
-  return { user, dialog };
+  const planSelect = within(dialog).getByRole("combobox", { name: "Mẫu gói" });
+  const closerSelect = within(dialog).getByRole("combobox", {
+    name: "Người giới thiệu / chốt",
+  });
+  const save = () =>
+    user.click(within(dialog).getByRole("button", { name: "Lưu & thu tiền" }));
+  return { user, dialog, planSelect, closerSelect, save };
 }
+const salePosts = (calls: Call[]) =>
+  calls.filter((c) => c.method === "POST" && c.url === "/api/v1/sales");
 
 describe("sale helpers", () => {
   it("splits a mixed payment so it always adds up to the total", () => {
@@ -177,15 +195,13 @@ describe("sale helpers", () => {
 describe("sell package dialog", () => {
   it("sells a package once even when Lưu is clicked twice, then lists 12/12", async () => {
     const calls = serve(MANAGER);
-    const { user, dialog } = await openDialog();
+    const { user, dialog, planSelect, closerSelect } = await openDialog();
     expect(
       await screen.findByText(/^Chưa có gói liệu trình nào./),
     ).toBeInTheDocument();
-    const [planSelect, closerSelect] = within(dialog).getAllByRole("combobox");
-    if (!planSelect || !closerSelect) throw new Error("selects missing");
     await user.selectOptions(planSelect, "p1");
     await user.selectOptions(closerSelect, "st1");
-    expect(within(dialog).getByLabelText("Quà tặng hiện vật")).toHaveValue(
+    expect(within(dialog).getByLabelText("Quà tặng")).toHaveValue(
       "Tặng dầu gội",
     );
     expect(
@@ -194,15 +210,14 @@ describe("sell package dialog", () => {
     const save = within(dialog).getByRole("button", { name: "Lưu & thu tiền" });
     await user.dblClick(save);
 
-    const posts = calls.filter(
-      (c) => c.method === "POST" && c.url === "/api/v1/sales",
-    );
+    const posts = salePosts(calls);
     expect(posts.length).toBeGreaterThanOrEqual(1);
     expect(new Set(posts.map((c) => c.key)).size).toBe(1);
     expect(posts[0]?.key).toMatch(/^[0-9a-f-]{36}$/);
     expect(posts[0]?.body).toEqual({
       customer_id: "c1",
       closer_staff_id: "st1",
+      beneficiary_customer_id: null,
       lines: [{ package_plan_id: "p1", gift_note: "Tặng dầu gội" }],
       discount: null,
       payments: [{ method: "cash", amount: 1_500_000 }],
@@ -219,69 +234,118 @@ describe("sell package dialog", () => {
 
   it("records a package the customer chose themselves with nobody credited (Q-U2)", async () => {
     const calls = serve(MANAGER);
-    const { user, dialog } = await openDialog();
-    const [planSelect, closerSelect] = within(dialog).getAllByRole("combobox");
-    if (!planSelect || !closerSelect) throw new Error("selects missing");
+    const { user, planSelect, closerSelect, save } = await openDialog();
     await user.selectOptions(planSelect, "p1");
-    await user.click(
-      within(dialog).getByRole("button", { name: "Lưu & thu tiền" }),
-    );
+    // No technician to default to on the profile: "Khách tự chọn" until someone is picked.
+    expect(closerSelect).toHaveValue("");
     expect(
-      within(dialog).getByText("Chọn người tư vấn chốt (hoặc Khách tự chọn)."),
+      within(closerSelect).getByRole("option", { name: "Khách tự chọn" }),
     ).toBeInTheDocument();
-    await user.selectOptions(closerSelect, "self");
-    await user.click(
-      within(dialog).getByRole("button", { name: "Lưu & thu tiền" }),
-    );
-    const post = calls.find(
-      (c) => c.method === "POST" && c.url === "/api/v1/sales",
-    );
-    expect(post?.body).toMatchObject({ closer_staff_id: null });
+    await save();
+    expect(salePosts(calls)[0]?.body).toMatchObject({ closer_staff_id: null });
+  });
+
+  it("asks for a package before saving", async () => {
+    const calls = serve(MANAGER);
+    const { dialog, save } = await openDialog();
+    await save();
+    expect(
+      within(dialog).getByText("Chọn mẫu gói liệu trình."),
+    ).toBeInTheDocument();
+    expect(salePosts(calls)).toHaveLength(0);
   });
 
   it("requires a reason for a discount and blocks a manager above 10%", async () => {
     const calls = serve(MANAGER);
-    const { user, dialog } = await openDialog();
-    const [planSelect, closerSelect] = within(dialog).getAllByRole("combobox");
-    if (!planSelect || !closerSelect) throw new Error("selects missing");
+    const { user, dialog, planSelect, closerSelect, save } = await openDialog();
     await user.selectOptions(planSelect, "p1");
     await user.selectOptions(closerSelect, "st1");
-    await user.type(within(dialog).getByLabelText(/^Giảm giá \(đ/), "200000");
-    expect(
-      within(dialog).getAllByText("Vượt 10% — cần chủ spa duyệt.").length,
-    ).toBeGreaterThan(0);
     await user.click(
-      within(dialog).getByRole("button", { name: "Lưu & thu tiền" }),
+      within(dialog).getByRole("button", { name: "Thêm giảm giá gói" }),
     );
+    const amount = within(dialog).getByLabelText("Giảm giá gói (đ)");
+    await user.type(amount, "200000");
+    await save();
     expect(
-      within(dialog).getByText("Giảm giá phải ghi lý do."),
+      within(dialog).getByText("Giảm giá gói phải ghi lý do."),
     ).toBeInTheDocument();
-    expect(calls.some((c) => c.method === "POST")).toBe(false);
+    await user.type(within(dialog).getByLabelText("Lý do giảm giá"), "Khách quen");
+    await save();
+    expect(
+      within(dialog).getByText("Vượt 10 % giá gói, cần chủ spa."),
+    ).toBeInTheDocument();
+    expect(salePosts(calls)).toHaveLength(0);
 
-    await user.clear(within(dialog).getByLabelText(/^Giảm giá \(đ/));
-    await user.type(within(dialog).getByLabelText(/^Giảm giá \(đ/), "150000");
-    await user.type(
-      within(dialog).getByLabelText(/^Lý do giảm giá/),
-      "Khách quen",
-    );
+    await user.clear(amount);
+    await user.type(amount, "150000");
     await user.click(
-      within(dialog).getByRole("radio", { name: "Tiền mặt + chuyển khoản" }),
+      within(dialog).getByRole("radio", { name: "Tiền mặt + CK" }),
     );
-    await user.type(within(dialog).getByLabelText(/^Tiền mặt \(đ\)/), "350000");
+    await user.type(within(dialog).getByLabelText("Tiền mặt (đ)"), "350000");
     expect(
       within(dialog).getByText("Chuyển khoản: 1.000.000đ"),
     ).toBeInTheDocument();
-    await user.click(
-      within(dialog).getByRole("button", { name: "Lưu & thu tiền" }),
-    );
-    const post = calls.find((c) => c.method === "POST");
-    expect(post?.body).toMatchObject({
+    await save();
+    expect(salePosts(calls)[0]?.body).toMatchObject({
       discount: { amount: 150_000, reason: "Khách quen" },
       payments: [
         { method: "cash", amount: 350_000 },
         { method: "bank_transfer", amount: 1_000_000 },
       ],
     });
+  });
+
+  it("lets the owner discount above 10%", async () => {
+    const calls = serve([...MANAGER, "sale.discount_unlimited"]);
+    const { user, dialog, planSelect, save } = await openDialog();
+    await user.selectOptions(planSelect, "p1");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Thêm giảm giá gói" }),
+    );
+    await user.type(within(dialog).getByLabelText("Giảm giá gói (đ)"), "500000");
+    await user.type(within(dialog).getByLabelText("Lý do giảm giá"), "Khách VIP");
+    await save();
+    expect(salePosts(calls)[0]?.body).toMatchObject({
+      discount: { amount: 500_000, reason: "Khách VIP" },
+      payments: [{ method: "cash", amount: 1_000_000 }],
+    });
+  });
+
+  it("buys a package for someone else: it goes on their profile, the toast names both (US13)", async () => {
+    const calls = serve(MANAGER);
+    const { user, dialog, planSelect, save } = await openDialog();
+    await user.selectOptions(planSelect, "p1");
+    await user.click(
+      within(dialog).getByRole("checkbox", { name: /Mua cho người khác/ }),
+    );
+    await save();
+    expect(within(dialog).getByText("Chọn khách sẽ dùng gói.")).toBeInTheDocument();
+    expect(salePosts(calls)).toHaveLength(0);
+
+    await user.type(
+      within(dialog).getByRole("combobox", { name: "Tìm khách theo SĐT hoặc tên" }),
+      "Nam",
+    );
+    await user.click(
+      await within(dialog).findByRole("option", { name: /Trần Văn Nam/ }),
+    );
+    expect(within(dialog).getByText("Người dùng gói")).toBeInTheDocument();
+    const packagesBefore = calls.filter(
+      (c) => c.url === "/api/v1/customers/c1/packages",
+    ).length;
+    await save();
+    expect(salePosts(calls)[0]?.body).toMatchObject({
+      customer_id: "c1",
+      beneficiary_customer_id: "c2",
+      lines: [{ package_plan_id: "p1" }],
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      'Đã bán "Gội đầu 10 + tặng 2" cho Trần Văn Nam (Nguyễn Thị Hà trả tiền).',
+    );
+    // The payer's list is refetched too (the beneficiary's key is invalidated the same way).
+    expect(
+      calls.filter((c) => c.url === "/api/v1/customers/c1/packages").length,
+    ).toBeGreaterThan(packagesBefore);
   });
 
   it("explains a server rejection in Vietnamese and keeps the form", async () => {
@@ -292,14 +356,10 @@ describe("sell package dialog", () => {
           status: 422,
         }),
     );
-    const { user, dialog } = await openDialog();
-    const [planSelect, closerSelect] = within(dialog).getAllByRole("combobox");
-    if (!planSelect || !closerSelect) throw new Error("selects missing");
+    const { user, dialog, planSelect, closerSelect, save } = await openDialog();
     await user.selectOptions(planSelect, "p1");
     await user.selectOptions(closerSelect, "st1");
-    await user.click(
-      within(dialog).getByRole("button", { name: "Lưu & thu tiền" }),
-    );
+    await save();
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(
       "không còn làm việc",
     );

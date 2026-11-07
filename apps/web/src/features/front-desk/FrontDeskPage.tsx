@@ -30,6 +30,7 @@ import { customerQuery } from "../customers/api";
 import { CustomerSearch } from "../customers/CustomerSearch";
 import { completeAppointment } from "../appointments/complete";
 import { activeStaffQuery, exceedsCap, parseAmount } from "../sales/api";
+import { boughtForOtherText } from "../sales/saleText";
 import {
   type CartLine,
   type DiscountDraft,
@@ -350,7 +351,12 @@ export function FrontDeskPage() {
       forgetDraft(visit.customer_id);
       showToast(
         savedSummary(visit) +
-          visit.package_sales.map((p) => ` · bán ${p.description}`).join("") +
+          visit.package_sales
+            .map(
+              (p) =>
+                ` · bán ${p.description}${p.beneficiary_name ? ` cho ${p.beneficiary_name}` : ""}`,
+            )
+            .join("") +
           (visit.business_date !== todayIso
             ? ` · nhập bù ngày ${visit.business_date.split("-").reverse().join("/")}`
             : ""),
@@ -412,12 +418,21 @@ export function FrontDeskPage() {
         idempotencyKey,
       );
     },
-    onSuccess: async (sale) => {
+    onSuccess: async (sale, draft) => {
       await queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
       void invalidateManagementViews(queryClient, customer?.id);
+      if (draft.beneficiary)
+        void invalidateManagementViews(queryClient, draft.beneficiary.id);
       forgetDraft(customer?.id);
+      const sold = sale.lines.map((l) => l.description).join(", ");
       showToast(
-        `Đã bán ${sale.lines.map((l) => l.description).join(", ")} · ${customer?.full_name ?? ""}`,
+        draft.beneficiary
+          ? boughtForOtherText(
+              sold,
+              draft.beneficiary.full_name,
+              customer?.full_name ?? "",
+            )
+          : `Đã bán ${sold} · ${customer?.full_name ?? ""}`,
       );
       resetVisit();
     },

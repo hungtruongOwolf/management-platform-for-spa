@@ -219,6 +219,11 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     await extend.getByLabel("Lý do gia hạn").fill("Khách đi công tác dài ngày");
     await expectAccessible(page, "profile-extend");
     await extend.getByRole("button", { name: "Gia hạn" }).click();
+    // A review step (old → new expiry, reason) before anything is saved.
+    const review = extend.getByRole("group", { name: "Xác nhận gia hạn" });
+    await expect(review).toContainText("Khách đi công tác dài ngày");
+    await expectAccessible(page, "profile-extend-review");
+    await review.getByRole("button", { name: "Xác nhận gia hạn" }).click();
     await expect(
       page.getByRole("status").filter({ hasText: "Đã gia hạn" }),
     ).toBeVisible();
