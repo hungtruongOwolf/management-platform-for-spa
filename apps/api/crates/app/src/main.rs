@@ -7,6 +7,9 @@ use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::Layer;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 /// Commands:
 ///   `app` | `app serve`                serve the API as app_rw (APP_DATABASE_URL)
@@ -316,13 +319,20 @@ async fn migrate() -> anyhow::Result<()> {
 }
 
 /// Human-readable logs in development, JSON everywhere else (for log shipping).
+/// The log filter is per layer, so `RUST_LOG` never decides whether `Server-Timing` can count
+/// SQL statements (app::server_timing listens to sqlx's DEBUG events for itself only).
 fn init_tracing(environment: Environment) {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    let builder = tracing_subscriber::fmt().with_env_filter(filter);
+    let registry =
+        tracing_subscriber::registry().with(app::server_timing::DbTimingLayer::filtered());
     if environment == Environment::Development {
-        builder.init();
+        registry
+            .with(tracing_subscriber::fmt::layer().with_filter(filter))
+            .init();
     } else {
-        builder.json().init();
+        registry
+            .with(tracing_subscriber::fmt::layer().json().with_filter(filter))
+            .init();
     }
 }
 

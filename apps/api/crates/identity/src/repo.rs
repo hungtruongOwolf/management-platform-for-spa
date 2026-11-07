@@ -370,28 +370,28 @@ pub async fn member_permissions(
     tx: &mut TenantTx,
     user: UserId,
 ) -> Result<Option<Vec<Permission>>, AppError> {
-    let tenant = tx.tenant().as_uuid();
+    // One statement (perf page §3.4: every authenticated request paid two round trips here). A
+    // member with no role still gets a row, with an empty list; no row = not an active member.
+    // `(tenant_id, user_id)` is unique, so at most one row.
     let member = sqlx::query_scalar!(
-        "SELECT m.id FROM app.membership m JOIN app.tenant t ON t.id = m.tenant_id
-         WHERE m.tenant_id = $1 AND m.user_id = $2 AND m.status = 'active' AND t.status = 'active'",
-        tenant,
+        r#"SELECT COALESCE(
+                    array_agg(DISTINCT rp.permission) FILTER (WHERE rp.permission IS NOT NULL),
+                    '{}'
+                  ) AS "permissions!"
+           FROM app.membership m
+           JOIN app.tenant t ON t.id = m.tenant_id
+           LEFT JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
+           LEFT JOIN app.role_permission rp ON rp.tenant_id = mr.tenant_id AND rp.role_id = mr.role_id
+           WHERE m.tenant_id = $1 AND m.user_id = $2 AND m.status = 'active' AND t.status = 'active'
+           GROUP BY m.id"#,
+        tx.tenant().as_uuid(),
         user.as_uuid()
     )
     .fetch_optional(tx.conn())
     .await?;
-    let Some(membership_id) = member else {
+    let Some(names) = member else {
         return Ok(None);
     };
-    let names = sqlx::query_scalar!(
-        r#"SELECT DISTINCT rp.permission
-           FROM app.membership_role mr
-           JOIN app.role_permission rp ON rp.tenant_id = mr.tenant_id AND rp.role_id = mr.role_id
-           WHERE mr.tenant_id = $1 AND mr.membership_id = $2"#,
-        tenant,
-        membership_id
-    )
-    .fetch_all(tx.conn())
-    .await?;
     let permissions = names
         .iter()
         .filter_map(|name| match Permission::from_str(name) {

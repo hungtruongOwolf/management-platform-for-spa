@@ -132,6 +132,7 @@ pub fn apply(router: Router, policy: &HttpPolicy) -> Router {
                 .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
                 .layer(PropagateRequestIdLayer::x_request_id())
                 .layer(TraceLayer::new_for_http().make_span_with(request_span))
+                .layer(middleware::from_fn(crate::server_timing::server_timing))
                 .layer(middleware::from_fn(problem_for_bare_errors))
                 .layer(TimeoutLayer::with_status_code(
                     StatusCode::REQUEST_TIMEOUT,

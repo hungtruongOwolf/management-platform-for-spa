@@ -8,6 +8,7 @@ pub mod jobs;
 pub mod middleware;
 pub mod openapi;
 pub mod paper_book;
+pub mod server_timing;
 
 use axum::Router;
 use middleware::HttpPolicy;
