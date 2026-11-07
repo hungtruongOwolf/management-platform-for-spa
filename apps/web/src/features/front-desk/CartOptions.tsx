@@ -683,8 +683,9 @@ export function CartLines({
    * The one line open for editing (EM 2026-11-07: a finished item folds into a summary row with
    * Sửa / ✕). A line without its technician stays open; `undefined` = every line open.
    */
-  openKey?: number | null;
-  onOpen?: (key: number | null) => void;
+  openKey?: string | null;
+  /** `"l<key>"` of the line to open, or null to fold every finished one. */
+  onOpen?: (item: string | null) => void;
   lines: CartLine[];
   onLines: (update: (ls: CartLine[]) => CartLine[]) => void;
   /** Line key → `ref` of the package sold today that covers it. */
@@ -748,7 +749,7 @@ export function CartLines({
           </button>
         );
         const folded =
-          onOpen !== undefined && openKey !== l.key && l.staffId !== "";
+          onOpen !== undefined && openKey !== `l${String(l.key)}` && l.staffId !== "";
         if (folded) {
           const referrer =
             l.source === "one_off" && !coveredBy
@@ -769,7 +770,7 @@ export function CartLines({
                 aria-label={`Sửa dòng ${l.serviceName}`}
                 className="btn btn-ghost"
                 onClick={() => {
-                  onOpen(l.key);
+                  onOpen(`l${String(l.key)}`);
                 }}
               >
                 Sửa

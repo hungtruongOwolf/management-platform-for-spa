@@ -1009,12 +1009,8 @@ export function FrontDeskPage() {
                     technicians={technicians}
                     staffSelects={staffSelects}
                     focusLineKey={focusLineKey}
-                    openKey={
-                      openItem?.startsWith("l") ? Number(openItem.slice(1)) : null
-                    }
-                    onOpen={(k) => {
-                      setOpenItem(k === null ? null : `l${String(k)}`);
-                    }}
+                    openKey={openItem}
+                    onOpen={setOpenItem}
                   />
                 </Suspense>
               )}
@@ -1063,10 +1059,8 @@ export function FrontDeskPage() {
                     openPlanId={openPlan}
                     onOpened={clearOpenPlan}
                     ownerNamed={customer.named}
-                    openRef={openItem?.startsWith("s") ? openItem.slice(1) : null}
-                    onOpenRef={(r) => {
-                      setOpenItem(r === null ? null : `s${r}`);
-                    }}
+                    openRef={openItem}
+                    onOpenRef={setOpenItem}
                     onLines={setLines}
                     onTodaySession={(saleRef, s) => {
                       addLine({

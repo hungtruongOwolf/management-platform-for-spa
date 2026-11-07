@@ -586,7 +586,8 @@ export function PackageSales({
    * folds into a summary row. Absent = every block open (other screens).
    */
   openRef?: string | null;
-  onOpenRef?: (ref: string | null) => void;
+  /** `"s<ref>"` of the block to open, or null to fold every finished one. */
+  onOpenRef?: (item: string | null) => void;
   /** "Làm 1 buổi hôm nay" on a block: add today's session of that service from it. */
   onTodaySession?: (
     ref: string,
@@ -668,7 +669,7 @@ export function PackageSales({
         : {}),
     };
     onSales((s) => (s.length >= maxSales ? s : [...s, added]));
-    open?.(added.ref);
+    open?.(`s${added.ref}`);
   }, [openPlanId, plans.isSuccess, plans.data, full, maxSales, onOpened, onSales]);
 
   useEffect(() => {
@@ -710,14 +711,14 @@ export function PackageSales({
               ownerNamed={ownerNamed}
               folded={
                 onOpenRef !== undefined &&
-                openRef !== s.ref &&
+                openRef !== `s${s.ref}` &&
                 !saleErrorOf(serverError) &&
                 saleProblem(s, unlimitedDiscount, ownerNamed) === null
               }
               {...(onOpenRef
                 ? {
                     onEdit: () => {
-                      onOpenRef(s.ref);
+                      onOpenRef(`s${s.ref}`);
                     },
                     onDone: () => {
                       onOpenRef(null);
@@ -756,7 +757,7 @@ export function PackageSales({
           onClick={() => {
             const added = newSale(sales);
             onSales((s) => [...s, added]);
-            onOpenRef?.(added.ref);
+            onOpenRef?.(`s${added.ref}`);
           }}
         >
           <Icon name="plus" />

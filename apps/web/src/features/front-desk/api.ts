@@ -153,6 +153,10 @@ export function coverage(
 ): Map<number, string> {
   const covered = new Map<number, string>();
   for (const p of sales) {
+    // "Làm 1 buổi hôm nay" lines belong to their package (pruned when it cannot hold them).
+    for (const l of lines)
+      if (l.source === "new_package" && l.saleRef === p.ref)
+        covered.set(l.key, p.ref);
     if (!p.useToday || !p.plan || p.beneficiary || p.forOther) continue;
     const left = new Map(
       p.plan.items.map((i) => [i.service_id, i.sessions + i.bonus_sessions]),
@@ -318,21 +322,14 @@ export function visitBody(
     ...(companions.length > 0 ? { companions } : {}),
     note: note.trim() === "" ? null : note.trim(),
     lines: lines.map((l) =>
-      covered.has(l.key)
+      covered.has(l.key) || l.source === "new_package"
         ? {
             service_id: l.serviceId,
             source: "package",
             package_ref: covered.get(l.key) ?? null,
             staff_id: l.staffId,
           }
-        : l.source === "new_package"
-          ? {
-              service_id: l.serviceId,
-              source: "package",
-              package_ref: l.saleRef,
-              staff_id: l.staffId,
-            }
-          : l.source === "package"
+        : l.source === "package"
           ? {
               service_id: l.serviceId,
               source: "package",
