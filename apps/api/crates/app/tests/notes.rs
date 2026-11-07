@@ -568,6 +568,16 @@ async fn every_kind_keeps_its_own_read_rule(pool: PgPool) -> TestResult {
         matches!(denied, Err(kernel::AppError::Forbidden { .. })),
         "{denied:?}"
     );
+    // ADR-0014: a manager whose staff profile has left keeps only the former-staff permissions,
+    // so no kind (new ones included) is reachable.
+    let former =
+        kernel::permission::effective_permissions(SystemRole::Manager.default_permissions(), true);
+    let actor = Actor::new(UserId::new(), TenantId::from_uuid(s.tenant), former, None);
+    let denied = reporting::notes::list(&app, &s.h.cipher, &actor, &query()).await;
+    assert!(
+        matches!(denied, Err(kernel::AppError::Forbidden { .. })),
+        "{denied:?}"
+    );
     Ok(())
 }
 
