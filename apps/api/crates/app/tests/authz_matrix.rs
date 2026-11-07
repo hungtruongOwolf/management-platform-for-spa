@@ -651,6 +651,13 @@ const ROUTES: &[Route] = &[
         "/api/v1/reports/ledger",
         Access::Perm(P::ReportRevenueRead, OWNER_MANAGER),
     ),
+    // "Nhật ký ghi chú": report.read gates the screen; each note kind keeps its own rule
+    // (tests/notes.rs).
+    route(
+        "GET",
+        "/api/v1/notes",
+        Access::Perm(P::ReportRead, OWNER_MANAGER),
+    ),
     route(
         "GET",
         "/api/v1/customers/inactive",

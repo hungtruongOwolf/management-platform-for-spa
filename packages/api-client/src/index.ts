@@ -73,6 +73,10 @@ export type PackageUse = Schemas["PackageUse"];
 export type CustomerKind = Schemas["CustomerKind"];
 export type CustomerKindFilter = Schemas["CustomerKindFilter"];
 export type FollowUpFilter = Schemas["FollowUpFilter"];
+// "Nhật ký ghi chú" (GET /notes).
+export type NotesPage = Schemas["NotesPage"];
+export type NoteEntry = Schemas["NoteEntry"];
+export type NoteKind = Schemas["NoteKind"];
 export type LastFollowUp = Schemas["LastFollowUp"];
 export type FollowUpChannel = Schemas["FollowUpChannelDto"];
 export type FollowUpOutcome = Schemas["FollowUpOutcomeDto"];

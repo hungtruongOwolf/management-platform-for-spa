@@ -28,6 +28,7 @@ const SCREENS: [string, string][] = [
   ["so-doanh-thu", "/bao-cao?tab=ledger"],
   ["goi-lieu-trinh", "/goi-lieu-trinh"],
   ["khach-lau-khong-quay-lai", "/khach-lau-khong-quay-lai"],
+  ["nhat-ky-ghi-chu", "/nhat-ky-ghi-chu"],
   ["bang-gia", "/bang-gia"],
   ["bang-gia-goi", "/bang-gia/goi"],
   ["cai-dat", "/cai-dat"],

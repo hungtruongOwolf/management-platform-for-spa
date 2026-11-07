@@ -1,0 +1,95 @@
+/* "Nhật ký ghi chú" (/nhat-ky-ghi-chu). Loaded with the lazy chunk only; tokens only. */
+
+@layer components {
+  .notes-page {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: 16px;
+  }
+  .notes-lede {
+    max-width: 42rem;
+    color: var(--text-muted);
+  }
+  /* A business day over its notes: a section label, not a panel title. */
+  .notes-day {
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+  }
+  /* One panel per day, one note per row, hairlines between (no card in a card). */
+  .notes-list {
+    display: grid;
+    padding: 0 16px;
+  }
+  .note-row {
+    display: grid;
+    gap: 6px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .note-row:last-child {
+    border-bottom: 0;
+  }
+  .note-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+  }
+  .note-about {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+  }
+  .note-about:empty {
+    display: none;
+  }
+  /* The note as written: its line breaks kept, long words wrapped. */
+  .note-text {
+    max-width: 48rem;
+    overflow-wrap: anywhere;
+    white-space: pre-line;
+  }
+  .note-source {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 16px;
+  }
+  .note-link {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    gap: 4px;
+    color: var(--primary);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+  }
+  .note-link:hover {
+    text-decoration: underline;
+  }
+  .note-link:focus-visible {
+    border-radius: var(--radius-sm);
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .notes-filter-chip {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px 4px 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+  }
+  .notes-filter-chip:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+}

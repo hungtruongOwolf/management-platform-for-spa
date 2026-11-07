@@ -10,6 +10,7 @@ import { ErrorState } from "../reports/ui";
 import { plansQuery, servicesQuery } from "./api";
 import { PlanForm } from "./PlanForm";
 import "../customers/khach.css";
+import "./messages";
 
 type Editing = { plan?: PackagePlan } | null;
 
