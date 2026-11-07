@@ -17,17 +17,15 @@ import {
   type Adjustment,
   type AttendanceEntryWrite,
   type DailyReview,
-  type DailyReviewEntryWrite,
   type StaffSheet,
 } from "./api";
-import { AdjustmentActions, AdjustmentForm } from "./AdjustmentsTab";
-import { AttendanceChoice } from "./AttendanceChoice";
+import { AdjustmentForm } from "./AdjustmentsTab";
+import { BookCard } from "./BookCard";
 import { putAttendance, putReviews } from "./cache";
-import { Counter } from "./Counter";
 import { STATUS_WORD, monthLabel, type AttendanceStatus } from "./labels";
 import { PersonDaySheet } from "./PersonDaySheet";
-import { cellOf, employedOn, evaluationDueMonth, incompleteDays, missingOn } from "./progress";
-import { ClosedBanner, dayLabel, lastDayOrToday, vnd } from "./ui";
+import { employedOn, evaluationDueMonth, incompleteDays, missingOn } from "./progress";
+import { ClosedBanner, dayLabel, lastDayOrToday } from "./ui";
 
 /** "2026-11-04" → "T3 04/11". */
 const shortDay = (iso: string) => dayLabel(iso).slice(0, -5).replace(",", "");
@@ -258,9 +256,9 @@ export function DailyBook({
       {working.length === 0 ? (
         <p className="empty-block">Không có nhân viên nào làm việc ngày này.</p>
       ) : (
-        <ul className="card book-list" aria-label={`Sổ ngày ${dayLabel(date)}`}>
+        <ul className="book-grid" aria-label={`Sổ ngày ${dayLabel(date)}`}>
           {working.map((s) => (
-            <PersonCard
+            <BookCard
               key={s.staff_id}
               staff={s}
               date={date}
@@ -360,180 +358,3 @@ export function DailyBook({
     </div>
   );
 }
-
-/**
- * One person's row in the day's panel (EM 2026-11-07: the card was far bigger than its content).
- * Same grid areas in every row so they line up down the list (staff.css `.book-row`):
- * - who: name, role/times, the flags that add information (not recorded yet, late);
- * - the attendance choice, in words;
- * - the day's record: Khen / Phàn nàn steppers and "Ghi thưởng / phạt", the day's
- *   bonuses/penalties and notes as compact rows under it;
- * - "Giờ & ghi chú".
- * Wide rows: who on the left; attendance + "Giờ & ghi chú", then the record (two lines). Narrower rows
- * stack. No chip repeats the chosen status: the filled option already says it.
- */
-function PersonCard({
-  staff: s,
-  date,
-  review,
-  adjustments,
-  canAttendance,
-  canReview,
-  readOnly,
-  busy,
-  savingStatus,
-  savingReview,
-  error,
-  onStatus,
-  onReview,
-  onAdjust,
-  onDetails,
-}: {
-  staff: StaffSheet;
-  date: string;
-  review: DailyReview | undefined;
-  adjustments: Adjustment[];
-  canAttendance: boolean;
-  canReview: boolean;
-  readOnly: boolean;
-  busy: boolean;
-  savingStatus: AttendanceStatus | null;
-  savingReview: DailyReviewEntryWrite | undefined;
-  error: string;
-  onStatus: (status: AttendanceStatus) => void;
-  onReview: (compliments: number, complaints: number) => void;
-  /** Without an entry: record a new one; with one: edit it. */
-  onAdjust: (entry?: Adjustment) => void;
-  onDetails: () => void;
-}) {
-  const cell = cellOf(s, date);
-  // Decision C: a manager's own row and other managers' rows are the owner's to write.
-  const locked = !s.can_record;
-  const shut = readOnly || locked;
-  // While a review save runs, show the counts being saved; the server's answer replaces them.
-  const c = savingReview?.compliments ?? review?.compliments ?? 0;
-  const k = savingReview?.complaints ?? review?.complaints ?? 0;
-  const missing = canAttendance && !cell && !savingStatus;
-  const times = [cell?.check_in && `đến ${cell.check_in}`, cell?.check_out && `về ${cell.check_out}`].filter(Boolean).join(" · ");
-  const hasLog = Boolean(cell?.note || review?.note || adjustments.length > 0);
-  return (
-    <li id={`book-${s.staff_id}`} className="book-row">
-      <div className="book-row-who">
-        <p className="book-row-name">{s.full_name}</p>
-        <p className="text-sm text-text-muted">
-          {s.position}
-          {times && ` · ${times}`}
-        </p>
-        {(missing || (cell && cell.late_minutes > 0)) && (
-          <p className="book-row-flags">
-            {missing && <span className="badge badge-warn">Chưa chấm công</span>}
-            {cell && cell.late_minutes > 0 && <span className="badge badge-danger">Đi muộn {cell.late_minutes} phút</span>}
-          </p>
-        )}
-      </div>
-      {!shut && (
-        <button type="button" className="btn btn-secondary book-row-details" onClick={onDetails}>
-          <Icon name="clock" className="size-4" />
-          Giờ & ghi chú
-        </button>
-      )}
-      {canAttendance && (
-        <AttendanceChoice
-          name={s.full_name}
-          value={cell?.status ?? null}
-          pending={savingStatus}
-          busy={busy}
-          disabled={shut}
-          onChange={onStatus}
-        />
-      )}
-      {locked && !readOnly && (canAttendance || canReview) && (
-        <p className="book-row-hint text-sm text-text-muted">
-          <Icon name="lock" className="size-4" />
-          Chỉ chủ spa chấm công, ghi khen/phàn nàn và thưởng/phạt cho quản lý.
-        </p>
-      )}
-      {error && (
-        <p role="alert" className="book-row-error">
-          <Icon name="alert" className="size-4" />
-          Chưa lưu được: {error}
-        </p>
-      )}
-      {(canReview || hasLog) && (
-        <section className="book-record" aria-label={`Ghi nhận trong ngày, ${s.full_name}`}>
-          {canReview && (
-            <div className="book-record-row">
-              <Counter
-                label="Khen"
-                name={s.full_name}
-                value={c}
-                disabled={shut}
-                busy={busy}
-                onChange={(v) => {
-                  onReview(v, k);
-                }}
-              />
-              <Counter
-                label="Phàn nàn"
-                name={s.full_name}
-                value={k}
-                disabled={shut}
-                busy={busy}
-                onChange={(v) => {
-                  onReview(c, v);
-                }}
-              />
-              {!shut && (
-                <button
-                  type="button"
-                  className="btn btn-secondary book-record-add"
-                  onClick={() => {
-                    onAdjust();
-                  }}
-                >
-                  <Icon name="plus" className="size-4" />
-                  Ghi thưởng / phạt
-                </button>
-              )}
-            </div>
-          )}
-          {hasLog && (
-            <ul className="book-log">
-              {adjustments.map((a) => (
-                <li key={a.id}>
-                  <span className={`badge ${a.kind === "bonus" ? "badge-ok" : "badge-danger"}`}>{a.kind === "bonus" ? "Thưởng" : "Phạt"}</span>
-                  <span className="book-log-amount tabular">
-                    {[a.amount != null ? vnd(a.amount) : "", a.points != null ? `${String(a.points)} điểm` : ""].filter(Boolean).join(" · ")}
-                  </span>
-                  <span className="book-log-text">{a.reason}</span>
-                  {!readOnly && a.can_edit && (
-                    <AdjustmentActions
-                      entry={a}
-                      name={s.full_name}
-                      onEdit={() => {
-                        onAdjust(a);
-                      }}
-                    />
-                  )}
-                </li>
-              ))}
-              {cell?.note && (
-                <li>
-                  <span className="book-log-label">Chấm công</span>
-                  <span className="book-log-text">{cell.note}</span>
-                </li>
-              )}
-              {review?.note && (
-                <li>
-                  <span className="book-log-label">Đánh giá</span>
-                  <span className="book-log-text">{review.note}</span>
-                </li>
-              )}
-            </ul>
-          )}
-        </section>
-      )}
-    </li>
-  );
-}
-

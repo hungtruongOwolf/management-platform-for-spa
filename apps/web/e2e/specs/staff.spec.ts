@@ -28,14 +28,14 @@ test.describe("nhân viên", () => {
     // is the filled radio (no separate status chip).
     const choice = card.getByRole("radiogroup", { name: `Chấm công ${name}` });
     await expect(card.getByText("Chưa chấm công")).toBeVisible();
-    await choice.getByRole("radio", { name: "Nghỉ có phép (P)" }).click();
-    await expect(choice.getByRole("radio", { name: "Nghỉ có phép (P)" })).toHaveAttribute("aria-checked", "true");
+    await choice.getByRole("radio", { name: "Nghỉ có phép" }).click();
+    await expect(choice.getByRole("radio", { name: "Nghỉ có phép" })).toHaveAttribute("aria-checked", "true");
     await expect(card.getByText("Chưa chấm công")).toBeHidden();
     // Taps wait for the running save (and the refetch behind it) to finish.
     await expect(choice).not.toHaveAttribute("aria-busy");
-    await choice.getByRole("radio", { name: "Nghỉ có phép (P)" }).press("ArrowLeft");
+    await choice.getByRole("radio", { name: "Nghỉ có phép" }).press("ArrowLeft");
     await expect(choice.getByRole("radio", { name: "Đi làm" })).toBeFocused();
-    await expect(choice.getByRole("radio", { name: "Nghỉ có phép (P)" })).toHaveAttribute("aria-checked", "true");
+    await expect(choice.getByRole("radio", { name: "Nghỉ có phép" })).toHaveAttribute("aria-checked", "true");
     await page.keyboard.press("Space");
     await expect(choice.getByRole("radio", { name: "Đi làm" })).toHaveAttribute("aria-checked", "true");
     await card.getByRole("button", { name: "Giờ & ghi chú" }).click();
@@ -73,15 +73,25 @@ test.describe("nhân viên", () => {
   });
 
   // EM 2026-11-07 (image 52): a person's card was far taller than its content and "Khen" sat apart
-  // from its stepper. Desktop: one compact row per person; each label 8px before its stepper.
-  test("desktop: one compact row per person in the daily book", async ({ page }) => {
+  // from its stepper. EM 2026-11-07 (image 65): one card per person in a grid (2 columns at 1280),
+  // the four attendance choices as separate tiles without P/ĐX/K badges.
+  test("desktop: one card per person in a grid in the daily book", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/nhan-vien");
     const book = page.getByRole("list", { name: /^Sổ ngày/ });
-    const row = book.locator(":scope > li").first();
+    const cards = book.locator(":scope > li");
+    const row = cards.first();
     await expect(row.getByRole("radiogroup")).toBeVisible();
-    const height = await row.evaluate((el) => el.getBoundingClientRect().height);
-    expect(height, "row height").toBeLessThanOrEqual(150);
+    if ((await cards.count()) > 1) {
+      const lefts = await cards.evaluateAll((els) => els.slice(0, 3).map((el) => Math.round(el.getBoundingClientRect().left)));
+      expect(new Set(lefts).size, "columns at 1280").toBe(2);
+    }
+    const tiles = await row.getByRole("radio").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON() as DOMRect));
+    for (const t of tiles) expect(t.height).toBeGreaterThanOrEqual(44);
+    // Spaced apart, not one strip.
+    const [a, b] = tiles;
+    if (a && b) expect(b.left - a.right).toBeGreaterThanOrEqual(8);
+    expect(await row.getByRole("radio").allTextContents()).toEqual(["Đi làm", "Nghỉ có phép", "Nghỉ đột xuất", "Nghỉ không phép"]);
     for (const group of await row.getByRole("group").all()) {
       const gap = await group.evaluate((el) => {
         const label = el.firstElementChild?.getBoundingClientRect();
@@ -91,7 +101,7 @@ test.describe("nhân viên", () => {
       expect(gap, "label → stepper").toBe(8);
     }
     expect(await sidewaysOverflow(page)).toBe(0);
-    await expectAccessible(page, "staff-daily-book-rows");
+    await expectAccessible(page, "staff-daily-book-cards");
   });
 
   test("phones: daily book and month grid fit 390 px without sideways page scroll", async ({ page }) => {
@@ -102,7 +112,7 @@ test.describe("nhân viên", () => {
     expect(await sidewaysOverflow(page)).toBe(0);
     // The four attendance options keep their words on a phone: 2 × 2, every target ≥ 44 px.
     const choice = page.getByRole("radiogroup").first();
-    await expect(choice.getByRole("radio", { name: "Nghỉ không phép (K)" })).toContainText("Nghỉ không phép");
+    await expect(choice.getByRole("radio", { name: "Nghỉ không phép" })).toContainText("Nghỉ không phép");
     const boxes = await choice.getByRole("radio").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON() as DOMRect));
     expect(new Set(boxes.map((b) => Math.round(b.top))).size).toBe(2);
     for (const b of boxes) expect(b.height).toBeGreaterThanOrEqual(44);

@@ -1,18 +1,27 @@
 import { useRef, type KeyboardEvent } from "react";
-import { Icon } from "../../app/Icon";
-import { STATUSES, STATUS_CODE, STATUS_HINT, STATUS_LABEL, STATUS_WORD, type AttendanceStatus } from "./labels";
+import { Icon, type IconName } from "../../app/Icon";
+import { STATUSES, STATUS_HINT, STATUS_WORD, type AttendanceStatus } from "./labels";
+
+/** Each choice's own mark, beside its colour (the month calendar legend's colours, #76). */
+const STATUS_ICON: Record<AttendanceStatus, IconName> = {
+  present: "check",
+  leave_p: "calendar",
+  leave_dx: "alert",
+  absent_k: "x",
+};
 
 /**
- * One person's attendance for a day as four worded options (Đi làm / Nghỉ có phép / Nghỉ đột
- * xuất / Nghỉ không phép), one tap saves. A radiogroup with a roving tab stop: Tab enters on the
+ * One person's attendance for a day as four separate worded tiles (Đi làm / Nghỉ có phép / Nghỉ
+ * đột xuất / Nghỉ không phép), each with its own colour and icon; one tap saves (EM 2026-11-07: no
+ * P/ĐX/K code badges, no run-on strip). A radiogroup with a roving tab stop: Tab enters on the
  * chosen option, ←/→/↑/↓/Home/End move focus, Space/Enter choose. Arrows only move focus — every
  * choice is a save (PUT /attendance), so walking past three options must not record three.
  *
- * States: chosen = filled with the status colour + check icon (colour is never the only signal);
- * `pending` = the option being saved, shown chosen and pulsing until the server answers (on error the
- * parent's server data still holds the old value, so the choice rolls back); `busy` = another save
- * is running: taps are ignored but focus stays (aria-disabled, not disabled); `disabled` = month
- * closed or future day.
+ * States: chosen = the tile filled with its status colour, a solid icon disc, a 2px border and bold
+ * words (colour is never the only signal); `pending` = the option being saved, shown chosen and
+ * pulsing until the server answers (on error the parent's server data still holds the old value, so
+ * the choice rolls back); `busy` = another save is running: taps are ignored but focus stays
+ * (aria-disabled, not disabled); `disabled` = month closed, future day or not the caller's to write.
  */
 export function AttendanceChoice({
   name,
@@ -67,7 +76,6 @@ export function AttendanceChoice({
               type="button"
               role="radio"
               aria-checked={checked}
-              aria-label={STATUS_LABEL[st]}
               aria-disabled={!disabled && blocked ? true : undefined}
               title={STATUS_HINT[st]}
               tabIndex={i === stop ? 0 : -1}
@@ -83,14 +91,9 @@ export function AttendanceChoice({
               }}
             >
               <span className="att-choice-mark" aria-hidden="true">
-                {checked && <Icon name="check" className="size-4" />}
+                <Icon name={STATUS_ICON[st]} className="size-4" />
               </span>
               <span className="att-choice-word">{STATUS_WORD[st]}</span>
-              {st !== "present" && (
-                <span className="att-choice-code" aria-hidden="true">
-                  {STATUS_CODE[st]}
-                </span>
-              )}
             </button>
           );
         })}
