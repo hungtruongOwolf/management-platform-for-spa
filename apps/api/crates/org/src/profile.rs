@@ -4,7 +4,7 @@
 //! written by holders of `payroll.read` as well (non-negotiable 4: a caller without the
 //! permission never receives the field, not even `null`).
 //!
-//! Employment is a list of periods ([`Employment`], ADR-0012): hiring opens one, ending
+//! Employment is a list of periods ([`Employment`], ADR-0013): hiring opens one, ending
 //! employment closes it (soft: nothing is deleted), rehiring opens a new one.
 
 use crate::employment::{Employment, Period, Tenure};

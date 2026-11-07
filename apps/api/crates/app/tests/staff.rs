@@ -1681,7 +1681,7 @@ fn names(list: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// EM 2026-11-07 item 9 (spec §13, ADR-0012): hire → work → end employment (soft) → rehire.
+/// EM 2026-11-07 item 9 (spec §13, ADR-0013): hire → work → end employment (soft) → rehire.
 /// Ending needs a reason, refuses a future date, a date before recorded work and open bookings;
 /// the person leaves every picker and is refused as KTV, but this month's attendance, payroll and
 /// visits keep them; rehiring opens a second period and tenure sums both. Mutation-checked:

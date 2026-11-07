@@ -3,7 +3,7 @@ import { daysOf, shiftMonth } from "./labels";
 
 /**
  * Whether the person works for the spa on `date`: inside one of their employment periods (a
- * rehired person's gap is not a workday, ADR-0012).
+ * rehired person's gap is not a workday, ADR-0013).
  */
 export function employedOn(s: StaffSheet, date: string): boolean {
   if (s.periods.length === 0) return (!s.joined_on || date >= s.joined_on) && (!s.left_on || date <= s.left_on);

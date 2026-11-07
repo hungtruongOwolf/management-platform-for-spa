@@ -43,7 +43,7 @@ Thước đo: quản lý không phải cộng tay lương và hoa hồng ([perso
 - AC1.2 `user_id` phải là thành viên đang hoạt động của spa, chưa liên kết với ai khác. Đã liên kết → `409 staff.account_taken`. `GET /staff/accounts` liệt kê các tài khoản có thể liên kết.
 - AC1.3 `PUT /staff/{id}/pay`: `base_salary` 0–1 tỷ, `commission_rate_bp` 0–10000 (500 = 5 %: Lựa chọn 1; 700: LC2; 1000: LC3), `loyalty_bonus_monthly`, `meal_allowance`. Lần sửa áp dụng cho mọi tháng **chưa chốt**; tháng đã chốt giữ nguyên số đã dùng (test `a_closed_month_is_locked…`).
 - AC1.4 Có `staff.manage` nhưng thiếu `payroll.read` (role tùy biến) → hồ sơ trả về **không có** key `pay`, `pay_visible: false`; `PUT …/pay` → `403` (test `salary_is_only_sent_to_payroll_readers`, đã mutation-check).
-- AC1.5 Không xóa nhân viên. Nghỉ việc = đóng đợt làm việc (§13, ADR-0012). Người đã nghỉ vẫn có trong các tháng họ còn làm.
+- AC1.5 Không xóa nhân viên. Nghỉ việc = đóng đợt làm việc (§13, ADR-0013). Người đã nghỉ vẫn có trong các tháng họ còn làm.
 
 ### US2: Chấm công hằng ngày (quản lý)
 *Là quản lý, tôi muốn chấm cả spa trong vài giây mỗi ngày, để cuối tháng không phải đếm lại.*
@@ -260,7 +260,7 @@ EM (đăng nhập quản lý): "mới có chấm công mới có đánh giá nh�
 
 Không có quy tắc thưởng nào đang hard-code thâm niên: thưởng gắn bó chỉ tính theo tỷ lệ ngày làm trong tháng (Q-C7, nay theo các đợt làm việc thật), mốc 12/24 tháng vẫn ngoài phạm vi (§8) và sẽ đọc `Employment::tenure`.
 
-Mô hình: [ADR-0012](../../decisions/ADR-0012-employment-periods.md) (đợt làm việc, nghỉ việc hủy mềm), migration **0025**.
+Mô hình: [ADR-0013](../../decisions/ADR-0013-employment-periods.md) (đợt làm việc, nghỉ việc hủy mềm), migration **0025**.
 
 ### US13: Danh sách nhân sự
 - AC13.1 Tab **"Nhân sự"** (thay "Hồ sơ"; link cũ `?tab=profiles` vẫn mở) cho người có `staff.read` (chủ spa, quản lý). Bảng: Họ tên, Vị trí, chip trạng thái ("Đang làm" / "Đã nghỉ từ dd/mm/yyyy"), Ngày vào làm (đợt hiện tại), **Thâm niên** ("1 năm 8 tháng", "19 ngày", "Chưa rõ ngày vào làm"), Tài khoản (chủ spa: tên tài khoản / "Chưa gắn"; quản lý: "Đã gắn" / "Chưa gắn"), lương + hoa hồng nếu `payroll.read`. Lọc **Đang làm (mặc định) / Đã nghỉ / Tất cả** kèm số người, trên URL (`roster`).

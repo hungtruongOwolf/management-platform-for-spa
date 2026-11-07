@@ -113,6 +113,7 @@ impl From<PayTerms> for StaffPayDto {
     }
 }
 
+// Employment periods are ADR-0013 (renumbered; the schema description below keeps its published text).
 /// One employment period (ADR-0012). `end_reason` only for `staff.manage` holders.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct EmploymentPeriodDto {

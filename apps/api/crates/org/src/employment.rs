@@ -1,4 +1,4 @@
-//! Employment periods (ADR-0012): a staff member works at the spa during one or more periods —
+//! Employment periods (ADR-0013): a staff member works at the spa during one or more periods —
 //! hired, possibly ended (nghỉ việc), possibly rehired. Every "was this person working on day D /
 //! in month M" question and the tenure ("làm bao lâu") are answered here, from the periods, so a
 //! rehired person's gap is neither unrecorded attendance nor employed time.

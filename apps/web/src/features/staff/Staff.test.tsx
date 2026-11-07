@@ -420,7 +420,7 @@ describe("staff helpers", () => {
     expect(incompleteDays("2026-03", people, "2026-03-04")).toEqual(["2026-03-01", "2026-03-02", "2026-03-03"]);
     const joined = people.map((p) => ({ ...p, joined_on: "2026-03-03" }));
     expect(incompleteDays("2026-03", joined, "2026-03-04")).toEqual(["2026-03-03"]);
-    // ADR-0012: a rehired person's gap (03-02 here) is not a workday, whatever was recorded.
+    // ADR-0013: a rehired person's gap (03-02 here) is not a workday, whatever was recorded.
     const rehired = people.map((p) => ({
       ...p,
       periods: [
