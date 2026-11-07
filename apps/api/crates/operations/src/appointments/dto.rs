@@ -318,6 +318,67 @@ pub struct CalendarVisitDto {
     pub paid_amount: i64,
 }
 
+/// What an entry of "Lịch của tôi" is: a booking assigned to me, or a visit I served that no
+/// booking of mine stands for.
+#[derive(Debug, Clone, Copy, Serialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MyEntryKind {
+    Appointment,
+    Visit,
+}
+
+/// A service on a technician's own calendar entry.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MyEntryService {
+    pub service_name: String,
+    pub category_name: String,
+    /// A session of the customer's package (visits only; bookings are always `false`).
+    pub from_package: bool,
+}
+
+/// One block of a technician's own calendar. An allowlist: times, phase, the customer's name and
+/// the services — no phone, no note, no money, no customer or staff ids.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MyCalendarEntry {
+    pub id: Uuid,
+    pub kind: MyEntryKind,
+    pub business_date: NaiveDate,
+    pub starts_at: DateTime<Utc>,
+    pub ends_at: DateTime<Utc>,
+    pub duration_min: i64,
+    pub phase: PhaseDto,
+    pub customer_name: String,
+    /// Bookings: what was booked; visits: only the lines I performed.
+    pub services: Vec<MyEntryService>,
+    /// People booked together in this booking's group (ADR-0009), this one included; `null` =
+    /// booked alone, or a visit.
+    pub group_size: Option<i64>,
+    /// A visit recorded without any booking ("vãng lai").
+    pub walk_in: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MyCalendarData {
+    pub from: NaiveDate,
+    pub to: NaiveDate,
+    pub today: NaiveDate,
+    /// "HH:MM", spa time.
+    pub opens_at: String,
+    pub closes_at: String,
+    pub slot_minutes: u32,
+    /// Every phase, earliest first.
+    pub entries: Vec<MyCalendarEntry>,
+}
+
+/// `GET /me/appointments`: the signed-in technician's own calendar.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MyCalendar {
+    /// `false`: this login is not linked to a staff profile (ask the owner).
+    pub linked: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<MyCalendarData>,
+}
+
 /// `POST /appointments/{id}/complete`.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AppointmentCompleted {

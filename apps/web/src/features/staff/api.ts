@@ -117,15 +117,29 @@ export function myMonthQuery(month: string) {
   });
 }
 
-export type MyWork = Schemas["MyWork"];
-export type ServedVisit = Schemas["ServedVisit"];
-export type UpcomingAppointment = Schemas["UpcomingAppointment"];
+export type MyDay = Schemas["MyDay"];
+export type MyDayData = Schemas["MyDayData"];
+export type MyDayVisit = Schemas["MyDayVisit"];
+export type MyDayUpsell = Schemas["MyDayUpsell"];
 
-/** "Khách của tôi": customers I served in the month + appointments assigned to me (`GET /me/work`). */
-export function myWorkQuery(month: string) {
+/** One day of my month in detail (`GET /me/staff/day`): the person is the session's, never a parameter. */
+export function myDayQuery(date: string) {
   return queryOptions({
-    queryKey: staffKeys.month("work", month),
-    queryFn: async () => (await api(`/me/work${q(month)}`)) as MyWork,
+    queryKey: ["staff", "me-day", date] as const,
+    queryFn: async () => (await api(`/me/staff/day?date=${date}`)) as MyDay,
+  });
+}
+
+export type MyCalendar = Schemas["MyCalendar"];
+export type MyCalendarData = Schemas["MyCalendarData"];
+export type MyCalendarEntry = Schemas["MyCalendarEntry"];
+
+/** "Khách của tôi": my bookings and the visits I served over `from..to` (≤ 14 days, `GET /me/appointments`). */
+export function myCalendarQuery(from: string, to: string) {
+  return queryOptions({
+    queryKey: ["staff", "me-calendar", from, to] as const,
+    queryFn: async () => (await api(`/me/appointments?from=${from}&to=${to}`)) as MyCalendar,
+    staleTime: 15_000,
   });
 }
 

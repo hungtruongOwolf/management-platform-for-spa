@@ -1,132 +1,347 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { Icon } from "../../app/Icon";
 import { PageHeader } from "../../app/PageHeader";
+import { BottomSheet } from "../../components/BottomSheet";
+import { usePhone } from "../../components/useMediaQuery";
 import { useSearchState } from "../../lib/searchState";
+import { PHASE_BADGE, PHASE_LABEL, counts, daysFrom, minutesOf, mondayOf, type EntryView } from "../appointments/api";
+import { TimeGrid, range, servicesText, type TimeColumn } from "../appointments/TimeGrid";
 import { spaToday } from "../corrections/api";
-import { timeOf } from "../front-desk/api";
-import { EmptyState, ErrorState, RowsSkeleton } from "../reports/ui";
-import { myWorkQuery, type ServedVisit, type UpcomingAppointment } from "./api";
-import { monthLabel } from "./labels";
+import { EmptyState, ErrorState } from "../reports/ui";
+import { myCalendarQuery, type MyCalendarData, type MyCalendarEntry } from "./api";
+import { shiftMonth, weekdayShort } from "./labels";
+import { entryView, weekSummary } from "./myCalendar";
 import { myWorkSearch } from "./search";
 import { MonthPicker, dayLabel } from "./ui";
 import "./staff.css";
 
-/** Items grouped by business day, keeping the order they arrived in. */
-function byDay<T extends { business_date: string }>(items: T[]): [string, T[]][] {
-  const groups = new Map<string, T[]>();
-  for (const it of items) groups.set(it.business_date, [...(groups.get(it.business_date) ?? []), it]);
-  return [...groups.entries()];
+type Layout = "ngay" | "tuan" | "ds";
+
+/** "Nhóm · 3 người" for a family booking, "Vãng lai" for a visit without one. */
+function tagOf(e: MyCalendarEntry): string | null {
+  if (e.walk_in) return "Vãng lai";
+  if (e.group_size && e.group_size > 1) return `Nhóm · ${String(e.group_size)} người`;
+  return null;
+}
+
+/** "03/11" of a day. */
+function ddmm(day: string): string {
+  return `${day.slice(8, 10)}/${day.slice(5, 7)}`;
+}
+
+/** A week column's header: "T2" over "03/11", a button that opens the day. */
+function DayHead({ day, onDay }: { day: string; onDay: (day: string) => void }) {
+  return (
+    <button
+      type="button"
+      className="cal-head-day"
+      aria-label={`Xem ngày ${dayLabel(day)}`}
+      onClick={() => {
+        onDay(day);
+      }}
+    >
+      <span>{weekdayShort(day)}</span>
+      <small>{ddmm(day)}</small>
+    </button>
+  );
 }
 
 /**
- * "Khách của tôi" (/khach-cua-toi, spec staff-management §10 US9): a technician's upcoming
- * appointments and the customers they served this month. The server picks the person from the
- * session and sends only names, times and services — nothing here can ask for someone else.
+ * "Khách của tôi" (/khach-cua-toi, EM 2026-11-07): the technician's own calendar, Google-Calendar
+ * style like the desk's "Lịch hẹn" — bookings assigned to them and visits they served, as blocks
+ * at their real length on the shared `TimeGrid` (day or week), or a list. Read-only: nothing here
+ * books or edits. The server picks the person from the session and sends names, times and
+ * services only — no phone, note or money (`GET /me/appointments`).
  */
 export function MyWorkPage() {
   const [search, patch] = useSearchState(myWorkSearch);
+  const phone = usePhone();
   const today = spaToday();
+  const day = search.ngay || today;
+  // Phones: the one-column day grid by default, the week as a list; no 7-column grid at 390 px.
+  const wanted: Layout = search.kieu || (phone ? "ngay" : "tuan");
+  const layout: Layout = phone && wanted === "tuan" ? "ds" : wanted;
+  const week = mondayOf(day);
+  const days = daysFrom(week, 7);
+  const query = useQuery({ ...myCalendarQuery(week, days[6] ?? week), placeholderData: keepPreviousData });
+  const [openId, setOpenId] = useState<string | null>(null);
   const current = today.slice(0, 7);
-  const month = search.month || current;
-  const query = useQuery(myWorkQuery(month));
+  // Bookings reach 30 days ahead: next month is worth a look, later ones are empty.
+  const latest = shiftMonth(current, 1);
+  const go = (d: string) => {
+    setOpenId(null);
+    patch({ ngay: d === today ? "" : d });
+  };
+  const shift = (n: number) => {
+    const d = new Date(`${day}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + n);
+    go(d.toISOString().slice(0, 10));
+  };
+  const step = layout === "ngay" ? 1 : 7;
+  const views: [Layout, string][] = phone
+    ? [
+        ["ngay", "Ngày"],
+        ["ds", "Danh sách tuần"],
+      ]
+    : [
+        ["ngay", "Ngày"],
+        ["tuan", "Tuần"],
+        ["ds", "Danh sách"],
+      ];
+  const data = query.data?.data;
+  const opened = data?.entries.find((e) => e.id === openId) ?? null;
 
   return (
     <section className="grid content-start gap-5">
       <PageHeader title="Khách của tôi">
         <MonthPicker
-          month={month}
-          current={current}
+          month={day.slice(0, 7)}
+          current={latest}
           onChange={(m) => {
-            patch({ month: m === current ? "" : m });
+            // A month jumps to its first day; the current month to today.
+            go(m === current ? today : `${m}-01`);
           }}
         />
       </PageHeader>
-      {query.isPending ? (
-        <RowsSkeleton rows={5} />
-      ) : query.isError ? (
-        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
-      ) : !query.data.linked || !query.data.data ? (
-        <EmptyState title="Tài khoản chưa gắn với hồ sơ nhân viên">
-          Nhờ chủ spa gắn tài khoản này vào hồ sơ của bạn để xem lịch hẹn và khách đã làm.
-        </EmptyState>
-      ) : (
-        <>
-          <Upcoming items={query.data.data.upcoming} today={query.data.data.today} />
-          <Served items={query.data.data.served} month={query.data.data.month} />
-        </>
-      )}
-    </section>
-  );
-}
-
-function Upcoming({ items, today }: { items: UpcomingAppointment[]; today: string }) {
-  return (
-    <section className="card grid gap-3 p-4 sm:p-5" aria-labelledby="my-upcoming">
-      <h2 id="my-upcoming" className="panel-title">
-        Lịch hẹn sắp tới
-      </h2>
-      {items.length === 0 ? (
-        <p className="empty-block">Chưa có ai đặt lịch với bạn trong 30 ngày tới. Lịch quầy đặt cho bạn sẽ hiện ở đây.</p>
-      ) : (
-        byDay(items).map(([day, list]) => (
-          <div key={day} className="grid gap-2">
-            <h3 className="text-sm font-semibold text-text-muted">{day === today ? `Hôm nay · ${dayLabel(day)}` : dayLabel(day)}</h3>
-            <ul className="work-list">
-              {list.map((a) => (
-                <li key={a.appointment_id} className="work-row">
-                  <span className="w-28 shrink-0 font-semibold tabular">
-                    {timeOf(a.starts_at)}–{timeOf(a.ends_at)}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold">{a.customer_name}</p>
-                    <p className="text-sm text-text-muted">{a.services.join(", ")}</p>
-                  </div>
-                  <span className={`badge ${a.status === "arrived" ? "badge-ok" : "badge-info"}`}>{a.status === "arrived" ? "Khách đã đến" : "Đã đặt"}</span>
-                </li>
-              ))}
-            </ul>
+      <section aria-labelledby="my-cal-title" className="cal">
+        <div className="cal-bar">
+          <div className="cal-heading">
+            <h2 id="my-cal-title" className="panel-title">
+              {layout === "ngay" ? dayLabel(day) : `Tuần ${ddmm(week)}–${ddmm(days[6] ?? week)}`}
+            </h2>
+            {data && (
+              <p className="cal-summary" aria-live="polite">
+                {weekSummary(data.entries, layout === "ngay" ? day : null)}
+              </p>
+            )}
           </div>
-        ))
+        </div>
+        <div className="cal-bar">
+          <div className="cal-toolbar">
+            <div role="group" aria-label="Chọn ngày" className="cal-toolbar-group">
+              <button
+                type="button"
+                className="btn btn-secondary btn-icon"
+                aria-label={step === 7 ? "Tuần trước" : "Ngày trước"}
+                onClick={() => {
+                  shift(-step);
+                }}
+              >
+                <Icon name="chevron-left" />
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={day === today}
+                onClick={() => {
+                  go(today);
+                }}
+              >
+                Hôm nay
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-icon"
+                aria-label={step === 7 ? "Tuần sau" : "Ngày sau"}
+                onClick={() => {
+                  shift(step);
+                }}
+              >
+                <Icon name="chevron-right" />
+              </button>
+            </div>
+            <div role="group" aria-label="Kiểu xem" className="segmented">
+              {views.map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  aria-pressed={layout === k}
+                  onClick={() => {
+                    patch({ kieu: k });
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        {query.isPending ? (
+          <div aria-hidden="true" className="card cal-panel">
+            <div className="cal-skel-rows">
+              {Array.from({ length: 5 }, (_, j) => (
+                <div key={j} className="skeleton cal-skel-line" />
+              ))}
+            </div>
+          </div>
+        ) : query.isError && !query.data ? (
+          <ErrorState error={query.error} onRetry={() => void query.refetch()} />
+        ) : !query.data.linked || !data ? (
+          <EmptyState title="Tài khoản chưa gắn với hồ sơ nhân viên">
+            Nhờ chủ spa gắn tài khoản này vào hồ sơ của bạn để xem lịch hẹn và khách đã làm.
+          </EmptyState>
+        ) : (
+          <div className={query.isPlaceholderData ? "is-refreshing" : ""}>
+            <MyCalendarView data={data} layout={layout} day={day} days={days} onOpen={setOpenId} onDay={(d) => {
+              patch({ ngay: d === today ? "" : d, kieu: "ngay" });
+            }} />
+          </div>
+        )}
+        <p className="field-hint">Lịch do quầy đặt. Cần đổi giờ hay đổi khách, hãy báo quầy.</p>
+      </section>
+      {opened && (
+        <EntrySheet
+          e={opened}
+          onClose={() => {
+            setOpenId(null);
+          }}
+        />
       )}
     </section>
   );
 }
 
-function Served({ items, month }: { items: ServedVisit[]; month: string }) {
-  const sessions = items.reduce((n, v) => n + v.services.reduce((m, s) => m + s.qty, 0), 0);
+function MyCalendarView({
+  data,
+  layout,
+  day,
+  days,
+  onOpen,
+  onDay,
+}: {
+  data: MyCalendarData;
+  layout: Layout;
+  day: string;
+  days: string[];
+  onOpen: (id: string) => void;
+  onDay: (day: string) => void;
+}) {
+  const shownDays = layout === "ngay" ? [day] : days;
+  const views = data.entries.map(entryView);
+  const inRange = views.filter((v) => shownDays.includes(v.day));
+  if (inRange.length === 0) {
+    return (
+      <p className="card cal-empty">
+        <strong>Chưa có lịch hẹn hay lượt khách nào {layout === "ngay" ? (day === data.today ? "hôm nay" : "ngày này") : "tuần này"}.</strong>{" "}
+        Lịch quầy đặt cho bạn sẽ hiện ở đây.
+      </p>
+    );
+  }
+  const byId = new Map(data.entries.map((e) => [e.id, e]));
+  if (layout === "ds") return <WeekList data={data} days={days} views={inRange} onOpen={onOpen} />;
+  const columns: TimeColumn[] = shownDays.map((d) => ({
+    key: d,
+    head: layout === "ngay" ? <span>Lịch của tôi</span> : <DayHead day={d} onDay={onDay} />,
+    title: dayLabel(d),
+    day: d,
+    // Cancelled and missed bookings free their place; the list still shows them.
+    items: inRange.filter((v) => v.day === d && counts(v.phase)),
+  }));
   return (
-    <section className="card grid gap-3 p-4 sm:p-5" aria-labelledby="my-served">
-      <h2 id="my-served" className="panel-title">
-        Khách đã làm · {monthLabel(month)}
-      </h2>
-      {items.length === 0 ? (
-        <p className="empty-block">Chưa có lượt khách nào trong tháng này. Chọn tháng trước ở góc trên để xem lại.</p>
-      ) : (
-        <>
-          <p className="text-sm">
-            <strong>{items.length}</strong> lượt khách · <strong>{sessions}</strong> lần làm dịch vụ
-          </p>
-          {byDay(items).map(([day, list]) => (
-            <div key={day} className="grid gap-2">
-              <h3 className="text-sm font-semibold text-text-muted">{dayLabel(day)}</h3>
-              <ul className="work-list">
-                {list.map((v) => (
-                  <li key={v.visit_id} className="work-row">
-                    <span className="w-14 shrink-0 font-semibold tabular">{timeOf(v.check_in_at)}</span>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold">{v.customer_name}</p>
-                      <p className="text-sm text-text-muted">
-                        {v.services
-                          .map((s) => `${s.service_name}${s.qty > 1 ? ` ×${String(s.qty)}` : ""}${s.from_package ? " (gói)" : ""}`)
-                          .join(", ")}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </>
-      )}
-    </section>
+    <TimeGrid
+      opens={minutesOf(data.opens_at)}
+      closes={minutesOf(data.closes_at)}
+      slot={data.slot_minutes}
+      columns={columns}
+      colMin={layout === "ngay" ? 168 : 112}
+      label={layout === "ngay" ? `Lịch của tôi ngày ${dayLabel(day)}` : "Lịch của tôi trong tuần"}
+      tagOf={(v) => {
+        const e = byId.get(v.id);
+        return e ? tagOf(e) : null;
+      }}
+      onOpen={onOpen}
+    />
   );
 }
+
+/** The week as a list grouped by day (phones, and the "Danh sách" view). */
+function WeekList({ data, days, views, onOpen }: { data: MyCalendarData; days: string[]; views: EntryView[]; onOpen: (id: string) => void }) {
+  const byId = new Map(data.entries.map((e) => [e.id, e]));
+  return (
+    <div className="card cal-panel">
+      {days.map((d) => {
+        const list = views.filter((v) => v.day === d);
+        if (list.length === 0) return null;
+        return (
+          <section key={d} aria-label={dayLabel(d)} className="my-cal-day">
+            <h3 className="my-cal-day-title">{d === data.today ? `Hôm nay · ${dayLabel(d)}` : dayLabel(d)}</h3>
+            <ul className="cal-list">
+              {list.map((v) => {
+                const e = byId.get(v.id);
+                const tag = e ? tagOf(e) : null;
+                return (
+                  <li key={v.id}>
+                    <button
+                      type="button"
+                      className="cal-row"
+                      data-closed={counts(v.phase) ? undefined : ""}
+                      onClick={() => {
+                        onOpen(v.id);
+                      }}
+                    >
+                      <span className="cal-row-time">{range(v.start, v.minutes)}</span>
+                      <span className="cal-row-main">
+                        <strong>{v.customerName}</strong>
+                        <span>
+                          {servicesText(v.services)}
+                          {tag ? ` · ${tag}` : ""}
+                        </span>
+                      </span>
+                      <span className={`badge ${PHASE_BADGE[v.phase]}`}>{PHASE_LABEL[v.phase]}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Read-only detail of one block: when, who, what. No actions but "Đóng". */
+function EntrySheet({ e, onClose }: { e: MyCalendarEntry; onClose: () => void }) {
+  const v = entryView(e);
+  const tag = tagOf(e);
+  return (
+    <BottomSheet
+      open
+      onClose={onClose}
+      title={`${range(v.start, v.minutes)} · ${e.customer_name}`}
+      description={
+        <>
+          {dayLabel(e.business_date)}
+          {tag ? ` · ${tag}` : ""} · <span className={`badge ${PHASE_BADGE[v.phase]}`}>{PHASE_LABEL[v.phase]}</span>
+        </>
+      }
+      footer={
+        <button type="button" className="btn btn-secondary" onClick={onClose}>
+          Đóng
+        </button>
+      }
+    >
+      <dl className="detail-grid">
+        <dt>Khách</dt>
+        <dd>{e.customer_name}</dd>
+        <dt>Dịch vụ</dt>
+        <dd>
+          <ul className="grid gap-1">
+            {e.services.map((s, i) => (
+              <li key={`${s.service_name}-${String(i)}`}>
+                {s.service_name}
+                <span className="text-text-muted"> · {s.from_package ? "Buổi liệu trình" : e.kind === "visit" ? "Dịch vụ lẻ" : s.category_name}</span>
+              </li>
+            ))}
+          </ul>
+        </dd>
+        <dt>Thời lượng</dt>
+        <dd>{e.duration_min} phút</dd>
+        <dt>{e.kind === "visit" ? "Lượt" : "Lịch hẹn"}</dt>
+        <dd>{e.kind === "visit" ? (e.walk_in ? "Khách vãng lai, không đặt lịch" : "Lượt khách bạn làm cùng") : "Quầy đặt cho bạn"}</dd>
+      </dl>
+    </BottomSheet>
+  );
+}
+

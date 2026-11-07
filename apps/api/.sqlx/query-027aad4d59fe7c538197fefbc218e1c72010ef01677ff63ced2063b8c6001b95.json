@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT kind AS \"kind!\", description AS \"description!\", customer_name AS \"customer_name!\",\n                  qty AS \"qty!\", value AS \"value!\"\n           FROM (\n             SELECT 'package'::text AS kind, cp.name_snapshot AS description,\n                    app.customer_label(c.full_name) AS customer_name, 1::bigint AS qty,\n                    cp.sold_price AS value, s.created_at AS at\n             FROM app.sale s\n             JOIN app.customer_package cp ON cp.tenant_id = s.tenant_id AND cp.sale_id = s.id\n             JOIN app.customer c ON c.tenant_id = cp.tenant_id AND c.id = cp.customer_id\n             WHERE s.tenant_id = $1 AND s.status = 'open' AND s.closer_staff_id = $2\n               AND s.business_date = $3\n             UNION ALL\n             SELECT 'package_refund', cp.name_snapshot, app.customer_label(c.full_name), 1::bigint,\n                    -r.amount, r.created_at\n             FROM app.refund r\n             JOIN app.customer_package cp ON cp.tenant_id = r.tenant_id AND cp.id = r.customer_package_id\n             JOIN app.sale s ON s.tenant_id = cp.tenant_id AND s.id = cp.sale_id\n             JOIN app.customer c ON c.tenant_id = cp.tenant_id AND c.id = cp.customer_id\n             WHERE r.tenant_id = $1 AND s.status = 'open' AND s.closer_staff_id = $2\n               AND r.business_date = $3\n             UNION ALL\n             SELECT 'service', vl.service_name_snapshot, app.customer_label(c.full_name),\n                    vl.qty::bigint, vl.line_value, v.check_in_at\n             FROM app.visit_line vl\n             JOIN app.visit v ON v.tenant_id = vl.tenant_id AND v.id = vl.visit_id\n             JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id\n             WHERE vl.tenant_id = $1 AND v.status = 'completed' AND vl.referrer_staff_id = $2\n               AND v.business_date = $3\n           ) u\n           ORDER BY at, kind, description",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kind!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "description!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "customer_name!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "qty!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "value!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "027aad4d59fe7c538197fefbc218e1c72010ef01677ff63ced2063b8c6001b95"
+}

@@ -712,85 +712,100 @@ pub async fn insert_payslip(
     Ok(())
 }
 
-// ------------------------------------------------------------------------- self-service work
+// -------------------------------------------------------------------------- self-service day
 
-pub struct ServedLineRow {
+pub struct DayLineRow {
     pub visit_id: Uuid,
-    pub business_date: NaiveDate,
     pub check_in_at: DateTime<Utc>,
     pub customer_name: String,
     pub service_name: String,
-    pub qty: i32,
     pub source: String,
+    pub qty: i64,
+    pub value: i64,
+    pub full_value: i64,
 }
 
-/// The lines `staff` performed in completed visits of the period, newest visit first. Only the
-/// allowlisted columns of `work::ServedVisit` are selected.
-pub async fn served_lines(
+/// The lines `staff` performed in completed visits of one business day, earliest visit first.
+/// Only the allowlisted columns of `day::MyDayVisit` are selected (no phone, note or ids).
+pub async fn day_lines(
     tx: &mut TenantTx,
     staff: Uuid,
-    from: NaiveDate,
-    to: NaiveDate,
-) -> Result<Vec<ServedLineRow>, AppError> {
+    day: NaiveDate,
+) -> Result<Vec<DayLineRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
-        ServedLineRow,
-        r#"SELECT v.id AS visit_id, v.business_date, v.check_in_at,
+        DayLineRow,
+        r#"SELECT v.id AS visit_id, v.check_in_at,
                   app.customer_label(c.full_name) AS "customer_name!",
-                  vl.service_name_snapshot AS service_name, vl.qty, vl.source
+                  vl.service_name_snapshot AS service_name, vl.source,
+                  vl.qty::bigint AS "qty!", vl.line_value AS value,
+                  (vl.qty::bigint * vl.unit_price)::bigint AS "full_value!"
            FROM app.visit v
            JOIN app.visit_line vl ON vl.tenant_id = v.tenant_id AND vl.visit_id = v.id
            JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id
            WHERE v.tenant_id = $1 AND vl.staff_id = $2 AND v.status = 'completed'
-             AND v.business_date BETWEEN $3 AND $4
-           ORDER BY v.check_in_at DESC, v.id, vl.position"#,
+             AND v.business_date = $3
+           ORDER BY v.check_in_at, v.id, vl.position"#,
         tenant,
         staff,
-        from,
-        to
+        day
     )
     .fetch_all(tx.conn())
     .await?)
 }
 
-pub struct UpcomingRow {
-    pub id: Uuid,
-    pub business_date: NaiveDate,
-    pub starts_at: DateTime<Utc>,
-    pub ends_at: DateTime<Utc>,
-    pub status: String,
+pub struct DayUpsellRow {
+    pub kind: String,
+    pub description: String,
     pub customer_name: String,
-    pub services: Vec<String>,
+    pub qty: i64,
+    pub value: i64,
 }
 
-/// Open appointments (booked / arrived) assigned to `staff` between two business dates.
-pub async fn upcoming_appointments(
+/// Upsell credits of `staff` on one business day, item by item, with the rules of
+/// [`upsell_lines`]: packages they closed (price paid), refunds of packages they closed
+/// (negative), one-off services they recommended (`line_value`).
+pub async fn day_upsell(
     tx: &mut TenantTx,
     staff: Uuid,
-    from: NaiveDate,
-    to: NaiveDate,
-) -> Result<Vec<UpcomingRow>, AppError> {
+    day: NaiveDate,
+) -> Result<Vec<DayUpsellRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
-        UpcomingRow,
-        r#"SELECT a.id, a.business_date, a.starts_at, a.ends_at, a.status,
-                  CASE WHEN c.id IS NULL THEN COALESCE(a.guest_name, '')
-                       ELSE app.customer_label(c.full_name) END AS "customer_name!",
-
-                  COALESCE(
-                    (SELECT array_agg(s.service_name_snapshot ORDER BY s.position)
-                     FROM app.appointment_service s
-                     WHERE s.tenant_id = a.tenant_id AND s.appointment_id = a.id),
-                    '{}'::text[]) AS "services!"
-           FROM app.appointment a
-           LEFT JOIN app.customer c ON c.tenant_id = a.tenant_id AND c.id = a.customer_id
-           WHERE a.tenant_id = $1 AND a.staff_id = $2 AND a.status IN ('booked', 'arrived')
-             AND a.business_date BETWEEN $3 AND $4
-           ORDER BY a.starts_at, a.id"#,
+        DayUpsellRow,
+        r#"SELECT kind AS "kind!", description AS "description!", customer_name AS "customer_name!",
+                  qty AS "qty!", value AS "value!"
+           FROM (
+             SELECT 'package'::text AS kind, cp.name_snapshot AS description,
+                    app.customer_label(c.full_name) AS customer_name, 1::bigint AS qty,
+                    cp.sold_price AS value, s.created_at AS at
+             FROM app.sale s
+             JOIN app.customer_package cp ON cp.tenant_id = s.tenant_id AND cp.sale_id = s.id
+             JOIN app.customer c ON c.tenant_id = cp.tenant_id AND c.id = cp.customer_id
+             WHERE s.tenant_id = $1 AND s.status = 'open' AND s.closer_staff_id = $2
+               AND s.business_date = $3
+             UNION ALL
+             SELECT 'package_refund', cp.name_snapshot, app.customer_label(c.full_name), 1::bigint,
+                    -r.amount, r.created_at
+             FROM app.refund r
+             JOIN app.customer_package cp ON cp.tenant_id = r.tenant_id AND cp.id = r.customer_package_id
+             JOIN app.sale s ON s.tenant_id = cp.tenant_id AND s.id = cp.sale_id
+             JOIN app.customer c ON c.tenant_id = cp.tenant_id AND c.id = cp.customer_id
+             WHERE r.tenant_id = $1 AND s.status = 'open' AND s.closer_staff_id = $2
+               AND r.business_date = $3
+             UNION ALL
+             SELECT 'service', vl.service_name_snapshot, app.customer_label(c.full_name),
+                    vl.qty::bigint, vl.line_value, v.check_in_at
+             FROM app.visit_line vl
+             JOIN app.visit v ON v.tenant_id = vl.tenant_id AND v.id = vl.visit_id
+             JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id
+             WHERE vl.tenant_id = $1 AND v.status = 'completed' AND vl.referrer_staff_id = $2
+               AND v.business_date = $3
+           ) u
+           ORDER BY at, kind, description"#,
         tenant,
         staff,
-        from,
-        to
+        day
     )
     .fetch_all(tx.conn())
     .await?)

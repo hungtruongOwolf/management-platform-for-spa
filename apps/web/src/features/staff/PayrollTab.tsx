@@ -7,7 +7,9 @@ import { messageFor } from "../../lib/errors";
 import { EmptyState, ErrorState, RowsSkeleton } from "../reports/ui";
 import { closePayroll, invalidateStaff, payrollQuery, rulesQuery, saveRules, type Payslip, type PayrollRules } from "./api";
 import { FLAG_LABEL, LEVEL_SHORT, monthLabel, percentOfBp } from "./labels";
+import { serviceWork, upsellWork } from "./payslipWork";
 import { vnd } from "./ui";
+import { WorkTable } from "./WorkTable";
 
 /**
  * Bảng lương (payroll.read): one row per person — base, deductions, commission, bonuses, net — and
@@ -162,36 +164,24 @@ function Row({ label, value, strong = false, hint }: { label: string; value: str
   );
 }
 
-const LINE_COLUMNS: Column<Payslip["commission_lines"][number]>[] = [
-  { id: "service", header: "Dịch vụ", card: "title", cell: (l) => l.service_name },
-  { id: "source", header: "Loại", card: "subtitle", cell: (l) => (l.source === "package" ? "Buổi liệu trình" : "Dịch vụ lẻ") },
-  { id: "qty", header: "Lượt", numeric: true, cell: (l) => l.qty },
-  { id: "value", header: "Giá trị", numeric: true, card: "aside", cell: (l) => vnd(l.value) },
-];
-
-/** A package refunded this month takes its refund back from whoever closed it (ADR-0010). */
-const UPSELL_KIND: Record<string, string> = {
-  package: "Gói liệu trình",
-  package_refund: "Hoàn tiền gói (trừ lại)",
-  service: "Dịch vụ lẻ",
-};
-
-/** Upsell credits (EM 2026-11-06, Q-U3): packages closed and one-off services recommended. */
-const UPSELL_COLUMNS: Column<NonNullable<Payslip["upsell_lines"]>[number]>[] = [
-  { id: "item", header: "Gói / dịch vụ", card: "title", cell: (l) => l.description },
-  { id: "kind", header: "Loại", card: "subtitle", cell: (l) => UPSELL_KIND[l.kind] ?? "Dịch vụ lẻ" },
-  { id: "qty", header: "Số lượng", numeric: true, cell: (l) => l.qty },
-  { id: "value", header: "Giá trị", numeric: true, card: "aside", cell: (l) => vnd(l.value) },
-];
-
 /** Phiếu lương: every line the sheet had, so a technician can check each amount. */
-export function PayslipView({ slip, closed }: { slip: Payslip; closed: boolean }) {
+export function PayslipView({ slip, closed, showFlags = true }: { slip: Payslip; closed: boolean; showFlags?: boolean }) {
   const a = slip.attendance;
   return (
-    <div className="grid gap-4">
+    <div className="payslip-view grid gap-4">
       <p className="text-sm text-text-muted">
         {closed ? "Đã chốt" : "Tạm tính, còn thay đổi đến khi chốt"} · {monthLabel(slip.month)} · {slip.employed_days}/{slip.days_in_month} ngày làm việc
       </p>
+      {/* What still needs someone, up front with the status (EM 2026-11-07: not alone at the end). */}
+      {showFlags && slip.flags.length > 0 && (
+        <ul className="flex flex-wrap gap-2" aria-label="Cần xem">
+          {slip.flags.map((f) => (
+            <li key={f} className="badge badge-warn">
+              {FLAG_LABEL[f]}
+            </li>
+          ))}
+        </ul>
+      )}
       <dl className="payslip">
         <Row label="Lương cứng" value={vnd(slip.base_salary)} hint={`Lương 1 ngày ${vnd(slip.day_rate)} = lương cứng ÷ (${String(slip.days_in_month)} − ${String(slip.free_leave_days)})`} />
         <Row
@@ -227,39 +217,20 @@ export function PayslipView({ slip, closed }: { slip: Payslip; closed: boolean }
           hint={slip.evaluation_level ? `Đánh giá ${LEVEL_SHORT[slip.evaluation_level]}; mức thấp hơn giữa ngày nghỉ và đánh giá` : undefined}
         />
       </dl>
-      {slip.commission_lines.length > 0 && (
-        <section className="grid gap-2" aria-label="Dịch vụ đã làm">
-          <h3 className="text-sm font-semibold">Dịch vụ đã làm</h3>
-          <div className="payslip overflow-hidden">
-            <ResponsiveTable
-              caption="Dịch vụ đã làm"
-              rows={slip.commission_lines}
-              rowKey={(l) => `${l.service_name}-${l.source}`}
-              columns={LINE_COLUMNS}
-            />
-          </div>
-        </section>
-      )}
-      {(slip.upsell_lines ?? []).length > 0 && (
-        <section className="grid gap-2" aria-label="Giới thiệu / chốt được">
-          <h3 className="text-sm font-semibold">Giới thiệu / chốt được</h3>
-          <div className="payslip overflow-hidden">
-            <ResponsiveTable
-              caption="Giới thiệu / chốt được"
-              rows={slip.upsell_lines ?? []}
-              rowKey={(l) => `${l.kind}-${l.description}`}
-              columns={UPSELL_COLUMNS}
-            />
-          </div>
-        </section>
-      )}
-      {slip.flags.length > 0 && (
-        <ul className="grid gap-1 text-sm text-text-muted">
-          {slip.flags.map((f) => (
-            <li key={f}>⚠ {FLAG_LABEL[f]}</li>
-          ))}
-        </ul>
-      )}
+      <WorkTable
+        title="Dịch vụ đã làm"
+        table={serviceWork(slip)}
+        itemHeader="Dịch vụ"
+        qtyHeader="Lượt"
+        commissionLabel="Thành hoa hồng làm"
+      />
+      <WorkTable
+        title="Giới thiệu / chốt được"
+        table={upsellWork(slip)}
+        itemHeader="Gói / dịch vụ"
+        qtyHeader="Số lượng"
+        commissionLabel="Thành hoa hồng giới thiệu / chốt"
+      />
     </div>
   );
 }

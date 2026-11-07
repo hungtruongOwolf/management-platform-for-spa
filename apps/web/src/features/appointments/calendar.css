@@ -186,6 +186,24 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A week of days as columns: today's header reads as the place to look (the now line is below). */
+.cal-head.is-today {
+  box-shadow: inset 0 -2px 0 var(--primary);
+  color: var(--primary);
+}
+.cal-head-day {
+  display: grid;
+  justify-items: center;
+  line-height: 16px;
+}
+.cal-head-day small {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+.cal-head.is-today .cal-head-day small {
+  color: inherit;
+}
 .cal-corner {
   left: 0;
   z-index: 8;
@@ -257,7 +275,11 @@
   outline: none;
   box-shadow: inset 0 0 0 3px var(--focus);
 }
-.cal-cell:not(:disabled):hover {
+/* A read-only grid (a technician's own calendar): lines only, nothing to click under the cards. */
+.cal-cell.is-static {
+  cursor: default;
+}
+button.cal-cell:not(:disabled):hover {
   background: var(--primary-soft);
 }
 /* Past time: a quiet wash, not a block of colour (it is most of a late afternoon's grid). */

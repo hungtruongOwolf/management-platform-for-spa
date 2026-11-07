@@ -10,8 +10,8 @@ use super::dto::{
     AppointmentArrive, AppointmentComplete, AppointmentCompleted, AppointmentCreate,
     AppointmentDto, AppointmentGroupCreate, AppointmentGroupDto, AppointmentServiceDto,
     AppointmentSettingsDto, AppointmentSettingsUpdate, AppointmentStatusDto, AppointmentUpdate,
-    CalendarDto, CalendarQuery, CalendarTechnician, CalendarVisitDto, GuestCreate, PaymentStateDto,
-    PhaseDto,
+    CalendarDto, CalendarQuery, CalendarTechnician, CalendarVisitDto, GuestCreate, MyCalendar,
+    MyCalendarData, MyCalendarEntry, MyEntryKind, MyEntryService, PaymentStateDto, PhaseDto,
 };
 use super::repo::{self, AppointmentInsert, AppointmentRow, Reschedule};
 use crate::dto::VisitCreate;
@@ -469,6 +469,120 @@ pub async fn calendar(
         max_per_slot: max_per_slot.and_then(|m| u32::try_from(m).ok()),
         appointments,
         visits,
+    })
+}
+
+/// `GET /me/appointments?from=&to=` (`staff.read_own`): the signed-in technician's own calendar
+/// (EM 2026-11-07, "như Google Calendar"): bookings assigned to them and visits they served, as
+/// blocks at their real length. Read-only. The person is the session's staff link, never a
+/// request parameter (non-negotiable 3); entries carry no phone, note, money or ids of others.
+pub async fn my_calendar(
+    pool: &PgPool,
+    actor: &Actor,
+    query: &CalendarQuery,
+) -> Result<MyCalendar, AppError> {
+    actor.require(Permission::StaffReadOwn)?;
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let Some(staff) = org::profile::own_staff_id(&mut tx, actor).await? else {
+        tx.commit().await?;
+        return Ok(MyCalendar {
+            linked: false,
+            data: None,
+        });
+    };
+    let profile = kernel::tenant::profile(&mut tx).await?;
+    let (hours, slot) = repo::calendar_settings(&mut tx).await?;
+    let settings = CalendarSettings::from_settings(hours.as_ref(), slot.as_ref());
+    let today = profile.business_date.as_naive();
+    let from = query.from.unwrap_or(today);
+    let to = query.to.unwrap_or(from);
+    if to < from {
+        return Err(invalid("to", "before_from"));
+    }
+    if (to - from).num_days() >= domain::MAX_RANGE_DAYS {
+        return Err(invalid("to", "range_too_long"));
+    }
+    let booked = repo::my_appointments(&mut tx, staff, from, to).await?;
+    let ids: Vec<Uuid> = booked.iter().map(|a| a.id).collect();
+    let mut booked_services: HashMap<Uuid, Vec<MyEntryService>> = HashMap::new();
+    for s in repo::services_of(&mut tx, &ids).await? {
+        booked_services
+            .entry(s.appointment_id)
+            .or_default()
+            .push(MyEntryService {
+                service_name: s.service_name,
+                category_name: s.category_name,
+                from_package: false,
+            });
+    }
+    let served = repo::my_visits(&mut tx, staff, from, to).await?;
+    let ids: Vec<Uuid> = served.iter().map(|v| v.id).collect();
+    let mut lines: HashMap<Uuid, Vec<repo::MyVisitLineRow>> = HashMap::new();
+    for l in repo::my_visit_lines(&mut tx, staff, &ids).await? {
+        lines.entry(l.visit_id).or_default().push(l);
+    }
+    tx.commit().await?;
+
+    let now = Utc::now();
+    let mut entries = Vec::with_capacity(booked.len() + served.len());
+    for a in booked {
+        let status = parse_status(&a.status)?;
+        let duration_min = (a.ends_at - a.starts_at).num_minutes();
+        let visit = a
+            .visit_check_in_at
+            .map(|at| (at, a.visit_status.as_deref() == Some("voided")));
+        entries.push(MyCalendarEntry {
+            phase: phase_dto(domain::appointment_phase(status, visit, duration_min, now)),
+            services: booked_services.remove(&a.id).unwrap_or_default(),
+            id: a.id,
+            kind: MyEntryKind::Appointment,
+            business_date: a.business_date,
+            starts_at: a.starts_at,
+            ends_at: a.ends_at,
+            duration_min,
+            customer_name: a.customer_name,
+            group_size: a.group_size,
+            walk_in: false,
+        });
+    }
+    for v in served {
+        let ls = lines.remove(&v.id).unwrap_or_default();
+        let durations: Vec<Option<i32>> = ls.iter().map(|l| l.duration_min).collect();
+        let minutes = domain::visit_minutes(&durations);
+        let ends_at = v.check_in_at + Duration::minutes(i64::from(minutes));
+        entries.push(MyCalendarEntry {
+            id: v.id,
+            kind: MyEntryKind::Visit,
+            business_date: v.business_date,
+            starts_at: v.check_in_at,
+            ends_at,
+            duration_min: i64::from(minutes),
+            phase: phase_dto(domain::served_phase(false, ends_at, now)),
+            customer_name: v.customer_name,
+            services: ls
+                .into_iter()
+                .map(|l| MyEntryService {
+                    from_package: l.source == "package",
+                    service_name: l.service_name,
+                    category_name: l.category_name,
+                })
+                .collect(),
+            group_size: None,
+            walk_in: v.walk_in,
+        });
+    }
+    entries.sort_by(|x, y| x.starts_at.cmp(&y.starts_at).then(x.id.cmp(&y.id)));
+    Ok(MyCalendar {
+        linked: true,
+        data: Some(MyCalendarData {
+            from,
+            to,
+            today,
+            opens_at: settings.open.format("%H:%M").to_string(),
+            closes_at: settings.close.format("%H:%M").to_string(),
+            slot_minutes: settings.slot_minutes,
+            entries,
+        }),
     })
 }
 

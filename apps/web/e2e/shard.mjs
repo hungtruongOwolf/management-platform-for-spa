@@ -21,6 +21,7 @@ const WEIGHTS = {
   "quay-upsell.spec.ts": 8,
   "sales.spec.ts": 3,
   "staff.spec.ts": 7,
+  "technician.spec.ts": 8,
   "voids.spec.ts": 12,
 };
 
