@@ -12,6 +12,7 @@
 use crate::adjustment::{self, Adjustment};
 use crate::attendance::{self, AttendanceDay};
 use crate::calc::mul_div_round;
+use crate::me::{self, OwnScope};
 use crate::month::Month;
 use crate::payroll;
 use crate::period;
@@ -19,7 +20,6 @@ use crate::repo::{self, DayLineRow, DayUpsellRow};
 use crate::review::{self, DailyReview};
 use crate::rules;
 use chrono::{DateTime, NaiveDate, Utc};
-use crate::me::{self, OwnScope};
 use kernel::crypto::FieldCipher;
 use kernel::{Actor, AppError, FieldError, TenantTx};
 use serde::Serialize;

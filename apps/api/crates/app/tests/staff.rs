@@ -620,7 +620,11 @@ async fn a_technician_sees_only_their_own_calendar(pool: PgPool) -> TestResult {
     // EM 2026-11-07 item 3: the session note of a visit A worked on, never the booking's note.
     assert_eq!(shared["note"], "Khách đau vai gáy");
     assert_eq!(entries[1]["note"], Value::Null, "A's own visit has no note");
-    assert_eq!(booked["note"], Value::Null, "a booking's own note is not a session note");
+    assert_eq!(
+        booked["note"],
+        Value::Null,
+        "a booking's own note is not a session note"
+    );
     // Allowlist: exactly these keys, nothing about money, phones, customer notes or ids.
     for e in &entries {
         assert_eq!(
@@ -670,7 +674,10 @@ async fn a_technician_sees_only_their_own_calendar(pool: PgPool) -> TestResult {
     assert_eq!(b_entries[0]["id"], json!(w.shared));
     assert_eq!(b_entries[0]["duration_min"], 60);
     assert_eq!(b_entries[1]["id"], json!(w.b_only));
-    assert_eq!(b_entries[0]["note"], "Khách đau vai gáy", "B worked on the shared visit too");
+    assert_eq!(
+        b_entries[0]["note"], "Khách đau vai gáy",
+        "B worked on the shared visit too"
+    );
     assert_eq!(b_entries[1]["note"], "Buổi riêng của Thu: đau lưng");
     assert_eq!(b_entries[2]["customer_name"], "Khách mới Yến");
     let b_text = b.body.to_string();
@@ -798,7 +805,10 @@ async fn a_technician_sees_their_own_day_in_detail(pool: PgPool) -> TestResult {
         keys(&visits[0]),
         ["check_in_at", "customer_name", "lines", "note", "visit_id"]
     );
-    assert_eq!(visits[0]["note"], "Khách đau vai gáy", "A worked on it: the session note");
+    assert_eq!(
+        visits[0]["note"], "Khách đau vai gáy",
+        "A worked on it: the session note"
+    );
     assert_eq!(visits[1]["note"], Value::Null);
     assert_eq!(
         d["upsell"],
@@ -2014,7 +2024,10 @@ async fn a_leaver_keeps_only_their_own_past_pay(pool: PgPool) -> TestResult {
         s.attend(&s.owner, s.lan, today(), "present").await.status,
         StatusCode::OK
     );
-    assert_eq!(s.get(&s.tech, "/me/appointments").await.status, StatusCode::OK);
+    assert_eq!(
+        s.get(&s.tech, "/me/appointments").await.status,
+        StatusCode::OK
+    );
     let ended = s.end(s.lan, today(), "Nghỉ sinh").await;
     assert_eq!(ended.status, StatusCode::OK, "{}", ended.body);
     assert_eq!(ended.body["login_linked"], true);
@@ -2026,21 +2039,36 @@ async fn a_leaver_keeps_only_their_own_past_pay(pool: PgPool) -> TestResult {
         let month = s.get(session, "/me/staff").await;
         assert_eq!(month.status, StatusCode::OK, "{}", month.body);
         assert_eq!(month.body["left_on"], json!(today()));
-        assert_eq!(month.body["data"]["month"], ym(today()), "defaults to the month they left");
+        assert_eq!(
+            month.body["data"]["month"],
+            ym(today()),
+            "defaults to the month they left"
+        );
         assert_eq!(month.body["data"]["attendance"]["staff_id"], json!(s.lan));
         assert_eq!(month.body["data"]["payslip"]["base_salary"], 5_000_000);
         let day = s.get(session, "/me/staff/day").await;
         assert_eq!(day.status, StatusCode::OK, "{}", day.body);
-        assert_eq!(day.body["data"]["date"], json!(today()), "defaults to their last day");
+        assert_eq!(
+            day.body["data"]["date"],
+            json!(today()),
+            "defaults to their last day"
+        );
         assert_eq!(day.body["data"]["attendance"]["status"], "present");
     }
     // No month after they left.
     let later = next_month_day();
-    let after = s.get(&s.tech, &format!("/me/staff?month={}", ym(later))).await;
+    let after = s
+        .get(&s.tech, &format!("/me/staff?month={}", ym(later)))
+        .await;
     assert_eq!(after.status, StatusCode::FORBIDDEN, "{}", after.body);
     assert_eq!(after.body["code"], "staff.not_employed_in_month");
     let after_day = s.get(&s.tech, &format!("/me/staff/day?date={later}")).await;
-    assert_eq!(after_day.status, StatusCode::FORBIDDEN, "{}", after_day.body);
+    assert_eq!(
+        after_day.status,
+        StatusCode::FORBIDDEN,
+        "{}",
+        after_day.body
+    );
     assert_eq!(after_day.body["code"], "staff.not_employed_in_month");
     // Every other screen is refused, whatever the role said.
     for path in [
@@ -2064,14 +2092,27 @@ async fn a_leaver_keeps_only_their_own_past_pay(pool: PgPool) -> TestResult {
     assert_eq!(back.status, StatusCode::OK, "{}", back.body);
     let perms = permissions(&s, &s.tech).await;
     assert!(perms.contains(&"staff.read_own".to_owned()), "{perms:?}");
-    assert!(!perms.contains(&"staff.read_own_past".to_owned()), "{perms:?}");
-    assert_eq!(s.get(&s.tech, "/me/appointments").await.status, StatusCode::OK);
+    assert!(
+        !perms.contains(&"staff.read_own_past".to_owned()),
+        "{perms:?}"
+    );
+    assert_eq!(
+        s.get(&s.tech, "/me/appointments").await.status,
+        StatusCode::OK
+    );
     let me = s.get(&s.tech, "/me/staff").await;
     assert_eq!(me.body.get("left_on"), None, "{}", me.body);
 
     // "Khóa tài khoản": the owner may lock the login outright when ending employment.
     const HUONG_PHONE: &str = "0912100555";
-    add_member(&s.h.owner, "vpyd", HUONG_PHONE, "KTV Hương", SystemRole::Technician).await?;
+    add_member(
+        &s.h.owner,
+        "vpyd",
+        HUONG_PHONE,
+        "KTV Hương",
+        SystemRole::Technician,
+    )
+    .await?;
     let huong = linked_profile(&s, HUONG_PHONE, "Ngô Hương").await?;
     let huong_session = session_for(&s.h, HUONG_PHONE).await;
     let p = s.profile(huong).await;

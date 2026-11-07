@@ -62,7 +62,7 @@ export function StaffPage() {
   if (!tab) {
     // A leaver (ADR-0014): their own months only; the server picks the month they left by
     // default and refuses the months they did not work in, so the picker lives with the data.
-    const former = mayOpen.formerStaff(me);
+    const former = can(me, "staff.read_own_past") && !can(me, "staff.read_own");
     return (
       <section className="grid content-start gap-5">
         <PageHeader title="Công và lương của tôi">

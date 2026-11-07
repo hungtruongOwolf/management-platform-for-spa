@@ -9,10 +9,10 @@ use super::domain::{self, CalendarSettings, Phase, SlotError, Status};
 use super::dto::{
     AppointmentArrive, AppointmentComplete, AppointmentCompleted, AppointmentCreate,
     AppointmentDto, AppointmentGroupCreate, AppointmentGroupDto, AppointmentGroupMove,
-    AppointmentGroupMoved, AppointmentServiceDto,
-    AppointmentSettingsDto, AppointmentSettingsUpdate, AppointmentStatusDto, AppointmentUpdate,
-    CalendarDto, CalendarQuery, CalendarTechnician, CalendarVisitDto, GuestCreate, MyCalendar,
-    MyCalendarData, MyCalendarEntry, MyEntryKind, MyEntryService, PaymentStateDto, PhaseDto,
+    AppointmentGroupMoved, AppointmentServiceDto, AppointmentSettingsDto,
+    AppointmentSettingsUpdate, AppointmentStatusDto, AppointmentUpdate, CalendarDto, CalendarQuery,
+    CalendarTechnician, CalendarVisitDto, GuestCreate, MyCalendar, MyCalendarData, MyCalendarEntry,
+    MyEntryKind, MyEntryService, PaymentStateDto, PhaseDto,
 };
 use super::repo::{self, AppointmentInsert, AppointmentRow, Reschedule};
 use crate::dto::VisitCreate;
@@ -1210,7 +1210,11 @@ pub async fn arrive(
 /// arrival): "Hoàn tác đã đến" for a mistaken "Chỉ báo đã đến". Only an arrived appointment of
 /// today without a visit; once completed it is closed (`409 appointment.closed`), and a past day
 /// follows the closed-day rule. Audited.
-pub async fn undo_arrival(pool: &PgPool, actor: &Actor, id: Uuid) -> Result<AppointmentDto, AppError> {
+pub async fn undo_arrival(
+    pool: &PgPool,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<AppointmentDto, AppError> {
     actor.require(Permission::AppointmentManage)?;
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let spa = spa(&mut tx).await?;
@@ -1235,8 +1239,10 @@ pub async fn undo_arrival(pool: &PgPool, actor: &Actor, id: Uuid) -> Result<Appo
         actor,
         "appointment.undo_arrival",
         id,
-        Some(json!({"status": "arrived", "arrived_at": current.arrived_at,
-                    "staff_id": current.staff_id})),
+        Some(
+            json!({"status": "arrived", "arrived_at": current.arrived_at,
+                    "staff_id": current.staff_id}),
+        ),
         json!({"status": "booked", "staff_id": current.staff_id}),
         None,
     )
@@ -1261,7 +1267,9 @@ fn in_member(member: Uuid, e: AppError) -> AppError {
         ),
         AppError::ConflictWith { code, .. }
         | AppError::Conflict { code }
-        | AppError::Unprocessable { code } => AppError::Validation(vec![FieldError::new(field, code)]),
+        | AppError::Unprocessable { code } => {
+            AppError::Validation(vec![FieldError::new(field, code)])
+        }
         other => other,
     }
 }

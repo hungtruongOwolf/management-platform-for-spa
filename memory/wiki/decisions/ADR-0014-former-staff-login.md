@@ -31,7 +31,7 @@ Chọn **C**.
 - `POST /staff/{id}/end` không còn khóa tài khoản; body có `lock_login` (mặc định `false`, checkbox "Khóa tài khoản") để chủ spa khóa hẳn (`membership.status = 'disabled'` như trước). Audit ghi `login_locked` / `login_former_staff`.
 - `POST /staff/{id}/rehire` giữ nguyên: đợt mới ⇒ `status = 'active'` ⇒ quyền của role trở lại ở request kế tiếp; mở khóa tài khoản nếu đã khóa.
 - Migration **0026**: mở lại các membership `disabled` của người đã nghỉ (trước đây chỉ `end` ghi `disabled`, nên đó là khóa theo quy tắc cũ chứ không phải lựa chọn).
-- Web: `mayOpen.myPay` (`staff.read_own` hoặc `staff.read_own_past`), `mayOpen.formerStaff`; nav tự rút còn Tổng quan, "Công và lương của tôi", Cài đặt; chọn tháng nằm cạnh dữ liệu (không qua tháng nghỉ việc).
+- Web: `mayOpen.myPay` (`staff.read_own` hoặc `staff.read_own_past`; người đã nghỉ = chỉ có `staff.read_own_past`, xét trong StaffPage để không thêm vào chunk khởi động); nav tự rút còn Tổng quan, "Công và lương của tôi", Cài đặt; chọn tháng nằm cạnh dữ liệu (không qua tháng nghỉ việc).
 
 ## Consequences
 - Positive: không có trạng thái thứ hai phải đồng bộ; test authz matrix có một lớp "former staff" chạy qua mọi route (`a_former_staff_member_reaches_only_their_past_pay`).

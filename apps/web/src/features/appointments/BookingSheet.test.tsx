@@ -550,7 +550,7 @@ describe("Đổi lịch một người trong nhóm (EM 2026-11-07 item 5c)", () 
   it("'Chỉ người này' moves only this booking", async () => {
     const user = userEvent.setup();
     const { fetchMock } = renderSheet(groupCal, { mode: "edit", appointment: HA });
-    fetchMock.mockImplementation((() => json({ ...HA, version: 2 })) as unknown as () => Promise<Response>);
+    fetchMock.mockImplementation(() => json({ ...HA, version: 2 }));
     await user.selectOptions(screen.getByLabelText("Giờ hẹn"), "720");
     await user.click(screen.getByRole("radio", { name: "Chỉ người này" }));
     await user.click(screen.getByRole("button", { name: "Lưu thay đổi" }));
@@ -565,11 +565,11 @@ describe("Đổi lịch một người trong nhóm (EM 2026-11-07 item 5c)", () 
   it("names the member a refused group move clashed on; nobody moved", async () => {
     const user = userEvent.setup();
     const { fetchMock } = renderSheet(groupCal, { mode: "edit", appointment: HA });
-    fetchMock.mockImplementation((() =>
+    fetchMock.mockImplementation(() =>
       json(
         { code: "validation_failed", errors: [{ field: "appointments.a2", code: "appointment.staff_busy" }] },
         422,
-      )) as unknown as () => Promise<Response>);
+      ));
     await user.selectOptions(screen.getByLabelText("Giờ hẹn"), "720");
     await user.click(screen.getByRole("button", { name: "Lưu thay đổi" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(

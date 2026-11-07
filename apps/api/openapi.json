@@ -625,6 +625,66 @@
         }
       }
     },
+    "/api/v1/appointments/{id}/move-group": {
+      "post": {
+        "tags": [
+          "appointments"
+        ],
+        "operationId": "move_group",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppointmentGroupMove"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentGroupMoved"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden / day.locked"
+          },
+          "404": {},
+          "409": {
+            "description": "appointment.closed, appointment.already_arrived ({id} is no longer booked)"
+          },
+          "412": {},
+          "422": {
+            "description": "appointment.not_in_group; validation_failed with errors[].field = appointments.<member id> and the member's refusal as code (appointment.staff_busy, appointment.customer_busy, appointment.in_the_past, appointment.outside_opening_hours, staff.inactive, …): nobody moved"
+          }
+        }
+      }
+    },
     "/api/v1/appointments/{id}/no-show": {
       "post": {
         "tags": [
@@ -672,6 +732,47 @@
           },
           "422": {
             "description": "reason required, appointment.not_started"
+          }
+        }
+      }
+    },
+    "/api/v1/appointments/{id}/undo-arrival": {
+      "post": {
+        "tags": [
+          "appointments"
+        ],
+        "operationId": "undo_arrival",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentDto"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden / day.locked"
+          },
+          "404": {},
+          "409": {
+            "description": "appointment.closed (done: a visit exists, or no-show / cancelled), appointment.not_arrived"
+          },
+          "422": {
+            "description": "appointment.not_today"
           }
         }
       }
@@ -2015,7 +2116,9 @@
             }
           },
           "401": {},
-          "403": {},
+          "403": {
+            "description": "auth.forbidden; staff.not_employed_in_month (a former staff member asked for a month they did not work in)"
+          },
           "422": {}
         }
       }
@@ -2050,7 +2153,9 @@
           },
           "400": {},
           "401": {},
-          "403": {},
+          "403": {
+            "description": "auth.forbidden; staff.not_employed_in_month (a former staff member, a day of a month they did not work in)"
+          },
           "422": {
             "description": "date invalid_date"
           }
@@ -4492,6 +4597,50 @@
           "group_id": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "AppointmentGroupMove": {
+        "type": "object",
+        "description": "Body of `POST /appointments/{id}/move-group` (If-Match of `{id}`): \"Đổi cả nhóm\".",
+        "required": [
+          "starts_at"
+        ],
+        "properties": {
+          "starts_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The new start of `{id}`; every other member still booked shifts by the same amount."
+          }
+        },
+        "additionalProperties": false
+      },
+      "AppointmentGroupMoved": {
+        "type": "object",
+        "description": "`POST /appointments/{id}/move-group` → 200.",
+        "required": [
+          "group_id",
+          "moved",
+          "not_moved"
+        ],
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "moved": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppointmentDto"
+            },
+            "description": "The members that moved (`{id}` included), earliest first."
+          },
+          "not_moved": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppointmentDto"
+            },
+            "description": "Members already arrived or done: left where they were."
           }
         }
       },
@@ -7464,7 +7613,7 @@
       },
       "MyCalendarEntry": {
         "type": "object",
-        "description": "One block of a technician's own calendar. An allowlist: times, phase, the customer's name and\nthe services — no phone, no note, no money, no customer or staff ids.",
+        "description": "One block of a technician's own calendar. An allowlist: times, phase, the customer's name, the\nservices and the session note of a visit they worked on — no phone, no booking or customer\nnote, no money, no customer or staff ids.",
         "required": [
           "id",
           "kind",
@@ -7507,6 +7656,13 @@
           },
           "kind": {
             "$ref": "#/components/schemas/MyEntryKind"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The session note of the visit (EM 2026-11-07 item 3), sent only when I performed one of\nits lines; `null` for a booking not yet done or a visit without a note."
           },
           "phase": {
             "$ref": "#/components/schemas/PhaseDto"
@@ -7722,6 +7878,13 @@
               "$ref": "#/components/schemas/MyDayLine"
             }
           },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The visit's session note (`null`: none written, or the caller is a former staff member).\nSent only because the person performed a line of this visit."
+          },
           "visit_id": {
             "type": "string",
             "format": "uuid"
@@ -7826,6 +7989,14 @@
                 "type": "null"
               }
             ]
+          },
+          "left_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Present only for a former staff member (ADR-0014): the last day they worked. Months they\ndid not work in are `403 staff.not_employed_in_month`; the default month is this day's."
           },
           "linked": {
             "type": "boolean",
@@ -10015,6 +10186,10 @@
             "type": "string",
             "format": "date",
             "description": "Last working day (≤ today)."
+          },
+          "lock_login": {
+            "type": "boolean",
+            "description": "`true` = also lock the linked login in this spa (\"Khóa tài khoản\"). Default `false`: the\nlogin stays, reaching only the person's own past attendance and payslips (ADR-0014)."
           },
           "reason": {
             "type": "string"

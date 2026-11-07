@@ -5,8 +5,8 @@
 use super::dto::{
     AppointmentArrive, AppointmentClose, AppointmentComplete, AppointmentCompleted,
     AppointmentCreate, AppointmentDto, AppointmentGroupCreate, AppointmentGroupDto,
-    AppointmentGroupMove, AppointmentGroupMoved, AppointmentSettingsDto, AppointmentSettingsUpdate, AppointmentUpdate, CalendarDto,
-    CalendarQuery, MyCalendar,
+    AppointmentGroupMove, AppointmentGroupMoved, AppointmentSettingsDto, AppointmentSettingsUpdate,
+    AppointmentUpdate, CalendarDto, CalendarQuery, MyCalendar,
 };
 use super::service::{self, Outcome};
 use axum::body::Bytes;

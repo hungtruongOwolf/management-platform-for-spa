@@ -16,8 +16,6 @@ export const mayOpen = {
   staff: (me: Me | null) => mayOpen.staffBooks(me) || mayOpen.myPay(me),
   /** "Công và lương của tôi": a working member, or a former one (ADR-0014, past months only). */
   myPay: (me: Me | null) => can(me, "staff.read_own") || can(me, "staff.read_own_past"),
-  /** A leaver whose login reaches only their own past pay (derived by the server, ADR-0014). */
-  formerStaff: (me: Me | null) => can(me, "staff.read_own_past") && !can(me, "staff.read_own"),
   myWork: (me: Me | null) => can(me, "staff.read_own"),
 };
 
