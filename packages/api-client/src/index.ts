@@ -103,6 +103,7 @@ export type TimelinePhase = Schemas["PhaseDto"];
 export type AppointmentGroupCreate = Schemas["AppointmentGroupCreate"];
 export type AppointmentGroup = Schemas["AppointmentGroupDto"];
 export type AppointmentGroupMoved = Schemas["AppointmentGroupMoved"];
+export type SaleCheckout = Schemas["SaleCheckoutDto"];
 export type GroupPersonCreate = Schemas["GroupPersonCreate"];
 export type AppointmentSettings = Schemas["AppointmentSettingsDto"];
 export type AppointmentSettingsUpdate = Schemas["AppointmentSettingsUpdate"];

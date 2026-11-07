@@ -4,9 +4,12 @@
 import type {
   PaymentCreate,
   Sale,
+  SaleCheckout,
   VisitPackageSaleCreate,
 } from "@vpyd/api-client";
+import { api } from "../../lib/api";
 import { createSale } from "../sales/api";
+import { boughtForOtherText } from "../sales/saleText";
 import { type PackageSaleDraft, packageDiscount } from "./api";
 
 /** "Khách tự chọn" in the closer picker: nobody is credited (Q-U2). */
@@ -61,4 +64,55 @@ export async function sellPackageOnly(
     },
     idempotencyKey,
   );
+}
+
+/**
+ * A cart of several packages and no service (EM 2026-11-07 item 4, "chị Lan"): one save, one
+ * payment step (`POST /sales/checkout`). Each package is its own sale with its own plan,
+ * beneficiary, discount and closer; the server splits the payment over them and saves all or none.
+ */
+export async function sellPackagesOnly(
+  customerId: string,
+  sales: PackageSaleDraft[],
+  payments: PaymentCreate[],
+  idempotencyKey: string,
+): Promise<SaleCheckout> {
+  const packages = packageSalesBody(sales).map((p) => ({
+    package_plan_id: p.package_plan_id,
+    closer_staff_id: p.closer_staff_id ?? null,
+    gift_note: p.gift_note ?? "",
+    discount: p.discount ?? null,
+    beneficiary_customer_id: p.beneficiary_customer_id ?? null,
+  }));
+  return (await api("/sales/checkout", {
+    method: "POST",
+    body: { customer_id: customerId, package_sales: packages, payments },
+    headers: { "Idempotency-Key": idempotencyKey },
+  })) as SaleCheckout;
+}
+
+/**
+ * Saves a cart of packages without services and says what was sold: one package → `POST /sales`
+ * (as before), several → `POST /sales/checkout` (one save, one payment). Returns the toast text,
+ * one sentence per package (a package bought for someone else names both people).
+ */
+export async function sellCart(
+  payer: { id: string; full_name: string },
+  drafts: PackageSaleDraft[],
+  payments: PaymentCreate[],
+  idempotencyKey: string,
+): Promise<string> {
+  const [only] = drafts;
+  const sold =
+    drafts.length === 1 && only
+      ? [await sellPackageOnly(payer.id, only, payments, idempotencyKey)]
+      : (await sellPackagesOnly(payer.id, drafts, payments, idempotencyKey)).sales;
+  return drafts
+    .map((d, i) => {
+      const name = (sold[i]?.lines ?? []).map((l) => l.description).join(", ");
+      return d.beneficiary
+        ? boughtForOtherText(name, d.beneficiary.full_name, payer.full_name)
+        : `Đã bán ${name} · ${payer.full_name}`;
+    })
+    .join(" ");
 }

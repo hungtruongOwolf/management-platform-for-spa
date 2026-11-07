@@ -4,8 +4,9 @@
 
 use crate::domain::{self, DiscountAuthority, DiscountError, PaymentMethod};
 use crate::dto::{
-    DiscountCreate, PaymentCreate, PaymentDto, PaymentKindDto, PaymentMethodDto, SaleCreate,
-    SaleDto, SaleLineDto, SaleLineTypeDto, SaleStatusDto,
+    DiscountCreate, PaymentCreate, PaymentDto, PaymentKindDto, PaymentMethodDto,
+    SaleCheckoutCreate, SaleCheckoutDto, SaleCreate, SaleDto, SaleLineDto, SaleLineTypeDto,
+    SaleStatusDto,
 };
 use crate::repo::{self, PackageLineInsert, PaymentInsert, SaleInsert, ServiceLineInsert};
 use chrono::{DateTime, Months, NaiveDate, Utc};
@@ -296,6 +297,133 @@ pub async fn create_sale_as_of(
         .await?
         .ok_or_else(|| AppError::Internal("sale vanished".into()))?;
     let body = serde_json::to_value(&dto).map_err(|e| AppError::Internal(e.to_string()))?;
+    idempotency::complete(&mut tx, actor, key, 201, &body).await?;
+    tx.commit().await?;
+    Ok((201, body))
+}
+
+/// Most packages one checkout sells: the same cap as `package_sales[]` of a visit.
+pub const MAX_CHECKOUT_PACKAGES: usize = 3;
+
+/// Field errors of package `k` of a checkout name `package_sales[k].…` (as in a visit).
+fn in_checkout_package(k: usize, e: AppError) -> AppError {
+    match e {
+        AppError::Validation(errors) => AppError::Validation(
+            errors
+                .into_iter()
+                .map(|f| FieldError::new(format!("package_sales[{k}].{}", f.field), f.code))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
+/// Shape rules of `POST /sales/checkout`: 1–3 packages, each like a package of a visit.
+fn parse_checkout(
+    input: &SaleCheckoutCreate,
+) -> Result<(Vec<PackageOrder>, Vec<Payment>), AppError> {
+    let mut errors = Vec::new();
+    if input.package_sales.is_empty() || input.package_sales.len() > MAX_CHECKOUT_PACKAGES {
+        errors.push(FieldError::new("package_sales", "count_out_of_range"));
+    }
+    let orders = input
+        .package_sales
+        .iter()
+        .enumerate()
+        .map(|(k, p)| {
+            let prefix = format!("package_sales[{k}]");
+            let (discount, discount_reason) = parse_package_discount(
+                p.discount.as_ref(),
+                &format!("{prefix}.discount"),
+                &mut errors,
+            );
+            PackageOrder {
+                customer_id: input.customer_id,
+                beneficiary_customer_id: p.beneficiary_customer_id,
+                closer_staff_id: p.closer_staff_id,
+                lines: vec![PackageLine {
+                    plan_id: p.package_plan_id,
+                    gift_note: parse_gift_note(
+                        p.gift_note.as_ref(),
+                        &format!("{prefix}.gift_note"),
+                        &mut errors,
+                    ),
+                }],
+                discount,
+                discount_reason,
+            }
+        })
+        .collect();
+    let payments = parse_payments(&input.payments, &mut errors);
+    if errors.is_empty() {
+        Ok((orders, payments))
+    } else {
+        Err(AppError::Validation(errors))
+    }
+}
+
+/// `POST /sales/checkout` (`package.sell`; `payment.collect` when money is taken; Idempotency-Key):
+/// a Quầy cart of packages only (EM 2026-11-07 item 4: chị Lan buys two packages, one for herself and one
+/// for her mother → one save, one payment step). Every package is priced and checked like a package of a
+/// visit (its own beneficiary, closer and discount, the manager cap per sale), the payments are
+/// split over the sales by [`allocate_payments`] (cash first, in cart order), and every sale is
+/// written in **one transaction**: one refusal saves nothing. Each sale keeps its own closer, so
+/// commission attribution (ADR-0010) stays per sale.
+pub async fn create_checkout(
+    pool: &PgPool,
+    actor: &Actor,
+    key: Uuid,
+    request_hash: [u8; 32],
+    input: &SaleCheckoutCreate,
+) -> Result<(u16, Value), AppError> {
+    actor.require(Permission::PackageSell)?;
+    let (orders, payments) = parse_checkout(input)?;
+    if !payments.is_empty() {
+        actor.require(Permission::PaymentCollect)?;
+    }
+
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    if let Claim::Replay { status, body } =
+        idempotency::claim(&mut tx, actor, key, request_hash).await?
+    {
+        tx.commit().await?;
+        return Ok((status, body));
+    }
+    let tenant = kernel::tenant::profile(&mut tx).await?;
+    let today = tenant.business_date.as_naive();
+    let mut priced = Vec::with_capacity(orders.len());
+    for (k, order) in orders.iter().enumerate() {
+        priced.push(
+            price_package_sale(&mut tx, actor, order, tenant.manager_discount_max_pct)
+                .await
+                .map_err(|e| in_checkout_package(k, e))?,
+        );
+    }
+    let dues: Vec<Money> = priced.iter().map(PricedPackageSale::total).collect();
+    let split = allocate_payments(&dues, &payments).ok_or(AppError::Unprocessable {
+        code: "payment.amount_mismatch",
+    })?;
+    let at = SaleAt {
+        business_date: today,
+        branch_id: tenant.branch.as_uuid(),
+        visit_id: None,
+    };
+    let mut sales = Vec::with_capacity(priced.len());
+    let mut total = Money::ZERO;
+    for (sale, paid) in priced.iter().zip(&split) {
+        let sold = record_package_sale(&mut tx, actor, sale, at, paid).await?;
+        total = Money::sum([total, sold.total]).map_err(money_err)?;
+        sales.push(
+            load(&mut tx, sold.sale_id, today)
+                .await?
+                .ok_or_else(|| AppError::Internal("sale vanished".into()))?,
+        );
+    }
+    let body = serde_json::to_value(SaleCheckoutDto {
+        sales,
+        total: total.as_i64(),
+    })
+    .map_err(|e| AppError::Internal(e.to_string()))?;
     idempotency::complete(&mut tx, actor, key, 201, &body).await?;
     tx.commit().await?;
     Ok((201, body))

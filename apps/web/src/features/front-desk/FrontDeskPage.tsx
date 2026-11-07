@@ -30,7 +30,6 @@ import { customerQuery } from "../customers/api";
 import { CustomerSearch } from "../customers/CustomerSearch";
 import { completeAppointment } from "../appointments/complete";
 import { activeStaffQuery, exceedsCap, parseAmount } from "../sales/api";
-import { boughtForOtherText } from "../sales/saleText";
 import {
   type CartLine,
   type DiscountDraft,
@@ -436,34 +435,22 @@ export function FrontDeskPage() {
       );
     },
   });
-  // A cart with only a package and no service is a plain package sale (spec §10.4.1, US10).
+  // A cart with packages and no service is a plain package sale (spec §10.4.1, US10): one package
+  // → `POST /sales`; several (EM 2026-11-07 item 4) → `POST /sales/checkout`, one save and one
+  // payment for all of them.
   const packageOnly = useMutation({
-    mutationFn: async (sale: PackageSaleDraft) => {
+    mutationFn: async (drafts: PackageSaleDraft[]) => {
       if (!customer) throw new Error("no customer");
       const m = await loadCartPackages();
-      return m.sellPackageOnly(
-        customer.id,
-        sale,
-        paymentsFor(payable, mode, cashPart),
-        idempotencyKey,
-      );
+      return m.sellCart(customer, drafts, paymentsFor(payable, mode, cashPart), idempotencyKey);
     },
-    onSuccess: (sale, draft) => {
+    onSuccess: (soldText, drafts) => {
       void queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
       void invalidateManagementViews(queryClient, customer?.id);
-      if (draft.beneficiary)
-        void invalidateManagementViews(queryClient, draft.beneficiary.id);
+      for (const d of drafts)
+        if (d.beneficiary) void invalidateManagementViews(queryClient, d.beneficiary.id);
       forgetDraft(customer?.id);
-      const sold = sale.lines.map((l) => l.description).join(", ");
-      showToast(
-        draft.beneficiary
-          ? boughtForOtherText(
-              sold,
-              draft.beneficiary.full_name,
-              customer?.full_name ?? "",
-            )
-          : `Đã bán ${sold} · ${customer?.full_name ?? ""}`,
-      );
+      showToast(soldText);
       resetVisit();
     },
     onError: (error) => {
@@ -572,7 +559,7 @@ export function FrontDeskPage() {
         );
         if (problem) showToast(problem, true);
         else if (lines.length > 0) record(m.packageSalesBody(sales));
-        else if (sales[0]) packageOnly.mutate(sales[0]);
+        else packageOnly.mutate(sales);
       });
       return;
     }

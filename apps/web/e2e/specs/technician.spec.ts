@@ -173,10 +173,19 @@ test.describe("KTV: màn của tôi", () => {
     await page.keyboard.press("Escape");
     await expect(detail).toBeHidden();
 
-    // Today's visit sits on today's column (it may share the week with tomorrow).
-    await page.goto("/khach-cua-toi?kieu=ngay");
-    await expect(page.getByRole("group", { name: /Lịch của tôi ngày/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: new RegExp(`${CUSTOMER}, (Đang làm|Xong), Vãng lai`) })).toBeVisible();
+    // Today's visit sits on today's column (it may share the week with tomorrow). The grid draws
+    // the opening hours only: a run before opening (after midnight in Vietnam) records the visit
+    // now, outside the grid, so it is checked in the list of the week instead.
+    const beforeOpening = new Date(Date.now() + 7 * 3_600_000).getUTCHours() < 9;
+    if (beforeOpening) {
+      await page.goto("/khach-cua-toi?kieu=ds");
+      await expect(page.getByRole("button", { name: new RegExp(CUSTOMER) }).first()).toBeVisible();
+      await expect(page.getByText("Vãng lai").first()).toBeVisible();
+    } else {
+      await page.goto("/khach-cua-toi?kieu=ngay");
+      await expect(page.getByRole("group", { name: /Lịch của tôi ngày/ })).toBeVisible();
+      await expect(page.getByRole("button", { name: new RegExp(`${CUSTOMER}, (Đang làm|Xong), Vãng lai`) })).toBeVisible();
+    }
     await expectAccessible(page, "my-calendar-day");
     await expect(page.getByText(phone)).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText("+84");

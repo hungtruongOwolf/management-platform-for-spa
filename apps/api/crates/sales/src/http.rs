@@ -1,6 +1,6 @@
-//! `POST /sales`, `GET /sales/{id}`, `POST /sales/{id}/void`.
+//! `POST /sales`, `POST /sales/checkout`, `GET /sales/{id}`, `POST /sales/{id}/void`.
 
-use crate::dto::{SaleCreate, SaleDto, VoidCreate};
+use crate::dto::{SaleCheckoutCreate, SaleCheckoutDto, SaleCreate, SaleDto, VoidCreate};
 use crate::{paper, service, voids};
 use axum::body::Bytes;
 use axum::extract::{FromRef, Path, State};
@@ -27,6 +27,7 @@ where
 {
     Router::new()
         .route("/sales", post(create_sale))
+        .route("/sales/checkout", post(create_checkout))
         .route("/sales/{id}", get(read_sale))
         .route("/sales/{id}/void", post(void_sale))
         // Lives here (not in `packages`) because it books the paper money as sales.
@@ -104,6 +105,35 @@ pub async fn create_sale(
         &user.actor,
         key,
         hash_route("POST", "/sales", None, &canonical),
+        &input,
+    )
+    .await?;
+    let status = StatusCode::from_u16(status).unwrap_or(StatusCode::CREATED);
+    Ok(no_store(status, body))
+}
+
+#[utoipa::path(post, path = "/api/v1/sales/checkout", tag = "sales", request_body = SaleCheckoutCreate,
+    params(("Idempotency-Key" = Uuid, Header, description = "One key per checkout attempt; a retry with the same key replays the first response")),
+    responses(
+        (status = 201, body = SaleCheckoutDto, description = "one sale per package, in request order; every one or none was created"),
+        (status = 400, description = "idempotency.key_required / key_invalid"),
+        (status = 401), (status = 403, description = "auth.forbidden / discount.limit_exceeded"),
+        (status = 404, description = "customer, beneficiary or plan not in this spa"),
+        (status = 422, description = "validation_failed (package_sales[k].…, package_sales count_out_of_range), payment.amount_mismatch, discount.reason_required, customer.name_required, staff.inactive, idempotency.key_reuse_mismatch")))]
+pub async fn create_checkout(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    IdempotencyKey(key): IdempotencyKey,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    let value: Value = serde_json::from_slice(&body).map_err(|_| invalid_body())?;
+    let canonical = serde_json::to_vec(&value).map_err(|e| AppError::Internal(e.to_string()))?;
+    let input: SaleCheckoutCreate = serde_json::from_value(value).map_err(|_| invalid_body())?;
+    let (status, body) = service::create_checkout(
+        &pool,
+        &user.actor,
+        key,
+        hash_route("POST", "/sales/checkout", None, &canonical),
         &input,
     )
     .await?;
