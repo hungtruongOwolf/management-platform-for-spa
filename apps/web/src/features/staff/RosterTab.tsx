@@ -316,7 +316,9 @@ function AccountSection({ profile: p }: { profile: StaffProfile }) {
           {choice ? "Gắn tài khoản" : "Bỏ gắn"}
         </button>
       </div>
-      {p.status === "left" && linked && <p className="text-sm text-text-muted">Tài khoản đang bị khóa vì nhân viên đã nghỉ việc.</p>}
+      {p.status === "left" && linked && (
+        <p className="text-sm text-text-muted">Đã nghỉ việc: tài khoản chỉ còn xem ngày công và phiếu lương các tháng đã làm (trừ khi đã khóa khi cho nghỉ).</p>
+      )}
       {save.isError && (
         <p role="alert" className="text-sm text-danger">
           {fieldMessage(save.error, "user_id") ?? messageFor(save.error)}
@@ -574,8 +576,9 @@ function EndSheet({ profile: p, onClose, onBack }: { profile: StaffProfile; onCl
   const today = spaToday();
   const [on, setOn] = useState(today);
   const [reason, setReason] = useState("");
+  const [lockLogin, setLockLogin] = useState(false);
   const save = useMutation({
-    mutationFn: () => endEmployment(p.id, p.version, on, reason.trim()),
+    mutationFn: () => endEmployment(p.id, p.version, on, reason.trim(), lockLogin),
     onSuccess: async () => {
       await invalidateStaff(queryClient);
       onBack();
@@ -610,8 +613,26 @@ function EndSheet({ profile: p, onClose, onBack }: { profile: StaffProfile; onCl
         <ul className="grid gap-1 text-sm">
           <li>Từ sau ngày này, {p.full_name} không còn trong danh sách chọn KTV, đặt lịch, sổ hằng ngày và đánh giá các tháng sau.</li>
           <li>Lịch sử chấm công, lượt khách, hoa hồng và phiếu lương giữ nguyên. Có thể nhận lại làm sau.</li>
-          {p.login_linked && <li>Tài khoản đăng nhập của {p.full_name} sẽ bị khóa ở spa này.</li>}
+          {p.login_linked && (
+            <li>
+              {lockLogin
+                ? `Tài khoản đăng nhập của ${p.full_name} sẽ bị khóa ở spa này.`
+                : `${p.full_name} vẫn đăng nhập được, nhưng chỉ xem ngày công và phiếu lương của các tháng đã làm.`}
+            </li>
+          )}
         </ul>
+        {p.login_linked && (
+          <label className="choice">
+            <input
+              type="checkbox"
+              checked={lockLogin}
+              onChange={(e) => {
+                setLockLogin(e.target.checked);
+              }}
+            />
+            Khóa tài khoản (không cho đăng nhập nữa)
+          </label>
+        )}
         <DateField label="Ngày làm cuối cùng" value={on} max={today} onChange={setOn} invalid={Boolean(dateError)} />
         {dateError && <p className="text-sm text-danger">{dateError}</p>}
         <label className="filter-field">
@@ -675,7 +696,7 @@ function RehireSheet({ profile: p, onClose, onBack }: { profile: StaffProfile; o
         }}
       >
         <p className="text-sm">
-          Mở một đợt làm việc mới; các đợt trước giữ nguyên.{p.login_linked ? " Tài khoản đăng nhập được mở lại." : ""}
+          Mở một đợt làm việc mới; các đợt trước giữ nguyên.{p.login_linked ? " Tài khoản đăng nhập được mở lại đầy đủ quyền." : ""}
         </p>
         <DateField label="Ngày vào làm lại" value={on} min={earliest} onChange={setOn} invalid={Boolean(dateError)} />
         {dateError && <p className="text-sm text-danger">{dateError}</p>}

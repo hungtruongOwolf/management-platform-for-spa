@@ -95,6 +95,10 @@ sources: [architecture/system.md, product/specs/front-desk-and-packages.md]
 | Gửi lại lệnh chốt / thưởng | `Idempotency-Key` (replay giống hệt, khác body → 422) | `a_closed_month…` (replay) |
 | Quy tắc lương độc hại (số âm, key lạ) | `PayrollRules::validate`, `deny_unknown_fields` | `rules_and_attendance_drive_deductions` |
 | Lộ lương qua cache trình duyệt/proxy | `Cache-Control: no-store` mọi response hr/org-profile | `salary_is_only…` (header) |
+| Người đã nghỉ (vẫn đăng nhập, ADR-0014) dùng quyền role cũ: xem khách, Quầy, lịch | quyền suy ra mỗi request từ `staff.status = 'left'` → chỉ `staff.read_own_past`; deny by default mọi route khác; session cũ đổi quyền ngay | `authz_matrix.rs::a_former_staff_member_reaches_only_their_past_pay`, `staff.rs::a_leaver_keeps_only_their_own_past_pay` |
+| Người đã nghỉ xem tháng sau khi nghỉ (dữ liệu sau ngày nghỉ) | `GET /me/staff`/`day` kiểm tháng có trong đợt làm việc → `403 staff.not_employed_in_month` | `a_leaver_keeps_only_their_own_past_pay` |
+| Gắn tài khoản chủ spa vào hồ sơ đã nghỉ để khóa chủ spa | `effective_permissions` không bao giờ hạ quyền người có `staff.manage` | `the_owners_login_is_never_downgraded` |
+| KTV đọc ghi chú buổi (có thể có thông tin sức khỏe) của lượt người khác làm | `note` chỉ khi `visit_line.staff_id = own_staff_id` (SQL), allowlist key | `a_technician_sees_only_their_own_calendar`, `…_own_day_in_detail` (test âm) |
 Không có Critical/High. Còn mở: quản lý thấy số tiền thưởng/phạt mình ghi (Q-S3); chủ spa gắn nhầm tài khoản → người đó thấy phiếu lương hồ sơ đó (có audit).
 
 ## Nhật ký ghi chú (`GET /notes`, secure review 2026-11-07, [spec §10](../product/specs/management-views.md))

@@ -13,7 +13,9 @@ export const mayOpen = {
   /** Keeps the staff books (attendance, reviews, payroll, profiles). */
   staffBooks: (me: Me | null) =>
     ["attendance.record", "evaluation.record", "payroll.read", "staff.manage"].some((p) => can(me, p)),
-  staff: (me: Me | null) => mayOpen.staffBooks(me) || can(me, "staff.read_own"),
+  staff: (me: Me | null) => mayOpen.staffBooks(me) || mayOpen.myPay(me),
+  /** "Công và lương của tôi": a working member, or a former one (ADR-0014, past months only). */
+  myPay: (me: Me | null) => can(me, "staff.read_own") || can(me, "staff.read_own_past"),
   myWork: (me: Me | null) => can(me, "staff.read_own"),
 };
 

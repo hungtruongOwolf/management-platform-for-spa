@@ -22,7 +22,7 @@ import {
 import { Icon } from "../../app/Icon";
 import { DateField } from "../../components/DateField";
 import { TimeField } from "../../components/TimeField";
-import { messageFor } from "../../lib/errors";
+import { addMessages, messageFor } from "../../lib/errors";
 import { serviceLabel } from "../../lib/names";
 import { categoriesQuery, servicesQuery } from "../catalog/api";
 import { customerQuery } from "../customers/api";
@@ -36,6 +36,15 @@ import {
   priceFor,
   timeOf,
 } from "./api";
+
+// The service-time refusals only this chunk's time field leads to: kept off the startup bundle.
+addMessages(
+  {
+    "visit.check_in_in_future": "Giờ làm không được ở tương lai.",
+    "visit.check_in_too_old": "Chỉ nhập bù được trong vòng 1 năm.",
+  },
+  {},
+);
 
 const CustomerForm = lazy(() =>
   import("../customers/CustomerForm").then((m) => ({

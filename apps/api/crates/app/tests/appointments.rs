@@ -1762,3 +1762,239 @@ async fn companions_are_added_and_edited_on_an_existing_booking(pool: PgPool) ->
     }
     Ok(())
 }
+
+/// Whether a JSON timestamp is the instant `rfc3339`.
+fn is_at(v: &Value, rfc3339: &str) -> bool {
+    let parse = |s: &str| chrono::DateTime::parse_from_rfc3339(s).ok();
+    let got = v.as_str().and_then(parse);
+    got.is_some() && got == parse(rfc3339)
+}
+
+/// EM 2026-11-07 item 5a: "Hoàn tác đã đến" puts a mistaken arrival back to booked (audited, the
+/// serving technician stays); refused for a booking that has not arrived, and once the visit is
+/// recorded (closed). Mutation-checked: dropping the status check in `undo_arrival` turns this red.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_mistaken_arrival_is_undone(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    s.open_all_day().await?;
+    let booked = s.book_ha(&s.manager, &at(0, "01:00"), Some(&s.lan)).await;
+    assert_eq!(booked.status, StatusCode::CREATED, "{}", booked.body);
+    let aid = id_of(&booked);
+    let undo = |who: String| {
+        let app = s.h.app.clone();
+        let path = format!("/appointments/{aid}/undo-arrival");
+        async move { call(&app, "POST", &path, Some(&who), None).await }
+    };
+    let not_yet = undo(s.manager.clone()).await;
+    assert_eq!(
+        code(&not_yet),
+        (StatusCode::CONFLICT, Some("appointment.not_arrived"))
+    );
+    let arrived = s
+        .post(
+            &s.manager,
+            &format!("/appointments/{aid}/arrive"),
+            json!({"staff_id": s.tuan}),
+        )
+        .await;
+    assert_eq!(arrived.status, StatusCode::OK, "{}", arrived.body);
+    let back = undo(s.manager.clone()).await;
+    assert_eq!(back.status, StatusCode::OK, "{}", back.body);
+    assert_eq!(back.body["status"], "booked");
+    assert_eq!(back.body["arrived_at"], Value::Null);
+    assert_eq!(
+        back.body["staff_id"],
+        json!(s.tuan),
+        "the serving technician stays"
+    );
+    assert_eq!(
+        back.body["version"],
+        arrived.body["version"].as_i64().unwrap_or(0) + 1
+    );
+    let audited: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM app.audit_log WHERE action = 'appointment.undo_arrival' AND entity_id = $1::uuid",
+    )
+    .bind(&aid)
+    .fetch_one(&s.h.owner)
+    .await?;
+    assert_eq!(audited, 1);
+
+    // Arrive again and record the visit: the appointment is closed, nothing to undo.
+    let again = s
+        .post(
+            &s.manager,
+            &format!("/appointments/{aid}/arrive"),
+            json!({"staff_id": s.tuan}),
+        )
+        .await;
+    assert_eq!(again.status, StatusCode::OK, "{}", again.body);
+    let done = s
+        .post(
+            &s.manager,
+            &format!("/appointments/{aid}/complete"),
+            json!({"lines": [{"service_id": s.dai_thong_lac, "source": "one_off", "staff_id": s.tuan}],
+                   "payments": [{"method": "cash", "amount": 349_000}]}),
+        )
+        .await;
+    assert_eq!(done.status, StatusCode::OK, "{}", done.body);
+    let closed = undo(s.owner.clone()).await;
+    assert_eq!(
+        code(&closed),
+        (StatusCode::CONFLICT, Some("appointment.closed"))
+    );
+    Ok(())
+}
+
+/// EM 2026-11-07 item 5c: "Đổi cả nhóm" shifts every member still booked by the same amount in
+/// one transaction — exact lengths and technicians kept — or moves nobody, naming the member
+/// that clashed; members already arrived stay put and are reported. Mutation-checked: moving
+/// only `{id}` (skipping the other members) turns this red.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_group_moves_together_or_not_at_all(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    s.open_all_day().await?;
+    let group = s
+        .post(
+            &s.manager,
+            "/appointments/group",
+            json!({"starts_at": at(1, "10:00"), "people": [
+                {"customer_id": s.ha, "service_ids": [s.dai_thong_lac], "staff_id": s.lan},
+                {"customer_id": s.duc, "service_ids": [s.shampoo], "staff_id": s.tuan,
+                 "starts_at": at(1, "10:30")},
+            ]}),
+        )
+        .await;
+    assert_eq!(group.status, StatusCode::CREATED, "{}", group.body);
+    let ha = group.body["appointments"][0].clone();
+    let move_group = |a: &Value, version: i64, starts_at: String| {
+        let path = format!(
+            "/appointments/{}/move-group",
+            a["id"].as_str().unwrap_or_default()
+        );
+        let app = s.h.app.clone();
+        let who = s.manager.clone();
+        async move {
+            let tag = format!("\"{version}\"");
+            call_with_headers(
+                &app,
+                "POST",
+                &path,
+                Some(&who),
+                Some(json!({"starts_at": starts_at})),
+                &[("if-match", tag.as_str())],
+            )
+            .await
+        }
+    };
+    let v = |a: &Value| a["version"].as_i64().unwrap_or_default();
+
+    // Move Hà to 14:00: Đức follows by the same 4 hours, both keep their length and technician.
+    let moved = move_group(&ha, v(&ha), at(1, "14:00")).await;
+    assert_eq!(moved.status, StatusCode::OK, "{}", moved.body);
+    let list = moved.body["moved"].as_array().cloned().unwrap_or_default();
+    assert_eq!(list.len(), 2, "{}", moved.body);
+    assert_eq!(moved.body["not_moved"], json!([]));
+    let (ha, duc) = (list[0].clone(), list[1].clone());
+    assert!(is_at(&ha["starts_at"], &at(1, "14:00")), "{ha}");
+    assert!(is_at(&duc["starts_at"], &at(1, "14:30")), "{duc}");
+    assert_eq!(ha["duration_min"], 90);
+    assert_eq!(duc["staff_id"], json!(s.tuan));
+
+    // Tuấn is booked at 16:30 tomorrow: moving the group to 16:00 puts Đức on him. Nobody moves.
+    let other = s
+        .book_person(
+            json!({"guest": {"full_name": "Khách khác", "phone": "0905999000"}}),
+            json!({"service_ids": [s.shampoo], "staff_id": s.tuan, "starts_at": at(1, "16:30")}),
+        )
+        .await;
+    assert_eq!(other.status, StatusCode::CREATED, "{}", other.body);
+    let clash = move_group(&ha, v(&ha), at(1, "16:00")).await;
+    assert_eq!(
+        clash.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{}",
+        clash.body
+    );
+    assert_eq!(
+        clash.body["errors"],
+        json!([{"field": format!("appointments.{}", duc["id"].as_str().unwrap_or_default()),
+                "code": "appointment.staff_busy"}])
+    );
+    let after = call(
+        &s.h.app,
+        "GET",
+        &format!("/appointments/{}", ha["id"].as_str().unwrap_or_default()),
+        Some(&s.manager),
+        None,
+    )
+    .await;
+    assert!(
+        is_at(&after.body["starts_at"], &at(1, "14:00")),
+        "all or nothing"
+    );
+    assert_eq!(after.body["version"], ha["version"]);
+
+    // No past day; a stale version is refused.
+    let past = move_group(&ha, v(&ha), at(-1, "14:00")).await;
+    assert_eq!(
+        past.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{}",
+        past.body
+    );
+    assert_eq!(past.body["errors"][0]["code"], "appointment.in_the_past");
+    let stale = move_group(&ha, v(&ha) - 1, at(1, "15:00")).await;
+    assert_eq!(stale.status, StatusCode::PRECONDITION_FAILED);
+
+    // Today: Đức has arrived, so only Hà moves and Đức is reported.
+    let today = s
+        .post(
+            &s.manager,
+            "/appointments/group",
+            json!({"starts_at": at(0, "01:00"), "people": [
+                {"customer_id": s.ha, "service_ids": [s.shampoo]},
+                {"customer_id": s.duc, "service_ids": [s.shampoo]},
+            ]}),
+        )
+        .await;
+    assert_eq!(today.status, StatusCode::CREATED, "{}", today.body);
+    let t_ha = today.body["appointments"][0].clone();
+    let t_duc = today.body["appointments"][1].clone();
+    let arrived = s
+        .post(
+            &s.manager,
+            &format!(
+                "/appointments/{}/arrive",
+                t_duc["id"].as_str().unwrap_or_default()
+            ),
+            json!({"staff_id": s.tuan}),
+        )
+        .await;
+    assert_eq!(arrived.status, StatusCode::OK, "{}", arrived.body);
+    let partly = move_group(&t_ha, v(&t_ha), at(0, "02:00")).await;
+    assert_eq!(partly.status, StatusCode::OK, "{}", partly.body);
+    assert_eq!(partly.body["moved"].as_array().map(Vec::len), Some(1));
+    assert_eq!(partly.body["moved"][0]["id"], t_ha["id"]);
+    assert_eq!(partly.body["not_moved"][0]["id"], t_duc["id"]);
+    assert!(is_at(
+        &partly.body["not_moved"][0]["starts_at"],
+        &at(0, "01:00")
+    ));
+    // Moving from an arrived member is refused; a booking alone has no group.
+    let from_arrived = move_group(&arrived.body, v(&arrived.body), at(0, "03:00")).await;
+    assert_eq!(
+        code(&from_arrived),
+        (StatusCode::CONFLICT, Some("appointment.already_arrived"))
+    );
+    let alone = s.book_ha(&s.manager, &at(2, "10:00"), None).await;
+    assert_eq!(alone.status, StatusCode::CREATED, "{}", alone.body);
+    let lonely = move_group(&alone.body, v(&alone.body), at(2, "11:00")).await;
+    assert_eq!(
+        code(&lonely),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("appointment.not_in_group")
+        )
+    );
+    Ok(())
+}

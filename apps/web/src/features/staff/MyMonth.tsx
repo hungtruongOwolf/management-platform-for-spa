@@ -5,7 +5,8 @@ import { myMonthQuery, type AttendanceDay, type MyStaff } from "./api";
 import { FLAG_LABEL, LEVEL_SHORT, STATUS_CODE, STATUS_LABEL, daysOf } from "./labels";
 import { MyDaySheet } from "./MyDaySheet";
 import { PayslipView } from "./PayrollTab";
-import { ClosedBanner, dayLabel, vnd } from "./ui";
+import { ApiError } from "../../lib/api";
+import { ClosedBanner, MonthPicker, dayLabel, vnd } from "./ui";
 
 type MonthData = NonNullable<MyStaff["data"]>;
 
@@ -205,11 +206,47 @@ function Summary({ data }: { data: MonthData }) {
  * the signed-in person's own data (`GET /me/staff`, `GET /me/staff/day`): the server picks the
  * person from the session; nothing here can ask for someone else.
  */
-export function MyMonth({ month, day, onDay }: { month: string; day: string; onDay: (date: string) => void }) {
+export function MyMonth({
+  month,
+  day,
+  onDay,
+  former = false,
+  onMonth,
+}: {
+  month: string;
+  day: string;
+  onDay: (date: string) => void;
+  /** A leaver (ADR-0014): `month` "" = the month they left (the server's default). */
+  former?: boolean;
+  onMonth?: (month: string) => void;
+}) {
   const query = useQuery(myMonthQuery(month));
   const today = spaToday();
   if (query.isPending) return <RowsSkeleton rows={5} />;
-  if (query.isError) return <ErrorState error={query.error} onRetry={() => void query.refetch()} />;
+  if (query.isError) {
+    if (query.error instanceof ApiError && query.error.code === "staff.not_employed_in_month")
+      return (
+        <EmptyState
+          title="Tháng này bạn không làm ở spa"
+          action={
+            onMonth && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  onMonth("");
+                }}
+              >
+                Về tháng nghỉ việc
+              </button>
+            )
+          }
+        >
+          Chỉ xem được ngày công và phiếu lương của các tháng bạn đã làm.
+        </EmptyState>
+      );
+    return <ErrorState error={query.error} onRetry={() => void query.refetch()} />;
+  }
   const data = query.data.data;
   if (!query.data.linked || !data) {
     return (
@@ -221,8 +258,25 @@ export function MyMonth({ month, day, onDay }: { month: string; day: string; onD
   const t = data.attendance.totals;
   const compliments = data.reviews.reduce((n, r) => n + r.compliments, 0);
   const complaints = data.reviews.reduce((n, r) => n + r.complaints, 0);
+  const leftOn = query.data.left_on;
   return (
     <div className="my-month grid content-start gap-6">
+      {former && leftOn && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p role="status" className="note">
+            Bạn đã nghỉ việc từ {dayLabel(leftOn)}. Tài khoản chỉ còn xem ngày công và phiếu lương của các tháng đã làm.
+          </p>
+          {onMonth && (
+            <MonthPicker
+              month={data.month}
+              current={leftOn.slice(0, 7)}
+              onChange={(m) => {
+                onMonth(m === leftOn.slice(0, 7) ? "" : m);
+              }}
+            />
+          )}
+        </div>
+      )}
       {data.closed && <ClosedBanner />}
       <Summary data={data} />
       <section className="card grid gap-4 p-4 sm:p-5" aria-labelledby="my-attendance">

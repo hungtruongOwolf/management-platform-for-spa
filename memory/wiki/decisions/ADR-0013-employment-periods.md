@@ -27,6 +27,9 @@ Chọn **B**.
 - Nghỉ việc (`POST /staff/{id}/end`, chủ spa): ngày làm cuối ≤ hôm nay, ≥ ngày vào đợt, có lý do; từ chối nếu còn chấm công / lượt khách sau ngày đó (`422 has_later_records`) hoặc còn lịch hẹn mở gán cho người đó sau ngày đó (`409 staff.has_upcoming_bookings`). Tài khoản đăng nhập đã gắn bị **khóa** ở spa này (`membership.status = 'disabled'`); hồ sơ gắn tài khoản chủ spa thì phải bỏ gắn trước; không tự cho mình nghỉ.
 - Nhận lại làm (`POST /staff/{id}/rehire`): đợt mới bắt đầu sau ngày nghỉ của đợt trước; mở lại tài khoản đã gắn.
 
+## Update 2026-11-07 (Q-S6)
+Nghỉ việc **không còn khóa** tài khoản đã gắn: [ADR-0014](ADR-0014-former-staff-login.md) — tài khoản chỉ còn `staff.read_own_past` (suy ra từ đợt làm việc), chủ spa có thể khóa hẳn bằng `lock_login`. Migration 0026 mở lại các tài khoản đã bị khóa theo quy tắc cũ.
+
 ## Consequences
 - Positive: lịch sử đầy đủ cho báo cáo và phiếu lương cũ; người đã nghỉ tự ra khỏi mọi picker (lọc `status`) và mọi tháng sau (lọc theo đợt); thâm niên tính từ ngày thật.
 - Negative / accepted trade-offs: sửa ngày kết thúc của một đợt đã đóng là không được (trigger) — ghi nhầm thì nhận lại làm rồi cho nghỉ đúng ngày, hoặc sửa tay bằng migration dữ liệu. Ngày vào của đợt hiện tại vẫn sửa được (`PUT /staff/{id}`).

@@ -3,6 +3,7 @@ import type {
   AppointmentCreate,
   AppointmentGroup,
   AppointmentGroupCreate,
+  AppointmentGroupMoved,
   AppointmentService,
   AppointmentSettings,
   AppointmentStatus,
@@ -28,6 +29,9 @@ addMessages(
     "appointment.already_arrived": "Khách đã được đánh dấu là đã đến.",
     "appointment.not_started":
       "Chưa tới giờ hẹn, chưa đánh dấu không đến được.",
+    "appointment.not_arrived":
+      "Lịch hẹn này chưa báo đã đến (có thể vừa được hoàn tác ở máy khác).",
+    "appointment.not_in_group": "Lịch hẹn này không thuộc nhóm nào.",
   },
   {
     not_on_slot: "Giờ hẹn phải đúng ô 15 phút (ví dụ 10:00, 10:15).",
@@ -102,6 +106,45 @@ export async function arriveAppointment(
     method: "POST",
     body: { staff_id: staffId },
   })) as Appointment;
+}
+
+/** "Hoàn tác đã đến": a mistaken arrival goes back to booked (today, no visit yet). */
+export async function undoArrival(id: string): Promise<Appointment> {
+  return (await api(`/appointments/${id}/undo-arrival`, { method: "POST" })) as Appointment;
+}
+
+/**
+ * "Đổi cả nhóm": `a` moves to `startsAt` and every other member still booked shifts by the same
+ * amount, all or none. A refusal names the member: `422` with `errors[].field =
+ * "appointments.<id>"` and the member's code (see [groupMoveRefusal]).
+ */
+export async function moveGroup(a: Appointment, startsAt: string): Promise<AppointmentGroupMoved> {
+  return (await api(`/appointments/${a.id}/move-group`, {
+    method: "POST",
+    body: { starts_at: startsAt },
+    headers: ifMatch(a.version),
+  })) as AppointmentGroupMoved;
+}
+
+const MEMBER_REFUSAL: Record<string, string> = {
+  "appointment.staff_busy": "KTV của người này đã có lịch khác vào giờ mới",
+  "appointment.customer_busy": "người này đã có lịch hẹn khác vào giờ mới",
+  "appointment.in_the_past": "giờ mới rơi vào ngày đã qua",
+  "appointment.outside_opening_hours": "giờ mới ra ngoài giờ mở cửa",
+  "staff.inactive": "KTV của người này đã nghỉ việc",
+};
+
+/** "Chị Hà: KTV của người này đã có lịch khác vào giờ mới." for a refused whole-group move. */
+export function groupMoveRefusal(
+  errors: { field: string; code: string }[],
+  nameOf: (id: string) => string,
+): string | undefined {
+  const parts = errors.flatMap((e) => {
+    const m = /^appointments\.([^.]+)/.exec(e.field);
+    if (!m?.[1]) return [];
+    return [`${nameOf(m[1])}: ${MEMBER_REFUSAL[e.code] ?? "giờ mới không hợp lệ"}.`];
+  });
+  return parts.length ? `Không đổi được cả nhóm. ${parts.join(" ")}` : undefined;
 }
 
 export async function closeAppointment(
