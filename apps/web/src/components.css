@@ -2354,8 +2354,19 @@ tr.ledger-day > :is(td, th) {
   font-weight: 500;
 }
 /* "Khách mới" is as tall as the large search field beside it. */
-.search-row > .btn {
+/* Search on its own full row, the two ways to start without a search ("Khách mới", "Khách vãng
+ * lai") as equal real buttons under it (EM 2026-11-07: the ghost-text walk-in and the cramped row
+ * read as broken). */
+.search-actions {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.search-actions > .btn {
   min-height: var(--size-control-lg);
+  flex: 1 1 0;
+  white-space: nowrap;
 }
 /* The toggletip keeps its 44px target but takes the height of its 28px ring in the row, so the
  * title sits where the next panel's title sits. */
@@ -2369,7 +2380,6 @@ tr.ledger-day > :is(td, th) {
   align-items: stretch;
   gap: 8px;
 }
-.search-row > input {
-  min-width: 12rem;
-  flex: 1;
+.search-row > .search-field {
+  flex: 1 1 100%;
 }

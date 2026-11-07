@@ -908,8 +908,8 @@ export function FrontDeskPage() {
                 />
               ) : (
                 <p className="empty-note">
-                  Chưa chọn khách. Tìm theo SĐT hoặc tên ở ô phía trên; khách
-                  đặt trước thì mở tab “Lịch hẹn”.
+                  Chưa chọn khách. Gõ SĐT hoặc tên ở ô phía trên (không cần
+                  dấu); khách đặt trước thì mở tab “Lịch hẹn”.
                 </p>
               )}
             </section>
