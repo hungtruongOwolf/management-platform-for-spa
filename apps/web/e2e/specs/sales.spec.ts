@@ -56,9 +56,11 @@ test.describe("bán liệu trình (US3)", () => {
     await dialog
       .getByLabel("Người giới thiệu / chốt")
       .selectOption({ label: "KTV E2E (Kỹ thuật viên)" });
-    await dialog
-      .getByRole("radio", { name: "Tiền mặt + CK" })
-      .check();
+    // The Quầy payment chips (`.pay-choice`): the radio sits invisible under its chip face, so
+    // the click lands on the chip, exactly as a user's does; `force` only skips the visibility wait.
+    const split = dialog.getByRole("radio", { name: "Tiền mặt + CK" });
+    await split.check({ force: true });
+    await expect(split).toBeChecked();
     await dialog.getByLabel(/^Tiền mặt \(đ\)/).fill("500000");
     await expect(dialog.getByText("Chuyển khoản: 1.000.000đ")).toBeVisible();
     await expect(dialog.getByText("Phải trả: 1.500.000đ")).toBeVisible();
