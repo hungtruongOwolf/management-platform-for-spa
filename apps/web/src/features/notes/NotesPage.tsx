@@ -9,6 +9,7 @@ import { spaToday } from "../corrections/api";
 import { FilterSelect, ResponsiveFilters, SearchField } from "../reports/filters";
 import { EmptyState, ErrorState, ManagementOnly, PageHeader, RowsSkeleton } from "../reports/ui";
 import { activeStaffQuery } from "../sales/api";
+import type { HistoryKind } from "@vpyd/api-client";
 import { notesQuery, type NoteEntry, type NoteKind } from "./api";
 import { NOTE_KINDS, notesSearch } from "./search";
 import "./notes.css";
@@ -24,6 +25,11 @@ export const KIND_LABEL: Record<NoteKind, string> = {
   follow_up: "Chăm sóc lại",
   void: "Hủy / sửa",
   employment_end: "Nghỉ việc",
+  appointment_note: "Ghi chú lịch hẹn",
+  evaluation_note: "Đánh giá tháng",
+  staff_note: "Ghi chú nhân sự",
+  package_extension: "Gia hạn gói",
+  discount: "Giảm giá",
 };
 
 const KIND_BADGE: Record<NoteKind, string> = {
@@ -36,6 +42,11 @@ const KIND_BADGE: Record<NoteKind, string> = {
   follow_up: "badge-info",
   void: "badge-danger",
   employment_end: "badge-muted",
+  appointment_note: "badge-info",
+  evaluation_note: "badge-gold",
+  staff_note: "badge-muted",
+  package_extension: "badge-info",
+  discount: "badge-warn",
 };
 
 /** The chip of one note: some kinds say more precisely what happened (`detail`). */
@@ -46,7 +57,20 @@ function chipOf(n: NoteEntry): { label: string; badge: string } {
     const label = { visit: "Hủy lượt", visit_corrected: "Sửa lượt", sale: "Hủy hóa đơn", package: "Hủy gói" }[n.detail ?? ""];
     if (label) return { label, badge: "badge-danger" };
   }
+  if (n.kind === "evaluation_note" && n.detail === "coaching_plan") return { label: "Kế hoạch kèm cặp", badge: "badge-gold" };
+  if (n.kind === "evaluation_note") return { label: "Nhận xét tháng", badge: "badge-gold" };
   return { label: KIND_LABEL[n.kind], badge: KIND_BADGE[n.kind] };
+}
+
+const dmy = (iso: string) => iso.split("-").reverse().join("/");
+
+/** The day the note is about, when it is not the day it is filed under. */
+function aboutOf(n: NoteEntry): string {
+  if (!n.about_date) return "";
+  if (n.kind === "appointment_note") return `Lịch hẹn ${dmy(n.about_date)}`;
+  if (n.kind === "evaluation_note") return `Tháng ${dmy(n.about_date.slice(0, 7))}`;
+  if (n.kind === "package_extension") return `Hạn mới ${dmy(n.about_date)}`;
+  return "";
 }
 
 const timeFormat = new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Ho_Chi_Minh" });
@@ -55,7 +79,8 @@ const timeFormat = new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "
 function whenOf(n: NoteEntry): string {
   if (n.kind === "employment_end") return "Ngày làm cuối";
   const time = timeFormat.format(new Date(n.at));
-  return n.kind === "customer_note" || n.kind === "health_note" ? `Hồ sơ sửa lúc ${time}` : time;
+  // EM Q-N2: profile, health and HR notes keep one value on the profile; its last change is shown.
+  return n.kind === "customer_note" || n.kind === "health_note" || n.kind === "staff_note" ? `Hồ sơ sửa lúc ${time}` : time;
 }
 
 /**
@@ -99,7 +124,7 @@ function NotesPageBody() {
     <section className="notes-page">
       <PageHeader title="Nhật ký ghi chú" />
       <p className="notes-lede">
-        Mọi ghi chú đã ghi trong app, mới nhất trước: ghi chú buổi, hồ sơ, chấm công, khen/phàn nàn, thưởng/phạt, chăm sóc lại, lý do hủy. Chỉ hiện loại ghi chú tài khoản của bạn được xem.
+        Mọi ghi chú đã ghi trong app, mới nhất trước: ghi chú buổi, hồ sơ, lịch hẹn, chấm công, khen/phàn nàn, đánh giá, thưởng/phạt, chăm sóc lại, lý do hủy, gia hạn, giảm giá. Chỉ hiện loại ghi chú tài khoản của bạn được xem.
       </p>
       <ResponsiveFilters
         label="Lọc ghi chú"
@@ -247,6 +272,7 @@ function NoteRow({ note: n, onCustomer }: { note: NoteEntry; onCustomer: (() => 
         <span className={`badge ${chip.badge}`}>{chip.label}</span>
         <span className="tabular">{whenOf(n)}</span>
         {n.author_name && <span>· {n.author_name}</span>}
+        {aboutOf(n) && <span className="tabular">· {aboutOf(n)}</span>}
       </p>
       <p className="note-about">
         {n.customer_id && n.customer_name && (
@@ -254,7 +280,9 @@ function NoteRow({ note: n, onCustomer }: { note: NoteEntry; onCustomer: (() => 
             {n.customer_name}
           </Link>
         )}
+        {!n.customer_id && n.customer_name && <span className="font-semibold">{n.customer_name}</span>}
         {n.staff_id && n.staff_name && <span className="font-semibold">{n.staff_name}</span>}
+        {n.kind === "package_extension" && n.detail && <span className="text-text-muted">{n.detail}</span>}
       </p>
       <p className="note-text">{n.text}</p>
       <p className="note-source">
@@ -270,16 +298,33 @@ function NoteRow({ note: n, onCustomer }: { note: NoteEntry; onCustomer: (() => 
   );
 }
 
+/** Where the customer's timeline shows each customer kind ("" = the profile, no filter). */
+function historyKindOf(n: NoteEntry): HistoryKind | "" {
+  if (n.kind === "visit_note") return "visit";
+  if (n.kind === "void") return n.detail === "visit" || n.detail === "visit_corrected" ? "visit_voided" : "";
+  if (n.kind === "package_extension") return "package_extended";
+  if (n.kind === "discount") return n.detail === "visit" ? "visit" : "purchase";
+  return "";
+}
+
 function SourceLink({ note: n }: { note: NoteEntry }): ReactNode {
   const arrow = <Icon name="arrow-right" className="size-4" />;
   const day = n.business_date;
-  if (n.customer_id && (n.kind === "visit_note" || n.kind === "void")) {
-    const kind = n.kind === "visit_note" ? "visit" : n.detail === "visit" || n.detail === "visit_corrected" ? "visit_voided" : "";
+  if (n.kind === "appointment_note") {
+    return (
+      <Link to="/quay" search={{ view: "lich", ngay: n.about_date ?? day }} className="note-link">
+        Mở lịch hẹn
+        {arrow}
+      </Link>
+    );
+  }
+  const inHistory = historyKindOf(n);
+  if (n.customer_id && (inHistory || n.kind === "void")) {
     return (
       <Link
         to="/khach-hang/$customerId"
         params={{ customerId: n.customer_id }}
-        search={{ hfrom: day, hto: day, ...(kind ? { hkind: kind } : {}) }}
+        search={{ hfrom: day, hto: day, ...(inHistory ? { hkind: inHistory } : {}) }}
         className="note-link"
       >
         {n.kind === "visit_note" ? "Xem lượt khách" : "Xem trong lịch sử khách"}
@@ -295,10 +340,18 @@ function SourceLink({ note: n }: { note: NoteEntry }): ReactNode {
       </Link>
     );
   }
-  if (n.kind === "employment_end") {
+  if (n.kind === "employment_end" || n.kind === "staff_note") {
     return (
       <Link to="/nhan-vien" search={{ tab: "profiles", roster: "all" }} className="note-link">
         Mở Nhân sự
+        {arrow}
+      </Link>
+    );
+  }
+  if (n.kind === "evaluation_note") {
+    return (
+      <Link to="/nhan-vien" search={{ tab: "evaluation", month: (n.about_date ?? day).slice(0, 7) }} className="note-link">
+        Mở đánh giá tháng
         {arrow}
       </Link>
     );

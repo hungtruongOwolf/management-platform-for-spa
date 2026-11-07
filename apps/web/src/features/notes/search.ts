@@ -15,6 +15,11 @@ export const NOTE_KINDS = [
   "follow_up",
   "void",
   "employment_end",
+  "appointment_note",
+  "evaluation_note",
+  "staff_note",
+  "package_extension",
+  "discount",
 ] as const satisfies readonly NoteKind[];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -30,10 +30,22 @@ pub enum NoteKind {
     Void,
     /// Why someone's employment ended: `staff.manage` (owner).
     EmploymentEnd,
+    /// A booking's note: `appointment.manage` (the calendar's rule).
+    AppointmentNote,
+    /// A monthly evaluation's comment or coaching plan: `evaluation.record`.
+    EvaluationNote,
+    /// The HR note on a staff profile: `staff.manage` (owner; never in the manager's roster).
+    StaffNote,
+    /// Why a package's expiry was extended: `customer.read` + `visit.read` + `sale.read` (the
+    /// customer timeline's rule).
+    PackageExtension,
+    /// Why a sale was discounted: a visit's sale under `visit.read` (the day list shows it), any
+    /// other sale under `sale.read` + `customer.read`.
+    Discount,
 }
 
 impl NoteKind {
-    pub const ALL: [NoteKind; 9] = [
+    pub const ALL: [NoteKind; 14] = [
         NoteKind::VisitNote,
         NoteKind::CustomerNote,
         NoteKind::HealthNote,
@@ -43,6 +55,11 @@ impl NoteKind {
         NoteKind::FollowUp,
         NoteKind::Void,
         NoteKind::EmploymentEnd,
+        NoteKind::AppointmentNote,
+        NoteKind::EvaluationNote,
+        NoteKind::StaffNote,
+        NoteKind::PackageExtension,
+        NoteKind::Discount,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -56,6 +73,11 @@ impl NoteKind {
             NoteKind::FollowUp => "follow_up",
             NoteKind::Void => "void",
             NoteKind::EmploymentEnd => "employment_end",
+            NoteKind::AppointmentNote => "appointment_note",
+            NoteKind::EvaluationNote => "evaluation_note",
+            NoteKind::StaffNote => "staff_note",
+            NoteKind::PackageExtension => "package_extension",
+            NoteKind::Discount => "discount",
         }
     }
 
@@ -90,15 +112,15 @@ pub struct NotesQuery {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct NoteEntry {
     pub kind: NoteKind,
-    /// When it was written (a profile / health note: the profile's last change; an end of
-    /// employment: the start of its last day).
+    /// When it was written (a customer profile / health note or a staff HR note: the profile's
+    /// last change, EM Q-N2; an end of employment: the start of its last day).
     pub at: DateTime<Utc>,
     /// The business day it belongs to (the visit's, the attendance day, the contact day…).
     pub business_date: NaiveDate,
     pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub customer_id: Option<Uuid>,
-    /// The profile's name, or "Khách vãng lai".
+    /// The profile's name, "Khách vãng lai", or a booking guest's name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub customer_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -113,9 +135,16 @@ pub struct NoteEntry {
     pub visit_id: Option<Uuid>,
     /// Extra context by kind: `adjustment` → `bonus` | `penalty`; `void` → `visit` |
     /// `visit_corrected` | `sale` | `package`; `attendance_note` → the day's status;
-    /// `follow_up` → the call's outcome.
+    /// `follow_up` → the call's outcome; `appointment_note` → the booking's status;
+    /// `evaluation_note` → `comment` | `coaching_plan`; `package_extension` → the package's name;
+    /// `discount` → `visit` | `sale`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// The day the note is about when it is not `business_date`: the booking's day
+    /// (`appointment_note`), the evaluated month's first day (`evaluation_note`), the new expiry
+    /// (`package_extension`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub about_date: Option<NaiveDate>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]

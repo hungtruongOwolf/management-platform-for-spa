@@ -587,3 +587,10 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Quyết định (lead's decision — EM to review): tìm chữ = SQL cho ghi chú thường + giải mã-rồi-so cho ghi chú mã hóa trong khoảng ngày, trần 500 ghi chú/request, `scan_capped` + "Tìm tiếp". Câu hỏi Q-N1 (thêm ghi chú lịch hẹn, đánh giá tháng, hồ sơ nhân viên, gia hạn, giảm giá?), Q-N2 (người/lúc sửa riêng ghi chú hồ sơ khách).
 - Ngân sách JS khởi động: route không có `validateSearch` (schema ở chunk lazy) + 5 thông báo lỗi chỉ màn lazy gặp chuyển ra `addMessages` → 124.93 KB (main 124.91).
 - Wiki: spec §10, authz-matrix (bảng quyền từng loại), threat-model (§ Nhật ký ghi chú), data (0027), backend/frontend (route + endpoint + số đo), design-system (dòng Nhật ký ghi chú).
+
+## [2026-11-07] ingest + build | Nhật ký ghi chú thêm 5 loại (EM Q-N1 có, Q-N2 không)
+- Raw: [2026-11-07-em-decisions-notes-journal-scope](raw/2026-11-07-em-decisions-notes-journal-scope.md).
+- `GET /notes` + màn: thêm ghi chú lịch hẹn (`appointment.manage`), nhận xét / kế hoạch kèm cặp đánh giá tháng (`evaluation.record`), ghi chú nhân sự `staff.note` (`staff.manage`, chủ spa; khớp allowlist 14 key của quản lý ở Nhân sự), lý do gia hạn gói (quy tắc lịch sử khách), lý do giảm giá (hóa đơn của lượt: `visit.read`; hóa đơn khác: `sale.read` + `customer.read`). Không nguồn nào thiếu quy tắc đọc nên không có loại "mặc định chỉ chủ spa"; đợt làm việc không có chữ tự do nào ngoài `end_reason`.
+- DTO thêm `about_date` (ngày hẹn / tháng đánh giá / hạn mới); lịch hẹn của khách chưa có hồ sơ hiện tên khách đặt. Migration 0028: 5 index một phần.
+- Q-N2: giữ một giá trị trên hồ sơ, hiện "Hồ sơ sửa lúc …" (cả ghi chú nhân sự), không đổi schema.
+- Test: `notes.rs` mở rộng (chủ spa 14 loại, quản lý 12, không lộ ghi chú nhân sự; từng loại × bỏ từng quyền; hai nhánh giảm giá; lọc theo khách / nhân viên).

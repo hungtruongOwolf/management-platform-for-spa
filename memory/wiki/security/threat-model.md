@@ -104,6 +104,8 @@ Một màn đọc mọi ghi chú gom nhiều nguồn, trong đó có dữ liệu
 | Quản lý không có `customer.health_notes.read` đọc ghi chú buổi / sức khỏe qua màn gom | cờ quyền per-loại tắt nhánh SQL; không giải mã; `kind=health_note` hay `q=` cũng trống | `notes.rs::a_manager_without_the_health_permission_sees_no_health_notes` |
 | Một quyền "nhẹ" mở loại cần nhiều quyền | mỗi loại = AND đúng các quyền của màn gốc; bỏ một quyền → mất loại | `notes.rs::every_kind_keeps_its_own_read_rule` (9 loại × từng quyền) |
 | Quản lý đọc lý do nghỉ việc | loại `employment_end` cần `staff.manage` | `each_role_reads_exactly_the_notes_it_may` |
+| Quản lý đọc ghi chú nhân sự (`staff.note`) qua nhật ký, vượt allowlist 14 key của Nhân sự (Q-N1) | loại `staff_note` cần `staff.manage` | `each_role_reads_exactly_the_notes_it_may` (không có chữ ghi chú nhân sự trong body quản lý) |
+| Role chỉ có `sale.read` đọc lý do giảm giá kèm tên khách (Q-N1) | hóa đơn ngoài lượt cần thêm `customer.read`; hóa đơn của lượt theo `visit.read` | `every_kind_keeps_its_own_read_rule` (nhánh giảm giá) |
 | KTV mở màn | `report.read` | matrix + `each_role…` (403) |
 | Spa khác dò id khách / nhân viên | `tenant_id = $1` ở mọi nhánh + RLS; id lạ → danh sách trống | `another_spa_sees_none_of_our_notes` |
 | Giải mã hàng loạt (DoS) qua tìm chữ | khoảng ngày ≤ 366, quét ≤ 500 ghi chú / request, cursor đi tiếp; rate limit chung | `notes.rs::filters_search_and_pages_with_a_cursor` |

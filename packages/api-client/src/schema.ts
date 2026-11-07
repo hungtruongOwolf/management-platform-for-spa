@@ -2610,9 +2610,16 @@ export interface components {
         /** @description One note. `customer_*` for notes about a customer, `staff_*` for notes about a staff member. */
         NoteEntry: {
             /**
+             * Format: date
+             * @description The day the note is about when it is not `business_date`: the booking's day
+             *     (`appointment_note`), the evaluated month's first day (`evaluation_note`), the new expiry
+             *     (`package_extension`).
+             */
+            about_date?: string | null;
+            /**
              * Format: date-time
-             * @description When it was written (a profile / health note: the profile's last change; an end of
-             *     employment: the start of its last day).
+             * @description When it was written (a customer profile / health note or a staff HR note: the profile's
+             *     last change, EM Q-N2; an end of employment: the start of its last day).
              */
             at: string;
             /** @description Who wrote it; absent when the source does not record it (profile and health notes). */
@@ -2624,12 +2631,14 @@ export interface components {
             business_date: string;
             /** Format: uuid */
             customer_id?: string | null;
-            /** @description The profile's name, or "Khách vãng lai". */
+            /** @description The profile's name, "Khách vãng lai", or a booking guest's name. */
             customer_name?: string | null;
             /**
              * @description Extra context by kind: `adjustment` → `bonus` | `penalty`; `void` → `visit` |
              *     `visit_corrected` | `sale` | `package`; `attendance_note` → the day's status;
-             *     `follow_up` → the call's outcome.
+             *     `follow_up` → the call's outcome; `appointment_note` → the booking's status;
+             *     `evaluation_note` → `comment` | `coaching_plan`; `package_extension` → the package's name;
+             *     `discount` → `visit` | `sale`.
              */
             detail?: string | null;
             kind: components["schemas"]["NoteKind"];
@@ -2647,7 +2656,7 @@ export interface components {
          * @description Where a note was written. Each kind keeps the read rule it already had on its own screen.
          * @enum {string}
          */
-        NoteKind: "visit_note" | "customer_note" | "health_note" | "attendance_note" | "review_note" | "adjustment" | "follow_up" | "void" | "employment_end";
+        NoteKind: "visit_note" | "customer_note" | "health_note" | "attendance_note" | "review_note" | "adjustment" | "follow_up" | "void" | "employment_end" | "appointment_note" | "evaluation_note" | "staff_note" | "package_extension" | "discount";
         NotesPage: {
             /** Format: date */
             from: string;

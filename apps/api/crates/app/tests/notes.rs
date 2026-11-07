@@ -25,10 +25,13 @@ const MANAGER_PHONE: &str = "0912000111";
 const TECH_PHONE: &str = "0912000222";
 const OTHER_OWNER_PHONE: &str = "0913000333";
 const PRICE: i64 = 150_000;
+const PLAN_PRICE: i64 = 1_200_000;
 
 const VISIT_NOTE: &str = "Đau vai gáy, ấn nhẹ";
 const HEALTH_NOTE: &str = "Huyết áp cao, tránh xông nóng";
 const PROFILE_NOTE: &str = "Thích phòng yên tĩnh";
+const BOOKING_NOTE: &str = "Khách muốn phòng riêng";
+const STAFF_NOTE: &str = "Đang học thêm khóa massage đá nóng";
 
 type Setup<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -125,7 +128,8 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
         "/visits",
         json!({
             "customer_id": customer, "lines": [line], "note": VISIT_NOTE,
-            "payments": [{"method": "cash", "amount": PRICE}]
+            "discount": {"amount": 15_000, "reason": "Khách quen giảm tại quầy"},
+            "payments": [{"method": "cash", "amount": PRICE - 15_000}]
         }),
     )
     .await;
@@ -152,6 +156,18 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
     )
     .await;
     assert_eq!(follow.status, StatusCode::CREATED, "{}", follow.body);
+    // A package sold with a discount (not in a visit), later extended (below).
+    let plan = call(&h.app, "POST", "/package-plans", Some(&owner), Some(json!({
+        "name": "Gói 10 buổi", "price": PLAN_PRICE, "validity_months": 6, "gift_note": null,
+        "active": true, "items": [{"service_id": id(&service), "sessions": 10, "bonus_sessions": 0}]
+    }))).await;
+    assert_eq!(plan.status, StatusCode::CREATED, "{}", plan.body);
+    let sale = post(&h, &owner, "/sales", json!({
+        "customer_id": customer, "closer_staff_id": lan, "lines": [{"package_plan_id": id(&plan)}],
+        "discount": {"amount": 200_000, "reason": "Mua gói thứ hai giảm giá"},
+        "payments": [{"method": "cash", "amount": PLAN_PRICE - 200_000}]
+    })).await;
+    assert_eq!(sale.status, StatusCode::CREATED, "{}", sale.body);
 
     // The staff books, written straight to the tables (their own tests cover the HTTP paths).
     let tenant: Uuid = sqlx::query_scalar("SELECT id FROM app.tenant WHERE slug = 'vpyd'")
@@ -195,6 +211,56 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
     .bind(day)
     .execute(&h.owner)
     .await?;
+    // The other new kinds, also straight to their tables.
+    let owner_user: Uuid =
+        sqlx::query_scalar("SELECT id FROM app.user_account WHERE phone_e164 = '+84905123456'")
+            .fetch_one(&h.owner)
+            .await?;
+    sqlx::query(
+        "INSERT INTO app.customer_package_extension
+           (id, tenant_id, customer_package_id, previous_expires_on, expires_on, reason, business_date, created_by)
+         SELECT $1, cp.tenant_id, cp.id, $3::date + 180, $3::date + 210, 'Khách ốm, gia hạn một tháng', $3, $4
+         FROM app.customer_package cp WHERE cp.tenant_id = $2 AND cp.customer_id = $5",
+    )
+    .bind(Uuid::now_v7())
+    .bind(tenant)
+    .bind(day)
+    .bind(owner_user)
+    .bind(customer)
+    .execute(&h.owner)
+    .await?;
+    sqlx::query(
+        "INSERT INTO app.appointment
+           (id, tenant_id, branch_id, customer_id, business_date, starts_at, ends_at, note, created_by)
+         SELECT $1, $2, b.id, $3, $4::date + 1, now() + interval '1 day', now() + interval '25 hours', $5, $6
+         FROM app.branch b WHERE b.tenant_id = $2 LIMIT 1",
+    )
+    .bind(Uuid::now_v7())
+    .bind(tenant)
+    .bind(customer)
+    .bind(day)
+    .bind(BOOKING_NOTE)
+    .bind(manager_user)
+    .execute(&h.owner)
+    .await?;
+    sqlx::query(
+        "INSERT INTO app.staff_evaluation
+           (tenant_id, staff_id, work_date, criteria, total_points, result_level, coaching_plan, comment, recorded_by)
+         VALUES ($1, $2, date_trunc('month', $3::date - 31)::date, '[]'::jsonb, 70, 'm3',
+                 'Kèm hai tuần kỹ thuật bấm huyệt', 'Cần nhẹ tay hơn', $4)",
+    )
+    .bind(tenant)
+    .bind(lan)
+    .bind(day)
+    .bind(manager_user)
+    .execute(&h.owner)
+    .await?;
+    sqlx::query("UPDATE app.staff SET note = $3 WHERE tenant_id = $1 AND id = $2")
+        .bind(tenant)
+        .bind(lan)
+        .bind(STAFF_NOTE)
+        .execute(&h.owner)
+        .await?;
     Ok(Spa {
         owner,
         manager,
@@ -287,6 +353,13 @@ async fn each_role_reads_exactly_the_notes_it_may(pool: PgPool) -> TestResult {
         "Ghi nhầm khách",
         "Chuyển về quê",
         "Hẹn tuần sau quay lại",
+        BOOKING_NOTE,
+        "Cần nhẹ tay hơn",
+        "Kèm hai tuần kỹ thuật bấm huyệt",
+        STAFF_NOTE,
+        "Khách ốm, gia hạn một tháng",
+        "Khách quen giảm tại quầy",
+        "Mua gói thứ hai giảm giá",
     ] {
         assert!(text.iter().any(|x| x == t), "owner sees {t}");
     }
@@ -324,20 +397,25 @@ async fn each_role_reads_exactly_the_notes_it_may(pool: PgPool) -> TestResult {
         Some("private, no-store")
     );
 
-    // Manager: everything but the end-of-employment reasons (owner only).
+    // Manager: everything but the owner's HR texts (end-of-employment reasons and the profile's
+    // HR note, both outside the manager's 14-key roster allowlist).
     let manager = s.notes(&s.manager, "").await;
     assert_eq!(manager.status, StatusCode::OK, "{}", manager.body);
     let mut expected = all.clone();
     expected.remove("employment_end");
+    expected.remove("staff_note");
     assert_eq!(kinds_of(&manager.body), expected);
     assert!(!manager.body.to_string().contains("Chuyển về quê"));
-    assert!(
-        !manager.body["kinds"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .any(|k| k == "employment_end")
-    );
+    assert!(!manager.body.to_string().contains(STAFF_NOTE));
+    for owner_only in ["employment_end", "staff_note"] {
+        assert!(
+            !manager.body["kinds"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|k| k == owner_only)
+        );
+    }
 
     // Technicians never; anonymous callers are not signed in.
     let tech = s.notes(&s.tech, "").await;
@@ -407,7 +485,14 @@ async fn a_manager_without_the_health_permission_sees_no_health_notes(pool: PgPo
 async fn every_kind_keeps_its_own_read_rule(pool: PgPool) -> TestResult {
     use Permission as P;
     let s = spa(pool).await?;
-    let rules: [(NoteKind, &[Permission]); 9] = [
+    let rules: [(NoteKind, &[Permission]); 13] = [
+        (NoteKind::AppointmentNote, &[P::AppointmentManage]),
+        (NoteKind::EvaluationNote, &[P::EvaluationRecord]),
+        (NoteKind::StaffNote, &[P::StaffManage]),
+        (
+            NoteKind::PackageExtension,
+            &[P::CustomerRead, P::VisitRead, P::SaleRead],
+        ),
         (
             NoteKind::VisitNote,
             &[P::VisitRead, P::CustomerHealthNotesRead],
@@ -446,6 +531,23 @@ async fn every_kind_keeps_its_own_read_rule(pool: PgPool) -> TestResult {
             assert!(!page.kinds.contains(&kind));
         }
     }
+    // Discounts: a visit's under visit.read (the day list), any other sale's under sale.read +
+    // customer.read (GET /sales/{id} + the name); sale.read alone shows none.
+    let details = |page: &reporting::notes_dto::NotesPage| -> BTreeSet<String> {
+        page.items
+            .iter()
+            .filter(|n| n.kind == NoteKind::Discount)
+            .filter_map(|n| n.detail.clone())
+            .collect()
+    };
+    let on_visit = s.as_actor(&[P::ReportRead, P::VisitRead], query()).await?;
+    assert_eq!(details(&on_visit), BTreeSet::from(["visit".to_owned()]));
+    let on_sale = s
+        .as_actor(&[P::ReportRead, P::SaleRead, P::CustomerRead], query())
+        .await?;
+    assert_eq!(details(&on_sale), BTreeSet::from(["sale".to_owned()]));
+    let bare = s.as_actor(&[P::ReportRead, P::SaleRead], query()).await?;
+    assert!(details(&bare).is_empty() && !bare.kinds.contains(&NoteKind::Discount));
     // report.read alone: the screen opens, empty.
     assert!(
         s.as_actor(&[P::ReportRead], query())
@@ -482,9 +584,12 @@ async fn filters_search_and_pages_with_a_cursor(pool: PgPool) -> TestResult {
     assert_eq!(
         kinds_of(&mine.body),
         [
+            "appointment_note",
             "customer_note",
+            "discount",
             "follow_up",
             "health_note",
+            "package_extension",
             "visit_note",
             "void"
         ]
@@ -498,7 +603,10 @@ async fn filters_search_and_pages_with_a_cursor(pool: PgPool) -> TestResult {
         [
             "adjustment",
             "attendance_note",
+            "discount",
+            "evaluation_note",
             "review_note",
+            "staff_note",
             "visit_note",
             "void"
         ]

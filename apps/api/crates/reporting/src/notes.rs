@@ -36,71 +36,58 @@ fn field(name: &'static str, code: &'static str) -> AppError {
     AppError::Validation(vec![FieldError::new(name, code)])
 }
 
-/// Which kinds the caller may read: exactly the rule each note has where it was written.
+/// Which kinds the caller may read: exactly the rule each note has where it is written or shown
+/// today (deny by default). `discount` has two sources with different rules, kept apart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Allowed {
-    pub visit_note: bool,
-    pub customer_note: bool,
-    pub health_note: bool,
-    pub attendance_note: bool,
-    pub review_note: bool,
-    pub adjustment: bool,
-    pub follow_up: bool,
-    pub void: bool,
-    pub employment_end: bool,
+    granted: [bool; NoteKind::ALL.len()],
+    /// A visit's sale: the day list (`GET /visits`, `visit.read`) shows its discount reason.
+    discount_on_visit: bool,
+    /// Any other sale: `GET /sales/{id}` (`sale.read`), with the customer's name (`customer.read`).
+    discount_on_sale: bool,
 }
 
 impl Allowed {
     pub fn of(actor: &Actor) -> Self {
         let can = |p| actor.can(p);
         let health = can(Permission::CustomerHealthNotesRead);
+        let timeline = can(Permission::CustomerRead)
+            && can(Permission::VisitRead)
+            && can(Permission::SaleRead);
+        let discount_on_visit = can(Permission::VisitRead);
+        let discount_on_sale = can(Permission::SaleRead) && can(Permission::CustomerRead);
+        let rule = |kind: NoteKind| match kind {
+            NoteKind::VisitNote => can(Permission::VisitRead) && health,
+            NoteKind::CustomerNote | NoteKind::FollowUp => can(Permission::CustomerRead),
+            NoteKind::HealthNote => can(Permission::CustomerRead) && health,
+            NoteKind::AttendanceNote => can(Permission::AttendanceRecord),
+            NoteKind::ReviewNote | NoteKind::Adjustment | NoteKind::EvaluationNote => {
+                can(Permission::EvaluationRecord)
+            }
+            NoteKind::Void | NoteKind::PackageExtension => timeline,
+            NoteKind::EmploymentEnd | NoteKind::StaffNote => can(Permission::StaffManage),
+            NoteKind::AppointmentNote => can(Permission::AppointmentManage),
+            NoteKind::Discount => discount_on_visit || discount_on_sale,
+        };
         Allowed {
-            visit_note: can(Permission::VisitRead) && health,
-            customer_note: can(Permission::CustomerRead),
-            health_note: can(Permission::CustomerRead) && health,
-            attendance_note: can(Permission::AttendanceRecord),
-            review_note: can(Permission::EvaluationRecord),
-            adjustment: can(Permission::EvaluationRecord),
-            follow_up: can(Permission::CustomerRead),
-            void: can(Permission::CustomerRead)
-                && can(Permission::VisitRead)
-                && can(Permission::SaleRead),
-            employment_end: can(Permission::StaffManage),
+            granted: NoteKind::ALL.map(rule),
+            discount_on_visit,
+            discount_on_sale,
         }
     }
 
     pub fn may(self, kind: NoteKind) -> bool {
-        match kind {
-            NoteKind::VisitNote => self.visit_note,
-            NoteKind::CustomerNote => self.customer_note,
-            NoteKind::HealthNote => self.health_note,
-            NoteKind::AttendanceNote => self.attendance_note,
-            NoteKind::ReviewNote => self.review_note,
-            NoteKind::Adjustment => self.adjustment,
-            NoteKind::FollowUp => self.follow_up,
-            NoteKind::Void => self.void,
-            NoteKind::EmploymentEnd => self.employment_end,
-        }
+        self.granted[kind as usize]
     }
 
-    /// Narrowed to one kind when the filter asks for it.
+    /// Narrowed to one kind when the filter asks for it (never widened).
     fn only(self, kind: Option<NoteKind>) -> Self {
-        match kind {
-            None => self,
-            Some(k) => {
-                let keep = |x: NoteKind, v: bool| v && x == k;
-                Allowed {
-                    visit_note: keep(NoteKind::VisitNote, self.visit_note),
-                    customer_note: keep(NoteKind::CustomerNote, self.customer_note),
-                    health_note: keep(NoteKind::HealthNote, self.health_note),
-                    attendance_note: keep(NoteKind::AttendanceNote, self.attendance_note),
-                    review_note: keep(NoteKind::ReviewNote, self.review_note),
-                    adjustment: keep(NoteKind::Adjustment, self.adjustment),
-                    follow_up: keep(NoteKind::FollowUp, self.follow_up),
-                    void: keep(NoteKind::Void, self.void),
-                    employment_end: keep(NoteKind::EmploymentEnd, self.employment_end),
-                }
-            }
+        let Some(k) = kind else { return self };
+        let keep = |x: NoteKind| self.may(x) && x == k;
+        Allowed {
+            granted: NoteKind::ALL.map(keep),
+            discount_on_visit: self.discount_on_visit && k == NoteKind::Discount,
+            discount_on_sale: self.discount_on_sale && k == NoteKind::Discount,
         }
     }
 }
@@ -153,6 +140,7 @@ struct NoteRow {
     author_name: Option<String>,
     visit_id: Option<Uuid>,
     detail: Option<String>,
+    about: Option<NaiveDate>,
     name_hit: bool,
 }
 
@@ -197,45 +185,45 @@ async fn fetch(
              SELECT 'visit_note'::text AS kind, v.check_in_at AS at, v.business_date AS day,
                     v.id::text AS key, NULL::text AS body, v.note_ct AS ct,
                     v.customer_id AS customer_id, v.created_by AS author_id, NULL::uuid AS staff_id,
-                    v.id AS visit_id, NULL::text AS detail
+                    v.id AS visit_id, NULL::text AS detail, NULL::text AS guest, NULL::date AS about
              FROM app.visit v
              WHERE $5 AND v.tenant_id = $1 AND v.note_ct IS NOT NULL
                AND v.business_date BETWEEN $3 AND $4
              UNION ALL
              SELECT 'customer_note', c.updated_at, (c.updated_at AT TIME ZONE $2)::date, c.id::text,
-                    c.note, NULL, c.id, NULL, NULL, NULL, NULL
+                    c.note, NULL, c.id, NULL, NULL, NULL, NULL, NULL, NULL
              FROM app.customer c, b
              WHERE $6 AND c.tenant_id = $1 AND c.note IS NOT NULL AND btrim(c.note) <> ''
                AND c.anonymized_at IS NULL AND c.updated_at >= b.lo AND c.updated_at < b.hi
              UNION ALL
              SELECT 'health_note', c.updated_at, (c.updated_at AT TIME ZONE $2)::date, c.id::text,
-                    NULL, c.health_note_ct, c.id, NULL, NULL, NULL, NULL
+                    NULL, c.health_note_ct, c.id, NULL, NULL, NULL, NULL, NULL, NULL
              FROM app.customer c, b
              WHERE $7 AND c.tenant_id = $1 AND c.health_note_ct IS NOT NULL
                AND c.anonymized_at IS NULL AND c.updated_at >= b.lo AND c.updated_at < b.hi
              UNION ALL
              SELECT 'attendance_note', a.updated_at, a.work_date,
                     a.staff_id::text || ':' || a.work_date::text, a.note, NULL, NULL, a.recorded_by,
-                    a.staff_id, NULL, a.status
+                    a.staff_id, NULL, a.status, NULL, NULL
              FROM app.attendance_day a
              WHERE $8 AND a.tenant_id = $1 AND a.note IS NOT NULL
                AND a.work_date BETWEEN $3 AND $4
              UNION ALL
              SELECT 'review_note', r.updated_at, r.work_date,
                     r.staff_id::text || ':' || r.work_date::text, r.note, NULL, NULL, r.recorded_by,
-                    r.staff_id, NULL, r.compliments::text || '/' || r.complaints::text
+                    r.staff_id, NULL, r.compliments::text || '/' || r.complaints::text, NULL, NULL
              FROM app.staff_daily_review r
              WHERE $9 AND r.tenant_id = $1 AND r.note IS NOT NULL
                AND r.work_date BETWEEN $3 AND $4
              UNION ALL
              SELECT 'adjustment', j.created_at, j.work_date, j.id::text, j.reason, NULL, NULL,
-                    j.created_by, j.staff_id, NULL, j.kind
+                    j.created_by, j.staff_id, NULL, j.kind, NULL, NULL
              FROM app.staff_adjustment j
              WHERE $10 AND j.tenant_id = $1 AND j.voided_at IS NULL
                AND j.work_date BETWEEN $3 AND $4
              UNION ALL
              SELECT 'follow_up', f.created_at, f.contacted_on, f.id::text, f.note, NULL,
-                    f.customer_id, f.created_by, NULL, NULL, f.outcome
+                    f.customer_id, f.created_by, NULL, NULL, f.outcome, NULL, NULL
              FROM app.customer_follow_up f
              WHERE $11 AND f.tenant_id = $1 AND f.note IS NOT NULL
                AND f.contacted_on BETWEEN $3 AND $4
@@ -244,13 +232,13 @@ async fn fetch(
                     v.void_reason, NULL, v.customer_id, v.voided_by, NULL, v.id,
                     CASE WHEN EXISTS (SELECT 1 FROM app.visit nv
                                       WHERE nv.tenant_id = v.tenant_id AND nv.corrects_visit_id = v.id)
-                         THEN 'visit_corrected' ELSE 'visit' END
+                         THEN 'visit_corrected' ELSE 'visit' END, NULL, NULL
              FROM app.visit v, b
              WHERE $12 AND v.tenant_id = $1 AND v.status = 'voided'
                AND v.voided_at >= b.lo AND v.voided_at < b.hi
              UNION ALL
              SELECT 'void', s.voided_at, (s.voided_at AT TIME ZONE $2)::date, s.id::text,
-                    s.void_reason, NULL, s.customer_id, s.voided_by, NULL, NULL, 'sale'
+                    s.void_reason, NULL, s.customer_id, s.voided_by, NULL, NULL, 'sale', NULL, NULL
              FROM app.sale s, b
              WHERE $12 AND s.tenant_id = $1 AND s.status = 'voided'
                AND s.voided_at >= b.lo AND s.voided_at < b.hi
@@ -259,7 +247,7 @@ async fn fetch(
                AND NOT EXISTS (SELECT 1 FROM app.visit_line l WHERE l.tenant_id = s.tenant_id AND l.sale_id = s.id)
              UNION ALL
              SELECT 'void', cp.cancelled_at, (cp.cancelled_at AT TIME ZONE $2)::date, cp.id::text,
-                    cp.cancel_reason, NULL, cp.customer_id, cp.cancelled_by, NULL, NULL, 'package'
+                    cp.cancel_reason, NULL, cp.customer_id, cp.cancelled_by, NULL, NULL, 'package', NULL, NULL
              FROM app.customer_package cp
              LEFT JOIN app.sale s ON s.tenant_id = cp.tenant_id AND s.id = cp.sale_id, b
              WHERE $12 AND cp.tenant_id = $1 AND cp.cancelled_at IS NOT NULL
@@ -268,19 +256,57 @@ async fn fetch(
                AND (s.id IS NULL OR s.status <> 'voided')
              UNION ALL
              SELECT 'employment_end', (e.ended_on::timestamp AT TIME ZONE $2), e.ended_on,
-                    e.id::text, e.end_reason, NULL, NULL, e.ended_by, e.staff_id, NULL, NULL
+                    e.id::text, e.end_reason, NULL, NULL, e.ended_by, e.staff_id, NULL, NULL, NULL, NULL
              FROM app.staff_employment e
              WHERE $13 AND e.tenant_id = $1 AND e.end_reason IS NOT NULL
                AND e.ended_on BETWEEN $3 AND $4
+             UNION ALL
+             SELECT 'appointment_note', ap.created_at, (ap.created_at AT TIME ZONE $2)::date,
+                    ap.id::text, ap.note, NULL, ap.customer_id, ap.created_by, ap.staff_id, NULL,
+                    ap.status, ap.guest_name, ap.business_date
+             FROM app.appointment ap, b
+             WHERE $22 AND ap.tenant_id = $1 AND ap.note IS NOT NULL AND btrim(ap.note) <> ''
+               AND ap.created_at >= b.lo AND ap.created_at < b.hi
+             UNION ALL
+             SELECT 'evaluation_note', ev.updated_at, (ev.updated_at AT TIME ZONE $2)::date,
+                    ev.staff_id::text || ':' || ev.work_date::text || ':' || part.name, part.body,
+                    NULL, NULL, ev.recorded_by, ev.staff_id, NULL, part.name, NULL, ev.work_date
+             FROM app.staff_evaluation ev
+             CROSS JOIN LATERAL (VALUES ('comment', ev.comment), ('coaching_plan', ev.coaching_plan))
+                  AS part (name, body), b
+             WHERE $23 AND ev.tenant_id = $1 AND part.body IS NOT NULL
+               AND ev.updated_at >= b.lo AND ev.updated_at < b.hi
+             UNION ALL
+             SELECT 'staff_note', sn.updated_at, (sn.updated_at AT TIME ZONE $2)::date, sn.id::text,
+                    sn.note, NULL, NULL, NULL, sn.id, NULL, NULL, NULL, NULL
+             FROM app.staff sn, b
+             WHERE $24 AND sn.tenant_id = $1 AND sn.note IS NOT NULL
+               AND sn.updated_at >= b.lo AND sn.updated_at < b.hi
+             UNION ALL
+             SELECT 'package_extension', x.created_at, x.business_date, x.id::text, x.reason, NULL,
+                    xp.customer_id, x.created_by, NULL, NULL, xp.name_snapshot, NULL, x.expires_on
+             FROM app.customer_package_extension x
+             JOIN app.customer_package xp ON xp.tenant_id = x.tenant_id AND xp.id = x.customer_package_id
+             WHERE $25 AND x.tenant_id = $1 AND x.business_date BETWEEN $3 AND $4
+             UNION ALL
+             SELECT 'discount', ds.created_at, ds.business_date, ds.id::text, ds.discount_reason,
+                    NULL, ds.customer_id, ds.created_by, NULL, ds.visit_id,
+                    CASE WHEN ds.visit_id IS NULL THEN 'sale' ELSE 'visit' END, NULL, NULL
+             FROM app.sale ds
+             WHERE ds.tenant_id = $1 AND ds.discount_reason IS NOT NULL
+               AND ds.business_date BETWEEN $3 AND $4
+               -- A visit's sale is shown with the visit (visit.read); any other on its own (sale.read).
+               AND ((ds.visit_id IS NOT NULL AND $26) OR (ds.visit_id IS NULL AND $27))
            )
            SELECT n.kind AS "kind!", n.at AS "at!", n.day AS "day!", n.key AS "key!",
                   n.body AS "body?", n.ct AS "ct?", n.customer_id AS "customer_id?",
-                  CASE WHEN n.customer_id IS NULL THEN NULL
+                  CASE WHEN n.customer_id IS NULL THEN n.guest
                        ELSE app.customer_label(c.full_name) END AS "customer_name?",
                   n.staff_id AS "staff_id?", st.full_name AS "staff_name?", u.full_name AS "author_name?",
-                  n.visit_id AS "visit_id?", n.detail AS "detail?",
+                  n.visit_id AS "visit_id?", n.detail AS "detail?", n.about AS "about?",
                   ($17::text IS NOT NULL
                    AND (coalesce(app.search_fold(c.full_name) LIKE $17, false)
+                        OR coalesce(app.search_fold(n.guest) LIKE $17, false)
                         OR coalesce(app.search_fold(st.full_name) LIKE $17, false))) AS "name_hit!"
            FROM n
            LEFT JOIN app.customer c ON c.tenant_id = $1 AND c.id = n.customer_id
@@ -296,6 +322,7 @@ async fn fetch(
              AND ($17::text IS NULL OR n.ct IS NOT NULL
                   OR coalesce(app.search_fold(n.body) LIKE $17, false)
                   OR coalesce(app.search_fold(c.full_name) LIKE $17, false)
+                  OR coalesce(app.search_fold(n.guest) LIKE $17, false)
                   OR coalesce(app.search_fold(st.full_name) LIKE $17, false))
              AND ($21::date IS NULL OR (n.day, n.at, n.kind, n.key) < ($21, $18, $19, $20))
            ORDER BY n.day DESC, n.at DESC, n.kind DESC, n.key DESC
@@ -304,15 +331,15 @@ async fn fetch(
         tz,
         f.from,
         f.to,
-        a.visit_note,
-        a.customer_note,
-        a.health_note,
-        a.attendance_note,
-        a.review_note,
-        a.adjustment,
-        a.follow_up,
-        a.void,
-        a.employment_end,
+        a.may(NoteKind::VisitNote),
+        a.may(NoteKind::CustomerNote),
+        a.may(NoteKind::HealthNote),
+        a.may(NoteKind::AttendanceNote),
+        a.may(NoteKind::ReviewNote),
+        a.may(NoteKind::Adjustment),
+        a.may(NoteKind::FollowUp),
+        a.may(NoteKind::Void),
+        a.may(NoteKind::EmploymentEnd),
         f.staff_id,
         f.customer_id,
         limit,
@@ -321,6 +348,12 @@ async fn fetch(
         a_kind,
         a_key,
         a_day,
+        a.may(NoteKind::AppointmentNote),
+        a.may(NoteKind::EvaluationNote),
+        a.may(NoteKind::StaffNote),
+        a.may(NoteKind::PackageExtension),
+        a.discount_on_visit,
+        a.discount_on_sale,
     )
     .fetch_all(tx.conn())
     .await?;
@@ -371,6 +404,7 @@ fn entry(row: NoteRow, kind: NoteKind, text: String) -> NoteEntry {
         author_name: row.author_name,
         visit_id: row.visit_id,
         detail: row.detail,
+        about_date: row.about,
     }
 }
 
@@ -514,33 +548,45 @@ mod tests {
 
     #[test]
     fn a_kind_filter_never_widens_what_the_caller_may_read() {
-        let none = Allowed {
-            visit_note: false,
-            customer_note: true,
-            health_note: false,
-            attendance_note: false,
-            review_note: false,
-            adjustment: false,
-            follow_up: false,
-            void: false,
-            employment_end: false,
+        let actor = |perms: &[Permission]| {
+            Actor::new(
+                kernel::UserId::new(),
+                kernel::TenantId::from_uuid(Uuid::now_v7()),
+                perms.iter().copied(),
+                None,
+            )
         };
+        let reader = Allowed::of(&actor(&[Permission::CustomerRead]));
         assert!(
-            !none
+            !reader
                 .only(Some(NoteKind::HealthNote))
                 .may(NoteKind::HealthNote)
         );
         assert!(
-            none.only(Some(NoteKind::CustomerNote))
+            reader
+                .only(Some(NoteKind::CustomerNote))
                 .may(NoteKind::CustomerNote)
         );
         assert!(
-            !none
+            !reader
                 .only(Some(NoteKind::CustomerNote))
                 .may(NoteKind::FollowUp)
         );
-        for k in NoteKind::ALL {
+        // Discount: each source keeps its own rule, and a filter on another kind drops both.
+        let visits = Allowed::of(&actor(&[Permission::VisitRead]));
+        assert!(
+            visits.discount_on_visit && !visits.discount_on_sale && visits.may(NoteKind::Discount)
+        );
+        let sales = Allowed::of(&actor(&[Permission::SaleRead]));
+        assert!(
+            !sales.may(NoteKind::Discount),
+            "sale.read without customer.read"
+        );
+        let narrowed = visits.only(Some(NoteKind::VisitNote));
+        assert!(!narrowed.discount_on_visit && !narrowed.discount_on_sale);
+        for (i, k) in NoteKind::ALL.into_iter().enumerate() {
             assert_eq!(NoteKind::parse(k.as_str()), Some(k));
+            assert_eq!(k as usize, i, "ALL follows the declaration order");
         }
     }
 }
