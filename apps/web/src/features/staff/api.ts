@@ -92,6 +92,8 @@ export function payrollQuery(month: string) {
   return queryOptions({
     queryKey: staffKeys.month("payroll", month),
     queryFn: async () => (await api(`/payroll${q(month)}`)) as PayrollMonth,
+    // Money, and the screen where a month is closed: always asked again, never served from cache.
+    staleTime: 0,
   });
 }
 

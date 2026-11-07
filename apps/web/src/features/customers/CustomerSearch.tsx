@@ -48,8 +48,8 @@ export function CustomerSearch({
   const queryClient = useQueryClient();
   const walkIn = useMutation({
     mutationFn: createWalkIn,
-    onSuccess: async (c) => {
-      await queryClient.invalidateQueries({ queryKey: ["customers"] });
+    onSuccess: (c) => {
+      void queryClient.invalidateQueries({ queryKey: ["customers"] });
       onWalkIn?.(c);
     },
   });

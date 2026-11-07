@@ -193,9 +193,12 @@ export function FrontDeskPage() {
   // "Perf budget"). The technician pickers need the staff only once a line is in the cart.
   const painted = useAfterFirstPaint();
   const staff = useQuery({ ...activeStaffQuery, enabled: painted });
+  const showsCalendar = search.view === "lich" && can(me, "appointment.manage");
+  // Today's visits order the technician pickers and fill "Lượt hôm nay", both on "Ghi lượt" only:
+  // the calendar tab asks for its own days (perf page §2d, one request less there).
   const today = useQuery({
     ...todayVisitsQuery,
-    enabled: painted,
+    enabled: painted && !showsCalendar,
   });
   useEffect(() => {
     if (!painted) return;
@@ -338,7 +341,7 @@ export function FrontDeskPage() {
       );
       return done.visit;
     },
-    onSuccess: async (visit: Visit) => {
+    onSuccess: (visit: Visit) => {
       queryClient.setQueryData<Visit[]>(todayVisitsQuery.queryKey, (old) =>
         visit.business_date === todayIso
           ? [visit, ...(old ?? []).filter((v) => v.id !== visit.id)]
@@ -350,7 +353,9 @@ export function FrontDeskPage() {
         void queryClient.invalidateQueries({
           queryKey: ["visits", visit.business_date],
         });
-      await queryClient.invalidateQueries({
+      // Not awaited: the toast does not wait a round trip for the balance (perf page §4d). The
+      // balance refetches behind it and is staleTime 0, so the next open of this customer asks again.
+      void queryClient.invalidateQueries({
         queryKey: ["customer-packages", visit.customer_id],
       });
       void invalidateManagementViews(queryClient, visit.customer_id);
@@ -429,8 +434,8 @@ export function FrontDeskPage() {
         idempotencyKey,
       );
     },
-    onSuccess: async (sale, draft) => {
-      await queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
+    onSuccess: (sale, draft) => {
+      void queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
       void invalidateManagementViews(queryClient, customer?.id);
       if (draft.beneficiary)
         void invalidateManagementViews(queryClient, draft.beneficiary.id);
@@ -777,7 +782,7 @@ export function FrontDeskPage() {
         )}
       </div>
 
-      {search.view === "lich" && can(me, "appointment.manage") ? (
+      {showsCalendar ? (
         <Suspense
           fallback={
             <p role="status" className="text-text-muted">

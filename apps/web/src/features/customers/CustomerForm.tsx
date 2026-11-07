@@ -148,8 +148,9 @@ export function CustomerForm({
             health_note: canWriteHealth ? opt(v.health_note) : null,
           });
     },
-    onSuccess: async (saved) => {
-      await queryClient.invalidateQueries({ queryKey: ["customers"] });
+    onSuccess: (saved) => {
+      // The saved profile comes back in the reply: the form closes now, lists refresh behind it.
+      void queryClient.invalidateQueries({ queryKey: ["customers"] });
       onSaved(saved);
     },
   });

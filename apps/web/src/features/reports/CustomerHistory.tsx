@@ -1,19 +1,20 @@
 import type { HistoryKind } from "@vpyd/api-client";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, type QueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { canSeeManagement } from "../../app/features";
 import { Icon, type IconName } from "../../app/Icon";
 import { monthLabel } from "../../lib/format";
 import { serviceLabel } from "../../lib/names";
-import { formatDate } from "../sales/api";
+import { customerPackagesQuery, formatDate } from "../sales/api";
 import { useSearchState } from "../../lib/searchState";
-import { can, type Me } from "../auth/session";
+import { authQuery, can, type Me } from "../auth/session";
 import { mayCorrectVisit, spaToday } from "../corrections/api";
+import { customerQuery } from "../customers/api";
 import { CHANNEL_LABEL, OUTCOME_LABEL, followUpsQuery } from "../customers/followUps";
 import { FollowUpForm } from "../customers/FollowUpForm";
 import { HISTORY_KINDS, historySearch } from "../customers/search";
-import { customerHistoryQuery, customerStatsQuery, relativeDay } from "./api";
+import { customerHistoryQuery, customerStatsQuery, relativeDay, type HistoryFilter } from "./api";
 import type { HistoryEvent } from "./contract";
 import { BottomSheet } from "../../components/BottomSheet";
 import { DateField } from "../../components/DateField";
@@ -233,14 +234,35 @@ function HistoryFilters() {
   );
 }
 
+/** The history request for the URL's filters (also what the route loader prefetches). */
+export function historyFilterOf(s: ReturnType<typeof historySearch.parse>): HistoryFilter {
+  // A reversed range is not sent (the API would answer 422); the inputs' min/max make it rare.
+  const range = s.hfrom && s.hto && s.hfrom > s.hto ? {} : { from: s.hfrom || undefined, to: s.hto || undefined };
+  const q = s.hq.trim();
+  return { q: q.length >= 2 ? q : undefined, kind: s.hkind || undefined, ...range };
+}
+
+/**
+ * Every query of the profile at once, from the id in the URL (perf page §2d: the panels used to
+ * wait for `/customers/{id}` before they mounted, one round trip more). Never throws: each panel
+ * shows its own error. Same gates as the panels, so no request is sent only to be refused.
+ */
+export function prefetchCustomerPage(queryClient: QueryClient, customerId: string, rawSearch: Record<string, unknown>): void {
+  const auth = queryClient.getQueryData(authQuery.queryKey);
+  const me = auth?.state === "signed_in" ? auth.me : null;
+  void queryClient.prefetchQuery(customerQuery(customerId));
+  void queryClient.prefetchQuery(customerPackagesQuery(customerId));
+  if (!canSeeManagement(me)) return;
+  void queryClient.prefetchQuery(followUpsQuery(customerId));
+  void queryClient.prefetchQuery(customerStatsQuery(customerId));
+  void queryClient.prefetchInfiniteQuery(customerHistoryQuery(customerId, historyFilterOf(historySearch.parse(rawSearch))));
+}
+
 function Timeline({ customerId, permissions }: { customerId: string; permissions: readonly string[] }) {
   const [s] = useSearchState(historySearch);
   const today = spaToday();
   const filtered = Boolean(s.hq || s.hkind || s.hfrom || s.hto);
-  // A reversed range is not sent (the API would answer 422); the inputs' min/max make it rare.
-  const range = s.hfrom && s.hto && s.hfrom > s.hto ? {} : { from: s.hfrom || undefined, to: s.hto || undefined };
-  const q = s.hq.trim();
-  const history = useInfiniteQuery(customerHistoryQuery(customerId, { q: q.length >= 2 ? q : undefined, kind: s.hkind || undefined, ...range }));
+  const history = useInfiniteQuery(customerHistoryQuery(customerId, historyFilterOf(s)));
   if (history.isPending) return <RowsSkeleton rows={4} />;
   if (history.isError) return <ErrorState error={history.error} onRetry={() => void history.refetch()} />;
   const events = history.data.pages.flatMap((p) => p.events);

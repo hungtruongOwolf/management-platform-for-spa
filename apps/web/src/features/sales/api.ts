@@ -20,6 +20,9 @@ export function customerPackagesQuery(customerId: string) {
     queryKey: ["customer-packages", customerId],
     queryFn: async () =>
       (await api(`/customers/${customerId}/packages`)) as CustomerPackage[],
+    // Sessions left decide what the desk deducts, and another device may have used one: asked
+    // again on every open. 5 s (not 0) only so a route prefetch and the mount right after share one request.
+    staleTime: 5_000,
   });
 }
 
