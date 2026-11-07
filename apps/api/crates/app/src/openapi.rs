@@ -49,6 +49,7 @@ use utoipa::OpenApi;
         hr::http::get_daily_reviews,
         hr::http::put_daily_reviews,
         hr::http::get_evaluations,
+        hr::http::get_evaluation_history,
         hr::http::put_evaluation,
         hr::http::get_adjustments,
         hr::http::post_adjustment,

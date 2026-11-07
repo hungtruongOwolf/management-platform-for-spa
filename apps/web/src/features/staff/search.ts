@@ -23,6 +23,8 @@ export const staffSearch = searchSchema({
   day: param.day(),
   /** Nhân sự filter: "" = Đang làm, `left` = Đã nghỉ, `all` = Tất cả. */
   roster: param.oneOf(ROSTER_FILTERS, ""),
+  /** One person (staff id): their evaluation history (tab=evaluation) or their days (tab=month). */
+  staff: param.text(40),
 });
 
 /** /khach-cua-toi: the calendar's day ("" = today) and view ("" = the device's default). */

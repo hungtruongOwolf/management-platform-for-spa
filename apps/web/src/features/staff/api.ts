@@ -123,6 +123,18 @@ export const profilesQuery = queryOptions({
 });
 
 /** Who changed what on a profile (owner); pay changes only for payroll.read. */
+export type Evaluation = Schemas["Evaluation"];
+export type EvaluationHistory = Schemas["EvaluationHistory"];
+export type HistoryMonth = Schemas["HistoryMonth"];
+
+/** `GET /evaluations/history`: one person's last 12 months in one request (EM 2026-11-08). */
+export function evaluationHistoryQuery(staffId: string) {
+  return queryOptions({
+    queryKey: ["staff", "evaluation-history", staffId] as const,
+    queryFn: async () => (await api(`/evaluations/history?staff_id=${encodeURIComponent(staffId)}`)) as EvaluationHistory,
+  });
+}
+
 export function historyQuery(id: string) {
   return queryOptions({
     queryKey: ["staff", "history", id] as const,

@@ -6,7 +6,21 @@ import { App } from "../../app/App";
 import { navFor, tabsFor } from "../../app/nav";
 import { spaToday } from "../corrections/api";
 import { ME } from "../reports/testServer";
-import type { Adjustment, AdjustmentLog, AttendanceSheet, EvaluationSheet, MyCalendar, MyDay, MyStaff, Payslip, PayrollMonth, ReviewSheet, StaffProfile } from "./api";
+import type {
+  Adjustment,
+  AdjustmentLog,
+  AttendanceSheet,
+  Evaluation,
+  EvaluationHistory,
+  EvaluationSheet,
+  MyCalendar,
+  MyDay,
+  MyStaff,
+  Payslip,
+  PayrollMonth,
+  ReviewSheet,
+  StaffProfile,
+} from "./api";
 import { mondayOf } from "../appointments/api";
 import { gridSpan, weekSummary } from "./myCalendar";
 import type { EntryView } from "../appointments/api";
@@ -311,6 +325,43 @@ interface ServeOptions {
   lanServedToday?: boolean;
   /** Lan left on this day (ADR-0014): `/me/staff` refuses later months. */
   leftOn?: string;
+  /** Scorecards exist (Hoa's: only the owner scores it), and the month is closed for evaluations. */
+  scored?: boolean;
+}
+
+/** A scorecard as `GET /evaluations` / `/me/staff` send it. */
+const SCORECARD: Evaluation = {
+  staff_id: "s-hoa",
+  month,
+  criteria: [
+    { key: "technique", max: 40, level: "m2", points: 32 },
+    { key: "attitude", max: 15, level: "m1", points: 15 },
+  ],
+  serious_issue: false,
+  total_points: 81,
+  result: "m2",
+  coaching_plan: null,
+  comment: "Tay nghề tốt, cần đúng giờ hơn",
+  by_name: "Chủ Spa",
+  updated_at: `${today}T03:00:00Z`,
+  version: 1,
+};
+
+function history(staffId: string): EvaluationHistory {
+  const previous = shiftMonth(month, -1);
+  return {
+    staff_id: staffId,
+    full_name: "Trần Thị Mai",
+    position: "Kỹ thuật viên",
+    from: previous,
+    to: month,
+    criteria: [],
+    can_record: true,
+    months: [
+      { month, closed: false, compliments: 1, complaints: 0, attendance: totals, evaluation: null },
+      { month: previous, closed: true, compliments: 3, complaints: 1, attendance: { ...totals, late_count: 2 }, evaluation: { ...SCORECARD, staff_id: staffId, month: previous } },
+    ],
+  };
 }
 
 const PENALTY_TEMPLATE: Adjustment = {
@@ -359,7 +410,15 @@ function serve(permissions: string[], options: ServeOptions = {}) {
       return ok({
         linked: true,
         ...(left ? { left_on: left } : {}),
-        data: { month: asked, closed: false, attendance: lan(), reviews: [], evaluation: null, adjustments: [], payslip: slip() },
+        data: {
+          month: asked,
+          closed: false,
+          attendance: lan(),
+          reviews: [],
+          evaluation: options.scored ? { ...SCORECARD, staff_id: "s-lan", month: asked } : null,
+          adjustments: [],
+          payslip: slip(),
+        },
       } satisfies MyStaff);
     }
     if (p === "/me/appointments") return ok(calendar());
@@ -369,7 +428,15 @@ function serve(permissions: string[], options: ServeOptions = {}) {
     if (p === "/adjustments" && method === "GET") return ok({ month, closed: false, items: options.adjustments ?? [] } satisfies AdjustmentLog);
     if (p.startsWith("/adjustments/") && method === "DELETE") return Promise.resolve(new Response(null, { status: 204 }));
     if (p === "/evaluations" && method === "PUT") return ok({});
-    if (p === "/evaluations") return ok(evaluations(url.searchParams.get("month") ?? month));
+    if (p === "/evaluations/history") return ok(history(url.searchParams.get("staff_id") ?? ""));
+    if (p === "/evaluations") {
+      const e = evaluations(url.searchParams.get("month") ?? month);
+      return ok(
+        options.scored
+          ? { ...e, closed: true, staff: e.staff.map((x) => (x.staff_id === "s-hoa" ? { ...x, evaluation: SCORECARD } : x)) }
+          : e,
+      );
+    }
     if (p.startsWith("/staff/profiles")) return ok(roster(permissions.includes("staff.manage")));
     if (p === "/staff/accounts") return ok([]);
     if (/^\/staff\/[^/]+\/history$/.test(p)) return ok([]);
@@ -382,6 +449,9 @@ function serve(permissions: string[], options: ServeOptions = {}) {
 const at = (path: string) => {
   const history = createMemoryHistory({ initialEntries: [path] });
   render(<App history={history} />);
+  /** The current URL search as plain strings. */
+  const search = () => Object.fromEntries(new URLSearchParams(history.location.search));
+  return { search };
 };
 
 const requests = (spy: ReturnType<typeof serve>) =>
@@ -647,6 +717,66 @@ describe("/nhan-vien", () => {
         "/api/v1/adjustments/adj-1",
       ]);
     });
+  });
+
+  // EM 2026-11-08: past and closed scorecards read back, and a row only the owner scores too.
+  it("evaluation: every scored row opens its scorecard read-only, closed months and owner-only rows included", async () => {
+    serve(MANAGER, { scored: true });
+    at("/nhan-vien?tab=evaluation");
+    await userEvent.click(await screen.findByRole("button", { name: "Xem phiếu đánh giá Phạm Thị Hoa" }));
+    const card = await screen.findByRole("dialog", { name: "Phiếu đánh giá Phạm Thị Hoa" });
+    expect(within(card).getByRole("rowheader", { name: "Kỹ thuật liệu trình" })).toBeInTheDocument();
+    expect(within(card).getByText("32/40")).toBeInTheDocument();
+    expect(within(card).getByText("81/100")).toBeInTheDocument();
+    expect(within(card).getByText("Tay nghề tốt, cần đúng giờ hơn")).toBeInTheDocument();
+    expect(within(card).getByText(/^Chấm bởi Chủ Spa/)).toBeInTheDocument();
+    // Closed month and decision C: nothing to rescore.
+    expect(within(card).queryByRole("button", { name: "Chấm lại" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Chấm (lại|điểm)$/ })).not.toBeInTheDocument();
+  });
+
+  it("evaluation history: a name opens the person's months, trend, scorecards and the month's days", async () => {
+    const spy = serve(MANAGER);
+    const { search } = at("/nhan-vien?tab=evaluation");
+    await userEvent.click(await screen.findByRole("button", { name: "Trần Thị Mai: lịch sử đánh giá các tháng" }));
+    expect(await screen.findByRole("heading", { name: "Lịch sử đánh giá · Trần Thị Mai" })).toBeInTheDocument();
+    expect(search()).toMatchObject({ tab: "evaluation", staff: "s-mai" });
+    // One request for the whole history.
+    expect(requests(spy).filter((r) => r.url.includes("/evaluations/history?staff_id=s-mai"))).toHaveLength(1);
+    const previous = shiftMonth(month, -1);
+    expect(screen.getByRole("listitem", { name: `${monthLabel(previous)}: 81 điểm, Mức 2` })).toBeInTheDocument();
+    expect(screen.getByRole("listitem", { name: `${monthLabel(month)}: chưa đánh giá` })).toBeInTheDocument();
+    const days = screen.getByRole("link", { name: `Từng ngày ${monthLabel(previous).toLowerCase()}` });
+    expect(days.getAttribute("href")).toContain(`month=${previous}`);
+    expect(days.getAttribute("href")).toContain("staff=s-mai");
+    // The open month may be scored; the closed one only read.
+    expect(screen.getAllByRole("link", { name: /^Chấm (lại|điểm)$/ })).toHaveLength(1);
+    await userEvent.click(screen.getByRole("button", { name: `Xem phiếu đánh giá ${monthLabel(previous).toLowerCase()}` }));
+    expect(await screen.findByRole("dialog", { name: "Phiếu đánh giá Trần Thị Mai" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Xem mọi ghi chú về Trần Thị Mai" }).getAttribute("href")).toContain("staff=s-mai");
+  });
+
+  it("one person's month: their row of the grid and their days, read-only", async () => {
+    serve(MANAGER, { adjustments: [PENALTY] });
+    at("/nhan-vien?tab=month&staff=s-lan");
+    const grid = await screen.findByRole("table", { name: /Bảng chấm công/ });
+    expect(within(grid).getByRole("rowheader", { name: /Lê Thị Lan/ })).toBeInTheDocument();
+    expect(within(grid).queryByRole("rowheader", { name: /Trần Thị Mai/ })).not.toBeInTheDocument();
+    const days = screen.getByRole("region", { name: "Từng ngày · Lê Thị Lan" });
+    expect(await within(days).findByText(/Đi muộn không báo/)).toBeInTheDocument();
+    expect(within(days).getByText("Khách khen tay nghề")).toBeInTheDocument();
+    expect(within(days).getByText(/muộn 12 phút/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Xem cả spa thay vì Lê Thị Lan" }));
+    expect(await within(await screen.findByRole("table", { name: /Bảng chấm công/ })).findByRole("rowheader", { name: /Trần Thị Mai/ })).toBeInTheDocument();
+  });
+
+  it("technician: reads their own month's scorecard, from /me/staff only", async () => {
+    const spy = serve(TECH, { scored: true });
+    at("/nhan-vien");
+    await userEvent.click(await screen.findByRole("button", { name: "Xem phiếu đánh giá" }));
+    const card = await screen.findByRole("dialog", { name: "Phiếu đánh giá của bạn" });
+    expect(within(card).getByText("Tay nghề tốt, cần đúng giờ hơn")).toBeInTheDocument();
+    expect(requests(spy).some((r) => r.url.includes("/evaluations"))).toBe(false);
   });
 
   it("monthly evaluation: starts empty, saves only when every criterion has a score, explains the levels", async () => {

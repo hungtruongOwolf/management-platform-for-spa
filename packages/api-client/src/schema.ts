@@ -583,6 +583,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/evaluations/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_evaluation_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me": {
         parameters: {
             query?: never;
@@ -2050,6 +2066,20 @@ export interface components {
             /** Format: int64 */
             version: number;
         };
+        /** @description `GET /evaluations/history`. */
+        EvaluationHistory: {
+            /** @description Decision C: whether the caller may score this person (an open month's "Chấm lại"). */
+            can_record: boolean;
+            criteria: components["schemas"]["Criterion"][];
+            from: string;
+            full_name: string;
+            /** @description Newest month first; only the months the person was employed in. */
+            months: components["schemas"]["HistoryMonth"][];
+            position: string;
+            /** Format: uuid */
+            staff_id: string;
+            to: string;
+        };
         EvaluationSheet: {
             closed: boolean;
             criteria: components["schemas"]["Criterion"][];
@@ -2210,6 +2240,18 @@ export interface components {
         };
         /** @enum {string} */
         HistoryKind: "visit" | "purchase" | "visit_voided" | "purchase_voided" | "package_cancelled" | "package_extended";
+        /** @description One month of a person's evaluation history: the month sheet's row for them. */
+        HistoryMonth: {
+            attendance: components["schemas"]["AttendanceTotals"];
+            /** @description Payroll closed for the month: read-only. */
+            closed: boolean;
+            /** Format: int32 */
+            complaints: number;
+            /** Format: int32 */
+            compliments: number;
+            evaluation?: components["schemas"]["Evaluation"] | null;
+            month: string;
+        };
         /** @description `GET /customers/{id}/history`: newest first. */
         HistoryPage: {
             /** Format: uuid */
@@ -6541,6 +6583,63 @@ export interface operations {
                 };
                 content?: never;
             };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_evaluation_history: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Required (`422 staff_id required`); optional in the type so a caller without the
+                 *     permission gets `403` before any parsing of what it asked for.
+                 */
+                staff_id?: string;
+                /** @description `YYYY-MM`; default 11 months before `to`. */
+                from?: string;
+                /** @description `YYYY-MM`; default (and at most) the current month. At most 24 months from `from`. */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One person's months, newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvaluationHistory"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: no evaluation.record */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unknown staff_id or another spa's */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed: from after_to, to range_too_long (> 24 months), month invalid */
             422: {
                 headers: {
                     [name: string]: unknown;

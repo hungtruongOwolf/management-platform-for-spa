@@ -6,7 +6,9 @@ use crate::adjustment::{self, Adjustment, AdjustmentInput, AdjustmentKind, Adjus
 use crate::attendance::{self, AttendanceDay, AttendanceSheet, AttendanceStatus, Entry};
 use crate::calc::Payslip;
 use crate::day::{self, MyDay};
-use crate::evaluation::{self, CriterionInput, Evaluation, EvaluationInput, EvaluationSheet};
+use crate::evaluation::{
+    self, CriterionInput, Evaluation, EvaluationHistory, EvaluationInput, EvaluationSheet,
+};
 use crate::me::{self, MyStaff};
 use crate::month::Month;
 use crate::payroll::{self, CloseInput, PayrollMonth};
@@ -43,6 +45,7 @@ where
             get(get_daily_reviews).put(put_daily_reviews),
         )
         .route("/evaluations", get(get_evaluations).put(put_evaluation))
+        .route("/evaluations/history", get(get_evaluation_history))
         .route("/adjustments", get(get_adjustments).post(post_adjustment))
         .route(
             "/adjustments/{id}",
@@ -265,6 +268,41 @@ pub async fn get_evaluations(
 ) -> Result<Response, AppError> {
     let sheet = evaluation::sheet(&pool, &user.actor, month_of(&q)?).await?;
     Ok(no_store(StatusCode::OK, sheet))
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
+pub struct HistoryQuery {
+    /// Required (`422 staff_id required`); optional in the type so a caller without the
+    /// permission gets `403` before any parsing of what it asked for.
+    pub staff_id: Option<Uuid>,
+    /// `YYYY-MM`; default 11 months before `to`.
+    pub from: Option<String>,
+    /// `YYYY-MM`; default (and at most) the current month. At most 24 months from `from`.
+    pub to: Option<String>,
+}
+
+#[utoipa::path(get, path = "/api/v1/evaluations/history", tag = "staff", params(HistoryQuery),
+    responses(
+        (status = 200, body = EvaluationHistory, description = "One person's months, newest first"),
+        (status = 401), (status = 403, description = "auth.forbidden: no evaluation.record"),
+        (status = 404, description = "unknown staff_id or another spa's"),
+        (status = 422, description = "validation_failed: from after_to, to range_too_long (> 24 months), month invalid")))]
+pub async fn get_evaluation_history(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Query(q): Query<HistoryQuery>,
+) -> Result<Response, AppError> {
+    let history = evaluation::history(
+        &pool,
+        &user.actor,
+        q.staff_id,
+        q.from.as_deref(),
+        q.to.as_deref(),
+    )
+    .await?;
+    Ok(no_store(StatusCode::OK, history))
 }
 
 #[utoipa::path(put, path = "/api/v1/evaluations", tag = "staff", request_body = EvaluationWrite,

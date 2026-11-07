@@ -38,11 +38,14 @@ export function RosterTab({
   canPay,
   filter,
   onFilter,
+  onHistory,
 }: {
   canManage: boolean;
   canPay: boolean;
   filter: RosterFilter;
   onFilter: (f: RosterFilter) => void;
+  /** Opens a person's evaluation history (only for `evaluation.record`; absent otherwise). */
+  onHistory?: (id: string) => void;
 }) {
   const query = useQuery(profilesQuery);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -145,6 +148,7 @@ export function RosterTab({
           onClose={() => {
             setOpenId(null);
           }}
+          {...(onHistory ? { onHistory } : {})}
         />
       )}
     </div>
@@ -162,7 +166,19 @@ function StatusChip({ profile: p }: { profile: StaffProfile }) {
 type Mode = "view" | "edit" | "end" | "rehire";
 
 /** One person: periods, tenure, login, history; the owner edits, ends or rehires from here. */
-function StaffSheet({ profile: p, canManage, canPay, onClose }: { profile: StaffProfile; canManage: boolean; canPay: boolean; onClose: () => void }) {
+function StaffSheet({
+  profile: p,
+  canManage,
+  canPay,
+  onClose,
+  onHistory,
+}: {
+  profile: StaffProfile;
+  canManage: boolean;
+  canPay: boolean;
+  onClose: () => void;
+  onHistory?: (id: string) => void;
+}) {
   const [mode, setMode] = useState<Mode>("view");
   if (mode === "edit") return <ProfileForm profile={p} canPay={canPay} onClose={onClose} onBack={() => { setMode("view"); }} />;
   if (mode === "end") return <EndSheet profile={p} onClose={onClose} onBack={() => { setMode("view"); }} />;
@@ -236,6 +252,18 @@ function StaffSheet({ profile: p, canManage, canPay, onClose }: { profile: Staff
             <dd>{p.shift_start ?? "Theo giờ chung của spa"}</dd>
           </div>
         </dl>
+        {onHistory && (
+          <button
+            type="button"
+            className="btn btn-secondary justify-self-start"
+            onClick={() => {
+              onClose();
+              onHistory(p.id);
+            }}
+          >
+            Lịch sử đánh giá
+          </button>
+        )}
         {p.details?.note && (
           <section className="grid gap-1">
             <h3 className="panel-title">Ghi chú</h3>

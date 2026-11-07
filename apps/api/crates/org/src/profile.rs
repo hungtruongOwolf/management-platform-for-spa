@@ -820,6 +820,12 @@ pub async fn profiles_in(tx: &mut TenantTx) -> Result<Vec<Profile>, AppError> {
     load(tx, None, false).await
 }
 
+/// One profile of the transaction's spa (`404` for an unknown id or another spa's). The caller
+/// authorizes.
+pub async fn profile_in(tx: &mut TenantTx, id: Uuid) -> Result<Profile, AppError> {
+    load_one(tx, id, false).await
+}
+
 /// The staff member linked to the actor's login in this spa (self-service), if any.
 pub async fn own_staff_id(tx: &mut TenantTx, actor: &Actor) -> Result<Option<Uuid>, AppError> {
     repo::staff_of_user(tx, actor.user_id.as_uuid()).await

@@ -188,4 +188,25 @@ test.describe("nhân viên", () => {
       await expect(back.getByText("Nhận lại làm", { exact: true })).toBeVisible();
     });
   }
+
+  // EM 2026-11-08: a person's evaluations across months, and the days behind a month.
+  test("evaluation history: a name opens the person's months, then that month's days (1280 / 390)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/nhan-vien?tab=evaluation");
+    await page.getByRole("button", { name: /: lịch sử đánh giá các tháng$/ }).first().click();
+    await expect(page.getByRole("heading", { name: /^Lịch sử đánh giá · / })).toBeVisible();
+    await expect(page).toHaveURL(/staff=/);
+    await expect(page.getByRole("list", { name: /^Các tháng của / })).toBeVisible();
+    await expectAccessible(page, "evaluation-history");
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await sidewaysOverflow(page)).toBe(0);
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expectAccessible(page, "evaluation-history-390-dark");
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.getByRole("link", { name: /^Từng ngày / }).first().click();
+    await expect(page.getByRole("region", { name: /^Từng ngày · / })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Xem cả spa thay vì / })).toBeVisible();
+    expect(await sidewaysOverflow(page)).toBe(0);
+    await expectAccessible(page, "person-days-390");
+  });
 });

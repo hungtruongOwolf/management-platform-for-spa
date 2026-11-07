@@ -108,7 +108,8 @@ export function StaffPage() {
             aria-selected={tab === t}
             aria-controls="staff-panel"
             onClick={() => {
-              patch({ tab: t }, { push: true });
+              // A tab opens on everyone; one person's view is reached from a name.
+              patch({ tab: t, staff: "" }, { push: true });
             }}
           >
             {TAB_LABEL[t]}
@@ -129,8 +130,26 @@ export function StaffPage() {
             }}
           />
         )}
-        {tab === "month" && <MonthSheet month={month} today={today} canReview={canReview} />}
-        {tab === "evaluation" && <EvaluationTab month={month} />}
+        {tab === "month" && (
+          <MonthSheet
+            month={month}
+            today={today}
+            canReview={canReview}
+            staffId={search.staff}
+            onAll={() => {
+              patch({ staff: "" });
+            }}
+          />
+        )}
+        {tab === "evaluation" && (
+          <EvaluationTab
+            month={month}
+            staffId={search.staff}
+            onPerson={(id) => {
+              patch({ staff: id }, { push: true });
+            }}
+          />
+        )}
         {tab === "payroll" && <PayrollTab month={month} canClose={can(me, "payroll.close")} />}
         {tab === "profiles" && (
           <RosterTab
@@ -140,6 +159,14 @@ export function StaffPage() {
             onFilter={(f) => {
               patch({ roster: f });
             }}
+            // EM 2026-11-08: a person's evaluation history from their roster sheet.
+            {...(canReview
+              ? {
+                  onHistory: (id: string) => {
+                    patch({ tab: "evaluation", staff: id }, { push: true });
+                  },
+                }
+              : {})}
           />
         )}
       </div>

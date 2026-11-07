@@ -45,6 +45,19 @@ export const LEVEL_LABEL: Record<Level, string> = {
 
 export const LEVEL_SHORT: Record<Level, string> = { m1: "Mức 1", m2: "Mức 2", m3: "Mức 3", fail: "Chưa đạt" };
 
+/** Chip of a month's result: good levels calm, Mức 3 amber, Chưa đạt red. */
+export const LEVEL_BADGE: Record<Level, string> = { m1: "badge-ok", m2: "badge-ok", m3: "badge-warn", fail: "badge-danger" };
+
+/** The scorecard's criteria by key (hr::evaluation::CRITERIA), for views without the sheet's list. */
+export const CRITERION_LABEL: Record<string, string> = {
+  technique: "Kỹ thuật liệu trình",
+  attitude: "Thái độ và giao tiếp",
+  customer_feedback: "Phản hồi khách hàng",
+  diligence: "Chuyên cần",
+  hygiene: "Vệ sinh và tác phong",
+  learning: "Tinh thần học hỏi",
+};
+
 export const LEVELS: Level[] = ["m1", "m2", "m3", "fail"];
 
 export const FLAG_LABEL: Record<PayFlag, string> = {
