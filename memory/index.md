@@ -28,6 +28,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [backend](wiki/architecture/backend.md) — R1-1 API contract + §3b R1-2 report endpoints (shapes, money rules, p95 bench) (endpoints, errors, idempotency, ETag), use cases + integrity strategies, layering, jobs, AC trace
 - [data](wiki/architecture/data.md) — R1-1 Postgres schema + R1-2 read models (0013: package_status, revenue_book, day indexes) + 0014 customer_follow_up, search_fold + 0023 danh tính khách (tên/SĐT nullable, `birth_date`, `customer_label`, `customer_package_extension`) + ER,
  tenant FKs, RLS, constraints, indexes, migrations, seed
+- [performance-latency-2026-11](wiki/architecture/performance-latency-2026-11.md) — đo staging 2026-11-07 (VN qua Globalping + đã đăng nhập): mạng VN↔Oregon chiếm >80 % mỗi request, cold start ~1,3–1,8 s sau chỉ ~45 s nghỉ, DB 0,25–1,7 ms; waterfall + refetch UI; phương án vùng/host có giá; kế hoạch giai đoạn 0 (engineering) / 1 (Singapore, EM quyết)
 - [principles](wiki/architecture/principles.md) — extensibility rules: modular monolith, permissions-as-data, tenant/branch, versioned policies, pure calculators
 
 ## Decisions (ADR)
@@ -43,6 +44,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [ADR-0009 served companions](wiki/decisions/ADR-0009-served-companions.md) — **accepted**: người đi cùng được làm = lịch hẹn trong nhóm (0022: khách mới không SĐT chỉ trong nhóm), ghi lượt vẫn cần hồ sơ (từ ADR-0011: hồ sơ không cần SĐT); không cột mới; **cập nhật (b) 2026-11-07**: nhóm chỉ ghi đi cùng nhau, mỗi người phục vụ riêng, bỏ sheet nhóm
 - [ADR-0010 commission follows kept money](wiki/decisions/ADR-0010-commission-follows-kept-money.md) — **accepted (EM to review)**: gói hủy có hoàn tiền → trừ tiền hoàn khỏi cơ sở hoa hồng chốt của người chốt, ở tháng hoàn (dòng `package_refund` âm); hủy không hoàn giữ nguyên
 - [ADR-0011 anonymous walk-in + optional phone](wiki/decisions/ADR-0011-anonymous-walk-in-and-optional-phone.md) — **accepted**: khách vãng lai không tên = hồ sơ không tên (`full_name NULL`, nhãn `app.customer_label`), SĐT tùy chọn mọi hồ sơ, ngày sinh, chủ gói phải có tên (`customer.name_required`), sổ gia hạn (0023)
+- [ADR-0012 colocate API + DB Singapore](wiki/decisions/ADR-0012-colocate-api-db-singapore.md) — **proposed**: API + DB cùng Singapore, API luôn chạy (staging: Fly.io `sin` sau Vercel rewrite; production B hoặc VPS theo ADR-0005); chờ EM Q-P1…P3
 
 ## Security
 - [authz-matrix](wiki/security/authz-matrix.md) — R1-1 + R1-2 (report.read, report.revenue.read) + 0016 staff (staff.manage, attendance.record, evaluation.record, payroll.read/close, staff.read_own) permissions × roles, re-auth, support grants, mandatory authz tests; quyết định C: phạm vi người được ghi (`hr::scope`)

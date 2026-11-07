@@ -47,3 +47,6 @@ EM muốn bắt đầu đơn giản: "dùng vercel và supabase cho đơn giản
   5. Gói Supabase Free không có backup tự động. Phải lên Pro trước khi nhập dữ liệu thật.
 - Migration chạy từ máy dev hoặc CI bằng owner URL (`.env.staging`), không chạy trong container.
 - Runbook: [vercel-staging](../runbooks/vercel-staging.md).
+
+## Update 2026-11-07: đo latency → đề xuất ADR-0012
+Đo staging ([performance-latency-2026-11](../architecture/performance-latency-2026-11.md)): từ VN mỗi request API tốn ~200–450 ms chỉ vì vùng Oregon, và lần gọi đầu sau ~45 s nghỉ chậm thêm 1,2–1,7 s (cold start container). Đánh đổi 1 ("cold start vài giây sau khi nghỉ") trên thực tế xảy ra gần như mỗi lượt khách. Đề xuất dời API + DB sang Singapore với API luôn chạy: [ADR-0012](ADR-0012-colocate-api-db-singapore.md) (proposed, chờ EM).
