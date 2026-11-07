@@ -2,7 +2,7 @@ import type { Calendar, Service, ServiceCategory } from "@vpyd/api-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/api";
 import { categoriesQuery, servicesQuery } from "../catalog/api";
 import {
@@ -45,6 +45,7 @@ const service = (
 });
 const GOI = service("s1", "Gội đầu", 30);
 const DAI = service("s2", "Đại Thông Lạc", 90);
+const AN_KIEN = service("s3", "An Kiên Lạc", 70);
 const CATEGORY: ServiceCategory = {
   id: "cat1",
   name: "Dưỡng sinh",
@@ -72,7 +73,7 @@ function renderSheet(
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  client.setQueryData(servicesQuery(false).queryKey, [GOI, DAI]);
+  client.setQueryData(servicesQuery(false).queryKey, [GOI, DAI, AN_KIEN]);
   client.setQueryData(categoriesQuery.queryKey, [CATEGORY]);
   const fetchMock = vi.fn(() =>
     Promise.resolve(new Response("{}", { status: 500 })),
@@ -91,7 +92,14 @@ function renderSheet(
   return { fetchMock };
 }
 
+beforeEach(() => {
+  // 2026-11-06 10:00 in the spa: the sheets' days (07/11) are tomorrow whenever the suite runs.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-11-06T03:00:00Z"));
+});
+
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -334,6 +342,132 @@ describe("Đặt lịch hẹn (spec appointments.md §10.2, §10.5)", () => {
       /Khung 10:00 đã có 2\/2 khách/,
     );
     expect(screen.getByRole("button", { name: "Đặt lịch" })).toBeEnabled();
+  });
+
+  it("books the services' exact length: 70 minutes is 10:00–11:10 (decision A)", async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = renderSheet();
+    await fillGuest(user);
+    await user.click(screen.getByRole("button", { name: "Bỏ Gội đầu" }));
+    await user.selectOptions(screen.getByLabelText("Thêm dịch vụ"), "s3");
+    const length = screen.getByLabelText("Thời lượng");
+    expect(length).toHaveValue("70");
+    expect(
+      screen.getByRole("option", { name: "70 phút (theo dịch vụ)" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/10:00–11:10/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Đặt lịch" }));
+    const [, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(JSON.parse(init.body as string)).toMatchObject({ duration_min: 70 });
+  });
+
+  it("puts what is missing by the button and focuses its field (EM 2026-11-07)", async () => {
+    const user = userEvent.setup();
+    renderSheet();
+    await fillGuest(user);
+    await user.click(screen.getByRole("button", { name: "Bỏ Gội đầu" }));
+    await user.click(screen.getByRole("button", { name: "Đặt lịch" }));
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("Còn thiếu: dịch vụ.");
+    // Pinned in the footer next to the button, not at the bottom of the form.
+    expect(alert.closest(".sheet-footer")).not.toBeNull();
+    expect(screen.getByLabelText("Thêm dịch vụ")).toHaveFocus();
+  });
+
+  it("refuses a second booking of the same customer at the same time, before sending", async () => {
+    const user = userEvent.setup();
+    // Chị Hà, a newcomer (0905111222), already booked 10:00–11:00 with KTV Lan.
+    const held = {
+      ...CAL_APPT,
+      customer_id: null,
+      is_guest: true,
+      customer_name: "Chị Hà",
+      staff_id: "st1",
+      staff_name: "KTV Lan",
+    };
+    const { fetchMock } = renderSheet({ ...CAL, appointments: [held] });
+    await fillGuest(user);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Chị Hà đã có lịch 10:00–11:00 ngày 07/11/2026 (KTV Lan). Một người không có hai lịch trùng giờ",
+    );
+    expect(
+      screen.getByText(/Đã có lịch 10:00–11:00 cùng lúc/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Đặt lịch" }));
+    expect(fetchMock).not.toHaveBeenCalled();
+    // Right after it: free.
+    await user.selectOptions(screen.getByLabelText("Giờ hẹn"), "660");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Đặt lịch" }));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("moving a booking onto the same customer's other booking is flagged too", async () => {
+    const user = userEvent.setup();
+    const later = {
+      ...CAL_APPT,
+      id: "a2",
+      starts_at: "2026-11-07T06:00:00Z",
+      ends_at: "2026-11-07T07:00:00Z",
+    };
+    const { fetchMock } = renderSheet(
+      { ...CAL, appointments: [CAL_APPT, later] },
+      { mode: "edit", appointment: later },
+    );
+    // Untouched, a booking is not judged against the other one.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Giờ hẹn"), "630");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /Nguyễn Thị Hà đã có lịch 10:00–11:00/,
+    );
+    await user.click(screen.getByRole("button", { name: "Lưu thay đổi" }));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("explains the server's customer_busy with the booking it names", () => {
+    const busy = new ApiError(409, "appointment.customer_busy", [], "a1");
+    expect(
+      bookingErrorText(busy, { ...CAL, appointments: [CAL_APPT] }, [blank(0)]),
+    ).toMatch(/^Nguyễn Thị Hà đã có lịch 10:00–11:00 ngày 07\/11\/2026/);
+  });
+
+  it("asks once before booking an earlier time of today, then books", async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = renderSheet(
+      { ...CAL, from: "2026-11-06", to: "2026-11-06" },
+      { mode: "new", day: "2026-11-06", start: 9 * 60, staffId: "" },
+    );
+    await fillGuest(user);
+    expect(
+      screen.getByText(/Giờ này đã qua \(bây giờ 10:00\)/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "09:30 · đã qua" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Đặt lịch" }));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /Giờ hẹn 09:00 đã qua .* ghi lượt nhập bù ở Quầy/,
+    );
+    await user.click(screen.getByRole("button", { name: "Vẫn đặt lịch" }));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("never books into a past day (the owner records a back-dated visit instead)", async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = renderSheet(
+      { ...CAL, from: "2026-11-05", to: "2026-11-05" },
+      { mode: "new", day: "2026-11-05", start: 10 * 60, staffId: "" },
+    );
+    await fillGuest(user);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /05\/11\/2026 đã qua: không đặt lịch cho ngày cũ/,
+    );
+    await user.click(screen.getByRole("button", { name: "Đặt lịch" }));
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

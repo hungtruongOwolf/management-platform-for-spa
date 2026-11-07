@@ -6,7 +6,7 @@ import type {
   ServiceCategory,
 } from "@vpyd/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CustomerName } from "../../app/CustomerName";
 import { Icon } from "../../app/Icon";
 import { BottomSheet } from "../../components/BottomSheet";
@@ -24,8 +24,10 @@ import {
   autoMinutes,
   bookAppointment,
   bookGroup,
+  customerClash,
   hhmm,
   instantAt,
+  lengthChoices,
   minutesOf,
   peakPeople,
   peopleAt,
@@ -130,6 +132,39 @@ export function missingParts(people: Person[], editing: boolean): string[] {
   return out;
 }
 
+/**
+ * Where the first missing part is, so a click on "Đặt lịch" brings it into view and focus instead
+ * of naming it at the bottom of a long form (EM 2026-11-07). Same order as `missingParts`.
+ */
+export function firstMissing(
+  people: Person[],
+  editing: boolean,
+): {
+  key: number;
+  what: "customer" | "guest-name" | "guest-phone" | "service";
+} | null {
+  for (const [i, p] of people.entries()) {
+    const own = i > 0 || !editing;
+    if (own && p.who === "customer" && p.customer === null)
+      return { key: p.key, what: "customer" };
+    if (own && p.who === "guest" && p.guestName.trim() === "")
+      return { key: p.key, what: "guest-name" };
+    if (i === 0 && !editing && p.who === "guest" && p.guestPhone.trim() === "")
+      return { key: p.key, what: "guest-phone" };
+    if (i === 0 && p.serviceIds.length === 0)
+      return { key: p.key, what: "service" };
+  }
+  return null;
+}
+
+/** Brings a form control into the middle of the sheet and focuses it (no-op when it is gone). */
+function reveal(el: HTMLElement | null | undefined) {
+  if (!el) return;
+  // jsdom has no scrollIntoView.
+  if ("scrollIntoView" in el) el.scrollIntoView({ block: "center" });
+  el.focus({ preventScroll: true });
+}
+
 const FIELD_NAMES: Record<string, string> = {
   service_ids: "dịch vụ",
   "guest.phone": "SĐT",
@@ -140,6 +175,12 @@ const FIELD_NAMES: Record<string, string> = {
   people: "số người",
   companions: "người đi cùng",
 };
+
+/** "Nguyễn Thị Hà đã có lịch 10:00–11:30 ngày đó (KTV Lan)…": one person, two bookings at once. */
+export function clashText(other: Appointment): string {
+  const s = spaMinutes(other.starts_at);
+  return `${other.customer_name} đã có lịch ${hhmm(s)}–${hhmm(s + other.duration_min)} ngày ${formatDate(other.business_date)} (${other.staff_name ?? "chưa gán KTV"}). Một người không có hai lịch trùng giờ: đổi giờ, hoặc mở lịch đã có để sửa.`;
+}
 
 /**
  * Every server refusal as one Vietnamese sentence. `sent` are the people of the request in its
@@ -161,6 +202,12 @@ export function bookingErrorText(
     return sent.length > 1
       ? "Hai người đang chọn cùng một KTV trùng giờ, hoặc KTV đã có lịch. Chọn KTV khác."
       : messageFor(error);
+  }
+  if (error.code === "appointment.customer_busy") {
+    const other = cal.appointments.find((x) => x.id === error.existingId);
+    return other
+      ? clashText(other)
+      : `${messageFor(error)} (${sent.length > 1 ? "một người trong nhóm" : "khách"} đã có lịch khác).`;
   }
   if (error.code === "appointment.outside_opening_hours")
     return `${messageFor(error)} Giờ mở cửa ${cal.opens_at}–${cal.closes_at}.`;
@@ -219,10 +266,7 @@ export function BookingSheet({
   const nextKey = useRef(1 + (editing?.companions.length ?? 0));
   const [people, setPeople] = useState<Person[]>(() => {
     if (!editing) return [blank(0, draft.mode === "new" ? draft.staffId : "")];
-    const auto = autoMinutes(
-      editing.services.map((s) => s.duration_min),
-      slot,
-    );
+    const auto = autoMinutes(editing.services.map((s) => s.duration_min));
     return [
       {
         ...blank(0, editing.staff_id ?? ""),
@@ -252,7 +296,9 @@ export function BookingSheet({
   const [key] = useState(() => crypto.randomUUID());
   // Editing runs several requests: what already went through is not sent again on a retry.
   const patched = useRef<Appointment | null>(null);
-  const missingRef = useRef<HTMLParagraphElement | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
+  // The earlier-than-now start the desk confirmed ("Vẫn đặt lịch"), as `day|starts`.
+  const [pastConfirmed, setPastConfirmed] = useState<string | null>(null);
 
   const serviceOf = (id: string): Service | undefined =>
     allServices.data?.find((s) => s.id === id);
@@ -264,7 +310,6 @@ export function BookingSheet({
           serviceOf(id)?.duration_min ??
           editing?.services.find((s) => s.service_id === id)?.duration_min,
       ),
-      slot,
     );
   const minutesOfPerson = (p: Person) => p.duration ?? autoOf(p);
   const startOf = (p: Person) => p.start ?? start;
@@ -298,6 +343,63 @@ export function BookingSheet({
     : 0;
   const adding = editing ? served.length - 1 : served.length;
   const overMax = max !== null && inRange && already + adding > max;
+
+  // When (EM 2026-11-07): a past day is refused by the server (a done service is a back-dated
+  // visit at Quầy); an earlier time today is allowed after one confirmation (a companion joining a
+  // booking under way). An edited booking that keeps its time is not re-judged.
+  const today = spaToday();
+  const moved =
+    editing === null ||
+    day !== editing.business_date ||
+    start !== spaMinutes(editing.starts_at);
+  const pastDay = moved && day < today;
+  const slotNow =
+    Math.floor(spaMinutes(new Date().toISOString()) / slot) * slot;
+  const earliest = Math.min(
+    ...served.filter((_, i) => i > 0 || moved).map(startOf),
+  );
+  const pastStart = day === today && earliest < slotNow;
+  const pastKey = `${day}|${String(earliest)}`;
+  // Asked once (footer + "Vẫn đặt lịch"); the next click books.
+  const pastAsked = pastStart && pastConfirmed === pastKey;
+
+  // Who already holds a booking at that time (the server refuses: 409 appointment.customer_busy).
+  const holderOf = (p: Person, i: number) => {
+    if (i === 0 && editing)
+      return {
+        customerId: editing.customer_id ?? null,
+        guestPhone: editing.is_guest ? (editing.customer_phone ?? null) : null,
+      };
+    return p.who === "customer"
+      ? { customerId: p.customer?.id ?? null, guestPhone: null }
+      : { customerId: null, guestPhone: p.guestPhone.trim() || null };
+  };
+  const clashes = new Map<number, Appointment>();
+  if (inRange)
+    served.forEach((p, i) => {
+      // Like the server: an edited booking is judged only once its time or length changes.
+      // (`moved` is always true for a new booking, so `editing` is set here.)
+      if (
+        i === 0 &&
+        editing &&
+        !moved &&
+        minutesOfPerson(p) === editing.duration_min
+      )
+        return;
+      const other = customerClash(
+        cal,
+        holderOf(p, i),
+        day,
+        startOf(p),
+        minutesOfPerson(p),
+        {
+          id: i === 0 ? (editing?.id ?? null) : null,
+          groupId: editing?.group_id ?? null,
+        },
+      );
+      if (other) clashes.set(p.key, other);
+    });
+  const firstClash = [...clashes.values()][0];
 
   const person = (p: Person) => ({
     ...(p.who === "customer"
@@ -396,14 +498,59 @@ export function BookingSheet({
     save.reset();
   };
 
+  const byId = (id: string) =>
+    formRef.current?.querySelector<HTMLElement>(`#${id}`);
+  const personField = (key: number) =>
+    formRef.current?.querySelector<HTMLElement>(
+      `#booking-person-${String(key)} :is(input, select)`,
+    );
+
   const submit = () => {
     setAttempted(true);
-    if (missing.length > 0) {
-      missingRef.current?.focus();
+    const gap = firstMissing(people, editing !== null);
+    if (gap) {
+      reveal(
+        gap.what === "customer"
+          ? personField(gap.key)
+          : byId(`booking-${gap.what}-${String(gap.key)}`),
+      );
+      return;
+    }
+    if (pastDay) {
+      reveal(formRef.current?.querySelector<HTMLElement>("#booking-day input"));
+      return;
+    }
+    const clashing = [...clashes.keys()][0];
+    if (clashing !== undefined) {
+      reveal(personField(clashing));
+      return;
+    }
+    if (pastStart && !pastAsked) {
+      setPastConfirmed(pastKey);
+      reveal(byId("booking-start"));
       return;
     }
     if (!save.isPending) save.mutate();
   };
+
+  // A server refusal: bring the field it is about into view (the sentence is in the footer).
+  useEffect(() => {
+    const e = save.error;
+    if (!(e instanceof ApiError)) return;
+    if (
+      e.code === "appointment.outside_opening_hours" ||
+      e.code === "appointment.in_the_past"
+    )
+      reveal(byId("booking-start"));
+    else if (
+      e.code === "appointment.staff_busy" &&
+      served.length === 1 &&
+      served[0]
+    )
+      reveal(byId(`booking-staff-${String(served[0].key)}`));
+    // Only when a new refusal arrives, not on every keystroke after it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [save.error]);
 
   const groups = (categories.data ?? []).map((c) => ({
     c,
@@ -416,6 +563,50 @@ export function BookingSheet({
   const sentLabels = served.map((p) => personLabel(p, people.indexOf(p)));
   const companionsCount = people.length - 1;
   const servedCompanions = served.length - 1;
+  const staffClashText =
+    clashing.length > 0
+      ? `${clashing.map((p) => personLabel(p, people.indexOf(p))).join(", ")} đang cùng KTV với người khác trong lịch này, trùng giờ: chọn KTV khác, đổi giờ bắt đầu hoặc để “Chưa gán KTV”.`
+      : null;
+  const capacityText = overMax
+    ? `Khung ${hhmm(firstStart)} đã có ${String(already)}/${String(max)} khách${adding > 0 ? `; thêm ${String(adding)} người sẽ vượt mức tối đa` : ""}. Vẫn đặt được nếu khách chịu chờ.`
+    : null;
+  const nowText = hhmm(spaMinutes(new Date().toISOString()));
+
+  /**
+   * The one message the desk must see now, pinned in the footer next to the button (EM
+   * 2026-11-07: errors at the bottom of a long form were out of sight). Blocking first, then the
+   * one-time question about an earlier start, then the advisory warnings.
+   */
+  const notice: { tone: "error" | "warn"; text: string } | null =
+    save.isError && !taken
+      ? {
+          tone: "error",
+          text: bookingErrorText(
+            save.error,
+            cal,
+            editing ? served.slice(1) : served,
+            editing ? sentLabels.slice(1) : sentLabels,
+          ),
+        }
+      : attempted && missing.length > 0
+        ? { tone: "error", text: `Còn thiếu: ${missing.join(", ")}.` }
+        : pastDay
+          ? {
+              tone: "error",
+              text: `${formatDate(day)} đã qua: không đặt lịch cho ngày cũ. Khách đã làm thì ghi lượt nhập bù ở Quầy.`,
+            }
+          : firstClash
+            ? { tone: "error", text: clashText(firstClash) }
+            : pastAsked
+              ? {
+                  tone: "warn",
+                  text: `Giờ hẹn ${hhmm(earliest)} đã qua (bây giờ ${nowText}). Khách đã làm xong thì ghi lượt nhập bù ở Quầy; khách đang làm hoặc sắp tới thì bấm “Vẫn đặt lịch”.`,
+                }
+              : staffClashText
+                ? { tone: "warn", text: staffClashText }
+                : capacityText
+                  ? { tone: "warn", text: capacityText }
+                  : null;
 
   return (
     <BottomSheet
@@ -425,6 +616,29 @@ export function BookingSheet({
       title={editing ? `Đổi lịch · ${editing.customer_name}` : "Đặt lịch hẹn"}
       footer={
         <>
+          {taken ? (
+            <div role="alert" className="alert appt-footer-note">
+              <span>Số điện thoại của khách mới đã có hồ sơ khách.</span>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  void adoptExisting(taken);
+                }}
+              >
+                Dùng hồ sơ này
+              </button>
+            </div>
+          ) : (
+            notice && (
+              <p
+                role={notice.tone === "error" ? "alert" : "status"}
+                className={`appt-footer-note ${notice.tone === "error" ? "alert" : "callout"}`}
+              >
+                {notice.text}
+              </p>
+            )
+          )}
           <button type="button" className="btn btn-secondary" onClick={onClose}>
             Thôi
           </button>
@@ -435,16 +649,19 @@ export function BookingSheet({
             className="btn btn-primary"
             aria-busy={save.isPending}
           >
-            {editing
-              ? "Lưu thay đổi"
-              : served.length > 1
-                ? `Đặt lịch ${String(served.length)} người`
-                : "Đặt lịch"}
+            {pastAsked
+              ? "Vẫn đặt lịch"
+              : editing
+                ? "Lưu thay đổi"
+                : served.length > 1
+                  ? `Đặt lịch ${String(served.length)} người`
+                  : "Đặt lịch"}
           </button>
         </>
       }
     >
       <form
+        ref={formRef}
         id="booking-form"
         className="appt-form"
         noValidate
@@ -458,8 +675,10 @@ export function BookingSheet({
           const id = (what: string) => `booking-${what}-${String(p.key)}`;
           const main = i === 0;
           const booked = isServed(p, i);
+          const held = clashes.get(p.key);
+          const sameStaff = clashing.includes(p);
           return (
-            <fieldset key={p.key} className="appt-person">
+            <fieldset key={p.key} id={id("person")} className="appt-person">
               <legend className="appt-person-head">
                 <span>{legend}</span>
                 {!main && (
@@ -484,6 +703,13 @@ export function BookingSheet({
                   booked={booked}
                   change={change}
                 />
+              )}
+              {held && (
+                <p className="field-error">
+                  Đã có lịch {hhmm(spaMinutes(held.starts_at))}–
+                  {hhmm(spaMinutes(held.starts_at) + held.duration_min)} cùng
+                  lúc: đổi giờ hoặc sửa lịch đã có.
+                </p>
               )}
               <ServiceFields
                 p={p}
@@ -523,7 +749,10 @@ export function BookingSheet({
                       id={id("staff")}
                       className="input"
                       value={p.staffId}
-                      aria-invalid={clashing.includes(p) || undefined}
+                      aria-invalid={sameStaff || undefined}
+                      aria-describedby={
+                        sameStaff ? id("staff-clash") : undefined
+                      }
                       onChange={(e) => {
                         change(p.key, { staffId: e.target.value });
                       }}
@@ -535,6 +764,11 @@ export function BookingSheet({
                         </option>
                       ))}
                     </select>
+                    {sameStaff && (
+                      <span id={id("staff-clash")} className="field-error">
+                        Trùng giờ với người khác cùng KTV này.
+                      </span>
+                    )}
                   </div>
                   {!main && (
                     <div className="field">
@@ -587,20 +821,26 @@ export function BookingSheet({
         )}
 
         <div className="appt-fields">
-          <DateField
-            label="Ngày hẹn"
-            value={day}
-            min={spaToday()}
-            onChange={(iso) => {
-              if (iso) setDay(iso);
-            }}
-          />
+          <div id="booking-day" className="grid">
+            <DateField
+              label="Ngày hẹn"
+              value={day}
+              min={today}
+              invalid={pastDay}
+              onChange={(iso) => {
+                if (iso) setDay(iso);
+              }}
+            />
+          </div>
           <div className="field">
             <label htmlFor="booking-start">Giờ hẹn</label>
             <select
               id="booking-start"
               className="input"
               value={start}
+              aria-describedby={
+                pastStart || overMax ? "booking-start-note" : undefined
+              }
               onChange={(e) => {
                 setStart(Number(e.target.value));
               }}
@@ -613,14 +853,23 @@ export function BookingSheet({
                     : n > 0
                       ? ` · ${String(n)} khách`
                       : "";
+                const gone = day === today && m < slotNow ? " · đã qua" : "";
                 return (
                   <option key={m} value={m}>
                     {hhmm(m)}
                     {tail}
+                    {gone}
                   </option>
                 );
               })}
             </select>
+            {(pastStart || overMax) && (
+              <span id="booking-start-note" className="field-hint">
+                {pastStart
+                  ? `Giờ này đã qua (bây giờ ${nowText}). Khách đã làm xong thì ghi lượt nhập bù ở Quầy.`
+                  : `Khung giờ đã đủ ${String(max)} khách.`}
+              </span>
+            )}
           </div>
         </div>
         <div className="field">
@@ -651,56 +900,7 @@ export function BookingSheet({
             : ""}{" "}
           · chưa thanh toán (thu khi ghi lượt)
         </p>
-        {clashing.length > 0 && (
-          <p role="status" className="callout">
-            {clashing.map((p) => personLabel(p, people.indexOf(p))).join(", ")}{" "}
-            đang cùng KTV với người khác trong lịch này, trùng giờ: chọn KTV
-            khác, đổi giờ bắt đầu hoặc để “Chưa gán KTV”.
-          </p>
-        )}
-        {overMax && (
-          <p role="status" className="callout">
-            Khung {hhmm(firstStart)} đã có {already}/{max} khách
-            {adding > 0
-              ? `; thêm ${String(adding)} người sẽ vượt mức tối đa`
-              : ""}
-            . Vẫn đặt được nếu khách chịu chờ.
-          </p>
-        )}
-        {attempted && missing.length > 0 && (
-          <p
-            ref={missingRef}
-            tabIndex={-1}
-            role="alert"
-            className="field-error"
-          >
-            Còn thiếu: {missing.join(", ")}.
-          </p>
-        )}
-        {taken && (
-          <p role="alert" className="button-row field-error">
-            Số điện thoại của khách mới đã có hồ sơ khách.
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => {
-                void adoptExisting(taken);
-              }}
-            >
-              Dùng hồ sơ này
-            </button>
-          </p>
-        )}
-        {save.isError && !taken && (
-          <p role="alert" className="field-error">
-            {bookingErrorText(
-              save.error,
-              cal,
-              editing ? served.slice(1) : served,
-              editing ? sentLabels.slice(1) : sentLabels,
-            )}
-          </p>
-        )}
+        {/* Errors and warnings: pinned in the footer, by the button (`notice`). */}
       </form>
     </BottomSheet>
   );
@@ -973,13 +1173,12 @@ function LengthField({
           change(p.key, { duration: m === auto ? null : m });
         }}
       >
-        {Array.from({ length: 480 / slot }, (_, x) => (x + 1) * slot).map(
-          (m) => (
-            <option key={m} value={m}>
-              {m} phút{m === auto ? " (theo dịch vụ)" : ""}
-            </option>
-          ),
-        )}
+        {/* Exact lengths (decision A): 70 sits between 60 and 75 instead of becoming 75. */}
+        {lengthChoices(slot, auto, minutes).map((m) => (
+          <option key={m} value={m}>
+            {m} phút{m === auto ? " (theo dịch vụ)" : ""}
+          </option>
+        ))}
       </select>
       <span id={id("length-hint")} className="field-hint" aria-live="polite">
         {p.duration === null

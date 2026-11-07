@@ -181,9 +181,8 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     await sheet.getByRole("option", { name: /Phạm Thị Đặt Lịch/ }).click();
     // What the EM did: pick the service in the list, nothing else.
     await sheet.getByLabel("Thêm dịch vụ").selectOption(r.service.id);
-    const minutes = String(
-      Math.max(15, Math.ceil((r.service.duration_min ?? 60) / 15) * 15),
-    );
+    // Exact, not rounded to the 15-minute grid (EM 2026-11-07, decision A).
+    const minutes = String(r.service.duration_min ?? 60);
     await expect(sheet.getByLabel("Thời lượng")).toHaveValue(minutes);
 
     // The server's 422 (outside opening hours) is shown in Vietnamese.
@@ -643,6 +642,121 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     await expect(page.getByText("Mai Thị Theo Người")).toHaveCount(0);
     await picker.selectOption("");
     await expect(page).not.toHaveURL(/ktv=/);
+  });
+
+  test("EM 2026-11-07: exact length, one booking per person at a time, real buttons, no guessed KTV", async ({
+    page,
+  }) => {
+    const r = await regular(page, "Nguyễn Thị Lan Anh");
+    const services = (await (
+      await page.request.get("/api/v1/services")
+    ).json()) as Service[];
+    const seventy = services.find((s) => s.active && s.duration_min === 70);
+    expect(seventy, "seeded menu: a 70-minute service").toBeDefined();
+    if (!seventy) return;
+    const day = spaDay(7);
+    const book = (starts: string, staff: string | null) =>
+      page.request.post("/api/v1/appointments", {
+        headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+        data: {
+          customer_id: r.customer,
+          service_ids: [seventy.id],
+          staff_id: staff,
+          starts_at: starts,
+        },
+      });
+    const booked = await book(`${day}T09:00:00+07:00`, r.staff.id);
+    expect(booked.status()).toBe(201);
+    expect(
+      ((await booked.json()) as { duration_min: number }).duration_min,
+    ).toBe(70);
+
+    // Decision A: 09:00–10:10 on the grid, 70/15 slots tall; 10:15 right below stays free.
+    await page.goto(`/quay?view=lich&ngay=${day}`);
+    const grid = page.getByRole("group", { name: /Lịch theo KTV/ });
+    const card = grid.getByRole("button", {
+      name: /^09:00–10:10 Nguyễn Thị Lan Anh, Chưa đến/,
+    });
+    await expect(card).toBeVisible();
+    const slot =
+      (await grid.locator(".cal-cell").first().boundingBox())?.height ?? 0;
+    const box = await card.boundingBox();
+    expect(slot).toBeGreaterThan(10);
+    expect(Math.abs((box?.height ?? 0) - (70 / 15) * slot)).toBeLessThanOrEqual(
+      4,
+    );
+
+    // The same customer again at 09:30: the server refuses, and the form says so by its button
+    // before sending anything (EM: "Lan Anh 09:00 ×2").
+    const twice = await book(`${day}T09:30:00+07:00`, null);
+    expect(twice.status()).toBe(409);
+    expect(((await twice.json()) as { code: string }).code).toBe(
+      "appointment.customer_busy",
+    );
+    await page.getByRole("button", { name: "Đặt lịch", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "Đặt lịch hẹn" });
+    await sheet
+      .getByRole("combobox", { name: "Tìm khách theo SĐT hoặc tên" })
+      .pressSequentially(r.phone);
+    await sheet.getByRole("option", { name: /Nguyễn Thị Lan Anh/ }).click();
+    await sheet.getByLabel("Thêm dịch vụ").selectOption(seventy.id);
+    await sheet
+      .getByLabel("Giờ hẹn")
+      .selectOption({ value: String(9 * 60 + 30) });
+    const alert = sheet.getByRole("alert");
+    await expect(alert).toContainText(
+      "Nguyễn Thị Lan Anh đã có lịch 09:00–10:10",
+    );
+    // Pinned by the button: on screen even though the form is long.
+    await expect(alert).toBeInViewport();
+    await sheet.getByRole("button", { name: "Đặt lịch", exact: true }).click();
+    await expect(sheet).toBeVisible();
+    await sheet.getByRole("button", { name: "Thôi" }).click();
+
+    // Today, no technician booked: "KTV làm" starts empty and asks for a choice.
+    const today = await book(`${spaDay()}T09:00:00+07:00`, null);
+    expect(today.status()).toBe(201);
+    await page.goto("/quay?view=lich");
+    await page
+      .getByRole("button", { name: /09:00.*Nguyễn Thị Lan Anh, Chưa đến/ })
+      .click();
+    const panel = page.getByRole("dialog", {
+      name: /09:00.*Nguyễn Thị Lan Anh/,
+    });
+    await expect(panel.getByLabel("KTV làm")).toHaveValue("");
+    await panel
+      .getByRole("button", { name: "Chỉ báo đã đến (ghi lượt sau)" })
+      .click();
+    await expect(panel).toContainText("Chọn KTV làm cho khách rồi bấm lại.");
+    await expect(panel).toContainText("Chưa đến");
+
+    // "Hủy lịch" is a real button of the control scale, at 1280 and at 390 px.
+    const cancel = panel.getByRole("button", { name: "Hủy lịch" });
+    const edit = panel.getByRole("button", { name: "Đổi lịch" });
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      await cancel.scrollIntoViewIfNeeded();
+      const [c, e] = await Promise.all([
+        cancel.boundingBox(),
+        edit.boundingBox(),
+      ]);
+      expect(
+        c?.height ?? 0,
+        `Hủy lịch at ${String(width)}`,
+      ).toBeGreaterThanOrEqual(43);
+      expect(Math.abs((c?.height ?? 0) - (e?.height ?? 0))).toBeLessThanOrEqual(
+        1,
+      );
+      expect(
+        await cancel.evaluate((el) => getComputedStyle(el).borderTopStyle),
+      ).toBe("solid");
+    }
+    await expectAccessible(page, "lich-hen-thao-tac");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await cancel.click();
+    await panel.getByLabel("Lý do hủy lịch (bắt buộc)").fill("Khách đặt trùng");
+    await panel.getByRole("button", { name: "Hủy lịch" }).click();
+    await expect(panel).toContainText("Đã hủy");
   });
 
   test("phones get the list, the week overview works", async ({ page }) => {

@@ -113,9 +113,17 @@ struct Placement {
     staff_id: Option<Uuid>,
 }
 
-/// Day rules: past days follow the closed-day rule (owner only), at most 90 days ahead.
-fn check_day(actor: &Actor, spa: &Spa, day: NaiveDate) -> Result<(), AppError> {
-    kernel::corrections::authorize_closed_day(actor, day, spa.today())?;
+/// Day rules of a new booking or of a move to another day: today up to 90 days ahead. A past day
+/// is refused for everyone, the owner too (EM 2026-11-07): a service already done is a back-dated
+/// visit ("nhập bù" at Quầy), not an appointment. Appointments already on a past day still follow
+/// the closed-day rule for every change (`lock_open`). An earlier time of today is allowed (a
+/// companion joining a booking already under way); the form warns and asks first.
+fn check_day(spa: &Spa, day: NaiveDate) -> Result<(), AppError> {
+    if day < spa.today() {
+        return Err(AppError::Unprocessable {
+            code: "appointment.in_the_past",
+        });
+    }
     if day > spa.today() + Duration::days(domain::MAX_DAYS_AHEAD) {
         return Err(invalid("starts_at", "too_far"));
     }
@@ -139,12 +147,22 @@ fn place(
     })
 }
 
-/// The technician (if any) is free over the whole booking (AC9.2). Takes the day lock first, so
-/// the answer stays true until the caller commits.
+/// The person a booking is for, to find their other bookings at the same time.
+#[derive(Clone, Copy)]
+struct Holder<'a> {
+    customer_id: Option<Uuid>,
+    guest_phone: Option<&'a str>,
+    group_id: Option<Uuid>,
+}
+
+/// The technician (if any) is free over the whole booking (AC9.2) and, when `holder` is given, the
+/// same person has no other open booking overlapping it (EM 2026-11-07: "Lan Anh 09:00 ×2").
+/// Takes the day lock first, so the answers stay true until the caller commits.
 async fn check_fits(
     tx: &mut TenantTx,
     p: &Placement,
     except: Option<Uuid>,
+    holder: Option<Holder<'_>>,
 ) -> Result<(), AppError> {
     if let Some(staff) = p.staff_id {
         org::service::require_active(tx, staff).await?;
@@ -155,6 +173,24 @@ async fn check_fits(
     {
         return Err(AppError::ConflictWith {
             code: "appointment.staff_busy",
+            existing_id: busy,
+        });
+    }
+    if let Some(h) = holder
+        && (h.customer_id.is_some() || h.guest_phone.is_some())
+        && let Some(busy) = repo::customer_overlap(
+            tx,
+            h.customer_id,
+            h.guest_phone,
+            h.group_id,
+            p.starts_at,
+            p.ends_at,
+            except,
+        )
+        .await?
+    {
+        return Err(AppError::ConflictWith {
+            code: "appointment.customer_busy",
             existing_id: busy,
         });
     }
@@ -318,7 +354,7 @@ async fn walk_ins(
             continue;
         };
         let durations: Vec<Option<i32>> = ls.iter().map(|l| l.duration_min).collect();
-        let minutes = domain::visit_minutes(&durations, spa.settings.slot_minutes);
+        let minutes = domain::visit_minutes(&durations);
         let ends_at = r.check_in_at + Duration::minutes(i64::from(minutes));
         let voided = r.status == "voided";
         let paid = r.sale_total.unwrap_or(0);
@@ -611,17 +647,21 @@ async fn insert_booking(
     };
     let services = resolve_services(tx, b.service_ids).await?;
     let durations: Vec<Option<i32>> = services.iter().map(|s| s.2).collect();
-    let minutes = domain::duration_minutes(&durations, b.duration_min, spa.settings.slot_minutes)
-        .map_err(slot_error)?;
+    let minutes = domain::duration_minutes(&durations, b.duration_min).map_err(slot_error)?;
     let p = place(spa, b.starts_at, minutes, b.staff_id)?;
-    check_day(actor, spa, p.business_date)?;
-    check_fits(tx, &p, None).await?;
-
-    let id = Uuid::now_v7();
+    check_day(spa, p.business_date)?;
     let (guest_name, guest_phone) = match &b.who {
         Who::Guest { name, phone } => (Some(name.as_str()), phone.as_ref().map(PhoneE164::as_str)),
         Who::Customer(_) => (None, None),
     };
+    let holder = Holder {
+        customer_id,
+        guest_phone,
+        group_id,
+    };
+    check_fits(tx, &p, None, Some(holder)).await?;
+
+    let id = Uuid::now_v7();
     repo::insert(
         tx,
         &AppointmentInsert {
@@ -906,12 +946,9 @@ pub async fn update(
             .map_err(|_| AppError::Internal("appointment duration".into()))?,
         (requested, Some(s)) => {
             let d: Vec<Option<i32>> = s.iter().map(|x| x.2).collect();
-            domain::duration_minutes(&d, requested, spa.settings.slot_minutes)
-                .map_err(slot_error)?
+            domain::duration_minutes(&d, requested).map_err(slot_error)?
         }
-        (Some(m), None) => {
-            domain::duration_minutes(&[], Some(m), spa.settings.slot_minutes).map_err(slot_error)?
-        }
+        (Some(m), None) => domain::duration_minutes(&[], Some(m)).map_err(slot_error)?,
     };
     let p = place(
         &spa,
@@ -923,9 +960,21 @@ pub async fn update(
         if arrived {
             return Err(invalid("starts_at", "not_today"));
         }
-        check_day(actor, &spa, p.business_date)?;
+        check_day(&spa, p.business_date)?;
     }
-    check_fits(&mut tx, &p, Some(id)).await?;
+    // The person's other bookings are checked only when this one moves or gets its customer: an
+    // overlap saved before the rule existed must not stop a change of technician or note.
+    let moved = p.starts_at != current.starts_at || p.ends_at != current.ends_at;
+    let holder = (moved || input.customer_id.is_some()).then(|| Holder {
+        customer_id: input.customer_id.or(current.customer_id),
+        guest_phone: if input.customer_id.is_some() {
+            None
+        } else {
+            current.guest_phone.as_deref()
+        },
+        group_id: current.group_id,
+    });
+    check_fits(&mut tx, &p, Some(id), holder).await?;
     let note_value = match &note {
         Some(n) => n.clone(),
         None => current.note.clone(),
@@ -1003,7 +1052,8 @@ pub async fn arrive(
         ends_at: current.ends_at,
         staff_id: Some(input.staff_id),
     };
-    check_fits(&mut tx, &p, Some(id)).await?;
+    // Same time as booked: only the serving technician is new.
+    check_fits(&mut tx, &p, Some(id), None).await?;
     if !repo::mark_arrived(&mut tx, id, input.staff_id).await? {
         return Err(AppError::Conflict {
             code: "appointment.already_arrived",

@@ -1174,7 +1174,7 @@ export interface components {
             customer_id?: string | null;
             /**
              * Format: int32
-             * @description Default: the services' durations (empty = 60) rounded up to the slot. 1 slot – 480.
+             * @description Default: the services' exact durations (untimed alone = 60). 5 – 480 minutes.
              */
             duration_min?: number | null;
             /**
@@ -1196,7 +1196,8 @@ export interface components {
             staff_id?: string | null;
             /**
              * Format: date-time
-             * @description On the spa's slot grid, inside opening hours; today up to 90 days ahead (past days: owner).
+             * @description On the spa's slot grid, inside opening hours; today up to 90 days ahead (a past day is
+             *     `422 appointment.in_the_past` for everyone: that is a back-dated visit).
              */
             starts_at: string;
         };
@@ -1448,7 +1449,7 @@ export interface components {
             duration_min: number;
             /**
              * Format: date-time
-             * @description `starts_at` + the services' durations (empty = 60) rounded up to the slot, ≤ 8 h.
+             * @description `starts_at` + the services' exact durations (untimed alone = 60), 5 min – 8 h.
              */
             ends_at: string;
             /** Format: uuid */
@@ -1912,7 +1913,7 @@ export interface components {
             customer_id?: string | null;
             /**
              * Format: int32
-             * @description Default: this person's services' durations rounded up to the slot.
+             * @description Default: this person's services' exact durations.
              */
             duration_min?: number | null;
             guest?: components["schemas"]["GuestCreate"] | null;
@@ -4089,7 +4090,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description auth.forbidden / day.locked (a past day, non-owner) */
+            /** @description auth.forbidden / day.locked (group_with: the host is on a past day, non-owner) */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4103,14 +4104,14 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description appointment.staff_busy (existing_id = the overlapping appointment), customer.phone_taken (newcomer's phone already has a record: existing_id) */
+            /** @description appointment.staff_busy (existing_id = the overlapping appointment), appointment.customer_busy (the same customer, or newcomer phone outside the group, already has an open booking overlapping it: existing_id), customer.phone_taken (newcomer's phone already has a record: existing_id) */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description validation_failed (starts_at not_on_slot / too_far, duration_min out_of_range, guest.*), appointment.outside_opening_hours, staff.inactive */
+            /** @description validation_failed (starts_at not_on_slot / too_far, duration_min out_of_range, guest.*), appointment.outside_opening_hours, appointment.in_the_past (a past business day, owner too: record a back-dated visit instead), staff.inactive */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4169,7 +4170,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description appointment.staff_busy (existing_id; also two people of the group on one technician), customer.phone_taken (existing_id) */
+            /** @description appointment.staff_busy (existing_id; also two people of the group on one technician), appointment.customer_busy (existing_id), customer.phone_taken (existing_id) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4268,7 +4269,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description appointment.closed, appointment.staff_busy */
+            /** @description appointment.closed, appointment.staff_busy, appointment.customer_busy (checked when the booking moves or gets its customer record) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4281,6 +4282,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description validation_failed, appointment.outside_opening_hours, appointment.in_the_past (moved to a past day) */
             422: {
                 headers: {
                     [name: string]: unknown;

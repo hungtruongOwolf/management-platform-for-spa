@@ -12,6 +12,8 @@ pub const DEFAULT_SLOT_MINUTES: u32 = 15;
 /// A service without a duration ("theo tư vấn") books one hour.
 pub const DEFAULT_SERVICE_MINUTES: u32 = 60;
 pub const MAX_DURATION_MINUTES: u32 = 480;
+/// Shortest booking or visit block. Lengths are exact (EM 2026-11-07, decision A), not slots.
+pub const MIN_DURATION_MINUTES: u32 = 5;
 pub const MAX_SERVICES: usize = 5;
 /// How far ahead the desk may book.
 pub const MAX_DAYS_AHEAD: i64 = 90;
@@ -166,7 +168,7 @@ impl CalendarSettings {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SlotError {
-    /// Not a multiple of the slot, or outside 1 slot..8 h.
+    /// Outside 5 minutes..8 h.
     BadDuration,
     /// Start not on the slot grid (`starts_at not_on_slot`).
     NotOnSlot,
@@ -174,53 +176,42 @@ pub enum SlotError {
     OutsideHours,
 }
 
-/// Minutes the booking lasts: the desk's choice, or the services' durations (empty = 1 hour)
-/// rounded up to the slot grid.
+/// Minutes the booking lasts: the desk's choice, or the services' exact durations (EM 2026-11-07,
+/// decision A: a 70-minute service is 09:00–10:10, no longer rounded up to 10:15 by the 15-minute
+/// grid). Only the start sits on the grid; the end falls where the service ends.
 pub fn duration_minutes(
     service_minutes: &[Option<i32>],
     requested: Option<u32>,
-    slot: u32,
 ) -> Result<u32, SlotError> {
-    let slot = slot.max(1);
-    let minutes = match requested {
-        Some(m) => {
-            if !m.is_multiple_of(slot) {
-                return Err(SlotError::BadDuration);
-            }
-            m
-        }
-        None => services_minutes(service_minutes, slot),
-    };
-    if minutes < slot || minutes > MAX_DURATION_MINUTES {
+    let minutes = requested.unwrap_or_else(|| services_minutes(service_minutes));
+    if !(MIN_DURATION_MINUTES..=MAX_DURATION_MINUTES).contains(&minutes) {
         return Err(SlotError::BadDuration);
     }
     Ok(minutes)
 }
 
-/// The services' durations summed and rounded up to the slot grid. A service without a duration
-/// ("theo tư vấn") books one hour when nothing else has a duration; next to a timed service it is
-/// an add-on done within that time ("Mặt nạ thuốc bắc" with a 30-minute "Gội đầu") and adds
-/// nothing. Counting every add-on as an hour drew a 30-minute visit 2.5 hours tall (round 6).
-fn services_minutes(service_minutes: &[Option<i32>], slot: u32) -> u32 {
+/// The services' durations summed, exactly. A service without a duration ("theo tư vấn") books
+/// one hour when nothing else has a duration; next to a timed service it is an add-on done within
+/// that time ("Mặt nạ thuốc bắc" with a 30-minute "Gội đầu") and adds nothing. Counting every
+/// add-on as an hour drew a 30-minute visit 2.5 hours tall (round 6).
+fn services_minutes(service_minutes: &[Option<i32>]) -> u32 {
     let timed: Vec<u32> = service_minutes
         .iter()
         .filter_map(|m| m.and_then(|v| u32::try_from(v).ok()).filter(|v| *v > 0))
         .collect();
-    let sum: u32 = if timed.is_empty() {
+    if timed.is_empty() {
         u32::try_from(service_minutes.len())
             .unwrap_or(u32::MAX)
             .saturating_mul(DEFAULT_SERVICE_MINUTES)
     } else {
         timed.iter().sum()
-    };
-    sum.div_ceil(slot) * slot
+    }
 }
 
-/// How long a recorded visit occupies the timeline: its services' durations like a booking,
-/// clamped to one slot..8 h (a visit is never refused for being long, it is already done).
-pub fn visit_minutes(service_minutes: &[Option<i32>], slot: u32) -> u32 {
-    let slot = slot.max(1);
-    services_minutes(service_minutes, slot).clamp(slot, MAX_DURATION_MINUTES)
+/// How long a recorded visit occupies the timeline: its services' exact durations like a booking,
+/// clamped to 5 minutes..8 h (a visit is never refused for being long, it is already done).
+pub fn visit_minutes(service_minutes: &[Option<i32>]) -> u32 {
+    services_minutes(service_minutes).clamp(MIN_DURATION_MINUTES, MAX_DURATION_MINUTES)
 }
 
 /// The booking's end, its business day, and whether it fits the day's grid and opening hours.
@@ -301,25 +292,27 @@ mod tests {
     }
 
     #[test]
-    fn duration_comes_from_services_rounded_to_the_slot() {
-        assert_eq!(duration_minutes(&[Some(60)], None, 15), Ok(60));
+    fn duration_is_the_services_exact_time() {
+        assert_eq!(duration_minutes(&[Some(60)], None), Ok(60));
+        // Decision A (EM 2026-11-07): 70 minutes stay 70, not the 75 of the 15-minute grid.
+        assert_eq!(duration_minutes(&[Some(70)], None), Ok(70));
+        assert_eq!(duration_minutes(&[Some(40)], None), Ok(40));
         // An untimed service is an hour on its own, an add-on next to a timed one.
-        assert_eq!(duration_minutes(&[Some(50), None], None, 15), Ok(60));
-        assert_eq!(duration_minutes(&[Some(30), None, None], None, 15), Ok(30));
-        assert_eq!(duration_minutes(&[None], None, 15), Ok(60));
-        assert_eq!(duration_minutes(&[None, None], None, 15), Ok(120));
-        assert_eq!(duration_minutes(&[Some(40)], None, 15), Ok(45));
-        assert_eq!(duration_minutes(&[Some(60)], Some(90), 15), Ok(90));
+        assert_eq!(duration_minutes(&[Some(50), None], None), Ok(50));
+        assert_eq!(duration_minutes(&[Some(30), None, None], None), Ok(30));
+        assert_eq!(duration_minutes(&[None], None), Ok(60));
+        assert_eq!(duration_minutes(&[None, None], None), Ok(120));
+        // The desk's own length is exact too, 5 minutes..8 hours.
+        assert_eq!(duration_minutes(&[Some(60)], Some(90)), Ok(90));
+        assert_eq!(duration_minutes(&[Some(60)], Some(50)), Ok(50));
+        for bad in [4, 481] {
+            assert_eq!(
+                duration_minutes(&[Some(60)], Some(bad)),
+                Err(SlotError::BadDuration)
+            );
+        }
         assert_eq!(
-            duration_minutes(&[Some(60)], Some(50), 15),
-            Err(SlotError::BadDuration)
-        );
-        assert_eq!(
-            duration_minutes(&[Some(60)], Some(495), 15),
-            Err(SlotError::BadDuration)
-        );
-        assert_eq!(
-            duration_minutes(&[Some(300), Some(300)], None, 15),
+            duration_minutes(&[Some(300), Some(300)], None),
             Err(SlotError::BadDuration)
         );
     }
@@ -333,17 +326,22 @@ mod tests {
         assert_eq!(place(at(10, 7), 60, vn(), s), Err(SlotError::NotOnSlot));
         assert_eq!(place(at(8, 45), 60, vn(), s), Err(SlotError::OutsideHours));
         assert_eq!(place(at(20, 30), 60, vn(), s), Err(SlotError::OutsideHours));
+        // Only the start is on the grid: 09:00 + 70 minutes ends at 10:10.
+        assert_eq!(place(at(9, 0), 70, vn(), s), Ok((at(10, 10), day)));
+        assert_eq!(place(at(19, 45), 70, vn(), s), Ok((at(20, 55), day)));
+        assert_eq!(place(at(20, 0), 70, vn(), s), Err(SlotError::OutsideHours));
     }
 
     #[test]
-    fn a_visit_occupies_its_services_time_clamped_to_the_grid() {
-        assert_eq!(visit_minutes(&[Some(90)], 15), 90);
-        assert_eq!(visit_minutes(&[Some(40), None], 15), 45);
-        assert_eq!(visit_minutes(&[Some(90), None], 15), 90);
-        assert_eq!(visit_minutes(&[None], 15), 60);
-        assert_eq!(visit_minutes(&[Some(5)], 15), 15);
-        assert_eq!(visit_minutes(&[], 15), 15);
-        assert_eq!(visit_minutes(&[Some(300), Some(300)], 15), 480);
+    fn a_visit_occupies_its_services_exact_time() {
+        assert_eq!(visit_minutes(&[Some(90)]), 90);
+        assert_eq!(visit_minutes(&[Some(70)]), 70);
+        assert_eq!(visit_minutes(&[Some(40), None]), 40);
+        assert_eq!(visit_minutes(&[Some(90), None]), 90);
+        assert_eq!(visit_minutes(&[None]), 60);
+        assert_eq!(visit_minutes(&[Some(2)]), 5);
+        assert_eq!(visit_minutes(&[]), 5);
+        assert_eq!(visit_minutes(&[Some(300), Some(300)]), 480);
     }
 
     #[test]

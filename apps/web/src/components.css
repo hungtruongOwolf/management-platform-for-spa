@@ -94,7 +94,8 @@
     gap: 8px;
     padding: 16px 12px;
     z-index: 11;
-    border-right: 1px solid color-mix(in srgb, var(--chrome-accent) 35%, transparent);
+    border-right: 1px solid
+      color-mix(in srgb, var(--chrome-accent) 35%, transparent);
     box-shadow: var(--shadow-chrome);
     /* Scrolls down on short screens, never sideways (overflow-y alone makes x scroll too). */
     overflow: hidden auto;
@@ -152,7 +153,8 @@
   justify-content: center;
   margin-bottom: 4px;
   padding-bottom: 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--chrome-accent) 30%, transparent);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--chrome-accent) 30%, transparent);
   border-radius: 0;
 }
 .sidebar-logo {
@@ -230,7 +232,8 @@
 .sidebar-toggle {
   display: none;
   width: 100%;
-  border-top: 1px solid color-mix(in srgb, var(--chrome-accent) 25%, transparent);
+  border-top: 1px solid
+    color-mix(in srgb, var(--chrome-accent) 25%, transparent);
   border-radius: 0;
   font-size: var(--fs-sm);
 }
@@ -507,7 +510,8 @@ kbd {
   grid-auto-columns: minmax(0, 1fr);
   grid-auto-flow: column;
   padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
-  border-top: 1px solid color-mix(in srgb, var(--chrome-accent) 45%, transparent);
+  border-top: 1px solid
+    color-mix(in srgb, var(--chrome-accent) 45%, transparent);
 }
 @media (min-width: 768px) {
   .tabbar {
@@ -609,13 +613,28 @@ dialog::backdrop {
  * 6px between a visible label and its field, whether the label wraps the field or precedes it, so
  * the field's 2px focus ring (styles.css) never touches the label text. Inline (flex) labels keep
  * their row alignment. Zero specificity: a margin utility on the field still wins. */
-:where(label:not(.sr-only)) + :where(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select, textarea),
-:where(label:not(.flex, .inline-flex, .sr-only)) > :where(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select, textarea) {
+:where(label:not(.sr-only))
+  + :where(
+    input:not([type="checkbox"], [type="radio"], [type="hidden"]),
+    select,
+    textarea
+  ),
+:where(label:not(.flex, .inline-flex, .sr-only))
+  > :where(
+    input:not([type="checkbox"], [type="radio"], [type="hidden"]),
+    select,
+    textarea
+  ) {
   margin-top: 6px;
 }
 /* A label that wraps its field stacks the field under the text (EM round 4: "Nhóm dịch vụ mới"
  * sat beside a narrower field, baseline-misaligned). Its width utility (w-64, w-full) still wins. */
-:where(label:not(.flex, .inline-flex, .sr-only)) > :where(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select, textarea) {
+:where(label:not(.flex, .inline-flex, .sr-only))
+  > :where(
+    input:not([type="checkbox"], [type="radio"], [type="hidden"]),
+    select,
+    textarea
+  ) {
   display: block;
 }
 
@@ -642,7 +661,8 @@ dialog::backdrop {
  * border-strong, 6px corners, surface fill. Hover/focus/invalid/disabled: styles.css.
  */
 .input:not(textarea),
-:is(.field, .filter-field, .filter-select) > :is(input:not([type="checkbox"], [type="radio"]), select),
+:is(.field, .filter-field, .filter-select)
+  > :is(input:not([type="checkbox"], [type="radio"]), select),
 .date-field > input[type="text"],
 .search-field input,
 :where(select:not([multiple], [size])) {
@@ -1109,16 +1129,28 @@ textarea::-webkit-resizer {
   background-color: var(--primary-hover);
 }
 /* Round 2: raised buttons rise a pixel under the pointer and sink when pressed. */
-:is(.btn-primary, .btn-danger, .btn-secondary):not(:disabled, [aria-disabled="true"], [aria-busy="true"]):hover {
+:is(.btn-primary, .btn-danger, .btn-secondary):not(
+    :disabled,
+    [aria-disabled="true"],
+    [aria-busy="true"]
+  ):hover {
   transform: translateY(-1px);
 }
-:is(.btn-primary, .btn-danger):not(:disabled, [aria-disabled="true"], [aria-busy="true"]):hover {
+:is(.btn-primary, .btn-danger):not(
+    :disabled,
+    [aria-disabled="true"],
+    [aria-busy="true"]
+  ):hover {
   box-shadow: var(--shadow-btn), var(--shadow-lift);
 }
 .btn-primary:not(:disabled, [aria-disabled="true"], [aria-busy="true"]):active {
   background-color: var(--primary-pressed);
 }
-:is(.btn-primary, .btn-danger):not(:disabled, [aria-disabled="true"], [aria-busy="true"]):active {
+:is(.btn-primary, .btn-danger):not(
+    :disabled,
+    [aria-disabled="true"],
+    [aria-busy="true"]
+  ):active {
   background-image: none;
   box-shadow: var(--shadow-press);
 }
@@ -1128,12 +1160,20 @@ textarea::-webkit-resizer {
   box-shadow: var(--shadow-xs);
   color: var(--text);
 }
-.btn-secondary:not(:disabled, [aria-disabled="true"], [aria-busy="true"]):hover {
+.btn-secondary:not(
+    :disabled,
+    [aria-disabled="true"],
+    [aria-busy="true"]
+  ):hover {
   border-color: var(--primary);
   background: var(--mix-secondary-hover);
   color: var(--primary);
 }
-.btn-secondary:not(:disabled, [aria-disabled="true"], [aria-busy="true"]):active {
+.btn-secondary:not(
+    :disabled,
+    [aria-disabled="true"],
+    [aria-busy="true"]
+  ):active {
   background: var(--primary-soft);
   box-shadow: var(--shadow-press);
 }
@@ -1153,6 +1193,31 @@ textarea::-webkit-resizer {
 }
 .btn-danger:not(:disabled, [aria-disabled="true"], [aria-busy="true"]):hover {
   background-color: color-mix(in srgb, var(--danger) 86%, var(--text));
+}
+/* The quiet weight of a destructive action: an outline button in the danger colour that opens
+   its confirmation ("Hủy lịch" → reason → `btn-danger` "Hủy lịch"). Same size and states as
+   `btn-secondary`; never the button that destroys by itself. */
+.btn-danger-outline {
+  border-color: var(--danger);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+  color: var(--danger);
+}
+.btn-danger-outline:not(
+    :disabled,
+    [aria-disabled="true"],
+    [aria-busy="true"]
+  ):hover {
+  transform: translateY(-1px);
+  background: var(--danger-soft);
+}
+.btn-danger-outline:not(
+    :disabled,
+    [aria-disabled="true"],
+    [aria-busy="true"]
+  ):active {
+  background: var(--danger-soft);
+  box-shadow: var(--shadow-press);
 }
 /* An icon-only button: a square 44px hit area; it always carries an aria-label. */
 .btn-icon {
@@ -1186,7 +1251,10 @@ textarea::-webkit-resizer {
 :is(button, a).border-border:not(.card) {
   background-color: var(--surface);
 }
-:is(button, a).border-border:not(.card):not(:disabled, [aria-disabled="true"]):hover {
+:is(button, a).border-border:not(.card):not(
+    :disabled,
+    [aria-disabled="true"]
+  ):hover {
   border-color: var(--border-strong);
 }
 
@@ -2300,4 +2368,3 @@ tr.ledger-day > :is(td, th) {
   min-width: 12rem;
   flex: 1;
 }
-

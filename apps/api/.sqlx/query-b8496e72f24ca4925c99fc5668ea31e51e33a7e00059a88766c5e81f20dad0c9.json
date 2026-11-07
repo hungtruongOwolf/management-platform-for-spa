@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM app.appointment\n           WHERE tenant_id = $1 AND status IN ('booked', 'arrived')\n             AND starts_at < $5 AND ends_at > $4\n             AND ($6::uuid IS NULL OR id <> $6)\n             AND (customer_id = $2\n                  OR (guest_phone = $3 AND ($7::uuid IS NULL OR group_id IS DISTINCT FROM $7)))\n           ORDER BY starts_at, id\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.appointment",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Timestamptz",
+        "Timestamptz",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b8496e72f24ca4925c99fc5668ea31e51e33a7e00059a88766c5e81f20dad0c9"
+}

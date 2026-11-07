@@ -1,4 +1,4 @@
-import type { Appointment, Calendar } from "@vpyd/api-client";
+import type { Appointment } from "@vpyd/api-client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatVnd } from "@vpyd/ui";
 import { useState } from "react";
@@ -67,12 +67,10 @@ export function skipReason(
  * stops nobody else, and pressing again resends only those not yet recorded.
  */
 export function GroupCheckIn({
-  cal,
   members,
   onClose,
   onDone,
 }: {
-  cal: Calendar;
   members: Appointment[];
   onClose: () => void;
   onDone: () => void;
@@ -93,7 +91,8 @@ export function GroupCheckIn({
       members.map((a) => [
         a.id,
         {
-          staffId: a.staff_id ?? cal.technicians[0]?.id ?? "",
+          // The booked technician or nobody: never a guess (EM 2026-11-07).
+          staffId: a.staff_id ?? "",
           mode: "cash",
           key: crypto.randomUUID(),
           state: "ready" as const,
@@ -319,7 +318,9 @@ export function GroupCheckIn({
                 </div>
               )}
               {row.state !== "done" && !skip && row.staffId === "" && (
-                <p className="field-hint">Chọn KTV làm để ghi lượt người này.</p>
+                <p className="field-hint">
+                  Chọn KTV làm để ghi lượt người này.
+                </p>
               )}
               {maySell && lines && !skip && row.state !== "done" && (
                 <GroupPackagePick
