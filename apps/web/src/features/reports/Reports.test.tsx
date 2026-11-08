@@ -414,6 +414,42 @@ describe("customer history", () => {
     expect(edits[0]?.parentElement).toHaveTextContent(/\d{2}:\d{2}/);
   });
 
+  it("adds a package's note from its purchase in the timeline (F4 follow-up)", async () => {
+    const spy = serveManagement({
+      permissions: [
+        ...MANAGER,
+        "package.sell",
+        "customer.health_notes.read",
+        "customer.health_notes.write",
+        "record.void_closed_day",
+      ],
+    });
+    const user = userEvent.setup();
+    at("/khach-hang/c1");
+    const timeline = await screen.findByRole("list", { name: "Lịch sử sử dụng" });
+    await user.click(await within(timeline).findByRole("button", { name: "Thêm ghi chú gói" }));
+    const field = await within(timeline).findByRole("textbox", { name: "Ghi chú gói" });
+    expect(field).toHaveAccessibleDescription(/Bảo mật như ghi chú buổi/);
+    await user.type(field, "Khách đau thắt lưng");
+    await user.click(within(timeline).getByRole("button", { name: "Lưu ghi chú" }));
+    await waitFor(() => {
+      const patch = spy.mock.calls.find(([, init]) => init?.method === "PATCH");
+      expect(patch?.[0]).toBe("/api/v1/sales/mock-sale");
+      expect(JSON.parse(patch?.[1]?.body as string)).toEqual({ note: "Khách đau thắt lưng" });
+    });
+    await waitFor(() => {
+      expect(within(timeline).queryByRole("textbox", { name: "Ghi chú gói" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("offers no package-note edit in the timeline without the rights", async () => {
+    serveManagement({ permissions: [...MANAGER, "customer.health_notes.read", "customer.health_notes.write"] });
+    at("/khach-hang/c1");
+    const timeline = await screen.findByRole("list", { name: "Lịch sử sử dụng" });
+    expect(await within(timeline).findByText("Mua gói liệu trình")).toBeInTheDocument();
+    expect(within(timeline).queryByRole("button", { name: /ghi chú gói/ })).not.toBeInTheDocument();
+  });
+
   it("searches the history by kind and text; the filters stay in the profile URL", async () => {
     const spy = serveManagement({ permissions: MANAGER });
     const user = userEvent.setup();
