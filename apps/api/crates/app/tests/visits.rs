@@ -831,7 +831,14 @@ async fn check_in_must_be_now_or_earlier_today(pool: PgPool) -> TestResult {
         )
     );
     let mut earlier = d.deduct(&d.ha, None);
-    let at = chrono::Utc::now() - chrono::Duration::minutes(1);
+    // A minute ago, but never before today's midnight (in the first minute of the day "a minute
+    // ago" is yesterday, refused as `check_in_not_today`).
+    let today = chrono::Utc::now()
+        .with_timezone(&chrono_tz::Asia::Ho_Chi_Minh)
+        .date_naive();
+    let midnight = chrono::DateTime::parse_from_rfc3339(&format!("{today}T00:00:00+07:00"))?
+        .with_timezone(&chrono::Utc);
+    let at = (chrono::Utc::now() - chrono::Duration::minutes(1)).max(midnight);
     earlier["check_in_at"] = json!(at.to_rfc3339());
     let ok = d.record(earlier).await;
     assert_eq!(ok.status, StatusCode::CREATED, "{}", ok.body);
