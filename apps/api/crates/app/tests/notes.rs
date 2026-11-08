@@ -34,6 +34,7 @@ const BOOKING_NOTE: &str = "Khách muốn phòng riêng";
 const STAFF_NOTE: &str = "Đang học thêm khóa massage đá nóng";
 const CANCEL_REASON: &str = "Khách bận việc đột xuất";
 const NO_SHOW_REASON: &str = "Gọi không nghe máy";
+const PACKAGE_NOTE: &str = "Mua gói vì đau thắt lưng";
 
 type Setup<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -167,7 +168,8 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
     let sale = post(&h, &owner, "/sales", json!({
         "customer_id": customer, "closer_staff_id": lan, "lines": [{"package_plan_id": id(&plan)}],
         "discount": {"amount": 200_000, "reason": "Mua gói thứ hai giảm giá"},
-        "payments": [{"method": "cash", "amount": PLAN_PRICE - 200_000}]
+        "payments": [{"method": "cash", "amount": PLAN_PRICE - 200_000}],
+        "note": PACKAGE_NOTE
     })).await;
     assert_eq!(sale.status, StatusCode::CREATED, "{}", sale.body);
 
@@ -387,9 +389,22 @@ async fn each_role_reads_exactly_the_notes_it_may(pool: PgPool) -> TestResult {
         "Mua gói thứ hai giảm giá",
         CANCEL_REASON,
         NO_SHOW_REASON,
+        PACKAGE_NOTE,
     ] {
         assert!(text.iter().any(|x| x == t), "owner sees {t}");
     }
+    // F4: "Ghi chú gói" names the package and its owner.
+    let package_note = owner.body["items"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|n| n["kind"] == "package_note")
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(package_note["text"], PACKAGE_NOTE);
+    assert_eq!(package_note["detail"], "Gói 10 buổi");
+    assert_eq!(package_note["customer_id"], s.customer.to_string());
+    assert_eq!(package_note["customer_name"], "Nguyễn Thị Hoa");
     // F21: the reason says which close it was, for which day, about whom, and who closed it.
     let reasons: Vec<Value> = owner.body["items"]
         .as_array()
@@ -477,7 +492,8 @@ async fn each_role_reads_exactly_the_notes_it_may(pool: PgPool) -> TestResult {
 
     // Reading writes nothing: no audit row carries a note.
     let leaks: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM app.audit_log WHERE after::text LIKE '%vai gáy%' OR after::text LIKE '%Huyết áp%'",
+        "SELECT count(*) FROM app.audit_log WHERE after::text LIKE '%vai gáy%' OR after::text LIKE '%Huyết áp%'
+                                              OR after::text LIKE '%thắt lưng%'",
     )
     .fetch_one(&s.h.owner)
     .await?;
@@ -497,15 +513,19 @@ async fn a_manager_without_the_health_permission_sees_no_health_notes(pool: PgPo
     let page = s.as_actor(&manager, query()).await?;
     let kinds: BTreeSet<NoteKind> = page.items.iter().map(|n| n.kind).collect();
     assert!(
-        !kinds.contains(&NoteKind::VisitNote) && !kinds.contains(&NoteKind::HealthNote),
+        !kinds.contains(&NoteKind::VisitNote)
+            && !kinds.contains(&NoteKind::HealthNote)
+            && !kinds.contains(&NoteKind::PackageNote),
         "{kinds:?}"
     );
     assert!(kinds.contains(&NoteKind::CustomerNote) && kinds.contains(&NoteKind::Void));
     assert!(
-        !page.kinds.contains(&NoteKind::HealthNote) && !page.kinds.contains(&NoteKind::VisitNote)
+        !page.kinds.contains(&NoteKind::HealthNote)
+            && !page.kinds.contains(&NoteKind::VisitNote)
+            && !page.kinds.contains(&NoteKind::PackageNote)
     );
     let all = serde_json::to_string(&page)?;
-    assert!(!all.contains("vai gáy") && !all.contains("Huyết áp"));
+    assert!(!all.contains("vai gáy") && !all.contains("Huyết áp") && !all.contains("thắt lưng"));
     // Asking for the kind or searching its words does not open it either.
     let only = s
         .as_actor(
@@ -527,6 +547,16 @@ async fn a_manager_without_the_health_permission_sees_no_health_notes(pool: PgPo
         )
         .await?;
     assert!(searched.items.is_empty(), "{:?}", searched.items);
+    let searched = s
+        .as_actor(
+            &manager,
+            NotesQuery {
+                q: Some("that lung".into()),
+                ..query()
+            },
+        )
+        .await?;
+    assert!(searched.items.is_empty(), "{:?}", searched.items);
     Ok(())
 }
 
@@ -535,7 +565,7 @@ async fn a_manager_without_the_health_permission_sees_no_health_notes(pool: PgPo
 async fn every_kind_keeps_its_own_read_rule(pool: PgPool) -> TestResult {
     use Permission as P;
     let s = spa(pool).await?;
-    let rules: [(NoteKind, &[Permission]); 14] = [
+    let rules: [(NoteKind, &[Permission]); 15] = [
         (NoteKind::AppointmentNote, &[P::AppointmentManage]),
         (NoteKind::AppointmentReason, &[P::AppointmentManage]),
         (NoteKind::EvaluationNote, &[P::EvaluationRecord]),
@@ -562,6 +592,10 @@ async fn every_kind_keeps_its_own_read_rule(pool: PgPool) -> TestResult {
             &[P::CustomerRead, P::VisitRead, P::SaleRead],
         ),
         (NoteKind::EmploymentEnd, &[P::StaffManage]),
+        (
+            NoteKind::PackageNote,
+            &[P::SaleRead, P::CustomerRead, P::CustomerHealthNotesRead],
+        ),
     ];
     for (kind, needs) in rules {
         let mut granted = vec![P::ReportRead];
@@ -730,6 +764,8 @@ async fn filters_search_and_pages_with_a_cursor(pool: PgPool) -> TestResult {
             "follow_up",
             "health_note",
             "package_extension",
+            // F4: the note of the package she bought.
+            "package_note",
             "visit_note",
             "void"
         ]

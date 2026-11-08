@@ -1082,6 +1082,7 @@ export function FrontDeskPage() {
                     openRef={openItem}
                     onOpenRef={setOpenItem}
                     onLines={setLines}
+                    canWriteNote={can(me, "customer.health_notes.write")}
                     onTodaySession={(saleRef, s) => {
                       addLine({
                         key: nextKey.current++,

@@ -162,7 +162,70 @@ export function plansFor(
   );
 }
 
-/** One package block: plan, closer, gift, discount, "use today", "buy for someone else". */
+/**
+ * "Ghi chú gói" (F4): collapsed behind one ghost button, so a package costs no extra step unless
+ * the desk wants a note. Health data like the session note: only holders of
+ * `customer.health_notes.write` see the field, the server refuses a note from anyone else.
+ */
+function PackageNoteField({
+  note,
+  onChange,
+}: {
+  note: string;
+  onChange: (note: string) => void;
+}) {
+  const id = useId();
+  const [open, setOpen] = useState(note !== "");
+  if (!open)
+    return (
+      <button
+        type="button"
+        className="btn btn-ghost"
+        onClick={() => {
+          setOpen(true);
+        }}
+      >
+        Thêm ghi chú gói
+      </button>
+    );
+  return (
+    <div className="field">
+      <label htmlFor={`${id}-note`}>
+        Ghi chú gói{" "}
+        <span className="font-normal text-text-muted">(không bắt buộc)</span>
+      </label>
+      <textarea
+        id={`${id}-note`}
+        className="input"
+        rows={2}
+        maxLength={2000}
+        autoFocus={note === ""}
+        aria-describedby={`${id}-hint`}
+        value={note}
+        onChange={(e) => {
+          onChange(e.target.value);
+        }}
+      />
+      <span id={`${id}-hint`} className="field-hint">
+        Bảo mật như ghi chú buổi: chỉ người được xem lưu ý sức khỏe mới đọc
+        được. Thông tin sức khỏe chỉ ghi ở đây, không ghi vào Quà tặng hay lý
+        do giảm giá.
+      </span>
+      <button
+        type="button"
+        className="btn btn-ghost justify-self-start"
+        onClick={() => {
+          setOpen(false);
+          onChange("");
+        }}
+      >
+        Bỏ ghi chú gói
+      </button>
+    </div>
+  );
+}
+
+/** One package block: plan, closer, gift, discount, "use today", "buy for someone else", note. */
 function SaleBlock({
   sale,
   index,
@@ -184,7 +247,10 @@ function SaleBlock({
   onEdit,
   onDone,
   onTodaySession,
+  canWriteNote,
 }: {
+  /** `customer.health_notes.write`: the "Ghi chú gói" field is offered (UX only). */
+  canWriteNote: boolean;
   /** The buyer has a name (a nameless walk-in may only buy for someone else, ADR-0011). */
   ownerNamed: boolean;
   /** Finished and not the item being edited: one summary row with Sửa / ✕. */
@@ -276,6 +342,7 @@ function SaleBlock({
         ? `Giảm ${formatVnd(discount)}`
         : "",
       todayIds.size > 0 ? `Hôm nay làm ${todayNames.join(", ")}` : "",
+      canWriteNote && sale.note?.trim() ? "Có ghi chú gói" : "",
     ]
       .filter(Boolean)
       .join(" · ");
@@ -532,6 +599,14 @@ function SaleBlock({
             Thêm giảm giá gói
           </button>
         ))}
+      {canWriteNote && (
+        <PackageNoteField
+          note={sale.note ?? ""}
+          onChange={(note) => {
+            onChange({ note });
+          }}
+        />
+      )}
       {(attempted && problem) || serverError ? (
         <p role="alert" className="field-error">
           {serverError ?? problem}
@@ -576,7 +651,13 @@ export function PackageSales({
   onOpenRef,
   onTodaySession,
   onLines,
+  canWriteNote = false,
 }: {
+  /**
+   * `customer.health_notes.write` (UX only): each package offers an optional, collapsed
+   * "Ghi chú gói" (F4). Off by default.
+   */
+  canWriteNote?: boolean;
   /** Lets the block drop today's sessions of a package that left the cart (`pruneSessions`). */
   onLines?: (update: (ls: CartLine[]) => CartLine[]) => void;
   /** The buyer has a name (else a package must be bought for someone else, ADR-0011). */
@@ -709,6 +790,7 @@ export function PackageSales({
               attempted={attempted}
               serverError={saleErrorOf(serverError)}
               ownerNamed={ownerNamed}
+              canWriteNote={canWriteNote}
               folded={
                 onOpenRef !== undefined &&
                 openRef !== `s${s.ref}` &&

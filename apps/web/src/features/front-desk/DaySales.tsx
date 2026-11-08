@@ -1,17 +1,23 @@
 // Package sales of the day saved without a visit (F6, EM live test 2026-11-08): a cart of only
 // packages is a sale, not a visit, so it used to show only in the ledger. Here it sits under the
 // day's visits at Quầy, with the same columns and its own void ("Hủy hóa đơn"). The day's visit
-// count stays a count of visits. Part of the lazy day-list chunk.
-import type { DaySale } from "@vpyd/api-client";
-import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
+// count stays a count of visits. Each sale shows its "Ghi chú gói" (F4) to health-note readers,
+// and the desk edits it in place (`PATCH /sales/{id}`). Part of the lazy day-list chunk.
+import type { DaySale, Sale } from "@vpyd/api-client";
+import {
+  queryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { formatVnd } from "@vpyd/ui";
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { CustomerName } from "../../app/CustomerName";
 import { ResponsiveTable, type Column } from "../../components/ResponsiveTable";
 import { RowMenu } from "../../components/RowMenu";
 import { api } from "../../lib/api";
-import { messageFor } from "../../lib/errors";
+import { fieldMessage, messageFor } from "../../lib/errors";
 import { spaTime } from "../../lib/format";
 import { invalidateManagementViews } from "../../lib/invalidate";
 import { voidSale } from "../corrections/api";
@@ -54,22 +60,128 @@ function saleMeta(s: DaySale): string {
 
 const voided = (s: DaySale) => s.sale.status === "voided";
 
+/** `PATCH /sales/{id}`: replaces a package sale's note ("" = none). */
+async function saveSaleNote(saleId: string, note: string): Promise<Sale> {
+  return (await api(`/sales/${saleId}`, {
+    method: "PATCH",
+    body: { note: note.trim() === "" ? null : note.trim() },
+  })) as Sale;
+}
+
+/** "Sửa ghi chú gói": the note of one package sale, edited inline under its row. */
+function SaleNoteForm({
+  sale,
+  title,
+  onDone,
+  onCancel,
+}: {
+  sale: Sale;
+  title: string;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const titleId = useId();
+  const noteId = useId();
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const [note, setNote] = useState(sale.note ?? "");
+  const save = useMutation({
+    mutationFn: () => saveSaleNote(sale.id, note),
+    onSuccess: onDone,
+  });
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+  const problem = fieldMessage(save.error, "note");
+  return (
+    <section
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby={titleId}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onCancel();
+      }}
+      className="mt-2 grid gap-3 rounded-md border border-border bg-surface p-3"
+    >
+      <h3 id={titleId} className="font-semibold">
+        {title}
+      </h3>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          save.mutate();
+        }}
+        className="grid gap-2"
+      >
+        <label htmlFor={noteId} className="field">
+          Ghi chú gói
+        </label>
+        <textarea
+          id={noteId}
+          ref={ref}
+          value={note}
+          maxLength={2000}
+          rows={3}
+          aria-invalid={problem ? true : undefined}
+          aria-describedby={`${noteId}-hint`}
+          onChange={(e) => {
+            setNote(e.target.value);
+          }}
+          className="input"
+        />
+        <span id={`${noteId}-hint`} className="field-hint">
+          Bảo mật như ghi chú buổi: chỉ người được xem lưu ý sức khỏe mới đọc
+          được. Để trống để xóa ghi chú.
+        </span>
+        {problem && <p className="field-error">{problem}</p>}
+        {save.isError && !problem && (
+          <p role="alert" className="alert">
+            {messageFor(save.error)}
+          </p>
+        )}
+        <div className="button-row">
+          <button
+            type="submit"
+            disabled={save.isPending}
+            className="btn btn-primary"
+          >
+            {save.isPending ? "Đang lưu…" : "Lưu ghi chú"}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="btn btn-secondary"
+          >
+            Thôi
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
 export function DaySales({
   day,
   isToday,
   mayVoid,
+  mayEditNote,
   onNotice,
 }: {
   day: string;
   isToday: boolean;
   /** UX only: the server decides (`403 day.locked` for a manager on an earlier day). */
   mayVoid: boolean;
+  /**
+   * UX only (`package.sell` + `customer.health_notes.write`, the closed-day rule of a void): the
+   * server decides.
+   */
+  mayEditNote: boolean;
   onNotice: (text: string) => void;
 }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const sales = useQuery(daySalesQuery(isToday ? undefined : day));
   const [voiding, setVoiding] = useState<string | null>(null);
+  const [noting, setNoting] = useState<string | null>(null);
   const rows = sales.data ?? [];
   if (sales.isError)
     return (
@@ -113,6 +225,11 @@ export function DaySales({
               Lý do hủy: {s.sale.void_reason}
             </span>
           )}
+          {s.sale.note && (
+            <span className="line-clamp-3 whitespace-pre-line text-text-muted">
+              Ghi chú gói: {s.sale.note}
+            </span>
+          )}
         </span>
       ),
     },
@@ -151,12 +268,24 @@ export function DaySales({
                 void navigate({ to: "/khach-hang/$customerId", params: { customerId: s.sale.customer_id } });
               },
             },
+            ...(mayEditNote && !voided(s)
+              ? [
+                  {
+                    label: s.sale.note ? "Sửa ghi chú gói" : "Thêm ghi chú gói",
+                    onSelect: () => {
+                      setVoiding(null);
+                      setNoting(s.sale.id);
+                    },
+                  },
+                ]
+              : []),
             ...(mayVoid && !voided(s)
               ? [
                   {
                     label: "Hủy hóa đơn",
                     danger: true,
                     onSelect: () => {
+                      setNoting(null);
                       setVoiding(s.sale.id);
                     },
                   },
@@ -194,6 +323,21 @@ export function DaySales({
                 onDone={() => {
                   setVoiding(null);
                   onNotice(`Đã hủy hóa đơn bán gói của ${s.customer_name}.`);
+                  void queryClient.invalidateQueries({ queryKey: ["sales", "day"] });
+                  void queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
+                  void invalidateManagementViews(queryClient, s.sale.customer_id);
+                }}
+              />
+            ) : noting === s.sale.id ? (
+              <SaleNoteForm
+                sale={s.sale}
+                title={`Ghi chú gói ${s.sale.lines.map((l) => `"${l.description}"`).join(", ")} của ${s.customer_name}`}
+                onCancel={() => {
+                  setNoting(null);
+                }}
+                onDone={() => {
+                  setNoting(null);
+                  onNotice(`Đã lưu ghi chú gói của ${s.customer_name}.`);
                   void queryClient.invalidateQueries({ queryKey: ["sales", "day"] });
                   void queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
                   void invalidateManagementViews(queryClient, s.sale.customer_id);

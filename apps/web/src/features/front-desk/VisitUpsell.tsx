@@ -357,6 +357,7 @@ export function VisitUpsell({
           maxSales={converting ? 1 : 3}
           titleId={`upsell-packages-${visit.id}`}
           title="Bán gói cho lượt này"
+          canWriteNote={can(me, "customer.health_notes.write")}
         />
       )}
       {mayCount && (

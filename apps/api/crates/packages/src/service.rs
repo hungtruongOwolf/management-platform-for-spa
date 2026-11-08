@@ -492,6 +492,40 @@ pub async fn for_customer(
     Ok(packages)
 }
 
+/// The "Ghi chú gói" (F4) of `sale_ids`, decrypted (AAD "sale.note" + tenant + sale), for a
+/// caller holding `customer.health_notes.read`; empty for anyone else (deny by default). The
+/// caller has authorized the screen that shows them (`customer.read`).
+pub async fn sale_notes(
+    pool: &PgPool,
+    cipher: &kernel::crypto::FieldCipher,
+    actor: &Actor,
+    sale_ids: &[Uuid],
+) -> Result<HashMap<Uuid, String>, AppError> {
+    if sale_ids.is_empty() || !actor.can(Permission::CustomerHealthNotesRead) {
+        return Ok(HashMap::new());
+    }
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let tenant = tx.tenant().as_uuid();
+    let rows = sqlx::query!(
+        r#"SELECT s.id, s.note_ct AS "note_ct!"
+           FROM app.sale s
+           WHERE s.tenant_id = $1 AND s.id = ANY($2) AND s.note_ct IS NOT NULL"#,
+        tenant,
+        sale_ids
+    )
+    .fetch_all(tx.conn())
+    .await?;
+    tx.commit().await?;
+    let mut notes = HashMap::with_capacity(rows.len());
+    for r in rows {
+        if let Some(text) = kernel::crypto::open_sale_note(cipher, tenant, r.id, Some(&r.note_ct))?
+        {
+            notes.insert(r.id, text);
+        }
+    }
+    Ok(notes)
+}
+
 /// A paper-book package as `sales::paper` needs it to book the paper money.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PaperPackage {
