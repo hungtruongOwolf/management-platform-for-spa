@@ -311,6 +311,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["change_password"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/password-reset-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["request_password_reset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/reauth": {
         parameters: {
             query?: never;
@@ -1045,6 +1077,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/staff/password-reset-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_reset_requests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/password-reset-requests/{id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["dismiss_reset_request"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/staff/profiles": {
         parameters: {
             query?: never;
@@ -1118,6 +1182,54 @@ export interface paths {
         };
         get: operations["staff_history"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/{id}/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/{id}/login/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reset_login_password"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/{id}/login/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set_login_role"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2603,7 +2715,7 @@ export interface components {
          * @description What the browser must do after the password step.
          * @enum {string}
          */
-        LoginNext: "done" | "mfa_verify" | "mfa_enroll";
+        LoginNext: "done" | "mfa_verify" | "mfa_enroll" | "password_change";
         /**
          * @description Body of a successful password step. `me` is only present once fully signed in: a session that
          *     still owes a second factor learns nothing about spas or permissions.
@@ -2612,6 +2724,11 @@ export interface components {
             me?: components["schemas"]["Me"] | null;
             next: components["schemas"]["LoginNext"];
         };
+        /**
+         * @description The roles the owner gives from the roster (the owner role is never handed out here).
+         * @enum {string}
+         */
+        LoginRole: "manager" | "technician";
         /** @description Body of `GET /me` and of a successful login. */
         Me: {
             active_tenant?: components["schemas"]["TenantSummary"] | null;
@@ -3139,6 +3256,39 @@ export interface components {
          * @enum {string}
          */
         PartialMonthLoyalty: "prorate" | "full" | "none_if_partial";
+        /** @description Body of `POST /auth/password`. */
+        PasswordChangeBody: {
+            /** @description The current password (the temporary one after an owner's reset). */
+            current_password: string;
+            /** @description 10–128 characters, not the current one, not the login phone. */
+            new_password: string;
+        };
+        /** @description Body of `POST /auth/password-reset-requests` ("Quên mật khẩu?"). */
+        PasswordResetRequestBody: {
+            phone: string;
+        };
+        /** @description An open forgotten-password request (option A). */
+        PasswordResetRequestDto: {
+            /** Format: date-time */
+            expires_at: string;
+            full_name: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            requested_at: string;
+            /**
+             * Format: uuid
+             * @description The profile of the login, when linked (its sheet holds "Đặt lại").
+             */
+            staff_id?: string | null;
+            /** Format: uuid */
+            user_id: string;
+        };
+        /** @description The one answer of `POST /auth/password-reset-requests`, whether or not the phone has a login. */
+        PasswordResetRequested: {
+            /** @description Always `received`. */
+            status: string;
+        };
         /** @enum {string} */
         PayFlag: "no_pay_terms" | "unrecorded_days" | "absent_k5_plus" | "evaluation_missing";
         PaymentCreate: {
@@ -3758,6 +3908,8 @@ export interface components {
              *     C): the owner is warned (F19).
              */
             is_manager: boolean;
+            /** @description The login manages staff (the owner): needs no staff profile. */
+            manages_staff: boolean;
             roles: string[];
             /**
              * Format: uuid
@@ -3801,6 +3953,7 @@ export interface components {
         };
         /** @description Personal details of a profile (`staff.manage` only). */
         StaffDetailsDto: {
+            login?: components["schemas"]["StaffLoginDto"] | null;
             note?: string | null;
             /** @description National form, e.g. `0905 123 456`. */
             phone?: string | null;
@@ -3859,6 +4012,34 @@ export interface components {
             changes: components["schemas"]["StaffChangeDto"][];
             /** @description End-of-employment reason. */
             reason?: string | null;
+        };
+        /** @description Body of `POST /staff/{id}/login`. */
+        StaffLoginCreate: {
+            /** @description The login phone: a Vietnamese mobile no account uses yet. */
+            phone: string;
+            role: components["schemas"]["LoginRole"];
+        };
+        /** @description `POST /staff/{id}/login` → 201: the profile, now linked, and the temporary password. */
+        StaffLoginCreated: {
+            profile: components["schemas"]["StaffProfileDto"];
+            temporary_password: string;
+        };
+        /** @description A profile's login (owner only): what the account section shows and acts on. */
+        StaffLoginDto: {
+            /** @description Locked when the person left (`lock_login`): no sign-in; rehiring unlocks it. */
+            locked: boolean;
+            /** @description The login phone, national form. */
+            phone?: string | null;
+            role: components["schemas"]["StaffLoginRoleDto"];
+        };
+        /**
+         * @description The role of a profile's login as the roster shows it.
+         * @enum {string}
+         */
+        StaffLoginRoleDto: "manager" | "technician" | "owner" | "other";
+        /** @description Body of `PUT /staff/{id}/login/role`. */
+        StaffLoginRoleWrite: {
+            role: components["schemas"]["LoginRole"];
         };
         /** @description Pay terms (salary data). Only ever sent to holders of `payroll.read`. */
         StaffPayDto: {
@@ -4044,6 +4225,13 @@ export interface components {
              * @description Completed visits in which this technician did at least one line.
              */
             visits: number;
+        };
+        /**
+         * @description A temporary password, returned this once (`Cache-Control: no-store`): the owner hands it over
+         *     and the person must replace it at their first sign-in.
+         */
+        TemporaryPasswordDto: {
+            temporary_password: string;
         };
         TenantSummary: {
             /** Format: uuid */
@@ -5678,6 +5866,87 @@ export interface operations {
             };
             /** @description auth.mfa_not_pending */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    change_password: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChangeBody"];
+            };
+        };
+        responses: {
+            /** @description Password changed: every session of the account ended, this browser got a new one (cookie) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description auth.invalid_credentials (wrong current password; counts toward the lockout) | auth.unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description new_password too_short | too_long | same_as_current | is_phone */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    request_password_reset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetRequestBody"];
+            };
+        };
+        responses: {
+            /** @description Always the same answer, whether or not the phone has a login (the spa's owner sees a real request) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetRequested"];
+                };
+            };
+            /** @description phone missing */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8334,6 +8603,74 @@ export interface operations {
             };
         };
     };
+    list_reset_requests: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetRequestDto"][];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    dismiss_reset_request: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_profiles: {
         parameters: {
             query?: {
@@ -8619,6 +8956,184 @@ export interface operations {
                 content?: never;
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffLoginCreate"];
+            };
+        };
+        responses: {
+            /** @description Login created and linked; `temporary_password` is shown this once (no-store) */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffLoginCreated"];
+                };
+            };
+            /** @description auth.reauth_required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description account.phone_taken | staff.account_exists | staff.already_left */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description phone invalid_format */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reset_login_password: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description New temporary password, shown this once (no-store); every session of the login ended */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemporaryPasswordDto"];
+                };
+            };
+            /** @description auth.reauth_required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description staff.no_login | account.locked */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description account.owner_protected | account.other_spa */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_login_role: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffLoginRoleWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffProfileDto"];
+                };
+            };
+            /** @description auth.reauth_required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description staff.no_login | staff.already_left */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description account.owner_protected */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

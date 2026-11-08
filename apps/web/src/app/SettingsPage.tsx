@@ -1,5 +1,6 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { meQuery } from "../features/auth/session";
+import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { ChangePasswordForm } from "../features/auth/PasswordChange";
+import { meQuery, setAuthState } from "../features/auth/session";
 import { PageHeader } from "./PageHeader";
 import { ThemePicker } from "./ThemePicker";
 import { initialOf, roleLabel } from "./UserMenu";
@@ -7,6 +8,7 @@ import { initialOf, roleLabel } from "./UserMenu";
 /** /cai-dat — appearance on this device, and who is signed in. Staff and roles come with spec #4. */
 export function SettingsPage() {
   const { data: me } = useSuspenseQuery(meQuery);
+  const queryClient = useQueryClient();
   return (
     <section className="grid max-w-3xl content-start gap-5">
       <PageHeader title="Giao diện & tài khoản" />
@@ -46,7 +48,19 @@ export function SettingsPage() {
             </div>
           </dl>
         </div>
-        <p className="mt-4 text-sm text-text-muted">Đổi mật khẩu, nhân viên và vai trò sẽ có ở đây trong đợt sau.</p>
+      </section>
+
+      {/* ADR-0016: everyone changes their own password; other devices are signed out. */}
+      <section aria-labelledby="password-title" className="card grid content-start gap-3 p-4 sm:p-5">
+        <h2 id="password-title" className="panel-title">
+          Đổi mật khẩu
+        </h2>
+        <ChangePasswordForm
+          currentLabel="Mật khẩu hiện tại"
+          onChanged={(fresh) => {
+            setAuthState(queryClient, { state: "signed_in", me: fresh });
+          }}
+        />
       </section>
     </section>
   );

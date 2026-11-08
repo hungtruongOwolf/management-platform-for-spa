@@ -1,4 +1,5 @@
 import { useQuery, useSuspenseQuery, type QueryClient } from "@tanstack/react-query";
+import { Suspense, lazy } from "react";
 import { Link } from "@tanstack/react-router";
 import { authQuery, can, meQuery, type Me } from "../features/auth/session";
 import { spaToday } from "../features/corrections/api";
@@ -9,6 +10,9 @@ import { canSeeManagement } from "./features";
 import { Icon } from "./Icon";
 import { longDate } from "../lib/format";
 import { navFor, navKey, type NavItem } from "./nav";
+
+// The owner's forgotten-password requests (ADR-0016): their own chunk, fetched by the owner only.
+const ResetRequestsNotice = lazy(() => import("../features/staff/ResetRequests").then((m) => ({ default: m.ResetRequestsNotice })));
 
 /** One line under each shortcut: what the screen is for. Screens without a hint get no shortcut. */
 const HINTS: Record<string, string> = {
@@ -120,6 +124,11 @@ export function HomePage() {
         </div>
       </section>
 
+      {can(me, "staff.manage") && (
+        <Suspense fallback={null}>
+          <ResetRequestsNotice />
+        </Suspense>
+      )}
       {canSeeManagement(me) && <Today />}
 
       <section

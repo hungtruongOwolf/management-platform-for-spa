@@ -99,6 +99,7 @@ const loginRoute = createRoute({
     // Already signed in: honour the (sanitised) destination instead of always going home.
     if (auth.state === "signed_in")
       redirect({ href: safeNextPath(search.next), throw: true });
+    if (auth.state === "password_change") redirect({ to: "/doi-mat-khau", throw: true });
     if (auth.state !== "anonymous")
       redirect({
         to: "/xac-thuc",
@@ -127,6 +128,7 @@ const mfaRoute = createRoute({
     });
     if (auth.state === "signed_in")
       redirect({ href: safeNextPath(search.next), throw: true });
+    if (auth.state === "password_change") redirect({ to: "/doi-mat-khau", throw: true });
     if (auth.state === "anonymous")
       redirect({
         to: "/dang-nhap",
@@ -141,6 +143,21 @@ const mfaRoute = createRoute({
     () => import("../features/auth/MfaPage"),
     "MfaRoutePage",
   ),
+});
+
+/**
+ * First sign-in with a temporary password (ADR-0016): the only screen until a new password is
+ * set; the server refuses that session everywhere else (`auth.password_change_required`).
+ */
+const passwordChangeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/doi-mat-khau",
+  beforeLoad: async ({ context }) => {
+    const auth = await context.queryClient.query({ ...authQuery, staleTime: "static" });
+    if (auth.state === "signed_in") redirect({ to: "/", throw: true });
+    if (auth.state !== "password_change") redirect({ to: "/dang-nhap", throw: true });
+  },
+  component: lazyRouteComponent(() => import("../features/auth/PasswordChange"), "PasswordChangePage"),
 });
 
 /** Everything below requires a session. This guard is UX only; the API enforces access. */
@@ -158,6 +175,7 @@ const authedRoute = createRoute({
         search: { next: location.href },
         throw: true,
       });
+    if (auth.state === "password_change") redirect({ to: "/doi-mat-khau", throw: true });
     if (auth.state !== "signed_in")
       redirect({
         to: "/xac-thuc",
@@ -325,6 +343,7 @@ const customerRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   loginRoute,
   mfaRoute,
+  passwordChangeRoute,
   authedRoute.addChildren([
     homeRoute,
     priceListRoute,

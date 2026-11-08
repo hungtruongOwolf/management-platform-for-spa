@@ -53,6 +53,8 @@ enum Target {
     Staff,
     Appointment,
     Adjustment,
+    /// An open forgotten-password request (ADR-0016).
+    ResetRequest,
 }
 
 struct Route {
@@ -138,6 +140,15 @@ const ROUTES: &[Route] = &[
         Access::PendingMfa,
     )
     .body(mfa_code_body),
+    // ADR-0016: every role changes its own password (a too-short new one stops at 422 after the
+    // session and the current password were accepted); the forgotten-password request is public.
+    route("POST", "/api/v1/auth/password", Access::Session).body(password_change_body),
+    route(
+        "POST",
+        "/api/v1/auth/password-reset-requests",
+        Access::Public,
+    )
+    .body(reset_request_body),
     // catalog
     route(
         "GET",
@@ -275,6 +286,40 @@ const ROUTES: &[Route] = &[
         Access::Perm(P::StaffManage, OWNER_ONLY),
     )
     .id(Target::Staff),
+    // ADR-0016, owner only (+ re-auth, fresh in this test). The fixture technician has no login
+    // and keeps none (create stops at 412 or 422), so reset / role stop at 409 staff.no_login.
+    route(
+        "POST",
+        "/api/v1/staff/{id}/login",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    )
+    .id(Target::Staff)
+    .body(login_body)
+    .if_match(),
+    route(
+        "POST",
+        "/api/v1/staff/{id}/login/reset-password",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    )
+    .id(Target::Staff),
+    route(
+        "PUT",
+        "/api/v1/staff/{id}/login/role",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    )
+    .id(Target::Staff)
+    .body(login_role_body),
+    route(
+        "GET",
+        "/api/v1/staff/password-reset-requests",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    ),
+    route(
+        "POST",
+        "/api/v1/staff/password-reset-requests/{id}/dismiss",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    )
+    .id(Target::ResetRequest),
     route(
         "PUT",
         "/api/v1/staff/{id}/account",
@@ -773,6 +818,20 @@ fn health_note_body(_: &Fixture) -> Option<Value> {
 fn staff_body(_: &Fixture) -> Option<Value> {
     Some(json!({"full_name": "KTV Hoa", "position": "Kỹ thuật viên"}))
 }
+fn password_change_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"current_password": PASSWORD, "new_password": "ngan"}))
+}
+fn reset_request_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"phone": "0905999888"}))
+}
+fn login_body(_: &Fixture) -> Option<Value> {
+    // An invalid phone: the owner's call stops at 422 after the permission and tenant checks, so the
+    // fixture technician never gets a login (later rows would then see a manager).
+    Some(json!({"phone": "12345", "role": "technician"}))
+}
+fn login_role_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"role": "manager"}))
+}
 fn account_body(_: &Fixture) -> Option<Value> {
     Some(json!({"user_id": null}))
 }
@@ -956,6 +1015,7 @@ struct Fixture {
     visit: String,
     appointment: String,
     adjustment: String,
+    reset_request: String,
 }
 
 impl Fixture {
@@ -972,6 +1032,7 @@ impl Fixture {
             Target::Staff => &self.staff,
             Target::Appointment => &self.appointment,
             Target::Adjustment => &self.adjustment,
+            Target::ResetRequest => &self.reset_request,
         }
     }
 }
@@ -1139,6 +1200,7 @@ async fn fixture(
         visit: String::new(),
         appointment: String::new(),
         adjustment: String::new(),
+        reset_request: String::new(),
     };
     f.service = created_id(
         app,
@@ -1227,6 +1289,18 @@ async fn fixture(
             )
         })?
         .to_owned();
+    // A forgotten-password request of the spa (written as the public route would).
+    f.reset_request = sqlx::query_scalar(
+        "INSERT INTO app.password_reset_request (id, tenant_id, user_id, expires_at)
+         SELECT $1, t.id, u.id, now() + interval '24 hours'
+         FROM app.tenant t, app.user_account u WHERE t.slug = $2 AND u.phone_e164 = $3
+         RETURNING id::text",
+    )
+    .bind(uuid::Uuid::now_v7())
+    .bind(slug)
+    .bind(format!("+84{}", &owner_phone[1..]))
+    .fetch_one(db)
+    .await?;
     Ok(f)
 }
 

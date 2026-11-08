@@ -1032,3 +1032,16 @@
     white-space: nowrap;
   }
 }
+
+/* A temporary password, shown once (ADR-0016): large, monospaced, easy to read aloud. */
+.temp-password {
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  user-select: all;
+}

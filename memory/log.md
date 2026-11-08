@@ -666,6 +666,11 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 ## [2026-11-08] build | Đổi tên mục "Nhân viên" → "Quản lý nhân sự"
 - EM: "trong mục Nhân viên bạn lại để thêm 1 phần nhân viên nữa lại bị trùng lặp … đổi nó thành là quản lý nhân sự". Nhóm menu vẫn tên "Nhân viên"; mục và tiêu đề trang (`/nhan-vien`, chủ spa + quản lý) thành "Quản lý nhân sự". KTV vẫn thấy "Công và lương của tôi".
 
+## [2026-11-08] spec + design + secure + build | Tài khoản đăng nhập và mật khẩu trong app (ADR-0016)
+- Raw: [2026-11-08-em-request-accounts-and-passwords](raw/2026-11-08-em-request-accounts-and-passwords.md) (EM duyệt luồng, bỏ bước "Gắn tài khoản" riêng, "ok cách A đi" cho quên mật khẩu). Spec staff-management §17, [ADR-0016](wiki/decisions/ADR-0016-accounts-and-passwords.md), authz-matrix (+7 route), threat-model, design-system.
+- Migration 0032: `user_account.must_change_password` / `password_changed_at`, `app.password_reset_request` (RLS, một yêu cầu mở mỗi tài khoản mỗi spa).
+- API: `POST /staff/{id}/login` / `…/login/reset-password` / `PUT …/login/role` (chủ spa, re-auth), `GET|POST /staff/password-reset-requests…`, `POST /auth/password` (mọi người), `POST /auth/password-reset-requests` (công khai, cùng một trả lời). Cổng bắt đổi mật khẩu ở `identity::service::resolve` (`403 auth.password_change_required`). Kernel: `AppError::PasswordChangeRequired`, `audit::record_system`.
+- Web: khối "Tài khoản đăng nhập" (tạo / đặt lại / đổi vai trò), "Tạo tài khoản đăng nhập ngay" khi thêm nhân viên, hộp thoại mật khẩu tạm + xác nhận lại mật khẩu, `/doi-mat-khau`, Cài đặt → Đổi mật khẩu, "Quên mật khẩu?", yêu cầu đặt lại ở Tổng quan + Hồ sơ nhân viên, gắn tài khoản cũ một lần. e2e `onboarding.spec.ts`.
 ## [2026-11-08] build | Sửa ghi chú gói của gói bán trong lượt (F4 follow-up)
 - Lead: thêm nút web cho gói bán **trong lượt**. Quầy: ⋯ của dòng lượt → "Thêm / Sửa ghi chú gói" (thêm tên gói khi lượt bán nhiều gói), form ngay dưới dòng; lịch sử khách: nút trên mục "Mua gói". Dùng lại `PATCH /sales/{id}`; không đổi API, không migration.
 - Một form chung `features/sales/SaleNoteForm.tsx` (tách từ `DaySales`, chunk lazy, cùng gợi ý), quyền UX chung `corrections/api.ts::mayEditSaleNote` (`package.sell` + đọc/ghi ghi chú sức khỏe, hóa đơn chưa hủy, ngày trước cần `record.void_closed_day`). Spec front-desk §10.15 AC-N3, threat-model cập nhật.

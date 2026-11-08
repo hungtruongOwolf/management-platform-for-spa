@@ -53,10 +53,22 @@ pub struct Profile {
     /// The login linked to this staff member (self-service), with its display name.
     pub user_id: Option<Uuid>,
     pub user_name: Option<String>,
+    /// The linked login as the owner manages it (phone, role, locked): `None` when unlinked.
+    pub login: Option<LoginInfo>,
     pub shift_start: Option<NaiveTime>,
     pub note: Option<String>,
     pub version: i64,
     pub employment: Employment,
+}
+
+/// The linked login of a profile (owner's view, ADR-0016).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoginInfo {
+    pub phone: Option<PhoneE164>,
+    /// Role keys in this spa (`manager`, `technician`, `owner`, …).
+    pub role_keys: Vec<String>,
+    /// The membership was locked (`lock_login` when the person left): no sign-in at all.
+    pub locked: bool,
 }
 
 impl Profile {
@@ -72,6 +84,18 @@ impl Profile {
             status,
             joined_on: r.joined_on,
             left_on: r.left_on,
+            login: r.user_id.map(|_| LoginInfo {
+                phone: r
+                    .user_phone
+                    .as_deref()
+                    .and_then(|p| PhoneE164::parse(p).ok()),
+                role_keys: r
+                    .account_role_keys
+                    .as_deref()
+                    .map(|k| k.split(',').map(str::to_owned).collect())
+                    .unwrap_or_default(),
+                locked: r.login_active == Some(false),
+            }),
             user_id: r.user_id,
             user_name: r.user_name,
             shift_start: r.shift_start,
@@ -109,7 +133,7 @@ async fn load(tx: &mut TenantTx, only: Option<Uuid>, lock: bool) -> Result<Vec<P
         .collect()
 }
 
-async fn load_one(tx: &mut TenantTx, id: Uuid, lock: bool) -> Result<Profile, AppError> {
+pub(crate) async fn load_one(tx: &mut TenantTx, id: Uuid, lock: bool) -> Result<Profile, AppError> {
     load(tx, Some(id), lock)
         .await?
         .pop()
@@ -294,7 +318,7 @@ fn view(actor: &Actor, profile: Profile, pay: Option<&PayRow>, today: NaiveDate)
 }
 
 /// `412` before any other answer when the client edited an older version (the row is locked).
-fn fresh(p: &Profile, version: i64) -> Result<(), AppError> {
+pub(crate) fn fresh(p: &Profile, version: i64) -> Result<(), AppError> {
     if p.version == version {
         Ok(())
     } else {
@@ -307,7 +331,11 @@ async fn today(tx: &mut TenantTx) -> Result<NaiveDate, AppError> {
 }
 
 /// The caller's view of one profile, read inside the write's transaction.
-async fn reread(tx: &mut TenantTx, actor: &Actor, id: Uuid) -> Result<ProfileView, AppError> {
+pub(crate) async fn reread(
+    tx: &mut TenantTx,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<ProfileView, AppError> {
     let profile = load_one(tx, id, false).await?;
     let pay = if actor.can(Permission::PayrollRead) {
         repo::pay_for_update(tx, id).await?
@@ -850,6 +878,8 @@ pub struct Account {
     pub full_name: String,
     pub roles: Vec<String>,
     pub staff_id: Option<Uuid>,
+    /// Holds `staff.manage` (the owner): needs no staff profile.
+    pub manages_staff: bool,
     /// Records attendance / evaluations for others without managing staff: a manager. Decision C
     /// needs their profile linked to this login to know which one is theirs; unlinked, it is a
     /// warning for the owner (F19).
@@ -864,6 +894,7 @@ impl From<AccountRow> for Account {
             roles: r.roles,
             staff_id: r.staff_id,
             is_manager: r.records_staff && !r.manages_staff,
+            manages_staff: r.manages_staff,
         }
     }
 }

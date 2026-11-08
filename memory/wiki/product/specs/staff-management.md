@@ -2,7 +2,7 @@
 title: "Spec: Quản lý nhân viên (chấm công, đánh giá, thưởng/phạt, bảng lương)"
 status: draft
 updated: 2026-11-08
-sources: [raw/2026-11-08-em-fix-all-and-manager-self-view.md, raw/2026-11-08-live-test-manager-technician.md, raw/2026-11-08-live-test-owner.md, raw/2026-11-07-em-decisions-hr-notes-group-region.md, raw/2026-11-07-em-flow-review-hr-latency.md, raw/2026-11-07-em-technician-pages.md, raw/2026-11-07-em-decisions-after-live-test.md, raw/2026-11-06-em-review-round5.md, raw/2026-11-05-em-review-round4.md, raw/2026-11-04-idea-internal-platform.md]
+sources: [raw/2026-11-08-em-request-accounts-and-passwords.md, raw/2026-11-08-em-fix-all-and-manager-self-view.md, raw/2026-11-08-live-test-manager-technician.md, raw/2026-11-08-live-test-owner.md, raw/2026-11-07-em-decisions-hr-notes-group-region.md, raw/2026-11-07-em-flow-review-hr-latency.md, raw/2026-11-07-em-technician-pages.md, raw/2026-11-07-em-decisions-after-live-test.md, raw/2026-11-06-em-review-round5.md, raw/2026-11-05-em-review-round4.md, raw/2026-11-04-idea-internal-platform.md]
 related: [../compensation-rules.md, ../personas.md, ../../architecture/backend.md, ../../architecture/data.md, ../../security/authz-matrix.md]
 ---
 
@@ -362,3 +362,32 @@ EM: *"nếu đã là account quản lý thì đâu cần show trong mục nhân 
 - **F24 — từ chối nghỉ việc vì còn lịch hẹn nêu rõ lịch nào:** `409 staff.has_upcoming_bookings` thêm `details.bookings` = `[{id, date, time (giờ spa), customer}]` (sớm nhất trước, tối đa 20, `more`), không SĐT / ghi chú. Kernel thêm biến thể `AppError::ConflictDetails` (Problem có `details`, additive). Sheet nghỉ việc liệt kê từng lịch, mỗi dòng mở `/quay?view=lich&ngay=…&ktv=…`.
 - **F25 — "Ngày vào làm: 01/03/2025 → trống" sau khi nghỉ việc:** lỗi hiển thị nhật ký, **không mất dữ liệu** (đợt làm việc và `staff.joined_on` giữ nguyên). Audit `staff.end` ghi `joined_on` chỉ ở `before` làm ngữ cảnh; hàm so sánh coi key thiếu ở `after` là "đổi thành trống". Sửa gốc: key chỉ có ở `before` là ngữ cảnh, không phải thay đổi (`org::profile::changes`), nên cả các dòng nhật ký cũ cũng hiện đúng. Test unit + `staff.rs::the_roster_hires_ends_and_rehires_without_losing_history`.
 - **F28 — người đã nghỉ:** chip tài khoản ghi "Đã nghỉ việc" thay vì vai trò cũ.
+
+## 17. Tài khoản đăng nhập và mật khẩu (EM 2026-11-08, [raw](../../../raw/2026-11-08-em-request-accounts-and-passwords.md), [ADR-0016](../../decisions/ADR-0016-accounts-and-passwords.md))
+EM: *"giả sử 1 spa mới chưa có data chỉ có mỗi account của chủ spa thì làm sao để tạo mới cho quản lý và nhân viên … chưa cho phép đổi mật khẩu"*; theo sau: bỏ bước "Gắn tài khoản" riêng; "ok cách A đi" cho quên mật khẩu.
+
+**US17a — Chủ spa tạo tài khoản từ hồ sơ.** Hồ sơ nhân viên → sheet → khối "Tài khoản đăng nhập": chưa có tài khoản → **"Tạo tài khoản đăng nhập"**: SĐT đăng nhập (di động VN) + vai trò (Quản lý / Kỹ thuật viên). Cũng có trong form "Thêm nhân viên" (tùy chọn): tạo hồ sơ xong tạo tài khoản ngay.
+- `POST /staff/{id}/login` `{phone, role: manager|technician}` (`staff.manage`, re-auth trong 5 phút): một transaction tạo tài khoản (tên = tên hồ sơ), membership + role, gắn vào hồ sơ. Trả hồ sơ + `temporary_password` **một lần** (`no-store`).
+- Lỗi: SĐT sai `422 phone invalid_format`; SĐT đã có tài khoản (ở spa này hay spa khác) `409 account.phone_taken`; hồ sơ đã có tài khoản `409 staff.account_exists`; hồ sơ đã nghỉ `409 staff.inactive`; chưa re-auth `401 auth.reauth_required`.
+- Vị trí của hồ sơ = tên vai trò (ADR-0015 update).
+
+**US17b — Mật khẩu tạm và bắt đổi.** Màn hiện mật khẩu tạm một lần, nút "Sao chép", ô tick "Tôi đã đưa mật khẩu cho nhân viên" rồi mới đóng. Tài khoản `must_change_password`: đăng nhập trả `next: password_change`; màn duy nhất là "Đặt mật khẩu mới" (mật khẩu tạm + mật khẩu mới ×2); server trả `403 auth.password_change_required` cho mọi route khác ngoài `POST /auth/password` và đăng xuất.
+
+**US17c — Đổi mật khẩu (mọi người, của chính mình).** Cài đặt → "Đổi mật khẩu": mật khẩu hiện tại + mới ×2. `POST /auth/password` `{current_password, new_password}`. Chính sách: 10–128 ký tự, khác mật khẩu hiện tại, không phải SĐT đăng nhập (`422 new_password too_short|too_long|same_as_current|is_phone`). Sai mật khẩu hiện tại `401 auth.invalid_credentials` (đếm vào khóa tài khoản). Thành công: đăng xuất mọi thiết bị khác, thiết bị này nhận session mới.
+
+**US17d — Chủ spa đặt lại mật khẩu.** Khối tài khoản → "Đặt lại mật khẩu" (xác nhận) → mật khẩu tạm mới một lần, bắt đổi, đăng xuất mọi thiết bị của người đó. `POST /staff/{id}/login/reset-password`. Không cho: chính mình / tài khoản chủ spa (`422 account.owner_protected`), tài khoản thuộc cả spa khác (`422 account.other_spa`), tài khoản bị khóa khi cho nghỉ (`409 account.locked` — "Nhận lại làm" mở khóa).
+
+**US17e — Chủ spa đổi vai trò.** "Đổi vai trò" Quản lý ↔ Kỹ thuật viên: `PUT /staff/{id}/login/role` `{role}`; quyền mới ở request kế tiếp. Không đổi chính mình / chủ spa (`422 account.owner_protected`).
+
+**US17f — Quên mật khẩu (cách A).** Màn đăng nhập → "Quên mật khẩu?" → SĐT → "Gửi yêu cầu" → luôn cùng một câu "Nếu số này có tài khoản, chủ spa sẽ thấy yêu cầu và đặt lại mật khẩu cho bạn." `POST /auth/password-reset-requests` `{phone}` → `202` như nhau dù SĐT có hay không. Ghi yêu cầu cho mỗi spa mà tài khoản là thành viên đang hoạt động không có `staff.manage`; một yêu cầu đang chờ mỗi spa; hết hạn 24 giờ. Chủ spa thấy ở Tổng quan và Quản lý nhân sự → Hồ sơ nhân viên: "Nguyễn Thị Lan xin đặt lại mật khẩu · 14:05" → "Đặt lại" (như US17d) / "Bỏ qua". `GET /staff/password-reset-requests`, `POST /staff/password-reset-requests/{id}/dismiss` (`staff.manage`).
+
+**US17g — Dữ liệu cũ.** Tài khoản tạo bằng CLI chưa gắn hồ sơ: chủ spa thấy một thông báo (chỉ khi có) liệt kê các tài khoản đó, mỗi dòng "Gắn vào hồ sơ" (chọn hồ sơ chưa có tài khoản) — `PUT /staff/{id}/account` giữ cho lối đi này. Luồng chính không còn dropdown gắn / "Bỏ gắn".
+
+**Bảo mật:** audit mọi hành động (không bao giờ có mật khẩu); re-auth cho tạo / đặt lại / đổi vai trò; giới hạn tần suất `/auth/*` theo IP + khóa theo tài khoản; tách spa (id hồ sơ spa khác `404`); người đã nghỉ bị khóa không đặt lại được.
+
+**AC**
+- AC17.1 Chủ spa tạo được tài khoản; quản lý / KTV `403`; spa khác `404`; mật khẩu tạm chỉ trong response tạo / đặt lại, không trong audit / log / response nào khác.
+- AC17.2 Tài khoản mới đăng nhập → chỉ đổi mật khẩu được; đổi xong dùng bình thường; session cũ bị thu hồi.
+- AC17.3 Đặt lại: session của người đó bị thu hồi; không đặt lại được chủ spa / chính mình / tài khoản spa khác / tài khoản bị khóa.
+- AC17.4 Đổi vai trò có hiệu lực ở request kế tiếp.
+- AC17.5 Quên mật khẩu: cùng response cho SĐT có / không; giới hạn tần suất; chỉ chủ spa thấy và xử lý; spa khác không thấy.

@@ -7,6 +7,7 @@ import { spaToday } from "../corrections/api";
 import { DailyBook } from "./DailyBook";
 import { EvaluationTab } from "./EvaluationTab";
 import { LinkRequiredNotice, LinkWarnings } from "./LinkWarnings";
+import { ResetRequestsNotice } from "./ResetRequests";
 import { MonthSheet } from "./MonthSheet";
 import { MyMonth } from "./MyMonth";
 import { PayrollTab } from "./PayrollTab";
@@ -154,6 +155,7 @@ export function StaffPage() {
               : {})}
           />
         )}
+        {can(me, "staff.manage") && tab === "profiles" && <ResetRequestsNotice />}
         {!can(me, "staff.manage") && (tab === "day" || tab === "month" || tab === "evaluation") && (
           <LinkRequiredNotice month={month} fromAttendance={canAttendance && tab !== "evaluation"} />
         )}

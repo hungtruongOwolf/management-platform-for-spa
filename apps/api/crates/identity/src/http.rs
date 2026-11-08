@@ -84,6 +84,27 @@ where
     }
 }
 
+/// A full session, also one that signed in with a temporary password and must replace it
+/// (ADR-0016). Only `POST /auth/password` takes it; every other route uses [`CurrentSession`],
+/// which refuses such a session with `403 auth.password_change_required`.
+pub struct PasswordChangeSession(pub Session);
+
+impl<S> FromRequestParts<S> for PasswordChangeSession
+where
+    PgPool: FromRef<S>,
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let secret = session_secret(&parts.headers).ok_or(AppError::Unauthenticated)?;
+        let pool = PgPool::from_ref(state);
+        service::resolve_for_password_change(&pool, &secret)
+            .await
+            .map(|(s, _)| PasswordChangeSession(s))
+    }
+}
+
 /// A session that passed the password step and still owes its second factor. Only the MFA
 /// endpoints take this extractor; everything else uses `CurrentSession`, which refuses it.
 pub struct PendingMfaSession(pub PendingMfa);
@@ -163,6 +184,30 @@ pub struct ReauthBody {
     code: Option<String>,
 }
 
+/// Body of `POST /auth/password`.
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PasswordChangeBody {
+    /// The current password (the temporary one after an owner's reset).
+    current_password: String,
+    /// 10–128 characters, not the current one, not the login phone.
+    new_password: String,
+}
+
+/// Body of `POST /auth/password-reset-requests` ("Quên mật khẩu?").
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PasswordResetRequestBody {
+    phone: String,
+}
+
+/// The one answer of `POST /auth/password-reset-requests`, whether or not the phone has a login.
+#[derive(Serialize, ToSchema)]
+pub struct PasswordResetRequested {
+    /// Always `received`.
+    pub status: &'static str,
+}
+
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MfaCodeBody {
@@ -209,7 +254,12 @@ where
         .route("/auth/switch-tenant", post(switch_tenant))
         .route("/auth/mfa/verify", post(mfa_verify))
         .route("/auth/mfa/enroll/start", post(mfa_enroll_start))
-        .route("/auth/mfa/enroll/confirm", post(mfa_enroll_confirm));
+        .route("/auth/mfa/enroll/confirm", post(mfa_enroll_confirm))
+        .route("/auth/password", post(change_password))
+        .route(
+            "/auth/password-reset-requests",
+            post(request_password_reset),
+        );
     let me_routes = Router::new().route("/me", get(me));
     (auth, me_routes)
 }
@@ -294,6 +344,52 @@ pub async fn mfa_enroll_confirm(
         &session_cookie(&token.secret),
         Some(enrolled),
     )
+}
+
+#[utoipa::path(post, path = "/api/v1/auth/password", tag = "auth", request_body = PasswordChangeBody,
+    responses((status = 200, body = Me, description = "Password changed: every session of the account ended, this browser got a new one (cookie)"),
+        (status = 401, description = "auth.invalid_credentials (wrong current password; counts toward the lockout) | auth.unauthenticated"),
+        (status = 422, description = "new_password too_short | too_long | same_as_current | is_phone"), (status = 429)))]
+pub async fn change_password(
+    State(pool): State<PgPool>,
+    PasswordChangeSession(session): PasswordChangeSession,
+    Client(meta): Client,
+    Json(body): Json<PasswordChangeBody>,
+) -> Result<Response, AppError> {
+    let (token, me) = service::change_password(
+        &pool,
+        &session,
+        &body.current_password,
+        &body.new_password,
+        &meta,
+    )
+    .await?;
+    with_cookie(StatusCode::OK, &session_cookie(&token.secret), Some(me))
+}
+
+#[utoipa::path(post, path = "/api/v1/auth/password-reset-requests", tag = "auth", request_body = PasswordResetRequestBody,
+    responses((status = 202, body = PasswordResetRequested, description = "Always the same answer, whether or not the phone has a login (the spa's owner sees a real request)"),
+        (status = 422, description = "phone missing"), (status = 429)))]
+pub async fn request_password_reset(
+    State(pool): State<PgPool>,
+    Client(meta): Client,
+    Json(body): Json<PasswordResetRequestBody>,
+) -> Result<Response, AppError> {
+    if body.phone.trim().is_empty() {
+        return Err(AppError::Validation(vec![FieldError::new(
+            "phone", "required",
+        )]));
+    }
+    service::request_password_reset(&pool, body.phone.trim(), &meta).await?;
+    let mut response = (
+        StatusCode::ACCEPTED,
+        Json(PasswordResetRequested { status: "received" }),
+    )
+        .into_response();
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    Ok(response)
 }
 
 /// Works for full and pending-MFA sessions alike (a user may abandon the MFA step).

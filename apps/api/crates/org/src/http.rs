@@ -1,6 +1,7 @@
 //! `GET /staff` — picker for closer / technician; the staff roster (`staff.read`), profiles,
 //! employment (end / rehire), login link and pay terms (`staff.manage`).
 
+use crate::account::{self, ResetRequest};
 use crate::employment::Period;
 use crate::profile::{
     self, Account, Change, EndInput, HistoryEntry, PayInput, PayTerms, ProfileInput, ProfileView,
@@ -13,6 +14,7 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use identity::AuthUser;
+use identity::account::LoginRole;
 use kernel::http::{IfMatch, etag};
 use kernel::{AppError, FieldError};
 use serde::{Deserialize, Serialize};
@@ -144,6 +146,51 @@ pub struct StaffDetailsDto {
     pub note: Option<String>,
     pub user_id: Option<Uuid>,
     pub user_name: Option<String>,
+    /// The linked login (ADR-0016); absent while unlinked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub login: Option<StaffLoginDto>,
+}
+
+/// The role of a profile's login as the roster shows it.
+#[derive(Debug, Clone, Copy, Serialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StaffLoginRoleDto {
+    Manager,
+    Technician,
+    /// Manages staff (the owner): never reset or re-roled from the roster.
+    Owner,
+    /// Any other role set (custom roles, several roles).
+    Other,
+}
+
+/// A profile's login (owner only): what the account section shows and acts on.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct StaffLoginDto {
+    /// The login phone, national form.
+    pub phone: Option<String>,
+    pub role: StaffLoginRoleDto,
+    /// Locked when the person left (`lock_login`): no sign-in; rehiring unlocks it.
+    pub locked: bool,
+}
+
+impl From<&profile::LoginInfo> for StaffLoginDto {
+    fn from(l: &profile::LoginInfo) -> Self {
+        let role = match l.role_keys.as_slice() {
+            [k] if k == "owner" => StaffLoginRoleDto::Owner,
+            [k] => match LoginRole::from_key(k) {
+                Some(LoginRole::Manager) => StaffLoginRoleDto::Manager,
+                Some(LoginRole::Technician) => StaffLoginRoleDto::Technician,
+                None => StaffLoginRoleDto::Other,
+            },
+            keys if keys.iter().any(|k| k == "owner") => StaffLoginRoleDto::Owner,
+            _ => StaffLoginRoleDto::Other,
+        };
+        Self {
+            phone: l.phone.as_ref().map(kernel::PhoneE164::display_national),
+            role,
+            locked: l.locked,
+        }
+    }
 }
 
 /// A roster entry / staff profile (`staff.read`). `details` only for `staff.manage`; `pay` only
@@ -214,6 +261,7 @@ impl From<ProfileView> for StaffProfileDto {
                 note: p.note,
                 user_id: p.user_id,
                 user_name: p.user_name,
+                login: p.login.as_ref().map(StaffLoginDto::from),
             }),
             pay_visible: v.pay_visible,
             pay: v.pay.map(Into::into),
@@ -309,6 +357,8 @@ pub struct StaffAccountDto {
     /// manager). Not linked to a profile, the app cannot tell which profile is theirs (decision
     /// C): the owner is warned (F19).
     pub is_manager: bool,
+    /// The login manages staff (the owner): needs no staff profile.
+    pub manages_staff: bool,
 }
 
 impl From<Account> for StaffAccountDto {
@@ -319,6 +369,7 @@ impl From<Account> for StaffAccountDto {
             roles: a.roles,
             staff_id: a.staff_id,
             is_manager: a.is_manager,
+            manages_staff: a.manages_staff,
         }
     }
 }
@@ -402,6 +453,17 @@ where
         .route("/staff/{id}/end", post(end_employment))
         .route("/staff/{id}/rehire", post(rehire_staff))
         .route("/staff/{id}/history", get(staff_history))
+        .route("/staff/{id}/login", post(create_login))
+        .route(
+            "/staff/{id}/login/reset-password",
+            post(reset_login_password),
+        )
+        .route("/staff/{id}/login/role", put(set_login_role))
+        .route("/staff/password-reset-requests", get(list_reset_requests))
+        .route(
+            "/staff/password-reset-requests/{id}/dismiss",
+            post(dismiss_reset_request),
+        )
 }
 
 fn no_store(status: StatusCode, headers: HeaderMap, body: impl Serialize) -> Response {
@@ -592,4 +654,155 @@ pub async fn list_accounts(
     let rows = profile::accounts(&pool, &user.actor).await?;
     let body: Vec<StaffAccountDto> = rows.into_iter().map(Into::into).collect();
     Ok(no_store(StatusCode::OK, HeaderMap::new(), body))
+}
+
+// ------------------------------------------------------------------ logins (ADR-0016)
+
+/// Body of `POST /staff/{id}/login`.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StaffLoginCreate {
+    /// The login phone: a Vietnamese mobile no account uses yet.
+    pub phone: String,
+    pub role: LoginRole,
+}
+
+/// Body of `PUT /staff/{id}/login/role`.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StaffLoginRoleWrite {
+    pub role: LoginRole,
+}
+
+/// A temporary password, returned this once (`Cache-Control: no-store`): the owner hands it over
+/// and the person must replace it at their first sign-in.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct TemporaryPasswordDto {
+    pub temporary_password: String,
+}
+
+/// `POST /staff/{id}/login` → 201: the profile, now linked, and the temporary password.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct StaffLoginCreated {
+    pub profile: StaffProfileDto,
+    pub temporary_password: String,
+}
+
+/// An open forgotten-password request (option A).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PasswordResetRequestDto {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub full_name: String,
+    /// The profile of the login, when linked (its sheet holds "Đặt lại").
+    pub staff_id: Option<Uuid>,
+    pub requested_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+}
+
+impl From<ResetRequest> for PasswordResetRequestDto {
+    fn from(r: ResetRequest) -> Self {
+        Self {
+            id: r.id,
+            user_id: r.user_id,
+            full_name: r.full_name,
+            staff_id: r.staff_id,
+            requested_at: r.requested_at,
+            expires_at: r.expires_at,
+        }
+    }
+}
+
+/// The owner's login actions ask for the password again within the re-auth window (ADR-0004);
+/// the permission is checked first, so a manager hears `403`, not `401 auth.reauth_required`.
+fn owner_step_up(user: &AuthUser) -> Result<(), AppError> {
+    user.actor.require(kernel::Permission::StaffManage)?;
+    user.require_recent_auth()
+}
+
+#[utoipa::path(post, path = "/api/v1/staff/{id}/login", tag = "staff", params(("id" = Uuid, Path)),
+    request_body = StaffLoginCreate,
+    responses((status = 201, body = StaffLoginCreated, description = "Login created and linked; `temporary_password` is shown this once (no-store)"),
+              (status = 401, description = "auth.reauth_required"), (status = 403), (status = 404),
+              (status = 409, description = "account.phone_taken | staff.account_exists | staff.already_left"),
+              (status = 412), (status = 422, description = "phone invalid_format")))]
+pub async fn create_login(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+    IfMatch(version): IfMatch,
+    Json(body): Json<StaffLoginCreate>,
+) -> Result<Response, AppError> {
+    owner_step_up(&user)?;
+    let created = account::create(&pool, &user.actor, id, version, &body.phone, body.role).await?;
+    let mut h = HeaderMap::new();
+    h.insert(header::ETAG, etag(created.profile.profile.version));
+    Ok(no_store(
+        StatusCode::CREATED,
+        h,
+        StaffLoginCreated {
+            temporary_password: created.temporary_password.expose().to_owned(),
+            profile: StaffProfileDto::from(created.profile),
+        },
+    ))
+}
+
+#[utoipa::path(post, path = "/api/v1/staff/{id}/login/reset-password", tag = "staff", params(("id" = Uuid, Path)),
+    responses((status = 200, body = TemporaryPasswordDto, description = "New temporary password, shown this once (no-store); every session of the login ended"),
+              (status = 401, description = "auth.reauth_required"), (status = 403), (status = 404),
+              (status = 409, description = "staff.no_login | account.locked"),
+              (status = 422, description = "account.owner_protected | account.other_spa")))]
+pub async fn reset_login_password(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    owner_step_up(&user)?;
+    let temporary = account::reset_password(&pool, &user.actor, id).await?;
+    Ok(no_store(
+        StatusCode::OK,
+        HeaderMap::new(),
+        TemporaryPasswordDto {
+            temporary_password: temporary.expose().to_owned(),
+        },
+    ))
+}
+
+#[utoipa::path(put, path = "/api/v1/staff/{id}/login/role", tag = "staff", params(("id" = Uuid, Path)),
+    request_body = StaffLoginRoleWrite,
+    responses((status = 200, body = StaffProfileDto), (status = 401, description = "auth.reauth_required"),
+              (status = 403), (status = 404), (status = 409, description = "staff.no_login | staff.already_left"),
+              (status = 422, description = "account.owner_protected")))]
+pub async fn set_login_role(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+    Json(body): Json<StaffLoginRoleWrite>,
+) -> Result<Response, AppError> {
+    owner_step_up(&user)?;
+    let v = account::set_role(&pool, &user.actor, id, body.role).await?;
+    Ok(profile_response(StatusCode::OK, v))
+}
+
+#[utoipa::path(get, path = "/api/v1/staff/password-reset-requests", tag = "staff",
+    responses((status = 200, body = [PasswordResetRequestDto]), (status = 401), (status = 403)))]
+pub async fn list_reset_requests(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+) -> Result<Response, AppError> {
+    let rows = account::reset_requests(&pool, &user.actor).await?;
+    let body: Vec<PasswordResetRequestDto> = rows.into_iter().map(Into::into).collect();
+    Ok(no_store(StatusCode::OK, HeaderMap::new(), body))
+}
+
+#[utoipa::path(post, path = "/api/v1/staff/password-reset-requests/{id}/dismiss", tag = "staff",
+    params(("id" = Uuid, Path)),
+    responses((status = 204), (status = 401), (status = 403), (status = 404)))]
+pub async fn dismiss_reset_request(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    account::dismiss_request(&pool, &user.actor, id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }

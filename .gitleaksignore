@@ -1,0 +1,3 @@
+# gitleaks fingerprints of reviewed false positives (commit:file:rule:line).
+# A fake temporary password in a vitest mock (ADR-0016), not a secret.
+ace5e7c96c265d3a0137fd969db21ee034a2d7ba:apps/web/src/features/staff/Staff.test.tsx:generic-api-key:480

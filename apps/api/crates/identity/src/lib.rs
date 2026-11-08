@@ -1,5 +1,6 @@
 //! Identity: accounts, opaque sessions, roles-as-data and the `AuthUser` extractor (ADR-0004).
 
+pub mod account;
 pub mod http;
 pub mod lockout;
 pub mod mfa;

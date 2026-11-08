@@ -35,6 +35,10 @@ pub enum AppError {
     /// Like `MfaRequired`, for an account that must first enrol an authenticator.
     #[error("second factor enrollment required")]
     MfaEnrollmentRequired,
+    /// The account signed in with a temporary password (ADR-0016): until it sets its own, the
+    /// session reaches only `POST /auth/password` and logout (403).
+    #[error("password change required")]
+    PasswordChangeRequired,
     /// Wrong, expired, or already-used TOTP / recovery code.
     #[error("invalid second factor")]
     InvalidMfaCode,
@@ -103,7 +107,7 @@ impl AppError {
             | Self::MfaRequired
             | Self::MfaEnrollmentRequired
             | Self::InvalidMfaCode => StatusCode::UNAUTHORIZED,
-            Self::Forbidden { .. } => StatusCode::FORBIDDEN,
+            Self::Forbidden { .. } | Self::PasswordChangeRequired => StatusCode::FORBIDDEN,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Validation(_) | Self::Unprocessable { .. } => StatusCode::UNPROCESSABLE_ENTITY,
             Self::Conflict { .. } | Self::ConflictWith { .. } | Self::ConflictDetails { .. } => {
@@ -124,6 +128,7 @@ impl AppError {
             Self::InvalidCredentials => "auth.invalid_credentials",
             Self::MfaRequired => "auth.mfa_required",
             Self::MfaEnrollmentRequired => "auth.mfa_enrollment_required",
+            Self::PasswordChangeRequired => "auth.password_change_required",
             Self::InvalidMfaCode => "auth.invalid_mfa_code",
             Self::Forbidden { code }
             | Self::Unprocessable { code }

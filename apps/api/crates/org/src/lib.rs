@@ -2,6 +2,7 @@
 //! (staff management). Staff are not user accounts: a technician who never logs in is still
 //! staff; a profile may be linked to a login for self-service.
 
+pub mod account;
 pub mod employment;
 pub mod http;
 pub mod profile;

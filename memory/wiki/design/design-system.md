@@ -81,6 +81,15 @@ Một giỏ nhiều dịch vụ / gói không được kéo dài thành một fo
 - Ô "Vị trí" của hồ sơ đã gắn tài khoản: `readOnly` + dòng phụ muted "Theo vai trò của tài khoản đăng nhập." (vị trí = tên role).
 - Sheet nghỉ việc bị từ chối vì lịch hẹn (F24): dưới lỗi là danh sách link `.link` "20/11/2026 lúc 10:00 · Tên khách", mỗi link mở ngày đó của Lịch hẹn lọc theo KTV.
 
+## Tài khoản đăng nhập và mật khẩu (ADR-0016, 2026-11-08, spec staff-management §17)
+- **Khối "Tài khoản đăng nhập"** trong sheet hồ sơ (chủ spa): chưa có → form ngắn (SĐT đăng nhập + Vai trò Kỹ thuật viên / Quản lý, `btn-primary` "Tạo tài khoản đăng nhập"); có → `roster-facts` (Số đăng nhập, Vai trò, Trạng thái chip `badge-ok` Đang dùng / `badge-danger` Đã khóa) + "Đặt lại mật khẩu" (`btn-secondary`, xác nhận tại chỗ bằng `btn-danger` "Đặt lại") + "Đổi vai trò" (select + "Lưu vai trò"). Không còn dropdown gắn / "Bỏ gắn". Form "Thêm nhân viên" có ô tick "Tạo tài khoản đăng nhập ngay" (SĐT + vai trò), tạo xong mở sheet hồ sơ và tạo tài khoản ở đó.
+- **Mật khẩu tạm** (`TemporaryPasswordDialog`): `BottomSheet` "Mật khẩu tạm của …", mật khẩu trong `.temp-password` (mono, `--fs-xl`, đậm, `user-select: all`) + "Sao chép"; "Xong" chỉ bật sau khi tick "Tôi đã đưa mật khẩu cho nhân viên"; không đóng được trước đó.
+- **Xác nhận lại mật khẩu** (`ReauthDialog`): khi server trả `auth.reauth_required`, sheet hỏi mật khẩu + mã xác thực (nếu có) rồi tự chạy lại thao tác.
+- **Bắt đổi mật khẩu** `/doi-mat-khau`: khung `AuthFrame` như đăng nhập, h1 "Đặt mật khẩu mới", form mật khẩu tạm + mới ×2 (gợi ý "Ít nhất 10 ký tự… một câu ngắn dễ nhớ"), "Đăng xuất" `btn-ghost`. Cài đặt có cùng form "Đổi mật khẩu" (card).
+- **Quên mật khẩu?** `btn-ghost btn-block` dưới nút đăng nhập; mở (chunk lười) khối SĐT + "Gửi yêu cầu"; sau khi gửi luôn cùng một câu.
+- **Yêu cầu đặt lại** (chủ spa, Tổng quan + Hồ sơ nhân viên): `.callout` "Yêu cầu đặt lại mật khẩu", mỗi dòng "**Tên** xin đặt lại mật khẩu · 14:05" + "Đặt lại" (`btn-secondary`) / "Bỏ qua" (`btn-ghost`).
+- **Tài khoản cũ chưa gắn hồ sơ** (dữ liệu CLI): `.callout` "Tài khoản đăng nhập chưa gắn với hồ sơ", mỗi dòng tên + vai trò, select "Hồ sơ của …" + "Gắn vào hồ sơ"; chỉ hiện khi có.
+
 ## Màn của KTV (EM 2026-11-07, [raw](../../raw/2026-11-07-em-technician-pages.md), spec staff-management §12)
 - **Quản lý dùng cùng màn** (2026-11-08, §16): "Công và lương của tôi" ở `/nhan-vien/cua-toi` (nav icon `wallet`, nhãn ngắn "Công lương") + "Khách của tôi"; mục "Nhân viên" của quản lý `exact` để chỉ một mục sáng.
 

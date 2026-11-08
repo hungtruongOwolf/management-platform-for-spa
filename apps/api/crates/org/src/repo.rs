@@ -72,6 +72,11 @@ pub struct ProfileRow {
     pub version: i64,
     /// The linked login's role name(s); shown instead of `position` while linked.
     pub account_role: Option<String>,
+    /// Its role keys, comma-separated (`manager`, `technician`, `owner`).
+    pub account_role_keys: Option<String>,
+    pub user_phone: Option<String>,
+    /// Whether the linked login's membership of this spa is active (`false` = locked).
+    pub login_active: Option<bool>,
 }
 
 pub async fn profiles(tx: &mut TenantTx) -> Result<Vec<ProfileRow>, AppError> {
@@ -84,7 +89,15 @@ pub async fn profiles(tx: &mut TenantTx) -> Result<Vec<ProfileRow>, AppError> {
                    FROM app.membership m
                    JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
                    JOIN app.role r ON r.tenant_id = mr.tenant_id AND r.id = mr.role_id
-                   WHERE m.tenant_id = s.tenant_id AND m.user_id = s.user_id) AS "account_role?"
+                   WHERE m.tenant_id = s.tenant_id AND m.user_id = s.user_id) AS "account_role?",
+                  (SELECT string_agg(r.key, ',' ORDER BY r.key)
+                   FROM app.membership m
+                   JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
+                   JOIN app.role r ON r.tenant_id = mr.tenant_id AND r.id = mr.role_id
+                   WHERE m.tenant_id = s.tenant_id AND m.user_id = s.user_id) AS "account_role_keys?",
+                  u.phone_e164 AS "user_phone?",
+                  (SELECT m.status = 'active' FROM app.membership m
+                   WHERE m.tenant_id = s.tenant_id AND m.user_id = s.user_id) AS "login_active?"
            FROM app.staff s LEFT JOIN app.user_account u ON u.id = s.user_id
            WHERE s.tenant_id = $1
            ORDER BY s.status, s.full_name"#,
@@ -118,7 +131,15 @@ pub async fn profile(
                    FROM app.membership m
                    JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
                    JOIN app.role r ON r.tenant_id = mr.tenant_id AND r.id = mr.role_id
-                   WHERE m.tenant_id = s.tenant_id AND m.user_id = s.user_id) AS "account_role?"
+                   WHERE m.tenant_id = s.tenant_id AND m.user_id = s.user_id) AS "account_role?",
+                  (SELECT string_agg(r.key, ',' ORDER BY r.key)
+                   FROM app.membership m
+                   JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
+                   JOIN app.role r ON r.tenant_id = mr.tenant_id AND r.id = mr.role_id
+                   WHERE m.tenant_id = s.tenant_id AND m.user_id = s.user_id) AS "account_role_keys?",
+                  u.phone_e164 AS "user_phone?",
+                  (SELECT m.status = 'active' FROM app.membership m
+                   WHERE m.tenant_id = s.tenant_id AND m.user_id = s.user_id) AS "login_active?"
            FROM app.staff s LEFT JOIN app.user_account u ON u.id = s.user_id
            WHERE s.tenant_id = $1 AND s.id = $2"#,
         tenant,

@@ -22,6 +22,12 @@ addMessages(
     "staff.cannot_end_self": "Bạn không tự cho mình nghỉ việc được.",
     "staff.not_employed_in_month": "Tháng này bạn không làm ở spa: chỉ xem được các tháng đã làm.",
     "staff.linked_to_owner": "Hồ sơ này gắn với tài khoản chủ spa. Bỏ gắn tài khoản trước khi cho nghỉ việc.",
+    "account.phone_taken": "Số điện thoại này đã có tài khoản đăng nhập. Dùng một số khác.",
+    "staff.account_exists": "Hồ sơ này đã có tài khoản đăng nhập. Tải lại để xem mới nhất.",
+    "staff.no_login": "Hồ sơ này chưa có tài khoản đăng nhập.",
+    "account.locked": "Tài khoản đã bị khóa khi cho nghỉ việc. Dùng “Nhận lại làm” để mở lại trước.",
+    "account.owner_protected": "Không đổi được tài khoản của chủ spa ở đây.",
+    "account.other_spa": "Tài khoản này còn dùng ở spa khác nên không đặt lại mật khẩu ở đây được.",
   },
   {
     not_employed: "Ngày này nhân viên chưa vào làm hoặc đã nghỉ.",
@@ -276,4 +282,42 @@ export async function savePay(id: string, body: StaffPayWrite): Promise<unknown>
 /** Current month `YYYY-MM` in the spa's time zone. */
 export function currentMonth(today: string): string {
   return today.slice(0, 7);
+}
+
+// ------------------------------------------------------------- logins (ADR-0016, spec §17)
+
+export type LoginRole = Schemas["LoginRole"];
+export type StaffLoginCreated = Schemas["StaffLoginCreated"];
+export type PasswordResetRequest = Schemas["PasswordResetRequestDto"];
+
+export const LOGIN_ROLE_LABEL: Record<LoginRole, string> = { manager: "Quản lý", technician: "Kỹ thuật viên" };
+
+/** Creates the profile's login (owner, re-auth): the temporary password comes back this once. */
+export async function createLogin(id: string, version: number, phone: string, role: LoginRole): Promise<StaffLoginCreated> {
+  return (await api(`/staff/${id}/login`, { method: "POST", body: { phone, role }, headers: ifMatch(version) })) as StaffLoginCreated;
+}
+
+/** A new temporary password (owner, re-auth); the person's sessions end. */
+export async function resetLoginPassword(id: string): Promise<string> {
+  const reply = (await api(`/staff/${id}/login/reset-password`, { method: "POST" })) as Schemas["TemporaryPasswordDto"];
+  return reply.temporary_password;
+}
+
+export async function setLoginRole(id: string, role: LoginRole): Promise<StaffProfile> {
+  return (await api(`/staff/${id}/login/role`, { method: "PUT", body: { role } })) as StaffProfile;
+}
+
+/** Forgotten-password requests waiting for the owner (option A). */
+export const resetRequestsQuery = queryOptions({
+  queryKey: ["staff", "reset-requests"],
+  queryFn: async () => (await api("/staff/password-reset-requests")) as PasswordResetRequest[],
+});
+
+export async function dismissResetRequest(id: string): Promise<void> {
+  await api(`/staff/password-reset-requests/${id}/dismiss`, { method: "POST" });
+}
+
+/** Confirms the owner's password (and code) again before a login action (`/auth/reauth`). */
+export async function reauth(password: string, code: string): Promise<void> {
+  await api("/auth/reauth", { method: "POST", body: code ? { password, code } : { password } });
 }
