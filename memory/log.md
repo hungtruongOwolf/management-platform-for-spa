@@ -622,3 +622,7 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - `GET /me/evaluations/history` (`staff.read_own` / `staff.read_own_past`): hồ sơ gắn với session, dùng chung `history_range` + `history_months` với `GET /evaluations/history` (tách ra từ #90, không nhân bản); không `can_record`/`staff_id`; chưa gắn → `linked: false`. Người đã nghỉ: kẹp về tháng nghỉ, chỉ tháng có làm, không `403` cả khoảng.
 - Web: khối "Lịch sử đánh giá" trong "Công và lương của tôi" (tải lười), dùng chung `MonthsHistory` (biểu đồ + dòng tháng) với màn quản lý; "Từng ngày" đổi tháng của trang.
 - Sửa kèm (axe 390 tối trên CI): ô lịch tháng của KTV ngày đi muộn chỉ hiện số phút thay cho ✓ ở mọi bề rộng (trước: điện thoại ẩn ✓ bằng CSS nên chữ hiện ≠ tên truy cập, `label-content-name-mismatch`); e2e `:122` chịu được seed chạy lại khi retry.
+
+## [2026-11-08] qa | Test live quản lý + KTV (Chrome, local)
+- Raw: [2026-11-08-live-test-manager-technician](raw/2026-11-08-live-test-manager-technician.md). Quản lý A1–A13 đạt (A14 bỏ qua: cửa sổ không thu nhỏ được); KTV B1–B4 đạt. Chủ spa chưa chạy (chờ EM nhập MFA).
+- Lỗi chính: F19 quy tắc C phụ thuộc hồ sơ ↔ tài khoản (hồ sơ quản lý chưa gắn → tự chấm được); F20 còn (P)/(ĐX)/(K); F21 lý do hủy lịch chưa vào nhật ký; F23 nhãn "Vãng lai". Chờ EM quyết: F12 (đặt lịch giờ đã qua), F18 (ghi bù lượt hôm qua). EM: lưu lại, sửa sau.
