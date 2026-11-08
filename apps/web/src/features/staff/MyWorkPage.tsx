@@ -18,9 +18,9 @@ import "./staff.css";
 
 type Layout = "ngay" | "tuan" | "ds";
 
-/** "Nhóm · 3 người" for a family booking, "Vãng lai" for a visit without one. */
+/** "Nhóm · 3 người" for a family booking, "Không đặt lịch" for a visit without one (F23). */
 function tagOf(e: MyCalendarEntry): string | null {
-  if (e.walk_in) return "Vãng lai";
+  if (e.walk_in) return "Không đặt lịch";
   if (e.group_size && e.group_size > 1) return `Nhóm · ${String(e.group_size)} người`;
   return null;
 }

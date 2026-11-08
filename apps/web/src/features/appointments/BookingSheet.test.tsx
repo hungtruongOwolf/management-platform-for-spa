@@ -17,12 +17,8 @@ import {
 
 /** The customer who books: a newcomer "Chị Hà" with a phone, one Gội đầu (30 phút). */
 async function fillGuest(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(
-    within(screen.getByRole("group", { name: "Loại khách Khách" })).getByRole(
-      "button",
-      { name: "Khách mới" },
-    ),
-  );
+  // The search's "Khách mới" (the only way to a newcomer, F7).
+  await user.click(screen.getByRole("button", { name: "Khách mới" }));
   await user.type(screen.getByLabelText("Tên khách"), "Chị Hà");
   await user.type(screen.getByLabelText("Số điện thoại"), "0905111222");
   await user.selectOptions(screen.getByLabelText("Thêm dịch vụ"), "s1");
@@ -434,7 +430,7 @@ describe("Đặt lịch hẹn (spec appointments.md §10.2, §10.5)", () => {
     ).toMatch(/^Nguyễn Thị Hà đã có lịch 10:00–11:00 ngày 07\/11\/2026/);
   });
 
-  it("asks once before booking an earlier time of today, then books", async () => {
+  it("never books a slot of today already over (F12: no more “Vẫn đặt lịch”)", async () => {
     const user = userEvent.setup();
     const { fetchMock } = renderSheet(
       { ...CAL, from: "2026-11-06", to: "2026-11-06" },
@@ -444,15 +440,20 @@ describe("Đặt lịch hẹn (spec appointments.md §10.2, §10.5)", () => {
     expect(
       screen.getByText(/Giờ này đã qua \(bây giờ 10:00\)/),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("option", { name: "09:30 · đã qua" }),
-    ).toBeInTheDocument();
+    // Earlier slots cannot be picked; the slot under way (10:00) can.
+    expect(screen.getByRole("option", { name: "09:30 · đã qua" })).toBeDisabled();
+    expect(screen.getByRole("option", { name: "10:00" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Đặt lịch" }));
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(screen.getByRole("status")).toHaveTextContent(
-      /Giờ hẹn 09:00 đã qua .* ghi lượt nhập bù ở Quầy/,
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /Giờ hẹn 09:00 đã qua \(bây giờ 10:00\): chọn từ 10:00 trở đi/,
     );
-    await user.click(screen.getByRole("button", { name: "Vẫn đặt lịch" }));
+    expect(screen.queryByRole("button", { name: "Vẫn đặt lịch" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Đặt lịch" }));
+    expect(fetchMock).not.toHaveBeenCalled();
+    await user.selectOptions(screen.getByLabelText("Giờ hẹn"), "600");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Đặt lịch" }));
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

@@ -401,8 +401,9 @@ fn kind_sql(kind: HistoryKind) -> &'static str {
 /// `GET /customers/{id}/history?q=&kind=&from=&to=&cursor=&limit=` (`customer.read` +
 /// `visit.read` + `sale.read`): newest business day first, then newest first within the day (a
 /// back-dated record keeps its day even though its `created_at` is when it was typed). Visits
-/// carry their one-off payment (the visit's own sale is not a separate purchase); a void is its
-/// own event at the moment it happened.
+/// carry their one-off payment (the visit's own sale is not a separate purchase). A voided visit
+/// or purchase is one event at its own time (`visit_voided` / `purchase_voided`) carrying both
+/// the record and its void (F16: it used to appear twice).
 ///
 /// Filters: `kind`; `from` / `to` on the event's business day; `q` (accent-insensitive) matches a
 /// visit by its services, their categories, packages and technicians, a purchase by its lines
@@ -444,24 +445,18 @@ pub async fn history(
     let tenant = tx.tenant().as_uuid();
     let mut heads = sqlx::query!(
         r#"WITH ev AS (
-             SELECT 'visit'::text AS kind, 0 AS rank, v.check_in_at AS at, v.business_date, v.id
+             -- One event per visit / purchase (F16, live test 2026-11-08): a voided one stays at
+             -- its own time and carries the void, instead of a second "Đã hủy" event.
+             SELECT CASE WHEN v.status = 'voided' THEN 'visit_voided' ELSE 'visit' END AS kind,
+                    CASE WHEN v.status = 'voided' THEN 1 ELSE 0 END AS rank,
+                    v.check_in_at AS at, v.business_date, v.id
              FROM app.visit v WHERE v.tenant_id = $1 AND v.customer_id = $2
              UNION ALL
-             SELECT 'visit_voided', 1, v.voided_at, (v.voided_at AT TIME ZONE $3)::date, v.id
-             FROM app.visit v
-             WHERE v.tenant_id = $1 AND v.customer_id = $2 AND v.status = 'voided'
-             UNION ALL
-             SELECT 'purchase', 2, s.created_at, s.business_date, s.id
+             SELECT CASE WHEN s.status = 'voided' THEN 'purchase_voided' ELSE 'purchase' END,
+                    CASE WHEN s.status = 'voided' THEN 3 ELSE 2 END,
+                    s.created_at, s.business_date, s.id
              FROM app.sale s
              WHERE s.tenant_id = $1 AND (s.customer_id = $2 OR EXISTS (
-                     SELECT 1 FROM app.customer_package cp
-                     WHERE cp.tenant_id = s.tenant_id AND cp.sale_id = s.id AND cp.customer_id = $2))
-               AND NOT EXISTS (SELECT 1 FROM app.visit v WHERE v.tenant_id = s.tenant_id AND v.sale_id = s.id)
-               AND NOT EXISTS (SELECT 1 FROM app.visit_line l WHERE l.tenant_id = s.tenant_id AND l.sale_id = s.id)
-             UNION ALL
-             SELECT 'purchase_voided', 3, s.voided_at, (s.voided_at AT TIME ZONE $3)::date, s.id
-             FROM app.sale s
-             WHERE s.tenant_id = $1 AND s.status = 'voided' AND (s.customer_id = $2 OR EXISTS (
                      SELECT 1 FROM app.customer_package cp
                      WHERE cp.tenant_id = s.tenant_id AND cp.sale_id = s.id AND cp.customer_id = $2))
                AND NOT EXISTS (SELECT 1 FROM app.visit v WHERE v.tenant_id = s.tenant_id AND v.sale_id = s.id)
@@ -585,6 +580,7 @@ pub async fn history(
         match kind {
             HistoryKind::Visit => event.visit = v.visits.get(&h.id).cloned(),
             HistoryKind::VisitVoided => {
+                event.visit = v.visits.get(&h.id).cloned();
                 let reason = v
                     .visits
                     .get(&h.id)
@@ -609,6 +605,7 @@ pub async fn history(
             }
             HistoryKind::Purchase => event.purchase = sales.get(&h.id).cloned(),
             HistoryKind::PurchaseVoided => {
+                event.purchase = sales.get(&h.id).cloned();
                 event.void = Some(HistoryVoid {
                     id: h.id,
                     reason: sales

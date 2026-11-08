@@ -36,6 +36,7 @@ import {
   type PackageSaleDraft,
   type PaymentMode,
   amountDue,
+  byServiceTime,
   coverage,
   discountPreview,
   inCart,
@@ -353,11 +354,11 @@ export function FrontDeskPage() {
       const sentNote = body.note;
       queryClient.setQueryData<Visit[]>(todayVisitsQuery.queryKey, (old) =>
         visit.business_date === todayIso
-          ? [
+          ? byServiceTime([
               // The saved response never carries the note (health data): show the one just typed.
               { ...visit, ...(sentNote ? { note: sentNote } : {}) },
               ...(old ?? []).filter((v) => v.id !== visit.id),
-            ]
+            ])
           : old,
       );
       // Walk-ins are on the calendar too (spec appointments.md §10.1), not only completed bookings.
@@ -372,6 +373,11 @@ export function FrontDeskPage() {
         queryKey: ["customer-packages", visit.customer_id],
       });
       void invalidateManagementViews(queryClient, visit.customer_id);
+      // The server wrote the Nữ / Nam picked for pricing on a profile without a gender (F2).
+      if (visit.customer_gender && !customer?.gender)
+        void queryClient.invalidateQueries({
+          queryKey: ["customers", "one", visit.customer_id],
+        });
       for (const ps of visit.package_sales)
         if (ps.beneficiary_customer_id)
           void queryClient.invalidateQueries({
@@ -446,6 +452,8 @@ export function FrontDeskPage() {
     },
     onSuccess: (soldText, drafts) => {
       void queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
+      // The day list shows package-only sales under the visits (F6).
+      void queryClient.invalidateQueries({ queryKey: ["sales", "day"] });
       void invalidateManagementViews(queryClient, customer?.id);
       for (const d of drafts)
         if (d.beneficiary) void invalidateManagementViews(queryClient, d.beneficiary.id);

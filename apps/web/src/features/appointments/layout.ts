@@ -80,7 +80,7 @@ export function blockOf(
 export interface CardLines {
   /** Customer name (bold): up to two lines, never cut mid-word when it wraps. */
   name: number;
-  /** Phase dot + phase word + tag ("Vãng lai", "Nhóm · 3 người"); 0 = the dot sits by the name. */
+  /** Phase dot + phase word + tag ("Không đặt lịch", "Nhóm · 3 người"); 0 = the dot sits by the name. */
   meta: number;
   services: number;
 }

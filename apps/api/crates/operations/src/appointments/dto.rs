@@ -28,8 +28,9 @@ pub struct AppointmentCreate {
     pub service_ids: Vec<Uuid>,
     /// Preferred technician (optional while booked).
     pub staff_id: Option<Uuid>,
-    /// On the spa's slot grid, inside opening hours; today up to 90 days ahead (a past day is
-    /// `422 appointment.in_the_past` for everyone: that is a back-dated visit).
+    /// On the spa's slot grid, inside opening hours; today up to 90 days ahead. A past day, or a
+    /// slot of today already over (the slot under way is fine), is `422 appointment.in_the_past`
+    /// for everyone: a service already done is a back-dated visit.
     pub starts_at: DateTime<Utc>,
     /// Default: the services' exact durations (untimed alone = 60). 5 – 480 minutes.
     pub duration_min: Option<u32>,

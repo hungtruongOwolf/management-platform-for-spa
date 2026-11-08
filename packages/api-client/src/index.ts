@@ -21,6 +21,7 @@ export type CustomerUpdate = Schemas["CustomerUpdate"];
 export type Staff = Schemas["StaffDto"];
 export type SaleCreate = Schemas["SaleCreate"];
 export type Sale = Schemas["SaleDto"];
+export type DaySale = Schemas["DaySaleDto"];
 export type PaymentCreate = Schemas["PaymentCreate"];
 export type CustomerPackage = Schemas["CustomerPackageDto"];
 export type CustomerPackageItem = Schemas["CustomerPackageItemDto"];

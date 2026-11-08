@@ -574,7 +574,9 @@ pub struct HistoryCancellation {
     pub refund: Option<HistoryRefund>,
 }
 
-/// One entry of a customer's timeline; exactly one of the detail fields is set, per `kind`.
+/// One entry of a customer's timeline. `visit` / `purchase` / `cancellation` / `extension` per
+/// `kind`; a `visit_voided` / `purchase_voided` event carries both its `visit` / `purchase` and
+/// its `void` (one event per record, at the record's own time).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct HistoryEvent {
     pub kind: HistoryKind,

@@ -10,6 +10,7 @@ use super::dto::{
 };
 use super::service::{self, Outcome};
 use axum::body::Bytes;
+use axum::extract::rejection::QueryRejection;
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -17,9 +18,9 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use identity::AuthUser;
 use kernel::crypto::FieldCipher;
-use kernel::http::{IdempotencyKey, IfMatch, etag};
+use kernel::http::{IdempotencyKey, IfMatch, etag, invalid_query};
 use kernel::idempotency::hash_route;
-use kernel::{AppError, FieldError};
+use kernel::{AppError, FieldError, Permission};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use sqlx::PgPool;
@@ -75,8 +76,11 @@ fn parse_canonical<T: DeserializeOwned>(body: &Bytes) -> Result<(T, Vec<u8>), Ap
 pub async fn calendar(
     State(pool): State<PgPool>,
     user: AuthUser,
-    Query(query): Query<CalendarQuery>,
+    query: Result<Query<CalendarQuery>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    // The right first, then the query (F17): a technician hears 403, not what a bad query lacks.
+    user.actor.require(Permission::AppointmentManage)?;
+    let Query(query) = query.map_err(invalid_query)?;
     let cal = service::calendar(&pool, &user.actor, &query).await?;
     Ok(no_store(StatusCode::OK, cal, None))
 }
@@ -90,8 +94,10 @@ pub async fn my_calendar(
     State(pool): State<PgPool>,
     State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
-    Query(query): Query<CalendarQuery>,
+    query: Result<Query<CalendarQuery>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    user.actor.require(Permission::StaffReadOwn)?;
+    let Query(query) = query.map_err(invalid_query)?;
     let cal = service::my_calendar(&pool, &cipher, &user.actor, &query).await?;
     Ok(no_store(StatusCode::OK, cal, None))
 }
@@ -102,7 +108,7 @@ pub async fn my_calendar(
         (status = 403, description = "auth.forbidden / day.locked (group_with: the host is on a past day, non-owner)"),
         (status = 404, description = "customer or service not in this spa"),
         (status = 409, description = "appointment.staff_busy (existing_id = the overlapping appointment), appointment.customer_busy (the same customer, or newcomer phone outside the group, already has an open booking overlapping it: existing_id), customer.phone_taken (newcomer's phone already has a record: existing_id)"),
-        (status = 422, description = "validation_failed (starts_at not_on_slot / too_far, duration_min out_of_range, guest.*), appointment.outside_opening_hours, appointment.in_the_past (a past business day, owner too: record a back-dated visit instead), staff.inactive")))]
+        (status = 422, description = "validation_failed (starts_at not_on_slot / too_far, duration_min out_of_range, guest.*), appointment.outside_opening_hours, appointment.in_the_past (a past business day or a slot of today already over, owner too: record a back-dated visit instead), staff.inactive")))]
 pub async fn book(
     State(pool): State<PgPool>,
     user: AuthUser,
@@ -186,7 +192,7 @@ pub async fn read_appointment(
         (status = 403, description = "auth.forbidden / day.locked"), (status = 404),
         (status = 409, description = "appointment.closed, appointment.staff_busy, appointment.customer_busy (checked when the booking moves or gets its customer record)"),
         (status = 412),
-        (status = 422, description = "validation_failed (customer_id duplicate: that profile is already in the group), appointment.outside_opening_hours, appointment.in_the_past (moved to a past day)")))]
+        (status = 422, description = "validation_failed (customer_id duplicate: that profile is already in the group), appointment.outside_opening_hours, appointment.in_the_past (a booking still waiting moved to a past day or a slot already over)")))]
 pub async fn update_appointment(
     State(pool): State<PgPool>,
     user: AuthUser,

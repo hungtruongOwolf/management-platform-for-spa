@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.customer SET gender = $3, version = version + 1, updated_at = now()\n           WHERE tenant_id = $1 AND id = $2 AND gender IS NULL AND anonymized_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "66c8eab0c943b6fba2d4deb0d8864b900556db3520954a3c13c318526c0348db"
+}

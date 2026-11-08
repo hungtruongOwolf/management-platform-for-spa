@@ -408,6 +408,33 @@ impl CustomerBrief {
     }
 }
 
+/// Records the gender the desk picked for a profile without one (F2: the Nữ / Nam chosen to price
+/// a visit), inside the caller's transaction. Needs `customer.write`; without it, or when the
+/// profile already has a gender, nothing changes (never an overwrite). Audited as a profile edit.
+pub async fn fill_gender_in(
+    tx: &mut TenantTx,
+    actor: &Actor,
+    id: Uuid,
+    gender: Gender,
+) -> Result<(), AppError> {
+    if !actor.can(Permission::CustomerWrite) || !repo::fill_gender(tx, id, gender.as_str()).await? {
+        return Ok(());
+    }
+    audit::record(
+        tx,
+        actor,
+        AuditEntry {
+            action: "customer.update",
+            entity_type: "customer",
+            entity_id: id,
+            before: Some(json!({ "gender": null })),
+            after: Some(json!({ "gender": gender.as_str() })),
+            reason: Some("gender picked to price a visit"),
+        },
+    )
+    .await
+}
+
 /// A live customer of the caller's tenant, read inside the caller's transaction (`None` = not
 /// here, which callers answer with `404`). The caller authorizes.
 pub async fn brief_in(tx: &mut TenantTx, id: Uuid) -> Result<Option<CustomerBrief>, AppError> {

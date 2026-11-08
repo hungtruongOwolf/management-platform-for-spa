@@ -4,7 +4,7 @@
 
 use crate::domain::{self, DiscountAuthority, DiscountError, PaymentMethod};
 use crate::dto::{
-    DiscountCreate, PaymentCreate, PaymentDto, PaymentKindDto, PaymentMethodDto,
+    DaySaleDto, DiscountCreate, PaymentCreate, PaymentDto, PaymentKindDto, PaymentMethodDto,
     SaleCheckoutCreate, SaleCheckoutDto, SaleCreate, SaleDto, SaleLineDto, SaleLineTypeDto,
     SaleStatusDto,
 };
@@ -800,6 +800,42 @@ pub(crate) async fn load(
         payments,
         customer_packages,
     }))
+}
+
+/// Most package sales one day list returns (a busy day sells a handful).
+const DAY_SALES_MAX: i64 = 200;
+
+/// `GET /sales?date=` (`sale.read` + `customer.read`: the list names the customer): the package
+/// sales of one business day saved at the desk without a visit (F6, live test 2026-11-08), newest
+/// first, each with what `GET /sales/{id}` returns. A visit's sales are shown with the visit
+/// (`GET /visits`), and paper-book imports are not desk sales.
+pub async fn for_day(
+    pool: &PgPool,
+    actor: &Actor,
+    day: Option<NaiveDate>,
+) -> Result<Vec<DaySaleDto>, AppError> {
+    actor.require(Permission::SaleRead)?;
+    actor.require(Permission::CustomerRead)?;
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let today = kernel::tenant::profile(&mut tx)
+        .await?
+        .business_date
+        .as_naive();
+    let heads = repo::day_sales(&mut tx, day.unwrap_or(today), DAY_SALES_MAX).await?;
+    let mut out = Vec::with_capacity(heads.len());
+    for h in heads {
+        let sale = load(&mut tx, h.id, today)
+            .await?
+            .ok_or_else(|| AppError::Internal("sale vanished".into()))?;
+        out.push(DaySaleDto {
+            sale,
+            customer_name: h.customer_name,
+            customer_gender: crm::http::gender_dto(h.customer_gender.as_deref()),
+            beneficiary_name: h.beneficiary_name,
+        });
+    }
+    tx.commit().await?;
+    Ok(out)
 }
 
 /// `GET /sales/{id}` (`sale.read`). Another spa's sale is `404`.

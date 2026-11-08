@@ -890,7 +890,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: operations["list_sales"];
         put?: never;
         post: operations["create_sale"];
         delete?: never;
@@ -1380,8 +1380,9 @@ export interface components {
             staff_id?: string | null;
             /**
              * Format: date-time
-             * @description On the spa's slot grid, inside opening hours; today up to 90 days ahead (a past day is
-             *     `422 appointment.in_the_past` for everyone: that is a back-dated visit).
+             * @description On the spa's slot grid, inside opening hours; today up to 90 days ahead. A past day, or a
+             *     slot of today already over (the slot under way is fine), is `422 appointment.in_the_past`
+             *     for everyone: a service already done is a back-dated visit.
              */
             starts_at: string;
         };
@@ -2046,6 +2047,18 @@ export interface components {
             /** Format: int64 */
             visits: number;
         };
+        /**
+         * @description One package sale of the day list at Quầy (F6, live test 2026-11-08): a cart of packages saved
+         *     without a visit, with who bought it and who uses it.
+         */
+        DaySaleDto: {
+            /** @description Who uses the package when it was bought for someone else (US13); null = the payer. */
+            beneficiary_name?: string | null;
+            customer_gender?: components["schemas"]["GenderDto"] | null;
+            /** @description The payer's name ("Khách vãng lai" for a nameless profile). */
+            customer_name: string;
+            sale: components["schemas"]["SaleDto"];
+        };
         DiscountCreate: {
             /**
              * Format: int64
@@ -2232,7 +2245,11 @@ export interface components {
             reason: string;
             refund?: components["schemas"]["HistoryRefund"] | null;
         };
-        /** @description One entry of a customer's timeline; exactly one of the detail fields is set, per `kind`. */
+        /**
+         * @description One entry of a customer's timeline. `visit` / `purchase` / `cancellation` / `extension` per
+         *     `kind`; a `visit_voided` / `purchase_voided` event carries both its `visit` / `purchase` and
+         *     its `void` (one event per record, at the record's own time).
+         */
         HistoryEvent: {
             /** Format: date-time */
             at: string;
@@ -2798,8 +2815,8 @@ export interface components {
             /**
              * Format: date
              * @description The day the note is about when it is not `business_date`: the booking's day
-             *     (`appointment_note`), the evaluated month's first day (`evaluation_note`), the new expiry
-             *     (`package_extension`).
+             *     (`appointment_note`, `appointment_reason`), the evaluated month's first day
+             *     (`evaluation_note`), the new expiry (`package_extension`).
              */
             about_date?: string | null;
             /**
@@ -2824,7 +2841,7 @@ export interface components {
              *     `visit_corrected` | `sale` | `package`; `attendance_note` → the day's status;
              *     `follow_up` → the call's outcome; `appointment_note` → the booking's status;
              *     `evaluation_note` → `comment` | `coaching_plan`; `package_extension` → the package's name;
-             *     `discount` → `visit` | `sale`.
+             *     `discount` → `visit` | `sale`; `appointment_reason` → `cancelled` | `no_show`.
              */
             detail?: string | null;
             kind: components["schemas"]["NoteKind"];
@@ -2842,7 +2859,7 @@ export interface components {
          * @description Where a note was written. Each kind keeps the read rule it already had on its own screen.
          * @enum {string}
          */
-        NoteKind: "visit_note" | "customer_note" | "health_note" | "attendance_note" | "review_note" | "adjustment" | "follow_up" | "void" | "employment_end" | "appointment_note" | "evaluation_note" | "staff_note" | "package_extension" | "discount";
+        NoteKind: "visit_note" | "customer_note" | "health_note" | "attendance_note" | "review_note" | "adjustment" | "follow_up" | "void" | "employment_end" | "appointment_note" | "evaluation_note" | "staff_note" | "package_extension" | "discount" | "appointment_reason";
         NotesPage: {
             /** Format: date */
             from: string;
@@ -4754,7 +4771,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description validation_failed (starts_at not_on_slot / too_far, duration_min out_of_range, guest.*), appointment.outside_opening_hours, appointment.in_the_past (a past business day, owner too: record a back-dated visit instead), staff.inactive */
+            /** @description validation_failed (starts_at not_on_slot / too_far, duration_min out_of_range, guest.*), appointment.outside_opening_hours, appointment.in_the_past (a past business day or a slot of today already over, owner too: record a back-dated visit instead), staff.inactive */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4925,7 +4942,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description validation_failed (customer_id duplicate: that profile is already in the group), appointment.outside_opening_hours, appointment.in_the_past (moved to a past day) */
+            /** @description validation_failed (customer_id duplicate: that profile is already in the group), appointment.outside_opening_hours, appointment.in_the_past (a booking still waiting moved to a past day or a slot already over) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -7562,6 +7579,49 @@ export interface operations {
             };
             /** @description validation_failed: from after_to, to range_too_long (> 366 days by day/week, > 732 days by month/year; > 1830 with report.long_range), preset conflicts_with_range */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_sales: {
+        parameters: {
+            query?: {
+                /** @description Business day (`YYYY-MM-DD`). Default: today. */
+                date?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Package sales of the day made without a visit (Quầy's day list), newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DaySaleDto"][];
+                };
+            };
+            /** @description query.invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: needs sale.read + customer.read */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

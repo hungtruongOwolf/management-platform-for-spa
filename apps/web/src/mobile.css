@@ -176,6 +176,9 @@
   color: var(--text);
   box-shadow: var(--shadow-2);
   transition: transform var(--dur-fast) var(--ease-out);
+  /* Only the body scrolls (F8): a modal dialog is `overflow: auto` in Chrome, and with its 1px
+     border the inner column is 2px taller than the dialog, so the dialog grew a second bar. */
+  overflow: hidden;
 }
 .sheet[open] {
   animation: sheet-up var(--dur-slow) var(--ease-out);
@@ -272,7 +275,8 @@
     animation: pop-in var(--dur-base) var(--ease-out);
   }
   .sheet-inner {
-    max-height: calc(100dvh - 48px);
+    /* Inside the 1px border on each edge. */
+    max-height: calc(100dvh - 50px);
   }
   .sheet-handle {
     display: none;

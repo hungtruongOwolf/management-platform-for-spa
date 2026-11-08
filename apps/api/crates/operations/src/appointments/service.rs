@@ -117,8 +117,7 @@ struct Placement {
 /// Day rules of a new booking or of a move to another day: today up to 90 days ahead. A past day
 /// is refused for everyone, the owner too (EM 2026-11-07): a service already done is a back-dated
 /// visit ("nhập bù" at Quầy), not an appointment. Appointments already on a past day still follow
-/// the closed-day rule for every change (`lock_open`). An earlier time of today is allowed (a
-/// companion joining a booking already under way); the form warns and asks first.
+/// the closed-day rule for every change (`lock_open`). An earlier time of today: [`check_time`].
 fn check_day(spa: &Spa, day: NaiveDate) -> Result<(), AppError> {
     if day < spa.today() {
         return Err(AppError::Unprocessable {
@@ -127,6 +126,20 @@ fn check_day(spa: &Spa, day: NaiveDate) -> Result<(), AppError> {
     }
     if day > spa.today() + Duration::days(domain::MAX_DAYS_AHEAD) {
         return Err(invalid("starts_at", "too_far"));
+    }
+    Ok(())
+}
+
+/// A new booking, or a booked one moved to another start, never starts in a slot that is already
+/// over (EM 2026-11-08, F12): `422 appointment.in_the_past`, the owner too. The slot under way is
+/// still bookable (19:00 at 19:08 with 30-minute slots: the customer is arriving). Before this rule
+/// only the day was checked, so a 10:00 booking was created at 19:08 the same day. A service
+/// already done is a visit recorded at Quầy ("Đổi giờ / nhập bù").
+fn check_time(spa: &Spa, starts_at: DateTime<Utc>, now: DateTime<Utc>) -> Result<(), AppError> {
+    if domain::slot_is_over(starts_at, now, spa.settings.slot_minutes) {
+        return Err(AppError::Unprocessable {
+            code: "appointment.in_the_past",
+        });
     }
     Ok(())
 }
@@ -772,6 +785,8 @@ async fn insert_booking(
     let services = resolve_services(tx, b.service_ids).await?;
     let durations: Vec<Option<i32>> = services.iter().map(|s| s.2).collect();
     let minutes = domain::duration_minutes(&durations, b.duration_min).map_err(slot_error)?;
+    // A start already over is refused before any other rule (opening hours, grid) of that time.
+    check_time(spa, b.starts_at, Utc::now())?;
     let p = place(spa, b.starts_at, minutes, b.staff_id)?;
     check_day(spa, p.business_date)?;
     let (guest_name, guest_phone) = match &b.who {
@@ -1094,6 +1109,11 @@ pub async fn update(
         }
         check_day(&spa, p.business_date)?;
     }
+    // A customer already here keeps the time the desk sets; a booking still waiting cannot move
+    // into a slot that is over.
+    if !arrived && p.starts_at != current.starts_at {
+        check_time(&spa, p.starts_at, Utc::now())?;
+    }
     // The person's other bookings are checked only when this one moves or gets its customer: an
     // overlap saved before the rule existed must not stop a change of technician or note.
     let moved = p.starts_at != current.starts_at || p.ends_at != current.ends_at;
@@ -1278,7 +1298,8 @@ fn in_member(member: Uuid, e: AppError) -> AppError {
 /// (EM 2026-11-07 item 5c). `{id}` moves to `starts_at` and every other member still booked
 /// shifts by the same amount, each keeping its exact length and technician, in one transaction:
 /// all move or none. Every member is checked like a single move (grid, opening hours, no past
-/// day, technician free, the person has no other booking then); a refusal names the member.
+/// day or slot, technician free, the person has no other booking then); a refusal names the
+/// member.
 /// Members already arrived or done stay where they are and come back in `not_moved`.
 pub async fn move_group(
     pool: &PgPool,
@@ -1303,6 +1324,7 @@ pub async fn move_group(
         code: "appointment.not_in_group",
     })?;
     let delta = input.starts_at - anchor.starts_at;
+    let now = Utc::now();
     let mut moving = Vec::new();
     let mut staying = Vec::new();
     for member in repo::group_member_ids(&mut tx, group).await? {
@@ -1333,6 +1355,7 @@ pub async fn move_group(
         if p.business_date != row.business_date {
             check_day(&spa, p.business_date).map_err(|e| in_member(*member, e))?;
         }
+        check_time(&spa, p.starts_at, now).map_err(|e| in_member(*member, e))?;
         let holder = Holder {
             customer_id: row.customer_id,
             guest_phone: row.guest_phone.as_deref(),

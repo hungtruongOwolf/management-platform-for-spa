@@ -8,14 +8,16 @@ use crate::dto::{
 };
 use crate::notes_dto::{NotesPage, NotesQuery};
 use crate::{customer, day, notes, overview};
+use axum::extract::rejection::QueryRejection;
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::{HeaderValue, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use identity::AuthUser;
-use kernel::AppError;
 use kernel::crypto::FieldCipher;
+use kernel::http::invalid_query;
+use kernel::{AppError, Permission};
 use serde::Serialize;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -120,8 +122,11 @@ pub async fn list_notes(
     State(pool): State<PgPool>,
     State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
-    Query(query): Query<NotesQuery>,
+    query: Result<Query<NotesQuery>, QueryRejection>,
 ) -> Result<Json<NotesPage>, AppError> {
+    // The right first, then the query (F17).
+    user.actor.require(Permission::ReportRead)?;
+    let Query(query) = query.map_err(invalid_query)?;
     // No handler-set Cache-Control: the default `private, no-store` (middleware) applies.
     Ok(Json(
         notes::list(&pool, &cipher, &user.actor, &query).await?,

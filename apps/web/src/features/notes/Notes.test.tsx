@@ -129,6 +129,28 @@ describe("/nhat-ky-ghi-chu", () => {
     });
   });
 
+  it("F21: a booking's cancel / no-show reason says which close it was and opens the calendar on its day", async () => {
+    const reasons: NoteEntry[] = [
+      {
+        kind: "appointment_reason", at: "2026-11-02T03:00:00Z", business_date: "2026-11-02", text: "Gọi không nghe máy",
+        customer_name: "Khách Yến", author_name: "Quản lý Hà", detail: "no_show", about_date: "2026-11-04",
+      },
+      {
+        kind: "appointment_reason", at: "2026-11-02T02:00:00Z", business_date: "2026-11-02", text: "Khách bận việc đột xuất",
+        customer_id: CUSTOMER, customer_name: "Nguyễn Thị Hoa", author_name: "Quản lý Hà", detail: "cancelled", about_date: "2026-11-05",
+      },
+    ];
+    serve(MANAGER, { items: reasons });
+    at("/nhat-ky-ghi-chu");
+    const rows = within(await screen.findByRole("region", { name: /02\/11\/2026/ })).getAllByRole("listitem");
+    const [noShow, cancelled] = rows;
+    if (!noShow || !cancelled) throw new Error("rows");
+    expect(within(noShow).getByText("Không đến")).toBeInTheDocument();
+    expect(within(noShow).getByText(/Lịch hẹn 04\/11\/2026/)).toBeInTheDocument();
+    expect(within(cancelled).getByText("Hủy lịch")).toBeInTheDocument();
+    expect(within(cancelled).getByRole("link", { name: "Mở lịch hẹn" }).getAttribute("href")).toContain("ngay=2026-11-05");
+  });
+
   it("EM Q-N1: booking, evaluation, HR, extension and discount notes say what they are about and link back", async () => {
     const more: NoteEntry[] = [
       {

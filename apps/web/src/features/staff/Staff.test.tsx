@@ -1033,7 +1033,7 @@ describe("/khach-cua-toi", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Khách của tôi" })).toBeInTheDocument();
     const grid = await screen.findByRole("group", { name: "Lịch của tôi trong tuần" });
     // Blocks at their real length: 10:00–11:10 (70 min), 14:00–15:00.
-    const visit = within(grid).getByRole("button", { name: /^10:00–11:10 Nguyễn Thị Hằng, Xong, Vãng lai/ });
+    const visit = within(grid).getByRole("button", { name: /^10:00–11:10 Nguyễn Thị Hằng, Xong, Không đặt lịch/ });
     expect(visit).toHaveAttribute("data-kind", "visit");
     expect(within(grid).getByRole("button", { name: /^14:00–15:00 Đỗ Văn Bình, Chưa đến, Nhóm · 3 người/ })).toBeInTheDocument();
     // Read-only: no booking anywhere, no slot buttons.

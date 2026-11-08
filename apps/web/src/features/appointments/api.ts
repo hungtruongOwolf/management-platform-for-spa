@@ -207,6 +207,13 @@ export function instantAt(day: string, minutes: number): string {
   return new Date(`${day}T${hhmm(minutes)}:00+07:00`).toISOString();
 }
 
+/**
+ * The tag of a visit recorded without a booking, on the calendar and in "Khách của tôi" (F23,
+ * 2026-11-08). Not the old "Vãng lai": that is the anonymous walk-in ("Khách vãng lai"), and most
+ * visits without a booking are named customers.
+ */
+export const NO_BOOKING = "Không đặt lịch";
+
 /** Open = still holds its slot. */
 export function isOpen(a: Appointment): boolean {
   return a.status === "booked" || a.status === "arrived";

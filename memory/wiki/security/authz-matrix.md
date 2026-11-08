@@ -1,6 +1,6 @@
 ---
 title: Authorization matrix (R1-1)
-updated: 2026-11-07
+updated: 2026-11-08
 sources: [product/specs/front-desk-and-packages.md, product/specs/management-views.md, decisions/ADR-0003-multi-tenancy.md, decisions/ADR-0004-authentication.md]
 ---
 
@@ -78,8 +78,14 @@ Permission là hằng số trong code (`kernel::perm`). Role là dữ liệu, ch
   | Ghi chú nhân sự `staff.note` (Q-N1) | `staff.manage` (như `details` ở Nhân sự; ngoài allowlist 14 key của quản lý) | ✓ | — | — |
   | Lý do gia hạn gói (Q-N1) | `customer.read` + `visit.read` + `sale.read` | ✓ | ✓ | — |
   | Lý do giảm giá (Q-N1) | hóa đơn của lượt: `visit.read`; hóa đơn khác: `sale.read` + `customer.read` | ✓ | ✓ | — |
+  | Lý do hủy lịch / không đến (F21, 2026-11-08, 0029 chỉ index) | `appointment.manage` | ✓ | ✓ | — |
 
   Loại không được đọc thì nhánh SQL của nó tắt (cờ bool), nên lọc `kind` hay tìm chữ cũng không mở được; `kinds` trong response chỉ liệt kê loại được đọc. Ghi chú mã hóa giải mã bằng đúng associated data của bên ghi, chỉ khi có `customer.health_notes.read`; không vào log/audit; `Cache-Control: private, no-store` (mặc định middleware). Tenant lọc tường minh ở mọi nhánh + RLS; id khách / nhân viên spa khác → danh sách trống. Query `deny_unknown_fields`. Test: `app/tests/notes.rs` (từng role, từng loại × bỏ từng quyền, quản lý không có quyền sức khỏe, spa khác, lọc + cursor + tìm trong ghi chú mã hóa), `authz_matrix.rs` +1 dòng (`ReportRead`, owner + manager).
+- **Sửa lỗi test live 2026-11-08 (Quầy, lịch hẹn, nhật ký):**
+  - **`GET /sales?date=`** (F6, danh sách bán gói không kèm lượt ở Quầy): `sale.read` **và** `customer.read` (danh sách nêu tên khách), cả hai kiểm trước khi đọc query; chỉ hóa đơn của tenant session (lọc tường minh + RLS), `no-store`. KTV `403`, chỉ `sale.read` → `403`, spa khác → `[]`. Hủy hóa đơn từ danh sách đi qua đúng `POST /sales/{id}/void` (quy tắc ngày đã chốt không đổi). Test: `sales.rs::the_day_lists_its_package_sales_without_a_visit`, `authz_matrix.rs` +1 dòng.
+  - **Kiểm quyền trước khi kiểm dữ liệu (F17):** trước đây `POST /visits/{id}/correct` của ngày đã chốt với thân sai trả `422` trước `403 day.locked`, và KTV gửi `GET /appointments` query sai nhận `400` trước `403`. Nay: (1) các route `GET` có query (`/visits`, `/appointments`, `/me/appointments`, `/notes`, `/sales`) nhận `Result<Query<T>, QueryRejection>`, gọi `actor.require(...)` rồi mới đọc query (`kernel::http::invalid_query` → `400 query.invalid` cho người có quyền); (2) `POST /visits/{id}/void`, `/visits/{id}/correct`, `/sales/{id}/void`: kiểm permission trước khi parse thân; thân sai (parse lỗi, thiếu lý do, dòng sai) thì **chạy kiểm quyền của bản ghi trước** (`authorized_then`: bản ghi có trong spa → `404`, quy tắc ngày → `403 day.locked`) rồi mới trả lỗi dữ liệu. Chỉ chạy trên nhánh lỗi, request đúng không thêm truy vấn. Test: `visit_corrections.rs::closed_days_technicians_and_bad_requests` (thân sai / không parse / hủy không lý do ở ngày đã chốt → `403 day.locked`; id lạ → `404`), `visits.rs::technician_role_cannot_record_or_read_visits` (4 query sai của KTV → `403`; quản lý → `400 query.invalid`).
+  - **F2 ghi giới tính khi lưu lượt:** chỉ khi người ghi có `customer.write` và hồ sơ chưa có giới tính (`WHERE gender IS NULL`), giá trị là `price_variant` server đã kiểm, audit `customer.update`. Không mở đường sửa hồ sơ mới: id khách vẫn là khách của lượt (đã kiểm tenant).
+  - **F12 giờ đã qua:** `422 appointment.in_the_past` cho mọi role (kể cả chủ spa) khi đặt / dời lịch chờ vào ô giờ đã hết; đồng hồ là của server.
 - **Vòng 3 (EM 2026-11-05, [spec](../product/specs/management-views.md) "Bổ sung vòng 3", migration 0014):**
   - `POST /customers/{id}/follow-ups` cần `customer.follow_up` + Idempotency-Key; người ghi lấy từ session (`created_by` = user, body có field lạ → `422`); bảng `customer_follow_up` chỉ thêm (trigger `reject_mutation`, app_rw chỉ `SELECT, INSERT`) + RLS tenant; audit `customer.follow_up` ghi `has_note`, không chép ghi chú. `GET /customers/{id}/follow-ups` cần `customer.read`. Khách spa khác → `404`.
   - `GET /customers/phone-check?phone=` cần `customer.read`; chỉ tra trong tenant của session (lọc tường minh + RLS); trả tên + id như `GET /customers?q=<số>` đã trả cho cùng người, nên không mở thêm bề mặt dò số. Chi phí: 1 lookup trên unique index; rate limit chung theo IP (5/s, burst 60). Số điện thoại nằm trong query string như `GET /customers?q=` (log truy cập không ghi query; xem threat-model).

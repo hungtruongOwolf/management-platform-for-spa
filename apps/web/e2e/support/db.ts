@@ -58,3 +58,28 @@ export async function backdateCustomer(customerId: string, days: number): Promis
     await sql.end();
   }
 }
+
+/**
+ * Moves bookings onto `today` (the spa's day, `YYYY-MM-DD`) at the same clock time (F12,
+ * 2026-11-08): a slot of today already over can no longer be booked, yet the desk flows
+ * (arrive, record) happen today. Book on a later day through the API, then call this: the spec
+ * runs the same at any hour.
+ */
+export async function bookingsToToday(ids: string[], today: string): Promise<void> {
+  const sql = postgres(stack.ownerDatabaseUrl(), {
+    max: 1,
+    onnotice: () => undefined,
+  });
+  try {
+    const moved = await sql`
+      UPDATE app.appointment
+         SET starts_at = starts_at - make_interval(days => business_date - ${today}::date),
+             ends_at = ends_at - make_interval(days => business_date - ${today}::date),
+             business_date = ${today}::date
+       WHERE id = ANY(${ids}::uuid[])
+      RETURNING id`;
+    if (moved.length !== ids.length) throw new Error(`moved ${String(moved.length)} of ${String(ids.length)} bookings`);
+  } finally {
+    await sql.end();
+  }
+}

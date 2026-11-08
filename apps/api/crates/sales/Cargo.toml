@@ -9,7 +9,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-axum = { version = "0.8.9", default-features = false, features = ["json"] }
+axum = { version = "0.8.9", default-features = false, features = ["json", "query"] }
 catalog = { version = "0.1.0", path = "../catalog" }
 chrono = { version = "0.4.45", default-features = false, features = ["std", "serde"] }
 crm = { version = "0.1.0", path = "../crm" }

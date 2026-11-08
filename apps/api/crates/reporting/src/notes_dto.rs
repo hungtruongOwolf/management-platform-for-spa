@@ -42,10 +42,13 @@ pub enum NoteKind {
     /// Why a sale was discounted: a visit's sale under `visit.read` (the day list shows it), any
     /// other sale under `sale.read` + `customer.read`.
     Discount,
+    /// Why a booking was cancelled or the customer did not come (F21, 2026-11-08):
+    /// `appointment.manage` (the calendar's rule, as `appointment_note`).
+    AppointmentReason,
 }
 
 impl NoteKind {
-    pub const ALL: [NoteKind; 14] = [
+    pub const ALL: [NoteKind; 15] = [
         NoteKind::VisitNote,
         NoteKind::CustomerNote,
         NoteKind::HealthNote,
@@ -60,6 +63,7 @@ impl NoteKind {
         NoteKind::StaffNote,
         NoteKind::PackageExtension,
         NoteKind::Discount,
+        NoteKind::AppointmentReason,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -78,6 +82,7 @@ impl NoteKind {
             NoteKind::StaffNote => "staff_note",
             NoteKind::PackageExtension => "package_extension",
             NoteKind::Discount => "discount",
+            NoteKind::AppointmentReason => "appointment_reason",
         }
     }
 
@@ -137,12 +142,12 @@ pub struct NoteEntry {
     /// `visit_corrected` | `sale` | `package`; `attendance_note` → the day's status;
     /// `follow_up` → the call's outcome; `appointment_note` → the booking's status;
     /// `evaluation_note` → `comment` | `coaching_plan`; `package_extension` → the package's name;
-    /// `discount` → `visit` | `sale`.
+    /// `discount` → `visit` | `sale`; `appointment_reason` → `cancelled` | `no_show`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     /// The day the note is about when it is not `business_date`: the booking's day
-    /// (`appointment_note`), the evaluated month's first day (`evaluation_note`), the new expiry
-    /// (`package_extension`).
+    /// (`appointment_note`, `appointment_reason`), the evaluated month's first day
+    /// (`evaluation_note`), the new expiry (`package_extension`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub about_date: Option<NaiveDate>,
 }

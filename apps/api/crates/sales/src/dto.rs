@@ -178,6 +178,27 @@ pub struct SaleDto {
     pub customer_packages: Vec<CustomerPackageDto>,
 }
 
+/// `GET /sales?date=`: the package sales of one business day made at the desk without a visit.
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
+pub struct SaleListQuery {
+    /// Business day (`YYYY-MM-DD`). Default: today.
+    pub date: Option<NaiveDate>,
+}
+
+/// One package sale of the day list at Quầy (F6, live test 2026-11-08): a cart of packages saved
+/// without a visit, with who bought it and who uses it.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct DaySaleDto {
+    pub sale: SaleDto,
+    /// The payer's name ("Khách vãng lai" for a nameless profile).
+    pub customer_name: String,
+    pub customer_gender: Option<crm::http::GenderDto>,
+    /// Who uses the package when it was bought for someone else (US13); null = the payer.
+    pub beneficiary_name: Option<String>,
+}
+
 /// Body of `POST /sales/{id}/void` and `POST /visits/{id}/void`.
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]

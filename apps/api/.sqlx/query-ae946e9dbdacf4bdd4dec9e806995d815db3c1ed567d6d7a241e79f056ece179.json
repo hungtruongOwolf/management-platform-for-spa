@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, app.customer_label(c.full_name) AS \"customer_name!\", c.gender AS customer_gender,\n                  (SELECT app.customer_label(bc.full_name)\n                   FROM app.customer_package cp\n                   JOIN app.customer bc ON bc.tenant_id = cp.tenant_id AND bc.id = cp.customer_id\n                   WHERE cp.tenant_id = s.tenant_id AND cp.sale_id = s.id\n                     AND cp.customer_id <> s.customer_id\n                   LIMIT 1) AS beneficiary_name\n           FROM app.sale s\n           JOIN app.customer c ON c.tenant_id = s.tenant_id AND c.id = s.customer_id\n           WHERE s.tenant_id = $1 AND s.business_date = $2 AND s.visit_id IS NULL\n             AND s.source = 'app'\n             AND EXISTS (SELECT 1 FROM app.sale_line l\n                         WHERE l.tenant_id = s.tenant_id AND l.sale_id = s.id\n                           AND l.line_type = 'package')\n             AND NOT EXISTS (SELECT 1 FROM app.visit v\n                             WHERE v.tenant_id = s.tenant_id AND v.sale_id = s.id)\n             AND NOT EXISTS (SELECT 1 FROM app.visit_line vl\n                             WHERE vl.tenant_id = s.tenant_id AND vl.sale_id = s.id)\n           ORDER BY s.created_at DESC, s.id DESC\n           LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "customer_name!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "customer_gender",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer",
+            "name": "gender"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "beneficiary_name",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      true,
+      null
+    ]
+  },
+  "hash": "ae946e9dbdacf4bdd4dec9e806995d815db3c1ed567d6d7a241e79f056ece179"
+}

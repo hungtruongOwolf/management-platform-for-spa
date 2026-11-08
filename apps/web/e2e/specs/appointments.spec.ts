@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { ownerState, stack } from "../stack";
+import { bookingsToToday } from "../support/db";
 import { expectAccessible, uniquePhone } from "../support/run";
 
 test.use({ storageState: ownerState });
@@ -118,16 +119,18 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
       "appointment.staff_busy",
     );
 
-    // Today 09:00: arrive, complete → the visit cart is filled; saving records the visit.
+    // Today 09:00: arrive, complete → the visit cart is filled; saving records the visit. (A slot
+    // already over cannot be booked, F12: booked on a later day, then moved onto today.)
     const today = await page.request.post("/api/v1/appointments", {
       headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
       data: {
         customer_id: r.customer,
         service_ids: [r.service.id],
-        starts_at: `${spaDay()}T09:00:00+07:00`,
+        starts_at: `${spaDay(3)}T09:00:00+07:00`,
       },
     });
     expect(today.status()).toBe(201);
+    await bookingsToToday([((await today.json()) as { id: string }).id], spaDay());
     await page.goto("/quay?view=lich");
     await page
       .getByRole("button", { name: /09:00.*Trần Thị Lịch Hẹn, Chưa đến/ })
@@ -255,7 +258,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     const group = await page.request.post("/api/v1/appointments/group", {
       headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
       data: {
-        starts_at: `${spaDay()}T09:00:00+07:00`,
+        starts_at: `${spaDay(3)}T09:00:00+07:00`,
         people: [
           { customer_id: mother.customer, service_ids: [mother.service.id] },
           { customer_id: child.customer, service_ids: [child.service.id] },
@@ -267,6 +270,10 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
       },
     });
     expect(group.status(), await group.text()).toBe(201);
+    await bookingsToToday(
+      ((await group.json()) as { appointments: { id: string }[] }).appointments.map((a) => a.id),
+      spaDay(),
+    );
     const checkIn = async (name: string, before?: (s: Locator) => Promise<void>) => {
       await page.goto("/quay?view=lich&kieu=ds");
       await page
@@ -331,7 +338,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     expect(walkIn.status()).toBe(201);
     await page.goto("/quay?view=lich&kieu=ds");
     const list = page.getByRole("list", { name: /Lịch hẹn ngày/ });
-    await expect(list.getByText(/Vãng lai/).first()).toBeVisible();
+    await expect(list.getByText(/Không đặt lịch/).first()).toBeVisible();
     await expect(
       list.getByRole("button", { name: /Đỗ Thị Mẹ.*(Đang làm|Xong)/ }),
     ).toBeVisible();
@@ -548,7 +555,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     // Yesterday's walk-in: 30 minutes = 2 slots tall (±2 px per slot).
     await page.goto(`/quay?view=lich&ngay=${yesterday}`);
     const visit = grid.getByRole("button", {
-      name: /^14:00–14:30 Bùi Thị Lớp Lịch, Xong, Vãng lai/,
+      name: /^14:00–14:30 Bùi Thị Lớp Lịch, Xong, Không đặt lịch/,
     });
     await expect(visit).toBeVisible();
     const slot = await slotHeight();
@@ -793,8 +800,9 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     await sheet.getByRole("button", { name: "Thôi" }).click();
 
     // Today, no technician booked: "KTV làm" starts empty and asks for a choice.
-    const today = await book(`${spaDay()}T09:00:00+07:00`, null);
+    const today = await book(`${spaDay(3)}T09:00:00+07:00`, null);
     expect(today.status()).toBe(201);
+    await bookingsToToday([((await today.json()) as { id: string }).id], spaDay());
     await page.goto("/quay?view=lich");
     await page
       .getByRole("button", { name: /09:00.*Nguyễn Thị Lan Anh, Chưa đến/ })
@@ -938,8 +946,10 @@ test("companion screenshots (EM 2026-11-07)", async ({ page }) => {
   test.skip(!dir, "set COMPANION_SHOTS_DIR to capture");
   test.setTimeout(5 * 60_000);
   const host = await regular(page, "Nguyễn Thị Hà Ảnh");
-  // Today: the sheets show arrival, the technician and the primary action.
+  // Today: the sheets show arrival, the technician and the primary action (booked on a later day,
+  // then moved onto today: a slot already over cannot be booked, F12).
   const day = spaDay();
+  const later = spaDay(3);
   const cal = (await (
     await page.request.get(`/api/v1/appointments?from=${day}`)
   ).json()) as { technicians: { id: string; full_name: string }[] };
@@ -947,7 +957,7 @@ test("companion screenshots (EM 2026-11-07)", async ({ page }) => {
   const booked = await page.request.post("/api/v1/appointments/group", {
     headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
     data: {
-      starts_at: `${day}T10:00:00+07:00`,
+      starts_at: `${later}T10:00:00+07:00`,
       companions: ["Bé Na"],
       people: [
         {
@@ -959,12 +969,16 @@ test("companion screenshots (EM 2026-11-07)", async ({ page }) => {
           guest: { full_name: "Chồng của chị Hà", phone: null },
           service_ids: [host.service.id],
           staff_id: tech.id,
-          starts_at: `${day}T10:30:00+07:00`,
+          starts_at: `${later}T10:30:00+07:00`,
         },
       ],
     },
   });
   expect(booked.status(), await booked.text()).toBe(201);
+  await bookingsToToday(
+    ((await booked.json()) as { appointments: { id: string }[] }).appointments.map((a) => a.id),
+    day,
+  );
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     for (const width of [390, 1280]) {

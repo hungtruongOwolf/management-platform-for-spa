@@ -474,8 +474,11 @@ describe("/quay round 6", () => {
       ],
       payments: [{ method: "cash", amount: 7_000_000 }],
     });
+    // One sentence for the whole cart (F5: two messages used to run together).
     expect(
-      await screen.findByText(/Đã bán .*Trần Văn Nam/),
+      await screen.findByText(
+        `Đã bán 2 gói (Nguyễn Thị Hà trả tiền): ${PLAN.name}; ${PLAN.name} cho Trần Văn Nam.`,
+      ),
     ).toBeInTheDocument();
   });
 

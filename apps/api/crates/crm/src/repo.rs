@@ -169,6 +169,22 @@ pub async fn set_health_note(
     Ok(done.rows_affected() == 1)
 }
 
+/// Sets the gender of a live profile that has none (a later full update with the old version
+/// then gets `412`, as after any change). `Ok(false)` = it already has one, or is not here.
+pub async fn fill_gender(tx: &mut TenantTx, id: Uuid, gender: &str) -> Result<bool, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let done = sqlx::query!(
+        r#"UPDATE app.customer SET gender = $3, version = version + 1, updated_at = now()
+           WHERE tenant_id = $1 AND id = $2 AND gender IS NULL AND anonymized_at IS NULL"#,
+        tenant,
+        id,
+        gender
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
 pub async fn get(tx: &mut TenantTx, id: Uuid) -> Result<Option<CustomerRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     let row = sqlx::query_as!(

@@ -32,6 +32,8 @@ const HEALTH_NOTE: &str = "Huyết áp cao, tránh xông nóng";
 const PROFILE_NOTE: &str = "Thích phòng yên tĩnh";
 const BOOKING_NOTE: &str = "Khách muốn phòng riêng";
 const STAFF_NOTE: &str = "Đang học thêm khóa massage đá nóng";
+const CANCEL_REASON: &str = "Khách bận việc đột xuất";
+const NO_SHOW_REASON: &str = "Gọi không nghe máy";
 
 type Setup<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -243,6 +245,29 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
     .bind(manager_user)
     .execute(&h.owner)
     .await?;
+    // F21: why a booking was cancelled (the customer's) or the person did not come (a guest's).
+    sqlx::query(
+        "INSERT INTO app.appointment
+           (id, tenant_id, branch_id, customer_id, guest_name, guest_phone, business_date, starts_at,
+            ends_at, status, status_reason, closed_at, closed_by, created_by)
+         SELECT v.id, $2, b.id, v.customer_id, v.guest_name, v.guest_phone, $3::date + 2,
+                now() + interval '2 days', now() + interval '49 hours', v.status, v.reason, now(), $4, $4
+         FROM app.branch b,
+              (VALUES ($1::uuid, $5::uuid, NULL::text, NULL::text, 'cancelled', $6::text),
+                      ($7::uuid, NULL::uuid, 'Khách Yến', '+84905000111', 'no_show', $8::text))
+                AS v (id, customer_id, guest_name, guest_phone, status, reason)
+         WHERE b.tenant_id = $2",
+    )
+    .bind(Uuid::now_v7())
+    .bind(tenant)
+    .bind(day)
+    .bind(manager_user)
+    .bind(customer)
+    .bind(CANCEL_REASON)
+    .bind(Uuid::now_v7())
+    .bind(NO_SHOW_REASON)
+    .execute(&h.owner)
+    .await?;
     sqlx::query(
         "INSERT INTO app.staff_evaluation
            (tenant_id, staff_id, work_date, criteria, total_points, result_level, coaching_plan, comment, recorded_by)
@@ -360,9 +385,34 @@ async fn each_role_reads_exactly_the_notes_it_may(pool: PgPool) -> TestResult {
         "Khách ốm, gia hạn một tháng",
         "Khách quen giảm tại quầy",
         "Mua gói thứ hai giảm giá",
+        CANCEL_REASON,
+        NO_SHOW_REASON,
     ] {
         assert!(text.iter().any(|x| x == t), "owner sees {t}");
     }
+    // F21: the reason says which close it was, for which day, about whom, and who closed it.
+    let reasons: Vec<Value> = owner.body["items"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|n| n["kind"] == "appointment_reason")
+        .cloned()
+        .collect();
+    let of = |detail: &str| {
+        reasons
+            .iter()
+            .find(|n| n["detail"] == detail)
+            .cloned()
+            .unwrap_or_default()
+    };
+    assert_eq!(of("cancelled")["text"], CANCEL_REASON);
+    assert_eq!(of("cancelled")["customer_name"], "Nguyễn Thị Hoa");
+    assert_eq!(of("no_show")["customer_name"], "Khách Yến");
+    assert_eq!(of("no_show")["author_name"], "Quản lý Hà");
+    assert_eq!(
+        of("no_show")["about_date"],
+        (today() + Duration::days(2)).to_string()
+    );
     // Who wrote it and about whom.
     let follow = owner.body["items"]
         .as_array()
@@ -485,8 +535,9 @@ async fn a_manager_without_the_health_permission_sees_no_health_notes(pool: PgPo
 async fn every_kind_keeps_its_own_read_rule(pool: PgPool) -> TestResult {
     use Permission as P;
     let s = spa(pool).await?;
-    let rules: [(NoteKind, &[Permission]); 13] = [
+    let rules: [(NoteKind, &[Permission]); 14] = [
         (NoteKind::AppointmentNote, &[P::AppointmentManage]),
+        (NoteKind::AppointmentReason, &[P::AppointmentManage]),
         (NoteKind::EvaluationNote, &[P::EvaluationRecord]),
         (NoteKind::StaffNote, &[P::StaffManage]),
         (
@@ -595,6 +646,7 @@ async fn filters_search_and_pages_with_a_cursor(pool: PgPool) -> TestResult {
         kinds_of(&mine.body),
         [
             "appointment_note",
+            "appointment_reason",
             "customer_note",
             "discount",
             "follow_up",

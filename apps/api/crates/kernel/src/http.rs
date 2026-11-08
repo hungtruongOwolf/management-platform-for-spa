@@ -7,6 +7,16 @@ use uuid::Uuid;
 
 pub const IDEMPOTENCY_KEY_HEADER: &str = "idempotency-key";
 
+/// A malformed query string, reported only after the route's permission check (F17, live test
+/// 2026-11-08): a handler takes `Result<Query<T>, QueryRejection>`, calls `actor.require(..)`,
+/// then maps the rejection with this. `Query<T>` alone answers `400` before the handler runs, so
+/// a caller without the right would learn which parameters the route takes.
+pub fn invalid_query<E>(_rejection: E) -> AppError {
+    AppError::BadRequest {
+        code: "query.invalid",
+    }
+}
+
 /// Required `If-Match: "<version>"` on updates of versioned records (optimistic locking).
 /// A stale version yields `412 conflict.stale_version` from the use case.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -184,7 +184,7 @@ test.describe("KTV: màn của tôi", () => {
     // after midnight in Vietnam still finds the 00:xx visit on the grid.
     await page.goto("/khach-cua-toi?kieu=ngay");
     await expect(page.getByRole("group", { name: /Lịch của tôi ngày/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: new RegExp(`${CUSTOMER}, (Đang làm|Xong), Vãng lai`) })).toBeVisible();
+    await expect(page.getByRole("button", { name: new RegExp(`${CUSTOMER}, (Đang làm|Xong), Không đặt lịch`) })).toBeVisible();
     await expectAccessible(page, "my-calendar-day");
     await expect(page.getByText(phone)).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText("+84");

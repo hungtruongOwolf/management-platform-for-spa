@@ -128,10 +128,53 @@ pub fn pricing_gender(
     }
 }
 
+/// The gender to write on a profile that has none (F2, live test 2026-11-08): the one the desk
+/// picked to price the visit's one-off lines (Nữ / Nam in the cart). Only when the profile has no
+/// gender and every line that names one agrees; never an overwrite.
+pub fn gender_to_record(
+    customer: Option<Gender>,
+    requested: impl IntoIterator<Item = Option<PriceVariant>>,
+) -> Option<Gender> {
+    if customer.is_some() {
+        return None;
+    }
+    let mut picked = None;
+    for variant in requested.into_iter().flatten() {
+        let g = match variant {
+            PriceVariant::Female => Gender::Female,
+            PriceVariant::Male => Gender::Male,
+            PriceVariant::All => continue,
+        };
+        match picked {
+            None => picked = Some(g),
+            Some(p) if p == g => {}
+            Some(_) => return None,
+        }
+    }
+    picked
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::TimeZone;
+
+    #[test]
+    fn the_price_gender_fills_an_empty_profile_only() {
+        use PriceVariant::{All, Female, Male};
+        assert_eq!(
+            gender_to_record(None, [Some(Female), None, Some(All)]),
+            Some(Gender::Female)
+        );
+        assert_eq!(
+            gender_to_record(None, [Some(Male), Some(Male)]),
+            Some(Gender::Male)
+        );
+        // Never an overwrite, never a guess.
+        assert_eq!(gender_to_record(Some(Gender::Male), [Some(Female)]), None);
+        assert_eq!(gender_to_record(None, [Some(Female), Some(Male)]), None);
+        assert_eq!(gender_to_record(None, [None, Some(All)]), None);
+    }
 
     fn vn() -> Tz {
         BusinessDate::parse_tz("Asia/Ho_Chi_Minh").unwrap_or(chrono_tz::UTC)

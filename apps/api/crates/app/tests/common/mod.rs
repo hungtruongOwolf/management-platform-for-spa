@@ -256,6 +256,28 @@ pub async fn current_code(h: &Harness, phone: &str) -> Result<String, Box<dyn st
     Ok(code_now(&stored_secret(h, phone).await?))
 }
 
+/// Moves bookings made for tomorrow onto the same time today (F12, 2026-11-08): a slot of today
+/// already over can no longer be booked, yet arriving and completing happen today. Book early
+/// tomorrow, then call this: it works whatever time the test runs.
+pub async fn bookings_to_today(
+    h: &Harness,
+    ids: &[&str],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let ids: Vec<uuid::Uuid> = ids
+        .iter()
+        .filter_map(|i| uuid::Uuid::parse_str(i).ok())
+        .collect();
+    sqlx::query(
+        "UPDATE app.appointment SET starts_at = starts_at - interval '1 day',
+                ends_at = ends_at - interval '1 day', business_date = business_date - 1
+         WHERE id = ANY($1)",
+    )
+    .bind(&ids)
+    .execute(&h.owner)
+    .await?;
+    Ok(())
+}
+
 pub async fn forget_used_step(h: &Harness, phone: &str) -> Result<(), Box<dyn std::error::Error>> {
     let user = user_id(h, phone).await?;
     sqlx::query("UPDATE app.user_account SET mfa_last_step = NULL WHERE id = $1")

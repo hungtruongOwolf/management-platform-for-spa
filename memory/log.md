@@ -632,3 +632,12 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 
 ## [2026-11-08] qa | Test live chủ spa (Chrome, local)
 - Raw: [2026-11-08-live-test-owner](raw/2026-11-08-live-test-owner.md). C1–C4, C6 đạt; F19 xác nhận chỉ do hồ sơ chưa gắn tài khoản (gắn rồi thì thẻ quản lý bị khóa đúng). F18 đã có lời giải: chủ spa nhập bù được ngày đã qua. Lỗi mới: F24–F28 (đáng chú ý F27: "Ghi lúc" theo múi giờ trình duyệt). Còn lại: nhận lại Lan (cần MFA), C5, C7.
+
+## [2026-11-08] ingest + build + secure + qa + record | Sửa lỗi test live: Quầy, lịch hẹn, khách, nhật ký (F1–F17, F21, F23, F26, F27)
+- Raw: [2026-11-08-em-fix-all-and-manager-self-view](raw/2026-11-08-em-fix-all-and-manager-self-view.md) (EM: "fix hết đống lỗi hiện có"). Phần 2 (quản lý không thấy mình trong Nhân viên, F19, F20, F22, F24, F25, F28) do agent khác làm (migration 0030).
+- Spec: front-desk §10.14, appointments §10.14, management-views §10.6–10.7; authz-matrix (`GET /sales?date=`, kiểm quyền trước khi kiểm dữ liệu, loại `appointment_reason`); design-system (`spaTime`/`spaDateTime`, "Không đặt lịch", `.sheet`); backend, data (0029).
+- Quyết định (lead, EM review): F12 chặn ô giờ đã hết của hôm nay ở server (`slot_is_over`, ô đang diễn ra vẫn đặt được, khách đã đến không kiểm); F6 khối "Bán gói không kèm lượt" dưới bảng lượt, đếm lượt không đổi; F16 một mục mỗi lượt / hóa đơn đã hủy ở giờ của nó; F23 "Không đặt lịch"; F2 ghi giới tính chỉ khi hồ sơ trống, cần `customer.write`, audit.
+- **F4 chưa làm**: ghi chú giỏ chỉ có gói cần chỗ lưu cho cả giỏ (2–3 hóa đơn) + mã hóa như ghi chú buổi → câu hỏi Q-M2 cho EM. Migration 0029 chỉ là index cho F21.
+- Nguyên nhân F12: server chỉ kiểm ngày (`check_day`), giờ sớm hơn hôm nay được nhận có chủ đích (§10.11 cũ). Test cũ đặt "hôm nay 00:00–04:00" đổi sang đặt ngày sau rồi dời về hôm nay bằng SQL (`common::bookings_to_today`, e2e `bookingsToToday`), chạy đúng mọi giờ.
+- Phát hiện khi rà F27 (ngoài phạm vi, báo agent nhân sự): `features/staff/RosterTab.tsx` lịch sử thay đổi hiện ngày bằng `h.at.slice(0, 10)` (ngày UTC, lệch trước 07:00 giờ spa).
+

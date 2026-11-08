@@ -1,4 +1,10 @@
-import type { CustomerPackage, Service, Staff, Visit } from "@vpyd/api-client";
+import type {
+  CustomerPackage,
+  DaySale,
+  Service,
+  Staff,
+  Visit,
+} from "@vpyd/api-client";
 import { createMemoryHistory } from "@tanstack/react-router";
 import {
   fireEvent,
@@ -270,6 +276,7 @@ function serve(
   onVisit: () => Response = () => Response.json(VISIT, { status: 201 }),
   packages: CustomerPackage[] = [pkg("cp1")],
   dayVisits: Visit[] = [],
+  daySales: DaySale[] = [],
 ) {
   const calls: Call[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
@@ -317,6 +324,10 @@ function serve(
     }
     if (url === "/api/v1/visits" && call.method === "POST")
       return Promise.resolve(onVisit());
+    if (url.startsWith("/api/v1/sales") && call.method === "GET")
+      return json(daySales);
+    if (url.endsWith("/void") && call.method === "POST")
+      return json({ ...daySales[0]?.sale, status: "voided" });
     return Promise.resolve(new Response(null, { status: 404 }));
   });
   return calls;
@@ -838,5 +849,146 @@ describe("/quay", () => {
     at("/");
     await screen.findByRole("navigation", { name: "Chính" });
     expect(screen.queryByRole("link", { name: "Ghi lượt khách" })).toBeNull();
+  });
+});
+
+describe("/quay day list (EM live test 2026-11-08)", () => {
+  const SOLD: Visit = {
+    ...VISIT,
+    id: "v2",
+    package_sales: [
+      {
+        sale_id: "ps1",
+        business_date: spaToday(),
+        customer_package_ids: ["cp9"],
+        description: "Gội đầu 10 buổi + tặng 2",
+        payments: [],
+        total: 790_000,
+        voided: false,
+      },
+    ],
+  };
+  const VOIDED: Visit = {
+    ...VISIT,
+    id: "v3",
+    status: "voided",
+    void_reason: "Ghi nhầm",
+    check_in_at: "2026-11-05T01:00:00Z",
+  };
+
+  it("names a package sold in a visit (F3), counts real visits (F14), says a voided session was returned (F15)", async () => {
+    serve(MANAGER, undefined, [pkg("cp1")], [SOLD, VOIDED]);
+    const user = userEvent.setup();
+    at("/quay");
+    expect(
+      await screen.findByRole("heading", {
+        name: "Lượt khách hôm nay (1 · 1 đã hủy / sửa)",
+      }),
+    ).toBeInTheDocument();
+    const list = screen.getByRole("table", { name: "Lượt khách hôm nay" });
+    expect(
+      within(list).getByText(
+        "Gội đầu dưỡng sinh · Gội đầu (trừ buổi) + bán gói Gội đầu 10 buổi + tặng 2",
+      ),
+    ).toBeInTheDocument();
+    const rows = within(list).getAllByRole("button", { name: /^Nguyễn Thị Hà/ });
+    const voided = rows[1];
+    if (!voided) throw new Error("no voided row");
+    await user.click(voided);
+    expect(
+      within(within(list).getByTestId("visit-details")).getByText(
+        "Trừ buổi · đã trả lại buổi",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a back-filled visit's recording time on the spa's clock, not the browser's (F27)", async () => {
+    const backfill: Visit = {
+      ...VISIT,
+      id: "v4",
+      business_date: "2026-11-07",
+      check_in_at: "2026-11-07T08:00:00Z",
+      created_at: "2026-11-08T12:27:27Z",
+    };
+    serve(MANAGER, undefined, [pkg("cp1")], [backfill]);
+    const user = userEvent.setup();
+    at("/quay");
+    await user.click(
+      await screen.findByRole("button", { name: /^Nguyễn Thị Hà/ }),
+    );
+    expect(
+      await screen.findByText("Ghi lúc 19:27 08/11/2026"),
+    ).toBeInTheDocument();
+  });
+
+  it("lists the day's package-only sales under the visits, with their void (F6)", async () => {
+    const sale: DaySale = {
+      customer_name: "Nguyễn Thị Hà",
+      customer_gender: "female",
+      beneficiary_name: "Trần Văn Nam",
+      sale: {
+        id: "s1",
+        customer_id: "c1",
+        business_date: spaToday(),
+        subtotal: 1_500_000,
+        discount_amount: 0,
+        total: 1_500_000,
+        amount_paid: 1_500_000,
+        status: "open",
+        closer_name: "KTV Lan",
+        created_at: "2026-11-05T03:30:00Z",
+        lines: [
+          {
+            id: "sl1",
+            line_type: "package",
+            description: "Gội đầu 10 buổi + tặng 2",
+            qty: 1,
+            unit_price: 1_500_000,
+            line_total: 1_500_000,
+          },
+        ],
+        payments: [
+          {
+            id: "p1",
+            kind: "payment",
+            method: "bank_transfer",
+            amount: 1_500_000,
+            paid_at: "2026-11-05T03:30:00Z",
+          },
+        ],
+        customer_packages: [],
+      },
+    };
+    const calls = serve(
+      [...MANAGER, "sale.read", "record.void_same_day"],
+      undefined,
+      [pkg("cp1")],
+      [],
+      [sale],
+    );
+    const user = userEvent.setup();
+    at("/quay");
+    const table = await screen.findByRole("table", {
+      name: "Bán gói liệu trình không kèm lượt khách",
+    });
+    expect(
+      screen.getByRole("heading", { name: "Bán gói không kèm lượt (1)" }),
+    ).toBeInTheDocument();
+    expect(within(table).getByText("10:30")).toBeInTheDocument();
+    expect(
+      within(table).getByText("Mua cho Trần Văn Nam · Người chốt: KTV Lan"),
+    ).toBeInTheDocument();
+    expect(within(table).getByText("Chuyển khoản")).toBeInTheDocument();
+    await user.click(
+      within(table).getByRole("button", { name: /^Thao tác hóa đơn 10:30/ }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Hủy hóa đơn" }));
+    await user.type(await screen.findByLabelText(/Lý do/), "Khách đổi ý");
+    await user.click(screen.getByRole("button", { name: "Hủy hóa đơn" }));
+    await waitFor(() => {
+      expect(
+        calls.find((c) => c.method === "POST" && c.url === "/api/v1/sales/s1/void")?.body,
+      ).toEqual({ reason: "Khách đổi ý" });
+    });
   });
 });

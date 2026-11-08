@@ -66,7 +66,9 @@ impl Allowed {
             }
             NoteKind::Void | NoteKind::PackageExtension => timeline,
             NoteKind::EmploymentEnd | NoteKind::StaffNote => can(Permission::StaffManage),
-            NoteKind::AppointmentNote => can(Permission::AppointmentManage),
+            NoteKind::AppointmentNote | NoteKind::AppointmentReason => {
+                can(Permission::AppointmentManage)
+            }
             NoteKind::Discount => discount_on_visit || discount_on_sale,
         };
         Allowed {
@@ -268,6 +270,14 @@ async fn fetch(
              WHERE $22 AND ap.tenant_id = $1 AND ap.note IS NOT NULL AND btrim(ap.note) <> ''
                AND ap.created_at >= b.lo AND ap.created_at < b.hi
              UNION ALL
+             -- Why a booking was cancelled / the customer did not come (the reason is required).
+             SELECT 'appointment_reason', ar.closed_at, (ar.closed_at AT TIME ZONE $2)::date,
+                    ar.id::text, ar.status_reason, NULL, ar.customer_id, ar.closed_by, ar.staff_id,
+                    NULL, ar.status, ar.guest_name, ar.business_date
+             FROM app.appointment ar, b
+             WHERE $28 AND ar.tenant_id = $1 AND ar.status IN ('cancelled', 'no_show')
+               AND ar.closed_at >= b.lo AND ar.closed_at < b.hi
+             UNION ALL
              SELECT 'evaluation_note', ev.updated_at, (ev.updated_at AT TIME ZONE $2)::date,
                     ev.staff_id::text || ':' || ev.work_date::text || ':' || part.name, part.body,
                     NULL, NULL, ev.recorded_by, ev.staff_id, NULL, part.name, NULL, ev.work_date
@@ -354,6 +364,7 @@ async fn fetch(
         a.may(NoteKind::PackageExtension),
         a.discount_on_visit,
         a.discount_on_sale,
+        a.may(NoteKind::AppointmentReason),
     )
     .fetch_all(tx.conn())
     .await?;
