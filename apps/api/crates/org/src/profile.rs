@@ -34,31 +34,16 @@ pub fn supervising_permissions() -> Vec<String> {
     SUPERVISING.iter().map(|p| p.as_str().to_owned()).collect()
 }
 
-/// Whether a free-text position names a manager ("Quản lý", "quản lý ca", "Quan ly"), whatever the
-/// case, accents or Unicode form (F19, 2026-11-08). Such a profile is treated as supervising even
-/// before the owner links it to a login: until then the app cannot tell whose it is, so only the
-/// owner records for it.
-pub fn is_manager_position(position: &str) -> bool {
-    use unicode_normalization::UnicodeNormalization;
-    use unicode_normalization::char::is_combining_mark;
-    let folded: String = position
-        .nfd()
-        .filter(|c| !is_combining_mark(*c))
-        .map(|c| if matches!(c, 'đ' | 'Đ') { 'd' } else { c })
-        .flat_map(char::to_lowercase)
-        .collect();
-    folded
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .contains("quan ly")
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Profile {
     pub id: Uuid,
     pub full_name: String,
+    /// What the person is: the linked login's role name(s) while linked (EM 2026-11-08: the
+    /// account role decides, so the label never contradicts it), else the owner's free text.
     pub position: String,
+    /// `position` comes from the linked login's role (the free text is kept for when it is
+    /// unlinked).
+    pub position_from_account: bool,
     pub phone: Option<PhoneE164>,
     pub status: StaffStatus,
     /// Start of the latest period (mirrored on the staff row).
@@ -81,7 +66,8 @@ impl Profile {
         Ok(Self {
             id: r.id,
             full_name: r.full_name,
-            position: r.position,
+            position_from_account: r.account_role.is_some(),
+            position: r.account_role.unwrap_or(r.position),
             phone: r.phone_e164.and_then(|p| PhoneE164::parse(&p).ok()),
             status,
             joined_on: r.joined_on,
@@ -979,22 +965,6 @@ mod tests {
         );
         let fields: Vec<&str> = c.iter().map(|c| c.field.as_str()).collect();
         assert_eq!(fields, ["left_on", "login_locked", "status"]);
-    }
-
-    #[test]
-    fn manager_positions_are_recognised_in_any_spelling() {
-        for p in [
-            "Quản lý",
-            "quản lý ca",
-            "QUẢN LÝ",
-            "Quan ly",
-            "Qua\u{0309}n ly\u{0301}",
-        ] {
-            assert!(is_manager_position(p), "{p}");
-        }
-        for p in ["Kỹ thuật viên", "KTV", "Lễ tân", "Quầy"] {
-            assert!(!is_manager_position(p), "{p}");
-        }
     }
 
     #[test]

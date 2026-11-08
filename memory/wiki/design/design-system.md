@@ -77,8 +77,8 @@ Một giỏ nhiều dịch vụ / gói không được kéo dài thành một fo
 - "Công và lương của tôi": ô "Nghỉ P / ĐX" + "Nghỉ K" → ba ô "Nghỉ có phép", "Nghỉ đột xuất", "Nghỉ không phép" (đơn vị "ngày").
 
 ## Cảnh báo liên kết quản lý ↔ hồ sơ (F19, 2026-11-08)
-- Chủ spa thấy một `.callout` (warning) ở đầu Sổ hằng ngày và Nhân sự khi có hồ sơ "Quản lý" chưa gắn tài khoản hoặc tài khoản quản lý chưa gắn hồ sơ: tiêu đề có icon `alert`, danh sách tên (đậm), một câu hậu quả + cách sửa; ở Sổ hằng ngày thêm nút `btn-secondary` "Mở Nhân sự". Không hiện khi mọi quản lý đã gắn; quản lý không bao giờ thấy (dữ liệu của chủ spa).
-- Cột "Tài khoản" ở Nhân sự: dòng phụ `text-warning-text` "Chưa gắn: chỉ chủ spa ghi công cho hồ sơ này".
+- Chủ spa thấy một `.callout` (warning) ở đầu Sổ hằng ngày và tab "Hồ sơ nhân viên" (trước là "Nhân sự") khi có **tài khoản quản lý** (theo role, không theo chức danh — EM 2026-11-08) chưa gắn hồ sơ: tiêu đề có icon `alert`, tên (đậm) + role, một câu hậu quả + cách sửa; ở Sổ hằng ngày thêm nút `btn-secondary` "Mở Hồ sơ nhân viên". Ở tab đó thêm một `.note` nhắc ai còn chưa có tài khoản. Quản lý chưa gắn thấy một `.callout` "Tài khoản của bạn chưa gắn với hồ sơ nhân viên, nên bạn chỉ xem được…" ở Sổ hằng ngày / Bảng công tháng / Đánh giá tháng.
+- Ô "Vị trí" của hồ sơ đã gắn tài khoản: `readOnly` + dòng phụ muted "Theo vai trò của tài khoản đăng nhập." (vị trí = tên role).
 - Sheet nghỉ việc bị từ chối vì lịch hẹn (F24): dưới lỗi là danh sách link `.link` "20/11/2026 lúc 10:00 · Tên khách", mỗi link mở ngày đó của Lịch hẹn lọc theo KTV.
 
 ## Màn của KTV (EM 2026-11-07, [raw](../../raw/2026-11-07-em-technician-pages.md), spec staff-management §12)

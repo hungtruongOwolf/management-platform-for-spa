@@ -208,13 +208,16 @@ async fn decision_c_shows_who_may_rescore_and_hides_the_managers_own(pool: PgPoo
         .history(Some(&s.manager), &format!("?staff_id={}", s.lan))
         .await;
     assert_eq!(lan.body["can_record"], true);
-    // Another manager's profile (F19: a "Quản lý" position, even unlinked): readable, owner-scored.
+    // A "Quản lý" title without a login decides nothing (EM 2026-11-08: role from the account):
     let thu = org::provisioning::add_staff(&s.h.owner, "vpyd", "Trần Thu", "Quản lý").await?;
     let other = s
         .history(Some(&s.manager), &format!("?staff_id={thu}"))
         .await;
     assert_eq!(other.status, StatusCode::OK, "{}", other.body);
-    assert_eq!(other.body["can_record"], false);
+    assert_eq!(
+        other.body["can_record"], true,
+        "a technician's profile until linked"
+    );
     Ok(())
 }
 

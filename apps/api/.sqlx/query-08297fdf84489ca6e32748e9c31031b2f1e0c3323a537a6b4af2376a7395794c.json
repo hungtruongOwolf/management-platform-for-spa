@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.staff SET full_name = $4,\n                  position = CASE WHEN user_id IS NULL THEN $5 ELSE position END, phone_e164 = $6,\n                  joined_on = $7, shift_start = $8, note = $9,\n                  version = version + 1, updated_at = now()\n           WHERE tenant_id = $1 AND id = $2 AND version = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Date",
+        "Time",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "08297fdf84489ca6e32748e9c31031b2f1e0c3323a537a6b4af2376a7395794c"
+}

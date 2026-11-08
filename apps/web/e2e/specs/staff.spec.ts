@@ -140,7 +140,7 @@ test.describe("nhân viên", () => {
       await page.setViewportSize(viewport);
       const name = `KTV Nghỉ ${label} ${String(Date.now()).slice(-5)}`;
       await page.goto("/nhan-vien?tab=profiles");
-      await expect(page.getByRole("tab", { name: "Nhân sự" })).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByRole("tab", { name: "Hồ sơ nhân viên" })).toHaveAttribute("aria-selected", "true");
       await page.getByRole("button", { name: "Thêm nhân viên" }).click();
       const form = page.getByRole("dialog", { name: "Thêm nhân viên" });
       await form.getByLabel("Họ tên").fill(name);

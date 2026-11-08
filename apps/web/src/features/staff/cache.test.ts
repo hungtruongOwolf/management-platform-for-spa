@@ -23,7 +23,7 @@ function attendanceSheet(days: AttendanceDay[]): AttendanceSheet {
     periods: [],
     visit_days: [],
   });
-  return { month: "2026-11", today: "2026-11-07", days_in_month: 30, default_shift_start: "08:00", closed: false, staff: [person("a"), person("b")] };
+  return { month: "2026-11", today: "2026-11-07", days_in_month: 30, default_shift_start: "08:00", closed: false, link_required: false, staff: [person("a"), person("b")] };
 }
 
 describe("withAttendance", () => {

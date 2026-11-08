@@ -189,7 +189,7 @@ describe("/nhat-ky-ghi-chu", () => {
     expect(within(evaluation).getByRole("link", { name: "Mở đánh giá tháng" }).getAttribute("href")).toContain("month=2026-10");
     // Q-N2: an HR note shows the profile's last change.
     expect(within(hr).getByText(/^Hồ sơ sửa lúc/)).toBeInTheDocument();
-    expect(within(hr).getByRole("link", { name: "Mở Nhân sự" })).toBeInTheDocument();
+    expect(within(hr).getByRole("link", { name: "Mở Hồ sơ nhân viên" })).toBeInTheDocument();
     expect(within(extension).getByText("Gói 10 buổi")).toBeInTheDocument();
     expect(within(extension).getByRole("link", { name: "Xem trong lịch sử khách" }).getAttribute("href")).toContain("hkind=package_extended");
     expect(within(discount).getByText("Giảm giá")).toBeInTheDocument();

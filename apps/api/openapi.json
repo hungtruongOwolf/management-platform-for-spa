@@ -5192,7 +5192,8 @@
           "today",
           "closed",
           "default_shift_start",
-          "staff"
+          "staff",
+          "link_required"
         ],
         "properties": {
           "closed": {
@@ -5205,6 +5206,10 @@
           },
           "default_shift_start": {
             "type": "string"
+          },
+          "link_required": {
+            "type": "boolean",
+            "description": "The caller supervises staff but their login is linked to no profile: they record nothing\n(`403 staff.link_required`) until the owner links it. Always false for the owner."
           },
           "month": {
             "type": "string",
@@ -6609,7 +6614,8 @@
           "month",
           "closed",
           "criteria",
-          "staff"
+          "staff",
+          "link_required"
         ],
         "properties": {
           "closed": {
@@ -6620,6 +6626,10 @@
             "items": {
               "$ref": "#/components/schemas/Criterion"
             }
+          },
+          "link_required": {
+            "type": "boolean",
+            "description": "The caller supervises staff but their login is linked to no profile: they record nothing\n(`403 staff.link_required`) until the owner links it. Always false for the owner."
           },
           "month": {
             "type": "string"
@@ -11110,6 +11120,7 @@
           "status",
           "periods",
           "login_linked",
+          "position_from_account",
           "version",
           "pay_visible"
         ],
@@ -11157,7 +11168,7 @@
           },
           "login_linked": {
             "type": "boolean",
-            "description": "Whether a login is linked (decision C: an unlinked manager counts as a technician)."
+            "description": "Whether a login is linked (decision C reads the linked login's role)."
           },
           "pay": {
             "oneOf": [
@@ -11181,6 +11192,10 @@
           },
           "position": {
             "type": "string"
+          },
+          "position_from_account": {
+            "type": "boolean",
+            "description": "`position` is the linked login's role name (not editable while linked; the free text\nreturns when the login is unlinked)."
           },
           "shift_start": {
             "type": [

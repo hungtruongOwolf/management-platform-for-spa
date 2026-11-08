@@ -5,13 +5,16 @@
 //! - Anyone else holding the recording permissions (a manager) records them only for people who
 //!   do not supervise: never for themselves, never for another manager or the owner.
 //!
-//! "Supervises" comes from the data: a staff profile linked to a login whose roles grant
-//! `attendance.record`, `evaluation.record` or `staff.manage` ([`org::profile::SUPERVISING`]), or
-//! a profile whose position names a manager ("Quản lý", [`org::profile::is_manager_position`]),
-//! linked or not (F19, 2026-11-08: while a manager's profile is not linked to their login the app
-//! cannot tell it is theirs, and an unlinked manager could mark their own attendance).
-//! The caller's own profile (the one linked to their login) is always owner-only, and it is left
-//! out of the books they read (EM 2026-11-08, [`RecordScope::lists`]): they read it in
+//! Who supervises comes from **account roles only** (EM 2026-11-08,
+//! [raw](../../../../memory/raw/2026-11-08-em-decision-role-by-account.md)): a staff profile linked
+//! to a login whose roles grant `attendance.record`, `evaluation.record` or `staff.manage`
+//! ([`org::profile::SUPERVISING`]). The free-text position never decides anything. A profile not
+//! linked to any login counts as a technician.
+//!
+//! A manager must be linked to their own profile before they record anything
+//! ([`LINK_REQUIRED`]): until then the app cannot tell which profile is theirs, so it could not
+//! stop them recording for themselves (live-test F19). The caller's own profile is always
+//! owner-only, and it is left out of the books they read ([`RecordScope::lists`]): they read it in
 //! "Công và lương của tôi" (`/me/*`), like a technician.
 
 use crate::repo;
@@ -22,6 +25,10 @@ use uuid::Uuid;
 /// `403` when a manager writes a record of a supervisor (or of themselves).
 pub const OWNER_ONLY: &str = "staff.record_owner_only";
 
+/// `403` when a supervising login that is not the owner records anything while it is not linked
+/// to a staff profile (ask the owner to link the account).
+pub const LINK_REQUIRED: &str = "staff.link_required";
+
 /// Loaded once per use case, inside its transaction.
 #[derive(Debug, Clone)]
 pub struct RecordScope {
@@ -31,6 +38,8 @@ pub struct RecordScope {
     owner_only: HashSet<Uuid>,
     /// The caller's own profile, left out of the books they read; `None` for the owner.
     own: Option<Uuid>,
+    /// A non-owner whose login is linked to no profile: records nothing.
+    link_required: bool,
 }
 
 impl RecordScope {
@@ -40,6 +49,7 @@ impl RecordScope {
                 unrestricted: true,
                 owner_only: HashSet::new(),
                 own: None,
+                link_required: false,
             });
         }
         let permissions = org::profile::supervising_permissions();
@@ -47,25 +57,25 @@ impl RecordScope {
             .await?
             .into_iter()
             .collect();
-        owner_only.extend(
-            org::profile::profiles_in(tx)
-                .await?
-                .into_iter()
-                .filter(|p| org::profile::is_manager_position(&p.position))
-                .map(|p| p.id),
-        );
         let own = repo::staff_of_user(tx, actor.user_id.as_uuid()).await?;
         owner_only.extend(own);
         Ok(Self {
             unrestricted: false,
             owner_only,
             own,
+            link_required: own.is_none(),
         })
     }
 
     /// Whether the caller may write this person's records (the UI hides the controls otherwise).
     pub fn may_record(&self, staff_id: Uuid) -> bool {
-        self.unrestricted || !self.owner_only.contains(&staff_id)
+        self.unrestricted || (!self.link_required && !self.owner_only.contains(&staff_id))
+    }
+
+    /// The caller must have their login linked to a profile before recording (the sheets say so,
+    /// so the UI can tell them to ask the owner).
+    pub const fn link_required(&self) -> bool {
+        self.link_required
     }
 
     /// Whether this person appears in the books the caller reads (attendance, daily reviews,
@@ -75,8 +85,14 @@ impl RecordScope {
         self.own != Some(staff_id)
     }
 
+    /// `403 staff.link_required` when the caller is not linked to a profile, else
     /// `403 staff.record_owner_only` when any of `staff` is outside the caller's scope.
     pub fn require(&self, staff: impl IntoIterator<Item = Uuid>) -> Result<(), AppError> {
+        if self.link_required {
+            return Err(AppError::Forbidden {
+                code: LINK_REQUIRED,
+            });
+        }
         if staff.into_iter().all(|s| self.may_record(s)) {
             Ok(())
         } else {
@@ -97,6 +113,7 @@ mod tests {
             unrestricted: true,
             owner_only: HashSet::new(),
             own: None,
+            link_required: false,
         };
         assert!(owner.require([manager, other_manager, technician]).is_ok());
         assert!(owner.lists(manager) && owner.lists(technician));
@@ -104,6 +121,7 @@ mod tests {
             unrestricted: false,
             owner_only: [manager, other_manager].into_iter().collect(),
             own: Some(manager),
+            link_required: false,
         };
         assert!(scope.may_record(technician));
         assert!(!scope.may_record(manager), "never themselves");
@@ -118,5 +136,24 @@ mod tests {
             scope.require([technician, other_manager]),
             Err(AppError::Forbidden { code: OWNER_ONLY })
         ));
+    }
+
+    #[test]
+    fn an_unlinked_manager_records_nobody() {
+        let technician = Uuid::from_u128(3);
+        let scope = RecordScope {
+            unrestricted: false,
+            owner_only: HashSet::new(),
+            own: None,
+            link_required: true,
+        };
+        assert!(!scope.may_record(technician));
+        assert!(matches!(
+            scope.require([technician]),
+            Err(AppError::Forbidden {
+                code: LINK_REQUIRED
+            })
+        ));
+        assert!(scope.lists(technician), "still reads the books");
     }
 }

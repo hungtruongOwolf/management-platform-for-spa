@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, full_name, position, status FROM app.staff\n           WHERE tenant_id = $1 AND id = $2 FOR SHARE",
+  "query": "SELECT s.id, s.full_name, s.status,\n                  coalesce((SELECT string_agg(r.name, ', ' ORDER BY r.name)\n                   FROM app.membership m\n                   JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id\n                   JOIN app.role r ON r.tenant_id = mr.tenant_id AND r.id = mr.role_id\n                   WHERE m.tenant_id = s.tenant_id AND m.user_id = s.user_id), s.position) AS \"position!\"\n           FROM app.staff s\n           WHERE s.tenant_id = $1 AND ($2::text IS NULL OR s.status = $2)\n           ORDER BY s.status, s.full_name",
   "describe": {
     "columns": [
       {
@@ -27,17 +27,6 @@
       },
       {
         "ordinal": 2,
-        "name": "position",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "app.staff",
-            "name": "position"
-          }
-        }
-      },
-      {
-        "ordinal": 3,
         "name": "status",
         "type_info": "Text",
         "origin": {
@@ -46,20 +35,26 @@
             "name": "status"
           }
         }
+      },
+      {
+        "ordinal": 3,
+        "name": "position!",
+        "type_info": "Text",
+        "origin": "Expression"
       }
     ],
     "parameters": {
       "Left": [
         "Uuid",
-        "Uuid"
+        "Text"
       ]
     },
     "nullable": [
       false,
       false,
       false,
-      false
+      null
     ]
   },
-  "hash": "ef34118fb1628c8bab97b69fc93a2aaef322a2a272d615c946abdade101ea0e2"
+  "hash": "748c7914bb9f8130357ca459c63a58c822ef501324b25c1b854d80e9bf3be773"
 }

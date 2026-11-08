@@ -346,7 +346,8 @@ async fn salary_is_only_sent_to_payroll_readers(pool: PgPool) -> TestResult {
         .get(&s.manager, &format!("/payroll/payslips/{}", s.lan))
         .await;
     assert_eq!(slip.status, StatusCode::FORBIDDEN);
-    // The manager keeps the daily books.
+    // The manager keeps the daily books (here granted `staff.manage`, so exempt from
+    // `staff.link_required` like the owner).
     assert_eq!(
         s.attend(&s.manager, s.lan, yesterday(), "present")
             .await
@@ -736,6 +737,7 @@ async fn a_technician_sees_only_their_own_calendar(pool: PgPool) -> TestResult {
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn a_technician_sees_their_own_day_in_detail(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
+    linked_profile(&s, MANAGER_PHONE, "Quản lý Hoa").await?;
     let w = two_technicians_at_work(&s).await?;
     s.pay(s.lan, 6_000_000, 1_000).await;
     assert_eq!(
@@ -950,6 +952,7 @@ async fn another_spa_cannot_reach_our_staff(pool: PgPool) -> TestResult {
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn a_closed_month_is_locked_and_corrected_by_adjustments(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
+    linked_profile(&s, MANAGER_PHONE, "Quản lý Hoa").await?;
     s.pay(s.lan, 5_000_000, 500).await;
     let last = end_of_last_month();
     let month = ym(last);
@@ -1826,67 +1829,103 @@ async fn a_manager_reads_their_own_month_only_through_me(pool: PgPool) -> TestRe
     Ok(())
 }
 
-/// F19 (live test 2026-11-08): while a manager's profile is not linked to their login, the app
-/// cannot tell which profile is theirs. A profile whose position names a manager is therefore
-/// owner-only for any manager, linked or not: an unlinked manager cannot mark their own
-/// attendance. The owner sees which manager logins and "Quản lý" profiles are not linked yet
-/// (`GET /staff/accounts` → `is_manager`, `GET /staff/profiles` → `login_linked`).
-/// Mutation-checked: dropping the position rule in `RecordScope::load` turns this red.
+/// EM 2026-11-08 (raw `2026-11-08-em-decision-role-by-account`): who supervises comes from the
+/// account role, never the position text. A login whose role supervises (a manager) but is linked
+/// to no staff profile records nothing: every write route answers `403 staff.link_required` and
+/// writes nothing, because the app cannot tell which profile is theirs (F19). The owner is exempt.
+/// Linked, the manager records for technicians — a "Quản lý" title without a login is one — and is
+/// still refused on themselves and another manager. Mutation-checked: dropping `link_required`
+/// in `RecordScope::load` turns this red.
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
-async fn an_unlinked_manager_profile_is_the_owners_to_record(pool: PgPool) -> TestResult {
+async fn a_manager_without_a_linked_profile_records_nothing(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    // The manager's own profile exists but is not linked to their login.
-    let hired = s
+    let day = yesterday();
+    let month = ym(day);
+    // The owner's entry, for the edit and remove routes.
+    let owners = s
         .post(
             &s.owner,
-            "/staff",
-            json!({"full_name": "Nguyễn Thị Thu Hà", "position": "Quản lý"}),
+            "/adjustments",
+            json!({"staff_id": s.lan, "kind": "bonus", "amount": 100_000, "reason": "Khách khen"}),
         )
         .await;
-    assert_eq!(hired.status, StatusCode::CREATED, "{}", hired.body);
-    let ha = id(&hired);
-    assert_eq!(hired.body["login_linked"], false);
-    let day = yesterday();
-    let refused = s.attend(&s.manager, ha, day, "present").await;
-    assert_eq!(
-        (refused.status, refused.body["code"].clone()),
-        (StatusCode::FORBIDDEN, json!("staff.record_owner_only")),
-        "{}",
-        refused.body
+    assert_eq!(owners.status, StatusCode::CREATED, "{}", owners.body);
+    let entry = format!("/adjustments/{}", id(&owners));
+    let link_required = |r: &Reply| {
+        assert_eq!(
+            (r.status, r.body["code"].clone()),
+            (StatusCode::FORBIDDEN, json!("staff.link_required")),
+            "{}",
+            r.body
+        );
+    };
+    link_required(&s.attend(&s.manager, s.lan, day, "present").await);
+    link_required(
+        &s.put(
+            &s.manager,
+            "/daily-reviews",
+            json!({"entries": [{"staff_id": s.lan, "date": day, "compliments": 1}]}),
+        )
+        .await,
     );
-    let evaluation = s
-        .put(
+    link_required(
+        &s.put(
             &s.manager,
             "/evaluations",
-            json!({"staff_id": ha, "month": ym(day), "criteria": criteria("m1")}),
+            json!({"staff_id": s.mai, "month": month, "criteria": criteria("m1")}),
         )
-        .await;
-    assert_eq!(
-        evaluation.body["code"], "staff.record_owner_only",
-        "{}",
-        evaluation.body
+        .await,
     );
-    // Still listed for the manager (it may be someone else's), read-only.
-    let sheet = s
-        .get(&s.manager, &format!("/attendance?month={}", ym(day)))
-        .await;
-    let row = sheet.body["staff"]
-        .as_array()
-        .and_then(|a| a.iter().find(|x| x["staff_id"] == json!(ha)).cloned())
-        .unwrap_or_default();
-    assert_eq!(row["can_record"], false, "{}", sheet.body);
-    // Technicians stay the manager's to record.
-    assert_eq!(
-        s.attend(&s.manager, s.lan, day, "present").await.status,
-        StatusCode::OK
+    link_required(
+        &s.post(
+            &s.manager,
+            "/adjustments",
+            json!({"staff_id": s.lan, "kind": "penalty", "amount": 10_000, "reason": "Đi muộn"}),
+        )
+        .await,
     );
-    // The owner records for it, and sees the manager login that is not linked to any profile.
-    assert_eq!(
-        s.attend(&s.owner, ha, day, "present").await.status,
-        StatusCode::OK
+    let key = Uuid::now_v7().to_string();
+    link_required(
+        &call_with_headers(
+            &s.h.app,
+            "PUT",
+            &entry,
+            Some(&s.manager),
+            Some(json!({"staff_id": s.lan, "kind": "penalty", "amount": 10_000, "reason": "Đi muộn"})),
+            &[("Idempotency-Key", &key)],
+        )
+        .await,
     );
+    link_required(&call(&s.h.app, "DELETE", &entry, Some(&s.manager), None).await);
+    let written: i64 = sqlx::query_scalar(
+        "SELECT (SELECT count(*) FROM app.attendance_day) + (SELECT count(*) FROM app.staff_daily_review)
+              + (SELECT count(*) FROM app.staff_evaluation)
+              + (SELECT count(*) FROM app.staff_adjustment WHERE voided_at IS NOT NULL)",
+    )
+    .fetch_one(&s.h.owner)
+    .await?;
+    assert_eq!(written, 0, "every refusal wrote nothing");
+    // The sheets say why (the UI tells the manager to ask the owner) and offer no control.
+    for path in [
+        format!("/attendance?month={month}"),
+        format!("/evaluations?month={month}"),
+    ] {
+        let sheet = s.get(&s.manager, &path).await;
+        assert_eq!(sheet.status, StatusCode::OK, "{path}: {}", sheet.body);
+        assert_eq!(sheet.body["link_required"], true, "{path}");
+        let rows = sheet.body["staff"].as_array().cloned().unwrap_or_default();
+        assert!(
+            !rows.is_empty() && rows.iter().all(|r| r["can_record"] == false),
+            "{path}"
+        );
+        assert_eq!(
+            s.get(&s.owner, &path).await.body["link_required"],
+            false,
+            "{path}"
+        );
+    }
+    // The owner sees the manager login that is not linked (from its role, not a title).
     let accounts = s.get(&s.owner, "/staff/accounts").await;
-    assert_eq!(accounts.status, StatusCode::OK, "{}", accounts.body);
     let by_name = |name: &str| {
         accounts
             .body
@@ -1899,13 +1938,124 @@ async fn an_unlinked_manager_profile_is_the_owners_to_record(pool: PgPool) -> Te
         (manager["is_manager"].clone(), manager["staff_id"].clone()),
         (json!(true), Value::Null)
     );
-    assert_eq!(
-        by_name("Chủ Spa")["is_manager"],
-        false,
-        "the owner records everyone: {}",
-        accounts.body
-    );
+    assert_eq!(by_name("Chủ Spa")["is_manager"], false, "{}", accounts.body);
     assert_eq!(by_name("KTV Lan")["is_manager"], false);
+    // The owner is exempt: no profile of their own, records anyone.
+    assert_eq!(
+        s.attend(&s.owner, s.lan, day, "present").await.status,
+        StatusCode::OK
+    );
+
+    // A "Quản lý" title without a login is a technician's profile: the title decides nothing.
+    let titled = s
+        .post(
+            &s.owner,
+            "/staff",
+            json!({"full_name": "Nguyễn Thị Thu Hà", "position": "Quản lý"}),
+        )
+        .await;
+    assert_eq!(titled.status, StatusCode::CREATED, "{}", titled.body);
+    let ha = id(&titled);
+    // Linked, the manager records for technicians, never for themselves or another manager.
+    add_member(
+        &s.h.owner,
+        "vpyd",
+        SECOND_MANAGER_PHONE,
+        "Quản lý Thu",
+        SystemRole::Manager,
+    )
+    .await?;
+    let hoa = linked_profile(&s, MANAGER_PHONE, "Quản lý Hoa").await?;
+    let thu = linked_profile(&s, SECOND_MANAGER_PHONE, "Quản lý Thu").await?;
+    for technician in [s.mai, ha] {
+        let r = s.attend(&s.manager, technician, day, "present").await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    }
+    for supervisor in [hoa, thu] {
+        let r = s.attend(&s.manager, supervisor, day, "present").await;
+        assert_eq!(r.body["code"], "staff.record_owner_only", "{}", r.body);
+    }
+    let sheet = s
+        .get(&s.manager, &format!("/attendance?month={month}"))
+        .await;
+    assert_eq!(sheet.body["link_required"], false);
+    Ok(())
+}
+
+/// EM 2026-11-08: a linked profile shows its login's role as its position, so the label can never
+/// contradict what the account may do; the owner's free text only applies while unlinked (and is
+/// kept, untouched, for when the login is unlinked).
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_linked_profile_shows_its_account_role(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    const THIRD_PHONE: &str = "0912100555";
+    add_member(
+        &s.h.owner,
+        "vpyd",
+        THIRD_PHONE,
+        "KTV Minh",
+        SystemRole::Technician,
+    )
+    .await?;
+    let user: Uuid = sqlx::query_scalar("SELECT id FROM app.user_account WHERE phone_e164 = $1")
+        .bind(format!("+84{}", &THIRD_PHONE[1..]))
+        .fetch_one(&s.h.owner)
+        .await?;
+    let hired = s
+        .post(
+            &s.owner,
+            "/staff",
+            json!({"full_name": "Lê Minh", "position": "Quản lý", "user_id": user}),
+        )
+        .await;
+    assert_eq!(hired.status, StatusCode::CREATED, "{}", hired.body);
+    let minh = id(&hired);
+    assert_eq!(hired.body["position"], "Kỹ thuật viên", "{}", hired.body);
+    assert_eq!(hired.body["position_from_account"], true);
+    // Editing the text while linked changes nothing shown, nor the text kept underneath.
+    let edited = s
+        .versioned(
+            &s.owner,
+            "PUT",
+            &format!("/staff/{minh}"),
+            json!({"full_name": "Lê Minh", "position": "Thu ngân"}),
+            &hired.body["version"],
+        )
+        .await;
+    assert_eq!(edited.status, StatusCode::OK, "{}", edited.body);
+    assert_eq!(edited.body["position"], "Kỹ thuật viên");
+    // Every reader shows the role: the picker, the month sheet.
+    let picker = s.get(&s.manager, "/staff").await;
+    let shown = picker
+        .body
+        .as_array()
+        .and_then(|a| a.iter().find(|x| x["id"] == json!(minh)).cloned())
+        .unwrap_or_default();
+    assert_eq!(shown["position"], "Kỹ thuật viên", "{}", picker.body);
+    let sheet = s.get(&s.owner, "/attendance").await;
+    let row = sheet.body["staff"]
+        .as_array()
+        .and_then(|a| a.iter().find(|x| x["staff_id"] == json!(minh)).cloned())
+        .unwrap_or_default();
+    assert_eq!(row["position"], "Kỹ thuật viên");
+    // Unlinked, the owner's text is back.
+    let unlinked = s
+        .versioned(
+            &s.owner,
+            "PUT",
+            &format!("/staff/{minh}/account"),
+            json!({"user_id": null}),
+            &edited.body["version"],
+        )
+        .await;
+    assert_eq!(unlinked.status, StatusCode::OK, "{}", unlinked.body);
+    assert_eq!(
+        (
+            unlinked.body["position"].clone(),
+            unlinked.body["position_from_account"].clone()
+        ),
+        (json!("Quản lý"), json!(false))
+    );
     Ok(())
 }
 
@@ -2136,6 +2286,7 @@ async fn the_roster_hires_ends_and_rehires_without_losing_history(pool: PgPool) 
                 "pay_visible",
                 "periods",
                 "position",
+                "position_from_account",
                 "shift_start",
                 "status",
                 "tenure_days",
@@ -2492,8 +2643,8 @@ async fn the_login_link_is_owner_only(pool: PgPool) -> TestResult {
     assert_eq!(by_manager.status, StatusCode::FORBIDDEN);
 
     // Decision C reads the link: Hoa's profile linked to the manager's login is the owner's to
-    // record. Unlinked, it stays the owner's (F19, 2026-11-08: a "Quản lý" position is owner-only
-    // until the app can tell whose profile it is; before, it counted as a technician's).
+    // record. Unlinked, the manager records nothing at all until the owner links them again
+    // (EM 2026-11-08: role from the account; the app cannot tell which profile is theirs).
     let hoa = linked_profile(&s, MANAGER_PHONE, "Quản lý Hoa").await?;
     let blocked = s.attend(&s.manager, hoa, today(), "present").await;
     assert_eq!(blocked.status, StatusCode::FORBIDDEN);
@@ -2511,7 +2662,7 @@ async fn the_login_link_is_owner_only(pool: PgPool) -> TestResult {
     assert_eq!(unlinked.body["login_linked"], false);
     assert_eq!(
         s.attend(&s.manager, hoa, today(), "present").await.body["code"],
-        "staff.record_owner_only"
+        "staff.link_required"
     );
     let history = s.get(&s.owner, &format!("/staff/{hoa}/history")).await;
     assert_eq!(history.body[0]["action"], "staff.account_link");

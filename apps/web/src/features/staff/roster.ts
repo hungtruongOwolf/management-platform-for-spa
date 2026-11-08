@@ -32,31 +32,15 @@ export function tenureLabel(p: Pick<StaffProfile, "tenure_days" | "tenure_months
 /** Positions offered when adding someone (free text stays possible: the spa names its own roles). */
 export const POSITIONS = ["Kỹ thuật viên", "Quản lý", "Thu ngân", "Lễ tân", "Học viên"] as const;
 
-/**
- * Whether a position names a manager, whatever the case, accents or Unicode form ("Quản lý",
- * "quan ly"): the same rule as the server's `org::profile::is_manager_position`, for warnings only.
- */
-export function isManagerPosition(position: string): boolean {
-  return position
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .replace(/[đĐ]/g, "d")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .includes("quan ly");
+/** A working profile with no login yet: counts as a technician; the owner is nudged to give one. */
+export function withoutLogin(p: Pick<StaffProfile, "login_linked" | "status">): boolean {
+  return p.status === "active" && !p.login_linked;
 }
 
 /**
- * F19 (live test 2026-11-08): decision C needs to know which profile is a manager's own, and only
- * the link between the profile and the login says so. Until the owner links it, a "Quản lý"
- * profile is the owner's to record (the server refuses a manager) and the manager cannot read
- * their own month. The roster and the daily book warn the owner.
+ * A manager login (its role records for others without managing staff) linked to no profile: it
+ * records nothing until the owner links it (`staff.link_required`, EM 2026-11-08).
  */
-export function managerWithoutLogin(p: Pick<StaffProfile, "position" | "login_linked" | "status">): boolean {
-  return p.status === "active" && !p.login_linked && isManagerPosition(p.position);
-}
-
-/** A manager login (records for others, does not manage staff) not linked to any profile yet. */
 export function managerLoginWithoutProfile(a: Pick<StaffAccount, "is_manager" | "staff_id">): boolean {
   return a.is_manager && !a.staff_id;
 }

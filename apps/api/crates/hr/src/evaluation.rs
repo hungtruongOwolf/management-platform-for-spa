@@ -262,6 +262,9 @@ pub struct EvaluationSheet {
     pub closed: bool,
     pub criteria: Vec<Criterion>,
     pub staff: Vec<StaffEvaluation>,
+    /// The caller supervises staff but their login is linked to no profile: they record nothing
+    /// (`403 staff.link_required`) until the owner links it. Always false for the owner.
+    pub link_required: bool,
 }
 
 /// `GET /evaluations?month=` (`evaluation.record`); not the caller's own row unless they are the
@@ -314,6 +317,7 @@ pub async fn sheet(
         closed: info.closed,
         criteria: CRITERIA.to_vec(),
         staff,
+        link_required: scope.link_required(),
     })
 }
 

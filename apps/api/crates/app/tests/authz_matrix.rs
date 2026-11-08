@@ -1242,6 +1242,20 @@ async fn world(pool: PgPool) -> Result<World, Box<dyn std::error::Error>> {
     })
 }
 
+/// Links the manager's login of spa `vpyd` to a staff profile of its own.
+async fn link_manager(w: &World) -> Result<(), Box<dyn std::error::Error>> {
+    let staff = org::provisioning::add_staff(&w.h.owner, "vpyd", "Quản lý Hoa", "Quản lý").await?;
+    sqlx::query(
+        "UPDATE app.staff SET user_id = (SELECT id FROM app.user_account WHERE phone_e164 = $2)
+         WHERE id = $1",
+    )
+    .bind(staff)
+    .bind(format!("+84{}", &MANAGER_PHONE[1..]))
+    .execute(&w.h.owner)
+    .await?;
+    Ok(())
+}
+
 fn concrete(route: &Route, f: &Fixture) -> String {
     route.path.replace("{id}", f.id_of(route.id))
 }
@@ -1433,6 +1447,9 @@ async fn every_non_public_route_rejects_anonymous_and_forged_sessions(pool: PgPo
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn each_role_gets_exactly_what_the_matrix_grants(pool: PgPool) -> TestResult {
     let w = world(pool).await?;
+    // A manager records only once their login is linked to their own profile (EM 2026-11-08,
+    // `staff.link_required`, covered in `staff.rs`); here the manager is a linked one.
+    link_manager(&w).await?;
     let mut failures = Vec::new();
     let mut cells = 0;
     for role in SystemRole::ALL {

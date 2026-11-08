@@ -167,8 +167,11 @@ pub struct StaffProfileDto {
     pub tenure_days: Option<i64>,
     /// Completed calendar months, summed over the periods.
     pub tenure_months: Option<i64>,
-    /// Whether a login is linked (decision C: an unlinked manager counts as a technician).
+    /// Whether a login is linked (decision C reads the linked login's role).
     pub login_linked: bool,
+    /// `position` is the linked login's role name (not editable while linked; the free text
+    /// returns when the login is unlinked).
+    pub position_from_account: bool,
     /// `HH:MM`; `null` = the spa default (payroll rules).
     pub shift_start: Option<String>,
     pub version: i64,
@@ -203,6 +206,7 @@ impl From<ProfileView> for StaffProfileDto {
             tenure_days: v.tenure.map(|t| t.days),
             tenure_months: v.tenure.map(|t| t.months),
             login_linked: p.user_id.is_some(),
+            position_from_account: p.position_from_account,
             shift_start: p.shift_start.map(|t| t.format("%H:%M").to_string()),
             version: p.version,
             details: details.then(|| StaffDetailsDto {
