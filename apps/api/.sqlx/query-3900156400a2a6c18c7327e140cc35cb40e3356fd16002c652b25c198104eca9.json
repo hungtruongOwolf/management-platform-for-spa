@@ -1,0 +1,159 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH b AS (\n             SELECT ($3::date::timestamp AT TIME ZONE $2) AS lo,\n                    (($4::date + 1)::timestamp AT TIME ZONE $2) AS hi\n           ), n AS (\n             SELECT 'visit_note'::text AS kind, v.check_in_at AS at, v.business_date AS day,\n                    v.id::text AS key, NULL::text AS body, v.note_ct AS ct,\n                    v.customer_id AS customer_id, v.created_by AS author_id, NULL::uuid AS staff_id,\n                    v.id AS visit_id, NULL::text AS detail, NULL::text AS guest, NULL::date AS about\n             FROM app.visit v\n             WHERE $5 AND v.tenant_id = $1 AND v.note_ct IS NOT NULL\n               AND v.business_date BETWEEN $3 AND $4\n             UNION ALL\n             SELECT 'customer_note', c.updated_at, (c.updated_at AT TIME ZONE $2)::date, c.id::text,\n                    c.note, NULL, c.id, NULL, NULL, NULL, NULL, NULL, NULL\n             FROM app.customer c, b\n             WHERE $6 AND c.tenant_id = $1 AND c.note IS NOT NULL AND btrim(c.note) <> ''\n               AND c.anonymized_at IS NULL AND c.updated_at >= b.lo AND c.updated_at < b.hi\n             UNION ALL\n             SELECT 'health_note', c.updated_at, (c.updated_at AT TIME ZONE $2)::date, c.id::text,\n                    NULL, c.health_note_ct, c.id, NULL, NULL, NULL, NULL, NULL, NULL\n             FROM app.customer c, b\n             WHERE $7 AND c.tenant_id = $1 AND c.health_note_ct IS NOT NULL\n               AND c.anonymized_at IS NULL AND c.updated_at >= b.lo AND c.updated_at < b.hi\n             UNION ALL\n             SELECT 'attendance_note', a.updated_at, a.work_date,\n                    a.staff_id::text || ':' || a.work_date::text, a.note, NULL, NULL, a.recorded_by,\n                    a.staff_id, NULL, a.status, NULL, NULL\n             FROM app.attendance_day a\n             WHERE $8 AND a.tenant_id = $1 AND a.note IS NOT NULL\n               AND a.work_date BETWEEN $3 AND $4\n             UNION ALL\n             SELECT 'review_note', r.updated_at, r.work_date,\n                    r.staff_id::text || ':' || r.work_date::text, r.note, NULL, NULL, r.recorded_by,\n                    r.staff_id, NULL, r.compliments::text || '/' || r.complaints::text, NULL, NULL\n             FROM app.staff_daily_review r\n             WHERE $9 AND r.tenant_id = $1 AND r.note IS NOT NULL\n               AND r.work_date BETWEEN $3 AND $4\n             UNION ALL\n             SELECT 'adjustment', j.created_at, j.work_date, j.id::text, j.reason, NULL, NULL,\n                    j.created_by, j.staff_id, NULL, j.kind, NULL, NULL\n             FROM app.staff_adjustment j\n             WHERE $10 AND j.tenant_id = $1 AND j.voided_at IS NULL\n               AND j.work_date BETWEEN $3 AND $4\n             UNION ALL\n             SELECT 'follow_up', f.created_at, f.contacted_on, f.id::text, f.note, NULL,\n                    f.customer_id, f.created_by, NULL, NULL, f.outcome, NULL, NULL\n             FROM app.customer_follow_up f\n             WHERE $11 AND f.tenant_id = $1 AND f.note IS NOT NULL\n               AND f.contacted_on BETWEEN $3 AND $4\n             UNION ALL\n             SELECT 'void', v.voided_at, (v.voided_at AT TIME ZONE $2)::date, v.id::text,\n                    v.void_reason, NULL, v.customer_id, v.voided_by, NULL, v.id,\n                    CASE WHEN EXISTS (SELECT 1 FROM app.visit nv\n                                      WHERE nv.tenant_id = v.tenant_id AND nv.corrects_visit_id = v.id)\n                         THEN 'visit_corrected' ELSE 'visit' END, NULL, NULL\n             FROM app.visit v, b\n             WHERE $12 AND v.tenant_id = $1 AND v.status = 'voided'\n               AND v.voided_at >= b.lo AND v.voided_at < b.hi\n             UNION ALL\n             SELECT 'void', s.voided_at, (s.voided_at AT TIME ZONE $2)::date, s.id::text,\n                    s.void_reason, NULL, s.customer_id, s.voided_by, NULL, NULL, 'sale', NULL, NULL\n             FROM app.sale s, b\n             WHERE $12 AND s.tenant_id = $1 AND s.status = 'voided'\n               AND s.voided_at >= b.lo AND s.voided_at < b.hi\n               -- A visit's own sale is voided with the visit: its reason is the visit's.\n               AND NOT EXISTS (SELECT 1 FROM app.visit v WHERE v.tenant_id = s.tenant_id AND v.sale_id = s.id)\n               AND NOT EXISTS (SELECT 1 FROM app.visit_line l WHERE l.tenant_id = s.tenant_id AND l.sale_id = s.id)\n             UNION ALL\n             SELECT 'void', cp.cancelled_at, (cp.cancelled_at AT TIME ZONE $2)::date, cp.id::text,\n                    cp.cancel_reason, NULL, cp.customer_id, cp.cancelled_by, NULL, NULL, 'package', NULL, NULL\n             FROM app.customer_package cp\n             LEFT JOIN app.sale s ON s.tenant_id = cp.tenant_id AND s.id = cp.sale_id, b\n             WHERE $12 AND cp.tenant_id = $1 AND cp.cancelled_at IS NOT NULL\n               AND cp.cancelled_at >= b.lo AND cp.cancelled_at < b.hi\n               -- Cancelled by its voided sale: the sale's void says why.\n               AND (s.id IS NULL OR s.status <> 'voided')\n             UNION ALL\n             SELECT 'employment_end', (e.ended_on::timestamp AT TIME ZONE $2), e.ended_on,\n                    e.id::text, e.end_reason, NULL, NULL, e.ended_by, e.staff_id, NULL, NULL, NULL, NULL\n             FROM app.staff_employment e\n             WHERE $13 AND e.tenant_id = $1 AND e.end_reason IS NOT NULL\n               AND e.ended_on BETWEEN $3 AND $4\n             UNION ALL\n             SELECT 'appointment_note', ap.created_at, (ap.created_at AT TIME ZONE $2)::date,\n                    ap.id::text, ap.note, NULL, ap.customer_id, ap.created_by, ap.staff_id, NULL,\n                    ap.status, ap.guest_name, ap.business_date\n             FROM app.appointment ap, b\n             WHERE $22 AND ap.tenant_id = $1 AND ap.note IS NOT NULL AND btrim(ap.note) <> ''\n               AND ap.created_at >= b.lo AND ap.created_at < b.hi\n             UNION ALL\n             -- Why a booking was cancelled / the customer did not come (the reason is required).\n             SELECT 'appointment_reason', ar.closed_at, (ar.closed_at AT TIME ZONE $2)::date,\n                    ar.id::text, ar.status_reason, NULL, ar.customer_id, ar.closed_by, ar.staff_id,\n                    NULL, ar.status, ar.guest_name, ar.business_date\n             FROM app.appointment ar, b\n             WHERE $28 AND ar.tenant_id = $1 AND ar.status IN ('cancelled', 'no_show')\n               AND ar.closed_at >= b.lo AND ar.closed_at < b.hi\n             UNION ALL\n             SELECT 'evaluation_note', ev.updated_at, (ev.updated_at AT TIME ZONE $2)::date,\n                    ev.staff_id::text || ':' || ev.work_date::text || ':' || part.name, part.body,\n                    NULL, NULL, ev.recorded_by, ev.staff_id, NULL, part.name, NULL, ev.work_date\n             FROM app.staff_evaluation ev\n             CROSS JOIN LATERAL (VALUES ('comment', ev.comment), ('coaching_plan', ev.coaching_plan))\n                  AS part (name, body), b\n             WHERE $23 AND ev.tenant_id = $1 AND part.body IS NOT NULL\n               AND ev.updated_at >= b.lo AND ev.updated_at < b.hi\n             UNION ALL\n             SELECT 'staff_note', sn.updated_at, (sn.updated_at AT TIME ZONE $2)::date, sn.id::text,\n                    sn.note, NULL, NULL, NULL, sn.id, NULL, NULL, NULL, NULL\n             FROM app.staff sn, b\n             WHERE $24 AND sn.tenant_id = $1 AND sn.note IS NOT NULL\n               AND sn.updated_at >= b.lo AND sn.updated_at < b.hi\n             UNION ALL\n             SELECT 'package_extension', x.created_at, x.business_date, x.id::text, x.reason, NULL,\n                    xp.customer_id, x.created_by, NULL, NULL, xp.name_snapshot, NULL, x.expires_on\n             FROM app.customer_package_extension x\n             JOIN app.customer_package xp ON xp.tenant_id = x.tenant_id AND xp.id = x.customer_package_id\n             WHERE $25 AND x.tenant_id = $1 AND x.business_date BETWEEN $3 AND $4\n             UNION ALL\n             SELECT 'discount', ds.created_at, ds.business_date, ds.id::text, ds.discount_reason,\n                    NULL, ds.customer_id, ds.created_by, NULL, ds.visit_id,\n                    CASE WHEN ds.visit_id IS NULL THEN 'sale' ELSE 'visit' END, NULL, NULL\n             FROM app.sale ds\n             WHERE ds.tenant_id = $1 AND ds.discount_reason IS NOT NULL\n               AND ds.business_date BETWEEN $3 AND $4\n               -- A visit's sale is shown with the visit (visit.read); any other on its own (sale.read).\n               AND ((ds.visit_id IS NOT NULL AND $26) OR (ds.visit_id IS NULL AND $27))\n           )\n           SELECT n.kind AS \"kind!\", n.at AS \"at!\", n.day AS \"day!\", n.key AS \"key!\",\n                  n.body AS \"body?\", n.ct AS \"ct?\", n.customer_id AS \"customer_id?\",\n                  CASE WHEN n.customer_id IS NULL THEN n.guest\n                       ELSE app.customer_label(c.full_name) END AS \"customer_name?\",\n                  n.staff_id AS \"staff_id?\", st.full_name AS \"staff_name?\", u.full_name AS \"author_name?\",\n                  n.visit_id AS \"visit_id?\", n.detail AS \"detail?\", n.about AS \"about?\",\n                  ($17::text IS NOT NULL\n                   AND (coalesce(app.search_fold(c.full_name) LIKE $17, false)\n                        OR coalesce(app.search_fold(n.guest) LIKE $17, false)\n                        OR coalesce(app.search_fold(st.full_name) LIKE $17, false))) AS \"name_hit!\"\n           FROM n\n           LEFT JOIN app.customer c ON c.tenant_id = $1 AND c.id = n.customer_id\n           LEFT JOIN app.staff st ON st.tenant_id = $1 AND st.id = n.staff_id\n           LEFT JOIN app.user_account u ON u.id = n.author_id\n           WHERE ($15::uuid IS NULL OR n.customer_id = $15)\n             AND ($14::uuid IS NULL OR n.staff_id = $14\n                  OR n.author_id = (SELECT s2.user_id FROM app.staff s2\n                                    WHERE s2.tenant_id = $1 AND s2.id = $14)\n                  OR (n.visit_id IS NOT NULL AND EXISTS (\n                        SELECT 1 FROM app.visit_line l\n                        WHERE l.tenant_id = $1 AND l.visit_id = n.visit_id AND l.staff_id = $14)))\n             AND ($17::text IS NULL OR n.ct IS NOT NULL\n                  OR coalesce(app.search_fold(n.body) LIKE $17, false)\n                  OR coalesce(app.search_fold(c.full_name) LIKE $17, false)\n                  OR coalesce(app.search_fold(n.guest) LIKE $17, false)\n                  OR coalesce(app.search_fold(st.full_name) LIKE $17, false))\n             AND ($21::date IS NULL OR (n.day, n.at, n.kind, n.key) < ($21, $18, $19, $20))\n             AND NOT ($29::uuid IS NOT NULL AND n.staff_id = $29\n                      AND n.kind IN ('attendance_note', 'review_note', 'adjustment',\n                                     'evaluation_note', 'staff_note', 'employment_end'))\n           ORDER BY n.day DESC, n.at DESC, n.kind DESC, n.key DESC\n           LIMIT $16",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kind!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "day!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "key!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "body?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "ct?",
+        "type_info": "Bytea",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "customer_id?",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "customer_name?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "staff_id?",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "staff_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.staff",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "author_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.user_account",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "visit_id?",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "detail?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "about?",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 14,
+        "name": "name_hit!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Date",
+        "Date",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Uuid",
+        "Uuid",
+        "Int8",
+        "Text",
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Date",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "3900156400a2a6c18c7327e140cc35cb40e3356fd16002c652b25c198104eca9"
+}

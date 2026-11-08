@@ -1796,8 +1796,7 @@ fn an_hour_ago() -> String {
 /// F12 (EM 2026-11-08): a slot of today already over is never booked, the owner included (the
 /// live test booked 10:00 at 19:08 through "Vẫn đặt lịch"). A service already done is a visit
 /// recorded at Quầy. A booking still waiting cannot move into such a slot either; an arrived
-/// customer's time stays the desk's to set. Mutation-checked: dropping `check_time` in
-/// `insert_booking` turns the first two assertions red.
+/// customer's time stays the desk's to set.
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn a_slot_already_over_is_never_booked(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;

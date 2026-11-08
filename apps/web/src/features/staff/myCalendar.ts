@@ -42,3 +42,36 @@ export function weekSummary(entries: MyCalendarEntry[], day: string | null): str
     .filter(Boolean)
     .join(" · ");
 }
+
+/**
+ * Where "Khách của tôi" brings its grid into view (F22, EM live test 2026-11-08). The grid keeps
+ * #89's widened span (a visit at 02:00 starts it at 02:00), so it used to open on hours of empty
+ * night. Today: an hour before now, so what is on now and next is in view. Another day: the
+ * opening hour, or the first block when every block is before opening. A whole hour (the gutter's
+ * labelled bands); `null` when that is the grid's first row already (nothing to scroll past).
+ */
+export function focusMinute({
+  gridOpens,
+  gridCloses,
+  opens,
+  now,
+  showsToday,
+  shown,
+}: {
+  /** The grid's first and last minute (`gridSpan`). */
+  gridOpens: number;
+  gridCloses: number;
+  /** The spa's opening minute. */
+  opens: number;
+  /** Minutes since midnight now, spa time. */
+  now: number;
+  showsToday: boolean;
+  shown: EntryView[];
+}): number | null {
+  const hour = (m: number) => Math.floor(m / 60) * 60;
+  let target: number;
+  if (showsToday && now >= gridOpens && now <= gridCloses) target = hour(now - 60);
+  else if (shown.length > 0 && shown.every((v) => v.start < opens)) target = hour(Math.min(...shown.map((v) => v.start)));
+  else target = hour(opens);
+  return target > Math.ceil(gridOpens / 60) * 60 ? target : null;
+}

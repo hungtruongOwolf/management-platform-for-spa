@@ -16,7 +16,7 @@ addMessages(
     "staff.already_left": "Nhân viên này đã nghỉ việc rồi. Tải lại để xem mới nhất.",
     "staff.already_active": "Nhân viên này đang làm. Tải lại để xem mới nhất.",
     "staff.has_upcoming_bookings":
-      "Nhân viên còn lịch hẹn sau ngày nghỉ việc. Hãy đổi KTV hoặc hủy các lịch đó ở Lịch hẹn trước.",
+      "Nhân viên còn lịch hẹn sau ngày nghỉ việc. Đổi KTV hoặc hủy các lịch dưới đây ở Lịch hẹn trước:",
     "staff.cannot_end_self": "Bạn không tự cho mình nghỉ việc được.",
     "staff.not_employed_in_month": "Tháng này bạn không làm ở spa: chỉ xem được các tháng đã làm.",
     "staff.linked_to_owner": "Hồ sơ này gắn với tài khoản chủ spa. Bỏ gắn tài khoản trước khi cho nghỉ việc.",

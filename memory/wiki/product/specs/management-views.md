@@ -252,6 +252,8 @@ Quản lý mặc định thấy mọi loại trừ "Nghỉ việc" và "Ghi chú
 - Loại mới `appointment_reason` (bảng 10.2): chip "Hủy lịch" hoặc "Không đến" (theo `detail`), "Lịch hẹn dd/mm/yyyy" là ngày hẹn, link "Mở lịch hẹn" về lịch ngày đó. Khách chưa có hồ sơ: hiện tên khách đặt. Quy tắc đọc như ghi chú lịch hẹn (`appointment.manage`), mặc định từ chối. Migration **0029**: index một phần `appointment (tenant_id, closed_at) WHERE status IN ('cancelled','no_show')`, không cột mới.
 - Test: `notes.rs` — chủ spa đọc 15 loại, hai lý do (của khách có hồ sơ và của khách đặt), người đóng, ngày hẹn; `every_kind_keeps_its_own_read_rule` +1 dòng (bỏ `appointment.manage` → mất loại); lọc theo khách có `appointment_reason`. Vitest `Notes` "F21…".
 
+- **Ghi chú về hồ sơ của chính mình (lead 2026-11-08, theo [ADR-0015](../../decisions/ADR-0015-own-profile-out-of-the-books.md)):** người không có `staff.manage` (quản lý) không thấy ghi chú chấm công, khen / phàn nàn, thưởng / phạt, đánh giá tháng **về hồ sơ gắn với tài khoản của mình** trong nhật ký (kể cả khi lọc `staff_id` = mình); xem qua `/me/*` như KTV. Chủ spa vẫn thấy mọi quản lý. Ghi chú quản lý viết về người khác vẫn hiện. Server: `org::profile::hidden_from` → điều kiện `$29` trong `GET /notes`. Test `notes.rs::a_manager_does_not_read_notes_about_their_own_profile`.
+
 ### 10.7 Lịch sử khách: một mục cho mỗi lượt / hóa đơn đã hủy (F16, 2026-11-08)
 - Trước: lượt đã hủy hiện hai lần (dòng lượt có lý do + mục "Đã hủy" ở giờ hủy). Nay: **một** mục ở giờ của lượt / hóa đơn, `kind = visit_voided` / `purchase_voided`, mang cả nội dung (`visit` / `purchase`) và `void` (lý do, tiền hoàn, buổi trả lại). Chip "Đã hủy" / "Đã sửa". Bộ lọc "Lượt đã hủy" / "Hóa đơn đã hủy" vẫn đúng; "Lượt khách" chỉ còn lượt chưa hủy.
 

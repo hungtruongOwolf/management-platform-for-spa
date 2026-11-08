@@ -301,6 +301,10 @@ pub struct StaffAccountDto {
     pub roles: Vec<String>,
     /// Staff profile already linked to this login.
     pub staff_id: Option<Uuid>,
+    /// The login records attendance / evaluations for others without managing staff (a
+    /// manager). Not linked to a profile, the app cannot tell which profile is theirs (decision
+    /// C): the owner is warned (F19).
+    pub is_manager: bool,
 }
 
 impl From<Account> for StaffAccountDto {
@@ -310,6 +314,7 @@ impl From<Account> for StaffAccountDto {
             full_name: a.full_name,
             roles: a.roles,
             staff_id: a.staff_id,
+            is_manager: a.is_manager,
         }
     }
 }
@@ -500,7 +505,7 @@ pub async fn set_staff_account(
 #[utoipa::path(post, path = "/api/v1/staff/{id}/end", tag = "staff", params(("id" = Uuid, Path)),
     request_body = StaffEndWrite,
     responses((status = 200, body = StaffProfileDto), (status = 401), (status = 403), (status = 404),
-              (status = 409, description = "staff.already_left | staff.has_upcoming_bookings"),
+              (status = 409, description = "staff.already_left | staff.has_upcoming_bookings (details.bookings = [{id, date, time HH:MM spa time, customer}], earliest first, at most 20; details.more = there are others)"),
               (status = 412),
               (status = 422, description = "staff.cannot_end_self | staff.linked_to_owner | field errors")))]
 pub async fn end_employment(

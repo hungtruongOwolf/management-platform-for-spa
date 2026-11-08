@@ -3698,6 +3698,12 @@ export interface components {
         };
         StaffAccountDto: {
             full_name: string;
+            /**
+             * @description The login records attendance / evaluations for others without managing staff (a
+             *     manager). Not linked to a profile, the app cannot tell which profile is theirs (decision
+             *     C): the owner is warned (F19).
+             */
+            is_manager: boolean;
             roles: string[];
             /**
              * Format: uuid
@@ -8427,7 +8433,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description staff.already_left | staff.has_upcoming_bookings */
+            /** @description staff.already_left | staff.has_upcoming_bookings (details.bookings = [{id, date, time HH:MM spa time, customer}], earliest first, at most 20; details.more = there are others) */
             409: {
                 headers: {
                     [name: string]: unknown;

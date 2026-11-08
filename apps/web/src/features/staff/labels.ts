@@ -1,30 +1,31 @@
 import type { Schemas } from "@vpyd/api-client";
+import type { IconName } from "../../app/Icon";
 
 export type AttendanceStatus = Schemas["AttendanceStatus"];
 export type Level = Schemas["Level"];
 export type PayFlag = Schemas["PayFlag"];
 
-/** The sheet's codes: ✓ đi làm, P, ĐX, K. */
-export const STATUS_CODE: Record<AttendanceStatus, string> = {
-  present: "✓",
-  leave_p: "P",
-  leave_dx: "ĐX",
-  absent_k: "K",
-};
-
+/**
+ * A status in words, everywhere it is shown (F20, EM 2026-11-08: the paper sheet's P / ĐX / K
+ * codes are gone from every screen; a status is its words, or its mark with the words beside it
+ * or in its accessible name).
+ */
 export const STATUS_LABEL: Record<AttendanceStatus, string> = {
-  present: "Đi làm",
-  leave_p: "Nghỉ có phép (P)",
-  leave_dx: "Nghỉ đột xuất (ĐX)",
-  absent_k: "Nghỉ không phép (K)",
-};
-
-/** The words of the choice in the daily book (the code is shown beside them, never alone). */
-export const STATUS_WORD: Record<AttendanceStatus, string> = {
   present: "Đi làm",
   leave_p: "Nghỉ có phép",
   leave_dx: "Nghỉ đột xuất",
   absent_k: "Nghỉ không phép",
+};
+
+/**
+ * Each status's mark, the daily book tiles' icon, always on its status colour (`att-<status>`):
+ * colour is never the only signal, and the icon is never the only name.
+ */
+export const STATUS_ICON: Record<AttendanceStatus, IconName> = {
+  present: "check",
+  leave_p: "calendar",
+  leave_dx: "alert",
+  absent_k: "x",
 };
 
 export const STATUS_HINT: Record<AttendanceStatus, string> = {
@@ -63,7 +64,7 @@ export const LEVELS: Level[] = ["m1", "m2", "m3", "fail"];
 export const FLAG_LABEL: Record<PayFlag, string> = {
   no_pay_terms: "Chưa có lương cứng",
   unrecorded_days: "Còn ngày chưa chấm công",
-  absent_k5_plus: "Nghỉ K từ 5 ngày (cần chủ spa xem)",
+  absent_k5_plus: "Nghỉ không phép từ 5 ngày (cần chủ spa xem)",
   evaluation_missing: "Chưa đánh giá tháng",
 };
 

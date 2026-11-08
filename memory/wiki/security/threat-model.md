@@ -99,6 +99,9 @@ sources: [architecture/system.md, product/specs/front-desk-and-packages.md]
 | Người đã nghỉ xem tháng sau khi nghỉ (dữ liệu sau ngày nghỉ) | `GET /me/staff`/`day` kiểm tháng có trong đợt làm việc → `403 staff.not_employed_in_month` | `a_leaver_keeps_only_their_own_past_pay` |
 | Gắn tài khoản chủ spa vào hồ sơ đã nghỉ để khóa chủ spa | `effective_permissions` không bao giờ hạ quyền người có `staff.manage` | `the_owners_login_is_never_downgraded` |
 | KTV đọc ghi chú buổi (có thể có thông tin sức khỏe) của lượt người khác làm | `note` chỉ khi `visit_line.staff_id = own_staff_id` (SQL), allowlist key | `a_technician_sees_only_their_own_calendar`, `…_own_day_in_detail` (test âm) |
+| Quản lý chưa gắn hồ sơ tự chấm công / chấm điểm cho mình (F19, 2026-11-08) | hồ sơ có vị trí quản lý luôn `owner_only` trong `RecordScope` (gắn hay chưa); chủ spa thấy cảnh báo hồ sơ / tài khoản quản lý chưa gắn | `staff.rs::an_unlinked_manager_profile_is_the_owners_to_record` (mutation-check: bỏ quy tắc vị trí → đỏ) |
+| Quản lý đọc sổ của chính mình qua sổ quản lý thay vì `/me` (EM 2026-11-08: không hiện chính mình) | server bỏ hồ sơ gắn với session khỏi mọi sổ đọc + `404` cho `/staff/{id}`, `/evaluations/history` của mình; lương của mình chỉ ở `/me/staff` | `staff.rs::a_manager_reads_their_own_month_only_through_me` |
+| Từ chối nghỉ việc lộ dữ liệu khách (F24 liệt kê lịch hẹn) | chỉ sau `staff.manage`; chỉ ngày, giờ, tên khách như lịch; không SĐT / ghi chú | `the_roster_hires_ends_and_rehires_without_losing_history` (body `details` đúng tập key) |
 Không có Critical/High. Còn mở: quản lý thấy số tiền thưởng/phạt mình ghi (Q-S3); chủ spa gắn nhầm tài khoản → người đó thấy phiếu lương hồ sơ đó (có audit).
 
 ## Nhật ký ghi chú (`GET /notes`, secure review 2026-11-07, [spec §10](../product/specs/management-views.md))

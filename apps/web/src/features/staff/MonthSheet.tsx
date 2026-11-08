@@ -4,10 +4,10 @@ import { Icon } from "../../app/Icon";
 import { ErrorState, RowsSkeleton } from "../reports/ui";
 import { AdjustmentLogSection } from "./AdjustmentsTab";
 import { adjustmentsQuery, attendanceQuery, reviewsQuery, type StaffReviews, type StaffSheet } from "./api";
-import { STATUS_CODE, STATUS_LABEL, STATUS_WORD, daysOf, weekdayShort } from "./labels";
+import { STATUS_LABEL, daysOf, weekdayShort } from "./labels";
 import { PersonDaySheet } from "./PersonDaySheet";
 import { cellOf, employedOn } from "./progress";
-import { ClosedBanner, dayLabel, vnd } from "./ui";
+import { AttendanceLegend, ClosedBanner, StatusMark, dayLabel, vnd } from "./ui";
 
 /**
  * "Bảng công tháng" (spec §10 US8): the sheet's month grid — rows = staff, columns = days, totals
@@ -119,7 +119,7 @@ export function MonthGrid({
                 Muộn
               </th>
               <th scope="col" className="total-col">
-                P/ĐX/K
+                Nghỉ
               </th>
               <th scope="col" className="total-col">
                 Chưa chấm
@@ -152,18 +152,19 @@ export function MonthGrid({
                         ) : !s.can_record ? (
                           // Decision C: the owner's to write; shown, not editable.
                           <span className={`att-cell att-${cell?.status ?? "none"}${cell && cell.late_minutes > 0 ? " is-late" : ""}`}>
-                            {cell ? STATUS_CODE[cell.status] : "–"}
+                            {cell ? <StatusMark status={cell.status} /> : <span aria-hidden="true">–</span>}
+                            <span className="sr-only">{cellText(s, d, cell)}</span>
                           </span>
                         ) : (
                           <button
                             type="button"
                             className={`att-cell att-${cell?.status ?? "none"}${cell && cell.late_minutes > 0 ? " is-late" : ""}`}
-                            aria-label={`${cell && cell.status !== "present" ? `${STATUS_CODE[cell.status]}, ` : ""}${s.full_name}, ${dayLabel(d)}: ${cell ? STATUS_LABEL[cell.status] : "chưa chấm"}${cell && cell.late_minutes > 0 ? `, muộn ${String(cell.late_minutes)} phút` : ""}`}
+                            aria-label={cellText(s, d, cell)}
                             onClick={() => {
                               onCell(s, d);
                             }}
                           >
-                            {cell ? STATUS_CODE[cell.status] : "–"}
+                            {cell ? <StatusMark status={cell.status} /> : "–"}
                           </button>
                         )}
                       </td>
@@ -174,7 +175,7 @@ export function MonthGrid({
                     {s.totals.late_count > 0 ? `${String(s.totals.late_count)} lần / ${String(s.totals.late_minutes)}′` : "–"}
                   </td>
                   <td className="total-col">
-                    {s.totals.leave_p}/{s.totals.leave_dx}/{s.totals.absent_k}
+                    <LeaveCounts totals={s.totals} />
                   </td>
                   <td className={`total-col${s.totals.unrecorded > 0 ? " text-danger" : ""}`}>{s.totals.unrecorded || "–"}</td>
                   {reviewsOf && (
@@ -188,10 +189,38 @@ export function MonthGrid({
           </tbody>
         </table>
       </div>
-      <p className="text-sm text-text-muted">
-        ✓ đi làm · P nghỉ có phép · ĐX nghỉ đột xuất · K nghỉ không phép · – chưa chấm · gạch đỏ dưới ô: đi muộn. Bấm một ô để sửa.
-      </p>
+      <AttendanceLegend late="underline" />
+      <p className="text-sm text-text-muted">Bấm một ô để sửa.</p>
     </div>
+  );
+}
+
+/** A cell's name in words: who, which day, the status and minutes late. */
+function cellText(s: StaffSheet, d: string, cell: ReturnType<typeof cellOf>): string {
+  const late = cell && cell.late_minutes > 0 ? `, muộn ${String(cell.late_minutes)} phút` : "";
+  return `${s.full_name}, ${dayLabel(d)}: ${cell ? STATUS_LABEL[cell.status] : "chưa chấm"}${late}`;
+}
+
+/** The month's days off by kind, each as its mark and count ("–" when none), named in words. */
+function LeaveCounts({ totals }: { totals: StaffSheet["totals"] }) {
+  const kinds = (
+    [
+      ["leave_p", totals.leave_p, "có phép"],
+      ["leave_dx", totals.leave_dx, "đột xuất"],
+      ["absent_k", totals.absent_k, "không phép"],
+    ] as const
+  ).filter(([, n]) => n > 0);
+  if (kinds.length === 0) return <>–</>;
+  return (
+    <span className="leave-counts">
+      {kinds.map(([st, n, word]) => (
+        <span key={st} className={`leave-count att-${st}`}>
+          <StatusMark status={st} className="size-3.5" />
+          {n}
+          <span className="sr-only"> {word}</span>
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -241,9 +270,9 @@ function PersonDays({
                   {cell && (
                     <p>
                       <span className={`att-cell att-${cell.status}`} aria-hidden="true">
-                        {STATUS_CODE[cell.status]}
+                        <StatusMark status={cell.status} />
                       </span>{" "}
-                      {STATUS_WORD[cell.status]}
+                      {STATUS_LABEL[cell.status]}
                       {times && ` · ${times}`}
                       {cell.late_minutes > 0 && <span className="text-danger"> · muộn {cell.late_minutes} phút</span>}
                       {cell.note && <span className="block text-text-muted">{cell.note}</span>}

@@ -1,14 +1,6 @@
 import { useRef, type KeyboardEvent } from "react";
-import { Icon, type IconName } from "../../app/Icon";
-import { STATUSES, STATUS_HINT, STATUS_WORD, type AttendanceStatus } from "./labels";
-
-/** Each choice's own mark, beside its colour (the month calendar legend's colours, #76). */
-const STATUS_ICON: Record<AttendanceStatus, IconName> = {
-  present: "check",
-  leave_p: "calendar",
-  leave_dx: "alert",
-  absent_k: "x",
-};
+import { Icon } from "../../app/Icon";
+import { STATUSES, STATUS_HINT, STATUS_ICON, STATUS_LABEL, type AttendanceStatus } from "./labels";
 
 /**
  * One person's attendance for a day as four separate worded tiles (Đi làm / Nghỉ có phép / Nghỉ
@@ -93,7 +85,7 @@ export function AttendanceChoice({
               <span className="att-choice-mark" aria-hidden="true">
                 <Icon name={STATUS_ICON[st]} className="size-4" />
               </span>
-              <span className="att-choice-word">{STATUS_WORD[st]}</span>
+              <span className="att-choice-word">{STATUS_LABEL[st]}</span>
             </button>
           );
         })}

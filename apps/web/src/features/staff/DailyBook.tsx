@@ -22,7 +22,7 @@ import {
 import { AdjustmentForm } from "./AdjustmentsTab";
 import { BookCard } from "./BookCard";
 import { putAttendance, putReviews } from "./cache";
-import { STATUS_WORD, monthLabel, type AttendanceStatus } from "./labels";
+import { STATUS_LABEL, monthLabel, type AttendanceStatus } from "./labels";
 import { PersonDaySheet } from "./PersonDaySheet";
 import { employedOn, evaluationDueMonth, incompleteDays, missingOn } from "./progress";
 import { ClosedBanner, dayLabel, lastDayOrToday } from "./ui";
@@ -344,13 +344,13 @@ export function DailyBook({
                   setConfirmLeave(null);
                 }}
               >
-                Vẫn chấm {STATUS_WORD[confirmLeave.status]}
+                Vẫn chấm {STATUS_LABEL[confirmLeave.status]}
               </button>
             </>
           }
         >
           <p className="text-sm">
-            Quầy đã ghi lượt khách do {confirmLeave.staff.full_name} làm trong ngày này. Chấm “{STATUS_WORD[confirmLeave.status]}” thì ngày
+            Quầy đã ghi lượt khách do {confirmLeave.staff.full_name} làm trong ngày này. Chấm “{STATUS_LABEL[confirmLeave.status]}” thì ngày
             này tính là ngày nghỉ. Kiểm tra lại lượt khách hoặc chấm “Đi làm” nếu người này có đến làm.
           </p>
         </BottomSheet>

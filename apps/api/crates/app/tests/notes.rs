@@ -632,6 +632,84 @@ async fn every_kind_keeps_its_own_read_rule(pool: PgPool) -> TestResult {
     Ok(())
 }
 
+/// ADR-0015 (lead 2026-11-08): the HR notes about the caller's own linked profile (attendance,
+/// praise / complaints, bonus / penalty, monthly evaluation) are not in a manager's journal: they
+/// read their own through `/me/*`. The owner still reads every manager's. Notes the manager wrote
+/// about others stay.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_manager_does_not_read_notes_about_their_own_profile(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let manager_user: Uuid =
+        sqlx::query_scalar("SELECT id FROM app.user_account WHERE phone_e164 = '+84912000111'")
+            .fetch_one(&s.h.owner)
+            .await?;
+    let own = org::provisioning::add_staff(&s.h.owner, "vpyd", "Quản lý Hà", "Quản lý").await?;
+    sqlx::query("UPDATE app.staff SET user_id = $2 WHERE id = $1")
+        .bind(own)
+        .bind(manager_user)
+        .execute(&s.h.owner)
+        .await?;
+    let owner_user: Uuid =
+        sqlx::query_scalar("SELECT id FROM app.user_account WHERE phone_e164 = '+84905123456'")
+            .fetch_one(&s.h.owner)
+            .await?;
+    let day = today();
+    sqlx::query(
+        "INSERT INTO app.attendance_day (tenant_id, staff_id, work_date, status, note, recorded_by)
+         VALUES ($1, $2, $3, 'present', 'Quản lý đến muộn vì kẹt xe', $4)",
+    )
+    .bind(s.tenant)
+    .bind(own)
+    .bind(day)
+    .bind(owner_user)
+    .execute(&s.h.owner)
+    .await?;
+    sqlx::query(
+        "INSERT INTO app.staff_adjustment (id, tenant_id, staff_id, work_date, kind, amount, reason, created_by)
+         VALUES ($1, $2, $3, $4, 'penalty', 50000, 'Quên khóa két', $5)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(s.tenant)
+    .bind(own)
+    .bind(day)
+    .bind(owner_user)
+    .execute(&s.h.owner)
+    .await?;
+
+    let manager = s.notes(&s.manager, "").await;
+    assert_eq!(manager.status, StatusCode::OK, "{}", manager.body);
+    let text = texts(&manager.body);
+    for own_note in ["Quản lý đến muộn vì kẹt xe", "Quên khóa két"] {
+        assert!(
+            !text.iter().any(|t| t == own_note),
+            "manager must not see {own_note}"
+        );
+    }
+    assert!(
+        text.iter().any(|t| t == "Con ốm, nghỉ đột xuất"),
+        "notes about the people they look after stay"
+    );
+    // Filtering on their own profile still shows what they wrote about others, nothing about them.
+    let filtered = s.notes(&s.manager, &format!("?staff_id={own}")).await;
+    assert!(
+        !filtered.body["items"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|n| n["staff_id"] == own.to_string()),
+        "{}",
+        filtered.body
+    );
+    let owner = texts(&s.notes(&s.owner, "").await.body);
+    for own_note in ["Quản lý đến muộn vì kẹt xe", "Quên khóa két"] {
+        assert!(
+            owner.iter().any(|t| t == own_note),
+            "the owner sees {own_note}"
+        );
+    }
+    Ok(())
+}
+
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn filters_search_and_pages_with_a_cursor(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;

@@ -257,7 +257,8 @@ pub async fn days_in(
         .collect()
 }
 
-/// `GET /attendance?month=` (`attendance.record`): month × staff grid of everyone employed in it.
+/// `GET /attendance?month=` (`attendance.record`): month × staff grid of everyone employed in it,
+/// but the caller's own row unless they are the owner ([`RecordScope::lists`]).
 pub async fn sheet(
     pool: &PgPool,
     actor: &Actor,
@@ -276,7 +277,7 @@ pub async fn sheet(
     tx.commit().await?;
     let staff = profiles
         .iter()
-        .filter(|p| period::employed_in(p, month))
+        .filter(|p| period::employed_in(p, month) && scope.lists(p.id))
         .map(|p| {
             let days = all_days
                 .iter()

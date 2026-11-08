@@ -20,17 +20,18 @@ import type {
   Payslip,
   PayrollMonth,
   ReviewSheet,
+  StaffAccount,
   StaffProfile,
 } from "./api";
 import { mondayOf } from "../appointments/api";
-import { gridSpan, weekSummary } from "./myCalendar";
+import { focusMinute, gridSpan, weekSummary } from "./myCalendar";
 import type { EntryView } from "../appointments/api";
 import { countsFullValue, serviceWork, upsellWork } from "./payslipWork";
 import { dayTotals, shiftDay } from "./MyDaySheet";
 import { daysOf, monthLabel, percentOfBp, shiftMonth, weekdayShort } from "./labels";
 import { evaluationDueMonth, incompleteDays, missingOn } from "./progress";
 import { staffSearch } from "./search";
-import { managerWithoutLogin, tenureLabel } from "./roster";
+import { isManagerPosition, managerLoginWithoutProfile, managerWithoutLogin, tenureLabel } from "./roster";
 import { PayslipView } from "./PayrollTab";
 
 const MANAGER = ["catalog.read", "staff.read_basic", "staff.read", "attendance.record", "evaluation.record", "staff.read_own", "report.read"];
@@ -76,7 +77,8 @@ function sheet(options: ServeOptions = {}): AttendanceSheet {
         can_record: true,
         visit_days: [],
       },
-      // The signed-in manager's own row (decision C): the owner's to write.
+      // Another manager's row (decision C): the owner's to write. The signed-in manager's own
+      // row never comes: the server leaves it out of their books (EM 2026-11-08).
       {
         staff_id: "s-hoa",
         full_name: "Phạm Thị Hoa",
@@ -328,6 +330,10 @@ interface ServeOptions {
   leftOn?: string;
   /** Scorecards exist (Hoa's: only the owner scores it), and the month is closed for evaluations. */
   scored?: boolean;
+  /** `GET /staff/accounts` (owner). */
+  accounts?: StaffAccount[];
+  /** `POST /staff/{id}/end` refuses: bookings still assigned (F24). */
+  endRefused?: boolean;
 }
 
 /** A scorecard as `GET /evaluations` / `/me/staff` send it. */
@@ -444,8 +450,16 @@ function serve(permissions: string[], options: ServeOptions = {}) {
       );
     }
     if (p.startsWith("/staff/profiles")) return ok(roster(permissions.includes("staff.manage")));
-    if (p === "/staff/accounts") return ok([]);
+    if (p === "/staff/accounts") return ok(options.accounts ?? []);
     if (/^\/staff\/[^/]+\/history$/.test(p)) return ok([]);
+    if (/^\/staff\/[^/]+\/end$/.test(p) && method === "POST" && options.endRefused)
+      return ok(
+        {
+          code: "staff.has_upcoming_bookings",
+          details: { bookings: [{ id: "a-1", date: "2026-11-20", time: "10:00", customer: "Nguyễn Thị Hằng" }], more: true },
+        },
+        409,
+      );
     if (/^\/staff\/[^/]+\/end$/.test(p) && method === "POST") return ok(roster(true)[0]);
     if (p === "/staff") return ok([]);
     return ok([]);
@@ -530,8 +544,24 @@ describe("staff helpers", () => {
     expect(item(["catalog.read"])).toBeUndefined();
     const mine = (perms: string[]) => items(perms).find((i) => i.to === "/khach-cua-toi");
     expect(mine(TECH)?.label).toBe("Khách của tôi");
-    expect(mine([...MANAGER, "visit.read"])).toBeUndefined();
+    // EM 2026-11-08: a manager reads their own month and customers the way a technician does;
+    // the owner keeps everyone in the books and has neither entry.
+    const own = (perms: string[]) => items(perms).find((i) => i.to === "/nhan-vien/cua-toi");
+    expect(own(MANAGER)?.label).toBe("Công và lương của tôi");
+    expect(mine([...MANAGER, "visit.read"])?.label).toBe("Khách của tôi");
+    expect(own(OWNER)).toBeUndefined();
+    expect(mine([...OWNER, "visit.read"])).toBeUndefined();
+    expect(own(TECH)).toBeUndefined();
+    expect(item(MANAGER)?.exact).toBe(true);
     expect(tabsFor(navFor(ME(TECH))).map((t) => t.to)).toEqual(["/", "/nhan-vien", "/khach-cua-toi"]);
+  });
+
+  it("knows a manager's position in any spelling, and an unlinked manager login", () => {
+    for (const p of ["Quản lý", "quản lý ca", "QUẢN LÝ", "Quan ly", "Qua\u0309n ly\u0301"]) expect(isManagerPosition(p)).toBe(true);
+    for (const p of ["Kỹ thuật viên", "KTV", "Lễ tân"]) expect(isManagerPosition(p)).toBe(false);
+    expect(managerLoginWithoutProfile({ is_manager: true, staff_id: null })).toBe(true);
+    expect(managerLoginWithoutProfile({ is_manager: true, staff_id: "s-hoa" })).toBe(false);
+    expect(managerLoginWithoutProfile({ is_manager: false, staff_id: null })).toBe(false);
   });
 });
 
@@ -657,13 +687,30 @@ describe("/nhan-vien", () => {
     expect(within(grid).getByRole("rowheader", { name: "Lê Thị Lan" })).toBeInTheDocument();
     expect(within(grid).getAllByRole("columnheader")).toHaveLength(1 + daysOf(month).length + 5);
     expect(within(grid).getByRole("button", { name: /Lê Thị Lan, .*: Đi làm, muộn 12 phút/ })).toBeInTheDocument();
-    // Decision C: the manager's own row is read-only, with the reason.
+    // Decision C: another manager's row is read-only, with the reason.
     expect(within(grid).getByRole("rowheader", { name: /Phạm Thị Hoa/ })).toHaveTextContent("Chủ spa chấm");
     expect(within(grid).queryByRole("button", { name: /Phạm Thị Hoa/ })).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Sổ thưởng, phạt của tháng" })).toBeInTheDocument();
+    // F20: no P / ĐX / K codes — a "Nghỉ" total, and a legend of the cells' own marks in words.
+    expect(within(grid).getByRole("columnheader", { name: "Nghỉ" })).toBeInTheDocument();
+    expect(screen.queryByText(/P\/ĐX\/K|ĐX/)).not.toBeInTheDocument();
+    const legend = screen.getByRole("list", { name: "Chú thích" });
+    expect(within(legend).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "Đi làm",
+      "Nghỉ có phép",
+      "Nghỉ đột xuất",
+      "Nghỉ không phép",
+      "–Chưa chấm",
+      "Gạch đỏ dưới ô: đi muộn",
+    ]);
+    // "Giờ & ghi chú" (a cell): the options in words, no codes in brackets.
+    await userEvent.click(within(grid).getByRole("button", { name: /Lê Thị Lan, .*: Đi làm, muộn 12 phút/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("radio", { name: /^Nghỉ có phép/ })).toBeInTheDocument();
+    expect(within(dialog).queryByText(/\((P|ĐX|K)\)/)).not.toBeInTheDocument();
   });
 
-  it("decision C: a manager's own row has no write controls, only the reason", async () => {
+  it("decision C: another manager's row has no write controls, only the reason", async () => {
     const spy = serve(MANAGER);
     at("/nhan-vien");
     const group = await waitFor(() => card("s-hoa").getByRole("radiogroup"));
@@ -901,6 +948,10 @@ describe("/nhan-vien", () => {
     expect(within(calendar).getAllByRole("button")).toHaveLength(pastDays);
     const late = within(calendar).getByRole("button", { name: /Đi làm, muộn 12 phút/ });
     expect(late).toHaveTextContent("12′");
+    // F20: the days off in words, never "Nghỉ P / ĐX" or "Nghỉ K".
+    const work = screen.getByRole("region", { name: "Ngày công" });
+    for (const label of ["Nghỉ có phép", "Nghỉ đột xuất", "Nghỉ không phép"]) expect(within(work).getAllByText(label).length).toBeGreaterThan(0);
+    expect(within(work).queryByText(/Nghỉ P|Nghỉ K|ĐX/)).not.toBeInTheDocument();
     const paths = requests(spy).map((r) => new URL(r.url, "http://app.test").pathname);
     expect(paths.some((p) => p.endsWith("/attendance") || p.endsWith("/payroll"))).toBe(false);
   });
@@ -1061,6 +1112,20 @@ describe("/khach-cua-toi", () => {
     expect(await screen.findByRole("group", { name: /Lịch của tôi ngày/ })).toBeInTheDocument();
   });
 
+  it("opens the grid on now today, on opening hours another day (F22)", () => {
+    const at = (start: number, minutes = 60) => ({ start, minutes }) as EntryView;
+    const base = { gridOpens: 120, gridCloses: 1260, opens: 540, now: 900, showsToday: false, shown: [at(120), at(600)] };
+    // A 02:00 visit widens the grid; another day still opens at 09:00.
+    expect(focusMinute(base)).toBe(540);
+    // Today: an hour before now (15:00 → 14:00).
+    expect(focusMinute({ ...base, showsToday: true })).toBe(840);
+    // Only work before opening: its first block.
+    expect(focusMinute({ ...base, shown: [at(150)] })).toBeNull();
+    expect(focusMinute({ ...base, gridOpens: 0, shown: [at(185)] })).toBe(180);
+    // The grid already starts there: nothing to scroll past.
+    expect(focusMinute({ ...base, gridOpens: 540, shown: [at(600)] })).toBeNull();
+  });
+
   it("draws the technician's own work outside opening hours instead of hiding it", () => {
     const at = (start: number, minutes: number) => ({ start, minutes }) as EntryView;
     // Inside 09:00–21:00: the spa's hours.
@@ -1117,7 +1182,7 @@ describe("Nhân sự (roster)", () => {
     const spy = serve(OWNER);
     at("/nhan-vien?tab=profiles");
     const table = await screen.findByRole("table", { name: "Danh sách nhân sự" });
-    expect(within(table).getByText("Chưa gắn: khi ghi công được tính như KTV")).toBeInTheDocument();
+    expect(within(table).getByText("Chưa gắn: chỉ chủ spa ghi công cho hồ sơ này")).toBeInTheDocument();
     await userEvent.click(within(table).getByRole("button", { name: "Lê Thị Lan" }));
     const sheet = await screen.findByRole("dialog", { name: "Lê Thị Lan" });
     expect(within(sheet).getByRole("heading", { name: "Tài khoản đăng nhập" })).toBeInTheDocument();
@@ -1136,5 +1201,63 @@ describe("Nhân sự (roster)", () => {
     });
     const post = requests(spy).find((r) => r.url.endsWith("/staff/s-lan/end"));
     expect(post?.body).toEqual({ ended_on: today, reason: "Chuyển công tác", lock_login: true });
+  });
+
+  it("owner: a refusal for future bookings lists them, each opening its day of the calendar (F24)", async () => {
+    serve(OWNER, { endRefused: true });
+    at("/nhan-vien?tab=profiles");
+    const table = await screen.findByRole("table", { name: "Danh sách nhân sự" });
+    await userEvent.click(within(table).getByRole("button", { name: "Lê Thị Lan" }));
+    const sheet = await screen.findByRole("dialog", { name: "Lê Thị Lan" });
+    await userEvent.click(within(sheet).getByRole("button", { name: "Cho nghỉ việc" }));
+    const confirm = await screen.findByRole("dialog", { name: "Cho Lê Thị Lan nghỉ việc" });
+    await userEvent.type(within(confirm).getByLabelText("Lý do nghỉ việc"), "Chuyển công tác");
+    await userEvent.click(within(confirm).getByRole("button", { name: "Xác nhận nghỉ việc" }));
+    const list = await within(confirm).findByRole("list", { name: "Lịch hẹn còn gán cho nhân viên" });
+    const link = within(list).getByRole("link", { name: "20/11/2026 lúc 10:00 · Nguyễn Thị Hằng" });
+    expect(link.getAttribute("href")).toBe("/quay?view=lich&ngay=2026-11-20&ktv=s-lan");
+    expect(within(confirm).getByText("Còn lịch khác sau các lịch trên.")).toBeInTheDocument();
+  });
+
+  it("owner: warns about managers whose profile and login are not linked (F19), the manager never", async () => {
+    const accounts: StaffAccount[] = [
+      { user_id: "u-owner", full_name: "Chủ Spa", roles: ["Chủ spa"], staff_id: null, is_manager: false },
+      { user_id: "u-ha", full_name: "Quản lý Hà", roles: ["Quản lý"], staff_id: null, is_manager: true },
+      { user_id: "u-lan", full_name: "KTV Lan", roles: ["Kỹ thuật viên"], staff_id: "s-lan", is_manager: false },
+    ];
+    serve(OWNER, { accounts });
+    at("/nhan-vien");
+    const warning = await screen.findByRole("status", { name: "Chưa gắn tài khoản quản lý với hồ sơ" });
+    expect(within(warning).getByText("Phạm Thị Hoa")).toBeInTheDocument();
+    expect(within(warning).getByText("Quản lý Hà")).toBeInTheDocument();
+    expect(within(warning).queryByText("Chủ Spa")).not.toBeInTheDocument();
+    await userEvent.click(within(warning).getByRole("button", { name: "Mở Nhân sự" }));
+    expect(await screen.findByRole("table", { name: "Danh sách nhân sự" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Chưa gắn tài khoản quản lý với hồ sơ" })).toBeInTheDocument();
+  });
+
+  it("manager: no link warning and no request for the logins (owner's data)", async () => {
+    const spy = serve(MANAGER, { accounts: [{ user_id: "u-ha", full_name: "Quản lý Hà", roles: [], staff_id: null, is_manager: true }] });
+    at("/nhan-vien?tab=profiles");
+    await screen.findByRole("table", { name: "Danh sách nhân sự" });
+    expect(screen.queryByRole("status", { name: "Chưa gắn tài khoản quản lý với hồ sơ" })).not.toBeInTheDocument();
+    expect(requests(spy).some((r) => r.url.includes("/staff/accounts"))).toBe(false);
+  });
+});
+
+describe("Công và lương của tôi for a manager (EM 2026-11-08)", () => {
+  it("opens the manager's own month from /me/* only, beside the staff books", async () => {
+    const spy = serve(MANAGER);
+    at("/nhan-vien/cua-toi");
+    expect(await screen.findByRole("heading", { level: 1, name: "Công và lương của tôi" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Tổng quan tháng" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    const paths = requests(spy).map((r) => new URL(r.url, "http://app.test").pathname);
+    expect(paths).toContain("/api/v1/me/staff");
+    expect(paths.some((p) => /\/(attendance|daily-reviews|evaluations|adjustments|payroll|staff\/profiles)$/.test(p))).toBe(false);
+    // The nav marks the own month, not the books.
+    const nav = screen.getAllByRole("navigation").find((n) => within(n).queryByRole("link", { name: "Nhân viên" }));
+    expect(nav && within(nav).getByRole("link", { name: "Công và lương của tôi" })).toHaveAttribute("aria-current", "page");
+    expect(nav && within(nav).getByRole("link", { name: "Nhân viên" })).not.toHaveAttribute("aria-current");
   });
 });

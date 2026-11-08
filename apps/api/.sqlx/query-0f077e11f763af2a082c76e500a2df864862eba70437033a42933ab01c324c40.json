@@ -1,0 +1,68 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.user_id, u.full_name,\n                  COALESCE(array_agg(r.name ORDER BY r.name) FILTER (WHERE r.id IS NOT NULL), '{}') AS \"roles!\",\n                  (SELECT s.id FROM app.staff s WHERE s.tenant_id = m.tenant_id AND s.user_id = m.user_id) AS staff_id,\n                  EXISTS (SELECT 1 FROM app.membership_role smr\n                          JOIN app.role_permission rp ON rp.tenant_id = smr.tenant_id AND rp.role_id = smr.role_id\n                          WHERE smr.tenant_id = m.tenant_id AND smr.membership_id = m.id\n                            AND rp.permission IN ('attendance.record', 'evaluation.record')) AS \"records_staff!\",\n                  EXISTS (SELECT 1 FROM app.membership_role smr\n                          JOIN app.role_permission rp ON rp.tenant_id = smr.tenant_id AND rp.role_id = smr.role_id\n                          WHERE smr.tenant_id = m.tenant_id AND smr.membership_id = m.id\n                            AND rp.permission = 'staff.manage') AS \"manages_staff!\"\n           FROM app.membership m\n           JOIN app.user_account u ON u.id = m.user_id\n           LEFT JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id\n           LEFT JOIN app.role r ON r.tenant_id = mr.tenant_id AND r.id = mr.role_id\n           WHERE m.tenant_id = $1 AND m.status = 'active'\n           GROUP BY m.tenant_id, m.id, m.user_id, u.full_name\n           ORDER BY u.full_name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.membership",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "full_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.user_account",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "roles!",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "staff_id",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "records_staff!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "manages_staff!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "0f077e11f763af2a082c76e500a2df864862eba70437033a42933ab01c324c40"
+}

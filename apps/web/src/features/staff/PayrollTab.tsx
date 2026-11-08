@@ -187,7 +187,7 @@ export function PayslipView({ slip, closed, showFlags = true }: { slip: Payslip;
         <Row
           label="Trừ ngày nghỉ"
           value={slip.leave_deduction > 0 ? `−${vnd(slip.leave_deduction)}` : "0đ"}
-          hint={`Nghỉ P ${String(a.leave_p)} · ĐX ${String(a.leave_dx)} · K ${String(a.absent_k)}; được nghỉ ${String(slip.free_leave_days)} ngày; trừ ${String(slip.deducted_leave_days)} ngày`}
+          hint={`Nghỉ có phép ${String(a.leave_p)} · đột xuất ${String(a.leave_dx)} · không phép ${String(a.absent_k)}; được nghỉ ${String(slip.free_leave_days)} ngày; trừ ${String(slip.deducted_leave_days)} ngày`}
         />
         <Row
           label="Trừ đi muộn"
@@ -349,7 +349,7 @@ function RulesForm({ initial, onDone }: { initial: PayrollRules; onDone: () => v
             setR({ ...r, free_leave_codes: e.target.checked ? ["leave_p", "leave_dx", "absent_k"] : ["leave_p", "leave_dx"] });
           }}
         />
-        <span>Nghỉ không phép (K) cũng được tính vào số ngày không trừ lương (như file Excel)</span>
+        <span>Nghỉ không phép cũng được tính vào số ngày không trừ lương (như file Excel)</span>
       </label>
       <div className="grid gap-4 sm:grid-cols-3">
         <label className="filter-field">
