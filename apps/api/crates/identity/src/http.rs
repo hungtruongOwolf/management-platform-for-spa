@@ -256,7 +256,10 @@ where
         .route("/auth/mfa/enroll/start", post(mfa_enroll_start))
         .route("/auth/mfa/enroll/confirm", post(mfa_enroll_confirm))
         .route("/auth/password", post(change_password))
-        .route("/auth/password-reset-requests", post(request_password_reset));
+        .route(
+            "/auth/password-reset-requests",
+            post(request_password_reset),
+        );
     let me_routes = Router::new().route("/me", get(me));
     (auth, me_routes)
 }
@@ -373,7 +376,9 @@ pub async fn request_password_reset(
     Json(body): Json<PasswordResetRequestBody>,
 ) -> Result<Response, AppError> {
     if body.phone.trim().is_empty() {
-        return Err(AppError::Validation(vec![FieldError::new("phone", "required")]));
+        return Err(AppError::Validation(vec![FieldError::new(
+            "phone", "required",
+        )]));
     }
     service::request_password_reset(&pool, body.phone.trim(), &meta).await?;
     let mut response = (

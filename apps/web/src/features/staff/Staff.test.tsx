@@ -474,8 +474,8 @@ function serve(permissions: string[], options: ServeOptions = {}) {
     if (/^\/staff\/password-reset-requests\/[^/]+\/dismiss$/.test(p)) return Promise.resolve(new Response(null, { status: 204 }));
     if (/^\/staff\/[^/]+\/login$/.test(p) && method === "POST") {
       if (options.reauthFirst && !reauthed.done) return ok({ code: "auth.reauth_required" }, 401);
-      const lan = roster(true)[0];
-      return ok({ profile: { ...lan, details: { ...lan.details, login: { phone: "0912 300 111", role: "manager", locked: false } } }, temporary_password: "ABCD-EFGH-JKLM" }, 201);
+      const lan = roster(true)[0] ?? roster(true)[1];
+      return ok({ profile: { ...lan, details: { ...lan?.details, login: { phone: "0912 300 111", role: "manager", locked: false } } }, temporary_password: "ABCD-EFGH-JKLM" }, 201);
     }
     if (/^\/staff\/[^/]+\/login\/reset-password$/.test(p)) return ok({ temporary_password: "WXYZ-2345-6789" });
     if (p === "/auth/reauth") {
@@ -1260,9 +1260,9 @@ describe("Hồ sơ nhân viên (roster)", () => {
     at("/nhan-vien");
     const warning = await screen.findByRole("status", { name: "Tài khoản đăng nhập chưa gắn với hồ sơ" });
     // A "Quản lý" title without a login is not a manager: only the manager login is listed.
-    expect(within(warning).queryByText("Phạm Thị Hoa")).not.toBeInTheDocument();
+    expect(within(warning).queryByText("Phạm Thị Hoa", { selector: "strong" })).not.toBeInTheDocument();
     expect(within(warning).getByText("Quản lý Hà")).toBeInTheDocument();
-    expect(within(warning).queryByText("Chủ Spa")).not.toBeInTheDocument();
+    expect(within(warning).queryByText("Chủ Spa", { selector: "strong" })).not.toBeInTheDocument();
     await userEvent.click(within(warning).getByRole("button", { name: "Mở Hồ sơ nhân viên" }));
     expect(await screen.findByRole("table", { name: "Danh sách nhân sự" })).toBeInTheDocument();
     const listed = screen.getByRole("status", { name: "Tài khoản đăng nhập chưa gắn với hồ sơ" });

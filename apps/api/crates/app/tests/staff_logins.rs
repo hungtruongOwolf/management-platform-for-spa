@@ -8,11 +8,11 @@ use common::{
     Harness, OWNER_PHONE, PASSWORD, Reply, TestResult, add_member, call, call_with_headers,
     current_code, forget_used_step, harness, session_for,
 };
-use std::sync::atomic::{AtomicU32, Ordering};
 use identity::SystemRole;
 use identity::provisioning::create_tenant;
 use serde_json::{Value, json};
 use sqlx::PgPool;
+use std::sync::atomic::{AtomicU32, Ordering};
 use uuid::Uuid;
 
 const NEW_PHONE: &str = "0912300111";
@@ -33,8 +33,22 @@ const TECH_PHONE: &str = "0912300444";
 
 async fn spa(pool: PgPool) -> Result<Spa, Box<dyn std::error::Error>> {
     let h = harness(pool).await?;
-    add_member(&h.owner, "vpyd", MANAGER_PHONE, "Quản lý Hoa", SystemRole::Manager).await?;
-    add_member(&h.owner, "vpyd", TECH_PHONE, "KTV Lan", SystemRole::Technician).await?;
+    add_member(
+        &h.owner,
+        "vpyd",
+        MANAGER_PHONE,
+        "Quản lý Hoa",
+        SystemRole::Manager,
+    )
+    .await?;
+    add_member(
+        &h.owner,
+        "vpyd",
+        TECH_PHONE,
+        "KTV Lan",
+        SystemRole::Technician,
+    )
+    .await?;
     let owner = session_for(&h, OWNER_PHONE).await;
     let manager = session_for(&h, MANAGER_PHONE).await;
     let tech = session_for(&h, TECH_PHONE).await;
@@ -66,7 +80,14 @@ fn id_of(r: &Reply) -> Uuid {
 
 impl Spa {
     async fn version(&self, staff: Uuid) -> String {
-        let p = call(&self.h.app, "GET", &format!("/staff/{staff}"), Some(&self.owner), None).await;
+        let p = call(
+            &self.h.app,
+            "GET",
+            &format!("/staff/{staff}"),
+            Some(&self.owner),
+            None,
+        )
+        .await;
         format!("\"{}\"", p.body["version"].as_i64().unwrap_or_default())
     }
 
@@ -95,11 +116,10 @@ impl Spa {
     }
 
     async fn audit_text(&self) -> Result<String, sqlx::Error> {
-        let rows: Vec<Value> = sqlx::query_scalar(
-            "SELECT to_jsonb(a) FROM app.audit_log a ORDER BY at",
-        )
-        .fetch_all(&self.h.owner)
-        .await?;
+        let rows: Vec<Value> =
+            sqlx::query_scalar("SELECT to_jsonb(a) FROM app.audit_log a ORDER BY at")
+                .fetch_all(&self.h.owner)
+                .await?;
         Ok(Value::Array(rows).to_string())
     }
 }
@@ -114,11 +134,25 @@ fn fresh_ip() -> String {
 
 async fn auth_call(app: &axum::Router, path: &str, session: Option<&str>, body: Value) -> Reply {
     let ip = fresh_ip();
-    call_with_headers(app, "POST", path, session, Some(body), &[("X-Forwarded-For", &ip)]).await
+    call_with_headers(
+        app,
+        "POST",
+        path,
+        session,
+        Some(body),
+        &[("X-Forwarded-For", &ip)],
+    )
+    .await
 }
 
 async fn login(app: &axum::Router, phone: &str, password: &str) -> Reply {
-    auth_call(app, "/auth/login", None, json!({"phone": phone, "password": password})).await
+    auth_call(
+        app,
+        "/auth/login",
+        None,
+        json!({"phone": phone, "password": password}),
+    )
+    .await
 }
 
 async fn change(app: &axum::Router, session: &str, current: &str, new: &str) -> Reply {
@@ -137,10 +171,15 @@ async fn change(app: &axum::Router, session: &str, current: &str, new: &str) -> 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn the_owner_onboards_a_manager_who_must_set_their_own_password(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    let created = s.create_login(&s.owner, s.ha, "0912 300 111", "manager").await;
+    let created = s
+        .create_login(&s.owner, s.ha, "0912 300 111", "manager")
+        .await;
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
     assert_eq!(
-        created.headers.get("cache-control").and_then(|v| v.to_str().ok()),
+        created
+            .headers
+            .get("cache-control")
+            .and_then(|v| v.to_str().ok()),
         Some("no-store")
     );
     let temporary = created.body["temporary_password"]
@@ -155,7 +194,10 @@ async fn the_owner_onboards_a_manager_who_must_set_their_own_password(pool: PgPo
     assert_eq!(profile["details"]["login"]["phone"], "0912 300 111");
     // Never again: not in the profile, not in the roster.
     for path in [format!("/staff/{}", s.ha), "/staff/profiles".to_owned()] {
-        let body = call(&s.h.app, "GET", &path, Some(&s.owner), None).await.body.to_string();
+        let body = call(&s.h.app, "GET", &path, Some(&s.owner), None)
+            .await
+            .body
+            .to_string();
         assert!(!body.contains(&temporary), "{path}");
     }
 
@@ -169,7 +211,10 @@ async fn the_owner_onboards_a_manager_who_must_set_their_own_password(pool: PgPo
         let r = call(&s.h.app, "GET", path, Some(&pending), None).await;
         assert_eq!(
             (r.status, r.body["code"].clone()),
-            (StatusCode::FORBIDDEN, json!("auth.password_change_required")),
+            (
+                StatusCode::FORBIDDEN,
+                json!("auth.password_change_required")
+            ),
             "{path}"
         );
     }
@@ -190,7 +235,9 @@ async fn the_owner_onboards_a_manager_who_must_set_their_own_password(pool: PgPo
     let fresh = changed.session().unwrap_or_default();
     assert_ne!(fresh, pending, "a new session for this browser");
     assert_eq!(
-        call(&s.h.app, "GET", "/me", Some(&pending), None).await.status,
+        call(&s.h.app, "GET", "/me", Some(&pending), None)
+            .await
+            .status,
         StatusCode::UNAUTHORIZED,
         "the temporary session ended"
     );
@@ -234,7 +281,14 @@ async fn only_the_owner_looks_after_logins(pool: PgPool) -> TestResult {
         )
         .await;
         assert_eq!(role.status, StatusCode::FORBIDDEN);
-        let list = call(&s.h.app, "GET", "/staff/password-reset-requests", Some(who), None).await;
+        let list = call(
+            &s.h.app,
+            "GET",
+            "/staff/password-reset-requests",
+            Some(who),
+            None,
+        )
+        .await;
         assert_eq!(list.status, StatusCode::FORBIDDEN);
         let dismiss = call(
             &s.h.app,
@@ -247,7 +301,14 @@ async fn only_the_owner_looks_after_logins(pool: PgPool) -> TestResult {
         assert_eq!(dismiss.status, StatusCode::FORBIDDEN);
     }
     create_tenant(&s.h.owner, "khac", "Spa khác", "Huế").await?;
-    add_member(&s.h.owner, "khac", OTHER_OWNER_PHONE, "Chủ spa khác", SystemRole::Owner).await?;
+    add_member(
+        &s.h.owner,
+        "khac",
+        OTHER_OWNER_PHONE,
+        "Chủ spa khác",
+        SystemRole::Owner,
+    )
+    .await?;
     let other = session_for(&s.h, OTHER_OWNER_PHONE).await;
     let r = call_with_headers(
         &s.h.app,
@@ -260,7 +321,14 @@ async fn only_the_owner_looks_after_logins(pool: PgPool) -> TestResult {
     .await;
     assert_eq!(r.status, StatusCode::NOT_FOUND, "{}", r.body);
     assert_eq!(s.reset(&other, s.ha).await.status, StatusCode::NOT_FOUND);
-    let anonymous = call(&s.h.app, "GET", "/staff/password-reset-requests", None, None).await;
+    let anonymous = call(
+        &s.h.app,
+        "GET",
+        "/staff/password-reset-requests",
+        None,
+        None,
+    )
+    .await;
     assert_eq!(anonymous.status, StatusCode::UNAUTHORIZED);
     Ok(())
 }
@@ -270,7 +338,9 @@ async fn only_the_owner_looks_after_logins(pool: PgPool) -> TestResult {
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn a_login_is_created_only_for_a_new_phone_and_a_working_profile(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    let taken = s.create_login(&s.owner, s.ha, MANAGER_PHONE, "technician").await;
+    let taken = s
+        .create_login(&s.owner, s.ha, MANAGER_PHONE, "technician")
+        .await;
     assert_eq!(taken.body["code"], "account.phone_taken", "{}", taken.body);
     let bad = s.create_login(&s.owner, s.ha, "12345", "technician").await;
     assert_eq!(bad.body["errors"][0]["field"], "phone", "{}", bad.body);
@@ -286,10 +356,14 @@ async fn a_login_is_created_only_for_a_new_phone_and_a_working_profile(pool: PgP
     )
     .await;
     assert_eq!(stale.status, StatusCode::PRECONDITION_FAILED);
-    let ok = s.create_login(&s.owner, s.ha, NEW_PHONE, "technician").await;
+    let ok = s
+        .create_login(&s.owner, s.ha, NEW_PHONE, "technician")
+        .await;
     assert_eq!(ok.status, StatusCode::CREATED, "{}", ok.body);
     assert_eq!(ok.body["profile"]["position"], "Kỹ thuật viên");
-    let twice = s.create_login(&s.owner, s.ha, "0912300999", "technician").await;
+    let twice = s
+        .create_login(&s.owner, s.ha, "0912300999", "technician")
+        .await;
     assert_eq!(twice.body["code"], "staff.account_exists");
     // Nothing half-made on a refusal: one account for the phone, linked once.
     let accounts: i64 = sqlx::query_scalar(
@@ -306,30 +380,57 @@ async fn a_login_is_created_only_for_a_new_phone_and_a_working_profile(pool: PgP
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn an_owner_reset_ends_every_session_and_forces_a_change(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    let created = s.create_login(&s.owner, s.ha, NEW_PHONE, "technician").await;
-    let temporary = created.body["temporary_password"].as_str().unwrap_or_default().to_owned();
-    let first = login(&s.h.app, NEW_PHONE, &temporary).await.session().unwrap_or_default();
+    let created = s
+        .create_login(&s.owner, s.ha, NEW_PHONE, "technician")
+        .await;
+    let temporary = created.body["temporary_password"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    let first = login(&s.h.app, NEW_PHONE, &temporary)
+        .await
+        .session()
+        .unwrap_or_default();
     let session = change(&s.h.app, &first, &temporary, OWN_PASSWORD)
         .await
         .session()
         .unwrap_or_default();
-    assert_eq!(call(&s.h.app, "GET", "/me", Some(&session), None).await.status, StatusCode::OK);
+    assert_eq!(
+        call(&s.h.app, "GET", "/me", Some(&session), None)
+            .await
+            .status,
+        StatusCode::OK
+    );
 
     let reset = s.reset(&s.owner, s.ha).await;
     assert_eq!(reset.status, StatusCode::OK, "{}", reset.body);
     assert_eq!(
-        reset.headers.get("cache-control").and_then(|v| v.to_str().ok()),
+        reset
+            .headers
+            .get("cache-control")
+            .and_then(|v| v.to_str().ok()),
         Some("no-store")
     );
-    let second = reset.body["temporary_password"].as_str().unwrap_or_default().to_owned();
+    let second = reset.body["temporary_password"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
     assert_ne!(second, temporary);
     assert_eq!(
-        call(&s.h.app, "GET", "/me", Some(&session), None).await.status,
+        call(&s.h.app, "GET", "/me", Some(&session), None)
+            .await
+            .status,
         StatusCode::UNAUTHORIZED,
         "sessions revoked"
     );
-    assert_eq!(login(&s.h.app, NEW_PHONE, OWN_PASSWORD).await.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(login(&s.h.app, NEW_PHONE, &second).await.body["next"], "password_change");
+    assert_eq!(
+        login(&s.h.app, NEW_PHONE, OWN_PASSWORD).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        login(&s.h.app, NEW_PHONE, &second).await.body["next"],
+        "password_change"
+    );
     assert!(!s.audit_text().await?.contains(&second));
 
     // The owner's own profile and login: protected.
@@ -346,11 +447,17 @@ async fn an_owner_reset_ends_every_session_and_forces_a_change(pool: PgPool) -> 
         .bind(mine)
         .execute(&s.h.owner)
         .await?;
-    assert_eq!(s.reset(&s.owner, mine).await.body["code"], "account.owner_protected");
+    assert_eq!(
+        s.reset(&s.owner, mine).await.body["code"],
+        "account.owner_protected"
+    );
     // A login that also belongs to another spa: that spa's access is not ours to reset.
     create_tenant(&s.h.owner, "khac", "Spa khác", "Huế").await?;
     add_member(&s.h.owner, "khac", NEW_PHONE, "Hà", SystemRole::Technician).await?;
-    assert_eq!(s.reset(&s.owner, s.ha).await.body["code"], "account.other_spa");
+    assert_eq!(
+        s.reset(&s.owner, s.ha).await.body["code"],
+        "account.other_spa"
+    );
     sqlx::query("DELETE FROM app.membership_role WHERE tenant_id = (SELECT id FROM app.tenant WHERE slug = 'khac')")
         .execute(&s.h.owner)
         .await?;
@@ -369,15 +476,25 @@ async fn an_owner_reset_ends_every_session_and_forces_a_change(pool: PgPool) -> 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn a_role_change_applies_on_the_next_request(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    let created = s.create_login(&s.owner, s.ha, NEW_PHONE, "technician").await;
-    let temporary = created.body["temporary_password"].as_str().unwrap_or_default().to_owned();
-    let first = login(&s.h.app, NEW_PHONE, &temporary).await.session().unwrap_or_default();
+    let created = s
+        .create_login(&s.owner, s.ha, NEW_PHONE, "technician")
+        .await;
+    let temporary = created.body["temporary_password"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    let first = login(&s.h.app, NEW_PHONE, &temporary)
+        .await
+        .session()
+        .unwrap_or_default();
     let session = change(&s.h.app, &first, &temporary, OWN_PASSWORD)
         .await
         .session()
         .unwrap_or_default();
     assert_eq!(
-        call(&s.h.app, "GET", "/customers?q=a", Some(&session), None).await.status,
+        call(&s.h.app, "GET", "/customers?q=a", Some(&session), None)
+            .await
+            .status,
         StatusCode::FORBIDDEN
     );
     let role = call(
@@ -391,7 +508,9 @@ async fn a_role_change_applies_on_the_next_request(pool: PgPool) -> TestResult {
     assert_eq!(role.status, StatusCode::OK, "{}", role.body);
     assert_eq!(role.body["position"], "Quản lý");
     assert_ne!(
-        call(&s.h.app, "GET", "/customers?q=a", Some(&session), None).await.status,
+        call(&s.h.app, "GET", "/customers?q=a", Some(&session), None)
+            .await
+            .status,
         StatusCode::FORBIDDEN,
         "manager permissions on the next request"
     );
@@ -407,9 +526,14 @@ async fn owner_login_actions_need_a_recent_reauth(pool: PgPool) -> TestResult {
     sqlx::query("UPDATE app.session SET recent_auth_at = now() - interval '1 hour'")
         .execute(&s.h.owner)
         .await?;
-    let r = s.create_login(&s.owner, s.ha, NEW_PHONE, "technician").await;
+    let r = s
+        .create_login(&s.owner, s.ha, NEW_PHONE, "technician")
+        .await;
     assert_eq!(r.body["code"], "auth.reauth_required", "{}", r.body);
-    assert_eq!(s.reset(&s.owner, s.ha).await.body["code"], "auth.reauth_required");
+    assert_eq!(
+        s.reset(&s.owner, s.ha).await.body["code"],
+        "auth.reauth_required"
+    );
     let _ = forget_used_step(&s.h, OWNER_PHONE).await;
     let code = current_code(&s.h, OWNER_PHONE).await?;
     let reauth = auth_call(
@@ -420,13 +544,21 @@ async fn owner_login_actions_need_a_recent_reauth(pool: PgPool) -> TestResult {
     )
     .await;
     assert_eq!(reauth.status, StatusCode::NO_CONTENT, "{}", reauth.body);
-    let r = s.create_login(&s.owner, s.ha, NEW_PHONE, "technician").await;
+    let r = s
+        .create_login(&s.owner, s.ha, NEW_PHONE, "technician")
+        .await;
     assert_eq!(r.status, StatusCode::CREATED, "{}", r.body);
     Ok(())
 }
 
 async fn ask(app: &axum::Router, phone: &str) -> Reply {
-    auth_call(app, "/auth/password-reset-requests", None, json!({"phone": phone})).await
+    auth_call(
+        app,
+        "/auth/password-reset-requests",
+        None,
+        json!({"phone": phone}),
+    )
+    .await
 }
 
 /// "Quên mật khẩu?" (option A): the answer never tells whether a phone has a login; the owner
@@ -442,45 +574,105 @@ async fn forgotten_password_requests_reach_only_the_owner(pool: PgPool) -> TestR
         assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.body);
         assert_eq!(r.body, json!({"status": "received"}));
     }
-    assert_eq!(ask(&s.h.app, OWNER_PHONE).await.status, StatusCode::ACCEPTED);
-    assert_eq!(ask(&s.h.app, TECH_PHONE).await.status, StatusCode::ACCEPTED, "a repeat");
+    assert_eq!(
+        ask(&s.h.app, OWNER_PHONE).await.status,
+        StatusCode::ACCEPTED
+    );
+    assert_eq!(
+        ask(&s.h.app, TECH_PHONE).await.status,
+        StatusCode::ACCEPTED,
+        "a repeat"
+    );
 
-    let list = call(&s.h.app, "GET", "/staff/password-reset-requests", Some(&s.owner), None).await;
+    let list = call(
+        &s.h.app,
+        "GET",
+        "/staff/password-reset-requests",
+        Some(&s.owner),
+        None,
+    )
+    .await;
     assert_eq!(list.status, StatusCode::OK, "{}", list.body);
     let items = list.body.as_array().cloned().unwrap_or_default();
-    assert_eq!(items.len(), 1, "one request, not the owner's: {}", list.body);
+    assert_eq!(
+        items.len(),
+        1,
+        "one request, not the owner's: {}",
+        list.body
+    );
     assert_eq!(items[0]["full_name"], "KTV Lan");
     for who in [&s.manager, &s.tech] {
-        let r = call(&s.h.app, "GET", "/staff/password-reset-requests", Some(who), None).await;
+        let r = call(
+            &s.h.app,
+            "GET",
+            "/staff/password-reset-requests",
+            Some(who),
+            None,
+        )
+        .await;
         assert_eq!(r.status, StatusCode::FORBIDDEN);
     }
     // Another spa's owner sees none of ours, and cannot dismiss it.
     create_tenant(&s.h.owner, "khac", "Spa khác", "Huế").await?;
-    add_member(&s.h.owner, "khac", OTHER_OWNER_PHONE, "Chủ spa khác", SystemRole::Owner).await?;
+    add_member(
+        &s.h.owner,
+        "khac",
+        OTHER_OWNER_PHONE,
+        "Chủ spa khác",
+        SystemRole::Owner,
+    )
+    .await?;
     let other = session_for(&s.h, OTHER_OWNER_PHONE).await;
-    let theirs = call(&s.h.app, "GET", "/staff/password-reset-requests", Some(&other), None).await;
+    let theirs = call(
+        &s.h.app,
+        "GET",
+        "/staff/password-reset-requests",
+        Some(&other),
+        None,
+    )
+    .await;
     assert_eq!(theirs.body, json!([]));
     let request = items[0]["id"].as_str().unwrap_or_default().to_owned();
     let dismiss = format!("/staff/password-reset-requests/{request}/dismiss");
     assert_eq!(
-        call(&s.h.app, "POST", &dismiss, Some(&other), None).await.status,
+        call(&s.h.app, "POST", &dismiss, Some(&other), None)
+            .await
+            .status,
         StatusCode::NOT_FOUND
     );
     // "Bỏ qua".
     assert_eq!(
-        call(&s.h.app, "POST", &dismiss, Some(&s.owner), None).await.status,
+        call(&s.h.app, "POST", &dismiss, Some(&s.owner), None)
+            .await
+            .status,
         StatusCode::NO_CONTENT
     );
     assert_eq!(
-        call(&s.h.app, "POST", &dismiss, Some(&s.owner), None).await.status,
+        call(&s.h.app, "POST", &dismiss, Some(&s.owner), None)
+            .await
+            .status,
         StatusCode::NOT_FOUND,
         "closed"
     );
-    let after = call(&s.h.app, "GET", "/staff/password-reset-requests", Some(&s.owner), None).await;
+    let after = call(
+        &s.h.app,
+        "GET",
+        "/staff/password-reset-requests",
+        Some(&s.owner),
+        None,
+    )
+    .await;
     assert_eq!(after.body, json!([]));
     // Within the hour a new request does not reach the owner again.
     ask(&s.h.app, TECH_PHONE).await;
-    let still = call(&s.h.app, "GET", "/staff/password-reset-requests", Some(&s.owner), None).await;
+    let still = call(
+        &s.h.app,
+        "GET",
+        "/staff/password-reset-requests",
+        Some(&s.owner),
+        None,
+    )
+    .await;
     assert_eq!(still.body, json!([]));
     let audit = s.audit_text().await?;
     assert!(audit.contains("account.password_reset_requested"));
@@ -492,7 +684,14 @@ async fn forgotten_password_requests_reach_only_the_owner(pool: PgPool) -> TestR
         .execute(&s.h.owner)
         .await?;
     ask(&s.h.app, MANAGER_PHONE).await;
-    let open = call(&s.h.app, "GET", "/staff/password-reset-requests", Some(&s.owner), None).await;
+    let open = call(
+        &s.h.app,
+        "GET",
+        "/staff/password-reset-requests",
+        Some(&s.owner),
+        None,
+    )
+    .await;
     assert_eq!(open.body.as_array().map(Vec::len), Some(1), "{}", open.body);
     let manager_profile = call(
         &s.h.app,
@@ -508,7 +707,14 @@ async fn forgotten_password_requests_reach_only_the_owner(pool: PgPool) -> TestR
         .execute(&s.h.owner)
         .await?;
     assert_eq!(s.reset(&s.owner, hoa).await.status, StatusCode::OK);
-    let answered = call(&s.h.app, "GET", "/staff/password-reset-requests", Some(&s.owner), None).await;
+    let answered = call(
+        &s.h.app,
+        "GET",
+        "/staff/password-reset-requests",
+        Some(&s.owner),
+        None,
+    )
+    .await;
     assert_eq!(answered.body, json!([]));
     Ok(())
 }
@@ -567,12 +773,23 @@ async fn passwords_never_reach_the_logs(pool: PgPool) -> TestResult {
     // Only this test installs a subscriber (one per process under nextest, too).
     let installed = tracing::subscriber::set_global_default(subscriber).is_ok();
     let s = spa(pool).await?;
-    let created = s.create_login(&s.owner, s.ha, NEW_PHONE, "technician").await;
-    let temporary = created.body["temporary_password"].as_str().unwrap_or_default().to_owned();
-    let first = login(&s.h.app, NEW_PHONE, &temporary).await.session().unwrap_or_default();
+    let created = s
+        .create_login(&s.owner, s.ha, NEW_PHONE, "technician")
+        .await;
+    let temporary = created.body["temporary_password"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    let first = login(&s.h.app, NEW_PHONE, &temporary)
+        .await
+        .session()
+        .unwrap_or_default();
     change(&s.h.app, &first, &temporary, OWN_PASSWORD).await;
     let reset = s.reset(&s.owner, s.ha).await;
-    let second = reset.body["temporary_password"].as_str().unwrap_or_default().to_owned();
+    let second = reset.body["temporary_password"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
     assert!(!temporary.is_empty() && !second.is_empty());
     let logged = capture
         .0

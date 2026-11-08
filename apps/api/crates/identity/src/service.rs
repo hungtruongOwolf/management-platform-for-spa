@@ -345,13 +345,16 @@ pub async fn resolve_for_password_change(
         });
     }
     let must_change = row.must_change_password;
-    Ok((Session {
-        id: row.id,
-        user_id: row.user_id,
-        active_tenant: row.active_tenant,
-        recent_auth_at: row.recent_auth_at,
-        absolute_expires_at: row.absolute_expires_at,
-    }, must_change))
+    Ok((
+        Session {
+            id: row.id,
+            user_id: row.user_id,
+            active_tenant: row.active_tenant,
+            recent_auth_at: row.recent_auth_at,
+            absolute_expires_at: row.absolute_expires_at,
+        },
+        must_change,
+    ))
 }
 
 /// Resolves a cookie secret into a session that is waiting for its second factor (and only that).

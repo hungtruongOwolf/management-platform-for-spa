@@ -109,7 +109,9 @@ pub fn check_new_password(new: &str, current: &str, phone: &PhoneE164) -> Result
     let digits: String = new.chars().filter(char::is_ascii_digit).collect();
     let e164 = phone.as_str().trim_start_matches('+').to_owned();
     let national = format!("0{}", e164.get(2..).unwrap_or_default());
-    if new.chars().all(|c| c.is_ascii_digit() || c.is_whitespace() || "+-.".contains(c))
+    if new
+        .chars()
+        .all(|c| c.is_ascii_digit() || c.is_whitespace() || "+-.".contains(c))
         && (digits == e164 || digits == national)
     {
         return Err(AppError::Validation(vec![FieldError::new(
@@ -213,14 +215,20 @@ pub async fn dismiss_request(
     id: Uuid,
     by: UserId,
 ) -> Result<Option<UserId>, AppError> {
-    Ok(repo::close_reset_requests(tx, Some(id), None, "dismissed", by)
-        .await?
-        .pop()
-        .map(UserId::from_uuid))
+    Ok(
+        repo::close_reset_requests(tx, Some(id), None, "dismissed", by)
+            .await?
+            .pop()
+            .map(UserId::from_uuid),
+    )
 }
 
 /// A reset answers every open request of that login.
-pub async fn close_requests_of(tx: &mut TenantTx, user: UserId, by: UserId) -> Result<(), AppError> {
+pub async fn close_requests_of(
+    tx: &mut TenantTx,
+    user: UserId,
+    by: UserId,
+) -> Result<(), AppError> {
     repo::close_reset_requests(tx, None, Some(user), "reset", by).await?;
     Ok(())
 }
@@ -231,7 +239,10 @@ mod tests {
 
     #[test]
     fn temporary_passwords_are_long_readable_and_unique() -> Result<(), RandomUnavailable> {
-        let (a, b) = (TemporaryPassword::generate()?, TemporaryPassword::generate()?);
+        let (a, b) = (
+            TemporaryPassword::generate()?,
+            TemporaryPassword::generate()?,
+        );
         assert_ne!(a.expose(), b.expose());
         assert_eq!(a.expose().len(), 14);
         assert!(password::check_policy(a.expose()).is_ok());
@@ -252,13 +263,29 @@ mod tests {
             Err(AppError::Validation(e)) => e.first().map(|f| f.code),
             _ => None,
         };
-        assert_eq!(code(check_new_password("ngan", "x", &phone)), Some("too_short"));
         assert_eq!(
-            code(check_new_password("giong-het-cu-1", "giong-het-cu-1", &phone)),
+            code(check_new_password("ngan", "x", &phone)),
+            Some("too_short")
+        );
+        assert_eq!(
+            code(check_new_password(
+                "giong-het-cu-1",
+                "giong-het-cu-1",
+                &phone
+            )),
             Some("same_as_current")
         );
-        for p in ["0905123456", "84905123456", "+84 905 123 456", "0905.123.456"] {
-            assert_eq!(code(check_new_password(p, "x", &phone)), Some("is_phone"), "{p}");
+        for p in [
+            "0905123456",
+            "84905123456",
+            "+84 905 123 456",
+            "0905.123.456",
+        ] {
+            assert_eq!(
+                code(check_new_password(p, "x", &phone)),
+                Some("is_phone"),
+                "{p}"
+            );
         }
         assert!(check_new_password("09051234567890", "x", &phone).is_ok());
         Ok(())
@@ -267,7 +294,10 @@ mod tests {
     #[test]
     fn the_roster_hands_out_manager_and_technician_only() {
         assert_eq!(LoginRole::from_key("manager"), Some(LoginRole::Manager));
-        assert_eq!(LoginRole::from_key("technician"), Some(LoginRole::Technician));
+        assert_eq!(
+            LoginRole::from_key("technician"),
+            Some(LoginRole::Technician)
+        );
         assert_eq!(LoginRole::from_key("owner"), None);
         assert_eq!(LoginRole::Manager.system().key(), "manager");
     }

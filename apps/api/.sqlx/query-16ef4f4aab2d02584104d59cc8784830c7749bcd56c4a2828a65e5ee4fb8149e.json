@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.password_reset_request\n         SET closed_at = now(), outcome = $4, closed_by = $5\n         WHERE tenant_id = $1 AND closed_at IS NULL\n           AND ($2::uuid IS NULL OR id = $2) AND ($3::uuid IS NULL OR user_id = $3)\n         RETURNING user_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.password_reset_request",
+            "name": "user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "16ef4f4aab2d02584104d59cc8784830c7749bcd56c4a2828a65e5ee4fb8149e"
+}

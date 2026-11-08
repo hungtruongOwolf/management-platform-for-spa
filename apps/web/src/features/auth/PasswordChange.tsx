@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { useState, type SyntheticEvent } from "react";
 import { ApiError, api } from "../../lib/api";
 import { fieldMessage } from "../../lib/errors";
 import { AuthFrame, bandTitle } from "./AuthFrame";
@@ -32,7 +32,7 @@ export function ChangePasswordForm({ currentLabel, onChanged }: { currentLabel: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
-  const submit = async (e: FormEvent) => {
+  const submit = async (e: SyntheticEvent) => {
     e.preventDefault();
     if (busy) return;
     setError(null);

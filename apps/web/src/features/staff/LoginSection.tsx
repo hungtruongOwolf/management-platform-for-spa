@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type SyntheticEvent } from "react";
 import { BottomSheet } from "../../components/BottomSheet";
 import { ApiError } from "../../lib/api";
 import { fieldMessage, messageFor } from "../../lib/errors";
@@ -58,7 +58,7 @@ export function ReauthDialog({ onDone, onClose }: { onDone: () => void; onClose:
       <form
         id={formId}
         className="grid gap-4"
-        onSubmit={(e: FormEvent) => {
+        onSubmit={(e: SyntheticEvent) => {
           e.preventDefault();
           if (!confirm.isPending) confirm.mutate();
         }}
@@ -114,7 +114,7 @@ export function TemporaryPasswordDialog({ name, phone, password, onClose }: { na
             type="button"
             className="btn btn-secondary"
             onClick={() => {
-              void navigator.clipboard?.writeText(password).then(() => {
+              void navigator.clipboard.writeText(password).then(() => {
                 setCopied(true);
               });
             }}

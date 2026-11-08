@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.user_account (id, phone_e164, full_name, password_hash, must_change_password)\n         VALUES ($1, $2, $3, $4, true)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "94fe4ab118c27f8f08cb81fad4714e4c204a4156c079b73bf6e87c7b19b4093e"
+}

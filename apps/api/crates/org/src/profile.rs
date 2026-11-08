@@ -85,7 +85,10 @@ impl Profile {
             joined_on: r.joined_on,
             left_on: r.left_on,
             login: r.user_id.map(|_| LoginInfo {
-                phone: r.user_phone.as_deref().and_then(|p| PhoneE164::parse(p).ok()),
+                phone: r
+                    .user_phone
+                    .as_deref()
+                    .and_then(|p| PhoneE164::parse(p).ok()),
                 role_keys: r
                     .account_role_keys
                     .as_deref()

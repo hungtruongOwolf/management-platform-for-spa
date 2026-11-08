@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.key FROM app.membership m\n         JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id\n         JOIN app.role r ON r.tenant_id = mr.tenant_id AND r.id = mr.role_id\n         WHERE m.tenant_id = $1 AND m.user_id = $2\n         ORDER BY r.key",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.role",
+            "name": "key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "06550adc7de95796326b45d44bd65aae023cebfe9c660ecfeb1ceb6c341b027d"
+}

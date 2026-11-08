@@ -1006,6 +1006,77 @@
         }
       }
     },
+    "/api/v1/auth/password": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "change_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChangeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Password changed: every session of the account ended, this browser got a new one (cookie)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "auth.invalid_credentials (wrong current password; counts toward the lockout) | auth.unauthenticated"
+          },
+          "422": {
+            "description": "new_password too_short | too_long | same_as_current | is_phone"
+          },
+          "429": {}
+        }
+      }
+    },
+    "/api/v1/auth/password-reset-requests": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "request_password_reset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Always the same answer, whether or not the phone has a login (the spa's owner sees a real request)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordResetRequested"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "phone missing"
+          },
+          "429": {}
+        }
+      }
+    },
     "/api/v1/auth/reauth": {
       "post": {
         "tags": [
@@ -3590,6 +3661,55 @@
         }
       }
     },
+    "/api/v1/staff/password-reset-requests": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "list_reset_requests",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PasswordResetRequestDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {}
+        }
+      }
+    },
+    "/api/v1/staff/password-reset-requests/{id}/dismiss": {
+      "post": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "dismiss_reset_request",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {},
+          "401": {},
+          "403": {},
+          "404": {}
+        }
+      }
+    },
     "/api/v1/staff/profiles": {
       "get": {
         "tags": [
@@ -3837,6 +3957,152 @@
           "401": {},
           "403": {},
           "404": {}
+        }
+      }
+    },
+    "/api/v1/staff/{id}/login": {
+      "post": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "create_login",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffLoginCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Login created and linked; `temporary_password` is shown this once (no-store)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffLoginCreated"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "auth.reauth_required"
+          },
+          "403": {},
+          "404": {},
+          "409": {
+            "description": "account.phone_taken | staff.account_exists | staff.already_left"
+          },
+          "412": {},
+          "422": {
+            "description": "phone invalid_format"
+          }
+        }
+      }
+    },
+    "/api/v1/staff/{id}/login/reset-password": {
+      "post": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "reset_login_password",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "New temporary password, shown this once (no-store); every session of the login ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemporaryPasswordDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "auth.reauth_required"
+          },
+          "403": {},
+          "404": {},
+          "409": {
+            "description": "staff.no_login | account.locked"
+          },
+          "422": {
+            "description": "account.owner_protected | account.other_spa"
+          }
+        }
+      }
+    },
+    "/api/v1/staff/{id}/login/role": {
+      "put": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "set_login_role",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffLoginRoleWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffProfileDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "auth.reauth_required"
+          },
+          "403": {},
+          "404": {},
+          "409": {
+            "description": "staff.no_login | staff.already_left"
+          },
+          "422": {
+            "description": "account.owner_protected"
+          }
         }
       }
     },
@@ -7979,7 +8245,8 @@
         "enum": [
           "done",
           "mfa_verify",
-          "mfa_enroll"
+          "mfa_enroll",
+          "password_change"
         ]
       },
       "LoginResponse": {
@@ -8003,6 +8270,14 @@
             "$ref": "#/components/schemas/LoginNext"
           }
         }
+      },
+      "LoginRole": {
+        "type": "string",
+        "description": "The roles the owner gives from the roster (the owner role is never handed out here).",
+        "enum": [
+          "manager",
+          "technician"
+        ]
       },
       "Me": {
         "type": "object",
@@ -9402,6 +9677,91 @@
           "full",
           "none_if_partial"
         ]
+      },
+      "PasswordChangeBody": {
+        "type": "object",
+        "description": "Body of `POST /auth/password`.",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "description": "The current password (the temporary one after an owner's reset)."
+          },
+          "new_password": {
+            "type": "string",
+            "description": "10–128 characters, not the current one, not the login phone."
+          }
+        },
+        "additionalProperties": false
+      },
+      "PasswordResetRequestBody": {
+        "type": "object",
+        "description": "Body of `POST /auth/password-reset-requests` (\"Quên mật khẩu?\").",
+        "required": [
+          "phone"
+        ],
+        "properties": {
+          "phone": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PasswordResetRequestDto": {
+        "type": "object",
+        "description": "An open forgotten-password request (option A).",
+        "required": [
+          "id",
+          "user_id",
+          "full_name",
+          "requested_at",
+          "expires_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requested_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "staff_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The profile of the login, when linked (its sheet holds \"Đặt lại\")."
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "PasswordResetRequested": {
+        "type": "object",
+        "description": "The one answer of `POST /auth/password-reset-requests`, whether or not the phone has a login.",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Always `received`."
+          }
+        }
       },
       "PayFlag": {
         "type": "string",
@@ -10883,7 +11243,8 @@
           "user_id",
           "full_name",
           "roles",
-          "is_manager"
+          "is_manager",
+          "manages_staff"
         ],
         "properties": {
           "full_name": {
@@ -10892,6 +11253,10 @@
           "is_manager": {
             "type": "boolean",
             "description": "The login records attendance / evaluations for others without managing staff (a\nmanager). Not linked to a profile, the app cannot tell which profile is theirs (decision\nC): the owner is warned (F19)."
+          },
+          "manages_staff": {
+            "type": "boolean",
+            "description": "The login manages staff (the owner): needs no staff profile."
           },
           "roles": {
             "type": "array",
@@ -11003,6 +11368,17 @@
         "type": "object",
         "description": "Personal details of a profile (`staff.manage` only).",
         "properties": {
+          "login": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StaffLoginDto",
+                "description": "The linked login (ADR-0016); absent while unlinked."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "note": {
             "type": [
               "string",
@@ -11167,6 +11543,87 @@
             "description": "End-of-employment reason."
           }
         }
+      },
+      "StaffLoginCreate": {
+        "type": "object",
+        "description": "Body of `POST /staff/{id}/login`.",
+        "required": [
+          "phone",
+          "role"
+        ],
+        "properties": {
+          "phone": {
+            "type": "string",
+            "description": "The login phone: a Vietnamese mobile no account uses yet."
+          },
+          "role": {
+            "$ref": "#/components/schemas/LoginRole"
+          }
+        },
+        "additionalProperties": false
+      },
+      "StaffLoginCreated": {
+        "type": "object",
+        "description": "`POST /staff/{id}/login` → 201: the profile, now linked, and the temporary password.",
+        "required": [
+          "profile",
+          "temporary_password"
+        ],
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/StaffProfileDto"
+          },
+          "temporary_password": {
+            "type": "string"
+          }
+        }
+      },
+      "StaffLoginDto": {
+        "type": "object",
+        "description": "A profile's login (owner only): what the account section shows and acts on.",
+        "required": [
+          "role",
+          "locked"
+        ],
+        "properties": {
+          "locked": {
+            "type": "boolean",
+            "description": "Locked when the person left (`lock_login`): no sign-in; rehiring unlocks it."
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The login phone, national form."
+          },
+          "role": {
+            "$ref": "#/components/schemas/StaffLoginRoleDto"
+          }
+        }
+      },
+      "StaffLoginRoleDto": {
+        "type": "string",
+        "description": "The role of a profile's login as the roster shows it.",
+        "enum": [
+          "manager",
+          "technician",
+          "owner",
+          "other"
+        ]
+      },
+      "StaffLoginRoleWrite": {
+        "type": "object",
+        "description": "Body of `PUT /staff/{id}/login/role`.",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/LoginRole"
+          }
+        },
+        "additionalProperties": false
       },
       "StaffPayDto": {
         "type": "object",
@@ -11604,6 +12061,18 @@
             "type": "integer",
             "format": "int64",
             "description": "Completed visits in which this technician did at least one line."
+          }
+        }
+      },
+      "TemporaryPasswordDto": {
+        "type": "object",
+        "description": "A temporary password, returned this once (`Cache-Control: no-store`): the owner hands it over\nand the person must replace it at their first sign-in.",
+        "required": [
+          "temporary_password"
+        ],
+        "properties": {
+          "temporary_password": {
+            "type": "string"
           }
         }
       },

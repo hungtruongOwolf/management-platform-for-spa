@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.password_reset_request (id, tenant_id, user_id, expires_at)\n         SELECT $1, $2, $3, now() + interval '24 hours'\n         WHERE NOT EXISTS (SELECT 1 FROM app.password_reset_request\n                           WHERE tenant_id = $2 AND user_id = $3\n                             AND (closed_at IS NULL OR requested_at > now() - interval '1 hour'))\n         ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3806a1a98c138c8c5ae075b4fb5e272116b9cbb08d5b28a3d530e22bafe12c37"
+}

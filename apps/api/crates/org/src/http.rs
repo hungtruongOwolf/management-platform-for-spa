@@ -454,7 +454,10 @@ where
         .route("/staff/{id}/rehire", post(rehire_staff))
         .route("/staff/{id}/history", get(staff_history))
         .route("/staff/{id}/login", post(create_login))
-        .route("/staff/{id}/login/reset-password", post(reset_login_password))
+        .route(
+            "/staff/{id}/login/reset-password",
+            post(reset_login_password),
+        )
         .route("/staff/{id}/login/role", put(set_login_role))
         .route("/staff/password-reset-requests", get(list_reset_requests))
         .route(
