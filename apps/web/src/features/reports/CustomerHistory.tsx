@@ -157,6 +157,12 @@ function EventBody({ e }: { e: HistoryEvent }) {
           {e.purchase.closer_name && ` · chốt bởi ${e.purchase.closer_name}`}
         </p>
         {e.purchase.void_reason && <p className="text-text-muted">Lý do hủy: {e.purchase.void_reason}</p>}
+        {e.purchase.note && (
+          <p className="whitespace-pre-line">
+            <span className="text-text-muted">Ghi chú gói: </span>
+            {e.purchase.note}
+          </p>
+        )}
       </div>
     );
   }

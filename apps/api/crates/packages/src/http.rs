@@ -146,6 +146,19 @@ pub struct CustomerPackageDto {
     pub version: i64,
     pub created_at: DateTime<Utc>,
     pub items: Vec<CustomerPackageItemDto>,
+    /// "Ghi chú gói" of the sale that created it (F4, health data). Filled only by
+    /// `GET /customers/{id}/packages` and `GET /customer-packages/{id}` for
+    /// `customer.health_notes.read`; absent everywhere else (a sale's response, a replay).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sale_note: Option<String>,
+}
+
+impl CustomerPackageDto {
+    /// Adds each package's sale note from `notes` (sale id → note); see [`service::sale_notes`].
+    fn with_notes(mut self, notes: &std::collections::HashMap<Uuid, String>) -> Self {
+        self.sale_note = self.sale_id.and_then(|s| notes.get(&s).cloned());
+        self
+    }
 }
 
 impl From<CustomerPackage> for CustomerPackageDto {
@@ -171,6 +184,7 @@ impl From<CustomerPackage> for CustomerPackageDto {
             version: p.version,
             created_at: p.created_at,
             items: p.items.into_iter().map(Into::into).collect(),
+            sale_note: None,
         }
     }
 }
@@ -201,28 +215,38 @@ fn no_store_status(status: StatusCode, body: impl Serialize) -> Response {
 }
 
 #[utoipa::path(get, path = "/api/v1/customer-packages/{id}", tag = "packages", params(("id" = Uuid, Path)),
-    responses((status = 200, body = CustomerPackageDto), (status = 401), (status = 403), (status = 404)))]
+    responses((status = 200, body = CustomerPackageDto, description = "`sale_note` only for customer.health_notes.read"),
+        (status = 401), (status = 403), (status = 404)))]
 pub async fn read_package(
     State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Response, AppError> {
     let package = service::get(&pool, &user.actor, id).await?;
-    Ok(no_store(CustomerPackageDto::from(package)))
+    let notes =
+        service::sale_notes(&pool, &cipher, &user.actor, package.sale_id.as_slice()).await?;
+    Ok(no_store(
+        CustomerPackageDto::from(package).with_notes(&notes),
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v1/customers/{id}/packages", tag = "packages", params(("id" = Uuid, Path)),
-    responses((status = 200, body = [CustomerPackageDto]), (status = 401), (status = 403), (status = 404)))]
+    responses((status = 200, body = [CustomerPackageDto], description = "Newest first; `sale_note` only for customer.health_notes.read"),
+        (status = 401), (status = 403), (status = 404)))]
 pub async fn list_customer_packages(
     State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Response, AppError> {
     let packages = service::for_customer(&pool, &user.actor, id).await?;
+    let sales: Vec<Uuid> = packages.iter().filter_map(|p| p.sale_id).collect();
+    let notes = service::sale_notes(&pool, &cipher, &user.actor, &sales).await?;
     Ok(no_store(
         packages
             .into_iter()
-            .map(CustomerPackageDto::from)
+            .map(|p| CustomerPackageDto::from(p).with_notes(&notes))
             .collect::<Vec<_>>(),
     ))
 }

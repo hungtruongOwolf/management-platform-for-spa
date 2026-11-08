@@ -506,6 +506,14 @@ const ROUTES: &[Route] = &[
         Access::Perm(P::SaleRead, OWNER_MANAGER),
     )
     .id(Target::Sale),
+    // F4 "Sửa ghi chú gói": package.sell + customer.health_notes.write (same holders by default).
+    route(
+        "PATCH",
+        "/api/v1/sales/{id}",
+        Access::Perm(P::CustomerHealthNotesWrite, OWNER_MANAGER),
+    )
+    .id(Target::Sale)
+    .body(sale_note_body),
     route(
         "POST",
         "/api/v1/sales/{id}/void",
@@ -908,6 +916,10 @@ fn sell_body(f: &Fixture) -> Option<Value> {
         "lines": [{"package_plan_id": f.plan}],
         "payments": [{"method": "cash", "amount": 1_200_000}]
     }))
+}
+
+fn sale_note_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"note": "Khách đau vai gáy"}))
 }
 
 fn checkout_body(f: &Fixture) -> Option<Value> {

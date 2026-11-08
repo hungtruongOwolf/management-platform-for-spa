@@ -119,5 +119,19 @@ Một màn đọc mọi ghi chú gom nhiều nguồn, trong đó có dữ liệu
 | Bản rõ lọt ra log / audit / cache | đọc không ghi audit; lỗi giải mã chỉ ghi id; `private, no-store`; `q` ở query string (log truy cập không ghi query) | `each_role…` (audit trống, header) |
 Không có Critical/High. Còn mở: `q` có thể chứa chữ của ghi chú sức khỏe trong URL lịch sử trình duyệt của chính người dùng (như mọi ô tìm trên URL; chấp nhận).
 
+## Ghi chú gói (F4, secure review 2026-11-08, [spec front-desk §10.15](../product/specs/front-desk-and-packages.md))
+Một nguồn dữ liệu sức khỏe mới (chữ tự do ở quầy khi bán gói), đi qua nhiều đường ghi (bán gói, giỏ nhiều gói, gói trong lượt, thêm vào lượt, lịch hẹn hoàn tất, chuyển sang gói) và nhiều màn đọc.
+| Lạm dụng | Kiểm soát (server) | Test |
+|---|---|---|
+| DB / backup / người có quyền đọc bảng thấy bản rõ | AES-256-GCM tầng app, AAD `sale.note` + tenant + hóa đơn; khóa ngoài DB | `package_notes.rs::a_package_sale_note_is_encrypted…`, unit `kernel::crypto` |
+| Chép ciphertext sang hóa đơn / spa khác để đọc dưới quyền khác | AAD gắn id hóa đơn: mở thất bại (`500`, lỗi chỉ ghi id) | `a_cart_of_packages_keeps_one_note_per_package` |
+| Bản rõ lọt qua bảng idempotency (không mã hóa) hay audit | response lưu theo khóa đọc không kèm ghi chú (`load(…, None)`); audit chỉ `"[redacted]"` / `"cleared"` | `leaks()` = 0 ở mọi test của `package_notes.rs` |
+| Người không có `customer.health_notes.write` cài ghi chú (qua giỏ, lượt, lịch hẹn, chuyển gói) | kiểm ở từng entry point **và** ở `record_package_sale` (chỗ ghi duy nhất); thiếu → `403`, cả giỏ không lưu | `writing_a_package_note_needs_the_health_write_right`, additions `403` |
+| Người thiếu `customer.health_notes.read` đọc qua màn khác (danh sách ngày, lượt, lịch sử, gói, nhật ký) | mọi đường đọc đi qua `note_reader` / cờ quyền; không có → không giải mã, không có key | `package_notes.rs` (từng màn), `notes.rs` (loại `package_note` × từng quyền) |
+| KTV / người đã nghỉ thấy ghi chú gói của khách mình làm | `/me/*` không đọc `sale.note_ct`; mọi route có ghi chú cần quyền KTV / người đã nghỉ không có | `a_package_sold_in_a_visit_keeps_its_own_note` (`/me/appointments`, `/me/staff/day`), `former()` → `403` |
+| Sửa ghi chú ngày đã chốt / hóa đơn đã hủy / hóa đơn của spa khác | `authorize_closed_day` trước lỗi thân (F17); trigger `sale_voided_is_final` + `409`; `tenant_id` + RLS → `404` | `the_desk_edits_a_package_note_in_place` |
+| Ghi chú nằm lại trên máy dùng chung | giỏ nháp sessionStorage bỏ `note` của từng gói; response `no-store` | vitest `draftCart` |
+Không có Critical/High. Còn mở: gói bán trong lượt chưa có nút sửa ghi chú trên web (API có).
+
 ## Còn mở
 - Danh sách thao tác yêu cầu nhập lại mật khẩu: chỉ thao tác bảo mật tài khoản (đổi mật khẩu, cài đặt MFA), EM 2026-11-05. Khi thêm route đó: dùng `AuthUser::require_recent_auth` + test `401`.

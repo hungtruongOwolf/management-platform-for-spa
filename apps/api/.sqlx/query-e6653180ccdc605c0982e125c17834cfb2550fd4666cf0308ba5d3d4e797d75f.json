@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.note_ct AS \"note_ct!\"\n           FROM app.sale s\n           WHERE s.tenant_id = $1 AND s.id = ANY($2) AND s.note_ct IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "note_ct!",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "note_ct"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "e6653180ccdc605c0982e125c17834cfb2550fd4666cf0308ba5d3d4e797d75f"
+}

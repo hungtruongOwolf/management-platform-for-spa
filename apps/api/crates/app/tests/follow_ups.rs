@@ -199,6 +199,7 @@ impl Spa {
         let k = Uuid::now_v7();
         let (_, sale) = sales::service::create_sale_as_of(
             &self.app,
+            &self.h.cipher,
             &self.actor,
             k,
             hash_request(k.as_bytes()),

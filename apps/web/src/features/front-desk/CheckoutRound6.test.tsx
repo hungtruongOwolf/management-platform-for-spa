@@ -168,6 +168,7 @@ function serve(
   dayVisits: Visit[] = [],
   packages: CustomerPackage[] = [],
   customer: Record<string, unknown> & { gender?: string | null } = HA,
+  permissions: string[] = PERMS,
 ) {
   const calls: Call[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
@@ -194,7 +195,7 @@ function serve(
         user: { id: "u1", full_name: "Quản lý Ngọc", phone: "0905" },
         active_tenant: { id: "t1", name: "Viên Phúc Y Đường" },
         tenants: [{ id: "t1", name: "Viên Phúc Y Đường" }],
-        permissions: PERMS,
+        permissions,
       });
     if (url.startsWith("/api/v1/customers?q=Nam")) return json([NAM]);
     if (url.startsWith("/api/v1/customers?q="))
@@ -450,6 +451,10 @@ describe("/quay round 6", () => {
     const second = await screen.findByRole("combobox", { name: "Mẫu gói" });
     expect(second).toHaveValue("");
     await user.selectOptions(second, "pl1");
+    // F4: no "Ghi chú gói" without customer.health_notes.write (the server refuses it anyway).
+    expect(
+      screen.queryByRole("button", { name: "Thêm ghi chú gói" }),
+    ).not.toBeInTheDocument();
     const gifts = screen.getAllByRole("checkbox", { name: /Mua cho người khác/ });
     const gift = gifts[gifts.length - 1];
     if (!gift) throw new Error("gift checkbox missing");
@@ -480,6 +485,53 @@ describe("/quay round 6", () => {
         `Đã bán 2 gói (Nguyễn Thị Hà trả tiền): ${PLAN.name}; ${PLAN.name} cho Trần Văn Nam.`,
       ),
     ).toBeInTheDocument();
+  });
+
+  it("each package of the cart keeps its own optional note, folded away by default (F4)", async () => {
+    const calls = serve([], [], HA, [...PERMS, "customer.health_notes.write"]);
+    const user = userEvent.setup();
+    render(
+      <App history={createMemoryHistory({ initialEntries: ["/quay"] })} />,
+    );
+    await pickHa(user);
+    await user.click(
+      await screen.findByRole("button", { name: "Bán gói liệu trình" }),
+    );
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Mẫu gói" }),
+      "pl1",
+    );
+    // Folded: one ghost button, no field until the desk asks for it.
+    expect(
+      screen.queryByRole("textbox", { name: /Ghi chú gói/ }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Thêm ghi chú gói" }));
+    const field = screen.getByRole("textbox", { name: /Ghi chú gói/ });
+    expect(field).toHaveAccessibleDescription(/Bảo mật như ghi chú buổi/);
+    await user.type(field, "  Đau vai gáy  ");
+    // A second package: the first folds into its summary, which says it has a note.
+    await user.click(screen.getByRole("button", { name: "Bán gói liệu trình" }));
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Mẫu gói" }),
+      "pl1",
+    );
+    expect(screen.getByText(/Có ghi chú gói/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Thêm ghi chú gói" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Lưu hóa đơn gói" }));
+    await waitFor(() => {
+      expect(posted(calls, "/api/v1/sales/checkout")).toHaveLength(1);
+    });
+    const sent = posted(calls, "/api/v1/sales/checkout")[0]?.body as {
+      package_sales: Record<string, unknown>[];
+    };
+    expect(sent.package_sales[0]).toMatchObject({
+      package_plan_id: "pl1",
+      note: "Đau vai gáy",
+    });
+    // No note, no key: the server asks for the health-note right only when one is sent.
+    expect(sent.package_sales[1]).not.toHaveProperty("note");
   });
 
   it("names who gets a package bought for someone else, and who paid (US13)", async () => {

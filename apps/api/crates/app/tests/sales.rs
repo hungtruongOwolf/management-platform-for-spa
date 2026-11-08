@@ -970,7 +970,7 @@ async fn the_day_lists_its_package_sales_without_a_visit(pool: PgPool) -> TestRe
         [kernel::Permission::SaleRead],
         None,
     );
-    let denied = sales::service::for_day(&app, &actor, None).await;
+    let denied = sales::service::for_day(&app, &s.h.cipher, &actor, None).await;
     assert!(
         matches!(denied, Err(kernel::AppError::Forbidden { .. })),
         "{denied:?}"
