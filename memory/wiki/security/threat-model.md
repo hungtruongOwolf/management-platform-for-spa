@@ -132,7 +132,7 @@ Một nguồn dữ liệu sức khỏe mới (chữ tự do ở quầy khi bán 
 | KTV / người đã nghỉ thấy ghi chú gói của khách mình làm | `/me/*` không đọc `sale.note_ct`; mọi route có ghi chú cần quyền KTV / người đã nghỉ không có | `a_package_sold_in_a_visit_keeps_its_own_note` (`/me/appointments`, `/me/staff/day`), `former()` → `403` |
 | Sửa ghi chú ngày đã chốt / hóa đơn đã hủy / hóa đơn của spa khác | `authorize_closed_day` trước lỗi thân (F17); trigger `sale_voided_is_final` + `409`; `tenant_id` + RLS → `404` | `the_desk_edits_a_package_note_in_place` |
 | Ghi chú nằm lại trên máy dùng chung | giỏ nháp sessionStorage bỏ `note` của từng gói; response `no-store` | vitest `draftCart` |
-Không có Critical/High. Còn mở: gói bán trong lượt chưa có nút sửa ghi chú trên web (API có).
+Không có Critical/High. Gói bán trong lượt sửa ghi chú được ở Quầy và lịch sử khách (lead 2026-11-08), cùng `PATCH /sales/{id}`; nút chỉ là UX.
 
 ## Còn mở
 - Danh sách thao tác yêu cầu nhập lại mật khẩu: chỉ thao tác bảo mật tài khoản (đổi mật khẩu, cài đặt MFA), EM 2026-11-05. Khi thêm route đó: dùng `AuthUser::require_recent_auth` + test `401`.

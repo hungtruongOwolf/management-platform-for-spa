@@ -1,7 +1,7 @@
 import type { HistoryKind } from "@vpyd/api-client";
 import { useInfiniteQuery, useQuery, type QueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { canSeeManagement } from "../../app/features";
 import { Icon, type IconName } from "../../app/Icon";
 import { monthLabel, spaTime } from "../../lib/format";
@@ -9,7 +9,7 @@ import { serviceLabel } from "../../lib/names";
 import { customerPackagesQuery, formatDate } from "../sales/api";
 import { useSearchState } from "../../lib/searchState";
 import { authQuery, can, type Me } from "../auth/session";
-import { mayCorrectVisit, spaToday } from "../corrections/api";
+import { mayCorrectVisit, mayEditSaleNote, spaToday } from "../corrections/api";
 import { customerQuery } from "../customers/api";
 import { CHANNEL_LABEL, OUTCOME_LABEL, followUpsQuery } from "../customers/followUps";
 import { FollowUpForm } from "../customers/FollowUpForm";
@@ -21,6 +21,9 @@ import { DateField } from "../../components/DateField";
 import { FilterSelect, ResponsiveFilters, SearchField } from "./filters";
 import { EmptyState, ErrorState, RowsSkeleton, money } from "./ui";
 import "../customers/khach.css";
+
+// "Thêm / Sửa ghi chú gói" (F4): only opened by those who may edit, so it stays out of this chunk.
+const SaleNoteForm = lazy(() => import("../sales/SaleNoteForm").then((m) => ({ default: m.SaleNoteForm })));
 
 
 /** Names of the history kinds (the "Loại" filter). */
@@ -275,6 +278,8 @@ export function prefetchCustomerPage(queryClient: QueryClient, customerId: strin
 
 function Timeline({ customerId, permissions }: { customerId: string; permissions: readonly string[] }) {
   const [s] = useSearchState(historySearch);
+  /** The package sale whose note is open for editing under its purchase. */
+  const [noting, setNoting] = useState<string | null>(null);
   const today = spaToday();
   const filtered = Boolean(s.hq || s.hkind || s.hfrom || s.hto);
   const history = useInfiniteQuery(customerHistoryQuery(customerId, historyFilterOf(s)));
@@ -303,6 +308,9 @@ function Timeline({ customerId, permissions }: { customerId: string; permissions
             e.kind === "visit" &&
             !!e.visit &&
             mayCorrectVisit(permissions, { business_date: e.business_date, voided: e.visit.voided }, today);
+          const purchase = e.kind === "purchase" ? e.purchase : undefined;
+          const notable =
+            !!purchase && mayEditSaleNote(permissions, { business_date: e.business_date, voided: purchase.voided }, today);
           return (
             <li key={`${e.at}-${String(i)}`} className="relative">
               {heading && <p className="timeline-month">{heading}</p>}
@@ -326,9 +334,36 @@ function Timeline({ customerId, permissions }: { customerId: string; permissions
                         Sửa lượt
                       </Link>
                     )}
+                    {purchase && notable && noting !== purchase.sale_id && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          setNoting(purchase.sale_id);
+                        }}
+                      >
+                        {purchase.note ? "Sửa ghi chú gói" : "Thêm ghi chú gói"}
+                      </button>
+                    )}
                   </span>
                 </div>
                 <EventBody e={e} />
+                {purchase && noting === purchase.sale_id && (
+                  <Suspense fallback={<p role="status" className="text-text-muted">Đang mở…</p>}>
+                    <SaleNoteForm
+                      saleId={purchase.sale_id}
+                      note={purchase.note}
+                      customerId={customerId}
+                      title={`Ghi chú gói ${purchase.lines.map((l) => `"${l.description}"`).join(", ")}`}
+                      onCancel={() => {
+                        setNoting(null);
+                      }}
+                      onDone={() => {
+                        setNoting(null);
+                      }}
+                    />
+                  </Suspense>
+                )}
               </div>
             </li>
           );
