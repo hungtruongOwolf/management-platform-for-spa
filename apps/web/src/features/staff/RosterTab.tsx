@@ -7,6 +7,7 @@ import { DateField, isoToDmy } from "../../components/DateField";
 import { ResponsiveTable, type Column } from "../../components/ResponsiveTable";
 import { TimeField } from "../../components/TimeField";
 import { ApiError } from "../../lib/api";
+import { spaDateTime } from "../../lib/format";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { spaToday } from "../corrections/api";
 import { ErrorState, RowsSkeleton } from "../reports/ui";
@@ -417,7 +418,7 @@ function HistorySection({ id }: { id: string }) {
                 <strong>{ACTION_LABEL[h.action] ?? h.action}</strong>
                 <span className="text-text-muted">
                   {" "}
-                  · {isoToDmy(h.at.slice(0, 10))}
+                  · {spaDateTime(h.at)}
                   {h.actor_name ? ` · ${h.actor_name}` : ""}
                 </span>
               </p>
