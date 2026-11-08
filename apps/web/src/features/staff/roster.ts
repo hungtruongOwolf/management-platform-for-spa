@@ -1,4 +1,4 @@
-import type { StaffProfile } from "./api";
+import type { StaffAccount, StaffProfile } from "./api";
 import { ROSTER_FILTERS, type RosterFilter } from "./search";
 
 export { ROSTER_FILTERS, type RosterFilter };
@@ -33,9 +33,30 @@ export function tenureLabel(p: Pick<StaffProfile, "tenure_days" | "tenure_months
 export const POSITIONS = ["Kỹ thuật viên", "Quản lý", "Thu ngân", "Lễ tân", "Học viên"] as const;
 
 /**
- * Decision C reads the login link, not the position: a "Quản lý" profile without a login counts
- * as a technician when someone records for them. The roster says so instead of letting it surprise.
+ * Whether a position names a manager, whatever the case, accents or Unicode form ("Quản lý",
+ * "quan ly"): the same rule as the server's `org::profile::is_manager_position`, for warnings only.
+ */
+export function isManagerPosition(position: string): boolean {
+  return position
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[đĐ]/g, "d")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .includes("quan ly");
+}
+
+/**
+ * F19 (live test 2026-11-08): decision C needs to know which profile is a manager's own, and only
+ * the link between the profile and the login says so. Until the owner links it, a "Quản lý"
+ * profile is the owner's to record (the server refuses a manager) and the manager cannot read
+ * their own month. The roster and the daily book warn the owner.
  */
 export function managerWithoutLogin(p: Pick<StaffProfile, "position" | "login_linked" | "status">): boolean {
-  return p.status === "active" && !p.login_linked && /quản lý/i.test(p.position);
+  return p.status === "active" && !p.login_linked && isManagerPosition(p.position);
+}
+
+/** A manager login (records for others, does not manage staff) not linked to any profile yet. */
+export function managerLoginWithoutProfile(a: Pick<StaffAccount, "is_manager" | "staff_id">): boolean {
+  return a.is_manager && !a.staff_id;
 }

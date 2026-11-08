@@ -632,3 +632,9 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 
 ## [2026-11-08] qa | Test live chủ spa (Chrome, local)
 - Raw: [2026-11-08-live-test-owner](raw/2026-11-08-live-test-owner.md). C1–C4, C6 đạt; F19 xác nhận chỉ do hồ sơ chưa gắn tài khoản (gắn rồi thì thẻ quản lý bị khóa đúng). F18 đã có lời giải: chủ spa nhập bù được ngày đã qua. Lỗi mới: F24–F28 (đáng chú ý F27: "Ghi lúc" theo múi giờ trình duyệt). Còn lại: nhận lại Lan (cần MFA), C5, C7.
+
+## [2026-11-08] build + secure | Quản lý không thấy chính mình trong Nhân viên + sửa phát hiện nhân sự (F19, F20, F22, F24, F25, F28)
+- Raw: [2026-11-08-em-fix-all-and-manager-self-view](raw/2026-11-08-em-fix-all-and-manager-self-view.md) (agent khác commit raw). Spec staff-management §16, [ADR-0015](wiki/decisions/ADR-0015-own-profile-out-of-the-books.md), authz-matrix, threat-model, design-system cập nhật.
+- Server: hồ sơ gắn với tài khoản của người không có `staff.manage` bị bỏ khỏi `/attendance`, `/daily-reviews`, `/evaluations`, `/adjustments`, `/staff/profiles`; `/staff/{id}` và `/evaluations/history` của chính mình `404`. Quản lý xem của mình ở `/nhan-vien/cua-toi` + "Khách của tôi" (role Quản lý vốn có `staff.read_own` từ 0017 → **không migration, 0030 không dùng**).
+- F19: hồ sơ có vị trí quản lý luôn chỉ chủ spa ghi (gắn hay chưa); `GET /staff/accounts` thêm `is_manager`; chủ spa thấy cảnh báo ở Sổ hằng ngày + Nhân sự. F24: `409 staff.has_upcoming_bookings` có `details.bookings` (kernel `AppError::ConflictDetails`), sheet nghỉ việc liệt kê + link lịch. F25: lỗi so sánh nhật ký (không mất dữ liệu), sửa ở `org::profile::changes`. F20: bỏ mọi mã P/ĐX/K (chữ hoặc icon + màu). F22: "Khách của tôi" tự cuộn tới giờ hiện tại / giờ mở cửa. F28: chip "Đã nghỉ việc".
+- Không thuộc phần này (agent Quầy/lịch hẹn/ghi chú): F1–F18, F21, F23, F26, F27.

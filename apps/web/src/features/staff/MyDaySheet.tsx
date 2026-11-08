@@ -4,8 +4,8 @@ import { BottomSheet } from "../../components/BottomSheet";
 import { timeOf } from "../front-desk/api";
 import { ErrorState, RowsSkeleton } from "../reports/ui";
 import { myDayQuery, type MyDayData } from "./api";
-import { STATUS_CODE, STATUS_WORD, percentOfBp } from "./labels";
-import { dayLabel, vnd } from "./ui";
+import { STATUS_LABEL, percentOfBp } from "./labels";
+import { StatusMark, dayLabel, vnd } from "./ui";
 
 /** `YYYY-MM-DD` ± n days. */
 export function shiftDay(day: string, n: number): string {
@@ -107,9 +107,9 @@ function DayDetail({ d, refreshing }: { d: MyDayData; refreshing: boolean }) {
             <dt>Trạng thái</dt>
             <dd>
               <span className={`my-legend-mark att-${a.status}`} aria-hidden="true">
-                {STATUS_CODE[a.status]}
+                <StatusMark status={a.status} className="size-3.5" />
               </span>{" "}
-              {STATUS_WORD[a.status]}
+              {STATUS_LABEL[a.status]}
               {a.late_minutes > 0 && <span className="badge badge-warn ml-2">Muộn {a.late_minutes} phút</span>}
             </dd>
             {a.status === "present" && (

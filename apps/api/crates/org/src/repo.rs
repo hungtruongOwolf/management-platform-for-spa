@@ -245,22 +245,35 @@ pub struct AccountRow {
     pub full_name: String,
     pub roles: Vec<String>,
     pub staff_id: Option<Uuid>,
+    /// The login's roles grant `attendance.record` or `evaluation.record`.
+    pub records_staff: bool,
+    /// The login's roles grant `staff.manage` (the owner).
+    pub manages_staff: bool,
 }
 
-/// Logins of this spa that a staff profile can be linked to.
+/// Logins of this spa that a staff profile can be linked to, with what their roles let them do
+/// to staff records (decision C).
 pub async fn accounts(tx: &mut TenantTx) -> Result<Vec<AccountRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         AccountRow,
         r#"SELECT m.user_id, u.full_name,
                   COALESCE(array_agg(r.name ORDER BY r.name) FILTER (WHERE r.id IS NOT NULL), '{}') AS "roles!",
-                  (SELECT s.id FROM app.staff s WHERE s.tenant_id = m.tenant_id AND s.user_id = m.user_id) AS staff_id
+                  (SELECT s.id FROM app.staff s WHERE s.tenant_id = m.tenant_id AND s.user_id = m.user_id) AS staff_id,
+                  EXISTS (SELECT 1 FROM app.membership_role smr
+                          JOIN app.role_permission rp ON rp.tenant_id = smr.tenant_id AND rp.role_id = smr.role_id
+                          WHERE smr.tenant_id = m.tenant_id AND smr.membership_id = m.id
+                            AND rp.permission IN ('attendance.record', 'evaluation.record')) AS "records_staff!",
+                  EXISTS (SELECT 1 FROM app.membership_role smr
+                          JOIN app.role_permission rp ON rp.tenant_id = smr.tenant_id AND rp.role_id = smr.role_id
+                          WHERE smr.tenant_id = m.tenant_id AND smr.membership_id = m.id
+                            AND rp.permission = 'staff.manage') AS "manages_staff!"
            FROM app.membership m
            JOIN app.user_account u ON u.id = m.user_id
            LEFT JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
            LEFT JOIN app.role r ON r.tenant_id = mr.tenant_id AND r.id = mr.role_id
            WHERE m.tenant_id = $1 AND m.status = 'active'
-           GROUP BY m.tenant_id, m.user_id, u.full_name
+           GROUP BY m.tenant_id, m.id, m.user_id, u.full_name
            ORDER BY u.full_name"#,
         tenant
     )
@@ -411,22 +424,40 @@ pub async fn worked_after(
     .await?)
 }
 
-/// Open bookings (booked / arrived) assigned to the person after `day`.
+pub struct UpcomingBookingRow {
+    pub id: Uuid,
+    pub business_date: NaiveDate,
+    pub starts_at: DateTime<Utc>,
+    /// The customer's name, "Khách vãng lai" for a nameless record, the guest's name for a newcomer.
+    pub customer: String,
+}
+
+/// Open bookings (booked / arrived) assigned to the person after `day`, earliest first (at most
+/// `limit`): what blocks ending their employment, listed so the owner can reassign them.
 pub async fn bookings_after(
     tx: &mut TenantTx,
     staff: Uuid,
     day: NaiveDate,
-) -> Result<i64, AppError> {
+    limit: i64,
+) -> Result<Vec<UpcomingBookingRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
-    Ok(sqlx::query_scalar!(
-        r#"SELECT count(*) AS "n!" FROM app.appointment
-           WHERE tenant_id = $1 AND staff_id = $2 AND status IN ('booked', 'arrived')
-             AND business_date > $3"#,
+    Ok(sqlx::query_as!(
+        UpcomingBookingRow,
+        r#"SELECT a.id, a.business_date, a.starts_at,
+                  CASE WHEN c.id IS NULL THEN coalesce(a.guest_name, 'Khách mới')
+                       ELSE app.customer_label(c.full_name) END AS "customer!"
+           FROM app.appointment a
+           LEFT JOIN app.customer c ON c.tenant_id = a.tenant_id AND c.id = a.customer_id
+           WHERE a.tenant_id = $1 AND a.staff_id = $2 AND a.status IN ('booked', 'arrived')
+             AND a.business_date > $3
+           ORDER BY a.starts_at, a.id
+           LIMIT $4"#,
         tenant,
         staff,
-        day
+        day,
+        limit
     )
-    .fetch_one(tx.conn())
+    .fetch_all(tx.conn())
     .await?)
 }
 

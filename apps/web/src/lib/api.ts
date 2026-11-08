@@ -14,6 +14,8 @@ export class ApiError extends Error {
     readonly existingId?: string,
     /** Seconds the server asks to wait before trying again (`Retry-After` of a 429/503). */
     readonly retryAfter?: number,
+    /** The records behind a refusal, when the code documents them (e.g. the bookings of `staff.has_upcoming_bookings`). */
+    readonly details?: unknown,
   ) {
     super(`${String(status)} ${code}`);
     this.name = "ApiError";
@@ -29,6 +31,7 @@ interface Problem {
   code: string;
   errors?: FieldProblem[];
   existing_id?: string;
+  details?: unknown;
 }
 
 function isProblem(value: unknown): value is Problem {
@@ -57,7 +60,7 @@ export async function api(path: string, init: RequestOptions = {}): Promise<unkn
   if (!response.ok) {
     const wait = Number(response.headers.get("retry-after"));
     const retryAfter = Number.isFinite(wait) && wait > 0 ? wait : undefined;
-    if (isProblem(data)) throw new ApiError(response.status, data.code, data.errors ?? [], data.existing_id, retryAfter);
+    if (isProblem(data)) throw new ApiError(response.status, data.code, data.errors ?? [], data.existing_id, retryAfter, data.details);
     throw new ApiError(response.status, "error", [], undefined, retryAfter);
   }
   return data;

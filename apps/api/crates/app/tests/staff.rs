@@ -1561,16 +1561,41 @@ async fn only_the_owner_records_for_a_manager(pool: PgPool) -> TestResult {
     ] {
         let as_manager = flags(&s.get(&s.manager, &path).await.body, "can_record");
         for (staff, can) in &as_manager {
-            assert_eq!(*can, *staff != hoa && *staff != thu, "{path} {staff}");
+            assert_eq!(*can, *staff != thu, "{path} {staff}");
         }
-        assert_eq!(as_manager.len(), 4, "{path}");
+        // EM 2026-11-08: the manager's own profile (Hoa) is not in their books; Thu, another
+        // manager, stays visible, read-only.
+        assert_eq!(as_manager.len(), 3, "{path}");
+        assert!(as_manager.iter().all(|(staff, _)| *staff != hoa), "{path}");
         let as_owner = flags(&s.get(&s.owner, &path).await.body, "can_record");
+        assert_eq!(as_owner.len(), 4, "{path}");
         assert!(as_owner.iter().all(|(_, can)| *can), "{path}");
     }
+    let thus_bonus = s
+        .post(
+            &s.owner,
+            "/adjustments",
+            json!({"staff_id": thu, "kind": "bonus", "amount": 200_000, "reason": "Quản lý tốt"}),
+        )
+        .await;
+    assert_eq!(
+        thus_bonus.status,
+        StatusCode::CREATED,
+        "{}",
+        thus_bonus.body
+    );
     let log = s
         .get(&s.manager, &format!("/adjustments?month={}", ym(today())))
         .await;
-    assert_eq!(log.body["items"][0]["can_edit"], false, "{}", log.body);
+    let items = log.body["items"].as_array().cloned().unwrap_or_default();
+    assert_eq!(
+        items.len(),
+        1,
+        "only Thu's, not the manager's own: {}",
+        log.body
+    );
+    assert_eq!(items[0]["staff_id"], json!(thu));
+    assert_eq!(items[0]["can_edit"], false, "{}", log.body);
 
     // A manager's own entry for a technician: edited (void + new) and removed once.
     let mine = s
@@ -1619,11 +1644,12 @@ async fn only_the_owner_records_for_a_manager(pool: PgPool) -> TestResult {
     let log = s
         .get(&s.owner, &format!("/adjustments?month={}", ym(today())))
         .await;
-    let amounts: Vec<i64> = log.body["items"]
+    let mut amounts: Vec<i64> = log.body["items"]
         .as_array()
         .map(|a| a.iter().filter_map(|x| x["amount"].as_i64()).collect())
         .unwrap_or_default();
-    assert_eq!(amounts, [300_000]);
+    amounts.sort_unstable();
+    assert_eq!(amounts, [200_000, 300_000]);
     assert_eq!(log.body["items"][0]["can_edit"], true);
     s.pay(s.lan, 5_000_000, 500).await;
     let payroll = s.get(&s.owner, "/payroll").await;
@@ -1645,6 +1671,241 @@ async fn only_the_owner_records_for_a_manager(pool: PgPool) -> TestResult {
         .execute(&s.h.owner)
         .await;
     assert!(deleted.is_err(), "never deleted");
+    Ok(())
+}
+
+/// EM 2026-11-08: a manager does not see themselves in "Nhân viên". Their own profile (the one
+/// linked to their login) is left out of every staff book they read — daily book, month sheet,
+/// evaluations and their history, bonuses / penalties, the roster — on the server, while the
+/// owner sees everyone. The manager reads their own attendance, pay and evaluations at `/me/*`,
+/// like a technician: their pay reaches them there and nowhere else. Mutation-checked: making
+/// `RecordScope::lists` / `profile::hidden_from` let everyone through turns this red.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_manager_reads_their_own_month_only_through_me(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let hoa = linked_profile(&s, MANAGER_PHONE, "Quản lý Hoa").await?;
+    let day = yesterday();
+    let month = ym(day);
+    // The owner keeps the manager's books: a day, a praise, a bonus, a score, pay terms.
+    assert_eq!(
+        s.attend(&s.owner, hoa, day, "present").await.status,
+        StatusCode::OK
+    );
+    let review = s
+        .put(
+            &s.owner,
+            "/daily-reviews",
+            json!({"entries": [{"staff_id": hoa, "date": day, "compliments": 2}]}),
+        )
+        .await;
+    assert_eq!(review.status, StatusCode::OK, "{}", review.body);
+    let bonus = s
+        .post(
+            &s.owner,
+            "/adjustments",
+            json!({"staff_id": hoa, "kind": "bonus", "amount": 250_000, "occurred_on": day,
+                   "reason": "Quản lý tốt"}),
+        )
+        .await;
+    assert_eq!(bonus.status, StatusCode::CREATED, "{}", bonus.body);
+    let eval = s
+        .put(
+            &s.owner,
+            "/evaluations",
+            json!({"staff_id": hoa, "month": month, "criteria": criteria("m1")}),
+        )
+        .await;
+    assert_eq!(eval.status, StatusCode::OK, "{}", eval.body);
+    s.pay(hoa, 9_000_000, 0).await;
+
+    let has = |body: &Value, key: &str| -> bool {
+        body[key]
+            .as_array()
+            .is_some_and(|a| a.iter().any(|x| x["staff_id"] == json!(hoa)))
+    };
+    for (path, key) in [
+        (format!("/attendance?month={month}"), "staff"),
+        (format!("/daily-reviews?month={month}"), "staff"),
+        (format!("/evaluations?month={month}"), "staff"),
+        (format!("/adjustments?month={month}"), "items"),
+    ] {
+        let mine = s.get(&s.manager, &path).await;
+        assert_eq!(mine.status, StatusCode::OK, "{path}: {}", mine.body);
+        assert!(
+            !has(&mine.body, key),
+            "{path}: the manager's own row: {}",
+            mine.body
+        );
+        assert!(
+            has(&s.get(&s.owner, &path).await.body, key),
+            "{path}: the owner sees it"
+        );
+    }
+    // The roster and the profile.
+    let roster = s.get(&s.manager, "/staff/profiles").await;
+    assert_eq!(roster.status, StatusCode::OK, "{}", roster.body);
+    assert!(
+        !names(&roster.body).contains(&"Quản lý Hoa".to_owned()),
+        "{}",
+        roster.body
+    );
+    assert!(names(&roster.body).contains(&"Lê Thị Lan".to_owned()));
+    assert!(
+        names(&s.get(&s.owner, "/staff/profiles").await.body).contains(&"Quản lý Hoa".to_owned())
+    );
+    assert_eq!(
+        s.get(&s.manager, &format!("/staff/{hoa}")).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        s.get(&s.owner, &format!("/staff/{hoa}")).await.status,
+        StatusCode::OK
+    );
+    // Their evaluation history: not in the books (404, like an unknown id), only at /me.
+    let history = s
+        .get(&s.manager, &format!("/evaluations/history?staff_id={hoa}"))
+        .await;
+    assert_eq!(history.status, StatusCode::NOT_FOUND, "{}", history.body);
+    assert_eq!(
+        s.get(&s.owner, &format!("/evaluations/history?staff_id={hoa}"))
+            .await
+            .status,
+        StatusCode::OK
+    );
+    // Pay: never on a book route for the manager (payroll is the owner's).
+    assert_eq!(
+        s.get(&s.manager, "/payroll").await.status,
+        StatusCode::FORBIDDEN
+    );
+    for path in ["/attendance", "/evaluations", "/staff/profiles"] {
+        let body = s.get(&s.manager, path).await.body.to_string();
+        assert!(
+            !body.contains("9000000"),
+            "{path} leaks the manager's salary"
+        );
+    }
+
+    // Their own month, the technician's way: attendance, praise, bonus, score and pay.
+    let me = s.get(&s.manager, &format!("/me/staff?month={month}")).await;
+    assert_eq!(me.status, StatusCode::OK, "{}", me.body);
+    assert_eq!(me.body["linked"], true);
+    let data = &me.body["data"];
+    assert_eq!(data["attendance"]["staff_id"], json!(hoa));
+    assert_eq!(data["attendance"]["days"][0]["status"], "present");
+    assert_eq!(data["attendance"]["can_record"], false);
+    assert_eq!(data["reviews"][0]["compliments"], 2);
+    assert_eq!(data["adjustments"][0]["amount"], 250_000);
+    assert_eq!(data["evaluation"]["result"], "m1");
+    assert_eq!(
+        data["payslip"]["base_salary"], 9_000_000,
+        "{}",
+        data["payslip"]
+    );
+    let me_day = s
+        .get(&s.manager, &format!("/me/staff/day?date={day}"))
+        .await;
+    assert_eq!(me_day.status, StatusCode::OK, "{}", me_day.body);
+    assert_eq!(
+        me_day.body["data"]["attendance"]["status"], "present",
+        "{}",
+        me_day.body
+    );
+    let me_history = s.get(&s.manager, "/me/evaluations/history").await;
+    assert_eq!(me_history.status, StatusCode::OK, "{}", me_history.body);
+    assert_eq!(me_history.body["linked"], true);
+    assert!(
+        me_history.body.to_string().contains("\"m1\""),
+        "{}",
+        me_history.body
+    );
+    // And still nobody else's: no person picker on /me.
+    let other = s
+        .get(&s.manager, &format!("/me/staff?staff_id={}", s.lan))
+        .await;
+    assert_eq!(other.status, StatusCode::BAD_REQUEST);
+    Ok(())
+}
+
+/// F19 (live test 2026-11-08): while a manager's profile is not linked to their login, the app
+/// cannot tell which profile is theirs. A profile whose position names a manager is therefore
+/// owner-only for any manager, linked or not: an unlinked manager cannot mark their own
+/// attendance. The owner sees which manager logins and "Quản lý" profiles are not linked yet
+/// (`GET /staff/accounts` → `is_manager`, `GET /staff/profiles` → `login_linked`).
+/// Mutation-checked: dropping the position rule in `RecordScope::load` turns this red.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn an_unlinked_manager_profile_is_the_owners_to_record(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    // The manager's own profile exists but is not linked to their login.
+    let hired = s
+        .post(
+            &s.owner,
+            "/staff",
+            json!({"full_name": "Nguyễn Thị Thu Hà", "position": "Quản lý"}),
+        )
+        .await;
+    assert_eq!(hired.status, StatusCode::CREATED, "{}", hired.body);
+    let ha = id(&hired);
+    assert_eq!(hired.body["login_linked"], false);
+    let day = yesterday();
+    let refused = s.attend(&s.manager, ha, day, "present").await;
+    assert_eq!(
+        (refused.status, refused.body["code"].clone()),
+        (StatusCode::FORBIDDEN, json!("staff.record_owner_only")),
+        "{}",
+        refused.body
+    );
+    let evaluation = s
+        .put(
+            &s.manager,
+            "/evaluations",
+            json!({"staff_id": ha, "month": ym(day), "criteria": criteria("m1")}),
+        )
+        .await;
+    assert_eq!(
+        evaluation.body["code"], "staff.record_owner_only",
+        "{}",
+        evaluation.body
+    );
+    // Still listed for the manager (it may be someone else's), read-only.
+    let sheet = s
+        .get(&s.manager, &format!("/attendance?month={}", ym(day)))
+        .await;
+    let row = sheet.body["staff"]
+        .as_array()
+        .and_then(|a| a.iter().find(|x| x["staff_id"] == json!(ha)).cloned())
+        .unwrap_or_default();
+    assert_eq!(row["can_record"], false, "{}", sheet.body);
+    // Technicians stay the manager's to record.
+    assert_eq!(
+        s.attend(&s.manager, s.lan, day, "present").await.status,
+        StatusCode::OK
+    );
+    // The owner records for it, and sees the manager login that is not linked to any profile.
+    assert_eq!(
+        s.attend(&s.owner, ha, day, "present").await.status,
+        StatusCode::OK
+    );
+    let accounts = s.get(&s.owner, "/staff/accounts").await;
+    assert_eq!(accounts.status, StatusCode::OK, "{}", accounts.body);
+    let by_name = |name: &str| {
+        accounts
+            .body
+            .as_array()
+            .and_then(|a| a.iter().find(|x| x["full_name"] == name).cloned())
+            .unwrap_or_default()
+    };
+    let manager = by_name("Quản lý Hoa");
+    assert_eq!(
+        (manager["is_manager"].clone(), manager["staff_id"].clone()),
+        (json!(true), Value::Null)
+    );
+    assert_eq!(
+        by_name("Chủ Spa")["is_manager"],
+        false,
+        "the owner records everyone: {}",
+        accounts.body
+    );
+    assert_eq!(by_name("KTV Lan")["is_manager"], false);
     Ok(())
 }
 
@@ -1801,6 +2062,15 @@ async fn the_roster_hires_ends_and_rehires_without_losing_history(pool: PgPool) 
     let booked = s.end(thu, today(), "Chuyển công tác").await;
     assert_eq!(booked.status, StatusCode::CONFLICT);
     assert_eq!(booked.body["code"], "staff.has_upcoming_bookings");
+    // F24 (2026-11-08): the refusal names the bookings to reassign — date, spa time, customer —
+    // and nothing else about them (no phone, no note).
+    assert_eq!(
+        booked.body["details"],
+        json!({"bookings": [{"id": booking.body["id"], "date": tomorrow, "time": "10:00",
+                             "customer": "Nguyễn Thị Hằng"}], "more": false}),
+        "{}",
+        booked.body
+    );
     sqlx::query("UPDATE app.appointment SET staff_id = NULL WHERE staff_id = $1")
         .bind(thu)
         .execute(&s.h.owner)
@@ -1965,6 +2235,18 @@ async fn the_roster_hires_ends_and_rehires_without_losing_history(pool: PgPool) 
         ]
     );
     assert_eq!(history.body[2]["reason"], "Chuyển công tác");
+    // F25 (2026-11-08): ending employment closes the period; the start date stays, and the log
+    // does not read "Ngày vào làm: … → trống".
+    let end_fields: Vec<&str> = history.body[2]["changes"]
+        .as_array()
+        .map_or_else(Vec::new, |a| {
+            a.iter().filter_map(|c| c["field"].as_str()).collect()
+        });
+    assert!(
+        end_fields.contains(&"left_on") && end_fields.contains(&"status"),
+        "{end_fields:?}"
+    );
+    assert!(!end_fields.contains(&"joined_on"), "{}", history.body[2]);
     assert_eq!(
         s.get(&s.manager, &format!("/staff/{thu}/history"))
             .await
@@ -2210,7 +2492,8 @@ async fn the_login_link_is_owner_only(pool: PgPool) -> TestResult {
     assert_eq!(by_manager.status, StatusCode::FORBIDDEN);
 
     // Decision C reads the link: Hoa's profile linked to the manager's login is the owner's to
-    // record; unlinked, it counts as a technician's.
+    // record. Unlinked, it stays the owner's (F19, 2026-11-08: a "Quản lý" position is owner-only
+    // until the app can tell whose profile it is; before, it counted as a technician's).
     let hoa = linked_profile(&s, MANAGER_PHONE, "Quản lý Hoa").await?;
     let blocked = s.attend(&s.manager, hoa, today(), "present").await;
     assert_eq!(blocked.status, StatusCode::FORBIDDEN);
@@ -2227,8 +2510,8 @@ async fn the_login_link_is_owner_only(pool: PgPool) -> TestResult {
     assert_eq!(unlinked.status, StatusCode::OK, "{}", unlinked.body);
     assert_eq!(unlinked.body["login_linked"], false);
     assert_eq!(
-        s.attend(&s.manager, hoa, today(), "present").await.status,
-        StatusCode::OK
+        s.attend(&s.manager, hoa, today(), "present").await.body["code"],
+        "staff.record_owner_only"
     );
     let history = s.get(&s.owner, &format!("/staff/{hoa}/history")).await;
     assert_eq!(history.body[0]["action"], "staff.account_link");

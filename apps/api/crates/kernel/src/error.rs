@@ -56,6 +56,14 @@ pub enum AppError {
         code: &'static str,
         existing_id: uuid::Uuid,
     },
+    /// Conflict whose blocking records the client lists for the user (409), e.g.
+    /// `staff.has_upcoming_bookings` with the bookings still assigned. `details` is built by the
+    /// service from data the caller is already entitled to; never internals.
+    #[error("conflict: {code}")]
+    ConflictDetails {
+        code: &'static str,
+        details: serde_json::Value,
+    },
     #[error("stale version")]
     StaleVersion,
     #[error("bad request: {code}")]
@@ -98,7 +106,9 @@ impl AppError {
             Self::Forbidden { .. } => StatusCode::FORBIDDEN,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Validation(_) | Self::Unprocessable { .. } => StatusCode::UNPROCESSABLE_ENTITY,
-            Self::Conflict { .. } | Self::ConflictWith { .. } => StatusCode::CONFLICT,
+            Self::Conflict { .. } | Self::ConflictWith { .. } | Self::ConflictDetails { .. } => {
+                StatusCode::CONFLICT
+            }
             Self::StaleVersion => StatusCode::PRECONDITION_FAILED,
             Self::BadRequest { .. } => StatusCode::BAD_REQUEST,
             Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
@@ -119,6 +129,7 @@ impl AppError {
             | Self::Unprocessable { code }
             | Self::Conflict { code }
             | Self::ConflictWith { code, .. }
+            | Self::ConflictDetails { code, .. }
             | Self::BadRequest { code } => code,
             Self::NotFound => "not_found",
             Self::Validation(_) => "validation_failed",
@@ -148,6 +159,10 @@ impl AppError {
                 Self::ConflictWith { existing_id, .. } => Some(*existing_id),
                 _ => None,
             },
+            details: match self {
+                Self::ConflictDetails { details, .. } => Some(details.clone()),
+                _ => None,
+            },
         }
     }
 }
@@ -163,6 +178,9 @@ pub struct Problem {
     pub errors: Option<Vec<FieldError>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub existing_id: Option<uuid::Uuid>,
+    /// The records behind a `ConflictDetails` refusal (shape documented per code in OpenAPI).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
 }
 
 impl Problem {
@@ -184,6 +202,7 @@ impl Problem {
             code,
             errors: None,
             existing_id: None,
+            details: None,
         }
     }
 }
@@ -270,6 +289,28 @@ mod tests {
             serde_json::to_value(AppError::NotFound.problem())
                 .unwrap_or_default()
                 .get("existing_id")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn conflict_details_list_the_blocking_records() {
+        let problem = AppError::ConflictDetails {
+            code: "staff.has_upcoming_bookings",
+            details: serde_json::json!({"bookings": [{"date": "2026-11-09"}]}),
+        }
+        .problem();
+        let json = serde_json::to_value(&problem).unwrap_or_default();
+        assert_eq!(json["status"], serde_json::json!(409));
+        assert_eq!(
+            json["code"],
+            serde_json::json!("staff.has_upcoming_bookings")
+        );
+        assert_eq!(json["details"]["bookings"][0]["date"], "2026-11-09");
+        assert!(
+            serde_json::to_value(AppError::NotFound.problem())
+                .unwrap_or_default()
+                .get("details")
                 .is_none()
         );
     }

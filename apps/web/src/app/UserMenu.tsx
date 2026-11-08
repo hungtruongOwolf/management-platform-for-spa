@@ -19,6 +19,9 @@ export function initialOf(name: string): string {
  * never decides access (the API does). /me has no role field yet (open question to the backend).
  */
 export function roleLabel(me: Me | null): string {
+  // A leaver keeps their login with only their past pay (ADR-0014): the chip says they have left
+  // rather than the role they no longer hold (F28, 2026-11-08).
+  if (can(me, "staff.read_own_past") && !can(me, "staff.read_own")) return "Đã nghỉ việc";
   if (can(me, "catalog.manage")) return "Chủ spa";
   if (can(me, "visit.record")) return "Quản lý";
   return "Kỹ thuật viên";

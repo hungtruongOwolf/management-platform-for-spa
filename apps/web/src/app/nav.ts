@@ -117,7 +117,7 @@ export function navFor(me: Me | null): NavGroup[] {
         },
       ],
     ],
-    ["Nhân viên", [staffItem(me), myWorkItem(me)]],
+    ["Nhân viên", [staffItem(me), myPayItem(me), myWorkItem(me)]],
     [
       "Danh mục",
       [
@@ -147,20 +147,46 @@ export function navFor(me: Me | null): NavGroup[] {
     .filter((g) => g.items.length > 0);
 }
 
+/**
+ * Staff who keep the books without managing staff: a manager. Their own profile is not in the
+ * books (EM 2026-11-08), so they read their own month in "Công và lương của tôi", like a
+ * technician. The owner records and sees everyone, themselves included.
+ */
+function keepsBooksForOthers(me: Me | null): boolean {
+  return mayOpen.staffBooks(me) && !can(me, "staff.manage");
+}
+
 /** Staff management for those who keep the books; "my month" for everyone else linked to a profile. */
 function staffItem(me: Me | null): NavItem | false {
-  if (mayOpen.staffBooks(me)) return { to: "/nhan-vien", label: "Nhân viên", icon: "id-card" };
+  if (mayOpen.staffBooks(me))
+    return {
+      to: "/nhan-vien",
+      label: "Nhân viên",
+      icon: "id-card",
+      // Not active on /nhan-vien/cua-toi, the manager's own month.
+      ...(keepsBooksForOthers(me) && mayOpen.myPay(me) ? { exact: true } : {}),
+    };
   return mayOpen.myPay(me) && { to: "/nhan-vien", label: "Công và lương của tôi", short: "Công lương", icon: "id-card" };
 }
 
+/** A manager's own month (EM 2026-11-08): attendance, pay, evaluation and its history. */
+function myPayItem(me: Me | null): NavItem | false {
+  return (
+    keepsBooksForOthers(me) &&
+    mayOpen.myPay(me) && { to: "/nhan-vien/cua-toi", label: "Công và lương của tôi", short: "Công lương", icon: "wallet" }
+  );
+}
+
 /**
- * "Khách của tôi" (round 5): a technician's served customers and bookings. Staff who already see
- * visits at the front desk (`visit.read`) do not need it.
+ * "Khách của tôi" (round 5): the customers and bookings of the signed-in staff member. A
+ * technician's only view of visits; a manager also gets it (EM 2026-11-08: their own things the
+ * way a technician sees them; useful when they serve customers too). The owner sees everything at
+ * the front desk.
  */
 function myWorkItem(me: Me | null): NavItem | false {
   return (
     mayOpen.myWork(me) &&
-    !can(me, "visit.read") && {
+    (!can(me, "visit.read") || keepsBooksForOthers(me)) && {
       to: "/khach-cua-toi",
       label: "Khách của tôi",
       short: "Khách",
@@ -183,6 +209,7 @@ const SCREEN_LABELS: Record<string, string> = {
   "/bang-gia": "Bảng giá dịch vụ",
   "/bang-gia/goi": "Mẫu gói liệu trình",
   "/nhan-vien": "Nhân viên",
+  "/nhan-vien/cua-toi": "Công và lương của tôi",
   "/khach-cua-toi": "Khách của tôi",
   "/cai-dat": "Cài đặt",
 };

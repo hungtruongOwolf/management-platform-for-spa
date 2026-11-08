@@ -191,22 +191,30 @@ async fn owners_and_managers_read_a_persons_months(pool: PgPool) -> TestResult {
 }
 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
-async fn decision_c_shows_who_may_rescore_but_both_may_read(pool: PgPool) -> TestResult {
+async fn decision_c_shows_who_may_rescore_and_hides_the_managers_own(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    // The manager's own profile: readable by the manager, scored only by the owner.
+    // EM 2026-11-08: the manager's own profile is not in their books (`404`, like an unknown
+    // id); they read their months at `/me/evaluations/history`. The owner scores and reads it.
     let mine = s
         .history(Some(&s.manager), &format!("?staff_id={}", s.hoa))
         .await;
-    assert_eq!(mine.status, StatusCode::OK, "{}", mine.body);
-    assert_eq!(mine.body["can_record"], false);
+    assert_eq!(mine.status, StatusCode::NOT_FOUND, "{}", mine.body);
     let owner = s
         .history(Some(&s.owner), &format!("?staff_id={}", s.hoa))
         .await;
+    assert_eq!(owner.status, StatusCode::OK, "{}", owner.body);
     assert_eq!(owner.body["can_record"], true);
     let lan = s
         .history(Some(&s.manager), &format!("?staff_id={}", s.lan))
         .await;
     assert_eq!(lan.body["can_record"], true);
+    // Another manager's profile (F19: a "Quản lý" position, even unlinked): readable, owner-scored.
+    let thu = org::provisioning::add_staff(&s.h.owner, "vpyd", "Trần Thu", "Quản lý").await?;
+    let other = s
+        .history(Some(&s.manager), &format!("?staff_id={thu}"))
+        .await;
+    assert_eq!(other.status, StatusCode::OK, "{}", other.body);
+    assert_eq!(other.body["can_record"], false);
     Ok(())
 }
 

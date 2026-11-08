@@ -3699,7 +3699,7 @@
           "403": {},
           "404": {},
           "409": {
-            "description": "staff.already_left | staff.has_upcoming_bookings"
+            "description": "staff.already_left | staff.has_upcoming_bookings (details.bookings = [{id, date, time HH:MM spa time, customer}], earliest first, at most 20; details.more = there are others)"
           },
           "412": {},
           "422": {
@@ -10684,11 +10684,16 @@
         "required": [
           "user_id",
           "full_name",
-          "roles"
+          "roles",
+          "is_manager"
         ],
         "properties": {
           "full_name": {
             "type": "string"
+          },
+          "is_manager": {
+            "type": "boolean",
+            "description": "The login records attendance / evaluations for others without managing staff (a\nmanager). Not linked to a profile, the app cannot tell which profile is theirs (decision\nC): the owner is warned (F19)."
           },
           "roles": {
             "type": "array",
