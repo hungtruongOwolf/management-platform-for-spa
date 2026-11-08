@@ -661,3 +661,8 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 
 ## [2026-11-08] build | Đổi tên mục "Nhân viên" → "Quản lý nhân sự"
 - EM: "trong mục Nhân viên bạn lại để thêm 1 phần nhân viên nữa lại bị trùng lặp … đổi nó thành là quản lý nhân sự". Nhóm menu vẫn tên "Nhân viên"; mục và tiêu đề trang (`/nhan-vien`, chủ spa + quản lý) thành "Quản lý nhân sự". KTV vẫn thấy "Công và lương của tôi".
+
+## [2026-11-08] build | Sửa ghi chú gói của gói bán trong lượt (F4 follow-up)
+- Lead: thêm nút web cho gói bán **trong lượt**. Quầy: ⋯ của dòng lượt → "Thêm / Sửa ghi chú gói" (thêm tên gói khi lượt bán nhiều gói), form ngay dưới dòng; lịch sử khách: nút trên mục "Mua gói". Dùng lại `PATCH /sales/{id}`; không đổi API, không migration.
+- Một form chung `features/sales/SaleNoteForm.tsx` (tách từ `DaySales`, chunk lazy, cùng gợi ý), quyền UX chung `corrections/api.ts::mayEditSaleNote` (`package.sell` + đọc/ghi ghi chú sức khỏe, hóa đơn chưa hủy, ngày trước cần `record.void_closed_day`). Spec front-desk §10.15 AC-N3, threat-model cập nhật.
+- JS khởi động (gzip -9 entry + modulepreload): 123.99 → **124.06 KiB** (+66 B: `mayEditSaleNote` nằm cạnh `spaToday`); form là chunk lazy riêng `SaleNoteForm-*.js`.
