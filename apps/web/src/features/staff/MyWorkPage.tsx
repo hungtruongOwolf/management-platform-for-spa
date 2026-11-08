@@ -1,17 +1,17 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "../../app/Icon";
 import { PageHeader } from "../../app/PageHeader";
 import { BottomSheet } from "../../components/BottomSheet";
 import { usePhone } from "../../components/useMediaQuery";
 import { useSearchState } from "../../lib/searchState";
-import { PHASE_BADGE, PHASE_LABEL, counts, daysFrom, minutesOf, mondayOf, type EntryView } from "../appointments/api";
+import { PHASE_BADGE, PHASE_LABEL, counts, daysFrom, hhmm, minutesOf, mondayOf, spaMinutes, type EntryView } from "../appointments/api";
 import { TimeGrid, range, servicesText, type TimeColumn } from "../appointments/TimeGrid";
 import { spaToday } from "../corrections/api";
 import { EmptyState, ErrorState } from "../reports/ui";
 import { myCalendarQuery, type MyCalendarData, type MyCalendarEntry } from "./api";
 import { shiftMonth, weekdayShort } from "./labels";
-import { entryView, gridSpan, weekSummary } from "./myCalendar";
+import { entryView, focusMinute, gridSpan, weekSummary } from "./myCalendar";
 import { myWorkSearch } from "./search";
 import { MonthPicker, dayLabel } from "./ui";
 import "./staff.css";
@@ -246,21 +246,58 @@ function MyCalendarView({
     data.slot_minutes,
     columns.flatMap((c) => c.items),
   );
+  const focus = focusMinute({
+    gridOpens: span.opens,
+    gridCloses: span.closes,
+    opens: minutesOf(data.opens_at),
+    now: spaMinutes(new Date().toISOString()),
+    showsToday: shownDays.includes(data.today),
+    shown: columns.flatMap((c) => c.items),
+  });
   return (
-    <TimeGrid
-      opens={span.opens}
-      closes={span.closes}
-      slot={data.slot_minutes}
-      columns={columns}
-      colMin={layout === "ngay" ? 168 : 112}
-      label={layout === "ngay" ? `Lịch của tôi ngày ${dayLabel(day)}` : "Lịch của tôi trong tuần"}
-      tagOf={(v) => {
-        const e = byId.get(v.id);
-        return e ? tagOf(e) : null;
-      }}
-      onOpen={onOpen}
-    />
+    <FocusedGrid view={`${layout}|${shownDays[0] ?? day}`} focus={focus}>
+      <TimeGrid
+        opens={span.opens}
+        closes={span.closes}
+        slot={data.slot_minutes}
+        columns={columns}
+        colMin={layout === "ngay" ? 168 : 112}
+        label={layout === "ngay" ? `Lịch của tôi ngày ${dayLabel(day)}` : "Lịch của tôi trong tuần"}
+        tagOf={(v) => {
+          const e = byId.get(v.id);
+          return e ? tagOf(e) : null;
+        }}
+        onOpen={onOpen}
+      />
+    </FocusedGrid>
   );
+}
+
+/**
+ * Brings the grid's `focus` hour (F22, `focusMinute`) to the top of the view, just under the
+ * sticky top bar and day headers, once per view (day or week, layout) — not on every refetch, so
+ * the page never jumps under the reader. The page scrolls as one (no nested scroll box), so this
+ * scrolls the window; nothing happens when the hour is already the grid's first row.
+ */
+function FocusedGrid({ view, focus, children }: { view: string; focus: number | null; children: ReactNode }) {
+  const wrap = useRef<HTMLDivElement | null>(null);
+  const done = useRef<string | null>(null);
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el || done.current === view) return;
+    done.current = view;
+    if (focus === null) return;
+    const label = hhmm(focus);
+    const band = Array.from(el.querySelectorAll<HTMLElement>(".cal-gutter.is-hour")).find(
+      (b) => b.firstElementChild?.textContent === label,
+    );
+    if (!band) return;
+    const head = el.querySelector<HTMLElement>(".cal-head");
+    const sticky = head ? (Number.parseFloat(getComputedStyle(head).top) || 0) + head.getBoundingClientRect().height : 0;
+    const top = band.getBoundingClientRect().top + window.scrollY - sticky - 8;
+    if (top > window.scrollY) window.scrollTo({ top, behavior: "auto" });
+  }, [view, focus]);
+  return <div ref={wrap}>{children}</div>;
 }
 
 /** The week as a list grouped by day (phones, and the "Danh sách" view). */

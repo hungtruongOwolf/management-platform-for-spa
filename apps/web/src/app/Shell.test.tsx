@@ -211,6 +211,8 @@ describe("app shell", () => {
     expect(roleLabel(me(["catalog.manage", "visit.record"]))).toBe("Chủ spa");
     expect(roleLabel(me(MANAGER))).toBe("Quản lý");
     expect(roleLabel(me(["catalog.read"]))).toBe("Kỹ thuật viên");
+    // F28: a leaver (ADR-0014) keeps only their past pay; the chip says so, not their old role.
+    expect(roleLabel(me(["staff.read_own_past"]))).toBe("Đã nghỉ việc");
   });
 });
 

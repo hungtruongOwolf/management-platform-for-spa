@@ -6,6 +6,7 @@ import { can, meQuery } from "../auth/session";
 import { spaToday } from "../corrections/api";
 import { DailyBook } from "./DailyBook";
 import { EvaluationTab } from "./EvaluationTab";
+import { LinkWarnings } from "./LinkWarnings";
 import { MonthSheet } from "./MonthSheet";
 import { MyMonth } from "./MyMonth";
 import { PayrollTab } from "./PayrollTab";
@@ -23,11 +24,62 @@ const TAB_LABEL: Record<StaffTab, string> = {
 };
 
 /**
+ * "Công và lương của tôi": the signed-in staff member's own month — attendance, pay, evaluation and
+ * its history (`/me/*`, the person comes from the session). A technician lands here at /nhan-vien;
+ * a manager, whose /nhan-vien holds the books of the people they look after (their own profile is
+ * left out of them, EM 2026-11-08), opens it at /nhan-vien/cua-toi.
+ */
+export function MyPayPage() {
+  const { data: me } = useSuspenseQuery(meQuery);
+  const [search, patch] = useSearchState(staffSearch);
+  const current = spaToday().slice(0, 7);
+  const month = search.month || current;
+  // A leaver (ADR-0014): their own months only; the server picks the month they left by default
+  // and refuses the months they did not work in, so the picker lives with the data.
+  const former = can(me, "staff.read_own_past") && !can(me, "staff.read_own");
+  return (
+    <section className="grid content-start gap-5">
+      <PageHeader title="Công và lương của tôi">
+        {!former && (
+          <MonthPicker
+            month={month}
+            current={current}
+            onChange={(m) => {
+              patch({ month: m === current ? "" : m, day: "" });
+            }}
+          />
+        )}
+      </PageHeader>
+      {mayOpen.myPay(me) ? (
+        <MyMonth
+          month={former ? search.month : month}
+          former={former}
+          onMonth={(m) => {
+            patch({ month: m, day: "" });
+          }}
+          day={search.day}
+          onDay={(d) => {
+            // The open day is in the URL (ADR-0007); its month follows it.
+            patch(d ? { day: d, month: d.slice(0, 7) === current ? "" : d.slice(0, 7) } : { day: "" });
+          }}
+        />
+      ) : (
+        <p role="alert" className="note">
+          Màn hình này chưa mở cho tài khoản của bạn.
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
  * /nhan-vien (spec staff-management §10): the daily book first (attendance, praise/complaints and
  * bonuses/penalties per person, in one pass), then the month grid, the monthly evaluation (the
  * book prompts for it when due), payroll (payroll.read) and the roster "Nhân sự" (staff.read;
  * hiring, editing and ending employment with staff.manage, spec §13). A
  * technician without those sees only their own month. Tabs are UX only: each API answers 403.
+ * A manager's own profile is not in these books (the server leaves it out); their own month is
+ * "Công và lương của tôi" ({@link MyPayPage}).
  */
 export function StaffPage() {
   const { data: me } = useSuspenseQuery(meQuery);
@@ -59,36 +111,7 @@ export function StaffPage() {
     />
   );
 
-  if (!tab) {
-    // A leaver (ADR-0014): their own months only; the server picks the month they left by
-    // default and refuses the months they did not work in, so the picker lives with the data.
-    const former = can(me, "staff.read_own_past") && !can(me, "staff.read_own");
-    return (
-      <section className="grid content-start gap-5">
-        <PageHeader title="Công và lương của tôi">
-          {!former && picker}
-        </PageHeader>
-        {mayOpen.myPay(me) ? (
-          <MyMonth
-            month={former ? search.month : month}
-            former={former}
-            onMonth={(m) => {
-              patch({ month: m, day: "" });
-            }}
-            day={search.day}
-            onDay={(d) => {
-              // The open day is in the URL (ADR-0007); its month follows it.
-              patch(d ? { day: d, month: d.slice(0, 7) === current ? "" : d.slice(0, 7) } : { day: "" });
-            }}
-          />
-        ) : (
-          <p role="alert" className="note">
-            Màn hình này chưa mở cho tài khoản của bạn.
-          </p>
-        )}
-      </section>
-    );
-  }
+  if (!tab) return <MyPayPage />;
 
   const onDay = (d: string) => {
     patch({ day: d === today ? "" : d, month: d.slice(0, 7) === current ? "" : d.slice(0, 7) });
@@ -117,6 +140,18 @@ export function StaffPage() {
         ))}
       </div>
       <div id="staff-panel" role="tabpanel" aria-labelledby={`staff-tab-${tab}`} className="grid content-start gap-5">
+        {/* F19: the owner sees which managers are not linked to their profile yet. */}
+        {can(me, "staff.manage") && (tab === "day" || tab === "profiles") && (
+          <LinkWarnings
+            {...(tab === "day"
+              ? {
+                  onOpenRoster: () => {
+                    patch({ tab: "profiles", staff: "" }, { push: true });
+                  },
+                }
+              : {})}
+          />
+        )}
         {tab === "day" && (
           <DailyBook
             month={month}

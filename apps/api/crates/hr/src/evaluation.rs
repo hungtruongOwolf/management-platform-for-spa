@@ -264,7 +264,8 @@ pub struct EvaluationSheet {
     pub staff: Vec<StaffEvaluation>,
 }
 
-/// `GET /evaluations?month=` (`evaluation.record`).
+/// `GET /evaluations?month=` (`evaluation.record`); not the caller's own row unless they are the
+/// owner ([`RecordScope::lists`]).
 pub async fn sheet(
     pool: &PgPool,
     actor: &Actor,
@@ -283,7 +284,7 @@ pub async fn sheet(
     tx.commit().await?;
     let staff = profiles
         .iter()
-        .filter(|p| period::employed_in(p, month))
+        .filter(|p| period::employed_in(p, month) && scope.lists(p.id))
         .map(|p| {
             let mine: Vec<Day> = days
                 .iter()
@@ -441,7 +442,8 @@ pub(crate) async fn history_months(
 /// `GET /evaluations`, which already shows every person's scorecard to its holders): one person's
 /// months, newest first — total and level, the month's praise / complaints and attendance. One
 /// transaction, three queries per month at most (a two-year cap); another spa's or an unknown
-/// `staff_id` is `404`.
+/// `staff_id` is `404`, and so is the caller's own unless they are the owner (they read theirs at
+/// `GET /me/evaluations/history`).
 pub async fn history(
     pool: &PgPool,
     actor: &Actor,
@@ -457,9 +459,12 @@ pub async fn history(
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let today = period::today(&mut tx).await?;
     let (from, to) = history_range(from, to, Month::of(today))?;
+    let scope = RecordScope::load(&mut tx, actor).await?;
+    if !scope.lists(staff_id) {
+        return Err(AppError::NotFound);
+    }
     let person = org::profile::profile_in(&mut tx, staff_id).await?;
     let months = history_months(&mut tx, &person, from, to, today).await?;
-    let scope = RecordScope::load(&mut tx, actor).await?;
     tx.commit().await?;
     Ok(EvaluationHistory {
         staff_id,

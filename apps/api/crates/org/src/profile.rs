@@ -21,6 +21,39 @@ pub const MAX_BASE_SALARY: i64 = 1_000_000_000;
 pub const MAX_ALLOWANCE: i64 = 100_000_000;
 pub const MAX_COMMISSION_BP: i32 = 10_000;
 
+/// The permissions whose holders supervise staff (decision C): only the owner records attendance,
+/// praise / complaints, bonuses / penalties and the evaluation of a profile linked to such a login.
+pub const SUPERVISING: [Permission; 3] = [
+    Permission::AttendanceRecord,
+    Permission::EvaluationRecord,
+    Permission::StaffManage,
+];
+
+/// [`SUPERVISING`] as permission strings, for SQL.
+pub fn supervising_permissions() -> Vec<String> {
+    SUPERVISING.iter().map(|p| p.as_str().to_owned()).collect()
+}
+
+/// Whether a free-text position names a manager ("Quản lý", "quản lý ca", "Quan ly"), whatever the
+/// case, accents or Unicode form (F19, 2026-11-08). Such a profile is treated as supervising even
+/// before the owner links it to a login: until then the app cannot tell whose it is, so only the
+/// owner records for it.
+pub fn is_manager_position(position: &str) -> bool {
+    use unicode_normalization::UnicodeNormalization;
+    use unicode_normalization::char::is_combining_mark;
+    let folded: String = position
+        .nfd()
+        .filter(|c| !is_combining_mark(*c))
+        .map(|c| if matches!(c, 'đ' | 'Đ') { 'd' } else { c })
+        .flat_map(char::to_lowercase)
+        .collect();
+    folded
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .contains("quan ly")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Profile {
     pub id: Uuid,
@@ -299,7 +332,19 @@ async fn reread(tx: &mut TenantTx, actor: &Actor, id: Uuid) -> Result<ProfileVie
     Ok(view(actor, profile, pay.as_ref(), today))
 }
 
-/// `GET /staff/profiles?status=` (`staff.read`): the roster, `None` = everyone, working first.
+/// The profile left out of the caller's staff books (EM 2026-11-08): their own, the one linked to
+/// their login, unless they manage staff (the owner sees everyone). A manager reads their own
+/// attendance, pay and evaluations through `/me/*` like a technician; the books are for the
+/// people they look after (decision C: they cannot record for themselves anyway).
+pub async fn hidden_from(tx: &mut TenantTx, actor: &Actor) -> Result<Option<Uuid>, AppError> {
+    if actor.can(Permission::StaffManage) {
+        return Ok(None);
+    }
+    repo::staff_of_user(tx, actor.user_id.as_uuid()).await
+}
+
+/// `GET /staff/profiles?status=` (`staff.read`): the roster, `None` = everyone, working first,
+/// without the caller's own profile unless they manage staff ([`hidden_from`]).
 pub async fn list(
     pool: &PgPool,
     actor: &Actor,
@@ -314,10 +359,12 @@ pub async fn list(
         Vec::new()
     };
     let today = today(&mut tx).await?;
+    let hidden = hidden_from(&mut tx, actor).await?;
     tx.commit().await?;
     Ok(profiles
         .into_iter()
         .filter(|p| status.is_none_or(|s| p.status == s))
+        .filter(|p| Some(p.id) != hidden)
         .map(|p| {
             let pay = pays.iter().find(|row| row.staff_id == p.id);
             view(actor, p, pay, today)
@@ -325,10 +372,14 @@ pub async fn list(
         .collect())
 }
 
-/// `GET /staff/{id}` (`staff.read`).
+/// `GET /staff/{id}` (`staff.read`). The caller's own profile is `404` unless they manage staff
+/// ([`hidden_from`]: they read it in "Công và lương của tôi").
 pub async fn get(pool: &PgPool, actor: &Actor, id: Uuid) -> Result<ProfileView, AppError> {
     actor.require(Permission::StaffRead)?;
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    if hidden_from(&mut tx, actor).await? == Some(id) {
+        return Err(AppError::NotFound);
+    }
     let profile = load_one(&mut tx, id, false).await?;
     let pay = if actor.can(Permission::PayrollRead) {
         repo::pays(&mut tx)
@@ -493,6 +544,35 @@ pub async fn set_account(
     Ok(after)
 }
 
+/// Bookings listed in a `staff.has_upcoming_bookings` refusal; `more: true` says there are others.
+const UPCOMING_LISTED: i64 = 20;
+
+/// `409 staff.has_upcoming_bookings` naming the bookings to reassign first (F24, 2026-11-08):
+/// date, start time in the spa's time zone and the customer as the calendar shows them. The caller
+/// manages staff and sees the calendar already; no phone or note is included.
+fn upcoming_bookings<Tz: chrono::TimeZone>(rows: &[repo::UpcomingBookingRow], tz: &Tz) -> AppError
+where
+    Tz::Offset: std::fmt::Display,
+{
+    let shown = usize::try_from(UPCOMING_LISTED).unwrap_or(usize::MAX);
+    let bookings: Vec<Value> = rows
+        .iter()
+        .take(shown)
+        .map(|b| {
+            json!({
+                "id": b.id,
+                "date": b.business_date,
+                "time": b.starts_at.with_timezone(tz).format("%H:%M").to_string(),
+                "customer": b.customer,
+            })
+        })
+        .collect();
+    AppError::ConflictDetails {
+        code: "staff.has_upcoming_bookings",
+        details: json!({"bookings": bookings, "more": rows.len() > shown}),
+    }
+}
+
 pub struct EndInput {
     pub ended_on: NaiveDate,
     pub reason: String,
@@ -549,10 +629,10 @@ pub async fn end(
     if repo::worked_after(&mut tx, id, input.ended_on).await? {
         return Err(field("ended_on", "has_later_records"));
     }
-    if repo::bookings_after(&mut tx, id, input.ended_on).await? > 0 {
-        return Err(AppError::Conflict {
-            code: "staff.has_upcoming_bookings",
-        });
+    let bookings = repo::bookings_after(&mut tx, id, input.ended_on, UPCOMING_LISTED + 1).await?;
+    if !bookings.is_empty() {
+        let tz = kernel::tenant::profile(&mut tx).await?.timezone;
+        return Err(upcoming_bookings(&bookings, &tz));
     }
     repo::end_period(
         &mut tx,
@@ -724,11 +804,15 @@ pub struct HistoryEntry {
     pub reason: Option<String>,
 }
 
+/// The fields an audit entry changed. A key only in `before` is context, not a change: `staff.end`
+/// records the start date of the period it closed (`before.joined_on`) without repeating it after,
+/// and reading that as "Ngày vào làm: 01/03/2025 → trống" told the owner the date was wiped when
+/// nothing was (F25, 2026-11-08). Every audit of a field that really changes writes it after.
 fn changes(before: Option<&Value>, after: Option<&Value>) -> Vec<Change> {
     let empty = serde_json::Map::new();
     let b = before.and_then(Value::as_object).unwrap_or(&empty);
     let a = after.and_then(Value::as_object).unwrap_or(&empty);
-    let mut keys: Vec<&String> = a.keys().chain(b.keys()).collect();
+    let mut keys: Vec<&String> = a.keys().collect();
     keys.sort();
     keys.dedup();
     keys.into_iter()
@@ -780,6 +864,10 @@ pub struct Account {
     pub full_name: String,
     pub roles: Vec<String>,
     pub staff_id: Option<Uuid>,
+    /// Records attendance / evaluations for others without managing staff: a manager. Decision C
+    /// needs their profile linked to this login to know which one is theirs; unlinked, it is a
+    /// warning for the owner (F19).
+    pub is_manager: bool,
 }
 
 impl From<AccountRow> for Account {
@@ -789,6 +877,7 @@ impl From<AccountRow> for Account {
             full_name: r.full_name,
             roles: r.roles,
             staff_id: r.staff_id,
+            is_manager: r.records_staff && !r.manages_staff,
         }
     }
 }
@@ -879,6 +968,33 @@ mod tests {
             }]
         );
         assert_eq!(changes(None, Some(&json!({"a": 1}))).len(), 1);
+    }
+
+    #[test]
+    fn ending_employment_does_not_read_as_clearing_the_start_date() {
+        // The audit `staff.end` writes (F25): `joined_on` is context on the before side only.
+        let c = changes(
+            Some(&json!({"status": "active", "joined_on": "2025-03-01"})),
+            Some(&json!({"status": "left", "left_on": "2026-11-08", "login_locked": false})),
+        );
+        let fields: Vec<&str> = c.iter().map(|c| c.field.as_str()).collect();
+        assert_eq!(fields, ["left_on", "login_locked", "status"]);
+    }
+
+    #[test]
+    fn manager_positions_are_recognised_in_any_spelling() {
+        for p in [
+            "Quản lý",
+            "quản lý ca",
+            "QUẢN LÝ",
+            "Quan ly",
+            "Qua\u{0309}n ly\u{0301}",
+        ] {
+            assert!(is_manager_position(p), "{p}");
+        }
+        for p in ["Kỹ thuật viên", "KTV", "Lễ tân", "Quầy"] {
+            assert!(!is_manager_position(p), "{p}");
+        }
     }
 
     #[test]

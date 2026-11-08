@@ -129,7 +129,8 @@ pub struct StaffReviews {
     pub can_record: bool,
 }
 
-/// `GET /daily-reviews?month=` (`evaluation.record`).
+/// `GET /daily-reviews?month=` (`evaluation.record`); not the caller's own row unless they are
+/// the owner ([`RecordScope::lists`]).
 pub async fn sheet(
     pool: &PgPool,
     actor: &Actor,
@@ -146,7 +147,7 @@ pub async fn sheet(
     tx.commit().await?;
     let staff = profiles
         .iter()
-        .filter(|p| period::employed_in(p, month))
+        .filter(|p| period::employed_in(p, month) && scope.lists(p.id))
         .map(|p| {
             let days: Vec<DailyReview> =
                 all.iter().filter(|r| r.staff_id == p.id).cloned().collect();

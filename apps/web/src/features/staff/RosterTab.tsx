@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Icon } from "../../app/Icon";
 import { BottomSheet } from "../../components/BottomSheet";
 import { DateField, isoToDmy } from "../../components/DateField";
 import { ResponsiveTable, type Column } from "../../components/ResponsiveTable";
 import { TimeField } from "../../components/TimeField";
+import { ApiError } from "../../lib/api";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { spaToday } from "../corrections/api";
 import { ErrorState, RowsSkeleton } from "../reports/ui";
@@ -82,7 +84,7 @@ export function RosterTab({
       cell: (p) => (
         <span className="grid gap-1">
           <span>{p.details?.user_name ?? (p.login_linked ? "Đã gắn" : "Chưa gắn")}</span>
-          {managerWithoutLogin(p) && <span className="text-sm text-text-muted">Chưa gắn: khi ghi công được tính như KTV</span>}
+          {managerWithoutLogin(p) && <span className="text-sm text-warning-text">Chưa gắn: chỉ chủ spa ghi công cho hồ sơ này</span>}
         </span>
       ),
     },
@@ -676,12 +678,55 @@ function EndSheet({ profile: p, onClose, onBack }: { profile: StaffProfile; onCl
           />
         </label>
         {save.isError && !dateError && (
-          <p role="alert" className="text-sm text-danger">
-            {messageFor(save.error)}
-          </p>
+          <div role="alert" className="grid gap-2 text-sm text-danger">
+            <p>{messageFor(save.error)}</p>
+            <UpcomingBookings error={save.error} staffId={p.id} />
+          </div>
         )}
       </form>
     </BottomSheet>
+  );
+}
+
+interface UpcomingBooking {
+  id: string;
+  date: string;
+  time: string;
+  customer: string;
+}
+
+/** The bookings of a `staff.has_upcoming_bookings` refusal (server-listed, at most 20). */
+function upcomingOf(error: unknown): { bookings: UpcomingBooking[]; more: boolean } | null {
+  if (!(error instanceof ApiError) || error.code !== "staff.has_upcoming_bookings") return null;
+  const d = error.details as { bookings?: unknown; more?: unknown } | undefined;
+  if (!d || !Array.isArray(d.bookings)) return null;
+  const bookings = d.bookings.filter(
+    (b): b is UpcomingBooking =>
+      typeof b === "object" && b !== null && typeof (b as UpcomingBooking).date === "string" && typeof (b as UpcomingBooking).time === "string",
+  );
+  return { bookings, more: d.more === true };
+}
+
+/**
+ * F24 (live test 2026-11-08): which bookings still hold the person — day, time, customer — each
+ * opening that day of the calendar on their column, where the owner changes the KTV or cancels.
+ */
+function UpcomingBookings({ error, staffId }: { error: unknown; staffId: string }) {
+  const upcoming = upcomingOf(error);
+  if (!upcoming || upcoming.bookings.length === 0) return null;
+  return (
+    <>
+      <ul className="grid gap-1 text-text" aria-label="Lịch hẹn còn gán cho nhân viên">
+        {upcoming.bookings.map((b) => (
+          <li key={b.id}>
+            <Link to="/quay" search={{ view: "lich", ngay: b.date, ktv: staffId }} className="link">
+              {isoToDmy(b.date)} lúc {b.time} · {b.customer}
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {upcoming.more && <p className="text-text-muted">Còn lịch khác sau các lịch trên.</p>}
+    </>
   );
 }
 

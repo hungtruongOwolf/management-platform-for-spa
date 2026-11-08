@@ -116,7 +116,8 @@ pub struct AdjustmentLog {
     pub items: Vec<Adjustment>,
 }
 
-/// `GET /adjustments?month=` (`evaluation.record`), newest first.
+/// `GET /adjustments?month=` (`evaluation.record`), newest first; not the caller's own entries
+/// unless they are the owner ([`RecordScope::lists`]: theirs are on their payslip at `/me/staff`).
 pub async fn log(
     pool: &PgPool,
     actor: &Actor,
@@ -131,6 +132,7 @@ pub async fn log(
     let items = adjustments_in(&mut tx, month, None)
         .await?
         .into_iter()
+        .filter(|a| scope.lists(a.staff_id))
         .map(|a| Adjustment {
             can_edit: !info.closed && scope.may_record(a.staff_id),
             ..a

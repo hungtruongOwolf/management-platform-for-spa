@@ -3,12 +3,12 @@ import { Suspense, lazy, useState } from "react";
 import { spaToday } from "../corrections/api";
 import { EmptyState, ErrorState, RowsSkeleton } from "../reports/ui";
 import { myMonthQuery, type AttendanceDay, type MyStaff } from "./api";
-import { FLAG_LABEL, LEVEL_SHORT, STATUS_CODE, STATUS_LABEL, daysOf } from "./labels";
+import { FLAG_LABEL, LEVEL_SHORT, STATUS_LABEL, daysOf } from "./labels";
 import { ScoreCard } from "./EvaluationViews";
 import { MyDaySheet } from "./MyDaySheet";
 import { PayslipView } from "./PayrollTab";
 import { ApiError } from "../../lib/api";
-import { ClosedBanner, MonthPicker, dayLabel, vnd } from "./ui";
+import { AttendanceLegend, ClosedBanner, MonthPicker, StatusMark, dayLabel, vnd } from "./ui";
 
 // Loaded only when opened (EM 2026-11-08: own evaluation history).
 const MyEvaluationHistory = lazy(() => import("./MyEvaluationHistory").then((m) => ({ default: m.MyEvaluationHistory })));
@@ -73,10 +73,11 @@ export function MonthCalendar({
           const d = byDate.get(date);
           const future = date > today;
           const late = d && d.late_minutes > 0 ? d.late_minutes : 0;
-          // A late day shows its minutes instead of ✓ (late = came): phones had no room for both and
-          // hid the ✓, so the cell's text stopped matching its name (axe, CI 2026-11-08 at 390 px).
-          const mark = d ? (late > 0 ? "" : STATUS_CODE[d.status]) : future ? "" : "–";
-          const shown = [String(Number(date.slice(8))), mark, late > 0 ? `${String(late)}′` : ""].filter(Boolean).join(" ");
+          // A late day shows its minutes instead of its mark (late = came): phones had no room for
+          // both. The mark is an icon (F20: no P / ĐX / K codes), so the cell's text is the day
+          // number, "–" when not recorded, and the minutes late; the status is in words after it.
+          const unrecorded = !d && !future;
+          const shown = [String(Number(date.slice(8))), unrecorded ? "–" : "", late > 0 ? `${String(late)}′` : ""].filter(Boolean).join(" ");
           const status = dayStatusText(date, today, d);
           const label = `${shown}: ${status}`;
           const cls = [
@@ -97,7 +98,7 @@ export function MonthCalendar({
                 {Number(date.slice(8))}
               </span>{" "}
               <span aria-hidden={hidden || undefined} className="my-day-mark">
-                {mark}
+                {d && late === 0 ? <StatusMark status={d.status} className="size-5" /> : unrecorded ? "–" : ""}
               </span>{" "}
               {late > 0 && (
                 <span aria-hidden={hidden || undefined} className="my-day-late">
@@ -132,35 +133,6 @@ export function MonthCalendar({
         })}
       </ol>
     </div>
-  );
-}
-
-/** The legend as the cells' own marks, small (no sentence of symbols). */
-function Legend() {
-  const items: [string, string, string][] = [
-    ["att-present", "✓", "Đi làm"],
-    ["att-leave_p", "P", "Nghỉ có phép"],
-    ["att-leave_dx", "ĐX", "Nghỉ đột xuất"],
-    ["att-absent_k", "K", "Nghỉ không phép"],
-    ["att-none", "–", "Chưa chấm"],
-  ];
-  return (
-    <ul className="my-legend" aria-label="Chú thích">
-      {items.map(([cls, mark, word]) => (
-        <li key={cls}>
-          <span aria-hidden="true" className={`my-legend-mark ${cls}`}>
-            {mark}
-          </span>
-          {word}
-        </li>
-      ))}
-      <li>
-        <span aria-hidden="true" className="my-day-late is-inline">
-          12′
-        </span>
-        Đi muộn (phút)
-      </li>
-    </ul>
   );
 }
 
@@ -301,12 +273,13 @@ export function MyMonth({
         <dl className="my-totals">
           <Tile label="Đi làm" value={`${String(t.present)} ngày`} />
           <Tile label="Đi muộn" value={`${String(t.late_count)} lần`} sub={t.late_minutes ? `${String(t.late_minutes)} phút` : undefined} />
-          <Tile label="Nghỉ P / ĐX" value={`${String(t.leave_p)} / ${String(t.leave_dx)}`} />
-          <Tile label="Nghỉ K" value={String(t.absent_k)} />
+          <Tile label="Nghỉ có phép" value={`${String(t.leave_p)} ngày`} />
+          <Tile label="Nghỉ đột xuất" value={`${String(t.leave_dx)} ngày`} />
+          <Tile label="Nghỉ không phép" value={`${String(t.absent_k)} ngày`} />
           <Tile label="Khen / Phàn nàn" value={`${String(compliments)} / ${String(complaints)}`} />
         </dl>
         <MonthCalendar month={data.month} today={today} days={data.attendance.days} selected={day} onDay={onDay} />
-        <Legend />
+        <AttendanceLegend late="chip" />
       </section>
       <section className="card grid gap-2 p-4 sm:p-5" aria-labelledby="my-evaluation">
         <h2 id="my-evaluation" className="panel-title">

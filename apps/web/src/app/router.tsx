@@ -242,6 +242,18 @@ const staffRoute = createRoute({
   component: lazyRouteComponent(staffPage, "StaffPage"),
 });
 
+/**
+ * "Công và lương của tôi" for those whose /nhan-vien holds the staff books (a manager, EM
+ * 2026-11-08); a technician's /nhan-vien already is this screen. `GET /me/*`, person from the session.
+ */
+const myPayRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/nhan-vien/cua-toi",
+  beforeLoad: only(mayOpen.myPay),
+  validateSearch: staffSearch.validate,
+  component: lazyRouteComponent(staffPage, "MyPayPage"),
+});
+
 /** A technician's own customers and bookings (spec staff-management §10 US9); `GET /me/work`. */
 const myWorkRoute = createRoute({
   getParentRoute: () => authedRoute,
@@ -325,6 +337,7 @@ const routeTree = rootRoute.addChildren([
     inactiveRoute,
     notesRoute,
     staffRoute,
+    myPayRoute,
     myWorkRoute,
     settingsRoute,
   ]),
