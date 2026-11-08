@@ -198,6 +198,27 @@ test.describe("KTV: màn của tôi", () => {
     await context.close();
   });
 
+  // EM 2026-11-08: their own evaluation history, from their own path only.
+  test("Lịch sử đánh giá: own months only, read-only, 390 dark", async ({ browser }) => {
+    const context = await browser.newContext({ storageState: techState, viewport: { width: 390, height: 844 } });
+    const page = await context.newPage();
+    await page.goto("/nhan-vien");
+    await expect(page.getByRole("heading", { level: 1, name: "Công và lương của tôi" })).toBeVisible();
+    const fromMe = page.waitForResponse((r) => r.url().includes("/api/v1/me/evaluations/history"));
+    await page.getByRole("button", { name: "Xem 12 tháng gần nhất" }).click();
+    expect((await fromMe).status()).toBe(200);
+    const list = page.getByRole("list", { name: "Các tháng của bạn" });
+    await expect(list).toBeVisible();
+    await expect(list.getByRole("link", { name: /^Chấm/ })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /Xem mọi ghi chú/ })).toHaveCount(0);
+    expect(await sidewaysOverflow(page)).toBe(0);
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expectAccessible(page, "my-evaluation-history-390-dark");
+    // The managers' route stays closed to them.
+    expect((await page.request.get("/api/v1/evaluations/history?staff_id=00000000-0000-0000-0000-000000000000")).status()).toBe(403);
+    await context.close();
+  });
+
   test("screenshots 1280 / 390, light / dark (TECH_SHOTS_DIR)", async ({ browser }) => {
     const dir = process.env["TECH_SHOTS_DIR"];
     test.skip(!dir, "set TECH_SHOTS_DIR to capture");

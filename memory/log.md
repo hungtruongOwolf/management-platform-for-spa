@@ -616,3 +616,8 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Raw: [2026-11-08-em-decisions-evaluation-history](raw/2026-11-08-em-decisions-evaluation-history.md). Đánh dấu đã quyết: Q-M1 giữ nguyên (front-desk), Q-S7 không cần (ADR-0014), "Đổi cả nhóm" mặc định (appointments AC14).
 - Spec staff-management §15: "Xem" phiếu chỉ đọc mọi tháng (không API mới, `GET /evaluations` vốn trả phiếu), lịch sử một người (`GET /evaluations/history`, `evaluation.record`, 12 tháng mặc định, ≤ 24, một request), "Từng ngày" = Bảng công tháng lọc một người + danh sách ngày chỉ đọc (dùng lại query tháng), KTV xem phiếu của mình trong "Công và lương của tôi" (`/me/staff`). URL: `?tab=evaluation&staff=<id>`, `?tab=month&month=&staff=<id>`.
 - Không migration (0029 không dùng). Test `evaluation_history.rs` (5), matrix +1 dòng, vitest + e2e.
+
+## [2026-11-08] ingest + build | Lịch sử đánh giá của chính mình (EM: "làm nốt feature đó đi")
+- Raw: [2026-11-08-em-decision-own-evaluation-history](raw/2026-11-08-em-decision-own-evaluation-history.md). Spec §15 US15e + AC15.4.
+- `GET /me/evaluations/history` (`staff.read_own` / `staff.read_own_past`): hồ sơ gắn với session, dùng chung `history_range` + `history_months` với `GET /evaluations/history` (tách ra từ #90, không nhân bản); không `can_record`/`staff_id`; chưa gắn → `linked: false`. Người đã nghỉ: kẹp về tháng nghỉ, chỉ tháng có làm, không `403` cả khoảng.
+- Web: khối "Lịch sử đánh giá" trong "Công và lương của tôi" (tải lười), dùng chung `MonthsHistory` (biểu đồ + dòng tháng) với màn quản lý; "Từng ngày" đổi tháng của trang.

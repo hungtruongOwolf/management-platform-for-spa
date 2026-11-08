@@ -427,6 +427,14 @@ const ROUTES: &[Route] = &[
         Access::Perm(P::StaffReadOwn, ALL),
     )
     .former_staff(),
+    // My own evaluation history (EM 2026-11-08): the session's staff link, former staff included
+    // (only the months they worked; tests/evaluation_history.rs).
+    route(
+        "GET",
+        "/api/v1/me/evaluations/history",
+        Access::Perm(P::StaffReadOwn, ALL),
+    )
+    .former_staff(),
     route(
         "GET",
         "/api/v1/me/appointments",

@@ -14,9 +14,10 @@ use crate::period;
 use crate::repo::{self, EvaluationRow, EvaluationWrite};
 use crate::review;
 use crate::scope::RecordScope;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use kernel::audit::{self, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
+use org::profile::Profile;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
@@ -357,27 +358,14 @@ fn months_back(m: Month, n: usize) -> Month {
     out
 }
 
-/// `GET /evaluations/history?staff_id=&from=&to=` (`evaluation.record`, the rule of
-/// `GET /evaluations`, which already shows every person's scorecard to its holders): one person's
-/// months, newest first — total and level, the month's praise / complaints and attendance. One
-/// transaction, three queries per month at most (a two-year cap); another spa's or an unknown
-/// `staff_id` is `404`.
-pub async fn history(
-    pool: &PgPool,
-    actor: &Actor,
-    staff_id: Option<Uuid>,
-    from: Option<&str>,
-    to: Option<&str>,
-) -> Result<EvaluationHistory, AppError> {
-    actor.require(Permission::EvaluationRecord)?;
-    let from = from.map(|m| Month::parse("from", m)).transpose()?;
-    let to = to.map(|m| Month::parse("to", m)).transpose()?;
-    let staff_id = staff_id
-        .ok_or_else(|| AppError::Validation(vec![FieldError::new("staff_id", "required")]))?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
-    let today = period::today(&mut tx).await?;
-    let current = Month::of(today);
-    let to = to.unwrap_or(current).min(current);
+/// The months a history covers: `to` defaults to (and never passes) `default_to`, `from` to 11
+/// months before `to`; `from` after `to` or more than 24 months is `422`.
+pub(crate) fn history_range(
+    from: Option<Month>,
+    to: Option<Month>,
+    default_to: Month,
+) -> Result<(Month, Month), AppError> {
+    let to = to.unwrap_or(default_to).min(default_to);
     let from = from.unwrap_or_else(|| months_back(to, HISTORY_DEFAULT_MONTHS - 1));
     if from > to {
         return Err(AppError::Validation(vec![FieldError::new(
@@ -390,13 +378,27 @@ pub async fn history(
             "range_too_long",
         )]));
     }
-    let person = org::profile::profile_in(&mut tx, staff_id).await?;
-    let reviews = repo::reviews_between(&mut tx, from.first_day(), to.last_day(), Some(staff_id))
+    Ok((from, to))
+}
+
+/// One person's months in `from..=to`, newest first, **only the months they were employed in**
+/// (employment periods, ADR-0013/0014): attendance and reviews read once for the range, then one
+/// evaluation and one period lookup per month. Shared by the managers' history and the staff
+/// member's own (`me::my_evaluation_history`); the callers authorize and pick the person.
+pub(crate) async fn history_months(
+    tx: &mut TenantTx,
+    person: &Profile,
+    from: Month,
+    to: Month,
+    today: NaiveDate,
+) -> Result<Vec<HistoryMonth>, AppError> {
+    let staff_id = person.id;
+    let reviews = repo::reviews_between(tx, from.first_day(), to.last_day(), Some(staff_id))
         .await?
         .into_iter()
         .map(review::DailyReview::from)
         .collect::<Vec<_>>();
-    let days = repo::attendance_between(&mut tx, from.first_day(), to.last_day(), Some(staff_id))
+    let days = repo::attendance_between(tx, from.first_day(), to.last_day(), Some(staff_id))
         .await?
         .into_iter()
         .map(attendance::AttendanceDay::try_from)
@@ -404,9 +406,9 @@ pub async fn history(
     let mut months = Vec::new();
     let mut m = to;
     loop {
-        if period::employed_in(&person, m) {
-            let info = period::info(&mut tx, m).await?;
-            let evaluation = evaluations_in(&mut tx, m, Some(staff_id)).await?.pop();
+        if period::employed_in(person, m) {
+            let info = period::info(tx, m).await?;
+            let evaluation = evaluations_in(tx, m, Some(staff_id)).await?.pop();
             let mine: Vec<Day> = days
                 .iter()
                 .filter(|d| m.contains(d.date))
@@ -432,6 +434,31 @@ pub async fn history(
         }
         m = months_back(m, 1);
     }
+    Ok(months)
+}
+
+/// `GET /evaluations/history?staff_id=&from=&to=` (`evaluation.record`, the rule of
+/// `GET /evaluations`, which already shows every person's scorecard to its holders): one person's
+/// months, newest first — total and level, the month's praise / complaints and attendance. One
+/// transaction, three queries per month at most (a two-year cap); another spa's or an unknown
+/// `staff_id` is `404`.
+pub async fn history(
+    pool: &PgPool,
+    actor: &Actor,
+    staff_id: Option<Uuid>,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Result<EvaluationHistory, AppError> {
+    actor.require(Permission::EvaluationRecord)?;
+    let from = from.map(|m| Month::parse("from", m)).transpose()?;
+    let to = to.map(|m| Month::parse("to", m)).transpose()?;
+    let staff_id = staff_id
+        .ok_or_else(|| AppError::Validation(vec![FieldError::new("staff_id", "required")]))?;
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let today = period::today(&mut tx).await?;
+    let (from, to) = history_range(from, to, Month::of(today))?;
+    let person = org::profile::profile_in(&mut tx, staff_id).await?;
+    let months = history_months(&mut tx, &person, from, to, today).await?;
     let scope = RecordScope::load(&mut tx, actor).await?;
     tx.commit().await?;
     Ok(EvaluationHistory {

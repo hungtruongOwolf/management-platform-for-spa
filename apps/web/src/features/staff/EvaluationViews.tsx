@@ -183,59 +183,28 @@ export function EvaluationHistoryView({ staffId, onBack }: { staffId: string; on
           {h.position} · {monthLabel(h.from)} – {monthLabel(h.to).toLowerCase()}
         </p>
       </div>
-      {h.months.length === 0 ? (
-        <p className="empty-block">Người này chưa làm tháng nào trong khoảng này.</p>
-      ) : (
-        <>
-          <Trend months={h.months} />
-          <ul className="card eval-list" aria-label={`Các tháng của ${h.full_name}`}>
-            {h.months.map((m) => {
-              const a = m.attendance;
-              return (
-                <li key={m.month} className="eval-row">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold">
-                      {monthLabel(m.month)}
-                      {m.closed && <span className="ml-2 text-sm font-normal text-text-muted">· đã chốt lương</span>}
-                    </p>
-                    <p className="text-sm text-text-muted">
-                      {m.compliments} khen · {m.complaints} phàn nàn · nghỉ {a.leave_p + a.leave_dx + a.absent_k} ngày · muộn {a.late_count} lần
-                    </p>
-                  </div>
-                  <ResultChip evaluation={m.evaluation} />
-                  <div className="eval-actions">
-                    {m.evaluation && (
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        aria-label={`Xem phiếu đánh giá ${monthLabel(m.month).toLowerCase()}`}
-                        onClick={() => {
-                          setOpen(m);
-                        }}
-                      >
-                        Xem phiếu
-                      </button>
-                    )}
-                    <Link
-                      to="/nhan-vien"
-                      search={{ tab: "month", month: m.month, staff: staffId }}
-                      className="btn btn-ghost"
-                      aria-label={`Từng ngày ${monthLabel(m.month).toLowerCase()}`}
-                    >
-                      Từng ngày
-                    </Link>
-                    {!m.closed && h.can_record && (
-                      <Link to="/nhan-vien" search={{ tab: "evaluation", month: m.month }} className="btn btn-ghost">
-                        {m.evaluation ? "Chấm lại" : "Chấm điểm"}
-                      </Link>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </>
-      )}
+      <MonthsHistory
+        name={h.full_name}
+        months={h.months}
+        onScorecard={setOpen}
+        actions={(m) => (
+          <>
+            <Link
+              to="/nhan-vien"
+              search={{ tab: "month", month: m.month, staff: staffId }}
+              className="btn btn-ghost"
+              aria-label={`Từng ngày ${monthLabel(m.month).toLowerCase()}`}
+            >
+              Từng ngày
+            </Link>
+            {!m.closed && h.can_record && (
+              <Link to="/nhan-vien" search={{ tab: "evaluation", month: m.month }} className="btn btn-ghost">
+                {m.evaluation ? "Chấm lại" : "Chấm điểm"}
+              </Link>
+            )}
+          </>
+        )}
+      />
       {can(me, "report.read") && (
         <Link to="/nhat-ky-ghi-chu" search={{ staff: staffId }} className="btn btn-ghost justify-self-start">
           Xem mọi ghi chú về {h.full_name}
@@ -253,5 +222,65 @@ export function EvaluationHistoryView({ staffId, onBack }: { staffId: string; on
         />
       )}
     </div>
+  );
+}
+
+/**
+ * The history's body, shared by the managers' view of a person and a staff member's own view
+ * (EM 2026-11-08): the trend, then a row per month — result, praise / complaints, leave and late —
+ * with "Xem phiếu" and whatever else the caller may do (`actions`).
+ */
+export function MonthsHistory({
+  name,
+  months,
+  onScorecard,
+  actions,
+  empty = "Người này chưa làm tháng nào trong khoảng này.",
+}: {
+  name: string;
+  months: HistoryMonth[];
+  onScorecard: (m: HistoryMonth) => void;
+  actions?: (m: HistoryMonth) => ReactNode;
+  empty?: string;
+}) {
+  if (months.length === 0) return <p className="empty-block">{empty}</p>;
+  return (
+    <>
+      <Trend months={months} />
+      <ul className="card eval-list" aria-label={`Các tháng của ${name}`}>
+        {months.map((m) => {
+          const a = m.attendance;
+          return (
+            <li key={m.month} className="eval-row">
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold">
+                  {monthLabel(m.month)}
+                  {m.closed && <span className="ml-2 text-sm font-normal text-text-muted">· đã chốt lương</span>}
+                </p>
+                <p className="text-sm text-text-muted">
+                  {m.compliments} khen · {m.complaints} phàn nàn · nghỉ {a.leave_p + a.leave_dx + a.absent_k} ngày · muộn {a.late_count} lần
+                </p>
+              </div>
+              <ResultChip evaluation={m.evaluation} />
+              <div className="eval-actions">
+                {m.evaluation && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    aria-label={`Xem phiếu đánh giá ${monthLabel(m.month).toLowerCase()}`}
+                    onClick={() => {
+                      onScorecard(m);
+                    }}
+                  >
+                    Xem phiếu
+                  </button>
+                )}
+                {actions?.(m)}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </>
   );
 }

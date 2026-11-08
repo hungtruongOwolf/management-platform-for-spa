@@ -9,7 +9,7 @@ use crate::day::{self, MyDay};
 use crate::evaluation::{
     self, CriterionInput, Evaluation, EvaluationHistory, EvaluationInput, EvaluationSheet,
 };
-use crate::me::{self, MyStaff};
+use crate::me::{self, MyEvaluationHistory, MyStaff};
 use crate::month::Month;
 use crate::payroll::{self, CloseInput, PayrollMonth};
 use crate::review::{self, DailyReview, ReviewEntry, ReviewSheet};
@@ -57,6 +57,7 @@ where
         .route("/payroll/rules", get(get_rules).put(put_rules))
         .route("/me/staff", get(get_my_staff))
         .route("/me/staff/day", get(get_my_day))
+        .route("/me/evaluations/history", get(get_my_evaluation_history))
 }
 
 fn no_store(status: StatusCode, body: impl Serialize) -> Response {
@@ -538,6 +539,34 @@ pub async fn get_my_staff(
     Query(q): Query<MonthQuery>,
 ) -> Result<Response, AppError> {
     let mine = me::my_month(&pool, &user.actor, month_of(&q)?).await?;
+    Ok(no_store(StatusCode::OK, mine))
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
+pub struct MyHistoryQuery {
+    /// `YYYY-MM`; default 11 months before `to`.
+    pub from: Option<String>,
+    /// `YYYY-MM`; default (and at most) the current month — for a former staff member, the
+    /// month they left. At most 24 months from `from`.
+    pub to: Option<String>,
+}
+
+/// My own evaluation history (EM 2026-11-08). The person is the session's own staff link; there
+/// is no parameter to pick anyone else (`?staff_id=` → 400).
+#[utoipa::path(get, path = "/api/v1/me/evaluations/history", tag = "staff", params(MyHistoryQuery),
+    responses(
+        (status = 200, body = MyEvaluationHistory, description = "`linked: false` without a staff profile; former staff: only the months they worked"),
+        (status = 400), (status = 401), (status = 403, description = "auth.forbidden: neither staff.read_own nor staff.read_own_past"),
+        (status = 422, description = "validation_failed: from after_to, to range_too_long (> 24 months), month invalid")))]
+pub async fn get_my_evaluation_history(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Query(q): Query<MyHistoryQuery>,
+) -> Result<Response, AppError> {
+    let mine =
+        me::my_evaluation_history(&pool, &user.actor, q.from.as_deref(), q.to.as_deref()).await?;
     Ok(no_store(StatusCode::OK, mine))
 }
 

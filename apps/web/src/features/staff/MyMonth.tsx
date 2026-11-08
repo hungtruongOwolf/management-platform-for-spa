@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { spaToday } from "../corrections/api";
 import { EmptyState, ErrorState, RowsSkeleton } from "../reports/ui";
 import { myMonthQuery, type AttendanceDay, type MyStaff } from "./api";
@@ -9,6 +9,9 @@ import { MyDaySheet } from "./MyDaySheet";
 import { PayslipView } from "./PayrollTab";
 import { ApiError } from "../../lib/api";
 import { ClosedBanner, MonthPicker, dayLabel, vnd } from "./ui";
+
+// Loaded only when opened (EM 2026-11-08: own evaluation history).
+const MyEvaluationHistory = lazy(() => import("./MyEvaluationHistory").then((m) => ({ default: m.MyEvaluationHistory })));
 
 type MonthData = NonNullable<MyStaff["data"]>;
 
@@ -224,6 +227,7 @@ export function MyMonth({
 }) {
   const query = useQuery(myMonthQuery(month));
   const [card, setCard] = useState(false);
+  const [history, setHistory] = useState(false);
   const today = spaToday();
   if (query.isPending) return <RowsSkeleton rows={5} />;
   if (query.isError) {
@@ -350,6 +354,34 @@ export function MyMonth({
           </ul>
         ) : (
           <p className="text-sm text-text-muted">Chưa có khoản thưởng / phạt nào trong tháng.</p>
+        )}
+      </section>
+      <section className="card grid gap-3 p-4 sm:p-5" aria-labelledby="my-history">
+        <h2 id="my-history" className="panel-title">
+          Lịch sử đánh giá
+        </h2>
+        {history ? (
+          <Suspense fallback={<RowsSkeleton rows={4} />}>
+            <MyEvaluationHistory
+              onMonth={(m) => {
+                setHistory(false);
+                onMonth?.(m);
+                const top = document.querySelector("h1");
+                // jsdom has no scrollIntoView; browsers do.
+                if (top && "scrollIntoView" in top) top.scrollIntoView({ block: "start" });
+              }}
+            />
+          </Suspense>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-secondary justify-self-start"
+            onClick={() => {
+              setHistory(true);
+            }}
+          >
+            Xem 12 tháng gần nhất
+          </button>
         )}
       </section>
       <section className="grid gap-2" aria-labelledby="my-payslip">

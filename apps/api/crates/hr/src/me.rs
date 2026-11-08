@@ -158,3 +158,78 @@ pub async fn my_month(
         }),
     })
 }
+
+/// The signed-in staff member's own evaluation history: what `GET /evaluations/history` shows a
+/// manager, without the writer-only `can_record` and `staff_id`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct MyHistoryData {
+    pub full_name: String,
+    pub position: String,
+    pub from: String,
+    pub to: String,
+    pub criteria: Vec<evaluation::Criterion>,
+    /// Newest month first; only the months the person was employed in.
+    pub months: Vec<evaluation::HistoryMonth>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct MyEvaluationHistory {
+    /// `false`: this login is not linked to a staff profile (as `GET /me/staff`).
+    pub linked: bool,
+    /// Present only for a former staff member (ADR-0014): the last day they worked; the window
+    /// then ends at that month by default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_on: Option<NaiveDate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<MyHistoryData>,
+}
+
+/// `GET /me/evaluations/history?from=&to=` (`staff.read_own`, or `staff.read_own_past` for a
+/// former staff member; EM 2026-11-08). The person is the session's linked profile, never a
+/// parameter. Same range rules as the managers' history (default 12 months, at most 24). A former
+/// staff member is never refused for a range: `to` defaults to — and is clamped at — the month
+/// they left, and months they were not employed in are simply left out (as for anyone, ADR-0013).
+pub async fn my_evaluation_history(
+    pool: &PgPool,
+    actor: &Actor,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Result<MyEvaluationHistory, AppError> {
+    let scope = own_scope(actor)?;
+    let from = from.map(|m| Month::parse("from", m)).transpose()?;
+    let to = to.map(|m| Month::parse("to", m)).transpose()?;
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let Some(staff_id) = org::profile::own_staff_id(&mut tx, actor).await? else {
+        tx.commit().await?;
+        return Ok(MyEvaluationHistory {
+            linked: false,
+            left_on: None,
+            data: None,
+        });
+    };
+    let profile = own_profile(&mut tx, staff_id).await?;
+    let today = period::today(&mut tx).await?;
+    let current = Month::of(today);
+    let (last, left_on) = match scope {
+        OwnScope::Working => (current, None),
+        OwnScope::Former => {
+            let left = last_day(&profile)?;
+            (Month::of(left).min(current), Some(left))
+        }
+    };
+    let (from, to) = evaluation::history_range(from, to, last)?;
+    let months = evaluation::history_months(&mut tx, &profile, from, to, today).await?;
+    tx.commit().await?;
+    Ok(MyEvaluationHistory {
+        linked: true,
+        left_on,
+        data: Some(MyHistoryData {
+            full_name: profile.full_name.clone(),
+            position: profile.position.clone(),
+            from: from.to_string(),
+            to: to.to_string(),
+            criteria: evaluation::CRITERIA.to_vec(),
+            months,
+        }),
+    })
+}

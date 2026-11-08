@@ -62,6 +62,7 @@ use utoipa::OpenApi;
         hr::http::put_rules,
         hr::http::get_my_staff,
         hr::http::get_my_day,
+        hr::http::get_my_evaluation_history,
         packages::http::read_package,
         packages::http::list_customer_packages,
         sales::http::import_opening_balance,

@@ -635,6 +635,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/evaluations/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My own evaluation history (EM 2026-11-08). The person is the session's own staff link; there
+         *     is no parameter to pick anyone else (`?staff_id=` → 400).
+         */
+        get: operations["get_my_evaluation_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/staff": {
         parameters: {
             query?: never;
@@ -2728,6 +2748,30 @@ export interface components {
             /** @description A session of the customer's package (visits only; bookings are always `false`). */
             from_package: boolean;
             service_name: string;
+        };
+        MyEvaluationHistory: {
+            data?: components["schemas"]["MyHistoryData"] | null;
+            /**
+             * Format: date
+             * @description Present only for a former staff member (ADR-0014): the last day they worked; the window
+             *     then ends at that month by default.
+             */
+            left_on?: string | null;
+            /** @description `false`: this login is not linked to a staff profile (as `GET /me/staff`). */
+            linked: boolean;
+        };
+        /**
+         * @description The signed-in staff member's own evaluation history: what `GET /evaluations/history` shows a
+         *     manager, without the writer-only `can_record` and `staff_id`.
+         */
+        MyHistoryData: {
+            criteria: components["schemas"]["Criterion"][];
+            from: string;
+            full_name: string;
+            /** @description Newest month first; only the months the person was employed in. */
+            months: components["schemas"]["HistoryMonth"][];
+            position: string;
+            to: string;
         };
         MyMonth: {
             adjustments: components["schemas"]["Adjustment"][];
@@ -6714,6 +6758,60 @@ export interface operations {
                 content?: never;
             };
             /** @description to before_from / range_too_long (max 14 days) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_my_evaluation_history: {
+        parameters: {
+            query?: {
+                /** @description `YYYY-MM`; default 11 months before `to`. */
+                from?: string;
+                /**
+                 * @description `YYYY-MM`; default (and at most) the current month — for a former staff member, the
+                 *     month they left. At most 24 months from `from`.
+                 */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `linked: false` without a staff profile; former staff: only the months they worked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyEvaluationHistory"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: neither staff.read_own nor staff.read_own_past */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed: from after_to, to range_too_long (> 24 months), month invalid */
             422: {
                 headers: {
                     [name: string]: unknown;

@@ -2148,6 +2148,55 @@
         }
       }
     },
+    "/api/v1/me/evaluations/history": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "summary": "My own evaluation history (EM 2026-11-08). The person is the session's own staff link; there\nis no parameter to pick anyone else (`?staff_id=` → 400).",
+        "operationId": "get_my_evaluation_history",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "`YYYY-MM`; default 11 months before `to`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "`YYYY-MM`; default (and at most) the current month — for a former staff member, the\nmonth they left. At most 24 months from `from`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "`linked: false` without a staff profile; former staff: only the months they worked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyEvaluationHistory"
+                }
+              }
+            }
+          },
+          "400": {},
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: neither staff.read_own nor staff.read_own_past"
+          },
+          "422": {
+            "description": "validation_failed: from after_to, to range_too_long (> 24 months), month invalid"
+          }
+        }
+      }
+    },
     "/api/v1/me/staff": {
       "get": {
         "tags": [
@@ -8277,6 +8326,75 @@
             "description": "A session of the customer's package (visits only; bookings are always `false`)."
           },
           "service_name": {
+            "type": "string"
+          }
+        }
+      },
+      "MyEvaluationHistory": {
+        "type": "object",
+        "required": [
+          "linked"
+        ],
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MyHistoryData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "left_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Present only for a former staff member (ADR-0014): the last day they worked; the window\nthen ends at that month by default."
+          },
+          "linked": {
+            "type": "boolean",
+            "description": "`false`: this login is not linked to a staff profile (as `GET /me/staff`)."
+          }
+        }
+      },
+      "MyHistoryData": {
+        "type": "object",
+        "description": "The signed-in staff member's own evaluation history: what `GET /evaluations/history` shows a\nmanager, without the writer-only `can_record` and `staff_id`.",
+        "required": [
+          "full_name",
+          "position",
+          "from",
+          "to",
+          "criteria",
+          "months"
+        ],
+        "properties": {
+          "criteria": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Criterion"
+            }
+          },
+          "from": {
+            "type": "string"
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "months": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoryMonth"
+            },
+            "description": "Newest month first; only the months the person was employed in."
+          },
+          "position": {
+            "type": "string"
+          },
+          "to": {
             "type": "string"
           }
         }
