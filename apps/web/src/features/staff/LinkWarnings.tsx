@@ -40,11 +40,12 @@ export function LinkWarnings({ onOpenRoster, nudge = false }: { onOpenRoster?: (
           <p>
             Các tài khoản này được tạo trước đây, chưa thuộc hồ sơ nhân viên nào: ứng dụng không biết đó là ai, nên quản lý chưa ghi sổ được và không ai xem được công và lương của mình. Gắn mỗi tài khoản vào đúng hồ sơ một lần.
           </p>
-          <ul className="grid gap-2">
+          {/* Rows, not list items: the daily book's cards are the page's list items. */}
+          <div className="grid gap-2">
             {loginsLeft.map((a) => (
               <LegacyRow key={a.user_id} account={a} profiles={free} />
             ))}
-          </ul>
+          </div>
           {onOpenRoster && (
             <div>
               <button type="button" className="btn btn-secondary" onClick={onOpenRoster}>
@@ -77,7 +78,7 @@ function LegacyRow({ account: a, profiles }: { account: StaffAccount; profiles: 
   });
   const id = `legacy-${a.user_id}`;
   return (
-    <li className="flex flex-wrap items-end gap-2">
+    <div className="flex flex-wrap items-end gap-2">
       <span className="min-w-0 flex-1">
         <strong>{a.full_name}</strong> ({a.roles.join(", ")})
       </span>
@@ -114,7 +115,7 @@ function LegacyRow({ account: a, profiles }: { account: StaffAccount; profiles: 
           {messageFor(link.error)}
         </span>
       )}
-    </li>
+    </div>
   );
 }
 
