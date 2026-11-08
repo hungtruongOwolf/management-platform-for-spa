@@ -310,7 +310,7 @@
             "description": "appointment.staff_busy (existing_id = the overlapping appointment), appointment.customer_busy (the same customer, or newcomer phone outside the group, already has an open booking overlapping it: existing_id), customer.phone_taken (newcomer's phone already has a record: existing_id)"
           },
           "422": {
-            "description": "validation_failed (starts_at not_on_slot / too_far, duration_min out_of_range, guest.*), appointment.outside_opening_hours, appointment.in_the_past (a past business day, owner too: record a back-dated visit instead), staff.inactive"
+            "description": "validation_failed (starts_at not_on_slot / too_far, duration_min out_of_range, guest.*), appointment.outside_opening_hours, appointment.in_the_past (a past business day or a slot of today already over, owner too: record a back-dated visit instead), staff.inactive"
           }
         }
       }
@@ -456,7 +456,7 @@
           },
           "412": {},
           "422": {
-            "description": "validation_failed (customer_id duplicate: that profile is already in the group), appointment.outside_opening_hours, appointment.in_the_past (moved to a past day)"
+            "description": "validation_failed (customer_id duplicate: that profile is already in the group), appointment.outside_opening_hours, appointment.in_the_past (a booking still waiting moved to a past day or a slot already over)"
           }
         }
       }
@@ -2977,6 +2977,46 @@
       }
     },
     "/api/v1/sales": {
+      "get": {
+        "tags": [
+          "sales"
+        ],
+        "operationId": "list_sales",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "description": "Business day (`YYYY-MM-DD`). Default: today.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Package sales of the day made without a visit (Quầy's day list), newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DaySaleDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "query.invalid"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs sale.read + customer.read"
+          }
+        }
+      },
       "post": {
         "tags": [
           "sales"
@@ -4642,7 +4682,7 @@
           "starts_at": {
             "type": "string",
             "format": "date-time",
-            "description": "On the spa's slot grid, inside opening hours; today up to 90 days ahead (a past day is\n`422 appointment.in_the_past` for everyone: that is a back-dated visit)."
+            "description": "On the spa's slot grid, inside opening hours; today up to 90 days ahead. A past day, or a\nslot of today already over (the slot under way is fine), is `422 appointment.in_the_past`\nfor everyone: a service already done is a back-dated visit."
           }
         },
         "additionalProperties": false
@@ -6369,6 +6409,40 @@
           }
         }
       },
+      "DaySaleDto": {
+        "type": "object",
+        "description": "One package sale of the day list at Quầy (F6, live test 2026-11-08): a cart of packages saved\nwithout a visit, with who bought it and who uses it.",
+        "required": [
+          "sale",
+          "customer_name"
+        ],
+        "properties": {
+          "beneficiary_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Who uses the package when it was bought for someone else (US13); null = the payer."
+          },
+          "customer_gender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GenderDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "customer_name": {
+            "type": "string",
+            "description": "The payer's name (\"Khách vãng lai\" for a nameless profile)."
+          },
+          "sale": {
+            "$ref": "#/components/schemas/SaleDto"
+          }
+        }
+      },
       "DiscountCreate": {
         "type": "object",
         "required": [
@@ -6904,7 +6978,7 @@
       },
       "HistoryEvent": {
         "type": "object",
-        "description": "One entry of a customer's timeline; exactly one of the detail fields is set, per `kind`.",
+        "description": "One entry of a customer's timeline. `visit` / `purchase` / `cancellation` / `extension` per\n`kind`; a `visit_voided` / `purchase_voided` event carries both its `visit` / `purchase` and\nits `void` (one event per record, at the record's own time).",
         "required": [
           "kind",
           "at",
@@ -8499,7 +8573,7 @@
               "null"
             ],
             "format": "date",
-            "description": "The day the note is about when it is not `business_date`: the booking's day\n(`appointment_note`), the evaluated month's first day (`evaluation_note`), the new expiry\n(`package_extension`)."
+            "description": "The day the note is about when it is not `business_date`: the booking's day\n(`appointment_note`, `appointment_reason`), the evaluated month's first day\n(`evaluation_note`), the new expiry (`package_extension`)."
           },
           "at": {
             "type": "string",
@@ -8537,7 +8611,7 @@
               "string",
               "null"
             ],
-            "description": "Extra context by kind: `adjustment` → `bonus` | `penalty`; `void` → `visit` |\n`visit_corrected` | `sale` | `package`; `attendance_note` → the day's status;\n`follow_up` → the call's outcome; `appointment_note` → the booking's status;\n`evaluation_note` → `comment` | `coaching_plan`; `package_extension` → the package's name;\n`discount` → `visit` | `sale`."
+            "description": "Extra context by kind: `adjustment` → `bonus` | `penalty`; `void` → `visit` |\n`visit_corrected` | `sale` | `package`; `attendance_note` → the day's status;\n`follow_up` → the call's outcome; `appointment_note` → the booking's status;\n`evaluation_note` → `comment` | `coaching_plan`; `package_extension` → the package's name;\n`discount` → `visit` | `sale`; `appointment_reason` → `cancelled` | `no_show`."
           },
           "kind": {
             "$ref": "#/components/schemas/NoteKind"
@@ -8585,7 +8659,8 @@
           "evaluation_note",
           "staff_note",
           "package_extension",
-          "discount"
+          "discount",
+          "appointment_reason"
         ]
       },
       "NotesPage": {

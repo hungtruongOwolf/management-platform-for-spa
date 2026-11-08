@@ -47,13 +47,18 @@ import {
   peakPeople,
   peopleAt,
   saveSlotLimit,
+  NO_BOOKING,
   spaMinutes,
   view,
 } from "./api";
 
-/** "Vãng lai" marks a visit recorded without a booking; "Nhóm · 3" a family booking. */
+/**
+ * "Không đặt lịch" marks a visit recorded without a booking (F23: the old tag read as the
+ * anonymous "Khách vãng lai", although most such visits are named customers); "Nhóm · 3" a
+ * family booking.
+ */
 function entryTag(e: Entry, cal: Calendar): string | null {
-  if (e.kind === "visit") return "Vãng lai";
+  if (e.kind === "visit") return NO_BOOKING;
   const g = e.a.group_id;
   if (!g) return null;
   const n = cal.appointments.filter((x) => x.group_id === g).length;
@@ -378,6 +383,9 @@ export function AppointmentsCalendar({
           }}
           onSaved={(a) => {
             setDraft(null);
+            // Booked for another day: go there, so the booking just made is on screen (F10).
+            if (a.business_date !== day)
+              setSearch({ ngay: a.business_date === today ? "" : a.business_date });
             setOpenId(a.id);
           }}
         />
@@ -659,7 +667,7 @@ function WeekGrid({
                   </span>
                   <span className="cal-chip-who">
                     {v.customerName}
-                    {e.kind === "visit" ? " · Vãng lai" : ""}
+                    {e.kind === "visit" ? ` · ${NO_BOOKING}` : ""}
                   </span>
                 </button>
               );
@@ -782,7 +790,7 @@ function VisitSheet({ v, onClose }: { v: CalendarVisit; onClose: () => void }) {
       title={`${range(start, v.duration_min)} · ${v.customer_name}`}
       description={
         <>
-          {dayTitle(v.business_date)} · Vãng lai ·{" "}
+          {dayTitle(v.business_date)} · {NO_BOOKING} ·{" "}
           <PhaseBadge phase={v.phase} />
         </>
       }

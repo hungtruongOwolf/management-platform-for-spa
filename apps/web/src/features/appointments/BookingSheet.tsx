@@ -24,6 +24,7 @@ import {
   autoMinutes,
   bookAppointment,
   bookGroup,
+  calendarQuery,
   customerClash,
   groupMoveRefusal,
   hhmm,
@@ -300,8 +301,6 @@ export function BookingSheet({
   const patched = useRef<Appointment | null>(null);
   const groupMoved = useRef<Appointment | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
-  // The earlier-than-now start the desk confirmed ("Vẫn đặt lịch"), as `day|starts`.
-  const [pastConfirmed, setPastConfirmed] = useState<string | null>(null);
 
   const serviceOf = (id: string): Service | undefined =>
     allServices.data?.find((s) => s.id === id);
@@ -339,17 +338,22 @@ export function BookingSheet({
         startOf(q) < startOf(p) + minutesOfPerson(p),
     ),
   );
-  const inRange = day >= cal.from && day <= cal.to;
+  // The day being booked: the calendar on screen, or that day's own calendar when another date is
+  // picked in the form (F13: the "x/3 khách" counts and the clash checks then went blank).
+  const onScreen = day >= cal.from && day <= cal.to;
+  const dayCal = useQuery({ ...calendarQuery(day), enabled: !onScreen });
+  const known: Calendar | undefined = onScreen ? cal : dayCal.data;
   const max = cal.max_per_slot ?? null;
-  const already = inRange
-    ? peakPeople(cal, day, firstStart, lastEnd - firstStart)
+  const already = known
+    ? peakPeople(known, day, firstStart, lastEnd - firstStart)
     : 0;
   const adding = editing ? served.length - 1 : served.length;
-  const overMax = max !== null && inRange && already + adding > max;
+  const overMax = max !== null && known !== undefined && already + adding > max;
 
-  // When (EM 2026-11-07): a past day is refused by the server (a done service is a back-dated
-  // visit at Quầy); an earlier time today is allowed after one confirmation (a companion joining a
-  // booking under way). An edited booking that keeps its time is not re-judged.
+  // When (EM 2026-11-07, 2026-11-08 F12): a past day and a slot of today already over are refused,
+  // here and by the server (`appointment.in_the_past`); a service already done is a visit recorded
+  // at Quầy ("Đổi giờ / nhập bù"). The slot under way is still bookable. An edited booking that
+  // keeps its time is not re-judged.
   const today = spaToday();
   const moved =
     editing === null ||
@@ -362,7 +366,6 @@ export function BookingSheet({
     ...served.filter((_, i) => i > 0 || moved).map(startOf),
   );
   const pastStart = day === today && earliest < slotNow;
-  const pastKey = `${day}|${String(earliest)}`;
 
   // "Đổi lịch" of one member of a group (EM 2026-11-07 item 5c): move the whole group by the same
   // amount (all or none, on the server), or only this person. Members already arrived or done stay.
@@ -374,8 +377,6 @@ export function BookingSheet({
   const askGroup = editing !== null && moved && mateMoves.length > 0;
   const [moveAll, setMoveAll] = useState(true);
   const wholeGroup = askGroup && moveAll;
-  // Asked once (footer + "Vẫn đặt lịch"); the next click books.
-  const pastAsked = pastStart && pastConfirmed === pastKey;
 
   // Who already holds a booking at that time (the server refuses: 409 appointment.customer_busy).
   const holderOf = (p: Person, i: number) => {
@@ -389,7 +390,7 @@ export function BookingSheet({
       : { customerId: null, guestPhone: p.guestPhone.trim() || null };
   };
   const clashes = new Map<number, Appointment>();
-  if (inRange)
+  if (known)
     served.forEach((p, i) => {
       // Like the server: an edited booking is judged only once its time or length changes.
       // (`moved` is always true for a new booking, so `editing` is set here.)
@@ -401,7 +402,7 @@ export function BookingSheet({
       )
         return;
       const other = customerClash(
-        cal,
+        known,
         holderOf(p, i),
         day,
         startOf(p),
@@ -539,18 +540,25 @@ export function BookingSheet({
       reveal(formRef.current?.querySelector<HTMLElement>("#booking-day input"));
       return;
     }
+    if (pastStart) {
+      reveal(byId("booking-start"));
+      return;
+    }
     const clashing = [...clashes.keys()][0];
     if (clashing !== undefined) {
       reveal(personField(clashing));
       return;
     }
-    if (pastStart && !pastAsked) {
-      setPastConfirmed(pastKey);
-      reveal(byId("booking-start"));
-      return;
-    }
     if (!save.isPending) save.mutate();
   };
+
+  // A refusal is about what was sent (F11): once the day, time or anyone in the form changes, the
+  // old sentence ("Lan đã có lịch…") no longer applies, so it goes until the next try.
+  useEffect(() => {
+    if (save.isError) save.reset();
+    // Only on an edit of the form, not when the refusal itself arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [day, start, people]);
 
   // A server refusal: bring the field it is about into view (the sentence is in the footer).
   useEffect(() => {
@@ -608,7 +616,7 @@ export function BookingSheet({
               )) ||
             bookingErrorText(
             save.error,
-            cal,
+            known ?? cal,
             editing ? served.slice(1) : served,
             editing ? sentLabels.slice(1) : sentLabels,
           ),
@@ -620,13 +628,13 @@ export function BookingSheet({
               tone: "error",
               text: `${formatDate(day)} đã qua: không đặt lịch cho ngày cũ. Khách đã làm thì ghi lượt nhập bù ở Quầy.`,
             }
-          : firstClash
-            ? { tone: "error", text: clashText(firstClash) }
-            : pastAsked
-              ? {
-                  tone: "warn",
-                  text: `Giờ hẹn ${hhmm(earliest)} đã qua (bây giờ ${nowText}). Khách đã làm xong thì ghi lượt nhập bù ở Quầy; khách đang làm hoặc sắp tới thì bấm “Vẫn đặt lịch”.`,
-                }
+          : pastStart
+            ? {
+                tone: "error",
+                text: `Giờ hẹn ${hhmm(earliest)} đã qua (bây giờ ${nowText}): chọn từ ${hhmm(slotNow)} trở đi. Khách đã làm xong thì ghi lượt ở Quầy (Đổi giờ / nhập bù).`,
+              }
+            : firstClash
+              ? { tone: "error", text: clashText(firstClash) }
               : staffClashText
                 ? { tone: "warn", text: staffClashText }
                 : capacityText
@@ -674,13 +682,11 @@ export function BookingSheet({
             className="btn btn-primary"
             aria-busy={save.isPending}
           >
-            {pastAsked
-              ? "Vẫn đặt lịch"
-              : editing
-                ? "Lưu thay đổi"
-                : served.length > 1
-                  ? `Đặt lịch ${String(served.length)} người`
-                  : "Đặt lịch"}
+            {editing
+              ? "Lưu thay đổi"
+              : served.length > 1
+                ? `Đặt lịch ${String(served.length)} người`
+                : "Đặt lịch"}
           </button>
         </>
       }
@@ -834,6 +840,9 @@ export function BookingSheet({
               className="btn btn-secondary justify-self-start"
               onClick={() => {
                 setPeople((ps) => [...ps, companion(nextKey.current++)]);
+                // A new, still empty row is not "missing" yet (F9): the earlier failed try is
+                // judged again on the next "Đặt lịch".
+                setAttempted(false);
               }}
             >
               <Icon name="plus" /> Người đi cùng
@@ -871,19 +880,21 @@ export function BookingSheet({
               }}
             >
               {startOptions.map((m) => {
-                const n = inRange ? peopleAt(cal, day, m) : 0;
+                const n = known ? peopleAt(known, day, m) : 0;
                 const tail =
-                  max !== null && inRange
+                  max !== null && known
                     ? ` · ${String(n)}/${String(max)} khách`
                     : n > 0
                       ? ` · ${String(n)} khách`
                       : "";
-                const gone = day === today && m < slotNow ? " · đã qua" : "";
+                const gone = day === today && m < slotNow;
                 return (
-                  <option key={m} value={m}>
+                  // A slot already over cannot be picked (F12); an edited booking still shows its
+                  // own time.
+                  <option key={m} value={m} disabled={gone && m !== start}>
                     {hhmm(m)}
                     {tail}
-                    {gone}
+                    {gone ? " · đã qua" : ""}
                   </option>
                 );
               })}
@@ -891,7 +902,7 @@ export function BookingSheet({
             {(pastStart || overMax) && (
               <span id="booking-start-note" className="field-hint">
                 {pastStart
-                  ? `Giờ này đã qua (bây giờ ${nowText}). Khách đã làm xong thì ghi lượt nhập bù ở Quầy.`
+                  ? `Giờ này đã qua (bây giờ ${nowText}). Khách đã làm xong thì ghi lượt ở Quầy.`
                   : `Khung giờ đã đủ ${String(max)} khách.`}
               </span>
             )}
@@ -974,7 +985,12 @@ function Who({ legend }: { legend: string | null }) {
   return legend ? <span className="sr-only"> · {legend}</span> : null;
 }
 
-/** Who the person is: a customer record, a newcomer (the customer) or a name / note (a companion). */
+/**
+ * Who the person is: a customer record, a newcomer (the customer) or a name / note (a companion).
+ * The customer has one way to a newcomer, the search's "Khách mới" (it keeps what was typed), and
+ * "Tìm khách có hồ sơ" back (F7: a "Khách mới" tab next to that button said the same twice). A
+ * companion starts as a name or note, so the two-way switch stays there.
+ */
 function WhoFields({
   p,
   main,
@@ -992,30 +1008,44 @@ function WhoFields({
 }) {
   return (
     <>
-      <div
-        role="group"
-        aria-label={`Loại khách ${legend}`}
-        className="segmented justify-self-start"
-      >
-        <button
-          type="button"
-          aria-pressed={p.who === "customer"}
-          onClick={() => {
-            change(p.key, { who: "customer" });
-          }}
+      {main ? (
+        p.who === "guest" && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              change(p.key, { who: "customer" });
+            }}
+          >
+            Tìm khách có hồ sơ
+          </button>
+        )
+      ) : (
+        <div
+          role="group"
+          aria-label={`Loại khách ${legend}`}
+          className="segmented justify-self-start"
         >
-          Khách có hồ sơ
-        </button>
-        <button
-          type="button"
-          aria-pressed={p.who === "guest"}
-          onClick={() => {
-            change(p.key, { who: "guest" });
-          }}
-        >
-          {main ? "Khách mới" : "Chỉ ghi tên"}
-        </button>
-      </div>
+          <button
+            type="button"
+            aria-pressed={p.who === "customer"}
+            onClick={() => {
+              change(p.key, { who: "customer" });
+            }}
+          >
+            Khách có hồ sơ
+          </button>
+          <button
+            type="button"
+            aria-pressed={p.who === "guest"}
+            onClick={() => {
+              change(p.key, { who: "guest" });
+            }}
+          >
+            Chỉ ghi tên
+          </button>
+        </div>
+      )}
       {p.who === "customer" &&
         (p.customer ? (
           <p className="appt-chosen-person">

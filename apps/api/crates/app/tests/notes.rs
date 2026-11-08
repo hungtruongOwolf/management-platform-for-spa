@@ -32,6 +32,8 @@ const HEALTH_NOTE: &str = "Huyết áp cao, tránh xông nóng";
 const PROFILE_NOTE: &str = "Thích phòng yên tĩnh";
 const BOOKING_NOTE: &str = "Khách muốn phòng riêng";
 const STAFF_NOTE: &str = "Đang học thêm khóa massage đá nóng";
+const CANCEL_REASON: &str = "Khách bận việc đột xuất";
+const NO_SHOW_REASON: &str = "Gọi không nghe máy";
 
 type Setup<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -243,6 +245,29 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
     .bind(manager_user)
     .execute(&h.owner)
     .await?;
+    // F21: why a booking was cancelled (the customer's) or the person did not come (a guest's).
+    sqlx::query(
+        "INSERT INTO app.appointment
+           (id, tenant_id, branch_id, customer_id, guest_name, guest_phone, business_date, starts_at,
+            ends_at, status, status_reason, closed_at, closed_by, created_by)
+         SELECT v.id, $2, b.id, v.customer_id, v.guest_name, v.guest_phone, $3::date + 2,
+                now() + interval '2 days', now() + interval '49 hours', v.status, v.reason, now(), $4, $4
+         FROM app.branch b,
+              (VALUES ($1::uuid, $5::uuid, NULL::text, NULL::text, 'cancelled', $6::text),
+                      ($7::uuid, NULL::uuid, 'Khách Yến', '+84905000111', 'no_show', $8::text))
+                AS v (id, customer_id, guest_name, guest_phone, status, reason)
+         WHERE b.tenant_id = $2",
+    )
+    .bind(Uuid::now_v7())
+    .bind(tenant)
+    .bind(day)
+    .bind(manager_user)
+    .bind(customer)
+    .bind(CANCEL_REASON)
+    .bind(Uuid::now_v7())
+    .bind(NO_SHOW_REASON)
+    .execute(&h.owner)
+    .await?;
     sqlx::query(
         "INSERT INTO app.staff_evaluation
            (tenant_id, staff_id, work_date, criteria, total_points, result_level, coaching_plan, comment, recorded_by)
@@ -360,9 +385,34 @@ async fn each_role_reads_exactly_the_notes_it_may(pool: PgPool) -> TestResult {
         "Khách ốm, gia hạn một tháng",
         "Khách quen giảm tại quầy",
         "Mua gói thứ hai giảm giá",
+        CANCEL_REASON,
+        NO_SHOW_REASON,
     ] {
         assert!(text.iter().any(|x| x == t), "owner sees {t}");
     }
+    // F21: the reason says which close it was, for which day, about whom, and who closed it.
+    let reasons: Vec<Value> = owner.body["items"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|n| n["kind"] == "appointment_reason")
+        .cloned()
+        .collect();
+    let of = |detail: &str| {
+        reasons
+            .iter()
+            .find(|n| n["detail"] == detail)
+            .cloned()
+            .unwrap_or_default()
+    };
+    assert_eq!(of("cancelled")["text"], CANCEL_REASON);
+    assert_eq!(of("cancelled")["customer_name"], "Nguyễn Thị Hoa");
+    assert_eq!(of("no_show")["customer_name"], "Khách Yến");
+    assert_eq!(of("no_show")["author_name"], "Quản lý Hà");
+    assert_eq!(
+        of("no_show")["about_date"],
+        (today() + Duration::days(2)).to_string()
+    );
     // Who wrote it and about whom.
     let follow = owner.body["items"]
         .as_array()
@@ -485,8 +535,9 @@ async fn a_manager_without_the_health_permission_sees_no_health_notes(pool: PgPo
 async fn every_kind_keeps_its_own_read_rule(pool: PgPool) -> TestResult {
     use Permission as P;
     let s = spa(pool).await?;
-    let rules: [(NoteKind, &[Permission]); 13] = [
+    let rules: [(NoteKind, &[Permission]); 14] = [
         (NoteKind::AppointmentNote, &[P::AppointmentManage]),
+        (NoteKind::AppointmentReason, &[P::AppointmentManage]),
         (NoteKind::EvaluationNote, &[P::EvaluationRecord]),
         (NoteKind::StaffNote, &[P::StaffManage]),
         (
@@ -581,6 +632,84 @@ async fn every_kind_keeps_its_own_read_rule(pool: PgPool) -> TestResult {
     Ok(())
 }
 
+/// ADR-0015 (lead 2026-11-08): the HR notes about the caller's own linked profile (attendance,
+/// praise / complaints, bonus / penalty, monthly evaluation) are not in a manager's journal: they
+/// read their own through `/me/*`. The owner still reads every manager's. Notes the manager wrote
+/// about others stay.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_manager_does_not_read_notes_about_their_own_profile(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let manager_user: Uuid =
+        sqlx::query_scalar("SELECT id FROM app.user_account WHERE phone_e164 = '+84912000111'")
+            .fetch_one(&s.h.owner)
+            .await?;
+    let own = org::provisioning::add_staff(&s.h.owner, "vpyd", "Quản lý Hà", "Quản lý").await?;
+    sqlx::query("UPDATE app.staff SET user_id = $2 WHERE id = $1")
+        .bind(own)
+        .bind(manager_user)
+        .execute(&s.h.owner)
+        .await?;
+    let owner_user: Uuid =
+        sqlx::query_scalar("SELECT id FROM app.user_account WHERE phone_e164 = '+84905123456'")
+            .fetch_one(&s.h.owner)
+            .await?;
+    let day = today();
+    sqlx::query(
+        "INSERT INTO app.attendance_day (tenant_id, staff_id, work_date, status, note, recorded_by)
+         VALUES ($1, $2, $3, 'present', 'Quản lý đến muộn vì kẹt xe', $4)",
+    )
+    .bind(s.tenant)
+    .bind(own)
+    .bind(day)
+    .bind(owner_user)
+    .execute(&s.h.owner)
+    .await?;
+    sqlx::query(
+        "INSERT INTO app.staff_adjustment (id, tenant_id, staff_id, work_date, kind, amount, reason, created_by)
+         VALUES ($1, $2, $3, $4, 'penalty', 50000, 'Quên khóa két', $5)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(s.tenant)
+    .bind(own)
+    .bind(day)
+    .bind(owner_user)
+    .execute(&s.h.owner)
+    .await?;
+
+    let manager = s.notes(&s.manager, "").await;
+    assert_eq!(manager.status, StatusCode::OK, "{}", manager.body);
+    let text = texts(&manager.body);
+    for own_note in ["Quản lý đến muộn vì kẹt xe", "Quên khóa két"] {
+        assert!(
+            !text.iter().any(|t| t == own_note),
+            "manager must not see {own_note}"
+        );
+    }
+    assert!(
+        text.iter().any(|t| t == "Con ốm, nghỉ đột xuất"),
+        "notes about the people they look after stay"
+    );
+    // Filtering on their own profile still shows what they wrote about others, nothing about them.
+    let filtered = s.notes(&s.manager, &format!("?staff_id={own}")).await;
+    assert!(
+        !filtered.body["items"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|n| n["staff_id"] == own.to_string()),
+        "{}",
+        filtered.body
+    );
+    let owner = texts(&s.notes(&s.owner, "").await.body);
+    for own_note in ["Quản lý đến muộn vì kẹt xe", "Quên khóa két"] {
+        assert!(
+            owner.iter().any(|t| t == own_note),
+            "the owner sees {own_note}"
+        );
+    }
+    Ok(())
+}
+
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn filters_search_and_pages_with_a_cursor(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
@@ -595,6 +724,7 @@ async fn filters_search_and_pages_with_a_cursor(pool: PgPool) -> TestResult {
         kinds_of(&mine.body),
         [
             "appointment_note",
+            "appointment_reason",
             "customer_note",
             "discount",
             "follow_up",

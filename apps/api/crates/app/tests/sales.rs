@@ -834,3 +834,156 @@ async fn a_refused_package_saves_nothing_of_the_cart(pool: PgPool) -> TestResult
     }
     Ok(())
 }
+
+/// F6 (live test 2026-11-08): Quầy's day list shows the package sales saved without a visit,
+/// newest first, with who paid and who uses each, voided ones included. A visit's own sales stay
+/// with the visit (`GET /visits`). `sale.read` + `customer.read` (the list names the customer),
+/// deny by default; another spa sees none.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_day_lists_its_package_sales_without_a_visit(pool: PgPool) -> TestResult {
+    let s = shop(pool).await?;
+    let alone = s.sell(&s.manager, s.cash(1_500_000)).await;
+    assert_eq!(alone.status, StatusCode::CREATED, "{}", alone.body);
+    let mother = call(
+        &s.h.app,
+        "POST",
+        "/customers",
+        Some(&s.manager),
+        Some(json!({"full_name": "Trần Thị Mẹ", "phone": "0905333444", "gender": "female"})),
+    )
+    .await;
+    let cart = s
+        .checkout(
+            &s.manager,
+            &Uuid::now_v7().to_string(),
+            json!({"customer_id": s.customer, "package_sales": [
+                      {"package_plan_id": s.plan},
+                      {"package_plan_id": s.plan, "beneficiary_customer_id": id_of(&mother)}],
+                   "payments": [{"method": "cash", "amount": 3_000_000}]}),
+        )
+        .await;
+    assert_eq!(cart.status, StatusCode::CREATED, "{}", cart.body);
+    // A package sold in a visit's cart is the visit's.
+    let services = s.get(&s.owner, "/services").await;
+    let shampoo = services
+        .body
+        .as_array()
+        .and_then(|l| l.iter().find(|x| x["name"] == "Cơ Bản – Dầu thảo dược"))
+        .map(|x| x["id"].clone())
+        .unwrap_or(Value::Null);
+    let visit = call_with_headers(
+        &s.h.app,
+        "POST",
+        "/visits",
+        Some(&s.manager),
+        Some(json!({"customer_id": s.customer,
+                    "lines": [{"service_id": shampoo, "source": "package", "package_ref": "p1",
+                               "staff_id": s.lan}],
+                    "package_sales": [{"ref": "p1", "package_plan_id": s.plan}],
+                    "payments": [{"method": "cash", "amount": 1_500_000}]})),
+        &[("idempotency-key", &Uuid::now_v7().to_string())],
+    )
+    .await;
+    assert_eq!(visit.status, StatusCode::CREATED, "{}", visit.body);
+    let void = call_with_headers(
+        &s.h.app,
+        "POST",
+        &format!("/sales/{}/void", id_of(&alone)),
+        Some(&s.manager),
+        Some(json!({"reason": "Khách đổi ý"})),
+        &[("idempotency-key", &Uuid::now_v7().to_string())],
+    )
+    .await;
+    assert_eq!(void.status, StatusCode::OK, "{}", void.body);
+
+    let day = s.get(&s.manager, "/sales").await;
+    assert_eq!(day.status, StatusCode::OK, "{}", day.body);
+    assert_eq!(
+        day.headers
+            .get(header::CACHE_CONTROL)
+            .and_then(|v| v.to_str().ok()),
+        Some("no-store")
+    );
+    let rows = day.body.as_array().cloned().unwrap_or_default();
+    let ids: Vec<&str> = rows
+        .iter()
+        .filter_map(|r| r["sale"]["id"].as_str())
+        .collect();
+    let checkout_ids: Vec<&str> = cart.body["sales"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|x| x["id"].as_str())
+        .collect();
+    assert_eq!(ids.len(), 3, "{}", day.body);
+    assert!(
+        checkout_ids.iter().all(|c| ids.contains(c)) && ids.contains(&id_of(&alone).as_str()),
+        "the cart's two sales and the one alone, not the visit's"
+    );
+    assert_eq!(ids[2], id_of(&alone), "newest first");
+    for r in &rows {
+        assert_eq!(r["customer_name"], "Nguyễn Thị Hà");
+        assert_eq!(r["customer_gender"], "female");
+        assert_eq!(r["sale"]["visit_id"], Value::Null);
+    }
+    let gift = rows
+        .iter()
+        .find(|r| r["beneficiary_name"] == "Trần Thị Mẹ")
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(
+        gift["sale"]["lines"][0]["description"],
+        "Gội đầu dưỡng sinh 10 buổi + tặng 2"
+    );
+    assert_eq!(rows[2]["sale"]["status"], "voided");
+    assert_eq!(rows[2]["sale"]["void_reason"], "Khách đổi ý");
+    assert_eq!(rows[2]["beneficiary_name"], Value::Null);
+
+    // Another day: none; another spa: none.
+    let yesterday = (chrono::Utc::now()
+        .with_timezone(&chrono_tz::Asia::Ho_Chi_Minh)
+        .date_naive()
+        - chrono::Duration::days(1))
+    .to_string();
+    let other_day = s.get(&s.manager, &format!("/sales?date={yesterday}")).await;
+    assert_eq!(other_day.body, json!([]), "{}", other_day.body);
+    identity::provisioning::create_tenant(&s.h.owner, "spa-b", "Spa B", "Cơ sở 1").await?;
+    add_member(
+        &s.h.owner,
+        "spa-b",
+        "0987000999",
+        "Chủ Spa B",
+        SystemRole::Owner,
+    )
+    .await?;
+    let other = session_for(&s.h, "0987000999").await;
+    assert_eq!(s.get(&other, "/sales").await.body, json!([]));
+
+    // Deny by default: sale.read alone does not name customers; technicians never.
+    let app = kernel::testing::app_pool(&s.h.owner).await?;
+    let tenant: Uuid = sqlx::query_scalar("SELECT id FROM app.tenant WHERE slug = 'vpyd'")
+        .fetch_one(&s.h.owner)
+        .await?;
+    let actor = kernel::Actor::new(
+        kernel::UserId::new(),
+        kernel::TenantId::from_uuid(tenant),
+        [kernel::Permission::SaleRead],
+        None,
+    );
+    let denied = sales::service::for_day(&app, &actor, None).await;
+    assert!(
+        matches!(denied, Err(kernel::AppError::Forbidden { .. })),
+        "{denied:?}"
+    );
+    add_member(
+        &s.h.owner,
+        "vpyd",
+        TECH_PHONE,
+        "KTV Mai",
+        SystemRole::Technician,
+    )
+    .await?;
+    let tech = session_for(&s.h, TECH_PHONE).await;
+    assert_eq!(s.get(&tech, "/sales").await.status, StatusCode::FORBIDDEN);
+    Ok(())
+}

@@ -103,7 +103,7 @@ export function TimeGrid({
   colMin?: number;
   /** Extra content of an hour's gutter band, under the hour (the desk's people count). */
   gutter?: (minute: number) => ReactNode;
-  /** "Vãng lai", "Nhóm · 3 người": the second word group of a card. */
+  /** "Không đặt lịch", "Nhóm · 3 người": the second word group of a card. */
   tagOf: (e: EntryView) => string | null;
   canBook?: boolean;
   onBook?: (start: number, column: TimeColumn) => void;

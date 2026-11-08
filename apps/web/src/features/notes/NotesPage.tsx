@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { Icon } from "../../app/Icon";
 import { DateField } from "../../components/DateField";
-import { dayLabel } from "../../lib/format";
+import { dayLabel, spaTime } from "../../lib/format";
 import { useSearchState } from "../../lib/searchState";
 import { spaToday } from "../corrections/api";
 import { FilterSelect, ResponsiveFilters, SearchField } from "../reports/filters";
@@ -30,6 +30,7 @@ export const KIND_LABEL: Record<NoteKind, string> = {
   staff_note: "Ghi chú nhân sự",
   package_extension: "Gia hạn gói",
   discount: "Giảm giá",
+  appointment_reason: "Hủy lịch / không đến",
 };
 
 const KIND_BADGE: Record<NoteKind, string> = {
@@ -47,6 +48,7 @@ const KIND_BADGE: Record<NoteKind, string> = {
   staff_note: "badge-muted",
   package_extension: "badge-info",
   discount: "badge-warn",
+  appointment_reason: "badge-danger",
 };
 
 /** The chip of one note: some kinds say more precisely what happened (`detail`). */
@@ -57,6 +59,9 @@ function chipOf(n: NoteEntry): { label: string; badge: string } {
     const label = { visit: "Hủy lượt", visit_corrected: "Sửa lượt", sale: "Hủy hóa đơn", package: "Hủy gói" }[n.detail ?? ""];
     if (label) return { label, badge: "badge-danger" };
   }
+  // F21: why a booking was closed without a visit.
+  if (n.kind === "appointment_reason")
+    return { label: n.detail === "no_show" ? "Không đến" : "Hủy lịch", badge: "badge-danger" };
   if (n.kind === "evaluation_note" && n.detail === "coaching_plan") return { label: "Kế hoạch kèm cặp", badge: "badge-gold" };
   if (n.kind === "evaluation_note") return { label: "Nhận xét tháng", badge: "badge-gold" };
   return { label: KIND_LABEL[n.kind], badge: KIND_BADGE[n.kind] };
@@ -67,18 +72,17 @@ const dmy = (iso: string) => iso.split("-").reverse().join("/");
 /** The day the note is about, when it is not the day it is filed under. */
 function aboutOf(n: NoteEntry): string {
   if (!n.about_date) return "";
-  if (n.kind === "appointment_note") return `Lịch hẹn ${dmy(n.about_date)}`;
+  if (n.kind === "appointment_note" || n.kind === "appointment_reason") return `Lịch hẹn ${dmy(n.about_date)}`;
   if (n.kind === "evaluation_note") return `Tháng ${dmy(n.about_date.slice(0, 7))}`;
   if (n.kind === "package_extension") return `Hạn mới ${dmy(n.about_date)}`;
   return "";
 }
 
-const timeFormat = new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Ho_Chi_Minh" });
 
 /** When it was written, in words that say what the time means. */
 function whenOf(n: NoteEntry): string {
   if (n.kind === "employment_end") return "Ngày làm cuối";
-  const time = timeFormat.format(new Date(n.at));
+  const time = spaTime(n.at);
   // EM Q-N2: profile, health and HR notes keep one value on the profile; its last change is shown.
   return n.kind === "customer_note" || n.kind === "health_note" || n.kind === "staff_note" ? `Hồ sơ sửa lúc ${time}` : time;
 }
@@ -310,7 +314,7 @@ function historyKindOf(n: NoteEntry): HistoryKind | "" {
 function SourceLink({ note: n }: { note: NoteEntry }): ReactNode {
   const arrow = <Icon name="arrow-right" className="size-4" />;
   const day = n.business_date;
-  if (n.kind === "appointment_note") {
+  if (n.kind === "appointment_note" || n.kind === "appointment_reason") {
     return (
       <Link to="/quay" search={{ view: "lich", ngay: n.about_date ?? day }} className="note-link">
         Mở lịch hẹn

@@ -437,6 +437,40 @@ async fn customer_without_gender_needs_a_price_variant_for_gendered_services(
         ))
         .await;
     assert_eq!(chosen.status, StatusCode::CREATED, "{}", chosen.body);
+    // F2 (live test 2026-11-08): the gender picked to price the visit is now the profile's, so the
+    // next visit needs no pick, and a different one is refused rather than overwriting it.
+    let profile = d.get(&format!("/customers/{}", d.khoi)).await;
+    assert_eq!(profile.body["gender"], "male", "{}", profile.body);
+    assert_eq!(chosen.body["customer_gender"], "male");
+    let audited = d
+        .count("SELECT count(*) FROM app.audit_log WHERE action = 'customer.update' AND after->>'gender' = 'male'")
+        .await?;
+    assert_eq!(audited, 1);
+    let again = d
+        .record(d.one_off(
+            &d.khoi,
+            &d.dai_thong_lac,
+            json!({}),
+            json!([{"method": "cash", "amount": 399_000}]),
+        ))
+        .await;
+    assert_eq!(again.status, StatusCode::CREATED, "{}", again.body);
+    let other = d
+        .record(d.one_off(
+            &d.khoi,
+            &d.dai_thong_lac,
+            json!({"price_variant": "female"}),
+            json!([{"method": "cash", "amount": 349_000}]),
+        ))
+        .await;
+    assert_eq!(
+        other.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{}",
+        other.body
+    );
+    let profile = d.get(&format!("/customers/{}", d.khoi)).await;
+    assert_eq!(profile.body["gender"], "male", "never overwritten");
     let flat = d
         .record(d.one_off(
             &d.khoi,
@@ -848,9 +882,16 @@ async fn session_note_is_encrypted_and_shown_only_to_health_readers(pool: PgPool
     assert_eq!(list.body[0]["note"], "Đỏ da vùng cổ sau buổi");
     let history = d.get(&format!("/customers/{}/history", d.ha)).await;
     assert_eq!(history.status, StatusCode::OK, "{}", history.body);
+    // Found by kind: same-day order mixes the API and database clocks (backend §3b).
+    let visit_event = history.body["events"]
+        .as_array()
+        .and_then(|events| events.iter().find(|e| e["kind"] == "visit"))
+        .cloned()
+        .unwrap_or_default();
     assert_eq!(
-        history.body["events"][0]["visit"]["note"],
-        "Đỏ da vùng cổ sau buổi"
+        visit_event["visit"]["note"], "Đỏ da vùng cổ sau buổi",
+        "{}",
+        history.body
     );
 
     let leaks = d
@@ -1017,6 +1058,25 @@ async fn technician_role_cannot_record_or_read_visits(pool: PgPool) -> TestResul
     assert_eq!(code(&r), (StatusCode::FORBIDDEN, Some("auth.forbidden")));
     let list = call(&d.h.app, "GET", "/visits", Some(&tech), None).await;
     assert_eq!(list.status, StatusCode::FORBIDDEN);
+    // F17 (live test 2026-11-08): the right is checked before the query, so a malformed query
+    // tells someone without it nothing about the parameters (it used to be 400 first).
+    for path in [
+        "/visits?limit=abc",
+        "/appointments?from=not-a-day",
+        "/notes?kind=nope",
+        "/sales?date=x",
+    ] {
+        let r = call(&d.h.app, "GET", path, Some(&tech), None).await;
+        assert_eq!(r.status, StatusCode::FORBIDDEN, "{path}: {}", r.body);
+    }
+    // A caller who has the right still hears what is wrong with the query.
+    let bad = call(&d.h.app, "GET", "/visits?limit=abc", Some(&d.manager), None).await;
+    assert_eq!(
+        code(&bad),
+        (StatusCode::BAD_REQUEST, Some("query.invalid")),
+        "{}",
+        bad.body
+    );
     Ok(())
 }
 

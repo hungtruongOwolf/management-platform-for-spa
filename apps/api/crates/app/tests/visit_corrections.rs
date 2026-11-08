@@ -718,6 +718,38 @@ async fn closed_days_technicians_and_bad_requests(pool: PgPool) -> TestResult {
         .await?;
     let manager = s.correct(&s.manager, &id, 1, body.clone()).await;
     assert_eq!(code(&manager), (StatusCode::FORBIDDEN, Some("day.locked")));
+    // F17 (live test 2026-11-08): a bad body on a day the manager may not change is still
+    // `403 day.locked` (it was 422 first), for a missing reason and for a body that does not parse.
+    let mut no_reason = body.clone();
+    no_reason["reason"] = json!("");
+    for bad in [no_reason, json!({"lines": "not a list"})] {
+        let r = s.correct(&s.manager, &id, 1, bad).await;
+        assert_eq!(
+            code(&r),
+            (StatusCode::FORBIDDEN, Some("day.locked")),
+            "{}",
+            r.body
+        );
+    }
+    let void = call_with_headers(
+        &s.h.app,
+        "POST",
+        &format!("/visits/{id}/void"),
+        Some(&s.manager),
+        Some(json!({"reason": ""})),
+        &[("idempotency-key", &key())],
+    )
+    .await;
+    assert_eq!(
+        code(&void),
+        (StatusCode::FORBIDDEN, Some("day.locked")),
+        "{}",
+        void.body
+    );
+    let unknown = s
+        .correct(&s.manager, &Uuid::now_v7().to_string(), 1, json!({}))
+        .await;
+    assert_eq!(unknown.status, StatusCode::NOT_FOUND, "{}", unknown.body);
     let manager_patch = s.patch(&s.manager, &id, 1, json!({"note": null})).await;
     assert_eq!(
         code(&manager_patch),
@@ -826,12 +858,14 @@ async fn the_appointment_moves_to_the_corrected_visit(pool: PgPool) -> TestResul
         "/appointments",
         Some(&s.manager),
         Some(json!({"customer_id": s.ha, "service_ids": [s.shampoo],
-                    "starts_at": format!("{}T00:00:00+07:00", spa_today())})),
+                    "starts_at": format!("{}T00:00:00+07:00", spa_today() + chrono::Duration::days(1))})),
         &[("idempotency-key", &key())],
     )
     .await;
     assert_eq!(booked.status, StatusCode::CREATED, "{}", booked.body);
     let appointment = str_of(&booked.body["id"]);
+    // Booked for tomorrow, then moved onto today (a slot already over cannot be booked, F12).
+    common::bookings_to_today(&s.h, &[&appointment]).await?;
     let done = call_with_headers(
         &s.h.app,
         "POST",

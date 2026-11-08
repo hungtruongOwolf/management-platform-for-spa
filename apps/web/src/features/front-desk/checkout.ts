@@ -93,8 +93,8 @@ export async function sellPackagesOnly(
 
 /**
  * Saves a cart of packages without services and says what was sold: one package → `POST /sales`
- * (as before), several → `POST /sales/checkout` (one save, one payment). Returns the toast text,
- * one sentence per package (a package bought for someone else names both people).
+ * (as before), several → `POST /sales/checkout` (one save, one payment). Returns the toast text:
+ * one sentence, also for several packages (F5: two sentences used to run together).
  */
 export async function sellCart(
   payer: { id: string; full_name: string },
@@ -107,12 +107,34 @@ export async function sellCart(
     drafts.length === 1 && only
       ? [await sellPackageOnly(payer.id, only, payments, idempotencyKey)]
       : (await sellPackagesOnly(payer.id, drafts, payments, idempotencyKey)).sales;
-  return drafts
-    .map((d, i) => {
-      const name = (sold[i]?.lines ?? []).map((l) => l.description).join(", ");
-      return d.beneficiary
-        ? boughtForOtherText(name, d.beneficiary.full_name, payer.full_name)
-        : `Đã bán ${name} · ${payer.full_name}`;
-    })
-    .join(" ");
+  return soldText(
+    payer.full_name,
+    drafts.map((d, i) => ({
+      name: (sold[i]?.lines ?? []).map((l) => l.description).join(", "),
+      beneficiary: d.beneficiary?.full_name ?? null,
+    })),
+  );
+}
+
+/**
+ * The toast of a package-only cart. One package: "Đã bán X · Hà", or who gets it and who paid
+ * (US13). Several: one sentence naming them all, "Đã bán 2 gói cho Hà: X; Y." — or, when one is a
+ * gift, "Đã bán 2 gói (Hà trả tiền): X; Y cho Nam.".
+ */
+export function soldText(
+  payer: string,
+  sold: { name: string; beneficiary: string | null }[],
+): string {
+  const [only] = sold;
+  if (sold.length === 1 && only)
+    return only.beneficiary
+      ? boughtForOtherText(only.name, only.beneficiary, payer)
+      : `Đã bán ${only.name} · ${payer}`;
+  const items = sold
+    .map((s) => (s.beneficiary ? `${s.name} cho ${s.beneficiary}` : s.name))
+    .join("; ");
+  const count = String(sold.length);
+  return sold.some((s) => s.beneficiary)
+    ? `Đã bán ${count} gói (${payer} trả tiền): ${items}.`
+    : `Đã bán ${count} gói cho ${payer}: ${items}.`;
 }

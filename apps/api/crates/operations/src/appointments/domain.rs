@@ -248,11 +248,31 @@ pub fn is_technician(position: &str) -> bool {
     p.contains("kỹ thuật") || p.contains("ky thuat") || p.contains("ktv")
 }
 
+/// A start whose whole first slot is already over (F12, EM 2026-11-08): it cannot be booked. The
+/// slot under way can (19:00 at 19:08 with 15- or 30-minute slots: the customer is arriving).
+pub fn slot_is_over(starts_at: DateTime<Utc>, now: DateTime<Utc>, slot_minutes: u32) -> bool {
+    starts_at + Duration::minutes(i64::from(slot_minutes)) <= now
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::TimeZone;
     use serde_json::json;
+
+    #[test]
+    fn a_slot_already_over_is_past_the_one_under_way_is_not() {
+        let now = at(19, 8);
+        assert!(!slot_is_over(at(19, 0), now, 15), "the slot under way");
+        assert!(!slot_is_over(at(19, 0), now, 30));
+        assert!(!slot_is_over(at(19, 15), now, 15), "a later slot");
+        assert!(slot_is_over(at(18, 45), now, 15), "ended 19:00");
+        assert!(
+            slot_is_over(at(10, 0), now, 30),
+            "the 10:00 booked at 19:08 (live test)"
+        );
+        assert!(slot_is_over(at(18, 53), at(19, 8), 15), "ends exactly now");
+    }
 
     fn vn() -> Tz {
         kernel::BusinessDate::parse_tz("Asia/Ho_Chi_Minh").unwrap_or(chrono_tz::UTC)

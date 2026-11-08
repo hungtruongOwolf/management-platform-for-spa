@@ -11,6 +11,7 @@ import type {
 } from "@vpyd/api-client";
 import { queryOptions } from "@tanstack/react-query";
 import { api } from "../../lib/api";
+import { spaTime } from "../../lib/format";
 
 export type Gender = "female" | "male";
 
@@ -48,6 +49,20 @@ export function visitsOfDayQuery(date: string, all = false) {
       )) as Visit[],
     staleTime: 15_000,
   });
+}
+
+/**
+ * The day list's order (F26): newest service time (`check_in_at`) first, as `GET /visits` sorts.
+ * A visit saved with an earlier "giờ làm" lands at its time instead of on top of the list.
+ */
+export function byServiceTime<T extends { check_in_at: string; id: string }>(
+  rows: T[],
+): T[] {
+  return [...rows].sort(
+    (a, b) =>
+      Date.parse(b.check_in_at) - Date.parse(a.check_in_at) ||
+      b.id.localeCompare(a.id),
+  );
 }
 
 /** One key per visit being recorded: a double click or a retry after a network error replays it. */
@@ -371,10 +386,4 @@ export function serviceInstant(day: string, time: string): string | null {
 }
 
 /** "2026-11-05T02:12:00Z" → "09:12" in the spa's time zone. */
-export function timeOf(iso: string): string {
-  return new Intl.DateTimeFormat("vi-VN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Asia/Ho_Chi_Minh",
-  }).format(new Date(iso));
-}
+export const timeOf = spaTime;

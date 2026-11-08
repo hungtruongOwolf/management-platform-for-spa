@@ -1,18 +1,22 @@
-//! `POST /sales`, `POST /sales/checkout`, `GET /sales/{id}`, `POST /sales/{id}/void`.
+//! `GET /sales?date=`, `POST /sales`, `POST /sales/checkout`, `GET /sales/{id}`,
+//! `POST /sales/{id}/void`.
 
-use crate::dto::{SaleCheckoutCreate, SaleCheckoutDto, SaleCreate, SaleDto, VoidCreate};
+use crate::dto::{
+    DaySaleDto, SaleCheckoutCreate, SaleCheckoutDto, SaleCreate, SaleDto, SaleListQuery, VoidCreate,
+};
 use crate::{paper, service, voids};
 use axum::body::Bytes;
-use axum::extract::{FromRef, Path, State};
+use axum::extract::rejection::QueryRejection;
+use axum::extract::{FromRef, Path, Query, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use crm::FieldCipher;
 use identity::AuthUser;
-use kernel::http::IdempotencyKey;
+use kernel::http::{IdempotencyKey, invalid_query};
 use kernel::idempotency::hash_route;
-use kernel::{AppError, FieldError};
+use kernel::{AppError, FieldError, Permission};
 use packages::opening_balance::{OpeningBalanceCreate, OpeningBalanceDto};
 use serde_json::Value;
 use sqlx::PgPool;
@@ -26,7 +30,7 @@ where
     S: Clone + Send + Sync + 'static,
 {
     Router::new()
-        .route("/sales", post(create_sale))
+        .route("/sales", get(list_sales).post(create_sale))
         .route("/sales/checkout", post(create_checkout))
         .route("/sales/{id}", get(read_sale))
         .route("/sales/{id}/void", post(void_sale))
@@ -141,6 +145,24 @@ pub async fn create_checkout(
     Ok(no_store(status, body))
 }
 
+#[utoipa::path(get, path = "/api/v1/sales", tag = "sales", params(SaleListQuery),
+    responses(
+        (status = 200, body = [DaySaleDto], description = "Package sales of the day made without a visit (Quầy's day list), newest first"),
+        (status = 400, description = "query.invalid"), (status = 401),
+        (status = 403, description = "auth.forbidden: needs sale.read + customer.read")))]
+pub async fn list_sales(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    query: Result<Query<SaleListQuery>, QueryRejection>,
+) -> Result<Response, AppError> {
+    // The rights first, then the query (F17).
+    user.actor.require(Permission::SaleRead)?;
+    user.actor.require(Permission::CustomerRead)?;
+    let Query(query) = query.map_err(invalid_query)?;
+    let sales = service::for_day(&pool, &user.actor, query.date).await?;
+    Ok(no_store(StatusCode::OK, sales))
+}
+
 #[utoipa::path(get, path = "/api/v1/sales/{id}", tag = "sales", params(("id" = Uuid, Path)),
     responses((status = 200, body = SaleDto), (status = 401), (status = 403), (status = 404)))]
 pub async fn read_sale(
@@ -169,9 +191,20 @@ pub async fn void_sale(
     IdempotencyKey(key): IdempotencyKey,
     body: Bytes,
 ) -> Result<Response, AppError> {
-    let value: Value = serde_json::from_slice(&body).map_err(|_| invalid_body())?;
-    let canonical = serde_json::to_vec(&value).map_err(|e| AppError::Internal(e.to_string()))?;
-    let input: VoidCreate = serde_json::from_value(value).map_err(|_| invalid_body())?;
+    // Authorize before saying what is wrong with the body (F17).
+    user.actor.require(Permission::RecordVoidSameDay)?;
+    let parsed = serde_json::from_slice::<Value>(&body)
+        .map_err(|_| invalid_body())
+        .and_then(|value| {
+            let canonical =
+                serde_json::to_vec(&value).map_err(|e| AppError::Internal(e.to_string()))?;
+            let input: VoidCreate = serde_json::from_value(value).map_err(|_| invalid_body())?;
+            Ok((canonical, input))
+        });
+    let (canonical, input) = match parsed {
+        Ok(p) => p,
+        Err(invalid) => return Err(voids::authorized_then(&pool, &user.actor, id, invalid).await),
+    };
     let (status, body) = voids::void_sale(
         &pool,
         &user.actor,

@@ -4,7 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { canSeeManagement } from "../../app/features";
 import { Icon, type IconName } from "../../app/Icon";
-import { monthLabel } from "../../lib/format";
+import { monthLabel, spaTime } from "../../lib/format";
 import { serviceLabel } from "../../lib/names";
 import { customerPackagesQuery, formatDate } from "../sales/api";
 import { useSearchState } from "../../lib/searchState";
@@ -22,7 +22,6 @@ import { FilterSelect, ResponsiveFilters, SearchField } from "./filters";
 import { EmptyState, ErrorState, RowsSkeleton, money } from "./ui";
 import "../customers/khach.css";
 
-const time = new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Ho_Chi_Minh" });
 
 /** Names of the history kinds (the "Loại" filter). */
 const KIND: Record<HistoryKind, string> = {
@@ -113,7 +112,11 @@ function EventBody({ e }: { e: HistoryEvent }) {
             <span className="min-w-0">
               {serviceLabel(l.service_name, l.category_name)}
               <span className="text-text-muted">
-                {l.source === "package" ? ` · trừ buổi${l.sessions_left_after != null ? `, còn ${String(l.sessions_left_after)}` : ""}` : " · dịch vụ lẻ"} · KTV {l.staff_name}
+                {l.source === "package"
+                  ? v.voided
+                    ? " · trừ buổi, đã trả lại buổi"
+                    : ` · trừ buổi${l.sessions_left_after != null ? `, còn ${String(l.sessions_left_after)}` : ""}`
+                  : " · dịch vụ lẻ"} · KTV {l.staff_name}
               </span>
             </span>
             {l.amount > 0 && (
@@ -310,7 +313,7 @@ function Timeline({ customerId, permissions }: { customerId: string; permissions
                   </span>
                   <span className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
                     <span className="text-xs text-text-muted tabular">
-                      {relativeDay(e.business_date)} · {time.format(new Date(e.at))}
+                      {relativeDay(e.business_date)} · {spaTime(e.at)}
                     </span>
                     {e.visit && correctable && (
                       <Link to="/quay" search={{ sua: e.visit.id }} className="btn btn-secondary">

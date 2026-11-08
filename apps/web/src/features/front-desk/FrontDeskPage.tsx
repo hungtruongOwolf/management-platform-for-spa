@@ -36,6 +36,7 @@ import {
   type PackageSaleDraft,
   type PaymentMode,
   amountDue,
+  byServiceTime,
   coverage,
   discountPreview,
   inCart,
@@ -50,7 +51,6 @@ import {
   visitBody,
 } from "./api";
 import type { CartDraft } from "./draftCart";
-import { CustomerCard } from "./CustomerCard";
 import { Tip } from "./Tip";
 import "./front-desk.css";
 import type {
@@ -84,6 +84,12 @@ const AppointmentsCalendar = lazy(() =>
 // Below the fold / after a line is added: own chunks, fetched right after the first paint so they
 // are ready when needed (startup JS ≤ 125 KB gzip, frontend.md "Perf budget").
 const loadTodayVisits = () => import("./TodayVisits");
+// The picked customer's card (packages, Trừ 1 buổi) shows only after a search: its own chunk,
+// prefetched after the first paint like the cart's (startup JS budget, 2026-11-08).
+const loadCustomerCard = () => import("./CustomerCard");
+const CustomerCard = lazy(() =>
+  loadCustomerCard().then((m) => ({ default: m.CustomerCard })),
+);
 const loadCartOptions = () => import("./CartOptions");
 const TodayVisits = lazy(() =>
   loadTodayVisits().then((m) => ({ default: m.TodayVisits })),
@@ -204,6 +210,7 @@ export function FrontDeskPage() {
   });
   useEffect(() => {
     if (!painted) return;
+    void loadCustomerCard();
     void loadTodayVisits();
     void loadCartOptions();
     void loadCartPackages();
@@ -353,11 +360,11 @@ export function FrontDeskPage() {
       const sentNote = body.note;
       queryClient.setQueryData<Visit[]>(todayVisitsQuery.queryKey, (old) =>
         visit.business_date === todayIso
-          ? [
+          ? byServiceTime([
               // The saved response never carries the note (health data): show the one just typed.
               { ...visit, ...(sentNote ? { note: sentNote } : {}) },
               ...(old ?? []).filter((v) => v.id !== visit.id),
-            ]
+            ])
           : old,
       );
       // Walk-ins are on the calendar too (spec appointments.md §10.1), not only completed bookings.
@@ -372,6 +379,11 @@ export function FrontDeskPage() {
         queryKey: ["customer-packages", visit.customer_id],
       });
       void invalidateManagementViews(queryClient, visit.customer_id);
+      // The server wrote the Nữ / Nam picked for pricing on a profile without a gender (F2).
+      if (visit.customer_gender && !customer?.gender)
+        void queryClient.invalidateQueries({
+          queryKey: ["customers", "one", visit.customer_id],
+        });
       for (const ps of visit.package_sales)
         if (ps.beneficiary_customer_id)
           void queryClient.invalidateQueries({
@@ -442,13 +454,21 @@ export function FrontDeskPage() {
     mutationFn: async (drafts: PackageSaleDraft[]) => {
       if (!customer) throw new Error("no customer");
       const m = await loadCartPackages();
-      return m.sellCart(customer, drafts, paymentsFor(payable, mode, cashPart), idempotencyKey);
+      return m.sellCart(
+        customer,
+        drafts,
+        paymentsFor(payable, mode, cashPart),
+        idempotencyKey,
+      );
     },
     onSuccess: (soldText, drafts) => {
       void queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
+      // The day list shows package-only sales under the visits (F6).
+      void queryClient.invalidateQueries({ queryKey: ["sales", "day"] });
       void invalidateManagementViews(queryClient, customer?.id);
       for (const d of drafts)
-        if (d.beneficiary) void invalidateManagementViews(queryClient, d.beneficiary.id);
+        if (d.beneficiary)
+          void invalidateManagementViews(queryClient, d.beneficiary.id);
       forgetDraft(customer?.id);
       showToast(soldText);
       resetVisit();
@@ -874,57 +894,65 @@ export function FrontDeskPage() {
                 </Suspense>
               )}
               {customer ? (
-                <CustomerCard
-                  key={customer.id}
-                  summary={customer}
-                  inCart={(itemId) =>
-                    inCart(lines, itemId) - heldByCorrected(itemId)
+                <Suspense
+                  fallback={
+                    <div aria-hidden="true" className="h-40 skeleton" />
                   }
-                  canOverrideExpiry={can(me, "package.use_expired_override")}
-                  focusFirst={focusDeduct}
-                  onClear={() => {
-                    leaveCart(dropCustomer);
-                  }}
-                  {...(can(me, "customer.write")
-                    ? {
-                        onEditInfo: () => {
-                          setEditingInfo(true);
-                        },
-                      }
-                    : {})}
-                  {...(can(me, "package.sell") && !correcting
-                    ? {
-                        onSellPackage: (planId: string | null) => {
-                          setOpenPlan(planId ?? "");
-                          setTimeout(() => {
-                            const el = document.getElementById(
-                              "cart-packages-title",
-                            );
-                            // jsdom has no scrollIntoView.
-                            if (el && "scrollIntoView" in el)
-                              el.scrollIntoView({ block: "center" });
-                          }, 0);
-                        },
-                      }
-                    : {})}
-                  onBlocked={(m) => {
-                    showToast(m, true);
-                  }}
-                  onDeduct={({ pkg, item, expiryOverrideReason }) => {
-                    setFocusDeduct(false);
-                    addLine({
-                      key: nextKey.current++,
-                      source: "package",
-                      serviceId: item.service_id,
-                      serviceName: item.name,
-                      categoryName: item.category_name,
-                      itemId: item.id,
-                      packageName: pkg.name,
-                      staffId: appointment?.staff_id ?? "",
-                      ...(expiryOverrideReason ? { expiryOverrideReason } : {}),
-                    });
-                  }}
-                />
+                >
+                  <CustomerCard
+                    key={customer.id}
+                    summary={customer}
+                    inCart={(itemId) =>
+                      inCart(lines, itemId) - heldByCorrected(itemId)
+                    }
+                    canOverrideExpiry={can(me, "package.use_expired_override")}
+                    focusFirst={focusDeduct}
+                    onClear={() => {
+                      leaveCart(dropCustomer);
+                    }}
+                    {...(can(me, "customer.write")
+                      ? {
+                          onEditInfo: () => {
+                            setEditingInfo(true);
+                          },
+                        }
+                      : {})}
+                    {...(can(me, "package.sell") && !correcting
+                      ? {
+                          onSellPackage: (planId: string | null) => {
+                            setOpenPlan(planId ?? "");
+                            setTimeout(() => {
+                              const el = document.getElementById(
+                                "cart-packages-title",
+                              );
+                              // jsdom has no scrollIntoView.
+                              if (el && "scrollIntoView" in el)
+                                el.scrollIntoView({ block: "center" });
+                            }, 0);
+                          },
+                        }
+                      : {})}
+                    onBlocked={(m) => {
+                      showToast(m, true);
+                    }}
+                    onDeduct={({ pkg, item, expiryOverrideReason }) => {
+                      setFocusDeduct(false);
+                      addLine({
+                        key: nextKey.current++,
+                        source: "package",
+                        serviceId: item.service_id,
+                        serviceName: item.name,
+                        categoryName: item.category_name,
+                        itemId: item.id,
+                        packageName: pkg.name,
+                        staffId: appointment?.staff_id ?? "",
+                        ...(expiryOverrideReason
+                          ? { expiryOverrideReason }
+                          : {}),
+                      });
+                    }}
+                  />
+                </Suspense>
               ) : (
                 <p className="empty-note">
                   Chưa chọn khách. Gõ SĐT hoặc tên ở ô phía trên (không cần
@@ -1121,25 +1149,26 @@ export function FrontDeskPage() {
                       />
                     </Suspense>
                   )}
-                  {can(me, "customer.health_notes.write") && lines.length > 0 && (
-                    <label className="field">
-                      <span>
-                        Ghi chú buổi{" "}
-                        <span className="font-normal text-text-muted">
-                          (không bắt buộc)
+                  {can(me, "customer.health_notes.write") &&
+                    lines.length > 0 && (
+                      <label className="field">
+                        <span>
+                          Ghi chú buổi{" "}
+                          <span className="font-normal text-text-muted">
+                            (không bắt buộc)
+                          </span>
                         </span>
-                      </span>
-                      <textarea
-                        value={note}
-                        onChange={(e) => {
-                          setNote(e.target.value);
-                        }}
-                        rows={2}
-                        maxLength={2000}
-                        className="input"
-                      />
-                    </label>
-                  )}
+                        <textarea
+                          value={note}
+                          onChange={(e) => {
+                            setNote(e.target.value);
+                          }}
+                          rows={2}
+                          maxLength={2000}
+                          className="input"
+                        />
+                      </label>
+                    )}
                   {correcting && correctionDraft && (
                     <Suspense fallback={null}>
                       <CorrectionPanel

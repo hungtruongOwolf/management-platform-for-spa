@@ -75,6 +75,33 @@ pub async fn void_in(
 /// Idempotency-Key). Only package sales: the sale of a visit's one-off
 /// services is voided with its visit (`409 sale.void_via_visit`), so a visit never keeps lines
 /// whose money was returned. Any session of its packages used → `409 sale.has_used_sessions`.
+/// Authorize before reporting what is wrong with a void request (F17): `404` / `403 day.locked`
+/// first, then `refused`. Error path only; the caller has checked `record.void_same_day`.
+pub async fn authorized_then(
+    pool: &PgPool,
+    actor: &Actor,
+    id: Uuid,
+    refused: AppError,
+) -> AppError {
+    let check = async {
+        let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+        let sale = repo::lock_sale(&mut tx, id)
+            .await?
+            .ok_or(AppError::NotFound)?;
+        let today = kernel::tenant::profile(&mut tx)
+            .await?
+            .business_date
+            .as_naive();
+        corrections::authorize_void(actor, sale.business_date, today)?;
+        tx.commit().await?;
+        Ok::<(), AppError>(())
+    };
+    match check.await {
+        Ok(()) => refused,
+        Err(denied) => denied,
+    }
+}
+
 pub async fn void_sale(
     pool: &PgPool,
     actor: &Actor,
@@ -84,7 +111,10 @@ pub async fn void_sale(
     reason: Option<&str>,
 ) -> Result<(u16, Value), AppError> {
     actor.require(Permission::RecordVoidSameDay)?;
-    let reason = corrections::reason(reason)?;
+    let reason = match corrections::reason(reason) {
+        Ok(r) => r,
+        Err(invalid) => return Err(authorized_then(pool, actor, id, invalid).await),
+    };
 
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     if let Claim::Replay { status, body } =

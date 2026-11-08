@@ -15,4 +15,5 @@ sources: [raw/2026-11-04-kickoff-request.md, raw/2026-11-04-idea-internal-platfo
 - Stack đã chốt: [ADR-0001](decisions/ADR-0001-tech-stack.md); kiến trúc: [system](architecture/system.md).
 
 ## Câu hỏi mở
+- Q-M2 (2026-11-08, F4): giỏ chỉ có gói có cần ô ghi chú không, ai đọc ở đâu? Xem [front-desk §10.14](product/specs/front-desk-and-packages.md).
 - 8 ⚠️ quy tắc lương: [compensation-rules](product/compensation-rules.md) (cần trước R2).

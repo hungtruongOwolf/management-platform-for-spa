@@ -7,6 +7,7 @@ use crate::dto::{
 };
 use crate::service;
 use axum::body::Bytes;
+use axum::extract::rejection::QueryRejection;
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -14,9 +15,9 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use identity::AuthUser;
 use kernel::crypto::FieldCipher;
-use kernel::http::{IdempotencyKey, IfMatch, etag};
+use kernel::http::{IdempotencyKey, IfMatch, etag, invalid_query};
 use kernel::idempotency::hash_route;
-use kernel::{AppError, FieldError};
+use kernel::{AppError, FieldError, Permission};
 use sales::dto::VoidCreate;
 use serde_json::Value;
 use sqlx::PgPool;
@@ -185,8 +186,11 @@ pub async fn list_visits(
     State(pool): State<PgPool>,
     State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
-    Query(query): Query<VisitListQuery>,
+    query: Result<Query<VisitListQuery>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    // The right first, then the query (F17): a caller without it never learns the parameters.
+    user.actor.require(Permission::VisitRead)?;
+    let Query(query) = query.map_err(invalid_query)?;
     let limit = match query.limit {
         None => None,
         Some(n) if (1..=crate::dto::VISIT_LIST_MAX_LIMIT).contains(&n) => Some(n as usize),
@@ -256,9 +260,12 @@ pub async fn void_visit(
     IdempotencyKey(key): IdempotencyKey,
     body: Bytes,
 ) -> Result<Response, AppError> {
-    let value: Value = serde_json::from_slice(&body).map_err(|_| invalid_body())?;
-    let canonical = serde_json::to_vec(&value).map_err(|e| AppError::Internal(e.to_string()))?;
-    let input: VoidCreate = serde_json::from_value(value).map_err(|_| invalid_body())?;
+    // Authorize before saying what is wrong with the body (F17).
+    user.actor.require(Permission::RecordVoidSameDay)?;
+    let (canonical, input): (_, VoidCreate) = match read_json(&body) {
+        Ok(parsed) => parsed,
+        Err(invalid) => return Err(service::authorized_then(&pool, &user.actor, id, invalid).await),
+    };
     let (status, body) = service::void(
         &pool,
         &cipher,
@@ -297,9 +304,13 @@ pub async fn correct_visit(
     IdempotencyKey(key): IdempotencyKey,
     body: Bytes,
 ) -> Result<Response, AppError> {
-    let value: Value = serde_json::from_slice(&body).map_err(|_| invalid_body())?;
-    let canonical = serde_json::to_vec(&value).map_err(|e| AppError::Internal(e.to_string()))?;
-    let input: VisitCorrection = serde_json::from_value(value).map_err(|_| invalid_body())?;
+    // Authorize before saying what is wrong with the body (F17).
+    user.actor.require(Permission::VisitRecord)?;
+    user.actor.require(Permission::RecordVoidSameDay)?;
+    let (canonical, input): (_, VisitCorrection) = match read_json(&body) {
+        Ok(parsed) => parsed,
+        Err(invalid) => return Err(service::authorized_then(&pool, &user.actor, id, invalid).await),
+    };
     let (reason, note, visit) = input.into_parts();
     let (status, body) = service::correct(
         &pool,

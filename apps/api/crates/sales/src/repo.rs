@@ -265,6 +265,51 @@ pub struct LockedSale {
 }
 
 /// Locks a sale row for a void.
+/// A package sale of the day list (`GET /sales?date=`).
+pub struct DaySaleHead {
+    pub id: Uuid,
+    pub customer_name: String,
+    pub customer_gender: Option<String>,
+    pub beneficiary_name: Option<String>,
+}
+
+/// Package sales of `day` saved without a visit (not paper-book imports), newest first.
+pub async fn day_sales(
+    tx: &mut TenantTx,
+    day: NaiveDate,
+    limit: i64,
+) -> Result<Vec<DaySaleHead>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        DaySaleHead,
+        r#"SELECT s.id, app.customer_label(c.full_name) AS "customer_name!", c.gender AS customer_gender,
+                  (SELECT app.customer_label(bc.full_name)
+                   FROM app.customer_package cp
+                   JOIN app.customer bc ON bc.tenant_id = cp.tenant_id AND bc.id = cp.customer_id
+                   WHERE cp.tenant_id = s.tenant_id AND cp.sale_id = s.id
+                     AND cp.customer_id <> s.customer_id
+                   LIMIT 1) AS beneficiary_name
+           FROM app.sale s
+           JOIN app.customer c ON c.tenant_id = s.tenant_id AND c.id = s.customer_id
+           WHERE s.tenant_id = $1 AND s.business_date = $2 AND s.visit_id IS NULL
+             AND s.source = 'app'
+             AND EXISTS (SELECT 1 FROM app.sale_line l
+                         WHERE l.tenant_id = s.tenant_id AND l.sale_id = s.id
+                           AND l.line_type = 'package')
+             AND NOT EXISTS (SELECT 1 FROM app.visit v
+                             WHERE v.tenant_id = s.tenant_id AND v.sale_id = s.id)
+             AND NOT EXISTS (SELECT 1 FROM app.visit_line vl
+                             WHERE vl.tenant_id = s.tenant_id AND vl.sale_id = s.id)
+           ORDER BY s.created_at DESC, s.id DESC
+           LIMIT $3"#,
+        tenant,
+        day,
+        limit
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
 pub async fn lock_sale(tx: &mut TenantTx, id: Uuid) -> Result<Option<LockedSale>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(

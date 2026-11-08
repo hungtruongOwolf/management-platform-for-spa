@@ -1672,6 +1672,7 @@ dependencies = [
  "crm",
  "identity",
  "kernel",
+ "org",
  "packages",
  "serde",
  "sqlx",

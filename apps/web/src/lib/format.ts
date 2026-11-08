@@ -31,6 +31,27 @@ export function longDate(at: Date): string {
   return dayLabel(spaParts.format(at));
 }
 
+const spaClock = new Intl.DateTimeFormat("en-GB", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+  timeZone: "Asia/Ho_Chi_Minh",
+});
+
+/**
+ * "19:27" for an instant (an API timestamp), always on the spa's clock. Never
+ * `toLocaleString()`: that uses the browser's time zone (F27: the EM in the US saw 06:27).
+ */
+export function spaTime(iso: string): string {
+  return spaClock.format(new Date(iso));
+}
+
+/** "19:27 08/11/2026" for an instant, on the spa's clock and calendar. */
+export function spaDateTime(iso: string): string {
+  const [y, m, d] = spaParts.format(new Date(iso)).split("-");
+  return `${spaTime(iso)} ${d ?? ""}/${m ?? ""}/${y ?? ""}`;
+}
+
 /** "05/11/2026" for a UTC `Date` (axis/tooltip helpers that already hold a Date). */
 export function dmy(d: Date): string {
   return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${String(d.getUTCFullYear())}`;

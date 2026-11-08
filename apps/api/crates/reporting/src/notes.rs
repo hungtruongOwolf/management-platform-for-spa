@@ -66,7 +66,9 @@ impl Allowed {
             }
             NoteKind::Void | NoteKind::PackageExtension => timeline,
             NoteKind::EmploymentEnd | NoteKind::StaffNote => can(Permission::StaffManage),
-            NoteKind::AppointmentNote => can(Permission::AppointmentManage),
+            NoteKind::AppointmentNote | NoteKind::AppointmentReason => {
+                can(Permission::AppointmentManage)
+            }
             NoteKind::Discount => discount_on_visit || discount_on_sale,
         };
         Allowed {
@@ -151,6 +153,9 @@ struct Filters<'a> {
     staff_id: Option<Uuid>,
     customer_id: Option<Uuid>,
     pattern: Option<&'a str>,
+    /// The caller's own staff profile, left out of the HR notes for anyone who does not manage
+    /// staff (ADR-0015: a manager reads their own through `/me/*`).
+    hidden_staff: Option<Uuid>,
 }
 
 /// The sort key of the last row scanned: business day, instant, kind, key.
@@ -268,6 +273,14 @@ async fn fetch(
              WHERE $22 AND ap.tenant_id = $1 AND ap.note IS NOT NULL AND btrim(ap.note) <> ''
                AND ap.created_at >= b.lo AND ap.created_at < b.hi
              UNION ALL
+             -- Why a booking was cancelled / the customer did not come (the reason is required).
+             SELECT 'appointment_reason', ar.closed_at, (ar.closed_at AT TIME ZONE $2)::date,
+                    ar.id::text, ar.status_reason, NULL, ar.customer_id, ar.closed_by, ar.staff_id,
+                    NULL, ar.status, ar.guest_name, ar.business_date
+             FROM app.appointment ar, b
+             WHERE $28 AND ar.tenant_id = $1 AND ar.status IN ('cancelled', 'no_show')
+               AND ar.closed_at >= b.lo AND ar.closed_at < b.hi
+             UNION ALL
              SELECT 'evaluation_note', ev.updated_at, (ev.updated_at AT TIME ZONE $2)::date,
                     ev.staff_id::text || ':' || ev.work_date::text || ':' || part.name, part.body,
                     NULL, NULL, ev.recorded_by, ev.staff_id, NULL, part.name, NULL, ev.work_date
@@ -325,6 +338,9 @@ async fn fetch(
                   OR coalesce(app.search_fold(n.guest) LIKE $17, false)
                   OR coalesce(app.search_fold(st.full_name) LIKE $17, false))
              AND ($21::date IS NULL OR (n.day, n.at, n.kind, n.key) < ($21, $18, $19, $20))
+             AND NOT ($29::uuid IS NOT NULL AND n.staff_id = $29
+                      AND n.kind IN ('attendance_note', 'review_note', 'adjustment',
+                                     'evaluation_note', 'staff_note', 'employment_end'))
            ORDER BY n.day DESC, n.at DESC, n.kind DESC, n.key DESC
            LIMIT $16"#,
         tenant,
@@ -354,6 +370,8 @@ async fn fetch(
         a.may(NoteKind::PackageExtension),
         a.discount_on_visit,
         a.discount_on_sale,
+        a.may(NoteKind::AppointmentReason),
+        f.hidden_staff,
     )
     .fetch_all(tx.conn())
     .await?;
@@ -444,6 +462,7 @@ pub async fn list(
     let (from, to) = range(query.from, query.to, profile.business_date.as_naive())?;
     let tz = profile.timezone.name();
     let tenant = tx.tenant().as_uuid();
+    let hidden_staff = org::profile::hidden_from(&mut tx, actor).await?;
     let filters = Filters {
         from,
         to,
@@ -451,6 +470,7 @@ pub async fn list(
         staff_id: query.staff_id,
         customer_id: query.customer_id,
         pattern: search.as_ref().map(|(_, p)| p.as_str()),
+        hidden_staff,
     };
     let page = usize::try_from(limit).unwrap_or(usize::MAX);
     // Without a search every fetched row is a hit: one round of limit + 1. With one, encrypted

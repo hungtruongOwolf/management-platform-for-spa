@@ -480,6 +480,12 @@ const ROUTES: &[Route] = &[
     .body(cancel_body)
     .idempotent(),
     // sales
+    // F6: the day list's package sales also need customer.read (same holders by default).
+    route(
+        "GET",
+        "/api/v1/sales",
+        Access::Perm(P::SaleRead, OWNER_MANAGER),
+    ),
     route(
         "POST",
         "/api/v1/sales",

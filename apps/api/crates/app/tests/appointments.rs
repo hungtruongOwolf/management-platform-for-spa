@@ -5,7 +5,7 @@ mod common;
 
 use axum::http::StatusCode;
 use catalog::service::seed_menu;
-use chrono::{Duration, FixedOffset, NaiveDate, Utc};
+use chrono::{DateTime, Duration, FixedOffset, NaiveDate, Utc};
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
     session_for,
@@ -183,6 +183,11 @@ impl Spa {
                    "starts_at": starts_at}),
         )
         .await
+    }
+
+    /// Bookings made for tomorrow, onto the same time today (`common::bookings_to_today`).
+    async fn to_today(&self, ids: &[&str]) -> Setup<()> {
+        common::bookings_to_today(&self.h, ids).await
     }
 
     /// Opening hours all day long, so "today" bookings work whatever time the test runs.
@@ -540,11 +545,12 @@ async fn an_appointment_becomes_a_visit_through_the_visit_rules(pool: PgPool) ->
     let booked = s
         .book(
             &s.manager,
-            json!({"customer_id": s.ha, "service_ids": [s.shampoo], "starts_at": at(0, "00:00")}),
+            json!({"customer_id": s.ha, "service_ids": [s.shampoo], "starts_at": at(1, "00:00")}),
         )
         .await;
     assert_eq!(booked.status, StatusCode::CREATED, "{}", booked.body);
     let id = id_of(&booked);
+    s.to_today(&[&id]).await?;
 
     // AC9.5: arrive with a technician, then complete with the cart.
     let arrived = call(
@@ -620,8 +626,9 @@ async fn an_appointment_becomes_a_visit_through_the_visit_rules(pool: PgPool) ->
     );
 
     // A paid one-off appointment shows its payment.
-    let paid = s.book_ha(&s.manager, &at(0, "02:00"), Some(&s.tuan)).await;
+    let paid = s.book_ha(&s.manager, &at(1, "02:00"), Some(&s.tuan)).await;
     let paid_id = id_of(&paid);
+    s.to_today(&[&paid_id]).await?;
     let done = s
         .post(
             &s.manager,
@@ -639,10 +646,11 @@ async fn an_appointment_becomes_a_visit_through_the_visit_rules(pool: PgPool) ->
         .book(
             &s.manager,
             json!({"guest": {"full_name": "Chị Mai", "phone": "0905 999 000"},
-                   "service_ids": [s.dai_thong_lac], "starts_at": at(0, "04:00")}),
+                   "service_ids": [s.dai_thong_lac], "starts_at": at(1, "04:00")}),
         )
         .await;
     let gid = id_of(&guest);
+    s.to_today(&[&gid]).await?;
     let body = json!({"lines": [{"service_id": s.dai_thong_lac, "source": "one_off", "staff_id": s.lan,
                                  "price_variant": "female"}],
                       "payments": [{"method": "cash", "amount": 349_000}]});
@@ -719,9 +727,10 @@ async fn walk_in_visits_share_the_timeline_with_bookings(pool: PgPool) -> TestRe
     let booked = s
         .book(
             &s.manager,
-            json!({"customer_id": s.ha, "service_ids": [s.shampoo], "starts_at": at(0, "00:00")}),
+            json!({"customer_id": s.ha, "service_ids": [s.shampoo], "starts_at": at(1, "00:00")}),
         )
         .await;
+    s.to_today(&[&id_of(&booked)]).await?;
     let completed = s
         .post(
             &s.manager,
@@ -1389,10 +1398,10 @@ async fn served_companions_get_their_own_technician_and_block(pool: PgPool) -> T
         .post(
             &s.manager,
             "/appointments/group",
-            json!({"starts_at": at(0, "01:00"), "companions": ["Bé Na (chỉ đi cùng)"], "people": [
+            json!({"starts_at": at(1, "01:00"), "companions": ["Bé Na (chỉ đi cùng)"], "people": [
                 {"customer_id": s.ha, "service_ids": [s.shampoo], "staff_id": s.lan},
                 {"guest": {"full_name": "Chồng của chị Hà", "phone": null},
-                 "service_ids": [s.dai_thong_lac], "staff_id": s.tuan, "starts_at": at(0, "01:30")},
+                 "service_ids": [s.dai_thong_lac], "staff_id": s.tuan, "starts_at": at(1, "01:30")},
             ]}),
         )
         .await;
@@ -1410,7 +1419,7 @@ async fn served_companions_get_their_own_technician_and_block(pool: PgPool) -> T
     assert!(starts(&husband) > starts(&host), "offset start kept");
 
     // Their block is in Tuấn's column on the calendar, and Tuấn is busy then.
-    let cal = calendar_of(&s, &s.manager, 0).await;
+    let cal = calendar_of(&s, &s.manager, 1).await;
     let on_cal = cal.body["appointments"]
         .as_array()
         .and_then(|l| l.iter().find(|a| a["id"] == husband["id"]).cloned())
@@ -1420,7 +1429,7 @@ async fn served_companions_get_their_own_technician_and_block(pool: PgPool) -> T
         .book(
             &s.manager,
             json!({"customer_id": s.duc, "service_ids": [s.shampoo], "staff_id": s.tuan,
-                   "starts_at": at(0, "02:00")}),
+                   "starts_at": at(1, "02:00")}),
         )
         .await;
     assert_eq!(
@@ -1463,6 +1472,8 @@ async fn served_companions_get_their_own_technician_and_block(pool: PgPool) -> T
 
     // Arrive with the technician, then record: a customer record is needed first.
     let hid = husband["id"].as_str().unwrap_or_default().to_owned();
+    let host_id = host["id"].as_str().unwrap_or_default().to_owned();
+    s.to_today(&[&hid, &host_id]).await?;
     let arrived = call(
         &s.h.app,
         "POST",
@@ -1533,7 +1544,7 @@ async fn group_members_are_served_one_by_one(pool: PgPool) -> TestResult {
         .post(
             &s.manager,
             "/appointments/group",
-            json!({"starts_at": at(0, "01:00"), "people": [
+            json!({"starts_at": at(1, "01:00"), "people": [
                 {"customer_id": s.ha, "service_ids": [s.shampoo]},
                 {"guest": {"full_name": "Bạn của chị Hà", "phone": null}, "service_ids": [s.shampoo]},
             ]}),
@@ -1543,6 +1554,7 @@ async fn group_members_are_served_one_by_one(pool: PgPool) -> TestResult {
     let ha = booked.body["appointments"][0].clone();
     let friend = booked.body["appointments"][1].clone();
     let id = |a: &Value| a["id"].as_str().unwrap_or_default().to_owned();
+    s.to_today(&[&id(&ha), &id(&friend)]).await?;
     let patch = |a: &Value, body: Value| {
         let path = format!("/appointments/{}", id(a));
         let version = format!("\"{}\"", a["version"]);
@@ -1770,6 +1782,87 @@ fn is_at(v: &Value, rfc3339: &str) -> bool {
     got.is_some() && got == parse(rfc3339)
 }
 
+/// A start of today in a slot already over: an hour ago, on the 15-minute grid (yesterday just
+/// after midnight, which is refused just the same).
+fn an_hour_ago() -> String {
+    let ago = Utc::now() - Duration::minutes(60);
+    let minute = ago.timestamp() / 60;
+    let on_grid = minute - minute.rem_euclid(15);
+    DateTime::<Utc>::from_timestamp(on_grid * 60, 0)
+        .unwrap_or_default()
+        .to_rfc3339()
+}
+
+/// F12 (EM 2026-11-08): a slot of today already over is never booked, the owner included (the
+/// live test booked 10:00 at 19:08 through "Vẫn đặt lịch"). A service already done is a visit
+/// recorded at Quầy. A booking still waiting cannot move into such a slot either; an arrived
+/// customer's time stays the desk's to set.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_slot_already_over_is_never_booked(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    s.open_all_day().await?;
+    let past = an_hour_ago();
+    for who in [&s.manager, &s.owner] {
+        let refused = s.book_ha(who, &past, None).await;
+        assert_eq!(
+            code(&refused),
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Some("appointment.in_the_past")
+            ),
+            "{}",
+            refused.body
+        );
+    }
+    let group = s
+        .post(
+            &s.manager,
+            "/appointments/group",
+            json!({"starts_at": past, "people": [
+                {"customer_id": s.ha, "service_ids": [s.shampoo]},
+                {"customer_id": s.duc, "service_ids": [s.shampoo]},
+            ]}),
+        )
+        .await;
+    assert_eq!(
+        code(&group),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("appointment.in_the_past")
+        ),
+        "{}",
+        group.body
+    );
+    let none: i64 = sqlx::query_scalar("SELECT count(*) FROM app.appointment")
+        .fetch_one(&s.h.owner)
+        .await?;
+    assert_eq!(none, 0, "nothing was booked");
+
+    // A booking for tomorrow cannot be moved back into a slot that is over.
+    let tomorrow = s.book_ha(&s.manager, &at(1, "10:00"), None).await;
+    assert_eq!(tomorrow.status, StatusCode::CREATED, "{}", tomorrow.body);
+    let version = format!("\"{}\"", tomorrow.body["version"]);
+    let moved = call_with_headers(
+        &s.h.app,
+        "PATCH",
+        &format!("/appointments/{}", id_of(&tomorrow)),
+        Some(&s.manager),
+        Some(json!({"starts_at": past})),
+        &[("if-match", version.as_str())],
+    )
+    .await;
+    assert_eq!(
+        code(&moved),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("appointment.in_the_past")
+        ),
+        "{}",
+        moved.body
+    );
+    Ok(())
+}
+
 /// EM 2026-11-07 item 5a: "Hoàn tác đã đến" puts a mistaken arrival back to booked (audited, the
 /// serving technician stays); refused for a booking that has not arrived, and once the visit is
 /// recorded (closed). Mutation-checked: dropping the status check in `undo_arrival` turns this red.
@@ -1777,9 +1870,10 @@ fn is_at(v: &Value, rfc3339: &str) -> bool {
 async fn a_mistaken_arrival_is_undone(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
     s.open_all_day().await?;
-    let booked = s.book_ha(&s.manager, &at(0, "01:00"), Some(&s.lan)).await;
+    let booked = s.book_ha(&s.manager, &at(1, "01:00"), Some(&s.lan)).await;
     assert_eq!(booked.status, StatusCode::CREATED, "{}", booked.body);
     let aid = id_of(&booked);
+    s.to_today(&[&aid]).await?;
     let undo = |who: String| {
         let app = s.h.app.clone();
         let path = format!("/appointments/{aid}/undo-arrival");
@@ -1946,12 +2040,13 @@ async fn a_group_moves_together_or_not_at_all(pool: PgPool) -> TestResult {
     let stale = move_group(&ha, v(&ha) - 1, at(1, "15:00")).await;
     assert_eq!(stale.status, StatusCode::PRECONDITION_FAILED);
 
-    // Today: Đức has arrived, so only Hà moves and Đức is reported.
+    // Today: Đức has arrived, so only Hà moves (to tomorrow: today's early slots are over) and
+    // Đức is reported.
     let today = s
         .post(
             &s.manager,
             "/appointments/group",
-            json!({"starts_at": at(0, "01:00"), "people": [
+            json!({"starts_at": at(1, "01:00"), "people": [
                 {"customer_id": s.ha, "service_ids": [s.shampoo]},
                 {"customer_id": s.duc, "service_ids": [s.shampoo]},
             ]}),
@@ -1960,6 +2055,11 @@ async fn a_group_moves_together_or_not_at_all(pool: PgPool) -> TestResult {
     assert_eq!(today.status, StatusCode::CREATED, "{}", today.body);
     let t_ha = today.body["appointments"][0].clone();
     let t_duc = today.body["appointments"][1].clone();
+    s.to_today(&[
+        t_ha["id"].as_str().unwrap_or_default(),
+        t_duc["id"].as_str().unwrap_or_default(),
+    ])
+    .await?;
     let arrived = s
         .post(
             &s.manager,
@@ -1971,7 +2071,7 @@ async fn a_group_moves_together_or_not_at_all(pool: PgPool) -> TestResult {
         )
         .await;
     assert_eq!(arrived.status, StatusCode::OK, "{}", arrived.body);
-    let partly = move_group(&t_ha, v(&t_ha), at(0, "02:00")).await;
+    let partly = move_group(&t_ha, v(&t_ha), at(1, "02:00")).await;
     assert_eq!(partly.status, StatusCode::OK, "{}", partly.body);
     assert_eq!(partly.body["moved"].as_array().map(Vec::len), Some(1));
     assert_eq!(partly.body["moved"][0]["id"], t_ha["id"]);
@@ -1981,7 +2081,7 @@ async fn a_group_moves_together_or_not_at_all(pool: PgPool) -> TestResult {
         &at(0, "01:00")
     ));
     // Moving from an arrived member is refused; a booking alone has no group.
-    let from_arrived = move_group(&arrived.body, v(&arrived.body), at(0, "03:00")).await;
+    let from_arrived = move_group(&arrived.body, v(&arrived.body), at(1, "03:00")).await;
     assert_eq!(
         code(&from_arrived),
         (StatusCode::CONFLICT, Some("appointment.already_arrived"))

@@ -532,7 +532,8 @@ async fn a_checkout_retry_never_sells_twice(pool: PgPool) -> TestResult {
 #[sqlx::test(migrations = "../../migrations")]
 async fn a_booking_completes_with_a_package_and_keeps_its_companions(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    let at = format!("{}T09:00:00+07:00", spa_today());
+    // Booked for tomorrow, then moved onto today (a slot already over cannot be booked, F12).
+    let at = format!("{}T09:00:00+07:00", spa_today() + chrono::Duration::days(1));
     let lonely_group = s
         .post(
             &s.owner,
@@ -556,6 +557,7 @@ async fn a_booking_completes_with_a_package_and_keeps_its_companions(pool: PgPoo
         .await;
     assert_eq!(group.status, StatusCode::CREATED, "{}", group.body);
     let booking = &group.body["appointments"][0];
+    common::bookings_to_today(&s.h, &[booking["id"].as_str().unwrap_or_default()]).await?;
     assert_eq!(booking["companions"], json!(["Chồng của chị Hà"]));
     assert_eq!(
         booking["customer_id"],

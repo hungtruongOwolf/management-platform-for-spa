@@ -1,7 +1,7 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Fragment } from "react";
 import { usePhone } from "../../components/useMediaQuery";
-import { dayLabel } from "../../lib/format";
+import { dayLabel, spaTime } from "../../lib/format";
 import { ledgerQuery } from "./api";
 import type { LedgerDay, LedgerRow } from "./contract";
 import { CustomerCell } from "./PackagesOverviewPage";
@@ -11,7 +11,6 @@ import { EmptyState, ErrorState, RowsSkeleton, money } from "./ui";
 /** `GET /reports/ledger` accepts at most 92 days after `from`. */
 export const LEDGER_MAX_DAYS = 93;
 
-const time = new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Ho_Chi_Minh" });
 
 const ENTRY_LABEL: Record<LedgerRow["entry"], string> = { sale: "", void: "Hủy hóa đơn", refund: "Hoàn tiền" };
 
@@ -99,7 +98,7 @@ export function LedgerTab({ period }: { period: Period }) {
                     <Fragment key={`${r.entry}-${r.id}`}>
                       {startsDay && <DayRow date={r.business_date} day={day} />}
                       <tr className={r.entry === "sale" ? (r.voided ? "ledger-voided" : "") : "ledger-negative"}>
-                        <td className="tabular">{time.format(new Date(r.at))}</td>
+                        <td className="tabular">{spaTime(r.at)}</td>
                         <td>
                           <CustomerCell id={r.customer_id} name={r.customer_name} gender={r.customer_gender ?? null} />
                           {r.entry !== "sale" && <span className="badge badge-danger mt-1">{ENTRY_LABEL[r.entry]}</span>}
@@ -181,7 +180,7 @@ function LedgerCards({ rows, dayOf }: { rows: LedgerRow[]; dayOf: Map<string, Le
                 <div className="rt-card-title">
                   <CustomerCell id={r.customer_id} name={r.customer_name} gender={r.customer_gender ?? null} />
                   <span className="rt-card-sub tabular">
-                    {time.format(new Date(r.at))}
+                    {spaTime(r.at)}
                     {r.entry !== "sale" && ` · ${ENTRY_LABEL[r.entry]}`}
                     {r.voided && " · đã hủy sau đó"}
                   </span>

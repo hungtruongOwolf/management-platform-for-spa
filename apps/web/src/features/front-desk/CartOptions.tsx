@@ -612,7 +612,8 @@ export function AddOneOff({
           Nhấn Enter để thêm “{pendingName}”.
         </p>
       ) : (
-        !known && (
+        // Gone once Nữ / Nam is picked (F1): the pressed toggle already says which price applies.
+        !gender && (
           <p className="field-hint">
             Khách chưa có giới tính: chọn Nữ/Nam để tính giá.
           </p>

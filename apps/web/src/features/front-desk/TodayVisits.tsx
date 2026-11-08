@@ -21,6 +21,7 @@ import { DateField } from "../../components/DateField";
 import { ResponsiveTable, type Column } from "../../components/ResponsiveTable";
 import { RowMenu, type RowMenuItem } from "../../components/RowMenu";
 import { useAfterFirstPaint } from "../../lib/afterFirstPaint";
+import { spaDateTime } from "../../lib/format";
 import { messageFor, retryable } from "../../lib/errors";
 import { invalidateManagementViews } from "../../lib/invalidate";
 import { serviceLabel } from "../../lib/names";
@@ -28,6 +29,7 @@ import { can, meQuery } from "../auth/session";
 import { mayCorrectVisit, spaToday } from "../corrections/api";
 import { customerQuery } from "../customers/api";
 import { HealthNote } from "../customers/HealthNote";
+import { DaySales } from "./DaySales";
 import {
   VISITS_PAGE,
   timeOf,
@@ -82,6 +84,15 @@ function sessionsLeft(l: LineDto): string {
   return l.sessions_left_after != null
     ? `còn ${String(l.sessions_left_after)}/${String(l.sessions_total ?? "?")}`
     : "";
+}
+
+/**
+ * "Trừ buổi · còn 4/12" for a package session. A voided visit gave the session back, so its
+ * snapshot count is no longer true (F15): "Trừ buổi · đã trả lại buổi".
+ */
+export function sessionText(v: Pick<Visit, "status">, l: LineDto): string {
+  if (v.status === "voided") return "Trừ buổi · đã trả lại buổi";
+  return `Trừ buổi${sessionsLeft(l) ? ` · ${sessionsLeft(l)}` : ""}`;
 }
 
 /** Packages sold in the visit that still stand (a voided visit keeps them, AC12.4). */
@@ -172,7 +183,8 @@ function VisitDetails({ v }: { v: Visit }) {
       : v.corrects_visit_id
         ? "Lượt đã sửa (thay cho lượt ghi trước)."
         : null;
-  const backdated = v.business_date < v.created_at.slice(0, 10);
+  // Both days on the spa's calendar: the UTC date of `created_at` is a day behind before 07:00.
+  const backdated = v.business_date < spaToday(new Date(v.created_at));
   const phone = phoneLine(customer.data);
   // A breakdown only when the visit has several parts; one line repeats the row (EM 2026-11-06).
   const breakdown =
@@ -193,7 +205,7 @@ function VisitDetails({ v }: { v: Visit }) {
     !breakdown && only
       ? only.source === "one_off"
         ? referrerText(only.referrer_name)
-        : `Trừ buổi${sessionsLeft(only) ? ` · ${sessionsLeft(only)}` : ""}`
+        : sessionText(v, only)
       : null;
   return (
     <div className="visit-details" data-testid="visit-details">
@@ -222,9 +234,7 @@ function VisitDetails({ v }: { v: Visit }) {
               main={serviceLabel(l.service_name, l.category_name)}
               meta={`KTV ${l.staff_name}${l.source === "one_off" ? ` · ${referrerText(l.referrer_name)}` : ""}`}
               pay={
-                l.source === "package"
-                  ? `Trừ buổi${sessionsLeft(l) ? ` · ${sessionsLeft(l)}` : ""}`
-                  : "Dịch vụ lẻ"
+                l.source === "package" ? sessionText(v, l) : "Dịch vụ lẻ"
               }
               amount={
                 l.source === "one_off" ? formatVnd(l.unit_price * l.qty) : "—"
@@ -283,7 +293,7 @@ function VisitDetails({ v }: { v: Visit }) {
       {backdated && (
         <DetailRow
           main="Nhập bù"
-          meta={`Ghi lúc ${new Date(v.created_at).toLocaleString("vi-VN")}`}
+          meta={`Ghi lúc ${spaDateTime(v.created_at)}`}
         />
       )}
       {customer.data?.health_note && (
@@ -351,12 +361,15 @@ function visitColumns({
       header: "Dịch vụ · KTV",
       cardLabel: "Dịch vụ",
       cell: (v) => {
-        const services = v.lines
-          .map(
-            (l) =>
-              `${serviceLabel(l.service_name, l.category_name)}${l.source === "package" ? " (trừ buổi)" : ""}`,
-          )
-          .join(", ");
+        // A package sold in the visit is named too (F3): its price is part of "Số tiền".
+        const sold = soldPackages(v).map((p) => p.description);
+        const services =
+          v.lines
+            .map(
+              (l) =>
+                `${serviceLabel(l.service_name, l.category_name)}${l.source === "package" ? " (trừ buổi)" : ""}`,
+            )
+            .join(", ") + (sold.length > 0 ? ` + bán gói ${sold.join(", ")}` : "");
         const staff = [...new Set(v.lines.map((l) => l.staff_name))].join(", ");
         return (
           <span className="grid min-w-0">
@@ -446,6 +459,12 @@ export function TodayVisits({
   });
   const list = today.data ?? [];
   const hasMore = !all && list.length > VISITS_PAGE;
+  // The title counts real visits (F14): a voided row, or the old row a "Sửa lượt" replaced, stays
+  // in the list (struck through) but is counted apart.
+  const voidedCount = list.filter((v) => v.status === "voided").length;
+  const countText = hasMore
+    ? `${String(VISITS_PAGE)}+`
+    : `${String(list.length - voidedCount)}${voidedCount > 0 ? ` · ${String(voidedCount)} đã hủy / sửa` : ""}`;
   const visible = list.slice(0, all ? shown : VISITS_PAGE);
   // UX only: the server decides (403 day.locked for managers; owners may).
   const mayVoid =
@@ -487,9 +506,7 @@ export function TodayVisits({
           {isToday
             ? "Lượt khách hôm nay"
             : `Lượt khách ngày ${day.split("-").reverse().join("/")}`}
-          {today.data
-            ? ` (${hasMore ? `${String(VISITS_PAGE)}+` : String(list.length)})`
-            : ""}
+          {today.data ? ` (${countText})` : ""}
         </h2>
         <DateField
           label="Xem ngày"
@@ -693,6 +710,14 @@ export function TodayVisits({
         >
           Xem thêm ({list.length - shown} lượt nữa)
         </button>
+      )}
+      {painted && can(me, "sale.read") && can(me, "customer.read") && (
+        <DaySales
+          day={day}
+          isToday={isToday}
+          mayVoid={mayVoid}
+          onNotice={setNotice}
+        />
       )}
     </section>
   );

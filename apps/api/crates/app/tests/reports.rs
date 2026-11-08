@@ -893,10 +893,9 @@ async fn a_customer_history_shows_every_visit_purchase_void_and_refund(pool: PgP
             "visit_voided",
             "visit",
             "visit",
-            "visit",
             "purchase"
         ],
-        "newest first; the paper-book package has no purchase event"
+        "newest first; one event per voided visit (F16); the paper-book package has no purchase event"
     );
     let cancelled = &events[0]["cancellation"];
     assert_eq!(cancelled["refund"]["amount"], 400_000);
@@ -904,17 +903,21 @@ async fn a_customer_history_shows_every_visit_purchase_void_and_refund(pool: PgP
     assert_eq!(events[1]["void"]["sessions_restored"], 1);
     assert_eq!(events[1]["void"]["reason"], "Ghi nhầm");
     assert_eq!(
-        events[2]["visit"]["voided"], true,
-        "a voided visit stays in the timeline"
+        events[1]["visit"]["voided"], true,
+        "the voided visit is one event carrying the visit and its void"
     );
-    let mixed = &events[3]["visit"];
+    assert_eq!(
+        events[1]["at"], wrong["check_in_at"],
+        "at the visit's own time"
+    );
+    let mixed = &events[2]["visit"];
     assert_eq!(mixed["paid"], split(PRICE, 0));
     assert_eq!(mixed["lines"][0]["staff_name"], "KTV Mai");
     assert_eq!(mixed["lines"][0]["package_name"], "Gói 10 buổi");
     assert_eq!(mixed["lines"][0]["sessions_left_after"], 8);
     assert_eq!(mixed["lines"][1]["amount"], PRICE);
-    assert_eq!(events[5]["purchase"]["total"], PLAN_PRICE);
-    assert_eq!(events[5]["purchase"]["closer_name"], "KTV Lan");
+    assert_eq!(events[4]["purchase"]["total"], PLAN_PRICE);
+    assert_eq!(events[4]["purchase"]["closer_name"], "KTV Lan");
     let text = history.body.to_string();
     assert!(
         !text.contains("note\":"),

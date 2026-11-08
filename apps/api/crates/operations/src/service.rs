@@ -668,6 +668,18 @@ async fn checkout(
     )
     .await?;
     let branch = tenant.branch.as_uuid();
+    // The Nữ / Nam picked to price this visit becomes the profile's gender when it has none (F2).
+    let picked = domain::gender_to_record(
+        customer.gender,
+        order
+            .lines
+            .iter()
+            .filter(|l| l.source == Source::OneOff)
+            .map(|l| l.price_variant),
+    );
+    if let Some(gender) = picked {
+        crm::service::fill_gender_in(tx, actor, customer_id, gender).await?;
+    }
 
     // Package sales first: today's session may come from one of them.
     let mut sold = Vec::with_capacity(packages.len());
@@ -1108,6 +1120,34 @@ pub async fn for_day(
     Ok(visits)
 }
 
+/// Authorize before reporting what is wrong with a request (F17, live test 2026-11-08): a void or
+/// correction refused by the body (missing reason, bad line…) first answers the questions any
+/// caller would hear for a valid body — is the visit here (`404`), may this caller change its day
+/// (`403 day.locked`) — and only then `refused`. Runs on the error path only, so a valid request
+/// pays no extra read. The caller has checked the route's permissions.
+pub async fn authorized_then(
+    pool: &PgPool,
+    actor: &Actor,
+    id: Uuid,
+    refused: AppError,
+) -> AppError {
+    let check = async {
+        let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+        let visit = repo::lock(&mut tx, id).await?.ok_or(AppError::NotFound)?;
+        let today = kernel::tenant::profile(&mut tx)
+            .await?
+            .business_date
+            .as_naive();
+        kernel::corrections::authorize_void(actor, visit.business_date, today)?;
+        tx.commit().await?;
+        Ok::<(), AppError>(())
+    };
+    match check.await {
+        Ok(()) => refused,
+        Err(denied) => denied,
+    }
+}
+
 /// Only a visit that is still the current version may change: a voided one is `409 visit.voided`,
 /// one replaced by "Sửa lượt" is `409 visit.corrected` (the desk opens the newest version).
 fn ensure_current(v: &repo::LockedVisit) -> Result<(), AppError> {
@@ -1268,7 +1308,10 @@ pub async fn void(
     reason: Option<&str>,
 ) -> Result<(u16, Value), AppError> {
     actor.require(Permission::RecordVoidSameDay)?;
-    let reason = kernel::corrections::reason(reason)?;
+    let reason = match kernel::corrections::reason(reason) {
+        Ok(r) => r,
+        Err(invalid) => return Err(authorized_then(pool, actor, id, invalid).await),
+    };
 
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     if let Claim::Replay { status, body } =
@@ -1403,17 +1446,23 @@ pub async fn correct(
 ) -> Result<(u16, Value), AppError> {
     actor.require(Permission::VisitRecord)?;
     actor.require(Permission::RecordVoidSameDay)?;
-    let reason = correction_reason(request.reason)?;
-    let new_note = request
-        .note
-        .as_ref()
-        .map(|n| clean_note(n.as_ref()))
-        .transpose()?;
-    if new_note.is_some() {
-        actor.require(Permission::CustomerHealthNotesWrite)?;
-    }
-    let order = parse(actor, request.visit)?;
     let id = request.id;
+    let checked = (|| {
+        let reason = correction_reason(request.reason)?;
+        let new_note = request
+            .note
+            .as_ref()
+            .map(|n| clean_note(n.as_ref()))
+            .transpose()?;
+        if new_note.is_some() {
+            actor.require(Permission::CustomerHealthNotesWrite)?;
+        }
+        Ok((reason, new_note, parse(actor, request.visit)?))
+    })();
+    let (reason, new_note, order) = match checked {
+        Ok(c) => c,
+        Err(refused) => return Err(authorized_then(pool, actor, id, refused).await),
+    };
 
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     if let Claim::Replay { status, body } =
