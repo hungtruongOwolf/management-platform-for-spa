@@ -76,9 +76,9 @@ export function MonthCalendar({
           // A late day shows its minutes instead of ✓ (late = came): phones had no room for both and
           // hid the ✓, so the cell's text stopped matching its name (axe, CI 2026-11-08 at 390 px).
           const mark = d ? (late > 0 ? "" : STATUS_CODE[d.status]) : future ? "" : "–";
-          // The name starts with what the cell shows (WCAG 2.5.3, axe label-content-name-mismatch).
           const shown = [String(Number(date.slice(8))), mark, late > 0 ? `${String(late)}′` : ""].filter(Boolean).join(" ");
-          const label = `${shown}: ${dayStatusText(date, today, d)}`;
+          const status = dayStatusText(date, today, d);
+          const label = `${shown}: ${status}`;
           const cls = [
             "my-day",
             future ? "is-future" : `att-${d?.status ?? "none"}`,
@@ -88,16 +88,19 @@ export function MonthCalendar({
           ]
             .filter(Boolean)
             .join(" ");
-          const inner = (
+          // A day button is named by its own text — what it shows, then the status in words for
+          // screen readers — so its name can never drift from its visible text (WCAG 2.5.3; an
+          // aria-label copy of the text failed axe at 390 px and then at 1280, CI 2026-11-08).
+          const parts = (hidden: boolean) => (
             <>
-              <span aria-hidden="true" className="my-day-num">
+              <span aria-hidden={hidden || undefined} className="my-day-num">
                 {Number(date.slice(8))}
-              </span>
-              <span aria-hidden="true" className="my-day-mark">
+              </span>{" "}
+              <span aria-hidden={hidden || undefined} className="my-day-mark">
                 {mark}
-              </span>
+              </span>{" "}
               {late > 0 && (
-                <span aria-hidden="true" className="my-day-late">
+                <span aria-hidden={hidden || undefined} className="my-day-late">
                   {late}′
                 </span>
               )}
@@ -107,13 +110,12 @@ export function MonthCalendar({
             <li key={date} className="my-calendar-cell">
               {future || !onDay ? (
                 <span className={cls} aria-label={label} title={label} role="img">
-                  {inner}
+                  {parts(true)}
                 </span>
               ) : (
                 <button
                   type="button"
                   className={cls}
-                  aria-label={label}
                   title={label}
                   aria-haspopup="dialog"
                   aria-current={selected === date ? "date" : undefined}
@@ -121,7 +123,8 @@ export function MonthCalendar({
                     onDay(date);
                   }}
                 >
-                  {inner}
+                  {parts(false)}
+                  <span className="sr-only">: {status}</span>
                 </button>
               )}
             </li>
