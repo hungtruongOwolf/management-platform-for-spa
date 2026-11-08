@@ -657,5 +657,7 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Đọc (chỉ `customer.health_notes.read`, thiếu → không key): `GET /sales?date=`, `/sales/{id}`, `GET /visits*` (`package_sales[].note`), lịch sử khách (`purchase.note`), `GET /customers/{id}/packages` + `/customer-packages/{id}` + `/usage` (`sale_note`), nhật ký `package_note` (`sale.read` + `customer.read` + `customer.health_notes.read`, khách = người dùng gói, tìm chữ sau giải mã). KTV `/me/*` và người đã nghỉ không có đường tới.
 - UI: mỗi khối gói trong giỏ có "Thêm ghi chú gói" (gập, không thêm bước) + gợi ý bảo mật; khối gập ghi "Có ghi chú gói"; giỏ nháp không lưu ghi chú gói.
 - Test: `app/tests/package_notes.rs` (5 test), `notes.rs` (+ loại mới), `authz_matrix.rs` +1 dòng, unit `kernel::crypto`; vitest `CheckoutRound6` (ghi chú từng gói), `FrontDesk` (hiện + sửa), `draftCart` (không lưu).
+- JS khởi động (gzip -9 entry + modulepreload, đo cùng cách trên main và nhánh): **123.99 KiB → 123.99 KiB** (mọi phần mới nằm trong chunk lazy).
+
 ## [2026-11-08] build | Đổi tên mục "Nhân viên" → "Quản lý nhân sự"
 - EM: "trong mục Nhân viên bạn lại để thêm 1 phần nhân viên nữa lại bị trùng lặp … đổi nó thành là quản lý nhân sự". Nhóm menu vẫn tên "Nhân viên"; mục và tiêu đề trang (`/nhan-vien`, chủ spa + quản lý) thành "Quản lý nhân sự". KTV vẫn thấy "Công và lương của tôi".
