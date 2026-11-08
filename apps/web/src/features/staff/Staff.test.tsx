@@ -15,6 +15,7 @@ import type {
   EvaluationSheet,
   MyCalendar,
   MyDay,
+  MyEvaluationHistory,
   MyStaff,
   Payslip,
   PayrollMonth,
@@ -429,6 +430,11 @@ function serve(permissions: string[], options: ServeOptions = {}) {
     if (p.startsWith("/adjustments/") && method === "DELETE") return Promise.resolve(new Response(null, { status: 204 }));
     if (p === "/evaluations" && method === "PUT") return ok({});
     if (p === "/evaluations/history") return ok(history(url.searchParams.get("staff_id") ?? ""));
+    if (p === "/me/evaluations/history") {
+      const h = history("s-lan");
+      const data = { full_name: "Lê Thị Lan", position: h.position, from: h.from, to: h.to, criteria: h.criteria, months: h.months };
+      return ok({ linked: true, data } satisfies MyEvaluationHistory);
+    }
     if (p === "/evaluations") {
       const e = evaluations(url.searchParams.get("month") ?? month);
       return ok(
@@ -768,6 +774,27 @@ describe("/nhan-vien", () => {
     expect(within(days).getByText(/muộn 12 phút/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Xem cả spa thay vì Lê Thị Lan" }));
     expect(await within(await screen.findByRole("table", { name: /Bảng chấm công/ })).findByRole("rowheader", { name: /Trần Thị Mai/ })).toBeInTheDocument();
+  });
+
+  it("technician: their own 12-month history, scorecards read-only, a month's days by moving the page", async () => {
+    const spy = serve(TECH);
+    const { search } = at("/nhan-vien");
+    await userEvent.click(await screen.findByRole("button", { name: "Xem 12 tháng gần nhất" }));
+    const list = await screen.findByRole("list", { name: "Các tháng của bạn" });
+    const previous = shiftMonth(month, -1);
+    expect(screen.getByRole("listitem", { name: `${monthLabel(previous)}: 81 điểm, Mức 2` })).toBeInTheDocument();
+    // Only their own path; nothing to rescore, no notes journal.
+    expect(requests(spy).some((r) => r.url.includes("/me/evaluations/history"))).toBe(true);
+    expect(requests(spy).some((r) => /\/api\/v1\/evaluations/.test(r.url))).toBe(false);
+    expect(within(list).queryByRole("link", { name: /^Chấm/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Xem mọi ghi chú/ })).not.toBeInTheDocument();
+    await userEvent.click(within(list).getByRole("button", { name: `Xem phiếu đánh giá ${monthLabel(previous).toLowerCase()}` }));
+    expect(await screen.findByRole("dialog", { name: "Phiếu đánh giá của bạn" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Đóng" }));
+    await userEvent.click(within(list).getByRole("button", { name: `Từng ngày ${monthLabel(previous).toLowerCase()}` }));
+    await waitFor(() => {
+      expect(search()).toMatchObject({ month: previous });
+    });
   });
 
   it("technician: reads their own month's scorecard, from /me/staff only", async () => {

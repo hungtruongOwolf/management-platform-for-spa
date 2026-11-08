@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { spaToday } from "../corrections/api";
 import { EmptyState, ErrorState, RowsSkeleton } from "../reports/ui";
 import { myMonthQuery, type AttendanceDay, type MyStaff } from "./api";
@@ -9,6 +9,9 @@ import { MyDaySheet } from "./MyDaySheet";
 import { PayslipView } from "./PayrollTab";
 import { ApiError } from "../../lib/api";
 import { ClosedBanner, MonthPicker, dayLabel, vnd } from "./ui";
+
+// Loaded only when opened (EM 2026-11-08: own evaluation history).
+const MyEvaluationHistory = lazy(() => import("./MyEvaluationHistory").then((m) => ({ default: m.MyEvaluationHistory })));
 
 type MonthData = NonNullable<MyStaff["data"]>;
 
@@ -70,10 +73,12 @@ export function MonthCalendar({
           const d = byDate.get(date);
           const future = date > today;
           const late = d && d.late_minutes > 0 ? d.late_minutes : 0;
-          const mark = d ? STATUS_CODE[d.status] : future ? "" : "–";
-          // The name starts with what the cell shows (WCAG 2.5.3, axe label-content-name-mismatch).
+          // A late day shows its minutes instead of ✓ (late = came): phones had no room for both and
+          // hid the ✓, so the cell's text stopped matching its name (axe, CI 2026-11-08 at 390 px).
+          const mark = d ? (late > 0 ? "" : STATUS_CODE[d.status]) : future ? "" : "–";
           const shown = [String(Number(date.slice(8))), mark, late > 0 ? `${String(late)}′` : ""].filter(Boolean).join(" ");
-          const label = `${shown}: ${dayStatusText(date, today, d)}`;
+          const status = dayStatusText(date, today, d);
+          const label = `${shown}: ${status}`;
           const cls = [
             "my-day",
             future ? "is-future" : `att-${d?.status ?? "none"}`,
@@ -83,16 +88,19 @@ export function MonthCalendar({
           ]
             .filter(Boolean)
             .join(" ");
-          const inner = (
+          // A day button is named by its own text — what it shows, then the status in words for
+          // screen readers — so its name can never drift from its visible text (WCAG 2.5.3; an
+          // aria-label copy of the text failed axe at 390 px and then at 1280, CI 2026-11-08).
+          const parts = (hidden: boolean) => (
             <>
-              <span aria-hidden="true" className="my-day-num">
+              <span aria-hidden={hidden || undefined} className="my-day-num">
                 {Number(date.slice(8))}
-              </span>
-              <span aria-hidden="true" className="my-day-mark">
+              </span>{" "}
+              <span aria-hidden={hidden || undefined} className="my-day-mark">
                 {mark}
-              </span>
+              </span>{" "}
               {late > 0 && (
-                <span aria-hidden="true" className="my-day-late">
+                <span aria-hidden={hidden || undefined} className="my-day-late">
                   {late}′
                 </span>
               )}
@@ -102,13 +110,12 @@ export function MonthCalendar({
             <li key={date} className="my-calendar-cell">
               {future || !onDay ? (
                 <span className={cls} aria-label={label} title={label} role="img">
-                  {inner}
+                  {parts(true)}
                 </span>
               ) : (
                 <button
                   type="button"
                   className={cls}
-                  aria-label={label}
                   title={label}
                   aria-haspopup="dialog"
                   aria-current={selected === date ? "date" : undefined}
@@ -116,7 +123,8 @@ export function MonthCalendar({
                     onDay(date);
                   }}
                 >
-                  {inner}
+                  {parts(false)}
+                  <span className="sr-only">: {status}</span>
                 </button>
               )}
             </li>
@@ -224,6 +232,7 @@ export function MyMonth({
 }) {
   const query = useQuery(myMonthQuery(month));
   const [card, setCard] = useState(false);
+  const [history, setHistory] = useState(false);
   const today = spaToday();
   if (query.isPending) return <RowsSkeleton rows={5} />;
   if (query.isError) {
@@ -350,6 +359,34 @@ export function MyMonth({
           </ul>
         ) : (
           <p className="text-sm text-text-muted">Chưa có khoản thưởng / phạt nào trong tháng.</p>
+        )}
+      </section>
+      <section className="card grid gap-3 p-4 sm:p-5" aria-labelledby="my-history">
+        <h2 id="my-history" className="panel-title">
+          Lịch sử đánh giá
+        </h2>
+        {history ? (
+          <Suspense fallback={<RowsSkeleton rows={4} />}>
+            <MyEvaluationHistory
+              onMonth={(m) => {
+                setHistory(false);
+                onMonth?.(m);
+                const top = document.querySelector("h1");
+                // jsdom has no scrollIntoView; browsers do.
+                if (top && "scrollIntoView" in top) top.scrollIntoView({ block: "start" });
+              }}
+            />
+          </Suspense>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-secondary justify-self-start"
+            onClick={() => {
+              setHistory(true);
+            }}
+          >
+            Xem 12 tháng gần nhất
+          </button>
         )}
       </section>
       <section className="grid gap-2" aria-labelledby="my-payslip">

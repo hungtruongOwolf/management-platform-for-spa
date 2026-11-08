@@ -531,16 +531,14 @@
     font-variant-numeric: tabular-nums;
     line-height: 14px;
   }
-  /* Phones: a 40 px cell has no corner to spare, so the minutes take the mark's place (late =
-     present). */
-  @media (max-width: 639.98px) {
-    .my-day.is-late .my-day-mark {
-      display: none;
-    }
-    .my-day.is-late .my-day-late {
-      position: static;
-      margin-top: 12px;
-    }
+  /* A late day: the minutes take the mark's place at every width (late = present; a phone's 40 px
+     cell has no corner to spare, and one rule keeps the cell's text equal to its name). */
+  .my-day.is-late .my-day-mark {
+    display: none;
+  }
+  .my-day.is-late .my-day-late {
+    position: static;
+    margin-top: 12px;
   }
   .my-day-late.is-inline {
     position: static;

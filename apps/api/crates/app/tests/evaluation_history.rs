@@ -1,7 +1,8 @@
 //! Evaluation history (EM 2026-11-08, spec staff-management §15): `GET /evaluations/history` for
 //! one person across months — the rule of `GET /evaluations` (owner + manager, technicians and
 //! former staff 403), another spa's or an unknown id 404, bounds 422 — and a technician's own
-//! scorecard detail through `/me/staff` only.
+//! scorecard detail through `/me/staff` only. Then `GET /me/evaluations/history` (EM 2026-11-08,
+//! follow-up): the session's own staff link only, former staff clamped to the months they worked.
 
 mod common;
 
@@ -341,5 +342,151 @@ async fn a_technician_reads_only_their_own_scorecard(pool: PgPool) -> TestResult
     )
     .await;
     assert_eq!(other.status, StatusCode::BAD_REQUEST);
+    Ok(())
+}
+
+// ---------------------------------------------------------------- GET /me/evaluations/history
+
+async fn mine(s: &Spa, session: Option<&str>, query: &str) -> Reply {
+    call(
+        &s.h.app,
+        "GET",
+        &format!("/me/evaluations/history{query}"),
+        session,
+        None,
+    )
+    .await
+}
+
+fn months_of(r: &Reply) -> Vec<String> {
+    r.body["data"]["months"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|m| m["month"].as_str().map(str::to_owned))
+        .collect()
+}
+
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_technician_reads_their_own_months_only(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let last = ym(this_month() - Months::new(1));
+    let r = mine(&s, Some(&s.tech), "").await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    assert_eq!(r.body["linked"], true);
+    assert!(r.body.get("left_on").is_none());
+    let data = &r.body["data"];
+    assert_eq!(data["full_name"], "Lê Thị Lan");
+    assert_eq!(months_of(&r).len(), 12);
+    assert_eq!(months_of(&r)[0], ym(this_month()));
+    let scored = data["months"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|m| m["month"] == last.as_str())
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(scored["evaluation"]["comment"], "Tay nghề tiến bộ");
+    assert_eq!(scored["compliments"], 2);
+    // Same shape as the managers' history, without the writer-only keys.
+    assert!(data.get("can_record").is_none() && data.get("staff_id").is_none());
+    // No way to ask for someone else; same range rules.
+    let other = mine(&s, Some(&s.tech), &format!("?staff_id={}", s.hoa)).await;
+    assert_eq!(other.status, StatusCode::BAD_REQUEST);
+    let one = mine(&s, Some(&s.tech), &format!("?from={last}&to={last}")).await;
+    assert_eq!(months_of(&one), [last]);
+    assert_eq!(
+        mine(&s, Some(&s.tech), "?from=2026-10&to=2026-09")
+            .await
+            .status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(mine(&s, None, "").await.status, StatusCode::UNAUTHORIZED);
+    Ok(())
+}
+
+/// ADR-0014: a former staff member is not refused a range; the window ends at the month they
+/// left, a later `to` is clamped to it, and months they were not employed in are left out.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn former_staff_see_only_the_months_they_worked(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let started = this_month() - Months::new(4);
+    let left = this_month() - Months::new(1) + chrono::Duration::days(14);
+    sqlx::query(
+        "UPDATE app.staff_employment SET started_on = $3, ended_on = $4, end_reason = 'Chuyển về quê'
+         WHERE tenant_id = $1 AND staff_id = $2 AND ended_on IS NULL",
+    )
+    .bind(s.tenant)
+    .bind(s.lan)
+    .bind(started)
+    .bind(left)
+    .execute(&s.h.owner)
+    .await?;
+    sqlx::query(
+        "UPDATE app.staff SET status = 'left', joined_on = $3, left_on = $4 WHERE tenant_id = $1 AND id = $2",
+    )
+    .bind(s.tenant)
+    .bind(s.lan)
+    .bind(started)
+    .bind(left)
+    .execute(&s.h.owner)
+    .await?;
+    let expected: Vec<String> = (1..=4).map(|n| ym(this_month() - Months::new(n))).collect();
+    let r = mine(&s, Some(&s.tech), "").await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    assert_eq!(r.body["left_on"], left.to_string());
+    assert_eq!(months_of(&r), expected, "the months worked, newest first");
+    // A range reaching past the end: clamped, not refused.
+    let past_end = mine(&s, Some(&s.tech), &format!("?to={}", ym(this_month()))).await;
+    assert_eq!(past_end.status, StatusCode::OK, "{}", past_end.body);
+    assert_eq!(months_of(&past_end), expected);
+    // A range wholly before they started: empty, not refused.
+    let before = this_month() - Months::new(8);
+    let none = mine(
+        &s,
+        Some(&s.tech),
+        &format!("?from={}&to={}", ym(before), ym(before)),
+    )
+    .await;
+    assert_eq!(none.status, StatusCode::OK, "{}", none.body);
+    assert!(months_of(&none).is_empty());
+    // Still no managers' history for them.
+    assert_eq!(
+        s.history(Some(&s.tech), &format!("?staff_id={}", s.lan))
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn owners_and_managers_get_their_own_link_or_nothing(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    // The manager's login is linked to Hoa: her months, nobody else's.
+    let manager = mine(&s, Some(&s.manager), "").await;
+    assert_eq!(manager.status, StatusCode::OK, "{}", manager.body);
+    assert_eq!(manager.body["data"]["full_name"], "Phạm Thị Hoa");
+    assert!(!manager.body.to_string().contains("Tay nghề tiến bộ"));
+    // The owner has no staff profile: the documented empty answer, as /me/staff.
+    let owner = mine(&s, Some(&s.owner), "").await;
+    assert_eq!(owner.status, StatusCode::OK, "{}", owner.body);
+    assert_eq!(owner.body["linked"], false);
+    assert!(owner.body.get("data").is_none());
+    // Another spa's owner: their own (empty) answer, never this spa's people.
+    create_tenant(&s.h.owner, "khac", "Spa khác", "Huế").await?;
+    add_member(
+        &s.h.owner,
+        "khac",
+        OTHER_OWNER_PHONE,
+        "Chủ spa khác",
+        SystemRole::Owner,
+    )
+    .await?;
+    let other = session_for(&s.h, OTHER_OWNER_PHONE).await;
+    let theirs = mine(&s, Some(&other), "").await;
+    assert_eq!(theirs.status, StatusCode::OK, "{}", theirs.body);
+    assert_eq!(theirs.body["linked"], false);
+    assert!(!theirs.body.to_string().contains("Lê Thị Lan"));
     Ok(())
 }

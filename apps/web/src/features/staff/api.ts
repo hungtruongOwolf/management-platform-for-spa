@@ -135,6 +135,14 @@ export function evaluationHistoryQuery(staffId: string) {
   });
 }
 
+export type MyEvaluationHistory = Schemas["MyEvaluationHistory"];
+
+/** `GET /me/evaluations/history`: the signed-in staff member's own last 12 months. */
+export const myEvaluationHistoryQuery = queryOptions({
+  queryKey: ["staff", "my-evaluation-history"] as const,
+  queryFn: async () => (await api("/me/evaluations/history")) as MyEvaluationHistory,
+});
+
 export function historyQuery(id: string) {
   return queryOptions({
     queryKey: ["staff", "history", id] as const,
