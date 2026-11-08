@@ -626,3 +626,6 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 ## [2026-11-08] qa | Test live quản lý + KTV (Chrome, local)
 - Raw: [2026-11-08-live-test-manager-technician](raw/2026-11-08-live-test-manager-technician.md). Quản lý A1–A13 đạt (A14 bỏ qua: cửa sổ không thu nhỏ được); KTV B1–B4 đạt. Chủ spa chưa chạy (chờ EM nhập MFA).
 - Lỗi chính: F19 quy tắc C phụ thuộc hồ sơ ↔ tài khoản (hồ sơ quản lý chưa gắn → tự chấm được); F20 còn (P)/(ĐX)/(K); F21 lý do hủy lịch chưa vào nhật ký; F23 nhãn "Vãng lai". Chờ EM quyết: F12 (đặt lịch giờ đã qua), F18 (ghi bù lượt hôm qua). EM: lưu lại, sửa sau.
+
+## [2026-11-08] decision | Lượt khách chỉ lưu giờ bắt đầu
+- Raw: [2026-11-08-em-decision-visit-time](raw/2026-11-08-em-decision-visit-time.md). Giữ nguyên: giờ kết thúc = giờ bắt đầu + thời lượng dịch vụ; không thêm "Giờ xong" hay nút bắt đầu/xong. Lượt không đặt lịch vẫn hiện trên lịch hẹn (`CalendarVisitDto`).
