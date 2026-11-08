@@ -142,7 +142,8 @@ test.describe("KTV: màn của tôi", () => {
     await expect(todayCell).toContainText("′");
     await todayCell.click();
     const sheet = page.getByRole("dialog", { name: /^Ngày / });
-    await expect(sheet.getByText(CUSTOMER)).toBeVisible();
+    // A retried worker reruns the seed: the same customer may then have two visits that day.
+    await expect(sheet.getByText(CUSTOMER).first()).toBeVisible();
     // The row header is the service name, then its type ("Dịch vụ lẻ") on a second line.
     await expect(sheet.getByRole("rowheader", { name: `${serviceName} Dịch vụ lẻ` })).toBeVisible();
     await expect(sheet.getByText("Dịch vụ lẻ")).toBeVisible();
@@ -152,7 +153,7 @@ test.describe("KTV: màn của tôi", () => {
     await expect(sheet.getByRole("button", { name: /Ngày sau/ })).toBeDisabled();
     await sheet.getByRole("button", { name: /Ngày trước/ }).click();
     await expect(page).toHaveURL(new RegExp(`day=${spaDay(-1)}`));
-    await expect(sheet.getByText(CUSTOMER)).toBeHidden();
+    await expect(sheet.getByText(CUSTOMER)).toHaveCount(0);
     await page.keyboard.press("Escape");
     await expect(sheet).toBeHidden();
     await expect(page.getByText(phone)).toHaveCount(0);

@@ -73,7 +73,9 @@ export function MonthCalendar({
           const d = byDate.get(date);
           const future = date > today;
           const late = d && d.late_minutes > 0 ? d.late_minutes : 0;
-          const mark = d ? STATUS_CODE[d.status] : future ? "" : "–";
+          // A late day shows its minutes instead of ✓ (late = came): phones had no room for both and
+          // hid the ✓, so the cell's text stopped matching its name (axe, CI 2026-11-08 at 390 px).
+          const mark = d ? (late > 0 ? "" : STATUS_CODE[d.status]) : future ? "" : "–";
           // The name starts with what the cell shows (WCAG 2.5.3, axe label-content-name-mismatch).
           const shown = [String(Number(date.slice(8))), mark, late > 0 ? `${String(late)}′` : ""].filter(Boolean).join(" ");
           const label = `${shown}: ${dayStatusText(date, today, d)}`;
