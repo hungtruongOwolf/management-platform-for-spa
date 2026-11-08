@@ -404,8 +404,8 @@ function ProfileForm({
   canPay: boolean;
   onClose: () => void;
   onBack?: () => void;
-  /** A new profile was saved: open its sheet, creating the login asked for here (if any). */
-  onCreated?: (id: string, login: PendingLogin | null) => void;
+  /** A new profile was saved with "Tạo tài khoản đăng nhập ngay": open its sheet to create the login. */
+  onCreated?: (id: string, login: PendingLogin) => void;
 }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState(profile?.full_name ?? "");
@@ -447,7 +447,8 @@ function ProfileForm({
     },
     onSuccess: async (saved) => {
       await invalidateStaff(queryClient);
-      if (!profile && onCreated) onCreated(saved.id, withLogin && loginPhone.trim() ? { phone: loginPhone.trim(), role: loginRole } : null);
+      // A login asked for: open the new profile's sheet, where it is created (and shown once).
+      if (!profile && onCreated && withLogin && loginPhone.trim()) onCreated(saved.id, { phone: loginPhone.trim(), role: loginRole });
       else onClose();
     },
   });
