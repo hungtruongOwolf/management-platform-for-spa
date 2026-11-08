@@ -17,6 +17,8 @@ pub struct SaleInsert<'a> {
     pub closer_staff_id: Option<Uuid>,
     /// The visit this sale was made in (its one-off lines, a package sold in the cart, an addition).
     pub visit_id: Option<Uuid>,
+    /// The package sale's note, already encrypted (F4); never plaintext.
+    pub note_ct: Option<&'a [u8]>,
     pub created_by: Uuid,
 }
 
@@ -25,8 +27,8 @@ pub async fn insert_sale(tx: &mut TenantTx, s: &SaleInsert<'_>) -> Result<(), Ap
     sqlx::query!(
         r#"INSERT INTO app.sale
              (id, tenant_id, branch_id, customer_id, business_date, subtotal, discount_amount, discount_reason,
-              total, amount_paid, closer_staff_id, created_by, visit_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)"#,
+              total, amount_paid, closer_staff_id, created_by, visit_id, note_ct)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)"#,
         s.id,
         tenant,
         s.branch_id,
@@ -39,7 +41,8 @@ pub async fn insert_sale(tx: &mut TenantTx, s: &SaleInsert<'_>) -> Result<(), Ap
         s.amount_paid,
         s.closer_staff_id,
         s.created_by,
-        s.visit_id
+        s.visit_id,
+        s.note_ct
     )
     .execute(tx.conn())
     .await?;
@@ -188,6 +191,7 @@ pub struct SaleRow {
     pub closer_name: Option<String>,
     pub visit_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
+    pub note_ct: Option<Vec<u8>>,
 }
 
 pub async fn sale(tx: &mut TenantTx, id: Uuid) -> Result<Option<SaleRow>, AppError> {
@@ -195,7 +199,7 @@ pub async fn sale(tx: &mut TenantTx, id: Uuid) -> Result<Option<SaleRow>, AppErr
     Ok(sqlx::query_as!(
         SaleRow,
         r#"SELECT s.id, s.customer_id, s.business_date, s.subtotal, s.discount_amount, s.discount_reason, s.total,
-                  s.amount_paid, s.status, s.void_reason, s.voided_at, s.closer_staff_id, st.full_name AS "closer_name?", s.visit_id, s.created_at
+                  s.amount_paid, s.status, s.void_reason, s.voided_at, s.closer_staff_id, st.full_name AS "closer_name?", s.visit_id, s.created_at, s.note_ct
            FROM app.sale s
            LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id
            WHERE s.tenant_id = $1 AND s.id = $2"#,
@@ -324,6 +328,22 @@ pub async fn lock_sale(tx: &mut TenantTx, id: Uuid) -> Result<Option<LockedSale>
     )
     .fetch_optional(tx.conn())
     .await?)
+}
+
+/// Replaces a package sale's note (`None` = no note). The caller holds the row lock and checked
+/// it is open: a voided sale is frozen by `sale_voided_is_final` (0009) anyway.
+pub async fn set_note(tx: &mut TenantTx, id: Uuid, note_ct: Option<&[u8]>) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        r#"UPDATE app.sale SET note_ct = $3, version = version + 1
+           WHERE tenant_id = $1 AND id = $2"#,
+        tenant,
+        id,
+        note_ct
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
 }
 
 /// `open` → `voided`, money collected back to 0. `false` = it was already voided: the

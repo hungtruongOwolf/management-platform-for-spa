@@ -26,10 +26,21 @@ function keyOf(userId: string, customerId: string): string {
   return `${PREFIX}${userId}:${customerId}`;
 }
 
-/** Drops the fields that must never be stored (the session note is health data). */
+/**
+ * Drops the fields that must never be stored: the session note and each package's "Ghi chú gói"
+ * (F4) are health data.
+ */
 function sanitize(draft: object): object {
   const copy: Record<string, unknown> = { ...draft };
   delete copy["note"];
+  const sales = copy["sales"];
+  if (Array.isArray(sales))
+    copy["sales"] = sales.map((s: unknown) => {
+      if (typeof s !== "object" || s === null) return s;
+      const sale: Record<string, unknown> = { ...(s as Record<string, unknown>) };
+      delete sale["note"];
+      return sale;
+    });
   return copy;
 }
 

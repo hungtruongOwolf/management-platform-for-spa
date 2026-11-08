@@ -1,16 +1,22 @@
 //! Sell packages (US3). One transaction creates the sale, its lines, the customer packages with
 //! their items, the payments, the audit entry and the idempotency record — or nothing at all.
 //! Visits (S7) record their one-off services through [`record_service_sale`] in their own transaction.
+//!
+//! "Ghi chú gói" (F4, EM 2026-11-08): each package sale may carry one note. It is health data like
+//! a visit's session note: encrypted at rest (AAD = "sale.note" + tenant + sale), written only with
+//! `customer.health_notes.write`, returned only to `customer.health_notes.read`, never stored in an
+//! idempotent response nor in audit.
 
 use crate::domain::{self, DiscountAuthority, DiscountError, PaymentMethod};
 use crate::dto::{
     DaySaleDto, DiscountCreate, PaymentCreate, PaymentDto, PaymentKindDto, PaymentMethodDto,
     SaleCheckoutCreate, SaleCheckoutDto, SaleCreate, SaleDto, SaleLineDto, SaleLineTypeDto,
-    SaleStatusDto,
+    SaleStatusDto, SaleUpdate,
 };
 use crate::repo::{self, PackageLineInsert, PaymentInsert, SaleInsert, ServiceLineInsert};
 use chrono::{DateTime, Months, NaiveDate, Utc};
-use kernel::audit::{self, AuditEntry};
+use kernel::audit::{self, AuditEntry, REDACTED};
+use kernel::crypto::FieldCipher;
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx};
 use packages::http::CustomerPackageDto;
@@ -25,6 +31,8 @@ pub const MAX_PAYMENTS: usize = 2;
 const MAX_REASON: usize = 500;
 const MAX_REFERENCE: usize = 200;
 const MAX_GIFT_NOTE: usize = 500;
+/// Longest "Ghi chú gói", the session note's bound.
+pub const MAX_SALE_NOTE: usize = 2000;
 
 /// One validated payment of a sale (see [`parse_payments`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +64,9 @@ pub struct PackageOrder {
     pub lines: Vec<PackageLine>,
     pub discount: Money,
     pub discount_reason: Option<String>,
+    /// "Ghi chú gói" (F4), trimmed, plaintext only until [`record_package_sale`] encrypts it.
+    /// Writing one needs `customer.health_notes.write`.
+    pub note: Option<String>,
 }
 
 struct Order {
@@ -82,6 +93,40 @@ pub fn parse_gift_note(
         errors.push(FieldError::new(field, "too_long"));
     }
     gift
+}
+
+/// Shape rules of a package sale's note: trimmed, blank = none, ≤ 2000 characters (`too_long` on
+/// `field`). Problems go to `errors`.
+pub fn parse_sale_note(
+    note: Option<&String>,
+    field: &str,
+    errors: &mut Vec<FieldError>,
+) -> Option<String> {
+    let note = trimmed(note);
+    if note
+        .as_ref()
+        .is_some_and(|n| n.chars().count() > MAX_SALE_NOTE)
+    {
+        errors.push(FieldError::new(field, "too_long"));
+    }
+    note
+}
+
+/// The right a note needs, asked when one is present: the API refuses a note it may not write
+/// rather than drop it silently, as `POST /visits` does for its session note.
+pub fn require_note_right(actor: &Actor, note: Option<&String>) -> Result<(), AppError> {
+    if note.is_some() {
+        actor.require(Permission::CustomerHealthNotesWrite)?;
+    }
+    Ok(())
+}
+
+/// The cipher when `actor` may read package-sale notes (`customer.health_notes.read`, on top of
+/// the screen's own rule); `None` leaves the note out (its key absent).
+pub fn note_reader<'c>(actor: &Actor, cipher: &'c FieldCipher) -> Option<&'c FieldCipher> {
+    actor
+        .can(Permission::CustomerHealthNotesRead)
+        .then_some(cipher)
 }
 
 /// Shape rules of a package discount (`amount` ≥ 0, reason ≤ 500; a reason without an amount is
@@ -132,6 +177,7 @@ fn parse(input: &SaleCreate) -> Result<Order, AppError> {
     let (discount, discount_reason) =
         parse_package_discount(input.discount.as_ref(), "discount", &mut errors);
     let payments = parse_payments(&input.payments, &mut errors);
+    let note = parse_sale_note(input.note.as_ref(), "note", &mut errors);
 
     if errors.is_empty() {
         Ok(Order {
@@ -142,6 +188,7 @@ fn parse(input: &SaleCreate) -> Result<Order, AppError> {
                 lines,
                 discount,
                 discount_reason,
+                note,
             },
             payments,
         })
@@ -234,17 +281,19 @@ fn session_count(v: i32) -> Result<u32, AppError> {
 }
 
 /// `POST /sales` (`package.sell`, plus `payment.collect` when money is taken, as on `POST /visits`,
-/// and `sale.discount` / `sale.discount_unlimited` for a discount).
+/// `sale.discount` / `sale.discount_unlimited` for a discount and `customer.health_notes.write`
+/// for a note).
 /// Returns the HTTP status and body to send, which are also stored under the idempotency key:
 /// retrying with the same key and body replays them without creating anything (AC3.7).
 pub async fn create_sale(
     pool: &PgPool,
+    cipher: &FieldCipher,
     actor: &Actor,
     key: Uuid,
     request_hash: [u8; 32],
     input: &SaleCreate,
 ) -> Result<(u16, Value), AppError> {
-    create_sale_as_of(pool, actor, key, request_hash, input, Utc::now()).await
+    create_sale_as_of(pool, cipher, actor, key, request_hash, input, Utc::now()).await
 }
 
 /// [`create_sale`] on the business day of `now` instead of the server clock, with every other
@@ -252,6 +301,7 @@ pub async fn create_sale(
 /// reaches it — `POST /sales` calls [`create_sale`].
 pub async fn create_sale_as_of(
     pool: &PgPool,
+    cipher: &FieldCipher,
     actor: &Actor,
     key: Uuid,
     request_hash: [u8; 32],
@@ -263,6 +313,7 @@ pub async fn create_sale_as_of(
     if !order.payments.is_empty() {
         actor.require(Permission::PaymentCollect)?;
     }
+    require_note_right(actor, order.package.note.as_ref())?;
 
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     if let Claim::Replay { status, body } =
@@ -282,6 +333,7 @@ pub async fn create_sale_as_of(
     .await?;
     let sold = record_package_sale(
         &mut tx,
+        cipher,
         actor,
         &priced,
         SaleAt {
@@ -293,7 +345,8 @@ pub async fn create_sale_as_of(
     )
     .await?;
 
-    let dto = load(&mut tx, sold.sale_id, today)
+    // The stored response never carries the note: the idempotency table is not encrypted.
+    let dto = load(&mut tx, sold.sale_id, today, None)
         .await?
         .ok_or_else(|| AppError::Internal("sale vanished".into()))?;
     let body = serde_json::to_value(&dto).map_err(|e| AppError::Internal(e.to_string()))?;
@@ -351,6 +404,7 @@ fn parse_checkout(
                 }],
                 discount,
                 discount_reason,
+                note: parse_sale_note(p.note.as_ref(), &format!("{prefix}.note"), &mut errors),
             }
         })
         .collect();
@@ -368,9 +422,11 @@ fn parse_checkout(
 /// visit (its own beneficiary, closer and discount, the manager cap per sale), the payments are
 /// split over the sales by [`allocate_payments`] (cash first, in cart order), and every sale is
 /// written in **one transaction**: one refusal saves nothing. Each sale keeps its own closer, so
-/// commission attribution (ADR-0010) stays per sale.
+/// commission attribution (ADR-0010) stays per sale, and its own "Ghi chú gói" (F4; a note needs
+/// `customer.health_notes.write`).
 pub async fn create_checkout(
     pool: &PgPool,
+    cipher: &FieldCipher,
     actor: &Actor,
     key: Uuid,
     request_hash: [u8; 32],
@@ -380,6 +436,9 @@ pub async fn create_checkout(
     let (orders, payments) = parse_checkout(input)?;
     if !payments.is_empty() {
         actor.require(Permission::PaymentCollect)?;
+    }
+    for order in &orders {
+        require_note_right(actor, order.note.as_ref())?;
     }
 
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
@@ -411,10 +470,11 @@ pub async fn create_checkout(
     let mut sales = Vec::with_capacity(priced.len());
     let mut total = Money::ZERO;
     for (sale, paid) in priced.iter().zip(&split) {
-        let sold = record_package_sale(&mut tx, actor, sale, at, paid).await?;
+        let sold = record_package_sale(&mut tx, cipher, actor, sale, at, paid).await?;
         total = Money::sum([total, sold.total]).map_err(money_err)?;
+        // Like `POST /sales`, the stored response never carries a note.
         sales.push(
-            load(&mut tx, sold.sale_id, today)
+            load(&mut tx, sold.sale_id, today, None)
                 .await?
                 .ok_or_else(|| AppError::Internal("sale vanished".into()))?,
         );
@@ -576,9 +636,11 @@ pub struct RecordedPackageSale {
 /// Writes a priced package sale inside the caller's transaction: the sale (payer, closer,
 /// `visit_id`), its package lines, the beneficiary's packages with their items, the payments
 /// (exactly the total, `422 payment.amount_mismatch`; taking money needs `payment.collect`) and
-/// the audit entry `sale.create`.
+/// the audit entry `sale.create`. The note is encrypted here, under the new sale's id; writing one
+/// needs `customer.health_notes.write` (checked again here, whatever the entry point).
 pub async fn record_package_sale(
     tx: &mut TenantTx,
+    cipher: &FieldCipher,
     actor: &Actor,
     priced: &PricedPackageSale,
     at: SaleAt,
@@ -594,8 +656,15 @@ pub async fn record_package_sale(
         actor.require(Permission::PaymentCollect)?;
     }
     let order = &priced.order;
+    require_note_right(actor, order.note.as_ref())?;
     let today = at.business_date;
     let sale_id = Uuid::now_v7();
+    let note_ct = kernel::crypto::seal_sale_note(
+        cipher,
+        tx.tenant().as_uuid(),
+        sale_id,
+        order.note.as_deref(),
+    )?;
     repo::insert_sale(
         tx,
         &SaleInsert {
@@ -610,6 +679,7 @@ pub async fn record_package_sale(
             amount_paid: paid.as_i64(),
             closer_staff_id: priced.closer,
             visit_id: at.visit_id,
+            note_ct: note_ct.as_deref(),
             created_by: actor.user_id.as_uuid(),
         },
     )
@@ -692,6 +762,8 @@ pub async fn record_package_sale(
                 "subtotal": priced.subtotal.as_i64(), "discount_amount": order.discount.as_i64(),
                 "total": priced.total.as_i64(),
                 "payments": payments.iter().map(|p| json!({"method": p.method.as_str(), "amount": p.amount.as_i64()})).collect::<Vec<_>>(),
+                // Health data: audit records that a note exists, never its text.
+                "note": order.note.as_ref().map(|_| REDACTED),
             })),
             reason: order.discount_reason.as_deref(),
         },
@@ -729,14 +801,21 @@ async fn insert_payments(
     Ok(())
 }
 
+/// One sale as `SaleDto`. `notes`: the cipher when the caller may read the note (see
+/// [`note_reader`]); `None` leaves the key out (idempotent responses always pass `None`).
 pub(crate) async fn load(
     tx: &mut TenantTx,
     id: Uuid,
     today: NaiveDate,
+    notes: Option<&FieldCipher>,
 ) -> Result<Option<SaleDto>, AppError> {
     let Some(s) = repo::sale(tx, id).await? else {
         return Ok(None);
     };
+    let tenant = tx.tenant().as_uuid();
+    let note = notes
+        .map(|c| kernel::crypto::open_sale_note(c, tenant, s.id, s.note_ct.as_deref()))
+        .transpose()?;
     let lines = repo::lines(tx, id)
         .await?
         .into_iter()
@@ -799,6 +878,7 @@ pub(crate) async fn load(
         lines,
         payments,
         customer_packages,
+        note,
     }))
 }
 
@@ -807,10 +887,12 @@ const DAY_SALES_MAX: i64 = 200;
 
 /// `GET /sales?date=` (`sale.read` + `customer.read`: the list names the customer): the package
 /// sales of one business day saved at the desk without a visit (F6, live test 2026-11-08), newest
-/// first, each with what `GET /sales/{id}` returns. A visit's sales are shown with the visit
-/// (`GET /visits`), and paper-book imports are not desk sales.
+/// first, each with what `GET /sales/{id}` returns (its "Ghi chú gói" only for
+/// `customer.health_notes.read`). A visit's sales are shown with the visit (`GET /visits`), and
+/// paper-book imports are not desk sales.
 pub async fn for_day(
     pool: &PgPool,
+    cipher: &FieldCipher,
     actor: &Actor,
     day: Option<NaiveDate>,
 ) -> Result<Vec<DaySaleDto>, AppError> {
@@ -822,9 +904,10 @@ pub async fn for_day(
         .business_date
         .as_naive();
     let heads = repo::day_sales(&mut tx, day.unwrap_or(today), DAY_SALES_MAX).await?;
+    let notes = note_reader(actor, cipher);
     let mut out = Vec::with_capacity(heads.len());
     for h in heads {
-        let sale = load(&mut tx, h.id, today)
+        let sale = load(&mut tx, h.id, today, notes)
             .await?
             .ok_or_else(|| AppError::Internal("sale vanished".into()))?;
         out.push(DaySaleDto {
@@ -838,17 +921,93 @@ pub async fn for_day(
     Ok(out)
 }
 
-/// `GET /sales/{id}` (`sale.read`). Another spa's sale is `404`.
-pub async fn get_sale(pool: &PgPool, actor: &Actor, id: Uuid) -> Result<SaleDto, AppError> {
+/// `GET /sales/{id}` (`sale.read`; the note only for `customer.health_notes.read`). Another
+/// spa's sale is `404`.
+pub async fn get_sale(
+    pool: &PgPool,
+    cipher: &FieldCipher,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<SaleDto, AppError> {
     actor.require(Permission::SaleRead)?;
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
         .as_naive();
-    let sale = load(&mut tx, id, today).await?;
+    let sale = load(&mut tx, id, today, note_reader(actor, cipher)).await?;
     tx.commit().await?;
     sale.ok_or(AppError::NotFound)
+}
+
+/// `PATCH /sales/{id}` ("Sửa ghi chú gói", F4): replaces a package sale's note, the one field a
+/// sale changes in place. Needs `package.sell` (the desk that sells) and
+/// `customer.health_notes.write`; a day before today also needs `record.void_closed_day`
+/// (`403 day.locked`, the rule of `PATCH /visits/{id}`). A voided sale is `409 sale.voided`; a
+/// visit's one-off sale is `409 sale.not_package` (its note is the visit's). Audited
+/// `sale.note_update` without the text. Returns the sale with its note for health readers.
+///
+/// `input` is `None` when the body did not parse. Like every correction (F17), the rights, the
+/// sale (`404`) and its day (`403 day.locked`) are answered before what is wrong with the body.
+pub async fn update_note(
+    pool: &PgPool,
+    cipher: &FieldCipher,
+    actor: &Actor,
+    id: Uuid,
+    input: Option<&SaleUpdate>,
+) -> Result<SaleDto, AppError> {
+    actor.require(Permission::PackageSell)?;
+    actor.require(Permission::CustomerHealthNotesWrite)?;
+
+    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let sale = repo::lock_sale(&mut tx, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let today = kernel::tenant::profile(&mut tx)
+        .await?
+        .business_date
+        .as_naive();
+    kernel::corrections::authorize_closed_day(actor, sale.business_date, today)?;
+    let input =
+        input.ok_or_else(|| AppError::Validation(vec![FieldError::new("body", "invalid")]))?;
+    let mut errors = Vec::new();
+    let note = parse_sale_note(input.note.as_ref(), "note", &mut errors);
+    if !errors.is_empty() {
+        return Err(AppError::Validation(errors));
+    }
+    if sale.status != "open" {
+        return Err(AppError::Conflict {
+            code: "sale.voided",
+        });
+    }
+    if !sale.sells_packages {
+        return Err(AppError::Conflict {
+            code: "sale.not_package",
+        });
+    }
+    let tenant = tx.tenant().as_uuid();
+    let note_ct = kernel::crypto::seal_sale_note(cipher, tenant, id, note.as_deref())?;
+    repo::set_note(&mut tx, id, note_ct.as_deref()).await?;
+    audit::record(
+        &mut tx,
+        actor,
+        AuditEntry {
+            action: "sale.note_update",
+            entity_type: "sale",
+            entity_id: id,
+            before: None,
+            after: Some(json!({
+                "note": if note.is_some() { REDACTED } else { "cleared" },
+            })),
+            reason: None,
+        },
+    )
+    .await?;
+    let sale = load(&mut tx, id, today, note_reader(actor, cipher))
+        .await?
+        .ok_or_else(|| AppError::Internal("sale vanished".into()))?;
+    tx.commit().await?;
+    Ok(sale)
 }
 
 fn payment_dto(
@@ -1091,6 +1250,8 @@ pub async fn record_service_sale(
             amount_paid: paid.as_i64(),
             closer_staff_id: None,
             visit_id: sale.visit_id,
+            // A visit's one-off sale: its note is the visit's session note.
+            note_ct: None,
             created_by: actor.user_id.as_uuid(),
         },
     )

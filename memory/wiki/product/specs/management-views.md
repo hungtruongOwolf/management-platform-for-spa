@@ -221,6 +221,7 @@ EM: "mấy ghi chú các thứ sau này có quản lý hay chủ spa vào xem l�
 | `package_extension` (Q-N1) | Gia hạn gói | `customer_package_extension.reason` | `customer.read` + `visit.read` + `sale.read` (lịch sử khách hiện mục "Gia hạn") | lúc gia hạn / ngày gia hạn; hạn mới ở `about_date` | người gia hạn |
 | `discount` (Q-N1) | Giảm giá | `sale.discount_reason` | hóa đơn của lượt (`sale.visit_id`): `visit.read` (`GET /visits` hiện lý do giảm); hóa đơn khác: `sale.read` (`GET /sales/{id}`) + `customer.read` (tên khách) | lúc lập hóa đơn / ngày hóa đơn | người lập |
 | `appointment_reason` (F21, 2026-11-08) | Hủy lịch / Không đến | `appointment.status_reason` của lịch `cancelled` / `no_show` (bắt buộc khi đóng) | `appointment.manage` (như ghi chú lịch hẹn; KTV không vào nhật ký) | lúc đóng / **ngày đóng** (`closed_at`); ngày hẹn ở `about_date`; `detail` = `cancelled` \| `no_show` | người đóng (`closed_by`) |
+| `package_note` (F4, 2026-11-08, §10.8) | Ghi chú gói | `sale.note_ct` (mã hóa) | `sale.read` + `customer.read` + `customer.health_notes.read` | lúc lập / ngày hóa đơn; khách = người dùng gói; `detail` = tên gói | người lập hóa đơn |
 
 Không có nguồn mới nào thiếu quy tắc đọc, nên không loại nào phải "mặc định chỉ chủ spa". Ngoài phạm vi: lý do không đến / hủy lịch hẹn (`appointment.status_reason`) và người đi cùng dạng ghi chú (EM chưa hỏi).
 
@@ -237,7 +238,7 @@ Quản lý mặc định thấy mọi loại trừ "Nghỉ việc" và "Ghi chú
 **10.6 Hiệu năng.** Migration 0027: index một phần theo ngày cho từng nguồn có ghi chú (`visit (tenant_id, business_date) WHERE note_ct IS NOT NULL`, `voided_at` của lượt / hóa đơn, `cancelled_at` của gói, `customer (tenant_id, updated_at)` khi có ghi chú, `customer_follow_up (tenant_id, contacted_on)`, `staff_employment (tenant_id, ended_on)`); sổ chấm công / khen / thưởng-phạt đã có `(tenant_id, work_date)` (0017).
 
 **AC**
-- AC10.1: chủ spa thấy cả **15** loại (thêm `appointment_reason`, F21 2026-11-08); quản lý mặc định thấy **13** (không "Nghỉ việc", không "Ghi chú nhân sự"); KTV `403`; chưa đăng nhập `401`. Quyền được kiểm **trước** khi đọc query: KTV gửi query sai vẫn `403` (F17).
+- AC10.1: chủ spa thấy cả **16** loại (thêm `appointment_reason`, F21 2026-11-08; `package_note`, F4 2026-11-08); quản lý mặc định thấy **14** (không "Nghỉ việc", không "Ghi chú nhân sự"); KTV `403`; chưa đăng nhập `401`. Quyền được kiểm **trước** khi đọc query: KTV gửi query sai vẫn `403` (F17).
 - AC10.1b (Q-N1): giảm giá của hóa đơn trong lượt chỉ cần `visit.read`; hóa đơn khác cần `sale.read` + `customer.read`; chỉ `sale.read` → không thấy giảm giá nào.
 - AC10.2: bỏ bất kỳ một quyền nào trong cột "Quyền đọc" của một loại → loại đó biến mất (cả khi lọc `kind` hoặc tìm chữ trong nó), `kinds` không còn nó.
 - AC10.3: lọc khoảng ngày / loại / nhân viên / khách / chữ đúng như 10.4; trang 2 dòng đi hết danh sách một lần, không lặp.
@@ -257,3 +258,9 @@ Quản lý mặc định thấy mọi loại trừ "Nghỉ việc" và "Ghi chú
 ### 10.7 Lịch sử khách: một mục cho mỗi lượt / hóa đơn đã hủy (F16, 2026-11-08)
 - Trước: lượt đã hủy hiện hai lần (dòng lượt có lý do + mục "Đã hủy" ở giờ hủy). Nay: **một** mục ở giờ của lượt / hóa đơn, `kind = visit_voided` / `purchase_voided`, mang cả nội dung (`visit` / `purchase`) và `void` (lý do, tiền hoàn, buổi trả lại). Chip "Đã hủy" / "Đã sửa". Bộ lọc "Lượt đã hủy" / "Hóa đơn đã hủy" vẫn đúng; "Lượt khách" chỉ còn lượt chưa hủy.
 
+
+### 10.8 Ghi chú gói (F4, EM 2026-11-08, [raw](../../../raw/2026-11-08-em-decision-package-note.md), [front-desk §10.15](front-desk-and-packages.md))
+- Loại thứ 16 **`package_note`**, chip "Ghi chú gói": `sale.note_ct` (mã hóa, migration 0030). Quy tắc đọc **`sale.read` + `customer.read` + `customer.health_notes.read`** (quy tắc ghi chú buổi đặt lên hóa đơn), mặc định từ chối; bỏ một quyền → mất loại (kể cả lọc `kind` hay tìm chữ). Chủ spa và quản lý mặc định đọc được (AC10.1: chủ spa **16** loại, quản lý **14**); KTV và người đã nghỉ không vào nhật ký.
+- Một dòng mỗi hóa đơn có ghi chú: giờ = lúc lập hóa đơn, ngày = ngày hóa đơn, tác giả = người lập, khách = **người dùng gói** (người được mua cho khi "Mua cho người khác", không thì người trả), `detail` = tên các gói của hóa đơn (hiện cạnh tên khách), `visit_id` khi gói bán trong lượt. Link "Xem trong lịch sử khách" lọc đúng ngày + "Mua gói".
+- Giải mã bằng đúng associated data của bên ghi (`sale.note` + tenant + hóa đơn, khóa của dòng = id hóa đơn); vào đường tìm chữ trong ghi chú mã hóa như ghi chú buổi (quét ≤ 500 / request, `scan_capped`). Index một phần mới của 0030: `sale (tenant_id, business_date) WHERE note_ct IS NOT NULL`.
+- Test: `notes.rs` (chủ spa đọc 16 loại kèm tên gói và khách, quản lý không có quyền sức khỏe không thấy / không tìm ra, `every_kind_keeps_its_own_read_rule` +1 dòng), `package_notes.rs::a_cart_of_packages_keeps_one_note_per_package` (một dòng mỗi gói, khách = người dùng gói, tìm không dấu "huyet ap cao" chỉ ra `package_note`).

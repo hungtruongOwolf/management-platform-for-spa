@@ -324,6 +324,8 @@ function serve(
     }
     if (url === "/api/v1/visits" && call.method === "POST")
       return Promise.resolve(onVisit());
+    if (url.startsWith("/api/v1/sales/") && call.method === "PATCH")
+      return json({ ...daySales[0]?.sale, ...(call.body as object) });
     if (url.startsWith("/api/v1/sales") && call.method === "GET")
       return json(daySales);
     if (url.endsWith("/void") && call.method === "POST")
@@ -982,6 +984,10 @@ describe("/quay day list (EM live test 2026-11-08)", () => {
     await user.click(
       within(table).getByRole("button", { name: /^Thao tác hóa đơn 10:30/ }),
     );
+    // F4: editing a package note needs package.sell (UX; the server decides).
+    expect(
+      screen.queryByRole("menuitem", { name: /ghi chú gói/ }),
+    ).not.toBeInTheDocument();
     await user.click(screen.getByRole("menuitem", { name: "Hủy hóa đơn" }));
     await user.type(await screen.findByLabelText(/Lý do/), "Khách đổi ý");
     await user.click(screen.getByRole("button", { name: "Hủy hóa đơn" }));
@@ -990,5 +996,66 @@ describe("/quay day list (EM live test 2026-11-08)", () => {
         calls.find((c) => c.method === "POST" && c.url === "/api/v1/sales/s1/void")?.body,
       ).toEqual({ reason: "Khách đổi ý" });
     });
+  });
+
+  it("shows a package sale's note and edits it in place (F4)", async () => {
+    const sale: DaySale = {
+      customer_name: "Nguyễn Thị Hà",
+      customer_gender: "female",
+      sale: {
+        id: "s1",
+        customer_id: "c1",
+        business_date: spaToday(),
+        subtotal: 1_500_000,
+        discount_amount: 0,
+        total: 1_500_000,
+        amount_paid: 1_500_000,
+        status: "open",
+        created_at: "2026-11-05T03:30:00Z",
+        lines: [
+          {
+            id: "sl1",
+            line_type: "package",
+            description: "Gội đầu 10 buổi + tặng 2",
+            qty: 1,
+            unit_price: 1_500_000,
+            line_total: 1_500_000,
+          },
+        ],
+        payments: [],
+        customer_packages: [],
+        note: "Đau vai gáy",
+      },
+    };
+    const calls = serve(
+      [...MANAGER, "sale.read", "record.void_same_day", "package.sell"],
+      undefined,
+      [pkg("cp1")],
+      [],
+      [sale],
+    );
+    const user = userEvent.setup();
+    at("/quay");
+    const table = await screen.findByRole("table", {
+      name: "Bán gói liệu trình không kèm lượt khách",
+    });
+    expect(within(table).getByText("Ghi chú gói: Đau vai gáy")).toBeInTheDocument();
+    await user.click(
+      within(table).getByRole("button", { name: /^Thao tác hóa đơn 10:30/ }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Sửa ghi chú gói" }));
+    const field = await screen.findByRole("textbox", { name: "Ghi chú gói" });
+    expect(field).toHaveValue("Đau vai gáy");
+    await user.clear(field);
+    await user.type(field, "Đau thắt lưng");
+    await user.click(screen.getByRole("button", { name: "Lưu ghi chú" }));
+    await waitFor(() => {
+      expect(
+        calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/sales/s1")?.body,
+      ).toEqual({ note: "Đau thắt lưng" });
+    });
+    expect(
+      await screen.findByText("Đã lưu ghi chú gói của Nguyễn Thị Hà."),
+    ).toBeInTheDocument();
   });
 });

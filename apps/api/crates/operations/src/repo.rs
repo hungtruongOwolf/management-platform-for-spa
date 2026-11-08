@@ -446,6 +446,8 @@ pub struct PackageSaleRow {
     pub closer_name: Option<String>,
     pub beneficiary_customer_id: Option<Uuid>,
     pub beneficiary_name: Option<String>,
+    /// "Ghi chú gói" (F4), still encrypted.
+    pub note_ct: Option<Vec<u8>>,
 }
 
 /// Package sales made in these visits (`sale.visit_id`), oldest first. The beneficiary is set only
@@ -462,7 +464,8 @@ pub async fn package_sales(
                   s.total, s.closer_staff_id, st.full_name AS "closer_name?",
                   b.id AS "beneficiary_customer_id?",
                   -- customer_label(NULL) reads "Khách vãng lai": only label a beneficiary that exists.
-                  CASE WHEN b.id IS NOT NULL THEN app.customer_label(b.full_name) END AS "beneficiary_name?"
+                  CASE WHEN b.id IS NOT NULL THEN app.customer_label(b.full_name) END AS "beneficiary_name?",
+                  s.note_ct
 
            FROM app.sale s
            CROSS JOIN LATERAL (

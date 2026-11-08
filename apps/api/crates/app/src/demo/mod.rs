@@ -712,12 +712,20 @@ impl Spa<'_> {
                 reason: Some(reason.to_owned()),
             }),
             payments: self.payments(total),
+            note: None,
         };
         let (key, hash) = idempotency();
-        let (_, body) =
-            sales::service::create_sale_as_of(self.app, &self.manager, key, hash, &input, at)
-                .await
-                .map_err(fail("sell a package"))?;
+        let (_, body) = sales::service::create_sale_as_of(
+            self.app,
+            self.cipher,
+            &self.manager,
+            key,
+            hash,
+            &input,
+            at,
+        )
+        .await
+        .map_err(fail("sell a package"))?;
         self.packages.extend(packages_in(&body, customer)?);
         self.report.package_sales += 1;
         self.report.discounted_sales += usize::from(discount.is_some());

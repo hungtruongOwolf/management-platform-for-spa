@@ -1,7 +1,9 @@
 //! One customer, looked back on: the timeline (visits, purchases, voids, cancellations with
 //! refunds), the summary stats and the per-package usage page (the paper "sổ theo dõi liệu trình").
 //! The timeline carries each visit's session note (health data) only for callers holding
-//! `customer.health_notes.read` (EM 2026-11-07: a visit's note is seen in the history too).
+//! `customer.health_notes.read` (EM 2026-11-07: a visit's note is seen in the history too), and
+//! each package purchase its "Ghi chú gói" (F4) under the same rule; the package page shows the
+//! note of the sale that created the package.
 
 use crate::cursor;
 use crate::dto::{
@@ -209,11 +211,12 @@ async fn visits(
 }
 
 /// Package sales `ids`, seen from `viewer`'s timeline: the payer sees who the packages went to,
-/// the beneficiary sees who paid.
+/// the beneficiary sees who paid. `notes`: the cipher when the caller may read package notes.
 async fn purchases(
     tx: &mut TenantTx,
     viewer: Uuid,
     ids: &[Uuid],
+    notes: Option<&FieldCipher>,
 ) -> Result<(HashMap<Uuid, HistoryPurchase>, HashMap<Uuid, Paid>), AppError> {
     let tenant = tx.tenant().as_uuid();
     let mut lines: HashMap<Uuid, Vec<HistoryPurchaseLine>> = HashMap::new();
@@ -248,7 +251,8 @@ async fn purchases(
                    WHERE cp.tenant_id = s.tenant_id AND cp.sale_id = s.id
                      AND cp.customer_id <> s.customer_id) AS "beneficiary_name?",
                   CASE WHEN s.customer_id <> $3 THEN app.customer_label(p.full_name) END
-                    AS "payer_name?"
+                    AS "payer_name?",
+                  s.note_ct
            FROM app.sale s
            JOIN app.customer p ON p.tenant_id = s.tenant_id AND p.id = s.customer_id
            LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id
@@ -260,10 +264,17 @@ async fn purchases(
     .fetch_all(tx.conn())
     .await?
     .into_iter()
-    .map(|s| {
-        (
+    .map(|s| -> Result<(Uuid, HistoryPurchase), AppError> {
+        let note = match notes {
+            Some(cipher) => {
+                kernel::crypto::open_sale_note(cipher, tenant, s.id, s.note_ct.as_deref())?
+            }
+            None => None,
+        };
+        Ok((
             s.id,
             HistoryPurchase {
+                note,
                 sale_id: s.id,
                 voided: s.status == "voided",
                 lines: lines.remove(&s.id).unwrap_or_default(),
@@ -279,9 +290,9 @@ async fn purchases(
                 beneficiary_name: s.beneficiary_name,
                 payer_name: s.payer_name,
             },
-        )
+        ))
     })
-    .collect();
+    .collect::<Result<_, _>>()?;
     Ok((sales, paid))
 }
 
@@ -549,7 +560,7 @@ pub async fn history(
         .can(Permission::CustomerHealthNotesRead)
         .then_some(cipher);
     let mut v = visits(&mut tx, &visit_ids, notes).await?;
-    let (sales, sale_money) = purchases(&mut tx, customer_id, &sale_ids).await?;
+    let (sales, sale_money) = purchases(&mut tx, customer_id, &sale_ids, notes).await?;
     let mut cancels = cancellations(&mut tx, &cancel_ids).await?;
     let mut extended = extensions(&mut tx, &extension_ids).await?;
     let visit_sale_ids: Vec<Uuid> = v.sale_of.values().flatten().copied().collect();
@@ -722,9 +733,11 @@ pub async fn summary(
 }
 
 /// `GET /customer-packages/{id}/usage` (`customer.read` + `visit.read`): the package (same DTO as
-/// `GET /customer-packages/{id}`) and every use of it, oldest first, voided ones flagged.
+/// `GET /customer-packages/{id}`) and every use of it, oldest first, voided ones flagged; plus the
+/// "Ghi chú gói" of the sale that created it (F4) for `customer.health_notes.read`.
 pub async fn package_usage(
     pool: &PgPool,
+    cipher: &FieldCipher,
     actor: &Actor,
     package_id: Uuid,
 ) -> Result<PackageUsage, AppError> {
@@ -751,10 +764,29 @@ pub async fn package_usage(
     )
     .fetch_all(tx.conn())
     .await?;
+    let sale_note = if actor.can(Permission::CustomerHealthNotesRead) {
+        let sold = sqlx::query!(
+            r#"SELECT s.id, s.note_ct
+               FROM app.customer_package cp
+               JOIN app.sale s ON s.tenant_id = cp.tenant_id AND s.id = cp.sale_id
+               WHERE cp.tenant_id = $1 AND cp.id = $2"#,
+            tenant,
+            package_id
+        )
+        .fetch_optional(tx.conn())
+        .await?;
+        match sold {
+            Some(s) => kernel::crypto::open_sale_note(cipher, tenant, s.id, s.note_ct.as_deref())?,
+            None => None,
+        }
+    } else {
+        None
+    };
     tx.commit().await?;
     Ok(PackageUsage {
         package: CustomerPackageDto::from(package),
         uses,
+        sale_note,
     })
 }
 

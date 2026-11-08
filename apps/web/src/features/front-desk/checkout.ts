@@ -15,6 +15,15 @@ import { type PackageSaleDraft, packageDiscount } from "./api";
 /** "Khách tự chọn" in the closer picker: nobody is credited (Q-U2). */
 export const SELF_CHOSEN = "self";
 
+/**
+ * "Ghi chú gói" on the wire: trimmed, and left out when empty, so a sale without a note never
+ * asks for `customer.health_notes.write`.
+ */
+function noteOf(p: PackageSaleDraft): { note?: string } {
+  const note = p.note?.trim() ?? "";
+  return note === "" ? {} : { note };
+}
+
 /** The wire form of the packages sold in a checkout (plans not chosen yet are left out). */
 export function packageSalesBody(
   sales: PackageSaleDraft[],
@@ -31,6 +40,7 @@ export function packageSalesBody(
         gift_note: p.giftNote.trim(),
         discount: d > 0 ? { amount: d, reason: p.discountReason.trim() } : null,
         beneficiary_customer_id: p.beneficiary?.id ?? null,
+        ...noteOf(p),
       },
     ];
   });
@@ -61,6 +71,7 @@ export async function sellPackageOnly(
       ],
       discount: body.discount ?? null,
       payments,
+      ...(body.note ? { note: body.note } : {}),
     },
     idempotencyKey,
   );
@@ -83,6 +94,7 @@ export async function sellPackagesOnly(
     gift_note: p.gift_note ?? "",
     discount: p.discount ?? null,
     beneficiary_customer_id: p.beneficiary_customer_id ?? null,
+    ...(p.note ? { note: p.note } : {}),
   }));
   return (await api("/sales/checkout", {
     method: "POST",

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id, s.customer_id, s.business_date, s.subtotal, s.discount_amount, s.discount_reason, s.total,\n                  s.amount_paid, s.status, s.void_reason, s.voided_at, s.closer_staff_id, st.full_name AS \"closer_name?\", s.visit_id, s.created_at\n           FROM app.sale s\n           LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id\n           WHERE s.tenant_id = $1 AND s.id = $2",
+  "query": "SELECT s.id, s.customer_id, s.business_date, s.subtotal, s.discount_amount, s.discount_reason, s.total,\n                  s.amount_paid, s.status, s.void_reason, s.voided_at, s.closer_staff_id, st.full_name AS \"closer_name?\", s.visit_id, s.created_at, s.note_ct\n           FROM app.sale s\n           LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id\n           WHERE s.tenant_id = $1 AND s.id = $2",
   "describe": {
     "columns": [
       {
@@ -167,6 +167,17 @@
             "name": "created_at"
           }
         }
+      },
+      {
+        "ordinal": 15,
+        "name": "note_ct",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "note_ct"
+          }
+        }
       }
     ],
     "parameters": {
@@ -190,8 +201,9 @@
       true,
       true,
       true,
-      false
+      false,
+      true
     ]
   },
-  "hash": "dffbd46e4a11f9f6a9705db99c600d6eedfcffce971c0872a954fa4defab8e9c"
+  "hash": "30a11ec989678f1e3951af63b8f272d58a5101d26c20174ec519dd35342c6b80"
 }

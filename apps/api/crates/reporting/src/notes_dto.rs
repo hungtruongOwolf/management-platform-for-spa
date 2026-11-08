@@ -45,10 +45,13 @@ pub enum NoteKind {
     /// Why a booking was cancelled or the customer did not come (F21, 2026-11-08):
     /// `appointment.manage` (the calendar's rule, as `appointment_note`).
     AppointmentReason,
+    /// "Ghi chú gói" of a package sale (F4, 2026-11-08; health data, encrypted): `sale.read` +
+    /// `customer.read` + `customer.health_notes.read` (the session note's rule on a sale).
+    PackageNote,
 }
 
 impl NoteKind {
-    pub const ALL: [NoteKind; 15] = [
+    pub const ALL: [NoteKind; 16] = [
         NoteKind::VisitNote,
         NoteKind::CustomerNote,
         NoteKind::HealthNote,
@@ -64,6 +67,7 @@ impl NoteKind {
         NoteKind::PackageExtension,
         NoteKind::Discount,
         NoteKind::AppointmentReason,
+        NoteKind::PackageNote,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -83,6 +87,7 @@ impl NoteKind {
             NoteKind::PackageExtension => "package_extension",
             NoteKind::Discount => "discount",
             NoteKind::AppointmentReason => "appointment_reason",
+            NoteKind::PackageNote => "package_note",
         }
     }
 
@@ -135,14 +140,15 @@ pub struct NoteEntry {
     /// Who wrote it; absent when the source does not record it (profile and health notes).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub author_name: Option<String>,
-    /// The visit, for `visit_note` and visit voids.
+    /// The visit, for `visit_note`, visit voids and a `package_note` of a package sold in a visit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visit_id: Option<Uuid>,
     /// Extra context by kind: `adjustment` → `bonus` | `penalty`; `void` → `visit` |
     /// `visit_corrected` | `sale` | `package`; `attendance_note` → the day's status;
     /// `follow_up` → the call's outcome; `appointment_note` → the booking's status;
     /// `evaluation_note` → `comment` | `coaching_plan`; `package_extension` → the package's name;
-    /// `discount` → `visit` | `sale`; `appointment_reason` → `cancelled` | `no_show`.
+    /// `discount` → `visit` | `sale`; `appointment_reason` → `cancelled` | `no_show`;
+    /// `package_note` → the package names of the sale.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     /// The day the note is about when it is not `business_date`: the booking's day

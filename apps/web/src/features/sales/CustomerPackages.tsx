@@ -50,6 +50,8 @@ function PackageRow({ p, today, canAct, onDone }: { p: CustomerPackage; today: s
           {p.items.map((i) => `${serviceLabel(i.name, i.category_name)} ${String(i.sessions_remaining)}/${String(i.sessions_total)}`).join(" · ")}
         </p>
       )}
+      {/* F4: sent only to health-note readers (the server leaves it out for anyone else). */}
+      {p.sale_note && <p className="row-meta whitespace-pre-line">Ghi chú gói: {p.sale_note}</p>}
       {p.status === "cancelled" && p.cancel_reason && (
         <p className="row-meta">
           Đã hủy: {p.cancel_reason}

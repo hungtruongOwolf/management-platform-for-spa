@@ -144,7 +144,8 @@ pub async fn void_sale(
     packages::lifecycle::cancel_for_sale(&mut tx, actor, id, &reason).await?;
     void_in(&mut tx, actor, id, &reason, today).await?;
 
-    let dto = load(&mut tx, id, today)
+    // Like `POST /sales`, the stored response never carries the note.
+    let dto = load(&mut tx, id, today, None)
         .await?
         .ok_or_else(|| AppError::Internal("sale vanished".into()))?;
     let body = serde_json::to_value(&dto).map_err(|e| AppError::Internal(e.to_string()))?;

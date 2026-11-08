@@ -42,6 +42,26 @@ describe("draft cart (Q-U8)", () => {
     expect((loadDraft("u1", "c1") as Draft | null)?.note).toBeUndefined();
   });
 
+  it("never stores a package's note either (F4, health data)", () => {
+    saveDraft("u1", "c1", {
+      ...draft,
+      sales: [
+        { ref: "p1", giftNote: "Tặng dầu gội", note: "Huyết áp cao" },
+        { ref: "p2", giftNote: "" },
+      ],
+    });
+    const stored = Array.from({ length: sessionStorage.length }, (_, i) =>
+      sessionStorage.getItem(sessionStorage.key(i) ?? ""),
+    ).join("");
+    expect(stored).toContain("Tặng dầu gội");
+    expect(stored).not.toContain("Huyết áp");
+    const back = loadDraft("u1", "c1") as {
+      sales: { ref: string; note?: string }[];
+    } | null;
+    expect(back?.sales.map((s) => s.ref)).toEqual(["p1", "p2"]);
+    expect(back?.sales[0]?.note).toBeUndefined();
+  });
+
   it("forgets a stale draft", () => {
     saveDraft("u1", "c1", draft, 0);
     expect(loadDraft("u1", "c1", DRAFT_MAX_AGE_MS + 1)).toBeNull();

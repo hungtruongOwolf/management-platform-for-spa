@@ -140,6 +140,11 @@ export interface PackageSaleDraft {
   beneficiary: { id: string; full_name: string } | null;
   /** "Mua cho người khác" is ticked (the beneficiary may not be picked yet). */
   forOther?: boolean;
+  /**
+   * "Ghi chú gói" (F4): health data like the session note, sent only by callers holding
+   * `customer.health_notes.write` and never kept in the draft cart.
+   */
+  note?: string;
 }
 
 /** Amount typed as a package discount: 0 = none, NaN = not a number. */
