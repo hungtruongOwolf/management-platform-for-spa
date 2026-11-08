@@ -64,6 +64,8 @@ export type AuthState =
   | { state: "anonymous" }
   | { state: "mfa_verify" }
   | { state: "mfa_enroll" }
+  /** Signed in with a temporary password (ADR-0016): set a new one before anything else. */
+  | { state: "password_change" }
   | { state: "signed_in"; me: Me };
 
 export type MfaStep = "mfa_verify" | "mfa_enroll";
@@ -131,6 +133,7 @@ async function fetchAuthState(): Promise<AuthState> {
       const step = MFA_STEP_BY_CODE[error.code];
       return step ? { state: step } : { state: "anonymous" };
     }
+    if (error instanceof ApiError && error.code === "auth.password_change_required") return { state: "password_change" };
     throw error;
   }
 }
@@ -150,7 +153,7 @@ export const meQuery = queryOptions({
   select: (auth: AuthState): Me | null => (auth.state === "signed_in" ? auth.me : null),
 });
 
-const LOGIN_NEXT = ["done", "mfa_verify", "mfa_enroll"] as const;
+const LOGIN_NEXT = ["done", "mfa_verify", "mfa_enroll", "password_change"] as const;
 
 /** Password step. Owners (and anyone with MFA on) come back in an `mfa_*` state. */
 export async function login(phone: string, password: string): Promise<AuthState> {

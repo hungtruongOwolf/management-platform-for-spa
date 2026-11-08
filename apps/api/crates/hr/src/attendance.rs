@@ -422,6 +422,7 @@ mod tests {
             left_on: None,
             user_id: None,
             user_name: None,
+            login: None,
             shift_start: None,
             note: None,
             version: 1,

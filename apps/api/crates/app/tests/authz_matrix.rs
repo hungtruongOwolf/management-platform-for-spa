@@ -138,6 +138,15 @@ const ROUTES: &[Route] = &[
         Access::PendingMfa,
     )
     .body(mfa_code_body),
+    // ADR-0016: every role changes its own password (a too-short new one stops at 422 after the
+    // session and the current password were accepted); the forgotten-password request is public.
+    route("POST", "/api/v1/auth/password", Access::Session).body(password_change_body),
+    route(
+        "POST",
+        "/api/v1/auth/password-reset-requests",
+        Access::Public,
+    )
+    .body(reset_request_body),
     // catalog
     route(
         "GET",
@@ -272,6 +281,41 @@ const ROUTES: &[Route] = &[
     route(
         "GET",
         "/api/v1/staff/{id}/history",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    )
+    .id(Target::Staff),
+    // ADR-0016, owner only (+ re-auth, fresh in this test). The fixture technician has no login
+    // and a newer version: create stops at 412, reset / role at 409 staff.no_login.
+    route(
+        "POST",
+        "/api/v1/staff/{id}/login",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    )
+    .id(Target::Staff)
+    .body(login_body)
+    .if_match(),
+    route(
+        "POST",
+        "/api/v1/staff/{id}/login/reset-password",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    )
+    .id(Target::Staff),
+    route(
+        "PUT",
+        "/api/v1/staff/{id}/login/role",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    )
+    .id(Target::Staff)
+    .body(login_role_body),
+    route(
+        "GET",
+        "/api/v1/staff/password-reset-requests",
+        Access::Perm(P::StaffManage, OWNER_ONLY),
+    ),
+    // A staff id is no request id: the owner's call is 404 after the permission check.
+    route(
+        "POST",
+        "/api/v1/staff/password-reset-requests/{id}/dismiss",
         Access::Perm(P::StaffManage, OWNER_ONLY),
     )
     .id(Target::Staff),
@@ -764,6 +808,18 @@ fn health_note_body(_: &Fixture) -> Option<Value> {
 }
 fn staff_body(_: &Fixture) -> Option<Value> {
     Some(json!({"full_name": "KTV Hoa", "position": "Kỹ thuật viên"}))
+}
+fn password_change_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"current_password": PASSWORD, "new_password": "ngan"}))
+}
+fn reset_request_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"phone": "0905999888"}))
+}
+fn login_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"phone": "0905 444 555", "role": "technician"}))
+}
+fn login_role_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"role": "manager"}))
 }
 fn account_body(_: &Fixture) -> Option<Value> {
     Some(json!({"user_id": null}))

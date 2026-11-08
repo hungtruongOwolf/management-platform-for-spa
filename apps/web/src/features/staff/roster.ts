@@ -44,3 +44,11 @@ export function withoutLogin(p: Pick<StaffProfile, "login_linked" | "status">): 
 export function managerLoginWithoutProfile(a: Pick<StaffAccount, "is_manager" | "staff_id">): boolean {
   return a.is_manager && !a.staff_id;
 }
+
+/**
+ * A login with no profile that is not the owner's (ADR-0016: logins are made from a profile, so
+ * only older, CLI-made logins are like this): the owner links each once.
+ */
+export function legacyLogin(a: Pick<StaffAccount, "manages_staff" | "staff_id">): boolean {
+  return !a.manages_staff && !a.staff_id;
+}

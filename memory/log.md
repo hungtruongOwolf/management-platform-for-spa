@@ -655,3 +655,9 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - EM: tab "Nhân sự" đổi tên thành **"Hồ sơ nhân viên"** ở mọi chỗ người dùng thấy (tab, nút "Mở Hồ sơ nhân viên" ở cảnh báo và Nhật ký ghi chú, câu hướng dẫn); URL `?tab=profiles` giữ nguyên. Trang là "Quản lý nhân sự" (PR fix/nav-staff-label).
 ## [2026-11-08] build | Đổi tên mục "Nhân viên" → "Quản lý nhân sự"
 - EM: "trong mục Nhân viên bạn lại để thêm 1 phần nhân viên nữa lại bị trùng lặp … đổi nó thành là quản lý nhân sự". Nhóm menu vẫn tên "Nhân viên"; mục và tiêu đề trang (`/nhan-vien`, chủ spa + quản lý) thành "Quản lý nhân sự". KTV vẫn thấy "Công và lương của tôi".
+
+## [2026-11-08] spec + design + secure + build | Tài khoản đăng nhập và mật khẩu trong app (ADR-0016)
+- Raw: [2026-11-08-em-request-accounts-and-passwords](raw/2026-11-08-em-request-accounts-and-passwords.md) (EM duyệt luồng, bỏ bước "Gắn tài khoản" riêng, "ok cách A đi" cho quên mật khẩu). Spec staff-management §17, [ADR-0016](wiki/decisions/ADR-0016-accounts-and-passwords.md), authz-matrix (+7 route), threat-model, design-system.
+- Migration 0032: `user_account.must_change_password` / `password_changed_at`, `app.password_reset_request` (RLS, một yêu cầu mở mỗi tài khoản mỗi spa).
+- API: `POST /staff/{id}/login` / `…/login/reset-password` / `PUT …/login/role` (chủ spa, re-auth), `GET|POST /staff/password-reset-requests…`, `POST /auth/password` (mọi người), `POST /auth/password-reset-requests` (công khai, cùng một trả lời). Cổng bắt đổi mật khẩu ở `identity::service::resolve` (`403 auth.password_change_required`). Kernel: `AppError::PasswordChangeRequired`, `audit::record_system`.
+- Web: khối "Tài khoản đăng nhập" (tạo / đặt lại / đổi vai trò), "Tạo tài khoản đăng nhập ngay" khi thêm nhân viên, hộp thoại mật khẩu tạm + xác nhận lại mật khẩu, `/doi-mat-khau`, Cài đặt → Đổi mật khẩu, "Quên mật khẩu?", yêu cầu đặt lại ở Tổng quan + Hồ sơ nhân viên, gắn tài khoản cũ một lần. e2e `onboarding.spec.ts`.

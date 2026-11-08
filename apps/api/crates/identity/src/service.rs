@@ -87,6 +87,9 @@ pub enum LoginNext {
     MfaVerify,
     /// MFA is mandatory for this account and not set up yet (`/auth/mfa/enroll/*`).
     MfaEnroll,
+    /// Signed in with a temporary password (ADR-0016): set a new one (`POST /auth/password`)
+    /// before anything else; every other route answers `403 auth.password_change_required`.
+    PasswordChange,
 }
 
 /// Body of a successful password step. `me` is only present once fully signed in: a session that
@@ -279,6 +282,16 @@ pub async fn login(
 
     repo::reset_failed_logins(pool, account.id).await?;
     let (token, me) = open_full_session(pool, account.id, meta).await?;
+    if account.must_change_password {
+        // The session exists, but `resolve` keeps it off every route but the password change.
+        return Ok((
+            token,
+            LoginResponse {
+                next: LoginNext::PasswordChange,
+                me: None,
+            },
+        ));
+    }
     Ok((
         token,
         LoginResponse {
@@ -309,6 +322,20 @@ async fn live(pool: &PgPool, secret: &str) -> Result<SessionRow, AppError> {
 /// Resolves a cookie secret into a live, fully authenticated session. A session that still owes
 /// its second factor is refused here, which is what keeps it off `/me` and every business route.
 pub async fn resolve(pool: &PgPool, secret: &str) -> Result<Session, AppError> {
+    let session = resolve_for_password_change(pool, secret).await?;
+    if session.1 {
+        // A temporary password (ADR-0016): only `POST /auth/password` and logout take it.
+        return Err(AppError::PasswordChangeRequired);
+    }
+    Ok(session.0)
+}
+
+/// Like [`resolve`], also for an account that must still replace its temporary password: the
+/// one extractor `POST /auth/password` uses. `.1` = the password must be changed.
+pub async fn resolve_for_password_change(
+    pool: &PgPool,
+    secret: &str,
+) -> Result<(Session, bool), AppError> {
     let row = live(pool, secret).await?;
     if row.mfa_pending {
         return Err(if row.mfa_enrolled {
@@ -317,13 +344,14 @@ pub async fn resolve(pool: &PgPool, secret: &str) -> Result<Session, AppError> {
             AppError::MfaEnrollmentRequired
         });
     }
-    Ok(Session {
+    let must_change = row.must_change_password;
+    Ok((Session {
         id: row.id,
         user_id: row.user_id,
         active_tenant: row.active_tenant,
         recent_auth_at: row.recent_auth_at,
         absolute_expires_at: row.absolute_expires_at,
-    })
+    }, must_change))
 }
 
 /// Resolves a cookie secret into a session that is waiting for its second factor (and only that).
@@ -656,4 +684,108 @@ pub async fn actor_for(
             code: "auth.not_a_member",
         })?;
     Ok(Actor::new(session.user_id, tenant, permissions, ip))
+}
+
+/// `POST /auth/password` (ADR-0016): the signed-in person replaces their own password — the
+/// temporary one the owner handed over, or their usual one. The current password is checked like
+/// a login (a wrong one counts toward the lockout), the new one against
+/// [`crate::account::check_new_password`]. Every session of the account ends and this browser
+/// gets a fresh one (token rotation). Audited in each spa of the account, never with a password.
+pub async fn change_password(
+    pool: &PgPool,
+    session: &Session,
+    current_input: &str,
+    new_input: &str,
+    meta: &ClientMeta,
+) -> Result<(SessionToken, Me), AppError> {
+    let account = repo::account_by_id(pool, session.user_id)
+        .await?
+        .ok_or(AppError::Unauthenticated)?;
+    if account.locked_until.is_some_and(|until| until > Utc::now()) {
+        return Err(AppError::InvalidCredentials);
+    }
+    let candidate = current_input.to_owned();
+    let stored = account.password_hash.clone();
+    let matches = tokio::task::spawn_blocking(move || password::verify(&candidate, &stored))
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    if !matches {
+        record_failure(pool, account.id).await?;
+        return Err(AppError::InvalidCredentials);
+    }
+    let phone = PhoneE164::parse(&account.phone)
+        .map_err(|_| AppError::Internal("stored phone unreadable".to_owned()))?;
+    crate::account::check_new_password(new_input, current_input, &phone)?;
+    let hashed = crate::account::hash("new_password", new_input).await?;
+    repo::set_own_password(pool, account.id, &hashed).await?;
+    repo::revoke_all_sessions(pool, account.id).await?;
+    let tenants = repo::tenants_of_user(pool, account.id).await?;
+    for t in &tenants {
+        let mut tx = TenantTx::begin(pool, t.id).await?;
+        let actor = Actor::new(account.id, t.id, Vec::new(), meta.ip);
+        kernel::audit::record(
+            &mut tx,
+            &actor,
+            kernel::audit::AuditEntry {
+                action: "account.password_change",
+                entity_type: "user",
+                entity_id: account.id.as_uuid(),
+                before: Some(serde_json::json!({"temporary": account.must_change_password})),
+                after: None,
+                reason: None,
+            },
+        )
+        .await?;
+        tx.commit().await?;
+    }
+    open_full_session(pool, account.id, meta).await
+}
+
+/// `POST /auth/password-reset-requests` (option A, ADR-0016), public: "Quên mật khẩu?". Records
+/// a request in each spa where the phone's login is an active member without `staff.manage`
+/// (an owner recovers another way), at most one open request and one an hour per login and spa,
+/// expiring after 24 h. The caller answers the same, after the same hashing work, whether or not
+/// anything was recorded: nothing here tells which phones have an account.
+pub async fn request_password_reset(
+    pool: &PgPool,
+    phone_input: &str,
+    meta: &ClientMeta,
+) -> Result<(), AppError> {
+    // Equal work on every path (one Argon2 verification dominates).
+    run_blocking_dummy(phone_input).await;
+    let Ok(phone) = PhoneE164::parse(phone_input) else {
+        return Ok(());
+    };
+    let Some(account) = repo::account_by_phone(pool, &phone).await? else {
+        return Ok(());
+    };
+    if !account.active {
+        return Ok(());
+    }
+    for t in repo::tenants_of_user(pool, account.id).await? {
+        let mut tx = TenantTx::begin(pool, t.id).await?;
+        let Some(perms) = repo::member_permissions(&mut tx, account.id).await? else {
+            continue;
+        };
+        if perms.contains(&Permission::StaffManage) {
+            continue;
+        }
+        if repo::open_reset_request(&mut tx, account.id).await? {
+            kernel::audit::record_system(
+                &mut tx,
+                meta.ip,
+                kernel::audit::AuditEntry {
+                    action: "account.password_reset_requested",
+                    entity_type: "user",
+                    entity_id: account.id.as_uuid(),
+                    before: None,
+                    after: None,
+                    reason: None,
+                },
+            )
+            .await?;
+        }
+        tx.commit().await?;
+    }
+    Ok(())
 }

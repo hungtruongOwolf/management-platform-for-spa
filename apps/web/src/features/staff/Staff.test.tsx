@@ -20,6 +20,7 @@ import type {
   Payslip,
   PayrollMonth,
   ReviewSheet,
+  PasswordResetRequest,
   StaffAccount,
   StaffProfile,
 } from "./api";
@@ -338,6 +339,10 @@ interface ServeOptions {
   endRefused?: boolean;
   /** The caller's login is linked to no profile (`link_required`, every `can_record` false). */
   linkRequired?: boolean;
+  /** `GET /staff/password-reset-requests` (owner). */
+  resetRequests?: PasswordResetRequest[];
+  /** `POST /staff/{id}/login` asks for re-auth until `POST /auth/reauth`. */
+  reauthFirst?: boolean;
 }
 
 /** A scorecard as `GET /evaluations` / `/me/staff` send it. */
@@ -404,6 +409,7 @@ const PENALTY: Adjustment = {
 };
 
 function serve(permissions: string[], options: ServeOptions = {}) {
+  const reauthed = { done: false };
   return vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
     const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const url = new URL(raw, "http://app.test");
@@ -463,6 +469,19 @@ function serve(permissions: string[], options: ServeOptions = {}) {
     }
     if (p.startsWith("/staff/profiles")) return ok(roster(permissions.includes("staff.manage")));
     if (p === "/staff/accounts") return ok(options.accounts ?? []);
+    if (/^\/staff\/[^/]+\/account$/.test(p) && method === "PUT") return ok(roster(true)[1]);
+    if (p === "/staff/password-reset-requests") return permissions.includes("staff.manage") ? ok(options.resetRequests ?? []) : ok({ code: "auth.forbidden" }, 403);
+    if (/^\/staff\/password-reset-requests\/[^/]+\/dismiss$/.test(p)) return Promise.resolve(new Response(null, { status: 204 }));
+    if (/^\/staff\/[^/]+\/login$/.test(p) && method === "POST") {
+      if (options.reauthFirst && !reauthed.done) return ok({ code: "auth.reauth_required" }, 401);
+      const lan = roster(true)[0];
+      return ok({ profile: { ...lan, details: { ...lan.details, login: { phone: "0912 300 111", role: "manager", locked: false } } }, temporary_password: "ABCD-EFGH-JKLM" }, 201);
+    }
+    if (/^\/staff\/[^/]+\/login\/reset-password$/.test(p)) return ok({ temporary_password: "WXYZ-2345-6789" });
+    if (p === "/auth/reauth") {
+      reauthed.done = true;
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }
     if (/^\/staff\/[^/]+\/history$/.test(p)) return ok([]);
     if (/^\/staff\/[^/]+\/end$/.test(p) && method === "POST" && options.endRefused)
       return ok(
@@ -1231,29 +1250,36 @@ describe("Hồ sơ nhân viên (roster)", () => {
     expect(within(confirm).getByText("Còn lịch khác sau các lịch trên.")).toBeInTheDocument();
   });
 
-  it("owner: warns about manager logins linked to no profile (from roles, not titles), the manager never", async () => {
+  it("owner: older logins with no profile are listed, each linked once to its profile; never the owner's", async () => {
     const accounts: StaffAccount[] = [
-      { user_id: "u-owner", full_name: "Chủ Spa", roles: ["Chủ spa"], staff_id: null, is_manager: false },
-      { user_id: "u-ha", full_name: "Quản lý Hà", roles: ["Quản lý"], staff_id: null, is_manager: true },
-      { user_id: "u-lan", full_name: "KTV Lan", roles: ["Kỹ thuật viên"], staff_id: "s-lan", is_manager: false },
+      { user_id: "u-owner", full_name: "Chủ Spa", roles: ["Chủ spa"], staff_id: null, is_manager: false, manages_staff: true },
+      { user_id: "u-ha", full_name: "Quản lý Hà", roles: ["Quản lý"], staff_id: null, is_manager: true, manages_staff: false },
+      { user_id: "u-lan", full_name: "KTV Lan", roles: ["Kỹ thuật viên"], staff_id: "s-lan", is_manager: false, manages_staff: false },
     ];
-    serve(OWNER, { accounts });
+    const spy = serve(OWNER, { accounts });
     at("/nhan-vien");
-    const warning = await screen.findByRole("status", { name: "Tài khoản quản lý chưa gắn với hồ sơ" });
+    const warning = await screen.findByRole("status", { name: "Tài khoản đăng nhập chưa gắn với hồ sơ" });
     // A "Quản lý" title without a login is not a manager: only the manager login is listed.
     expect(within(warning).queryByText("Phạm Thị Hoa")).not.toBeInTheDocument();
     expect(within(warning).getByText("Quản lý Hà")).toBeInTheDocument();
     expect(within(warning).queryByText("Chủ Spa")).not.toBeInTheDocument();
     await userEvent.click(within(warning).getByRole("button", { name: "Mở Hồ sơ nhân viên" }));
     expect(await screen.findByRole("table", { name: "Danh sách nhân sự" })).toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "Tài khoản quản lý chưa gắn với hồ sơ" })).toBeInTheDocument();
+    const listed = screen.getByRole("status", { name: "Tài khoản đăng nhập chưa gắn với hồ sơ" });
+    // ADR-0016: the one-time path for CLI-made logins — pick the profile, "Gắn vào hồ sơ".
+    await userEvent.selectOptions(within(listed).getByLabelText("Hồ sơ của Quản lý Hà"), "s-hoa");
+    await userEvent.click(within(listed).getByRole("button", { name: "Gắn vào hồ sơ" }));
+    await waitFor(() => {
+      expect(requests(spy).some((r) => r.method === "PUT" && r.url.endsWith("/staff/s-hoa/account"))).toBe(true);
+    });
+    expect(requests(spy).find((r) => r.url.endsWith("/staff/s-hoa/account"))?.body).toEqual({ user_id: "u-ha" });
   });
 
   it("manager: no link warning and no request for the logins (owner's data)", async () => {
-    const spy = serve(MANAGER, { accounts: [{ user_id: "u-ha", full_name: "Quản lý Hà", roles: [], staff_id: null, is_manager: true }] });
+    const spy = serve(MANAGER, { accounts: [{ user_id: "u-ha", full_name: "Quản lý Hà", roles: [], staff_id: null, is_manager: true, manages_staff: false }] });
     at("/nhan-vien?tab=profiles");
     await screen.findByRole("table", { name: "Danh sách nhân sự" });
-    expect(screen.queryByRole("status", { name: "Tài khoản quản lý chưa gắn với hồ sơ" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Tài khoản đăng nhập chưa gắn với hồ sơ" })).not.toBeInTheDocument();
     expect(requests(spy).some((r) => r.url.includes("/staff/accounts"))).toBe(false);
   });
 
@@ -1280,5 +1306,63 @@ describe("Công và lương của tôi for a manager (EM 2026-11-08)", () => {
     const nav = screen.getAllByRole("navigation").find((n) => within(n).queryByRole("link", { name: "Quản lý nhân sự" }));
     expect(nav && within(nav).getByRole("link", { name: "Công và lương của tôi" })).toHaveAttribute("aria-current", "page");
     expect(nav && within(nav).getByRole("link", { name: "Quản lý nhân sự" })).not.toHaveAttribute("aria-current");
+  });
+});
+
+describe("logins (ADR-0016)", () => {
+  it("owner: creates a login from the profile, asks for the password again, shows the temporary password once", async () => {
+    const spy = serve(OWNER, { reauthFirst: true });
+    at("/nhan-vien?tab=profiles");
+    const table = await screen.findByRole("table", { name: "Danh sách nhân sự" });
+    await userEvent.click(within(table).getByRole("button", { name: "Phạm Thị Hoa" }));
+    const sheet = await screen.findByRole("dialog", { name: "Phạm Thị Hoa" });
+    // No link dropdown in the normal flow: create the login here.
+    expect(within(sheet).queryByRole("button", { name: "Gắn tài khoản" })).not.toBeInTheDocument();
+    await userEvent.type(within(sheet).getByLabelText("Số điện thoại đăng nhập"), "0912300111");
+    await userEvent.selectOptions(within(sheet).getByLabelText("Vai trò"), "manager");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Tạo tài khoản đăng nhập" }));
+    const again = await screen.findByRole("dialog", { name: "Xác nhận lại mật khẩu" });
+    await userEvent.type(within(again).getByLabelText("Mật khẩu của bạn"), "mat-khau-chu-spa");
+    await userEvent.type(within(again).getByLabelText(/Mã xác thực/), "123456");
+    await userEvent.click(within(again).getByRole("button", { name: "Xác nhận" }));
+    const shown = await screen.findByRole("dialog", { name: "Mật khẩu tạm của Phạm Thị Hoa" });
+    expect(within(shown).getByLabelText("Mật khẩu tạm")).toHaveTextContent("ABCD-EFGH-JKLM");
+    const done = within(shown).getByRole("button", { name: "Xong" });
+    expect(done).toBeDisabled();
+    await userEvent.click(within(shown).getByRole("checkbox", { name: "Tôi đã đưa mật khẩu cho nhân viên" }));
+    expect(done).toBeEnabled();
+    const posts = requests(spy).filter((r) => r.method === "POST" && r.url.endsWith("/staff/s-hoa/login"));
+    expect(posts).toHaveLength(2);
+    expect(posts[1]?.body).toEqual({ phone: "0912300111", role: "manager" });
+    expect(requests(spy).find((r) => r.url.endsWith("/auth/reauth"))?.body).toEqual({ password: "mat-khau-chu-spa", code: "123456" });
+  });
+
+  it("owner: forgotten-password requests in Hồ sơ nhân viên — reset shows the new temporary password, or Bỏ qua", async () => {
+    const request: PasswordResetRequest = {
+      id: "r-1",
+      user_id: "u-lan",
+      full_name: "Lê Thị Lan",
+      staff_id: "s-lan",
+      requested_at: `${today}T07:05:00Z`,
+      expires_at: `${today}T23:05:00Z`,
+    };
+    const spy = serve(OWNER, { resetRequests: [request] });
+    at("/nhan-vien?tab=profiles");
+    const notice = await screen.findByRole("status", { name: "Yêu cầu đặt lại mật khẩu" });
+    expect(within(notice).getByText(/xin đặt lại mật khẩu · 14:05/)).toBeInTheDocument();
+    await userEvent.click(within(notice).getByRole("button", { name: "Đặt lại" }));
+    const shown = await screen.findByRole("dialog", { name: "Mật khẩu tạm của Lê Thị Lan" });
+    expect(within(shown).getByLabelText("Mật khẩu tạm")).toHaveTextContent("WXYZ-2345-6789");
+    await userEvent.click(within(notice).getByRole("button", { name: "Bỏ qua" }));
+    await waitFor(() => {
+      expect(requests(spy).some((r) => r.url.endsWith("/staff/password-reset-requests/r-1/dismiss"))).toBe(true);
+    });
+  });
+
+  it("manager: never asks for the forgotten-password requests", async () => {
+    const spy = serve(MANAGER);
+    at("/nhan-vien?tab=profiles");
+    await screen.findByRole("table", { name: "Danh sách nhân sự" });
+    expect(requests(spy).some((r) => r.url.includes("/password-reset-requests"))).toBe(false);
   });
 });

@@ -1,23 +1,33 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Icon } from "../../app/Icon";
-import { accountsQuery, attendanceQuery, evaluationsQuery, profilesQuery, type StaffProfile } from "./api";
-import { managerLoginWithoutProfile, withoutLogin } from "./roster";
+import { messageFor } from "../../lib/errors";
+import {
+  accountsQuery,
+  attendanceQuery,
+  evaluationsQuery,
+  invalidateStaff,
+  profilesQuery,
+  setAccount,
+  type StaffAccount,
+  type StaffProfile,
+} from "./api";
+import { legacyLogin, withoutLogin } from "./roster";
 
 /**
- * For the owner only (`staff.manage`: both lists are theirs to read). Who someone is comes from
- * their account role (EM 2026-11-08), so the warnings read roles, never titles:
- * - a manager login (records for others, does not manage staff) linked to no profile records
- *   nothing until the owner links it (`403 staff.link_required`): a warning, in Sổ hằng ngày and
- *   Nhân sự; `onOpenRoster` (the daily book) leads to where it is fixed;
- * - with `nudge` (Nhân sự), the people still without a login: they count as technicians and
- *   cannot read their own month, so the owner is nudged to give everyone an account.
- * Nothing renders while loading, on error or when there is nothing to say.
+ * For the owner only (`staff.manage`: both lists are theirs to read). Logins are created from a
+ * profile (ADR-0016), so a login with no profile exists only in older data (made with the CLI):
+ * this notice lists them — a manager among them records nothing until linked
+ * (`403 staff.link_required`) — each with a one-time "Gắn vào hồ sơ". It shows only when there is
+ * such a login. With `nudge` (Hồ sơ nhân viên), the people still without a login are listed too:
+ * they count as technicians and cannot read their own month.
  */
 export function LinkWarnings({ onOpenRoster, nudge = false }: { onOpenRoster?: () => void; nudge?: boolean }) {
-  const profiles = useQuery({ ...profilesQuery, enabled: nudge });
+  const profiles = useQuery(profilesQuery);
   const accounts = useQuery(accountsQuery);
-  const loginsLeft = (accounts.data ?? []).filter(managerLoginWithoutProfile);
-  const profilesLeft: StaffProfile[] = nudge ? (profiles.data ?? []).filter(withoutLogin) : [];
+  const loginsLeft = (accounts.data ?? []).filter(legacyLogin);
+  const free = (profiles.data ?? []).filter(withoutLogin);
+  const profilesLeft: StaffProfile[] = nudge ? free : [];
   if (loginsLeft.length === 0 && profilesLeft.length === 0) return null;
   return (
     <>
@@ -25,18 +35,16 @@ export function LinkWarnings({ onOpenRoster, nudge = false }: { onOpenRoster?: (
         <section role="status" aria-labelledby="link-warning-title" className="callout">
           <h2 id="link-warning-title" className="flex items-center gap-2 font-semibold">
             <Icon name="alert" className="size-4" />
-            Tài khoản quản lý chưa gắn với hồ sơ
+            Tài khoản đăng nhập chưa gắn với hồ sơ
           </h2>
-          <ul className="grid gap-1">
+          <p>
+            Các tài khoản này được tạo trước đây, chưa thuộc hồ sơ nhân viên nào: ứng dụng không biết đó là ai, nên quản lý chưa ghi sổ được và không ai xem được công và lương của mình. Gắn mỗi tài khoản vào đúng hồ sơ một lần.
+          </p>
+          <ul className="grid gap-2">
             {loginsLeft.map((a) => (
-              <li key={a.user_id}>
-                <strong>{a.full_name}</strong> ({a.roles.join(", ")}) chưa gắn với hồ sơ nhân viên nào.
-              </li>
+              <LegacyRow key={a.user_id} account={a} profiles={free} />
             ))}
           </ul>
-          <p>
-            Khi chưa gắn, ứng dụng không biết hồ sơ nào là của quản lý đó, nên quản lý chưa chấm công, ghi khen/phàn nàn, thưởng/phạt hay đánh giá được, và chưa xem được công và lương của mình. Mở hồ sơ của họ ở Hồ sơ nhân viên → “Tài khoản đăng nhập” để gắn.
-          </p>
           {onOpenRoster && (
             <div>
               <button type="button" className="btn btn-secondary" onClick={onOpenRoster}>
@@ -48,10 +56,65 @@ export function LinkWarnings({ onOpenRoster, nudge = false }: { onOpenRoster?: (
       )}
       {profilesLeft.length > 0 && (
         <p role="status" className="note">
-          Chưa có tài khoản đăng nhập: {profilesLeft.map((p) => p.full_name).join(", ")}. Gắn tài khoản để họ tự xem ngày công và phiếu lương (khi chưa có tài khoản, hồ sơ được tính như KTV).
+          Chưa có tài khoản đăng nhập: {profilesLeft.map((p) => p.full_name).join(", ")}. Mở hồ sơ → “Tạo tài khoản đăng nhập” để họ tự xem ngày công và phiếu lương (khi chưa có tài khoản, hồ sơ được tính như KTV).
         </p>
       )}
     </>
+  );
+}
+
+/** One login with no profile: pick the profile it belongs to, link once (`PUT /staff/{id}/account`). */
+function LegacyRow({ account: a, profiles }: { account: StaffAccount; profiles: StaffProfile[] }) {
+  const queryClient = useQueryClient();
+  const [target, setTarget] = useState("");
+  const link = useMutation({
+    mutationFn: () => {
+      const p = profiles.find((x) => x.id === target);
+      if (!p) throw new Error("no profile");
+      return setAccount(p.id, p.version, a.user_id);
+    },
+    onSuccess: () => invalidateStaff(queryClient),
+  });
+  const id = `legacy-${a.user_id}`;
+  return (
+    <li className="flex flex-wrap items-end gap-2">
+      <span className="min-w-0 flex-1">
+        <strong>{a.full_name}</strong> ({a.roles.join(", ")})
+      </span>
+      <label className="filter-field" htmlFor={id}>
+        Hồ sơ của {a.full_name}
+        <select
+          id={id}
+          value={target}
+          onChange={(e) => {
+            setTarget(e.target.value);
+          }}
+        >
+          <option value="">Chọn hồ sơ…</option>
+          {profiles.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.full_name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="button"
+        className="btn btn-secondary"
+        disabled={!target}
+        aria-busy={link.isPending || undefined}
+        onClick={() => {
+          if (!link.isPending) link.mutate();
+        }}
+      >
+        Gắn vào hồ sơ
+      </button>
+      {link.isError && (
+        <span role="alert" className="w-full text-sm text-danger">
+          {messageFor(link.error)}
+        </span>
+      )}
+    </li>
   );
 }
 

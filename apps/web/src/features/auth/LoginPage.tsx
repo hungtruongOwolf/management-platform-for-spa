@@ -1,10 +1,13 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useRef, useState, type SyntheticEvent } from "react";
+import { Suspense, lazy, useRef, useState, type SyntheticEvent } from "react";
 import { safeNextPath } from "../../lib/api";
 import { messageFor } from "../../lib/errors";
 import { AuthFrame, bandTitle } from "./AuthFrame";
 import { login, setAuthState } from "./session";
+
+// "Quên mật khẩu?" (ADR-0016, option A): its own chunk, loaded when asked for.
+const ForgotPassword = lazy(() => import("./ForgotPassword").then((m) => ({ default: m.ForgotPassword })));
 
 // The login page is the public entry point, so it stays free of react-hook-form and zod: two
 // fields do not need them, and they would sit on its critical path (frontend.md, perf budget).
@@ -37,6 +40,7 @@ export function LoginPage({ next }: { next?: string | undefined }) {
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [forgot, setForgot] = useState(false);
   const phoneInput = useRef<HTMLInputElement>(null);
   const passwordInput = useRef<HTMLInputElement>(null);
 
@@ -66,6 +70,8 @@ export function LoginPage({ next }: { next?: string | undefined }) {
       setAuthState(queryClient, auth);
       if (auth.state === "signed_in") {
         await navigate({ to: safeNextPath(next) });
+      } else if (auth.state === "password_change") {
+        await navigate({ to: "/doi-mat-khau" });
       } else {
         // Second factor still owed (owners): the server refuses this session everywhere else.
         await navigate({ to: "/xac-thuc", search: next ? { next } : {} });
@@ -161,6 +167,26 @@ export function LoginPage({ next }: { next?: string | undefined }) {
         >
           Đăng nhập
         </button>
+        {forgot ? (
+          <Suspense fallback={null}>
+            <ForgotPassword
+              phone={values.phone}
+              onClose={() => {
+                setForgot(false);
+              }}
+            />
+          </Suspense>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-ghost btn-block"
+            onClick={() => {
+              setForgot(true);
+            }}
+          >
+            Quên mật khẩu?
+          </button>
+        )}
       </form>
     </AuthFrame>
   );

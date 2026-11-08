@@ -12,20 +12,21 @@ import { fieldMessage, messageFor } from "../../lib/errors";
 import { spaToday } from "../corrections/api";
 import { ErrorState, RowsSkeleton } from "../reports/ui";
 import {
-  accountsQuery,
   createProfile,
   endEmployment,
   historyQuery,
   invalidateStaff,
   profilesQuery,
+  LOGIN_ROLE_LABEL,
   rehire,
   savePay,
-  setAccount,
   updateProfile,
+  type LoginRole,
   type StaffHistoryEntry,
   type StaffProfile,
 } from "./api";
 import { percentOfBp } from "./labels";
+import { LoginSection, type PendingLogin } from "./LoginSection";
 import { shiftDay } from "./MyDaySheet";
 import { POSITIONS, ROSTER_FILTERS, ROSTER_FILTER_LABEL, inFilter, tenureLabel, type RosterFilter } from "./roster";
 import { vnd } from "./ui";
@@ -52,6 +53,8 @@ export function RosterTab({
 }) {
   const query = useQuery(profilesQuery);
   const [openId, setOpenId] = useState<string | null>(null);
+  // A login asked for in "Thêm nhân viên": created from the new profile's sheet right away.
+  const [pendingLogin, setPendingLogin] = useState<PendingLogin | null>(null);
   if (query.isPending) return <RowsSkeleton rows={5} />;
   if (query.isError) return <ErrorState error={query.error} onRetry={() => void query.refetch()} />;
   const everyone = query.data;
@@ -139,6 +142,10 @@ export function RosterTab({
           onClose={() => {
             setOpenId(null);
           }}
+          onCreated={(id, login) => {
+            setPendingLogin(login);
+            setOpenId(id);
+          }}
         />
       )}
       {open && (
@@ -149,7 +156,9 @@ export function RosterTab({
           canPay={canPay}
           onClose={() => {
             setOpenId(null);
+            setPendingLogin(null);
           }}
+          pendingLogin={pendingLogin}
           {...(onHistory ? { onHistory } : {})}
         />
       )}
@@ -174,12 +183,14 @@ function StaffSheet({
   canPay,
   onClose,
   onHistory,
+  pendingLogin = null,
 }: {
   profile: StaffProfile;
   canManage: boolean;
   canPay: boolean;
   onClose: () => void;
   onHistory?: (id: string) => void;
+  pendingLogin?: PendingLogin | null;
 }) {
   const [mode, setMode] = useState<Mode>("view");
   if (mode === "edit") return <ProfileForm profile={p} canPay={canPay} onClose={onClose} onBack={() => { setMode("view"); }} />;
@@ -291,70 +302,10 @@ function StaffSheet({
             ))}
           </ol>
         </section>
-        {canManage && <AccountSection profile={p} />}
+        {canManage && <LoginSection profile={p} pending={pendingLogin} />}
         {canManage && <HistorySection id={p.id} />}
       </div>
     </BottomSheet>
-  );
-}
-
-/** Owner: link / unlink the login (decision C reads it). Passwords are never shown or set here. */
-function AccountSection({ profile: p }: { profile: StaffProfile }) {
-  const queryClient = useQueryClient();
-  const accounts = useQuery(accountsQuery);
-  const linked = p.details?.user_id ?? "";
-  const [choice, setChoice] = useState(linked);
-  const save = useMutation({
-    mutationFn: (userId: string | null) => setAccount(p.id, p.version, userId),
-    onSuccess: () => invalidateStaff(queryClient),
-  });
-  const options = (accounts.data ?? []).filter((a) => !a.staff_id || a.staff_id === p.id);
-  return (
-    <section className="grid gap-2" aria-labelledby="roster-login">
-      <h3 id="roster-login" className="panel-title">
-        Tài khoản đăng nhập
-      </h3>
-      <p className="text-sm text-text-muted">
-        Gắn tài khoản để nhân viên tự xem công và lương; vị trí của hồ sơ theo vai trò của tài khoản. Quản lý chưa gắn hồ sơ thì chưa ghi sổ được. Mật khẩu không xem hay đặt ở đây.
-      </p>
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="filter-field min-w-[16rem] flex-1">
-          Tài khoản
-          <select
-            value={choice}
-            onChange={(e) => {
-              setChoice(e.target.value);
-            }}
-          >
-            <option value="">Chưa gắn</option>
-            {options.map((a) => (
-              <option key={a.user_id} value={a.user_id}>
-                {a.full_name} ({a.roles.join(", ")})
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={choice === linked}
-          aria-busy={save.isPending || undefined}
-          onClick={() => {
-            if (!save.isPending) save.mutate(choice || null);
-          }}
-        >
-          {choice ? "Gắn tài khoản" : "Bỏ gắn"}
-        </button>
-      </div>
-      {p.status === "left" && linked && (
-        <p className="text-sm text-text-muted">Đã nghỉ việc: tài khoản chỉ còn xem ngày công và phiếu lương các tháng đã làm (trừ khi đã khóa khi cho nghỉ).</p>
-      )}
-      {save.isError && (
-        <p role="alert" className="text-sm text-danger">
-          {fieldMessage(save.error, "user_id") ?? messageFor(save.error)}
-        </p>
-      )}
-    </section>
   );
 }
 
@@ -442,16 +393,30 @@ function HistorySection({ id }: { id: string }) {
 const digits = (v: string) => Number(v.replace(/\D/g, "") || "0");
 
 /** Add (hire) or edit a profile; pay terms only when the server says pay is visible. */
-function ProfileForm({ profile, canPay, onClose, onBack }: { profile: StaffProfile | null; canPay: boolean; onClose: () => void; onBack?: () => void }) {
+function ProfileForm({
+  profile,
+  canPay,
+  onClose,
+  onBack,
+  onCreated,
+}: {
+  profile: StaffProfile | null;
+  canPay: boolean;
+  onClose: () => void;
+  onBack?: () => void;
+  /** A new profile was saved: open its sheet, creating the login asked for here (if any). */
+  onCreated?: (id: string, login: PendingLogin | null) => void;
+}) {
   const queryClient = useQueryClient();
-  const accounts = useQuery({ ...accountsQuery, enabled: profile === null });
   const [name, setName] = useState(profile?.full_name ?? "");
   const [position, setPosition] = useState(profile?.position ?? "Kỹ thuật viên");
   const [phone, setPhone] = useState(profile?.details?.phone ?? "");
   const [joined, setJoined] = useState(profile ? (profile.joined_on ?? "") : spaToday());
   const [shift, setShift] = useState(profile?.shift_start ?? "");
   const [note, setNote] = useState(profile?.details?.note ?? "");
-  const [userId, setUserId] = useState("");
+  const [withLogin, setWithLogin] = useState(false);
+  const [loginPhone, setLoginPhone] = useState("");
+  const [loginRole, setLoginRole] = useState<LoginRole>("technician");
   const pay = profile?.pay;
   // The server decides (`pay_visible`); `canPay` only covers a profile not created yet.
   const payVisible = profile ? profile.pay_visible : canPay;
@@ -469,7 +434,7 @@ function ProfileForm({ profile, canPay, onClose, onBack }: { profile: StaffProfi
         shift_start: shift || null,
         note: note.trim() || null,
       };
-      const saved = profile ? await updateProfile(profile.id, profile.version, body) : await createProfile({ ...body, user_id: userId || null });
+      const saved = profile ? await updateProfile(profile.id, profile.version, body) : await createProfile({ ...body, user_id: null });
       if (payVisible && base) {
         await savePay(saved.id, {
           base_salary: digits(base),
@@ -478,10 +443,12 @@ function ProfileForm({ profile, canPay, onClose, onBack }: { profile: StaffProfi
           meal_allowance: digits(meal),
         });
       }
+      return saved;
     },
-    onSuccess: async () => {
+    onSuccess: async (saved) => {
       await invalidateStaff(queryClient);
-      onClose();
+      if (!profile && onCreated) onCreated(saved.id, withLogin && loginPhone.trim() ? { phone: loginPhone.trim(), role: loginRole } : null);
+      else onClose();
     },
   });
   const err = (f: string) => fieldMessage(save.error, f);
@@ -559,19 +526,33 @@ function ProfileForm({ profile, canPay, onClose, onBack }: { profile: StaffProfi
             <DateField label={profile && profile.periods.length > 1 ? "Ngày vào làm (đợt hiện tại)" : "Ngày vào làm"} value={joined} onChange={setJoined} invalid={Boolean(err("joined_on"))} />
           )}
           {profile === null && (
-            <label className="filter-field">
-              Tài khoản đăng nhập (không bắt buộc)
-              <select value={userId} onChange={(e) => { setUserId(e.target.value); }}>
-                <option value="">Chưa gắn</option>
-                {(accounts.data ?? [])
-                  .filter((a) => !a.staff_id)
-                  .map((a) => (
-                    <option key={a.user_id} value={a.user_id}>
-                      {a.full_name} ({a.roles.join(", ")})
-                    </option>
-                  ))}
-              </select>
-            </label>
+            <fieldset className="grid gap-3 sm:col-span-2">
+              <label className="choice">
+                <input
+                  type="checkbox"
+                  checked={withLogin}
+                  onChange={(e) => {
+                    setWithLogin(e.target.checked);
+                  }}
+                />
+                Tạo tài khoản đăng nhập ngay
+              </label>
+              {withLogin && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="filter-field">
+                    Số điện thoại đăng nhập
+                    <input inputMode="tel" autoComplete="off" required value={loginPhone} onChange={(e) => { setLoginPhone(e.target.value); }} />
+                  </label>
+                  <label className="filter-field">
+                    Vai trò
+                    <select value={loginRole} onChange={(e) => { setLoginRole(e.target.value as LoginRole); }}>
+                      <option value="technician">{LOGIN_ROLE_LABEL.technician}</option>
+                      <option value="manager">{LOGIN_ROLE_LABEL.manager}</option>
+                    </select>
+                  </label>
+                </div>
+              )}
+            </fieldset>
           )}
           <label className="filter-field sm:col-span-2">
             Ghi chú (chỉ chủ spa thấy)

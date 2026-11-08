@@ -18,6 +18,8 @@ pub struct AccountRow {
     /// Encrypted TOTP secret (enrolled, or enrollment started but not confirmed).
     pub mfa_secret_ct: Option<Vec<u8>>,
     pub mfa_enabled: bool,
+    /// Signed in with a temporary password (ADR-0016): must set their own first.
+    pub must_change_password: bool,
 }
 
 pub async fn account_by_phone(
@@ -26,7 +28,7 @@ pub async fn account_by_phone(
 ) -> Result<Option<AccountRow>, AppError> {
     let row = sqlx::query!(
         r#"SELECT id, full_name, phone_e164, password_hash, status, locked_until,
-                  mfa_secret_ct, mfa_enabled_at
+                  mfa_secret_ct, mfa_enabled_at, must_change_password
            FROM app.user_account WHERE phone_e164 = $1"#,
         phone.as_str()
     )
@@ -41,13 +43,14 @@ pub async fn account_by_phone(
         locked_until: r.locked_until,
         mfa_secret_ct: r.mfa_secret_ct,
         mfa_enabled: r.mfa_enabled_at.is_some(),
+        must_change_password: r.must_change_password,
     }))
 }
 
 pub async fn account_by_id(pool: &PgPool, id: UserId) -> Result<Option<AccountRow>, AppError> {
     let row = sqlx::query!(
         r#"SELECT id, full_name, phone_e164, password_hash, status, locked_until,
-                  mfa_secret_ct, mfa_enabled_at
+                  mfa_secret_ct, mfa_enabled_at, must_change_password
            FROM app.user_account WHERE id = $1"#,
         id.as_uuid()
     )
@@ -62,6 +65,7 @@ pub async fn account_by_id(pool: &PgPool, id: UserId) -> Result<Option<AccountRo
         locked_until: r.locked_until,
         mfa_secret_ct: r.mfa_secret_ct,
         mfa_enabled: r.mfa_enabled_at.is_some(),
+        must_change_password: r.must_change_password,
     }))
 }
 
@@ -152,6 +156,7 @@ pub struct SessionRow {
     pub recent_auth_at: DateTime<Utc>,
     pub mfa_pending: bool,
     pub mfa_enrolled: bool,
+    pub must_change_password: bool,
 }
 
 /// A live session: not revoked, not past either expiry, owner account active.
@@ -161,7 +166,7 @@ pub async fn live_session(
 ) -> Result<Option<SessionRow>, AppError> {
     let row = sqlx::query!(
         r#"SELECT s.id, s.user_id, s.active_tenant_id, s.last_seen_at, s.absolute_expires_at, s.recent_auth_at,
-                  s.mfa_pending, u.mfa_enabled_at IS NOT NULL AS "mfa_enrolled!"
+                  s.mfa_pending, u.mfa_enabled_at IS NOT NULL AS "mfa_enrolled!", u.must_change_password
            FROM app.session s JOIN app.user_account u ON u.id = s.user_id
            WHERE s.token_hash = $1 AND s.revoked_at IS NULL
              AND now() < s.idle_expires_at AND now() < s.absolute_expires_at
@@ -179,6 +184,7 @@ pub async fn live_session(
         recent_auth_at: r.recent_auth_at,
         mfa_pending: r.mfa_pending,
         mfa_enrolled: r.mfa_enrolled,
+        must_change_password: r.must_change_password,
     }))
 }
 
@@ -413,4 +419,226 @@ pub async fn member_permissions(
         roles,
         member.former_staff,
     )))
+}
+
+// ------------------------------------------------------------------ passwords (ADR-0016)
+
+/// The person's own new password: clears the temporary-password flag and any lockout.
+pub async fn set_own_password(pool: &PgPool, user: UserId, hash: &str) -> Result<(), AppError> {
+    sqlx::query!(
+        "UPDATE app.user_account
+         SET password_hash = $2, must_change_password = false, password_changed_at = now(),
+             failed_logins = 0, locked_until = NULL, updated_at = now()
+         WHERE id = $1",
+        user.as_uuid(),
+        hash
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// A temporary password set by the owner: must be changed at the next sign-in; the lockout is
+/// cleared (the person asked for help) and every session ends.
+pub async fn set_temporary_password(
+    tx: &mut TenantTx,
+    user: UserId,
+    hash: &str,
+) -> Result<(), AppError> {
+    sqlx::query!(
+        "UPDATE app.user_account
+         SET password_hash = $2, must_change_password = true, failed_logins = 0,
+             locked_until = NULL, updated_at = now()
+         WHERE id = $1",
+        user.as_uuid(),
+        hash
+    )
+    .execute(tx.conn())
+    .await?;
+    sqlx::query!(
+        "UPDATE app.session SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL",
+        user.as_uuid()
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
+/// Whether any account uses this phone (accounts are global: one phone, one login).
+pub async fn phone_taken(tx: &mut TenantTx, phone: &PhoneE164) -> Result<bool, AppError> {
+    Ok(sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM app.user_account WHERE phone_e164 = $1) AS "e!""#,
+        phone.as_str()
+    )
+    .fetch_one(tx.conn())
+    .await?)
+}
+
+/// A new login with a temporary password, an active membership of the transaction's spa and one
+/// system role (`key`).
+pub async fn insert_login(
+    tx: &mut TenantTx,
+    phone: &PhoneE164,
+    full_name: &str,
+    hash: &str,
+    role_key: &str,
+) -> Result<UserId, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let user = UserId::new();
+    sqlx::query!(
+        "INSERT INTO app.user_account (id, phone_e164, full_name, password_hash, must_change_password)
+         VALUES ($1, $2, $3, $4, true)",
+        user.as_uuid(),
+        phone.as_str(),
+        full_name,
+        hash
+    )
+    .execute(tx.conn())
+    .await?;
+    let membership = Uuid::now_v7();
+    sqlx::query!(
+        "INSERT INTO app.membership (id, tenant_id, user_id) VALUES ($1, $2, $3)",
+        membership,
+        tenant,
+        user.as_uuid()
+    )
+    .execute(tx.conn())
+    .await?;
+    let roles = sqlx::query!(
+        "INSERT INTO app.membership_role (tenant_id, membership_id, role_id)
+         SELECT $1, $2, id FROM app.role WHERE tenant_id = $1 AND key = $3",
+        tenant,
+        membership,
+        role_key
+    )
+    .execute(tx.conn())
+    .await?;
+    if roles.rows_affected() != 1 {
+        return Err(AppError::Internal(format!("role {role_key} missing")));
+    }
+    Ok(user)
+}
+
+/// Replaces the roles of `user` in the transaction's spa with the system role `key`.
+pub async fn replace_role(tx: &mut TenantTx, user: UserId, role_key: &str) -> Result<(), AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let membership = sqlx::query_scalar!(
+        "SELECT id FROM app.membership WHERE tenant_id = $1 AND user_id = $2 FOR UPDATE",
+        tenant,
+        user.as_uuid()
+    )
+    .fetch_optional(tx.conn())
+    .await?
+    .ok_or(AppError::NotFound)?;
+    sqlx::query!(
+        "DELETE FROM app.membership_role WHERE tenant_id = $1 AND membership_id = $2",
+        tenant,
+        membership
+    )
+    .execute(tx.conn())
+    .await?;
+    let roles = sqlx::query!(
+        "INSERT INTO app.membership_role (tenant_id, membership_id, role_id)
+         SELECT $1, $2, id FROM app.role WHERE tenant_id = $1 AND key = $3",
+        tenant,
+        membership,
+        role_key
+    )
+    .execute(tx.conn())
+    .await?;
+    if roles.rows_affected() != 1 {
+        return Err(AppError::Internal(format!("role {role_key} missing")));
+    }
+    Ok(())
+}
+
+/// Keys of the system roles `user` holds in the transaction's spa.
+pub async fn role_keys(tx: &mut TenantTx, user: UserId) -> Result<Vec<String>, AppError> {
+    Ok(sqlx::query_scalar!(
+        "SELECT r.key FROM app.membership m
+         JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
+         JOIN app.role r ON r.tenant_id = mr.tenant_id AND r.id = mr.role_id
+         WHERE m.tenant_id = $1 AND m.user_id = $2
+         ORDER BY r.key",
+        tx.tenant().as_uuid(),
+        user.as_uuid()
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+// ------------------------------------------------------- forgotten-password requests (option A)
+
+/// Records a request unless one is open, or one was made in the last hour (at most one a spa an
+/// hour reaches the owner). Expired open requests are closed first. `true` = a new request.
+pub async fn open_reset_request(tx: &mut TenantTx, user: UserId) -> Result<bool, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    sqlx::query!(
+        "UPDATE app.password_reset_request
+         SET closed_at = now(), outcome = 'expired'
+         WHERE tenant_id = $1 AND user_id = $2 AND closed_at IS NULL AND expires_at <= now()",
+        tenant,
+        user.as_uuid()
+    )
+    .execute(tx.conn())
+    .await?;
+    let inserted = sqlx::query!(
+        "INSERT INTO app.password_reset_request (id, tenant_id, user_id, expires_at)
+         SELECT $1, $2, $3, now() + interval '24 hours'
+         WHERE NOT EXISTS (SELECT 1 FROM app.password_reset_request
+                           WHERE tenant_id = $2 AND user_id = $3
+                             AND (closed_at IS NULL OR requested_at > now() - interval '1 hour'))
+         ON CONFLICT DO NOTHING",
+        Uuid::now_v7(),
+        tenant,
+        user.as_uuid()
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(inserted.rows_affected() == 1)
+}
+
+pub struct ResetRequestRow {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub requested_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+}
+
+/// Open, unexpired requests of the transaction's spa, oldest first.
+pub async fn open_reset_requests(tx: &mut TenantTx) -> Result<Vec<ResetRequestRow>, AppError> {
+    Ok(sqlx::query_as!(
+        ResetRequestRow,
+        "SELECT id, user_id, requested_at, expires_at FROM app.password_reset_request
+         WHERE tenant_id = $1 AND closed_at IS NULL AND expires_at > now()
+         ORDER BY requested_at, id",
+        tx.tenant().as_uuid()
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+/// Closes the open request `id` (or, with `user`, every open request of that login) with
+/// `outcome`; returns the users whose request closed.
+pub async fn close_reset_requests(
+    tx: &mut TenantTx,
+    id: Option<Uuid>,
+    user: Option<UserId>,
+    outcome: &str,
+    by: UserId,
+) -> Result<Vec<Uuid>, AppError> {
+    Ok(sqlx::query_scalar!(
+        "UPDATE app.password_reset_request
+         SET closed_at = now(), outcome = $4, closed_by = $5
+         WHERE tenant_id = $1 AND closed_at IS NULL
+           AND ($2::uuid IS NULL OR id = $2) AND ($3::uuid IS NULL OR user_id = $3)
+         RETURNING user_id",
+        tx.tenant().as_uuid(),
+        id,
+        user.map(|u| u.as_uuid()),
+        outcome,
+        by.as_uuid()
+    )
+    .fetch_all(tx.conn())
+    .await?)
 }
