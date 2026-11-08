@@ -1372,7 +1372,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "unicode-normalization",
  "utoipa",
  "uuid",
 ]

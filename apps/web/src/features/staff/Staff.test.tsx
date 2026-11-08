@@ -31,7 +31,7 @@ import { dayTotals, shiftDay } from "./MyDaySheet";
 import { daysOf, monthLabel, percentOfBp, shiftMonth, weekdayShort } from "./labels";
 import { evaluationDueMonth, incompleteDays, missingOn } from "./progress";
 import { staffSearch } from "./search";
-import { isManagerPosition, managerLoginWithoutProfile, managerWithoutLogin, tenureLabel } from "./roster";
+import { managerLoginWithoutProfile, tenureLabel, withoutLogin } from "./roster";
 import { PayslipView } from "./PayrollTab";
 
 const MANAGER = ["catalog.read", "staff.read_basic", "staff.read", "attendance.record", "evaluation.record", "staff.read_own", "report.read"];
@@ -50,6 +50,7 @@ function sheet(options: ServeOptions = {}): AttendanceSheet {
     today,
     closed: false,
     default_shift_start: "09:00",
+    link_required: false,
     staff: [
       {
         staff_id: "s-lan",
@@ -98,7 +99,7 @@ function sheet(options: ServeOptions = {}): AttendanceSheet {
 
 /** The roster as the server sends it: `details` only with staff.manage (manager: none). */
 function roster(details: boolean): StaffProfile[] {
-  const base = { shift_start: "09:00", version: 1, pay_visible: false };
+  const base = { shift_start: "09:00", version: 1, pay_visible: false, position_from_account: false };
   const people: StaffProfile[] = [
     {
       ...base,
@@ -233,6 +234,7 @@ function evaluations(m: string): EvaluationSheet {
   return {
     month: m,
     closed: false,
+    link_required: false,
     criteria: [
       { key: "technique", label: "Kỹ thuật liệu trình", max: 40 },
       { key: "attitude", label: "Thái độ và giao tiếp", max: 15 },
@@ -334,6 +336,8 @@ interface ServeOptions {
   accounts?: StaffAccount[];
   /** `POST /staff/{id}/end` refuses: bookings still assigned (F24). */
   endRefused?: boolean;
+  /** The caller's login is linked to no profile (`link_required`, every `can_record` false). */
+  linkRequired?: boolean;
 }
 
 /** A scorecard as `GET /evaluations` / `/me/staff` send it. */
@@ -408,7 +412,15 @@ function serve(permissions: string[], options: ServeOptions = {}) {
     const ok = (json: unknown, status = 200) => Promise.resolve(Response.json(json, { status }));
     if (p === "/me") return ok(ME(permissions));
     if (p === "/attendance" && method === "PUT") return options.attendancePut ? options.attendancePut() : ok([]);
-    if (p === "/attendance") return ok({ ...sheet(options), closed: options.closed ?? false });
+    if (p === "/attendance") {
+      const att = sheet(options);
+      return ok({
+        ...att,
+        closed: options.closed ?? false,
+        link_required: options.linkRequired ?? false,
+        staff: options.linkRequired ? att.staff.map((x) => ({ ...x, can_record: false })) : att.staff,
+      });
+    }
     if (p === "/payroll") return permissions.includes("payroll.read") ? ok(payroll()) : ok({ code: "auth.forbidden" }, 403);
     if (p === "/me/staff") {
       const left = options.leftOn;
@@ -556,9 +568,10 @@ describe("staff helpers", () => {
     expect(tabsFor(navFor(ME(TECH))).map((t) => t.to)).toEqual(["/", "/nhan-vien", "/khach-cua-toi"]);
   });
 
-  it("knows a manager's position in any spelling, and an unlinked manager login", () => {
-    for (const p of ["Quản lý", "quản lý ca", "QUẢN LÝ", "Quan ly", "Qua\u0309n ly\u0301"]) expect(isManagerPosition(p)).toBe(true);
-    for (const p of ["Kỹ thuật viên", "KTV", "Lễ tân"]) expect(isManagerPosition(p)).toBe(false);
+  it("reads a manager from the login's role, never from a title", () => {
+    expect(withoutLogin({ login_linked: false, status: "active" })).toBe(true);
+    expect(withoutLogin({ login_linked: true, status: "active" })).toBe(false);
+    expect(withoutLogin({ login_linked: false, status: "left" })).toBe(false);
     expect(managerLoginWithoutProfile({ is_manager: true, staff_id: null })).toBe(true);
     expect(managerLoginWithoutProfile({ is_manager: true, staff_id: "s-hoa" })).toBe(false);
     expect(managerLoginWithoutProfile({ is_manager: false, staff_id: null })).toBe(false);
@@ -574,7 +587,7 @@ describe("/nhan-vien", () => {
     expect(screen.getByRole("tab", { name: "Đánh giá tháng" })).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: /Thưởng/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Bảng lương" })).not.toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Nhân sự" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Hồ sơ nhân viên" })).toBeInTheDocument();
 
     const progress = await screen.findByRole("status", { name: "Tiến độ chấm công" });
     expect(progress).toHaveTextContent("Đã chấm công 1/3 người");
@@ -1144,14 +1157,12 @@ describe("/khach-cua-toi", () => {
 
 });
 
-describe("Nhân sự (roster)", () => {
+describe("Hồ sơ nhân viên (roster)", () => {
   it("says how long someone has worked, from the server's tenure", () => {
     expect(tenureLabel({ tenure_days: 615, tenure_months: 20 })).toBe("1 năm 8 tháng");
     expect(tenureLabel({ tenure_days: 400, tenure_months: 12 })).toBe("1 năm");
     expect(tenureLabel({ tenure_days: 19, tenure_months: 0 })).toBe("19 ngày");
     expect(tenureLabel({ tenure_days: null, tenure_months: null })).toBe("Chưa rõ ngày vào làm");
-    expect(managerWithoutLogin({ position: "Quản lý", login_linked: false, status: "active" })).toBe(true);
-    expect(managerWithoutLogin({ position: "Quản lý", login_linked: true, status: "active" })).toBe(false);
   });
 
   it("manager: reads the roster (working first, former staff behind a filter) but changes nothing", async () => {
@@ -1182,7 +1193,8 @@ describe("Nhân sự (roster)", () => {
     const spy = serve(OWNER);
     at("/nhan-vien?tab=profiles");
     const table = await screen.findByRole("table", { name: "Danh sách nhân sự" });
-    expect(within(table).getByText("Chưa gắn: chỉ chủ spa ghi công cho hồ sơ này")).toBeInTheDocument();
+    // People without a login: nudged in Nhân sự (they count as technicians until they have one).
+    expect(screen.getByText(/Chưa có tài khoản đăng nhập: Phạm Thị Hoa\./)).toBeInTheDocument();
     await userEvent.click(within(table).getByRole("button", { name: "Lê Thị Lan" }));
     const sheet = await screen.findByRole("dialog", { name: "Lê Thị Lan" });
     expect(within(sheet).getByRole("heading", { name: "Tài khoản đăng nhập" })).toBeInTheDocument();
@@ -1219,7 +1231,7 @@ describe("Nhân sự (roster)", () => {
     expect(within(confirm).getByText("Còn lịch khác sau các lịch trên.")).toBeInTheDocument();
   });
 
-  it("owner: warns about managers whose profile and login are not linked (F19), the manager never", async () => {
+  it("owner: warns about manager logins linked to no profile (from roles, not titles), the manager never", async () => {
     const accounts: StaffAccount[] = [
       { user_id: "u-owner", full_name: "Chủ Spa", roles: ["Chủ spa"], staff_id: null, is_manager: false },
       { user_id: "u-ha", full_name: "Quản lý Hà", roles: ["Quản lý"], staff_id: null, is_manager: true },
@@ -1227,21 +1239,30 @@ describe("Nhân sự (roster)", () => {
     ];
     serve(OWNER, { accounts });
     at("/nhan-vien");
-    const warning = await screen.findByRole("status", { name: "Chưa gắn tài khoản quản lý với hồ sơ" });
-    expect(within(warning).getByText("Phạm Thị Hoa")).toBeInTheDocument();
+    const warning = await screen.findByRole("status", { name: "Tài khoản quản lý chưa gắn với hồ sơ" });
+    // A "Quản lý" title without a login is not a manager: only the manager login is listed.
+    expect(within(warning).queryByText("Phạm Thị Hoa")).not.toBeInTheDocument();
     expect(within(warning).getByText("Quản lý Hà")).toBeInTheDocument();
     expect(within(warning).queryByText("Chủ Spa")).not.toBeInTheDocument();
-    await userEvent.click(within(warning).getByRole("button", { name: "Mở Nhân sự" }));
+    await userEvent.click(within(warning).getByRole("button", { name: "Mở Hồ sơ nhân viên" }));
     expect(await screen.findByRole("table", { name: "Danh sách nhân sự" })).toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "Chưa gắn tài khoản quản lý với hồ sơ" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Tài khoản quản lý chưa gắn với hồ sơ" })).toBeInTheDocument();
   });
 
   it("manager: no link warning and no request for the logins (owner's data)", async () => {
     const spy = serve(MANAGER, { accounts: [{ user_id: "u-ha", full_name: "Quản lý Hà", roles: [], staff_id: null, is_manager: true }] });
     at("/nhan-vien?tab=profiles");
     await screen.findByRole("table", { name: "Danh sách nhân sự" });
-    expect(screen.queryByRole("status", { name: "Chưa gắn tài khoản quản lý với hồ sơ" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Tài khoản quản lý chưa gắn với hồ sơ" })).not.toBeInTheDocument();
     expect(requests(spy).some((r) => r.url.includes("/staff/accounts"))).toBe(false);
+  });
+
+  it("manager whose login is linked to no profile: told to ask the owner, every choice read-only", async () => {
+    serve(MANAGER, { linkRequired: true });
+    at("/nhan-vien");
+    expect(await screen.findByText(/Tài khoản của bạn chưa gắn với hồ sơ nhân viên, nên bạn chỉ xem được/)).toBeInTheDocument();
+    const group = await waitFor(() => card("s-lan").getByRole("radiogroup"));
+    for (const r of within(group).getAllByRole("radio")) expect(r).toBeDisabled();
   });
 });
 

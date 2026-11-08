@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id, s.full_name, s.position, s.phone_e164, s.status, s.joined_on, s.left_on,\n                  s.user_id, u.full_name AS \"user_name?\", s.shift_start, s.note, s.version\n           FROM app.staff s LEFT JOIN app.user_account u ON u.id = s.user_id\n           WHERE s.tenant_id = $1 AND s.id = $2",
+  "query": "SELECT s.id, s.full_name, s.position, s.phone_e164, s.status, s.joined_on, s.left_on,\n                  s.user_id, u.full_name AS \"user_name?\", s.shift_start, s.note, s.version,\n                  (SELECT string_agg(r.name, ', ' ORDER BY r.name)\n                   FROM app.membership m\n                   JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id\n                   JOIN app.role r ON r.tenant_id = mr.tenant_id AND r.id = mr.role_id\n                   WHERE m.tenant_id = s.tenant_id AND m.user_id = s.user_id) AS \"account_role?\"\n           FROM app.staff s LEFT JOIN app.user_account u ON u.id = s.user_id\n           WHERE s.tenant_id = $1 AND s.id = $2",
   "describe": {
     "columns": [
       {
@@ -134,6 +134,12 @@
             "name": "version"
           }
         }
+      },
+      {
+        "ordinal": 12,
+        "name": "account_role?",
+        "type_info": "Text",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -154,8 +160,9 @@
       true,
       true,
       true,
-      false
+      false,
+      null
     ]
   },
-  "hash": "7ff8ac06a45b71c1555040dcdc557c3fda98d80f973d1c62c68c7b01b7ce6154"
+  "hash": "8b522f22e6532d92d3c093e7d4e9cdb76609bc671e68cd9fd7659dc8f52c3b3d"
 }

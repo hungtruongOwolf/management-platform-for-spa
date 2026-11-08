@@ -649,6 +649,10 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - F19: hồ sơ có vị trí quản lý luôn chỉ chủ spa ghi (gắn hay chưa); `GET /staff/accounts` thêm `is_manager`; chủ spa thấy cảnh báo ở Sổ hằng ngày + Nhân sự. F24: `409 staff.has_upcoming_bookings` có `details.bookings` (kernel `AppError::ConflictDetails`), sheet nghỉ việc liệt kê + link lịch. F25: lỗi so sánh nhật ký (không mất dữ liệu), sửa ở `org::profile::changes`. F20: bỏ mọi mã P/ĐX/K (chữ hoặc icon + màu). F22: "Khách của tôi" tự cuộn tới giờ hiện tại / giờ mở cửa. F28: chip "Đã nghỉ việc".
 - Không thuộc phần này (agent Quầy/lịch hẹn/ghi chú): F1–F18, F21, F23, F26, F27.
 
+## [2026-11-08] decision + build | Vai trò lấy từ tài khoản, không từ chức danh
+- Raw: [2026-11-08-em-decision-role-by-account](raw/2026-11-08-em-decision-role-by-account.md). ADR-0015 update, spec §16 US16c, authz-matrix, threat-model.
+- Bỏ quy tắc chức danh "Quản lý" của #95 (`is_manager_position`). Quản lý chưa gắn hồ sơ: mọi route ghi sổ nhân viên `403 staff.link_required`, chủ spa miễn; sổ trả `link_required`. Hồ sơ đã gắn hiện tên role làm vị trí (suy ra lúc đọc ở `org::repo`, `position_from_account`), không migration (0031 không dùng). Quản lý giữ "Khách của tôi" (EM xác nhận).
+- EM: tab "Nhân sự" đổi tên thành **"Hồ sơ nhân viên"** ở mọi chỗ người dùng thấy (tab, nút "Mở Hồ sơ nhân viên" ở cảnh báo và Nhật ký ghi chú, câu hướng dẫn); URL `?tab=profiles` giữ nguyên. Trang là "Quản lý nhân sự" (PR fix/nav-staff-label).
 ## [2026-11-08] ingest + build + secure + qa + record | Ghi chú gói: mỗi gói bán một ghi chú (F4, Q-M2)
 - Raw: [2026-11-08-em-decision-package-note](raw/2026-11-08-em-decision-package-note.md) (EM: "thường khách chỉ mua 1 gói 1 lần thì ghi chú theo gói đi làm feature này"). Q-M2 đã quyết: một ghi chú **mỗi hóa đơn gói**, không ghi chú chung cho giỏ.
 - Spec: front-desk §10.15 (AC-N1…N5), management-views §10.8 (loại thứ 16 `package_note`); authz-matrix, threat-model (§ Ghi chú gói), data (0030). Design-system không đổi: ô gập sau nút ghost là mẫu sẵn có ("Thêm giảm giá gói").

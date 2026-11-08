@@ -352,7 +352,7 @@ function SourceLink({ note: n }: { note: NoteEntry }): ReactNode {
   if (n.kind === "employment_end" || n.kind === "staff_note") {
     return (
       <Link to="/nhan-vien" search={{ tab: "profiles", roster: "all" }} className="note-link">
-        Mở Nhân sự
+        Mở Hồ sơ nhân viên
         {arrow}
       </Link>
     );

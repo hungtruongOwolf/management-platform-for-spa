@@ -6,7 +6,7 @@ import { can, meQuery } from "../auth/session";
 import { spaToday } from "../corrections/api";
 import { DailyBook } from "./DailyBook";
 import { EvaluationTab } from "./EvaluationTab";
-import { LinkWarnings } from "./LinkWarnings";
+import { LinkRequiredNotice, LinkWarnings } from "./LinkWarnings";
 import { MonthSheet } from "./MonthSheet";
 import { MyMonth } from "./MyMonth";
 import { PayrollTab } from "./PayrollTab";
@@ -20,7 +20,7 @@ const TAB_LABEL: Record<StaffTab, string> = {
   month: "Bảng công tháng",
   evaluation: "Đánh giá tháng",
   payroll: "Bảng lương",
-  profiles: "Nhân sự",
+  profiles: "Hồ sơ nhân viên",
 };
 
 /**
@@ -140,9 +140,11 @@ export function StaffPage() {
         ))}
       </div>
       <div id="staff-panel" role="tabpanel" aria-labelledby={`staff-tab-${tab}`} className="grid content-start gap-5">
-        {/* F19: the owner sees which managers are not linked to their profile yet. */}
+        {/* F19: the owner sees which manager logins are not linked to a profile yet (and, in
+            Nhân sự, who has no login); such a manager is told to ask the owner. */}
         {can(me, "staff.manage") && (tab === "day" || tab === "profiles") && (
           <LinkWarnings
+            nudge={tab === "profiles"}
             {...(tab === "day"
               ? {
                   onOpenRoster: () => {
@@ -151,6 +153,9 @@ export function StaffPage() {
                 }
               : {})}
           />
+        )}
+        {!can(me, "staff.manage") && (tab === "day" || tab === "month" || tab === "evaluation") && (
+          <LinkRequiredNotice month={month} fromAttendance={canAttendance && tab !== "evaluation"} />
         )}
         {tab === "day" && (
           <DailyBook

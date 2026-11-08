@@ -4,6 +4,9 @@ use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use kernel::{AppError, TenantTx};
 use uuid::Uuid;
 
+/// `position` is the linked login's role name(s) when the profile has a login, else the free
+/// text the owner typed (EM 2026-11-08: who someone is comes from their account role, so the
+/// label can never contradict it).
 pub struct StaffRow {
     pub id: Uuid,
     pub full_name: String,
@@ -15,9 +18,15 @@ pub async fn list(tx: &mut TenantTx, status: Option<&str>) -> Result<Vec<StaffRo
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         StaffRow,
-        r#"SELECT id, full_name, position, status FROM app.staff
-           WHERE tenant_id = $1 AND ($2::text IS NULL OR status = $2)
-           ORDER BY status, full_name"#,
+        r#"SELECT s.id, s.full_name, s.status,
+                  coalesce((SELECT string_agg(r.name, ', ' ORDER BY r.name)
+                   FROM app.membership m
+                   JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
+                   JOIN app.role r ON r.tenant_id = mr.tenant_id AND r.id = mr.role_id
+                   WHERE m.tenant_id = s.tenant_id AND m.user_id = s.user_id), s.position) AS "position!"
+           FROM app.staff s
+           WHERE s.tenant_id = $1 AND ($2::text IS NULL OR s.status = $2)
+           ORDER BY s.status, s.full_name"#,
         tenant,
         status
     )
@@ -31,8 +40,14 @@ pub async fn get_for_share(tx: &mut TenantTx, id: Uuid) -> Result<Option<StaffRo
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         StaffRow,
-        r#"SELECT id, full_name, position, status FROM app.staff
-           WHERE tenant_id = $1 AND id = $2 FOR SHARE"#,
+        r#"SELECT s.id, s.full_name, s.status,
+                  coalesce((SELECT string_agg(r.name, ', ' ORDER BY r.name)
+                   FROM app.membership m
+                   JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
+                   JOIN app.role r ON r.tenant_id = mr.tenant_id AND r.id = mr.role_id
+                   WHERE m.tenant_id = s.tenant_id AND m.user_id = s.user_id), s.position) AS "position!"
+           FROM app.staff s
+           WHERE s.tenant_id = $1 AND s.id = $2 FOR SHARE OF s"#,
         tenant,
         id
     )
@@ -55,6 +70,8 @@ pub struct ProfileRow {
     pub shift_start: Option<NaiveTime>,
     pub note: Option<String>,
     pub version: i64,
+    /// The linked login's role name(s); shown instead of `position` while linked.
+    pub account_role: Option<String>,
 }
 
 pub async fn profiles(tx: &mut TenantTx) -> Result<Vec<ProfileRow>, AppError> {
@@ -62,7 +79,12 @@ pub async fn profiles(tx: &mut TenantTx) -> Result<Vec<ProfileRow>, AppError> {
     Ok(sqlx::query_as!(
         ProfileRow,
         r#"SELECT s.id, s.full_name, s.position, s.phone_e164, s.status, s.joined_on, s.left_on,
-                  s.user_id, u.full_name AS "user_name?", s.shift_start, s.note, s.version
+                  s.user_id, u.full_name AS "user_name?", s.shift_start, s.note, s.version,
+                  (SELECT string_agg(r.name, ', ' ORDER BY r.name)
+                   FROM app.membership m
+                   JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
+                   JOIN app.role r ON r.tenant_id = mr.tenant_id AND r.id = mr.role_id
+                   WHERE m.tenant_id = s.tenant_id AND m.user_id = s.user_id) AS "account_role?"
            FROM app.staff s LEFT JOIN app.user_account u ON u.id = s.user_id
            WHERE s.tenant_id = $1
            ORDER BY s.status, s.full_name"#,
@@ -91,7 +113,12 @@ pub async fn profile(
     Ok(sqlx::query_as!(
         ProfileRow,
         r#"SELECT s.id, s.full_name, s.position, s.phone_e164, s.status, s.joined_on, s.left_on,
-                  s.user_id, u.full_name AS "user_name?", s.shift_start, s.note, s.version
+                  s.user_id, u.full_name AS "user_name?", s.shift_start, s.note, s.version,
+                  (SELECT string_agg(r.name, ', ' ORDER BY r.name)
+                   FROM app.membership m
+                   JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
+                   JOIN app.role r ON r.tenant_id = mr.tenant_id AND r.id = mr.role_id
+                   WHERE m.tenant_id = s.tenant_id AND m.user_id = s.user_id) AS "account_role?"
            FROM app.staff s LEFT JOIN app.user_account u ON u.id = s.user_id
            WHERE s.tenant_id = $1 AND s.id = $2"#,
         tenant,
@@ -150,7 +177,10 @@ pub async fn update_profile(
 ) -> Result<bool, AppError> {
     let tenant = tx.tenant().as_uuid();
     let done = sqlx::query!(
-        r#"UPDATE app.staff SET full_name = $4, position = $5, phone_e164 = $6,
+        // While a login is linked the position shown is its role: the free text stays as it was
+        // (it returns if the login is unlinked).
+        r#"UPDATE app.staff SET full_name = $4,
+                  position = CASE WHEN user_id IS NULL THEN $5 ELSE position END, phone_e164 = $6,
                   joined_on = $7, shift_start = $8, note = $9,
                   version = version + 1, updated_at = now()
            WHERE tenant_id = $1 AND id = $2 AND version = $3"#,

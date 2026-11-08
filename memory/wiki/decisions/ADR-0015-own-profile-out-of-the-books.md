@@ -1,6 +1,6 @@
 ---
 title: ADR-0015 Hồ sơ của chính mình nằm ngoài sổ quản lý; hồ sơ "Quản lý" chưa gắn chỉ chủ spa ghi
-status: accepted (EM to review)
+status: accepted (EM 2026-11-08; F19-3 superseded by the update below)
 date: 2026-11-08
 deciders: EM, agent
 ---
@@ -35,3 +35,10 @@ Chọn **B + F19-3**.
 
 ## Revisit when
 Spa có nhiều chi nhánh / nhiều tầng quản lý (quản lý ca ghi cho quản lý chi nhánh), hoặc có trường vai trò có cấu trúc thay cho vị trí chữ tự do.
+
+## Update 2026-11-08: vai trò lấy từ tài khoản, không từ chức danh ([raw](../../raw/2026-11-08-em-decision-role-by-account.md))
+EM: *"chúng ta chia theo role … có các role as account thì theo cái nào thì làm cái đó"*; quản lý giữ "Khách của tôi" (*"quản lý cũng phải làm cho khách như KTV"*).
+- **Bỏ F19-3** (quy tắc chức danh "Quản lý" → chỉ chủ spa ghi, `is_manager_position`). Chức danh không quyết định gì. Ai giám sát = hồ sơ gắn tài khoản có role cấp `attendance.record` / `evaluation.record` / `staff.manage` (quyết định C, giữ nguyên). Hồ sơ chưa có tài khoản = KTV, như trước.
+- **Thay bằng F19-2 hẹp:** tài khoản có quyền ghi sổ nhân viên mà không có `staff.manage` (quản lý) và **chưa gắn hồ sơ** không ghi gì (chấm công, khen/phàn nàn, thưởng/phạt — thêm, sửa, xóa —, đánh giá): `403 staff.link_required`, cả batch không ghi. Chủ spa miễn. Lý do: app không biết hồ sơ nào là của người đó nên không chặn được tự ghi cho mình. Sổ trả `link_required` để UI nói rõ "nhờ chủ spa gắn tài khoản"; chủ spa thấy cảnh báo tài khoản quản lý chưa gắn (`GET /staff/accounts` → `is_manager`, từ role) và một dòng nhắc ai còn chưa có tài khoản. Hậu quả chấp nhận: quản lý chưa gắn chỉ xem sổ cho tới khi được gắn (EM: mọi người sẽ có tài khoản).
+- **Chức danh theo vai trò:** hồ sơ đã gắn tài khoản hiện tên role của tài khoản đó làm vị trí, ở mọi chỗ đọc (`org::repo`: danh sách chọn KTV, Nhân sự, sổ, phiếu lương), suy ra lúc đọc nên không bao giờ lệch; `position_from_account: true`, ô "Vị trí" chỉ đọc. Chữ tự do của chủ spa chỉ dùng khi chưa gắn và được giữ nguyên (sửa hồ sơ khi đang gắn không ghi đè) để hiện lại khi bỏ gắn. Chọn cách suy ra lúc đọc thay vì chép role vào `staff.position` khi gắn: không cần migration (0031 không dùng), không cũ khi role đổi.
+- Test: `staff.rs::a_manager_without_a_linked_profile_records_nothing` (mọi route ghi, chủ spa miễn, đã gắn vẫn bị chặn cho chính mình / quản lý khác, chức danh "Quản lý" chưa có tài khoản = KTV; mutation-check), `::a_linked_profile_shows_its_account_role`; thay `an_unlinked_manager_profile_is_the_owners_to_record` và unit `manager_positions_are_recognised_in_any_spelling` (đã xóa).

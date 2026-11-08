@@ -208,6 +208,9 @@ pub struct AttendanceSheet {
     pub closed: bool,
     pub default_shift_start: String,
     pub staff: Vec<StaffSheet>,
+    /// The caller supervises staff but their login is linked to no profile: they record nothing
+    /// (`403 staff.link_required`) until the owner links it. Always false for the owner.
+    pub link_required: bool,
 }
 
 /// Builds one person's sheet from their recorded days.
@@ -302,6 +305,7 @@ pub async fn sheet(
         closed: info.closed,
         default_shift_start: hhmm(rules.default_shift_start),
         staff,
+        link_required: scope.link_required(),
     })
 }
 
@@ -411,6 +415,7 @@ mod tests {
             id: Uuid::nil(),
             full_name: "Mai".into(),
             position: "KTV".into(),
+            position_from_account: false,
             phone: None,
             status: StaffStatus::Active,
             joined_on: Some(d("2026-11-03")),

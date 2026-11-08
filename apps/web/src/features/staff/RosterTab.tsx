@@ -27,7 +27,7 @@ import {
 } from "./api";
 import { percentOfBp } from "./labels";
 import { shiftDay } from "./MyDaySheet";
-import { POSITIONS, ROSTER_FILTERS, ROSTER_FILTER_LABEL, inFilter, managerWithoutLogin, tenureLabel, type RosterFilter } from "./roster";
+import { POSITIONS, ROSTER_FILTERS, ROSTER_FILTER_LABEL, inFilter, tenureLabel, type RosterFilter } from "./roster";
 import { vnd } from "./ui";
 
 /**
@@ -85,7 +85,6 @@ export function RosterTab({
       cell: (p) => (
         <span className="grid gap-1">
           <span>{p.details?.user_name ?? (p.login_linked ? "Đã gắn" : "Chưa gắn")}</span>
-          {managerWithoutLogin(p) && <span className="text-sm text-warning-text">Chưa gắn: chỉ chủ spa ghi công cho hồ sơ này</span>}
         </span>
       ),
     },
@@ -316,7 +315,7 @@ function AccountSection({ profile: p }: { profile: StaffProfile }) {
         Tài khoản đăng nhập
       </h3>
       <p className="text-sm text-text-muted">
-        Gắn tài khoản để nhân viên tự xem công và lương. Quản lý chưa gắn tài khoản được tính như KTV khi ghi chấm công, đánh giá. Mật khẩu không xem hay đặt ở đây.
+        Gắn tài khoản để nhân viên tự xem công và lương; vị trí của hồ sơ theo vai trò của tài khoản. Quản lý chưa gắn hồ sơ thì chưa ghi sổ được. Mật khẩu không xem hay đặt ở đây.
       </p>
       <div className="flex flex-wrap items-end gap-2">
         <label className="filter-field min-w-[16rem] flex-1">
@@ -522,7 +521,23 @@ function ProfileForm({ profile, canPay, onClose, onBack }: { profile: StaffProfi
           </label>
           <label className="filter-field">
             Vị trí
-            <input required maxLength={100} list="roster-positions" value={position} onChange={(e) => { setPosition(e.target.value); }} />
+            {/* EM 2026-11-08: a linked profile's position is its login's role, not free text. */}
+            <input
+              required
+              maxLength={100}
+              list="roster-positions"
+              value={position}
+              readOnly={profile?.position_from_account}
+              aria-describedby={profile?.position_from_account ? "roster-position-hint" : undefined}
+              onChange={(e) => {
+                setPosition(e.target.value);
+              }}
+            />
+            {profile?.position_from_account && (
+              <span id="roster-position-hint" className="text-sm text-text-muted">
+                Theo vai trò của tài khoản đăng nhập.
+              </span>
+            )}
             <datalist id="roster-positions">
               {POSITIONS.map((p) => (
                 <option key={p} value={p} />

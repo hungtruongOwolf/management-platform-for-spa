@@ -12,6 +12,8 @@ addMessages(
     "payroll.unrecorded_days": "Còn ngày chưa chấm công. Chấm đủ hoặc chọn chốt dù còn thiếu.",
     "staff.account_taken": "Tài khoản này đã gắn với một nhân viên khác.",
     "staff.record_owner_only": "Chỉ chủ spa ghi được cho quản lý (quản lý không tự ghi cho mình).",
+    "staff.link_required":
+      "Tài khoản của bạn chưa gắn với hồ sơ nhân viên nên chưa ghi được. Nhờ chủ spa gắn tài khoản vào hồ sơ của bạn ở Hồ sơ nhân viên.",
     "adjustment.voided": "Khoản này vừa được xóa hoặc sửa ở máy khác. Tải lại để xem mới nhất.",
     "staff.already_left": "Nhân viên này đã nghỉ việc rồi. Tải lại để xem mới nhất.",
     "staff.already_active": "Nhân viên này đang làm. Tải lại để xem mới nhất.",

@@ -1572,6 +1572,11 @@ export interface components {
             /** Format: int32 */
             days_in_month: number;
             default_shift_start: string;
+            /**
+             * @description The caller supervises staff but their login is linked to no profile: they record nothing
+             *     (`403 staff.link_required`) until the owner links it. Always false for the owner.
+             */
+            link_required: boolean;
             /** @description `YYYY-MM`. */
             month: string;
             staff: components["schemas"]["StaffSheet"][];
@@ -2126,6 +2131,11 @@ export interface components {
         EvaluationSheet: {
             closed: boolean;
             criteria: components["schemas"]["Criterion"][];
+            /**
+             * @description The caller supervises staff but their login is linked to no profile: they record nothing
+             *     (`403 staff.link_required`) until the owner links it. Always false for the owner.
+             */
+            link_required: boolean;
             month: string;
             staff: components["schemas"]["StaffEvaluation"][];
         };
@@ -3899,13 +3909,18 @@ export interface components {
              * @description Last day of the latest period, once the person has left.
              */
             left_on?: string | null;
-            /** @description Whether a login is linked (decision C: an unlinked manager counts as a technician). */
+            /** @description Whether a login is linked (decision C reads the linked login's role). */
             login_linked: boolean;
             pay?: components["schemas"]["StaffPayDto"] | null;
             pay_visible: boolean;
             /** @description Oldest first. */
             periods: components["schemas"]["EmploymentPeriodDto"][];
             position: string;
+            /**
+             * @description `position` is the linked login's role name (not editable while linked; the free text
+             *     returns when the login is unlinked).
+             */
+            position_from_account: boolean;
             /** @description `HH:MM`; `null` = the spa default (payroll rules). */
             shift_start?: string | null;
             status: components["schemas"]["StaffStatusDto"];
