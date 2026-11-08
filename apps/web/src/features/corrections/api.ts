@@ -98,6 +98,26 @@ export function mayCorrectVisit(
   );
 }
 
+/**
+ * "Thêm / Sửa ghi chú gói" (F4) on an open package sale, UX only (`PATCH /sales/{id}` decides):
+ * `package.sell` + `customer.health_notes.write`, and the health read too so the desk sees the note
+ * it replaces; a day before today needs `record.void_closed_day` (the owner).
+ */
+export function mayEditSaleNote(
+  permissions: readonly string[],
+  sale: { business_date: string; voided: boolean },
+  today: string,
+): boolean {
+  const has = (p: string) => permissions.includes(p);
+  return (
+    !sale.voided &&
+    has("package.sell") &&
+    has("customer.health_notes.write") &&
+    has("customer.health_notes.read") &&
+    (sale.business_date >= today || has("record.void_closed_day"))
+  );
+}
+
 /** Today in the spa's time zone, "YYYY-MM-DD". */
 export function spaToday(now: Date = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", {

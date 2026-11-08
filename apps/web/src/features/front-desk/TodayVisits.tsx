@@ -26,7 +26,7 @@ import { messageFor, retryable } from "../../lib/errors";
 import { invalidateManagementViews } from "../../lib/invalidate";
 import { serviceLabel } from "../../lib/names";
 import { can, meQuery } from "../auth/session";
-import { mayCorrectVisit, spaToday } from "../corrections/api";
+import { mayCorrectVisit, mayEditSaleNote, spaToday } from "../corrections/api";
 import { customerQuery } from "../customers/api";
 import { HealthNote } from "../customers/HealthNote";
 import { DaySales } from "./DaySales";
@@ -40,6 +40,9 @@ import {
 
 const VisitUpsell = lazy(() =>
   import("./VisitUpsell").then((m) => ({ default: m.VisitUpsell })),
+);
+const SaleNoteForm = lazy(() =>
+  import("../sales/SaleNoteForm").then((m) => ({ default: m.SaleNoteForm })),
 );
 const VoidVisitForm = lazy(() =>
   import("../corrections/VoidVisitForm").then((m) => ({
@@ -456,6 +459,8 @@ export function TodayVisits({
   }
   /** The saved visit open for "Thêm dịch vụ / bán gói" (which also converts, Q-U1). */
   const [upsell, setUpsell] = useState<string | null>(null);
+  /** "Thêm / Sửa ghi chú gói" open under a visit: the package sale being edited (F4). */
+  const [noting, setNoting] = useState<{ visitId: string; saleId: string } | null>(null);
   // A busy day holds a hundred visits: the newest VISITS_PAGE first; "Xem tất cả" loads the day,
   // then shows it VISITS_PAGE at a time.
   const [all, setAll] = useState(false);
@@ -487,6 +492,11 @@ export function TodayVisits({
   const correctable = (v: Visit) =>
     onCorrect !== undefined &&
     mayCorrectVisit(me?.permissions ?? [], v, todayIso);
+  /** The packages sold in a visit whose note this caller may add or edit (UX only). */
+  const notable = (v: Visit) =>
+    v.package_sales.filter((p) =>
+      mayEditSaleNote(me?.permissions ?? [], p, todayIso),
+    );
   // Round 6 (UX only, the server decides): adding to a saved visit needs the same rights as
   // recording one, a past day the owner's; converting also voids the one-off part.
   const pastOk = isToday || can(me, "record.void_closed_day");
@@ -505,10 +515,12 @@ export function TodayVisits({
     setExpanded((open) => (open === id ? null : id));
     if (voiding === id) setVoiding(null);
     if (upsell === id) setUpsell(null);
+    if (noting?.visitId === id) setNoting(null);
   };
   const openUpsell = (v: Visit) => {
     setNotice(null);
     setVoiding(null);
+    setNoting(null);
     setExpanded(v.id);
     setUpsell(v.id);
   };
@@ -618,6 +630,17 @@ export function TodayVisits({
                       },
                     ]
                   : []),
+                // F4: a package sold in the visit keeps its own note, edited in place.
+                ...notable(v).map((p) => ({
+                  label: `${p.note ? "Sửa" : "Thêm"} ghi chú gói${v.package_sales.length > 1 ? ` ${p.description}` : ""}`,
+                  onSelect: () => {
+                    setNotice(null);
+                    setVoiding(null);
+                    setUpsell(null);
+                    setExpanded(v.id);
+                    setNoting({ visitId: v.id, saleId: p.sale_id });
+                  },
+                })),
                 ...(mayVoid && v.status === "completed"
                   ? [
                       {
@@ -625,6 +648,7 @@ export function TodayVisits({
                         danger: true,
                         onSelect: () => {
                           setNotice(null);
+                          setNoting(null);
                           setExpanded(v.id);
                           setVoiding(v.id);
                         },
@@ -695,6 +719,33 @@ export function TodayVisits({
                     }}
                   />
                 </Suspense>
+              ) : noting?.visitId === v.id ? (
+                <Suspense
+                  fallback={
+                    <p role="status" className="text-text-muted">
+                      Đang mở…
+                    </p>
+                  }
+                >
+                  {v.package_sales
+                    .filter((p) => p.sale_id === noting.saleId)
+                    .map((p) => (
+                      <SaleNoteForm
+                        key={p.sale_id}
+                        saleId={p.sale_id}
+                        note={p.note}
+                        customerId={v.customer_id}
+                        title={`Ghi chú gói "${p.description}" của ${v.customer_name}`}
+                        onCancel={() => {
+                          setNoting(null);
+                        }}
+                        onDone={() => {
+                          setNoting(null);
+                          setNotice(`Đã lưu ghi chú gói của ${v.customer_name}.`);
+                        }}
+                      />
+                    ))}
+                </Suspense>
               ) : expanded === v.id ? (
                 <VisitDetails v={v} />
               ) : null
@@ -730,11 +781,11 @@ export function TodayVisits({
           day={day}
           isToday={isToday}
           mayVoid={mayVoid}
-          mayEditNote={
-            mayVoid &&
-            can(me, "package.sell") &&
-            can(me, "customer.health_notes.write")
-          }
+          mayEditNote={mayEditSaleNote(
+            me?.permissions ?? [],
+            { business_date: day, voided: false },
+            todayIso,
+          )}
           onNotice={setNotice}
         />
       )}

@@ -904,6 +904,54 @@ describe("/quay day list (EM live test 2026-11-08)", () => {
     ).toBeInTheDocument();
   });
 
+  it("edits the note of a package sold in a visit from the row's ⋯ (F4 follow-up)", async () => {
+    const noted: Visit = {
+      ...SOLD,
+      package_sales: SOLD.package_sales.map((p) => ({ ...p, note: "Đau vai gáy" })),
+    };
+    const calls = serve([...MANAGER, "package.sell"], undefined, [pkg("cp1")], [noted]);
+    const user = userEvent.setup();
+    at("/quay");
+    const list = await screen.findByRole("table", { name: "Lượt khách hôm nay" });
+    await user.click(
+      within(list).getByRole("button", { name: /^Thao tác lượt .* của Nguyễn Thị Hà$/ }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Sửa ghi chú gói" }));
+    const field = await screen.findByRole("textbox", { name: "Ghi chú gói" });
+    expect(field).toHaveValue("Đau vai gáy");
+    expect(field).toHaveAccessibleDescription(/Bảo mật như ghi chú buổi/);
+    await user.clear(field);
+    await user.type(field, "Đau thắt lưng");
+    await user.click(screen.getByRole("button", { name: "Lưu ghi chú" }));
+    await waitFor(() => {
+      expect(
+        calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/sales/ps1")?.body,
+      ).toEqual({ note: "Đau thắt lưng" });
+    });
+    expect(
+      await screen.findByText("Đã lưu ghi chú gói của Nguyễn Thị Hà."),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no package-note edit without package.sell or the health-note rights", async () => {
+    serve(
+      [...MANAGER, "package.sell"].filter((p) => p !== "customer.health_notes.write"),
+      undefined,
+      [pkg("cp1")],
+      [SOLD],
+    );
+    const user = userEvent.setup();
+    at("/quay");
+    const list = await screen.findByRole("table", { name: "Lượt khách hôm nay" });
+    await user.click(
+      within(list).getByRole("button", { name: /^Thao tác lượt .* của Nguyễn Thị Hà$/ }),
+    );
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: /ghi chú gói/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows a back-filled visit's recording time on the spa's clock, not the browser's (F27)", async () => {
     const backfill: Visit = {
       ...VISIT,

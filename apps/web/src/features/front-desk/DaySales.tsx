@@ -3,25 +3,21 @@
 // day's visits at Quầy, with the same columns and its own void ("Hủy hóa đơn"). The day's visit
 // count stays a count of visits. Each sale shows its "Ghi chú gói" (F4) to health-note readers,
 // and the desk edits it in place (`PATCH /sales/{id}`). Part of the lazy day-list chunk.
-import type { DaySale, Sale } from "@vpyd/api-client";
-import {
-  queryOptions,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import type { DaySale } from "@vpyd/api-client";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { formatVnd } from "@vpyd/ui";
-import { useEffect, useId, useRef, useState } from "react";
+import { useState } from "react";
 import { CustomerName } from "../../app/CustomerName";
 import { ResponsiveTable, type Column } from "../../components/ResponsiveTable";
 import { RowMenu } from "../../components/RowMenu";
 import { api } from "../../lib/api";
-import { fieldMessage, messageFor } from "../../lib/errors";
+import { messageFor } from "../../lib/errors";
 import { spaTime } from "../../lib/format";
 import { invalidateManagementViews } from "../../lib/invalidate";
 import { voidSale } from "../corrections/api";
 import { VoidForm } from "../corrections/VoidForm";
+import { SaleNoteForm } from "../sales/SaleNoteForm";
 
 /**
  * Package sales of a business day saved without a visit (F6): shown under the day's visits at
@@ -59,105 +55,6 @@ function saleMeta(s: DaySale): string {
 }
 
 const voided = (s: DaySale) => s.sale.status === "voided";
-
-/** `PATCH /sales/{id}`: replaces a package sale's note ("" = none). */
-async function saveSaleNote(saleId: string, note: string): Promise<Sale> {
-  return (await api(`/sales/${saleId}`, {
-    method: "PATCH",
-    body: { note: note.trim() === "" ? null : note.trim() },
-  })) as Sale;
-}
-
-/** "Sửa ghi chú gói": the note of one package sale, edited inline under its row. */
-function SaleNoteForm({
-  sale,
-  title,
-  onDone,
-  onCancel,
-}: {
-  sale: Sale;
-  title: string;
-  onDone: () => void;
-  onCancel: () => void;
-}) {
-  const titleId = useId();
-  const noteId = useId();
-  const ref = useRef<HTMLTextAreaElement>(null);
-  const [note, setNote] = useState(sale.note ?? "");
-  const save = useMutation({
-    mutationFn: () => saveSaleNote(sale.id, note),
-    onSuccess: onDone,
-  });
-  useEffect(() => {
-    ref.current?.focus();
-  }, []);
-  const problem = fieldMessage(save.error, "note");
-  return (
-    <section
-      role="dialog"
-      aria-modal="false"
-      aria-labelledby={titleId}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") onCancel();
-      }}
-      className="mt-2 grid gap-3 rounded-md border border-border bg-surface p-3"
-    >
-      <h3 id={titleId} className="font-semibold">
-        {title}
-      </h3>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          save.mutate();
-        }}
-        className="grid gap-2"
-      >
-        <label htmlFor={noteId} className="field">
-          Ghi chú gói
-        </label>
-        <textarea
-          id={noteId}
-          ref={ref}
-          value={note}
-          maxLength={2000}
-          rows={3}
-          aria-invalid={problem ? true : undefined}
-          aria-describedby={`${noteId}-hint`}
-          onChange={(e) => {
-            setNote(e.target.value);
-          }}
-          className="input"
-        />
-        <span id={`${noteId}-hint`} className="field-hint">
-          Bảo mật như ghi chú buổi: chỉ người được xem lưu ý sức khỏe mới đọc
-          được. Để trống để xóa ghi chú.
-        </span>
-        {problem && <p className="field-error">{problem}</p>}
-        {save.isError && !problem && (
-          <p role="alert" className="alert">
-            {messageFor(save.error)}
-          </p>
-        )}
-        <div className="button-row">
-          <button
-            type="submit"
-            disabled={save.isPending}
-            className="btn btn-primary"
-          >
-            {save.isPending ? "Đang lưu…" : "Lưu ghi chú"}
-          </button>
-          <button
-            type="button"
-            onClick={onCancel}
-            className="btn btn-secondary"
-          >
-            Thôi
-          </button>
-        </div>
-      </form>
-    </section>
-  );
-}
 
 export function DaySales({
   day,
@@ -330,7 +227,9 @@ export function DaySales({
               />
             ) : noting === s.sale.id ? (
               <SaleNoteForm
-                sale={s.sale}
+                saleId={s.sale.id}
+                note={s.sale.note}
+                customerId={s.sale.customer_id}
                 title={`Ghi chú gói ${s.sale.lines.map((l) => `"${l.description}"`).join(", ")} của ${s.customer_name}`}
                 onCancel={() => {
                   setNoting(null);
@@ -338,9 +237,6 @@ export function DaySales({
                 onDone={() => {
                   setNoting(null);
                   onNotice(`Đã lưu ghi chú gói của ${s.customer_name}.`);
-                  void queryClient.invalidateQueries({ queryKey: ["sales", "day"] });
-                  void queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
-                  void invalidateManagementViews(queryClient, s.sale.customer_id);
                 }}
               />
             ) : null

@@ -5,7 +5,7 @@ mod common;
 
 use axum::http::StatusCode;
 use catalog::service::seed_menu;
-use chrono::{DateTime, Duration, FixedOffset, NaiveDate, Utc};
+use chrono::{Duration, FixedOffset, NaiveDate, Utc};
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
     session_for,
@@ -1782,15 +1782,24 @@ fn is_at(v: &Value, rfc3339: &str) -> bool {
     got.is_some() && got == parse(rfc3339)
 }
 
-/// A start of today in a slot already over: an hour ago, on the 15-minute grid (yesterday just
-/// after midnight, which is refused just the same).
-fn an_hour_ago() -> String {
-    let ago = Utc::now() - Duration::minutes(60);
-    let minute = ago.timestamp() / 60;
-    let on_grid = minute - minute.rem_euclid(15);
-    DateTime::<Utc>::from_timestamp(on_grid * 60, 0)
-        .unwrap_or_default()
-        .to_rfc3339()
+/// A start whose slot is already over, inside the opening hours at any hour of the day (the test
+/// opens 00:00–23:45 and books a 90-minute service). Today 00:00 (+90 = 01:30): its first
+/// 15-minute slot is over from 00:15 on. "An hour ago" used to fail late in the evening (22:30 +
+/// 90 minutes ends after closing → `outside_opening_hours`, seen at 23:43) and just after midnight
+/// (yesterday's late slot runs past closing too). In the first quarter hour of the day no slot of
+/// today is over yet, so that sub-case cannot exist then: yesterday 10:00 is booked instead, a
+/// past day refused with the same `appointment.in_the_past`. Either way the server's clock may
+/// move on before the request lands; both choices stay refused (and in hours) when it does.
+fn a_slot_already_over() -> String {
+    let midnight = at(0, "00:00");
+    let over_from = chrono::DateTime::parse_from_rfc3339(&midnight)
+        .map(|m| m.with_timezone(&Utc) + Duration::minutes(15))
+        .unwrap_or_default();
+    if Utc::now() >= over_from {
+        midnight
+    } else {
+        at(-1, "10:00")
+    }
 }
 
 /// F12 (EM 2026-11-08): a slot of today already over is never booked, the owner included (the
@@ -1801,7 +1810,7 @@ fn an_hour_ago() -> String {
 async fn a_slot_already_over_is_never_booked(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
     s.open_all_day().await?;
-    let past = an_hour_ago();
+    let past = a_slot_already_over();
     for who in [&s.manager, &s.owner] {
         let refused = s.book_ha(who, &past, None).await;
         assert_eq!(
