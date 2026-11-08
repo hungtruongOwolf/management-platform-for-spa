@@ -629,3 +629,6 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 
 ## [2026-11-08] decision | Lượt khách chỉ lưu giờ bắt đầu
 - Raw: [2026-11-08-em-decision-visit-time](raw/2026-11-08-em-decision-visit-time.md). Giữ nguyên: giờ kết thúc = giờ bắt đầu + thời lượng dịch vụ; không thêm "Giờ xong" hay nút bắt đầu/xong. Lượt không đặt lịch vẫn hiện trên lịch hẹn (`CalendarVisitDto`).
+
+## [2026-11-08] qa | Test live chủ spa (Chrome, local)
+- Raw: [2026-11-08-live-test-owner](raw/2026-11-08-live-test-owner.md). C1–C4, C6 đạt; F19 xác nhận chỉ do hồ sơ chưa gắn tài khoản (gắn rồi thì thẻ quản lý bị khóa đúng). F18 đã có lời giải: chủ spa nhập bù được ngày đã qua. Lỗi mới: F24–F28 (đáng chú ý F27: "Ghi lúc" theo múi giờ trình duyệt). Còn lại: nhận lại Lan (cần MFA), C5, C7.
