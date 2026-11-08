@@ -287,6 +287,20 @@ function VisitDetails({ v }: { v: Visit }) {
       )}
       {split && <DetailRow main="Thanh toán" meta={split} />}
       {v.note && <DetailRow main="Ghi chú buổi" meta={v.note} />}
+      {/* F4: each package sold here, its own note (sent only to health-note readers). */}
+      {packages
+        .filter((p) => p.note)
+        .map((p) => (
+          <DetailRow
+            key={`note-${p.sale_id}`}
+            main="Ghi chú gói"
+            meta={
+              packages.length > 1
+                ? `${p.description}: ${p.note ?? ""}`
+                : (p.note ?? "")
+            }
+          />
+        ))}
       {v.companions.length > 0 && (
         <DetailRow main="Người đi cùng" meta={v.companions.join(", ")} />
       )}
@@ -716,6 +730,11 @@ export function TodayVisits({
           day={day}
           isToday={isToday}
           mayVoid={mayVoid}
+          mayEditNote={
+            mayVoid &&
+            can(me, "package.sell") &&
+            can(me, "customer.health_notes.write")
+          }
           onNotice={setNotice}
         />
       )}

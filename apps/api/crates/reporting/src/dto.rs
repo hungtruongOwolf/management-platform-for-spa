@@ -534,6 +534,10 @@ pub struct HistoryPurchase {
     /// Bought by someone else for this customer: who paid (the money fields are theirs). Null
     /// on the payer's own timeline.
     pub payer_name: Option<String>,
+    /// "Ghi chú gói" (F4), only for `customer.health_notes.read` (absent otherwise or when
+    /// empty), like a visit's session note.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// A package's expiry moved later ("Gia hạn").
@@ -673,6 +677,10 @@ pub struct PackageUsage {
     pub package: CustomerPackageDto,
     /// Oldest first, like the paper page (STT 1, 2, 3…).
     pub uses: Vec<PackageUse>,
+    /// The "Ghi chú gói" of the sale that created this package (F4), only for
+    /// `customer.health_notes.read` (absent otherwise, when empty, or for a paper-book package).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sale_note: Option<String>,
 }
 
 // -------------------------------------------------------------------------------- overview

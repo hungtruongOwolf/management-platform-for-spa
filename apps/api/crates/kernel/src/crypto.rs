@@ -115,6 +115,38 @@ pub fn open_visit_note(
         .map_err(|e| crate::AppError::Internal(format!("visit note of {visit}: {e}")))
 }
 
+/// Associated data of a package sale's note (`app.sale.note_ct`, F4): the one purpose and ids
+/// every context encrypts and reads it under. A ciphertext moved to another sale or spa fails.
+pub fn sale_note_aad(tenant: uuid::Uuid, sale: uuid::Uuid) -> Vec<u8> {
+    record_aad("sale.note", &[tenant, sale])
+}
+
+/// Encrypts a package sale's note for `app.sale.note_ct`; `None` stays `None`. The error names
+/// the sale only, never the text.
+pub fn seal_sale_note(
+    cipher: &FieldCipher,
+    tenant: uuid::Uuid,
+    sale: uuid::Uuid,
+    note: Option<&str>,
+) -> Result<Option<Vec<u8>>, crate::AppError> {
+    note.map(|n| cipher.encrypt(n, &sale_note_aad(tenant, sale)))
+        .transpose()
+        .map_err(|e| crate::AppError::Internal(format!("sale note of {sale}: {e}")))
+}
+
+/// Decrypts a package sale's note; a blob that does not open is an internal error, never shown
+/// as an empty note.
+pub fn open_sale_note(
+    cipher: &FieldCipher,
+    tenant: uuid::Uuid,
+    sale: uuid::Uuid,
+    ct: Option<&[u8]>,
+) -> Result<Option<String>, crate::AppError> {
+    ct.map(|ct| cipher.decrypt(ct, &sale_note_aad(tenant, sale)))
+        .transpose()
+        .map_err(|e| crate::AppError::Internal(format!("sale note of {sale}: {e}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,6 +185,28 @@ mod tests {
         assert_eq!(c.decrypt(&blob, &other), Err(CipherError::Decrypt));
         let other_purpose = record_aad("customer.health_note", &[uuid::Uuid::from_u128(1)]);
         assert_eq!(c.decrypt(&blob, &other_purpose), Err(CipherError::Decrypt));
+        Ok(())
+    }
+
+    #[test]
+    fn a_sale_note_opens_only_on_its_own_sale_and_never_as_a_session_note()
+    -> Result<(), crate::AppError> {
+        let c = cipher().map_err(|e| crate::AppError::Internal(e.to_string()))?;
+        let (tenant, sale, other) = (
+            uuid::Uuid::from_u128(1),
+            uuid::Uuid::from_u128(2),
+            uuid::Uuid::from_u128(3),
+        );
+        let blob = seal_sale_note(&c, tenant, sale, Some("Đau vai gáy"))?.unwrap_or_default();
+        assert!(!String::from_utf8_lossy(&blob).contains("vai"));
+        assert_eq!(
+            open_sale_note(&c, tenant, sale, Some(&blob))?.as_deref(),
+            Some("Đau vai gáy")
+        );
+        assert!(open_sale_note(&c, tenant, other, Some(&blob)).is_err());
+        assert!(open_visit_note(&c, tenant, sale, Some(&blob)).is_err());
+        assert_eq!(seal_sale_note(&c, tenant, sale, None)?, None);
+        assert_eq!(open_sale_note(&c, tenant, sale, None)?, None);
         Ok(())
     }
 

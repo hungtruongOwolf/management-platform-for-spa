@@ -24,6 +24,10 @@ pub struct SaleCreate {
     pub discount: Option<DiscountCreate>,
     /// 0–2 payments, one per method, summing exactly to the total (R1 collects in full).
     pub payments: Vec<PaymentCreate>,
+    /// "Ghi chú gói" (F4): an optional note on this package sale, ≤ 2000 characters. Often holds
+    /// health information, so it is encrypted at rest and needs `customer.health_notes.write`;
+    /// empty or blank = none.
+    pub note: Option<String>,
 }
 
 /// Body of `POST /sales/checkout` (EM 2026-11-07 item 4): a Quầy cart holding only packages,
@@ -53,6 +57,8 @@ pub struct CheckoutPackageCreate {
     pub discount: Option<DiscountCreate>,
     /// Who the package belongs to ("Mua cho người khác"); omitted = the payer.
     pub beneficiary_customer_id: Option<Uuid>,
+    /// "Ghi chú gói" of this package alone (F4), as `note` of `POST /sales`.
+    pub note: Option<String>,
 }
 
 /// `POST /sales/checkout` → 201: the sales of the checkout, in request order.
@@ -176,6 +182,22 @@ pub struct SaleDto {
     pub payments: Vec<PaymentDto>,
     /// Packages this sale created.
     pub customer_packages: Vec<CustomerPackageDto>,
+    /// "Ghi chú gói" (F4). Present (`GET /sales?date=`, `GET /sales/{id}`, `PATCH /sales/{id}`)
+    /// only for `customer.health_notes.read`; null = no note. Never in an idempotent replay: the
+    /// responses of `POST /sales`, `POST /sales/checkout` and the void leave it out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>)]
+    pub note: Option<Option<String>>,
+}
+
+/// Body of `PATCH /sales/{id}` ("Sửa ghi chú gói", F4): the note is the only field a package
+/// sale lets the desk change in place (money and packages change through a void).
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SaleUpdate {
+    /// The new note (≤ 2000 characters); null or blank = no note. Needs
+    /// `customer.health_notes.write`.
+    pub note: Option<String>,
 }
 
 /// `GET /sales?date=`: the package sales of one business day made at the desk without a visit.

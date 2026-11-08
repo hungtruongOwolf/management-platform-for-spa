@@ -168,16 +168,17 @@ pub async fn customer_summary(
 #[utoipa::path(get, path = "/api/v1/customer-packages/{id}/usage", tag = "reports",
     params(("id" = Uuid, Path)),
     responses(
-        (status = 200, body = PackageUsage),
+        (status = 200, body = PackageUsage, description = "`sale_note` only for customer.health_notes.read"),
         (status = 401), (status = 403, description = "auth.forbidden: needs customer.read + visit.read"),
         (status = 404)))]
 pub async fn package_usage(
     State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Response, AppError> {
     Ok(no_store(
-        customer::package_usage(&pool, &user.actor, id).await?,
+        customer::package_usage(&pool, &cipher, &user.actor, id).await?,
     ))
 }
 

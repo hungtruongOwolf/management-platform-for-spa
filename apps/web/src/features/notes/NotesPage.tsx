@@ -31,6 +31,7 @@ export const KIND_LABEL: Record<NoteKind, string> = {
   package_extension: "Gia hạn gói",
   discount: "Giảm giá",
   appointment_reason: "Hủy lịch / không đến",
+  package_note: "Ghi chú gói",
 };
 
 const KIND_BADGE: Record<NoteKind, string> = {
@@ -49,6 +50,7 @@ const KIND_BADGE: Record<NoteKind, string> = {
   package_extension: "badge-info",
   discount: "badge-warn",
   appointment_reason: "badge-danger",
+  package_note: "badge-info",
 };
 
 /** The chip of one note: some kinds say more precisely what happened (`detail`). */
@@ -128,7 +130,7 @@ function NotesPageBody() {
     <section className="notes-page">
       <PageHeader title="Nhật ký ghi chú" />
       <p className="notes-lede">
-        Mọi ghi chú đã ghi trong app, mới nhất trước: ghi chú buổi, hồ sơ, lịch hẹn, chấm công, khen/phàn nàn, đánh giá, thưởng/phạt, chăm sóc lại, lý do hủy, gia hạn, giảm giá. Chỉ hiện loại ghi chú tài khoản của bạn được xem.
+        Mọi ghi chú đã ghi trong app, mới nhất trước: ghi chú buổi, ghi chú gói, hồ sơ, lịch hẹn, chấm công, khen/phàn nàn, đánh giá, thưởng/phạt, chăm sóc lại, lý do hủy, gia hạn, giảm giá. Chỉ hiện loại ghi chú tài khoản của bạn được xem.
       </p>
       <ResponsiveFilters
         label="Lọc ghi chú"
@@ -286,7 +288,9 @@ function NoteRow({ note: n, onCustomer }: { note: NoteEntry; onCustomer: (() => 
         )}
         {!n.customer_id && n.customer_name && <span className="font-semibold">{n.customer_name}</span>}
         {n.staff_id && n.staff_name && <span className="font-semibold">{n.staff_name}</span>}
-        {n.kind === "package_extension" && n.detail && <span className="text-text-muted">{n.detail}</span>}
+        {(n.kind === "package_extension" || n.kind === "package_note") && n.detail && (
+          <span className="text-text-muted">{n.detail}</span>
+        )}
       </p>
       <p className="note-text">{n.text}</p>
       <p className="note-source">
@@ -308,6 +312,7 @@ function historyKindOf(n: NoteEntry): HistoryKind | "" {
   if (n.kind === "void") return n.detail === "visit" || n.detail === "visit_corrected" ? "visit_voided" : "";
   if (n.kind === "package_extension") return "package_extended";
   if (n.kind === "discount") return n.detail === "visit" ? "visit" : "purchase";
+  if (n.kind === "package_note") return "purchase";
   return "";
 }
 

@@ -173,6 +173,7 @@ export function SellPackageDialog({
         serverError={mutation.error}
         openPlanId={null}
         onOpened={onOpened}
+        canWriteNote={can(me, "customer.health_notes.write")}
       />
       {total > 0 && (
         <PaymentChoices

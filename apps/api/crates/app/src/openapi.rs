@@ -72,6 +72,7 @@ use utoipa::OpenApi;
         sales::http::create_sale,
         sales::http::create_checkout,
         sales::http::read_sale,
+        sales::http::update_sale,
         sales::http::void_sale,
         operations::http::create_visit,
         operations::http::list_visits,

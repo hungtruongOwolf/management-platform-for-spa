@@ -4,8 +4,8 @@
 //! Nothing is copied: one query unions the notes where they live. Each source keeps the read rule
 //! it already has on its own screen ([`Allowed`]), passed to SQL as a flag per branch, so a kind the
 //! caller may not read is never selected (deny by default). Encrypted notes (session notes, health
-//! notes) are decrypted here, with the same associated data their writers use, only for callers
-//! entitled to them, and never logged.
+//! notes, package-sale notes) are decrypted here, with the same associated data their writers use,
+//! only for callers entitled to them, and never logged.
 //!
 //! **Search over encrypted notes** (the decision, spec §10.4): the database cannot search a
 //! ciphertext, and decrypting every note of the spa per request does not scale. Plain notes are
@@ -70,6 +70,9 @@ impl Allowed {
                 can(Permission::AppointmentManage)
             }
             NoteKind::Discount => discount_on_visit || discount_on_sale,
+            NoteKind::PackageNote => {
+                can(Permission::SaleRead) && can(Permission::CustomerRead) && health
+            }
         };
         Allowed {
             granted: NoteKind::ALL.map(rule),
@@ -281,6 +284,23 @@ async fn fetch(
              WHERE $28 AND ar.tenant_id = $1 AND ar.status IN ('cancelled', 'no_show')
                AND ar.closed_at >= b.lo AND ar.closed_at < b.hi
              UNION ALL
+             -- "Ghi chú gói" (F4): about the package's owner (the beneficiary when bought for
+             -- someone else), named by the packages it sold.
+             SELECT 'package_note', pn.created_at, pn.business_date, pn.id::text, NULL, pn.note_ct,
+                    coalesce(own.customer_id, pn.customer_id), pn.created_by, NULL, pn.visit_id,
+                    own.names, NULL, NULL
+             FROM app.sale pn
+             CROSS JOIN LATERAL (
+               SELECT string_agg(sl.description_snapshot, ', ' ORDER BY sl.position) AS names,
+                      (array_agg(cp.customer_id))[1] AS customer_id
+               FROM app.sale_line sl
+               LEFT JOIN app.customer_package cp
+                 ON cp.tenant_id = sl.tenant_id AND cp.id = sl.customer_package_id
+               WHERE sl.tenant_id = pn.tenant_id AND sl.sale_id = pn.id AND sl.line_type = 'package'
+             ) own
+             WHERE $30 AND pn.tenant_id = $1 AND pn.note_ct IS NOT NULL
+               AND pn.business_date BETWEEN $3 AND $4
+             UNION ALL
              SELECT 'evaluation_note', ev.updated_at, (ev.updated_at AT TIME ZONE $2)::date,
                     ev.staff_id::text || ':' || ev.work_date::text || ':' || part.name, part.body,
                     NULL, NULL, ev.recorded_by, ev.staff_id, NULL, part.name, NULL, ev.work_date
@@ -372,6 +392,7 @@ async fn fetch(
         a.discount_on_sale,
         a.may(NoteKind::AppointmentReason),
         f.hidden_staff,
+        a.may(NoteKind::PackageNote),
     )
     .fetch_all(tx.conn())
     .await?;
@@ -381,6 +402,11 @@ async fn fetch(
 /// Same purpose and ids `operations` encrypts a session note under (`operations::service::visit_aad`).
 fn visit_note_aad(tenant: Uuid, visit: Uuid) -> Vec<u8> {
     kernel::crypto::record_aad("visit.note", &[tenant, visit])
+}
+
+/// The sale of a `package_note` row: its key is the sale's id.
+fn sale_of(row: &NoteRow) -> Option<Uuid> {
+    Uuid::parse_str(&row.key).ok()
 }
 
 /// The note's text: plain from SQL, or decrypted with its writer's associated data. The error
@@ -394,9 +420,10 @@ fn text_of(
     let Some(ct) = row.ct.as_deref() else {
         return Ok(row.body.clone().unwrap_or_default());
     };
-    let aad = match (kind, row.visit_id, row.customer_id) {
-        (NoteKind::VisitNote, Some(visit), _) => visit_note_aad(tenant, visit),
-        (NoteKind::HealthNote, _, Some(customer)) => crm::cipher::customer_aad(tenant, customer),
+    let aad = match (kind, row.visit_id, row.customer_id, sale_of(row)) {
+        (NoteKind::VisitNote, Some(visit), _, _) => visit_note_aad(tenant, visit),
+        (NoteKind::HealthNote, _, Some(customer), _) => crm::cipher::customer_aad(tenant, customer),
+        (NoteKind::PackageNote, _, _, Some(sale)) => kernel::crypto::sale_note_aad(tenant, sale),
         _ => {
             return Err(AppError::Internal(format!(
                 "note {} has no key context",

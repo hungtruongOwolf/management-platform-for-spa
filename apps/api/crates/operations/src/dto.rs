@@ -60,6 +60,9 @@ pub struct VisitPackageSaleCreate {
     /// Who the package belongs to (US13); omitted = the visit's customer (the payer). A package
     /// for someone else cannot be used in this visit.
     pub beneficiary_customer_id: Option<Uuid>,
+    /// "Ghi chú gói" of this package (F4), beside the visit's session note: ≤ 2000 characters,
+    /// health data (encrypted at rest), needs `customer.health_notes.write`.
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
@@ -310,6 +313,11 @@ pub struct VisitPackageSaleDto {
     pub beneficiary_customer_id: Option<Uuid>,
     pub beneficiary_name: Option<String>,
     pub payments: Vec<PaymentDto>,
+    /// "Ghi chú gói" (F4): present exactly when the visit's session note is (a visit or the day
+    /// list read by `customer.health_notes.read`); null = no note. Never in an idempotent replay.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>)]
+    pub note: Option<Option<String>>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

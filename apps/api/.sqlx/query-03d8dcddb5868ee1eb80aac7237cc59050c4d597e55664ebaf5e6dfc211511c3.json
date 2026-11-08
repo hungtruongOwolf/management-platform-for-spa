@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.note_ct\n               FROM app.customer_package cp\n               JOIN app.sale s ON s.tenant_id = cp.tenant_id AND s.id = cp.sale_id\n               WHERE cp.tenant_id = $1 AND cp.id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "note_ct",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "note_ct"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "03d8dcddb5868ee1eb80aac7237cc59050c4d597e55664ebaf5e6dfc211511c3"
+}

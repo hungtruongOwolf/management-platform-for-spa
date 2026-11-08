@@ -10,7 +10,9 @@
 //!
 //! The session note is health data: encrypted at rest (AAD = tenant + visit), written only with
 //! `customer.health_notes.write`, returned (on a visit and in the day list) only with
-//! `customer.health_notes.read`, never stored in the idempotent response nor in audit.
+//! `customer.health_notes.read`, never stored in the idempotent response nor in audit. Each package
+//! sold in the checkout may carry its own "Ghi chú gói" (F4) under the same rules, encrypted by
+//! `sales` under the sale (`sales::service::record_package_sale`).
 
 use crate::domain::{self, CheckInError};
 use crate::dto::{
@@ -82,6 +84,8 @@ struct PackageSaleOrder {
     line: PackageLine,
     discount: Money,
     discount_reason: Option<String>,
+    /// "Ghi chú gói" (F4), trimmed; needs `customer.health_notes.write`.
+    note: Option<String>,
 }
 
 /// The request after shape validation; nothing is checked against the database yet.
@@ -192,10 +196,23 @@ fn parse_package_sales(
                 },
                 discount,
                 discount_reason,
+                note: sales::service::parse_sale_note(
+                    p.note.as_ref(),
+                    &format!("{prefix}.note"),
+                    errors,
+                ),
             }
         })
         .collect();
     (sales, refs)
+}
+
+/// A note on any package sold needs `customer.health_notes.write` (refused, never dropped).
+fn require_package_note_rights(actor: &Actor, sales: &[PackageSaleOrder]) -> Result<(), AppError> {
+    for s in sales {
+        sales::service::require_note_right(actor, s.note.as_ref())?;
+    }
+    Ok(())
 }
 
 fn parse_lines(
@@ -321,6 +338,7 @@ fn parse_order(actor: &Actor, input: &VisitCreate, min_lines: usize) -> Result<O
     if !package_sales.is_empty() {
         actor.require(Permission::PackageSell)?;
     }
+    require_package_note_rights(actor, &package_sales)?;
     Ok(Order {
         customer_id: input.customer_id,
         check_in_at: input.check_in_at,
@@ -481,6 +499,7 @@ async fn price_checkout(
                 lines: vec![p.line.clone()],
                 discount: p.discount,
                 discount_reason: p.discount_reason.clone(),
+                note: p.note.clone(),
             },
             manager_discount_max_pct,
         )
@@ -688,6 +707,7 @@ async fn checkout(
         sold.push(
             sales::service::record_package_sale(
                 tx,
+                cipher,
                 actor,
                 priced_sale,
                 SaleAt {
@@ -1001,8 +1021,21 @@ async fn load(
     for (visit, sale) in service_sales {
         sales_of.entry(visit).or_default().push(sale);
     }
+    let read_note = with_note && actor.can(Permission::CustomerHealthNotesRead);
+    let tenant = tx.tenant().as_uuid();
     let mut package_sales: HashMap<Uuid, Vec<VisitPackageSaleDto>> = HashMap::new();
     for p in package_rows {
+        // The package's note follows the session note's rule: same caller, same response.
+        let note = if read_note {
+            Some(kernel::crypto::open_sale_note(
+                cipher,
+                tenant,
+                p.sale_id,
+                p.note_ct.as_deref(),
+            )?)
+        } else {
+            None
+        };
         package_sales
             .entry(p.visit_id)
             .or_default()
@@ -1018,10 +1051,9 @@ async fn load(
                 closer_name: p.closer_name,
                 beneficiary_customer_id: p.beneficiary_customer_id,
                 beneficiary_name: p.beneficiary_name,
+                note,
             });
     }
-    let read_note = with_note && actor.can(Permission::CustomerHealthNotesRead);
-    let tenant = tx.tenant().as_uuid();
     rows.into_iter()
         .map(|r| {
             let lines = lines.remove(&r.id).unwrap_or_default();
@@ -1685,6 +1717,7 @@ pub async fn convert(
     if !errors.is_empty() {
         return Err(AppError::Validation(errors));
     }
+    require_package_note_rights(actor, &package_sales)?;
     let id = request.id;
 
     let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;

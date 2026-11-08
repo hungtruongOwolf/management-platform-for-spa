@@ -892,6 +892,7 @@ export interface paths {
         };
         get: operations["list_sales"];
         put?: never;
+        /** @description A `note` ("Ghi chú gói", health data) needs `customer.health_notes.write` (403 without it); it is encrypted at rest and never in this response or its replay. */
         post: operations["create_sale"];
         delete?: never;
         options?: never;
@@ -908,6 +909,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Each package may carry its own `note` ("Ghi chú gói"), which needs `customer.health_notes.write`; notes are encrypted at rest and never in this response or its replay. */
         post: operations["create_checkout"];
         delete?: never;
         options?: never;
@@ -928,7 +930,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        patch: operations["update_sale"];
         trace?: never;
     };
     "/api/v1/sales/{id}/void": {
@@ -1697,6 +1699,8 @@ export interface components {
             discount?: components["schemas"]["DiscountCreate"] | null;
             /** @description Omitted = the plan's gift; empty = none. */
             gift_note?: string | null;
+            /** @description "Ghi chú gói" of this package alone (F4), as `note` of `POST /sales`. */
+            note?: string | null;
             /** Format: uuid */
             package_plan_id: string;
         };
@@ -1833,6 +1837,12 @@ export interface components {
              *     otherwise looks like any other package (EM 2026-11-05: no "sổ cũ" label in the product).
              */
             sale_id?: string | null;
+            /**
+             * @description "Ghi chú gói" of the sale that created it (F4, health data). Filled only by
+             *     `GET /customers/{id}/packages` and `GET /customer-packages/{id}` for
+             *     `customer.health_notes.read`; absent everywhere else (a sale's response, a replay).
+             */
+            sale_note?: string | null;
             /** Format: int64 */
             sessions_remaining: number;
             /** Format: int64 */
@@ -2304,6 +2314,11 @@ export interface components {
             discount_amount: number;
             discount_reason?: string | null;
             lines: components["schemas"]["HistoryPurchaseLine"][];
+            /**
+             * @description "Ghi chú gói" (F4), only for `customer.health_notes.read` (absent otherwise or when
+             *     empty), like a visit's session note.
+             */
+            note?: string | null;
             /** @description Money received (before any void). */
             paid: components["schemas"]["MethodSplit"];
             /**
@@ -2841,7 +2856,8 @@ export interface components {
              *     `visit_corrected` | `sale` | `package`; `attendance_note` → the day's status;
              *     `follow_up` → the call's outcome; `appointment_note` → the booking's status;
              *     `evaluation_note` → `comment` | `coaching_plan`; `package_extension` → the package's name;
-             *     `discount` → `visit` | `sale`; `appointment_reason` → `cancelled` | `no_show`.
+             *     `discount` → `visit` | `sale`; `appointment_reason` → `cancelled` | `no_show`;
+             *     `package_note` → the package names of the sale.
              */
             detail?: string | null;
             kind: components["schemas"]["NoteKind"];
@@ -2851,7 +2867,7 @@ export interface components {
             text: string;
             /**
              * Format: uuid
-             * @description The visit, for `visit_note` and visit voids.
+             * @description The visit, for `visit_note`, visit voids and a `package_note` of a package sold in a visit.
              */
             visit_id?: string | null;
         };
@@ -2859,7 +2875,7 @@ export interface components {
          * @description Where a note was written. Each kind keeps the read rule it already had on its own screen.
          * @enum {string}
          */
-        NoteKind: "visit_note" | "customer_note" | "health_note" | "attendance_note" | "review_note" | "adjustment" | "follow_up" | "void" | "employment_end" | "appointment_note" | "evaluation_note" | "staff_note" | "package_extension" | "discount" | "appointment_reason";
+        NoteKind: "visit_note" | "customer_note" | "health_note" | "attendance_note" | "review_note" | "adjustment" | "follow_up" | "void" | "employment_end" | "appointment_note" | "evaluation_note" | "staff_note" | "package_extension" | "discount" | "appointment_reason" | "package_note";
         NotesPage: {
             /** Format: date */
             from: string;
@@ -3074,6 +3090,11 @@ export interface components {
         /** @description `GET /customer-packages/{id}/usage`: one page of the paper "sổ theo dõi liệu trình". */
         PackageUsage: {
             package: components["schemas"]["CustomerPackageDto"];
+            /**
+             * @description The "Ghi chú gói" of the sale that created this package (F4), only for
+             *     `customer.health_notes.read` (absent otherwise, when empty, or for a paper-book package).
+             */
+            sale_note?: string | null;
             /** @description Oldest first, like the paper page (STT 1, 2, 3…). */
             uses: components["schemas"]["PackageUse"][];
         };
@@ -3548,6 +3569,12 @@ export interface components {
             discount?: components["schemas"]["DiscountCreate"] | null;
             /** @description 1–10 packages. */
             lines: components["schemas"]["SaleLineCreate"][];
+            /**
+             * @description "Ghi chú gói" (F4): an optional note on this package sale, ≤ 2000 characters. Often holds
+             *     health information, so it is encrypted at rest and needs `customer.health_notes.write`;
+             *     empty or blank = none.
+             */
+            note?: string | null;
             /** @description 0–2 payments, one per method, summing exactly to the total (R1 collects in full). */
             payments: components["schemas"]["PaymentCreate"][];
         };
@@ -3571,6 +3598,12 @@ export interface components {
             /** Format: uuid */
             id: string;
             lines: components["schemas"]["SaleLineDto"][];
+            /**
+             * @description "Ghi chú gói" (F4). Present (`GET /sales?date=`, `GET /sales/{id}`, `PATCH /sales/{id}`)
+             *     only for `customer.health_notes.read`; null = no note. Never in an idempotent replay: the
+             *     responses of `POST /sales`, `POST /sales/checkout` and the void leave it out.
+             */
+            note?: string | null;
             payments: components["schemas"]["PaymentDto"][];
             status: components["schemas"]["SaleStatusDto"];
             /** Format: int64 */
@@ -3618,6 +3651,17 @@ export interface components {
         SaleLineTypeDto: "package" | "service";
         /** @enum {string} */
         SaleStatusDto: "open" | "voided";
+        /**
+         * @description Body of `PATCH /sales/{id}` ("Sửa ghi chú gói", F4): the note is the only field a package
+         *     sale lets the desk change in place (money and packages change through a void).
+         */
+        SaleUpdate: {
+            /**
+             * @description The new note (≤ 2000 characters); null or blank = no note. Needs
+             *     `customer.health_notes.write`.
+             */
+            note?: string | null;
+        };
         /** @description One scored criterion, as stored in `staff_evaluation.criteria`. */
         ScoredCriterion: {
             key: string;
@@ -4359,6 +4403,11 @@ export interface components {
             discount?: components["schemas"]["DiscountCreate"] | null;
             /** @description Omitted = the plan's gift; empty = none. */
             gift_note?: string | null;
+            /**
+             * @description "Ghi chú gói" of this package (F4), beside the visit's session note: ≤ 2000 characters,
+             *     health data (encrypted at rest), needs `customer.health_notes.write`.
+             */
+            note?: string | null;
             /** Format: uuid */
             package_plan_id: string;
             /**
@@ -4386,6 +4435,11 @@ export interface components {
             customer_package_ids: string[];
             /** @description Package names, in sale order. */
             description: string;
+            /**
+             * @description "Ghi chú gói" (F4): present exactly when the visit's session note is (a visit or the day
+             *     list read by `customer.health_notes.read`); null = no note. Never in an idempotent replay.
+             */
+            note?: string | null;
             payments: components["schemas"]["PaymentDto"][];
             /** Format: uuid */
             sale_id: string;
@@ -5703,6 +5757,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description `sale_note` only for customer.health_notes.read */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5882,6 +5937,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description `sale_note` only for customer.health_notes.read */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -6412,6 +6468,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Newest first; `sale_note` only for customer.health_notes.read */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -7604,7 +7661,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Package sales of the day made without a visit (Quầy's day list), newest first */
+            /** @description Package sales of the day made without a visit (Quầy's day list), newest first; `sale.note` only for customer.health_notes.read */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -7686,7 +7743,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description validation_failed, payment.amount_mismatch, discount.reason_required, staff.inactive, idempotency.key_reuse_mismatch */
+            /** @description validation_failed (note too_long…), payment.amount_mismatch, discount.reason_required, staff.inactive, idempotency.key_reuse_mismatch */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -7767,6 +7824,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description `note` only for customer.health_notes.read */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -7788,6 +7846,65 @@ export interface operations {
                 content?: never;
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_sale: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaleUpdate"];
+            };
+        };
+        responses: {
+            /** @description "Sửa ghi chú gói": the note replaced (null / blank = removed); audited without its text */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaleDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden (needs package.sell + customer.health_notes.write) / day.locked (a day before today without record.void_closed_day) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description sale.voided, sale.not_package (a visit's one-off sale: its note is the visit's) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed: note too_long, body invalid */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

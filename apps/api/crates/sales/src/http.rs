@@ -1,8 +1,9 @@
 //! `GET /sales?date=`, `POST /sales`, `POST /sales/checkout`, `GET /sales/{id}`,
-//! `POST /sales/{id}/void`.
+//! `PATCH /sales/{id}` (the note, F4), `POST /sales/{id}/void`.
 
 use crate::dto::{
-    DaySaleDto, SaleCheckoutCreate, SaleCheckoutDto, SaleCreate, SaleDto, SaleListQuery, VoidCreate,
+    DaySaleDto, SaleCheckoutCreate, SaleCheckoutDto, SaleCreate, SaleDto, SaleListQuery,
+    SaleUpdate, VoidCreate,
 };
 use crate::{paper, service, voids};
 use axum::body::Bytes;
@@ -32,7 +33,7 @@ where
     Router::new()
         .route("/sales", get(list_sales).post(create_sale))
         .route("/sales/checkout", post(create_checkout))
-        .route("/sales/{id}", get(read_sale))
+        .route("/sales/{id}", get(read_sale).patch(update_sale))
         .route("/sales/{id}/void", post(void_sale))
         // Lives here (not in `packages`) because it books the paper money as sales.
         .route("/opening-balances", post(import_opening_balance))
@@ -92,9 +93,11 @@ fn no_store(status: StatusCode, body: impl serde::Serialize) -> Response {
         (status = 400, description = "idempotency.key_required / key_invalid"),
         (status = 401), (status = 403, description = "auth.forbidden / discount.limit_exceeded"),
         (status = 404, description = "customer or plan not in this spa"),
-        (status = 422, description = "validation_failed, payment.amount_mismatch, discount.reason_required, staff.inactive, idempotency.key_reuse_mismatch")))]
+        (status = 422, description = "validation_failed (note too_long…), payment.amount_mismatch, discount.reason_required, staff.inactive, idempotency.key_reuse_mismatch")),
+    description = "A `note` (\"Ghi chú gói\", health data) needs `customer.health_notes.write` (403 without it); it is encrypted at rest and never in this response or its replay.")]
 pub async fn create_sale(
     State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
     IdempotencyKey(key): IdempotencyKey,
     body: Bytes,
@@ -106,6 +109,7 @@ pub async fn create_sale(
     let input: SaleCreate = serde_json::from_value(value).map_err(|_| invalid_body())?;
     let (status, body) = service::create_sale(
         &pool,
+        &cipher,
         &user.actor,
         key,
         hash_route("POST", "/sales", None, &canonical),
@@ -123,9 +127,11 @@ pub async fn create_sale(
         (status = 400, description = "idempotency.key_required / key_invalid"),
         (status = 401), (status = 403, description = "auth.forbidden / discount.limit_exceeded"),
         (status = 404, description = "customer, beneficiary or plan not in this spa"),
-        (status = 422, description = "validation_failed (package_sales[k].…, package_sales count_out_of_range), payment.amount_mismatch, discount.reason_required, customer.name_required, staff.inactive, idempotency.key_reuse_mismatch")))]
+        (status = 422, description = "validation_failed (package_sales[k].…, package_sales count_out_of_range), payment.amount_mismatch, discount.reason_required, customer.name_required, staff.inactive, idempotency.key_reuse_mismatch")),
+    description = "Each package may carry its own `note` (\"Ghi chú gói\"), which needs `customer.health_notes.write`; notes are encrypted at rest and never in this response or its replay.")]
 pub async fn create_checkout(
     State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
     IdempotencyKey(key): IdempotencyKey,
     body: Bytes,
@@ -135,6 +141,7 @@ pub async fn create_checkout(
     let input: SaleCheckoutCreate = serde_json::from_value(value).map_err(|_| invalid_body())?;
     let (status, body) = service::create_checkout(
         &pool,
+        &cipher,
         &user.actor,
         key,
         hash_route("POST", "/sales/checkout", None, &canonical),
@@ -147,11 +154,12 @@ pub async fn create_checkout(
 
 #[utoipa::path(get, path = "/api/v1/sales", tag = "sales", params(SaleListQuery),
     responses(
-        (status = 200, body = [DaySaleDto], description = "Package sales of the day made without a visit (Quầy's day list), newest first"),
+        (status = 200, body = [DaySaleDto], description = "Package sales of the day made without a visit (Quầy's day list), newest first; `sale.note` only for customer.health_notes.read"),
         (status = 400, description = "query.invalid"), (status = 401),
         (status = 403, description = "auth.forbidden: needs sale.read + customer.read")))]
 pub async fn list_sales(
     State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
     query: Result<Query<SaleListQuery>, QueryRejection>,
 ) -> Result<Response, AppError> {
@@ -159,18 +167,43 @@ pub async fn list_sales(
     user.actor.require(Permission::SaleRead)?;
     user.actor.require(Permission::CustomerRead)?;
     let Query(query) = query.map_err(invalid_query)?;
-    let sales = service::for_day(&pool, &user.actor, query.date).await?;
+    let sales = service::for_day(&pool, &cipher, &user.actor, query.date).await?;
     Ok(no_store(StatusCode::OK, sales))
 }
 
 #[utoipa::path(get, path = "/api/v1/sales/{id}", tag = "sales", params(("id" = Uuid, Path)),
-    responses((status = 200, body = SaleDto), (status = 401), (status = 403), (status = 404)))]
+    responses((status = 200, body = SaleDto, description = "`note` only for customer.health_notes.read"),
+        (status = 401), (status = 403), (status = 404)))]
 pub async fn read_sale(
     State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Response, AppError> {
-    let sale = service::get_sale(&pool, &user.actor, id).await?;
+    let sale = service::get_sale(&pool, &cipher, &user.actor, id).await?;
+    Ok(no_store(StatusCode::OK, sale))
+}
+
+#[utoipa::path(patch, path = "/api/v1/sales/{id}", tag = "sales", request_body = SaleUpdate,
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 200, body = SaleDto, description = "\"Sửa ghi chú gói\": the note replaced (null / blank = removed); audited without its text"),
+        (status = 401),
+        (status = 403, description = "auth.forbidden (needs package.sell + customer.health_notes.write) / day.locked (a day before today without record.void_closed_day)"),
+        (status = 404),
+        (status = 409, description = "sale.voided, sale.not_package (a visit's one-off sale: its note is the visit's)"),
+        (status = 422, description = "validation_failed: note too_long, body invalid")))]
+pub async fn update_sale(
+    State(pool): State<PgPool>,
+    State(cipher): State<Arc<FieldCipher>>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    // The rights first, then the body (F17): the service answers 404 / day.locked before it
+    // looks at what is wrong with the body.
+    let input: Option<SaleUpdate> = serde_json::from_slice(&body).ok();
+    let sale = service::update_note(&pool, &cipher, &user.actor, id, input.as_ref()).await?;
     Ok(no_store(StatusCode::OK, sale))
 }
 
