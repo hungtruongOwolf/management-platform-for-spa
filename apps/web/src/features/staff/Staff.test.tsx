@@ -551,7 +551,7 @@ describe("staff helpers", () => {
   it("names the nav entries by what the user may do; technicians get 'Khách của tôi' in the tab bar", () => {
     const items = (perms: string[]) => navFor(ME(perms)).flatMap((g) => g.items);
     const item = (perms: string[]) => items(perms).find((i) => i.to === "/nhan-vien");
-    expect(item(MANAGER)?.label).toBe("Nhân viên");
+    expect(item(MANAGER)?.label).toBe("Quản lý nhân sự");
     expect(item(TECH)?.label).toBe("Công và lương của tôi");
     expect(item(["catalog.read"])).toBeUndefined();
     const mine = (perms: string[]) => items(perms).find((i) => i.to === "/khach-cua-toi");
@@ -1277,8 +1277,8 @@ describe("Công và lương của tôi for a manager (EM 2026-11-08)", () => {
     expect(paths).toContain("/api/v1/me/staff");
     expect(paths.some((p) => /\/(attendance|daily-reviews|evaluations|adjustments|payroll|staff\/profiles)$/.test(p))).toBe(false);
     // The nav marks the own month, not the books.
-    const nav = screen.getAllByRole("navigation").find((n) => within(n).queryByRole("link", { name: "Nhân viên" }));
+    const nav = screen.getAllByRole("navigation").find((n) => within(n).queryByRole("link", { name: "Quản lý nhân sự" }));
     expect(nav && within(nav).getByRole("link", { name: "Công và lương của tôi" })).toHaveAttribute("aria-current", "page");
-    expect(nav && within(nav).getByRole("link", { name: "Nhân viên" })).not.toHaveAttribute("aria-current");
+    expect(nav && within(nav).getByRole("link", { name: "Quản lý nhân sự" })).not.toHaveAttribute("aria-current");
   });
 });

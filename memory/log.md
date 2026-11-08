@@ -653,3 +653,5 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Raw: [2026-11-08-em-decision-role-by-account](raw/2026-11-08-em-decision-role-by-account.md). ADR-0015 update, spec §16 US16c, authz-matrix, threat-model.
 - Bỏ quy tắc chức danh "Quản lý" của #95 (`is_manager_position`). Quản lý chưa gắn hồ sơ: mọi route ghi sổ nhân viên `403 staff.link_required`, chủ spa miễn; sổ trả `link_required`. Hồ sơ đã gắn hiện tên role làm vị trí (suy ra lúc đọc ở `org::repo`, `position_from_account`), không migration (0031 không dùng). Quản lý giữ "Khách của tôi" (EM xác nhận).
 - EM: tab "Nhân sự" đổi tên thành **"Hồ sơ nhân viên"** ở mọi chỗ người dùng thấy (tab, nút "Mở Hồ sơ nhân viên" ở cảnh báo và Nhật ký ghi chú, câu hướng dẫn); URL `?tab=profiles` giữ nguyên. Trang là "Quản lý nhân sự" (PR fix/nav-staff-label).
+## [2026-11-08] build | Đổi tên mục "Nhân viên" → "Quản lý nhân sự"
+- EM: "trong mục Nhân viên bạn lại để thêm 1 phần nhân viên nữa lại bị trùng lặp … đổi nó thành là quản lý nhân sự". Nhóm menu vẫn tên "Nhân viên"; mục và tiêu đề trang (`/nhan-vien`, chủ spa + quản lý) thành "Quản lý nhân sự". KTV vẫn thấy "Công và lương của tôi".

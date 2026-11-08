@@ -161,7 +161,7 @@ function staffItem(me: Me | null): NavItem | false {
   if (mayOpen.staffBooks(me))
     return {
       to: "/nhan-vien",
-      label: "Nhân viên",
+      label: "Quản lý nhân sự",
       icon: "id-card",
       // Not active on /nhan-vien/cua-toi, the manager's own month.
       ...(keepsBooksForOthers(me) && mayOpen.myPay(me) ? { exact: true } : {}),
@@ -208,7 +208,7 @@ const SCREEN_LABELS: Record<string, string> = {
   "/bao-cao": "Báo cáo kinh doanh",
   "/bang-gia": "Bảng giá dịch vụ",
   "/bang-gia/goi": "Mẫu gói liệu trình",
-  "/nhan-vien": "Nhân viên",
+  "/nhan-vien": "Quản lý nhân sự",
   "/nhan-vien/cua-toi": "Công và lương của tôi",
   "/khach-cua-toi": "Khách của tôi",
   "/cai-dat": "Cài đặt",
