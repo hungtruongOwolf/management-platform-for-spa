@@ -332,7 +332,7 @@ describe("home page", () => {
         ["/goi-lieu-trinh", "Gói liệu trình của khách"],
         ["/bao-cao", "Báo cáo kinh doanh"],
         ["/nhat-ky-ghi-chu", "Nhật ký ghi chú"],
-        ["/nhan-vien", "Nhân viên", "Chấm công, đánh giá, bảng lương, hồ sơ nhân viên"],
+        ["/nhan-vien", "Quản lý nhân sự", "Chấm công, đánh giá, bảng lương, hồ sơ nhân viên"],
         ["/bang-gia", "Bảng giá dịch vụ"],
         ["/bang-gia/goi", "Mẫu gói liệu trình"],
         ["/cai-dat", "Giao diện & tài khoản"],
@@ -348,7 +348,7 @@ describe("home page", () => {
         ["/goi-lieu-trinh", "Gói liệu trình của khách"],
         ["/bao-cao", "Báo cáo kinh doanh"],
         ["/nhat-ky-ghi-chu", "Nhật ký ghi chú"],
-        ["/nhan-vien", "Nhân viên", "Chấm công, đánh giá"],
+        ["/nhan-vien", "Quản lý nhân sự", "Chấm công, đánh giá"],
         // EM 2026-11-08: the manager's own month and customers, the way a technician sees them.
         ["/nhan-vien/cua-toi", "Công và lương của tôi", "Ngày công, đánh giá, phiếu lương của bạn"],
         ["/khach-cua-toi", "Khách của tôi"],
