@@ -10,7 +10,7 @@ test.describe("nhân viên", () => {
   test("profile with pay → attendance with lateness → bonus → payroll and payslip", async ({ page }) => {
     const name = `KTV Hồng ${String(Date.now()).slice(-5)}`;
     await page.goto("/nhan-vien?tab=profiles");
-    await expect(page.getByRole("heading", { level: 1, name: "Nhân viên" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Quản lý nhân sự" })).toBeVisible();
     await page.getByRole("button", { name: "Thêm nhân viên" }).click();
     const profile = page.getByRole("dialog", { name: "Thêm nhân viên" });
     await profile.getByLabel("Họ tên").fill(name);

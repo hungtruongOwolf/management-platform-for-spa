@@ -118,7 +118,7 @@ export function StaffPage() {
   };
   return (
     <section className="grid content-start gap-5">
-      <PageHeader title="Nhân viên" label={`Nhân viên · ${TAB_LABEL[tab]}`}>
+      <PageHeader title="Quản lý nhân sự" label={`Quản lý nhân sự · ${TAB_LABEL[tab]}`}>
         {tab !== "profiles" && picker}
       </PageHeader>
       <div role="tablist" aria-label="Mục quản lý nhân viên" className="tabs tabs-scroll">

@@ -648,3 +648,6 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Server: hồ sơ gắn với tài khoản của người không có `staff.manage` bị bỏ khỏi `/attendance`, `/daily-reviews`, `/evaluations`, `/adjustments`, `/staff/profiles`; `/staff/{id}` và `/evaluations/history` của chính mình `404`. Quản lý xem của mình ở `/nhan-vien/cua-toi` + "Khách của tôi" (role Quản lý vốn có `staff.read_own` từ 0017 → **không migration, 0030 không dùng**).
 - F19: hồ sơ có vị trí quản lý luôn chỉ chủ spa ghi (gắn hay chưa); `GET /staff/accounts` thêm `is_manager`; chủ spa thấy cảnh báo ở Sổ hằng ngày + Nhân sự. F24: `409 staff.has_upcoming_bookings` có `details.bookings` (kernel `AppError::ConflictDetails`), sheet nghỉ việc liệt kê + link lịch. F25: lỗi so sánh nhật ký (không mất dữ liệu), sửa ở `org::profile::changes`. F20: bỏ mọi mã P/ĐX/K (chữ hoặc icon + màu). F22: "Khách của tôi" tự cuộn tới giờ hiện tại / giờ mở cửa. F28: chip "Đã nghỉ việc".
 - Không thuộc phần này (agent Quầy/lịch hẹn/ghi chú): F1–F18, F21, F23, F26, F27.
+
+## [2026-11-08] build | Đổi tên mục "Nhân viên" → "Quản lý nhân sự"
+- EM: "trong mục Nhân viên bạn lại để thêm 1 phần nhân viên nữa lại bị trùng lặp … đổi nó thành là quản lý nhân sự". Nhóm menu vẫn tên "Nhân viên"; mục và tiêu đề trang (`/nhan-vien`, chủ spa + quản lý) thành "Quản lý nhân sự". KTV vẫn thấy "Công và lương của tôi".
