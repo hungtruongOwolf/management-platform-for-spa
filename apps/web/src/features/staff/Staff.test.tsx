@@ -477,7 +477,7 @@ function serve(permissions: string[], options: ServeOptions = {}) {
       const lan = roster(true)[0] ?? roster(true)[1];
       return ok({ profile: { ...lan, details: { ...lan?.details, login: { phone: "0912 300 111", role: "manager", locked: false } } }, temporary_password: "ABCD-EFGH-JKLM" }, 201);
     }
-    if (/^\/staff\/[^/]+\/login\/reset-password$/.test(p)) return ok({ temporary_password: "WXYZ-2345-6789" });
+    if (/^\/staff\/[^/]+\/login\/reset-password$/.test(p)) return ok({ temporary_password: "NEWT-EMPP-ASSW" }); // gitleaks:allow (a fake temporary password)
     if (p === "/auth/reauth") {
       reauthed.done = true;
       return Promise.resolve(new Response(null, { status: 204 }));
@@ -1352,7 +1352,7 @@ describe("logins (ADR-0016)", () => {
     expect(within(notice).getByText(/xin đặt lại mật khẩu · 14:05/)).toBeInTheDocument();
     await userEvent.click(within(notice).getByRole("button", { name: "Đặt lại" }));
     const shown = await screen.findByRole("dialog", { name: "Mật khẩu tạm của Lê Thị Lan" });
-    expect(within(shown).getByLabelText("Mật khẩu tạm")).toHaveTextContent("WXYZ-2345-6789");
+    expect(within(shown).getByLabelText("Mật khẩu tạm")).toHaveTextContent("NEWT-EMPP-ASSW");
     await userEvent.click(within(notice).getByRole("button", { name: "Bỏ qua" }));
     await waitFor(() => {
       expect(requests(spy).some((r) => r.url.endsWith("/staff/password-reset-requests/r-1/dismiss"))).toBe(true);
