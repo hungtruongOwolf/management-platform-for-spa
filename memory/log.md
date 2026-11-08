@@ -640,7 +640,7 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - **F4 chưa làm**: ghi chú giỏ chỉ có gói cần chỗ lưu cho cả giỏ (2–3 hóa đơn) + mã hóa như ghi chú buổi → câu hỏi Q-M2 cho EM. Migration 0029 chỉ là index cho F21.
 - Nguyên nhân F12: server chỉ kiểm ngày (`check_day`), giờ sớm hơn hôm nay được nhận có chủ đích (§10.11 cũ). Test cũ đặt "hôm nay 00:00–04:00" đổi sang đặt ngày sau rồi dời về hôm nay bằng SQL (`common::bookings_to_today`, e2e `bookingsToToday`), chạy đúng mọi giờ.
 - Thêm theo lead (sau #95, ADR-0015): nhật ký ghi chú không còn hiện ghi chú nhân sự về hồ sơ của chính quản lý (`hidden_from`), test mới trong `notes.rs`. Merge `origin/main` (#95), giải xung đột index/log.
-- JS khởi động (gzip -9 entry + modulepreload): `CustomerCard` thành chunk lazy prefetch sau lần vẽ đầu (chỉ hiện sau khi chọn khách): main sau #95 125.63 KiB theo cách đo này → nhánh **124.37 KiB** (127.36 KB).
+- JS khởi động (gzip -9 entry + modulepreload): `CustomerCard` thành chunk lazy prefetch sau lần vẽ đầu (chỉ hiện sau khi chọn khách): main trước #95 đo cùng cách 125.63 KiB → nhánh **124.37 KiB** (127.36 KB).
 - Phát hiện khi rà F27 (ngoài phạm vi, báo agent nhân sự): `features/staff/RosterTab.tsx` lịch sử thay đổi hiện ngày bằng `h.at.slice(0, 10)` (ngày UTC, lệch trước 07:00 giờ spa).
 
 ## [2026-11-08] build + secure | Quản lý không thấy chính mình trong Nhân viên + sửa phát hiện nhân sự (F19, F20, F22, F24, F25, F28)
