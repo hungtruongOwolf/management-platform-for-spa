@@ -22,6 +22,12 @@ use tracing_subscriber::util::SubscriberInitExt;
 ///   `app reset-mfa --phone P`          lost authenticator: clear TOTP + recovery codes, end
 ///                                      sessions; next login re-enrolls (verify identity first)
 ///   `app unlock --phone P`             clear a login lockout (verify identity first)
+///   `app add-operator --username U --name N`
+///                                      platform console operator (ADR-0018; password from env
+///                                      APP_NEW_OPERATOR_PASSWORD, never argv); MFA enrolls at the
+///                                      first sign-in at /admin
+///   `app reset-operator-mfa --username U`   lost operator authenticator (verify identity first)
+///   `app disable-operator --username U` | `app enable-operator --username U`
 ///   `app seed-demo --tenant S [--force-again]`
 ///                                      fill a spa with demo data (staff, a manager login 0905000002
 ///                                      whose password comes from APP_NEW_USER_PASSWORD, customers,
@@ -43,6 +49,10 @@ async fn main() -> anyhow::Result<()> {
         Some("seed-catalog") => seed_catalog().await,
         Some("reset-mfa") => reset_mfa().await,
         Some("unlock") => unlock().await,
+        Some("add-operator") => add_operator().await,
+        Some("reset-operator-mfa") => reset_operator_mfa().await,
+        Some("disable-operator") => set_operator_active(false).await,
+        Some("enable-operator") => set_operator_active(true).await,
         Some("seed-demo") => seed_demo().await,
         Some("import-paper-book") => import_paper_book().await,
         Some("openapi") => {
@@ -50,7 +60,7 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Some(other) => anyhow::bail!(
-            "unknown command {other:?} (expected: serve | migrate | create-tenant | add-user | add-staff | seed-catalog | reset-mfa | unlock | seed-demo | import-paper-book | openapi)"
+            "unknown command {other:?} (expected: serve | migrate | create-tenant | add-user | add-staff | seed-catalog | reset-mfa | unlock | add-operator | reset-operator-mfa | disable-operator | enable-operator | seed-demo | import-paper-book | openapi)"
         ),
     }
 }
@@ -76,6 +86,7 @@ async fn serve() -> anyhow::Result<()> {
     jobs::spawn_maintenance(pool.clone());
 
     let mut policy = HttpPolicy::standard(config.public_origin.clone());
+    policy.admin_origin = config.admin_origin.clone();
     if let Some(limit) = config.rate_limit {
         // Development only (Config refuses it elsewhere): the E2E/Lighthouse stack.
         tracing::warn!(?limit, "API rate limit overridden for the local test stack");
@@ -169,6 +180,46 @@ async fn add_user() -> anyhow::Result<()> {
     .await
     .map_err(|e| anyhow::anyhow!("add-user failed: {}", e.code()))?;
     tracing::info!(%user, %tenant, role = role.key(), "user added");
+    Ok(())
+}
+
+async fn add_operator() -> anyhow::Result<()> {
+    init_tracing(Environment::Development);
+    let password = std::env::var("APP_NEW_OPERATOR_PASSWORD")
+        .context("APP_NEW_OPERATOR_PASSWORD is required (kept out of argv and shell history)")?;
+    let (username, name) = (required_flag("username")?, required_flag("name")?);
+    let pool = owner_pool().await?;
+    let operator = platform::operator::add_operator(&pool, &username, &name, &password)
+        .await
+        .map_err(|e| anyhow::anyhow!("add-operator failed: {}", e.code()))?;
+    tracing::warn!(
+        %operator, %username,
+        "operator created: sign in at /admin now and enroll the authenticator before anyone else can"
+    );
+    Ok(())
+}
+
+async fn reset_operator_mfa() -> anyhow::Result<()> {
+    init_tracing(Environment::Development);
+    let username = required_flag("username")?;
+    let pool = owner_pool().await?;
+    let done = platform::operator::reset_operator_mfa(&pool, &username)
+        .await
+        .map_err(|e| anyhow::anyhow!("reset-operator-mfa failed: {}", e.code()))?;
+    anyhow::ensure!(done, "no operator {username:?}");
+    tracing::info!(%username, "operator MFA cleared; sessions ended");
+    Ok(())
+}
+
+async fn set_operator_active(active: bool) -> anyhow::Result<()> {
+    init_tracing(Environment::Development);
+    let username = required_flag("username")?;
+    let pool = owner_pool().await?;
+    let done = platform::operator::set_operator_active(&pool, &username, active)
+        .await
+        .map_err(|e| anyhow::anyhow!("operator status change failed: {}", e.code()))?;
+    anyhow::ensure!(done, "no operator {username:?}");
+    tracing::info!(%username, active, "operator status changed");
     Ok(())
 }
 

@@ -264,6 +264,12 @@ pub async fn login(
         }
         return Err(AppError::InvalidCredentials);
     }
+    // A suspended spa (ADR-0018 spec US4): only someone who proved the password learns why.
+    if repo::user_spa_suspended(pool, account.id).await? {
+        return Err(AppError::Forbidden {
+            code: "auth.spa_suspended",
+        });
+    }
 
     if let Some(previous) = previous_token {
         repo::revoke_session_by_hash(pool, &token::hash_secret(previous)).await?;

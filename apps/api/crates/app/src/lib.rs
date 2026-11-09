@@ -39,6 +39,7 @@ impl axum::extract::FromRef<AppState> for PgPool {
 /// Builds the full HTTP router with every protection applied. Kept separate from `main` so tests drive it in-process.
 pub fn router(state: AppState, policy: &HttpPolicy) -> Router {
     let (auth, me) = identity::http::routes::<AppState>();
+    let (admin_auth, admin) = platform::http::routes::<AppState>();
     let api = Router::<AppState>::new()
         .merge(health::routes())
         .merge(middleware::with_auth_rate_limit(auth))
@@ -52,6 +53,8 @@ pub fn router(state: AppState, policy: &HttpPolicy) -> Router {
         .merge(operations::http::routes())
         .merge(operations::appointments::http::routes())
         .merge(reporting::http::routes())
+        .merge(middleware::with_admin_auth_rate_limit(admin_auth))
+        .merge(admin)
         .with_state(state);
     middleware::apply(Router::new().nest("/api/v1", api), policy)
 }

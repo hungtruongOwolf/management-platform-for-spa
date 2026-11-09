@@ -16,6 +16,7 @@ const MESSAGES: Record<string, string> = {
   "auth.mfa_enrollment_changed": "Mã QR đã được tạo lại ở nơi khác. Vui lòng đăng nhập lại.",
   "auth.mfa_enrollment_not_started": "Vui lòng đăng nhập lại để thiết lập.",
   "auth.forbidden": "Bạn không có quyền thực hiện thao tác này.",
+  "auth.spa_suspended": "Spa đang tạm ngưng. Liên hệ bộ phận hỗ trợ.",
   "auth.bad_origin": "Yêu cầu không hợp lệ. Vui lòng tải lại trang.",
   "conflict.stale_version":
     "Dữ liệu vừa được người khác sửa. Vui lòng tải lại rồi thử lại.",

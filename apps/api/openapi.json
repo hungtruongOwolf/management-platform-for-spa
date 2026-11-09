@@ -180,6 +180,434 @@
         }
       }
     },
+    "/api/v1/admin/audit": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "list_audit",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "description": "Only entries strictly older than this instant (the previous page's `next_before`).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1–100, default 50.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformAuditPage"
+                }
+              }
+            }
+          },
+          "401": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/admin/auth/login": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "admin_login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorLoginBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Sets a pending __Host-op-session cookie: always a second factor next",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorLogin"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "auth.invalid_credentials"
+          },
+          "422": {},
+          "429": {}
+        }
+      }
+    },
+    "/api/v1/admin/auth/logout": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Works for full and pending sessions alike.",
+        "operationId": "admin_logout",
+        "responses": {
+          "204": {},
+          "401": {}
+        }
+      }
+    },
+    "/api/v1/admin/auth/mfa/enroll/confirm": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "admin_mfa_enroll_confirm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorCodeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "MFA on; recovery codes shown once; new full-session cookie",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorEnrolled"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "auth.invalid_mfa_code"
+          },
+          "409": {
+            "description": "auth.mfa_already_enrolled | auth.mfa_enrollment_not_started | auth.mfa_enrollment_changed | auth.mfa_not_pending"
+          },
+          "429": {}
+        }
+      }
+    },
+    "/api/v1/admin/auth/mfa/enroll/start": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "admin_mfa_enroll_start",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorEnrollment"
+                }
+              }
+            }
+          },
+          "401": {},
+          "409": {
+            "description": "auth.mfa_already_enrolled | auth.mfa_not_pending"
+          },
+          "429": {}
+        }
+      }
+    },
+    "/api/v1/admin/auth/mfa/verify": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "admin_mfa_verify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorCodeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Signed in: new full-session cookie",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorSummary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "auth.invalid_mfa_code | auth.mfa_enrollment_required | auth.unauthenticated"
+          },
+          "409": {
+            "description": "auth.mfa_not_pending"
+          },
+          "429": {}
+        }
+      }
+    },
+    "/api/v1/admin/auth/reauth": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "admin_reauth",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorReauthBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Step-up open for 5 minutes"
+          },
+          "401": {
+            "description": "auth.invalid_credentials | auth.invalid_mfa_code | auth.unauthenticated"
+          },
+          "422": {
+            "description": "code required"
+          },
+          "429": {}
+        }
+      }
+    },
+    "/api/v1/admin/me": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "admin_me",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorMe"
+                }
+              }
+            }
+          },
+          "401": {}
+        }
+      }
+    },
+    "/api/v1/admin/tenants": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "list_tenants",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TenantRow"
+                  }
+                }
+              }
+            }
+          },
+          "401": {}
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "create_tenant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewTenant"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The owner's temporary password is in this response only (no-store)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedTenant"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "platform.step_up_required"
+          },
+          "409": {
+            "description": "tenant.slug_taken | account.phone_taken"
+          },
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/admin/tenants/{id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "get_tenant",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantRow"
+                }
+              }
+            }
+          },
+          "401": {},
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/admin/tenants/{id}/suspend": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "suspend_tenant",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reason"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusChanged"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "platform.step_up_required"
+          },
+          "404": {},
+          "409": {
+            "description": "tenant.status_unchanged"
+          },
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/admin/tenants/{id}/unsuspend": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "unsuspend_tenant",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reason"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusChanged"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "platform.step_up_required"
+          },
+          "404": {},
+          "409": {
+            "description": "tenant.status_unchanged"
+          },
+          "422": {}
+        }
+      }
+    },
     "/api/v1/appointment-settings": {
       "put": {
         "tags": [
@@ -5918,6 +6346,42 @@
           }
         }
       },
+      "CreatedOwner": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "phone",
+          "temporary_password"
+        ],
+        "properties": {
+          "phone": {
+            "type": "string"
+          },
+          "temporary_password": {
+            "type": "string",
+            "description": "Shown this once (`Cache-Control: no-store`); the owner must replace it at first sign-in."
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "CreatedTenant": {
+        "type": "object",
+        "required": [
+          "tenant",
+          "owner"
+        ],
+        "properties": {
+          "owner": {
+            "$ref": "#/components/schemas/CreatedOwner"
+          },
+          "tenant": {
+            "$ref": "#/components/schemas/TenantRow"
+          }
+        }
+      },
       "Criterion": {
         "type": "object",
         "required": [
@@ -8919,6 +9383,52 @@
           }
         }
       },
+      "NewOwner": {
+        "type": "object",
+        "required": [
+          "phone",
+          "full_name"
+        ],
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Vietnamese mobile number that has no login yet (one person, one spa: ADR-0016)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "NewTenant": {
+        "type": "object",
+        "description": "Body of `POST /admin/tenants`.",
+        "required": [
+          "name",
+          "slug",
+          "owner"
+        ],
+        "properties": {
+          "branch_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Default \"Cơ sở chính\"."
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/NewOwner"
+          },
+          "slug": {
+            "type": "string",
+            "description": "`^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$`, unique."
+          }
+        },
+        "additionalProperties": false
+      },
       "NoteEntry": {
         "type": "object",
         "description": "One note. `customer_*` for notes about a customer, `staff_*` for notes about a staff member.",
@@ -9239,6 +9749,144 @@
           }
         },
         "additionalProperties": false
+      },
+      "OperatorCodeBody": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "6-digit TOTP code, or (verify / re-auth) a recovery code."
+          }
+        },
+        "additionalProperties": false
+      },
+      "OperatorEnrolled": {
+        "type": "object",
+        "required": [
+          "operator",
+          "recovery_codes"
+        ],
+        "properties": {
+          "operator": {
+            "$ref": "#/components/schemas/OperatorSummary"
+          },
+          "recovery_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Shown this once; stored hashed."
+          }
+        }
+      },
+      "OperatorEnrollment": {
+        "type": "object",
+        "required": [
+          "otpauth_uri",
+          "manual_key"
+        ],
+        "properties": {
+          "manual_key": {
+            "type": "string"
+          },
+          "otpauth_uri": {
+            "type": "string"
+          }
+        }
+      },
+      "OperatorLogin": {
+        "type": "object",
+        "required": [
+          "next"
+        ],
+        "properties": {
+          "next": {
+            "$ref": "#/components/schemas/OperatorLoginNext"
+          }
+        }
+      },
+      "OperatorLoginBody": {
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OperatorLoginNext": {
+        "type": "string",
+        "description": "What the browser does after the password step: always a second factor.",
+        "enum": [
+          "mfa_verify",
+          "mfa_enroll"
+        ]
+      },
+      "OperatorMe": {
+        "type": "object",
+        "description": "Body of `GET /admin/me`.",
+        "required": [
+          "operator"
+        ],
+        "properties": {
+          "operator": {
+            "$ref": "#/components/schemas/OperatorSummary"
+          },
+          "step_up_until": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Writes are allowed until then without a new step-up (`null` = step-up needed now)."
+          }
+        }
+      },
+      "OperatorReauthBody": {
+        "type": "object",
+        "required": [
+          "password",
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OperatorSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "full_name"
+        ],
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
       },
       "PackageCancel": {
         "type": "object",
@@ -10389,6 +11037,91 @@
         },
         "additionalProperties": false
       },
+      "PlatformAuditItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "at",
+          "operator_id",
+          "operator_username",
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "detail": {},
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operator_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operator_username": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "target_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tenant_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "PlatformAuditPage": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlatformAuditItem"
+            }
+          },
+          "next_before": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Pass as `before` for the next (older) page; absent on the last page."
+          }
+        }
+      },
       "PriceVariant": {
         "type": "string",
         "enum": [
@@ -10561,6 +11294,20 @@
             "description": "Whole range; `customers` = distinct customers over the range."
           }
         }
+      },
+      "Reason": {
+        "type": "object",
+        "description": "Body of suspend / unsuspend (and every other operator write): why, for the audit trail.",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "3–500 characters."
+          }
+        },
+        "additionalProperties": false
       },
       "ReauthBody": {
         "type": "object",
@@ -11982,6 +12729,23 @@
           "left"
         ]
       },
+      "StatusChanged": {
+        "type": "object",
+        "required": [
+          "tenant",
+          "revoked_sessions"
+        ],
+        "properties": {
+          "revoked_sessions": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Sessions of the spa's members ended by a suspension."
+          },
+          "tenant": {
+            "$ref": "#/components/schemas/TenantRow"
+          }
+        }
+      },
       "SuggestedNextOn": {
         "type": "object",
         "description": "The next date the rules would store for a contact made today, per outcome (`null` = none).\nThe form pre-fills `next_follow_up_on` with it; whatever the user leaves there is sent.",
@@ -12075,6 +12839,75 @@
             "type": "string"
           }
         }
+      },
+      "TenantRow": {
+        "type": "object",
+        "description": "One spa in the console's list: metadata and counts only (ADR-0003, ADR-0018 D3).",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "status",
+          "created_at",
+          "staff_count",
+          "customer_count",
+          "visits_30d",
+          "owner_count"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "customer_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Customer profiles not anonymised."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_activity_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Latest entry of the spa's audit trail."
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Active logins holding `staff.manage`."
+          },
+          "slug": {
+            "type": "string"
+          },
+          "staff_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Staff profiles still working."
+          },
+          "status": {
+            "$ref": "#/components/schemas/TenantStatus"
+          },
+          "visits_30d": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Completed (not voided) visits in the last 30 days."
+          }
+        }
+      },
+      "TenantStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "suspended"
+        ]
       },
       "TenantSummary": {
         "type": "object",
@@ -13063,6 +13896,10 @@
     {
       "name": "reports",
       "description": "Xem lại và theo dõi: hôm nay, theo khoảng ngày, sổ doanh thu, lịch sử khách, liệu trình"
+    },
+    {
+      "name": "admin",
+      "description": "Admin nền tảng (operator): spa, tính năng, vai trò, tài khoản, nhật ký"
     }
   ]
 }

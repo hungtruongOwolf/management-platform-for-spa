@@ -1,0 +1,102 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, username, full_name, password_hash, status = 'active' AS \"active!\",\n                  locked_until, mfa_secret_ct, mfa_enabled_at IS NOT NULL AS \"mfa_enabled!\"\n           FROM app.platform_operator WHERE username = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.platform_operator",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.platform_operator",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "full_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.platform_operator",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "password_hash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.platform_operator",
+            "name": "password_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "active!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "locked_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.platform_operator",
+            "name": "locked_until"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "mfa_secret_ct",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "app.platform_operator",
+            "name": "mfa_secret_ct"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "mfa_enabled!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "b5f9bcb07f30fbbd406a0d695507979003483d9c9432f53d666ba147b20c199f"
+}

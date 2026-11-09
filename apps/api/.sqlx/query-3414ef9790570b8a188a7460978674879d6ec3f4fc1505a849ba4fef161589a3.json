@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.platform_operator SET mfa_last_step = $2\n                 WHERE id = $1 AND (mfa_last_step IS NULL OR mfa_last_step < $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3414ef9790570b8a188a7460978674879d6ec3f4fc1505a849ba4fef161589a3"
+}

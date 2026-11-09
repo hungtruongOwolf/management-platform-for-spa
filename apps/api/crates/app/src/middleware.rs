@@ -24,6 +24,10 @@ use tower_http::trace::TraceLayer;
 #[derive(Debug, Clone)]
 pub struct HttpPolicy {
     pub public_origin: String,
+    /// `APP_ADMIN_ORIGIN` (ADR-0018 D2): when the platform console has its own host, writes to
+    /// `/api/v1/admin/*` must come from it and writes to the spa API must not. `None` = the
+    /// console shares the spa's origin.
+    pub admin_origin: Option<String>,
     pub request_timeout: Duration,
     pub max_body_bytes: usize,
     /// Sustained requests per second per client IP, and the burst allowed on top.
@@ -35,6 +39,7 @@ impl HttpPolicy {
     pub fn standard(public_origin: String) -> Self {
         Self {
             public_origin,
+            admin_origin: None,
             request_timeout: Duration::from_secs(10),
             max_body_bytes: 64 * 1024,
             rate_per_second: 5,
@@ -115,9 +120,12 @@ pub fn apply(router: Router, policy: &HttpPolicy) -> Router {
     // convert the rate into the replenish interval.
     let replenish_ms = (1000 / policy.rate_per_second.max(1)).max(1);
     let governor = client_limiter(replenish_ms, policy.rate_burst);
-    let origin = Arc::new(policy.public_origin.clone());
+    let origins = Arc::new(Origins {
+        public: policy.public_origin.clone(),
+        admin: policy.admin_origin.clone(),
+    });
 
-    let router = router.layer(middleware::from_fn_with_state(origin, check_origin));
+    let router = router.layer(middleware::from_fn_with_state(origins, check_origin));
     let router = match governor {
         Some(config) => router.layer(GovernorLayer::new(config)),
         None => {
@@ -167,9 +175,43 @@ fn request_span<B>(request: &Request<B>) -> tracing::Span {
     )
 }
 
+/// Stricter per-IP limit for `/admin/auth/*` (ADR-0018 D1): one request per 6 s sustained,
+/// burst 5. Operator lockout (`identity::lockout`) is the second layer.
+pub fn with_admin_auth_rate_limit<S: Clone + Send + Sync + 'static>(
+    router: Router<S>,
+) -> Router<S> {
+    match client_limiter(6_000, 5) {
+        Some(config) => router.layer(GovernorLayer::new(config)),
+        None => {
+            tracing::error!(
+                "invalid admin auth rate limit policy; admin auth rate limiting disabled"
+            );
+            router
+        }
+    }
+}
+
+/// The origins allowed to send state-changing requests.
+struct Origins {
+    public: String,
+    admin: Option<String>,
+}
+
+impl Origins {
+    /// The one origin a write to `path` may come from: the console's own host for the admin API
+    /// when it has one, the spa's origin otherwise.
+    fn expected_for(&self, path: &str) -> &str {
+        let admin_api = path == "/api/v1/admin" || path.starts_with("/api/v1/admin/");
+        match (&self.admin, admin_api) {
+            (Some(admin), true) => admin,
+            _ => &self.public,
+        }
+    }
+}
+
 /// State-changing requests must come from our own SPA origin (CSRF defence with SameSite cookies).
 async fn check_origin(
-    State(allowed): State<Arc<String>>,
+    State(origins): State<Arc<Origins>>,
     request: Request,
     next: Next,
 ) -> Response {
@@ -180,11 +222,12 @@ async fn check_origin(
     if safe {
         return next.run(request).await;
     }
+    let expected = origins.expected_for(request.uri().path());
     let origin_ok = request
         .headers()
         .get(header::ORIGIN)
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|origin| origin == allowed.as_str());
+        .is_some_and(|origin| origin == expected);
     if origin_ok {
         next.run(request).await
     } else {
@@ -239,6 +282,37 @@ mod tests {
     fn ip(s: &str) -> IpAddr {
         s.parse()
             .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+    }
+
+    /// ADR-0018 D2: with its own host, the console's API takes writes only from that host and the
+    /// spa API never from it; without one, both share the spa's origin.
+    #[test]
+    fn admin_origin_is_separate() {
+        let shared = Origins {
+            public: "https://app.example".into(),
+            admin: None,
+        };
+        assert_eq!(
+            shared.expected_for("/api/v1/admin/tenants"),
+            "https://app.example"
+        );
+        let split = Origins {
+            public: "https://app.example".into(),
+            admin: Some("https://admin.example".into()),
+        };
+        assert_eq!(
+            split.expected_for("/api/v1/admin/tenants"),
+            "https://admin.example"
+        );
+        assert_eq!(split.expected_for("/api/v1/admin"), "https://admin.example");
+        assert_eq!(
+            split.expected_for("/api/v1/customers"),
+            "https://app.example"
+        );
+        assert_eq!(
+            split.expected_for("/api/v1/administrator"),
+            "https://app.example"
+        );
     }
 
     #[test]

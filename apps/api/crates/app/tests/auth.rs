@@ -550,9 +550,15 @@ async fn suspending_a_spa_cuts_off_its_open_sessions(owner: PgPool) -> TestResul
     assert!(me.body["active_tenant"].is_null());
     assert_eq!(me.body["permissions"], json!([]));
 
-    // MFA does not lapse with the suspension: the owner still owes a second factor.
+    // ADR-0018 (spec platform-admin US4): nobody signs in to a suspended spa, the owner included,
+    // so no password-only owner session can exist when it reopens. Only a correct password
+    // learns why.
     let owner_login = login(&h.app, common::OWNER_PHONE, PASSWORD).await;
-    assert_eq!(owner_login.body["next"], "mfa_enroll");
+    assert_eq!(owner_login.status, StatusCode::FORBIDDEN);
+    assert_eq!(owner_login.body["code"], "auth.spa_suspended");
+    assert!(owner_login.session().is_none());
+    let wrong = login(&h.app, common::OWNER_PHONE, "not-the-password").await;
+    assert_eq!(wrong.status, StatusCode::UNAUTHORIZED);
     Ok(())
 }
 

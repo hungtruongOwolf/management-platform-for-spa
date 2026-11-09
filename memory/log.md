@@ -690,6 +690,10 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Đề xuất theo thứ tự A1 (pool ping) → A2 (lịch sử) → A3/A4 (gộp xác thực, cần ADR + secure) → B1 (bỏ index) → C1 (dọn session) → C2 (job bất biến); danh sách không được đổi ở §6. Tooling `infra/perf/db/`.
 - Tiếp theo: EM trả lời Q-DB1…Q-DB4; chưa đổi schema, chưa merge.
 
+## [2026-11-09] ingest + spec + architect + design | Admin nền tảng (ADR-0018)
+- Raw: [2026-11-09-em-request-docs-and-platform-admin](raw/2026-11-09-em-request-docs-and-platform-admin.md) (mục 2; mục 1 docs/README do agent khác). EM chọn "Admin nền tảng".
+- Spec [platform-admin](wiki/product/specs/platform-admin.md) (US1–US9, Q-PA1…4), [ADR-0018](wiki/decisions/ADR-0018-platform-admin-console.md) (principal operator riêng, `/admin` cùng deployment + `APP_ADMIN_ORIGIN`, hàm definer có cổng token, cờ tính năng, mẫu vai trò), thiết kế [architecture/platform-admin](wiki/architecture/platform-admin.md); authz-matrix + threat-model thêm mục "Admin nền tảng".
+- Build chờ #109 (`app.session_actor`) + #110 vào main (điều phối với agent DB); migration lấy số trống tiếp theo (dự kiến 0038–0040).
 ## [2026-11-09] build + secure + record | Rà soát DB PR 4: dọn session, kiểm bất biến hằng ngày, FK cột người làm (C1, C2, C4)
 - 0035: `app.maintenance_run` + `claim_maintenance` (một instance mỗi khoảng, sửa F10), `purge_sessions` (30 ngày, EM Q-DB4), `invariant_violations` (11 phép kiểm, chỉ đếm); job `app::jobs::run_maintenance` thay purge cũ; drift → log ERROR `data invariant violated`.
 - 0036/0037: FK `created_by`/`voided_by`/`cancelled_by`/`closed_by` → `user_account` (NOT VALID rồi VALIDATE; staging 0 mồ côi). `TenantTx` thêm `idle_in_transaction_session_timeout` 30 s.
@@ -709,3 +713,9 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Migration 0034 `app.session_actor(token_hash)` (SECURITY DEFINER, `search_path` pin, chỉ `app_rw` EXECUTE). `AuthUser` -> `service::authenticate`, `/me` -> `resolve_with_access`; transaction quyền riêng bỏ: -3 lượt đi về mỗi request nghiệp vụ, `/me` còn 3 câu.
 - `secure`: threat-model TB2 thêm dòng hàm definer; ADR-0017. Test `app/tests/session_actor.rs`; mutation-check SQL 11 đột biến (10 bị bắt, 1 tương đương do CHECK idle <= absolute).
 - Xếp chồng trên PR 1 (dùng `MemberAccess` / `TenantFacts` của A4). Tiếp theo: PR 4 (dọn session, kiểm bất biến hằng ngày, C4).
+
+## [2026-11-09] build + secure | Admin nền tảng PR A: danh tính operator + spa (ADR-0018)
+- Sau khi #107–#110 vào main (785e21e), merge main, build trên `app.session_actor`. Migration **0038** (`platform_operator`, `platform_session`, `platform_recovery_code`, `platform_audit_log` append-only, `platform_gate`, `platform_tenant_overview`, `platform_insert_tenant`, `platform_set_tenant_status`, `user_spa_suspended`, index `audit_log (tenant_id, at DESC)`).
+- Crate `platform` (auth operator luôn TOTP, session idle 30 phút / 8 giờ, step-up 5 phút cho mọi request ghi trong extractor `Operator`, rate limit `/admin/auth/*` 1/6 s burst 5), route `/api/v1/admin/{auth/*, me, tenants, tenants/{id}[/suspend|/unsuspend], audit}`; CLI `add-operator` (mật khẩu từ env), `reset-operator-mfa`, `disable-/enable-operator`; `APP_ADMIN_ORIGIN` (kiểm Origin riêng cho `/api/v1/admin/*`). Đăng nhập spa đang ngưng → `403 auth.spa_suspended` (thay hành vi M3: không còn session mật khẩu nào trong lúc ngưng). `kernel::audit::record_platform` (audit spa `platform_admin`).
+- Test: `app/tests/platform.rs` (MFA luôn, khóa, cookie spa ≠ operator, step-up Rust + DB `42501`, tạo spa + chủ spa đăng nhập → MFA → đổi mật khẩu, không spa mồ côi, danh sách chỉ số đếm, spa ngưng, audit append-only, hàm definer/search_path/PUBLIC, mã dùng một lần, SQL `app.platform_*` chỉ ở crate platform); `authz_matrix.rs` lớp operator; `auth.rs` (spa ngưng); vitest `admin/admin.test.tsx`. Test Rust chạy ở CI (local bị dừng vì thiếu RAM).
+- Web: ứng dụng con `/admin` (chunk `boot` 7,0 KiB gzip), nạp từ `main.tsx`. JS khởi động gzip -9: **124,43 → 124,61 KiB** (≤ 125).

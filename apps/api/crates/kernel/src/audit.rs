@@ -43,6 +43,36 @@ pub async fn record(
     Ok(())
 }
 
+/// An entry in the spa's own trail for something a platform operator did to the spa
+/// (`actor_kind = 'platform_admin'`, ADR-0018 D6), so the owner sees it. `operator` is the
+/// `platform_operator` id, not a spa account.
+pub async fn record_platform(
+    tx: &mut TenantTx,
+    operator: Uuid,
+    ip: Option<std::net::IpAddr>,
+    entry: AuditEntry<'_>,
+) -> Result<(), AppError> {
+    let ip = ip.map(sqlx::types::ipnetwork::IpNetwork::from);
+    sqlx::query!(
+        r#"INSERT INTO app.audit_log
+             (id, tenant_id, actor_user_id, actor_kind, action, entity_type, entity_id, before, after, reason, ip)
+           VALUES ($1, $2, $3, 'platform_admin', $4, $5, $6, $7, $8, $9, $10)"#,
+        Uuid::now_v7(),
+        tx.tenant().as_uuid(),
+        operator,
+        entry.action,
+        entry.entity_type,
+        entry.entity_id,
+        entry.before,
+        entry.after,
+        entry.reason,
+        ip,
+    )
+    .execute(tx.conn())
+    .await?;
+    Ok(())
+}
+
 /// An audit entry with no signed-in actor (`actor_kind = 'system'`), e.g. a forgotten-password
 /// request from the login screen: who asked is not authenticated, so no user is named as actor.
 pub async fn record_system(

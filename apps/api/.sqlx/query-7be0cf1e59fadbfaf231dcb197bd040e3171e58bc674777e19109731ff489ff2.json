@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.role (id, tenant_id, key, name, is_system, requires_mfa)\n             VALUES ($1, $2, $3, $4, true, $5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7be0cf1e59fadbfaf231dcb197bd040e3171e58bc674777e19109731ff489ff2"
+}

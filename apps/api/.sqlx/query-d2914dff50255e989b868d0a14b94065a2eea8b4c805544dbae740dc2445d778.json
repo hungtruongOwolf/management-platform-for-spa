@@ -1,0 +1,95 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.operator_id, s.last_seen_at, s.absolute_expires_at, s.recent_auth_at,\n                  s.mfa_pending, (o.mfa_enabled_at IS NOT NULL) AS \"mfa_enrolled!\"\n           FROM app.platform_session s\n           JOIN app.platform_operator o ON o.id = s.operator_id AND o.status = 'active'\n           WHERE s.token_hash = $1 AND s.revoked_at IS NULL\n             AND now() < s.idle_expires_at AND now() < s.absolute_expires_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.platform_session",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "operator_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.platform_session",
+            "name": "operator_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "last_seen_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.platform_session",
+            "name": "last_seen_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "absolute_expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.platform_session",
+            "name": "absolute_expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "recent_auth_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.platform_session",
+            "name": "recent_auth_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "mfa_pending",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "app.platform_session",
+            "name": "mfa_pending"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "mfa_enrolled!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "d2914dff50255e989b868d0a14b94065a2eea8b4c805544dbae740dc2445d778"
+}
