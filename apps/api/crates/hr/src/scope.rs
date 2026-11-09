@@ -57,7 +57,7 @@ impl RecordScope {
             .await?
             .into_iter()
             .collect();
-        let own = repo::staff_of_user(tx, actor.user_id.as_uuid()).await?;
+        let own = org::profile::own_staff_id(tx, actor).await?;
         owner_only.extend(own);
         Ok(Self {
             unrestricted: false,

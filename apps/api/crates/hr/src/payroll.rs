@@ -62,15 +62,16 @@ fn totals(slips: &[Payslip]) -> PayrollTotals {
     }
 }
 
-/// Computes the live payslips of `month` for `only` (one person) or everyone employed in it.
-/// No authorization: callers check theirs first.
-pub async fn compute_in(
+/// Computes the live payslips of `month` for `only` (one person) or everyone employed in it,
+/// under `rules` (the caller loads them once, so the close audit records exactly the rules the
+/// snapshots used). No authorization: callers check theirs first.
+async fn compute_in(
     tx: &mut TenantTx,
     month: Month,
     only: Option<Uuid>,
     today: NaiveDate,
+    rules: &PayrollRules,
 ) -> Result<Vec<Payslip>, AppError> {
-    let (rules, _) = rules::load(tx).await?;
     let profiles: Vec<Profile> = org::profile::profiles_in(tx)
         .await?
         .into_iter()
@@ -143,7 +144,7 @@ pub async fn compute_in(
                     .find(|e| e.staff_id == p.id)
                     .map(|e| e.result),
             };
-            calc::compute(p.id, &p.full_name, &p.position, &input, &rules)
+            calc::compute(p.id, &p.full_name, &p.position, &input, rules)
         })
         .collect())
 }
@@ -165,7 +166,8 @@ pub async fn payslips_in(
     if info.closed {
         parse_slips(repo::payslips(tx, month.first_day(), only).await?)
     } else {
-        compute_in(tx, month, only, today).await
+        let (rules, _) = rules::load(tx).await?;
+        compute_in(tx, month, only, today, &rules).await
     }
 }
 
@@ -193,7 +195,8 @@ pub async fn month(
     })
 }
 
-/// `GET /payroll/payslip?month=&staff_id=` (`payroll.read`): one payslip, with its rules.
+/// `GET /payroll/payslips/{staff_id}?month=` (`payroll.read`): one payslip, and whether its month
+/// is closed.
 pub async fn payslip(
     pool: &PgPool,
     actor: &Actor,
@@ -248,7 +251,8 @@ pub async fn close(
     if repo::lock_period(&mut tx, month.first_day(), true).await? == "closed" {
         return Err(period::closed());
     }
-    let slips = compute_in(&mut tx, month, None, today).await?;
+    let (rules, _) = rules::load(&mut tx).await?;
+    let slips = compute_in(&mut tx, month, None, today, &rules).await?;
     if !input.allow_incomplete
         && slips
             .iter()
@@ -264,7 +268,6 @@ pub async fn close(
     }
     repo::close_period(&mut tx, month.first_day(), actor.user_id.as_uuid()).await?;
     let t = totals(&slips);
-    let rules: PayrollRules = rules::load(&mut tx).await?.0;
     audit::record(
         &mut tx,
         actor,
