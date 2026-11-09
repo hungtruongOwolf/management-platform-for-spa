@@ -178,7 +178,7 @@ export function AdminLogin() {
         <div className="grid justify-items-center gap-2">
           <QrCode value={enrolling.otpauth_uri} label="Mã QR để thêm vào ứng dụng xác thực" />
           <p className="text-sm text-text-muted">
-            Hoặc nhập khóa: <span className="font-mono tabular">{enrolling.manual_key}</span>
+            Hoặc nhập khóa: <span data-testid="admin-manual-key" className="font-mono tabular">{enrolling.manual_key}</span>
           </p>
         </div>
       )}

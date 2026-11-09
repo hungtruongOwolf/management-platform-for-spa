@@ -51,6 +51,8 @@ setup("migrate and provision a fresh spa", () => {
     managerPassword: randomBytes(18).toString("base64url"),
     techPhone: `093${String(randomInt(0, 10_000_000)).padStart(7, "0")}`,
     techPassword: randomBytes(18).toString("base64url"),
+    operatorUsername: `ops-${Date.now().toString(36)}`,
+    operatorPassword: randomBytes(18).toString("base64url"),
   };
 
   cli(["migrate"]);
@@ -110,6 +112,11 @@ setup("migrate and provision a fresh spa", () => {
     { APP_NEW_USER_PASSWORD: run.techPassword ?? "" },
   );
   cli(["seed-catalog", "--tenant", run.slug]);
+  // Platform console operator (ADR-0018): CLI only, password through the environment.
+  cli(
+    ["add-operator", "--username", run.operatorUsername ?? "", "--name", "Người vận hành E2E"],
+    { APP_NEW_OPERATOR_PASSWORD: run.operatorPassword ?? "" },
+  );
   // Closer for the sell-package flow (sales.spec.ts).
   cli([
     "add-staff",
