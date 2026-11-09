@@ -253,17 +253,13 @@ pub async fn create(
         )
         .execute(tx.conn())
         .await?;
-        let permissions: Vec<String> = role
-            .default_permissions()
-            .iter()
-            .map(|p| p.as_str().to_owned())
-            .collect();
+        // The operator-edited template (ADR-0018 D5), not the code defaults.
         sqlx::query!(
             "INSERT INTO app.role_permission (tenant_id, role_id, permission)
-             SELECT $1, $2, unnest($3::text[])",
+             SELECT $1, $2, permission FROM app.role_template_permission WHERE role_key = $3",
             tenant_id,
             role_id,
-            &permissions
+            role.key()
         )
         .execute(tx.conn())
         .await?;

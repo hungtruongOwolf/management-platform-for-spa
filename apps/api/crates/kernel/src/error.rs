@@ -68,6 +68,13 @@ pub enum AppError {
         code: &'static str,
         details: serde_json::Value,
     },
+    /// A business rule refused the request (422) and the client lists why, e.g. `role.owner_floor`
+    /// with the permissions the owner role must keep (ADR-0018). Same `details` rule as above.
+    #[error("unprocessable: {code}")]
+    UnprocessableDetails {
+        code: &'static str,
+        details: serde_json::Value,
+    },
     #[error("stale version")]
     StaleVersion,
     #[error("bad request: {code}")]
@@ -109,7 +116,9 @@ impl AppError {
             | Self::InvalidMfaCode => StatusCode::UNAUTHORIZED,
             Self::Forbidden { .. } | Self::PasswordChangeRequired => StatusCode::FORBIDDEN,
             Self::NotFound => StatusCode::NOT_FOUND,
-            Self::Validation(_) | Self::Unprocessable { .. } => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::Validation(_)
+            | Self::Unprocessable { .. }
+            | Self::UnprocessableDetails { .. } => StatusCode::UNPROCESSABLE_ENTITY,
             Self::Conflict { .. } | Self::ConflictWith { .. } | Self::ConflictDetails { .. } => {
                 StatusCode::CONFLICT
             }
@@ -135,6 +144,7 @@ impl AppError {
             | Self::Conflict { code }
             | Self::ConflictWith { code, .. }
             | Self::ConflictDetails { code, .. }
+            | Self::UnprocessableDetails { code, .. }
             | Self::BadRequest { code } => code,
             Self::NotFound => "not_found",
             Self::Validation(_) => "validation_failed",
@@ -165,7 +175,8 @@ impl AppError {
                 _ => None,
             },
             details: match self {
-                Self::ConflictDetails { details, .. } => Some(details.clone()),
+                Self::ConflictDetails { details, .. }
+                | Self::UnprocessableDetails { details, .. } => Some(details.clone()),
                 _ => None,
             },
         }

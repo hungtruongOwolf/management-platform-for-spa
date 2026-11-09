@@ -7,11 +7,13 @@
 //! hash itself; work inside one spa runs in that spa's `TenantTx` (its RLS). Nothing here reads
 //! customer, visit, note or pay rows.
 
+pub mod accounts;
 pub mod audit;
 pub mod auth;
 pub mod features;
 pub mod http;
 pub mod operator;
+pub mod roles;
 pub mod tenants;
 
 /// Map a refusal of a platform DB function (`platform_gate`: SQLSTATE 42501) to a 401: the Rust

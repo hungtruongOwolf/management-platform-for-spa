@@ -2,12 +2,16 @@
 //! extractor: `Operator` (full session; writes need a step-up), `OperatorAuth` (full session,
 //! no step-up: me, re-auth), `PendingOperatorSession` (the MFA steps). Spa cookies are never read.
 
-use crate::audit::{self, AuditQuery, PlatformAuditPage};
+use crate::accounts::{
+    self, AccountAction, AccountQuery, AccountRow, PasswordReset, SessionsRevoked,
+};
+use crate::audit::{self, AuditQuery, PlatformAuditPage, SpaAuditPage};
 use crate::auth::{
     self, Operator, OperatorAuth, OperatorEnrolled, OperatorEnrollment, OperatorLogin, OperatorMe,
     OperatorSummary, PendingOperatorSession,
 };
 use crate::features::{self, FeatureInfo, FeatureSwitch, TenantFeature};
+use crate::roles::{self, PermissionInfo, RoleEdit, RoleGrants};
 use crate::tenants::{
     self, CreatedTenant, NewTenant, Reason, StatusChanged, TenantRow, TenantStatus,
 };
@@ -54,6 +58,28 @@ where
         .route(
             "/admin/tenants/{id}/features/{key}",
             put(set_tenant_feature),
+        )
+        .route("/admin/tenants/{id}/roles", get(tenant_roles))
+        .route("/admin/tenants/{id}/roles/{key}", put(set_tenant_role))
+        .route(
+            "/admin/tenants/{id}/roles/{key}/reset",
+            post(reset_tenant_role),
+        )
+        .route("/admin/tenants/{id}/audit", get(tenant_audit))
+        .route("/admin/permissions", get(list_permissions))
+        .route("/admin/role-templates", get(list_role_templates))
+        .route("/admin/role-templates/{key}", put(set_role_template))
+        .route("/admin/accounts", get(search_accounts))
+        .route("/admin/accounts/{id}/lock", post(lock_account))
+        .route("/admin/accounts/{id}/unlock", post(unlock_account))
+        .route(
+            "/admin/accounts/{id}/reset-password",
+            post(reset_account_password),
+        )
+        .route("/admin/accounts/{id}/reset-mfa", post(reset_account_mfa))
+        .route(
+            "/admin/accounts/{id}/revoke-sessions",
+            post(revoke_account_sessions),
         );
     (auth, console)
 }
@@ -308,4 +334,181 @@ pub async fn set_tenant_feature(
     Json(body): Json<FeatureSwitch>,
 ) -> Result<Json<TenantFeature>, AppError> {
     features::set(&pool, &op, id, &key, &body).await.map(Json)
+}
+
+#[utoipa::path(get, path = "/api/v1/admin/tenants/{id}/roles", tag = "admin",
+    params(("id" = Uuid, Path)),
+    responses((status = 200, body = Vec<RoleGrants>), (status = 401), (status = 404)))]
+pub async fn tenant_roles(
+    State(pool): State<PgPool>,
+    Operator(op): Operator,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<RoleGrants>>, AppError> {
+    roles::of_tenant(&pool, &op, id).await.map(Json)
+}
+
+#[utoipa::path(put, path = "/api/v1/admin/tenants/{id}/roles/{key}", tag = "admin",
+    params(("id" = Uuid, Path), ("key" = String, Path, description = "owner | manager | technician")),
+    request_body = RoleEdit,
+    responses((status = 200, body = RoleGrants, description = "This spa's own grants (no longer follows the template); next request"),
+        (status = 401), (status = 403, description = "platform.step_up_required"), (status = 404),
+        (status = 422, description = "role.not_grantable | role.owner_only_permission | role.owner_floor (details.missing) | permissions unknown_permission | reason")))]
+pub async fn set_tenant_role(
+    State(pool): State<PgPool>,
+    Operator(op): Operator,
+    Path((id, key)): Path<(Uuid, String)>,
+    Json(body): Json<RoleEdit>,
+) -> Result<Json<RoleGrants>, AppError> {
+    let reason = Reason {
+        reason: body.reason.clone(),
+    };
+    roles::set_for_tenant(&pool, &op, id, &key, Some(&body), &reason)
+        .await
+        .map(Json)
+}
+
+#[utoipa::path(post, path = "/api/v1/admin/tenants/{id}/roles/{key}/reset", tag = "admin",
+    params(("id" = Uuid, Path), ("key" = String, Path)), request_body = Reason,
+    responses((status = 200, body = RoleGrants, description = "Back to the template, and following it again"),
+        (status = 401), (status = 403, description = "platform.step_up_required"), (status = 404), (status = 422)))]
+pub async fn reset_tenant_role(
+    State(pool): State<PgPool>,
+    Operator(op): Operator,
+    Path((id, key)): Path<(Uuid, String)>,
+    Json(body): Json<Reason>,
+) -> Result<Json<RoleGrants>, AppError> {
+    roles::set_for_tenant(&pool, &op, id, &key, None, &body)
+        .await
+        .map(Json)
+}
+
+#[utoipa::path(get, path = "/api/v1/admin/tenants/{id}/audit", tag = "admin",
+    params(("id" = Uuid, Path), AuditQuery),
+    responses((status = 200, body = SpaAuditPage, description = "Metadata only; the read is audited"),
+        (status = 401), (status = 404), (status = 422)))]
+pub async fn tenant_audit(
+    State(pool): State<PgPool>,
+    Operator(op): Operator,
+    Path(id): Path<Uuid>,
+    Query(query): Query<AuditQuery>,
+) -> Result<Response, AppError> {
+    let page = audit::of_tenant(&pool, &op, id, &query).await?;
+    Ok(no_store(Json(page).into_response()))
+}
+
+#[utoipa::path(get, path = "/api/v1/admin/permissions", tag = "admin",
+    responses((status = 200, body = Vec<PermissionInfo>), (status = 401)))]
+pub async fn list_permissions(Operator(_op): Operator) -> Json<Vec<PermissionInfo>> {
+    Json(roles::catalogue())
+}
+
+#[utoipa::path(get, path = "/api/v1/admin/role-templates", tag = "admin",
+    responses((status = 200, body = Vec<RoleGrants>), (status = 401)))]
+pub async fn list_role_templates(
+    State(pool): State<PgPool>,
+    Operator(_op): Operator,
+) -> Result<Json<Vec<RoleGrants>>, AppError> {
+    roles::templates(&pool).await.map(Json)
+}
+
+#[utoipa::path(put, path = "/api/v1/admin/role-templates/{key}", tag = "admin",
+    params(("key" = String, Path, description = "owner | manager | technician")), request_body = RoleEdit,
+    responses((status = 200, body = RoleGrants, description = "`updated_spas`: spas following the template, changed in the same transaction"),
+        (status = 401), (status = 403, description = "platform.step_up_required"), (status = 404),
+        (status = 422, description = "role.not_grantable | role.owner_only_permission | role.owner_floor | reason")))]
+pub async fn set_role_template(
+    State(pool): State<PgPool>,
+    Operator(op): Operator,
+    Path(key): Path<String>,
+    Json(body): Json<RoleEdit>,
+) -> Result<Json<RoleGrants>, AppError> {
+    roles::set_template(&pool, &op, &key, &body).await.map(Json)
+}
+
+#[utoipa::path(get, path = "/api/v1/admin/accounts", tag = "admin", params(AccountQuery),
+    responses((status = 200, body = Vec<AccountRow>), (status = 401), (status = 422, description = "q too_short")))]
+pub async fn search_accounts(
+    State(pool): State<PgPool>,
+    Operator(op): Operator,
+    Query(query): Query<AccountQuery>,
+) -> Result<Response, AppError> {
+    let rows = accounts::search(&pool, &op, &query).await?;
+    Ok(no_store(Json(rows).into_response()))
+}
+
+async fn account_action(
+    pool: &PgPool,
+    op: &crate::auth::OperatorSession,
+    id: Uuid,
+    action: AccountAction,
+    reason: &Reason,
+) -> Result<Json<SessionsRevoked>, AppError> {
+    accounts::act(pool, op, id, action, reason).await.map(Json)
+}
+
+#[utoipa::path(post, path = "/api/v1/admin/accounts/{id}/lock", tag = "admin",
+    params(("id" = Uuid, Path)), request_body = Reason,
+    responses((status = 200, body = SessionsRevoked), (status = 401), (status = 403, description = "platform.step_up_required"),
+        (status = 404), (status = 409, description = "platform.last_owner | account.status_unchanged"), (status = 422)))]
+pub async fn lock_account(
+    State(pool): State<PgPool>,
+    Operator(op): Operator,
+    Path(id): Path<Uuid>,
+    Json(body): Json<Reason>,
+) -> Result<Json<SessionsRevoked>, AppError> {
+    account_action(&pool, &op, id, AccountAction::Lock, &body).await
+}
+
+#[utoipa::path(post, path = "/api/v1/admin/accounts/{id}/unlock", tag = "admin",
+    params(("id" = Uuid, Path)), request_body = Reason,
+    responses((status = 200, body = SessionsRevoked), (status = 401), (status = 403, description = "platform.step_up_required"),
+        (status = 404), (status = 409, description = "account.status_unchanged"), (status = 422)))]
+pub async fn unlock_account(
+    State(pool): State<PgPool>,
+    Operator(op): Operator,
+    Path(id): Path<Uuid>,
+    Json(body): Json<Reason>,
+) -> Result<Json<SessionsRevoked>, AppError> {
+    account_action(&pool, &op, id, AccountAction::Unlock, &body).await
+}
+
+#[utoipa::path(post, path = "/api/v1/admin/accounts/{id}/reset-mfa", tag = "admin",
+    params(("id" = Uuid, Path)), request_body = Reason,
+    responses((status = 200, body = SessionsRevoked), (status = 401), (status = 403, description = "platform.step_up_required"),
+        (status = 404), (status = 409, description = "account.mfa_not_enabled"), (status = 422)))]
+pub async fn reset_account_mfa(
+    State(pool): State<PgPool>,
+    Operator(op): Operator,
+    Path(id): Path<Uuid>,
+    Json(body): Json<Reason>,
+) -> Result<Json<SessionsRevoked>, AppError> {
+    account_action(&pool, &op, id, AccountAction::ResetMfa, &body).await
+}
+
+#[utoipa::path(post, path = "/api/v1/admin/accounts/{id}/revoke-sessions", tag = "admin",
+    params(("id" = Uuid, Path)), request_body = Reason,
+    responses((status = 200, body = SessionsRevoked), (status = 401), (status = 403, description = "platform.step_up_required"),
+        (status = 404), (status = 422)))]
+pub async fn revoke_account_sessions(
+    State(pool): State<PgPool>,
+    Operator(op): Operator,
+    Path(id): Path<Uuid>,
+    Json(body): Json<Reason>,
+) -> Result<Json<SessionsRevoked>, AppError> {
+    account_action(&pool, &op, id, AccountAction::RevokeSessions, &body).await
+}
+
+#[utoipa::path(post, path = "/api/v1/admin/accounts/{id}/reset-password", tag = "admin",
+    params(("id" = Uuid, Path)), request_body = Reason,
+    responses((status = 200, body = PasswordReset, description = "The temporary password is in this response only (no-store)"),
+        (status = 401), (status = 403, description = "platform.step_up_required"),
+        (status = 404), (status = 409, description = "account.locked"), (status = 422)))]
+pub async fn reset_account_password(
+    State(pool): State<PgPool>,
+    Operator(op): Operator,
+    Path(id): Path<Uuid>,
+    Json(body): Json<Reason>,
+) -> Result<Response, AppError> {
+    let reset = accounts::reset_password(&pool, &op, id, &body).await?;
+    Ok(no_store(Json(reset).into_response()))
 }
