@@ -3,7 +3,7 @@ name: CI
 # Job graph (memory/wiki/conventions/testing.md §5):
 #   changes ─┬─ rust-lint                       fmt, clippy, doctests, cargo-deny      (scope full)
 #            ├─ rust-test-build ── rust-test×3  nextest archive once, 3 shards        (scope full)
-#            ├─ api-build ─┬─ e2e×2             Playwright desktop project, 2 shards  (scope web|full)
+#            ├─ api-build ─┬─ e2e×3             Playwright desktop project, 3 shards  (scope web|full)
 #            │             └─ perf              API p95 + Lighthouse CI               (scope web|full)
 #            ├─ web, images                                                           (scope web|full)
 #   secrets (always)
@@ -45,7 +45,7 @@ jobs:
       - name: Classifier self-test
         run: |
           bash scripts/ci-changes.test.sh
-          if [ -f scripts/gate-lib.test.sh ]; then bash scripts/gate-lib.test.sh; fi
+          bash scripts/gate-lib.test.sh
       - id: scope
         name: Decide scope
         env:
@@ -217,14 +217,14 @@ jobs:
           retention-days: 1
 
   e2e:
-    name: E2E + a11y (shard ${{ matrix.shard }}/2)
+    name: E2E + a11y (shard ${{ matrix.shard }}/3)
     needs: api-build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     services:
       postgres:
         image: postgres:17-alpine
@@ -272,9 +272,9 @@ jobs:
       # (a missing library fails the browser launch loudly, it cannot pass silently).
       # Each shard provisions its own spa (setup project) on its own Postgres. Specs are split by
       # measured duration (e2e/shard.mjs): Playwright's --shard splits by test count per file.
-      - name: E2E and axe (shard ${{ matrix.shard }}/2)
+      - name: E2E and axe (shard ${{ matrix.shard }}/3)
         run: |
-          specs=$(cd apps/web && node e2e/shard.mjs ${{ matrix.shard }} 2)
+          specs=$(cd apps/web && node e2e/shard.mjs ${{ matrix.shard }} 3)
           echo "specs: $specs"
           # shellcheck disable=SC2086 # one argument per spec
           pnpm e2e --project=desktop --reporter=list,github,html e2e/setup/ $specs
@@ -339,6 +339,7 @@ jobs:
       # seeds 300 customers and 100 visits, so /quay is audited with data on it, as before.
       - name: API p95
         run: pnpm e2e --project=perf
+      # Median of 5 runs per URL (lighthouserc.json): the first run on a cold API is often the slowest.
       - name: Lighthouse CI (LCP < 2.5 s)
         run: pnpm lhci
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
