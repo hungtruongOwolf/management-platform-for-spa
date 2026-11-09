@@ -268,7 +268,7 @@ pub async fn set_for_tenant(
         &op.token_hash[..],
         tenant,
         role.key(),
-        permissions.as_ref()
+        permissions.as_deref()
     )
     .fetch_optional(tx.conn())
     .await
