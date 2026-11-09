@@ -232,6 +232,51 @@ describe("auth flow", () => {
   });
 });
 
+describe("signing out", () => {
+  it("lands on a clean login page: no `next`, not even the login page itself", async () => {
+    let loggedIn = true;
+    server((method, path) => {
+      if (path === "/api/v1/me") return loggedIn ? Response.json(ME) : unauthorized();
+      if (path === "/api/v1/auth/logout" && method === "POST") {
+        loggedIn = false;
+        return new Response(null, { status: 204 });
+      }
+      if (path === "/api/v1/service-categories" || path === "/api/v1/services")
+        return Response.json([]);
+      return new Response(null, { status: 404 });
+    });
+    const history = createMemoryHistory({ initialEntries: ["/bang-gia"] });
+    render(<App history={history} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^Tài khoản/ }));
+    await user.click(await screen.findByRole("button", { name: "Đăng xuất" }));
+    expect(await screen.findByRole("button", { name: "Đăng nhập" })).toBeInTheDocument();
+    expect(history.location.pathname).toBe("/dang-nhap");
+    expect(new URLSearchParams(history.location.search).get("next")).toBeNull();
+  });
+
+  it("quick lock comes back to the screen it locked", async () => {
+    let loggedIn = true;
+    server((method, path) => {
+      if (path === "/api/v1/me") return loggedIn ? Response.json(ME) : unauthorized();
+      if (path === "/api/v1/auth/logout" && method === "POST") {
+        loggedIn = false;
+        return new Response(null, { status: 204 });
+      }
+      if (path === "/api/v1/service-categories" || path === "/api/v1/services")
+        return Response.json([]);
+      return new Response(null, { status: 404 });
+    });
+    const history = createMemoryHistory({ initialEntries: ["/bang-gia"] });
+    render(<App history={history} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^Tài khoản/ }));
+    await user.click(await screen.findByRole("button", { name: /^Khóa nhanh/ }));
+    expect(await screen.findByRole("button", { name: "Đăng nhập" })).toBeInTheDocument();
+    expect(new URLSearchParams(history.location.search).get("next")).toBe("/bang-gia");
+  });
+});
+
 describe("session ending while the app is open", () => {
   it("a 401 from any screen asks /me again and lands on the login page, back to that screen", async () => {
     let expired = false;
