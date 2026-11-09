@@ -4,6 +4,7 @@ import { useState, type SyntheticEvent, type ReactNode } from "react";
 import { ApiError, safeNextPath } from "../../lib/api";
 import { messageFor } from "../../lib/errors";
 import { AuthFrame, bandTitle } from "./AuthFrame";
+import "./mfaMessages";
 import { QrCode } from "./QrCode";
 import { authQuery, confirmMfaEnrollment, logout, setAuthState, startMfaEnrollment, verifyMfa, type Me, type MfaStep } from "./session";
 

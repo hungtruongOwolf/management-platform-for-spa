@@ -1,5 +1,6 @@
 import { ApiError } from "../lib/api";
 import { addMessages, messageFor } from "../lib/errors";
+import "../features/auth/mfaMessages";
 
 /** Error messages only the platform console meets: they live in its chunk, not the spa's startup bundle. */
 addMessages(
