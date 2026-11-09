@@ -8,7 +8,7 @@ use crate::dto::{
 };
 use crate::service;
 use axum::body::Bytes;
-use axum::extract::rejection::QueryRejection;
+use axum::extract::rejection::{JsonRejection, QueryRejection};
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -63,9 +63,12 @@ pub async fn add_to_visit(
     State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
     Path(id): Path<Uuid>,
-    IdempotencyKey(key): IdempotencyKey,
+    key: Result<IdempotencyKey, AppError>,
     body: Bytes,
 ) -> Result<Response, AppError> {
+    // The right first, then the key and the body (F17).
+    user.actor.require(Permission::VisitRecord)?;
+    let IdempotencyKey(key) = key?;
     let (canonical, input): (_, VisitAdditions) = read_json(&body)?;
     let visit = input.into_visit();
     let (status, body) = service::add(
@@ -102,10 +105,19 @@ pub async fn convert_visit(
     State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
     Path(id): Path<Uuid>,
-    IfMatch(version): IfMatch,
-    IdempotencyKey(key): IdempotencyKey,
+    version: Result<IfMatch, AppError>,
+    key: Result<IdempotencyKey, AppError>,
     body: Bytes,
 ) -> Result<Response, AppError> {
+    // The rights first, then the headers and the body (F17).
+    for right in [
+        Permission::VisitRecord,
+        Permission::RecordVoidSameDay,
+        Permission::PackageSell,
+    ] {
+        user.actor.require(right)?;
+    }
+    let (IfMatch(version), IdempotencyKey(key)) = (version?, key?);
     let (canonical, input): (_, VisitConversion) = read_json(&body)?;
     let (status, body) = service::convert(
         &pool,
@@ -160,13 +172,15 @@ pub async fn create_visit(
     State(pool): State<PgPool>,
     State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
-    IdempotencyKey(key): IdempotencyKey,
+    key: Result<IdempotencyKey, AppError>,
     body: Bytes,
 ) -> Result<Response, AppError> {
-    let value: Value = serde_json::from_slice(&body).map_err(|_| invalid_body())?;
-    // Hash the canonical JSON so whitespace or key order never turns a retry into a "different body".
-    let canonical = serde_json::to_vec(&value).map_err(|e| AppError::Internal(e.to_string()))?;
-    let input: VisitCreate = serde_json::from_value(value).map_err(|_| invalid_body())?;
+    // The right first, then the key and the body (F17): a caller without it learns nothing about
+    // what the route expects. The canonical JSON is hashed, so whitespace or key order never turns
+    // a retry into a "different body".
+    user.actor.require(Permission::VisitRecord)?;
+    let IdempotencyKey(key) = key?;
+    let (canonical, input): (_, VisitCreate) = read_json(&body)?;
     let (status, body) = service::record(
         &pool,
         &cipher,
@@ -194,7 +208,7 @@ pub async fn list_visits(
     let Query(query) = query.map_err(invalid_query)?;
     let limit = match query.limit {
         None => None,
-        Some(n) if (1..=crate::dto::VISIT_LIST_MAX_LIMIT).contains(&n) => Some(n as usize),
+        Some(n) if (1..=crate::dto::VISIT_LIST_MAX_LIMIT).contains(&n) => Some(n),
         Some(_) => {
             return Err(AppError::Validation(vec![FieldError::new(
                 "limit",
@@ -202,11 +216,8 @@ pub async fn list_visits(
             )]));
         }
     };
-    let mut visits = service::for_day(&pool, &cipher, &user.actor, query.date).await?;
-    // Newest first (repo orders by check_in_at DESC), so truncating keeps the latest visits.
-    if let Some(n) = limit {
-        visits.truncate(n);
-    }
+    // Only the newest `limit` visits are read (with their lines, sales and payments), not the day.
+    let visits = service::for_day(&pool, &cipher, &user.actor, query.date, limit).await?;
     Ok(no_store(StatusCode::OK, visits, None))
 }
 
@@ -235,9 +246,16 @@ pub async fn update_visit(
     State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
     Path(id): Path<Uuid>,
-    IfMatch(version): IfMatch,
-    Json(input): Json<VisitUpdate>,
+    version: Result<IfMatch, AppError>,
+    input: Result<Json<VisitUpdate>, JsonRejection>,
 ) -> Result<Response, AppError> {
+    // The right first, then the header and the body (F17).
+    user.actor.require(Permission::VisitRecord)?;
+    let IfMatch(version) = version?;
+    let Json(input) = match input {
+        Ok(input) => input,
+        Err(rejected) => return Ok(rejected.into_response()),
+    };
     let visit = service::update(&pool, &cipher, &user.actor, id, version, &input).await?;
     let version = visit.version;
     Ok(no_store(StatusCode::OK, visit, Some(version)))
@@ -258,11 +276,12 @@ pub async fn void_visit(
     State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
     Path(id): Path<Uuid>,
-    IdempotencyKey(key): IdempotencyKey,
+    key: Result<IdempotencyKey, AppError>,
     body: Bytes,
 ) -> Result<Response, AppError> {
-    // Authorize before saying what is wrong with the body (F17).
+    // Authorize before saying what is wrong with the key or the body (F17).
     user.actor.require(Permission::RecordVoidSameDay)?;
+    let IdempotencyKey(key) = key?;
     let (canonical, input): (_, VoidCreate) = match read_json(&body) {
         Ok(parsed) => parsed,
         Err(invalid) => return Err(service::authorized_then(&pool, &user.actor, id, invalid).await),
@@ -301,13 +320,14 @@ pub async fn correct_visit(
     State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
     Path(id): Path<Uuid>,
-    IfMatch(version): IfMatch,
-    IdempotencyKey(key): IdempotencyKey,
+    version: Result<IfMatch, AppError>,
+    key: Result<IdempotencyKey, AppError>,
     body: Bytes,
 ) -> Result<Response, AppError> {
-    // Authorize before saying what is wrong with the body (F17).
+    // Authorize before saying what is wrong with the headers or the body (F17).
     user.actor.require(Permission::VisitRecord)?;
     user.actor.require(Permission::RecordVoidSameDay)?;
+    let (IfMatch(version), IdempotencyKey(key)) = (version?, key?);
     let (canonical, input): (_, VisitCorrection) = match read_json(&body) {
         Ok(parsed) => parsed,
         Err(invalid) => return Err(service::authorized_then(&pool, &user.actor, id, invalid).await),

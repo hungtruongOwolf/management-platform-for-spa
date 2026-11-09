@@ -7,6 +7,7 @@ use crate::profile::{
     self, Account, Change, EndInput, HistoryEntry, PayInput, PayTerms, ProfileInput, ProfileView,
 };
 use crate::service::{self, Staff, StaffStatus};
+use axum::extract::rejection::JsonRejection;
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -730,10 +731,16 @@ pub async fn create_login(
     State(pool): State<PgPool>,
     user: AuthUser,
     Path(id): Path<Uuid>,
-    IfMatch(version): IfMatch,
-    Json(body): Json<StaffLoginCreate>,
+    version: Result<IfMatch, AppError>,
+    body: Result<Json<StaffLoginCreate>, JsonRejection>,
 ) -> Result<Response, AppError> {
+    // The right and the step-up first, then the header and the body (F17).
     owner_step_up(&user)?;
+    let IfMatch(version) = version?;
+    let Json(body) = match body {
+        Ok(body) => body,
+        Err(rejected) => return Ok(rejected.into_response()),
+    };
     let created = account::create(&pool, &user.actor, id, version, &body.phone, body.role).await?;
     let mut h = HeaderMap::new();
     h.insert(header::ETAG, etag(created.profile.profile.version));
@@ -777,9 +784,13 @@ pub async fn set_login_role(
     State(pool): State<PgPool>,
     user: AuthUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<StaffLoginRoleWrite>,
+    body: Result<Json<StaffLoginRoleWrite>, JsonRejection>,
 ) -> Result<Response, AppError> {
     owner_step_up(&user)?;
+    let Json(body) = match body {
+        Ok(body) => body,
+        Err(rejected) => return Ok(rejected.into_response()),
+    };
     let v = account::set_role(&pool, &user.actor, id, body.role).await?;
     Ok(profile_response(StatusCode::OK, v))
 }

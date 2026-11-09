@@ -978,7 +978,7 @@ async fn session_note_is_encrypted_and_shown_only_to_health_readers(pool: PgPool
     let seen =
         operations::service::get(&app, &cipher, &reader, Uuid::parse_str(&id_of(&v))?).await?;
     assert_eq!(seen.note, None);
-    let day = operations::service::for_day(&app, &cipher, &reader, None).await?;
+    let day = operations::service::for_day(&app, &cipher, &reader, None, None).await?;
     assert_eq!(day.first().map(|v| v.note.clone()), Some(None));
     let history_reader = Actor::new(
         UserId::new(),
@@ -1124,6 +1124,46 @@ async fn technician_role_cannot_record_or_read_visits(pool: PgPool) -> TestResul
         let r = call(&d.h.app, "GET", path, Some(&tech), None).await;
         assert_eq!(r.status, StatusCode::FORBIDDEN, "{path}: {}", r.body);
     }
+    // F17 for writes: the route's right comes before its headers and body, so a caller without
+    // it hears 403 for a missing Idempotency-Key / If-Match or a body that does not parse (each
+    // used to be 400 / 422 first).
+    let visit = Uuid::now_v7();
+    for (method, path) in [
+        ("POST", "/visits".to_owned()),
+        ("POST", format!("/visits/{visit}/void")),
+        ("POST", format!("/visits/{visit}/correct")),
+        ("POST", format!("/visits/{visit}/additions")),
+        ("POST", format!("/visits/{visit}/convert-to-package")),
+        ("PATCH", format!("/visits/{visit}")),
+    ] {
+        let r = call(
+            &d.h.app,
+            method,
+            &path,
+            Some(&tech),
+            Some(json!({"lines": "not a list"})),
+        )
+        .await;
+        assert_eq!(
+            code(&r),
+            (StatusCode::FORBIDDEN, Some("auth.forbidden")),
+            "{method} {path}: {}",
+            r.body
+        );
+    }
+    // Who holds the right still hears about the missing key.
+    let no_key = call(
+        &d.h.app,
+        "POST",
+        "/visits",
+        Some(&d.manager),
+        Some(json!({})),
+    )
+    .await;
+    assert_eq!(
+        code(&no_key),
+        (StatusCode::BAD_REQUEST, Some("idempotency.key_required"))
+    );
     // A caller who has the right still hears what is wrong with the query.
     let bad = call(&d.h.app, "GET", "/visits?limit=abc", Some(&d.manager), None).await;
     assert_eq!(
@@ -1155,6 +1195,23 @@ async fn day_list_can_be_limited_to_the_newest_visits(pool: PgPool) -> TestResul
     );
     let more = d.get("/visits?limit=500").await;
     assert_eq!(more.body.as_array().map(Vec::len), Some(3));
+    // The limit reaches the query: only the newest visits are read, not the whole day cut later.
+    let tenant: Uuid = sqlx::query_scalar("SELECT id FROM app.tenant WHERE slug = 'vpyd'")
+        .fetch_one(&d.h.owner)
+        .await?;
+    let reader = Actor::new(
+        UserId::new(),
+        TenantId::from_uuid(tenant),
+        [Permission::VisitRead],
+        None,
+    );
+    let cipher = crm::FieldCipher::from_base64(TEST_DATA_KEY)?;
+    let app = app_pool(&d.h.owner).await?;
+    let newest = operations::service::for_day(&app, &cipher, &reader, None, Some(1)).await?;
+    assert_eq!(
+        newest.iter().map(|v| v.id.to_string()).collect::<Vec<_>>(),
+        vec![all.body[0]["id"].as_str().unwrap_or_default().to_owned()]
+    );
     for bad in ["/visits?limit=0", "/visits?limit=501"] {
         let r = d.get(bad).await;
         assert_eq!(
