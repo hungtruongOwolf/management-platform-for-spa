@@ -689,3 +689,8 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Kết luận: Postgres không phải nút thắt (29/40 câu ≤ 3 ms); ~10 lượt đi về API↔DB mỗi GET (3 ping `test_before_acquire`, xác thực 2 transaction). Lịch sử khách seq scan 66–94 ms → `UNION` < 1 ms; GIN trigram không dùng được dưới RLS; 8 index bỏ được (−31 MB); session không bao giờ được dọn.
 - Đề xuất theo thứ tự A1 (pool ping) → A2 (lịch sử) → A3/A4 (gộp xác thực, cần ADR + secure) → B1 (bỏ index) → C1 (dọn session) → C2 (job bất biến); danh sách không được đổi ở §6. Tooling `infra/perf/db/`.
 - Tiếp theo: EM trả lời Q-DB1…Q-DB4; chưa đổi schema, chưa merge.
+
+## [2026-11-09] build + secure + record | Rà soát DB PR 4: dọn session, kiểm bất biến hằng ngày, FK cột người làm (C1, C2, C4)
+- 0035: `app.maintenance_run` + `claim_maintenance` (một instance mỗi khoảng, sửa F10), `purge_sessions` (30 ngày, EM Q-DB4), `invariant_violations` (11 phép kiểm, chỉ đếm); job `app::jobs::run_maintenance` thay purge cũ; drift → log ERROR `data invariant violated`.
+- 0036/0037: FK `created_by`/`voided_by`/`cancelled_by`/`closed_by` → `user_account` (NOT VALID rồi VALIDATE; staging 0 mồ côi). `TenantTx` thêm `idle_in_transaction_session_timeout` 30 s.
+- Sửa dòng wiki backend nói sai là session được dọn mỗi giờ. `audit_log` giữ hết. Test `app/tests/maintenance.rs`.

@@ -217,3 +217,11 @@ Những thứ dưới đây trông như "thừa" hoặc "tốn" khi nhìn riêng
 | `seed-busy-spa.sql` | Seed 3 năm một spa đông vào DB **tạm** (~400 MB, vài phút) | chỉ local |
 | `explain_hot.py` | Sinh script `EXPLAIN (ANALYZE, BUFFERS)` cho 40 câu nóng, nguyên văn từ `.sqlx`, với `app_rw` + RLS | chỉ local |
 | `experiments.sql` | Trigram owner vs `app_rw`, viết lại lịch sử, generic plan, bản nháp gộp xác thực, bỏ index (rollback) | chỉ local |
+
+**C1 + C2 + C4 đã làm (PR 4, migration 0035–0037, 2026-11-09):**
+- Session đã thu hồi / hết hạn bị xóa sau 30 ngày (`app.purge_sessions`).
+- Kiểm bất biến hằng ngày (`app.invariant_violations`, log ERROR khi có dòng lệch). Trên dữ liệu `seed-demo` cả 11 phép kiểm đều 0. Trên seed 3 năm, phép kiểm `sessions_remaining` báo 2 918 dòng, đúng như dự kiến, vì seed này đặt số buổi giả.
+- Mỗi job chạy một lần mỗi khoảng cho cả hệ thống (`app.claim_maintenance`, sửa F10).
+- FK cột "người làm" (`NOT VALID` → `VALIDATE`; staging 0 dòng mồ côi, `infra/perf/db/actor_column_orphans.sql`).
+- `idle_in_transaction_session_timeout = 30s` trong `TenantTx`.
+- `audit_log` giữ, không có hạn. Index `membership (user_id)` để sau.

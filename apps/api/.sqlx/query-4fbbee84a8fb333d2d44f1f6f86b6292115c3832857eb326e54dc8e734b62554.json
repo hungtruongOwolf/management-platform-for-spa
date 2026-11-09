@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT check_name AS \"check!\", violations AS \"rows!\"\n           FROM app.invariant_violations() WHERE violations > 0 ORDER BY check_name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "check!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "rows!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "4fbbee84a8fb333d2d44f1f6f86b6292115c3832857eb326e54dc8e734b62554"
+}
