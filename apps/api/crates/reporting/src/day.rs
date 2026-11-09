@@ -476,13 +476,18 @@ pub async fn range(
     });
     let customers = books.customers;
 
+    // ADR-0019 D7: a paper-book package without a plan is its own row (by name, not one "no plan"
+    // row); revenue is what was paid for it (the paper amount, or the price after discount), net
+    // of any refund since.
     let top_packages = sqlx::query!(
         r#"SELECT cp.plan_id, min(cp.name_snapshot) AS "name!", count(*) AS "sold!",
-                  coalesce(sum(cp.sold_price), 0)::bigint AS "revenue!"
+                  coalesce(sum(CASE WHEN s.source = 'paper_book' THEN s.amount_paid ELSE cp.sold_price END
+                               - coalesce(r.amount, 0)), 0)::bigint AS "revenue!"
            FROM app.sale s
            JOIN app.customer_package cp ON cp.tenant_id = s.tenant_id AND cp.sale_id = s.id
+           LEFT JOIN app.refund r ON r.tenant_id = cp.tenant_id AND r.customer_package_id = cp.id
            WHERE s.tenant_id = $1 AND s.business_date BETWEEN $2 AND $3 AND s.status = 'open'
-           GROUP BY cp.plan_id
+           GROUP BY cp.plan_id, CASE WHEN cp.plan_id IS NULL THEN cp.name_snapshot END
            ORDER BY 3 DESC, 2, cp.plan_id
            LIMIT $4"#,
         tenant,
@@ -580,17 +585,27 @@ pub async fn ledger(
     let mut rows = sqlx::query!(
         r#"SELECT b.id AS "id!", b.seq AS "seq!", b.entry AS "entry!",
                   b.business_date AS "business_date!", b.at AS "at!",
-                  b.customer_id AS "customer_id!", app.customer_label(c.full_name) AS "full_name!",
+                  c.id AS "customer_id!", app.customer_label(c.full_name) AS "full_name!",
                   c.gender, b.sale_kind AS "sale_kind!",
-                  (SELECT string_agg(DISTINCT app.customer_label(o.full_name), ', ')
-                   FROM app.customer_package cp
-                   JOIN app.customer o ON o.tenant_id = cp.tenant_id AND o.id = cp.customer_id
-                   WHERE cp.tenant_id = b.tenant_id AND cp.sale_id = b.sale_id
-                     AND cp.customer_id <> b.customer_id) AS "beneficiary_name?",
+                  CASE WHEN b.entry = 'refund' THEN
+                    (SELECT app.customer_label(o.full_name) FROM app.customer o
+                     WHERE o.tenant_id = b.tenant_id AND o.id = b.customer_id AND o.id <> c.id)
+                  ELSE
+                    (SELECT string_agg(DISTINCT app.customer_label(o.full_name), ', ')
+                     FROM app.customer_package cp
+                     JOIN app.customer o ON o.tenant_id = cp.tenant_id AND o.id = cp.customer_id
+                     WHERE cp.tenant_id = b.tenant_id AND cp.sale_id = b.sale_id
+                       AND cp.customer_id <> b.customer_id)
+                  END AS "beneficiary_name?",
                   b.one_off, b.package, b.bank_transfer AS "bank_transfer!", b.cash AS "cash!",
                   b.unpaid AS "unpaid!", b.note, b.voided AS "voided!", b.visit_id, b.upsell_by
            FROM app.revenue_book b
-           JOIN app.customer c ON c.tenant_id = b.tenant_id AND c.id = b.customer_id
+           -- A refund is the payer's money back (ADR-0019 D6): its row names who paid for the
+           -- package (the refund row keeps the package's owner, shown as the beneficiary).
+           LEFT JOIN app.customer_package rcp
+             ON b.entry = 'refund' AND rcp.tenant_id = b.tenant_id AND rcp.id = b.customer_package_id
+           LEFT JOIN app.sale rs ON rs.tenant_id = rcp.tenant_id AND rs.id = rcp.sale_id
+           JOIN app.customer c ON c.tenant_id = b.tenant_id AND c.id = coalesce(rs.customer_id, b.customer_id)
            WHERE b.tenant_id = $1 AND b.business_date BETWEEN $2 AND $3
              AND ($4::date IS NULL OR (b.business_date, b.seq) > ($4, $5))
            ORDER BY b.business_date, b.seq

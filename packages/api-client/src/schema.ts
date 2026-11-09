@@ -2518,7 +2518,11 @@ export interface components {
              * @description Money received from this customer (before voids and refunds).
              */
             paid: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Money given back to this customer for packages they paid for, including packages they
+             *     bought for someone else (ADR-0019 D6: a refund goes to the payer).
+             */
             refunded: number;
             /**
              * Format: int64
@@ -2878,10 +2882,21 @@ export interface components {
             /** @description null or empty clears the note. */
             health_note?: string | null;
         };
+        /**
+         * @description A package cancelled (US7). Its `refund` is on the payer's timeline only (ADR-0019 D6): a
+         *     package bought for someone else is refunded to who paid, so its user's timeline shows none.
+         */
         HistoryCancellation: {
+            /** @description Bought for someone else: who the package belonged to. Null on its user's own timeline. */
+            beneficiary_name?: string | null;
             /** Format: uuid */
             customer_package_id: string;
             package_name: string;
+            /**
+             * @description Bought by someone else for this customer: who paid (and got any refund). Null on the
+             *     payer's own timeline.
+             */
+            payer_name?: string | null;
             reason: string;
             refund?: components["schemas"]["HistoryRefund"] | null;
         };
@@ -5063,11 +5078,15 @@ export interface components {
         };
         TopPackage: {
             name: string;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description Null = paper-book packages without a plan, one row per package name.
+             */
             plan_id?: string | null;
             /**
              * Format: int64
-             * @description Sum of their prices after discount; only with `report.revenue.read`.
+             * @description What was actually paid for them (price after discount; a paper-book package's paid
+             *     amount), minus what was refunded since (ADR-0019 D7); only with `report.revenue.read`.
              */
             revenue?: number | null;
             /**
