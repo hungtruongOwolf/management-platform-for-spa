@@ -7955,7 +7955,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description new_password too_short | too_long | same_as_current | is_phone */
+            /** @description new_password too_short | too_long | too_common | same_as_current | is_phone */
             422: {
                 headers: {
                     [name: string]: unknown;
