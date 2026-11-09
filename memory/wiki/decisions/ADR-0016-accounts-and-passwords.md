@@ -38,3 +38,9 @@ deciders: EM, agent
 
 ## Revisit when
 Có nhân viên làm ở nhiều spa, hoặc có kênh gửi tin (SMS / Zalo) cho cách B.
+
+## EM decisions (2026-11-08)
+Raw: [2026-11-08-em-decisions-accounts-open-questions](../../raw/2026-11-08-em-decisions-accounts-open-questions.md).
+- Một người chỉ làm ở một spa: SĐT đã có tài khoản ở spa khác giữ `409 account.phone_taken`, không làm nhiều spa từ app.
+- Chủ spa quên mật khẩu: khôi phục qua hỗ trợ / CLI (và mã khôi phục MFA); chưa làm trong app.
+- Người đã nghỉ chưa bị khóa: chủ spa vẫn đặt lại mật khẩu được để họ xem phiếu lương cũ; người bị khóa giữ khóa tới khi "Nhận lại làm".
