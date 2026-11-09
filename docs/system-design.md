@@ -71,7 +71,7 @@ sequenceDiagram
   participant H as Handler / use case
   B->>M: POST /api/v1/visits (cookie, Origin, Idempotency-Key)
   M->>M: request id, trace (không log query string), timeout 10 s, body ≤ 64 KB
-  M->>M: rate limit theo IP; kiểm Origin cho method ghi (CSRF)
+  M->>M: rate limit theo IP, kiểm Origin cho method ghi (CSRF)
   M->>X: request
   X->>D: SELECT app.session_actor(sha256(cookie))
   D-->>X: session + cờ tài khoản + permissions + former_staff + disabled_features + cài đặt spa
@@ -81,7 +81,7 @@ sequenceDiagram
   H->>D: BEGIN + set_config(app.tenant_id, statement_timeout 5s, idle_in_transaction 30s)
   H->>D: claim idempotency key / UPDATE … WHERE version = If-Match
   H->>D: câu nghiệp vụ (tenant_id = $1, RLS áp lần nữa)
-  H->>D: INSERT audit_log; lưu response idempotency
+  H->>D: INSERT audit_log, lưu response idempotency
   H->>D: COMMIT
   H-->>B: 2xx JSON hoặc problem+json (Cache-Control private, no-store)
 ```
