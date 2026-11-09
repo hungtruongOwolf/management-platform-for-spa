@@ -117,7 +117,11 @@ export function AdjustmentLogSection({ month, today, canWrite }: { month: string
 
   if (log.isPending) return <RowsSkeleton rows={4} />;
   if (log.isError) return <ErrorState error={log.error} onRetry={() => void log.refetch()} />;
-  const names = new Map((staff.data ?? []).map((s) => [s.id, s.full_name]));
+  // Someone who left this month is no longer in the active list, but is in the month's sheet.
+  const names = new Map([
+    ...(reviews.data?.staff ?? []).map((s) => [s.staff_id, s.full_name] as const),
+    ...(staff.data ?? []).map((s) => [s.id, s.full_name] as const),
+  ]);
   const columns: Column<Adjustment>[] = [
     { id: "who", header: "Nhân viên", card: "title", cell: (a) => names.get(a.staff_id) ?? "Nhân viên đã nghỉ" },
     { id: "day", header: "Ngày", card: "subtitle", cell: (a) => dayLabel(a.occurred_on) },
@@ -221,6 +225,9 @@ export function AdjustmentLogSection({ month, today, canWrite }: { month: string
   );
 }
 
+/** Points per entry, as the server bounds them (hr/src/adjustment.rs `MAX_POINTS`). */
+const MAX_POINTS = 100;
+
 /** What a bonus / penalty form still lacks before it can be saved ("" when complete). */
 export function adjustmentMissing(f: { staffId: string; amount: string; points: string; reason: string }): string {
   const missing = [
@@ -282,6 +289,9 @@ export function AdjustmentForm({
   });
   const missing = adjustmentMissing({ staffId: chosen, amount, points, reason });
   const err = (f: string) => fieldMessage(save.error, f);
+  const pointsOutOfRange = points !== "" && (Number(points) < 1 || Number(points) > MAX_POINTS);
+  const pointsError = pointsOutOfRange || err("points") ? `Từ 1 đến ${String(MAX_POINTS)} điểm.` : undefined;
+  const reasonError = err("reason") ? "Ghi lý do, tối đa 500 ký tự." : undefined;
   const formId = "adjustment-form";
   return (
     <BottomSheet
@@ -300,7 +310,7 @@ export function AdjustmentForm({
             type="submit"
             form={formId}
             className="btn btn-primary"
-            disabled={save.isPending || missing !== ""}
+            disabled={save.isPending || missing !== "" || pointsOutOfRange}
             aria-describedby={missing ? "adjustment-missing" : undefined}
           >
             Lưu
@@ -313,7 +323,7 @@ export function AdjustmentForm({
         className="grid gap-4"
         onSubmit={(e) => {
           e.preventDefault();
-          if (missing || save.isPending) return;
+          if (missing || pointsOutOfRange || save.isPending) return;
           save.mutate();
         }}
       >
@@ -374,7 +384,9 @@ export function AdjustmentForm({
               onChange={(e) => {
                 setPoints(e.target.value.replace(/\D/g, "").slice(0, 3));
               }}
+              aria-invalid={pointsError ? true : undefined}
             />
+            {pointsError && <span className="text-sm text-danger">{pointsError}</span>}
           </label>
         </div>
         <label className="filter-field">
@@ -387,9 +399,14 @@ export function AdjustmentForm({
             onChange={(e) => {
               setReason(e.target.value);
             }}
+            aria-invalid={reasonError ? true : undefined}
           />
+          {reasonError && <span className="text-sm text-danger">{reasonError}</span>}
         </label>
-        <DateField label="Ngày" value={on} max={today} onChange={setOn} />
+        <DateField label="Ngày" value={on} max={today} onChange={setOn} invalid={Boolean(err("occurred_on"))} />
+        {err("occurred_on") && <p className="text-sm text-danger">Ngày: {err("occurred_on")}</p>}
+        {/* Derived from the month being viewed, not an input: said as a sentence. */}
+        {err("corrects_month") && <p className="text-sm text-danger">{err("corrects_month")}</p>}
         {save.isError && (
           <p role="alert" className="text-sm text-danger">
             {messageFor(save.error)}

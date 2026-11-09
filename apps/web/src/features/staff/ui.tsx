@@ -4,6 +4,9 @@ import { STATUS_ICON, STATUS_LABEL, daysOf, monthLabel, shiftMonth, weekdayShort
 
 export const vnd = (n: number) => formatVnd(n);
 
+/** A net that may be negative, with the minus sign "−" (U+2212) every deduction here uses (Intl writes "-"). */
+export const signedVnd = (n: number) => (n < 0 ? `−${formatVnd(-n)}` : formatVnd(n));
+
 /** "2026-11-05" → "T5, 05/11/2026" (dd/mm/yyyy, design-system § Định dạng). */
 export function dayLabel(iso: string): string {
   const [y, m, d] = iso.split("-");
