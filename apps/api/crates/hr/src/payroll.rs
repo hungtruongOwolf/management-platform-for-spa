@@ -14,10 +14,12 @@ use chrono::{DateTime, NaiveDate, Utc};
 use kernel::audit::{self, AuditEntry};
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, Permission, TenantTx};
+use org::Employment;
 use org::profile::Profile;
 use serde::Serialize;
 use serde_json::{Value, json};
 use sqlx::PgPool;
+use std::collections::HashSet;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -43,6 +45,13 @@ pub struct PayrollMonth {
     pub ended: bool,
     pub payslips: Vec<Payslip>,
     pub totals: PayrollTotals,
+    /// Who must get pay terms or an evaluation before the month can close (ADR-0019 D1;
+    /// `POST /payroll/close` answers `409 payroll.missing_data` with the same list). Empty once
+    /// closed.
+    pub missing: Vec<MissingPayrollData>,
+    /// Refunds dated this month of packages closed by someone who does not work in it, and where
+    /// each was settled (ADR-0019 D2b).
+    pub leaver_refunds: Vec<LeaverRefund>,
 }
 
 fn totals(slips: &[Payslip]) -> PayrollTotals {
@@ -63,16 +72,147 @@ fn totals(slips: &[Payslip]) -> PayrollTotals {
     }
 }
 
+/// The payroll month that settles a refund dated `day` for the closer of the refunded package
+/// (ADR-0019 D2b): the refund's own month when they work in it, else the month of their last
+/// working day before it (a leaver's final month); `None` when they had not started yet.
+pub fn settling_month(employment: &Employment, day: NaiveDate) -> Option<Month> {
+    let own = Month::of(day);
+    if employment.overlaps(own.first_day(), own.last_day()) {
+        return Some(own);
+    }
+    employment
+        .periods()
+        .iter()
+        .filter_map(|p| p.ended_on)
+        .filter(|end| *end < day)
+        .max()
+        .map(Month::of)
+}
+
+/// A refund of a package closed by someone who does not work in the refund's month (ADR-0019
+/// D2b): deducted from their last month while it was open, else not clawed back. Listed with the
+/// month of the refund so it is never dropped silently.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct LeaverRefund {
+    pub refund_id: Uuid,
+    /// The closer of the package.
+    pub staff_id: Uuid,
+    pub full_name: String,
+    /// The package.
+    pub description: String,
+    /// The amount refunded (positive).
+    pub amount: i64,
+    pub refund_date: NaiveDate,
+    /// `YYYY-MM` of the payslip it is deducted from (the closer's last month, open when the
+    /// refund was made); `null` = not clawed back: that month was already closed, the spa bears
+    /// it.
+    pub deducted_in: Option<String>,
+}
+
+/// What is missing for someone on the month's payroll.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MissingItem {
+    /// No pay terms: every amount would be frozen at 0đ.
+    PayTerms,
+    /// No monthly evaluation: the Tết level would be frozen at 0đ.
+    Evaluation,
+}
+
+/// Someone whose data must be completed before the month can close (ADR-0019 D1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct MissingPayrollData {
+    pub staff_id: Uuid,
+    pub full_name: String,
+    pub missing: Vec<MissingItem>,
+}
+
+/// Who blocks the close (ADR-0019 D1): everyone on the payroll without pay terms or without the
+/// month's evaluation, except `exempt` — the profiles of people who close payroll themselves
+/// (the owner is not paid or evaluated by the books).
+pub fn missing_data(slips: &[Payslip], exempt: &HashSet<Uuid>) -> Vec<MissingPayrollData> {
+    slips
+        .iter()
+        .filter(|s| !exempt.contains(&s.staff_id))
+        .filter_map(|s| {
+            let missing: Vec<MissingItem> = [
+                (PayFlag::NoPayTerms, MissingItem::PayTerms),
+                (PayFlag::EvaluationMissing, MissingItem::Evaluation),
+            ]
+            .into_iter()
+            .filter(|(flag, _)| s.flags.contains(flag))
+            .map(|(_, item)| item)
+            .collect();
+            (!missing.is_empty()).then(|| MissingPayrollData {
+                staff_id: s.staff_id,
+                full_name: s.full_name.clone(),
+                missing,
+            })
+        })
+        .collect()
+}
+
+/// Profiles linked to a login that may close payroll (the owner): not required to have pay terms
+/// or an evaluation.
+async fn close_exempt(tx: &mut TenantTx) -> Result<HashSet<Uuid>, AppError> {
+    Ok(
+        repo::supervising_staff(tx, &[Permission::PayrollClose.as_str().to_owned()])
+            .await?
+            .into_iter()
+            .collect(),
+    )
+}
+
+/// The month's refunds of packages closed by someone not working in it, and where each was
+/// settled (ADR-0019 D2b). A deduction counts once the refund was recorded before its settling
+/// month closed.
+async fn leaver_refunds(tx: &mut TenantTx, month: Month) -> Result<Vec<LeaverRefund>, AppError> {
+    let refunds = repo::package_refunds_between(tx, month.first_day(), month.last_day()).await?;
+    if refunds.is_empty() {
+        return Ok(Vec::new());
+    }
+    let profiles = org::profile::profiles_in(tx).await?;
+    let mut out = Vec::new();
+    for r in refunds {
+        let Some(p) = profiles.iter().find(|p| p.id == r.staff_id) else {
+            continue;
+        };
+        if period::employed_in(p, month) {
+            // On their own payslip of this month (ADR-0010).
+            continue;
+        }
+        let deducted_in = match settling_month(&p.employment, r.business_date) {
+            None => None,
+            Some(last) => {
+                let info = period::info(tx, last).await?;
+                let deducted = !info.closed || info.closed_at.is_some_and(|at| r.created_at < at);
+                deducted.then(|| last.to_string())
+            }
+        };
+        out.push(LeaverRefund {
+            refund_id: r.refund_id,
+            staff_id: p.id,
+            full_name: p.full_name.clone(),
+            description: r.description,
+            amount: r.amount,
+            refund_date: r.business_date,
+            deducted_in,
+        });
+    }
+    Ok(out)
+}
+
 /// Computes the live payslips of `month` for `only` (one person) or everyone employed in it,
 /// under `rules` (the caller loads them once, so the close audit records exactly the rules the
-/// snapshots used). No authorization: callers check theirs first.
+/// snapshots used), with the ids of the later refunds settled in it (D2b). No authorization:
+/// callers check theirs first.
 async fn compute_in(
     tx: &mut TenantTx,
     month: Month,
     only: Option<Uuid>,
     today: NaiveDate,
     rules: &PayrollRules,
-) -> Result<Vec<Payslip>, AppError> {
+) -> Result<(Vec<Payslip>, Vec<Uuid>), AppError> {
     let profiles: Vec<Profile> = org::profile::profiles_in(tx)
         .await?
         .into_iter()
@@ -83,10 +223,25 @@ async fn compute_in(
     let (from, to) = (month.first_day(), month.last_day());
     let lines = repo::commission_lines(tx, from, to).await?;
     let upsell = repo::upsell_lines(tx, from, to).await?;
+    // D2b: a refund after this month of a package closed by someone whose last month this is
+    // comes back from this payslip while the month is open.
+    let later: Vec<repo::PackageRefundRow> = match to.succ_opt().filter(|next| *next <= today) {
+        None => Vec::new(),
+        Some(next) => repo::package_refunds_between(tx, next, today)
+            .await?
+            .into_iter()
+            .filter(|r| {
+                profiles.iter().any(|p| {
+                    p.id == r.staff_id
+                        && settling_month(&p.employment, r.business_date) == Some(month)
+                })
+            })
+            .collect(),
+    };
     let adjustments = adjustment::adjustments_in(tx, month, only).await?;
     let evaluations = evaluation::evaluations_in(tx, month, only).await?;
     let recorded_until = attendance::recorded_until(month, today);
-    Ok(profiles
+    let slips = profiles
         .iter()
         .map(|p| {
             let my_days: Vec<Day> = days
@@ -114,6 +269,17 @@ async fn compute_in(
                     qty: l.qty,
                     value: l.value,
                 })
+                .chain(
+                    later
+                        .iter()
+                        .filter(|r| r.staff_id == p.id)
+                        .map(|r| UpsellLine {
+                            kind: "package_refund".to_owned(),
+                            description: r.description.clone(),
+                            qty: 1,
+                            value: -r.amount,
+                        }),
+                )
                 .collect();
             let mine = adjustments.iter().filter(|a| a.staff_id == p.id);
             let sum = |kind: AdjustmentKind, money: bool| -> i64 {
@@ -147,7 +313,8 @@ async fn compute_in(
             };
             calc::compute(p.id, &p.full_name, &p.position, &input, rules)
         })
-        .collect())
+        .collect();
+    Ok((slips, later.iter().map(|r| r.refund_id).collect()))
 }
 
 fn parse_slips(raw: Vec<Value>) -> Result<Vec<Payslip>, AppError> {
@@ -168,7 +335,7 @@ pub async fn payslips_in(
         parse_slips(repo::payslips(tx, month.first_day(), only).await?)
     } else {
         let (rules, _) = rules::load(tx).await?;
-        compute_in(tx, month, only, today, &rules).await
+        Ok(compute_in(tx, month, only, today, &rules).await?.0)
     }
 }
 
@@ -184,6 +351,12 @@ pub async fn month(
     let month = month.unwrap_or_else(|| Month::of(today));
     let info = period::info(&mut tx, month).await?;
     let payslips = payslips_in(&mut tx, month, None, &info, today).await?;
+    let missing = if info.closed {
+        Vec::new()
+    } else {
+        missing_data(&payslips, &close_exempt(&mut tx).await?)
+    };
+    let leaver_refunds = leaver_refunds(&mut tx, month).await?;
     tx.commit().await?;
     Ok(PayrollMonth {
         month: month.to_string(),
@@ -193,6 +366,8 @@ pub async fn month(
         ended: month.last_day() < today,
         totals: totals(&payslips),
         payslips,
+        missing,
+        leaver_refunds,
     })
 }
 
@@ -253,7 +428,15 @@ pub async fn close(
         return Err(period::closed());
     }
     let (rules, _) = rules::load(&mut tx).await?;
-    let slips = compute_in(&mut tx, month, None, today, &rules).await?;
+    let (slips, settled_refunds) = compute_in(&mut tx, month, None, today, &rules).await?;
+    // D1: a month closed without pay terms or an evaluation would freeze 0đ with no way back.
+    let missing = missing_data(&slips, &close_exempt(&mut tx).await?);
+    if !missing.is_empty() {
+        return Err(AppError::ConflictDetails {
+            code: "payroll.missing_data",
+            details: json!({ "staff": missing }),
+        });
+    }
     if !input.allow_incomplete
         && slips
             .iter()
@@ -269,6 +452,13 @@ pub async fn close(
     }
     repo::close_period(&mut tx, month.first_day(), actor.user_id.as_uuid()).await?;
     let t = totals(&slips);
+    let leaver_refunds = leaver_refunds(&mut tx, month).await?;
+    // D2b: both outcomes of a leaver's refund are on record — deducted here, or not clawed back.
+    let not_clawed_back: Vec<Value> = leaver_refunds
+        .iter()
+        .filter(|r| r.deducted_in.is_none())
+        .map(|r| json!({"refund_id": r.refund_id, "staff_id": r.staff_id, "amount": r.amount}))
+        .collect();
     audit::record(
         &mut tx,
         actor,
@@ -281,6 +471,8 @@ pub async fn close(
                 "month": month.to_string(), "payslips": t.staff, "net_pay": t.net_pay,
                 "allow_incomplete": input.allow_incomplete,
                 "rules": serde_json::to_value(&rules).ok(),
+                "leaver_refunds_deducted": settled_refunds,
+                "leaver_refunds_not_clawed_back": not_clawed_back,
             })),
             reason: None,
         },
@@ -295,8 +487,121 @@ pub async fn close(
         ended: true,
         totals: t,
         payslips: slips,
+        missing: Vec::new(),
+        leaver_refunds,
     })?;
     idempotency::complete(&mut tx, actor, key, 200, &body).await?;
     tx.commit().await?;
     Ok((200, body))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::evaluation::Level;
+    use org::Period;
+    use org::profile::PayTerms;
+
+    fn d(s: &str) -> NaiveDate {
+        s.parse().unwrap_or_default()
+    }
+
+    fn period(started: Option<&str>, ended: Option<&str>) -> Period {
+        Period {
+            id: Uuid::nil(),
+            started_on: started.map(d),
+            ended_on: ended.map(d),
+            end_reason: None,
+        }
+    }
+
+    fn settled(e: &Employment, day: &str) -> Option<String> {
+        settling_month(e, d(day)).map(|m| m.to_string())
+    }
+
+    /// ADR-0019 D2b: a refund after the closer left is settled in their last month; while they
+    /// work in the refund's month it stays there (ADR-0010).
+    #[test]
+    fn a_refund_is_settled_in_the_closers_last_month_once_they_left() {
+        let october = Some("2026-10".to_owned());
+        let left = Employment::new(vec![period(Some("2026-03-01"), Some("2026-10-20"))]);
+        assert_eq!(settled(&left, "2026-11-05"), october);
+        assert_eq!(settled(&left, "2027-02-01"), october, "any later refund");
+        assert_eq!(
+            settled(&left, "2026-10-25"),
+            october,
+            "left on the 20th, refund on the 25th: still their month"
+        );
+        assert_eq!(
+            settled(&Employment::always(), "2026-11-05"),
+            Some("2026-11".to_owned())
+        );
+        // Left in October, rehired in December: a November refund goes back to October; a
+        // December one is on the December payslip.
+        let rehired = Employment::new(vec![
+            period(Some("2026-03-01"), Some("2026-10-20")),
+            period(Some("2026-12-10"), None),
+        ]);
+        assert_eq!(settled(&rehired, "2026-11-15"), october);
+        assert_eq!(settled(&rehired, "2026-12-01"), Some("2026-12".to_owned()));
+        let later_start = Employment::new(vec![period(Some("2027-01-01"), None)]);
+        assert_eq!(settled(&later_start, "2026-11-15"), None);
+    }
+
+    fn payslip(id: u128, pay: bool, evaluated: bool) -> Payslip {
+        let input = MonthInput {
+            month: Month::of(d("2026-10-01")),
+            recorded_until: None,
+            employment: Employment::always(),
+            pay: pay.then_some(PayTerms {
+                base_salary: 5_000_000,
+                commission_rate_bp: 500,
+                loyalty_bonus_monthly: 0,
+                meal_allowance: 0,
+                version: 1,
+            }),
+            days: &[],
+            commission_lines: &[],
+            upsell_lines: &[],
+            bonuses: 0,
+            penalties: 0,
+            bonus_points: 0,
+            penalty_points: 0,
+            evaluation: evaluated.then_some(Level::M1),
+        };
+        calc::compute(
+            Uuid::from_u128(id),
+            "Lan",
+            "KTV",
+            &input,
+            &PayrollRules::default(),
+        )
+    }
+
+    /// ADR-0019 D1: the close is blocked by anyone on the payroll without pay terms or an
+    /// evaluation, except the profile of whoever closes payroll (the owner).
+    #[test]
+    fn missing_pay_terms_or_evaluation_blocks_the_close_except_for_the_owner() {
+        let slips = [
+            payslip(1, true, true),
+            payslip(2, false, true),
+            payslip(3, true, false),
+            payslip(4, false, false),
+        ];
+        let got: Vec<(u128, Vec<MissingItem>)> = missing_data(&slips, &HashSet::new())
+            .iter()
+            .map(|m| (m.staff_id.as_u128(), m.missing.clone()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (2, vec![MissingItem::PayTerms]),
+                (3, vec![MissingItem::Evaluation]),
+                (4, vec![MissingItem::PayTerms, MissingItem::Evaluation]),
+            ]
+        );
+        let owner: HashSet<Uuid> = [Uuid::from_u128(4)].into_iter().collect();
+        assert_eq!(missing_data(&slips, &owner).len(), 2);
+        assert!(missing_data(&slips[..1], &HashSet::new()).is_empty());
+    }
 }

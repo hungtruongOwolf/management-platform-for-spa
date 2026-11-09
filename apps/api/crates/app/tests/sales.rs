@@ -6,7 +6,7 @@ use axum::http::{StatusCode, header};
 use catalog::service::seed_menu;
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
-    session_for,
+    post_customer, session_for,
 };
 use identity::SystemRole;
 use serde_json::{Value, json};
@@ -62,10 +62,8 @@ async fn shop(pool: PgPool) -> Setup<Shop> {
     )
     .await;
     assert_eq!(plan.status, StatusCode::CREATED, "{}", plan.body);
-    let customer = call(
+    let customer = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&owner),
         Some(json!({"full_name": "Nguyễn Thị Hà", "phone": "0905111222", "gender": "female"})),
     )
@@ -646,10 +644,8 @@ impl Shop {
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn a_cart_of_packages_is_one_save_and_one_payment(pool: PgPool) -> TestResult {
     let s = shop(pool).await?;
-    let mother = call(
+    let mother = post_customer(
         &s.h.app,
-        "POST",
-        "/customers",
         Some(&s.manager),
         Some(json!({"full_name": "Trần Thị Mẹ", "phone": "0905333444", "gender": "female"})),
     )
@@ -844,10 +840,8 @@ async fn the_day_lists_its_package_sales_without_a_visit(pool: PgPool) -> TestRe
     let s = shop(pool).await?;
     let alone = s.sell(&s.manager, s.cash(1_500_000)).await;
     assert_eq!(alone.status, StatusCode::CREATED, "{}", alone.body);
-    let mother = call(
+    let mother = post_customer(
         &s.h.app,
-        "POST",
-        "/customers",
         Some(&s.manager),
         Some(json!({"full_name": "Trần Thị Mẹ", "phone": "0905333444", "gender": "female"})),
     )

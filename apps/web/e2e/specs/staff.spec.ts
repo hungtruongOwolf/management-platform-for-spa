@@ -161,10 +161,9 @@ test.describe("nhân viên", () => {
       await confirm.getByLabel("Lý do nghỉ việc").fill("Chuyển về quê");
       await expectAccessible(page, `roster-end-${label}`);
       await confirm.getByRole("button", { name: "Xác nhận nghỉ việc" }).click();
-      const after = page.getByRole("dialog", { name });
-      await expect(after.getByText("Nghỉ: Chuyển về quê")).toBeVisible();
-      await expect(after.getByRole("button", { name: "Nhận lại làm" })).toBeVisible();
-      await page.keyboard.press("Escape");
+      // ADR-0019 D20: done means back to the roster, not to the person's sheet.
+      await expect(confirm).toBeHidden();
+      await expect(page.getByRole("dialog", { name })).toBeHidden();
 
       // Out of "Đang làm" and of the front desk's KTV picker, in "Đã nghỉ".
       await expect(page.getByRole("button", { name, exact: true })).toBeHidden();
@@ -178,7 +177,9 @@ test.describe("nhân viên", () => {
 
       // Rehire: a second period; back under "Đang làm".
       await page.getByRole("button", { name, exact: true }).click();
-      await page.getByRole("dialog", { name }).getByRole("button", { name: "Nhận lại làm" }).click();
+      const left = page.getByRole("dialog", { name });
+      await expect(left.getByText("Nghỉ: Chuyển về quê")).toBeVisible();
+      await left.getByRole("button", { name: "Nhận lại làm" }).click();
       const rehire = page.getByRole("dialog", { name: `Nhận ${name} lại làm` });
       await rehire.getByRole("button", { name: "Nhận lại làm" }).click();
       const back = page.getByRole("dialog", { name });

@@ -1,6 +1,6 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { can, meQuery } from "../features/auth/session";
 import { isSearchable, searchQuery } from "../features/customers/api";
 import { Modal } from "./AppShell";
@@ -89,6 +89,15 @@ export default function CommandPalette({
     : [];
   const options = [...people, ...screens];
   const current = Math.min(active, Math.max(options.length - 1, 0));
+  const activeId = options[current] ? `${id}-${options[current].id}` : undefined;
+  const list = useRef<HTMLUListElement>(null);
+  // Arrow keys move past the list's scroll edge: keep the chosen option on screen (ADR-0019 D20).
+  useEffect(() => {
+    if (!activeId) return;
+    const option = list.current?.ownerDocument.getElementById(activeId);
+    // jsdom has no scrollIntoView.
+    if (option && "scrollIntoView" in option) option.scrollIntoView({ block: "nearest" });
+  }, [activeId]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -150,9 +159,7 @@ export default function CommandPalette({
           aria-label="Tìm khách hoặc màn hình"
           aria-expanded={options.length > 0}
           aria-controls={`${id}-list`}
-          aria-activedescendant={
-            options[current] ? `${id}-${options[current].id}` : undefined
-          }
+          aria-activedescendant={activeId}
           autoComplete="off"
           maxLength={100}
           placeholder="Tên khách, SĐT hoặc tên màn hình…"
@@ -166,6 +173,7 @@ export default function CommandPalette({
         />
       </div>
       <ul
+        ref={list}
         id={`${id}-list`}
         role="listbox"
         aria-label="Kết quả"

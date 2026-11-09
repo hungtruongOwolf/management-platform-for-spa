@@ -48,7 +48,7 @@ test.beforeAll(async ({ browser }) => {
     baseURL: stack.webOrigin,
   });
   const res = await ctx.request.post("/api/v1/customers", {
-    headers: { Origin: stack.webOrigin },
+    headers: { Origin: stack.webOrigin, "Idempotency-Key": crypto.randomUUID() },
     data: {
       full_name: "Nguyễn Thị Bố Cục Rất Dài Tên Để Thử Xuống Dòng",
       phone: uniquePhone(),
@@ -232,7 +232,7 @@ test("the page scrolls as one: full-height sidebar, no phantom area, no nested t
   const price = service?.prices.female ?? service?.prices.all ?? 0;
   for (let i = 0; i < 12; i++) {
     const customer = await page.request.post("/api/v1/customers", {
-      headers: { Origin: stack.webOrigin },
+      headers: { Origin: stack.webOrigin, "Idempotency-Key": crypto.randomUUID() },
       data: { full_name: `Khách Cuộn Trang ${String(i + 1)}`, phone: uniquePhone(), gender: "female" },
     });
     expect(customer.status()).toBe(201);

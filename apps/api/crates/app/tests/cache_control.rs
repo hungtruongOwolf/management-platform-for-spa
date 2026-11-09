@@ -6,7 +6,9 @@ mod common;
 
 use axum::http::StatusCode;
 use catalog::service::seed_menu;
-use common::{OWNER_PHONE, PASSWORD, Reply, TestResult, add_member, call, harness, login};
+use common::{
+    OWNER_PHONE, PASSWORD, Reply, TestResult, add_member, call, harness, login, post_customer,
+};
 use identity::SystemRole;
 use serde_json::json;
 use sqlx::PgPool;
@@ -38,10 +40,8 @@ async fn responses_without_their_own_policy_are_private_no_store(pool: PgPool) -
         .session()
         .unwrap_or_default();
     assert!(!manager.is_empty(), "manager logged in");
-    let created = call(
+    let created = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&manager),
         Some(json!({"full_name": "Nguyễn Thị Hà", "phone": "0905111222"})),
     )
@@ -78,10 +78,8 @@ async fn responses_without_their_own_policy_are_private_no_store(pool: PgPool) -
     assert_eq!(missing.status, StatusCode::NOT_FOUND);
     assert_eq!(cache_control(&missing), Some(DEFAULT), "404 fallback");
 
-    let invalid = call(
+    let invalid = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&manager),
         Some(json!({"full_name": "X", "phone": "12345"})),
     )

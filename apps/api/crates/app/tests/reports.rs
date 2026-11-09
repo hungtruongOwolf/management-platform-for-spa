@@ -9,7 +9,7 @@ use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
 use chrono_tz::Asia::Ho_Chi_Minh;
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
-    session_for,
+    post_customer, session_for,
 };
 use identity::SystemRole;
 use identity::provisioning::create_tenant;
@@ -153,10 +153,8 @@ impl Spa {
     }
 
     async fn customer(&self, name: &str, phone: &str) -> Uuid {
-        let reply = call(
+        let reply = post_customer(
             &self.h.app,
-            "POST",
-            "/customers",
             Some(&self.owner),
             Some(json!({"full_name": name, "phone": phone, "gender": "female"})),
         )

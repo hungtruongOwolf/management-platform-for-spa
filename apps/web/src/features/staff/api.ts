@@ -10,6 +10,7 @@ addMessages(
       "Tháng này đã chốt lương nên không sửa được. Hãy ghi một khoản thưởng/phạt điều chỉnh vào tháng đang mở.",
     "payroll.month_not_ended": "Tháng chưa kết thúc, chưa chốt lương được.",
     "payroll.unrecorded_days": "Còn ngày chưa chấm công. Chấm đủ hoặc chọn chốt dù còn thiếu.",
+    "payroll.missing_data": "Còn người chưa có lương cứng hoặc chưa đánh giá tháng. Bổ sung theo danh sách rồi chốt lại.",
     "staff.account_taken": "Tài khoản này đã gắn với một nhân viên khác.",
     "staff.record_owner_only": "Chỉ chủ spa ghi được cho quản lý (quản lý không tự ghi cho mình).",
     "staff.link_required":
@@ -67,6 +68,9 @@ export type AdjustmentLog = Schemas["AdjustmentLog"];
 export type Adjustment = Schemas["Adjustment"];
 export type AdjustmentCreate = Schemas["AdjustmentCreate"];
 export type PayrollMonth = Schemas["PayrollMonth"];
+export type MissingPayrollData = Schemas["MissingPayrollData"];
+export type MissingItem = Schemas["MissingItem"];
+export type LeaverRefund = Schemas["LeaverRefund"];
 export type Payslip = Schemas["Payslip"];
 export type PayrollRules = Schemas["PayrollRules"];
 export type PayrollRulesDto = Schemas["PayrollRulesDto"];

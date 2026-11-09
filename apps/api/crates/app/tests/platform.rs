@@ -7,7 +7,7 @@ mod common;
 use axum::http::StatusCode;
 use common::{
     OPERATOR, OPERATOR_PASSWORD, PASSWORD, TestResult, add_operator, admin_call, call, code_now,
-    expire_step_up, harness, login, operator_session, session_for, step_up,
+    expire_step_up, harness, login, operator_session, post_customer, session_for, step_up,
 };
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -989,14 +989,7 @@ async fn role_edits_take_effect_on_the_next_request(owner: PgPool) -> TestResult
     let manager = session_for(&h, "0905000002").await;
     let new_customer =
         || json!({"full_name": "Khách Thử", "phone": "0912345678", "gender": "female"});
-    let before = call(
-        &h.app,
-        "POST",
-        "/customers",
-        Some(&manager),
-        Some(new_customer()),
-    )
-    .await;
+    let before = post_customer(&h.app, Some(&manager), Some(new_customer())).await;
     assert_eq!(before.status, StatusCode::CREATED, "{}", before.body);
 
     let mut grants: Vec<String> = identity::SystemRole::Manager
@@ -1015,10 +1008,8 @@ async fn role_edits_take_effect_on_the_next_request(owner: PgPool) -> TestResult
     .await;
     assert_eq!(edited.status, StatusCode::OK, "{}", edited.body);
     assert_eq!(edited.body["updated_spas"], 1);
-    let refused = call(
+    let refused = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&manager),
         Some(json!({"full_name": "Khách Hai", "phone": "0912345679", "gender": "female"})),
     )
@@ -1040,10 +1031,8 @@ async fn role_edits_take_effect_on_the_next_request(owner: PgPool) -> TestResult
     .await;
     assert_eq!(own.status, StatusCode::OK, "{}", own.body);
     assert_eq!(own.body["follows_template"], false);
-    let allowed = call(
+    let allowed = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&manager),
         Some(json!({"full_name": "Khách Ba", "phone": "0912345670", "gender": "female"})),
     )
@@ -1393,10 +1382,8 @@ async fn tenant_audit_is_metadata_only(owner: PgPool) -> TestResult {
     add_operator(&h).await?;
     let op = operator_session(&h).await?;
     let spa_owner = session_for(&h, common::OWNER_PHONE).await;
-    let created = call(
+    let created = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&spa_owner),
         Some(json!({"full_name": "Khách Bí Mật", "phone": "0912345678", "gender": "female"})),
     )
