@@ -104,6 +104,10 @@ pub(crate) struct Order {
     companions: Vec<String>,
     /// Set by "Sửa lượt": the voided visit this one replaces, whose business day it keeps.
     correction: Option<Replaces>,
+    /// Set by "Sửa lượt": the one-off prices of the replaced visit. A line of the same service
+    /// (and price) keeps its price and name; only a service the old visit did not have is priced
+    /// from today's list (ADR-0019 D8).
+    kept_prices: Vec<domain::KeptPrice<Uuid>>,
 }
 
 /// The visit a correction replaces (already voided and authorized by the caller).
@@ -350,6 +354,7 @@ fn parse_order(actor: &Actor, input: &VisitCreate, min_lines: usize) -> Result<O
         package_sales,
         companions,
         correction: None,
+        kept_prices: Vec::new(),
     })
 }
 
@@ -513,6 +518,20 @@ async fn price_checkout(
     // Sessions earlier lines take from each item: a default pick skips an item they empty.
     let mut planned: HashMap<Uuid, u32> = HashMap::new();
     for (i, line) in order.lines.iter().enumerate() {
+        // A correction keeps what the old visit charged for the same service (D8): no catalog
+        // read, so a price changed or a service retired since then does not touch it.
+        let kept = (line.source == Source::OneOff)
+            .then(|| domain::pricing_gender(customer.gender, line.price_variant).ok())
+            .flatten()
+            .and_then(|g| domain::kept_price(&order.kept_prices, &line.service_id, g));
+        if let Some(kept) = kept {
+            priced.push(Priced::OneOff {
+                name: kept.name.clone(),
+                variant: kept.variant,
+                unit_price: kept.unit_price,
+            });
+            continue;
+        }
         priced.push(match (line.source, line.new_package) {
             (Source::OneOff, _) => {
                 let service = catalog::service::service_snapshot(tx, line.service_id)
@@ -1059,7 +1078,8 @@ async fn load(
             .entry(p.visit_id)
             .or_default()
             .push(VisitPackageSaleDto {
-                payments: payments.remove(&p.sale_id).unwrap_or_default(),
+                // `get`, not `remove`: a package kept by "Sửa lượt" shows on the old and the new visit.
+                payments: payments.get(&p.sale_id).cloned().unwrap_or_default(),
                 sale_id: p.sale_id,
                 voided: p.status == "voided",
                 business_date: p.business_date,
@@ -1294,11 +1314,18 @@ pub async fn update(
     }
 
     let mut staff_changes = Vec::with_capacity(input.lines.len());
+    let mut month_checked = false;
     for (i, change) in input.lines.iter().enumerate() {
         org::service::require_active(&mut tx, change.staff_id).await?;
         let before = repo::set_line_staff(&mut tx, id, change.id, change.staff_id)
             .await?
             .ok_or_else(|| line_error(i, "id", "not_found"))?;
+        // Another technician moves the line's commission: refused once the month's payroll is
+        // closed (ADR-0019 D8; the update above rolls back with the request).
+        if before != change.staff_id && !month_checked {
+            require_payroll_open(&mut tx, visit.business_date).await?;
+            month_checked = true;
+        }
         staff_changes.push(json!({"line_id": change.id, "from": before, "to": change.staff_id}));
     }
     let note_ct = match &note {
@@ -1592,6 +1619,44 @@ pub(crate) async fn finish_correction(
         visit_id: id,
         business_date: old.business_date,
     });
+    // D8: the lines keep the prices they were sold at, and a service moved to another technician
+    // changes that month's commissions, so it needs the month's payroll still open.
+    order.kept_prices = before
+        .lines
+        .iter()
+        .filter(|l| l.source == VisitLineSourceDto::OneOff)
+        .filter_map(|l| {
+            Some(domain::KeptPrice {
+                service_id: l.service_id,
+                variant: l.price_variant?,
+                name: l.service_name.clone(),
+                unit_price: Money::vnd(l.unit_price).ok()?,
+            })
+        })
+        .collect();
+    let old_pairs: Vec<(Uuid, Uuid)> = before
+        .lines
+        .iter()
+        .flat_map(|l| {
+            std::iter::repeat_n(
+                (l.service_id, l.staff_id),
+                usize::try_from(l.qty).unwrap_or(1),
+            )
+        })
+        .collect();
+    let new_pairs: Vec<(Uuid, Uuid)> = order
+        .lines
+        .iter()
+        .flat_map(|l| {
+            std::iter::repeat_n(
+                (l.service_id, l.staff_id),
+                usize::try_from(l.qty).unwrap_or(1),
+            )
+        })
+        .collect();
+    if domain::technician_changed(&old_pairs, &new_pairs) {
+        require_payroll_open(tx, old.business_date).await?;
+    }
     let new_id = record_in(tx, cipher, actor, order, Utc::now()).await?;
     let appointment = crate::appointments::repo::move_to_correction(tx, id, new_id).await?;
 
@@ -1831,7 +1896,9 @@ pub async fn convert(
             code: "visit.nothing_to_convert",
         });
     }
-    // The one-off lines kept keep their share of the old discount, with its reason.
+    // The one-off lines kept keep their share of the old discount, with its reason. It was
+    // granted when the visit was sold, so it is not checked again against the limit of whoever
+    // converts now (ADR-0019 D8); only a new discount (the package's own) is.
     let discount = Money::vnd(kept_discount)
         .ok()
         .filter(|d| *d > Money::ZERO)
@@ -1839,8 +1906,12 @@ pub async fn convert(
             ask: DiscountAsk::Amount(amount),
             reason: old
                 .discount_reason
-                .clone()
-                .unwrap_or_else(|| reason.clone()),
+                .as_deref()
+                .unwrap_or(&reason)
+                .chars()
+                .take(kernel::corrections::MAX_REASON)
+                .collect(),
+            granted: amount,
         });
     let order = Order {
         customer_id: old.customer_id,
@@ -1853,16 +1924,22 @@ pub async fn convert(
         package_sales: vec![package_sales.remove(0)],
         companions: old.companions.clone(),
         correction: None,
+        kept_prices: Vec::new(),
     };
     let mut done = finish_correction(&mut tx, cipher, actor, started, order, None, &reason).await?;
     // What the customer hands over now: the new package plus the one-off lines kept, minus what
-    // the old visit had collected for its one-off lines (reversed).
-    done.difference += done
+    // the old visit had collected for its one-off lines (reversed). Packages the visit sold before
+    // stay with it (D8) and were paid then: they are not part of the difference.
+    let sold_before: HashSet<Uuid> = old.package_sales.iter().map(|p| p.sale_id).collect();
+    let sold_now: Vec<&VisitPackageSaleDto> = done
         .visit
         .package_sales
         .iter()
-        .map(|p| p.total)
-        .sum::<i64>();
+        .filter(|p| !sold_before.contains(&p.sale_id))
+        .collect();
+    let sold_now_total: i64 = sold_now.iter().map(|p| p.total).sum();
+    let sold_now_ids: Vec<Uuid> = sold_now.iter().map(|p| p.sale_id).collect();
+    done.difference += sold_now_total;
     audit::record(
         &mut tx,
         actor,
@@ -1873,7 +1950,7 @@ pub async fn convert(
             before: Some(json!({"visit_id": id, "total": old.total})),
             after: Some(json!({
                 "visit_id": done.visit.id, "package_plan_id": plan_id,
-                "package_sale_ids": done.visit.package_sales.iter().map(|p| p.sale_id).collect::<Vec<_>>(),
+                "package_sale_ids": sold_now_ids,
                 "converted_lines": converted, "difference": done.difference,
             })),
             reason: Some(&reason),

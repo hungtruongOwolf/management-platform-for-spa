@@ -9,5 +9,8 @@ addMessages(
     "sale.void_via_visit": "Hóa đơn dịch vụ lẻ được hủy cùng lượt khách.",
     "refund.exceeds_paid": "Số tiền hoàn lớn hơn số khách đã trả cho liệu trình.",
     "package.restore_exceeds_total": "Buổi của lượt này đã được cộng lại trước đó. Vui lòng tải lại.",
+    // ADR-0019 D8: another technician on a visit of a month whose payroll is closed.
+    "payroll.period_closed":
+      "Tháng của lượt này đã chốt lương nên không đổi kỹ thuật viên hay thêm vào lượt được nữa.",
   },
 );

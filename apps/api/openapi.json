@@ -5544,7 +5544,7 @@
           },
           "404": {},
           "409": {
-            "description": "visit.voided / visit.corrected (open the newest version)"
+            "description": "visit.voided / visit.corrected (open the newest version), payroll.period_closed (another technician in a month whose payroll is closed)"
           },
           "412": {},
           "422": {
@@ -5764,7 +5764,7 @@
             "description": "visit, customer or service not in this spa"
           },
           "409": {
-            "description": "visit.voided / visit.corrected (already corrected: open the newest version), package.*"
+            "description": "visit.voided / visit.corrected (already corrected: open the newest version), payroll.period_closed (a service moved to another technician in a month whose payroll is closed), package.*"
           },
           "412": {
             "description": "conflict.stale_version"
@@ -14599,7 +14599,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Reasons of the discounts on the visit's one-off bills (its sale and each addition), in the\norder they were made, joined by \"; \"."
           },
           "id": {
             "type": "string",
@@ -14623,7 +14624,7 @@
             "items": {
               "$ref": "#/components/schemas/VisitPackageSaleDto"
             },
-            "description": "Packages sold in this visit, each a sale of its own."
+            "description": "Packages sold in this visit, each a sale of its own. A visit recorded by \"Sửa lượt\" also\nshows the packages still standing that the visits it replaced sold to the same customer:\nthey stay with it."
           },
           "payments": {
             "type": "array",

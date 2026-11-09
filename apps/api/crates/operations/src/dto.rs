@@ -353,13 +353,17 @@ pub struct VisitDto {
     /// Sum of the one-off lines before discount.
     pub subtotal: i64,
     pub discount_amount: i64,
+    /// Reasons of the discounts on the visit's one-off bills (its sale and each addition), in the
+    /// order they were made, joined by "; ".
     pub discount_reason: Option<String>,
     /// Amount collected for the one-off lines (after discount), additions included. Packages sold
     /// in the visit are in `package_sales`.
     pub total: i64,
     /// Payments of the one-off sales (the first one and every addition).
     pub payments: Vec<PaymentDto>,
-    /// Packages sold in this visit, each a sale of its own.
+    /// Packages sold in this visit, each a sale of its own. A visit recorded by "Sửa lượt" also
+    /// shows the packages still standing that the visits it replaced sold to the same customer:
+    /// they stay with it.
     pub package_sales: Vec<VisitPackageSaleDto>,
     /// Companions known only by a note (never served or charged).
     pub companions: Vec<String>,

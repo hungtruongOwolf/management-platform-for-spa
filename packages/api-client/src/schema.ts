@@ -5291,6 +5291,10 @@ export interface components {
             customer_name: string;
             /** Format: int64 */
             discount_amount: number;
+            /**
+             * @description Reasons of the discounts on the visit's one-off bills (its sale and each addition), in the
+             *     order they were made, joined by "; ".
+             */
             discount_reason?: string | null;
             /** Format: uuid */
             id: string;
@@ -5300,7 +5304,11 @@ export interface components {
              *     note. Never in an idempotent replay.
              */
             note?: string | null;
-            /** @description Packages sold in this visit, each a sale of its own. */
+            /**
+             * @description Packages sold in this visit, each a sale of its own. A visit recorded by "Sửa lượt" also
+             *     shows the packages still standing that the visits it replaced sold to the same customer:
+             *     they stay with it.
+             */
             package_sales: components["schemas"]["VisitPackageSaleDto"][];
             /** @description Payments of the one-off sales (the first one and every addition). */
             payments: components["schemas"]["PaymentDto"][];
@@ -11577,7 +11585,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description visit.voided / visit.corrected (open the newest version) */
+            /** @description visit.voided / visit.corrected (open the newest version), payroll.period_closed (another technician in a month whose payroll is closed) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -11786,7 +11794,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description visit.voided / visit.corrected (already corrected: open the newest version), package.* */
+            /** @description visit.voided / visit.corrected (already corrected: open the newest version), payroll.period_closed (a service moved to another technician in a month whose payroll is closed), package.* */
             409: {
                 headers: {
                     [name: string]: unknown;
