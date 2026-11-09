@@ -1,10 +1,12 @@
 ---
 title: System architecture (R1)
-updated: 2026-11-04
+updated: 2026-11-09
 sources: [product/vision.md, product/specs/front-desk-and-packages.md]
 ---
 
 # Kiến trúc hệ thống (R1)
+
+> ⚠️ Lỗi thời một phần (ghi nhận 2026-11-09): trang này là thiết kế gốc R1 (VPS Singapore + Caddy + R2). Staging hiện chạy **Vercel `pdx1` + Supabase `us-west-2`** ([ADR-0005 update](../decisions/ADR-0005-compute-hosting.md), [vercel-staging](../runbooks/vercel-staging.md)); production dự kiến Singapore ([ADR-0012](../decisions/ADR-0012-colocate-api-db-singapore.md)). Danh sách module ở §4 chưa có `hr`, `reporting`, `platform` (đã build); `ledger`, `notifications` chưa có. Bản tổng quan hiện hành: [docs/system-design.md](../../../docs/system-design.md). Thứ tự ưu tiên chất lượng (§1) vẫn đúng; §5 và §6 đúng về nguyên tắc (index trigram ở J1 đã bỏ ở 0033, "VPS" ở §6 nay là instance Vercel).
 
 ## 1. Thứ tự ưu tiên chất lượng
 Thứ tự này quyết định mọi đánh đổi bên dưới.

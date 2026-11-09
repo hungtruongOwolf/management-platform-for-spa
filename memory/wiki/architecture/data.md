@@ -1,6 +1,6 @@
 ---
 title: Data model (R1-1)
-updated: 2026-11-05
+updated: 2026-11-09
 sources: [product/specs/front-desk-and-packages.md, product/specs/management-views.md, architecture/system.md, decisions/ADR-0003-multi-tenancy.md]
 ---
 
@@ -60,9 +60,10 @@ erDiagram
 | `role_permission` | tenant_id, role_id, permission `text` | PK `(tenant_id, role_id, permission)`; permission phải thuộc danh mục trong code (app kiểm tra khi ghi) |
 | `membership_role` | tenant_id, membership_id, role_id | PK cả ba cột |
 | `session` *(toàn cục)* | token_hash `bytea`, user_id, active_tenant_id?, created_at, last_seen_at, idle_expires_at, absolute_expires_at, recent_auth_at, ip, user_agent, revoked_at | `UNIQUE(token_hash)`; index `(user_id)` |
-| `auth_token` *(toàn cục)* | user_id, purpose (`activate`/`reset`), token_hash, expires_at, used_at | `UNIQUE(token_hash)` |
-| `platform_admin` *(toàn cục)* | user_id | |
-| `support_grant` | tenant_id, platform_admin_id, granted_by, expires_at, revoked_at | index `(tenant_id, expires_at)` |
+| `auth_token` *(kế hoạch, chưa tạo)* | user_id, purpose (`activate`/`reset`), token_hash, expires_at, used_at | Không có migration nào tạo bảng này: mật khẩu tạm + `password_reset_request` (0032, ADR-0016) thay cho link kích hoạt / đặt lại |
+| `platform_admin` *(kế hoạch, chưa tạo)* | user_id | Thay bằng principal riêng `platform_operator` (0038, ADR-0018), không phải user của spa |
+| `support_grant` *(kế hoạch, chưa tạo)* | tenant_id, platform_admin_id, granted_by, expires_at, revoked_at | Chưa có bảng; permission `support_grant.manage` vẫn có trong code |
+| `password_reset_request` ✅ 0032 | tenant_id, user_id, requested_at, expires_at (24 h), closed_at, outcome (`reset`/`dismissed`/`expired`), closed_by | unique một phần `(tenant_id, user_id) WHERE closed_at IS NULL`; RLS `tenant_isolation`. `user_account.must_change_password` cùng migration |
 | `staff` ✅ 0005 | tenant_id, branch_id, full_name, phone_e164?, position (chữ tự do), status (`active`/`left`), joined_on?, left_on?, version | `CHECK (status='left') = (left_on IS NOT NULL)`; index `(tenant_id, status, full_name)`; không có DELETE. Context khác kiểm tra bằng `org::service::require_active` (khóa `FOR SHARE`) |
 
 ### catalog
@@ -232,6 +233,11 @@ Không có bảng mới. 0013:
   - **0036** thêm FK `NOT VALID` cho cột "người làm" → `user_account`: `visit.created_by/voided_by`, `sale.created_by/voided_by`, `payment.created_by`, `refund.created_by`, `customer_package.created_by/cancelled_by`, `appointment.created_by/closed_by`.
   - **0037** chạy `VALIDATE` (khóa `SHARE UPDATE EXCLUSIVE`, ghi vẫn chạy). 3 năm dữ liệu: 0,4 + 0,4 + 0,6 s.
   - `TenantTx` đặt thêm `idle_in_transaction_session_timeout = 30s` (transaction-local).
+
+## Xác thực một câu và admin nền tảng (0034, 0038–0040)
+- **0034** `app.session_actor(token_hash)`: xem [ADR-0017](../decisions/ADR-0017-one-statement-request-auth.md). 0039 thay hàm bằng bản thêm cột `disabled_features`.
+- **0038–0040** `platform_operator`, `platform_session`, `platform_recovery_code`, `platform_audit_log`, `tenant_feature`, `role_template_permission`, `role.follows_template` và các hàm `platform_*`: xem [platform-admin](platform-admin.md).
+- Tổng quan mọi nhóm bảng (ER theo nhóm, RLS, toàn vẹn, migration theo dải): [docs/database-design.md](../../../docs/database-design.md).
 
 ## Seed
 Dữ liệu tenant Viên Phúc Y Đường: 1 chi nhánh (Phường Đông Hà), 10 nhóm và 35 dịch vụ từ [service-catalog](../product/service-catalog.md), role hệ thống, tài khoản chủ spa. Giá "Ôn ấm tử cung" và các gói liệu trình: chờ EM.
