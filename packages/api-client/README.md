@@ -1,5 +1,3 @@
 # @vpyd/api-client
 
-TypeScript types **generated** from the API's OpenAPI document (`apps/api/openapi.json`, written by `pnpm api:spec`) into `src/schema.ts` by `pnpm api:types`; `pnpm api:gen` runs both. Never edit `schema.ts` by hand: regenerate, and let the frontend typecheck catch contract changes. CI diffs both files against the code.
-
-`src/index.ts` holds hand-written short aliases (`Customer = Schemas["CustomerDto"]` …) for the DTOs the web app uses: add one when a screen needs it, remove it when nothing imports it.
+TypeScript types **generated** from the API contract `apps/api/openapi.json` into `src/schema.ts` (`pnpm api:gen` = `api:spec` from the Rust code, then `api:types` with openapi-typescript). Never edit `schema.ts` by hand; `src/index.ts` only re-exports named aliases. CI regenerates both files and fails on any diff.
