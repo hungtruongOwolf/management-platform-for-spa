@@ -954,7 +954,8 @@ async fn role_edits_take_effect_on_the_next_request(owner: PgPool) -> TestResult
     .await?;
     let op = operator_session(&h).await?;
     let manager = session_for(&h, "0905000002").await;
-    let new_customer = || json!({"full_name": "Khách Thử", "phone": "0912345678", "gender": "female"});
+    let new_customer =
+        || json!({"full_name": "Khách Thử", "phone": "0912345678", "gender": "female"});
     let before = call(
         &h.app,
         "POST",
