@@ -5,7 +5,7 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
+import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from "react";
 import { useBackdropClose, useModalDialog } from "../components/useModalDialog";
 import { can, logout, meQuery } from "../features/auth/session";
 import { longDate } from "../lib/format";
@@ -167,8 +167,11 @@ export function AppShell() {
   // The session ended while the app was open (a 401 refetched `/me`, lib/queryClient.ts): forget
   // what was cached for it and sign in again, back to this screen. Unsaved carts stay in
   // sessionStorage. Sign-out and "Khóa nhanh" navigate on their own.
+  // A sign-out or quick lock in progress: it chooses where to go, so the effect below stays out
+  // of the way (otherwise it would race it and nest `next=/dang-nhap?next=…`).
+  const leaving = useRef(false);
   useEffect(() => {
-    if (me) return;
+    if (me || leaving.current) return;
     queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
     void navigate({ to: "/dang-nhap", search: { next: href } });
     // Only a change of `me` matters, not the URL it was on.
@@ -177,11 +180,14 @@ export function AppShell() {
 
   // "Khóa nhanh": leave the counter safely; signing in again comes back to this screen.
   const lock = async () => {
+    leaving.current = true;
+    const back = href;
     await logout(queryClient);
-    await navigate({ to: "/dang-nhap", search: { next: href } });
+    await navigate({ to: "/dang-nhap", search: { next: back } });
   };
   // "Đăng xuất": a clean end of the shift, the next person starts from home with no trail.
   const signOut = async () => {
+    leaving.current = true;
     await logout(queryClient);
     resetTrail();
     await navigate({ to: "/dang-nhap" });
