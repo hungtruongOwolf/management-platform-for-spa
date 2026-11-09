@@ -103,6 +103,21 @@ pub async fn call(
     call_with_headers(app, method, path, session, body, &[]).await
 }
 
+/// `POST /customers` with a fresh `Idempotency-Key`, as the web sends one per create attempt
+/// (ADR-0019 D11: the route requires it).
+pub async fn post_customer(app: &Router, session: Option<&str>, body: Option<Value>) -> Reply {
+    let key = uuid::Uuid::now_v7().to_string();
+    call_with_headers(
+        app,
+        "POST",
+        "/customers",
+        session,
+        body,
+        &[("idempotency-key", &key)],
+    )
+    .await
+}
+
 /// Like `call`, with extra request headers (e.g. `If-Match`).
 pub async fn call_with_headers(
     app: &Router,

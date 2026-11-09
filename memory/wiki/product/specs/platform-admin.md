@@ -92,10 +92,10 @@ As an operator, I want to change what a manager may do for all spas (or for one 
 
 ### US8 — Tài khoản xuyên spa
 As an operator, I want to find a person's login and fix it (lock, reset password, reset MFA, end sessions), so that an owner who forgot their password is back in minutes — replacing the CLI path.
-- **AC8.1** `GET /admin/accounts?q=` (≥ 3 ký tự; SĐT hoặc tên, không dấu) → tối đa 50: `id, full_name, phone, status, locked_until, mfa_enabled, must_change_password, created_at, memberships[{tenant_id, tenant_name, tenant_status, role_keys, status}]`. Không hash, không secret, không dữ liệu khách.
+- **AC8.1** `GET /admin/accounts?q=` (≥ 3 ký tự; SĐT hoặc tên, không dấu) → tối đa 50: `id, full_name, phone, status, locked_until, mfa_enabled, must_change_password, created_at, memberships[{tenant_id, tenant_name, tenant_status, role_keys, status}]`. Không hash, không secret, không dữ liệu khách. `%`, `_` và `\` trong tên được escape (chỉ khớp chính nó). Mỗi lượt tìm ghi một dòng `platform.account.search` vào nhật ký nền tảng, cùng transaction, với chuỗi tìm đã che: SĐT giữ 3 chữ số đầu (`090****`), tên giữ chữ đầu mỗi từ (`N… A…`), kèm `by` (`phone` / `name`) và số kết quả (ADR-0019 D17).
 - **AC8.2** `POST /admin/accounts/{id}/lock {reason}` → `user_account.status = disabled` + thu hồi mọi session; đăng nhập → `401 auth.invalid_credentials`. Từ chối nếu là **chủ spa đang hoạt động cuối cùng** của một spa đang hoạt động → `409 platform.last_owner` (ngưng spa trước). `unlock` → `active` + xóa khóa tạm (thay `app unlock`).
 - **AC8.3** `POST /admin/accounts/{id}/reset-password {reason}` → mật khẩu tạm mới (một lần, `no-store`), `must_change_password`, thu hồi mọi session, xóa đếm sai / khóa tạm. Tài khoản bị operator khóa → `409 account.locked`. Áp dụng cả cho chủ spa (thay đường CLI-only mà EM chấp nhận ở ADR-0016).
-- **AC8.4** `POST /admin/accounts/{id}/reset-mfa {reason}` → xóa secret + mã khôi phục, thu hồi session; lần đăng nhập sau phải enroll lại (owner). Chưa có MFA → `409 account.mfa_not_enabled`.
+- **AC8.4** `POST /admin/accounts/{id}/reset-mfa {reason}` → xóa secret + mã khôi phục, thu hồi session; lần đăng nhập sau phải enroll lại (owner). Chưa có MFA → `409 account.mfa_not_enabled`. Làm được cả khi tài khoản đang bị khóa (operator khóa hoặc khóa tạm), vì mất điện thoại thường là lý do bị khóa (ADR-0019 D20).
 - **AC8.5** `POST /admin/accounts/{id}/revoke-sessions {reason}` → `{revoked: n}`.
 - **AC8.6** Mỗi thao tác: audit nền tảng `platform.account.*` + audit spa `account.*` ở **mọi spa** của tài khoản (actor `platform_admin`), không mật khẩu. Tài khoản không tồn tại → `404`.
 
@@ -127,6 +127,13 @@ Bảng mới: `platform_operator`, `platform_session`, `platform_recovery_code`,
 - Gửi mật khẩu tạm qua SMS / Zalo.
 
 ## 9. Open questions (EM)
+**Đã trả lời 2026-11-09** (lead quyết khi EM ủy quyền, [ADR-0019](../../decisions/ADR-0019-audit-decisions-2026-11-09.md) D19):
+- **Q-PA1 → giữ metadata.** Nhật ký spa cho hỗ trợ chỉ hiện metadata, nay có nhãn tiếng Việt cho thao tác và loại bản ghi (D20). Chưa làm support grant.
+- **Q-PA2 → chưa có cờ `packages`.**
+- **Q-PA3 → có, khi có domain chính thức:** dùng `admin.<domain>` (đặt `APP_ADMIN_ORIGIN` + domain trên Vercel).
+- **Q-PA4 → giữ quy tắc** "không khóa chủ spa cuối" (`409 platform.last_owner`).
+
+Câu hỏi gốc:
 - **Q-PA1** Nhật ký spa cho hỗ trợ: v1 chỉ metadata (không before/after, không lý do). Đủ cho hỗ trợ không, hay cần support grant (chủ spa cấp 24 giờ) ngay? Mặc định: metadata.
 - **Q-PA2** Tính năng `packages` (bán gói) chưa đưa vào registry: Quầy xoay quanh gói, tắt nó cần thiết kế lại giỏ. Có spa nào không bán gói không? Mặc định: để sau.
 - **Q-PA3** Subdomain `admin.<domain>` khi có tên miền thật (production châu Á, ADR-0012)? Mặc định: có — chỉ cần đặt `APP_ADMIN_ORIGIN` + domain trên Vercel.

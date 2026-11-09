@@ -73,8 +73,8 @@ pub struct CommissionLine {
 /// recommended. Performing the service is a separate credit ([`CommissionLine`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct UpsellLine {
-    /// `package`, `package_refund` (a package closed earlier, cancelled with a refund this month)
-    /// or `service`.
+    /// `package`, `package_refund` (a package closed earlier, cancelled with a refund this month,
+    /// or after the closer's last month when this is it: ADR-0019 D2b) or `service`.
     pub kind: String,
     pub description: String,
     /// Packages sold or refunded / services recommended.

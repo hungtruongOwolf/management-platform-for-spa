@@ -9,7 +9,7 @@ use chrono::{Duration, NaiveDate, Utc};
 use chrono_tz::Asia::Ho_Chi_Minh;
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
-    session_for,
+    post_customer, session_for,
 };
 use identity::SystemRole;
 use identity::provisioning::create_tenant;
@@ -111,10 +111,8 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
     )
     .await;
     assert_eq!(service.status, StatusCode::CREATED, "{}", service.body);
-    let created = call(
+    let created = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&owner),
         Some(json!({
             "full_name": "Nguyễn Thị Hoa", "phone": "0987000111", "gender": "female",

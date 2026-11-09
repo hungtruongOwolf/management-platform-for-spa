@@ -4,7 +4,7 @@ mod common;
 
 use axum::http::StatusCode;
 use catalog::service::seed_menu;
-use common::{OWNER_PHONE, TestResult, call, harness, session_for};
+use common::{OWNER_PHONE, TestResult, harness, post_customer, session_for};
 use kernel::testing::app_pool;
 use kernel::{Actor, AppError, Money, Permission, TenantId, TenantTx, UserId};
 use packages::{Consume, NewItem, NewPackage, Origin};
@@ -27,10 +27,8 @@ async fn fixture(pool: PgPool) -> Result<Fixture, Box<dyn std::error::Error>> {
     let token = session_for(&h, OWNER_PHONE).await;
     let mut ids = Vec::new();
     for (name, phone) in [("Hà", "0905111222"), ("Lan", "0905333444")] {
-        let c = call(
+        let c = post_customer(
             &h.app,
-            "POST",
-            "/customers",
             Some(&token),
             Some(json!({"full_name": name, "phone": phone})),
         )

@@ -38,10 +38,26 @@ export function readTheme(): Theme {
 
 const themeListeners = new Set<() => void>();
 
+/**
+ * The browser chrome follows the app's theme too (ADR-0019 D20). index.html has one
+ * `theme-color` per colour scheme (`media`); a chosen theme gives every one of them that theme's
+ * colour, "system" puts each back to its own. The colours stay in index.html (`data-color` keeps
+ * the original).
+ */
+function syncThemeColor(theme: Theme, doc: Document): void {
+  const metas = [...doc.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')];
+  const own = (m: HTMLMetaElement) => (m.dataset["color"] ??= m.content);
+  for (const m of metas) own(m);
+  const pick = metas.find((m) => m.media.includes(theme));
+  const color = theme === "system" || !pick ? null : own(pick);
+  for (const m of metas) m.content = color ?? own(m);
+}
+
 /** Applies a theme (tokens.css reads `data-theme`) and remembers it on this device. */
 export function applyTheme(theme: Theme, root: HTMLElement = document.documentElement): void {
   if (theme === "system") delete root.dataset["theme"];
   else root.dataset["theme"] = theme;
+  syncThemeColor(theme, root.ownerDocument);
   write(THEME_KEY, theme === "system" ? null : theme);
   chosen = theme;
   for (const notify of themeListeners) notify();

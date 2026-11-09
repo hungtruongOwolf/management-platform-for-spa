@@ -93,5 +93,13 @@ deciders: EM (what), agent (how)
 - Negative / accepted: cùng origin ở giai đoạn đầu (D2); thêm 7 hàm plpgsql (`platform_gate` + 6 hàm ở D3) phải giữ đầu ra hẹp (test từng hàm: không có session → lỗi, đầu ra không có cột nhạy cảm); mẫu vai trò trong DB làm "nguồn sự thật" của quyền mặc định chuyển từ code sang DB (code giữ làm giá trị seed + test).
 - Follow-ups: support grant (ADR-0003) cho xem chi tiết audit / dữ liệu spa; subdomain khi có domain; tính năng `packages` (Q-PA2); WebAuthn cho operator.
 
+## Update 2026-11-09: Q-PA1…4 đã có câu trả lời ([ADR-0019](ADR-0019-audit-decisions-2026-11-09.md) D17, D19, D20)
+- **Q-PA1:** audit spa chỉ metadata, chưa làm support grant. Console hiện nhãn tiếng Việt thay mã action thô.
+- **Q-PA2:** chưa có cờ `packages`.
+- **Q-PA3:** dùng subdomain `admin.<domain>` khi có domain chính thức; D2 (cùng origin) giữ tới lúc đó.
+- **Q-PA4:** giữ quy tắc "không khóa chủ spa cuối".
+- **Thêm (D17):** lượt tìm tài khoản xuyên spa ghi `platform.account.search` vào `platform_audit_log`, chuỗi tìm đã che; `%`, `_`, `\` được escape trong `LIKE`.
+- **Thêm (0049):** `platform_tenant_overview(p_token_hash, p_tenant uuid DEFAULT NULL)` lọc một spa ngay trong hàm. `GET /admin/tenants/{id}` và bước kiểm spa tồn tại của mọi route theo spa không còn dựng overview của tất cả spa.
+
 ## Revisit when
 Có hơn một operator với vai trò khác nhau, có tên miền production, có hợp đồng yêu cầu hỗ trợ đọc dữ liệu spa, hoặc số spa > 200 (danh sách cần phân trang / số đếm cần bảng tổng hợp).

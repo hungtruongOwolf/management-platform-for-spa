@@ -352,6 +352,7 @@ function Timeline({ customerId, permissions }: { customerId: string; permissions
                   <Suspense fallback={<p role="status" className="text-text-muted">Đang mở…</p>}>
                     <SaleNoteForm
                       saleId={purchase.sale_id}
+                      version={purchase.version}
                       note={purchase.note}
                       customerId={customerId}
                       title={`Ghi chú gói ${purchase.lines.map((l) => `"${l.description}"`).join(", ")}`}

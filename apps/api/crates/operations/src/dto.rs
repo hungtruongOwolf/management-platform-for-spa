@@ -313,6 +313,8 @@ pub struct VisitPackageSaleDto {
     pub beneficiary_customer_id: Option<Uuid>,
     pub beneficiary_name: Option<String>,
     pub payments: Vec<PaymentDto>,
+    /// The sale's optimistic-lock version: the `If-Match` of `PATCH /sales/{id}` ("Sửa ghi chú gói").
+    pub version: i64,
     /// "Ghi chú gói" (F4): present exactly when the visit's session note is (a visit or the day
     /// list read by `customer.health_notes.read`); null = no note. Never in an idempotent replay.
     #[serde(skip_serializing_if = "Option::is_none")]

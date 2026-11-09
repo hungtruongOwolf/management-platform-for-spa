@@ -804,17 +804,28 @@ pub(crate) async fn load(
     today: NaiveDate,
     notes: Option<&FieldCipher>,
 ) -> Result<Option<SaleDto>, AppError> {
-    let Some(s) = repo::sale(tx, id).await? else {
-        return Ok(None);
-    };
-    let tenant = tx.tenant().as_uuid();
-    let note = notes
-        .map(|c| kernel::crypto::open_sale_note(c, tenant, s.id, s.note_ct.as_deref()))
-        .transpose()?;
-    let lines = repo::lines(tx, id)
+    Ok(load_many(tx, &[id], today, notes).await?.pop())
+}
+
+/// Sales as `SaleDto`, in the order of `ids` (unknown ids are skipped), in four queries however
+/// many there are: sales, lines, payments, packages (the day list used to read each sale alone).
+async fn load_many(
+    tx: &mut TenantTx,
+    ids: &[Uuid],
+    today: NaiveDate,
+    notes: Option<&FieldCipher>,
+) -> Result<Vec<SaleDto>, AppError> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut heads: HashMap<Uuid, repo::SaleRow> = repo::sales(tx, ids)
         .await?
         .into_iter()
-        .map(|l| SaleLineDto {
+        .map(|s| (s.id, s))
+        .collect();
+    let mut lines: HashMap<Uuid, Vec<SaleLineDto>> = HashMap::new();
+    for l in repo::lines(tx, ids).await? {
+        lines.entry(l.sale_id).or_default().push(SaleLineDto {
             id: l.id,
             line_type: if l.line_type == "service" {
                 SaleLineTypeDto::Service
@@ -828,53 +839,55 @@ pub(crate) async fn load(
             qty: l.qty,
             unit_price: l.unit_price,
             line_total: l.line_total,
-        })
-        .collect();
-    let payments = repo::payments(tx, id)
-        .await?
-        .into_iter()
-        .map(|p| {
-            payment_dto(
-                p.id,
-                &p.kind,
-                p.reversal_of,
-                &p.method,
-                p.amount,
-                p.reference,
-                p.paid_at,
-            )
-        })
-        .collect::<Result<Vec<_>, AppError>>()?;
-    let customer_packages = packages::service::of_sale(tx, id, today)
-        .await?
-        .into_iter()
-        .map(CustomerPackageDto::from)
-        .collect();
-    Ok(Some(SaleDto {
-        id: s.id,
-        customer_id: s.customer_id,
-        business_date: s.business_date,
-        subtotal: s.subtotal,
-        discount_amount: s.discount_amount,
-        discount_reason: s.discount_reason,
-        total: s.total,
-        amount_paid: s.amount_paid,
-        status: if s.status == "voided" {
-            SaleStatusDto::Voided
-        } else {
-            SaleStatusDto::Open
-        },
-        void_reason: s.void_reason,
-        voided_at: s.voided_at,
-        closer_staff_id: s.closer_staff_id,
-        closer_name: s.closer_name,
-        visit_id: s.visit_id,
-        created_at: s.created_at,
-        lines,
-        payments,
-        customer_packages,
-        note,
-    }))
+        });
+    }
+    let mut payments = payments_of(tx, ids).await?;
+    let mut packages: HashMap<Uuid, Vec<CustomerPackageDto>> = HashMap::new();
+    for p in packages::service::of_sales(tx, ids, today).await? {
+        if let Some(sale) = p.sale_id {
+            packages
+                .entry(sale)
+                .or_default()
+                .push(CustomerPackageDto::from(p));
+        }
+    }
+    let tenant = tx.tenant().as_uuid();
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        let Some(s) = heads.remove(id) else {
+            continue;
+        };
+        let note = notes
+            .map(|c| kernel::crypto::open_sale_note(c, tenant, s.id, s.note_ct.as_deref()))
+            .transpose()?;
+        out.push(SaleDto {
+            id: s.id,
+            customer_id: s.customer_id,
+            business_date: s.business_date,
+            subtotal: s.subtotal,
+            discount_amount: s.discount_amount,
+            discount_reason: s.discount_reason,
+            total: s.total,
+            amount_paid: s.amount_paid,
+            status: if s.status == "voided" {
+                SaleStatusDto::Voided
+            } else {
+                SaleStatusDto::Open
+            },
+            void_reason: s.void_reason,
+            voided_at: s.voided_at,
+            closer_staff_id: s.closer_staff_id,
+            closer_name: s.closer_name,
+            visit_id: s.visit_id,
+            created_at: s.created_at,
+            version: s.version,
+            lines: lines.remove(id).unwrap_or_default(),
+            payments: payments.remove(id).unwrap_or_default(),
+            customer_packages: packages.remove(id).unwrap_or_default(),
+            note,
+        });
+    }
+    Ok(out)
 }
 
 /// Most package sales one day list returns (a busy day sells a handful).
@@ -884,7 +897,7 @@ const DAY_SALES_MAX: i64 = 200;
 /// sales of one business day saved at the desk without a visit (F6, live test 2026-11-08), newest
 /// first, each with what `GET /sales/{id}` returns (its "Ghi chú gói" only for
 /// `customer.health_notes.read`). A visit's sales are shown with the visit (`GET /visits`), and
-/// paper-book imports are not desk sales.
+/// paper-book imports are not desk sales. A fixed number of queries for any number of sales.
 pub async fn for_day(
     pool: &PgPool,
     cipher: &FieldCipher,
@@ -899,21 +912,22 @@ pub async fn for_day(
         .business_date
         .as_naive();
     let heads = repo::day_sales(&mut tx, day.unwrap_or(today), DAY_SALES_MAX).await?;
-    let notes = note_reader(actor, cipher);
-    let mut out = Vec::with_capacity(heads.len());
-    for h in heads {
-        let sale = load(&mut tx, h.id, today, notes)
-            .await?
-            .ok_or_else(|| AppError::Internal("sale vanished".into()))?;
-        out.push(DaySaleDto {
+    let ids: Vec<Uuid> = heads.iter().map(|h| h.id).collect();
+    let sales = load_many(&mut tx, &ids, today, note_reader(actor, cipher)).await?;
+    tx.commit().await?;
+    if sales.len() != heads.len() {
+        return Err(AppError::Internal("sale vanished".into()));
+    }
+    Ok(heads
+        .into_iter()
+        .zip(sales)
+        .map(|(h, sale)| DaySaleDto {
             sale,
             customer_name: h.customer_name,
             customer_gender: crm::http::gender_dto(h.customer_gender.as_deref()),
             beneficiary_name: h.beneficiary_name,
-        });
-    }
-    tx.commit().await?;
-    Ok(out)
+        })
+        .collect())
 }
 
 /// `GET /sales/{id}` (`sale.read`; the note only for `customer.health_notes.read`). Another
@@ -942,13 +956,20 @@ pub async fn get_sale(
 /// visit's one-off sale is `409 sale.not_package` (its note is the visit's). Audited
 /// `sale.note_update` without the text. Returns the sale with its note for health readers.
 ///
+/// `version` is the `If-Match` header (`400 precondition.if_match_required / _invalid` when it is
+/// missing or malformed); a sale changed since (another note edit, a void) is `412
+/// conflict.stale_version` (ADR-0019 D10). A body without `note` (`{}`) changes nothing: absent =
+/// unchanged, `null` / blank = cleared (D9).
+///
 /// `input` is `None` when the body did not parse. Like every correction (F17), the rights, the
-/// sale (`404`) and its day (`403 day.locked`) are answered before what is wrong with the body.
+/// sale (`404`) and its day (`403 day.locked`) are answered before what is wrong with the headers
+/// or the body.
 pub async fn update_note(
     pool: &PgPool,
     cipher: &FieldCipher,
     actor: &Actor,
     id: Uuid,
+    version: Result<i64, AppError>,
     input: Option<&SaleUpdate>,
 ) -> Result<SaleDto, AppError> {
     actor.require(Permission::PackageSell)?;
@@ -963,10 +984,14 @@ pub async fn update_note(
         .business_date
         .as_naive();
     kernel::corrections::authorize_closed_day(actor, sale.business_date, today)?;
+    let version = version?;
     let input =
         input.ok_or_else(|| AppError::Validation(vec![FieldError::new("body", "invalid")]))?;
     let mut errors = Vec::new();
-    let note = parse_sale_note(input.note.as_ref(), "note", &mut errors);
+    let note = input
+        .note
+        .as_ref()
+        .map(|n| parse_sale_note(n.as_ref(), "note", &mut errors));
     if !errors.is_empty() {
         return Err(AppError::Validation(errors));
     }
@@ -980,24 +1005,29 @@ pub async fn update_note(
             code: "sale.not_package",
         });
     }
-    let tenant = tx.tenant().as_uuid();
-    let note_ct = kernel::crypto::seal_sale_note(cipher, tenant, id, note.as_deref())?;
-    repo::set_note(&mut tx, id, note_ct.as_deref()).await?;
-    audit::record(
-        &mut tx,
-        actor,
-        AuditEntry {
-            action: "sale.note_update",
-            entity_type: "sale",
-            entity_id: id,
-            before: None,
-            after: Some(json!({
-                "note": if note.is_some() { REDACTED } else { "cleared" },
-            })),
-            reason: None,
-        },
-    )
-    .await?;
+    if sale.version != version {
+        return Err(AppError::StaleVersion);
+    }
+    if let Some(note) = note {
+        let tenant = tx.tenant().as_uuid();
+        let note_ct = kernel::crypto::seal_sale_note(cipher, tenant, id, note.as_deref())?;
+        repo::set_note(&mut tx, id, note_ct.as_deref()).await?;
+        audit::record(
+            &mut tx,
+            actor,
+            AuditEntry {
+                action: "sale.note_update",
+                entity_type: "sale",
+                entity_id: id,
+                before: None,
+                after: Some(json!({
+                    "note": if note.is_some() { REDACTED } else { "cleared" },
+                })),
+                reason: None,
+            },
+        )
+        .await?;
+    }
     let sale = load(&mut tx, id, today, note_reader(actor, cipher))
         .await?
         .ok_or_else(|| AppError::Internal("sale vanished".into()))?;

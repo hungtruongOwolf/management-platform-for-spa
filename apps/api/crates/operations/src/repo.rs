@@ -458,6 +458,7 @@ pub struct PackageSaleRow {
     pub beneficiary_name: Option<String>,
     /// "Ghi chú gói" (F4), still encrypted.
     pub note_ct: Option<Vec<u8>>,
+    pub version: i64,
 }
 
 /// Package sales made in these visits (`sale.visit_id`), oldest first. A visit recorded by "Sửa
@@ -486,8 +487,7 @@ pub async fn package_sales(
                   b.id AS "beneficiary_customer_id?",
                   -- customer_label(NULL) reads "Khách vãng lai": only label a beneficiary that exists.
                   CASE WHEN b.id IS NOT NULL THEN app.customer_label(b.full_name) END AS "beneficiary_name?",
-                  s.note_ct
-
+                  s.note_ct, s.version
            FROM lineage l
            JOIN app.sale s ON s.tenant_id = $1 AND s.visit_id = l.made_in
              AND (l.made_in = l.shown_on OR (s.status = 'open' AND s.customer_id = l.customer_id))

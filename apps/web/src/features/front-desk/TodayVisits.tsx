@@ -722,6 +722,7 @@ export function TodayVisits({
                       <SaleNoteForm
                         key={p.sale_id}
                         saleId={p.sale_id}
+                        version={p.version}
                         note={p.note}
                         customerId={v.customer_id}
                         title={`Ghi chú gói "${p.description}" của ${v.customer_name}`}

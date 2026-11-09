@@ -9,7 +9,7 @@ use catalog::service::seed_menu;
 use chrono::{Datelike, FixedOffset, NaiveDate, Utc};
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
-    session_for,
+    post_customer, session_for,
 };
 use identity::SystemRole;
 use serde_json::{Value, json};
@@ -100,7 +100,7 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
         let app = h.app.clone();
         let manager = manager.clone();
         let body = json!({"full_name": name, "phone": phone, "gender": "female"});
-        async move { call(&app, "POST", "/customers", Some(&manager), Some(body)).await }
+        async move { post_customer(&app, Some(&manager), Some(body)).await }
     };
     let ha = customer("Nguyễn Thị Hà", "0905111222").await;
     assert_eq!(ha.status, StatusCode::CREATED, "{}", ha.body);

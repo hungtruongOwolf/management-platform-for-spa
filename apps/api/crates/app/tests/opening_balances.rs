@@ -6,7 +6,7 @@ use axum::http::StatusCode;
 use catalog::service::seed_menu;
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
-    session_for,
+    post_customer, session_for,
 };
 use identity::SystemRole;
 use identity::provisioning::create_tenant;
@@ -80,10 +80,8 @@ async fn shop(pool: PgPool) -> Setup<Shop> {
     )
     .await;
     assert_eq!(plan.status, StatusCode::CREATED, "{}", plan.body);
-    let customer = call(
+    let customer = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&owner),
         Some(json!({"full_name": "Nguyễn Thị Hà", "phone": "0905111222", "gender": "female"})),
     )

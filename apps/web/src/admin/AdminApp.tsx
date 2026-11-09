@@ -1,5 +1,6 @@
 import { QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { SkipLink } from "../components/SkipLink";
 import { ApiError } from "../lib/api";
 import { createQueryClient } from "../lib/queryClient";
 import { adminApi, adminKeys } from "./api";
@@ -118,6 +119,7 @@ function AdminShell({ name, route, children }: { name: string; route: AdminRoute
   };
   return (
     <div className="min-h-dvh">
+      <SkipLink target="admin-main" />
       <header className="chrome flex flex-wrap items-center gap-4 px-4 py-3 sm:px-8">
         <span className="font-brand text-lg">Admin nền tảng</span>
         <nav aria-label="Admin nền tảng" className="flex gap-1">
@@ -137,7 +139,9 @@ function AdminShell({ name, route, children }: { name: string; route: AdminRoute
           Đăng xuất
         </button>
       </header>
-      <main className="mx-auto grid w-full max-w-6xl content-start gap-4 p-4 sm:p-8">{children}</main>
+      <main id="admin-main" tabIndex={-1} className="admin-main mx-auto grid w-full max-w-6xl content-start gap-4 p-4 sm:p-8">
+        {children}
+      </main>
     </div>
   );
 }

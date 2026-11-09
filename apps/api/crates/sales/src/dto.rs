@@ -3,7 +3,7 @@
 
 use chrono::{DateTime, NaiveDate, Utc};
 use packages::http::CustomerPackageDto;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -178,6 +178,8 @@ pub struct SaleDto {
     /// addition); null = a sale at the desk without a visit.
     pub visit_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
+    /// Optimistic-lock version: `PATCH /sales/{id}` takes it as `If-Match` (also sent as `ETag`).
+    pub version: i64,
     pub lines: Vec<SaleLineDto>,
     pub payments: Vec<PaymentDto>,
     /// Packages this sale created.
@@ -195,9 +197,20 @@ pub struct SaleDto {
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SaleUpdate {
-    /// The new note (≤ 2000 characters); null or blank = no note. Needs
-    /// `customer.health_notes.write`.
-    pub note: Option<String>,
+    /// The new note (≤ 2000 characters). Absent = unchanged (`{}` changes nothing, ADR-0019 D9);
+    /// null or blank = no note. Needs `customer.health_notes.write`.
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<String>)]
+    pub note: Option<Option<String>>,
+}
+
+/// Absent = unchanged, `null` = cleared.
+fn present<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(d).map(Some)
 }
 
 /// `GET /sales?date=`: the package sales of one business day made at the desk without a visit.
@@ -227,4 +240,24 @@ pub struct DaySaleDto {
 pub struct VoidCreate {
     /// Why the record is voided (required, 1–500 characters); shown in history and audited.
     pub reason: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SaleUpdate;
+
+    fn note(body: &str) -> Result<Option<Option<String>>, serde_json::Error> {
+        serde_json::from_str::<SaleUpdate>(body).map(|u| u.note)
+    }
+
+    #[test]
+    fn an_absent_note_is_unchanged_and_null_clears_it() {
+        assert_eq!(note("{}").ok(), Some(None));
+        assert_eq!(note(r#"{"note": null}"#).ok(), Some(Some(None)));
+        assert_eq!(
+            note(r#"{"note": "x"}"#).ok(),
+            Some(Some(Some("x".to_owned())))
+        );
+        assert!(note(r#"{"total": 0}"#).is_err());
+    }
 }
