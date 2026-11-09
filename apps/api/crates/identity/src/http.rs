@@ -84,6 +84,26 @@ where
     }
 }
 
+/// [`CurrentSession`] plus the active membership's permissions, read in the same statement
+/// (`GET /me`: no second permission transaction).
+pub struct SessionWithAccess(pub Session, pub Option<crate::repo::MemberAccess>);
+
+impl<S> FromRequestParts<S> for SessionWithAccess
+where
+    PgPool: FromRef<S>,
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let secret = session_secret(&parts.headers).ok_or(AppError::Unauthenticated)?;
+        let pool = PgPool::from_ref(state);
+        service::resolve_with_access(&pool, &secret)
+            .await
+            .map(|(s, a)| SessionWithAccess(s, a))
+    }
+}
+
 /// A full session, also one that signed in with a temporary password and must replace it
 /// (ADR-0016). Only `POST /auth/password` takes it; every other route uses [`CurrentSession`],
 /// which refuses such a session with `403 auth.password_change_required`.
@@ -139,9 +159,10 @@ where
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let CurrentSession(session) = CurrentSession::from_request_parts(parts, state).await?;
+        // Session, account flags and permissions in one statement (db review A3, ADR-0017).
+        let secret = session_secret(&parts.headers).ok_or(AppError::Unauthenticated)?;
         let pool = PgPool::from_ref(state);
-        let actor = service::actor_for(&pool, &session, client_meta(parts).ip).await?;
+        let (session, actor) = service::authenticate(&pool, &secret, client_meta(parts).ip).await?;
         Ok(Self { actor, session })
     }
 }
@@ -444,9 +465,9 @@ pub async fn switch_tenant(
 #[utoipa::path(get, path = "/api/v1/me", tag = "auth", responses((status = 200, body = Me), (status = 401)))]
 pub async fn me(
     State(pool): State<PgPool>,
-    CurrentSession(session): CurrentSession,
+    SessionWithAccess(session, access): SessionWithAccess,
 ) -> Result<Response, AppError> {
-    let me = service::me(&pool, &session).await?;
+    let me = service::me_with_access(&pool, &session, access).await?;
     let mut response = Json(me).into_response();
     response
         .headers_mut()

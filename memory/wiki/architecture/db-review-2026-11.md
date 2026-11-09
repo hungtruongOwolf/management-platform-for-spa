@@ -242,6 +242,21 @@ Thứ tự triển khai, mỗi bước một PR có test: (1) A1 + A2 + A4, (2) 
 - Số ms đo ở local không có ý nghĩa: proxy Python + build debug chiếm phần lớn, và độ phân giải timer của Windows (~15 ms) làm `--delay-ms` vô dụng.
 - A2 đo ở §4 F4: 79–94 → 0,4–0,6 ms ở 3 năm. Test hồi quy chạy câu cũ và câu mới trên cùng dữ liệu (người trả, người dùng gói, hóa đơn đã hủy, gói mua cho người khác, hóa đơn của lượt bị loại).
 
+**PR 3 (A3, migration 0034, [ADR-0017](../decisions/ADR-0017-one-statement-request-auth.md)).** `app.session_actor(token_hash)` gộp tra session, cờ tài khoản, quyền của membership đang chọn, cờ người đã nghỉ và cài đặt spa thành **một câu**.
+- Dùng ở `AuthUser` (`service::authenticate`), `/me` (`resolve_with_access`), và `CurrentSession` / `resolve` / `resolve_pending` / logout (bỏ phần quyền).
+- Bỏ transaction quyền riêng (`BEGIN; set_config`, `SELECT`, `COMMIT`): **−3 lượt đi về mỗi request nghiệp vụ**.
+- `/me` còn 3 câu: hàm, tài khoản, danh sách spa.
+- Test `app/tests/session_actor.rs`:
+  - grant: chỉ `app_rw`, không có PUBLIC;
+  - `search_path` được pin;
+  - chỉ trả quyền của spa đang chọn, không trả của spa khác cùng người;
+  - session đã thu hồi = không có gì;
+  - `GET /staff` và `GET /me` mỗi cái ≤ 3 câu.
+- **Mutation check:** `infra/perf/db/session_actor_checks.sql` chạy 13 phép kiểm trên fixture, trên hàm gốc và trên 11 đột biến. Mỗi đột biến bỏ một quy tắc: thu hồi, hết hạn rảnh, hết hạn tuyệt đối, tài khoản bị khóa, membership bị khóa, spa bị đình chỉ, mật khẩu tạm, người đã nghỉ, membership của spa khác, membership của người khác, MFA chờ.
+  - Hàm gốc đạt hết. 10 đột biến bị bắt (8 bằng phép kiểm hỏng, 2 bằng lỗi "nhiều hơn một dòng").
+  - Đột biến "bỏ hạn tuyệt đối" là **tương đương**: `CHECK (idle_expires_at <= absolute_expires_at)` của bảng `session` khiến điều kiện hạn rảnh đã bao luôn hạn tuyệt đối.
+- Các luồng từ chối ở Rust (`full_session`, thứ tự `no_active_tenant` → `not_a_member`, `effective_permissions`) giữ nguyên code. Chúng được phủ bởi `auth.rs` (hết hạn, thu hồi, tài khoản / membership bị khóa, spa đình chỉ, hai spa), `staff_logins.rs` (mật khẩu tạm, #103), `authz_matrix.rs` (người đã nghỉ, ADR-0014) và `staff.rs` (`staff.link_required`, #99, không đụng tới).
+
 ## 8. Tooling (`infra/perf/db/`)
 | File | Làm gì | Chạy ở đâu |
 |---|---|---|

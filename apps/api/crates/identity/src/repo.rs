@@ -160,33 +160,83 @@ pub struct SessionRow {
     pub must_change_password: bool,
 }
 
-/// A live session: not revoked, not past either expiry, owner account active.
-pub async fn live_session(
+/// A live session and, when its spa is active and the user an active member there, what they
+/// may do in it.
+pub struct LiveSession {
+    pub row: SessionRow,
+    /// `None` = no active spa on the session, the spa is suspended, or no active membership.
+    pub access: Option<MemberAccess>,
+}
+
+/// A live session (not revoked, not past either expiry, owner account active) with its active
+/// membership's permissions, in one statement (`app.session_actor`, 0034, ADR-0017): no
+/// separate permission transaction before the request's own.
+pub async fn session_actor(
     pool: &PgPool,
     token_hash: &[u8; 32],
-) -> Result<Option<SessionRow>, AppError> {
+) -> Result<Option<LiveSession>, AppError> {
     let row = sqlx::query!(
-        r#"SELECT s.id, s.user_id, s.active_tenant_id, s.last_seen_at, s.absolute_expires_at, s.recent_auth_at,
-                  s.mfa_pending, u.mfa_enabled_at IS NOT NULL AS "mfa_enrolled!", u.must_change_password
-           FROM app.session s JOIN app.user_account u ON u.id = s.user_id
-           WHERE s.token_hash = $1 AND s.revoked_at IS NULL
-             AND now() < s.idle_expires_at AND now() < s.absolute_expires_at
-             AND u.status = 'active'"#,
+        r#"SELECT session_id AS "session_id!", user_id AS "user_id!", active_tenant_id,
+                  last_seen_at AS "last_seen_at!", absolute_expires_at AS "absolute_expires_at!",
+                  recent_auth_at AS "recent_auth_at!", mfa_pending AS "mfa_pending!",
+                  mfa_enrolled AS "mfa_enrolled!", must_change_password AS "must_change_password!",
+                  member AS "member!", permissions AS "permissions!", former_staff AS "former_staff!",
+                  timezone, manager_discount_max_pct, branch_id
+           FROM app.session_actor($1)"#,
         &token_hash[..]
     )
     .fetch_optional(pool)
     .await?;
-    Ok(row.map(|r| SessionRow {
-        id: r.id,
-        user_id: UserId::from_uuid(r.user_id),
-        active_tenant: r.active_tenant_id.map(TenantId::from_uuid),
-        last_seen_at: r.last_seen_at,
-        absolute_expires_at: r.absolute_expires_at,
-        recent_auth_at: r.recent_auth_at,
-        mfa_pending: r.mfa_pending,
-        mfa_enrolled: r.mfa_enrolled,
-        must_change_password: r.must_change_password,
+    let Some(r) = row else {
+        return Ok(None);
+    };
+    let active_tenant = r.active_tenant_id.map(TenantId::from_uuid);
+    let access = match (r.member, active_tenant) {
+        (true, Some(tenant)) => Some(MemberAccess {
+            permissions: kernel::permission::effective_permissions(
+                known_permissions(&r.permissions),
+                r.former_staff,
+            ),
+            facts: r.timezone.as_deref().and_then(|tz| {
+                TenantFacts::from_row(
+                    tenant,
+                    tz,
+                    r.manager_discount_max_pct.as_deref(),
+                    r.branch_id,
+                )
+                .ok()
+            }),
+        }),
+        _ => None,
+    };
+    Ok(Some(LiveSession {
+        row: SessionRow {
+            id: r.session_id,
+            user_id: UserId::from_uuid(r.user_id),
+            active_tenant,
+            last_seen_at: r.last_seen_at,
+            absolute_expires_at: r.absolute_expires_at,
+            recent_auth_at: r.recent_auth_at,
+            mfa_pending: r.mfa_pending,
+            mfa_enrolled: r.mfa_enrolled,
+            must_change_password: r.must_change_password,
+        },
+        access,
     }))
+}
+
+/// Permission names of the catalog; a name the code no longer knows is skipped (and logged).
+fn known_permissions(names: &[String]) -> Vec<Permission> {
+    names
+        .iter()
+        .filter_map(|name| match Permission::from_str(name) {
+            Ok(p) => Some(p),
+            Err(_) => {
+                tracing::warn!(permission = %name, "ignoring unknown permission in role");
+                None
+            }
+        })
+        .collect()
 }
 
 pub async fn touch_session(
@@ -434,19 +484,11 @@ pub async fn member_access(
         member.branch_id,
     )
     .ok();
-    let roles = member
-        .permissions
-        .iter()
-        .filter_map(|name| match Permission::from_str(name) {
-            Ok(p) => Some(p),
-            Err(_) => {
-                tracing::warn!(permission = %name, "ignoring unknown permission in role");
-                None
-            }
-        })
-        .collect();
     Ok(Some(MemberAccess {
-        permissions: kernel::permission::effective_permissions(roles, member.former_staff),
+        permissions: kernel::permission::effective_permissions(
+            known_permissions(&member.permissions),
+            member.former_staff,
+        ),
         facts,
     }))
 }

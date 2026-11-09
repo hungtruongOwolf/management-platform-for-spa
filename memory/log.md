@@ -700,3 +700,8 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - A1 `app::db_pool` (ping chỉ khi rảnh >= 30 s, test giết backend); A2 lịch sử khách `UNION` (test hồi quy so câu cũ); A4 `TenantFacts` trong `Actor`, `TenantTx::for_actor` (96 chỗ gọi).
 - Đo local qua `rtt_proxy.py`: `/staff` 13 → 10 lượt đi về (ping 6 → 3, 3 còn lại là ping nền khi trả kết nối), `/appointments` 20 → 16, lịch sử khách 24 → 20.
 - Tiếp theo: PR 2 (B1, migration 0033).
+
+## [2026-11-09] build + secure + record | Rà soát DB PR 3: một câu xác thực mỗi request (A3, ADR-0017)
+- Migration 0034 `app.session_actor(token_hash)` (SECURITY DEFINER, `search_path` pin, chỉ `app_rw` EXECUTE). `AuthUser` -> `service::authenticate`, `/me` -> `resolve_with_access`; transaction quyền riêng bỏ: -3 lượt đi về mỗi request nghiệp vụ, `/me` còn 3 câu.
+- `secure`: threat-model TB2 thêm dòng hàm definer; ADR-0017. Test `app/tests/session_actor.rs`; mutation-check SQL 11 đột biến (10 bị bắt, 1 tương đương do CHECK idle <= absolute).
+- Xếp chồng trên PR 1 (dùng `MemberAccess` / `TenantFacts` của A4). Tiếp theo: PR 4 (dọn session, kiểm bất biến hằng ngày, C4).
