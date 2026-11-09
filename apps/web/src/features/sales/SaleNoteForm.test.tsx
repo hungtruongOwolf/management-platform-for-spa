@@ -11,7 +11,7 @@ describe("SaleNoteForm", () => {
     );
     render(
       <QueryClientProvider client={new QueryClient()}>
-        <SaleNoteForm saleId="s1" note="Đau vai gáy" customerId="c1" title="Ghi chú gói" onDone={() => undefined} onCancel={() => undefined} />
+        <SaleNoteForm saleId="s1" version={1} note="Đau vai gáy" customerId="c1" title="Ghi chú gói" onDone={() => undefined} onCancel={() => undefined} />
       </QueryClientProvider>,
     );
     const field = screen.getByRole("textbox", { name: "Ghi chú gói" });
