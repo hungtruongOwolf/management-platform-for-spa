@@ -27,7 +27,8 @@ CONTROL_PORT = int(os.environ.get("RTT_CONTROL_PORT", "15433"))
 def round_trips():
     with socket.create_connection(("127.0.0.1", CONTROL_PORT)) as s:
         line = s.recv(100).decode().strip()
-    return int(line.split("=", 1)[1])
+    parts = dict(kv.split("=", 1) for kv in line.split())
+    return int(parts["round_trips"]), int(parts["pings"])
 
 
 def main():
@@ -71,13 +72,15 @@ def main():
 
     rows = []
     for name, path in endpoints:
-        rts, statements, db, total = [], [], [], []
+        rts, pings, statements, db, total = [], [], [], [], []
         for _ in range(samples):
             time.sleep(0.4)  # background release pings of the previous request finish
             round_trips()  # reset
             r, _ = request("GET", path, cookie=cookie)
             time.sleep(0.3)
-            rts.append(round_trips())
+            rt, ping = round_trips()
+            rts.append(rt)
+            pings.append(ping)
             timing = r.getheader("Server-Timing") or ""
             m = re.search(r'db;dur=([\d.]+);desc="(\d+) statements", total;dur=([\d.]+)', timing)
             if m:
@@ -88,6 +91,7 @@ def main():
             "endpoint": name,
             "status": r.status,
             "round_trips_p50": statistics.median(rts),
+            "of_which_pings_p50": statistics.median(pings),
             "statements": statistics.median(statements) if statements else None,
             "db_ms_p50": round(statistics.median(db), 1) if db else None,
             "total_ms_p50": round(statistics.median(total), 1) if total else None,

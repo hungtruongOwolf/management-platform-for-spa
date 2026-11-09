@@ -2,12 +2,13 @@
 
 Every time the client (the API) writes after the server last answered, that is one round trip:
 a statement, a BEGIN, a COMMIT, or a ping of the connection pool alike. Server-Timing only counts
-sqlx statements; this counts everything that waits for the database.
+sqlx statements; this counts everything that waits for the database. A round trip whose request
+is a bare Sync message is a pool ping (sqlx `ping`), counted separately.
 
     python -I infra/perf/db/rtt_proxy.py --listen 15432 --target 127.0.0.1:5432 --delay-ms 2.6
 
-Point APP_DATABASE_URL at 127.0.0.1:15432 (TLS off for this local run). Read and reset the
-counter with `python -I infra/perf/db/rtt_proxy.py --read 15433` (prints "round_trips=N").
+Point APP_DATABASE_URL at 127.0.0.1:15432 (plain TCP: local only). Read and reset the counters
+with `python -I infra/perf/db/rtt_proxy.py --read 15433` ("round_trips=N pings=M").
 `--delay-ms` delays every answer of the server, to mimic the ~2.6 ms per round trip measured
 between Vercel and Supabase (db review §3a).
 """
@@ -16,7 +17,15 @@ import argparse
 import asyncio
 import socket
 
-counter = {"round_trips": 0}
+counter = {"round_trips": 0, "pings": 0}
+# A bare Sync message: what sqlx sends to ping a connection (no statement, only ReadyForQuery).
+SYNC = bytes([0x53, 0, 0, 0, 4])
+
+
+def no_delay(writer):
+    sock = writer.get_extra_info("socket")
+    if sock is not None:
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
 
 async def pipe(reader, writer, on_chunk, delay):
@@ -25,7 +34,7 @@ async def pipe(reader, writer, on_chunk, delay):
             data = await reader.read(65536)
             if not data:
                 break
-            on_chunk()
+            on_chunk(data)
             if delay:
                 await asyncio.sleep(delay)
             writer.write(data)
@@ -38,14 +47,18 @@ async def pipe(reader, writer, on_chunk, delay):
 
 async def handle(client_r, client_w, host, port, delay):
     server_r, server_w = await asyncio.open_connection(host, port)
+    no_delay(client_w)
+    no_delay(server_w)
     state = {"waiting": False}
 
-    def client_sent():
+    def client_sent(data):
         if not state["waiting"]:
             counter["round_trips"] += 1
+            if data == SYNC:
+                counter["pings"] += 1
             state["waiting"] = True
 
-    def server_sent():
+    def server_sent(_data):
         state["waiting"] = False
 
     await asyncio.gather(
@@ -54,9 +67,10 @@ async def handle(client_r, client_w, host, port, delay):
     )
 
 
-async def control(reader, writer):
-    writer.write(f"round_trips={counter['round_trips']}\n".encode())
+async def control(_reader, writer):
+    writer.write(f"round_trips={counter['round_trips']} pings={counter['pings']}\n".encode())
     counter["round_trips"] = 0
+    counter["pings"] = 0
     await writer.drain()
     writer.close()
 
@@ -83,7 +97,7 @@ def main():
     parser.add_argument("--target", default="127.0.0.1:5432")
     parser.add_argument("--control", type=int, default=15433)
     parser.add_argument("--delay-ms", type=float, default=0.0)
-    parser.add_argument("--read", type=int, help="print and reset the counter on this control port")
+    parser.add_argument("--read", type=int, help="print and reset the counters on this control port")
     args = parser.parse_args()
     if args.read:
         read(args.read)

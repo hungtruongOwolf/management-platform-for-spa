@@ -209,6 +209,24 @@ Những thứ dưới đây trông như "thừa" hoặc "tốn" khi nhìn riêng
 
 Thứ tự triển khai, mỗi bước một PR có test: (1) A1 + A2 + A4, (2) B1, (3) A3 + ADR, (4) C1 + C2 + C4 + sửa wiki backend.
 
+### 7a. Trạng thái triển khai
+**PR 1 (A1 + A2 + A4).** Đo ở local, cùng dữ liệu `seed-demo`, cùng 8 mẫu mỗi endpoint, so binary của `main` với binary của nhánh. API trỏ vào Postgres qua `infra/perf/db/rtt_proxy.py`; proxy đếm **mọi** lượt đi về, kể cả ping (một `Sync` trơn).
+
+| Endpoint | Lượt đi về trước → sau | trong đó ping | Câu sqlx (Server-Timing) |
+|---|---|---|---|
+| `GET /me` | 14 → **10** | 8 → 4 | 5 → 5 |
+| `GET /staff` | 13 → **10** | 6 → 3 | 5 → 5 |
+| `GET /visits?date=` | 17 → **14** | 6 → 3 | 9 → 9 |
+| `GET /appointments` (ngày) | 20 → **16** | 6 → 3 | 12 → **11** (A4: bỏ câu profile) |
+| `GET /attendance?month=` | 21 → **17** | 6 → 3 | 13 → **12** (A4) |
+| `GET /reports/daily` | 16 → **13** | 6 → 3 | 8 → 8 |
+| `GET /customers/{id}/history` | 24 → **20** | 6 → 3 | 16 → **15** (A4) |
+
+- 3 ping còn lại là ping sqlx 0.9 gửi khi **trả** kết nối về pool. Ping này chạy ở task nền, không nằm trên đường đi của request.
+- Trên đường đi của request, mỗi request bớt 3–4 lượt, ≈ **8–10 ms trên staging** (2,6 ms/lượt, §3a).
+- Số ms đo ở local không có ý nghĩa: proxy Python + build debug chiếm phần lớn, và độ phân giải timer của Windows (~15 ms) làm `--delay-ms` vô dụng.
+- A2 đo ở §4 F4: 79–94 → 0,4–0,6 ms ở 3 năm. Test hồi quy chạy câu cũ và câu mới trên cùng dữ liệu (người trả, người dùng gói, hóa đơn đã hủy, gói mua cho người khác, hóa đơn của lượt bị loại).
+
 ## 8. Tooling (`infra/perf/db/`)
 | File | Làm gì | Chạy ở đâu |
 |---|---|---|
