@@ -212,11 +212,11 @@ pub struct Evaluation {
     pub version: i64,
 }
 
-fn from_row(r: EvaluationRow, month: Month) -> Result<Evaluation, AppError> {
+fn from_row(r: EvaluationRow) -> Result<Evaluation, AppError> {
     let corrupt = || AppError::Internal(format!("evaluation of {} is corrupt", r.staff_id));
     Ok(Evaluation {
         staff_id: r.staff_id,
-        month: month.to_string(),
+        month: Month::of(r.work_date).to_string(),
         criteria: serde_json::from_value(r.criteria).map_err(|_| corrupt())?,
         serious_issue: r.serious_issue,
         total_points: u32::try_from(r.total_points).map_err(|_| corrupt())?,
@@ -234,10 +234,20 @@ pub async fn evaluations_in(
     month: Month,
     staff: Option<Uuid>,
 ) -> Result<Vec<Evaluation>, AppError> {
-    repo::evaluations(tx, month.first_day(), staff)
+    evaluations_between(tx, month, month, staff).await
+}
+
+/// Evaluations of the months `from..=to`, in one query.
+async fn evaluations_between(
+    tx: &mut TenantTx,
+    from: Month,
+    to: Month,
+    staff: Option<Uuid>,
+) -> Result<Vec<Evaluation>, AppError> {
+    repo::evaluations(tx, from.first_day(), to.first_day(), staff)
         .await?
         .into_iter()
-        .map(|r| from_row(r, month))
+        .map(from_row)
         .collect()
 }
 
@@ -387,9 +397,10 @@ pub(crate) fn history_range(
 }
 
 /// One person's months in `from..=to`, newest first, **only the months they were employed in**
-/// (employment periods, ADR-0013/0014): attendance and reviews read once for the range, then one
-/// evaluation and one period lookup per month. Shared by the managers' history and the staff
-/// member's own (`me::my_evaluation_history`); the callers authorize and pick the person.
+/// (employment periods, ADR-0013/0014): attendance, reviews, evaluations and the months' payroll
+/// status are each read once for the whole range (four queries, whatever its length). Shared by
+/// the managers' history and the staff member's own (`me::my_evaluation_history`); the callers
+/// authorize and pick the person.
 pub(crate) async fn history_months(
     tx: &mut TenantTx,
     person: &Profile,
@@ -408,12 +419,15 @@ pub(crate) async fn history_months(
         .into_iter()
         .map(attendance::AttendanceDay::try_from)
         .collect::<Result<Vec<_>, _>>()?;
+    let evaluations = evaluations_between(tx, from, to, Some(staff_id)).await?;
+    let periods = period::infos_between(tx, from, to).await?;
     let mut months = Vec::new();
     let mut m = to;
     loop {
         if period::employed_in(person, m) {
-            let info = period::info(tx, m).await?;
-            let evaluation = evaluations_in(tx, m, Some(staff_id)).await?.pop();
+            let closed = periods.iter().any(|(p, info)| *p == m && info.closed);
+            let label = m.to_string();
+            let evaluation = evaluations.iter().find(|e| e.month == label).cloned();
             let mine: Vec<Day> = days
                 .iter()
                 .filter(|d| m.contains(d.date))
@@ -421,8 +435,8 @@ pub(crate) async fn history_months(
                 .collect();
             let rs = reviews.iter().filter(|r| m.contains(r.date));
             months.push(HistoryMonth {
-                month: m.to_string(),
-                closed: info.closed,
+                month: label,
+                closed,
                 compliments: rs.clone().map(|r| r.compliments).sum(),
                 complaints: rs.map(|r| r.complaints).sum(),
                 attendance: calc::summarize(
@@ -445,7 +459,7 @@ pub(crate) async fn history_months(
 /// `GET /evaluations/history?staff_id=&from=&to=` (`evaluation.record`, the rule of
 /// `GET /evaluations`, which already shows every person's scorecard to its holders): one person's
 /// months, newest first — total and level, the month's praise / complaints and attendance. One
-/// transaction, three queries per month at most (a two-year cap); another spa's or an unknown
+/// transaction, a fixed number of queries for the whole range (a two-year cap); another spa's or an unknown
 /// `staff_id` is `404`, and so is the caller's own unless they are the owner (they read theirs at
 /// `GET /me/evaluations/history`).
 pub async fn history(

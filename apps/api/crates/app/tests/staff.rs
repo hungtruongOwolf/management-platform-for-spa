@@ -2903,6 +2903,40 @@ async fn adjustments_need_a_month_the_person_worked_in(pool: PgPool) -> TestResu
     Ok(())
 }
 
+/// Migration 0045: a profile's login is a member of the profile's spa, in the database too (the
+/// service already refuses it). A profile without a login is fine.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_profile_links_only_to_a_member_of_its_own_spa(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let stranger: Uuid =
+        sqlx::query_scalar("SELECT id FROM app.user_account WHERE phone_e164 = '+84913100333'")
+            .fetch_one(&s.h.owner)
+            .await?;
+    let linked = sqlx::query("UPDATE app.staff SET user_id = $2 WHERE id = $1")
+        .bind(s.mai)
+        .bind(stranger)
+        .execute(&s.h.owner)
+        .await;
+    assert!(
+        linked.is_err_and(|e| e.to_string().contains("staff_membership_fkey")),
+        "the other spa's owner is no member here"
+    );
+    let manager: Uuid =
+        sqlx::query_scalar("SELECT id FROM app.user_account WHERE phone_e164 = '+84912100111'")
+            .fetch_one(&s.h.owner)
+            .await?;
+    sqlx::query("UPDATE app.staff SET user_id = $2 WHERE id = $1")
+        .bind(s.mai)
+        .bind(manager)
+        .execute(&s.h.owner)
+        .await?;
+    sqlx::query("UPDATE app.staff SET user_id = NULL WHERE id = $1")
+        .bind(s.mai)
+        .execute(&s.h.owner)
+        .await?;
+    Ok(())
+}
+
 /// D10: pay terms and payroll rules are optimistic. A write names the version it read (`0` =
 /// none yet); a write over someone else's save is `412`, never a silent overwrite.
 #[sqlx::test(migrator = "kernel::MIGRATOR")]

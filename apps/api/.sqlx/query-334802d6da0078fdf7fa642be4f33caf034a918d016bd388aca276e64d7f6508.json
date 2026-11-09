@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT e.staff_id, e.criteria, e.serious_issue, e.total_points, e.result_level,\n                  e.coaching_plan, e.comment, u.full_name AS by_name, e.updated_at, e.version\n           FROM app.staff_evaluation e JOIN app.user_account u ON u.id = e.recorded_by\n           WHERE e.tenant_id = $1 AND e.work_date = $2 AND ($3::uuid IS NULL OR e.staff_id = $3)",
+  "query": "SELECT e.staff_id, e.work_date, e.criteria, e.serious_issue, e.total_points,\n                  e.result_level, e.coaching_plan, e.comment, u.full_name AS by_name,\n                  e.updated_at, e.version\n           FROM app.staff_evaluation e JOIN app.user_account u ON u.id = e.recorded_by\n           WHERE e.tenant_id = $1 AND e.work_date BETWEEN $2 AND $3\n             AND ($4::uuid IS NULL OR e.staff_id = $4)",
   "describe": {
     "columns": [
       {
@@ -16,6 +16,17 @@
       },
       {
         "ordinal": 1,
+        "name": "work_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "app.staff_evaluation",
+            "name": "work_date"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
         "name": "criteria",
         "type_info": "Jsonb",
         "origin": {
@@ -26,7 +37,7 @@
         }
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "serious_issue",
         "type_info": "Bool",
         "origin": {
@@ -37,7 +48,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "total_points",
         "type_info": "Int4",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "result_level",
         "type_info": "Text",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "coaching_plan",
         "type_info": "Text",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "comment",
         "type_info": "Text",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "by_name",
         "type_info": "Text",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -103,7 +114,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "version",
         "type_info": "Int8",
         "origin": {
@@ -118,10 +129,12 @@
       "Left": [
         "Uuid",
         "Date",
+        "Date",
         "Uuid"
       ]
     },
     "nullable": [
+      false,
       false,
       false,
       false,
@@ -134,5 +147,5 @@
       false
     ]
   },
-  "hash": "f69d0de665e2f04dd244db3177e24156b1282d5295f45c16457994c4fd40ccc1"
+  "hash": "334802d6da0078fdf7fa642be4f33caf034a918d016bd388aca276e64d7f6508"
 }

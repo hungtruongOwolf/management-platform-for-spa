@@ -275,5 +275,8 @@ Không có bảng mới. 0013:
 - FK `visit_line (tenant_id, customer_package_id, customer_package_item_id)` → `customer_package_item (tenant_id, customer_package_id, id)` (UNIQUE mới): item của dòng phải thuộc đúng gói. FK `appointment_setting.updated_by` → `user_account`. Thêm `NOT VALID` ở 0042, `VALIDATE` ở 0043.
 - Tổng quan mọi nhóm bảng (ER theo nhóm, RLS, toàn vẹn, migration theo dải): [docs/database-design.md](../../../docs/database-design.md).
 
+## Tài khoản của hồ sơ nhân viên (0045–0046, 2026-11-09)
+- FK `staff (tenant_id, user_id)` → `membership (tenant_id, user_id)` (`staff_membership_fkey`): hồ sơ chỉ gắn được với tài khoản là thành viên của chính spa đó. Trước đây chỉ có FK tới `user_account`, nên một lỗi có thể gắn tài khoản của spa khác và mọi phép nối "ai là quản lý / chủ spa" qua membership sẽ âm thầm bỏ sót. `membership` không bao giờ bị xóa (`app_rw` không có `DELETE`), nên `NO ACTION` không chặn thao tác nào của app. `NOT VALID` ở 0045, `VALIDATE` ở 0046; câu kiểm dữ liệu trước khi chạy nằm trong đầu file 0045.
+
 ## Seed
 Dữ liệu tenant Viên Phúc Y Đường: 1 chi nhánh (Phường Đông Hà), 10 nhóm và 35 dịch vụ từ [service-catalog](../product/service-catalog.md), role hệ thống, tài khoản chủ spa. Giá "Ôn ấm tử cung" và các gói liệu trình: chờ EM.

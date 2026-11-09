@@ -5,7 +5,7 @@
 use crate::calc::{self, AttendanceTotals, Day};
 use crate::month::Month;
 use crate::period;
-use crate::repo::{self, AttendanceRow};
+use crate::repo::{self, AttendanceRow, Cell};
 use crate::rules;
 use crate::scope::RecordScope;
 use chrono::{NaiveDate, NaiveTime, Timelike};
@@ -339,15 +339,35 @@ pub async fn record(
     }
     let (rules, _) = rules::load(&mut tx).await?;
     let by = actor.user_id.as_uuid();
+    // A fixed number of statements per batch (was three per cell): what was there, one write,
+    // one clear; then an audit row per cell that changed.
+    let cells: Vec<Cell> = entries
+        .iter()
+        .map(|e| Cell {
+            staff_id: e.staff_id,
+            day: e.date,
+        })
+        .collect();
+    let recorded: Vec<AttendanceDay> = repo::attendance_cells(&mut tx, &cells)
+        .await?
+        .into_iter()
+        .map(AttendanceDay::try_from)
+        .collect::<Result<_, _>>()?;
     let mut out = Vec::new();
+    let mut writes: Vec<serde_json::Value> = Vec::new();
+    let mut clears: Vec<Cell> = Vec::new();
+    let mut changed: Vec<(&Entry, Option<AttendanceDay>, Option<AttendanceDay>)> = Vec::new();
     for e in entries {
-        let before = repo::attendance_day(&mut tx, e.staff_id, e.date)
-            .await?
-            .map(AttendanceDay::try_from)
-            .transpose()?;
+        let before = recorded
+            .iter()
+            .find(|d| d.staff_id == e.staff_id && d.date == e.date)
+            .cloned();
         let after = match e.status {
             None => {
-                repo::delete_attendance(&mut tx, e.staff_id, e.date).await?;
+                clears.push(Cell {
+                    staff_id: e.staff_id,
+                    day: e.date,
+                });
                 None
             }
             Some(status) => {
@@ -370,28 +390,41 @@ pub async fn record(
                     late_minutes: i32::try_from(late).unwrap_or(0),
                     note: e.note.clone(),
                 };
-                repo::upsert_attendance(&mut tx, &row, by).await?;
+                writes.push(json!({
+                    "staff_id": row.staff_id, "work_date": row.work_date, "status": row.status,
+                    "check_in": row.check_in, "check_out": row.check_out,
+                    "late_minutes": row.late_minutes, "note": row.note,
+                }));
                 let day = AttendanceDay::try_from(row)?;
                 out.push(day.clone());
                 Some(day)
             }
         };
         if before != after {
-            audit::record(
-                &mut tx,
-                actor,
-                AuditEntry {
-                    action: "attendance.record",
-                    entity_type: "staff",
-                    entity_id: e.staff_id,
-                    before: audit_value(before.as_ref()),
-                    after: audit_value(after.as_ref())
-                        .or_else(|| Some(json!({"date": e.date, "cleared": true}))),
-                    reason: None,
-                },
-            )
-            .await?;
+            changed.push((e, before, after));
         }
+    }
+    if !writes.is_empty() {
+        repo::upsert_attendance_many(&mut tx, &serde_json::Value::Array(writes), by).await?;
+    }
+    if !clears.is_empty() {
+        repo::delete_attendance_many(&mut tx, &clears).await?;
+    }
+    for (e, before, after) in changed {
+        audit::record(
+            &mut tx,
+            actor,
+            AuditEntry {
+                action: "attendance.record",
+                entity_type: "staff",
+                entity_id: e.staff_id,
+                before: audit_value(before.as_ref()),
+                after: audit_value(after.as_ref())
+                    .or_else(|| Some(json!({"date": e.date, "cleared": true}))),
+                reason: None,
+            },
+        )
+        .await?;
     }
     tx.commit().await?;
     Ok(out)

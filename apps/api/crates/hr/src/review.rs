@@ -4,7 +4,7 @@
 
 use crate::month::Month;
 use crate::period;
-use crate::repo::{self, ReviewRow};
+use crate::repo::{self, Cell, ReviewRow};
 use crate::scope::RecordScope;
 use chrono::NaiveDate;
 use kernel::audit::{self, AuditEntry};
@@ -194,13 +194,34 @@ pub async fn record(
         period::require_open(&mut tx, m).await?;
     }
     let by = actor.user_id.as_uuid();
+    // A fixed number of statements per batch (was three per cell): what was there, one write,
+    // one clear; then an audit row per cell that changed.
+    let cells: Vec<Cell> = entries
+        .iter()
+        .map(|e| Cell {
+            staff_id: e.staff_id,
+            day: e.date,
+        })
+        .collect();
+    let recorded: Vec<DailyReview> = repo::review_cells(&mut tx, &cells)
+        .await?
+        .into_iter()
+        .map(DailyReview::from)
+        .collect();
     let mut out = Vec::new();
+    let mut writes: Vec<serde_json::Value> = Vec::new();
+    let mut clears: Vec<Cell> = Vec::new();
+    let mut changed: Vec<(&ReviewEntry, Option<DailyReview>)> = Vec::new();
     for e in entries {
-        let before = repo::review_day(&mut tx, e.staff_id, e.date)
-            .await?
-            .map(DailyReview::from);
+        let before = recorded
+            .iter()
+            .find(|r| r.staff_id == e.staff_id && r.date == e.date)
+            .cloned();
         if e.is_empty() {
-            repo::delete_review(&mut tx, e.staff_id, e.date).await?;
+            clears.push(Cell {
+                staff_id: e.staff_id,
+                day: e.date,
+            });
         } else {
             let row = ReviewRow {
                 staff_id: e.staff_id,
@@ -209,33 +230,45 @@ pub async fn record(
                 complaints: i32::try_from(e.complaints).unwrap_or(0),
                 note: e.note.clone(),
             };
-            repo::upsert_review(&mut tx, &row, by).await?;
+            writes.push(json!({
+                "staff_id": row.staff_id, "work_date": row.work_date,
+                "compliments": row.compliments, "complaints": row.complaints, "note": row.note,
+            }));
             out.push(DailyReview::from(row));
         }
-        let changed = match &before {
+        let differs = match &before {
             None => !e.is_empty(),
             Some(b) => {
                 (b.compliments, b.complaints, &b.note) != (e.compliments, e.complaints, &e.note)
             }
         };
-        if changed {
-            let summary = |c: u32, k: u32, note: bool| json!({"date": e.date, "compliments": c, "complaints": k, "has_note": note});
-            audit::record(
-                &mut tx,
-                actor,
-                AuditEntry {
-                    action: "evaluation.daily_review",
-                    entity_type: "staff",
-                    entity_id: e.staff_id,
-                    before: before
-                        .as_ref()
-                        .map(|b| summary(b.compliments, b.complaints, b.note.is_some())),
-                    after: Some(summary(e.compliments, e.complaints, e.note.is_some())),
-                    reason: None,
-                },
-            )
-            .await?;
+        if differs {
+            changed.push((e, before));
         }
+    }
+    if !writes.is_empty() {
+        repo::upsert_reviews_many(&mut tx, &serde_json::Value::Array(writes), by).await?;
+    }
+    if !clears.is_empty() {
+        repo::delete_reviews_many(&mut tx, &clears).await?;
+    }
+    for (e, before) in changed {
+        let summary = |c: u32, k: u32, note: bool| json!({"date": e.date, "compliments": c, "complaints": k, "has_note": note});
+        audit::record(
+            &mut tx,
+            actor,
+            AuditEntry {
+                action: "evaluation.daily_review",
+                entity_type: "staff",
+                entity_id: e.staff_id,
+                before: before
+                    .as_ref()
+                    .map(|b| summary(b.compliments, b.complaints, b.note.is_some())),
+                after: Some(summary(e.compliments, e.complaints, e.note.is_some())),
+                reason: None,
+            },
+        )
+        .await?;
     }
     tx.commit().await?;
     Ok(out)

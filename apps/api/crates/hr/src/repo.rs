@@ -130,6 +130,33 @@ pub async fn period(tx: &mut TenantTx, period: NaiveDate) -> Result<Option<Perio
     .await?)
 }
 
+pub struct DatedPeriodRow {
+    pub period: NaiveDate,
+    pub status: String,
+    pub closed_at: Option<DateTime<Utc>>,
+    pub closed_by_name: Option<String>,
+}
+
+/// The months `from..=to` that have a row (a month without one is open), in one query.
+pub async fn periods_between(
+    tx: &mut TenantTx,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<Vec<DatedPeriodRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        DatedPeriodRow,
+        r#"SELECT p.period, p.status, p.closed_at, u.full_name AS "closed_by_name?"
+           FROM app.payroll_period p LEFT JOIN app.user_account u ON u.id = p.closed_by
+           WHERE p.tenant_id = $1 AND p.period BETWEEN $2 AND $3"#,
+        tenant,
+        from,
+        to
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
 /// Creates the month's row if missing and locks it: `FOR SHARE` for writers of the month's
 /// records (many at once), `FOR UPDATE` for the close (exclusive). Returns the status.
 pub async fn lock_period(
@@ -216,46 +243,59 @@ pub async fn attendance_between(
     .await?)
 }
 
-pub async fn attendance_day(
+/// One (person, day) cell of a batch write.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Cell {
+    pub staff_id: Uuid,
+    pub day: NaiveDate,
+}
+
+fn columns(cells: &[Cell]) -> (Vec<Uuid>, Vec<NaiveDate>) {
+    cells.iter().map(|c| (c.staff_id, c.day)).unzip()
+}
+
+/// The recorded days among `cells`, in one query (a batch write's "before").
+pub async fn attendance_cells(
     tx: &mut TenantTx,
-    staff: Uuid,
-    day: NaiveDate,
-) -> Result<Option<AttendanceRow>, AppError> {
+    cells: &[Cell],
+) -> Result<Vec<AttendanceRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
+    let (staff, days) = columns(cells);
     Ok(sqlx::query_as!(
         AttendanceRow,
-        r#"SELECT staff_id, work_date, status, check_in, check_out, late_minutes, note
-           FROM app.attendance_day WHERE tenant_id = $1 AND staff_id = $2 AND work_date = $3"#,
+        r#"SELECT a.staff_id, a.work_date, a.status, a.check_in, a.check_out, a.late_minutes, a.note
+           FROM app.attendance_day a
+           JOIN UNNEST($2::uuid[], $3::date[]) AS c(staff_id, work_date)
+             ON c.staff_id = a.staff_id AND c.work_date = a.work_date
+           WHERE a.tenant_id = $1"#,
         tenant,
-        staff,
-        day
+        &staff[..],
+        &days[..]
     )
-    .fetch_optional(tx.conn())
+    .fetch_all(tx.conn())
     .await?)
 }
 
-pub async fn upsert_attendance(
+/// Records `rows` (JSON array of `{staff_id, work_date, status, check_in, check_out,
+/// late_minutes, note}`, no (person, day) twice) in one statement.
+pub async fn upsert_attendance_many(
     tx: &mut TenantTx,
-    row: &AttendanceRow,
+    rows: &Value,
     by: Uuid,
 ) -> Result<(), AppError> {
     let tenant = tx.tenant().as_uuid();
     sqlx::query!(
         r#"INSERT INTO app.attendance_day
              (tenant_id, staff_id, work_date, status, check_in, check_out, late_minutes, note, recorded_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           SELECT $1::uuid, r.staff_id, r.work_date, r.status, r.check_in, r.check_out, r.late_minutes, r.note, $3::uuid
+           FROM jsonb_to_recordset($2::jsonb) AS r(staff_id uuid, work_date date, status text, check_in time,
+                                            check_out time, late_minutes integer, note text)
            ON CONFLICT (tenant_id, staff_id, work_date) DO UPDATE SET
              status = EXCLUDED.status, check_in = EXCLUDED.check_in, check_out = EXCLUDED.check_out,
              late_minutes = EXCLUDED.late_minutes, note = EXCLUDED.note,
              recorded_by = EXCLUDED.recorded_by, updated_at = now()"#,
         tenant,
-        row.staff_id,
-        row.work_date,
-        row.status,
-        row.check_in,
-        row.check_out,
-        row.late_minutes,
-        row.note,
+        rows,
         by
     )
     .execute(tx.conn())
@@ -263,17 +303,17 @@ pub async fn upsert_attendance(
     Ok(())
 }
 
-pub async fn delete_attendance(
-    tx: &mut TenantTx,
-    staff: Uuid,
-    day: NaiveDate,
-) -> Result<(), AppError> {
+/// Clears `cells` in one statement.
+pub async fn delete_attendance_many(tx: &mut TenantTx, cells: &[Cell]) -> Result<(), AppError> {
     let tenant = tx.tenant().as_uuid();
+    let (staff, days) = columns(cells);
     sqlx::query!(
-        "DELETE FROM app.attendance_day WHERE tenant_id = $1 AND staff_id = $2 AND work_date = $3",
+        r#"DELETE FROM app.attendance_day a
+           USING UNNEST($2::uuid[], $3::date[]) AS c(staff_id, work_date)
+           WHERE a.tenant_id = $1 AND a.staff_id = c.staff_id AND a.work_date = c.work_date"#,
         tenant,
-        staff,
-        day
+        &staff[..],
+        &days[..]
     )
     .execute(tx.conn())
     .await?;
@@ -314,39 +354,44 @@ pub async fn reviews_between(
     .await?)
 }
 
-pub async fn review_day(
-    tx: &mut TenantTx,
-    staff: Uuid,
-    day: NaiveDate,
-) -> Result<Option<ReviewRow>, AppError> {
+/// The reviewed days among `cells`, in one query (a batch write's "before").
+pub async fn review_cells(tx: &mut TenantTx, cells: &[Cell]) -> Result<Vec<ReviewRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
+    let (staff, days) = columns(cells);
     Ok(sqlx::query_as!(
         ReviewRow,
-        r#"SELECT staff_id, work_date, compliments, complaints, note
-           FROM app.staff_daily_review WHERE tenant_id = $1 AND staff_id = $2 AND work_date = $3"#,
+        r#"SELECT r.staff_id, r.work_date, r.compliments, r.complaints, r.note
+           FROM app.staff_daily_review r
+           JOIN UNNEST($2::uuid[], $3::date[]) AS c(staff_id, work_date)
+             ON c.staff_id = r.staff_id AND c.work_date = r.work_date
+           WHERE r.tenant_id = $1"#,
         tenant,
-        staff,
-        day
+        &staff[..],
+        &days[..]
     )
-    .fetch_optional(tx.conn())
+    .fetch_all(tx.conn())
     .await?)
 }
 
-pub async fn upsert_review(tx: &mut TenantTx, row: &ReviewRow, by: Uuid) -> Result<(), AppError> {
+/// Records `rows` (JSON array of `{staff_id, work_date, compliments, complaints, note}`, no
+/// (person, day) twice) in one statement.
+pub async fn upsert_reviews_many(
+    tx: &mut TenantTx,
+    rows: &Value,
+    by: Uuid,
+) -> Result<(), AppError> {
     let tenant = tx.tenant().as_uuid();
     sqlx::query!(
         r#"INSERT INTO app.staff_daily_review
              (tenant_id, staff_id, work_date, compliments, complaints, note, recorded_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           SELECT $1::uuid, r.staff_id, r.work_date, r.compliments, r.complaints, r.note, $3::uuid
+           FROM jsonb_to_recordset($2::jsonb) AS r(staff_id uuid, work_date date, compliments integer,
+                                            complaints integer, note text)
            ON CONFLICT (tenant_id, staff_id, work_date) DO UPDATE SET
              compliments = EXCLUDED.compliments, complaints = EXCLUDED.complaints,
              note = EXCLUDED.note, recorded_by = EXCLUDED.recorded_by, updated_at = now()"#,
         tenant,
-        row.staff_id,
-        row.work_date,
-        row.compliments,
-        row.complaints,
-        row.note,
+        rows,
         by
     )
     .execute(tx.conn())
@@ -354,13 +399,17 @@ pub async fn upsert_review(tx: &mut TenantTx, row: &ReviewRow, by: Uuid) -> Resu
     Ok(())
 }
 
-pub async fn delete_review(tx: &mut TenantTx, staff: Uuid, day: NaiveDate) -> Result<(), AppError> {
+/// Clears `cells` in one statement.
+pub async fn delete_reviews_many(tx: &mut TenantTx, cells: &[Cell]) -> Result<(), AppError> {
     let tenant = tx.tenant().as_uuid();
+    let (staff, days) = columns(cells);
     sqlx::query!(
-        "DELETE FROM app.staff_daily_review WHERE tenant_id = $1 AND staff_id = $2 AND work_date = $3",
+        r#"DELETE FROM app.staff_daily_review r
+           USING UNNEST($2::uuid[], $3::date[]) AS c(staff_id, work_date)
+           WHERE r.tenant_id = $1 AND r.staff_id = c.staff_id AND r.work_date = c.work_date"#,
         tenant,
-        staff,
-        day
+        &staff[..],
+        &days[..]
     )
     .execute(tx.conn())
     .await?;
@@ -372,6 +421,8 @@ pub async fn delete_review(tx: &mut TenantTx, staff: Uuid, day: NaiveDate) -> Re
 #[derive(Debug, Clone)]
 pub struct EvaluationRow {
     pub staff_id: Uuid,
+    /// First day of the evaluated month.
+    pub work_date: NaiveDate,
     pub criteria: Value,
     pub serious_issue: bool,
     pub total_points: i32,
@@ -383,20 +434,25 @@ pub struct EvaluationRow {
     pub version: i64,
 }
 
+/// Evaluations of the months `from..=to` (first days), of one person or everyone, in one query.
 pub async fn evaluations(
     tx: &mut TenantTx,
-    month: NaiveDate,
+    from: NaiveDate,
+    to: NaiveDate,
     staff: Option<Uuid>,
 ) -> Result<Vec<EvaluationRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         EvaluationRow,
-        r#"SELECT e.staff_id, e.criteria, e.serious_issue, e.total_points, e.result_level,
-                  e.coaching_plan, e.comment, u.full_name AS by_name, e.updated_at, e.version
+        r#"SELECT e.staff_id, e.work_date, e.criteria, e.serious_issue, e.total_points,
+                  e.result_level, e.coaching_plan, e.comment, u.full_name AS by_name,
+                  e.updated_at, e.version
            FROM app.staff_evaluation e JOIN app.user_account u ON u.id = e.recorded_by
-           WHERE e.tenant_id = $1 AND e.work_date = $2 AND ($3::uuid IS NULL OR e.staff_id = $3)"#,
+           WHERE e.tenant_id = $1 AND e.work_date BETWEEN $2 AND $3
+             AND ($4::uuid IS NULL OR e.staff_id = $4)"#,
         tenant,
-        month,
+        from,
+        to,
         staff
     )
     .fetch_all(tx.conn())
