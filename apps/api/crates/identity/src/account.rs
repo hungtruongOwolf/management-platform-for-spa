@@ -76,14 +76,7 @@ impl LoginRole {
 }
 
 fn policy_error(field: &str, e: PasswordError) -> AppError {
-    AppError::Validation(vec![FieldError::new(
-        field,
-        match e {
-            PasswordError::TooShort => "too_short",
-            PasswordError::TooLong => "too_long",
-            PasswordError::Hashing => "invalid",
-        },
-    )])
+    AppError::Validation(vec![FieldError::new(field, e.code())])
 }
 
 /// Argon2id on the blocking pool.

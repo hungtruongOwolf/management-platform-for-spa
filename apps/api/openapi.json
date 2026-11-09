@@ -2157,7 +2157,7 @@
             "description": "auth.invalid_credentials (wrong current password; counts toward the lockout) | auth.unauthenticated"
           },
           "422": {
-            "description": "new_password too_short | too_long | same_as_current | is_phone"
+            "description": "new_password too_short | too_long | too_common | same_as_current | is_phone"
           },
           "429": {}
         }

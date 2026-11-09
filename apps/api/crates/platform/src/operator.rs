@@ -36,16 +36,7 @@ pub async fn add_operator(
     let hashed = tokio::task::spawn_blocking(move || password::hash(&candidate))
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?
-        .map_err(|e| {
-            AppError::Validation(vec![FieldError::new(
-                "password",
-                match e {
-                    password::PasswordError::TooShort => "too_short",
-                    password::PasswordError::TooLong => "too_long",
-                    password::PasswordError::Hashing => "invalid",
-                },
-            )])
-        })?;
+        .map_err(|e| AppError::Validation(vec![FieldError::new("password", e.code())]))?;
     let id = Uuid::now_v7();
     let inserted = sqlx::query!(
         "INSERT INTO app.platform_operator (id, username, full_name, password_hash)

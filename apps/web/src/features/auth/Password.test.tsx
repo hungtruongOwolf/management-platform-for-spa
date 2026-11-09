@@ -46,6 +46,7 @@ describe("temporary password (ADR-0016)", () => {
         const b = body as { current_password: string; new_password: string };
         if (b.current_password !== "ABCD-EFGH-JKLM") return problem(401, "auth.invalid_credentials");
         if (b.new_password === "0912300111") return problem(422, "validation_failed", [{ field: "new_password", code: "is_phone" }]);
+        if (b.new_password === "Password1234") return problem(422, "validation_failed", [{ field: "new_password", code: "too_common" }]);
         stage = "done";
         return Response.json(ME);
       }
@@ -71,6 +72,13 @@ describe("temporary password (ADR-0016)", () => {
     await user.type(screen.getByLabelText("Nhập lại mật khẩu mới"), "0912300111");
     await user.click(screen.getByRole("button", { name: "Đổi mật khẩu" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Không dùng số điện thoại");
+
+    await user.clear(screen.getByLabelText("Mật khẩu mới"));
+    await user.clear(screen.getByLabelText("Nhập lại mật khẩu mới"));
+    await user.type(screen.getByLabelText("Mật khẩu mới"), "Password1234");
+    await user.type(screen.getByLabelText("Nhập lại mật khẩu mới"), "Password1234");
+    await user.click(screen.getByRole("button", { name: "Đổi mật khẩu" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("quá phổ biến");
 
     await user.clear(screen.getByLabelText("Mật khẩu mới"));
     await user.clear(screen.getByLabelText("Nhập lại mật khẩu mới"));
