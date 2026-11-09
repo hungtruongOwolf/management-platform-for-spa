@@ -40,6 +40,29 @@ pub async fn info(tx: &mut TenantTx, month: Month) -> Result<PeriodInfo, AppErro
     })
 }
 
+/// The months of `from..=to` that have a payroll row, with their status, in one query; a month
+/// not listed is open (as [`info`] reads it).
+pub async fn infos_between(
+    tx: &mut TenantTx,
+    from: Month,
+    to: Month,
+) -> Result<Vec<(Month, PeriodInfo)>, AppError> {
+    Ok(repo::periods_between(tx, from.first_day(), to.first_day())
+        .await?
+        .into_iter()
+        .map(|p| {
+            (
+                Month::of(p.period),
+                PeriodInfo {
+                    closed: p.status == "closed",
+                    closed_at: p.closed_at,
+                    closed_by_name: p.closed_by_name,
+                },
+            )
+        })
+        .collect())
+}
+
 /// Locks the month for a write of its records; `409 payroll.period_closed` if it is closed.
 pub async fn require_open(tx: &mut TenantTx, month: Month) -> Result<(), AppError> {
     if repo::lock_period(tx, month.first_day(), false).await? == "closed" {

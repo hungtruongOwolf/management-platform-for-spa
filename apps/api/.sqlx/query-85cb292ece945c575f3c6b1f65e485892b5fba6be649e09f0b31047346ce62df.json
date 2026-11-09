@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM app.staff_daily_review r\n           USING UNNEST($2::uuid[], $3::date[]) AS c(staff_id, work_date)\n           WHERE r.tenant_id = $1 AND r.staff_id = c.staff_id AND r.work_date = c.work_date",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray",
+        "DateArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "85cb292ece945c575f3c6b1f65e485892b5fba6be649e09f0b31047346ce62df"
+}

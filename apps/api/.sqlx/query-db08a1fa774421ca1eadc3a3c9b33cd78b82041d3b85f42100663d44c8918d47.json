@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.attendance_day\n             (tenant_id, staff_id, work_date, status, check_in, check_out, late_minutes, note, recorded_by)\n           SELECT $1::uuid, r.staff_id, r.work_date, r.status, r.check_in, r.check_out, r.late_minutes, r.note, $3::uuid\n           FROM jsonb_to_recordset($2::jsonb) AS r(staff_id uuid, work_date date, status text, check_in time,\n                                            check_out time, late_minutes integer, note text)\n           ON CONFLICT (tenant_id, staff_id, work_date) DO UPDATE SET\n             status = EXCLUDED.status, check_in = EXCLUDED.check_in, check_out = EXCLUDED.check_out,\n             late_minutes = EXCLUDED.late_minutes, note = EXCLUDED.note,\n             recorded_by = EXCLUDED.recorded_by, updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "db08a1fa774421ca1eadc3a3c9b33cd78b82041d3b85f42100663d44c8918d47"
+}

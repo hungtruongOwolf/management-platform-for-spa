@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT staff_id, work_date, compliments, complaints, note\n           FROM app.staff_daily_review WHERE tenant_id = $1 AND staff_id = $2 AND work_date = $3",
+  "query": "SELECT r.staff_id, r.work_date, r.compliments, r.complaints, r.note\n           FROM app.staff_daily_review r\n           JOIN UNNEST($2::uuid[], $3::date[]) AS c(staff_id, work_date)\n             ON c.staff_id = r.staff_id AND c.work_date = r.work_date\n           WHERE r.tenant_id = $1",
   "describe": {
     "columns": [
       {
@@ -62,8 +62,8 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Uuid",
-        "Date"
+        "UuidArray",
+        "DateArray"
       ]
     },
     "nullable": [
@@ -74,5 +74,5 @@
       true
     ]
   },
-  "hash": "d3d3437e8622559f2610dc73462886f218b421326934f209d9d4c9be7be63064"
+  "hash": "c65e0f691ecd1609af4369127ad139ed145e3daf4def91c0bb2b7a04ed7c674d"
 }

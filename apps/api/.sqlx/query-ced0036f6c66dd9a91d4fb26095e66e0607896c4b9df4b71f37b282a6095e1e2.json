@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT staff_id, work_date, status, check_in, check_out, late_minutes, note\n           FROM app.attendance_day WHERE tenant_id = $1 AND staff_id = $2 AND work_date = $3",
+  "query": "SELECT a.staff_id, a.work_date, a.status, a.check_in, a.check_out, a.late_minutes, a.note\n           FROM app.attendance_day a\n           JOIN UNNEST($2::uuid[], $3::date[]) AS c(staff_id, work_date)\n             ON c.staff_id = a.staff_id AND c.work_date = a.work_date\n           WHERE a.tenant_id = $1",
   "describe": {
     "columns": [
       {
@@ -84,8 +84,8 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Uuid",
-        "Date"
+        "UuidArray",
+        "DateArray"
       ]
     },
     "nullable": [
@@ -98,5 +98,5 @@
       true
     ]
   },
-  "hash": "58169556bc025d73b676a6c4b5be066953cdfeb20b795672f9aabad0d2c59ce2"
+  "hash": "ced0036f6c66dd9a91d4fb26095e66e0607896c4b9df4b71f37b282a6095e1e2"
 }
