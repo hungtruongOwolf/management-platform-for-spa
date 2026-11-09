@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, full_name, phone_e164, status, locked_until,\n                  mfa_enabled_at IS NOT NULL AS \"mfa_enabled!\", must_change_password, created_at\n           FROM app.user_account\n           WHERE ($1::text IS NOT NULL AND phone_e164 LIKE $1 || '%')\n              OR ($1::text IS NULL AND app.search_fold(full_name) LIKE '%' || app.search_fold($2) || '%')\n           ORDER BY full_name, id\n           LIMIT 50",
+  "query": "SELECT id, full_name, phone_e164, status, locked_until,\n                  mfa_enabled_at IS NOT NULL AS \"mfa_enabled!\", must_change_password, created_at\n           FROM app.user_account\n           WHERE ($1::text IS NOT NULL AND phone_e164 LIKE $1 || '%')\n              OR ($1::text IS NULL AND app.search_fold(full_name) LIKE\n                    '%' || replace(replace(replace(app.search_fold($2), '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%'\n                    ESCAPE '\\')\n           ORDER BY full_name, id\n           LIMIT 50",
   "describe": {
     "columns": [
       {
@@ -104,5 +104,5 @@
       false
     ]
   },
-  "hash": "a83b6e54b0d42cd32a962543ca78cc41c9c3bb82353637a3cce7cb3722a77b09"
+  "hash": "1462e29e0f00e87010e5fe1e7a16a211e79ec42543975ba5d03663b452d71704"
 }

@@ -536,6 +536,8 @@ pub struct HistoryPurchase {
     /// Bought by someone else for this customer: who paid (the money fields are theirs). Null
     /// on the payer's own timeline.
     pub payer_name: Option<String>,
+    /// The sale's optimistic-lock version: the `If-Match` of `PATCH /sales/{id}` ("Sửa ghi chú gói").
+    pub version: i64,
     /// "Ghi chú gói" (F4), only for `customer.health_notes.read` (absent otherwise or when
     /// empty), like a visit's session note.
     #[serde(skip_serializing_if = "Option::is_none")]

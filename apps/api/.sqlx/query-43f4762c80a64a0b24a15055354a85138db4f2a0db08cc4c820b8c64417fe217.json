@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.business_date, s.status,\n                  EXISTS (SELECT 1 FROM app.sale_line l\n                          WHERE l.tenant_id = s.tenant_id AND l.sale_id = s.id AND l.line_type = 'package')\n                    AS \"sells_packages!\"\n           FROM app.sale s WHERE s.tenant_id = $1 AND s.id = $2 FOR UPDATE OF s",
+  "query": "SELECT s.business_date, s.status, s.version,\n                  EXISTS (SELECT 1 FROM app.sale_line l\n                          WHERE l.tenant_id = s.tenant_id AND l.sale_id = s.id AND l.line_type = 'package')\n                    AS \"sells_packages!\"\n           FROM app.sale s WHERE s.tenant_id = $1 AND s.id = $2 FOR UPDATE OF s",
   "describe": {
     "columns": [
       {
@@ -27,6 +27,17 @@
       },
       {
         "ordinal": 2,
+        "name": "version",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "version"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
         "name": "sells_packages!",
         "type_info": "Bool",
         "origin": "Expression"
@@ -41,8 +52,9 @@
     "nullable": [
       false,
       false,
+      false,
       null
     ]
   },
-  "hash": "29718af7d984e6d7daa0ee51b53893400cdfc7c612d41297dc5fd8a9ddbbbcca"
+  "hash": "43f4762c80a64a0b24a15055354a85138db4f2a0db08cc4c820b8c64417fe217"
 }

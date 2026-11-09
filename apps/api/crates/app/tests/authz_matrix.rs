@@ -567,7 +567,8 @@ const ROUTES: &[Route] = &[
         Access::Perm(P::CustomerHealthNotesWrite, OWNER_MANAGER),
     )
     .id(Target::Sale)
-    .body(sale_note_body),
+    .body(sale_note_body)
+    .if_match(),
     route(
         "POST",
         "/api/v1/sales/{id}/void",
