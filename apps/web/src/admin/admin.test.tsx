@@ -215,3 +215,127 @@ describe("feature switches", () => {
     expect(puts).toEqual([{ enabled: false, reason: "Gói cơ bản" }]);
   });
 });
+
+describe("console sheets and caches (review 2026-11)", () => {
+  const spaServer = (counts: Record<string, number>, steppedUp = { value: true }) => {
+    let status = "active";
+    return server((method, path) => {
+      const bump = (key: string) => {
+        counts[key] = (counts[key] ?? 0) + 1;
+      };
+      if (path === "/api/v1/admin/me") return Response.json(ME);
+      if (path === "/api/v1/admin/auth/reauth") return problem(401, "auth.invalid_credentials");
+      if (path === "/api/v1/admin/tenants") return Response.json([{ ...SPA, status }]);
+      if (path === `/api/v1/admin/tenants/${SPA.id}`) return Response.json({ ...SPA, status });
+      if (path === `/api/v1/admin/tenants/${SPA.id}/features`) {
+        bump("features");
+        return Response.json([{ key: "appointments", name: "Lịch hẹn", enabled: true, updated_at: null }]);
+      }
+      if (path === `/api/v1/admin/tenants/${SPA.id}/roles`) {
+        bump("roles");
+        return Response.json([]);
+      }
+      if (path === "/api/v1/admin/permissions") return Response.json([]);
+      if (path.startsWith(`/api/v1/admin/tenants/${SPA.id}/audit`)) {
+        bump("spaAudit");
+        return Response.json({ items: [], next_before: null });
+      }
+      if (path.startsWith("/api/v1/admin/audit")) {
+        bump("audit");
+        return Response.json({ items: [], next_before: null });
+      }
+      if (path === `/api/v1/admin/tenants/${SPA.id}/suspend` && method === "POST") {
+        if (!steppedUp.value) return problem(403, "platform.step_up_required");
+        status = "suspended";
+        return Response.json({ tenant: { ...SPA, status }, revoked_sessions: 0 });
+      }
+      return new Response(null, { status: 404 });
+    });
+  };
+
+  it("reopens a cancelled sheet empty: no old reason, no old error", async () => {
+    spaServer({});
+    at(`/admin/spa/${SPA.id}`);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Tạm ngưng spa" }));
+    let sheet = await screen.findByRole("dialog", { name: `Tạm ngưng ${SPA.name}?` });
+    await user.type(within(sheet).getByLabelText("Lý do"), "ab");
+    await user.click(within(sheet).getByRole("button", { name: "Hủy" }));
+    await user.click(screen.getByRole("button", { name: "Tạm ngưng spa" }));
+    sheet = await screen.findByRole("dialog", { name: `Tạm ngưng ${SPA.name}?` });
+    expect(within(sheet).getByLabelText("Lý do")).toHaveValue("");
+    await user.click(within(sheet).getByRole("button", { name: "Hủy" }));
+
+    await user.click(await screen.findByRole("button", { name: "Tắt Lịch hẹn" }));
+    let feature = await screen.findByRole("dialog", { name: "Tắt Lịch hẹn?" });
+    await user.type(within(feature).getByLabelText("Lý do"), "Gói cơ bản");
+    await user.click(within(feature).getByRole("button", { name: "Hủy" }));
+    await user.click(screen.getByRole("button", { name: "Tắt Lịch hẹn" }));
+    feature = await screen.findByRole("dialog", { name: "Tắt Lịch hẹn?" });
+    expect(within(feature).getByLabelText("Lý do")).toHaveValue("");
+    expect(within(feature).getByLabelText("Lý do")).toHaveAttribute("maxlength", "500");
+  });
+
+  it("clears the step-up dialog after Hủy", async () => {
+    spaServer({}, { value: false });
+    at(`/admin/spa/${SPA.id}`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Tạm ngưng spa" }));
+    const sheet = await screen.findByRole("dialog", { name: `Tạm ngưng ${SPA.name}?` });
+    await user.type(within(sheet).getByLabelText("Lý do"), "Chưa gia hạn");
+    await user.click(within(sheet).getByRole("button", { name: "Tạm ngưng" }));
+
+    let stepUp = await screen.findByRole("dialog", { name: "Xác nhận lại" });
+    await user.type(within(stepUp).getByLabelText("Mật khẩu"), "sai-mat-khau");
+    await user.type(within(stepUp).getByLabelText("Mã xác thực"), "123456");
+    await user.click(within(stepUp).getByRole("button", { name: "Xác nhận" }));
+    expect(await within(stepUp).findByRole("alert")).toBeInTheDocument();
+    await user.click(within(stepUp).getByRole("button", { name: "Hủy" }));
+
+    await user.click(within(sheet).getByRole("button", { name: "Tạm ngưng" }));
+    stepUp = await screen.findByRole("dialog", { name: "Xác nhận lại" });
+    expect(within(stepUp).getByLabelText("Mật khẩu")).toHaveValue("");
+    expect(within(stepUp).queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("a write refreshes the platform log but never re-reads an open spa trail (each read is audited)", async () => {
+    const counts: Record<string, number> = {};
+    spaServer(counts);
+    at("/admin/nhat-ky");
+    const user = userEvent.setup();
+    await waitFor(() => {
+      expect(counts.audit).toBe(1);
+    });
+
+    await user.click(screen.getByRole("link", { name: "Spa" }));
+    await user.click(await screen.findByRole("link", { name: SPA.name }));
+    await user.click(await screen.findByRole("button", { name: "Xem nhật ký" }));
+    await waitFor(() => {
+      expect(counts.spaAudit).toBe(1);
+    });
+
+    await user.click(screen.getByRole("button", { name: "Tạm ngưng spa" }));
+    const sheet = await screen.findByRole("dialog", { name: `Tạm ngưng ${SPA.name}?` });
+    await user.type(within(sheet).getByLabelText("Lý do"), "Chưa gia hạn");
+    await user.click(within(sheet).getByRole("button", { name: "Tạm ngưng" }));
+    expect(await screen.findByRole("button", { name: "Mở lại spa" })).toBeInTheDocument();
+    expect(counts).toMatchObject({ spaAudit: 1, features: 1, roles: 1 });
+
+    await user.click(screen.getByRole("link", { name: "Nhật ký" }));
+    await waitFor(() => {
+      expect(counts.audit).toBe(2);
+    });
+  });
+
+  it("caps the create-spa names at the server's 200 characters", async () => {
+    spaServer({});
+    at("/admin");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Tạo spa" }));
+    const form = await screen.findByRole("dialog", { name: "Tạo spa" });
+    for (const label of ["Tên spa", "Chi nhánh đầu tiên (không bắt buộc)", "Tên chủ spa"]) {
+      expect(within(form).getByLabelText(label)).toHaveAttribute("maxlength", "200");
+    }
+  });
+});

@@ -1,12 +1,13 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type SyntheticEvent } from "react";
 import { BottomSheet } from "../components/BottomSheet";
-import { adminApi, adminDateTime, adminKeys, type TenantRow } from "./api";
+import { adminApi, adminDateTime, adminKeys, markAuditStale, REASON_MAX, type TenantRow } from "./api";
 import { FeaturesPanel } from "./FeaturesPanel";
 import { SpaAuditPanel, SpaRolesPanel } from "./SpaPanels";
 import { adminFieldError, adminMessage } from "./messages";
 import { AdminLink } from "./nav";
 import { StepUpCancelled, useStepUp } from "./StepUp";
+import { useResetOnOpen } from "./useResetOnOpen";
 import { StatusBadge } from "./TenantsPage";
 
 /** One spa: its metadata and the suspend / reopen switch (spec US4). */
@@ -103,6 +104,10 @@ function StatusSheet({ tenant, open, onClose }: { tenant: TenantRow; open: boole
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const suspend = tenant.status === "active";
+  useResetOnOpen(open, () => {
+    setReason("");
+    setError(null);
+  });
 
   const submit = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -112,8 +117,10 @@ function StatusSheet({ tenant, open, onClose }: { tenant: TenantRow; open: boole
     try {
       const changed = await stepUp(() => adminApi.setStatus(tenant.id, suspend, reason.trim()));
       queryClient.setQueryData(adminKeys.tenant(tenant.id), changed.tenant);
-      await queryClient.invalidateQueries({ queryKey: adminKeys.tenants });
-      setReason("");
+      // Exact: the prefix would also refetch this spa's open panels, and each refetch of its
+      // audit trail writes a `platform.tenant_audit.read` row.
+      await queryClient.invalidateQueries({ queryKey: adminKeys.tenants, exact: true });
+      markAuditStale(queryClient);
       onClose();
     } catch (err) {
       if (!(err instanceof StepUpCancelled)) setError(err);
@@ -155,6 +162,7 @@ function StatusSheet({ tenant, open, onClose }: { tenant: TenantRow; open: boole
           <textarea
             id="status-reason"
             className="input"
+            maxLength={REASON_MAX}
             value={reason}
             onChange={(e) => {
               setReason(e.target.value);
