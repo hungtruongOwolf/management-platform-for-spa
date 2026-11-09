@@ -16,7 +16,7 @@ async function regular(page: Page, name: string) {
   });
   const phone = uniquePhone();
   const created = await page.request.post("/api/v1/customers", {
-    headers: WRITE,
+    headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
     data: { full_name: name, phone, gender: "female" },
   });
   expect(created.status()).toBe(201);

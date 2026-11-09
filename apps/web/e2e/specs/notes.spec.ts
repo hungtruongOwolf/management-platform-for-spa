@@ -12,7 +12,7 @@ test.describe("nhật ký ghi chú", () => {
     const stamp = String(Date.now()).slice(-6);
     const name = `Khách ghi chú ${stamp}`;
     const created = await page.request.post("/api/v1/customers", {
-      headers: WRITE,
+      headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
       data: { full_name: name, phone: uniquePhone(), gender: "female", note: `Thích trà gừng ${stamp}`, health_note: `Dị ứng tinh dầu ${stamp}` },
     });
     expect(created.status()).toBe(201);

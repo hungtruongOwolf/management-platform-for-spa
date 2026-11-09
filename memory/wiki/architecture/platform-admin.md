@@ -56,7 +56,7 @@ Tất cả: `SECURITY DEFINER`, `SET search_path = app, pg_temp`, SQL tĩnh, `RE
 | `platform_set_tenant_role(t, tenant, key, perms text[] \| NULL)` (ghi, 0041) | khóa role hệ thống `key` của spa; thay `role_permission` bằng `perms` (NULL = mẫu hiện tại); `follows_template = perms IS NULL`; không dòng = không có spa / role | `role_id, before text[], after text[]` (sắp theo tên) |
 | `user_spa_suspended(user) → bool` (không token; như `tenants_of_user`) | membership active của user ở spa `suspended` và không spa active nào | bool — chỉ dùng sau khi mật khẩu đã đúng |
 
-Tìm tài khoản (PR C) **không** có hàm definer riêng (bản thiết kế ban đầu có `platform_account_search`, khi build đã bỏ): `user_account` là bảng toàn cục không RLS, nên `platform::accounts` (sau extractor `Operator`) truy vấn thẳng nó (SĐT tiền tố E.164 hoặc `search_fold(full_name) LIKE`, ≤ 50), rồi gọi `platform_account_memberships` cho các id tìm được (sửa theo code 2026-11-09).
+Tìm tài khoản (PR C) **không** có hàm definer riêng (bản thiết kế ban đầu có `platform_account_search`, khi build đã bỏ): `user_account` là bảng toàn cục không RLS, nên `platform::accounts` (sau extractor `Operator`) truy vấn thẳng nó (SĐT tiền tố E.164 hoặc `search_fold(full_name) LIKE`, ≤ 50), rồi gọi `platform_account_memberships` cho các id tìm được (sửa theo code 2026-11-09). Từ ADR-0019 D17: tên được escape `\`, `%`, `_` rồi so bằng `LIKE … ESCAPE '\'`; lượt tìm và dòng audit `platform.account.search` (chuỗi đã che bằng `audit::masked_query`, `by`, `results`) nằm chung một transaction.
 
 **Mọi thao tác ghi của console đi qua một hàm có `platform_gate(t, true)`** (0041, sau review PR C): trước đó khóa / mở khóa / reset MFA / đặt lại mật khẩu / đăng xuất tài khoản và quyền riêng của một spa là câu ghi `app_rw` thường, step-up chỉ được kiểm ở extractor Rust. Phần ghi vào `audit_log` của spa vẫn là INSERT dưới RLS của spa đó (append-only). `app.purge_sessions` (0035) từ 0041 xóa cả `platform_session` đã hết hạn / thu hồi quá 30 ngày.
 
@@ -87,7 +87,7 @@ Test (`app/tests/platform.rs`, `platform_functions_check_the_operator_session_th
 | `GET /tenants/{id}/roles` | — | `[{key, name, follows_template, permissions[]}]` | |
 | `PUT /tenants/{id}/roles/{key}` 🔐 | `{permissions[], reason}` | role | `422 role.*` |
 | `POST /tenants/{id}/roles/{key}/reset` 🔐 | `{reason}` | role | |
-| `GET /accounts?q=` | q ≥ 3 ký tự | `AccountRow[]` ≤ 50 | `422 q too_short` |
+| `GET /accounts?q=` | q ≥ 3 ký tự | `AccountRow[]` ≤ 50; ghi audit `platform.account.search` | `422 q too_short` |
 | `POST /accounts/{id}/lock` / `unlock` 🔐 | `{reason}` | `AccountRow` | `409 platform.last_owner`, `409 account.status_unchanged` |
 | `POST /accounts/{id}/reset-password` 🔐 | `{reason}` | `{temporary_password}` `no-store` | `409 account.locked` |
 | `POST /accounts/{id}/reset-mfa` 🔐 | `{reason}` | `AccountRow` | `409 account.mfa_not_enabled` |

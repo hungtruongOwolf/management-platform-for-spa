@@ -44,16 +44,25 @@ export function customerQuery(id: string) {
   });
 }
 
-export async function createCustomer(body: CustomerCreate): Promise<Customer> {
-  return (await api("/customers", { method: "POST", body })) as Customer;
+/**
+ * `idempotencyKey`: one per create attempt (ADR-0019 D11). A double click or a retry of the same
+ * attempt sends the same key and gets the profile the first request made, never a second one;
+ * the caller takes a new key once a create succeeded.
+ */
+export async function createCustomer(body: CustomerCreate, idempotencyKey: string): Promise<Customer> {
+  return (await api("/customers", {
+    method: "POST",
+    body,
+    headers: { "Idempotency-Key": idempotencyKey },
+  })) as Customer;
 }
 
 /**
  * An anonymous walk-in (EM 2026-11-07): a profile with neither name nor phone, shown everywhere
  * as "Khách vãng lai", so the visit is recorded like any other. A name added later keeps the history.
  */
-export async function createWalkIn(): Promise<Customer> {
-  return createCustomer({ full_name: null, phone: null });
+export async function createWalkIn(idempotencyKey: string): Promise<Customer> {
+  return createCustomer({ full_name: null, phone: null }, idempotencyKey);
 }
 
 /** Mirrors the server: a date of birth is not after today and at most 120 years back. */

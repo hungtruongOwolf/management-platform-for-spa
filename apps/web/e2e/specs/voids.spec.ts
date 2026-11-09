@@ -25,7 +25,7 @@ async function customerWithVisit(
     serviceId: service.id,
   });
   const customer = await page.request.post("/api/v1/customers", {
-    headers: WRITE,
+    headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
     data: { full_name: fullName, phone, gender: "female" },
   });
   expect(customer.status()).toBe(201);

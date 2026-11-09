@@ -270,6 +270,7 @@ interface Call {
   url: string;
   body: unknown;
   key: string | undefined;
+  ifMatch?: string | undefined;
 }
 
 function serve(
@@ -296,6 +297,7 @@ function serve(
           ? (JSON.parse(init.body) as unknown)
           : undefined,
       key: headers["Idempotency-Key"],
+      ifMatch: headers["If-Match"],
     };
     calls.push(call);
     const json = (v: unknown) => Promise.resolve(Response.json(v));
@@ -876,6 +878,7 @@ describe("/quay day list (EM live test 2026-11-08)", () => {
         payments: [],
         total: 790_000,
         voided: false,
+        version: 4,
       },
     ],
   };
@@ -937,6 +940,10 @@ describe("/quay day list (EM live test 2026-11-08)", () => {
         calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/sales/ps1")?.body,
       ).toEqual({ note: "Đau thắt lưng" });
     });
+    // The version the day list read (ADR-0019 D10): a sale changed since is refused, not overwritten.
+    expect(
+      calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/sales/ps1")?.ifMatch,
+    ).toBe('"4"');
     expect(
       await screen.findByText("Đã lưu ghi chú gói của Nguyễn Thị Hà."),
     ).toBeInTheDocument();
@@ -996,6 +1003,7 @@ describe("/quay day list (EM live test 2026-11-08)", () => {
         status: "open",
         closer_name: "KTV Lan",
         created_at: "2026-11-05T03:30:00Z",
+        version: 2,
         lines: [
           {
             id: "sl1",
@@ -1076,6 +1084,7 @@ describe("/quay day list (EM live test 2026-11-08)", () => {
         amount_paid: 1_500_000,
         status: "open",
         created_at: "2026-11-05T03:30:00Z",
+        version: 3,
         lines: [
           {
             id: "sl1",
@@ -1118,6 +1127,9 @@ describe("/quay day list (EM live test 2026-11-08)", () => {
         calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/sales/s1")?.body,
       ).toEqual({ note: "Đau thắt lưng" });
     });
+    expect(
+      calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/sales/s1")?.ifMatch,
+    ).toBe('"3"');
     expect(
       await screen.findByText("Đã lưu ghi chú gói của Nguyễn Thị Hà."),
     ).toBeInTheDocument();

@@ -9,7 +9,7 @@ test.use({ storageState: ownerState });
 async function regularWithPackage(page: Page, phone: string): Promise<void> {
   const plan = await createPlan(page.request, { name: `Gói quầy ${String(Date.now())}`, price: 1_500_000 });
   const customer = await page.request.post("/api/v1/customers", {
-    headers: WRITE,
+    headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
     data: { full_name: "Lê Thị Quầy", phone, gender: "female" },
   });
   expect(customer.status()).toBe(201);

@@ -11,7 +11,7 @@ use catalog::service::seed_menu;
 use chrono::{Duration, TimeZone, Utc};
 use common::{
     Harness, ORIGIN, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
-    session_for,
+    post_customer, session_for,
 };
 use http_body_util::BodyExt;
 use identity::SystemRole;
@@ -89,10 +89,8 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
     )
     .fetch_one(&h.owner)
     .await?;
-    let ha = call(
+    let ha = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&manager),
         Some(json!({"full_name": "Nguyễn Thị Hà", "phone": "0905111222", "gender": "female"})),
     )
@@ -214,10 +212,8 @@ async fn names_from_any_keyboard_are_stored_nfc_and_found_with_or_without_accent
     let s = spa(pool).await?;
     // "Đặng Thị Hà" typed decomposed (base letters + combining marks), as some keyboards do.
     let decomposed = "\u{110}a\u{323}\u{306}ng Thi\u{323} Ha\u{300}";
-    let created = call(
+    let created = post_customer(
         &s.h.app,
-        "POST",
-        "/customers",
         Some(&s.manager),
         Some(json!({"full_name": decomposed, "phone": "0905333444", "gender": "female"})),
     )
@@ -250,10 +246,8 @@ async fn names_from_any_keyboard_are_stored_nfc_and_found_with_or_without_accent
     assert_eq!(dung.body.as_array().map(Vec::len), Some(0));
 
     // Emoji and other non-Vietnamese symbols are kept as typed and do not break the search key.
-    let emoji = call(
+    let emoji = post_customer(
         &s.h.app,
-        "POST",
-        "/customers",
         Some(&s.manager),
         Some(json!({"full_name": "Chị Mai 🌸", "phone": "0905333555"})),
     )
@@ -273,10 +267,8 @@ async fn text_limits_count_characters_not_bytes(pool: PgPool) -> TestResult {
         let app = s.h.app.clone();
         let manager = s.manager.clone();
         async move {
-            call(
+            post_customer(
                 &app,
-                "POST",
-                "/customers",
                 Some(&manager),
                 Some(json!({"full_name": name, "phone": phone})),
             )
@@ -299,10 +291,8 @@ async fn text_limits_count_characters_not_bytes(pool: PgPool) -> TestResult {
 async fn nul_characters_are_rejected_as_422_not_500(pool: PgPool) -> TestResult {
     // Postgres `text` cannot hold U+0000; JSON can (`"\u0000"`). It must be a validation error.
     let s = spa(pool).await?;
-    let customer = call(
+    let customer = post_customer(
         &s.h.app,
-        "POST",
-        "/customers",
         Some(&s.manager),
         Some(json!({"full_name": "Hà\u{0}", "phone": "0905444555"})),
     )
@@ -704,15 +694,7 @@ async fn two_corrections_of_the_same_visit_version_one_wins(pool: PgPool) -> Tes
 async fn double_submits_of_natural_key_writes_create_one_record(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
     let body = json!({"full_name": "Lê Thị Ánh", "phone": "0905 777 888"});
-    let send = || {
-        call(
-            &s.h.app,
-            "POST",
-            "/customers",
-            Some(&s.manager),
-            Some(body.clone()),
-        )
-    };
+    let send = || post_customer(&s.h.app, Some(&s.manager), Some(body.clone()));
     let (a, b) = tokio::join!(send(), send());
     let mut statuses = [a.status, b.status];
     statuses.sort();

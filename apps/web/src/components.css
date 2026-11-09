@@ -72,6 +72,35 @@
   margin-inline: auto;
   padding: 20px 16px calc(var(--tabbar-h) + 28px);
 }
+/* The skip link lands focus on <main> (tabindex -1): a ring around the whole page says nothing. */
+.shell-content:focus,
+.admin-main:focus {
+  outline: none;
+}
+
+/*
+ * "Bỏ qua tới nội dung chính" (WCAG 2.4.1, ADR-0019 D20): the first Tab stop of the shell, off
+ * screen until focused, then a button-like chip over the top-left corner.
+ */
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-control);
+  padding-inline: 16px;
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-lift);
+  font-weight: 600;
+  transform: translateY(calc(-100% - 16px));
+}
+.skip-link:focus {
+  transform: none;
+}
 
 .sidebar {
   display: none;

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.visit_id AS \"visit_id!\", s.id AS sale_id, s.status, s.business_date,\n                  d.description AS \"description!\", d.packages AS \"customer_package_ids!\",\n                  s.total, s.closer_staff_id, st.full_name AS \"closer_name?\",\n                  b.id AS \"beneficiary_customer_id?\",\n                  -- customer_label(NULL) reads \"Khách vãng lai\": only label a beneficiary that exists.\n                  CASE WHEN b.id IS NOT NULL THEN app.customer_label(b.full_name) END AS \"beneficiary_name?\",\n                  s.note_ct\n\n           FROM app.sale s\n           CROSS JOIN LATERAL (\n             SELECT string_agg(sl.description_snapshot, ', ' ORDER BY sl.position) AS description,\n                    array_agg(sl.customer_package_id ORDER BY sl.position) AS packages\n             FROM app.sale_line sl\n             WHERE sl.tenant_id = s.tenant_id AND sl.sale_id = s.id AND sl.line_type = 'package'\n           ) d\n           LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id\n           LEFT JOIN LATERAL (\n             SELECT c.id, c.full_name FROM app.customer_package cp\n             JOIN app.customer c ON c.tenant_id = cp.tenant_id AND c.id = cp.customer_id\n             WHERE cp.tenant_id = s.tenant_id AND cp.sale_id = s.id AND cp.customer_id <> s.customer_id\n             LIMIT 1\n           ) b ON true\n           WHERE s.tenant_id = $1 AND s.visit_id = ANY($2) AND d.description IS NOT NULL\n           ORDER BY s.id",
+  "query": "SELECT s.visit_id AS \"visit_id!\", s.id AS sale_id, s.status, s.business_date,\n                  d.description AS \"description!\", d.packages AS \"customer_package_ids!\",\n                  s.total, s.closer_staff_id, st.full_name AS \"closer_name?\",\n                  b.id AS \"beneficiary_customer_id?\",\n                  -- customer_label(NULL) reads \"Khách vãng lai\": only label a beneficiary that exists.\n                  CASE WHEN b.id IS NOT NULL THEN app.customer_label(b.full_name) END AS \"beneficiary_name?\",\n                  s.note_ct, s.version\n           FROM app.sale s\n           CROSS JOIN LATERAL (\n             SELECT string_agg(sl.description_snapshot, ', ' ORDER BY sl.position) AS description,\n                    array_agg(sl.customer_package_id ORDER BY sl.position) AS packages\n             FROM app.sale_line sl\n             WHERE sl.tenant_id = s.tenant_id AND sl.sale_id = s.id AND sl.line_type = 'package'\n           ) d\n           LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id\n           LEFT JOIN LATERAL (\n             SELECT c.id, c.full_name FROM app.customer_package cp\n             JOIN app.customer c ON c.tenant_id = cp.tenant_id AND c.id = cp.customer_id\n             WHERE cp.tenant_id = s.tenant_id AND cp.sale_id = s.id AND cp.customer_id <> s.customer_id\n             LIMIT 1\n           ) b ON true\n           WHERE s.tenant_id = $1 AND s.visit_id = ANY($2) AND d.description IS NOT NULL\n           ORDER BY s.id",
   "describe": {
     "columns": [
       {
@@ -119,6 +119,17 @@
             "name": "note_ct"
           }
         }
+      },
+      {
+        "ordinal": 12,
+        "name": "version",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.sale",
+            "name": "version"
+          }
+        }
       }
     ],
     "parameters": {
@@ -136,11 +147,12 @@
       null,
       false,
       true,
-      true,
-      true,
+      false,
+      false,
       null,
-      true
+      true,
+      false
     ]
   },
-  "hash": "26758ee3f3ac1d12951e56312d694ebbb2ead2eef65a19aee12561289f10116e"
+  "hash": "7531d4fffe30c190828198ae454adf7f118704a1596117d24947ae251a109684"
 }
