@@ -267,6 +267,7 @@ export function DailyBook({
               canAttendance={canAttendance}
               canReview={canReview}
               readOnly={readOnly}
+              linkRequired={attendance.data?.link_required ?? false}
               busy={mark.isPending || review.isPending}
               savingStatus={savingStatus(s.staff_id)}
               savingReview={savingReview(s.staff_id)}
