@@ -6887,7 +6887,7 @@
             "items": {
               "$ref": "#/components/schemas/CalendarTechnician"
             },
-            "description": "Columns of the day view (active technicians)."
+            "description": "Columns of the day view: active staff who serve customers, by login role (technician or\nmanager; a profile without a login counts as a technician; never the owner)."
           },
           "time_zone": {
             "type": "string"

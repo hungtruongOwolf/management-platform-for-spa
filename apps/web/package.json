@@ -12,7 +12,8 @@
     "test": "vitest run",
     "e2e": "playwright test",
     "e2e:perf": "playwright test --project=perf",
-    "lhci": "node lighthouse/run.mjs"
+    "lhci": "node lighthouse/run.mjs",
+    "budget": "node scripts/startup-budget.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",

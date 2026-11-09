@@ -4,7 +4,7 @@ import type {
   InactiveCustomer,
 } from "@vpyd/api-client";
 import { vi } from "vitest";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
 import { NEXT_TRY_DAYS } from "../customers/followUps";
 import type { PackageFilter } from "./api";
 import { shiftDays } from "./period";

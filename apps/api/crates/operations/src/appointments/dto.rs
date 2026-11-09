@@ -301,7 +301,8 @@ pub struct CalendarDto {
     pub closes_at: String,
     pub slot_minutes: u32,
     pub time_zone: String,
-    /// Columns of the day view (active technicians).
+    /// Columns of the day view: active staff who serve customers, by login role (technician or
+    /// manager; a profile without a login counts as a technician; never the owner).
     pub technicians: Vec<CalendarTechnician>,
     /// The owner's advisory "max customers per slot"; null = no limit. Bookings are never
     /// refused on it: the calendar shows "n / max" and warns.

@@ -281,6 +281,19 @@ async fn only_the_owner_looks_after_logins(pool: PgPool) -> TestResult {
         )
         .await;
         assert_eq!(role.status, StatusCode::FORBIDDEN);
+        // F17: the right comes before the If-Match header and the body (each was 400/422 first).
+        for (method, path) in [
+            ("POST", format!("/staff/{}/login", s.ha)),
+            ("PUT", format!("/staff/{}/login/role", s.ha)),
+        ] {
+            let r = call(&s.h.app, method, &path, Some(who), Some(json!({"role": 7}))).await;
+            assert_eq!(
+                r.status,
+                StatusCode::FORBIDDEN,
+                "{method} {path}: {}",
+                r.body
+            );
+        }
         let list = call(
             &s.h.app,
             "GET",
