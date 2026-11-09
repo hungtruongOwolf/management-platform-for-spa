@@ -8,7 +8,7 @@ test.describe("khách hàng (US2)", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/khach-hang");
     await expect(
-      page.getByRole("heading", { name: "Khách hàng", level: 1 }),
+      page.getByRole("heading", { name: "Danh sách khách hàng", level: 1, exact: true }),
     ).toBeVisible();
   });
 

@@ -17,7 +17,8 @@ const STAFF_VIEWS_FROM_VISITS: unknown[][] = ["payroll", "attendance", "me", "me
  * old numbers on its next open, so the staff views computed from visits and sales are listed too.
  */
 export function invalidateManagementViews(queryClient: QueryClient, customerId?: string): Promise<void> {
-  const keys: unknown[][] = [["reports"], ["packages", "overview"], ["customers", "inactive"], ...STAFF_VIEWS_FROM_VISITS];
+  // ["notes"]: visit, sale, void and package notes show in "Nhật ký ghi chú".
+  const keys: unknown[][] = [["reports"], ["packages", "overview"], ["customers", "inactive"], ["notes"], ...STAFF_VIEWS_FROM_VISITS];
   if (customerId) keys.push(["customers", "history", customerId], ["customers", "summary", customerId]);
   else keys.push(["customers", "history"], ["customers", "summary"]);
   return Promise.all(keys.map((queryKey) => queryClient.invalidateQueries({ queryKey }))).then(() => undefined);

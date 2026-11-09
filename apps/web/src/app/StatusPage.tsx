@@ -1,13 +1,17 @@
+import { use } from "react";
 import { ForbiddenRoute } from "./access";
 import { BrandLogo } from "./BrandLogo";
+import { InShell } from "./inShell";
 
 /**
  * Whole-page fallbacks outside the shell (rulebook §9: say what happened and the next step).
  * 404 is its own lazy chunk; the error page is used only when a screen throws.
  */
 export function StatusPage({ title, body, retry = false }: { title: string; body: string; retry?: boolean }) {
+  // Inside the shell its `<main>` is already the landmark (and owns id="main").
+  const Root = use(InShell) ? "section" : "main";
   return (
-    <main id="main" className="status-page">
+    <Root id={Root === "main" ? "main" : undefined} className={Root === "main" ? "status-page" : "status-page is-in-shell"}>
       <BrandLogo className="w-16" />
       <h1 className="page-title">{title}</h1>
       <p className="max-w-md text-text-muted">{body}</p>
@@ -27,7 +31,7 @@ export function StatusPage({ title, body, retry = false }: { title: string; body
           Về trang tổng quan
         </a>
       </div>
-    </main>
+    </Root>
   );
 }
 

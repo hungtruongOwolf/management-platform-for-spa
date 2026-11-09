@@ -1379,3 +1379,161 @@ async fn tenant_audit_is_metadata_only(owner: PgPool) -> TestResult {
     assert_eq!(reads, 1);
     Ok(())
 }
+
+/// The cross-spa functions return exactly these columns (ADR-0003, ADR-0018 D3: counts and
+/// metadata only). A new column is a reviewed change of this list, never a silent widening.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn platform_functions_return_only_their_columns(owner: PgPool) -> TestResult {
+    let found: Vec<(String, String)> = sqlx::query_as(
+        "SELECT p.proname::text, pg_get_function_result(p.oid)
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'app' AND p.proname LIKE 'platform\\_%'
+         ORDER BY p.proname",
+    )
+    .fetch_all(&owner)
+    .await?;
+    let expected = [
+        ("platform_account_action", "bigint"),
+        (
+            "platform_account_memberships",
+            "TABLE(user_id uuid, tenant_id uuid, tenant_name text, tenant_status text, \
+             membership_status text, role_keys text[], is_owner boolean, other_active_owners bigint)",
+        ),
+        ("platform_apply_role_template", "integer"),
+        ("platform_gate", "uuid"),
+        ("platform_insert_tenant", "void"),
+        ("platform_set_feature", "TABLE(previous boolean)"),
+        (
+            "platform_set_tenant_role",
+            "TABLE(role_id uuid, before text[], after text[])",
+        ),
+        (
+            "platform_set_tenant_status",
+            "TABLE(previous text, revoked integer)",
+        ),
+        (
+            "platform_tenant_overview",
+            "TABLE(id uuid, name text, slug text, status text, created_at timestamp with time zone, \
+             staff_count bigint, customer_count bigint, visits_30d bigint, owner_count bigint, \
+             last_activity_at timestamp with time zone)",
+        ),
+    ];
+    let expected: Vec<(String, String)> = expected
+        .iter()
+        .map(|(name, result)| ((*name).to_owned(), (*result).to_owned()))
+        .collect();
+    assert_eq!(found, expected);
+    Ok(())
+}
+
+/// `(SQLSTATE, constraint)` of a refused statement; `None` = it ran.
+fn refusal(result: Result<sqlx::postgres::PgQueryResult, sqlx::Error>) -> Option<(String, String)> {
+    let error = result.err()?;
+    let db = error.as_database_error()?;
+    Some((
+        db.code().map(|c| c.into_owned()).unwrap_or_default(),
+        db.constraint().unwrap_or_default().to_owned(),
+    ))
+}
+
+/// 0041 (lead review of PR C): account actions and a spa's own role grants are written by
+/// functions that check the step-up themselves, so a code path that skipped the `Operator`
+/// extractor is still refused; the owner floor of a lock is enforced by the database too.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn account_and_role_writes_check_the_step_up_in_the_database(owner: PgPool) -> TestResult {
+    let h = harness(owner).await?;
+    add_operator(&h).await?;
+    let op = operator_session(&h).await?;
+    let hash = identity::token::hash_secret(&op).to_vec();
+    let app_pool = kernel::testing::app_pool(&h.owner).await?;
+    let spa_owner: uuid::Uuid =
+        sqlx::query_scalar("SELECT id FROM app.user_account WHERE phone_e164 = '+84905123456'")
+            .fetch_one(&h.owner)
+            .await?;
+    let tenant: uuid::Uuid = sqlx::query_scalar("SELECT id FROM app.tenant WHERE slug = 'vpyd'")
+        .fetch_one(&h.owner)
+        .await?;
+    let account_action =
+        |hash: Vec<u8>, action: &'static str, password_hash: Option<&'static str>| {
+            let pool = app_pool.clone();
+            async move {
+                sqlx::query("SELECT app.platform_account_action($1, $2, $3, $4)")
+                    .bind(hash)
+                    .bind(spa_owner)
+                    .bind(action)
+                    .bind(password_hash)
+                    .execute(&pool)
+                    .await
+            }
+        };
+    let tenant_role = |hash: Vec<u8>| {
+        let pool = app_pool.clone();
+        async move {
+            sqlx::query("SELECT * FROM app.platform_set_tenant_role($1, $2, 'technician', NULL)")
+                .bind(hash)
+                .bind(tenant)
+                .execute(&pool)
+                .await
+        }
+    };
+    let insufficient = Some(("42501".to_owned(), String::new()));
+
+    // Stepped up: the database itself keeps the last owner of an active spa.
+    assert_eq!(
+        refusal(account_action(hash.clone(), "lock", None).await),
+        Some(("23514".to_owned(), "platform_owner_floor".to_owned()))
+    );
+    assert_eq!(
+        refusal(account_action(hash.clone(), "reset_password", Some("plain-text")).await)
+            .map(|(code, _)| code)
+            .as_deref(),
+        Some("22023"),
+        "a temporary password is stored only as an Argon2id hash"
+    );
+    assert_eq!(
+        refusal(account_action(hash.clone(), "delete", None).await)
+            .map(|(code, _)| code)
+            .as_deref(),
+        Some("22023")
+    );
+    assert_eq!(refusal(tenant_role(hash.clone()).await), None);
+
+    // Step-up expired: every write is refused by the database, whatever Rust checked.
+    expire_step_up(&h).await?;
+    for action in ["revoke_sessions", "unlock", "reset_mfa"] {
+        assert_eq!(
+            refusal(account_action(hash.clone(), action, None).await),
+            insufficient,
+            "{action}"
+        );
+    }
+    assert_eq!(refusal(tenant_role(hash.clone()).await), insufficient);
+    // A spa session's hash is no operator session at all.
+    let spa_hash =
+        identity::token::hash_secret(&session_for(&h, common::OWNER_PHONE).await).to_vec();
+    assert_eq!(
+        refusal(account_action(spa_hash, "revoke_sessions", None).await),
+        insufficient
+    );
+    // Over HTTP the extractor answers first.
+    let id = spa_owner.to_string();
+    let refused = admin_call(
+        &h.app,
+        "POST",
+        &format!("/admin/accounts/{id}/revoke-sessions"),
+        Some(&op),
+        Some(json!({"reason": "Chủ spa gọi hỗ trợ"})),
+    )
+    .await;
+    assert_eq!(refused.status, StatusCode::FORBIDDEN);
+    assert_eq!(refused.body["code"], "platform.step_up_required");
+    let trail = count(
+        &h.owner,
+        &format!(
+            "SELECT count(*) FROM app.audit_log WHERE actor_kind = 'platform_admin' AND entity_id = '{id}'"
+        ),
+    )
+    .await?;
+    assert_eq!(trail, 0, "refused writes leave no trail");
+    Ok(())
+}

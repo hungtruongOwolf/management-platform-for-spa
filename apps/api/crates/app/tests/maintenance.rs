@@ -72,6 +72,71 @@ async fn sessions_ended_over_30_days_ago_are_purged_and_only_those(owner: PgPool
     for kept in [recent_revoked, recent_expired, live] {
         assert!(left.contains(&kept), "{kept} kept");
     }
+
+    // 0042: whatever interval a caller passes, a live session is never touched (floor 1 day).
+    // Red before: a negative interval deleted the live session too.
+    let purged: i64 = sqlx::query_scalar("SELECT app.purge_sessions(interval '-40 days')")
+        .fetch_one(&app)
+        .await?;
+    assert_eq!(purged, 2, "only the two that ended 2 days ago");
+    let left: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM app.session")
+        .fetch_all(&h.owner)
+        .await?;
+    assert!(left.contains(&live), "the live session stays");
+    Ok(())
+}
+
+/// 0041: operator sessions follow the same 30-day rule (they carry an IP and a user agent too).
+#[sqlx::test(migrations = "../../migrations")]
+async fn operator_sessions_are_purged_like_spa_sessions(owner: PgPool) -> TestResult {
+    let h = harness(owner).await?;
+    let operator = common::add_operator(&h).await?;
+    let insert = |revoked_days_ago: Option<i32>, idle_days_ago: Option<i32>| {
+        let owner = h.owner.clone();
+        async move {
+            let id = Uuid::now_v7();
+            sqlx::query(
+                "INSERT INTO app.platform_session
+                   (id, token_hash, operator_id, idle_expires_at, absolute_expires_at, recent_auth_at,
+                    mfa_pending, revoked_at)
+                 VALUES ($1, sha256($1::text::bytea), $2,
+                   CASE WHEN $4::int IS NULL THEN now() + interval '10 minutes' ELSE now() - make_interval(days => $4) END,
+                   CASE WHEN $4::int IS NULL THEN now() + interval '1 hour' ELSE now() - make_interval(days => $4) END,
+                   now() - interval '40 days', false,
+                   CASE WHEN $3::int IS NULL THEN NULL ELSE now() - make_interval(days => $3) END)",
+            )
+            .bind(id)
+            .bind(operator)
+            .bind(revoked_days_ago)
+            .bind(idle_days_ago)
+            .execute(&owner)
+            .await
+            .map(|_| id)
+        }
+    };
+    let old_revoked = insert(Some(31), None).await?;
+    let old_expired = insert(None, Some(31)).await?;
+    let recent = insert(Some(2), None).await?;
+    let live = insert(None, None).await?;
+    let app = app_pool(&h.owner).await?;
+    let denied = sqlx::query("DELETE FROM app.platform_session")
+        .execute(&app)
+        .await;
+    assert!(
+        denied.is_err(),
+        "app_rw has no DELETE on app.platform_session"
+    );
+
+    assert_eq!(jobs::purge_sessions(&app).await?, 2);
+    let left: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM app.platform_session")
+        .fetch_all(&h.owner)
+        .await?;
+    for gone in [old_revoked, old_expired] {
+        assert!(!left.contains(&gone), "{gone} purged");
+    }
+    for kept in [recent, live] {
+        assert!(left.contains(&kept), "{kept} kept");
+    }
     Ok(())
 }
 

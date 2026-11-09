@@ -464,6 +464,12 @@ async fn an_owner_reset_ends_every_session_and_forces_a_change(pool: PgPool) -> 
     sqlx::query("UPDATE app.membership SET status = 'disabled' WHERE tenant_id = (SELECT id FROM app.tenant WHERE slug = 'khac')")
         .execute(&s.h.owner)
         .await?;
+    // Locked in the other spa still counts: unlocked there later, our password would open it
+    // (0042). Red before: `tenants_of_user` saw only active memberships and allowed the reset.
+    assert_eq!(
+        s.reset(&s.owner, s.ha).await.body["code"],
+        "account.other_spa"
+    );
     // A leaver whose login was locked: a reset must not reopen access.
     sqlx::query("UPDATE app.membership SET status = 'disabled' WHERE user_id = (SELECT id FROM app.user_account WHERE phone_e164 = '+84912300111')")
         .execute(&s.h.owner)

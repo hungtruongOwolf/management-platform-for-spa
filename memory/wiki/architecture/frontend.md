@@ -60,7 +60,7 @@ Kiểu từ `packages/api-client` (contract r3b của `feat/followup-and-reports
 - **Query keys:** `['reports','range',from,to,granularity]` (60 s, giữ dữ liệu cũ khi đổi kỳ), `['reports','ledger',from,to]` (infinite), `['packages','overview',status,q]` (infinite), `['customers','inactive',days,scope,kind,follow,q]` (infinite), `['customers','history',id,q,kind,from,to]` (infinite), `['customers','summary',id]`, `['customers','follow-ups',id]`, `['customers','phone-check',digits]` (30 s).
 - **Invalidation:**
   - follow-up → `['customers','inactive']` + follow-ups + summary của khách đó;
-  - ghi / hủy lượt, bán gói, hủy / gia hạn gói → `lib/invalidate.ts` `invalidateManagementViews`: `['reports']`, `['packages','overview']`, `['customers','inactive']`, history + summary của khách. Chỉ đánh dấu stale; trên `/quay` không có query nào trong số này đang mount nên không tốn request ở lần vẽ đầu.
+  - ghi / hủy lượt, bán gói, hủy / gia hạn gói → `lib/invalidate.ts` `invalidateManagementViews`: `['reports']`, `['packages','overview']`, `['customers','inactive']`, `['notes']` (Nhật ký ghi chú; liên hệ chăm sóc và lưu ý sức khỏe cũng invalidate key này), history + summary của khách. Chỉ đánh dấu stale; trên `/quay` không có query nào trong số này đang mount nên không tốn request ở lần vẽ đầu.
 - **Test:** `fixtures.ts` + `testServer.ts` giả API đúng contract, gồm follow-up GET/POST giữ trong bộ nhớ, lọc và sắp xếp như server, phone-check. E2E `e2e/specs/management.spec.ts` dùng `support/db.ts` `backdateCustomer` để có khách vắng 20 ngày.
 
 ## Mobile (vòng 4, EM mục 3)

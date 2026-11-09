@@ -73,7 +73,8 @@ export const param = {
   },
   /** A calendar day `YYYY-MM-DD`; "" when absent or malformed (the screen picks its own default). */
   day(): Parser<string> {
-    return (raw) => (typeof raw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw) && !Number.isNaN(Date.parse(raw)) ? raw : "");
+    // A real calendar day: Date rolls "2026-02-30" over to March, so the round trip must match.
+    return (raw) => (typeof raw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw) && isCalendarDay(raw) ? raw : "");
   },
 };
 
@@ -108,4 +109,9 @@ export function useSearchState<T extends Shape>(
     [navigate, schema],
   );
   return [state, set];
+}
+
+function isCalendarDay(iso: string): boolean {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(iso);
 }

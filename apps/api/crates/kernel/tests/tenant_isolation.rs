@@ -276,3 +276,65 @@ async fn purge_removes_old_records_across_tenants(owner: PgPool) -> TestResult {
     assert_eq!(purged, 2);
     Ok(())
 }
+
+/// 0042: the purge never goes below 48 hours, whatever it is asked (a retried payment must find
+/// its record). Red before: `interval '0'` deleted the hour-old record.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn purge_never_shortens_the_48_hours(owner: PgPool) -> TestResult {
+    let tenant = seed_tenant(&owner, "spa-a").await?;
+    sqlx::query(
+        "INSERT INTO app.idempotency_record (tenant_id, actor_user_id, key, request_hash, created_at)
+         VALUES ($1, $2, $3, $4, now() - interval '1 hour')",
+    )
+    .bind(tenant.as_uuid())
+    .bind(Uuid::now_v7())
+    .bind(Uuid::now_v7())
+    .bind(&idempotency::hash_request(b"x")[..])
+    .execute(&owner)
+    .await?;
+    let pool = app_pool(&owner).await?;
+    for asked in ["0", "-1 day", "1 minute"] {
+        let purged: i64 = sqlx::query_scalar("SELECT app.purge_idempotency_records($1::interval)")
+            .bind(asked)
+            .fetch_one(&pool)
+            .await?;
+        assert_eq!(purged, 0, "{asked}");
+    }
+    Ok(())
+}
+
+/// 0042: app_rw may change only the columns the code changes. Red before: whole-table UPDATE on
+/// role / membership / branch and DELETE on role.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn app_rw_updates_only_the_columns_the_code_changes(owner: PgPool) -> TestResult {
+    let pool = app_pool(&owner).await?;
+    let (role_delete, role_update, branch_update, membership_update): (bool, bool, bool, bool) =
+        sqlx::query_as(
+            "SELECT has_table_privilege('app.role', 'DELETE'), has_table_privilege('app.role', 'UPDATE'),
+                    has_table_privilege('app.branch', 'UPDATE'),
+                    has_table_privilege('app.membership', 'UPDATE')",
+        )
+        .fetch_one(&pool)
+        .await?;
+    assert!(!role_delete && !role_update && !branch_update && !membership_update);
+    let (follows, role_name, status, user_id): (bool, bool, bool, bool) = sqlx::query_as(
+        "SELECT has_column_privilege('app.role', 'follows_template', 'UPDATE'),
+                has_column_privilege('app.role', 'name', 'UPDATE'),
+                has_column_privilege('app.membership', 'status', 'UPDATE'),
+                has_column_privilege('app.membership', 'user_id', 'UPDATE')",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert!(follows && status, "the columns the code updates");
+    assert!(!role_name && !user_id, "nothing else");
+    // The two integrity keys of 0042 are validated by 0043.
+    let validated: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM pg_constraint
+         WHERE conname IN ('visit_line_item_of_package_fkey', 'appointment_setting_updated_by_fkey')
+           AND convalidated",
+    )
+    .fetch_one(&owner)
+    .await?;
+    assert_eq!(validated, 2);
+    Ok(())
+}

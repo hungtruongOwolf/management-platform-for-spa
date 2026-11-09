@@ -7,7 +7,6 @@ use crate::auth::OperatorSession;
 use crate::gate_refusal;
 use chrono::{DateTime, Utc};
 use identity::account::TemporaryPassword;
-use identity::roles::SystemRole;
 use kernel::audit::{AuditEntry, record_platform};
 use kernel::{AppError, FieldError, PhoneE164, TenantId, TenantTx};
 use serde::{Deserialize, Serialize};
@@ -231,43 +230,8 @@ pub async fn create(
             gate_refusal(e)
         }
     })?;
-    sqlx::query!(
-        "INSERT INTO app.branch (id, tenant_id, name) VALUES ($1, $2, $3)",
-        Uuid::now_v7(),
-        tenant_id,
-        valid.branch
-    )
-    .execute(tx.conn())
-    .await?;
-    let mut owner_role = None;
-    for role in SystemRole::ALL {
-        let role_id = Uuid::now_v7();
-        sqlx::query!(
-            "INSERT INTO app.role (id, tenant_id, key, name, is_system, requires_mfa)
-             VALUES ($1, $2, $3, $4, true, $5)",
-            role_id,
-            tenant_id,
-            role.key(),
-            role.display_name(),
-            role.requires_mfa()
-        )
-        .execute(tx.conn())
-        .await?;
-        // The operator-edited template (ADR-0018 D5), not the code defaults.
-        sqlx::query!(
-            "INSERT INTO app.role_permission (tenant_id, role_id, permission)
-             SELECT $1, $2, permission FROM app.role_template_permission WHERE role_key = $3",
-            tenant_id,
-            role_id,
-            role.key()
-        )
-        .execute(tx.conn())
-        .await?;
-        if role == SystemRole::Owner {
-            owner_role = Some(role_id);
-        }
-    }
-    let owner_role = owner_role.ok_or(AppError::Internal("no owner role".to_owned()))?;
+    // Grants from the operator-edited templates (ADR-0018 D5), not the code defaults.
+    let owner_role = identity::provisioning::seed_spa(tx.conn(), tenant, &valid.branch).await?;
 
     let user_id = Uuid::now_v7();
     sqlx::query!(

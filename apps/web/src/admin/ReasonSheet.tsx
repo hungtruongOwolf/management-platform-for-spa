@@ -1,7 +1,9 @@
 import { useState, type ReactNode, type SyntheticEvent } from "react";
 import { BottomSheet } from "../components/BottomSheet";
+import { REASON_MAX } from "./api";
 import { adminFieldError, adminMessage } from "./messages";
 import { StepUpCancelled, useStepUp } from "./StepUp";
+import { useResetOnOpen } from "./useResetOnOpen";
 
 /**
  * Every operator write asks why (the reason goes into both audit trails) and may ask for a
@@ -30,6 +32,10 @@ export function ReasonSheet({
   const [reason, setReason] = useState("");
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  useResetOnOpen(open, () => {
+    setReason("");
+    setError(null);
+  });
 
   const submit = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -38,7 +44,6 @@ export function ReasonSheet({
     setError(null);
     try {
       await stepUp(() => run(reason.trim()));
-      setReason("");
       onClose();
     } catch (err) {
       if (!(err instanceof StepUpCancelled)) setError(err);
@@ -77,6 +82,7 @@ export function ReasonSheet({
           <textarea
             id="reason-text"
             className="input"
+            maxLength={REASON_MAX}
             value={reason}
             onChange={(e) => {
               setReason(e.target.value);

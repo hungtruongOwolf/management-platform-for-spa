@@ -6,7 +6,7 @@
 export interface Part {
   label: string;
   value: number;
-  tone: "primary" | "accent" | "muted";
+  tone: "primary" | "muted";
 }
 
 /** One horizontal bar split into parts (cash / transfer, package / one-off) with a legend. */

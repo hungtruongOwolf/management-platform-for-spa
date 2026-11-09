@@ -2,6 +2,7 @@
  * The platform console's API (`/api/v1/admin/*`, ADR-0018). Its own cookie and session: nothing
  * here touches the spa's `/me` or its query cache keys (all keys start with "admin").
  */
+import type { QueryClient } from "@tanstack/react-query";
 import type { components } from "@vpyd/api-client";
 import { api } from "../lib/api";
 
@@ -37,6 +38,26 @@ export const adminKeys = {
   templates: ["admin", "role-templates"] as const,
   accounts: (q: string) => ["admin", "accounts", q] as const,
 };
+
+/**
+ * Server limits on free text (platform/src/tenants.rs): names 1–200, reasons 3–500 characters.
+ * The inputs stop there, because the server answers an over-long value with `required`.
+ */
+export const NAME_MAX = 200;
+export const REASON_MAX = 500;
+
+/**
+ * Call after every console write: it added a platform audit row (and, for spa-scoped writes, rows
+ * in spa trails). A spa trail is only marked stale, never refetched now: each read of it is itself
+ * audited (`platform.tenant_audit.read`), so it reloads only when the operator opens it again.
+ */
+export function markAuditStale(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({ queryKey: adminKeys.audit });
+  void queryClient.invalidateQueries({
+    predicate: (query) => query.queryKey[0] === "admin" && query.queryKey[1] === "tenants" && query.queryKey[3] === "audit",
+    refetchType: "none",
+  });
+}
 
 export const adminApi = {
   me: () => api("/admin/me") as Promise<OperatorMe>,

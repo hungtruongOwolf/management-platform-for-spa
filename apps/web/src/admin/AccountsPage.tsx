@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type SyntheticEvent } from "react";
 import { BottomSheet } from "../components/BottomSheet";
-import { adminApi, adminDateTime, adminKeys, type AccountAction, type AccountRow } from "./api";
+import { adminApi, adminDateTime, adminKeys, markAuditStale, type AccountAction, type AccountRow } from "./api";
 import { adminMessage } from "./messages";
 import { ReasonSheet } from "./ReasonSheet";
 
@@ -35,6 +35,14 @@ const LABELS: Record<Pending["action"], { title: string; confirm: string; descri
   },
 };
 
+/**
+ * A temporary lock (too many wrong passwords) ends by itself at `locked_until`; the server clears
+ * the column only at the next successful sign-in, so a past value is no lock at all.
+ */
+function temporarilyLocked(account: AccountRow, now: number): boolean {
+  return account.locked_until ? Date.parse(account.locked_until) > now : false;
+}
+
 /** "Tài khoản" (spec US8): logins across spas — never a hash, a secret or business data. */
 export function AccountsPage() {
   const queryClient = useQueryClient();
@@ -61,6 +69,7 @@ export function AccountsPage() {
       await adminApi.accountAction(pending.account.id, pending.action, reason);
     }
     await queryClient.invalidateQueries({ queryKey: ["admin", "accounts"] });
+    markAuditStale(queryClient);
   };
   const label = pending ? LABELS[pending.action] : null;
 
@@ -101,53 +110,57 @@ export function AccountsPage() {
           <p className="empty-note">Không có tài khoản nào khớp.</p>
         ) : (
           <ul className="grid gap-3">
-            {accounts.data.map((a) => (
-              <li key={a.id} className="grid gap-2 border-b border-border pb-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{a.full_name}</span>
-                  <span className="tabular text-sm">{a.phone}</span>
-                  {a.status === "disabled" && <span className="badge badge-danger">Đã khóa</span>}
-                  {a.locked_until && <span className="badge badge-warn">Khóa tạm tới {adminDateTime(a.locked_until)}</span>}
-                  {a.mfa_enabled && <span className="badge badge-info">Có xác thực hai bước</span>}
-                  {a.must_change_password && <span className="badge badge-muted">Đang dùng mật khẩu tạm</span>}
-                </div>
-                <p className="text-sm text-text-muted">
-                  {a.memberships.length === 0
-                    ? "Không thuộc spa nào"
-                    : a.memberships
-                        .map((m) => `${m.tenant_name} · ${m.is_owner ? "chủ spa" : m.role_keys.join(", ")}${m.status === "active" ? "" : " (đã khóa ở spa)"}`)
-                        .join(" — ")}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {(a.status === "disabled" || a.locked_until
-                    ? (["unlock"] as const)
-                    : (["lock", "reset-password", "revoke-sessions"] as const)
-                  ).map((action) => (
-                    <button
-                      key={action}
-                      type="button"
-                      className={LABELS[action].danger ? "btn btn-danger-outline" : "btn btn-secondary"}
-                      onClick={() => {
-                        setPending({ account: a, action });
-                      }}
-                    >
-                      {LABELS[action].title}
-                    </button>
-                  ))}
-                  {a.mfa_enabled && a.status === "active" && (
-                    <button
-                      type="button"
-                      className="btn btn-danger-outline"
-                      onClick={() => {
-                        setPending({ account: a, action: "reset-mfa" });
-                      }}
-                    >
-                      {LABELS["reset-mfa"].title}
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
+            {accounts.data.map((a) => {
+              // As of the answer, not of this render: renders stay pure and the row matches what the server saw.
+              const tempLocked = temporarilyLocked(a, accounts.dataUpdatedAt);
+              return (
+                <li key={a.id} className="grid gap-2 border-b border-border pb-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{a.full_name}</span>
+                    <span className="tabular text-sm">{a.phone}</span>
+                    {a.status === "disabled" && <span className="badge badge-danger">Đã khóa</span>}
+                    {tempLocked && <span className="badge badge-warn">Khóa tạm tới {adminDateTime(a.locked_until)}</span>}
+                    {a.mfa_enabled && <span className="badge badge-info">Có xác thực hai bước</span>}
+                    {a.must_change_password && <span className="badge badge-muted">Đang dùng mật khẩu tạm</span>}
+                  </div>
+                  <p className="text-sm text-text-muted">
+                    {a.memberships.length === 0
+                      ? "Không thuộc spa nào"
+                      : a.memberships
+                          .map((m) => `${m.tenant_name} · ${m.is_owner ? "chủ spa" : m.role_keys.join(", ")}${m.status === "active" ? "" : " (đã khóa ở spa)"}`)
+                          .join(" — ")}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {(a.status === "disabled" || tempLocked
+                      ? (["unlock"] as const)
+                      : (["lock", "reset-password", "revoke-sessions"] as const)
+                    ).map((action) => (
+                      <button
+                        key={action}
+                        type="button"
+                        className={LABELS[action].danger ? "btn btn-danger-outline" : "btn btn-secondary"}
+                        onClick={() => {
+                          setPending({ account: a, action });
+                        }}
+                      >
+                        {LABELS[action].title}
+                      </button>
+                    ))}
+                    {a.mfa_enabled && a.status === "active" && (
+                      <button
+                        type="button"
+                        className="btn btn-danger-outline"
+                        onClick={() => {
+                          setPending({ account: a, action: "reset-mfa" });
+                        }}
+                      >
+                        {LABELS["reset-mfa"].title}
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
