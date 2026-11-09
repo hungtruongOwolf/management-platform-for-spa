@@ -458,6 +458,34 @@ async fn a_follow_up_is_recorded_once_by_the_session_user(pool: PgPool) -> TestR
     Ok(())
 }
 
+/// "Không hẹn": `next_follow_up_on: null` stores no next try even for outcomes that suggest one;
+/// only an omitted field takes the suggestion. Red before: null was read as "omitted" and the
+/// +3 / +7 day suggestion was stored.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn an_explicit_no_date_is_never_replaced_by_the_suggestion(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let day = today();
+    let lan = s.customer("Trần Thị Lan", "0905111002").await;
+    for outcome in ["no_answer", "will_come"] {
+        let none = s
+            .follow_up(
+                lan,
+                json!({"channel": "phone", "outcome": outcome, "next_follow_up_on": null}),
+            )
+            .await;
+        assert_eq!(none.status, StatusCode::CREATED, "{}", none.body);
+        assert_eq!(none.body["next_follow_up_on"], Value::Null, "{outcome}");
+    }
+    let omitted = s
+        .follow_up(lan, json!({"channel": "phone", "outcome": "no_answer"}))
+        .await;
+    assert_eq!(
+        omitted.body["next_follow_up_on"],
+        json!(day + Duration::days(3))
+    );
+    Ok(())
+}
+
 /// The table is append-only and tenant-scoped for the runtime role (RLS), like the books.
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn follow_ups_are_append_only_and_isolated_by_rls(pool: PgPool) -> TestResult {

@@ -97,8 +97,9 @@ pub struct FollowUpInput {
     pub channel: Channel,
     pub outcome: Outcome,
     pub note: Option<String>,
-    /// Overrides the default rule.
-    pub next_follow_up_on: Option<NaiveDate>,
+    /// `None` = the rule's suggestion; `Some(None)` = no next try ("Không hẹn"); `Some(Some(d))`
+    /// = that day.
+    pub next_follow_up_on: Option<Option<NaiveDate>>,
 }
 
 /// A recorded follow-up as the API shows it.
@@ -144,13 +145,14 @@ pub fn suggested_next(outcome: Outcome, contacted_on: NaiveDate) -> Option<Naive
     }
 }
 
-/// The stored next date: the date given wins, otherwise the suggestion.
+/// The stored next date: what was asked (a day, or explicitly none) wins; nothing asked → the
+/// suggestion.
 pub fn next_follow_up(
     outcome: Outcome,
     contacted_on: NaiveDate,
-    requested: Option<NaiveDate>,
+    requested: Option<Option<NaiveDate>>,
 ) -> Option<NaiveDate> {
-    requested.or_else(|| suggested_next(outcome, contacted_on))
+    requested.unwrap_or_else(|| suggested_next(outcome, contacted_on))
 }
 
 /// Suggestions for a contact made today, per outcome, so the form can pre-fill the date
@@ -203,7 +205,7 @@ fn validate(input: &FollowUpInput, today: NaiveDate) -> Result<Clean, AppError> 
     {
         errors.push(FieldError::new("note", "too_long"));
     }
-    if let Some(next) = input.next_follow_up_on {
+    if let Some(Some(next)) = input.next_follow_up_on {
         if next < contacted_on {
             errors.push(FieldError::new("next_follow_up_on", "before_contact"));
         } else if contacted_on
@@ -347,7 +349,7 @@ mod tests {
             Some(d("2026-11-08"))
         );
         assert_eq!(
-            next_follow_up(Outcome::NoAnswer, on, Some(d("2026-11-20"))),
+            next_follow_up(Outcome::NoAnswer, on, Some(Some(d("2026-11-20")))),
             Some(d("2026-11-20"))
         );
         assert_eq!(
@@ -359,10 +361,17 @@ mod tests {
             assert_eq!(next_follow_up(o, on, None), None, "{o:?}");
         }
         assert_eq!(
-            next_follow_up(Outcome::NotInterested, on, Some(d("2027-01-05"))),
+            next_follow_up(Outcome::NotInterested, on, Some(Some(d("2027-01-05")))),
             Some(d("2027-01-05")),
             "a date given always wins"
         );
+        for o in [Outcome::NoAnswer, Outcome::WillCome] {
+            assert_eq!(
+                next_follow_up(o, on, Some(None)),
+                None,
+                "{o:?}: \"Không hẹn\" is never replaced by the suggestion"
+            );
+        }
         assert_eq!(
             suggestions(on),
             Suggestions {
@@ -390,11 +399,11 @@ mod tests {
         assert!(validate(&late, today).is_err(), "tomorrow");
 
         let mut next = input(Outcome::WillCome);
-        next.next_follow_up_on = Some(d("2026-11-04"));
+        next.next_follow_up_on = Some(Some(d("2026-11-04")));
         assert!(validate(&next, today).is_err(), "before the contact");
-        next.next_follow_up_on = Some(d("2027-11-06"));
+        next.next_follow_up_on = Some(Some(d("2027-11-06")));
         assert!(validate(&next, today).is_err(), "more than a year out");
-        next.next_follow_up_on = Some(today);
+        next.next_follow_up_on = Some(Some(today));
         assert!(validate(&next, today).is_ok(), "same day");
 
         let mut note = input(Outcome::Other);

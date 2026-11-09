@@ -311,9 +311,20 @@ pub struct FollowUpCreate {
     pub outcome: FollowUpOutcomeDto,
     /// ≤ 500 characters. A contact note, not a health note.
     pub note: Option<String>,
-    /// When to try again (≥ `contacted_on`, ≤ 365 days after it). Omitted: `no_answer` → contact
-    /// day + 3, `will_come` → + 7, `not_interested` / `other` → none.
-    pub next_follow_up_on: Option<NaiveDate>,
+    /// When to try again (≥ `contacted_on`, ≤ 365 days after it); `null` = no next try. Omitted:
+    /// `no_answer` → contact day + 3, `will_come` → + 7, `not_interested` / `other` → none.
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<NaiveDate>)]
+    pub next_follow_up_on: Option<Option<NaiveDate>>,
+}
+
+/// Absent = `None` (the server's default), `null` = `Some(None)` (explicitly nothing).
+fn present<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(d).map(Some)
 }
 
 #[derive(Debug, Serialize, ToSchema)]
