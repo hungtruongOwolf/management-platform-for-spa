@@ -944,7 +944,7 @@ async fn a_correction_keeps_prices_and_the_package_sold_in_the_checkout(
     let sold = v.body["package_sales"][0]["sale_id"].clone();
     // The price list changes after the visit.
     s.exec(&format!(
-        "UPDATE app.service_price SET price = 59000 WHERE service_id = '{}'",
+        "UPDATE app.service_price SET amount = 59000 WHERE service_id = '{}'",
         s.shampoo
     ))
     .await?;
