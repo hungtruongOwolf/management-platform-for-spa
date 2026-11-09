@@ -5,7 +5,7 @@ import { DateField } from "../../components/DateField";
 import { StickyActions } from "../../components/StickyActions";
 import { ApiError } from "../../lib/api";
 import { fieldMessage, messageFor } from "../../lib/errors";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
 import { shiftDays } from "../reports/period";
 import {
   CHANNEL_LABEL,

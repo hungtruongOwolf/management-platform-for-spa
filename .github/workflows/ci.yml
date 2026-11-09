@@ -387,6 +387,8 @@ jobs:
       - run: pnpm -r typecheck
       - run: pnpm -r test
       - run: pnpm --filter web build
+      - name: Startup JS budget (entry + modulepreload ≤ 125 KiB gzip)
+        run: pnpm --filter web budget
       - run: pnpm audit --prod --audit-level high
 
   images:

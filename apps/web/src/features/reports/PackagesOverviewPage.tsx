@@ -5,7 +5,7 @@ import { CustomerName } from "../../app/CustomerName";
 import { NO_EXPIRY } from "../../lib/names";
 import { useSearchState } from "../../lib/searchState";
 import { ResponsiveTable } from "../../components/ResponsiveTable";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
 import { ENDING_DAYS, PACKAGE_STATE, packageState } from "../sales/packageState";
 import { SearchField } from "./filters";
 import { packagesSearch } from "./search";

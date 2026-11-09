@@ -25,7 +25,7 @@ import { messageFor, retryable } from "../../lib/errors";
 import { useSearchState } from "../../lib/searchState";
 import { useReached } from "../../lib/useReached";
 import { can, meQuery } from "../auth/session";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
 import type { CartLine } from "../front-desk/api";
 import { cartFromAppointment } from "../front-desk/prefill";
 import { frontDeskSearch } from "../front-desk/search";
