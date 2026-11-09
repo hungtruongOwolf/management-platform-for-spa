@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT p.id, p.customer_id, p.plan_id, p.name_snapshot, p.gift_note, p.sold_price, p.origin, p.sale_id,\n                  p.closer_staff_id, s.full_name AS \"closer_name?\", p.starts_on, p.expires_on, p.cancelled_at,\n                  p.cancel_reason, p.version, p.created_at\n           FROM app.customer_package p\n           LEFT JOIN app.staff s ON s.tenant_id = p.tenant_id AND s.id = p.closer_staff_id\n           WHERE p.tenant_id = $1\n             AND ($2::uuid IS NULL OR p.id = $2)\n             AND ($3::uuid IS NULL OR p.customer_id = $3)\n             AND ($4::uuid IS NULL OR p.sale_id = $4)\n           ORDER BY p.created_at DESC, p.id DESC\n           LIMIT 200",
+  "query": "SELECT p.id, p.customer_id, p.plan_id, p.name_snapshot, p.gift_note, p.sold_price, p.origin, p.sale_id,\n                  p.closer_staff_id, s.full_name AS \"closer_name?\", p.starts_on, p.expires_on, p.cancelled_at,\n                  p.cancel_reason, p.version, p.created_at\n           FROM app.customer_package p\n           LEFT JOIN app.staff s ON s.tenant_id = p.tenant_id AND s.id = p.closer_staff_id\n           WHERE p.tenant_id = $1\n             AND ($2::uuid IS NULL OR p.id = $2)\n             AND ($3::uuid IS NULL OR p.customer_id = $3)\n           ORDER BY p.created_at DESC, p.id DESC\n           LIMIT 200",
   "describe": {
     "columns": [
       {
@@ -184,7 +184,6 @@
       "Left": [
         "Uuid",
         "Uuid",
-        "Uuid",
         "Uuid"
       ]
     },
@@ -207,5 +206,5 @@
       false
     ]
   },
-  "hash": "202359ebf16c6d64de9ab6dba730816f2a4062bb0ba5e7cb3c81f372bbfd2246"
+  "hash": "863696a2f9ed020c77884bf8716679b68ddcf41d35d47548b08c82076ecc7371"
 }

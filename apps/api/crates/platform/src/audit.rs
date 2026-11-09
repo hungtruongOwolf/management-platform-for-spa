@@ -55,6 +55,24 @@ pub fn phone_tail(e164: &str) -> String {
     format!("…{tail}")
 }
 
+/// What an operator typed into the account search, kept for the trail without the personal data
+/// it names (ADR-0019 D17): a phone keeps its first three digits (the network prefix), a name
+/// keeps the first letter of each word. Enough to see that a search happened and of what kind,
+/// not whose number or name it was.
+pub fn masked_query(q: &str, by_phone: bool) -> String {
+    if by_phone {
+        let digits: Vec<char> = q.chars().filter(char::is_ascii_digit).collect();
+        let head: String = digits.iter().take(3).collect();
+        let hidden = "*".repeat(digits.len().saturating_sub(3));
+        return format!("{head}{hidden}");
+    }
+    q.split_whitespace()
+        .filter_map(|word| word.chars().next())
+        .map(|first| format!("{first}…"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[derive(Debug, Clone, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct AuditQuery {
@@ -243,6 +261,15 @@ mod tests {
     fn only_the_last_three_digits_of_a_phone_are_kept() {
         assert_eq!(phone_tail("+84905123456"), "…456");
         assert_eq!(phone_tail("12"), "…12");
+    }
+
+    #[test]
+    fn a_search_is_kept_without_the_number_or_name() {
+        assert_eq!(masked_query("0905 123 456", true), "090*******");
+        assert_eq!(masked_query("+84905", true), "849**");
+        assert_eq!(masked_query("Nguyễn  Văn An", false), "N… V… A…");
+        assert_eq!(masked_query("%%%", false), "%…");
+        assert!(!masked_query("Nguyễn Văn An", false).contains("guy"));
     }
 
     #[test]

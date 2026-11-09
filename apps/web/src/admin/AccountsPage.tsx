@@ -146,7 +146,8 @@ export function AccountsPage() {
                         {LABELS[action].title}
                       </button>
                     ))}
-                    {a.mfa_enabled && a.status === "active" && (
+                    {/* Also on a locked account (ADR-0019 D20): a lost phone is often why it was locked. */}
+                    {a.mfa_enabled && (
                       <button
                         type="button"
                         className="btn btn-danger-outline"

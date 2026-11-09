@@ -59,14 +59,21 @@ pub struct TenantRow {
     pub last_activity_at: Option<DateTime<Utc>>,
 }
 
-pub async fn list(pool: &PgPool, op: &OperatorSession) -> Result<Vec<TenantRow>, AppError> {
+/// The overview of every spa (`tenant = None`) or of one: the filter runs inside the gated
+/// function, so one spa costs one spa's counts (0049).
+async fn overview(
+    pool: &PgPool,
+    op: &OperatorSession,
+    tenant: Option<Uuid>,
+) -> Result<Vec<TenantRow>, AppError> {
     let rows = sqlx::query!(
         r#"SELECT id AS "id!", name AS "name!", slug AS "slug!", status AS "status!",
                   created_at AS "created_at!", staff_count AS "staff_count!",
                   customer_count AS "customer_count!", visits_30d AS "visits_30d!",
                   owner_count AS "owner_count!", last_activity_at
-           FROM app.platform_tenant_overview($1)"#,
-        &op.token_hash[..]
+           FROM app.platform_tenant_overview($1, $2)"#,
+        &op.token_hash[..],
+        tenant
     )
     .fetch_all(pool)
     .await
@@ -89,11 +96,16 @@ pub async fn list(pool: &PgPool, op: &OperatorSession) -> Result<Vec<TenantRow>,
         .collect()
 }
 
+pub async fn list(pool: &PgPool, op: &OperatorSession) -> Result<Vec<TenantRow>, AppError> {
+    overview(pool, op, None).await
+}
+
+/// One spa, or `NotFound`; also the existence check of every per-spa console route.
 pub async fn get(pool: &PgPool, op: &OperatorSession, id: Uuid) -> Result<TenantRow, AppError> {
-    list(pool, op)
+    overview(pool, op, Some(id))
         .await?
         .into_iter()
-        .find(|t| t.id == id)
+        .next()
         .ok_or(AppError::NotFound)
 }
 

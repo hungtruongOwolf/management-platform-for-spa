@@ -1,0 +1,209 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.id, p.customer_id, p.plan_id, p.name_snapshot, p.gift_note, p.sold_price, p.origin, p.sale_id,\n                  p.closer_staff_id, s.full_name AS \"closer_name?\", p.starts_on, p.expires_on, p.cancelled_at,\n                  p.cancel_reason, p.version, p.created_at\n           FROM app.customer_package p\n           LEFT JOIN app.staff s ON s.tenant_id = p.tenant_id AND s.id = p.closer_staff_id\n           WHERE p.tenant_id = $1 AND p.sale_id = ANY($2)\n           ORDER BY p.created_at DESC, p.id DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "customer_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "customer_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "plan_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "plan_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "name_snapshot",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "name_snapshot"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "gift_note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "gift_note"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "sold_price",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "sold_price"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "origin",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "origin"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "sale_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "sale_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "closer_staff_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "closer_staff_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "closer_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.staff",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "starts_on",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "starts_on"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "expires_on",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "expires_on"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "cancelled_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "cancelled_at"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "cancel_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "cancel_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "version",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "version"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "76914f1f2319d6023f6a66994c6addff76d37f8c376187ebdf190c6668145d79"
+}

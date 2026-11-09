@@ -252,7 +252,7 @@ async fn purchases(
                      AND cp.customer_id <> s.customer_id) AS "beneficiary_name?",
                   CASE WHEN s.customer_id <> $3 THEN app.customer_label(p.full_name) END
                     AS "payer_name?",
-                  s.note_ct
+                  s.note_ct, s.version
            FROM app.sale s
            JOIN app.customer p ON p.tenant_id = s.tenant_id AND p.id = s.customer_id
            LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id
@@ -289,6 +289,7 @@ async fn purchases(
                 visit_id: s.visit_id,
                 beneficiary_name: s.beneficiary_name,
                 payer_name: s.payer_name,
+                version: s.version,
             },
         ))
     })
