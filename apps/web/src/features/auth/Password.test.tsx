@@ -82,6 +82,29 @@ describe("temporary password (ADR-0016)", () => {
     expect(calls.at(-1)?.[1]?.body).toBe(JSON.stringify({ current_password: "ABCD-EFGH-JKLM", new_password: "mot-cau-de-nho" }));
   });
 
+  it("a wrong current password and an expired session read differently", async () => {
+    let expired = false;
+    server((method, path) => {
+      if (path === "/api/v1/me") return problem(403, "auth.password_change_required");
+      if (path === "/api/v1/auth/password" && method === "POST")
+        return expired ? problem(401, "auth.unauthenticated") : problem(401, "auth.invalid_credentials");
+      return new Response(null, { status: 404 });
+    });
+    renderAt("/doi-mat-khau");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText("Mật khẩu tạm"), "sai-mat-khau");
+    await user.type(screen.getByLabelText("Mật khẩu mới"), "mot-cau-de-nho");
+    await user.type(screen.getByLabelText("Nhập lại mật khẩu mới"), "mot-cau-de-nho");
+    await user.click(screen.getByRole("button", { name: "Đổi mật khẩu" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Mật khẩu hiện tại không đúng.");
+
+    expired = true;
+    await user.click(screen.getByRole("button", { name: "Đổi mật khẩu" }));
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("Phiên đăng nhập đã hết.");
+    });
+  });
+
   it("an app screen opened during a forced change goes back to 'Đặt mật khẩu mới'", async () => {
     server((_m, path) => (path === "/api/v1/me" ? problem(403, "auth.password_change_required") : new Response(null, { status: 404 })));
     const history = renderAt("/nhan-vien");
