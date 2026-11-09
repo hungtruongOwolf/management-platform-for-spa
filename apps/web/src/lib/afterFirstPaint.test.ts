@@ -1,30 +1,41 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { PAINT_REPORT_TIMEOUT_MS, afterFirstPaint } from "./afterFirstPaint";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// A fake Paint Timing API: the browser reports first-contentful-paint when `report()` is called.
-function fakePaintTiming() {
-  let reported = false;
-  const observers: (() => void)[] = [];
+type Module = typeof import("./afterFirstPaint");
+
+/**
+ * A fake Performance Timeline. `paint()` reports first-contentful-paint; `lcp(t)` reports a
+ * largest-contentful-paint candidate painted at `t` (buffered entries replay on observe).
+ */
+function fakeTimeline(supported: string[]) {
+  let fcp = false;
+  const lcps: number[] = [];
+  const observers = new Map<object, { type: string; cb: (list: { getEntries: () => { startTime: number }[] }) => void }>();
+  const entries = (times: number[]) => ({ getEntries: () => times.map((startTime) => ({ startTime })) });
   class FakeObserver {
-    static supportedEntryTypes = ["paint", "largest-contentful-paint"];
-    constructor(private readonly callback: () => void) {}
-    observe() {
-      observers.push(this.callback);
+    static supportedEntryTypes = supported;
+    constructor(private readonly callback: (list: { getEntries: () => { startTime: number }[] }) => void) {}
+    observe({ type, buffered }: { type: string; buffered?: boolean }) {
+      observers.set(this, { type, cb: this.callback });
+      if (type === "largest-contentful-paint" && buffered && lcps.length > 0) this.callback(entries(lcps));
     }
     disconnect() {
-      observers.splice(observers.indexOf(this.callback), 1);
+      observers.delete(this);
     }
   }
   vi.stubGlobal("PerformanceObserver", FakeObserver);
   vi.spyOn(performance, "getEntriesByName").mockImplementation((name: string) =>
-    reported && name === "first-contentful-paint" ? ([{}] as PerformanceEntryList) : [],
+    fcp && name === "first-contentful-paint" ? ([{}] as PerformanceEntryList) : [],
   );
   return {
-    report() {
-      reported = true;
-      for (const cb of [...observers]) cb();
+    paint() {
+      fcp = true;
+      for (const o of [...observers.values()]) if (o.type === "paint") o.cb(entries([]));
     },
-    observing: () => observers.length,
+    lcp(t: number) {
+      lcps.push(t);
+      for (const o of [...observers.values()]) if (o.type === "largest-contentful-paint") o.cb(entries([t]));
+    },
+    observing: () => observers.size,
   };
 }
 
@@ -38,40 +49,66 @@ async function settled(p: Promise<void>): Promise<boolean> {
 }
 
 describe("afterFirstPaint", () => {
+  let mod: Module;
+  beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame"] });
+    // The module remembers that the page load's paint was reported: a fresh copy per test.
+    vi.resetModules();
+    mod = await import("./afterFirstPaint");
+  });
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
-  it("waits for the browser to report the first contentful paint, not just for a frame", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame"] });
-    const paint = fakePaintTiming();
-    const p = afterFirstPaint();
-    await vi.advanceTimersByTimeAsync(50); // frames go by, the paint is not reported yet
+  it("waits for a paint reported after the screen rendered, not for an earlier frame (shell, skeleton)", async () => {
+    const t = fakeTimeline(["paint", "largest-contentful-paint"]);
+    t.paint();
+    t.lcp(80); // the skeleton's paint, before the screen rendered at 100
+    const p = mod.afterFirstPaint(100);
+    await vi.advanceTimersByTimeAsync(50);
     expect(await settled(p)).toBe(false);
-    paint.report();
+    t.lcp(190); // the screen's own paint
     expect(await settled(p)).toBe(true);
-    expect(paint.observing()).toBe(0);
+    expect(t.observing()).toBe(0);
   });
 
-  it("resolves right after a frame when the paint was already reported (in-app navigation)", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame"] });
-    const paint = fakePaintTiming();
-    paint.report();
-    const p = afterFirstPaint();
+  it("after the load's paint, a later screen (in-app navigation) only waits a frame", async () => {
+    const t = fakeTimeline(["paint", "largest-contentful-paint"]);
+    t.paint();
+    const first = mod.afterFirstPaint(100);
     await vi.advanceTimersByTimeAsync(20);
-    expect(await settled(p)).toBe(true);
+    t.lcp(150);
+    expect(await settled(first)).toBe(true);
+    // After user input the browser reports no more LCP: no wait for one.
+    const later = mod.afterFirstPaint(5000);
+    await vi.advanceTimersByTimeAsync(20);
+    expect(await settled(later)).toBe(true);
   });
 
-  it("gives up waiting after PAINT_REPORT_TIMEOUT_MS when no paint is ever reported", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame"] });
-    const paint = fakePaintTiming();
-    const p = afterFirstPaint();
-    await vi.advanceTimersByTimeAsync(PAINT_REPORT_TIMEOUT_MS - 100);
+  it("gives up after PAINT_REPORT_TIMEOUT_MS when no paint is ever reported", async () => {
+    const t = fakeTimeline(["paint", "largest-contentful-paint"]);
+    const p = mod.afterFirstPaint(100);
+    await vi.advanceTimersByTimeAsync(mod.PAINT_REPORT_TIMEOUT_MS - 100);
     expect(await settled(p)).toBe(false);
     await vi.advanceTimersByTimeAsync(200);
     expect(await settled(p)).toBe(true);
-    expect(paint.observing()).toBe(0);
+    expect(t.observing()).toBe(0);
+  });
+
+  it("without LCP reporting, waits for the reported first contentful paint", async () => {
+    const t = fakeTimeline(["paint"]);
+    const p = mod.afterFirstPaint();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await settled(p)).toBe(false);
+    t.paint();
+    expect(await settled(p)).toBe(true);
+  });
+
+  it("resolves right after a frame without any Paint Timing API (jsdom)", async () => {
+    const p = mod.afterFirstPaint();
+    await vi.advanceTimersByTimeAsync(20);
+    expect(await settled(p)).toBe(true);
   });
 });
