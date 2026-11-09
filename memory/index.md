@@ -53,6 +53,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [ADR-0016 accounts and passwords](wiki/decisions/ADR-0016-accounts-and-passwords.md) — **accepted (EM 2026-11-08)**: tài khoản tạo từ hồ sơ, mật khẩu tạm một lần + bắt đổi, đổi / đặt lại mật khẩu, đổi vai trò, "Quên mật khẩu?" gửi yêu cầu cho chủ spa (0032)
 - [ADR-0017 one-statement request auth](wiki/decisions/ADR-0017-one-statement-request-auth.md) — **accepted (EM 2026-11-09)**: `app.session_actor(token_hash)` SECURITY DEFINER trả session + quyền + người đã nghỉ + cài đặt spa trong một câu (0034); quyết định vẫn ở Rust
 - [ADR-0018 platform admin console](wiki/decisions/ADR-0018-platform-admin-console.md) — **accepted (đã làm 0038–0040, EM to review)**: operator là principal riêng (`__Host-op-session`, TOTP, step-up 5 phút), `/admin` cùng deployment, hàm definer hẹp có cổng token, cờ tính năng, mẫu vai trò, audit hai phía
+- [ADR-0019](wiki/decisions/ADR-0019-audit-decisions-2026-11-09.md) — lead quyết các câu hỏi mở sau rà soát 2026-11-09 (EM ủy quyền): chốt lương, sửa lượt, hoàn tiền, PII trong audit, cột lịch hẹn của quản lý, UX
 
 ## Security
 - [authz-matrix](wiki/security/authz-matrix.md) — ai gọi được gì: permission × role (seed mẫu 0040), bảng endpoint → permission khớp `authz_matrix.rs`, quy tắc server từng vòng, cờ tính năng, console operator, test bắt buộc

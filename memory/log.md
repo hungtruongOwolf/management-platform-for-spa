@@ -760,3 +760,6 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Sự cố trong đợt: 0042 (viết song song) ghi đè `purge_sessions` của 0041 → main đỏ; sửa bằng 0044 (#143). Bài học: hai agent không được cùng `CREATE OR REPLACE` một hàm; lead chia số migration *và* hàm theo agent.
 - Repo xác nhận **PUBLIC** (`gh repo view`), không có branch protection; 14 file `docs for reference/` đang được track. Chờ EM chọn.
 - Quyết định lead: ngân sách startup JS tính entry + modulepreload (như frontend.md) → hiện 125.37 KiB, vượt 0.37 KiB; ticket cắt bớt.
+
+## [2026-11-09] decision | EM ủy quyền lead quyết câu hỏi mở của đợt rà soát → ADR-0019
+- Raw: [2026-11-09-em-delegates-audit-decisions](raw/2026-11-09-em-delegates-audit-decisions.md). Quyết định D1–D21 trong [ADR-0019](wiki/decisions/ADR-0019-audit-decisions-2026-11-09.md); thực hiện bởi 3 agent (lương; bán hàng/lượt/báo cáo/khách/lịch hẹn; nền tảng + web shell + ngân sách JS). Public/private: EM nói để sau.
