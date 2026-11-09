@@ -9,7 +9,7 @@ import { useAdminNav } from "./nav";
 type Stage =
   | { step: "password" }
   | { step: "verify" }
-  | { step: "enroll"; enrollment: OperatorEnrollment | null }
+  | { step: "enroll"; enrollment: OperatorEnrollment }
   | { step: "codes"; codes: string[] };
 
 function Frame({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {

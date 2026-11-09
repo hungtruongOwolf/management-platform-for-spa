@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type SyntheticEvent } from "react";
+import { useState, type InputHTMLAttributes, type SyntheticEvent } from "react";
 import { BottomSheet } from "../components/BottomSheet";
-import { adminApi, adminDateTime, adminKeys, type CreatedTenant, type TenantRow } from "./api";
+import { adminApi, adminDateTime, adminKeys, markAuditStale, NAME_MAX, type CreatedTenant, type TenantRow } from "./api";
 import { adminFieldError, adminMessage } from "./messages";
 import { AdminLink } from "./nav";
 import { StepUpCancelled, useStepUp } from "./StepUp";
@@ -184,7 +184,8 @@ function CreateTenantSheet({
           owner: { full_name: draft.ownerName.trim(), phone: draft.ownerPhone.trim() },
         }),
       );
-      await queryClient.invalidateQueries({ queryKey: adminKeys.tenants });
+      await queryClient.invalidateQueries({ queryKey: adminKeys.tenants, exact: true });
+      markAuditStale(queryClient);
       setDraft(EMPTY);
       setSlugTouched(false);
       onCreated(created);
@@ -198,7 +199,7 @@ function CreateTenantSheet({
   const fieldError = (field: string) => adminFieldError(error, field);
   const general = error && !["name", "slug", "branch_name", "owner.phone", "owner.full_name"].some((f) => fieldError(f));
 
-  const input = (id: string, label: string, field: keyof Draft, apiField: string, extra: Record<string, string> = {}) => {
+  const input = (id: string, label: string, field: keyof Draft, apiField: string, extra: InputHTMLAttributes<HTMLInputElement> = {}) => {
     const message = fieldError(apiField);
     return (
       <div className="field">
@@ -243,13 +244,14 @@ function CreateTenantSheet({
       }
     >
       <form id="create-tenant-form" noValidate className="grid gap-4 sm:grid-cols-2" onSubmit={(e) => void submit(e)}>
-        {input("tenant-name", "Tên spa", "name", "name")}
+        {input("tenant-name", "Tên spa", "name", "name", { maxLength: NAME_MAX })}
         {input("tenant-slug", "Mã spa", "slug", "slug", { autoCapitalize: "none" })}
         {input("tenant-branch", "Chi nhánh đầu tiên (không bắt buộc)", "branch", "branch_name", {
           placeholder: "Cơ sở chính",
+          maxLength: NAME_MAX,
         })}
         <span aria-hidden="true" />
-        {input("owner-name", "Tên chủ spa", "ownerName", "owner.full_name")}
+        {input("owner-name", "Tên chủ spa", "ownerName", "owner.full_name", { maxLength: NAME_MAX })}
         {input("owner-phone", "Số điện thoại chủ spa", "ownerPhone", "owner.phone", {
           type: "tel",
           inputMode: "numeric",

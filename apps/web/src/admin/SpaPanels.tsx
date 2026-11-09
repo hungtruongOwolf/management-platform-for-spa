@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { adminApi, adminDateTime, adminKeys } from "./api";
+import { adminApi, adminDateTime, adminKeys, markAuditStale } from "./api";
 import { adminMessage } from "./messages";
 import { RoleList } from "./RolesPage";
 
@@ -8,7 +8,10 @@ import { RoleList } from "./RolesPage";
 export function SpaRolesPanel({ tenantId }: { tenantId: string }) {
   const queryClient = useQueryClient();
   const roles = useQuery({ queryKey: adminKeys.roles(tenantId), queryFn: () => adminApi.roles(tenantId) });
-  const refresh = () => queryClient.invalidateQueries({ queryKey: adminKeys.roles(tenantId) });
+  const refresh = () => {
+    markAuditStale(queryClient);
+    return queryClient.invalidateQueries({ queryKey: adminKeys.roles(tenantId) });
+  };
   return (
     <section className="grid gap-3" aria-labelledby="spa-roles">
       <h2 id="spa-roles" className="section-heading">
@@ -49,7 +52,11 @@ export function SpaAuditPanel({ tenantId }: { tenantId: string }) {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.next_before ?? undefined,
     enabled: open,
+    // Never a background read: each one is audited. A write marks it stale (markAuditStale), and
+    // it reloads when the panel is next opened.
     staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
   return (
     <section className="panel" aria-labelledby="spa-audit">
