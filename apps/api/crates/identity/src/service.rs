@@ -688,7 +688,11 @@ pub async fn actor_for(
         code: "auth.not_a_member",
     })?;
     // The spa settings ride along, so the request's own transactions skip re-reading them.
-    Ok(Actor::new(session.user_id, tenant, access.permissions, ip).with_tenant_facts(access.facts))
+    let actor = Actor::new(session.user_id, tenant, access.permissions, ip);
+    Ok(match access.facts {
+        Some(facts) => actor.with_tenant_facts(facts),
+        None => actor,
+    })
 }
 
 /// `POST /auth/password` (ADR-0016): the signed-in person replaces their own password — the

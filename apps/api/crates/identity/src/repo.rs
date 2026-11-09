@@ -379,7 +379,7 @@ pub async fn tenants_of_user(pool: &PgPool, user: UserId) -> Result<Vec<TenantRe
 /// from the roster, never from the client.
 pub struct MemberAccess {
     pub permissions: Vec<Permission>,
-    pub facts: TenantFacts,
+    pub facts: Option<TenantFacts>,
 }
 
 /// [`member_access`] without the spa settings.
@@ -425,12 +425,15 @@ pub async fn member_access(
     let Some(member) = member else {
         return Ok(None);
     };
+    // A spa without an active branch or with an unknown zone authorizes as before; only the use
+    // cases that need its profile fail, when they read it (no facts carried = read in the tx).
     let facts = TenantFacts::from_row(
         tenant,
         &member.timezone,
         member.manager_discount_max_pct.as_deref(),
         member.branch_id,
-    )?;
+    )
+    .ok();
     let roles = member
         .permissions
         .iter()
