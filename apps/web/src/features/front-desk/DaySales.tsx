@@ -115,7 +115,8 @@ export function DaySales({
       cardLabel: "Gói",
       cell: (s) => (
         <span className="grid min-w-0">
-          <span className="line-clamp-2">{s.sale.lines.map((l) => l.description).join(", ")}</span>
+          {/* Whole names, wrapped: a clamp hid real package names ("Gội đầu dưỡng sinh 10 buổi + tặng 2…"). */}
+          <span className="[overflow-wrap:anywhere]">{s.sale.lines.map((l) => l.description).join(", ")}</span>
           <span className="truncate text-text-muted">{saleMeta(s)}</span>
           {voided(s) && s.sale.void_reason && (
             <span className="truncate text-text-muted" title={s.sale.void_reason}>

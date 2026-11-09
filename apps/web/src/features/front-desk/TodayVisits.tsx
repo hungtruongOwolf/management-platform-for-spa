@@ -380,9 +380,8 @@ function visitColumns({
         const staff = [...new Set(v.lines.map((l) => l.staff_name))].join(", ");
         return (
           <span className="grid min-w-0">
-            <span className="line-clamp-2 text-ellipsis" title={services}>
-              {services}
-            </span>
+            {/* Whole, wrapped: services and package names cut after two lines were unreadable (no hover on a tablet). */}
+            <span className="[overflow-wrap:anywhere]">{services}</span>
             <span className="truncate text-text-muted">KTV {staff}</span>
             {v.note && (
               <span className="truncate text-text-muted" title={v.note}>
