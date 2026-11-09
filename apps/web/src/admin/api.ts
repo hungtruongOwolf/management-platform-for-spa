@@ -15,7 +15,6 @@ export type CreatedTenant = Schemas["CreatedTenant"];
 export type NewTenant = Schemas["NewTenant"];
 export type StatusChanged = Schemas["StatusChanged"];
 export type PlatformAuditPage = Schemas["PlatformAuditPage"];
-export type PlatformAuditItem = Schemas["PlatformAuditItem"];
 export type TenantFeature = Schemas["TenantFeature"];
 export type PermissionInfo = Schemas["PermissionInfo"];
 export type RoleGrants = Schemas["RoleGrants"];

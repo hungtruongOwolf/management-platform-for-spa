@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState, type SyntheticEvent } from "react";
 import { ApiError, api } from "../../lib/api";
-import { fieldMessage } from "../../lib/errors";
+import { fieldMessage, messageFor } from "../../lib/errors";
 import { AuthFrame, bandTitle } from "./AuthFrame";
 import { logout, parseMe, setAuthState, type Me } from "./session";
 
@@ -57,11 +57,14 @@ export function ChangePasswordForm({ currentLabel, onChanged }: { currentLabel: 
       setError(
         code
           ? (FIELD_TEXT[code] ?? "Mật khẩu mới chưa hợp lệ.")
-          : err instanceof ApiError && err.status === 401
+          : err instanceof ApiError && err.code === "auth.invalid_credentials"
             ? "Mật khẩu hiện tại không đúng."
             : err instanceof ApiError && err.status === 429
               ? "Thử nhiều lần quá. Chờ một lúc rồi thử lại."
-              : "Chưa đổi được mật khẩu. Vui lòng thử lại.",
+              : // Another 401 is an expired session, not a wrong password.
+                err instanceof ApiError && err.status === 401
+                ? messageFor(err)
+                : "Chưa đổi được mật khẩu. Vui lòng thử lại.",
       );
     } finally {
       setBusy(false);

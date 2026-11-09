@@ -4,8 +4,6 @@
  * strings in the spa's day (Asia/Ho_Chi_Minh), formatted as UTC so the day never shifts.
  */
 
-const pad = (n: number) => String(n).padStart(2, "0");
-
 /** "2026-11-05" → "Tháng 11/2026" (a heading over a month of history, sentence case). */
 export function monthLabel(iso: string): string {
   const [y, m] = iso.split("-");
@@ -50,9 +48,4 @@ export function spaTime(iso: string): string {
 export function spaDateTime(iso: string): string {
   const [y, m, d] = spaParts.format(new Date(iso)).split("-");
   return `${spaTime(iso)} ${d ?? ""}/${m ?? ""}/${y ?? ""}`;
-}
-
-/** "05/11/2026" for a UTC `Date` (axis/tooltip helpers that already hold a Date). */
-export function dmy(d: Date): string {
-  return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${String(d.getUTCFullYear())}`;
 }

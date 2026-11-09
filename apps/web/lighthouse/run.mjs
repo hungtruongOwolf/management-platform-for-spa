@@ -104,6 +104,9 @@ try {
     delete ci.collect.signedInUrls;
     ci.collect.url = pass.urls.map((path) => `${webOrigin}${path}`);
     if (pass.headers) ci.collect.settings = { ...ci.collect.settings, extraHeaders: pass.headers };
+    // One folder per pass: each upload writes its own manifest.json, which would otherwise replace
+    // the previous pass's (the CI report listed /quay only).
+    ci.upload.outputDir = `${base.ci.upload.outputDir}/${pass.name}`;
     const config = join(tmp, `lighthouserc-${pass.name}.json`);
     writeFileSync(config, JSON.stringify({ ci }), { mode: 0o600 });
     const status =
