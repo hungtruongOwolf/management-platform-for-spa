@@ -10,7 +10,8 @@
 -- moves into the function too, under a per-spa advisory lock: two operators locking the last two
 -- owners of a spa at the same moment can no longer both pass the check.
 --
--- Also: operator sessions are purged like spa sessions (0035 C1 covered app.session only).
+-- Also: operator sessions are purged like spa sessions (0035 C1 covered app.session only), and
+-- app.user_requires_mfa drops its dead `platform.tenant.manage` branch.
 
 -- ---------------------------------------------------------------- account actions (US8)
 -- `p_action`: lock | unlock | reset_mfa | reset_password (with `p_password_hash`, an Argon2id
@@ -124,6 +125,23 @@ END
 $$;
 REVOKE ALL ON FUNCTION app.platform_set_tenant_role(bytea, uuid, text, text[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app.platform_set_tenant_role(bytea, uuid, text, text[]) TO app_rw;
+
+-- ---------------------------------------------------------------- MFA requirement (0011)
+-- `platform.tenant.manage` can no longer be held by any role: 0040 deleted the stored copies and
+-- the platform crate refuses to grant it (`role.not_grantable`); platform administration is the
+-- operator principal's (ADR-0018). The branch that made it imply MFA is dead; the rule is the
+-- role's `requires_mfa` alone. Same signature, so the grants and the pinned search_path stay.
+CREATE OR REPLACE FUNCTION app.user_requires_mfa(p_user_id uuid)
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = app, pg_temp AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM app.membership m
+    JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
+    JOIN app.role r ON r.tenant_id = mr.tenant_id AND r.id = mr.role_id
+    WHERE m.user_id = p_user_id AND m.status = 'active' AND r.requires_mfa
+  )
+$$;
 
 -- ---------------------------------------------------------------- session purge (0035 C1)
 -- Same rule for operator sessions, which kept their IP and user agent for ever. One count for both
