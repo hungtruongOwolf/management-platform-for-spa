@@ -753,3 +753,10 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Đánh dấu superseded: [staging-setup](wiki/runbooks/staging-setup.md) (giữ vì `infra/` + `deploy.yml` còn trỏ tới); quy tắc cũ trong spec có ghi chú "(thay bằng §X)" tại chỗ; db-review / latency có bảng trạng thái từng đề xuất. Không xóa trang nào. Bỏ project ref / URL staging khỏi trang wiki hiện hành (raw + log giữ nguyên). `index.md` viết lại thành mỗi trang một dòng "trả lời gì". Sửa một link hỏng cũ trong log (ADR-0013).
 - Câu hỏi cho EM/lead (doc và code mâu thuẫn, chưa đổi bên nào): `POST /opening-balances` còn sống dù plan M8 nói xóa; quản lý đã gắn hồ sơ không bao giờ thành cột lịch (cột chọn theo chức danh); 401 giữa phiên không tự về `/dang-nhap` như frontend.md từng mô tả; rate limit theo người dùng (thiết kế) chưa làm; G5 "mọi ghi có audit" chưa có test phủ mọi route; S10 (buổi dùng thử) chưa chạy; principles #4 chính sách lương có phiên bản chưa làm; comment code cũ (`merge-local-gate.sh`, `merge-when-green.sh`, header 0025, `router.tsx:275` `/me/work`).
 - Tiếp theo: lead gom các câu hỏi trên cho EM; agent code sửa comment cũ; khi xóa đường VPS trong `infra/` thì xóa luôn staging-setup.
+
+## [2026-11-09] record | Rà soát toàn bộ (5 agent song song) — xong, deploy staging
+- Raw: [2026-11-09-em-request-full-audit](raw/2026-11-09-em-request-full-audit.md). Tổng hợp, câu hỏi EM và ticket còn lại: [audit-2026-11-09](wiki/plans/audit-2026-11-09.md).
+- ~35 PR (#117–#148) merge qua `merge-when-green`, CI xanh. Migration 0041–0044: lead kiểm dữ liệu staging với FK mới (0 dòng vi phạm), chạy trên local + staging (max 44), deploy Vercel main.
+- Sự cố trong đợt: 0042 (viết song song) ghi đè `purge_sessions` của 0041 → main đỏ; sửa bằng 0044 (#143). Bài học: hai agent không được cùng `CREATE OR REPLACE` một hàm; lead chia số migration *và* hàm theo agent.
+- Repo xác nhận **PUBLIC** (`gh repo view`), không có branch protection; 14 file `docs for reference/` đang được track. Chờ EM chọn.
+- Quyết định lead: ngân sách startup JS tính entry + modulepreload (như frontend.md) → hiện 125.37 KiB, vượt 0.37 KiB; ticket cắt bớt.
