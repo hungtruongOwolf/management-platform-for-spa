@@ -244,6 +244,10 @@ domain: kiểu dữ liệu & bất biến thuần (Money, PhoneE164, SessionCoun
 - **Rà soát DB A1/A4 (2026-11-09, [db-review](db-review-2026-11.md)):**
   - **A1:** pool `app::db_pool::options` tắt `test_before_acquire`. Chỉ kết nối đã rảnh ≥ `PING_WHEN_IDLE_FOR` (30 s) mới bị ping trước khi giao ra. Ping hỏng thì sqlx đóng kết nối và đưa kết nối khác. `idle_timeout` 5 phút. Bớt một lượt đi về mỗi lần lấy kết nối, ~3 lượt mỗi request. sqlx 0.9 vẫn ping khi **trả** kết nối về pool, nhưng việc đó chạy ở task nền, không nằm trên đường đi của request.
   - **A4:** câu quyền (`identity::repo::member_access`) đọc luôn timezone, chi nhánh và trần giảm giá của spa (`kernel::tenant::TenantFacts`) rồi gắn vào `Actor`. `TenantTx::for_actor` mang chúng vào transaction, nên `kernel::tenant::profile` không còn query. Transaction mở bằng `TenantTx::begin` (tooling, test) vẫn đọc như cũ.
+  - **A3 ([ADR-0017](../decisions/ADR-0017-one-statement-request-auth.md), 0034):** `app.session_actor(token_hash)` trả session + cờ MFA / mật khẩu tạm + quyền + người đã nghỉ + cài đặt spa trong **một** câu, không cần transaction.
+    - `AuthUser` = `identity::service::authenticate`; `/me` = `resolve_with_access` + tài khoản + danh sách spa.
+    - Một request đăng nhập giờ là: `session_actor` (+ touch mỗi phút) → tx nghiệp vụ.
+    - `actor_for` / `tenant_permissions` (dưới RLS) vẫn dùng cho tooling, demo, đổi mật khẩu.
 - **`Server-Timing`** (`app::server_timing`): mọi response trừ `/auth/*` có `db;dur=<ms>;desc="<n> statements", total;dur=<ms>`. `db` = tổng thời gian các câu sqlx của request (layer tracing riêng nghe event `sqlx::query` DEBUG, filter theo layer nên `RUST_LOG` không ảnh hưởng; task-local theo request). `/auth/*` không có: số câu lệnh phân biệt được SĐT lạ / bị khóa / đúng. Đọc bằng DevTools hoặc `infra/perf/endpoints.mjs`.
 - **Tiện ích domain:** chuẩn hóa SĐT VN → E.164 (`phonenumber`); tạo `search_text` (NFC → lowercase → bỏ dấu → `đ→d`); mã hóa field AES-256-GCM (`aes-gcm`, key qua `secrecy`).
 

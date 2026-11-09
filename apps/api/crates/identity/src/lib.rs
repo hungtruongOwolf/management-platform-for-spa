@@ -12,4 +12,5 @@ pub mod service;
 pub mod token;
 
 pub use http::{AuthUser, CurrentSession, PendingMfaSession};
+pub use repo::{LiveSession, MemberAccess};
 pub use roles::SystemRole;
