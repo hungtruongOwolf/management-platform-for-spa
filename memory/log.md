@@ -694,6 +694,11 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - 0035: `app.maintenance_run` + `claim_maintenance` (một instance mỗi khoảng, sửa F10), `purge_sessions` (30 ngày, EM Q-DB4), `invariant_violations` (11 phép kiểm, chỉ đếm); job `app::jobs::run_maintenance` thay purge cũ; drift → log ERROR `data invariant violated`.
 - 0036/0037: FK `created_by`/`voided_by`/`cancelled_by`/`closed_by` → `user_account` (NOT VALID rồi VALIDATE; staging 0 mồ côi). `TenantTx` thêm `idle_in_transaction_session_timeout` 30 s.
 - Sửa dòng wiki backend nói sai là session được dọn mỗi giờ. `audit_log` giữ hết. Test `app/tests/maintenance.rs`.
+## [2026-11-09] build + perf | Rà soát DB PR 2: migration 0033 bỏ 8 index (B1)
+- Bỏ 2 GIN trigram (vô dụng dưới RLS), 2 index tiền tố trùng, 4 index ngày theo chi nhánh; `SET LOCAL lock_timeout`; hoàn tác `CREATE INDEX CONCURRENTLY` ghi trong file. Test `kernel/tests/indexes.rs`.
+- Đo lại trên hai DB sạch 3 năm (0032 vs 0033): index 125 → 108 MB (−16 MB). 40 câu nóng: câu từng dùng index bị bỏ chuyển sang index unique thay thế, không có seq scan mới.
+- ⚠️ Sửa số trong trang review: lần đo đầu (397 MB / index 208 MB / −31 MB) bị phồng do hai lần seed bị hủy; số đúng 312 MB / 125 MB / −16 MB.
+- Tiếp theo: PR 3 (A3, `app.session_actor`, ADR-0017).
 ## [2026-11-09] decision + build + perf | Rà soát DB: EM duyệt hết; PR 1 = A1 + A2 + A4
 - Raw: [2026-11-09-em-decision-db-plan](raw/2026-11-09-em-decision-db-plan.md) ("ok bạn cứ làm hết đi"). Q-DB1..4 ghi ở [db-review §7](wiki/architecture/db-review-2026-11.md); `audit_log` giữ, không có hạn.
 - A1 `app::db_pool` (ping chỉ khi rảnh >= 30 s, test giết backend); A2 lịch sử khách `UNION` (test hồi quy so câu cũ); A4 `TenantFacts` trong `Actor`, `TenantTx::for_actor` (96 chỗ gọi).

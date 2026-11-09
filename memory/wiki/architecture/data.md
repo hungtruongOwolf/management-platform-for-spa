@@ -222,6 +222,11 @@ Không có bảng mới. 0013:
 
 ## Rà soát 2026-11
 Đo trên 3 năm dữ liệu + staging, findings và đề xuất (bỏ 8 index, gộp xác thực, sửa lịch sử khách, dọn session, job kiểm bất biến), danh sách cơ chế không được đổi: [db-review-2026-11](db-review-2026-11.md).
+- **0033 (B1, EM duyệt 2026-11-09):** bỏ 8 index, nên các dòng index tương ứng trong bảng ở trên không còn đúng:
+  - GIN trigram `customer_search_trgm`, `customer_phone_trgm`: dưới RLS không bao giờ dùng được, vì `LIKE` không leakproof. Tìm khách quét theo `tenant_id`.
+  - `visit_line_visit_idx`, `sale_line_sale_idx`: tiền tố của `UNIQUE (tenant_id, x_id, position)`.
+  - `visit_day_idx`, `sale_day_idx`, `payment_day_idx`, `refund_day_idx`: dẫn đầu `branch_id`. Bản `(tenant_id, business_date)` từ 0013 thay thế.
+  - Không đụng constraint, unique hay đích FK nào. Hoàn tác: `CREATE INDEX CONCURRENTLY` ghi trong file migration. Test `kernel/tests/indexes.rs`.
 - **0035–0037 (C1, C2, C4, EM 2026-11-09):**
   - **0035** thêm `app.maintenance_run` (RLS bật, không policy, không grant), `app.claim_maintenance(job, every)` (upsert nguyên tử, một instance chạy mỗi khoảng), `app.purge_sessions(older_than)` (job truyền 30 ngày) và `app.invariant_violations()` (đếm theo phép kiểm, chỉ số đếm). Cả ba là `SECURITY DEFINER` + `search_path` pin, chỉ `app_rw` `EXECUTE`.
   - **0036** thêm FK `NOT VALID` cho cột "người làm" → `user_account`: `visit.created_by/voided_by`, `sale.created_by/voided_by`, `payment.created_by`, `refund.created_by`, `customer_package.created_by/cancelled_by`, `appointment.created_by/closed_by`.
