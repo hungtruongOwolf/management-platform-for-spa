@@ -23,6 +23,7 @@ kernel = { version = "0.1.0", path = "../kernel" }
 operations = { version = "0.1.0", path = "../operations" }
 org = { version = "0.1.0", path = "../org" }
 packages = { version = "0.1.0", path = "../packages" }
+platform = { version = "0.1.0", path = "../platform" }
 reporting = { version = "0.1.0", path = "../reporting" }
 sales = { version = "0.1.0", path = "../sales" }
 secrecy = "0.10.3"
@@ -50,6 +51,7 @@ identity = { path = "../identity" }
 kernel = { path = "../kernel", features = ["testing"] }
 org = { path = "../org" }
 packages = { path = "../packages" }
+platform = { path = "../platform" }
 tokio = { version = "1.54.1", features = ["macros", "rt", "time"] }
 uuid = "1.29.0"
 tower = { version = "0.5.3", features = ["util"] }

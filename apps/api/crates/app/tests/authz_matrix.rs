@@ -37,6 +37,11 @@ enum Access {
     /// Signed in inside a spa and holding this permission (`AuthUser` + `actor.require`).
     /// `allow` lists the default roles that hold it (authz-matrix.md columns).
     Perm(P, &'static [SystemRole]),
+    /// A full platform operator session (ADR-0018, cookie `__Host-op-session`); a spa session of
+    /// any role is `401`. Writes also need a recent step-up (`403 platform.step_up_required`).
+    Operator,
+    /// An operator session that passed the password and still owes its second factor.
+    OperatorPending,
 }
 
 /// What the `{id}` in the path refers to; the test substitutes a real record of that kind.
@@ -55,6 +60,8 @@ enum Target {
     Adjustment,
     /// An open forgotten-password request (ADR-0016).
     ResetRequest,
+    /// The spa itself (platform console routes).
+    Tenant,
 }
 
 struct Route {
@@ -768,6 +775,46 @@ const ROUTES: &[Route] = &[
         "/api/v1/packages",
         Access::Perm(P::CustomerRead, OWNER_MANAGER),
     ),
+    // platform admin console (ADR-0018): operators only, never a spa session
+    route("POST", "/api/v1/admin/auth/login", Access::Public).body(operator_login_body),
+    route("POST", "/api/v1/admin/auth/logout", Access::Operator).consumes_session(),
+    route("POST", "/api/v1/admin/auth/reauth", Access::Operator).body(operator_reauth_body),
+    route(
+        "POST",
+        "/api/v1/admin/auth/mfa/verify",
+        Access::OperatorPending,
+    )
+    .body(mfa_code_body),
+    route(
+        "POST",
+        "/api/v1/admin/auth/mfa/enroll/start",
+        Access::OperatorPending,
+    ),
+    route(
+        "POST",
+        "/api/v1/admin/auth/mfa/enroll/confirm",
+        Access::OperatorPending,
+    )
+    .body(mfa_code_body),
+    route("GET", "/api/v1/admin/me", Access::Operator),
+    route("GET", "/api/v1/admin/tenants", Access::Operator),
+    route("POST", "/api/v1/admin/tenants", Access::Operator).body(new_tenant_body),
+    route("GET", "/api/v1/admin/tenants/{id}", Access::Operator).id(Target::Tenant),
+    route(
+        "POST",
+        "/api/v1/admin/tenants/{id}/suspend",
+        Access::Operator,
+    )
+    .id(Target::Tenant)
+    .body(reason_body),
+    route(
+        "POST",
+        "/api/v1/admin/tenants/{id}/unsuspend",
+        Access::Operator,
+    )
+    .id(Target::Tenant)
+    .body(reason_body),
+    route("GET", "/api/v1/admin/audit", Access::Operator),
 ];
 
 /// Mounted but deliberately left out of the OpenAPI contract. Must answer without a session.
@@ -777,6 +824,29 @@ const PUBLIC_UNDOCUMENTED: &[(&str, &str)] = &[("GET", "/api/v1/health")];
 
 fn no_body(_: &Fixture) -> Option<Value> {
     None
+}
+
+fn operator_login_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"username": common::OPERATOR, "password": "not-the-password"}))
+}
+
+fn operator_reauth_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"password": "not-the-password", "code": "000000"}))
+}
+
+/// A fresh slug and owner phone per call, so the operator's call succeeds.
+fn new_tenant_body(_: &Fixture) -> Option<Value> {
+    static N: AtomicU32 = AtomicU32::new(1);
+    let n = N.fetch_add(1, Ordering::Relaxed);
+    Some(json!({
+        "name": "Spa mới",
+        "slug": format!("spa-moi-{n}"),
+        "owner": {"phone": format!("0908{n:06}"), "full_name": "Chủ spa mới"},
+    }))
+}
+
+fn reason_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"reason": "Kiểm thử ma trận quyền"}))
 }
 fn reauth_body(_: &Fixture) -> Option<Value> {
     Some(json!({"password": PASSWORD}))
@@ -1033,6 +1103,7 @@ impl Fixture {
             Target::Appointment => &self.appointment,
             Target::Adjustment => &self.adjustment,
             Target::ResetRequest => &self.reset_request,
+            Target::Tenant => &self.tenant_id,
         }
     }
 }
@@ -1543,7 +1614,11 @@ async fn each_role_gets_exactly_what_the_matrix_grants(pool: PgPool) -> TestResu
         for route in ROUTES {
             let expected_allowed = match route.access {
                 // Pending-MFA routes: `pending_mfa_sessions_reach_only_the_mfa_routes`.
-                Access::Public | Access::PendingMfa => continue,
+                // Operator rows: `every_admin_route_needs_a_full_operator_session`.
+                Access::Public
+                | Access::PendingMfa
+                | Access::Operator
+                | Access::OperatorPending => continue,
                 Access::Session => true,
                 Access::Perm(_, allow) => allow.contains(&role),
             };
@@ -1638,7 +1713,10 @@ async fn a_former_staff_member_reaches_only_their_past_pay(pool: PgPool) -> Test
         let mut shared = session(&w.h, phone_of(role)).await?;
         for route in ROUTES {
             let expected_allowed = match route.access {
-                Access::Public | Access::PendingMfa => continue,
+                Access::Public
+                | Access::PendingMfa
+                | Access::Operator
+                | Access::OperatorPending => continue,
                 Access::Session => true,
                 Access::Perm(..) => route.former_staff,
             };
@@ -1702,7 +1780,7 @@ async fn pending_mfa_sessions_reach_only_the_mfa_routes(pool: PgPool) -> TestRes
         let path = concrete(route, &w.home);
         let body = (route.body)(&w.home);
         match route.access {
-            Access::Public => {}
+            Access::Public | Access::Operator | Access::OperatorPending => {}
             Access::PendingMfa => {
                 let reply = send_route(&w.app, route, &path, Some(&full), body).await;
                 if (reply.status, reply.body["code"].as_str())
@@ -1747,7 +1825,13 @@ async fn ids_from_another_spa_are_not_found(pool: PgPool) -> TestResult {
     let intruder = session(&w.h, OTHER_OWNER_PHONE).await?;
     let mut failures = Vec::new();
     let mut swept = 0;
-    for route in ROUTES.iter().filter(|r| r.id != Target::None) {
+    let spa_scoped =
+        |r: &&Route| !matches!(r.access, Access::Operator | Access::OperatorPending);
+    for route in ROUTES
+        .iter()
+        .filter(|r| r.id != Target::None)
+        .filter(spa_scoped)
+    {
         // The intruder's body references only their own records; the path id is the only foreign thing.
         let reply = send_route(
             &w.app,
@@ -1786,6 +1870,143 @@ async fn ids_from_another_spa_are_not_found(pool: PgPool) -> TestResult {
     assert!(swept > 0, "no {{id}} routes swept");
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     Ok(())
+}
+
+/// ADR-0018: every console route needs a full operator session. Spa sessions of every role (the
+/// owner's included) are `401`, a pending operator session reaches only the MFA steps, a full one
+/// is allowed, and a write without a recent step-up is `403 platform.step_up_required`.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn every_admin_route_needs_a_full_operator_session(pool: PgPool) -> TestResult {
+    let w = world(pool).await?;
+    common::add_operator(&w.h).await?;
+    let mut failures = Vec::new();
+    let admin_rows = || {
+        ROUTES
+            .iter()
+            .filter(|r| matches!(r.access, Access::Operator | Access::OperatorPending))
+    };
+    for role in SystemRole::ALL {
+        let spa = session(&w.h, phone_of(role)).await?;
+        for route in admin_rows() {
+            let reply = send_route(
+                &w.app,
+                route,
+                &concrete(route, &w.home),
+                Some(&spa),
+                (route.body)(&w.home),
+            )
+            .await;
+            if reply.status != StatusCode::UNAUTHORIZED {
+                failures.push(format!(
+                    "{} as spa {}: expected 401, got {} {}",
+                    label(route),
+                    role.key(),
+                    reply.status,
+                    reply.body
+                ));
+            }
+        }
+    }
+    // Enroll once, so the pending sessions below are `mfa_verify` ones.
+    let mut full = common::operator_session(&w.h).await?;
+    for route in admin_rows().filter(|r| matches!(r.access, Access::Operator)) {
+        let pending = operator_pending(&w.app).await;
+        let reply = operator_send(&w.app, route, &w.home, &pending).await;
+        if reply.status != StatusCode::UNAUTHORIZED {
+            failures.push(format!(
+                "{} with a pending operator session: expected 401, got {} {}",
+                label(route),
+                reply.status,
+                reply.body
+            ));
+        }
+    }
+    for route in admin_rows() {
+        let token = match route.access {
+            Access::OperatorPending => operator_pending(&w.app).await,
+            _ if route.consumes_session => common::operator_session(&w.h).await?,
+            _ => full.clone(),
+        };
+        let reply = operator_send(&w.app, route, &w.home, &token).await;
+        if route.path == "/api/v1/admin/auth/reauth" {
+            // The session is accepted; the wrong password in the body is refused on its own.
+            if reply.body["code"] != "auth.invalid_credentials" {
+                failures.push(format!(
+                    "{}: expected auth.invalid_credentials, got {} {}",
+                    label(route),
+                    reply.status,
+                    reply.body
+                ));
+            }
+            full = common::operator_session(&w.h).await?;
+            continue;
+        }
+        let refused = reply.status == StatusCode::FORBIDDEN
+            || reply.status.is_server_error()
+            || (reply.status == StatusCode::UNAUTHORIZED
+                && reply.body["code"] == "auth.unauthenticated");
+        if refused {
+            failures.push(format!(
+                "{} as operator: expected allowed, got {} {}",
+                label(route),
+                reply.status,
+                reply.body
+            ));
+        }
+    }
+    common::expire_step_up(&w.h).await?;
+    for route in admin_rows().filter(|r| {
+        matches!(r.access, Access::Operator)
+            && r.method != "GET"
+            && !r.path.starts_with("/api/v1/admin/auth/")
+    }) {
+        let reply = operator_send(&w.app, route, &w.home, &full).await;
+        if (reply.status, reply.body["code"].as_str())
+            != (StatusCode::FORBIDDEN, Some("platform.step_up_required"))
+        {
+            failures.push(format!(
+                "{} without a step-up: expected 403 platform.step_up_required, got {} {}",
+                label(route),
+                reply.status,
+                reply.body
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
+}
+
+/// Sends `route` with the operator cookie, from a fresh client IP.
+async fn operator_send(app: &Router, route: &Route, f: &Fixture, op: &str) -> Reply {
+    let ip = next_ip();
+    let cookie = format!("__Host-op-session={op}");
+    let path = concrete(route, f);
+    let path = path.strip_prefix("/api/v1").unwrap_or(&path);
+    call_with_headers(
+        app,
+        route.method,
+        path,
+        None,
+        (route.body)(f),
+        &[("X-Forwarded-For", &ip), ("Cookie", &cookie)],
+    )
+    .await
+}
+
+/// The password step of the operator: a session still owing its second factor.
+async fn operator_pending(app: &Router) -> String {
+    let ip = next_ip();
+    call_with_headers(
+        app,
+        "POST",
+        "/admin/auth/login",
+        None,
+        Some(json!({"username": common::OPERATOR, "password": common::OPERATOR_PASSWORD})),
+        &[("X-Forwarded-For", &ip)],
+    )
+    .await
+    .op_session()
+    .unwrap_or_default()
 }
 
 #[test]

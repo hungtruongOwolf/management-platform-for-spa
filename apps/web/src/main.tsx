@@ -10,8 +10,16 @@ applyTheme(readTheme());
 const root = document.getElementById("root");
 if (!root) throw new Error("#root element missing from index.html");
 
-createRoot(root).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+// The platform console (ADR-0018) is a separate app in its own chunk: the spa's startup bundle
+// only carries this branch.
+if (/^\/admin(\/|$)/.test(location.pathname)) {
+  void import("./admin/boot").then((m) => {
+    m.mountAdmin(root);
+  });
+} else {
+  createRoot(root).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}

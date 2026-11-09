@@ -254,6 +254,17 @@ pub async fn user_requires_mfa(pool: &PgPool, user: UserId) -> Result<bool, AppE
     Ok(required)
 }
 
+/// The account's only active memberships are in suspended spas (ADR-0018, `app.user_spa_suspended`).
+pub async fn user_spa_suspended(pool: &PgPool, user: UserId) -> Result<bool, AppError> {
+    let suspended = sqlx::query_scalar!(
+        r#"SELECT app.user_spa_suspended($1) AS "suspended!""#,
+        user.as_uuid()
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(suspended)
+}
+
 /// Stores a not-yet-confirmed TOTP secret. Refuses (false) once MFA is enabled: an enrolled
 /// authenticator is only replaced by an operator reset, never by a password-only session.
 pub async fn store_pending_mfa_secret(

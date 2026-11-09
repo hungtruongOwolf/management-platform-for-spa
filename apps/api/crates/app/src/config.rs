@@ -19,6 +19,9 @@ pub struct Config {
     pub app_database_url: SecretString,
     /// The only browser origin allowed to send state-changing requests (CSRF defence).
     pub public_origin: String,
+    /// `APP_ADMIN_ORIGIN`, optional: the platform console's own origin once it has its own host
+    /// (ADR-0018 D2). Unset = the console shares `public_origin`.
+    pub admin_origin: Option<String>,
     /// AES-256 key (base64) for field encryption of health notes. Never stored in the database.
     pub data_key: SecretString,
     /// A looser per-IP API rate limit for the local test stack (E2E, Lighthouse), where one
@@ -132,6 +135,20 @@ impl Config {
             });
         }
 
+        let admin_origin = lookup("APP_ADMIN_ORIGIN").filter(|v| !v.is_empty());
+        if let Some(admin) = &admin_origin {
+            let ok = (admin.starts_with("https://")
+                || (environment == Environment::Development && admin.starts_with("http://")))
+                && !admin.ends_with('/')
+                && *admin != public_origin;
+            if !ok {
+                return Err(ConfigError::Invalid {
+                    name: "APP_ADMIN_ORIGIN",
+                    value: admin.clone(),
+                });
+            }
+        }
+
         let data_key = required("APP_DATA_KEY")?;
         if kernel::crypto::FieldCipher::from_base64(&data_key).is_err() {
             return Err(ConfigError::Invalid {
@@ -147,6 +164,7 @@ impl Config {
             environment,
             app_database_url: SecretString::from(app_database_url),
             public_origin,
+            admin_origin,
             data_key: SecretString::from(data_key),
             rate_limit,
         })

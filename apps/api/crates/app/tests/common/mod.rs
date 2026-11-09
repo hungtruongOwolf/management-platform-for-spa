@@ -286,3 +286,145 @@ pub async fn forget_used_step(h: &Harness, phone: &str) -> Result<(), Box<dyn st
         .await?;
     Ok(())
 }
+
+// ------------------------------------------------------------------ platform operator (ADR-0018)
+
+pub const OPERATOR: &str = "ops";
+pub const OPERATOR_PASSWORD: &str = "mat-khau-cua-operator";
+
+/// The CLI path (`app add-operator`): the only way an operator exists.
+pub async fn add_operator(h: &Harness) -> Result<uuid::Uuid, Box<dyn std::error::Error>> {
+    Ok(platform::operator::add_operator(
+        &h.owner,
+        OPERATOR,
+        "Người vận hành",
+        OPERATOR_PASSWORD,
+    )
+    .await?)
+}
+
+impl Reply {
+    /// The `__Host-op-session` value this reply set, if any.
+    pub fn op_session(&self) -> Option<String> {
+        self.headers
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .find_map(|c| {
+                c.split(';')
+                    .next()?
+                    .strip_prefix("__Host-op-session=")
+                    .map(str::to_owned)
+            })
+            .filter(|v| !v.is_empty())
+    }
+}
+
+/// Like `call`, with the operator cookie (`op`) instead of the spa one. Each call comes from its
+/// own client address, so the strict `/admin/auth/*` rate limit (burst 5) never masks a result.
+pub async fn admin_call(
+    app: &Router,
+    method: &str,
+    path: &str,
+    op: Option<&str>,
+    body: Option<Value>,
+) -> Reply {
+    static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let ip = format!("10.200.{}.{}", (n >> 8) & 0xff, n & 0xff);
+    let cookie = op.map(|s| format!("__Host-op-session={s}"));
+    let mut extra: Vec<(&str, &str)> = vec![("X-Forwarded-For", ip.as_str())];
+    extra.extend(cookie.iter().map(|c| ("Cookie", c.as_str())));
+    call_with_headers(app, method, path, None, body, &extra).await
+}
+
+/// The operator's TOTP secret, decrypted the way the server does.
+pub async fn operator_secret(h: &Harness) -> Result<String, Box<dyn std::error::Error>> {
+    let (id, ct): (uuid::Uuid, Vec<u8>) =
+        sqlx::query_as("SELECT id, mfa_secret_ct FROM app.platform_operator WHERE username = $1")
+            .bind(OPERATOR)
+            .fetch_one(&h.owner)
+            .await?;
+    let aad = kernel::crypto::record_aad("platform_operator.mfa", &[id]);
+    Ok(h.cipher.decrypt(&ct, &aad)?)
+}
+
+/// A current code for the operator, forgetting the last used step first (several sign-ins and
+/// step-ups inside one 30 s step are otherwise, correctly, replays).
+pub async fn operator_code(h: &Harness) -> Result<String, Box<dyn std::error::Error>> {
+    sqlx::query("UPDATE app.platform_operator SET mfa_last_step = NULL WHERE username = $1")
+        .bind(OPERATOR)
+        .execute(&h.owner)
+        .await?;
+    Ok(code_now(&operator_secret(h).await?))
+}
+
+/// Signs the operator in (enrolling an authenticator the first time); the full session.
+pub async fn operator_session(h: &Harness) -> Result<String, Box<dyn std::error::Error>> {
+    let login = admin_call(
+        &h.app,
+        "POST",
+        "/admin/auth/login",
+        None,
+        Some(json!({"username": OPERATOR, "password": OPERATOR_PASSWORD})),
+    )
+    .await;
+    let pending = login
+        .op_session()
+        .ok_or(format!("login → {} {}", login.status, login.body))?;
+    let done = if login.body["next"] == "mfa_enroll" {
+        let start = admin_call(
+            &h.app,
+            "POST",
+            "/admin/auth/mfa/enroll/start",
+            Some(&pending),
+            None,
+        )
+        .await;
+        let key = start.body["manual_key"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        admin_call(
+            &h.app,
+            "POST",
+            "/admin/auth/mfa/enroll/confirm",
+            Some(&pending),
+            Some(json!({"code": code_now(&key)})),
+        )
+        .await
+    } else {
+        let code = operator_code(h).await?;
+        admin_call(
+            &h.app,
+            "POST",
+            "/admin/auth/mfa/verify",
+            Some(&pending),
+            Some(json!({"code": code})),
+        )
+        .await
+    };
+    done.op_session()
+        .ok_or_else(|| format!("mfa → {} {}", done.status, done.body).into())
+}
+
+/// Ages the step-up of every operator session past the 5-minute window.
+pub async fn expire_step_up(h: &Harness) -> Result<(), Box<dyn std::error::Error>> {
+    sqlx::query("UPDATE app.platform_session SET recent_auth_at = now() - interval '6 minutes'")
+        .execute(&h.owner)
+        .await?;
+    Ok(())
+}
+
+/// `POST /admin/auth/reauth` with the password and a current code.
+pub async fn step_up(h: &Harness, op: &str) -> Result<Reply, Box<dyn std::error::Error>> {
+    let code = operator_code(h).await?;
+    Ok(admin_call(
+        &h.app,
+        "POST",
+        "/admin/auth/reauth",
+        Some(op),
+        Some(json!({"password": OPERATOR_PASSWORD, "code": code})),
+    )
+    .await)
+}

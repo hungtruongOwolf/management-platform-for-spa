@@ -111,6 +111,19 @@ use utoipa::OpenApi;
         reporting::http::package_usage,
         reporting::http::list_packages,
         reporting::http::list_notes,
+        platform::http::login,
+        platform::http::logout,
+        platform::http::reauth,
+        platform::http::mfa_verify,
+        platform::http::mfa_enroll_start,
+        platform::http::mfa_enroll_confirm,
+        platform::http::me,
+        platform::http::list_tenants,
+        platform::http::create_tenant,
+        platform::http::get_tenant,
+        platform::http::suspend_tenant,
+        platform::http::unsuspend_tenant,
+        platform::http::list_audit,
     ),
     // Enums used only as query parameters are not reached from any body, so register them.
     components(schemas(
@@ -134,6 +147,7 @@ use utoipa::OpenApi;
         (name = "visits", description = "Ghi lượt khách tại quầy"),
         (name = "appointments", description = "Lịch hẹn: đặt lịch, khách đến, hoàn tất thành lượt khách"),
         (name = "reports", description = "Xem lại và theo dõi: hôm nay, theo khoảng ngày, sổ doanh thu, lịch sử khách, liệu trình"),
+        (name = "admin", description = "Admin nền tảng (operator): spa, tính năng, vai trò, tài khoản, nhật ký"),
     )
 )]
 pub struct ApiDoc;
