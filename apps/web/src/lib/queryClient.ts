@@ -1,5 +1,4 @@
-import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
-import { ApiError } from "./api";
+import { QueryClient } from "@tanstack/react-query";
 
 /**
  * How long a fetched answer counts as fresh unless a query says otherwise (perf page §4d). Each
@@ -10,21 +9,11 @@ import { ApiError } from "./api";
  */
 export const DEFAULT_STALE_MS = 30_000;
 
-/**
- * The app's client. `refetchOnWindowFocus` stays on, and TanStack Query only refetches stale queries on focus.
- * A 401 `auth.unauthenticated` from any request means the session ended (expired, revoked, signed
- * out elsewhere): `/me` is asked again, and the shell sends the person to /dang-nhap once it says so.
- */
+/** The app's client. `refetchOnWindowFocus` stays on, and TanStack Query only refetches stale queries on focus. */
 export function createQueryClient(): QueryClient {
-  const onError = (error: unknown) => {
-    if (error instanceof ApiError && error.code === "auth.unauthenticated") void client.invalidateQueries({ queryKey: ["me"] });
-  };
-  const client = new QueryClient({
-    queryCache: new QueryCache({ onError }),
-    mutationCache: new MutationCache({ onError }),
+  return new QueryClient({
     defaultOptions: {
       queries: { retry: false, staleTime: DEFAULT_STALE_MS, refetchOnWindowFocus: true },
     },
   });
-  return client;
 }

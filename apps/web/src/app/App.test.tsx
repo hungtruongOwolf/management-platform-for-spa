@@ -232,25 +232,7 @@ describe("auth flow", () => {
   });
 });
 
-describe("session ending while the app is open", () => {
-  it("a 401 from any screen asks /me again and lands on the login page, back to that screen", async () => {
-    let expired = false;
-    server((_method, path) => {
-      if (path === "/api/v1/me") return expired ? unauthorized() : Response.json(ME);
-      if (path === "/api/v1/service-categories" || path === "/api/v1/services")
-        return expired ? unauthorized() : Response.json([]);
-      return new Response(null, { status: 404 });
-    });
-    const history = createMemoryHistory({ initialEntries: ["/"] });
-    render(<App history={history} />);
-    const nav = await screen.findByRole("navigation", { name: "Chính" });
-    expired = true;
-    await userEvent.click(within(nav).getByRole("link", { name: "Bảng giá dịch vụ" }));
-    expect(await screen.findByRole("button", { name: "Đăng nhập" })).toBeInTheDocument();
-    expect(history.location.pathname).toBe("/dang-nhap");
-    expect(new URLSearchParams(history.location.search).get("next")).toBe("/bang-gia");
-  });
-
+describe("signing in with a `next` link", () => {
   it("signing in again returns to `next` with its query", async () => {
     let loggedIn = false;
     server((method, path) => {

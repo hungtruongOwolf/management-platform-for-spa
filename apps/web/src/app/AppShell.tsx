@@ -163,17 +163,6 @@ export function AppShell() {
     };
   }, []);
 
-  // The session ended while the app was open (a 401 refetched `/me`, lib/queryClient.ts): forget
-  // what was cached for it and sign in again, back to this screen. Unsaved carts stay in
-  // sessionStorage. Sign-out and "Khóa nhanh" navigate on their own.
-  useEffect(() => {
-    if (me) return;
-    queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
-    void navigate({ to: "/dang-nhap", search: { next: href } });
-    // Only a change of `me` matters, not the URL it was on.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [me]);
-
   // "Khóa nhanh": leave the counter safely; signing in again comes back to this screen.
   const lock = async () => {
     await logout(queryClient);
