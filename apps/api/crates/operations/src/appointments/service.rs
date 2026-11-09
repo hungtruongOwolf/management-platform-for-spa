@@ -61,16 +61,8 @@ impl Spa {
 async fn spa(tx: &mut TenantTx) -> Result<Spa, AppError> {
     let profile = kernel::tenant::profile(tx).await?;
     let (hours, slot) = repo::calendar_settings(tx).await?;
-    let staff = org::service::active_in(tx).await?;
-    let named: Vec<_> = staff
-        .iter()
-        .filter(|s| domain::is_technician(&s.position))
-        .collect();
-    let columns = if named.is_empty() {
-        staff.iter().collect()
-    } else {
-        named
-    };
+    // Columns: who serves customers, by login role, never by position text (ADR-0019 D14).
+    let columns = org::service::serving_customers_in(tx).await?;
     Ok(Spa {
         profile,
         settings: CalendarSettings::from_settings(hours.as_ref(), slot.as_ref()),
@@ -78,7 +70,7 @@ async fn spa(tx: &mut TenantTx) -> Result<Spa, AppError> {
             .into_iter()
             .map(|s| CalendarTechnician {
                 id: s.id,
-                full_name: s.full_name.clone(),
+                full_name: s.full_name,
             })
             .collect(),
     })

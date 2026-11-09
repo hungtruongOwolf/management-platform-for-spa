@@ -23,6 +23,7 @@ import { StickyActions } from "../../components/StickyActions";
 import { usePhone } from "../../components/useMediaQuery";
 import { messageFor, retryable } from "../../lib/errors";
 import { useSearchState } from "../../lib/searchState";
+import { useReached } from "../../lib/useReached";
 import { can, meQuery } from "../auth/session";
 import { spaToday } from "../../lib/format";
 import type { CartLine } from "../front-desk/api";
@@ -99,8 +100,14 @@ export function AppointmentsCalendar({
   const [limitOpen, setLimitOpen] = useState(false);
   const isOwner = can(me, "record.void_closed_day");
   const locked = day < today && !isOwner;
-  // The server refuses a booking on a past day for everyone, the owner too (`check_day`).
-  const bookable = day >= today;
+  // The server refuses a booking on a past day for everyone, the owner too (`check_day`), and
+  // today once the spa has closed: no start is left (ADR-0019 D20). The spa runs on UTC+7.
+  const closedToday = useReached(
+    day === today && cal.data
+      ? Date.parse(`${today}T${cal.data.closes_at}:00+07:00`)
+      : null,
+  );
+  const bookable = day > today || (day === today && !closedToday);
 
   const opened = cal.data
     ? (entriesOf(cal.data).find((e) => e.id === openId) ?? null)
