@@ -297,7 +297,8 @@ pub async fn revoke_all_sessions(pool: &PgPool, user: UserId) -> Result<u64, App
     Ok(done.rows_affected())
 }
 
-/// Whether any of the user's active memberships holds a role that requires MFA (migration 0006).
+/// Whether any of the user's active memberships holds a role that requires MFA in a spa whose
+/// policy asks for it (strictest wins, suspended spas included: migration 0050, ADR-0020).
 pub async fn user_requires_mfa(pool: &PgPool, user: UserId) -> Result<bool, AppError> {
     let required = sqlx::query_scalar!(
         r#"SELECT app.user_requires_mfa($1) AS "required!""#,

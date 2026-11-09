@@ -15,6 +15,7 @@ export type TenantRow = Schemas["TenantRow"];
 export type CreatedTenant = Schemas["CreatedTenant"];
 export type NewTenant = Schemas["NewTenant"];
 export type StatusChanged = Schemas["StatusChanged"];
+export type OwnerMfaChanged = Schemas["OwnerMfaChanged"];
 export type PlatformAuditPage = Schemas["PlatformAuditPage"];
 export type TenantFeature = Schemas["TenantFeature"];
 export type PermissionInfo = Schemas["PermissionInfo"];
@@ -79,6 +80,11 @@ export const adminApi = {
       method: "POST",
       body: { reason },
     }) as Promise<StatusChanged>,
+  setOwnerMfa: (id: string, required: boolean, reason: string) =>
+    api(`/admin/tenants/${encodeURIComponent(id)}/owner-mfa`, {
+      method: "PUT",
+      body: { required, reason },
+    }) as Promise<OwnerMfaChanged>,
   features: (id: string) =>
     api(`/admin/tenants/${encodeURIComponent(id)}/features`) as Promise<TenantFeature[]>,
   setFeature: (id: string, key: string, enabled: boolean, reason: string) =>

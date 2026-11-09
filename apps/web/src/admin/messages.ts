@@ -8,6 +8,7 @@ addMessages(
     "platform.step_up_required": "Cần xác nhận lại mật khẩu và mã để làm thao tác này.",
     "tenant.slug_taken": "Mã spa này đã có. Chọn mã khác.",
     "tenant.status_unchanged": "Spa đã ở trạng thái này.",
+    "tenant.owner_mfa_unchanged": "Xác thực 2 bước của chủ spa đã ở trạng thái này.",
     "account.phone_taken": "Số điện thoại này đã có tài khoản (mỗi người chỉ thuộc một spa).",
     "platform.last_owner": "Đây là chủ spa duy nhất của một spa đang hoạt động. Tạm ngưng spa trước, hoặc đặt lại mật khẩu thay vì khóa.",
     "account.status_unchanged": "Tài khoản đã ở trạng thái này.",

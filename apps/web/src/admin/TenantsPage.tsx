@@ -88,7 +88,14 @@ export function TenantsPage() {
                       <div className="text-xs text-text-muted">{t.slug}</div>
                     </td>
                     <td>
-                      <StatusBadge status={t.status} />
+                      <div className="flex flex-wrap gap-1">
+                        <StatusBadge status={t.status} />
+                        {!t.owner_mfa_required && (
+                          <span className="badge badge-warn" title="Chủ spa đăng nhập chỉ bằng mật khẩu">
+                            Không MFA
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td>{adminDateTime(t.created_at)}</td>
                     <td className="text-right tabular">{number.format(t.staff_count)}</td>

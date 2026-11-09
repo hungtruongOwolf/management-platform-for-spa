@@ -2,7 +2,7 @@
 title: Spec — Admin nền tảng (platform admin console)
 status: draft (lead's design, EM to review)
 updated: 2026-11-09
-sources: [raw/2026-11-09-em-request-docs-and-platform-admin.md, decisions/ADR-0003-multi-tenancy.md, decisions/ADR-0004-authentication.md, decisions/ADR-0014-former-staff-login.md, decisions/ADR-0016-accounts-and-passwords.md, decisions/ADR-0018-platform-admin-console.md]
+sources: [raw/2026-11-09-em-request-docs-and-platform-admin.md, raw/2026-11-09-em-request-owner-mfa-toggle.md, decisions/ADR-0020-owner-mfa-per-spa.md, decisions/ADR-0003-multi-tenancy.md, decisions/ADR-0004-authentication.md, decisions/ADR-0014-former-staff-login.md, decisions/ADR-0016-accounts-and-passwords.md, decisions/ADR-0018-platform-admin-console.md]
 ---
 
 # Spec: Admin nền tảng
@@ -43,7 +43,7 @@ As an operator, I want to see every spa with status and a few health numbers, so
 ### US3 — Tạo spa + chủ spa đầu tiên
 As an operator, I want to create a spa and its first owner in one step, so that a new customer can start the same day.
 - **AC3.1** `POST /admin/tenants {name, slug, branch_name?, owner: {phone, full_name}}` (step-up) → `201` một transaction: `tenant`, chi nhánh mặc định, 3 role hệ thống theo **mẫu vai trò hiện tại** (US7), tài khoản chủ spa với **mật khẩu tạm** (ADR-0016: 12 ký tự CSPRNG, `must_change_password`), membership + role owner. Response có `temporary_password` **một lần** (`Cache-Control: no-store`), không log, không audit mật khẩu.
-- **AC3.2** Chủ spa đăng nhập: mật khẩu tạm → enroll MFA (role owner bắt buộc) → `403 auth.password_change_required` ở mọi route → `/doi-mat-khau` → dùng được app.
+- **AC3.2** Chủ spa đăng nhập: mật khẩu tạm → enroll MFA (role owner bắt buộc; spa mới luôn có công tắc MFA bật, US10) → `403 auth.password_change_required` ở mọi route → `/doi-mat-khau` → dùng được app.
 - **AC3.3** Slug trùng → `409 tenant.slug_taken`; slug sai dạng → `422 slug invalid_format`; SĐT đã có tài khoản → `409 account.phone_taken` (một người một spa, ADR-0016); SĐT sai → `422 phone invalid_format`. Lỗi bất kỳ → không còn gì (không spa mồ côi).
 - **AC3.4** Audit nền tảng `platform.tenant.create` (tenant, slug, owner user id; không SĐT đầy đủ, không mật khẩu) + audit spa `tenant.created` (actor `platform_admin`).
 
@@ -51,7 +51,7 @@ As an operator, I want to create a spa and its first owner in one step, so that 
 As an operator, I want to suspend a spa that stopped paying or is under investigation, so that nobody can use it while its data stays intact.
 - **AC4.1** `POST /admin/tenants/{id}/suspend {reason}` (step-up, lý do bắt buộc 3–500 ký tự) → `status = suspended`, thu hồi mọi session đang mở của thành viên spa đó; dữ liệu giữ nguyên.
 - **AC4.2** Thành viên spa bị ngưng đăng nhập: mật khẩu đúng → `403 auth.spa_suspended` (chỉ người có mật khẩu đúng thấy); request bằng session cũ → `401` (đã thu hồi); session nào sót → `403 auth.not_a_member` (đã có từ M3).
-- **AC4.3** `POST /admin/tenants/{id}/unsuspend {reason}` → `active`; đăng nhập lại bình thường (chủ spa vẫn phải MFA).
+- **AC4.3** `POST /admin/tenants/{id}/unsuspend {reason}` → `active`; đăng nhập lại bình thường (chủ spa vẫn phải MFA nếu công tắc MFA của spa bật, US10).
 - **AC4.4** Ngưng spa đã ngưng / mở spa đang mở → `409 tenant.status_unchanged`. Spa không tồn tại → `404`.
 
 ### US5 — Cờ tính năng theo spa
@@ -87,7 +87,7 @@ As an operator, I want to change what a manager may do for all spas (or for one 
   - owner phải giữ `staff.manage`, `staff.read`, `staff.read_basic`, `audit.read` → `role.owner_floor` (`details.missing`);
   - `staff.manage` chỉ ở owner → `role.owner_only_permission` (giữ quyết định C, ADR-0015/0016 "owner_protected" dựa trên `staff.manage`);
   - chỉ role hệ thống (`owner`, `manager`, `technician`) → key khác `404`.
-- **AC7.5** Bất biến cứng không đổi: người đã nghỉ chỉ `staff.read_own_past` (ADR-0014), `staff.link_required`, quyết định C, owner luôn MFA (CHECK DB), tính năng tắt rút permission bất kể role.
+- **AC7.5** Bất biến cứng không đổi: người đã nghỉ chỉ `staff.read_own_past` (ADR-0014), `staff.link_required`, quyết định C, role `owner` luôn `requires_mfa` (CHECK DB; sửa vai trò không tắt được MFA — chỉ công tắc theo spa ở US10 quyết spa đó có áp dụng không), tính năng tắt rút permission bất kể role.
 - **AC7.6** Audit nền tảng `platform.role_template.set` / `platform.role.set` / `platform.role.reset` + audit spa `role.permissions_changed` (before/after list).
 
 ### US8 — Tài khoản xuyên spa
@@ -98,6 +98,16 @@ As an operator, I want to find a person's login and fix it (lock, reset password
 - **AC8.4** `POST /admin/accounts/{id}/reset-mfa {reason}` → xóa secret + mã khôi phục, thu hồi session; lần đăng nhập sau phải enroll lại (owner). Chưa có MFA → `409 account.mfa_not_enabled`. Làm được cả khi tài khoản đang bị khóa (operator khóa hoặc khóa tạm), vì mất điện thoại thường là lý do bị khóa (ADR-0019 D20).
 - **AC8.5** `POST /admin/accounts/{id}/revoke-sessions {reason}` → `{revoked: n}`.
 - **AC8.6** Mỗi thao tác: audit nền tảng `platform.account.*` + audit spa `account.*` ở **mọi spa** của tài khoản (actor `platform_admin`), không mật khẩu. Tài khoản không tồn tại → `404`.
+
+### US10 — Bắt buộc xác thực 2 bước cho chủ spa (theo spa)
+As an operator, I want to switch off the owner's second factor for one spa (and back on), so that a spa that cannot use an authenticator still works, with the decision on record. ([raw](../../../raw/2026-11-09-em-request-owner-mfa-toggle.md), [ADR-0020](../../decisions/ADR-0020-owner-mfa-per-spa.md))
+- **AC10.1** Mặc định **bật** cho mọi spa (đang có và tạo mới): `TenantRow.owner_mfa_required = true` ở `GET /admin/tenants` và `GET /admin/tenants/{id}`.
+- **AC10.2** `PUT /admin/tenants/{id}/owner-mfa {required, reason}` (step-up; lý do 3–500 ký tự) → `200 {tenant, revoked_sessions}`. Đặt giá trị đang có → `409 tenant.owner_mfa_unchanged`; spa không có → `404`; thiếu step-up → `403 platform.step_up_required`; hàm DB `platform_set_owner_mfa` tự từ chối step-up cũ (42501).
+- **AC10.3** Tắt: chủ spa đăng nhập chỉ bằng mật khẩu (`next: done`, không session pending), reauth không cần mã; không thu hồi session; secret TOTP + mã khôi phục giữ nguyên.
+- **AC10.4** Bật: thu hồi mọi session của thành viên vừa chuyển sang phải MFA (không đụng quản lý / KTV, không đụng ai đã phải MFA nhờ spa khác); lần đăng nhập sau hỏi mã của authenticator cũ, ai chưa enroll thì enroll.
+- **AC10.5** Nghiêm nhất thắng: chủ ở hai spa, một spa bật → vẫn MFA. Spa đang tạm ngưng vẫn tính (M3).
+- **AC10.6** Audit nền tảng `platform.tenant.owner_mfa` (`before`, `after`, `revoked_sessions`, lý do) + audit spa `tenant.owner_mfa_changed` (`platform_admin`, before/after, lý do).
+- **AC10.7** UI: panel "Bảo mật đăng nhập" ở `/admin/spa/$id` (chip Đang bật / Đang tắt, Tắt / Bật → lý do → step-up); khi tắt có cảnh báo chủ spa chỉ dùng mật khẩu; danh sách `/admin` có chip "Không MFA".
 
 ### US9 — Nhật ký
 As an operator, I want an audit of everything operators did, and read-only access to a spa's audit trail when supporting them, so that every support action is accountable.

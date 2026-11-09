@@ -774,3 +774,9 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Live test 3 vai trò trên local đều đúng: quản lý có cột lịch + trong picker KTV; sau giờ đóng cửa khóa "Đặt lịch", lịch quá giờ có "Không đến"; Sửa lượt giữ gói bán kèm + giá gốc; mật khẩu phổ biến bị từ chối; KTV đã nghỉ chỉ xem công lương, /quay bị chặn; chủ spa: lương tỷ lệ người nghỉ giữa tháng, chốt lương 10/2026 bị chặn với danh sách thiếu (không chốt), roster hiện SĐT, báo cáo 5 năm, lưu quy tắc lương (If-Match).
 - Lỗi tìm thấy và sửa (#172, test đỏ → xanh): đăng xuất để lại `?next=/dang-nhap`; "Khóa nhanh" lồng `next` nên đăng nhập lại không về màn đã khóa.
 - Deploy Vercel main 0bbff14 (không có migration mới; staging vẫn 49); 15 API 200.
+
+## [2026-11-09] record | Công tắc "Bắt buộc xác thực 2 bước cho chủ spa" theo spa (ADR-0020, migration 0050)
+- Raw: [2026-11-09-em-request-owner-mfa-toggle](raw/2026-11-09-em-request-owner-mfa-toggle.md) (EM chọn hướng 1). Quyết định + trường hợp biên: [ADR-0020](wiki/decisions/ADR-0020-owner-mfa-per-spa.md) (sửa ADR-0004); spec [platform-admin US10](wiki/product/specs/platform-admin.md), AC7.5 sửa.
+- 0050: `tenant.owner_mfa_required` (mặc định true), `user_requires_mfa` chỉ tính role `requires_mfa` ở spa bật (nghiêm nhất thắng, spa ngưng vẫn tính), `platform_set_owner_mfa` (step-up trong DB, bật thì thu hồi session của người vừa phải MFA, tắt không thu hồi), overview thêm cột. Đăng nhập + reauth hỏi mã khi và chỉ khi `user_requires_mfa` (bỏ `mfa_enabled ||`); L4 của `add_user` theo policy.
+- API `PUT /admin/tenants/{id}/owner-mfa` (`409 tenant.owner_mfa_unchanged`), audit `platform.tenant.owner_mfa` + spa `tenant.owner_mfa_changed`; UI panel "Bảo mật đăng nhập" ở `/admin/spa/$id`, chip "Không MFA" ở `/admin`; e2e `admin.spec.ts` thêm bước tắt MFA → chủ spa đăng nhập chỉ bằng mật khẩu.
+- Tiếp theo: lead chạy 0050 trên staging + deploy (agent không đụng staging).

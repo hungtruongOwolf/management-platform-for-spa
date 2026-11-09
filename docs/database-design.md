@@ -42,7 +42,7 @@ erDiagram
 
 | Bảng | Vai trò | Điểm chính |
 |---|---|---|
-| `tenant` | Một spa | `slug` duy nhất, `timezone`, `status` (`active`/`suspended`), `settings jsonb` (ví dụ `manager_discount_max_pct`) |
+| `tenant` | Một spa | `slug` duy nhất, `timezone`, `status` (`active`/`suspended`), `settings jsonb` (ví dụ `manager_discount_max_pct`), `owner_mfa_required` (mặc định true; chỉ operator đổi qua `platform_set_owner_mfa`, 0050) |
 | `branch` | Chi nhánh | `UNIQUE (tenant_id, name)`; R1 dùng một chi nhánh |
 | `audit_log` | Ai đổi gì, lúc nào | `actor_kind` ∈ `user`/`platform_admin`/`system`, `before`/`after jsonb` (trường sức khỏe `"[redacted]"`), append-only (chỉ grant `SELECT, INSERT`), **giữ vĩnh viễn** |
 | `idempotency_record` | Phát lại response của lệnh trùng | PK `(tenant_id, actor_user_id, key)`, `request_hash` 32 byte, dọn sau 48 giờ |
@@ -210,14 +210,14 @@ CREATE POLICY tenant_isolation ON app.<table>
 | Hàm | Vì sao cần | Trả về |
 |---|---|---|
 | `tenants_of_user(user)` | Đăng nhập xảy ra trước khi chọn spa | id + tên các spa active của người đó |
-| `user_requires_mfa(user)` | Như trên; MFA không được tắt khi spa đang ngưng | bool |
+| `user_requires_mfa(user)` | Như trên. True khi có role `requires_mfa` ở spa có `owner_mfa_required` (nghiêm nhất thắng); spa đang ngưng vẫn tính (0050) | bool |
 | `session_actor(token_hash)` | Spa của request chỉ biết được từ dòng session ([ADR-0017](../memory/wiki/decisions/ADR-0017-one-statement-request-auth.md)) | session + cờ + quyền của spa đang chọn + cài đặt spa + `disabled_features` |
 | `purge_idempotency_records(interval)`, `purge_sessions(interval)` | Dọn dẹp xuyên spa mà `app_rw` không có `DELETE` | số dòng xóa |
 | `claim_maintenance(job, every)` | Một instance chạy job mỗi khoảng | bool |
 | `invariant_violations()` | Kiểm bản sao dữ liệu trên mọi spa | tên phép kiểm + **số đếm** |
 | `user_spa_suspended(user)` | Thông báo "spa đang tạm ngưng" sau khi mật khẩu đúng | bool |
 | `platform_gate(token_hash, write)` (không grant) | Cổng chung của mọi hàm platform: hash phải là session operator còn sống, đã qua MFA; ghi thì cần step-up ≤ 5 phút | id operator hoặc lỗi `42501` |
-| `platform_tenant_overview`, `platform_insert_tenant`, `platform_set_tenant_status`, `platform_set_feature`, `platform_apply_role_template`, `platform_account_memberships` | Console nền tảng; tham số đầu luôn là hash token operator, gọi `platform_gate` trước | số đếm / metadata, không dữ liệu khách |
+| `platform_tenant_overview`, `platform_insert_tenant`, `platform_set_tenant_status`, `platform_set_feature`, `platform_set_owner_mfa`, `platform_apply_role_template`, `platform_account_memberships`, `platform_account_action`, `platform_set_tenant_role` | Console nền tảng; tham số đầu luôn là hash token operator, gọi `platform_gate` trước | số đếm / metadata, không dữ liệu khách |
 
 Nếu một bug ở Rust gọi hàm platform từ route spa, hoặc quên kiểm operator, DB vẫn từ chối.
 
@@ -281,5 +281,6 @@ Hệ quả: không tìm được trong ghi chú mã hóa bằng SQL; "Nhật ký
 | 0045–0046 | FK `staff (tenant_id, user_id)` → `membership (tenant_id, user_id)`: tài khoản gắn với hồ sơ nhân viên phải là thành viên của chính spa đó (`NOT VALID` ở 0045, `VALIDATE` ở 0046). Hồ sơ chưa có tài khoản (`user_id` NULL) không bị kiểm |
 | 0047–0048 | ADR-0019: CHECK SĐT chỉ nhận đầu số di động `^\+84[35789][0-9]{8}$` ở `customer`, `staff`, `user_account`, `appointment.guest_phone` (`NOT VALID` ở 0047, `VALIDATE` + bỏ CHECK cũ ở 0048, chạy sau khi kiểm dữ liệu); audit hồ sơ khách chỉ còn cờ (`has_phone`, `has_birth_date`…) và danh sách trường đã đổi, các dòng cũ được xóa PII (0047) |
 | 0049 | `platform_tenant_overview(p_token_hash, p_tenant DEFAULT NULL)`: overview của một spa lọc ngay trong hàm, cho `GET /admin/tenants/{id}` và bước kiểm spa tồn tại (ADR-0019, ticket `tenants::get`) |
+| 0050 | Công tắc MFA chủ spa theo spa ([ADR-0020](../memory/wiki/decisions/ADR-0020-owner-mfa-per-spa.md)): cột `tenant.owner_mfa_required` (mặc định true), `user_requires_mfa` chỉ tính role `requires_mfa` ở spa bật, hàm ghi `platform_set_owner_mfa` (step-up trong DB; bật thì thu hồi session của người vừa phải MFA), `platform_tenant_overview` thêm cột `owner_mfa_required` |
 
 Số 0008, 0010, 0031 bỏ trống (được giữ chỗ rồi không dùng). Migration nhúng vào binary qua `kernel/build.rs` (`rerun-if-changed`), chạy bằng `pnpm db:migrate`. Sửa query thì chạy `pnpm db:prepare` và commit `apps/api/.sqlx` (CI build ở chế độ offline).

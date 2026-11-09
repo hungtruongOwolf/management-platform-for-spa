@@ -388,6 +388,7 @@ async fn the_spa_list_is_counts_only(owner: PgPool) -> TestResult {
             "last_activity_at",
             "name",
             "owner_count",
+            "owner_mfa_required",
             "slug",
             "staff_count",
             "status",
@@ -396,6 +397,10 @@ async fn the_spa_list_is_counts_only(owner: PgPool) -> TestResult {
     );
     assert_eq!(spas[0]["owner_count"], 1);
     assert_eq!(spas[0]["status"], "active");
+    assert_eq!(
+        spas[0]["owner_mfa_required"], true,
+        "ON by default (ADR-0020)"
+    );
     let id = spas[0]["id"].as_str().unwrap_or_default();
     let one = admin_call(
         &h.app,
@@ -1459,6 +1464,10 @@ async fn platform_functions_return_only_their_columns(owner: PgPool) -> TestResu
         ("platform_insert_tenant", "void"),
         ("platform_set_feature", "TABLE(previous boolean)"),
         (
+            "platform_set_owner_mfa",
+            "TABLE(previous boolean, revoked bigint)",
+        ),
+        (
             "platform_set_tenant_role",
             "TABLE(role_id uuid, before text[], after text[])",
         ),
@@ -1470,7 +1479,7 @@ async fn platform_functions_return_only_their_columns(owner: PgPool) -> TestResu
             "platform_tenant_overview",
             "TABLE(id uuid, name text, slug text, status text, created_at timestamp with time zone, \
              staff_count bigint, customer_count bigint, visits_30d bigint, owner_count bigint, \
-             last_activity_at timestamp with time zone)",
+             last_activity_at timestamp with time zone, owner_mfa_required boolean)",
         ),
     ];
     let expected: Vec<(String, String)> = expected
@@ -1587,6 +1596,334 @@ async fn account_and_role_writes_check_the_step_up_in_the_database(owner: PgPool
         &format!(
             "SELECT count(*) FROM app.audit_log WHERE actor_kind = 'platform_admin' AND entity_id = '{id}'"
         ),
+    )
+    .await?;
+    assert_eq!(trail, 0, "refused writes leave no trail");
+    Ok(())
+}
+
+// ------------------------------------------------------------------ owner MFA policy (ADR-0020)
+
+async fn tenant_id(h: &common::Harness, slug: &str) -> Result<uuid::Uuid, sqlx::Error> {
+    sqlx::query_scalar("SELECT id FROM app.tenant WHERE slug = $1")
+        .bind(slug)
+        .fetch_one(&h.owner)
+        .await
+}
+
+const OWNER_MFA_REASON: &str = "Chủ spa yêu cầu qua điện thoại";
+
+/// `PUT /admin/tenants/{id}/owner-mfa` with a valid reason.
+async fn set_owner_mfa(
+    h: &common::Harness,
+    op: &str,
+    tenant: uuid::Uuid,
+    required: bool,
+) -> common::Reply {
+    admin_call(
+        &h.app,
+        "PUT",
+        &format!("/admin/tenants/{tenant}/owner-mfa"),
+        Some(op),
+        Some(json!({"required": required, "reason": OWNER_MFA_REASON})),
+    )
+    .await
+}
+
+async fn me_status(h: &common::Harness, session: &str) -> StatusCode {
+    call(&h.app, "GET", "/me", Some(session), None).await.status
+}
+
+/// OFF: the enrolled owner signs in with the password alone (no pending session) and re-auths
+/// without a code; nothing is revoked and the authenticator is kept. ON again: the owner's sessions
+/// end (not the manager's), and the next sign-in asks for a code of the SAME authenticator. Both
+/// audit trails get one row per switch.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn owner_mfa_off_is_password_only_and_on_again_reuses_the_authenticator(
+    owner: PgPool,
+) -> TestResult {
+    let h = harness(owner).await?;
+    add_operator(&h).await?;
+    let op = operator_session(&h).await?;
+    let tenant = tenant_id(&h, "vpyd").await?;
+    common::add_member(
+        &h.owner,
+        "vpyd",
+        "0912000111",
+        "Quản lý",
+        identity::SystemRole::Manager,
+    )
+    .await?;
+    let enrolled = session_for(&h, common::OWNER_PHONE).await;
+    let secret = common::stored_secret(&h, common::OWNER_PHONE).await?;
+    let manager = session_for(&h, "0912000111").await;
+
+    let path = format!("/admin/tenants/{tenant}/owner-mfa");
+    let no_reason = admin_call(
+        &h.app,
+        "PUT",
+        &path,
+        Some(&op),
+        Some(json!({"required": false, "reason": " "})),
+    )
+    .await;
+    assert_eq!(no_reason.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let unknown = set_owner_mfa(&h, &op, uuid::Uuid::now_v7(), false).await;
+    assert_eq!(unknown.status, StatusCode::NOT_FOUND);
+    let unchanged = set_owner_mfa(&h, &op, tenant, true).await;
+    assert_eq!(
+        (unchanged.status, unchanged.body["code"].as_str()),
+        (StatusCode::CONFLICT, Some("tenant.owner_mfa_unchanged"))
+    );
+
+    let off = set_owner_mfa(&h, &op, tenant, false).await;
+    assert_eq!(off.status, StatusCode::OK, "{}", off.body);
+    assert_eq!(off.body["tenant"]["owner_mfa_required"], false);
+    assert_eq!(off.body["revoked_sessions"], 0, "OFF ends no session");
+    assert_eq!(me_status(&h, &enrolled).await, StatusCode::OK);
+    let list = admin_call(&h.app, "GET", "/admin/tenants", Some(&op), None).await;
+    assert_eq!(list.body[0]["owner_mfa_required"], false);
+
+    let plain = login(&h.app, common::OWNER_PHONE, PASSWORD).await;
+    assert_eq!(plain.status, StatusCode::OK, "{}", plain.body);
+    assert_eq!(plain.body["next"], "done", "no pending MFA session");
+    assert_eq!(
+        plain.body["me"]["active_tenant"]["name"],
+        "Viên Phúc Y Đường"
+    );
+    let plain = plain.session().unwrap_or_default();
+    assert_eq!(me_status(&h, &plain).await, StatusCode::OK);
+    let reauth = call(
+        &h.app,
+        "POST",
+        "/auth/reauth",
+        Some(&plain),
+        Some(json!({"password": PASSWORD})),
+    )
+    .await;
+    assert_eq!(reauth.status, StatusCode::NO_CONTENT, "no code while OFF");
+    assert_eq!(
+        common::stored_secret(&h, common::OWNER_PHONE).await?,
+        secret,
+        "the authenticator is kept"
+    );
+
+    let on = set_owner_mfa(&h, &op, tenant, true).await;
+    assert_eq!(on.status, StatusCode::OK, "{}", on.body);
+    assert_eq!(on.body["tenant"]["owner_mfa_required"], true);
+    assert_eq!(on.body["revoked_sessions"], 2, "both owner sessions");
+    assert_eq!(me_status(&h, &enrolled).await, StatusCode::UNAUTHORIZED);
+    assert_eq!(me_status(&h, &plain).await, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        me_status(&h, &manager).await,
+        StatusCode::OK,
+        "a manager never needed MFA"
+    );
+
+    let again = login(&h.app, common::OWNER_PHONE, PASSWORD).await;
+    assert_eq!(again.body["next"], "mfa_verify", "no re-enrolment");
+    common::forget_used_step(&h, common::OWNER_PHONE).await?;
+    let verified =
+        common::mfa_verify(&h, &again.session().unwrap_or_default(), &code_now(&secret)).await;
+    assert_eq!(verified.status, StatusCode::OK, "{}", verified.body);
+
+    let platform_rows: Vec<(Value, Option<String>)> = sqlx::query_as(
+        "SELECT detail, reason FROM app.platform_audit_log
+         WHERE action = 'platform.tenant.owner_mfa' AND tenant_id = $1 AND target_id = $1
+         ORDER BY at, id",
+    )
+    .bind(tenant)
+    .fetch_all(&h.owner)
+    .await?;
+    let reason = Some(OWNER_MFA_REASON.to_owned());
+    assert_eq!(
+        platform_rows,
+        [
+            (
+                json!({"before": true, "after": false, "revoked_sessions": 0}),
+                reason.clone()
+            ),
+            (
+                json!({"before": false, "after": true, "revoked_sessions": 2}),
+                reason.clone()
+            ),
+        ]
+    );
+    let spa_rows: Vec<(Option<Value>, Option<Value>, Option<String>)> = sqlx::query_as(
+        "SELECT before, after, reason FROM app.audit_log
+         WHERE tenant_id = $1 AND action = 'tenant.owner_mfa_changed'
+           AND actor_kind = 'platform_admin' AND entity_type = 'tenant' AND entity_id = $1
+         ORDER BY at, id",
+    )
+    .bind(tenant)
+    .fetch_all(&h.owner)
+    .await?;
+    assert_eq!(
+        spa_rows,
+        [
+            (
+                Some(json!({"owner_mfa_required": true})),
+                Some(json!({"owner_mfa_required": false})),
+                reason.clone()
+            ),
+            (
+                Some(json!({"owner_mfa_required": false})),
+                Some(json!({"owner_mfa_required": true})),
+                reason
+            ),
+        ]
+    );
+    Ok(())
+}
+
+/// An owner who never enrolled works password-only while OFF; ON ends that session and the next
+/// sign-in enrolls an authenticator.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn an_owner_who_never_enrolled_enrolls_once_the_policy_is_on(owner: PgPool) -> TestResult {
+    let h = harness(owner).await?;
+    add_operator(&h).await?;
+    let op = operator_session(&h).await?;
+    let tenant = tenant_id(&h, "vpyd").await?;
+    assert_eq!(
+        set_owner_mfa(&h, &op, tenant, false).await.status,
+        StatusCode::OK
+    );
+    let first = login(&h.app, common::OWNER_PHONE, PASSWORD).await;
+    assert_eq!(first.body["next"], "done");
+    let first = first.session().unwrap_or_default();
+    assert_eq!(me_status(&h, &first).await, StatusCode::OK);
+
+    let on = set_owner_mfa(&h, &op, tenant, true).await;
+    assert_eq!(on.body["revoked_sessions"], 1);
+    assert_eq!(me_status(&h, &first).await, StatusCode::UNAUTHORIZED);
+    let again = login(&h.app, common::OWNER_PHONE, PASSWORD).await;
+    assert_eq!(again.body["next"], "mfa_enroll");
+    let enrolled = common::enroll(&h, &again.session().unwrap_or_default()).await;
+    assert_eq!(enrolled.status, StatusCode::OK, "{}", enrolled.body);
+    assert_eq!(
+        enrolled.body["recovery_codes"].as_array().map(Vec::len),
+        Some(10)
+    );
+    Ok(())
+}
+
+/// Strictest wins: an owner of two spas needs MFA while either spa's policy is ON, and switching
+/// a spa ON ends no session of someone who already needed MFA. A suspended spa's policy still
+/// counts (ADR-0004 M3).
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_strictest_spa_policy_wins_and_a_suspended_spa_still_counts(
+    owner: PgPool,
+) -> TestResult {
+    let h = harness(owner).await?;
+    add_operator(&h).await?;
+    let op = operator_session(&h).await?;
+    identity::provisioning::create_tenant(&h.owner, "hoa-sen", "Spa Hoa Sen", "Cơ sở chính")
+        .await?;
+    common::add_member(
+        &h.owner,
+        "hoa-sen",
+        common::OWNER_PHONE,
+        "Chủ Spa",
+        identity::SystemRole::Owner,
+    )
+    .await?;
+    let (vpyd, hoa_sen) = (
+        tenant_id(&h, "vpyd").await?,
+        tenant_id(&h, "hoa-sen").await?,
+    );
+    let session = session_for(&h, common::OWNER_PHONE).await;
+
+    assert_eq!(
+        set_owner_mfa(&h, &op, vpyd, false).await.status,
+        StatusCode::OK
+    );
+    let still = login(&h.app, common::OWNER_PHONE, PASSWORD).await;
+    assert_eq!(still.body["next"], "mfa_verify", "Hoa Sen is still ON");
+    let on = set_owner_mfa(&h, &op, vpyd, true).await;
+    assert_eq!(on.status, StatusCode::OK, "{}", on.body);
+    assert_eq!(
+        on.body["revoked_sessions"], 0,
+        "the owner already passed MFA for Hoa Sen"
+    );
+    assert_eq!(me_status(&h, &session).await, StatusCode::OK);
+
+    // Hoa Sen suspended (policy ON), Viên Phúc active (policy OFF): MFA still applies.
+    assert_eq!(
+        set_owner_mfa(&h, &op, vpyd, false).await.status,
+        StatusCode::OK
+    );
+    let suspended = admin_call(
+        &h.app,
+        "POST",
+        &format!("/admin/tenants/{hoa_sen}/suspend"),
+        Some(&op),
+        Some(json!({"reason": "Chưa gia hạn hợp đồng"})),
+    )
+    .await;
+    assert_eq!(suspended.status, StatusCode::OK, "{}", suspended.body);
+    let suspended_counts = login(&h.app, common::OWNER_PHONE, PASSWORD).await;
+    assert_eq!(suspended_counts.status, StatusCode::OK);
+    assert_eq!(suspended_counts.body["next"], "mfa_verify");
+
+    // Both spas OFF: password only.
+    assert_eq!(
+        set_owner_mfa(&h, &op, hoa_sen, false).await.status,
+        StatusCode::OK,
+        "a suspended spa's policy can still be switched"
+    );
+    let plain = login(&h.app, common::OWNER_PHONE, PASSWORD).await;
+    assert_eq!(plain.body["next"], "done");
+    Ok(())
+}
+
+/// The switch is a console write like any other: the extractor wants a recent step-up, and the
+/// DB function refuses a stale step-up (or a spa session) on its own; app_rw cannot write the
+/// column directly; refused writes leave no trail.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_owner_mfa_switch_checks_the_step_up_in_the_database(owner: PgPool) -> TestResult {
+    let h = harness(owner).await?;
+    add_operator(&h).await?;
+    let op = operator_session(&h).await?;
+    let hash = identity::token::hash_secret(&op).to_vec();
+    let tenant = tenant_id(&h, "vpyd").await?;
+    let app_pool = kernel::testing::app_pool(&h.owner).await?;
+    let direct = |hash: Vec<u8>| {
+        let pool = app_pool.clone();
+        async move {
+            sqlx::query("SELECT * FROM app.platform_set_owner_mfa($1, $2, false)")
+                .bind(hash)
+                .bind(tenant)
+                .execute(&pool)
+                .await
+        }
+    };
+    let insufficient = Some(("42501".to_owned(), String::new()));
+    let spa_hash =
+        identity::token::hash_secret(&session_for(&h, common::OWNER_PHONE).await).to_vec();
+    assert_eq!(refusal(direct(spa_hash).await), insufficient);
+
+    expire_step_up(&h).await?;
+    assert_eq!(refusal(direct(hash).await), insufficient);
+    let refused = set_owner_mfa(&h, &op, tenant, false).await;
+    assert_eq!(
+        (refused.status, refused.body["code"].as_str()),
+        (StatusCode::FORBIDDEN, Some("platform.step_up_required"))
+    );
+    let column = sqlx::query("UPDATE app.tenant SET owner_mfa_required = false")
+        .execute(&app_pool)
+        .await;
+    assert!(column.is_err(), "app_rw may not write the policy");
+
+    let still_on: bool =
+        sqlx::query_scalar("SELECT owner_mfa_required FROM app.tenant WHERE id = $1")
+            .bind(tenant)
+            .fetch_one(&h.owner)
+            .await?;
+    assert!(still_on);
+    let trail = count(
+        &h.owner,
+        "SELECT (SELECT count(*) FROM app.platform_audit_log WHERE action = 'platform.tenant.owner_mfa')
+              + (SELECT count(*) FROM app.audit_log WHERE action = 'tenant.owner_mfa_changed')",
     )
     .await?;
     assert_eq!(trail, 0, "refused writes leave no trail");

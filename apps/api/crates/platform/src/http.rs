@@ -13,7 +13,8 @@ use crate::auth::{
 use crate::features::{self, FeatureInfo, FeatureSwitch, TenantFeature};
 use crate::roles::{self, PermissionInfo, RoleEdit, RoleGrants};
 use crate::tenants::{
-    self, CreatedTenant, NewTenant, Reason, StatusChanged, TenantRow, TenantStatus,
+    self, CreatedTenant, NewTenant, OwnerMfaChanged, OwnerMfaSwitch, Reason, StatusChanged,
+    TenantRow, TenantStatus,
 };
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
@@ -52,6 +53,7 @@ where
         .route("/admin/tenants/{id}", get(get_tenant))
         .route("/admin/tenants/{id}/suspend", post(suspend_tenant))
         .route("/admin/tenants/{id}/unsuspend", post(unsuspend_tenant))
+        .route("/admin/tenants/{id}/owner-mfa", put(set_owner_mfa))
         .route("/admin/audit", get(list_audit))
         .route("/admin/features", get(list_features))
         .route("/admin/tenants/{id}/features", get(tenant_features))
@@ -291,6 +293,22 @@ pub async fn unsuspend_tenant(
     Json(body): Json<Reason>,
 ) -> Result<Json<StatusChanged>, AppError> {
     tenants::set_status(&pool, &op, id, TenantStatus::Active, &body)
+        .await
+        .map(Json)
+}
+
+#[utoipa::path(put, path = "/api/v1/admin/tenants/{id}/owner-mfa", tag = "admin",
+    params(("id" = Uuid, Path)), request_body = OwnerMfaSwitch,
+    responses((status = 200, body = OwnerMfaChanged, description = "Effective at the owners' next sign-in; switching ON ends the sessions of members who now need MFA"),
+        (status = 401), (status = 403, description = "platform.step_up_required"), (status = 404),
+        (status = 409, description = "tenant.owner_mfa_unchanged"), (status = 422)))]
+pub async fn set_owner_mfa(
+    State(pool): State<PgPool>,
+    Operator(op): Operator,
+    Path(id): Path<Uuid>,
+    Json(body): Json<OwnerMfaSwitch>,
+) -> Result<Json<OwnerMfaChanged>, AppError> {
+    tenants::set_owner_mfa(&pool, &op, id, &body)
         .await
         .map(Json)
 }

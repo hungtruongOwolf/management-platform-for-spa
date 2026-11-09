@@ -238,8 +238,11 @@ async fn record_failure(pool: &PgPool, user: UserId) -> Result<(), AppError> {
 /// (session rotation on login). Unknown phone, wrong password, locked or disabled account all
 /// return the same `auth.invalid_credentials` after the same amount of hashing work.
 ///
-/// When MFA applies (a role requires it, or the user enrolled), the new session is only
-/// "pending MFA": usable for the MFA endpoints and logout, expiring after `MFA_PENDING_MINUTES`.
+/// When MFA is required (`app.user_requires_mfa`: a `requires_mfa` role in a spa whose policy is
+/// ON, ADR-0020) the new session is only "pending MFA": usable for the MFA endpoints and logout,
+/// expiring after `MFA_PENDING_MINUTES`. Enrolment alone no longer asks for a code: with every
+/// policy OFF an enrolled owner signs in with the password, and the stored authenticator is used
+/// again the moment a policy is back ON.
 pub async fn login(
     pool: &PgPool,
     phone: &str,
@@ -280,7 +283,7 @@ pub async fn login(
     if let Some(previous) = previous_token {
         repo::revoke_session_by_hash(pool, &token::hash_secret(previous)).await?;
     }
-    if account.mfa_enabled || repo::user_requires_mfa(pool, account.id).await? {
+    if repo::user_requires_mfa(pool, account.id).await? {
         // The failure counter is reset only after the second factor: otherwise re-entering the
         // (stolen) password would reset the lockout between rounds of code guessing.
         let token = issue_session(pool, account.id, None, meta, Issue::MfaPending).await?;
@@ -444,9 +447,10 @@ pub async fn logout_all(pool: &PgPool, session: &Session) -> Result<u64, AppErro
 }
 
 /// Confirms the password again before account-security actions (🔒 in the authz matrix: password
-/// and MFA settings; business actions never ask, EM decision 2026-11-05). Accounts with
-/// MFA must also give a current TOTP (or recovery) code. Failures count toward the lockout, so a
-/// stolen session cannot be used to guess the password or the code.
+/// and MFA settings; business actions never ask, EM decision 2026-11-05). An account that needs
+/// MFA now (the same rule as login, ADR-0020) must also give a current TOTP (or recovery) code; an
+/// enrolled account whose spas have the policy OFF does not. Failures count toward the lockout, so
+/// a stolen session cannot be used to guess the password or the code.
 pub async fn reauth(
     pool: &PgPool,
     cipher: &FieldCipher,
@@ -469,7 +473,12 @@ pub async fn reauth(
         record_failure(pool, account.id).await?;
         return Err(AppError::InvalidCredentials);
     }
-    if account.mfa_enabled {
+    if repo::user_requires_mfa(pool, account.id).await? {
+        if !account.mfa_enabled {
+            // Not reachable through the API (switching a policy ON or granting a role that needs
+            // MFA ends the sessions it affects); refuse rather than accept the password alone.
+            return Err(AppError::MfaEnrollmentRequired);
+        }
         let code =
             code.ok_or_else(|| AppError::Validation(vec![FieldError::new("code", "required")]))?;
         if !second_factor_ok(pool, cipher, &account, code, true).await? {

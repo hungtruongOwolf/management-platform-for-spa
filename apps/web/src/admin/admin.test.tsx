@@ -18,6 +18,7 @@ const SPA = {
   visits_30d: 310,
   owner_count: 1,
   last_activity_at: "2026-11-09T03:00:00Z",
+  owner_mfa_required: true,
 };
 
 const problem = (status: number, code: string, errors: unknown[] = []) =>
@@ -213,6 +214,97 @@ describe("feature switches", () => {
     await user.click(within(sheet).getByRole("button", { name: "Tắt tính năng" }));
     expect(await screen.findByRole("button", { name: "Bật Lịch hẹn" })).toBeInTheDocument();
     expect(puts).toEqual([{ enabled: false, reason: "Gói cơ bản" }]);
+  });
+});
+
+describe("owner MFA switch (ADR-0020)", () => {
+  it("turns it off after a reason and a step-up, then warns that the owner signs in with the password only", async () => {
+    let required = true;
+    let steppedUp = false;
+    const puts: unknown[] = [];
+    server((method, path, body) => {
+      if (path === "/api/v1/admin/me") return Response.json(ME);
+      if (path === "/api/v1/admin/tenants") return Response.json([{ ...SPA, owner_mfa_required: required }]);
+      if (path === `/api/v1/admin/tenants/${SPA.id}`) return Response.json({ ...SPA, owner_mfa_required: required });
+      if (path === `/api/v1/admin/tenants/${SPA.id}/features`) return Response.json([]);
+      if (path === `/api/v1/admin/tenants/${SPA.id}/roles`) return Response.json([]);
+      if (path === "/api/v1/admin/permissions") return Response.json([]);
+      if (path === "/api/v1/admin/auth/reauth") {
+        steppedUp = true;
+        return new Response(null, { status: 204 });
+      }
+      if (path === `/api/v1/admin/tenants/${SPA.id}/owner-mfa` && method === "PUT") {
+        if (!steppedUp) return problem(403, "platform.step_up_required");
+        puts.push(body);
+        required = (body as { required: boolean }).required;
+        return Response.json({ tenant: { ...SPA, owner_mfa_required: required }, revoked_sessions: 0 });
+      }
+      return new Response(null, { status: 404 });
+    });
+    at(`/admin/spa/${SPA.id}`);
+    const user = userEvent.setup();
+    const panel = await screen.findByRole("region", { name: "Bảo mật đăng nhập" });
+    expect(within(panel).getByText("Bắt buộc xác thực 2 bước cho chủ spa")).toBeInTheDocument();
+    expect(within(panel).getByText("Đang bật")).toBeInTheDocument();
+    expect(within(panel).queryByText(/chỉ bằng mật khẩu/)).not.toBeInTheDocument();
+
+    await user.click(within(panel).getByRole("button", { name: "Tắt xác thực 2 bước cho chủ spa" }));
+    const sheet = await screen.findByRole("dialog", { name: "Tắt xác thực 2 bước cho chủ spa?" });
+    await user.type(within(sheet).getByLabelText("Lý do"), "Chủ spa xin tắt");
+    await user.click(within(sheet).getByRole("button", { name: "Tắt xác thực 2 bước" }));
+
+    const stepUp = await screen.findByRole("dialog", { name: "Xác nhận lại" });
+    await user.type(within(stepUp).getByLabelText("Mật khẩu"), "mat-khau-operator");
+    await user.type(within(stepUp).getByLabelText("Mã xác thực"), "123456");
+    await user.click(within(stepUp).getByRole("button", { name: "Xác nhận" }));
+
+    expect(await within(panel).findByText("Đang tắt")).toBeInTheDocument();
+    expect(within(panel).getByText("Chủ spa đang đăng nhập chỉ bằng mật khẩu, không cần mã xác thực.")).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "Bật xác thực 2 bước cho chủ spa" })).toBeInTheDocument();
+    expect(puts).toEqual([{ required: false, reason: "Chủ spa xin tắt" }]);
+  });
+
+  it("flags the spas whose owners sign in without MFA in the list", async () => {
+    const other = { ...SPA, id: "0190b6a1-0000-7000-8000-000000000003", name: "Spa Hoa Sen", slug: "hoa-sen", owner_mfa_required: false };
+    server((method, path) => {
+      if (path === "/api/v1/admin/me") return Response.json(ME);
+      if (path === "/api/v1/admin/tenants") return Response.json([SPA, other]);
+      return new Response(null, { status: 404 });
+    });
+    at("/admin");
+    const rows = await screen.findAllByRole("row");
+    const row = (name: string) => rows.find((r) => within(r).queryByRole("link", { name })) as HTMLElement;
+    expect(within(row("Spa Hoa Sen")).getByText("Không MFA")).toBeInTheDocument();
+    expect(within(row(SPA.name)).queryByText("Không MFA")).not.toBeInTheDocument();
+  });
+
+  it("names the switch in the platform log by its direction", async () => {
+    server((method, path) => {
+      if (path === "/api/v1/admin/me") return Response.json(ME);
+      if (path === "/api/v1/admin/tenants") return Response.json([SPA]);
+      if (path.startsWith("/api/v1/admin/audit")) {
+        return Response.json({
+          items: [
+            {
+              id: "a1",
+              at: "2026-11-09T04:00:00Z",
+              operator_username: "ops",
+              action: "platform.tenant.owner_mfa",
+              tenant_id: SPA.id,
+              target_type: "tenant",
+              target_id: SPA.id,
+              detail: { before: true, after: false, revoked_sessions: 0 },
+              reason: "Chủ spa xin tắt",
+              ip: null,
+            },
+          ],
+          next_before: null,
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
+    at("/admin/nhat-ky");
+    expect(await screen.findByText("Tắt xác thực 2 bước cho chủ spa")).toBeInTheDocument();
   });
 });
 

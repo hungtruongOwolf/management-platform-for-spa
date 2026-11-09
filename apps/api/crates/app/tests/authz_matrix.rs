@@ -821,6 +821,13 @@ const ROUTES: &[Route] = &[
     )
     .id(Target::Tenant)
     .body(reason_body),
+    route(
+        "PUT",
+        "/api/v1/admin/tenants/{id}/owner-mfa",
+        Access::Operator,
+    )
+    .id(Target::Tenant)
+    .body(owner_mfa_body),
     route("GET", "/api/v1/admin/audit", Access::Operator),
     route("GET", "/api/v1/admin/features", Access::Operator),
     route(
@@ -935,6 +942,11 @@ fn role_edit_body(_: &Fixture) -> Option<Value> {
 /// Keeps the feature on (`{key}` = `appointments`), so later rows still see it.
 fn feature_switch_body(_: &Fixture) -> Option<Value> {
     Some(json!({"enabled": true, "reason": "Kiểm thử ma trận quyền"}))
+}
+
+/// OFF, so the operator's allowed call changes something (ON is the default: 409 unchanged).
+fn owner_mfa_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"required": false, "reason": "Kiểm thử ma trận quyền"}))
 }
 
 fn reason_body(_: &Fixture) -> Option<Value> {

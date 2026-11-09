@@ -5,7 +5,8 @@ import { credentials, expectAccessible, totpAt } from "../support/run";
  * ADR-0018, spec platform-admin US1/US3/US5: the operator signs in to the console (password +
  * TOTP), creates a spa with its first owner, the owner signs in with the temporary password,
  * enrolls MFA and must set a password; the operator switches "Lịch hẹn" off and the owner can no
- * longer see or use it.
+ * longer see or use it; the operator switches the owner's MFA off (ADR-0020) and the owner signs
+ * in with the password only.
  */
 
 /** Codes for a key, never reusing a time step (the server accepts each step once). */
@@ -31,7 +32,7 @@ async function stepUpIfAsked(page: Page, password: string, code: () => Promise<s
   }
 }
 
-test("operator creates a spa and its owner, then switches a feature off for it", async ({ browser }) => {
+test("operator creates a spa and its owner, then switches a feature and the owner's MFA off for it", async ({ browser }) => {
   test.setTimeout(180_000);
   const { operatorUsername, operatorPassword } = credentials();
   if (!operatorUsername || !operatorPassword) throw new Error("setup did not create the operator");
@@ -117,6 +118,27 @@ test("operator creates a spa and its owner, then switches a feature off for it",
   expect(refused.status()).toBe(403);
   expect(((await refused.json()) as { code: string }).code).toBe("feature.disabled");
 
+  // ADR-0020: the operator switches the owner's second factor off; the owner signs in with the
+  // password alone, without being asked for a code.
+  await op.getByRole("button", { name: "Tắt xác thực 2 bước cho chủ spa" }).click();
+  const mfaSheet = op.getByRole("dialog", { name: "Tắt xác thực 2 bước cho chủ spa?" });
+  await mfaSheet.getByLabel("Lý do").fill("Chủ spa chưa dùng được ứng dụng xác thực");
+  await mfaSheet.getByRole("button", { name: "Tắt xác thực 2 bước" }).click();
+  const warned = op.getByText("Chủ spa đang đăng nhập chỉ bằng mật khẩu, không cần mã xác thực.");
+  await stepUpIfAsked(op, operatorPassword, opCode, warned);
+  await expect(warned).toBeVisible();
+  await expectAccessible(op, "admin-tenant-owner-mfa-off");
+
+  const plainContext = await browser.newContext();
+  const plain = await plainContext.newPage();
+  await plain.goto("/dang-nhap");
+  await plain.getByLabel("Số điện thoại").fill(ownerPhone);
+  await plain.getByLabel("Mật khẩu").fill(ownerPassword);
+  await plain.getByRole("button", { name: "Đăng nhập" }).click();
+  await expect(plain.getByRole("navigation", { name: "Chính" }).getByRole("link", { name: "Ghi lượt khách" })).toBeVisible();
+  await expect(plain).not.toHaveURL(/\/xac-thuc/);
+
+  await plainContext.close();
   await ownerContext.close();
   await opContext.close();
 });

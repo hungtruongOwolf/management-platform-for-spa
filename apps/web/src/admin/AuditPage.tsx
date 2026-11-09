@@ -11,6 +11,7 @@ const ACTIONS: Record<string, string> = {
   "platform.tenant.create": "Tạo spa",
   "platform.tenant.suspend": "Tạm ngưng spa",
   "platform.tenant.unsuspend": "Mở lại spa",
+  "platform.tenant.owner_mfa": "Bật / tắt xác thực 2 bước cho chủ spa",
   "platform.feature.set": "Bật / tắt tính năng",
   "platform.role_template.set": "Sửa mẫu vai trò",
   "platform.role.set": "Sửa quyền vai trò của spa",
@@ -28,11 +29,20 @@ export function actionLabel(action: string): string {
   return ACTIONS[action] ?? action;
 }
 
-/** The action, plus the masked query of an account search (ADR-0019 D17: "090****", "N… A…"). */
+/**
+ * The action, plus the masked query of an account search (ADR-0019 D17: "090****", "N… A…"), or
+ * which way the owner MFA switch went (ADR-0020).
+ */
 function actionText(item: { action: string; detail?: unknown }): string {
   const label = actionLabel(item.action);
   const detail = item.detail;
-  if (item.action !== "platform.account.search" || typeof detail !== "object" || detail === null) return label;
+  if (typeof detail !== "object" || detail === null) return label;
+  if (item.action === "platform.tenant.owner_mfa") {
+    const after = (detail as { after?: unknown }).after;
+    if (typeof after !== "boolean") return label;
+    return `${after ? "Bật" : "Tắt"} xác thực 2 bước cho chủ spa`;
+  }
+  if (item.action !== "platform.account.search") return label;
   const q = (detail as { q?: unknown }).q;
   return typeof q === "string" ? `${label}: ${q}` : label;
 }

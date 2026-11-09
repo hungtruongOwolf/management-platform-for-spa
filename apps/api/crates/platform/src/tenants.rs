@@ -57,6 +57,9 @@ pub struct TenantRow {
     pub owner_count: i64,
     /// Latest entry of the spa's audit trail.
     pub last_activity_at: Option<DateTime<Utc>>,
+    /// The spa's MFA policy (ADR-0020): `true` (the default) = its owners must use a second
+    /// factor; `false` = they sign in with the password only.
+    pub owner_mfa_required: bool,
 }
 
 /// The overview of every spa (`tenant = None`) or of one: the filter runs inside the gated
@@ -70,7 +73,8 @@ async fn overview(
         r#"SELECT id AS "id!", name AS "name!", slug AS "slug!", status AS "status!",
                   created_at AS "created_at!", staff_count AS "staff_count!",
                   customer_count AS "customer_count!", visits_30d AS "visits_30d!",
-                  owner_count AS "owner_count!", last_activity_at
+                  owner_count AS "owner_count!", last_activity_at,
+                  owner_mfa_required AS "owner_mfa_required!"
            FROM app.platform_tenant_overview($1, $2)"#,
         &op.token_hash[..],
         tenant
@@ -91,6 +95,7 @@ async fn overview(
                 visits_30d: r.visits_30d,
                 owner_count: r.owner_count,
                 last_activity_at: r.last_activity_at,
+                owner_mfa_required: r.owner_mfa_required,
             })
         })
         .collect()
@@ -329,6 +334,7 @@ pub async fn create(
             visits_30d: 0,
             owner_count: 1,
             last_activity_at: None,
+            owner_mfa_required: true,
         },
         owner: CreatedOwner {
             user_id,
@@ -429,6 +435,95 @@ pub async fn set_status(
     .await?;
     tx.commit().await?;
     Ok(StatusChanged {
+        tenant: get(pool, op, id).await?,
+        revoked_sessions: changed.revoked,
+    })
+}
+
+/// Body of `PUT /admin/tenants/{id}/owner-mfa`.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OwnerMfaSwitch {
+    /// `true` = the spa's owners must use a second factor (the default); `false` = password only.
+    pub required: bool,
+    /// 3–500 characters.
+    pub reason: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct OwnerMfaChanged {
+    pub tenant: TenantRow,
+    /// Sessions ended because their user needs MFA from now on (switching ON only; OFF ends none).
+    pub revoked_sessions: i64,
+}
+
+/// Switches the spa's MFA policy for its owners (ADR-0020). ON ends the sessions of every member
+/// whose requirement flips with it; OFF keeps sessions, TOTP secrets and recovery codes, so ON
+/// again reuses the same authenticator. Setting the current value is `409
+/// tenant.owner_mfa_unchanged`. Audited on both sides.
+pub async fn set_owner_mfa(
+    pool: &PgPool,
+    op: &OperatorSession,
+    id: Uuid,
+    input: &OwnerMfaSwitch,
+) -> Result<OwnerMfaChanged, AppError> {
+    let reason = Reason {
+        reason: input.reason.clone(),
+    };
+    let reason = reason.checked()?;
+    let mut tx = TenantTx::begin(pool, TenantId::from_uuid(id)).await?;
+    let Some(changed) = sqlx::query!(
+        r#"SELECT previous AS "previous!", revoked AS "revoked!"
+           FROM app.platform_set_owner_mfa($1, $2, $3)"#,
+        &op.token_hash[..],
+        id,
+        input.required
+    )
+    .fetch_optional(tx.conn())
+    .await
+    .map_err(gate_refusal)?
+    else {
+        return Err(AppError::NotFound);
+    };
+    if changed.previous == input.required {
+        return Err(AppError::Conflict {
+            code: "tenant.owner_mfa_unchanged",
+        });
+    }
+    record_platform(
+        &mut tx,
+        op.operator_id,
+        op.meta.ip,
+        AuditEntry {
+            action: "tenant.owner_mfa_changed",
+            entity_type: "tenant",
+            entity_id: id,
+            before: Some(json!({"owner_mfa_required": changed.previous})),
+            after: Some(json!({"owner_mfa_required": input.required})),
+            reason: Some(reason),
+        },
+    )
+    .await?;
+    audit::record(
+        tx.conn(),
+        op.operator_id,
+        op.meta.ip,
+        PlatformEntry {
+            action: "platform.tenant.owner_mfa",
+            tenant: Some(id),
+            target_type: Some("tenant"),
+            target_id: Some(id),
+            detail: Some(json!({
+                "before": changed.previous,
+                "after": input.required,
+                "revoked_sessions": changed.revoked,
+            })),
+            reason: Some(reason),
+        },
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(OwnerMfaChanged {
         tenant: get(pool, op, id).await?,
         revoked_sessions: changed.revoked,
     })

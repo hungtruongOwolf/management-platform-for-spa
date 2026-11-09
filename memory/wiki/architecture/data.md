@@ -53,7 +53,7 @@ erDiagram
 ### identity / org
 | Bảng | Cột chính | Ràng buộc / index |
 |---|---|---|
-| `tenant` | name, slug, timezone (`Asia/Ho_Chi_Minh`), status (`active`/`suspended`), settings `jsonb` (ví dụ `manager_discount_max_pct`, `opening_hours`, `slot_minutes`) | `UNIQUE(slug)` + CHECK dạng slug; RLS `tenant_self` (`id = app.current_tenant()`); `app_rw` chỉ `SELECT` (tạo spa / đổi trạng thái qua hàm `app.platform_insert_tenant` / `platform_set_tenant_status`, 0038, hoặc CLI bằng owner) |
+| `tenant` | name, slug, timezone (`Asia/Ho_Chi_Minh`), status (`active`/`suspended`), settings `jsonb` (ví dụ `manager_discount_max_pct`, `opening_hours`, `slot_minutes`), `owner_mfa_required` (0050, mặc định true, [ADR-0020](../decisions/ADR-0020-owner-mfa-per-spa.md)) | `UNIQUE(slug)` + CHECK dạng slug; RLS `tenant_self` (`id = app.current_tenant()`); `app_rw` chỉ `SELECT` (tạo spa / đổi trạng thái / công tắc MFA chủ spa qua hàm `app.platform_insert_tenant` / `platform_set_tenant_status` (0038) / `platform_set_owner_mfa` (0050), hoặc CLI bằng owner) |
 | `branch` | tenant_id, name, address, active | `UNIQUE(tenant_id, name)` |
 | `user_account` *(toàn cục, ✅ 0002)* | phone_e164, full_name, password_hash (`$argon2id$`), status (`active`/`disabled`), failed_logins, locked_until; MFA (0006): mfa_secret_ct, mfa_enabled_at, mfa_last_step (chống dùng lại mã); 0032: must_change_password, password_changed_at | `UNIQUE(phone_e164)` + CHECK `^\+84[0-9]{9}$` (từ 0047/0048: `^\+84[35789][0-9]{8}$`, chỉ di động); CHECK `mfa_enabled_at` cần `mfa_secret_ct`. Một người có thể làm ở nhiều spa (qua membership) |
 | `mfa_recovery_code` *(toàn cục, 0006)* | user_id, code_hash (SHA-256 của id tài khoản + mã), created_at, used_at | `UNIQUE(code_hash)`; index `(user_id) WHERE used_at IS NULL` |
@@ -147,6 +147,7 @@ File ở `apps/api/migrations/`, mới nhất **0040**. Số **0008, 0010, 0031 
 | `0032_staff_logins_and_passwords` | `must_change_password`, password_reset_request (ADR-0016) |
 | `0033_drop_redundant_indexes` … `0037_validate_actor_foreign_keys` | Rà soát 2026-11 |
 | `0038_platform_admin` · `0039_feature_flags` · `0040_roles_and_accounts` | Admin nền tảng (ADR-0018) |
+| `0050_owner_mfa_switch` | `tenant.owner_mfa_required`; `user_requires_mfa` chỉ tính role `requires_mfa` ở spa bật (nghiêm nhất thắng, spa ngưng vẫn tính); `platform_set_owner_mfa`; `platform_tenant_overview` thêm cột (ADR-0020) |
 
 Từ 0016 crate `kernel` có `build.rs` (`rerun-if-changed=../../migrations`): trước đó thêm file migration mới không làm build lại migrator nhúng, `app migrate` lặng lẽ bỏ qua nó. Kế hoạch tách riêng migration RLS/grants ban đầu đã bỏ: mỗi migration tự bật RLS và cấp quyền cho bảng của nó.
 
@@ -266,7 +267,7 @@ Không có bảng mới. 0013:
 
 ## Xác thực một câu và admin nền tảng (0034, 0038–0040)
 - **0034** `app.session_actor(token_hash)`: xem [ADR-0017](../decisions/ADR-0017-one-statement-request-auth.md). 0039 thay hàm bằng bản thêm cột `disabled_features`.
-- **0038–0040** `platform_operator`, `platform_session`, `platform_recovery_code`, `platform_audit_log`, `tenant_feature`, `role_template_permission`, `role.follows_template` và các hàm `platform_*`: xem [platform-admin](platform-admin.md). **0049** thêm tham số `p_tenant uuid DEFAULT NULL` cho `platform_tenant_overview` (DROP + CREATE, cùng cột trả về và quyền): một spa chỉ tốn số đếm của spa đó.
+- **0038–0040** `platform_operator`, `platform_session`, `platform_recovery_code`, `platform_audit_log`, `tenant_feature`, `role_template_permission`, `role.follows_template` và các hàm `platform_*`: xem [platform-admin](platform-admin.md). **0049** thêm tham số `p_tenant uuid DEFAULT NULL` cho `platform_tenant_overview` (DROP + CREATE, cùng cột trả về và quyền): một spa chỉ tốn số đếm của spa đó. **0050** thêm cột trả về `owner_mfa_required` (DROP + CREATE lần nữa) và hàm ghi `platform_set_owner_mfa` ([ADR-0020](../decisions/ADR-0020-owner-mfa-per-spa.md)).
 
 ## Gia cố sau rà soát code + schema (0042–0043, 2026-11-09)
 - `app.user_in_other_spa(user_id)` (definer, `IS DISTINCT FROM current_tenant()`, thiếu tenant thì trả true): đặt lại mật khẩu bị chặn khi tài khoản có **bất kỳ** membership ở spa khác, kể cả bị khóa ở đó hoặc spa đó đang tạm ngưng (trước đây dùng `tenants_of_user` chỉ đếm membership + spa đang hoạt động).

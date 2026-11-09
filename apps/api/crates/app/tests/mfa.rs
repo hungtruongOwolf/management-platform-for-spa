@@ -441,3 +441,70 @@ async fn operator_reset_sends_the_owner_back_to_enrollment(owner: PgPool) -> Tes
     assert_eq!(reply.body["next"], "mfa_enroll");
     Ok(())
 }
+
+/// ADR-0020: a `requires_mfa` role counts only in a spa whose policy is ON. With it OFF the owner
+/// signs in with the password, and granting the owner role ends no session (L4 applies only where
+/// MFA is required); back ON, the same grant ends the sessions again.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_mfa_requirement_follows_the_spa_policy(owner: PgPool) -> TestResult {
+    let h = harness(owner).await?;
+    let required = |phone: &'static str| {
+        let pool = h.owner.clone();
+        async move {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT app.user_requires_mfa(id) FROM app.user_account WHERE phone_e164 = $1",
+            )
+            .bind(phone)
+            .fetch_one(&pool)
+            .await
+        }
+    };
+    let policy = |on: bool| {
+        let pool = h.owner.clone();
+        async move {
+            sqlx::query("UPDATE app.tenant SET owner_mfa_required = $1 WHERE slug = 'vpyd'")
+                .bind(on)
+                .execute(&pool)
+                .await
+        }
+    };
+    add_member(
+        &h.owner,
+        "vpyd",
+        "0912000111",
+        "Quản lý",
+        SystemRole::Manager,
+    )
+    .await?;
+    let manager = login(&h.app, "0912000111", PASSWORD)
+        .await
+        .session()
+        .unwrap_or_default();
+    assert!(required("+84905123456").await?);
+
+    policy(false).await?;
+    assert!(!required("+84905123456").await?);
+    let reply = login(&h.app, OWNER_PHONE, PASSWORD).await;
+    assert_eq!(reply.body["next"], "done");
+    add_member(&h.owner, "vpyd", "0912000111", "Quản lý", SystemRole::Owner).await?;
+    assert!(!required("+84912000111").await?);
+    assert_eq!(
+        call(&h.app, "GET", "/me", Some(&manager), None)
+            .await
+            .status,
+        StatusCode::OK,
+        "promoted while OFF: no MFA owed, the session stays"
+    );
+
+    policy(true).await?;
+    assert!(required("+84912000111").await?);
+    add_member(&h.owner, "vpyd", "0912000111", "Quản lý", SystemRole::Owner).await?;
+    assert_eq!(
+        call(&h.app, "GET", "/me", Some(&manager), None)
+            .await
+            .status,
+        StatusCode::UNAUTHORIZED,
+        "an MFA role granted under an ON policy ends the sessions (L4)"
+    );
+    Ok(())
+}

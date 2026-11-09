@@ -407,6 +407,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/tenants/{id}/owner-mfa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set_owner_mfa"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/tenants/{id}/roles": {
         parameters: {
             query?: never;
@@ -3729,6 +3745,21 @@ export interface components {
             id: string;
             username: string;
         };
+        OwnerMfaChanged: {
+            /**
+             * Format: int64
+             * @description Sessions ended because their user needs MFA from now on (switching ON only; OFF ends none).
+             */
+            revoked_sessions: number;
+            tenant: components["schemas"]["TenantRow"];
+        };
+        /** @description Body of `PUT /admin/tenants/{id}/owner-mfa`. */
+        OwnerMfaSwitch: {
+            /** @description 3–500 characters. */
+            reason: string;
+            /** @description `true` = the spa's owners must use a second factor (the default); `false` = password only. */
+            required: boolean;
+        };
         /** @description Body of `POST /customer-packages/{id}/cancel`. */
         PackageCancel: {
             /** @description Why (required, 1–500 characters); audited. */
@@ -5061,6 +5092,11 @@ export interface components {
              * @description Active logins holding `staff.manage`.
              */
             owner_count: number;
+            /**
+             * @description The spa's MFA policy (ADR-0020): `true` (the default) = its owners must use a second
+             *     factor; `false` = they sign in with the password only.
+             */
+            owner_mfa_required: boolean;
             slug: string;
             /**
              * Format: int64
@@ -6714,6 +6750,64 @@ export interface operations {
             };
             /** @description unknown spa or feature key */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_owner_mfa: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnerMfaSwitch"];
+            };
+        };
+        responses: {
+            /** @description Effective at the owners' next sign-in; switching ON ends the sessions of members who now need MFA */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnerMfaChanged"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description platform.step_up_required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description tenant.owner_mfa_unchanged */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
