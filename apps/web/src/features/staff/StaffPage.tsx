@@ -3,7 +3,7 @@ import { mayOpen } from "../../app/access";
 import { PageHeader } from "../../app/PageHeader";
 import { useSearchState } from "../../lib/searchState";
 import { can, meQuery } from "../auth/session";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
 import { DailyBook } from "./DailyBook";
 import { EvaluationTab } from "./EvaluationTab";
 import { LinkRequiredNotice, LinkWarnings } from "./LinkWarnings";

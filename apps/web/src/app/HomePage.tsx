@@ -2,14 +2,13 @@ import { useQuery, useSuspenseQuery, type QueryClient } from "@tanstack/react-qu
 import { Suspense, lazy } from "react";
 import { Link } from "@tanstack/react-router";
 import { authQuery, can, meQuery, type Me } from "../features/auth/session";
-import { spaToday } from "../features/corrections/api";
 import { dailyReportQuery } from "../features/reports/api";
 import { StatCard, StatSkeleton, count, money } from "../features/reports/ui";
 import { mayOpen } from "./access";
 import { BrandLogo } from "./BrandLogo";
 import { canSeeManagement } from "./features";
 import { Icon } from "./Icon";
-import { longDate } from "../lib/format";
+import { longDate, spaToday } from "../lib/format";
 import { navFor, navKey, type NavItem } from "./nav";
 
 // The owner's forgotten-password requests (ADR-0016): their own chunk, fetched by the owner only.

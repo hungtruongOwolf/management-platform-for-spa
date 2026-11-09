@@ -5,7 +5,7 @@ import { Suspense, lazy, useState } from "react";
 import { Icon } from "../../app/Icon";
 import { BottomSheet } from "../../components/BottomSheet";
 import { can, meQuery } from "../auth/session";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
 import { useToast } from "../customers/Toast";
 import { ErrorState } from "../reports/ui";
 import { customerPackagesQuery, formatDate } from "./api";

@@ -13,7 +13,7 @@ import { Icon } from "../../app/Icon";
 import { BottomSheet } from "../../components/BottomSheet";
 import { ApiError } from "../../lib/api";
 import { messageFor } from "../../lib/errors";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
 import { createCustomer, createWalkIn, customerQuery } from "../customers/api";
 import { activeStaffQuery, formatDate } from "../sales/api";
 import { putAppointment } from "./cache";

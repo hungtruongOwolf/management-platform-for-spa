@@ -14,7 +14,7 @@ import { DateField } from "../../components/DateField";
 import { ApiError } from "../../lib/api";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { categoriesQuery, servicesQuery } from "../catalog/api";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
 import { CustomerSearch } from "../customers/CustomerSearch";
 import { customerQuery } from "../customers/api";
 import { formatDate } from "../sales/api";
