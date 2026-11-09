@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT feature, enabled, updated_at FROM app.tenant_feature WHERE tenant_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "feature",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.tenant_feature",
+            "name": "feature"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "app.tenant_feature",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.tenant_feature",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1731eb4e6bbe1524d8b732038116004bd284663d163736aef7623a0c8b3db95b"
+}

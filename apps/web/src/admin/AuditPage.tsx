@@ -11,6 +11,7 @@ const ACTIONS: Record<string, string> = {
   "platform.tenant.create": "Tạo spa",
   "platform.tenant.suspend": "Tạm ngưng spa",
   "platform.tenant.unsuspend": "Mở lại spa",
+  "platform.feature.set": "Bật / tắt tính năng",
 };
 
 export function actionLabel(action: string): string {

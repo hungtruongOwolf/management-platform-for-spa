@@ -20,6 +20,9 @@ export interface RunCredentials {
   /** Technician account (no MFA, no profile until a spec links one): the technician's own pages. */
   techPhone?: string;
   techPassword?: string;
+  /** Platform console operator (ADR-0018), created by `app add-operator`; enrolls MFA in admin.spec.ts. */
+  operatorUsername?: string;
+  operatorPassword?: string;
 }
 
 export function credentials(): RunCredentials {
@@ -49,7 +52,7 @@ function base32Decode(input: string): Buffer {
 }
 
 /** RFC 6238 code (HMAC-SHA-1, 6 digits) for one 30 s time step, as an authenticator app shows it. */
-function totpAt(key: string, step: number): string {
+export function totpAt(key: string, step: number): string {
   const counter = Buffer.alloc(8);
   counter.writeBigUInt64BE(BigInt(step));
   const mac = createHmac("sha1", base32Decode(key)).update(counter).digest();

@@ -5,7 +5,7 @@ import { ApiError, safeNextPath } from "../../lib/api";
 import { messageFor } from "../../lib/errors";
 import { AuthFrame, bandTitle } from "./AuthFrame";
 import { QrCode } from "./QrCode";
-import { confirmMfaEnrollment, logout, setAuthState, startMfaEnrollment, verifyMfa, type Me, type MfaStep } from "./session";
+import { authQuery, confirmMfaEnrollment, logout, setAuthState, startMfaEnrollment, verifyMfa, type Me, type MfaStep } from "./session";
 
 const input = "input";
 const primaryButton = "btn btn-primary btn-lg btn-block";
@@ -47,7 +47,10 @@ export function MfaPage({ step, next }: { step: MfaStep; next?: string | undefin
 
   const finish = async (me: Me) => {
     setAuthState(queryClient, { state: "signed_in", me });
-    await navigate({ to: safeNextPath(next) });
+    // An owner created with a temporary password (platform console, ADR-0018) passes MFA first
+    // and must then set their own password: the server refuses the session until then, so ask it.
+    const auth = await queryClient.query({ ...authQuery, staleTime: 0 }).catch(() => null);
+    await navigate({ to: auth?.state === "password_change" ? "/doi-mat-khau" : safeNextPath(next) });
   };
   const restart = async () => {
     await logout(queryClient);

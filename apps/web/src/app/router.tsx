@@ -214,7 +214,7 @@ const homeRoute = createRoute({
 const reportsRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/bao-cao",
-  beforeLoad: only(mayOpen.management),
+  beforeLoad: only(mayOpen.reports),
   validateSearch: reportsSearch.validate,
   loaderDeps: ({ search }) => search,
   loader: ({ context, deps }) => reportsPage().then((m) => {
@@ -239,7 +239,7 @@ const packagesRoute = createRoute({
 const notesRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/nhat-ky-ghi-chu",
-  beforeLoad: only(mayOpen.management),
+  beforeLoad: only(mayOpen.notes),
   component: lazyRouteComponent(notesPage, "NotesPage"),
 });
 

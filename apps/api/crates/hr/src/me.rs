@@ -14,7 +14,7 @@ use crate::period;
 use crate::review::{self, DailyReview};
 use crate::rules;
 use chrono::NaiveDate;
-use kernel::{Actor, AppError, Permission, TenantTx};
+use kernel::{Actor, AppError, Feature, Permission, TenantTx};
 use org::profile::Profile;
 use serde::Serialize;
 use sqlx::PgPool;
@@ -122,15 +122,23 @@ pub async fn my_month(
     let info = period::info(&mut tx, month).await?;
     let days = attendance::days_in(&mut tx, month, Some(staff_id)).await?;
     let reviews = review::reviews_in(&mut tx, month, Some(staff_id)).await?;
-    let evaluation = evaluation::evaluations_in(&mut tx, month, Some(staff_id))
-        .await?
-        .pop();
+    // A spa that switched evaluations or payroll off (ADR-0018 D4) shows neither here either.
+    let evaluation = if actor.feature_enabled(Feature::Evaluations) {
+        evaluation::evaluations_in(&mut tx, month, Some(staff_id))
+            .await?
+            .pop()
+    } else {
+        None
+    };
     let adjustments = adjustment::adjustments_in(&mut tx, month, Some(staff_id)).await?;
     let has_pay = org::profile::pay_terms(&mut tx)
         .await?
         .iter()
         .any(|(id, _)| *id == staff_id);
-    let payslip = if has_pay && period::employed_in(&profile, month) {
+    let payslip = if has_pay
+        && period::employed_in(&profile, month)
+        && actor.feature_enabled(Feature::Payroll)
+    {
         payroll::payslips_in(&mut tx, month, Some(staff_id), &info, today)
             .await?
             .pop()

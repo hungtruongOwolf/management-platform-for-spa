@@ -16,12 +16,14 @@ export type NewTenant = Schemas["NewTenant"];
 export type StatusChanged = Schemas["StatusChanged"];
 export type PlatformAuditPage = Schemas["PlatformAuditPage"];
 export type PlatformAuditItem = Schemas["PlatformAuditItem"];
+export type TenantFeature = Schemas["TenantFeature"];
 
 export const adminKeys = {
   me: ["admin", "me"] as const,
   tenants: ["admin", "tenants"] as const,
   tenant: (id: string) => ["admin", "tenants", id] as const,
   audit: ["admin", "audit"] as const,
+  features: (id: string) => ["admin", "tenants", id, "features"] as const,
 };
 
 export const adminApi = {
@@ -44,6 +46,13 @@ export const adminApi = {
       method: "POST",
       body: { reason },
     }) as Promise<StatusChanged>,
+  features: (id: string) =>
+    api(`/admin/tenants/${encodeURIComponent(id)}/features`) as Promise<TenantFeature[]>,
+  setFeature: (id: string, key: string, enabled: boolean, reason: string) =>
+    api(`/admin/tenants/${encodeURIComponent(id)}/features/${encodeURIComponent(key)}`, {
+      method: "PUT",
+      body: { enabled, reason },
+    }) as Promise<TenantFeature>,
   audit: (before?: string) =>
     api(`/admin/audit?limit=50${before ? `&before=${encodeURIComponent(before)}` : ""}`) as Promise<PlatformAuditPage>,
 };

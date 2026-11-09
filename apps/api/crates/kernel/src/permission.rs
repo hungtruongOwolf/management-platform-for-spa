@@ -2,6 +2,7 @@
 //! these permissions stored per tenant. Source of truth for defaults: memory/wiki/security/authz-matrix.md.
 
 use crate::error::AppError;
+use crate::feature::Feature;
 use crate::ids::{TenantId, UserId};
 use crate::tenant::TenantFacts;
 use std::collections::BTreeSet;
@@ -109,6 +110,9 @@ pub struct Actor {
     /// The spa's settings, read with the permissions (db review A4); `None` for actors built by
     /// tooling and tests, whose transactions then read them.
     tenant_facts: Option<TenantFacts>,
+    /// Features the spa has switched off (ADR-0018 D4): their permissions are not in
+    /// `permissions`, and requiring one answers `403 feature.disabled`.
+    disabled_features: BTreeSet<Feature>,
 }
 
 impl Actor {
@@ -124,6 +128,34 @@ impl Actor {
             ip,
             permissions: permissions.into_iter().collect(),
             tenant_facts: None,
+            disabled_features: BTreeSet::new(),
+        }
+    }
+
+    /// The spa's switched-off features: their permissions are removed, whatever the roles say.
+    #[must_use]
+    pub fn with_disabled_features(mut self, features: impl IntoIterator<Item = Feature>) -> Self {
+        self.disabled_features = features.into_iter().collect();
+        let stripped = crate::feature::strip(
+            self.permissions.iter().copied().collect(),
+            &self.disabled_features,
+        );
+        self.permissions = stripped.into_iter().collect();
+        self
+    }
+
+    pub fn feature_enabled(&self, feature: Feature) -> bool {
+        !self.disabled_features.contains(&feature)
+    }
+
+    /// For a route of a feature the spa switched off: `403 feature.disabled`.
+    pub fn require_feature(&self, feature: Feature) -> Result<(), AppError> {
+        if self.feature_enabled(feature) {
+            Ok(())
+        } else {
+            Err(AppError::Forbidden {
+                code: "feature.disabled",
+            })
         }
     }
 
@@ -147,6 +179,12 @@ impl Actor {
     pub fn require(&self, permission: Permission) -> Result<(), AppError> {
         if self.can(permission) {
             Ok(())
+        } else if crate::feature::owning(permission)
+            .is_some_and(|f| self.disabled_features.contains(&f))
+        {
+            Err(AppError::Forbidden {
+                code: "feature.disabled",
+            })
         } else {
             Err(AppError::forbidden())
         }
@@ -169,6 +207,38 @@ mod tests {
         for p in Permission::ALL {
             assert_eq!(Permission::from_str(p.as_str()), Ok(*p));
         }
+    }
+
+    #[test]
+    fn a_switched_off_feature_removes_its_permissions() {
+        let actor = Actor::new(
+            UserId::new(),
+            TenantId::new(),
+            [
+                Permission::AppointmentManage,
+                Permission::CustomerRead,
+                Permission::PayrollRead,
+            ],
+            None,
+        )
+        .with_disabled_features([Feature::Appointments]);
+        assert!(!actor.can(Permission::AppointmentManage));
+        assert!(actor.can(Permission::CustomerRead));
+        assert!(matches!(
+            actor.require(Permission::AppointmentManage),
+            Err(AppError::Forbidden {
+                code: "feature.disabled"
+            })
+        ));
+        // A permission the role never had stays an ordinary refusal.
+        assert!(matches!(
+            actor.require(Permission::CatalogManage),
+            Err(AppError::Forbidden {
+                code: "auth.forbidden"
+            })
+        ));
+        assert!(actor.require_feature(Feature::Payroll).is_ok());
+        assert!(actor.require_feature(Feature::Appointments).is_err());
     }
 
     #[test]

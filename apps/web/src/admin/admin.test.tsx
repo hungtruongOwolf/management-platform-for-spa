@@ -184,3 +184,34 @@ describe("spa list", () => {
     expect(await screen.findByRole("button", { name: "Mở lại spa" })).toBeInTheDocument();
   });
 });
+
+describe("feature switches", () => {
+  it("turns a feature off for one spa with a reason", async () => {
+    let appointments = true;
+    const puts: unknown[] = [];
+    server((method, path, body) => {
+      if (path === "/api/v1/admin/me") return Response.json(ME);
+      if (path === `/api/v1/admin/tenants/${SPA.id}`) return Response.json(SPA);
+      if (path === `/api/v1/admin/tenants/${SPA.id}/features`) {
+        return Response.json([
+          { key: "appointments", name: "Lịch hẹn", enabled: appointments, updated_at: appointments ? null : "2026-11-09T03:00:00Z" },
+          { key: "payroll", name: "Bảng lương", enabled: true, updated_at: null },
+        ]);
+      }
+      if (path === `/api/v1/admin/tenants/${SPA.id}/features/appointments` && method === "PUT") {
+        puts.push(body);
+        appointments = (body as { enabled: boolean }).enabled;
+        return Response.json({ key: "appointments", name: "Lịch hẹn", enabled: appointments, updated_at: "2026-11-09T03:00:00Z" });
+      }
+      return new Response(null, { status: 404 });
+    });
+    at(`/admin/spa/${SPA.id}`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Tắt Lịch hẹn" }));
+    const sheet = await screen.findByRole("dialog", { name: "Tắt Lịch hẹn?" });
+    await user.type(within(sheet).getByLabelText("Lý do"), "Gói cơ bản");
+    await user.click(within(sheet).getByRole("button", { name: "Tắt tính năng" }));
+    expect(await screen.findByRole("button", { name: "Bật Lịch hẹn" })).toBeInTheDocument();
+    expect(puts).toEqual([{ enabled: false, reason: "Gói cơ bản" }]);
+  });
+});

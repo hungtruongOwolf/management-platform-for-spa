@@ -7,7 +7,9 @@ use crate::token::{self, SessionToken};
 use crate::{lockout, password};
 use chrono::{DateTime, Duration, Utc};
 use kernel::crypto::FieldCipher;
-use kernel::{Actor, AppError, FieldError, Permission, PhoneE164, TenantId, TenantTx, UserId};
+use kernel::{
+    Actor, AppError, Feature, FieldError, Permission, PhoneE164, TenantId, TenantTx, UserId,
+};
 use serde::Serialize;
 use sqlx::PgPool;
 use std::net::IpAddr;
@@ -68,6 +70,10 @@ pub struct Me {
     pub tenants: Vec<TenantSummary>,
     #[schema(value_type = Vec<String>)]
     pub permissions: Vec<&'static str>,
+    /// Features the active spa has on (ADR-0018 D4): the UI hides the others. Empty without an
+    /// active spa.
+    #[schema(value_type = Vec<String>)]
+    pub features: Vec<&'static str>,
 }
 
 fn summary(t: TenantRef) -> TenantSummary {
@@ -395,7 +401,8 @@ fn actor_with(
     access: repo::MemberAccess,
     ip: Option<IpAddr>,
 ) -> Actor {
-    let actor = Actor::new(user, tenant, access.permissions, ip);
+    let actor = Actor::new(user, tenant, access.permissions, ip)
+        .with_disabled_features(access.disabled_features);
     match access.facts {
         Some(facts) => actor.with_tenant_facts(facts),
         None => actor,
@@ -674,7 +681,7 @@ pub async fn me_with_access(
     session: &Session,
     access: Option<repo::MemberAccess>,
 ) -> Result<Me, AppError> {
-    build_me(pool, session, None, Some(access.map(|a| a.permissions))).await
+    build_me(pool, session, None, Some(access)).await
 }
 
 /// `known`: the active membership's permissions when the caller already has them (`Some(None)`
@@ -683,7 +690,7 @@ async fn build_me(
     pool: &PgPool,
     session: &Session,
     tenants: Option<Vec<TenantRef>>,
-    known: Option<Option<Vec<Permission>>>,
+    known: Option<Option<repo::MemberAccess>>,
 ) -> Result<Me, AppError> {
     let account = repo::account_by_id(pool, session.user_id)
         .await?
@@ -692,12 +699,12 @@ async fn build_me(
         Some(t) => t,
         None => repo::tenants_of_user(pool, session.user_id).await?,
     };
-    let (active_tenant, permissions) = match session.active_tenant {
+    let (active_tenant, permissions, features) = match session.active_tenant {
         Some(tenant) => match match known {
-            Some(permissions) => permissions,
-            None => tenant_permissions(pool, session.user_id, tenant).await?,
+            Some(access) => access,
+            None => tenant_access(pool, session.user_id, tenant).await?,
         } {
-            Some(perms) => (
+            Some(access) => (
                 tenants
                     .iter()
                     .find(|t| t.id == tenant)
@@ -705,11 +712,16 @@ async fn build_me(
                         id: t.id,
                         name: t.name.clone(),
                     }),
-                perms,
+                access.permissions,
+                Feature::ALL
+                    .iter()
+                    .filter(|f| !access.disabled_features.contains(f))
+                    .map(|f| f.key())
+                    .collect(),
             ),
-            None => (None, Vec::new()),
+            None => (None, Vec::new(), Vec::new()),
         },
-        None => (None, Vec::new()),
+        None => (None, Vec::new(), Vec::new()),
     };
     let phone = PhoneE164::parse(&account.phone)
         .map(|p| p.display_national())
@@ -725,7 +737,20 @@ async fn build_me(
         active_tenant,
         tenants: tenants.into_iter().map(summary).collect(),
         permissions: permission_names,
+        features,
     })
+}
+
+/// The active membership's access in `tenant` (permissions, switched-off features), under RLS.
+async fn tenant_access(
+    pool: &PgPool,
+    user: UserId,
+    tenant: TenantId,
+) -> Result<Option<repo::MemberAccess>, AppError> {
+    let mut tx = TenantTx::begin(pool, tenant).await?;
+    let access = repo::member_access(&mut tx, user).await?;
+    tx.commit().await?;
+    Ok(access)
 }
 
 /// Permissions of `user` in `tenant` from their roles; `None` = not an active member of an active

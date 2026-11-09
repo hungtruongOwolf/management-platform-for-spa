@@ -12,6 +12,11 @@ export interface Me {
   active_tenant: Tenant | null;
   tenants: Tenant[];
   permissions: string[];
+  /**
+   * Features the spa has on (ADR-0018): an operator may switch some off per spa. Absent only
+   * from an API older than the switches, where every feature is on.
+   */
+  features?: string[];
 }
 
 // Responses are checked by hand rather than with zod: this module is on every page's critical path,
@@ -53,6 +58,7 @@ export function parseMe(value: unknown): Me {
     active_tenant: me["active_tenant"] === null ? null : tenant(me["active_tenant"]),
     tenants: list(me["tenants"], tenant),
     permissions: list(me["permissions"], str),
+    ...(me["features"] === undefined ? {} : { features: list(me["features"], str) }),
   };
 }
 
@@ -205,4 +211,10 @@ export async function logout(queryClient: QueryClient): Promise<void> {
 
 export function can(me: Me | null | undefined, permission: string): boolean {
   return me?.permissions.includes(permission) ?? false;
+}
+
+/** The spa has this feature on (UX only: its routes answer `403 feature.disabled` anyway). */
+export function hasFeature(me: Me | null | undefined, feature: string): boolean {
+  if (!me) return false;
+  return me.features?.includes(feature) ?? true;
 }
