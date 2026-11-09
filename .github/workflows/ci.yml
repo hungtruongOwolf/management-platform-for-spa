@@ -139,7 +139,7 @@ jobs:
         partition: [1, 2, 3]
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: vpyd
           POSTGRES_PASSWORD: vpyd_ci_password
@@ -227,7 +227,7 @@ jobs:
         shard: [1, 2]
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: vpyd
           POSTGRES_PASSWORD: vpyd_ci_password
@@ -294,7 +294,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: vpyd
           POSTGRES_PASSWORD: vpyd_ci_password

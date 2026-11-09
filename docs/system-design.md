@@ -25,7 +25,7 @@ flowchart TB
   end
   subgraph Supabase["Supabase (us-west-2)"]
     pooler["Supavisor session pooler"]
-    db[("Postgres 16<br/>schema app, RLS theo tenant")]
+    db[("Postgres 17<br/>schema app, RLS theo tenant")]
   end
   spa -- "HTTPS, cookie __Host-session" --> edge
   admin -- "HTTPS, cookie __Host-op-session" --> edge

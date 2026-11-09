@@ -18,6 +18,7 @@ const MESSAGES: Record<string, string> = {
   "auth.forbidden": "Bạn không có quyền thực hiện thao tác này.",
   "auth.spa_suspended": "Spa đang tạm ngưng. Liên hệ bộ phận hỗ trợ.",
   "auth.bad_origin": "Yêu cầu không hợp lệ. Vui lòng tải lại trang.",
+  "feature.disabled": "Tính năng này đang tắt cho spa. Liên hệ bộ phận hỗ trợ.",
   "conflict.stale_version":
     "Dữ liệu vừa được người khác sửa. Vui lòng tải lại rồi thử lại.",
   not_found: "Không tìm thấy dữ liệu (có thể đã bị xóa hoặc đổi).",
@@ -54,7 +55,7 @@ const MESSAGES: Record<string, string> = {
     "Lượt này vừa được sửa (có thể ở máy khác). Mở lượt mới nhất để sửa tiếp.",
   "day.locked": "Ngày đã chốt, liên hệ chủ spa.",
   "idempotency.key_reuse_mismatch":
-    "Hóa đơn này có thể đã được lưu. Vui lòng đóng hộp thoại và kiểm tra lại liệu trình.",
+    "Thao tác này có thể đã được lưu ở lần gửi trước. Đóng hộp thoại, tải lại rồi kiểm tra trước khi làm lại.",
 };
 
 /** Messages for field-level validation codes. */
@@ -77,7 +78,6 @@ const FIELD_MESSAGES: Record<string, string> = {
   invalid_time: "Giờ không hợp lệ (dạng 09:00).",
   unknown: "Không tìm thấy nhân viên.",
   percent_or_amount: "Chỉ nhập % hoặc số tiền, không cả hai.",
-  rounds_to_zero: "Mức giảm quá nhỏ.",
   count_out_of_range: "Số lượng không hợp lệ.",
   not_today: "Chỉ đổi sang ngày khác khi khách chưa đến.",
   before_from: "Ngày kết thúc trước ngày bắt đầu.",
