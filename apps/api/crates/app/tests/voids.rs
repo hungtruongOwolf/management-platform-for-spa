@@ -6,7 +6,7 @@ use axum::http::StatusCode;
 use catalog::service::seed_menu;
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
-    session_for,
+    post_customer, session_for,
 };
 use identity::SystemRole;
 use kernel::testing::app_pool;
@@ -73,10 +73,8 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
     )
     .await;
     assert_eq!(plan.status, StatusCode::CREATED, "{}", plan.body);
-    let ha = call(
+    let ha = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&manager),
         Some(json!({"full_name": "Nguyễn Thị Hà", "phone": "0905111222", "gender": "female"})),
     )

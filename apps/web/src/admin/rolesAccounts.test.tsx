@@ -121,6 +121,51 @@ describe("accounts", () => {
     expect(within(row("Đang khóa")).queryByRole("button", { name: "Khóa tài khoản" })).not.toBeInTheDocument();
   });
 
+  it("offers the MFA reset on a locked account too (ADR-0019 D20)", async () => {
+    const account = (id: string, full_name: string, extra: Record<string, unknown>) => ({
+      id,
+      full_name,
+      phone: `0905 000 00${id}`,
+      status: "active",
+      locked_until: null,
+      mfa_enabled: true,
+      must_change_password: false,
+      created_at: "2026-11-01T02:00:00Z",
+      memberships: [],
+      ...extra,
+    });
+    const actions: string[] = [];
+    server((method, url) => {
+      if (url.endsWith("/api/v1/admin/me")) return Response.json(ME);
+      if (url.includes("/api/v1/admin/accounts?q=")) {
+        return Response.json([
+          account("1", "Bị khóa", { status: "disabled" }),
+          account("2", "Khóa tạm", { locked_until: new Date(Date.now() + 3_600_000).toISOString() }),
+        ]);
+      }
+      if (method === "POST" && url.endsWith("/api/v1/admin/accounts/1/reset-mfa")) {
+        actions.push(url);
+        return Response.json({ revoked: 0, account: account("1", "Bị khóa", { status: "disabled", mfa_enabled: false }) });
+      }
+      return new Response(null, { status: 404 });
+    });
+    window.history.pushState(null, "", "/admin/tai-khoan");
+    render(<AdminApp />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText("Tìm theo số điện thoại hoặc tên"), "0905");
+    await user.click(screen.getByRole("button", { name: "Tìm" }));
+    const row = (name: string) => screen.getByText(name).closest("li") as HTMLElement;
+    await screen.findByText("Bị khóa");
+    expect(within(row("Khóa tạm")).getByRole("button", { name: "Đặt lại xác thực hai bước" })).toBeInTheDocument();
+    await user.click(within(row("Bị khóa")).getByRole("button", { name: "Đặt lại xác thực hai bước" }));
+    const sheet = await screen.findByRole("dialog", { name: "Đặt lại xác thực hai bước: Bị khóa" });
+    await user.type(within(sheet).getByLabelText("Lý do"), "Mất điện thoại");
+    await user.click(within(sheet).getByRole("button", { name: "Đặt lại" }));
+    await vi.waitFor(() => {
+      expect(actions).toHaveLength(1);
+    });
+  });
+
   it("keeps the reason sheet's last text to itself after Hủy", async () => {
     server((method, url) => {
       if (url.endsWith("/api/v1/admin/me")) return Response.json(ME);

@@ -1070,6 +1070,7 @@ async fn load(
                 closer_name: p.closer_name,
                 beneficiary_customer_id: p.beneficiary_customer_id,
                 beneficiary_name: p.beneficiary_name,
+                version: p.version,
                 note,
             });
     }

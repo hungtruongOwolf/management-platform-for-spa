@@ -87,7 +87,9 @@ export function RosterTab({
       header: "Tài khoản",
       cell: (p) => (
         <span className="grid gap-1">
-          <span>{p.details?.user_name ?? (p.login_linked ? "Đã gắn" : "Chưa gắn")}</span>
+          {/* The login phone (owner's view, ADR-0019 D20): what the person types to sign in. */}
+          <span className="tabular">{p.details?.login?.phone ?? (p.login_linked ? "Đã gắn" : "Chưa gắn")}</span>
+          {p.details?.login?.locked && <span className="text-sm text-text-muted">Đã khóa</span>}
         </span>
       ),
     },
@@ -637,9 +639,10 @@ function EndSheet({ profile: p, onClose, onBack }: { profile: StaffProfile; onCl
   const [lockLogin, setLockLogin] = useState(false);
   const save = useMutation({
     mutationFn: () => endEmployment(p.id, p.version, on, reason.trim(), lockLogin),
+    // Done: back to the roster, where the person now shows as left (ADR-0019 D20).
     onSuccess: async () => {
       await invalidateStaff(queryClient);
-      onBack();
+      onClose();
     },
   });
   const formId = "end-form";

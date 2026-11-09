@@ -109,6 +109,30 @@ describe("management views gate", () => {
 });
 
 describe("device preferences", () => {
+  it("gives the browser chrome the chosen theme's colour; 'system' gives each scheme its own (ADR-0019 D20)", () => {
+    const meta = (scheme: string, color: string) => {
+      const m = document.createElement("meta");
+      m.name = "theme-color";
+      m.media = `(prefers-color-scheme: ${scheme})`;
+      m.content = color;
+      document.head.append(m);
+      return m;
+    };
+    const light = meta("light", "#5a1d18");
+    const dark = meta("dark", "#2b1310");
+    try {
+      applyTheme("dark");
+      expect([light.content, dark.content]).toEqual(["#2b1310", "#2b1310"]);
+      applyTheme("light");
+      expect([light.content, dark.content]).toEqual(["#5a1d18", "#5a1d18"]);
+      applyTheme("system");
+      expect([light.content, dark.content]).toEqual(["#5a1d18", "#2b1310"]);
+    } finally {
+      light.remove();
+      dark.remove();
+    }
+  });
+
   it("applies and remembers the theme; 'system' clears the override", () => {
     applyTheme("dark");
     expect(document.documentElement.dataset["theme"]).toBe("dark");
@@ -183,9 +207,45 @@ describe("command palette", () => {
     await user.type(box, "quay");
     expect(screen.queryByRole("option", { name: /Ghi lượt khách/ })).not.toBeInTheDocument();
   });
+
+  it("scrolls the option chosen with the arrow keys into view (ADR-0019 D20)", async () => {
+    const scrolled: string[] = [];
+    const scrollIntoView = vi.fn(function (this: Element) {
+      scrolled.push(this.textContent);
+    });
+    Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
+    try {
+      serve(MANAGER);
+      const user = userEvent.setup();
+      at("/");
+      await user.click(await screen.findByRole("button", { name: /Tìm khách, mở màn hình/ }));
+      const box = await screen.findByRole("combobox", { name: "Tìm khách hoặc màn hình" });
+      const options = screen.getAllByRole("option");
+      await user.type(box, "{ArrowUp}");
+      const last = options.at(-1);
+      expect(last).toHaveAttribute("aria-selected", "true");
+      expect(scrollIntoView).toHaveBeenLastCalledWith({ block: "nearest" });
+      expect(scrolled.at(-1)).toBe(last?.textContent);
+    } finally {
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    }
+  });
 });
 
 describe("app shell", () => {
+  it("starts with a skip link that moves focus to the main content (ADR-0019 D20)", async () => {
+    serve(MANAGER);
+    const user = userEvent.setup();
+    at("/");
+    await screen.findByRole("navigation", { name: "Chính" });
+    await user.tab();
+    const skip = screen.getByRole("link", { name: "Bỏ qua tới nội dung chính" });
+    expect(skip).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("main")).toHaveFocus();
+    expect(window.location.hash).toBe("");
+  });
+
   it("folds the sidebar and remembers it on this device", async () => {
     serve(MANAGER);
     const user = userEvent.setup();

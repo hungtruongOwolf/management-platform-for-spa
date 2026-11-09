@@ -2963,6 +2963,11 @@ export interface components {
             /** Format: int64 */
             total: number;
             /**
+             * Format: int64
+             * @description The sale's optimistic-lock version: the `If-Match` of `PATCH /sales/{id}` ("Sửa ghi chú gói").
+             */
+            version: number;
+            /**
              * Format: uuid
              * @description The visit this package was sold in, if any.
              */
@@ -3125,6 +3130,36 @@ export interface components {
          * @enum {string}
          */
         LeaveCode: "leave_p" | "leave_dx" | "absent_k";
+        /**
+         * @description A refund of a package closed by someone who does not work in the refund's month (ADR-0019
+         *     D2b): deducted from their last month while it was open, else not clawed back. Listed with the
+         *     month of the refund so it is never dropped silently.
+         */
+        LeaverRefund: {
+            /**
+             * Format: int64
+             * @description The amount refunded (positive).
+             */
+            amount: number;
+            /**
+             * @description `YYYY-MM` of the payslip it is deducted from (the closer's last month, open when the
+             *     refund was made); `null` = not clawed back: that month was already closed, the spa bears
+             *     it.
+             */
+            deducted_in?: string | null;
+            /** @description The package. */
+            description: string;
+            full_name: string;
+            /** Format: date */
+            refund_date: string;
+            /** Format: uuid */
+            refund_id: string;
+            /**
+             * Format: uuid
+             * @description The closer of the package.
+             */
+            staff_id: string;
+        };
         /** @description Daily subtotal of the book, for every day of the range (not only the current page). */
         LedgerDay: {
             /** Format: int64 */
@@ -3281,6 +3316,18 @@ export interface components {
             manual_key: string;
             /** @description `otpauth://totp/...` URI; the client renders it as a QR code. */
             otpauth_uri: string;
+        };
+        /**
+         * @description What is missing for someone on the month's payroll.
+         * @enum {string}
+         */
+        MissingItem: "pay_terms" | "evaluation";
+        /** @description Someone whose data must be completed before the month can close (ADR-0019 D1). */
+        MissingPayrollData: {
+            full_name: string;
+            missing: components["schemas"]["MissingItem"][];
+            /** Format: uuid */
+            staff_id: string;
         };
         /** @description `GET /me/appointments`: the signed-in technician's own calendar. */
         MyCalendar: {
@@ -3920,6 +3967,17 @@ export interface components {
             closed_by_name?: string | null;
             /** @description The month has ended (it can be closed). */
             ended: boolean;
+            /**
+             * @description Refunds dated this month of packages closed by someone who does not work in it, and where
+             *     each was settled (ADR-0019 D2b).
+             */
+            leaver_refunds: components["schemas"]["LeaverRefund"][];
+            /**
+             * @description Who must get pay terms or an evaluation before the month can close (ADR-0019 D1;
+             *     `POST /payroll/close` answers `409 payroll.missing_data` with the same list). Empty once
+             *     closed.
+             */
+            missing: components["schemas"]["MissingPayrollData"][];
             month: string;
             payslips: components["schemas"]["Payslip"][];
             totals: components["schemas"]["PayrollTotals"];
@@ -4447,6 +4505,11 @@ export interface components {
             /** Format: int64 */
             total: number;
             /**
+             * Format: int64
+             * @description Optimistic-lock version: `PATCH /sales/{id}` takes it as `If-Match` (also sent as `ETag`).
+             */
+            version: number;
+            /**
              * Format: uuid
              * @description The visit this sale was made in (its one-off lines, a package sold in the cart, an
              *     addition); null = a sale at the desk without a visit.
@@ -4493,8 +4556,8 @@ export interface components {
          */
         SaleUpdate: {
             /**
-             * @description The new note (≤ 2000 characters); null or blank = no note. Needs
-             *     `customer.health_notes.write`.
+             * @description The new note (≤ 2000 characters). Absent = unchanged (`{}` changes nothing, ADR-0019 D9);
+             *     null or blank = no note. Needs `customer.health_notes.write`.
              */
             note?: string | null;
         };
@@ -5037,8 +5100,8 @@ export interface components {
         UpsellLine: {
             description: string;
             /**
-             * @description `package`, `package_refund` (a package closed earlier, cancelled with a refund this month)
-             *     or `service`.
+             * @description `package`, `package_refund` (a package closed earlier, cancelled with a refund this month,
+             *     or after the closer's last month when this is it: ADR-0019 D2b) or `service`.
              */
             kind: string;
             /**
@@ -5408,6 +5471,11 @@ export interface components {
             sale_id: string;
             /** Format: int64 */
             total: number;
+            /**
+             * Format: int64
+             * @description The sale's optimistic-lock version: the `If-Match` of `PATCH /sales/{id}` ("Sửa ghi chú gói").
+             */
+            version: number;
             voided: boolean;
         };
         /** @enum {string} */
@@ -8283,7 +8351,10 @@ export interface operations {
     create: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description One key per create attempt (ADR-0019 D11): a double click or a retry answers with the profile the first request created, never a second one */
+                "Idempotency-Key": string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -8293,7 +8364,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Created; with no name and no phone it is an anonymous walk-in profile ("Khách vãng lai") */
+            /** @description Created (a replay of the same key answers with that profile as it is now); with no name and no phone it is an anonymous walk-in profile ("Khách vãng lai") */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -8302,7 +8373,21 @@ export interface operations {
                     "application/json": components["schemas"]["CustomerDto"];
                 };
             };
+            /** @description idempotency.key_required / key_invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description replay of a profile anonymised since */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8315,7 +8400,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description validation_failed: full_name too_long, phone invalid_format, birth_date in_future / too_old, birth_year out_of_range / conflicts_with_birth_date */
+            /** @description validation_failed: full_name too_long, phone invalid_format, birth_date in_future / too_old, birth_year out_of_range / conflicts_with_birth_date, body invalid; idempotency.key_reuse_mismatch */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -9642,7 +9727,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description payroll.period_closed */
+            /** @description payroll.period_closed | payroll.missing_data (ADR-0019 D1: details.staff = [MissingPayrollData], who needs pay terms or the month's evaluation first; allow_incomplete does not skip it) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -10097,7 +10182,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description `note` only for customer.health_notes.read */
+            /** @description `note` only for customer.health_notes.read; `ETag` = `version` */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -10129,7 +10214,10 @@ export interface operations {
     update_sale: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description The sale's `version` as read (`"3"`); required */
+                "If-Match": string;
+            };
             path: {
                 id: string;
             };
@@ -10141,7 +10229,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description "Sửa ghi chú gói": the note replaced (null / blank = removed); audited without its text */
+            /** @description "Sửa ghi chú gói": the note replaced (null / blank = removed, absent = unchanged); audited without its text; `ETag` = the new `version` */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -10149,6 +10237,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SaleDto"];
                 };
+            };
+            /** @description precondition.if_match_required / if_match_invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: {
                 headers: {
@@ -10171,6 +10266,13 @@ export interface operations {
             };
             /** @description sale.voided, sale.not_package (a visit's one-off sale: its note is the visit's) */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description conflict.stale_version: the sale changed since it was read */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };

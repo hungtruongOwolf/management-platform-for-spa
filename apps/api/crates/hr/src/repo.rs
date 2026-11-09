@@ -657,6 +657,43 @@ pub async fn upsell_lines(
     .await?)
 }
 
+pub struct PackageRefundRow {
+    pub refund_id: Uuid,
+    /// The closer of the refunded package's sale.
+    pub staff_id: Uuid,
+    pub description: String,
+    pub amount: i64,
+    pub business_date: NaiveDate,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Refunds dated `from..=to` of packages sold in an open sale with a closer, one row each, oldest
+/// first: the `package_refund` credits of [`upsell_lines`], for settling a leaver's (ADR-0019
+/// D2b).
+pub async fn package_refunds_between(
+    tx: &mut TenantTx,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<Vec<PackageRefundRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        PackageRefundRow,
+        r#"SELECT r.id AS refund_id, s.closer_staff_id AS "staff_id!", cp.name_snapshot AS description,
+                  r.amount, r.business_date, r.created_at
+           FROM app.refund r
+           JOIN app.customer_package cp ON cp.tenant_id = r.tenant_id AND cp.id = r.customer_package_id
+           JOIN app.sale s ON s.tenant_id = cp.tenant_id AND s.id = cp.sale_id
+           WHERE r.tenant_id = $1 AND s.status = 'open' AND s.closer_staff_id IS NOT NULL
+             AND r.business_date BETWEEN $2 AND $3
+           ORDER BY r.business_date, r.created_at, r.id"#,
+        tenant,
+        from,
+        to
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
 // --------------------------------------------------------------------------------- payslips
 
 pub async fn payslips(

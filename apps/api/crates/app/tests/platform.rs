@@ -7,7 +7,7 @@ mod common;
 use axum::http::StatusCode;
 use common::{
     OPERATOR, OPERATOR_PASSWORD, PASSWORD, TestResult, add_operator, admin_call, call, code_now,
-    expire_step_up, harness, login, operator_session, session_for, step_up,
+    expire_step_up, harness, login, operator_session, post_customer, session_for, step_up,
 };
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -415,6 +415,39 @@ async fn the_spa_list_is_counts_only(owner: PgPool) -> TestResult {
     )
     .await;
     assert_eq!(missing.status, StatusCode::NOT_FOUND);
+
+    // 0049: one spa's row comes from the function's own filter, not from the whole overview.
+    let other = uuid::Uuid::now_v7();
+    sqlx::query("INSERT INTO app.tenant (id, name, slug) VALUES ($1, 'Spa khác', 'spa-khac')")
+        .bind(other)
+        .execute(&h.owner)
+        .await?;
+    let hash = identity::token::hash_secret(&op).to_vec();
+    let app_pool = kernel::testing::app_pool(&h.owner).await?;
+    let rows = |tenant: Option<uuid::Uuid>| {
+        let (pool, hash) = (app_pool.clone(), hash.clone());
+        async move {
+            sqlx::query_scalar::<_, uuid::Uuid>(
+                "SELECT id FROM app.platform_tenant_overview($1, $2)",
+            )
+            .bind(hash)
+            .bind(tenant)
+            .fetch_all(&pool)
+            .await
+        }
+    };
+    assert_eq!(rows(None).await?.len(), 2);
+    assert_eq!(rows(Some(other)).await?, vec![other]);
+    assert!(rows(Some(uuid::Uuid::now_v7())).await?.is_empty());
+    let one = admin_call(
+        &h.app,
+        "GET",
+        &format!("/admin/tenants/{other}"),
+        Some(&op),
+        None,
+    )
+    .await;
+    assert_eq!(one.body["slug"], "spa-khac", "{}", one.body);
     Ok(())
 }
 
@@ -956,14 +989,7 @@ async fn role_edits_take_effect_on_the_next_request(owner: PgPool) -> TestResult
     let manager = session_for(&h, "0905000002").await;
     let new_customer =
         || json!({"full_name": "Khách Thử", "phone": "0912345678", "gender": "female"});
-    let before = call(
-        &h.app,
-        "POST",
-        "/customers",
-        Some(&manager),
-        Some(new_customer()),
-    )
-    .await;
+    let before = post_customer(&h.app, Some(&manager), Some(new_customer())).await;
     assert_eq!(before.status, StatusCode::CREATED, "{}", before.body);
 
     let mut grants: Vec<String> = identity::SystemRole::Manager
@@ -982,10 +1008,8 @@ async fn role_edits_take_effect_on_the_next_request(owner: PgPool) -> TestResult
     .await;
     assert_eq!(edited.status, StatusCode::OK, "{}", edited.body);
     assert_eq!(edited.body["updated_spas"], 1);
-    let refused = call(
+    let refused = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&manager),
         Some(json!({"full_name": "Khách Hai", "phone": "0912345679", "gender": "female"})),
     )
@@ -1007,10 +1031,8 @@ async fn role_edits_take_effect_on_the_next_request(owner: PgPool) -> TestResult
     .await;
     assert_eq!(own.status, StatusCode::OK, "{}", own.body);
     assert_eq!(own.body["follows_template"], false);
-    let allowed = call(
+    let allowed = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&manager),
         Some(json!({"full_name": "Khách Ba", "phone": "0912345670", "gender": "female"})),
     )
@@ -1165,6 +1187,41 @@ async fn accounts_across_spas(owner: PgPool) -> TestResult {
     );
     let short = admin_call(&h.app, "GET", "/admin/accounts?q=ab", Some(&op), None).await;
     assert_eq!(short.status, StatusCode::UNPROCESSABLE_ENTITY);
+    // ADR-0019 D17: LIKE wildcards in a name match themselves, not every account.
+    for wildcard in ["%25%25%25", "___", "a%5C%25b"] {
+        let none = admin_call(
+            &h.app,
+            "GET",
+            &format!("/admin/accounts?q={wildcard}"),
+            Some(&op),
+            None,
+        )
+        .await;
+        assert_eq!(none.status, StatusCode::OK, "{}", none.body);
+        assert_eq!(none.body, json!([]), "q={wildcard}");
+    }
+    // Every search across spas is in the platform trail, the query masked.
+    let searches: Vec<Value> = sqlx::query_scalar(
+        "SELECT detail FROM app.platform_audit_log
+         WHERE action = 'platform.account.search' ORDER BY at, id",
+    )
+    .fetch_all(&h.owner)
+    .await?;
+    assert_eq!(searches.len(), 5, "{searches:?}");
+    assert_eq!(
+        searches[0],
+        json!({"q": "090****", "by": "phone", "results": 1})
+    );
+    assert_eq!(
+        searches[1],
+        json!({"q": "c… s…", "by": "name", "results": 1})
+    );
+    assert!(
+        !searches
+            .iter()
+            .any(|s| s.to_string().contains("905123") || s.to_string().contains("chu spa")),
+        "{searches:?}"
+    );
     let id = found["id"].as_str().unwrap_or_default().to_owned();
     let reason = || Some(json!({"reason": "Chủ spa gọi hỗ trợ"}));
 
@@ -1325,10 +1382,8 @@ async fn tenant_audit_is_metadata_only(owner: PgPool) -> TestResult {
     add_operator(&h).await?;
     let op = operator_session(&h).await?;
     let spa_owner = session_for(&h, common::OWNER_PHONE).await;
-    let created = call(
+    let created = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&spa_owner),
         Some(json!({"full_name": "Khách Bí Mật", "phone": "0912345678", "gender": "female"})),
     )

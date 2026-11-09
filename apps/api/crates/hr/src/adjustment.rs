@@ -198,9 +198,16 @@ async fn insert_checked(
     let today = period::today(tx).await?;
     let c = validate(input, today)?;
     let profiles = org::profile::profiles_in(tx).await?;
-    if !profiles.iter().any(|p| p.id == input.staff_id) {
+    let Some(person) = profiles.iter().find(|p| p.id == input.staff_id) else {
         return Err(AppError::Validation(vec![FieldError::new(
             "staff_id", "unknown",
+        )]));
+    };
+    // ADR-0019 D2: an entry in a month the person worked no day of would never reach a payslip.
+    if !period::employed_in(person, Month::of(c.occurred_on)) {
+        return Err(AppError::Validation(vec![FieldError::new(
+            "occurred_on",
+            "not_employed",
         )]));
     }
     if let Some(corrected) = input.corrects_month

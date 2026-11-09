@@ -116,7 +116,9 @@ function roster(details: boolean): StaffProfile[] {
       tenure_days: 615,
       tenure_months: 20,
       login_linked: true,
-      ...(details ? { details: { phone: "0905 111 222", note: null, user_id: "u-lan", user_name: "KTV Lan" } } : {}),
+      ...(details
+        ? { details: { phone: "0905 111 222", note: null, user_id: "u-lan", user_name: "KTV Lan", login: { phone: "0912 300 111", role: "technician", locked: false } } }
+        : {}),
     },
     {
       ...base,
@@ -209,6 +211,8 @@ function payroll(): PayrollMonth {
     ended: false,
     payslips: [s],
     totals: { staff: 1, base_salary: s.base_salary, deductions: 0, commission: 15_000, bonuses: 0, penalties: 0, net_pay: s.net_pay },
+    missing: [],
+    leaver_refunds: [],
   };
 }
 
@@ -353,6 +357,8 @@ interface ServeOptions {
   payRefusedOnce?: boolean;
   /** `POST /adjustments` answers 422 with this field error. */
   adjustmentRefused?: { field: string; code: string };
+  /** Overrides of `GET /payroll` (an ended month, close blockers, leaver refunds). */
+  payroll?: Partial<PayrollMonth>;
 }
 
 /** A scorecard as `GET /evaluations` / `/me/staff` send it. */
@@ -455,7 +461,7 @@ function serve(permissions: string[], options: ServeOptions = {}) {
           tet_level_amounts: [],
         },
       });
-    if (p === "/payroll") return permissions.includes("payroll.read") ? ok(payroll()) : ok({ code: "auth.forbidden" }, 403);
+    if (p === "/payroll") return permissions.includes("payroll.read") ? ok({ ...payroll(), ...options.payroll }) : ok({ code: "auth.forbidden" }, 403);
     if (p === "/me/staff") {
       const left = options.leftOn;
       const asked = url.searchParams.get("month") ?? (left ? left.slice(0, 7) : month);
@@ -1060,6 +1066,35 @@ describe("/nhan-vien", () => {
     expect(within(sheet).getByLabelText("Hỗ trợ tiền ăn")).toHaveValue("monthly");
   });
 
+  it("owner: closing a month lists who still needs pay terms or an evaluation, and refuses until then (ADR-0019 D1)", async () => {
+    serve(OWNER, {
+      payroll: {
+        ended: true,
+        missing: [{ staff_id: "s-mai", full_name: "Trần Thị Mai", missing: ["pay_terms", "evaluation"] }],
+      },
+    });
+    at("/nhan-vien?tab=payroll");
+    await userEvent.click(await screen.findByRole("button", { name: /^Chốt lương/ }));
+    const dialog = await screen.findByRole("dialog", { name: /^Chốt lương/ });
+    expect(within(dialog).getByText("Trần Thị Mai: chưa có lương cứng, chưa đánh giá tháng")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Chốt lương" })).toBeDisabled();
+  });
+
+  it("owner: a leaver's package refund says where it was taken back, or that it was not (ADR-0019 D2b)", async () => {
+    serve(OWNER, {
+      payroll: {
+        leaver_refunds: [
+          { refund_id: "r1", staff_id: "s-mai", full_name: "Trần Thị Mai", description: "Gói 10 buổi", amount: 1_000_000, refund_date: "2026-11-05", deducted_in: "2026-10" },
+          { refund_id: "r2", staff_id: "s-mai", full_name: "Trần Thị Mai", description: "Gói 10 buổi", amount: 500_000, refund_date: "2026-11-20", deducted_in: null },
+        ],
+      },
+    });
+    at("/nhan-vien?tab=payroll");
+    const section = await screen.findByRole("region", { name: "Hoàn tiền gói của người đã nghỉ" });
+    expect(within(section).getByText(/hoàn 1\.000\.000đ ngày 05\/11\/2026: trừ lại hoa hồng chốt ở phiếu lương tháng 10\/2026/)).toBeInTheDocument();
+    expect(within(section).getByText(/hoàn 500\.000đ ngày 20\/11\/2026: không trừ lại được/)).toBeInTheDocument();
+  });
+
   it("payslip lists what the upsell commission is computed from", () => {
     const base = slip();
     const withUpsell: Payslip = {
@@ -1367,6 +1402,9 @@ describe("Hồ sơ nhân viên (roster)", () => {
     const table = await screen.findByRole("table", { name: "Danh sách nhân sự" });
     // People without a login: nudged in Hồ sơ nhân viên (they count as technicians until they have one).
     expect(screen.getByText(/Chưa có tài khoản đăng nhập: Phạm Thị Hoa\./)).toBeInTheDocument();
+    // "Tài khoản" shows the phone the person signs in with (ADR-0019 D20), not the login's name.
+    expect(within(table).getByText("0912 300 111")).toBeInTheDocument();
+    expect(within(table).queryByText("KTV Lan")).not.toBeInTheDocument();
     await userEvent.click(within(table).getByRole("button", { name: "Lê Thị Lan" }));
     const sheet = await screen.findByRole("dialog", { name: "Lê Thị Lan" });
     expect(within(sheet).getByRole("heading", { name: "Tài khoản đăng nhập" })).toBeInTheDocument();
@@ -1385,6 +1423,10 @@ describe("Hồ sơ nhân viên (roster)", () => {
     });
     const post = requests(spy).find((r) => r.url.endsWith("/staff/s-lan/end"));
     expect(post?.body).toEqual({ ended_on: today, reason: "Chuyển công tác", lock_login: true });
+    // ADR-0019 D20: done means back to the roster, not to the person's sheet.
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
   });
 
   it("owner: a refusal for future bookings lists them, each opening its day of the calendar (F24)", async () => {

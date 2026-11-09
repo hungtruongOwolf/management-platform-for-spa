@@ -33,7 +33,7 @@ async function regularWithPackage(page: Page, phone: string): Promise<void> {
   });
   expect(plan.status()).toBe(201);
   const customer = await page.request.post("/api/v1/customers", {
-    headers: write,
+    headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
     data: { full_name: "Lê Thị Quầy", phone, gender: "female" },
   });
   expect(customer.status()).toBe(201);

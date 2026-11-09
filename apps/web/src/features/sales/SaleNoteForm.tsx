@@ -5,15 +5,19 @@
 import type { Sale } from "@vpyd/api-client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState } from "react";
-import { api } from "../../lib/api";
+import { api, ifMatch } from "../../lib/api";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { invalidateManagementViews } from "../../lib/invalidate";
 
-/** `PATCH /sales/{id}`: replaces a package sale's note ("" = none). */
-export async function saveSaleNote(saleId: string, note: string): Promise<Sale> {
+/**
+ * `PATCH /sales/{id}`: replaces a package sale's note ("" = none). `version` is the sale's version
+ * as the screen read it (`If-Match`): a sale changed since is refused (412), never overwritten.
+ */
+export async function saveSaleNote(saleId: string, note: string, version: number): Promise<Sale> {
   return (await api(`/sales/${saleId}`, {
     method: "PATCH",
     body: { note: note.trim() === "" ? null : note.trim() },
+    headers: ifMatch(version),
   })) as Sale;
 }
 
@@ -23,6 +27,7 @@ export async function saveSaleNote(saleId: string, note: string): Promise<Sale> 
  */
 export function SaleNoteForm({
   saleId,
+  version,
   note: initial,
   customerId,
   title,
@@ -30,6 +35,8 @@ export function SaleNoteForm({
   onCancel,
 }: {
   saleId: string;
+  /** The sale's `version` as the caller read it (sent as `If-Match`). */
+  version: number;
   /** The note as the caller shows it (null / undefined = none yet). */
   note: string | null | undefined;
   /** Whose views to refresh (the payer; the beneficiary's timeline refreshes with them). */
@@ -44,7 +51,7 @@ export function SaleNoteForm({
   const ref = useRef<HTMLTextAreaElement>(null);
   const [note, setNote] = useState(initial ?? "");
   const save = useMutation({
-    mutationFn: () => saveSaleNote(saleId, note),
+    mutationFn: () => saveSaleNote(saleId, note, version),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["sales", "day"] });
       void queryClient.invalidateQueries({ queryKey: ["visits"] });

@@ -483,7 +483,7 @@ pub struct PayrollClose {
 #[utoipa::path(post, path = "/api/v1/payroll/close", tag = "staff", request_body = PayrollClose,
     params(("Idempotency-Key" = Uuid, Header)),
     responses((status = 200, body = PayrollMonth), (status = 400), (status = 401), (status = 403),
-              (status = 409, description = "payroll.period_closed"),
+              (status = 409, description = "payroll.period_closed | payroll.missing_data (ADR-0019 D1: details.staff = [MissingPayrollData], who needs pay terms or the month's evaluation first; allow_incomplete does not skip it)"),
               (status = 422, description = "payroll.month_not_ended | payroll.unrecorded_days")))]
 pub async fn close_payroll(
     State(pool): State<PgPool>,
