@@ -56,9 +56,57 @@ test.beforeAll(async ({ browser }) => {
     },
   });
   expect(res.status()).toBe(201);
-  profilePath = `/khach-hang/${((await res.json()) as { id: string }).id}`;
+  const customerId = ((await res.json()) as { id: string }).id;
+  profilePath = `/khach-hang/${customerId}`;
+
+  // Real-length package names (CI audit 2026-11-09: /quay at 1040 px cut them after two lines,
+  // invisible on a near-empty spa). A package-only sale today lists the name on /quay too.
+  const services = (await (await ctx.request.get("/api/v1/services")).json()) as {
+    id: string;
+    active: boolean;
+  }[];
+  const service = services.find((s) => s.active);
+  const staff = (await (await ctx.request.get("/api/v1/staff")).json()) as { id: string }[];
+  expect(service && staff[0], "seeded menu and a technician").toBeTruthy();
+  const plan = await ctx.request.post("/api/v1/package-plans", {
+    headers: { Origin: stack.webOrigin },
+    data: {
+      name: LONG_PLAN_NAME,
+      price: 2_500_000,
+      validity_months: 12,
+      gift_note: null,
+      active: true,
+      items: [{ service_id: service?.id, sessions: 10, bonus_sessions: 2 }],
+    },
+  });
+  expect(plan.status()).toBe(201);
+  const sale = await ctx.request.post("/api/v1/sales", {
+    headers: { Origin: stack.webOrigin, "Idempotency-Key": crypto.randomUUID() },
+    data: {
+      customer_id: customerId,
+      closer_staff_id: staff[0]?.id,
+      lines: [{ package_plan_id: ((await plan.json()) as { id: string }).id }],
+      payments: [{ method: "cash", amount: 2_500_000 }],
+    },
+  });
+  expect(sale.status()).toBe(201);
   await ctx.close();
 });
+
+/** A package name as long as the real menu's, with a unique tail (several runs share the DB). */
+const LONG_PLAN_NAME = `Liệu trình gội đầu dưỡng sinh thảo dược kèm massage cổ vai gáy 10 buổi tặng 2 (${String(Date.now())})`;
+
+/** Lines that cut the long package name (it must be read whole, wrapped, on /quay). */
+function cutPackageName(page: Page): Promise<string[]> {
+  return page.evaluate((name) => {
+    const out: string[] = [];
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>("main *"))) {
+      if (!Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").includes(name))) continue;
+      if (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1) out.push(el.textContent.trim().slice(0, 60));
+    }
+    return out;
+  }, LONG_PLAN_NAME);
+}
 
 async function open(page: Page, path: string) {
   await page.goto(path);
@@ -108,6 +156,12 @@ test("every screen holds from 320 to 1920 px and at 200 % zoom", async ({
         problems.push(`${at}: overlap ${o}`);
       for (const c of await clippedText(page))
         problems.push(`${at}: clipped ${c}`);
+      if (path === "/quay") {
+        // The day's package-only sale (beforeAll): its long name is read whole at every width.
+        await expect(page.getByText(LONG_PLAN_NAME).first()).toBeAttached();
+        for (const c of await cutPackageName(page))
+          problems.push(`${at}: package name cut: ${c}`);
+      }
       if (SHOTS.has(size.width) && size.height === 900) {
         await testInfo.attach(`${name}-${String(size.width)}`, {
           body: await page.screenshot({ fullPage: true }),
