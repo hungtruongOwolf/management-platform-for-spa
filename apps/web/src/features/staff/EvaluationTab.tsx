@@ -106,7 +106,7 @@ function MonthList({ month, onPerson }: { month: string; onPerson: (id: string) 
                 {s.evaluation ? "Chấm lại" : "Chấm điểm"}
               </button>
             )}
-            {!sheet.closed && !s.can_record && <span className="text-sm text-text-muted">Chỉ chủ spa chấm cho quản lý</span>}
+            {!sheet.closed && !s.can_record && !sheet.link_required && <span className="text-sm text-text-muted">Chỉ chủ spa chấm cho quản lý</span>}
           </li>
         ))}
       </ul>

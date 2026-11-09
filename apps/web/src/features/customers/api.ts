@@ -14,7 +14,9 @@ export function isSearchable(q: string): boolean {
   if (t === "") return false;
   const digits = t.replace(/\D/g, "");
   const phoneLike = /^[\d\s.+()-]+$/.test(t);
-  return phoneLike ? digits.replace(/^0/, "").length >= 3 : t.length >= 2;
+  // The national number, as the server counts it: "+84…" drops 84, otherwise one trunk 0.
+  const national = t.startsWith("+") && digits.startsWith("84") ? digits.slice(2) : digits.replace(/^0/, "");
+  return phoneLike ? national.length >= 3 : t.length >= 2;
 }
 
 export function searchQuery(q: string) {

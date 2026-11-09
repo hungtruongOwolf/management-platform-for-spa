@@ -19,6 +19,7 @@ import type {
   Revenue,
 } from "./contract";
 import type { FollowUp, InactiveCustomer } from "@vpyd/api-client";
+import { spaToday } from "../corrections/api";
 
 function rng(seedText: string): () => number {
   let h = 2166136261;
@@ -315,7 +316,7 @@ export function mockCustomerStats(customerId: string, history: HistoryPage): Cus
   const paid = history.events.reduce((s, e) => s + (e.purchase?.paid.total ?? 0) + (e.visit?.paid.total ?? 0), 0);
   const voided = history.events.reduce((s, e) => s + (e.kind === "visit_voided" ? (e.visit?.paid.total ?? 0) : 0), 0);
   const last = visits[0]?.business_date ?? null;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = spaToday();
   return {
     customer_id: customerId,
     first_visit_on: visits.at(-1)?.business_date ?? null,

@@ -19,7 +19,8 @@ export function CustomerSearch({
   onWalkIn,
 }: {
   onSelect: (c: CustomerSummary) => void;
-  onCreate: (typed: string) => void;
+  /** "Khách mới"; leave it out for a role without `customer.write` (the button would do nothing). */
+  onCreate?: ((typed: string) => void) | undefined;
   /** Shows "Khách vãng lai": records an anonymous profile (no name, no phone) and hands it back
    * (front desk, for those with `customer.write`). */
   onWalkIn?: (c: Customer) => void;
@@ -130,16 +131,18 @@ export function CustomerSearch({
           />
         </div>
         <div className="search-actions">
-          <button
-            type="button"
-            onClick={() => {
-              onCreate(text);
-            }}
-            className="btn btn-secondary"
-          >
-            <Icon name="plus" className="size-[18px]" />
-            Khách mới
-          </button>
+          {onCreate && (
+            <button
+              type="button"
+              onClick={() => {
+                onCreate(text);
+              }}
+              className="btn btn-secondary"
+            >
+              <Icon name="plus" className="size-[18px]" />
+              Khách mới
+            </button>
+          )}
           {onWalkIn && (
             <button
               type="button"

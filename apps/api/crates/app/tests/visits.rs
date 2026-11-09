@@ -582,6 +582,54 @@ async fn default_package_is_the_one_expiring_soonest(pool: PgPool) -> TestResult
     Ok(())
 }
 
+/// AC4.3 with quantities: the default pick skips a package that cannot cover the line, counting
+/// what earlier lines of the same checkout take. Red before: the soonest-expiring package with
+/// 1 session left was picked for qty 2 (and for a second line), and the visit failed
+/// `409 package.no_sessions_left` although the other package had sessions.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn default_package_has_enough_sessions_for_the_line(pool: PgPool) -> TestResult {
+    let d = desk(pool).await?;
+    let (later, later_item) = (
+        d.get(&format!("/customers/{}/packages", d.ha)).await.body[0]["id"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned(),
+        d.item_of(&d.ha).await,
+    );
+    let (soon, soon_item) = d.sell(&d.ha).await?;
+    d.set_expiry(&soon, 10).await?;
+    d.set_expiry(&later, 100).await?;
+    d.set_remaining(&soon_item, 1).await?;
+
+    let line = |qty: u32| json!({"service_id": d.shampoo, "source": "package", "staff_id": d.lan, "qty": qty});
+    let two = d
+        .record(json!({"customer_id": d.ha, "lines": [line(2)]}))
+        .await;
+    assert_eq!(two.status, StatusCode::CREATED, "{}", two.body);
+    assert_eq!(
+        two.body["lines"][0]["customer_package_id"].as_str(),
+        Some(later.as_str())
+    );
+    assert_eq!(d.remaining(&later_item).await?, 10);
+
+    let pair = d
+        .record(json!({"customer_id": d.ha, "lines": [line(1), line(1)]}))
+        .await;
+    assert_eq!(pair.status, StatusCode::CREATED, "{}", pair.body);
+    let used: Vec<Option<&str>> = (0..2)
+        .map(|i| pair.body["lines"][i]["customer_package_id"].as_str())
+        .collect();
+    assert_eq!(used, [Some(soon.as_str()), Some(later.as_str())]);
+    assert_eq!(
+        (
+            d.remaining(&soon_item).await?,
+            d.remaining(&later_item).await?
+        ),
+        (0, 9)
+    );
+    Ok(())
+}
+
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn exhausted_and_cancelled_packages_are_409(pool: PgPool) -> TestResult {
     let d = desk(pool).await?;

@@ -76,7 +76,7 @@ export function MyPayPage() {
 /**
  * /nhan-vien (spec staff-management §10): the daily book first (attendance, praise/complaints and
  * bonuses/penalties per person, in one pass), then the month grid, the monthly evaluation (the
- * book prompts for it when due), payroll (payroll.read) and the roster "Nhân sự" (staff.read;
+ * book prompts for it when due), payroll (payroll.read) and the roster "Hồ sơ nhân viên" (staff.read;
  * hiring, editing and ending employment with staff.manage, spec §13). A
  * technician without those sees only their own month. Tabs are UX only: each API answers 403.
  * A manager's own profile is not in these books (the server leaves it out); their own month is
@@ -142,7 +142,7 @@ export function StaffPage() {
       </div>
       <div id="staff-panel" role="tabpanel" aria-labelledby={`staff-tab-${tab}`} className="grid content-start gap-5">
         {/* F19: the owner sees which manager logins are not linked to a profile yet (and, in
-            Nhân sự, who has no login); such a manager is told to ask the owner. */}
+            Hồ sơ nhân viên, who has no login); such a manager is told to ask the owner. */}
         {can(me, "staff.manage") && (tab === "day" || tab === "profiles") && (
           <LinkWarnings
             nudge={tab === "profiles"}

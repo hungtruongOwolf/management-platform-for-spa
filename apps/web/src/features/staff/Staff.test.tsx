@@ -32,8 +32,9 @@ import { dayTotals, shiftDay } from "./MyDaySheet";
 import { daysOf, monthLabel, percentOfBp, shiftMonth, weekdayShort } from "./labels";
 import { evaluationDueMonth, incompleteDays, missingOn } from "./progress";
 import { staffSearch } from "./search";
-import { managerLoginWithoutProfile, tenureLabel, withoutLogin } from "./roster";
+import { tenureLabel, withoutLogin } from "./roster";
 import { PayslipView } from "./PayrollTab";
+import { signedVnd } from "./ui";
 
 const MANAGER = ["catalog.read", "staff.read_basic", "staff.read", "attendance.record", "evaluation.record", "staff.read_own", "report.read"];
 const OWNER = [...MANAGER, "staff.manage", "payroll.read", "payroll.close"];
@@ -345,6 +346,10 @@ interface ServeOptions {
   reauthFirst?: boolean;
   /** `POST /auth/reauth` answers 401 `auth.unauthenticated`: the session itself ended. */
   reauthExpired?: boolean;
+  /** The first `PUT /staff/{id}/pay` is refused (base salary over the server's bound). */
+  payRefusedOnce?: boolean;
+  /** `POST /adjustments` answers 422 with this field error. */
+  adjustmentRefused?: { field: string; code: string };
 }
 
 /** A scorecard as `GET /evaluations` / `/me/staff` send it. */
@@ -412,6 +417,8 @@ const PENALTY: Adjustment = {
 
 function serve(permissions: string[], options: ServeOptions = {}) {
   const reauthed = { done: false };
+  const payRefused = { left: options.payRefusedOnce ? 1 : 0 };
+  const hired = { version: 0 };
   return vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
     const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const url = new URL(raw, "http://app.test");
@@ -429,6 +436,21 @@ function serve(permissions: string[], options: ServeOptions = {}) {
         staff: options.linkRequired ? att.staff.map((x) => ({ ...x, can_record: false })) : att.staff,
       });
     }
+    if (p === "/payroll/rules" && method === "GET")
+      return ok({
+        version: 1,
+        rules: {
+          closing_commission: true,
+          commission_on_bonus_sessions: false,
+          default_shift_start: "09:00",
+          free_leave_codes: ["leave_p", "leave_dx", "absent_k"],
+          free_leave_days: 2,
+          late_grace_minutes: 5,
+          late_penalty_amount: 20_000,
+          loyalty_partial_month: "prorate",
+          tet_level_amounts: [],
+        },
+      });
     if (p === "/payroll") return permissions.includes("payroll.read") ? ok(payroll()) : ok({ code: "auth.forbidden" }, 403);
     if (p === "/me/staff") {
       const left = options.leftOn;
@@ -452,6 +474,8 @@ function serve(permissions: string[], options: ServeOptions = {}) {
     if (p === "/me/staff/day") return ok(myDay(url.searchParams.get("date") ?? today));
     if (p === "/daily-reviews" && method === "PUT") return ok([]);
     if (p === "/daily-reviews") return ok(reviews());
+    if (p === "/adjustments" && method === "POST" && options.adjustmentRefused)
+      return ok({ code: "validation_failed", errors: [options.adjustmentRefused] }, 422);
     if (p === "/adjustments" && method === "GET") return ok({ month, closed: false, items: options.adjustments ?? [] } satisfies AdjustmentLog);
     if (p.startsWith("/adjustments/") && method === "DELETE") return Promise.resolve(new Response(null, { status: 204 }));
     if (p === "/evaluations" && method === "PUT") return ok({});
@@ -463,6 +487,7 @@ function serve(permissions: string[], options: ServeOptions = {}) {
     }
     if (p === "/evaluations") {
       const e = evaluations(url.searchParams.get("month") ?? month);
+      if (options.linkRequired) return ok({ ...e, link_required: true, staff: e.staff.map((x) => ({ ...x, can_record: false })) });
       return ok(
         options.scored
           ? { ...e, closed: true, staff: e.staff.map((x) => (x.staff_id === "s-hoa" ? { ...x, evaluation: SCORECARD } : x)) }
@@ -495,6 +520,21 @@ function serve(permissions: string[], options: ServeOptions = {}) {
         409,
       );
     if (/^\/staff\/[^/]+\/end$/.test(p) && method === "POST") return ok(roster(true)[0]);
+    if (/^\/staff\/[^/]+\/pay$/.test(p) && method === "PUT") {
+      if (payRefused.left > 0) {
+        payRefused.left -= 1;
+        return ok({ code: "validation_failed", errors: [{ field: "base_salary", code: "out_of_range" }] }, 422);
+      }
+      return ok({});
+    }
+    if (p === "/staff" && method === "POST") {
+      hired.version = 1;
+      return ok({ ...roster(true)[1], id: "s-new", full_name: "Võ Thị Ngọc", version: hired.version }, 201);
+    }
+    if (p === "/staff/s-new" && method === "PUT") {
+      hired.version += 1;
+      return ok({ ...roster(true)[1], id: "s-new", full_name: "Võ Thị Ngọc", version: hired.version });
+    }
     if (p === "/staff") return ok([]);
     return ok([]);
   });
@@ -590,13 +630,10 @@ describe("staff helpers", () => {
     expect(tabsFor(navFor(ME(TECH))).map((t) => t.to)).toEqual(["/", "/nhan-vien", "/khach-cua-toi"]);
   });
 
-  it("reads a manager from the login's role, never from a title", () => {
+  it("nudges for a login only for someone still working without one", () => {
     expect(withoutLogin({ login_linked: false, status: "active" })).toBe(true);
     expect(withoutLogin({ login_linked: true, status: "active" })).toBe(false);
     expect(withoutLogin({ login_linked: false, status: "left" })).toBe(false);
-    expect(managerLoginWithoutProfile({ is_manager: true, staff_id: null })).toBe(true);
-    expect(managerLoginWithoutProfile({ is_manager: true, staff_id: "s-hoa" })).toBe(false);
-    expect(managerLoginWithoutProfile({ is_manager: false, staff_id: null })).toBe(false);
   });
 });
 
@@ -925,6 +962,51 @@ describe("/nhan-vien", () => {
     });
   });
 
+  it("a negative bonus − penalty net uses the same minus sign as the deductions", () => {
+    expect(signedVnd(-50_000)).toBe(`−50.000đ`);
+    expect(signedVnd(20_000)).toBe("20.000đ");
+    expect(signedVnd(0)).toBe("0đ");
+  });
+
+  it("owner: the pay rules stop at the server's bounds and say so", async () => {
+    serve(OWNER);
+    at("/nhan-vien?tab=payroll");
+    await userEvent.click(await screen.findByRole("button", { name: "Quy tắc lương" }));
+    const sheet = await screen.findByRole("dialog", { name: "Quy tắc lương của spa" });
+    const days = await within(sheet).findByLabelText("Số ngày nghỉ không trừ lương mỗi tháng");
+    await userEvent.clear(days);
+    await userEvent.type(days, "11");
+    expect(within(sheet).getByText("Tối đa 10 ngày.")).toBeInTheDocument();
+    await userEvent.type(within(sheet).getByLabelText("Muộn dưới (phút) không tính"), "00");
+    expect(within(sheet).getByText("Tối đa 240 phút.")).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Lưu quy tắc" })).toBeDisabled();
+  });
+
+  it("bonus / penalty: points stop at 100, and the server's field errors show where they belong", async () => {
+    serve(MANAGER, { adjustmentRefused: { field: "corrects_month", code: "not_closed" } });
+    at("/nhan-vien");
+    await userEvent.click(await waitFor(() => card("s-mai").getByRole("button", { name: "Ghi thưởng / phạt" })));
+    const dialog = await screen.findByRole("dialog", { name: "Thưởng / phạt · Trần Thị Mai" });
+    const points = within(dialog).getByLabelText("Điểm");
+    await userEvent.type(within(dialog).getByLabelText("Lý do"), "Khách khen");
+    await userEvent.type(points, "150");
+    expect(within(dialog).getByText("Từ 1 đến 100 điểm.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Lưu" })).toBeDisabled();
+
+    await userEvent.clear(points);
+    await userEvent.type(points, "15");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Lưu" }));
+    expect(await within(dialog).findByText("Tháng này chưa chốt, không cần điều chỉnh.")).toBeInTheDocument();
+  });
+
+  it("the month's bonus log names someone no longer in the active list from the month's sheet", async () => {
+    serve(MANAGER, { adjustments: [{ ...PENALTY, staff_id: "s-mai" }] });
+    at("/nhan-vien?tab=month");
+    const log = await screen.findByRole("table", { name: "Sổ thưởng phạt" });
+    expect(await within(log).findByText("Trần Thị Mai")).toBeInTheDocument();
+    expect(within(log).queryByText("Nhân viên đã nghỉ")).not.toBeInTheDocument();
+  });
+
   it("owner: payroll with net pay and a payslip that shows every line", async () => {
     serve(OWNER);
     at("/nhan-vien?tab=payroll");
@@ -1211,11 +1293,41 @@ describe("Hồ sơ nhân viên (roster)", () => {
     expect(within(sheet).queryByRole("heading", { name: "Tài khoản đăng nhập" })).not.toBeInTheDocument();
   });
 
+  it("owner: a refused pay keeps the saved profile, and saving again updates it instead of hiring twice", async () => {
+    const spy = serve(OWNER, { payRefusedOnce: true });
+    at("/nhan-vien?tab=profiles");
+    await userEvent.click(await screen.findByRole("button", { name: /Thêm nhân viên/ }));
+    const form = await screen.findByRole("dialog", { name: "Thêm nhân viên" });
+    const base = within(form).getByLabelText("Lương cứng thực nhận / tháng (đ)");
+    await userEvent.type(within(form).getByLabelText("Họ tên"), "Võ Thị Ngọc");
+    await userEvent.type(base, "2000000000");
+    await userEvent.click(within(form).getByRole("button", { name: "Lưu hồ sơ" }));
+    expect(await within(form).findByText(/^Tối đa 1\.000\.000\.000/)).toBeInTheDocument();
+
+    await userEvent.clear(base);
+    await userEvent.type(base, "6000000");
+    await userEvent.click(within(form).getByRole("button", { name: "Lưu hồ sơ" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Thêm nhân viên" })).not.toBeInTheDocument();
+    });
+    const writes = requests(spy)
+      .map((r, i) => ({ ...r, path: new URL(r.url, "http://app.test").pathname.replace(/^\/api\/v1/, ""), init: spy.mock.calls[i]?.[1] }))
+      .filter((r) => r.method !== "GET");
+    expect(writes.map((r) => `${r.method} ${r.path}`)).toEqual([
+      "POST /staff",
+      "PUT /staff/s-new/pay",
+      "PUT /staff/s-new",
+      "PUT /staff/s-new/pay",
+    ]);
+    // The update carries the version the create answered, not a stale one.
+    expect(new Headers(writes[2]?.init?.headers).get("If-Match")).toBe('"1"');
+  });
+
   it("owner: ends employment with a last day and a reason, confirmed", async () => {
     const spy = serve(OWNER);
     at("/nhan-vien?tab=profiles");
     const table = await screen.findByRole("table", { name: "Danh sách nhân sự" });
-    // People without a login: nudged in Nhân sự (they count as technicians until they have one).
+    // People without a login: nudged in Hồ sơ nhân viên (they count as technicians until they have one).
     expect(screen.getByText(/Chưa có tài khoản đăng nhập: Phạm Thị Hoa\./)).toBeInTheDocument();
     await userEvent.click(within(table).getByRole("button", { name: "Lê Thị Lan" }));
     const sheet = await screen.findByRole("dialog", { name: "Lê Thị Lan" });
@@ -1292,6 +1404,17 @@ describe("Hồ sơ nhân viên (roster)", () => {
     expect(await screen.findByText(/Tài khoản của bạn chưa gắn với hồ sơ nhân viên, nên bạn chỉ xem được/)).toBeInTheDocument();
     const group = await waitFor(() => card("s-lan").getByRole("radiogroup"));
     for (const r of within(group).getAllByRole("radio")) expect(r).toBeDisabled();
+    // The notice explains; no card claims the owner-only rule for managers.
+    expect(screen.queryByText(/Chỉ chủ spa chấm công, ghi khen\/phàn nàn/)).not.toBeInTheDocument();
+  });
+
+  it("manager whose login is linked to no profile: the evaluations do not blame the owner-only rule", async () => {
+    serve(MANAGER, { linkRequired: true });
+    at("/nhan-vien?tab=evaluation");
+    expect(await screen.findByText(/Tài khoản của bạn chưa gắn với hồ sơ nhân viên, nên bạn chỉ xem được/)).toBeInTheDocument();
+    expect(await screen.findByText("Trần Thị Mai")).toBeInTheDocument();
+    expect(screen.queryByText("Chỉ chủ spa chấm cho quản lý")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Chấm điểm" })).not.toBeInTheDocument();
   });
 });
 

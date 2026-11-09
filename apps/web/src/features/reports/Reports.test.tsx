@@ -17,6 +17,7 @@ import { displayPhone } from "./PackagesOverviewPage";
 import { isEmptyRange } from "./ReportsPage";
 import { serveManagement } from "./testServer";
 import { SearchField } from "./filters";
+import { isSearchable } from "../customers/api";
 
 const MANAGER = ["visit.record", "visit.read", "customer.read", "catalog.read", "report.read", "report.revenue.read"];
 
@@ -197,6 +198,14 @@ describe("/bao-cao", () => {
   it("does not ask the ledger for more than the API serves (92 days)", async () => {
     const spy = serveManagement({ permissions: MANAGER });
     at("/bao-cao?tab=ledger&period=12m");
+    expect(await screen.findByText(/xem tối đa 3 tháng/)).toBeInTheDocument();
+    expect(urls(spy).some((u) => u.includes("/reports/ledger"))).toBe(false);
+  });
+
+  it("stops at 92 days, from and to included, like the API (93 is refused there)", async () => {
+    const spy = serveManagement({ permissions: MANAGER });
+    // 2026-08-01 … 2026-10-31 is 92 days; one more day is too long.
+    at("/bao-cao?tab=ledger&period=custom&from=2026-07-31&to=2026-10-31");
     expect(await screen.findByText(/xem tối đa 3 tháng/)).toBeInTheDocument();
     expect(urls(spy).some((u) => u.includes("/reports/ledger"))).toBe(false);
   });
@@ -527,5 +536,26 @@ describe("list search box", () => {
     // jsdom draws no native controls: the stylesheet must hide WebKit's own cancel button.
     const css = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../components.css"), "utf8");
     expect(css).toMatch(/\.search-field input::-webkit-search-cancel-button\s*\{\s*appearance:\s*none;/);
+  });
+
+  it("sends a phone search only with 3 national digits, as the API counts them (+84 is not part of the number)", async () => {
+    const user = userEvent.setup();
+    const committed: string[] = [];
+    render(
+      <SearchField
+        label="Tìm khách"
+        value=""
+        sendable={isSearchable}
+        onCommit={(v) => {
+          committed.push(v);
+        }}
+      />,
+    );
+    const box = screen.getByRole("searchbox", { name: "Tìm khách" });
+    await user.type(box, "+84 90{Enter}");
+    expect(committed).toEqual([]);
+    expect(box).toHaveAccessibleDescription("Gõ ít nhất 2 chữ, hoặc 3 số của số điện thoại.");
+    await user.type(box, "5{Enter}");
+    expect(committed).toEqual(["+84 905"]);
   });
 });

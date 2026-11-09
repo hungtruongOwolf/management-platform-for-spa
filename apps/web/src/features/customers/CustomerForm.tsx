@@ -315,16 +315,16 @@ export function CustomerForm({
       )}
       <div className="field span-2">
         <label htmlFor={`${id}-address`}>Địa chỉ</label>
-        <input id={`${id}-address`} className="input" autoComplete="off" {...form.register("address")} />
+        <input id={`${id}-address`} className="input" autoComplete="off" maxLength={500} {...form.register("address")} />
       </div>
       <div className="field span-2">
         <label htmlFor={`${id}-note`}>Ghi chú chung</label>
-        <input id={`${id}-note`} className="input" autoComplete="off" {...form.register("note")} />
+        <input id={`${id}-note`} className="input" autoComplete="off" maxLength={2000} {...form.register("note")} />
       </div>
       {!customer && canWriteHealth && (
         <div className="field span-2">
           <label htmlFor={`${id}-health`}>Lưu ý sức khỏe (chống chỉ định, tình trạng)</label>
-          <textarea id={`${id}-health`} className="input" aria-describedby={`${id}-health-hint`} {...form.register("health_note")} />
+          <textarea id={`${id}-health`} className="input" maxLength={2000} aria-describedby={`${id}-health-hint`} {...form.register("health_note")} />
           <span id={`${id}-health-hint`} className="field-hint">
             Hiện ở quầy mỗi lần khách đến. Không bắt buộc.
           </span>
@@ -345,6 +345,9 @@ export function CustomerForm({
                 Mở hồ sơ đó
               </button>
             </>
+          ) : mutation.error instanceof ApiError && mutation.error.code === "customer.name_required" ? (
+            // From this form it means clearing the name of a package owner (the global text is about selling).
+            "Khách này có gói liệu trình nên phải có tên. Nhập tên rồi lưu."
           ) : (
             messageFor(mutation.error)
           )}

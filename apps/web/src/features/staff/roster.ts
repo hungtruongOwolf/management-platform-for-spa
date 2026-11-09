@@ -38,14 +38,6 @@ export function withoutLogin(p: Pick<StaffProfile, "login_linked" | "status">): 
 }
 
 /**
- * A manager login (its role records for others without managing staff) linked to no profile: it
- * records nothing until the owner links it (`staff.link_required`, EM 2026-11-08).
- */
-export function managerLoginWithoutProfile(a: Pick<StaffAccount, "is_manager" | "staff_id">): boolean {
-  return a.is_manager && !a.staff_id;
-}
-
-/**
  * A login with no profile that is not the owner's (ADR-0016: logins are made from a profile, so
  * only older, CLI-made logins are like this): the owner links each once.
  */

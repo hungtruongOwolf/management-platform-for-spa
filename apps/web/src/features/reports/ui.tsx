@@ -12,7 +12,10 @@ export const money = (n: number) => formatVnd(n);
 export function Delta({ now, before, label, onChrome = false }: { now: number; before: number; label: string; onChrome?: boolean }) {
   const muted = onChrome ? "text-chrome-text-muted" : "text-text-muted";
   if (before === 0 && now === 0) return <span className={`text-xs ${muted}`}>= {label}</span>;
-  const pct = before === 0 ? 100 : Math.round(((now - before) / before) * 100);
+  // Net revenue can be negative (refunds above sales): measure against |before| so the sign of
+  // the change is right, and a start from zero reads ±100% in the direction of `now`.
+  const base = Math.abs(before);
+  const pct = base === 0 ? (now > 0 ? 100 : -100) : Math.round(((now - before) / base) * 100);
   const up = pct > 0;
   // On the maroon card green/red fail contrast: the arrow and sign carry the direction there.
   const tone = pct === 0 ? muted : onChrome ? "text-chrome-accent" : up ? "text-success" : "text-danger";

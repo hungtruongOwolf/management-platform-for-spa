@@ -5,6 +5,7 @@ import type {
   Staff,
   Visit,
 } from "@vpyd/api-client";
+import { QueryClient } from "@tanstack/react-query";
 import { createMemoryHistory } from "@tanstack/react-router";
 import {
   fireEvent,
@@ -747,6 +748,14 @@ describe("/quay", () => {
     expect(
       within(closedList).queryByRole("button", { hidden: true }),
     ).toBeNull();
+
+    // The reason is bounded like the server's (operations MAX_REASON = 500).
+    await user.click(
+      within(open).getByRole("button", { name: "Trừ 1 buổi Gói old" }),
+    );
+    expect(
+      await screen.findByLabelText(/Lý do cho dùng tiếp “Gói old”/),
+    ).toHaveAttribute("maxlength", "500");
   });
 
   it("does not offer an expired package to a desk without the override", async () => {
@@ -1016,6 +1025,7 @@ describe("/quay day list (EM live test 2026-11-08)", () => {
       [],
       [sale],
     );
+    const invalidated = vi.spyOn(QueryClient.prototype, "invalidateQueries");
     const user = userEvent.setup();
     at("/quay");
     const table = await screen.findByRole("table", {
@@ -1043,6 +1053,12 @@ describe("/quay day list (EM live test 2026-11-08)", () => {
       expect(
         calls.find((c) => c.method === "POST" && c.url === "/api/v1/sales/s1/void")?.body,
       ).toEqual({ reason: "Khách đổi ý" });
+    });
+    // Bought for Nam: his history goes stale too, not only the payer's (the row has no id for him).
+    await waitFor(() => {
+      expect(invalidated).toHaveBeenCalledWith({
+        queryKey: ["customers", "history"],
+      });
     });
   });
 

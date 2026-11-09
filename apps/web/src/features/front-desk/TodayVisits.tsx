@@ -29,7 +29,7 @@ import { can, meQuery } from "../auth/session";
 import { mayCorrectVisit, mayEditSaleNote, spaToday } from "../corrections/api";
 import { customerQuery } from "../customers/api";
 import { HealthNote } from "../customers/HealthNote";
-import { DaySales } from "./DaySales";
+import { DaySales, methodText } from "./DaySales";
 import {
   VISITS_PAGE,
   timeOf,
@@ -51,16 +51,6 @@ const VoidVisitForm = lazy(() =>
 );
 
 type PaymentDto = Visit["payments"][number];
-
-/** "Tiền mặt" / "Chuyển khoản" / "Tiền mặt + CK" of some payments; "" when none. */
-function methodText(payments: PaymentDto[]): string {
-  const methods = new Set(
-    payments.filter((p) => p.kind === "payment").map((p) => p.method),
-  );
-  if (methods.size === 0) return "";
-  if (methods.size > 1) return "Tiền mặt + CK";
-  return methods.has("cash") ? "Tiền mặt" : "Chuyển khoản";
-}
 
 /** "Tiền mặt 20.000đ · CK 25.000đ" when paid both ways, else null (the row says the method). */
 export function splitText(payments: PaymentDto[]): string | null {

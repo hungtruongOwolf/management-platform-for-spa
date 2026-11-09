@@ -299,16 +299,31 @@ pub async fn consume_session(tx: &mut TenantTx, c: Consume) -> Result<Consumed, 
 }
 
 /// The item a visit uses when the front desk did not pick a package (AC4.3): among the
-/// customer's usable packages containing `service_id`, the one expiring soonest, then the oldest.
-/// `None` = no usable package (all exhausted, expired or cancelled — pick one explicitly to get
-/// the precise 409, or to use an expired one with an override). Runs in the caller's transaction.
+/// customer's usable packages containing `service_id`, the one expiring soonest, then the oldest,
+/// that still has `qty` sessions once `planned` (sessions earlier lines of the same checkout take
+/// from each item) are set aside. When none has enough, the first usable one, so consuming it
+/// answers the precise `409 package.no_sessions_left`. `None` = no usable package (all
+/// exhausted, expired or cancelled — pick one explicitly to get the precise 409, or to use an
+/// expired one with an override). Runs in the caller's transaction.
 pub async fn default_item(
     tx: &mut TenantTx,
     customer_id: Uuid,
     service_id: Uuid,
     today: NaiveDate,
+    qty: u32,
+    planned: &HashMap<Uuid, u32>,
 ) -> Result<Option<Uuid>, AppError> {
-    repo::default_item(tx, customer_id, service_id, today).await
+    let items = repo::usable_items(tx, customer_id, service_id, today).await?;
+    let left = |i: &repo::UsableItem| {
+        u32::try_from(i.sessions_remaining)
+            .unwrap_or(0)
+            .saturating_sub(planned.get(&i.id).copied().unwrap_or(0))
+    };
+    Ok(items
+        .iter()
+        .find(|i| left(i) >= qty)
+        .or_else(|| items.first())
+        .map(|i| i.id))
 }
 
 // ---------------------------------------------------------------- read side
