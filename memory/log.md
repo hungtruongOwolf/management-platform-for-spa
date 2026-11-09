@@ -768,3 +768,9 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - PR #151–#169 merge (lương; bán hàng/lượt/khách/lịch; nền tảng + web). Chi tiết: [audit-2026-11-09 § Cập nhật](wiki/plans/audit-2026-11-09.md).
 - Lead kiểm dữ liệu staging (0 vi phạm FK 0045, 0 SĐT sai cho 0048) rồi migrate local + staging → 49; Vercel main 8a86179; 15 API 200. Không có `payroll_rules` lưu riêng → mặc định `loyalty_partial_month = fifteen_days` tự áp dụng.
 - Bài học điều phối: mỗi agent sở hữu số migration và tập hàm DB riêng (không trùng lần nào); agent có fork con phải tự land PR của fork trước khi báo xong.
+
+## [2026-11-09] record | Live test sau ADR-0019 (local, Chrome) + deploy staging 0bbff14
+- Hai việc nhỏ: `quay-upsell.spec` bỏ `networkidle` (#171); đo lại `GET /attendance?month` n=12 → 30,3 ms (45 ms trước đó là nhiễu n=4).
+- Live test 3 vai trò trên local đều đúng: quản lý có cột lịch + trong picker KTV; sau giờ đóng cửa khóa "Đặt lịch", lịch quá giờ có "Không đến"; Sửa lượt giữ gói bán kèm + giá gốc; mật khẩu phổ biến bị từ chối; KTV đã nghỉ chỉ xem công lương, /quay bị chặn; chủ spa: lương tỷ lệ người nghỉ giữa tháng, chốt lương 10/2026 bị chặn với danh sách thiếu (không chốt), roster hiện SĐT, báo cáo 5 năm, lưu quy tắc lương (If-Match).
+- Lỗi tìm thấy và sửa (#172, test đỏ → xanh): đăng xuất để lại `?next=/dang-nhap`; "Khóa nhanh" lồng `next` nên đăng nhập lại không về màn đã khóa.
+- Deploy Vercel main 0bbff14 (không có migration mới; staging vẫn 49); 15 API 200.
