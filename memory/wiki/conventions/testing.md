@@ -1,7 +1,7 @@
 ---
 title: Testing conventions
-updated: 2026-11-04
-sources: [security/authz-matrix.md, product/specs/front-desk-and-packages.md, plans/r1-1-front-desk.md]
+updated: 2026-11-09
+sources: [security/authz-matrix.md, product/specs/front-desk-and-packages.md, plans/r1-1-front-desk.md, runbooks/local-merge-gate.md]
 ---
 
 # Testing conventions
@@ -11,8 +11,8 @@ Hạ tầng test hardening dựng ở S10. Mọi ticket S6–S9 trở đi cắm 
 | Lớp | Ở đâu | Chạy |
 |---|---|---|
 | Unit + integration (Rust) | `apps/api/crates/*/src`, `apps/api/crates/app/tests/*.rs` (`#[sqlx::test]`, mỗi test một DB riêng, chạy dưới `app_rw` có RLS) | `pnpm check:api` |
-| **Authz matrix + tenant isolation** | `apps/api/crates/app/tests/authz_matrix.rs` | `cargo test -p app --test authz_matrix` |
-| Unit (web) | Vitest, `apps/web/src/**/*.test.ts(x)` | `pnpm test` |
+| **Authz matrix + tenant isolation** | `apps/api/crates/app/tests/authz_matrix.rs` | `cargo test -p app --test authz_matrix` (trong `apps/api`) |
+| Unit (web) | Vitest, `apps/web/src/**/*.test.ts(x)`, `packages/*/src/**/*.test.ts` | `pnpm test` (= `pnpm -r test`) |
 | E2E + a11y (axe) | Playwright, `apps/web/e2e/specs/` | `pnpm e2e` |
 | p95 API | `apps/web/e2e/perf/api-latency.spec.ts` | `pnpm e2e:perf` |
 | LCP (Lighthouse CI) | `apps/web/lighthouserc.json` | `pnpm lhci` |
@@ -28,31 +28,34 @@ Thêm endpoint thì làm 3 bước:
 1. Thêm `#[utoipa::path]` vào `openapi.rs` (đằng nào cũng phải làm cho contract TS).
 2. Thêm một dòng vào `ROUTES`, ví dụ S6 bán gói:
    ```rust
-   route("POST", "/api/v1/customers/{id}/packages", Access::Perm(P::PackageSell, OWNER_MANAGER))
+   route("POST", "/api/v1/customers/{id}/follow-ups", Access::Perm(P::CustomerFollowUp, OWNER_MANAGER))
        .id(Target::Customer)
-       .body(sell_package_body)
-       .idempotent(),            // chỉ khi handler đọc Idempotency-Key (helper thêm ở S6)
+       .body(follow_up_body)
+       .idempotent(),            // chỉ khi handler đọc Idempotency-Key
    ```
    - `Access::Public` (không cần session), `Access::Session` (đăng nhập là đủ), `Access::Perm(permission, roles)`. `roles` là cột ✓ của authz-matrix: `ALL`, `OWNER_MANAGER`, `OWNER_ONLY`. `Access::PendingMfa` (S2b): chỉ session vừa qua bước mật khẩu và còn nợ MFA (`/auth/mfa/*`); session đầy đủ gọi vào thì `409 auth.mfa_not_pending`. `Access::Operator` / `Access::OperatorPending` (ADR-0018): route `/admin/*` của console, chỉ cookie `__Host-op-session`; test `every_admin_route_needs_a_full_operator_session` kiểm cookie spa mọi role → `401`, operator pending → `401`, operator đầy đủ → được, ghi không step-up → `403 platform.step_up_required`. Route có `{id}` là spa dùng `Target::Tenant`. Helper operator ở `tests/common` (`add_operator`, `operator_session`, `admin_call`, `step_up`, `expire_step_up`); `admin_call` đổi IP mỗi lần để rate limit `/admin/auth/*` (burst 5) không che kết quả.
    - Helper `session()` trong matrix tự hoàn tất MFA cho owner (enroll lần đầu, sau đó nhập mã hiện tại).
    - `.id(Target::X)` khi path có `{id}`. Loại record mới (ví dụ `Target::CustomerPackage`) thì thêm variant, thêm field vào `Fixture`, rồi tạo record đó trong `fixture()` cho **cả hai** spa.
    - `.body(fn)`: body **hợp lệ** cho spa của người gọi. Body sai thì serde trả 4xx trước khi chạy permission check, và test báo nhầm.
-   - `.if_match()` cho PUT có optimistic lock. `.consumes_session()` cho route thu hồi session (logout, switch-tenant).
+   - `.if_match()` cho route có optimistic lock (`If-Match`). `.consumes_session()` cho route thu hồi session (logout, switch-tenant). `.former_staff()` cho route người đã nghỉ còn vào được (`staff.read_own_past`, ADR-0014: `/me/staff`, `/me/staff/day`, `/me/evaluations/history`).
 3. Chạy `cargo test -p app --test authz_matrix`. Ngoài cổng coverage, file còn chạy:
    - `matrix_rows_agree_with_seeded_roles`: cột `roles` phải khớp `SystemRole::default_permissions()`. Lệch nghĩa là roles.rs hoặc tài liệu sai.
    - `every_non_public_route_rejects_anonymous_and_forged_sessions`: không có cookie, hoặc cookie giả, thì `401`.
    - `each_role_gets_exactly_what_the_matrix_grants`: role không có quyền nhận `403 auth.forbidden`. Role có quyền thì không bị 401/403/5xx.
    - `ids_from_another_spa_are_not_found`: chủ spa B gọi ID của spa A thì `404`. Có control call trên record của chính B để chứng minh 404 đến từ cách ly tenant, không phải do request hỏng.
    - `pending_mfa_sessions_reach_only_the_mfa_routes`: session pending MFA gọi mọi route khác (trừ logout) thì `401 auth.mfa_*`.
+   - `a_former_staff_member_reaches_only_their_past_pay`: quản lý + KTV đã nghỉ chỉ vào được dòng `.former_staff()` và route `Session`.
+   - `every_admin_route_needs_a_full_operator_session`: lớp operator (xem trên).
+   - `switched_off_features_refuse_their_routes`: spa tắt một tính năng (`kernel::feature`) thì route của nó trả `403 feature.disabled` cho mọi role.
 
 Rule ngày đã chốt / không reauth cho nghiệp vụ, route 🔒 bảo mật tài khoản (khi có) và rule giảm giá có test riêng trong file test của slice (authz-matrix mục 5–6). Matrix chỉ kiểm cổng permission.
 
-Chưa phủ: role `PlatformAdmin`/support grant (chưa có trong `identity::roles`). Khi S-ticket thêm role này, thêm nó vào `SystemRole::ALL` và các dòng tự động được kiểm thêm.
+Quản trị nền tảng không phải role spa (ADR-0018) nên không có trong `SystemRole::ALL`; nó được phủ bằng `Access::Operator*`. Chưa phủ: support grant (chưa xây).
 
 ## 2. Viết E2E spec
 
 - Stack: `playwright.config.ts` khởi động API (`cargo run -p app -- serve`, port **8091**) trên DB riêng `vpyd_e2e`, và Vite dev (port **5181**, proxy `/api` → 8091 qua `VPYD_API_ORIGIN`). Hai port này tránh đụng `pnpm dev:*`.
-- Project `setup` (`e2e/setup/provision.setup.ts`) chạy `migrate`, rồi `create-tenant` (slug `e2e-<thời gian>`), `add-user` (owner, SĐT ngẫu nhiên, mật khẩu ngẫu nhiên truyền qua env `APP_NEW_USER_PASSWORD`, không qua argv), `add-user` thêm một quản lý (không MFA, cho Lighthouse), rồi `seed-catalog`. Mỗi lần chạy có một spa mới, nên không cần reset DB. Credentials nằm ở `e2e/.auth/run.json`, cookie owner ở `e2e/.auth/owner.json` (đều gitignored). **Không bao giờ hard-code credentials.**
+- Project `setup` (`e2e/setup/provision.setup.ts`) chạy `migrate`, rồi `create-tenant` (slug `e2e-<thời gian>`), `add-user` (owner, SĐT ngẫu nhiên, mật khẩu ngẫu nhiên truyền qua env `APP_NEW_USER_PASSWORD`, không qua argv), `add-user` thêm một quản lý (không MFA, cho Lighthouse) và một KTV có đăng nhập, `seed-catalog`, `add-operator` (operator console, mật khẩu qua `APP_NEW_OPERATOR_PASSWORD`), rồi `add-staff` (người chốt cho `sales.spec.ts`). Mỗi lần chạy có một spa mới, nên không cần reset DB. Credentials nằm ở `e2e/.auth/run.json`, cookie owner ở `e2e/.auth/owner.json` (đều gitignored). **Không bao giờ hard-code credentials.**
 - Spec mới đặt trong `e2e/specs/*.spec.ts`:
   - Cần đăng nhập sẵn: `test.use({ storageState: ownerState })`. Test luồng đăng nhập: `signIn(page, path)`, hoặc `submitLogin(page)` khi form đăng nhập đã ở trên màn hình.
   - Owner bắt buộc TOTP (S2b). `signIn`/`submitLogin` tự làm bước `/xac-thuc`: lần đầu (trong setup) enroll và lưu `totpKey` vào `run.json`; các lần sau sinh mã RFC 6238 cho bước thời gian chưa dùng (`lastTotpStep`). Server chặn replay, và mã cũ bị tính vào khóa tài khoản, nên helper không bao giờ gửi lại mã cũ (có thể phải chờ tới 30 giây). Gọi API trực tiếp thì dùng `apiSignIn`.
@@ -84,7 +87,7 @@ Connection string: `E2E_DATABASE_URL` / `E2E_APP_DATABASE_URL`. Nếu không đ�
 
 ## 5. CI
 
-> GitHub Actions tắt 2026-11-05 (hết phút, repo private) và chạy lại khi repo chuyển public (2026-11-06, run 42183885873 của PR #47). Gate local theo thay đổi vẫn dùng được: [local-merge-gate](../runbooks/local-merge-gate.md).
+> **GitHub Actions đang bật** (kiểm 2026-11-09: workflow `CI` và `Deploy (staging)` đều `active`). Lịch sử: tắt 2026-11-05 (hết phút, repo private), chạy lại 2026-11-06 khi repo chuyển public. Đường merge: `scripts/merge-when-green.sh <pr>`; gate local theo thay đổi chỉ là dự phòng khi Actions không chạy được: [local-merge-gate](../runbooks/local-merge-gate.md).
 
 `.github/workflows/ci.yml` (từ 2026-11-06, PR #48) chạy song song theo đồ thị:
 
@@ -102,6 +105,7 @@ secrets (luôn chạy)            ci-ok: needs tất cả, if: always()
 - **API binary**: `api-build` build `app` (debug) một lần, cache theo `hashFiles('apps/api/**')` + phiên bản `rustc` (PR chỉ sửa web dùng lại binary của `main`), kiểm `app openapi | diff openapi.json`, upload artifact `api-bin`. Job e2e/perf tải về và đặt `E2E_API_BIN` (Playwright chạy binary thay vì `cargo run`).
 - **E2E**: mỗi shard chạy project `setup` của riêng nó (spa mới trên Postgres riêng), nên chia shard an toàn. Chia theo **thời gian đo được**, không dùng `--shard` (Playwright cắt theo số test ở mức file: `layout.spec.ts` ~110 s một mình, `--shard=1/2` cho 2,7 phút vs 36 s): `node apps/web/e2e/shard.mjs <i> <n>` in danh sách spec của shard i (LPT theo bảng `WEIGHTS`; spec mới chưa có trong bảng vẫn chạy với trọng số trung vị). Spec lớn lên nhiều thì cập nhật bảng. Job `perf` chạy `--project=perf` (setup + seed 300 khách / 100 lượt, đo p95) rồi `pnpm lhci` trên cùng DB, nên `/quay` vẫn được đo khi có dữ liệu. Ngân sách giữ nguyên (LCP ≤ 2,5 s median-run, CLS, a11y ≥ 0,95, p95). Fail → upload `playwright-report-<shard>` / `perf-failure-report`; pass → `perf-report`.
 - **Cache**: Playwright browser theo version Playwright (`~/.cache/ms-playwright`; hit thì bỏ qua cả bước apt vì image ubuntu-24.04 đã có thư viện của Chrome — thiếu thì browser không mở được, fail rõ ràng); rust-cache tách key `lint`, `test`, `e2e`; `CARGO_PROFILE_DEV_DEBUG=0` cho mọi build CI (target/cache/archive nhỏ; panic vẫn có file:line).
+- **Deploy**: `.github/workflows/deploy.yml` (`Deploy (staging)`, chạy tay) là đường VPS + GHCR + SSH ([staging-setup](../runbooks/staging-setup.md)); staging hiện tại trên Vercel không dùng nó ([vercel-staging](../runbooks/vercel-staging.md)).
 - **Merge**: `ci-ok` là status duy nhất cần bắt buộc (fail nếu job nào `failure`/`cancelled`, `skipped` là ok, `changes` phải `success`). `scripts/merge-when-green.sh` chờ mọi check, chấp nhận `pass|skipping`, và đòi `CI ok: pass`.
 
 ## Gotcha: DB dev cũ hơn `main`

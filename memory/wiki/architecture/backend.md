@@ -1,12 +1,14 @@
 ---
 title: Backend design (R1-1)
-updated: 2026-11-05
+updated: 2026-11-09
 sources: [product/specs/front-desk-and-packages.md, product/specs/management-views.md, architecture/system.md, architecture/data.md, security/authz-matrix.md]
 ---
 
 # Backend design R1-1
 
-Contract-first: các bảng dưới đây là hợp đồng API, hiện thực bằng `utoipa` → `apps/api/openapi.json` (lệnh `app openapi`, commit vào repo) → `packages/api-client/src/schema.ts` (openapi-typescript). `pnpm api:gen` sinh lại cả hai; CI fail nếu lệch (S3 ✅).
+Contract-first: các bảng dưới đây là hợp đồng API, hiện thực bằng `utoipa` → `apps/api/openapi.json` (lệnh `app openapi`, commit vào repo) → `packages/api-client/src/schema.ts` (openapi-typescript). `pnpm api:gen` sinh lại cả hai; CI fail nếu lệch (S3 ✅). Khi trang này và `openapi.json` lệch nhau thì `openapi.json` (sinh từ code) là đúng.
+
+Route nằm ở `apps/api/crates/*/src/http.rs` (lịch hẹn: `operations/src/appointments/http.rs`), ghép trong `app::router` (`crates/app/src/lib.rs`) dưới tiền tố `/api/v1`. Crate: `kernel`, `identity`, `org`, `hr`, `catalog`, `crm`, `packages`, `sales`, `operations`, `reporting`, `platform`, `app` (binary). API của console admin nền tảng (`/api/v1/admin/*`): [platform-admin](platform-admin.md).
 
 ## 1. Quy ước API
 - REST + JSON, `snake_case`, prefix `/api/v1`. Tiền là số nguyên VND. Thời gian là ISO 8601 có offset. Ngày nghiệp vụ dạng `YYYY-MM-DD`.
@@ -18,13 +20,21 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
   - Request đầu vẫn đang chạy → request trùng **chờ** (khóa PK của Postgres) cho tới khi request đầu commit, rồi replay; nếu request đầu rollback thì request trùng chạy mới. (`409 idempotency.in_progress` chỉ là nhánh phòng thủ.) Hiện thực: `kernel::idempotency` (S1).
 - **Optimistic lock:** DTO có trường `version`; ghi xong trả về `ETag: "<version>"`. Lệnh sửa (`PUT`, thay toàn bộ bản ghi) bắt buộc `If-Match`: thiếu → `400 precondition.if_match_required`, lệch phiên bản → `412 conflict.stale_version` (S4 ✅).
 - **Cache:** mọi response `/api` mang `Cache-Control`. Handler không tự đặt → mặc định `private, no-store` (layer ngoài cùng, `app::middleware`, 2026-11-07). Endpoint nào muốn cache phải tự đặt `private, no-cache` + `ETag` (chưa có endpoint nào; `ETag` hiện chỉ cho `If-Match`). Không `public`/`s-maxage`: CDN sẽ chia dữ liệu giữa người dùng.
-- **Rate-limit classes:** `auth` (5/phút/tài khoản, 20/phút/IP) · `search` (120/phút/user) · `write` (60/phút/user) · `read` (300/phút/user). Vượt → `429 rate_limited`.
+- **Rate limit (theo IP, in-memory mỗi instance, `app::middleware`):** mọi `/api` 5 request/giây, burst 60 (`HttpPolicy::standard`; chỉ `APP_ENV=development` mới nới được bằng `APP_RATE_PER_SECOND` + `APP_RATE_BURST`); `/auth/*` 1 request / 3 giây, burst 10 (≈ 20/phút); `/admin/auth/*` 1 / 6 giây, burst 5. Lớp thứ hai cho đăng nhập: khóa theo tài khoản sau 5 lần sai (15 phút, gấp đôi mỗi lần sai tiếp, tối đa 24 giờ; `identity::lockout`). Vượt → `429 rate_limited`. Cột "Rate" trong các bảng endpoint dưới đây là phân loại của bản thiết kế đầu (`auth` / `search` / `write` / `read` theo user), **chưa hiện thực**: hiện chỉ có các giới hạn theo IP vừa kể.
+- **Middleware khác** (`app::middleware::apply`): timeout 10 giây, body tối đa 64 KB, request ghi phải có `Origin` của spa (`APP_PUBLIC_ORIGIN`; console admin: `APP_ADMIN_ORIGIN` nếu đặt) → thiếu/lạ `403 auth.bad_origin`.
 
 ## 2. Mã lỗi nghiệp vụ
 | code | HTTP | Khi nào |
 |---|---|---|
 | `auth.unauthenticated` / `auth.reauth_required` | 401 | Chưa đăng nhập / thao tác 🔒 bảo mật tài khoản cần nhập lại mật khẩu (không dùng cho thao tác nghiệp vụ, EM 2026-11-05) |
+| `auth.invalid_credentials` | 401 | Sai SĐT / mật khẩu, tài khoản khóa hoặc disabled (một mã cho mọi trường hợp) |
+| `auth.mfa_required` / `auth.mfa_enrollment_required` / `auth.invalid_mfa_code` | 401 | Session mới qua bước mật khẩu, còn nợ mã TOTP / chưa đăng ký MFA / mã sai, hết hạn hoặc dùng lại |
+| `auth.password_change_required` | 403 | Đăng nhập bằng mật khẩu tạm (ADR-0016): mọi route trừ `POST /auth/password` và logout |
+| `auth.spa_suspended` | 403 | Mật khẩu đúng nhưng mọi spa của tài khoản đang bị tạm ngưng (ADR-0018) |
+| `auth.no_active_tenant` / `auth.not_a_member` | 403 | Session chưa chọn spa / không còn là thành viên spa đang chọn |
+| `auth.bad_origin` | 403 | Request ghi thiếu hoặc sai `Origin` |
 | `auth.forbidden` | 403 | Thiếu permission |
+| `feature.disabled` | 403 | Tính năng của route bị admin nền tảng tắt cho spa này (`kernel::feature`, ADR-0018 D4) |
 | `not_found` | 404 | Không tồn tại **hoặc thuộc tenant khác** |
 | `validation_failed` | 422 | Kèm `errors[]` |
 | `customer.phone_taken` | 409 | Kèm `existing_id` (ID hồ sơ đã có) |
@@ -52,40 +62,46 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
 ## 3. Endpoints
 | Method & path | Mục đích (story) | Permission | Idem | Rate |
 |---|---|---|---|---|
-| `POST /auth/login` | Đăng nhập (SĐT, mật khẩu) → `200` + body `/me` + Set-Cookie; sai SĐT/mật khẩu/khóa/disabled đều → `401 auth.invalid_credentials` (S2 ✅; TOTP ở S2b) | công khai | — | auth (~20/phút/IP + khóa theo tài khoản) |
+| `POST /auth/login` | Đăng nhập (SĐT, mật khẩu) → `200 LoginResponse {next: done \| mfa_verify \| mfa_enroll \| password_change, me?}` + Set-Cookie (`me` chỉ có khi `done`); sai SĐT/mật khẩu/khóa/disabled đều → `401 auth.invalid_credentials`; spa ngưng → `403 auth.spa_suspended` | công khai | — | auth (~20/phút/IP + khóa theo tài khoản) |
+| `POST /auth/mfa/verify` · `/auth/mfa/enroll/start` · `/auth/mfa/enroll/confirm` | Bước 2 của đăng nhập (TOTP hoặc mã khôi phục, ADR-0004): chỉ nhận session đang `mfa_pending`; `verify`/`confirm` thay bằng session đầy đủ (cookie mới), `confirm` trả mã khôi phục một lần; `409 auth.mfa_not_pending / mfa_already_enrolled / mfa_enrollment_not_started / mfa_enrollment_changed` | session pending MFA | — | auth |
+| `POST /auth/password` | Đổi mật khẩu `{current_password, new_password}` (10–128 ký tự, khác mật khẩu cũ và SĐT): kết thúc mọi session của tài khoản, cấp cookie mới, trả `Me`. Route duy nhất nhận session mật khẩu tạm (ADR-0016) | đã đăng nhập | — | auth |
+| `POST /auth/password-reset-requests` | "Quên mật khẩu?" `{phone}` → luôn `202 {status: "received"}` dù SĐT có tài khoản hay không; chủ spa thấy yêu cầu thật (`password_reset_request`, ADR-0016) | công khai | — | auth |
 | `POST /auth/logout`, `/auth/logout-all` | Đăng xuất | đã đăng nhập | — | write |
-| `POST /auth/reauth` | Nhập lại mật khẩu → `recent_auth_at` | đã đăng nhập | — | auth |
-| `POST /auth/activate` | Kích hoạt / đặt lại mật khẩu bằng token (**spec #4**; R1 tạo tài khoản bằng CLI `app add-user`) | công khai | — | auth |
-| `GET /me` | User, tenant đang dùng, permissions, memberships | đã đăng nhập | — | read |
+| `POST /auth/reauth` | Nhập lại mật khẩu `{password, code?}` (`code` bắt buộc khi tài khoản có MFA) → `recent_auth_at` | đã đăng nhập | — | auth |
+| `GET /me` | `Me {user, active_tenant?, tenants[], permissions[], features[]}` (`features` = tính năng đang bật của spa, ADR-0018) | đã đăng nhập | — | read |
 | `POST /auth/switch-tenant` | Đổi spa đang làm việc; **xoay token** (đổi quyền); spa không phải thành viên → `404` | membership | — | write |
 | `GET /service-categories` · `GET /services?active=` · `GET /package-plans?active=` | Bảng giá (US1) | `catalog.read` | — | read |
 | `POST /service-categories` · `PUT /service-categories/{id}` | Thêm / đổi tên + thứ tự nhóm (S4 ✅) | `catalog.manage` | — | write |
 | `POST /services` · `PUT /services/{id}` (If-Match) | Dịch vụ + `prices` (all \| female/male). **Ngừng bán = `active:false` trong PUT**, không có endpoint xóa (S4 ✅) | `catalog.manage` | — | write |
 | `POST /package-plans` · `PUT /package-plans/{id}` (If-Match) | Gói: items `service × sessions + bonus` (S4 ✅) | `catalog.manage` | — | write |
 | `GET /staff?status=active` | Picker KTV, người chốt; `status` = `active` (mặc định), `left` hoặc `all`; chỉ trả tên, chức vụ, trạng thái (S6 ✅) | `staff.read_basic` | — | read |
-| `GET /customers?q=` | Tìm theo SĐT (≥ 3 số) / tên (≥ 2 ký tự, không dấu) (US2) | `customer.read` | — | search |
-| `POST /customers` | Tạo khách (US2) | `customer.write` (+ `health_notes.write` nếu gửi ghi chú) | — | write |
-| `GET /customers/{id}` | Hồ sơ: liệu trình (trạng thái suy ra), tổng nợ; `health_note` chỉ khi có quyền (US2) | `customer.read` | — | read |
+| `GET /customers?q=` | Tìm theo SĐT (≥ 3 số) / tên (≥ 2 ký tự, không dấu) (US2); không `q` = khách gần đây (bỏ hồ sơ không tên) | `customer.read` | — | search |
+| `POST /customers` | Tạo khách (US2) | `customer.write` (+ `customer.health_notes.write` nếu gửi ghi chú) | — | write |
+| `GET /customers/{id}` | Hồ sơ `CustomerDto` (thông tin khách, `named`; liệu trình đọc riêng ở `/customers/{id}/packages`, không có công nợ vì R1 không có nợ); `health_note` chỉ khi có `customer.health_notes.read` (US2) | `customer.read` | — | read |
 | `PUT /customers/{id}` | Sửa hồ sơ, thay toàn bộ (If-Match); không gồm ghi chú sức khỏe | `customer.write` | — | write |
 | `PUT /customers/{id}/health-note` | Đặt/xóa ghi chú sức khỏe (If-Match) | `customer.health_notes.write` | — | write |
-| `GET /customers/{id}/visits` | Lịch sử buổi | `visit.read` | — | read |
-| `POST /customers/{id}/anonymize` 🔒 | Ẩn danh hóa | `customer.anonymize` | ✓ | write |
 | `GET /customer-packages/{id}` | Chi tiết + items, trạng thái suy ra (S6 ✅; lịch sử sử dụng thêm ở S7) | `customer.read` | — | read |
 | `GET /customers/{id}/packages` | Liệu trình của khách, mới nhất trước, còn X/Y buổi (S6 ✅) | `customer.read` | — | read |
 | `POST /customer-packages/{id}/extend` | Gia hạn (US7, S8 ✅): `{expires_on, reason}` + If-Match. Hạn mới phải sau hạn hiện tại và không ở quá khứ (`422 expires_on not_later / in_past / package_has_no_expiry`); gói đã hủy → `409 package.cancelled`. `200 CustomerPackageDto` + `ETag`; audit before/after + lý do | `package.extend_expiry` | ✓ | write |
 | `POST /customer-packages/{id}/cancel` | Hủy + hoàn tiền (US7, S8 ✅): `{reason, refund_amount (0 = không hoàn), refund_method?}`. Buổi còn lại → 0, `cancelled`; hoàn > `sold_price` → `422 refund.exceeds_paid` (gói sổ cũ cũng vậy, AC8.8); tạo một dòng `refund` (sổ quỹ hôm nay). `200 CustomerPackageDto` (có `cancel_reason`, `refund`). Không reauth (EM 2026-11-05) | `package.cancel_refund` | ✓ | write |
-| `POST /opening-balances` | **Tạm thời, chỉ chủ spa** (R1-2 §7: team migrate bằng `app import-paper-book`; xóa route khi web bỏ màn `/nhap-so-cu`). Nhập liệu trình dở dang (US8, S9 ✅): `customer_id` **hoặc** `customer{…như POST /customers}` + `packages[{package_plan_id?, name?, sold_price, starts_on, expires_on?, gift_note?, items[{service_id, sessions_purchased, sessions_bonus?, sessions_remaining}]}]` (1–10). `201 {customer_id, customer_created, customer_packages}`; không sale/payment; lỗi field có tiền tố `customer.` / `packages[j].`; bắt buộc `Idempotency-Key` | `opening_balance.import` (chỉ Owner từ 0013; + `customer.write` khi tạo khách) | ✓ | write |
+| `POST /opening-balances` | **Tạm thời, chỉ chủ spa** (R1-2 §7: team migrate bằng `app import-paper-book`; xóa route khi web bỏ màn `/nhap-so-cu`; 2026-11-09: web không còn màn này, route API vẫn còn, chưa xóa). Nhập liệu trình dở dang (US8, S9 ✅): `customer_id` **hoặc** `customer{…như POST /customers}` + `packages[{package_plan_id?, name?, sold_price, starts_on, expires_on?, gift_note?, items[{service_id, sessions_purchased, sessions_bonus?, sessions_remaining}]}]` (1–10). `201 {customer_id, customer_created, customer_packages}`; không sale/payment; lỗi field có tiền tố `customer.` / `packages[j].`; bắt buộc `Idempotency-Key` | `opening_balance.import` (chỉ Owner từ 0013; + `customer.write` khi tạo khách) | ✓ | write |
 | `POST /sales` | Bán gói: `lines[{package_plan_id, gift_note?}]` (1–10), `closer_staff_id`, `discount{amount, reason}?`, `payments[{method, amount, reference?}]` (0–2, mỗi hình thức 1 lần). `201` trả `SaleDto` kèm `customer_packages` (US3, S6 ✅) | `package.sell` (+ `sale.discount*`) | ✓ | write |
+| `POST /sales/checkout` | Giỏ bán gói không kèm lượt: `{customer_id, package_sales[1–3]{package_plan_id, closer_staff_id?, gift_note?, discount?, beneficiary_customer_id?, note?}, payments[0–2]}` → `201 SaleCheckoutDto {sales[], total}`: mỗi gói một hóa đơn, tất cả hoặc không gì; tiền chia như checkout của lượt (TM trả theo thứ tự trước, còn lại CK) | `package.sell` (+ `payment.collect`, `sale.discount*`, `customer.health_notes.write` khi có `note`) | ✓ | write |
 | `GET /sales?date=` | Bán gói không kèm lượt của một ngày (F6, 2026-11-08): `[{sale, customer_name, customer_gender, beneficiary_name}]`, mới nhất trước, ≤ 200; hóa đơn có dòng gói, `visit_id IS NULL`, `source = 'app'` | `sale.read` + `customer.read` | — | read |
 | `GET /sales/{id}` | Chi tiết hóa đơn: lines, payments, customer_packages (S6 ✅); `note` ("Ghi chú gói", F4) chỉ cho `customer.health_notes.read` | `sale.read` | — | read |
 | `PATCH /sales/{id}` | "Sửa ghi chú gói" (F4, 2026-11-08): `{note}` (≤ 2000, `null`/trống = xóa), mã hóa AAD `sale.note`; ngày trước cần `record.void_closed_day` (`403 day.locked`, trước lỗi thân); `409 sale.voided` / `sale.not_package`; audit `sale.note_update` không chữ. Ghi `note` lúc bán: `POST /sales`, `package_sales[k].note` của `/sales/checkout`, `/visits`, `/additions` (cần `customer.health_notes.write`) | `package.sell` + `customer.health_notes.write` | — | update |
 | `POST /sales/{id}/void` | Hủy hóa đơn bán gói + `{reason}` (US6, S8 ✅): mỗi payment một `reversal`, `amount_paid` → 0, các gói của hóa đơn → `cancelled` (buổi → 0). Gói đã dùng buổi → `409 sale.has_used_sessions`; gói đã hủy/hoàn tiền → `409 package.cancelled`; hóa đơn dịch vụ lẻ của lượt → `409 sale.void_via_visit`; hủy lần 2 → `409 sale.voided`. `200 SaleDto` (`void_reason`, `voided_at`) | `record.void_same_day`; ngày trước hôm nay: `record.void_closed_day` (thiếu → `403 day.locked`) | ✓ | write |
 | `POST /visits` | Ghi lượt: `lines` (1–20), `check_in_at?`, `note?`, `payments[]` (US4). `201` trả `VisitDto` (không bao giờ có `note`) (S7 ✅) | `visit.record` (+ `payment.collect` khi có tiền, `customer.health_notes.write` khi có ghi chú, `package.use_expired_override` khi có lý do) | ✓ | write |
-| `GET /visits?date=` | Lượt của một ngày nghiệp vụ (mặc định hôm nay), mới nhất trước, kèm lines + payments, **không có ghi chú** (S7 ✅) | `visit.read` | — | read |
-| `POST /visits/{id}/correct` | **Sửa lượt có đụng tiền/buổi (US6b, 0020):** If-Match + `Idempotency-Key` (hash gồm `{id}`); thân `VisitCorrection` = thân `POST /visits` + `reason` (1–490, lưu "Sửa lượt: …"), `note` vắng = giữ ghi chú cũ (server giải mã + mã hóa lại cho lượt mới), `check_in_at` vắng = giờ cũ, phải cùng ngày nghiệp vụ. Một transaction: `begin_correction` (khóa lượt → `ensure_current` → `authorize_void` → version → `void_locked`, đúng thân của `/void`) rồi `finish_correction` (`record_in` với `Order.correction` = lượt cũ, ngày của lượt cũ, không cần `visit.backdate`; chuyển `appointment.visit_id`; audit `visit.correct`). `201 VisitCorrected {voided, visit, difference}` (không có `note`); hai lần sửa song song → một `201`, một `409 visit.corrected`. Hai bước là `pub(crate)` để "chuyển sang gói" (spec §10, chưa làm) bán gói giữa hai bước | `visit.record` + `record.void_same_day` (+ quyền của thân như `POST /visits`); ngày trước: `record.void_closed_day` | ✓ | write |
+| `GET /visits?date=&limit=` | Lượt của một ngày nghiệp vụ (mặc định hôm nay), mới nhất trước, kèm lines + payments; `limit` 1–500 (mặc định cả ngày); `note` chỉ có khi người gọi có `customer.health_notes.read` (từ 2026-11-07; S7 ban đầu không trả ghi chú) | `visit.read` | — | read |
+| `POST /visits/{id}/correct` | **Sửa lượt có đụng tiền/buổi (US6b, 0020):** If-Match + `Idempotency-Key` (hash gồm `{id}`); thân `VisitCorrection` = thân `POST /visits` + `reason` (1–490, lưu "Sửa lượt: …"), `note` vắng = giữ ghi chú cũ (server giải mã + mã hóa lại cho lượt mới), `check_in_at` vắng = giờ cũ, phải cùng ngày nghiệp vụ. Một transaction: `begin_correction` (khóa lượt → `ensure_current` → `authorize_void` → version → `void_locked`, đúng thân của `/void`) rồi `finish_correction` (`record_in` với `Order.correction` = lượt cũ, ngày của lượt cũ, không cần `visit.backdate`; chuyển `appointment.visit_id`; audit `visit.correct`). `201 VisitCorrected {voided, visit, difference}` (không có `note`); hai lần sửa song song → một `201`, một `409 visit.corrected`. Hai bước là `pub(crate)` để "chuyển sang gói" (`POST /visits/{id}/convert-to-package`, §3e) bán gói giữa hai bước | `visit.record` + `record.void_same_day` (+ quyền của thân như `POST /visits`); ngày trước: `record.void_closed_day` | ✓ | write |
 | `GET /visits/{id}` · `PATCH /visits/{id}` | `VisitDto` thêm `corrects_visit_id?`, `corrected_by_visit_id?` (0020). Xem (có `note` nếu có `customer.health_notes.read`, `ETag`) / sửa ghi chú, KTV từng dòng và **giờ làm trong cùng ngày** (`check_in_at`, US6b: khác ngày → `422 check_in_at not_visit_day`, tương lai → `422 visit.check_in_in_future`) (If-Match; không đụng buổi hay tiền; lượt đã được sửa → `409 visit.corrected`; ngày đã chốt theo đúng quy tắc của hủy: Manager → `403 day.locked`, Owner (`record.void_closed_day`) → được, không reauth) (S7 ✅) | `visit.read` / `visit.record` (+ `customer.health_notes.write` khi sửa ghi chú) | — | read/write |
 | `POST /visits/{id}/void` | Hủy lượt + `{reason}` (US6, S8 ✅): lượt → `voided` (giữ trong lịch sử, `void_reason`, `voided_at`), buổi đã trừ được cộng lại, sale dịch vụ lẻ của lượt bị hủy bằng reversal. Hủy lần 2 → `409 visit.voided`; gói đã bị hủy từ lúc đó → `409 package.cancelled`; thiếu lý do → `422`. `200 VisitDto` (không có `note`) | `record.void_same_day`; ngày trước hôm nay: `record.void_closed_day` (thiếu → `403 day.locked`) | ✓ | write |
-| `POST /support-grants` · `DELETE /support-grants/{id}` | Cấp / thu hồi quyền hỗ trợ | `support_grant.manage` 🔒 | — | write |
+
+**Có trong thiết kế đầu nhưng không có route:**
+- `POST /auth/activate` (kích hoạt / đặt lại mật khẩu bằng token): thay bằng mật khẩu tạm do chủ spa / operator tạo + `POST /auth/password` + `POST /auth/password-reset-requests` ([ADR-0016](../decisions/ADR-0016-accounts-and-passwords.md)).
+- `GET /customers/{id}/visits`: lịch sử lượt nằm trong `GET /customers/{id}/history` (§3b).
+- `POST /customers/{id}/anonymize`: chưa làm (cột `customer.anonymized_at` và permission `customer.anonymize` đã có).
+- `POST /support-grants` · `DELETE /support-grants/{id}`: chưa làm (permission `support_grant.manage` còn trong danh mục, không bảng, không route; [ADR-0003](../decisions/ADR-0003-multi-tenancy.md)).
 
 ### 3b. Xem lại & theo dõi (R1-2, crate `reporting`, [spec](../product/specs/management-views.md))
 Chỉ đọc, `GET`, `Cache-Control: no-store`, rate class `read`. Query param nào cũng có mặc định, nên thiếu param không bao giờ thành 400 trước khi kiểm quyền. Danh sách: cursor mờ (base64url của khóa sắp xếp), `limit` 1–100 (mặc định 20); cursor sửa tay → `422 cursor invalid`. Trường tiền là `Option` và **vắng hẳn** khi thiếu `report.revenue.read`.
@@ -110,7 +126,7 @@ Chỉ đọc, `GET`, `Cache-Control: no-store`, rate class `read`. Query param n
 | `GET /customers/phone-check?phone=` (mới) | `PhoneCheckDto {valid, taken, existing_id?, full_name?}`; chuẩn hóa `PhoneE164::parse` như tạo khách | `customer.read` |
 | `GET /customers/inactive` | thêm `kind`, `follow_up`, `sort=due\|absent`, `q`; `scope` mặc định `all`; item thêm `gender`, `kind`, `last_follow_up {on, channel, outcome, by}`, `next_follow_up_on`, `due_on` (ngày hẹn, hoặc `not_interested` + 90); "lần gần nhất" = max(lượt, hóa đơn chưa hủy, ngày bắt đầu gói); cursor 3 phần (khóa hạn, last_seen, id) | như cũ |
 | `GET /customers/{id}/history` | thêm `q`, `kind`, `from`, `to` (lọc trong SQL qua `app.search_fold`) | như cũ |
-| `GET /notes?from=&to=&kind=&staff_id=&customer_id=&q=&cursor=&limit=` (2026-11-07, management-views §10) | `NotesPage {from, to, items[]{kind, at, business_date, text, customer_id?, customer_name?, staff_id?, staff_name?, author_name?, visit_id?, detail?}, kinds[], next_cursor, scan_capped}`; 9 loại, mỗi loại quyền riêng; mặc định 30 ngày, ≤ 366; tìm ghi chú mã hóa quét ≤ 500/request | `report.read` + quyền từng loại |
+| `GET /notes?from=&to=&kind=&staff_id=&customer_id=&q=&cursor=&limit=` (2026-11-07, management-views §10) | `NotesPage {from, to, items[]{kind, at, business_date, text, customer_id?, customer_name?, staff_id?, staff_name?, author_name?, visit_id?, detail?}, kinds[], next_cursor, scan_capped}`; 16 loại (`reporting::notes_dto::NoteKind`, lúc đầu 9, thêm ở 0028–0030), mỗi loại quyền riêng; mặc định 30 ngày, ≤ 366; tìm ghi chú mã hóa quét ≤ 500/request | `report.read` + quyền từng loại |
 | `GET /packages` | `q` khớp cả tên gói; row thêm `customer_gender` | như cũ |
 | `GET /reports/range` | `preset` (`last_7_days`, `last_30_days`, `this_month`, `last_month`, `this_year`, `last_12_months`, `last_2_years`; chủ spa thêm `last_3_years`, `last_5_years`), `granularity=year`, giới hạn 366 ngày (day/week) / 732 ngày (month/year) / 1830 ngày với `report.long_range` (0015); bucket thêm `net_revenue`; report thêm `preset`, `technicians[]`; đọc sổ bằng `BETWEEN` (không gửi mảng ngày) | như cũ |
 | `GET /reports/ledger` | row thêm `customer_gender` | như cũ |
@@ -149,6 +165,8 @@ OpenAPI: struct query (`SearchQuery`, `ActiveFilter`, `VisitListQuery`, `StaffQu
 | `PUT /appointment-settings` (vòng 5) | `{max_per_slot: 1–200 \| null}` (bắt buộc có field) → `200 {max_per_slot}`; audit `appointment.settings` | `appointment.settings` (Owner) | — |
 | `GET /appointments/{id}` · `PATCH /appointments/{id}` (If-Match) | xem / đổi giờ, thời lượng, KTV, dịch vụ, ghi chú, nối khách mới với hồ sơ (`customer_id`) | `appointment.manage` | — |
 | `POST /appointments/{id}/arrive` | `{staff_id}` booked → arrived (chỉ đúng ngày, KTV phải rảnh) | `appointment.manage` | — |
+| `POST /appointments/{id}/undo-arrival` | "Hoàn tác đã đến": arrived → booked, chỉ lịch hôm nay chưa có lượt (đã hoàn tất → `409 appointment.closed`; lịch không ở trạng thái đến → `409 appointment.not_arrived`); audit `appointment.undo_arrival` | `appointment.manage` | — |
+| `POST /appointments/{id}/move-group` (If-Match) | "Đổi cả nhóm" `{starts_at}`: lịch `{id}` dời tới giờ mới, mọi người khác trong nhóm còn `booked` dời cùng khoảng (giữ thời lượng, KTV), cả nhóm một transaction; người đã đến / xong đứng yên và trả về trong `not_moved`; một người bị từ chối → `422 validation_failed` với `errors[].field = appointments.<id người đó>`, không ai dời; lịch lẻ → `422 appointment.not_in_group`; `{id}` không còn booked → `409 appointment.already_arrived` | `appointment.manage` | — |
 | `POST /appointments/{id}/complete` | thân như `POST /visits` trừ `customer_id` → `200 AppointmentCompleted {appointment, visit}` | `appointment.manage` + `visit.record` | ✓ |
 | `POST /appointments/{id}/cancel` · `/no-show` | `{reason}` (no-show chỉ sau giờ hẹn) | `appointment.manage` | — |
 
@@ -159,25 +177,34 @@ OpenAPI: struct query (`SearchQuery`, `ActiveFilter`, `VisitListQuery`, `StaffQu
 - **Giảm giá lượt:** `VisitCreate.discount {percent? | amount?, reason}` (đúng một). `sales::service::record_service_sale` tính `percent → floor(subtotal × % / 100)`, kiểm D10 như bán gói, chia cho từng dòng lẻ bằng `allocate_discount` → `visit_line.discount_amount`, `line_value = qty × unit_price − phần giảm` (CHECK 0016). `VisitDto` thêm `subtotal`, `discount_amount`, `discount_reason`; `VisitLineDto.discount_amount`. Sổ doanh thu hiện lý do giảm ở cột ghi chú (view `revenue_book` đã dùng `sale.discount_reason`).
 - Mã lỗi mới: `appointment.staff_busy` / `customer_busy` (2026-11-07) / ~~`slot_full`~~ (bỏ ở vòng 5) / `closed` / `already_arrived` (409), `appointment.in_the_past` (422, 2026-11-07), vòng 5: field `people count_out_of_range`, `people[i].customer_id duplicate`, `people[i].starts_at not_same_day`, `max_per_slot required / out_of_range`; `appointment.outside_opening_hours` / `not_today` / `not_started` / `customer_required` (422), `visit.check_in_too_old` (422); field: `starts_at not_on_slot / too_far`, `duration_min out_of_range`, `discount percent_or_amount`, `discount.percent out_of_range`.
 
-### 3c. Quản lý nhân viên (crate `org` + crate mới `hr`, [spec](../product/specs/staff-management.md), migration 0017)
+### 3d. Quản lý nhân viên (crate `org` + crate `hr`, [spec](../product/specs/staff-management.md), migration 0017; đợt làm việc 0025, tài khoản 0032)
 Mọi response `Cache-Control: no-store`; `?month=YYYY-MM` mặc định tháng hiện tại theo giờ spa.
 
 | Method + path | Mô tả | Permission | Ghi chú |
 |---|---|---|---|
-| `POST /staff`, `PUT /staff/{id}` (`If-Match`) | Hồ sơ: tên, vị trí, SĐT, trạng thái, ngày vào/nghỉ, `user_id`, `shift_start` | `staff.manage` | `409 staff.account_taken`, `412` |
-| `GET /staff/profiles`, `GET /staff/{id}` | Hồ sơ đầy đủ; `pay` chỉ khi có `payroll.read` | `staff.manage` | |
+| `POST /staff`, `PUT /staff/{id}` (`If-Match`) | Tuyển / sửa hồ sơ: tên, vị trí, SĐT, ngày vào (đợt hiện tại), `shift_start`, `note` (chủ spa); `POST` nhận thêm `user_id?` để gắn tài khoản ngay | `staff.manage` | `409 staff.account_taken`, `412` |
+| `GET /staff/profiles`, `GET /staff/{id}` | Danh sách nhân sự / một hồ sơ (`StaffProfileDto`: đợt làm việc, thâm niên); `details` (SĐT, ghi chú, tài khoản) chỉ cho `staff.manage`, `pay` chỉ cho `payroll.read` | `staff.read` | |
+| `PUT /staff/{id}/account` (`If-Match`) | Gắn / bỏ gắn tài khoản (`user_id`, `null` = bỏ) | `staff.manage` | `409 staff.account_taken` |
+| `POST /staff/{id}/end` · `POST /staff/{id}/rehire` (`If-Match`) | Nghỉ việc (ngày cuối ≤ hôm nay, lý do, `lock_login?`) / nhận lại (đợt mới sau đợt cũ), ADR-0013, ADR-0014 | `staff.manage` | `409 staff.already_left / has_upcoming_bookings / already_active`, `422 staff.cannot_end_self / linked_to_owner` |
+| `GET /staff/{id}/history` | Lịch sử thay đổi hồ sơ (từ audit: `staff.create`, `staff.update`, `staff.account_link`, `staff.end`, `staff.rehire`, `staff.pay_update` chỉ cho `payroll.read`) | `staff.manage` | |
 | `PUT /staff/{id}/pay` | Lương cứng, `commission_rate_bp`, thưởng gắn bó, tiền ăn | `staff.manage` + `payroll.read` | audit `staff.pay_update` |
 | `GET /staff/accounts` | Tài khoản của spa để gắn | `staff.manage` | |
+| `POST /staff/{id}/login` · `POST /staff/{id}/login/reset-password` · `PUT /staff/{id}/login/role` | Tạo tài khoản cho hồ sơ (`{phone, role: manager \| technician}` → `201` kèm mật khẩu tạm hiện một lần, `no-store`) / đặt lại mật khẩu tạm (mọi session của tài khoản bị đóng) / đổi role ([ADR-0016](../decisions/ADR-0016-accounts-and-passwords.md)); cần nhập lại mật khẩu (`401 auth.reauth_required`) | `staff.manage` | `409 account.phone_taken / staff.account_exists / staff.no_login / account.locked`, `422 account.owner_protected / account.other_spa` |
+| `GET /staff/password-reset-requests` · `POST /staff/password-reset-requests/{id}/dismiss` | Yêu cầu "Quên mật khẩu?" đang mở / "Bỏ qua" (`204`) | `staff.manage` | |
 | `GET/PUT /attendance` | Lưới tháng × người; PUT 1–100 ô/transaction, `status: null` xóa | `attendance.record` | phút muộn do server tính |
 | `GET/PUT /daily-reviews` | Khen/phàn nàn/ghi chú theo ngày | `evaluation.record` | |
 | `GET/PUT /evaluations` | Phiếu 6 tiêu chí tháng (upsert) | `evaluation.record` | `hr::evaluation::score` |
-| `GET /adjustments`, `POST /adjustments` (`Idempotency-Key`) | Sổ thưởng/phạt, chỉ thêm, `corrects_month` | `evaluation.record` | |
+| `GET /evaluations/history?staff_id=&from=&to=` · `GET /me/evaluations/history?from=&to=` | Kết quả đánh giá qua các tháng của một người / của chính mình (`?staff_id=` ở bản `/me` → 400) | `evaluation.record` / `staff.read_own` | |
+| `GET /adjustments`, `POST /adjustments` (`Idempotency-Key`) | Sổ thưởng/phạt, `corrects_month` | `evaluation.record` | |
+| `PUT /adjustments/{id}` (`Idempotency-Key`) · `DELETE /adjustments/{id}` | Sửa = hủy dòng cũ + ghi dòng mới (id mới) trong một transaction / xóa = hủy (`voided_at/by`, giữ cho audit; 0024). Tháng đã chốt → `409 payroll.period_closed`; đã hủy → `409 adjustment.voided` | `evaluation.record` | |
 | `GET /payroll`, `GET /payroll/payslips/{staff_id}` | Bảng lương; tạm tính hoặc bản chụp | `payroll.read` | |
 | `POST /payroll/close` (`Idempotency-Key`) | Chốt tháng đã kết thúc | `payroll.close` (+ `payroll.read`) | `422 payroll.month_not_ended / unrecorded_days`, `409 payroll.period_closed` |
 | `GET /payroll/rules`, `PUT /payroll/rules` | Quy tắc cho 8 mâu thuẫn | `payroll.read` / `payroll.close` | `deny_unknown_fields`, có giới hạn |
 | `GET /me/staff` | Tháng của chính mình | `staff.read_own` | `{linked:false}` nếu chưa gắn |
 | `GET /me/staff/day?date=` (EM 2026-11-07) | `MyDay {linked, data?: {date, today, closed, attendance?, review?, adjustments[], visits[]{visit_id, check_in_at, customer_name, lines[]{service_name, source, qty, value, commission?}}, upsell[]{kind, description, customer_name, qty, value, commission?}, commission_rate_bp?}}`: một ngày của chính mình; `value` theo quy tắc buổi tặng, hoa hồng = tỷ lệ × giá trị (tháng chốt: tỷ lệ của phiếu đã chốt) | `staff.read_own` | `hr::day`, `repo::day_lines` + `repo::day_upsell`; `?staff_id=` 400, ngày sai 422 `invalid_date`; không SĐT/ghi chú lượt/id khách |
 | `GET /me/appointments?from=&to=` (EM 2026-11-07, thay `GET /me/work`) | `MyCalendar {linked, data?: {from, to, today, opens_at, closes_at, slot_minutes, entries[]{id, kind appointment/visit, business_date, starts_at, ends_at, duration_min, phase, customer_name, services[]{service_name, category_name, from_package}, group_size?, walk_in}}}`: lịch của chính KTV — lịch hẹn gán cho mình (mọi trạng thái) + lượt mình làm không thuộc lịch hẹn của mình (chỉ dòng của mình) | `staff.read_own` | `operations::appointments::service::my_calendar`, 4 query (`my_appointments`, `services_of`, `my_visits`, `my_visit_lines`); ≤ 14 ngày; không SĐT/ghi chú/tiền/id |
+
+Các route "của chính mình" của `hr` (`/me/staff`, `/me/staff/day`, `/me/evaluations/history`) nhận `staff.read_own`, hoặc `staff.read_own_past` (quyền suy ra cho người đã nghỉ, chỉ các tháng đã làm; [ADR-0014](../decisions/ADR-0014-former-staff-login.md)) qua `hr::me::own_scope`.
 
 Tính lương: bộ tính thuần `hr::calc::compute` (unit test theo ô Excel E55/K54, Tết, cờ). Hoa hồng: 1 query gom `visit_line` (lượt `completed`, theo `business_date`) theo (KTV, dịch vụ, nguồn) + `sale.total` theo `closer_staff_id` (không hủy). Khóa tháng: `hr::period` (FOR SHARE khi ghi, FOR UPDATE khi chốt) + trigger. Mã lỗi mới: `payroll.period_closed` (409), `payroll.month_not_ended`, `payroll.unrecorded_days` (422), `staff.account_taken` (409).
 
@@ -209,7 +236,7 @@ Tính lương: bộ tính thuần `hr::calc::compute` (unit test theo ô Excel E
 - Test: `appointments.rs` `served_companions_get_their_own_technician_and_block`, `companions_are_added_and_edited_on_an_existing_booking`.
 
 ## 4. Use case & tính toàn vẹn dữ liệu (áp dụng [data-integrity](../../../.claude/skills/backend-design/data-integrity.md))
-Mọi use case chạy trong **một transaction**, mở bởi `kernel::TenantTx`. `TenantTx` chạy `SET LOCAL app.tenant_id` và `SET LOCAL statement_timeout = '5s'`, giữ `actor` và `business_date`, và **không gọi mạng ra ngoài** trong lúc transaction mở.
+Mọi use case chạy trong **một transaction**, mở bởi `kernel::TenantTx` (`kernel/src/db.rs`). `TenantTx` mở bằng một simple query `BEGIN; SELECT set_config('app.tenant_id', …, true), set_config('statement_timeout', '5s', true), set_config('idle_in_transaction_session_timeout', '30s', true)` (đều transaction-local), giữ `actor` và `business_date`, và **không gọi mạng ra ngoài** trong lúc transaction mở.
 
 | Write path | Bất biến | Chiến lược xung đột / trùng lặp |
 |---|---|---|
@@ -238,9 +265,9 @@ http (Axum route, DTO, extractor AuthUser/TenantCtx/IdempotencyKey/IfMatch)
         └─▶ repo (SQL qua sqlx::query!, nhận &mut TenantTx + TenantId)
 domain: kiểu dữ liệu & bất biến thuần (Money, PhoneE164, SessionCount, PriceVariant, PackageStatus::derive)
 ```
-- **Đồ thị phụ thuộc crate:** `reporting → {packages, crm}` (chỉ đọc; SQL thẳng trên các bảng sổ, như một read model) · `operations → {packages, sales, catalog, crm}` (chỉ qua `service` API, truyền chung `&mut TenantTx`) · `sales → {catalog, crm}` · `packages → {catalog, crm}` · mọi crate → `kernel`. Không vòng; `ledger` (spec #2) chỉ **đọc** `sales`.
-- **Cross-cutting ở `app`:** config (validate khi khởi động, fail-fast), middleware tower (tracing request-id, timeout 10 giây, giới hạn body 64 KB, rate limit, kiểm tra `Origin` cho request ghi), error mapping `AppError → problem+json` tại một chỗ, header bảo mật do Caddy đặt.
-- **Chi phí mỗi request (perf giai đoạn 0, 2026-11-07):** `TenantTx::begin` gửi `BEGIN; SELECT set_config('app.tenant_id', …, true), set_config('statement_timeout','5s', true)` trong **một** simple query (`begin_with`; vẫn transaction-local, test `request_plumbing.rs`). Quyền của member = **một** câu (`array_agg` + `LEFT JOIN` role). Một request đăng nhập: tra session (+ touch mỗi vài phút) → tx quyền (BEGIN+settings, quyền, COMMIT) → tx nghiệp vụ. Trước: 8–17 câu/request, nay bớt 3 (1 ở quyền, 1 ở mỗi `TenantTx`).
+- **Đồ thị phụ thuộc crate** (theo `Cargo.toml`, 2026-11-09): `operations → {catalog, crm, hr, org, packages, sales}` (chỉ qua `service` API, truyền chung `&mut TenantTx`) · `sales → {catalog, crm, org, packages}` · `reporting → {crm, org, packages}` (chỉ đọc; SQL thẳng trên các bảng sổ, như một read model) · `packages → {catalog, crm}` · `hr → {org}` · mọi crate còn lại → `identity` + `kernel` (`identity → kernel`) · `app` → tất cả. Không vòng. Crate `ledger` (sổ quỹ, spec #2) chưa có.
+- **Cross-cutting ở `app`:** config (validate khi khởi động, fail-fast), middleware tower (tracing request-id, timeout 10 giây, giới hạn body 64 KB, rate limit, kiểm tra `Origin` cho request ghi, mặc định `Cache-Control: private, no-store`), error mapping `AppError → problem+json` tại một chỗ. Header bảo mật (HSTS, CSP, …) do `vercel.json` đặt trên Vercel, do Caddy (`infra/Caddyfile`) đặt trên đường VPS.
+- **Chi phí mỗi request (perf giai đoạn 0, 2026-11-07):** `TenantTx::begin` gửi `BEGIN; SELECT set_config('app.tenant_id', …, true), set_config('statement_timeout','5s', true)` trong **một** simple query (`begin_with`; vẫn transaction-local, test `request_plumbing.rs`). Quyền của member = **một** câu (`array_agg` + `LEFT JOIN` role). Một request đăng nhập lúc đó: tra session (+ touch) → tx quyền (BEGIN+settings, quyền, COMMIT) → tx nghiệp vụ. Trước: 8–17 câu/request, giai đoạn 0 bớt 3 (1 ở quyền, 1 ở mỗi `TenantTx`). Tx quyền riêng đã bỏ ở A3 bên dưới.
 - **Rà soát DB A1/A4 (2026-11-09, [db-review](db-review-2026-11.md)):**
   - **A1:** pool `app::db_pool::options` tắt `test_before_acquire`. Chỉ kết nối đã rảnh ≥ `PING_WHEN_IDLE_FOR` (30 s) mới bị ping trước khi giao ra. Ping hỏng thì sqlx đóng kết nối và đưa kết nối khác. `idle_timeout` 5 phút. Bớt một lượt đi về mỗi lần lấy kết nối, ~3 lượt mỗi request. sqlx 0.9 vẫn ping khi **trả** kết nối về pool, nhưng việc đó chạy ở task nền, không nằm trên đường đi của request.
   - **A4:** câu quyền (`identity::repo::member_access`) đọc luôn timezone, chi nhánh và trần giảm giá của spa (`kernel::tenant::TenantFacts`) rồi gắn vào `Actor`. `TenantTx::for_actor` mang chúng vào transaction, nên `kernel::tenant::profile` không còn query. Transaction mở bằng `TenantTx::begin` (tooling, test) vẫn đọc như cũ.
@@ -254,10 +281,11 @@ domain: kiểu dữ liệu & bất biến thuần (Money, PhoneE164, SessionCoun
 ## 6. Background jobs (in-process, `tokio`)
 | Job | Lịch | Retry |
 |---|---|---|
-| Dọn `idempotency_record` > 48 giờ và session đã thu hồi / hết hạn quá **30 ngày** (`app.purge_sessions`, 0035, EM Q-DB4); `audit_log` giữ hết, không có hạn | Mỗi giờ cho cả hệ thống (`app.claim_maintenance`: một instance mỗi khoảng, dù Vercel dựng bao nhiêu instance) | Idempotent, chạy lại thoải mái (`app::jobs::run_maintenance`) |
-| Kiểm bất biến dữ liệu: 11 phép kiểm bản sao / liên kết (`app.invariant_violations`, 0035 = `infra/perf/db/invariants.sql`) | Mỗi ngày (claim 23 giờ) | Phép kiểm có dòng lệch → log **ERROR** `data invariant violated` với `check` + `rows`; log của Vercel / VPS là chỗ báo |
-| Backup `pg_dump` → mã hóa → R2 | 02:00 hằng ngày (cron trên VPS, ở `/devops`) | Alert nếu không có backup mới trong 26 giờ |
-Nhắc nhở (spec #3) sẽ dùng bảng job trên Postgres (`FOR UPDATE SKIP LOCKED`) có dead-letter.
+| Dọn `idempotency_record` > 48 giờ (`app.purge_idempotency_records`, 0001) và session đã thu hồi / hết hạn quá **30 ngày** (`app.purge_sessions`, 0035, EM Q-DB4); `audit_log` giữ hết, không có hạn | Vòng lặp `app::jobs::spawn_maintenance` thức dậy lúc khởi động rồi mỗi giờ; job chỉ chạy khi `app.claim_maintenance('purge', '55 minutes')` trả `true` (0035), nên cả hệ thống chạy khoảng một lần mỗi giờ dù Vercel dựng bao nhiêu instance | Idempotent, chạy lại thoải mái (`app::jobs::run_maintenance`) |
+| Kiểm bất biến dữ liệu: 11 phép kiểm bản sao / liên kết (`app.invariant_violations`, 0035 = `infra/perf/db/invariants.sql`) | Mỗi ngày (`claim_maintenance('invariants', '23 hours')`) | Phép kiểm có dòng lệch → log **ERROR** `data invariant violated` với `check` + `rows`; log của Vercel / VPS là chỗ báo |
+| Backup `pg_dump` → mã hóa `age` → R2 (`infra/backup/backup.sh`) | Chỉ đường VPS: systemd `vpyd-backup.timer`, 02:30 giờ VN. Staging Vercel + Supabase không chạy job này (cần Supabase Pro hoặc job riêng, [vercel-staging](../runbooks/vercel-staging.md)) | Dead-man's switch `HEALTHCHECK_PING_URL` (healthchecks.io) báo khi không có lần chạy thành công |
+
+Chưa có hàng đợi job: nhắc nhở (spec #3) sẽ dùng bảng job trên Postgres (`FOR UPDATE SKIP LOCKED`) có dead-letter.
 
 ## 6b. Lệnh vận hành (CLI `app`, `apps/api/crates/app/src/main.rs`)
 Chạy trên máy vận hành, không có route HTTP nào tương ứng. Mật khẩu chỉ qua env, không bao giờ qua argv.
@@ -273,6 +301,8 @@ Chạy trên máy vận hành, không có route HTTP nào tương ứng. Mật k
 | `app import-paper-book --tenant S --file F.csv [--dry-run]` | Migrate sổ liệu trình giấy một lần (R1-2 §7, cột CSV ở spec, gồm `paid_amount`/`paid_on`/`method`: tiền sổ giấy ghi thành hóa đơn vào ngày trên sổ, 0018). Đi qua `sales::paper::import_opening_balance` với quyền của chủ spa; gói đã nhập mà chưa có tiền thì lần chạy sau ghi tiền một lần (`sales::paper::book`); gói đã có (cùng khách, tên, ngày bắt đầu, không hóa đơn) bị bỏ qua nên chạy lại an toàn; file lỗi ở bất kỳ dòng nào (cột, số, ngày, tên dịch vụ) → không ghi gì | owner + app_rw + `APP_DATA_KEY` |
 | `app seed-demo --tenant S [--force-again]` | Dữ liệu demo cho staging/buổi dùng thử, xem [runbook](../runbooks/vercel-staging.md#dữ-liệu-demo) | owner + app_rw + `APP_DATA_KEY` + `APP_NEW_USER_PASSWORD` |
 | `app reset-mfa --phone P` / `app unlock --phone P` | Mất authenticator / gỡ khóa đăng nhập (xác minh người trước) | owner |
+| `app add-operator --username U --name N` | Tạo operator console admin nền tảng (ADR-0018), mật khẩu từ `APP_NEW_OPERATOR_PASSWORD`; MFA đăng ký ở lần đăng nhập đầu tại `/admin` | owner |
+| `app reset-operator-mfa --username U` · `app disable-operator --username U` · `app enable-operator --username U` | Operator mất authenticator / tạm khóa / mở lại | owner |
 | `app openapi` | In contract ra stdout | — |
 
 `seed-demo` đi qua đúng các use case của quầy (`crm`, `sales`, `operations`, `packages`), nên validation, audit và quy tắc append-only vẫn giữ. Để ghi lịch sử 3 tuần, `sales::service::create_sale_as_of` và `operations::service::record_as_of` nhận đồng hồ làm tham số (`kernel::tenant::profile_as_of`). Handler HTTP chỉ gọi `create_sale` / `record`, hai hàm này truyền `Utc::now()`: client không có cách nào ghi lùi ngày.
@@ -287,7 +317,7 @@ Chạy trên máy vận hành, không có route HTTP nào tương ứng. Mật k
 | US5 | hoãn | Không có endpoint thu nợ / công nợ ở R1; không có endpoint sửa/xóa payment |
 | US6 | 6.1–6.4 | `POST /visits/{id}/void`, `POST /sales/{id}/void` (S8 ✅) |
 | US7 | 7.1–7.4 | `/customer-packages/{id}/extend`, `/cancel` (S8 ✅) |
-| US8 | 8.1, 8.3–8.8 | `POST /opening-balances` (tạm, chỉ Owner) + `app import-paper-book` (tạo `customer_package` với `origin=opening_balance` trong DB, không có sale hay payment; DTO không lộ `origin`) |
+| US8 | 8.1, 8.3–8.8 | `POST /opening-balances` (tạm, chỉ Owner; không sale, không payment) + `app import-paper-book` (tạo `customer_package` với `origin=opening_balance`; từ 0018 tiền đã trả trên sổ ghi thành hóa đơn `source = 'paper_book'` vào ngày trên sổ); DTO không lộ `origin` |
 | R1-2 US1–US5 | [management-views](../product/specs/management-views.md) | §3b |
 | G1–G6 | | Middleware + extractor + `kernel` |
 

@@ -60,6 +60,9 @@ Chọn **A**: migration 0034 tạo `app.session_actor(p_token_hash bytea)` (`LAN
 **Hoàn tác:**
 - Đổi `AuthUser` / `/me` về `resolve` + `actor_for` (chỉ đổi code). Hàm để lại vô hại, hoặc `DROP FUNCTION app.session_actor(bytea)`.
 
+## Hiện trạng (kiểm lại 2026-11-09)
+Migration 0039 (cờ tính năng, [ADR-0018](ADR-0018-platform-admin-console.md) D4) `CREATE OR REPLACE` hàm này để trả thêm `disabled_features` của spa; quyền bị rút theo cờ vẫn quyết ở Rust. Đúng ràng buộc "sửa cả hàm và test" ở trên.
+
 ## Revisit when
 - Có nhiều spa và nhiều chi nhánh mỗi người.
 - Quyền theo chi nhánh (spec #4) cần thêm cột.

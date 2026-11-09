@@ -38,5 +38,8 @@ Chọn **C**.
 - Negative / accepted: tài khoản đã nghỉ vẫn đăng nhập được (bề mặt tấn công nhỏ: hai endpoint chỉ đọc dữ liệu của chính họ). Muốn chặn hẳn thì chủ spa chọn "Khóa tài khoản" lúc cho nghỉ. Chưa có nút khóa / mở khóa riêng sau khi đã cho nghỉ (nhận lại làm thì mở).
 - Follow-ups: nếu sau này có role tùy biến, `staff.manage` vẫn là ranh giới "không bao giờ hạ quyền". Nút "Khóa / mở khóa tài khoản" độc lập (Q-S7) — **đã quyết (EM 2026-11-08, [raw](../../raw/2026-11-08-em-decisions-evaluation-history.md)): không cần**; khóa chỉ qua "Khóa tài khoản" khi cho nghỉ.
 
+## Hiện trạng (kiểm lại 2026-11-09)
+Từ [ADR-0017](ADR-0017-one-statement-request-auth.md) (0034), cờ "người đã nghỉ" đọc trong cùng một câu `app.session_actor(token_hash)` thay vì `EXISTS` riêng trong `member_permissions`; quyết định vẫn ở Rust (`kernel::permission::effective_permissions`). Hành vi không đổi.
+
 ## Revisit when
 Có nhiều chi nhánh (người nghỉ ở một chi nhánh nhưng còn làm ở chi nhánh khác), hoặc pháp lý yêu cầu thời hạn giữ quyền xem phiếu lương.

@@ -1,10 +1,12 @@
 ---
 title: Kịch bản buổi dùng thử R1-1 với quản lý
-updated: 2026-11-04
+updated: 2026-11-09
 sources: [product/specs/front-desk-and-packages.md, plans/r1-1-front-desk.md, design/front-desk-flows.md]
 ---
 
 # Kịch bản buổi dùng thử R1-1 (màn hình quầy & liệu trình)
+
+> **Trạng thái (2026-11-09):** buổi này **chưa chạy**; EM đã tự live test trên staging (2026-11-07, 2026-11-08). Kịch bản đã chỉnh theo sản phẩm hiện tại: không còn hỏi lại mật khẩu khi hủy / hoàn tiền (EM 2026-11-05), quản lý không còn nhập sổ cũ (team nhập bằng CLI), hồ sơ khách đã có lịch sử buổi, đã có màn Báo cáo kinh doanh. Có thể chạy trên staging với dữ liệu `app seed-demo` thay cho §1.
 
 Mục đích: quản lý (kiêm thu ngân) tự làm các việc hằng ngày trên platform bằng **dữ liệu giả**, để kiểm tra spec R1-1 đã thay được sổ dịch vụ, sổ liệu trình và phần bán hàng của sổ doanh thu chưa. Ticket S10 chỉ được tick sau buổi này. Thời lượng khoảng **60–75 phút**: 10 phút chuẩn bị, 40 phút làm việc, 15 phút góp ý.
 
@@ -37,10 +39,12 @@ pnpm dev:web     # cửa sổ 2 → http://localhost:5173
 ```
 
 Sau đó, đăng nhập bằng **chủ spa** (lần đầu phải quét mã QR bằng Google/Microsoft Authenticator) và tạo sẵn:
-1. Gói **"Gội đầu dưỡng sinh 10 buổi + tặng 2"**, dịch vụ "Cơ Bản – Dầu thảo dược" × 10 + tặng 2, giá 1.500.000đ, hạn 6 tháng (trang Bảng giá → Gói liệu trình).
+1. Gói **"Gội đầu dưỡng sinh 10 buổi + tặng 2"**, dịch vụ "Cơ Bản – Dầu thảo dược" × 10 + tặng 2, giá 1.500.000đ, hạn 6 tháng (menu "Mẫu gói liệu trình", `/bang-gia/goi`).
 2. Gói **"Cổ vai gáy 5 buổi"**: dịch vụ "An Kiên Lạc" × 5, giá 1.000.000đ, không hạn.
 3. 3 khách quen ở `/khach-hang`: **Nguyễn Thị Hà** (Nữ, 0905 111 222, ghi chú sức khỏe "Huyết áp cao, không bấm huyệt mạnh"), **Trần Văn Nam** (Nam, 0905 333 444), **Lê Thị Mai** (chưa ghi giới tính, 0905 555 666).
 4. Bán cho chị Hà gói Gội đầu 10 + 2 (TM 1.500.000đ), rồi ghi 1 lượt trừ 1 buổi để gói còn **11/12**.
+
+Cách nhanh hơn: `APP_NEW_USER_PASSWORD='<mật-khẩu-quản-lý>' $A seed-demo --tenant dung-thu` tạo sẵn 5 KTV, tài khoản quản lý `0905000002`, menu, 5 gói, 40 khách và 3 tuần lượt khách (chi tiết: [vercel-staging § Dữ liệu demo](../runbooks/vercel-staging.md#dữ-liệu-demo)); khi đó bỏ lệnh `add-user` quản lý / `add-staff` ở trên và vẫn tạo 3 khách + gói của mục 1–4 để khớp nhiệm vụ.
 
 Kiểm tra trước buổi: đăng nhập được bằng tài khoản **quản lý**, `/quay` hiện ô tìm khách, danh sách lượt hôm nay có 1 lượt. Chuẩn bị đồng hồ bấm giờ (điện thoại) và in phiếu góp ý ở §4.
 
@@ -60,17 +64,17 @@ Kiểm tra trước buổi: đăng nhập được bằng tài khoản **quản 
 | 8 | "Anh Nam mua gói Cổ vai gáy 5 buổi, chị (quản lý) chốt, giảm 50.000đ vì khách quen, trả CK." | Hồ sơ/thẻ khách → Bán liệu trình → người chốt → giảm giá + lý do → CK | ✓ | < 60 s; giá trị buổi = 190.000đ |
 | 9 | "Thử giảm 20% cho chị Mai khi bán gói Gội đầu." | Hệ thống từ chối (quản lý tối đa 10%) với thông báo dễ hiểu | — | Quản lý hiểu vì sao bị chặn |
 | 10 | "Lúc nãy ghi nhầm lượt của chị Mai (nhiệm vụ 5), hủy giúp." | Danh sách lượt hôm nay → Hủy → nhập lý do | ✓ | < 30 s; lượt hiện "Đã hủy" + lý do |
-| 11 | "Đây là trang sổ liệu trình giấy của **bà Võ Thị Lài** (SĐT 0935 222 111): gói Gội đầu 10 buổi, đã dùng 6, giá 1.500.000đ, đăng ký 01/06/2026, không hạn." | `/nhap-so-cu` → khách mới → gói từ bảng giá → còn 4/10 → Lưu | ✓ | 1–2 phút; hồ sơ hiện "Nhập từ sổ cũ" |
-| 12 | (Chủ spa) "Hủy lượt của **hôm qua**" — người dẫn chuẩn bị 1 lượt ngày cũ trước buổi, hoặc bỏ qua nếu không có | Xem ngày → Hủy → hệ thống hỏi lại mật khẩu (+ mã 2 bước) | — | Quản lý thử trước: thấy "Ngày đã chốt" |
-| 13 | (Chủ spa) "Chị Hà chuyển nhà, hủy gói và hoàn 300.000đ tiền mặt." | Hồ sơ → Hủy liệu trình + hoàn tiền → xác nhận lại mật khẩu | — | Gói "Đã hủy", còn 0 buổi |
+| 11 | (bỏ) Nhập sổ liệu trình giấy | **Bỏ** (EM 2026-11-05): quản lý không nhập sổ cũ, team nhập một lần bằng CLI `app import-paper-book`; web không còn màn `/nhap-so-cu` | — | — |
+| 12 | (Chủ spa) "Hủy lượt của **hôm qua**" — người dẫn chuẩn bị 1 lượt ngày cũ trước buổi, hoặc bỏ qua nếu không có | Xem ngày → Hủy → lý do (không hỏi lại mật khẩu, EM 2026-11-05) | — | Quản lý thử trước: thấy "Ngày đã chốt" |
+| 13 | (Chủ spa) "Chị Hà chuyển nhà, hủy gói và hoàn 300.000đ tiền mặt." | Hồ sơ → Hủy liệu trình + hoàn tiền → lý do (không hỏi lại mật khẩu) | — | Gói "Đã hủy", còn 0 buổi |
 | 14 | "Khách hỏi: chị Hà còn mấy buổi, hết hạn khi nào? Lần trước ai làm?" | Tìm khách → hồ sơ: còn X/Y, HSD, lịch sử buổi | ✓ | < 15 s |
-| 15 | "Cuối ca, xem hôm nay KTV Lan làm cho mấy khách." | Danh sách lượt hôm nay (đếm theo KTV) | — | Quản lý tìm được hay không |
+| 15 | "Cuối ca, xem hôm nay KTV Lan làm cho mấy khách." | "Báo cáo kinh doanh" (`/bao-cao`, bảng KTV) hoặc danh sách lượt hôm nay | — | Quản lý tìm được hay không |
 
 Ghi chú cho người dẫn:
 - Nhiệm vụ 2, 3 là **thước đo chính** (mục tiêu < 30 s/lượt, spec §1). Nếu > 30 s, hỏi ngay "chỗ nào làm chị chậm?".
 - Nhiệm vụ 9, 12 kiểm tra **thông báo lỗi**: quản lý có hiểu lý do bị chặn không, có biết phải làm gì tiếp không.
-- Nhiệm vụ 14: hồ sơ hiện còn X/Y buổi và HSD, nhưng **lịch sử buổi làm trên hồ sơ chưa có** (`GET /customers/{id}/visits` hoãn từ S7; hiện chỉ xem được theo ngày ở `/quay`). Ghi lại quản lý tìm "lần trước ai làm" ở đâu và có cần không: đây là đầu vào để quyết định làm trước S11 hay không.
-- Nhiệm vụ 15 có thể chưa có màn hình riêng (báo cáo thuộc spec #3); ghi lại quản lý muốn xem ở đâu.
+- Nhiệm vụ 14: hồ sơ hiện còn X/Y buổi, HSD và lịch sử buổi (ai làm, ngày nào; R1-2 `GET /customers/{id}/history`). Ghi lại quản lý tìm "lần trước ai làm" ở đâu.
+- Nhiệm vụ 15: ghi lại quản lý tìm ở Báo cáo kinh doanh hay ở danh sách lượt.
 - Nếu mạng/app lỗi giữa chừng: ghi lại, bấm Lưu lại; dữ liệu đã nhập phải còn nguyên và không bị ghi 2 lần.
 
 ## 3. Bảng bấm giờ (người dẫn điền)
@@ -85,7 +89,6 @@ Ghi chú cho người dẫn:
 | 7 | | | | | |
 | 8 | | | | | |
 | 10 | | | | | |
-| 11 | | | | | |
 | 14 | | | | | |
 
 **Đạt** khi: nhiệm vụ 2–5 đều < 30 s (5 có thể < 40 s), không nhiệm vụ nào cần gợi ý quá 1 lần, không có lỗi làm sai dữ liệu (sai số buổi, sai tiền).
@@ -103,7 +106,6 @@ Thang 1–5 (1 = rất không đồng ý, 5 = rất đồng ý):
 | Giá dịch vụ lẻ (Nữ/Nam) hiện đúng, tôi không phải tự nhớ | | | | | |
 | Bán gói và ghi giảm giá dễ hiểu | | | | | |
 | Hủy lượt ghi nhầm dễ, tôi không sợ làm hỏng số liệu | | | | | |
-| Nhập liệu trình từ sổ cũ đủ nhanh để nhập hết các khách đang dùng gói | | | | | |
 | Chữ, nút, màu dễ đọc trên máy quầy | | | | | |
 | Tôi sẵn sàng bỏ sổ dịch vụ và sổ liệu trình giấy nếu dùng hệ thống này | | | | | |
 
@@ -113,11 +115,11 @@ Câu hỏi mở:
 3. Thông báo nào chị **không hiểu**?
 4. Nếu dùng từ tuần sau, chị lo nhất điều gì (mất mạng, mất điện, nhầm khách, …)?
 5. Chị muốn thêm/bớt gì trên màn hình quầy?
-6. Mỗi ngày có khoảng bao nhiêu khách đang dùng gói cần nhập từ sổ cũ? (để ước lượng thời gian chuyển đổi)
+6. Sổ liệu trình giấy hiện có khoảng bao nhiêu khách đang dùng gói? (để team ước lượng lần nhập bằng CLI)
 
 ## 5. Sau buổi (người dẫn)
 
 - Ghi kết quả vào `memory/raw/2026-11-xx-trial-session-notes.md` (bảng bấm giờ + phiếu góp ý, nguyên văn), rồi chạy `memory` ingest.
 - Mỗi vấn đề → một dòng trong plan (lỗi → ticket fix; thiếu tính năng → backlog spec #2/#3/#4).
-- Đạt tiêu chí §3 và câu cuối của phiếu ≥ 4 → tick S10 trong [r1-1-front-desk](r1-1-front-desk.md) và chuyển sang S11 (staging).
-- Xóa DB `vpyd_trial` sau khi ghi nhận xong (dữ liệu giả, nhưng có tên/SĐT đọc to trong buổi).
+- Đạt tiêu chí §3 và câu cuối của phiếu ≥ 4 → tick S10 trong [r1-1-front-desk](r1-1-front-desk.md) (staging đã có từ 2026-11-05).
+- Xóa DB `vpyd_trial` (hoặc spa dùng thử trên staging) sau khi ghi nhận xong (dữ liệu giả, nhưng có tên/SĐT đọc to trong buổi).

@@ -1,12 +1,15 @@
 ---
-title: Runbook — dựng staging (VPS cùng vùng Supabase + R2)
-updated: 2026-11-04
+title: Runbook — đường VPS (Docker Compose + Caddy + R2), không dùng cho staging hiện tại
+status: superseded cho staging (2026-11-05) bởi runbooks/vercel-staging.md
+updated: 2026-11-09
 sources: [ADR-0002, ADR-0005, architecture/system.md, plans/r1-1-front-desk.md (S11)]
 ---
 
-# Runbook: dựng staging S11
+# Runbook: dựng staging S11 (đường VPS)
 
-Mục tiêu: một VPS chạy `caddy` + `api` bằng Docker Compose, database là Supabase project `vpyd-staging` (ref `zyyiukcysjntjgjabiqe`), backup đêm mã hóa lên Cloudflare R2, có uptime alert.
+> **⚠️ Superseded cho staging (2026-11-05).** Staging đang chạy là **Vercel + Supabase**, xem [vercel-staging](vercel-staging.md) ([ADR-0005](../decisions/ADR-0005-compute-hosting.md) update 2026-11-05). Không có VPS nào đang chạy theo runbook này. Trang được giữ vì phần code của đường VPS vẫn còn trong repo (`infra/docker-compose.prod.yml`, `infra/Caddyfile`, `infra/deploy.sh`, `infra/backup/`, `.github/workflows/deploy.yml` trỏ về trang này) và là một phương án production (ADR-0005, [ADR-0012](../decisions/ADR-0012-colocate-api-db-singapore.md) phương án VPS). Phần còn dùng cho staging Vercel: checklist Supabase §4.2 (REVOKE khi Data API bật). Các mục giá VPS §1 là số liệu ngày 2026-11-04, kiểm lại trước khi mua.
+
+Mục tiêu: một VPS chạy `caddy` + `api` bằng Docker Compose, database là Supabase project `vpyd-staging`, backup đêm mã hóa lên Cloudflare R2, có uptime alert.
 
 > **Quyết định EM (2026-11-04):** project staging nằm ở **vùng Mỹ** (vùng cụ thể đọc từ pooler host `aws-<index>-<region>.pooler.supabase.com`) và **Data API vẫn bật**. Do đó (1) VPS staging phải đặt **cùng vùng với DB**: đi xuyên Thái Bình Dương mất khoảng 170 ms mỗi query, không chấp nhận được; (2) giảm thiểu rủi ro Data API bằng REVOKE (§4.2). **Production** sẽ là một project Supabase **mới ở Singapore** + VPS Singapore theo ADR-0002/0005; bảng Singapore ở §1.2 dành cho lúc đó. Chỉ dùng **dữ liệu giả** cho tới khi xong thủ tục chuyển dữ liệu ra nước ngoài (ADR-0002, Luật 91/2025/QH15).
 
@@ -142,7 +145,7 @@ install -d -m 750 -o deploy -g deploy /opt/vpyd /opt/vpyd/infra /opt/vpyd/secret
 - **Docker và ufw:** port publish bởi Docker đi vòng qua ufw. Stack chỉ publish 80/443 (đằng nào cũng mở) và **không** publish port của `api`, nên không có lỗ hổng. Không thêm `ports:` cho `api`.
 - **DigitalOcean Cloud Firewall** (lớp 2): inbound chỉ cho 80/443 từ mọi nơi và 22 từ IP của EM (nếu IP cố định) cộng IP runner GitHub. Nếu không cố định được IP SSH thì để 22 mở, vì đã có key-only + fail2ban.
 
-## 4. Supabase (project `vpyd-staging`, ref `zyyiukcysjntjgjabiqe`)
+## 4. Supabase (project `vpyd-staging`)
 
 ### 4.1 Những gì EM bấm khi tạo project (đã làm cho staging)
 - Org **"For my future"** (đăng nhập bằng GitHub, credits Pro đã redeem). Bật **MFA** cho tài khoản GitHub và tài khoản Supabase. Nên có thêm một owner thứ hai, ghi lại offline.
@@ -157,7 +160,7 @@ install -d -m 750 -o deploy -g deploy /opt/vpyd /opt/vpyd/infra /opt/vpyd/secret
 Cài client trên VPS: `docker run --rm -it postgres:17-alpine psql "<owner-url>"`, hoặc `apt install postgresql-client-17` từ repo PGDG. Owner URL gõ tay trong phiên đó, không lưu vào file nào ngoài `.env.production`.
 
 1. **Data API / PostgREST:** production thì tắt (Project Settings → Data API). Staging vẫn bật, nên: **Exposed schemas không được chứa `app`** (chỉ để `public` + `graphql_public` mặc định, hoặc rỗng), cộng thêm các REVOKE ở bước 6. Kiểm tra bằng anon key (key này công khai, không phải secret):
-   `curl -s -H "apikey: $ANON" -H 'Accept-Profile: app' https://zyyiukcysjntjgjabiqe.supabase.co/rest/v1/tenant` → phải lỗi (schema không được expose / permission denied), không bao giờ trả dữ liệu. Thử thêm `/rest/v1/_sqlx_migrations` → `401/404/permission denied`.
+   `curl -s -H "apikey: $ANON" -H 'Accept-Profile: app' https://<ref>.supabase.co/rest/v1/tenant` → phải lỗi (schema không được expose / permission denied), không bao giờ trả dữ liệu. Thử thêm `/rest/v1/_sqlx_migrations` → `401/404/permission denied`.
 2. **Auth không dùng:** Authentication → Sign In / Providers → tắt "Allow new users to sign up", để anon key không tạo được user.
 3. **SSL:** Database Settings → SSL Configuration → bật **Enforce SSL on incoming connections** (sẽ reboot nhanh). Tải **CA certificate** → `/opt/vpyd/secrets/supabase-ca.crt` (`chmod 640`, owner deploy). Mọi URL dùng `sslmode=verify-full&sslrootcert=/run/secrets/supabase-ca.crt`.
 4. **Role runtime `app_rw`** (giống `infra/postgres-init/01-roles.sql`, nhưng mật khẩu mạnh và không nằm trong SQL):
@@ -194,8 +197,8 @@ Cài client trên VPS: `docker run --rm -it postgres:17-alpine psql "<owner-url>
    ```
 8. **Network Restrictions** (chỉ áp dụng cho kết nối Postgres, **không** chặn Data API qua HTTPS, nên bước 6 vẫn bắt buộc): Database Settings → Network Restrictions → chỉ cho phép `<IP VPS>/32` (thêm `<IPv6>/128` nếu dùng direct). Khi EM cần kết nối từ máy cá nhân thì thêm tạm IP rồi xóa đi. Giới hạn này áp dụng cho cả direct lẫn pooler.
 9. **Chọn kết nối cho SQLx** (theo [Supabase: Connect to your database](https://supabase.com/docs/guides/database/connecting-to-postgres)):
-   - **Dùng: Supavisor session mode**: host `aws-<index>-<region>.pooler.supabase.com` (staging: một vùng `us-*`; production: `ap-southeast-1`; copy từ nút **Connect**, vì index không tự suy ra được), port **5432**, user **`app_rw.zyyiukcysjntjgjabiqe`** (role + `.` + ref; owner là `postgres.zyyiukcysjntjgjabiqe`). Chạy IPv4, hỗ trợ prepared statements.
-   - Hoặc **direct**: `db.zyyiukcysjntjgjabiqe.supabase.co:5432`, user `app_rw`. Chỉ có IPv6 (Docker phải bật IPv6), trừ khi mua IPv4 add-on ($4/tháng).
+   - **Dùng: Supavisor session mode**: host `aws-<index>-<region>.pooler.supabase.com` (staging: một vùng `us-*`; production: `ap-southeast-1`; copy từ nút **Connect**, vì index không tự suy ra được), port **5432**, user **`app_rw.<ref>`** (role + `.` + ref; owner là `postgres.<ref>`). Chạy IPv4, hỗ trợ prepared statements.
+   - Hoặc **direct**: `db.<ref>.supabase.co:5432`, user `app_rw`. Chỉ có IPv6 (Docker phải bật IPv6), trừ khi mua IPv4 add-on ($4/tháng).
    - **Không dùng transaction mode (6543):** SQLx dùng prepared statements và cache chúng theo connection. Transaction mode không hỗ trợ prepared statements, nên muốn dùng thì phải tắt statement cache (`statement_cache_capacity(0)`) và chấp nhận các giới hạn về session state. Không đáng với tải < 10 người dùng. `TenantTx` dùng `SET LOCAL` trong transaction nên chạy đúng ở session mode.
    - Pool: API mở tối đa 10 connection. Kiểm tra Database Settings → Connection pooling → Pool Size ≥ 15 (10 cho API, cộng migrate, backup và psql).
 10. **Backup của Supabase:** Pro có daily backup 7 ngày. PITR là add-on trả phí, chưa cần vì đã có backup độc lập ra R2 (§7).
@@ -258,7 +261,7 @@ Cài client trên VPS: `docker run --rm -it postgres:17-alpine psql "<owner-url>
 
 | # | Việc | Gửi lại cho agent (**không** phải secret) | Giữ riêng (secret, chỉ vào `.env.production` / password manager) |
 |---|---|---|---|
-| 1 | ✅ Tạo Supabase `vpyd-staging` (đã xong, ref `zyyiukcysjntjgjabiqe`, vùng Mỹ, Data API bật); rotate DB password; bật MFA. Lead bootstrap DB | Pooler host session mode (từ nút Connect) → vùng; Postgres major version | DB password `postgres`, mật khẩu `app_rw` |
+| 1 | ✅ Tạo Supabase `vpyd-staging` (đã xong, vùng Mỹ, Data API bật); rotate DB password; bật MFA. Lead bootstrap DB | Pooler host session mode (từ nút Connect) → vùng; Postgres major version | DB password `postgres`, mật khẩu `app_rw` |
 | 2 | Mua VPS DigitalOcean Basic 2 GiB ($12) ở datacenter **khớp vùng Supabase** (§1.1: NYC3 hoặc SFO3), Ubuntu 24.04, gắn SSH key của EM | IP v4/v6; xác nhận đã làm §3 (hoặc cấp tạm cho agent một SSH key để làm) | Private SSH key |
 | 3 | Mua domain, trỏ `A` `staging.<domain>` về VPS | Tên miền staging; email nhận thông báo ACME | — |
 | 4 | Tạo R2 bucket `vpyd-backups` + lifecycle + bucket lock + token scope bucket | Account ID, tên bucket | Access Key ID + Secret |
