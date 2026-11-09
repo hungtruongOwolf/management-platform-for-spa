@@ -28,6 +28,7 @@ function activeFor(item: NavItem) {
 import { readSidebarCollapsed, saveSidebarCollapsed } from "./prefs";
 import { resetTrail } from "./trail";
 import { UserMenu } from "./UserMenu";
+import { SkipLink } from "../components/SkipLink";
 
 // Opens on Ctrl/⌘+K or the search button only: its own chunk, off the startup path.
 const CommandPalette = lazy(() => import("./CommandPalette"));
@@ -195,6 +196,7 @@ export function AppShell() {
 
   return (
     <div className="shell">
+      <SkipLink target="main" />
       {/* The focus ring switches to the bright gold: the standard one is too dark on maroon. */}
       <aside className="sidebar chrome" data-collapsed={collapsed || undefined}>
         <Link
@@ -252,7 +254,7 @@ export function AppShell() {
           />
         </header>
 
-        <main id="main" className="shell-content">
+        <main id="main" tabIndex={-1} className="shell-content">
           <div key={pathname} className={navigated ? "page-enter" : undefined}>
             <InShell value>
               <Outlet />

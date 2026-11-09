@@ -2505,6 +2505,18 @@
           "customers"
         ],
         "operationId": "create",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per create attempt (ADR-0019 D11): a double click or a retry answers with the profile the first request created, never a second one",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -2517,7 +2529,7 @@
         },
         "responses": {
           "201": {
-            "description": "Created; with no name and no phone it is an anonymous walk-in profile (\"Khách vãng lai\")",
+            "description": "Created (a replay of the same key answers with that profile as it is now); with no name and no phone it is an anonymous walk-in profile (\"Khách vãng lai\")",
             "content": {
               "application/json": {
                 "schema": {
@@ -2526,12 +2538,18 @@
               }
             }
           },
+          "400": {
+            "description": "idempotency.key_required / key_invalid"
+          },
           "403": {},
+          "404": {
+            "description": "replay of a profile anonymised since"
+          },
           "409": {
             "description": "customer.phone_taken with existing_id"
           },
           "422": {
-            "description": "validation_failed: full_name too_long, phone invalid_format, birth_date in_future / too_old, birth_year out_of_range / conflicts_with_birth_date"
+            "description": "validation_failed: full_name too_long, phone invalid_format, birth_date in_future / too_old, birth_year out_of_range / conflicts_with_birth_date, body invalid; idempotency.key_reuse_mismatch"
           }
         }
       }
@@ -7663,7 +7681,8 @@
           },
           "refunded": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "Money given back to this customer for packages they paid for, including packages they\nbought for someone else (ADR-0019 D6: a refund goes to the payer)."
           },
           "sessions_remaining": {
             "type": "integer",
@@ -8609,18 +8628,33 @@
       },
       "HistoryCancellation": {
         "type": "object",
+        "description": "A package cancelled (US7). Its `refund` is on the payer's timeline only (ADR-0019 D6): a\npackage bought for someone else is refunded to who paid, so its user's timeline shows none.",
         "required": [
           "customer_package_id",
           "package_name",
           "reason"
         ],
         "properties": {
+          "beneficiary_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Bought for someone else: who the package belonged to. Null on its user's own timeline."
+          },
           "customer_package_id": {
             "type": "string",
             "format": "uuid"
           },
           "package_name": {
             "type": "string"
+          },
+          "payer_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Bought by someone else for this customer: who paid (and got any refund). Null on the\npayer's own timeline."
           },
           "reason": {
             "type": "string"
@@ -14160,7 +14194,8 @@
               "string",
               "null"
             ],
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Null = paper-book packages without a plan, one row per package name."
           },
           "revenue": {
             "type": [
@@ -14168,7 +14203,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Sum of their prices after discount; only with `report.revenue.read`."
+            "description": "What was actually paid for them (price after discount; a paper-book package's paid\namount), minus what was refunded since (ADR-0019 D7); only with `report.revenue.read`."
           },
           "sold": {
             "type": "integer",

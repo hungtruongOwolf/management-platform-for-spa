@@ -6,7 +6,7 @@ use axum::http::StatusCode;
 use catalog::service::seed_menu;
 use common::{
     Harness, OWNER_PHONE, Reply, TEST_DATA_KEY, TestResult, add_member, call, call_with_headers,
-    harness, session_for,
+    harness, post_customer, session_for,
 };
 use identity::SystemRole;
 use kernel::idempotency::hash_request;
@@ -95,10 +95,8 @@ async fn desk(pool: PgPool) -> Setup<Desk> {
         ("Trần Văn Đức", "0905333444", json!("male")),
         ("Phạm Minh Khôi", "0905555666", Value::Null),
     ] {
-        let c = call(
+        let c = post_customer(
             &h.app,
-            "POST",
-            "/customers",
             Some(&manager),
             Some(json!({"full_name": name, "phone": phone, "gender": gender})),
         )

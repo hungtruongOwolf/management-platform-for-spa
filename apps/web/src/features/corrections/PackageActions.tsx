@@ -14,7 +14,7 @@ import { useFormAction } from "./useFormAction";
 import { VoidForm } from "./VoidForm";
 import { invalidateManagementViews } from "../../lib/invalidate";
 import "./messages";
-import "./packageMessages";
+import { PACKAGE_FIELDS } from "./packageMessages";
 
 type Open = "extend" | "cancel" | "void" | null;
 
@@ -192,7 +192,7 @@ function ExtendForm({
   const reasonProblem = (touched && reason.trim() === "" ? "Bắt buộc ghi lý do." : undefined) ?? fieldMessage(action.error, "reason");
   const dateProblem =
     (touched && pkg.expires_on && expiresOn <= pkg.expires_on ? "Hạn mới phải sau hạn hiện tại." : undefined) ??
-    fieldMessage(action.error, "expires_on");
+    fieldMessage(action.error, "expires_on", PACKAGE_FIELDS);
 
   return (
     <section
@@ -289,7 +289,7 @@ function ExtendForm({
               </span>
             )}
           </div>
-          {action.error != null && !fieldMessage(action.error, "reason") && !fieldMessage(action.error, "expires_on") && (
+          {action.error != null && !fieldMessage(action.error, "reason") && !fieldMessage(action.error, "expires_on", PACKAGE_FIELDS) && (
             <p role="alert" className="alert span-2">
               {messageFor(action.error)}
             </p>

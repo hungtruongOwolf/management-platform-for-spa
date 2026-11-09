@@ -9,7 +9,7 @@ use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
 use chrono_tz::Asia::Ho_Chi_Minh;
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
-    session_for,
+    post_customer, session_for,
 };
 use identity::SystemRole;
 use identity::provisioning::create_tenant;
@@ -153,10 +153,8 @@ impl Spa {
     }
 
     async fn customer(&self, name: &str, phone: &str) -> Uuid {
-        let reply = call(
+        let reply = post_customer(
             &self.h.app,
-            "POST",
-            "/customers",
             Some(&self.owner),
             Some(json!({"full_name": name, "phone": phone, "gender": "female"})),
         )
@@ -1423,5 +1421,144 @@ async fn the_dashboard_reconciles_with_raw_rows_after_seed_demo(pool: PgPool) ->
             .fetch_one(&h.owner)
             .await?;
     assert_eq!(range.body["totals"]["visits"], visits);
+    Ok(())
+}
+
+/// ADR-0019 D6: a package bought for someone else and refunded gives the money back to who paid.
+/// The payer's spend drops and their timeline carries the refund; the person who used the package
+/// sees the cancellation without any negative line; the ledger names the payer.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_refund_of_a_package_bought_for_someone_else_goes_to_the_payer(
+    pool: PgPool,
+) -> TestResult {
+    let s = spa(pool).await?;
+    let day = today();
+    let payer = s.customer("Nguyễn Thị Hà", "0905111222").await;
+    let user = s.customer("Trần Thị Mẹ", "0905333444").await;
+    let mut body = s.sale_body(payer, 0, "cash");
+    body["beneficiary_customer_id"] = json!(user);
+    let sale = s.post(&s.owner, "/sales", body).await;
+    assert_eq!(sale.status, StatusCode::CREATED, "{}", sale.body);
+    let package = sale.body["customer_packages"][0]["id"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    s.cancel(&package, 400_000, "cash").await;
+
+    let paid = s
+        .get(&s.manager, &format!("/customers/{payer}/summary"))
+        .await;
+    assert_eq!(paid.status, StatusCode::OK, "{}", paid.body);
+    assert_eq!(paid.body["refunded"], 400_000, "{}", paid.body);
+    assert_eq!(paid.body["net_spent"], PLAN_PRICE - 400_000);
+    let used = s
+        .get(&s.manager, &format!("/customers/{user}/summary"))
+        .await;
+    assert_eq!(used.body["refunded"], 0, "{}", used.body);
+    assert_eq!(used.body["net_spent"], 0);
+
+    let cancellation_of = |history: &Value| -> Value {
+        history["events"]
+            .as_array()
+            .and_then(|e| e.iter().find(|e| e["kind"] == "package_cancelled"))
+            .map(|e| e["cancellation"].clone())
+            .unwrap_or_default()
+    };
+    let payer_history = s
+        .get(&s.manager, &format!("/customers/{payer}/history"))
+        .await;
+    assert_eq!(
+        payer_history.status,
+        StatusCode::OK,
+        "{}",
+        payer_history.body
+    );
+    let theirs = cancellation_of(&payer_history.body);
+    assert_eq!(
+        theirs["refund"]["amount"], 400_000,
+        "{}",
+        payer_history.body
+    );
+    assert_eq!(theirs["beneficiary_name"], "Trần Thị Mẹ");
+    assert_eq!(theirs["payer_name"], Value::Null);
+    let user_history = s
+        .get(&s.manager, &format!("/customers/{user}/history"))
+        .await;
+    let mine = cancellation_of(&user_history.body);
+    assert_eq!(mine["package_name"], "Gói 10 buổi", "{}", user_history.body);
+    assert_eq!(mine["refund"], Value::Null, "no negative line for the user");
+    assert_eq!(mine["payer_name"], "Nguyễn Thị Hà");
+    assert_eq!(mine["beneficiary_name"], Value::Null);
+
+    let book = s
+        .get(
+            &s.owner,
+            &format!("/reports/ledger?from={day}&to={day}&limit=100"),
+        )
+        .await;
+    assert_eq!(book.status, StatusCode::OK, "{}", book.body);
+    let refund = book.body["rows"]
+        .as_array()
+        .and_then(|rows| rows.iter().find(|r| r["entry"] == "refund"))
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(refund["customer_id"], json!(payer), "{}", book.body);
+    assert_eq!(refund["customer_name"], "Nguyễn Thị Hà");
+    assert_eq!(refund["beneficiary_name"], "Trần Thị Mẹ");
+    assert_eq!(refund["cash"], -400_000);
+    Ok(())
+}
+
+/// ADR-0019 D7: the range report's packages. Paper-book packages without a plan are one row per
+/// name (not one "no plan" row), revenue is what was paid (the paper amount, the price after
+/// discount), and a package refunded since counts net.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_range_report_ranks_packages_by_what_was_paid_net_of_refunds(
+    pool: PgPool,
+) -> TestResult {
+    let s = spa(pool).await?;
+    let day = today();
+    let ha = s.customer("Nguyễn Thị Hà", "0905111222").await;
+    let lan = s.customer("Lê Thị Lan", "0905333444").await;
+    for (customer, name, paid) in [
+        (ha, "Gói ngâm chân sổ cũ", 600_000),
+        (lan, "Gói bấm huyệt sổ cũ", 250_000),
+    ] {
+        let reply = s
+            .post(
+                &s.owner,
+                "/opening-balances",
+                json!({"customer_id": customer, "packages": [{
+                    "name": name, "sold_price": 1_000_000, "paid_amount": paid, "paid_on": day,
+                    "starts_on": day, "expires_on": null,
+                    "items": [{"service_id": s.service, "sessions_purchased": 10, "sessions_remaining": 10}]
+                }]}),
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::CREATED, "{}", reply.body);
+    }
+    s.sell(ha, 200_000, "cash", None).await?;
+    let refunded = s.sell(lan, 0, "cash", None).await?;
+    let package = refunded["customer_packages"][0]["id"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    s.cancel(&package, 500_000, "cash").await;
+
+    let range = s
+        .get(&s.owner, &format!("/reports/range?from={day}&to={day}"))
+        .await;
+    assert_eq!(range.status, StatusCode::OK, "{}", range.body);
+    assert_eq!(
+        range.body["top_packages"],
+        json!([
+            {"plan_id": s.plan, "name": "Gói 10 buổi", "sold": 2,
+             "revenue": (PLAN_PRICE - 200_000) + (PLAN_PRICE - 500_000)},
+            {"plan_id": null, "name": "Gói bấm huyệt sổ cũ", "sold": 1, "revenue": 250_000},
+            {"plan_id": null, "name": "Gói ngâm chân sổ cũ", "sold": 1, "revenue": 600_000},
+        ]),
+        "{}",
+        range.body["top_packages"]
+    );
     Ok(())
 }

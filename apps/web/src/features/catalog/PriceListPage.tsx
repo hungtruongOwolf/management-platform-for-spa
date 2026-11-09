@@ -16,7 +16,7 @@ import { categoriesQuery, createCategory, servicesQuery } from "./api";
 import { describeDuration, describePrices } from "./prices";
 import { ServiceForm } from "./ServiceForm";
 import "../customers/khach.css";
-import "./messages";
+import { CATALOG_FIELDS } from "./messages";
 
 type Editing =
   | { kind: "service"; service: Service }
@@ -194,7 +194,7 @@ function NewCategory({ onDone }: { onDone: () => void }) {
   useEffect(() => {
     input.current?.focus();
   }, []);
-  const problem = (touched && name.trim() === "" ? "Nhập tên nhóm." : undefined) ?? fieldMessage(mutation.error, "name");
+  const problem = (touched && name.trim() === "" ? "Nhập tên nhóm." : undefined) ?? fieldMessage(mutation.error, "name", CATALOG_FIELDS);
   return (
     <form
       noValidate
@@ -233,7 +233,7 @@ function NewCategory({ onDone }: { onDone: () => void }) {
           </span>
         )}
       </div>
-      {mutation.isError && !fieldMessage(mutation.error, "name") && (
+      {mutation.isError && !fieldMessage(mutation.error, "name", CATALOG_FIELDS) && (
         <p role="alert" className="alert">
           {messageFor(mutation.error)}
         </p>

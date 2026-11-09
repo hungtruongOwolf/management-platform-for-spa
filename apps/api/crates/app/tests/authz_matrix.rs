@@ -222,7 +222,8 @@ const ROUTES: &[Route] = &[
         "/api/v1/customers",
         Access::Perm(P::CustomerWrite, OWNER_MANAGER),
     )
-    .body(customer_body),
+    .body(customer_body)
+    .idempotent(),
     route(
         "GET",
         "/api/v1/customers/{id}",
@@ -1324,7 +1325,10 @@ async fn session(h: &Harness, phone: &str) -> Result<String, String> {
 }
 
 async fn created_id(app: &Router, owner: &str, path: &str, body: Value) -> Result<String, String> {
-    let reply = send(app, "POST", path, Some(owner), Some(body), &[]).await;
+    // Routes that do not need the key ignore it (POST /customers does, ADR-0019 D11).
+    let key = uuid::Uuid::now_v7().to_string();
+    let headers = [("Idempotency-Key", key.as_str())];
+    let reply = send(app, "POST", path, Some(owner), Some(body), &headers).await;
     reply.body["id"]
         .as_str()
         .map(str::to_owned)

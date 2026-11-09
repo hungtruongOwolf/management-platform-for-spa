@@ -42,7 +42,7 @@ async function customerWithVisit(
   });
   expect(plan.status()).toBe(201);
   const customer = await page.request.post("/api/v1/customers", {
-    headers: write,
+    headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
     data: { full_name: fullName, phone, gender: "female" },
   });
   expect(customer.status()).toBe(201);

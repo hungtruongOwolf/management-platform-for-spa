@@ -5,7 +5,7 @@ mod common;
 
 use app::paper_book::{ImportOptions, ImportReport, import};
 use catalog::service::seed_menu;
-use common::{OWNER_PHONE, TestResult, call, harness, session_for};
+use common::{OWNER_PHONE, TestResult, call, harness, post_customer, session_for};
 use kernel::testing::app_pool;
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -28,10 +28,8 @@ async fn the_paper_books_import_once_through_the_owner_use_case(pool: PgPool) ->
     seed_menu(&h.owner, "vpyd").await?;
     let app = app_pool(&h.owner).await?;
     let owner = session_for(&h, OWNER_PHONE).await;
-    let existing = call(
+    let existing = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&owner),
         Some(json!({"full_name": "Nguyễn Thị Hà", "phone": "0905111001", "gender": "female"})),
     )

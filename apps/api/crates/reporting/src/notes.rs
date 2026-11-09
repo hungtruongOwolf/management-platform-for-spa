@@ -399,11 +399,6 @@ async fn fetch(
     Ok(rows)
 }
 
-/// Same purpose and ids `operations` encrypts a session note under (`operations::service::visit_aad`).
-fn visit_note_aad(tenant: Uuid, visit: Uuid) -> Vec<u8> {
-    kernel::crypto::record_aad("visit.note", &[tenant, visit])
-}
-
 /// The sale of a `package_note` row: its key is the sale's id.
 fn sale_of(row: &NoteRow) -> Option<Uuid> {
     Uuid::parse_str(&row.key).ok()
@@ -421,7 +416,7 @@ fn text_of(
         return Ok(row.body.clone().unwrap_or_default());
     };
     let aad = match (kind, row.visit_id, row.customer_id, sale_of(row)) {
-        (NoteKind::VisitNote, Some(visit), _, _) => visit_note_aad(tenant, visit),
+        (NoteKind::VisitNote, Some(visit), _, _) => kernel::crypto::visit_note_aad(tenant, visit),
         (NoteKind::HealthNote, _, Some(customer), _) => crm::cipher::customer_aad(tenant, customer),
         (NoteKind::PackageNote, _, _, Some(sale)) => kernel::crypto::sale_note_aad(tenant, sale),
         _ => {

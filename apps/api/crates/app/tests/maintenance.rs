@@ -6,7 +6,7 @@ mod common;
 
 use app::jobs::{self, MaintenanceReport};
 use axum::http::StatusCode;
-use common::{TestResult, add_member, call, harness, session_for};
+use common::{TestResult, add_member, harness, post_customer, session_for};
 use identity::SystemRole;
 use kernel::TenantTx;
 use kernel::testing::app_pool;
@@ -170,10 +170,8 @@ async fn the_daily_check_reports_a_drifted_copy(owner: PgPool) -> TestResult {
     let h = harness(owner).await?;
     add_member(&h.owner, "vpyd", MANAGER, "Quản lý", SystemRole::Manager).await?;
     let manager = session_for(&h, MANAGER).await;
-    let created = call(
+    let created = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&manager),
         Some(json!({"full_name": "Nguyễn Thị Hà", "phone": "0905111222", "gender": "female"})),
     )

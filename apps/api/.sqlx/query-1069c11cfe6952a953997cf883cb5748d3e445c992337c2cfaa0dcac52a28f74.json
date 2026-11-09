@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT coalesce(sum(p.amount) FILTER (WHERE p.kind = 'payment'), 0)::bigint AS \"paid!\",\n                  coalesce(sum(p.amount) FILTER (WHERE p.kind = 'reversal'), 0)::bigint AS \"voided!\",\n                  -- Refunds go back to whoever paid (ADR-0019 D6): this customer's own packages\n                  -- they paid for (or got from the paper book), and packages they bought for others.\n                  coalesce((SELECT sum(r.amount) FROM app.refund r\n                            WHERE r.tenant_id = $1 AND r.customer_package_id IN (\n                              SELECT x.id FROM app.customer_package x\n                              LEFT JOIN app.sale xs ON xs.tenant_id = x.tenant_id AND xs.id = x.sale_id\n                              WHERE x.tenant_id = $1 AND x.customer_id = $2\n                                AND (xs.id IS NULL OR xs.customer_id = $2)\n                              UNION ALL\n                              SELECT y.id FROM app.sale z\n                              JOIN app.customer_package y ON y.tenant_id = z.tenant_id AND y.sale_id = z.id\n                              WHERE z.tenant_id = $1 AND z.customer_id = $2 AND y.customer_id <> $2)),\n                           0)::bigint AS \"refunded!\"\n           FROM app.payment p\n           JOIN app.sale s ON s.tenant_id = p.tenant_id AND s.id = p.sale_id\n           WHERE p.tenant_id = $1 AND s.customer_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "paid!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "voided!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "refunded!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "1069c11cfe6952a953997cf883cb5748d3e445c992337c2cfaa0dcac52a28f74"
+}

@@ -116,7 +116,9 @@ function roster(details: boolean): StaffProfile[] {
       tenure_days: 615,
       tenure_months: 20,
       login_linked: true,
-      ...(details ? { details: { phone: "0905 111 222", note: null, user_id: "u-lan", user_name: "KTV Lan" } } : {}),
+      ...(details
+        ? { details: { phone: "0905 111 222", note: null, user_id: "u-lan", user_name: "KTV Lan", login: { phone: "0912 300 111", role: "technician", locked: false } } }
+        : {}),
     },
     {
       ...base,
@@ -341,6 +343,8 @@ interface ServeOptions {
   accounts?: StaffAccount[];
   /** `POST /staff/{id}/end` refuses: bookings still assigned (F24). */
   endRefused?: boolean;
+  /** `POST /staff/{id}/end` refuses the last day (`422 ended_on has_later_records`). */
+  endDateRefused?: boolean;
   /** The caller's login is linked to no profile (`link_required`, every `can_record` false). */
   linkRequired?: boolean;
   /** `GET /staff/password-reset-requests` (owner). */
@@ -527,6 +531,8 @@ function serve(permissions: string[], options: ServeOptions = {}) {
         },
         409,
       );
+    if (/^\/staff\/[^/]+\/end$/.test(p) && method === "POST" && options.endDateRefused)
+      return ok({ code: "validation_failed", errors: [{ field: "ended_on", code: "has_later_records" }] }, 422);
     if (/^\/staff\/[^/]+\/end$/.test(p) && method === "POST") return ok(roster(true)[0]);
     if (/^\/staff\/[^/]+\/pay$/.test(p) && method === "PUT") {
       if (payRefused.left > 0) {
@@ -1413,6 +1419,9 @@ describe("Hồ sơ nhân viên (roster)", () => {
     const table = await screen.findByRole("table", { name: "Danh sách nhân sự" });
     // People without a login: nudged in Hồ sơ nhân viên (they count as technicians until they have one).
     expect(screen.getByText(/Chưa có tài khoản đăng nhập: Phạm Thị Hoa\./)).toBeInTheDocument();
+    // "Tài khoản" shows the phone the person signs in with (ADR-0019 D20), not the login's name.
+    expect(within(table).getByText("0912 300 111")).toBeInTheDocument();
+    expect(within(table).queryByText("KTV Lan")).not.toBeInTheDocument();
     await userEvent.click(within(table).getByRole("button", { name: "Lê Thị Lan" }));
     const sheet = await screen.findByRole("dialog", { name: "Lê Thị Lan" });
     expect(within(sheet).getByRole("heading", { name: "Tài khoản đăng nhập" })).toBeInTheDocument();
@@ -1431,6 +1440,10 @@ describe("Hồ sơ nhân viên (roster)", () => {
     });
     const post = requests(spy).find((r) => r.url.endsWith("/staff/s-lan/end"));
     expect(post?.body).toEqual({ ended_on: today, reason: "Chuyển công tác", lock_login: true });
+    // ADR-0019 D20: done means back to the roster, not to the person's sheet.
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
   });
 
   it("owner: a refusal for future bookings lists them, each opening its day of the calendar (F24)", async () => {
@@ -1447,6 +1460,23 @@ describe("Hồ sơ nhân viên (roster)", () => {
     const link = within(list).getByRole("link", { name: "20/11/2026 lúc 10:00 · Nguyễn Thị Hằng" });
     expect(link.getAttribute("href")).toBe("/quay?view=lich&ngay=2026-11-20&ktv=s-lan");
     expect(within(confirm).getByText("Còn lịch khác sau các lịch trên.")).toBeInTheDocument();
+  });
+
+  it("owner: a refused last day is said on the date field itself (aria-describedby), in the staff wording", async () => {
+    serve(OWNER, { endDateRefused: true });
+    at("/nhan-vien?tab=profiles");
+    const table = await screen.findByRole("table", { name: "Danh sách nhân sự" });
+    await userEvent.click(within(table).getByRole("button", { name: "Lê Thị Lan" }));
+    const sheet = await screen.findByRole("dialog", { name: "Lê Thị Lan" });
+    await userEvent.click(within(sheet).getByRole("button", { name: "Cho nghỉ việc" }));
+    const confirm = await screen.findByRole("dialog", { name: "Cho Lê Thị Lan nghỉ việc" });
+    await userEvent.type(within(confirm).getByLabelText("Lý do nghỉ việc"), "Chuyển công tác");
+    await userEvent.click(within(confirm).getByRole("button", { name: "Xác nhận nghỉ việc" }));
+    const text = "Sau ngày này nhân viên vẫn có chấm công hoặc lượt khách. Chọn ngày làm cuối cùng.";
+    await within(confirm).findByText(text);
+    const date = within(confirm).getByLabelText("Ngày làm cuối cùng");
+    expect(date).toHaveAttribute("aria-invalid", "true");
+    expect(date).toHaveAccessibleDescription(expect.stringContaining(text));
   });
 
   it("owner: older logins with no profile are listed, each linked once to its profile; never the owner's", async () => {

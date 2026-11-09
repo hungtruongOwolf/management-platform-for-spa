@@ -67,7 +67,7 @@ async function seedTechnicianDay(page: Page): Promise<void> {
 
   phone = uniquePhone();
   const customer = await page.request.post("/api/v1/customers", {
-    headers: write,
+    headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
     data: { full_name: CUSTOMER, phone, gender: "female" },
   });
   expect(customer.status(), await customer.text()).toBe(201);

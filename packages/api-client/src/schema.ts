@@ -2518,7 +2518,11 @@ export interface components {
              * @description Money received from this customer (before voids and refunds).
              */
             paid: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Money given back to this customer for packages they paid for, including packages they
+             *     bought for someone else (ADR-0019 D6: a refund goes to the payer).
+             */
             refunded: number;
             /**
              * Format: int64
@@ -2878,10 +2882,21 @@ export interface components {
             /** @description null or empty clears the note. */
             health_note?: string | null;
         };
+        /**
+         * @description A package cancelled (US7). Its `refund` is on the payer's timeline only (ADR-0019 D6): a
+         *     package bought for someone else is refunded to who paid, so its user's timeline shows none.
+         */
         HistoryCancellation: {
+            /** @description Bought for someone else: who the package belonged to. Null on its user's own timeline. */
+            beneficiary_name?: string | null;
             /** Format: uuid */
             customer_package_id: string;
             package_name: string;
+            /**
+             * @description Bought by someone else for this customer: who paid (and got any refund). Null on the
+             *     payer's own timeline.
+             */
+            payer_name?: string | null;
             reason: string;
             refund?: components["schemas"]["HistoryRefund"] | null;
         };
@@ -5068,11 +5083,15 @@ export interface components {
         };
         TopPackage: {
             name: string;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description Null = paper-book packages without a plan, one row per package name.
+             */
             plan_id?: string | null;
             /**
              * Format: int64
-             * @description Sum of their prices after discount; only with `report.revenue.read`.
+             * @description What was actually paid for them (price after discount; a paper-book package's paid
+             *     amount), minus what was refunded since (ADR-0019 D7); only with `report.revenue.read`.
              */
             revenue?: number | null;
             /**
@@ -8356,7 +8375,10 @@ export interface operations {
     create: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description One key per create attempt (ADR-0019 D11): a double click or a retry answers with the profile the first request created, never a second one */
+                "Idempotency-Key": string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -8366,7 +8388,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Created; with no name and no phone it is an anonymous walk-in profile ("Khách vãng lai") */
+            /** @description Created (a replay of the same key answers with that profile as it is now); with no name and no phone it is an anonymous walk-in profile ("Khách vãng lai") */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -8375,7 +8397,21 @@ export interface operations {
                     "application/json": components["schemas"]["CustomerDto"];
                 };
             };
+            /** @description idempotency.key_required / key_invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description replay of a profile anonymised since */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8388,7 +8424,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description validation_failed: full_name too_long, phone invalid_format, birth_date in_future / too_old, birth_year out_of_range / conflicts_with_birth_date */
+            /** @description validation_failed: full_name too_long, phone invalid_format, birth_date in_future / too_old, birth_year out_of_range / conflicts_with_birth_date, body invalid; idempotency.key_reuse_mismatch */
             422: {
                 headers: {
                     [name: string]: unknown;
