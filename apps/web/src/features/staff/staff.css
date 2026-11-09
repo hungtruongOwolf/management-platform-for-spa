@@ -94,7 +94,7 @@
   }
   .book-progress-box {
     display: flex;
-    min-height: 44px;
+    min-height: var(--size-control);
     flex-wrap: wrap;
     align-items: center;
     gap: 6px 16px;
@@ -107,7 +107,7 @@
     height: 8px;
     flex: 1 1 8rem;
     overflow: hidden;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--surface-2);
     box-shadow: inset 0 0 0 1px var(--border);
   }
@@ -126,10 +126,10 @@
   .book-chip {
     display: inline-flex;
     align-items: center;
-    min-height: 44px;
+    min-height: var(--size-control);
     padding: 4px 14px;
     border: 1px solid var(--border-strong);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--surface);
     font-size: var(--fs-sm);
     font-weight: 600;
@@ -774,8 +774,8 @@
   }
   .counter-box > button {
     display: inline-grid;
-    width: 44px;
-    height: 44px;
+    width: var(--size-control);
+    height: var(--size-control);
     place-items: center;
     color: var(--text);
     transition: background-color var(--dur-fast) var(--ease-out);

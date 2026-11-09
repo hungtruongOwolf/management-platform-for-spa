@@ -76,8 +76,8 @@
 }
 .cal-toolbar :is(.btn, .segmented, .date-field, .date-field > input, select) {
   box-sizing: border-box;
-  height: 44px;
-  min-height: 44px;
+  height: var(--size-control);
+  min-height: var(--size-control);
   margin: 0;
 }
 @media (max-width: 639.98px) {
@@ -245,7 +245,7 @@
   max-width: 100%;
   overflow: hidden;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   box-shadow: var(--mix-chip-ring);
   color: var(--text-muted);
@@ -383,7 +383,7 @@ button.cal-cell:not(:disabled):hover {
   width: 8px;
   height: 8px;
   margin-right: 4px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--appt-fg);
   vertical-align: 1px;
 }
@@ -449,7 +449,7 @@ button.cal-cell:not(:disabled):hover {
 .cal-day-head {
   display: grid;
   gap: 2px;
-  min-height: 44px;
+  min-height: var(--size-control);
   padding: 4px 6px;
   border-radius: var(--radius-sm);
   font-size: var(--fs-base);
@@ -472,7 +472,7 @@ button.cal-cell:not(:disabled):hover {
   display: grid;
   gap: 1px;
   min-width: 0;
-  min-height: 44px;
+  min-height: var(--size-control);
   padding: 4px 8px;
   border: 1px solid var(--appt-edge);
   border-radius: var(--radius-sm);
@@ -633,7 +633,7 @@ button.cal-cell:not(:disabled):hover {
   padding: 12px 16px;
 }
 .cal-skel-line {
-  height: 44px;
+  height: var(--size-control);
 }
 
 /* ------------------------------------------------------------------ sheets */
@@ -787,7 +787,7 @@ button.appt-member:hover {
   display: flex;
   float: left;
   width: 100%;
-  min-height: 44px;
+  min-height: var(--size-control);
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -803,7 +803,7 @@ button.appt-member:hover {
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 12px;
-  min-height: 44px;
+  min-height: var(--size-control);
 }
 .appt-chosen-person strong {
   font-size: var(--fs-md);
@@ -819,7 +819,7 @@ button.appt-member:hover {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 44px;
+  min-height: var(--size-control);
   padding-left: 4px;
   border-bottom: 1px solid var(--border);
   font-size: var(--fs-base);

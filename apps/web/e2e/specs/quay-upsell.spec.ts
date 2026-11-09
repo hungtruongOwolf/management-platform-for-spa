@@ -1,13 +1,12 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { ownerState, stack } from "../stack";
+import { ownerState } from "../stack";
+import { WRITE, createPlan, flatService } from "../support/fixtures";
 import { expectAccessible, uniquePhone } from "../support/run";
 
 // Round 6 at /quay (spec R1-1 §10, plan r1-6-upsell B6): sell a package in the cart and use
 // today's session from it ("Làm 1 buổi hôm nay"), the unsaved cart after a reload, converting and
 // adding to a saved visit ("Thêm dịch vụ / bán gói"), and the visit details sub-row.
 test.use({ storageState: ownerState });
-
-const write = { Origin: stack.webOrigin };
 
 interface Fixture {
   name: string;
@@ -22,30 +21,16 @@ interface Fixture {
 
 /** A new customer, a flat-priced service and a "10 + 2" plan of it (through the API). */
 async function fixture(page: Page, tag: string): Promise<Fixture> {
-  const services = (await (await page.request.get("/api/v1/services")).json()) as {
-    id: string;
-    active: boolean;
-    prices: { all?: number | null };
-  }[];
-  const service = services.find((s) => s.active && s.prices.all != null);
-  expect(service, "seeded menu has a flat-priced service").toBeDefined();
-  const planName = `Gói upsell ${tag} ${String(Date.now())}`;
-  const plan = await page.request.post("/api/v1/package-plans", {
-    headers: write,
-    data: {
-      name: planName,
-      price: 1_200_000,
-      validity_months: 6,
-      gift_note: null,
-      active: true,
-      items: [{ service_id: service?.id, sessions: 10, bonus_sessions: 2 }],
-    },
+  const service = await flatService(page.request);
+  const plan = await createPlan(page.request, {
+    name: `Gói upsell ${tag} ${String(Date.now())}`,
+    price: 1_200_000,
+    serviceId: service.id,
   });
-  expect(plan.status()).toBe(201);
   const phone = uniquePhone();
   const name = `Khách ${tag} ${phone.slice(-4)}`;
   const customer = await page.request.post("/api/v1/customers", {
-    headers: write,
+    headers: WRITE,
     data: { full_name: name, phone, gender: "female" },
   });
   expect(customer.status()).toBe(201);
@@ -58,10 +43,10 @@ async function fixture(page: Page, tag: string): Promise<Fixture> {
     name,
     phone,
     customerId: ((await customer.json()) as { id: string }).id,
-    serviceId: service?.id ?? "",
-    servicePrice: service?.prices.all ?? 0,
-    planId: ((await plan.json()) as { id: string }).id,
-    planName,
+    serviceId: service.id,
+    servicePrice: service.prices.all ?? 0,
+    planId: plan.id,
+    planName: plan.name,
     staffId: ktv?.id ?? "",
   };
 }
@@ -153,7 +138,7 @@ test.describe("vòng 6: bán gói trong giỏ, giỏ nháp, chuyển sang gói",
     const motherPhone = uniquePhone();
     const motherName = `Mẹ của ${f.name}`;
     const mother = await page.request.post("/api/v1/customers", {
-      headers: write,
+      headers: WRITE,
       data: { full_name: motherName, phone: motherPhone, gender: "female" },
     });
     expect(mother.status()).toBe(201);
@@ -202,7 +187,7 @@ test.describe("vòng 6: bán gói trong giỏ, giỏ nháp, chuyển sang gói",
     const f = await fixture(page, "chuyển");
     // Today's one-off visit, paid in cash.
     const visit = await page.request.post("/api/v1/visits", {
-      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+      headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
       data: {
         customer_id: f.customerId,
         lines: [{ service_id: f.serviceId, source: "one_off", staff_id: f.staffId }],

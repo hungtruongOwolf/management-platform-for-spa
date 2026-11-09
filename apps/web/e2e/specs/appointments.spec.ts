@@ -1,47 +1,22 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { ownerState, stack } from "../stack";
+import { ownerState } from "../stack";
 import { bookingsToToday } from "../support/db";
+import { WRITE, createPlan, flatService, spaDay, type Service } from "../support/fixtures";
 import { expectAccessible, uniquePhone } from "../support/run";
 
 test.use({ storageState: ownerState });
 
-const write = { Origin: stack.webOrigin };
-
-interface Service {
-  id: string;
-  name: string;
-  active: boolean;
-  duration_min: number | null;
-  prices: { all?: number | null };
-}
-
-function spaDay(offsetDays = 0): string {
-  const now = new Date(Date.now() + 7 * 3_600_000 + offsetDays * 86_400_000);
-  return now.toISOString().slice(0, 10);
-}
-
 /** A customer with a fresh "10 + 2" package; returns ids for API bookings. */
 async function regular(page: Page, name: string) {
-  const services = (await (
-    await page.request.get("/api/v1/services")
-  ).json()) as Service[];
-  const service = services.find((s) => s.active && s.prices.all != null);
-  expect(service, "seeded menu has a flat-priced service").toBeDefined();
-  const plan = await page.request.post("/api/v1/package-plans", {
-    headers: write,
-    data: {
-      name: `Gói lịch hẹn ${String(Date.now())}`,
-      price: 1_000_000,
-      validity_months: 6,
-      gift_note: null,
-      active: true,
-      items: [{ service_id: service?.id, sessions: 10, bonus_sessions: 2 }],
-    },
+  const service = await flatService(page.request);
+  const plan = await createPlan(page.request, {
+    name: `Gói lịch hẹn ${String(Date.now())}`,
+    price: 1_000_000,
+    serviceId: service.id,
   });
-  expect(plan.status()).toBe(201);
   const phone = uniquePhone();
   const created = await page.request.post("/api/v1/customers", {
-    headers: write,
+    headers: WRITE,
     data: { full_name: name, phone, gender: "female" },
   });
   expect(created.status()).toBe(201);
@@ -51,11 +26,11 @@ async function regular(page: Page, name: string) {
     full_name: string;
   }[];
   const sale = await page.request.post("/api/v1/sales", {
-    headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+    headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
     data: {
       customer_id: customer,
       closer_staff_id: staff[0]?.id,
-      lines: [{ package_plan_id: ((await plan.json()) as { id: string }).id }],
+      lines: [{ package_plan_id: plan.id }],
       payments: [{ method: "cash", amount: 1_000_000 }],
     },
   });
@@ -63,7 +38,7 @@ async function regular(page: Page, name: string) {
   return {
     customer,
     phone,
-    service: service as Service,
+    service,
     staff: staff[0] as { id: string; full_name: string },
   };
 }
@@ -106,7 +81,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
 
     // The server refuses the same technician in an overlapping slot and names the booking.
     const clash = await page.request.post("/api/v1/appointments", {
-      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+      headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
       data: {
         customer_id: r.customer,
         service_ids: [r.service.id],
@@ -122,7 +97,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     // Today 09:00: arrive, complete → the visit cart is filled; saving records the visit. (A slot
     // already over cannot be booked, F12: booked on a later day, then moved onto today.)
     const today = await page.request.post("/api/v1/appointments", {
-      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+      headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
       data: {
         customer_id: r.customer,
         service_ids: [r.service.id],
@@ -256,7 +231,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     // only says they come together: each person is checked in from their own sheet, like a single
     // booking (EM 2026-11-07: no "Khách đến cả nhóm" step) → one visit and one payment each.
     const group = await page.request.post("/api/v1/appointments/group", {
-      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+      headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
       data: {
         starts_at: `${spaDay(3)}T09:00:00+07:00`,
         people: [
@@ -322,7 +297,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
 
     // A walk-in recorded at the desk shows up on the timeline without a booking.
     const walkIn = await page.request.post("/api/v1/visits", {
-      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+      headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
       data: {
         customer_id: child.customer,
         lines: [
@@ -351,7 +326,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     const child = await regular(page, "Phan Văn Theo");
     const day = spaDay(4);
     const group = await page.request.post("/api/v1/appointments/group", {
-      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+      headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
       data: {
         starts_at: `${day}T10:00:00+07:00`,
         people: [
@@ -513,7 +488,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     if (!short || !addOn) return;
     const day = spaDay(5);
     const booked = await page.request.post("/api/v1/appointments", {
-      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+      headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
       data: {
         customer_id: r.customer,
         service_ids: [short.id, addOn.id],
@@ -529,7 +504,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     // A walk-in recorded yesterday 14:00 (owner backdate) with the same two services.
     const yesterday = spaDay(-1);
     const walkIn = await page.request.post("/api/v1/visits", {
-      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+      headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
       data: {
         customer_id: r.customer,
         check_in_at: `${yesterday}T14:00:00+07:00`,
@@ -683,7 +658,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     const r = await regular(page, "Mai Thị Theo Người");
     const day = spaDay(6);
     const booked = await page.request.post("/api/v1/appointments", {
-      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+      headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
       data: {
         customer_id: r.customer,
         service_ids: [r.service.id],
@@ -743,7 +718,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     const day = spaDay(7);
     const book = (starts: string, staff: string | null) =>
       page.request.post("/api/v1/appointments", {
-        headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+        headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
         data: {
           customer_id: r.customer,
           service_ids: [seventy.id],
@@ -849,7 +824,7 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
   test("phones get the list, the week overview works", async ({ page }) => {
     const r = await regular(page, "Lê Thị Điện Thoại");
     const booked = await page.request.post("/api/v1/appointments", {
-      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+      headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
       data: {
         customer_id: r.customer,
         service_ids: [r.service.id],
@@ -873,191 +848,4 @@ test.describe("lịch hẹn (spec appointments.md)", () => {
     await page.getByRole("button", { name: "Tuần" }).click();
     await expect(page.getByText("Lê Thị Điện Thoại")).toBeVisible();
   });
-});
-
-/**
- * Review screenshots (round 4): set R4_SHOTS_DIR to an absolute folder. Skipped otherwise.
- * 360/768/1280/1440 × light/dark of the record tab (with a cart and a discount) and the calendar.
- */
-test("round-4 screenshots", async ({ page }) => {
-  const dir = process.env["R4_SHOTS_DIR"];
-  test.skip(!dir, "set R4_SHOTS_DIR to capture");
-  test.setTimeout(5 * 60_000);
-  const r = await regular(page, "Nguyễn Thị Ảnh Chụp");
-  for (const [h, staff] of [
-    ["09:00", r.staff.id],
-    ["10:30", null],
-    ["13:00", r.staff.id],
-  ] as const) {
-    await page.request.post("/api/v1/appointments", {
-      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
-      data: {
-        customer_id: r.customer,
-        service_ids: [r.service.id],
-        staff_id: staff,
-        starts_at: `${spaDay(1)}T${h}:00+07:00`,
-      },
-    });
-  }
-  for (const scheme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: scheme });
-    for (const width of [360, 768, 1280, 1440]) {
-      await page.setViewportSize({ width, height: 900 });
-      await page.goto("/quay");
-      const search = page.getByRole("combobox", {
-        name: "Tìm khách theo SĐT hoặc tên",
-      });
-      await search.pressSequentially(r.phone);
-      await page.getByRole("option", { name: /Nguyễn Thị Ảnh Chụp/ }).click();
-      await page
-        .getByRole("button", { name: /^Trừ 1 buổi/ })
-        .first()
-        .click();
-      // Picking a service adds it (no separate "Thêm").
-      await page.getByLabel("Thêm dịch vụ lẻ").selectOption(r.service.id);
-      await page.getByRole("button", { name: "Thêm giảm giá" }).click();
-      await page.getByLabel("Mức giảm (%)").fill("10");
-      await page.getByLabel("Lý do (bắt buộc)").fill("Khách quen");
-      await page.screenshot({
-        path: `${dir}/quay-ghi-luot-${String(width)}-${scheme}.png`,
-        fullPage: true,
-      });
-      for (const kieu of width < 640
-        ? ["ngay", "tuan"]
-        : ["ngay", "tuan", "ds"]) {
-        await page.goto(
-          `/quay?view=lich&ngay=${spaDay(1)}${kieu === "ngay" ? "" : `&kieu=${kieu}`}`,
-        );
-        await expect(
-          page.getByRole("heading", { name: /Lịch hẹn/ }),
-        ).toBeVisible();
-        await page.waitForTimeout(300);
-        await page.screenshot({
-          path: `${dir}/quay-lich-${kieu}-${String(width)}-${scheme}.png`,
-          fullPage: true,
-        });
-      }
-    }
-  }
-});
-
-test("companion screenshots (EM 2026-11-07)", async ({ page }) => {
-  const dir = process.env["COMPANION_SHOTS_DIR"];
-  test.skip(!dir, "set COMPANION_SHOTS_DIR to capture");
-  test.setTimeout(5 * 60_000);
-  const host = await regular(page, "Nguyễn Thị Hà Ảnh");
-  // Today: the sheets show arrival, the technician and the primary action (booked on a later day,
-  // then moved onto today: a slot already over cannot be booked, F12).
-  const day = spaDay();
-  const later = spaDay(3);
-  const cal = (await (
-    await page.request.get(`/api/v1/appointments?from=${day}`)
-  ).json()) as { technicians: { id: string; full_name: string }[] };
-  const tech = cal.technicians.at(-1) ?? host.staff;
-  const booked = await page.request.post("/api/v1/appointments/group", {
-    headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
-    data: {
-      starts_at: `${later}T10:00:00+07:00`,
-      companions: ["Bé Na"],
-      people: [
-        {
-          customer_id: host.customer,
-          service_ids: [host.service.id],
-          staff_id: null,
-        },
-        {
-          guest: { full_name: "Chồng của chị Hà", phone: null },
-          service_ids: [host.service.id],
-          staff_id: tech.id,
-          starts_at: `${later}T10:30:00+07:00`,
-        },
-      ],
-    },
-  });
-  expect(booked.status(), await booked.text()).toBe(201);
-  await bookingsToToday(
-    ((await booked.json()) as { appointments: { id: string }[] }).appointments.map((a) => a.id),
-    day,
-  );
-  for (const scheme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: scheme });
-    for (const width of [390, 1280]) {
-      await page.setViewportSize({ width, height: 900 });
-      await page.goto(`/quay?view=lich&ngay=${day}`);
-      await expect(page.getByText("Chồng của chị Hà").first()).toBeVisible();
-      await page.waitForTimeout(300);
-      await page.screenshot({
-        path: `${dir}/lich-${String(width)}-${scheme}.png`,
-        fullPage: true,
-      });
-      await page
-        .getByRole("button", { name: "Đặt lịch", exact: true })
-        .first()
-        .click();
-      const sheet = page.getByRole("dialog", { name: "Đặt lịch hẹn" });
-      await sheet
-        .getByRole("combobox", { name: "Tìm khách theo SĐT hoặc tên" })
-        .pressSequentially(host.phone);
-      await sheet.getByRole("option", { name: /Nguyễn Thị Hà Ảnh/ }).click();
-      await sheet
-        .getByLabel("Thêm dịch vụ", { exact: true })
-        .selectOption(host.service.id);
-      await sheet
-        .getByRole("button", { name: "Người đi cùng", exact: true })
-        .click();
-      await sheet
-        .getByLabel("Tên hoặc ghi chú · Người đi cùng 1")
-        .fill("Chồng của chị Hà");
-      await sheet
-        .getByLabel("Thêm dịch vụ · Người đi cùng 1")
-        .selectOption(host.service.id);
-      await sheet
-        .getByLabel("KTV làm cho người đi cùng · Người đi cùng 1")
-        .selectOption(tech.id);
-      await sheet
-        .getByRole("button", { name: "Người đi cùng", exact: true })
-        .click();
-      await sheet
-        .getByLabel("Tên hoặc ghi chú · Người đi cùng 2")
-        .fill("Bé Na");
-      await page.waitForTimeout(300);
-      await sheet.screenshot({
-        path: `${dir}/dat-lich-${String(width)}-${scheme}.png`,
-      });
-      await sheet
-        .getByRole("button", { name: "Người đi cùng 1" })
-        .first()
-        .scrollIntoViewIfNeeded()
-        .catch(() => undefined);
-      await sheet
-        .getByLabel("KTV làm cho người đi cùng · Người đi cùng 1")
-        .scrollIntoViewIfNeeded();
-      await sheet.screenshot({
-        path: `${dir}/dat-lich-nguoi-di-cung-${String(width)}-${scheme}.png`,
-      });
-      await page.keyboard.press("Escape");
-      const card = page
-        .getByRole("button", { name: /Nguyễn Thị Hà Ảnh/ })
-        .first();
-      await card.click();
-      const opened = page.getByRole("dialog", { name: /Nguyễn Thị Hà Ảnh/ });
-      await expect(opened).toContainText("Cùng nhóm");
-      await page.waitForTimeout(300);
-      await opened.screenshot({
-        path: `${dir}/sheet-${String(width)}-${scheme}.png`,
-      });
-      // The companion's own sheet (no profile yet), opened from the group row.
-      await opened
-        .getByRole("button", { name: /Chồng của chị Hà/ })
-        .first()
-        .click();
-      const companion = page.getByRole("dialog", { name: /Chồng của chị Hà/ });
-      await expect(companion).toContainText("Chưa có hồ sơ khách.");
-      await page.waitForTimeout(300);
-      await companion.screenshot({
-        path: `${dir}/sheet-nguoi-di-cung-${String(width)}-${scheme}.png`,
-      });
-      await page.keyboard.press("Escape");
-    }
-  }
 });

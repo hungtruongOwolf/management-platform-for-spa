@@ -1,42 +1,16 @@
-import { expect, test, type Page } from "@playwright/test";
-import { ownerState, stack } from "../stack";
+import { expect, test } from "@playwright/test";
+import { ownerState } from "../stack";
+import { createPlan } from "../support/fixtures";
 import { expectAccessible, uniquePhone } from "../support/run";
 
 test.use({ storageState: ownerState });
-
-interface Service {
-  id: string;
-  active: boolean;
-  prices: { all?: number };
-}
-
-/** A fresh "10 + 2 bonus at 1.500.000đ" plan through the owner's API (catalog UI is covered elsewhere). */
-async function createPlan(page: Page): Promise<string> {
-  const services = (await (
-    await page.request.get("/api/v1/services")
-  ).json()) as Service[];
-  const service = services.find((s) => s.active && s.prices.all != null);
-  expect(service, "seeded menu has a flat-priced service").toBeDefined();
-  const reply = await page.request.post("/api/v1/package-plans", {
-    headers: { Origin: stack.webOrigin },
-    data: {
-      name: `Gói E2E ${String(Date.now())}`,
-      price: 1_500_000,
-      validity_months: 6,
-      gift_note: "Tặng dầu gội",
-      active: true,
-      items: [{ service_id: service?.id, sessions: 10, bonus_sessions: 2 }],
-    },
-  });
-  expect(reply.status()).toBe(201);
-  return ((await reply.json()) as { id: string }).id;
-}
 
 test.describe("bán liệu trình (US3)", () => {
   test("sell a 10 + 2 package, paid half cash half transfer → 12/12 on the profile", async ({
     page,
   }) => {
-    const planId = await createPlan(page);
+    // A fresh "10 + 2 bonus at 1.500.000đ" plan through the API (the catalog UI is covered elsewhere).
+    const { id: planId } = await createPlan(page.request, { name: `Gói E2E ${String(Date.now())}`, price: 1_500_000, giftNote: "Tặng dầu gội" });
     await page.goto("/khach-hang");
     await page.getByRole("button", { name: "Khách mới", exact: true }).click();
     const form = page.getByRole("form", { name: "Khách mới" });

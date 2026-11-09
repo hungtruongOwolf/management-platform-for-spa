@@ -8,7 +8,8 @@
  */
 import { expect, test, type Page } from "@playwright/test";
 import { ownerState, stack } from "../stack";
-import { interactiveSample, shiftsOnInteraction } from "../support/layout";
+import { WRITE, createPlan } from "../support/fixtures";
+import { interactiveSample, nextPaint, settled, shiftsOnInteraction } from "../support/layout";
 import {
   clippedText,
   focusRingsOverText,
@@ -29,6 +30,7 @@ const SCREENS: [string, string][] = [
   ["goi-lieu-trinh", "/goi-lieu-trinh"],
   ["khach-lau-khong-quay-lai", "/khach-lau-khong-quay-lai"],
   ["nhat-ky-ghi-chu", "/nhat-ky-ghi-chu"],
+  ["nhan-vien", "/nhan-vien"],
   ["bang-gia", "/bang-gia"],
   ["bang-gia-goi", "/bang-gia/goi"],
   ["cai-dat", "/cai-dat"],
@@ -48,7 +50,7 @@ test.beforeAll(async ({ browser }) => {
     baseURL: stack.webOrigin,
   });
   const res = await ctx.request.post("/api/v1/customers", {
-    headers: { Origin: stack.webOrigin },
+    headers: WRITE,
     data: {
       full_name: "Nguyễn Thị Bố Cục Rất Dài Tên Để Thử Xuống Dòng",
       phone: uniquePhone(),
@@ -61,31 +63,15 @@ test.beforeAll(async ({ browser }) => {
 
   // Real-length package names (CI audit 2026-11-09: /quay at 1040 px cut them after two lines,
   // invisible on a near-empty spa). A package-only sale today lists the name on /quay too.
-  const services = (await (await ctx.request.get("/api/v1/services")).json()) as {
-    id: string;
-    active: boolean;
-  }[];
-  const service = services.find((s) => s.active);
   const staff = (await (await ctx.request.get("/api/v1/staff")).json()) as { id: string }[];
-  expect(service && staff[0], "seeded menu and a technician").toBeTruthy();
-  const plan = await ctx.request.post("/api/v1/package-plans", {
-    headers: { Origin: stack.webOrigin },
-    data: {
-      name: LONG_PLAN_NAME,
-      price: 2_500_000,
-      validity_months: 12,
-      gift_note: null,
-      active: true,
-      items: [{ service_id: service?.id, sessions: 10, bonus_sessions: 2 }],
-    },
-  });
-  expect(plan.status()).toBe(201);
+  expect(staff[0], "a seeded technician").toBeTruthy();
+  const plan = await createPlan(ctx.request, { name: LONG_PLAN_NAME, price: 2_500_000, validityMonths: 12 });
   const sale = await ctx.request.post("/api/v1/sales", {
-    headers: { Origin: stack.webOrigin, "Idempotency-Key": crypto.randomUUID() },
+    headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
     data: {
       customer_id: customerId,
       closer_staff_id: staff[0]?.id,
-      lines: [{ package_plan_id: ((await plan.json()) as { id: string }).id }],
+      lines: [{ package_plan_id: plan.id }],
       payments: [{ method: "cash", amount: 2_500_000 }],
     },
   });
@@ -111,7 +97,7 @@ function cutPackageName(page: Page): Promise<string[]> {
 async function open(page: Page, path: string) {
   await page.goto(path);
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  await page.waitForLoadState("networkidle");
+  await settled(page);
 }
 
 const screens = () => [...SCREENS, ["ho-so", profilePath] as [string, string]];
@@ -146,7 +132,7 @@ test("every screen holds from 320 to 1920 px and at 200 % zoom", async ({
       await page.setViewportSize(size);
       // Load once per screen, then resize like a user dragging the window (plus one reload at 200 %).
       if (first || size === ZOOM_200) await open(page, path);
-      else await page.waitForTimeout(60);
+      else await nextPaint(page);
       first = false;
       const at = `${name} @ ${String(size.width)}×${String(size.height)}`;
       const overflow = await sidewaysOverflow(page);
@@ -232,12 +218,12 @@ test("the page scrolls as one: full-height sidebar, no phantom area, no nested t
   const price = service?.prices.female ?? service?.prices.all ?? 0;
   for (let i = 0; i < 12; i++) {
     const customer = await page.request.post("/api/v1/customers", {
-      headers: { Origin: stack.webOrigin },
+      headers: WRITE,
       data: { full_name: `Khách Cuộn Trang ${String(i + 1)}`, phone: uniquePhone(), gender: "female" },
     });
     expect(customer.status()).toBe(201);
     const visit = await page.request.post("/api/v1/visits", {
-      headers: { Origin: stack.webOrigin, "Idempotency-Key": crypto.randomUUID() },
+      headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
       data: {
         customer_id: ((await customer.json()) as { id: string }).id,
         lines: [{ service_id: service?.id, source: "one_off", staff_id: staff[0]?.id }],

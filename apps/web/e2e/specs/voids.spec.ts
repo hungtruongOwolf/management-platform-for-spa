@@ -1,22 +1,16 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ownerState, stack } from "../stack";
+import { ownerState } from "../stack";
 import { ageRecentAuth } from "../support/db";
+import { WRITE, createPlan, flatService, type Service } from "../support/fixtures";
 import { credentials, expectAccessible, uniquePhone } from "../support/run";
 
 test.use({ storageState: ownerState });
 
-interface Service {
-  id: string;
-  active: boolean;
-  prices: { all?: number };
-}
 interface Pkg {
   id: string;
   sessions_remaining: number;
   items: { id: string }[];
 }
-
-const write = { Origin: stack.webOrigin };
 
 /** A customer with a fresh "10 + 2" package and one recorded visit that took a session (11/12). */
 async function customerWithVisit(
@@ -24,25 +18,14 @@ async function customerWithVisit(
   phone: string,
   fullName: string,
 ): Promise<string> {
-  const services = (await (
-    await page.request.get("/api/v1/services")
-  ).json()) as Service[];
-  const service = services.find((s) => s.active && s.prices.all != null);
-  expect(service, "seeded menu has a flat-priced service").toBeDefined();
-  const plan = await page.request.post("/api/v1/package-plans", {
-    headers: write,
-    data: {
-      name: `Gói hủy ${String(Date.now())}`,
-      price: 1_500_000,
-      validity_months: 6,
-      gift_note: null,
-      active: true,
-      items: [{ service_id: service?.id, sessions: 10, bonus_sessions: 2 }],
-    },
+  const service = await flatService(page.request);
+  const plan = await createPlan(page.request, {
+    name: `Gói hủy ${String(Date.now())}`,
+    price: 1_500_000,
+    serviceId: service.id,
   });
-  expect(plan.status()).toBe(201);
   const customer = await page.request.post("/api/v1/customers", {
-    headers: write,
+    headers: WRITE,
     data: { full_name: fullName, phone, gender: "female" },
   });
   expect(customer.status()).toBe(201);
@@ -51,11 +34,11 @@ async function customerWithVisit(
     id: string;
   }[];
   const sale = await page.request.post("/api/v1/sales", {
-    headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+    headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
     data: {
       customer_id: customerId,
       closer_staff_id: staff[0]?.id,
-      lines: [{ package_plan_id: ((await plan.json()) as { id: string }).id }],
+      lines: [{ package_plan_id: plan.id }],
       payments: [{ method: "cash", amount: 1_500_000 }],
     },
   });
@@ -63,12 +46,12 @@ async function customerWithVisit(
   const pkg = ((await sale.json()) as { customer_packages: Pkg[] })
     .customer_packages[0];
   const visit = await page.request.post("/api/v1/visits", {
-    headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+    headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
     data: {
       customer_id: customerId,
       lines: [
         {
-          service_id: service?.id,
+          service_id: service.id,
           source: "package",
           customer_package_item_id: pkg?.items[0]?.id,
           staff_id: staff[0]?.id,
@@ -99,7 +82,7 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     expect(await remaining(page, customerId)).toBe(11);
     const services = (await (
       await page.request.get("/api/v1/services")
-    ).json()) as (Service & { name: string })[];
+    ).json()) as Service[];
     const oneOff = services.find((s) => s.active && s.prices.all != null);
 
     await page.goto("/quay");
