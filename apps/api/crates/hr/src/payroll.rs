@@ -176,7 +176,7 @@ pub async fn month(
     month: Option<Month>,
 ) -> Result<PayrollMonth, AppError> {
     actor.require(Permission::PayrollRead)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let today = period::today(&mut tx).await?;
     let month = month.unwrap_or_else(|| Month::of(today));
     let info = period::info(&mut tx, month).await?;
@@ -201,7 +201,7 @@ pub async fn payslip(
     staff_id: Uuid,
 ) -> Result<(Payslip, bool), AppError> {
     actor.require(Permission::PayrollRead)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let today = period::today(&mut tx).await?;
     let month = month.unwrap_or_else(|| Month::of(today));
     let info = period::info(&mut tx, month).await?;
@@ -231,7 +231,7 @@ pub async fn close(
 ) -> Result<(u16, Value), AppError> {
     actor.require(Permission::PayrollClose)?;
     actor.require(Permission::PayrollRead)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {

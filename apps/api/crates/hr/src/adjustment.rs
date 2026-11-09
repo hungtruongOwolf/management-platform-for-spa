@@ -124,7 +124,7 @@ pub async fn log(
     month: Option<Month>,
 ) -> Result<AdjustmentLog, AppError> {
     actor.require(Permission::EvaluationRecord)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let today = period::today(&mut tx).await?;
     let month = month.unwrap_or_else(|| Month::of(today));
     let info = period::info(&mut tx, month).await?;
@@ -301,7 +301,7 @@ pub async fn record(
     to_body: impl FnOnce(Adjustment) -> Result<Value, AppError>,
 ) -> Result<(u16, Value), AppError> {
     actor.require(Permission::EvaluationRecord)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -329,7 +329,7 @@ pub async fn replace(
     to_body: impl FnOnce(Adjustment) -> Result<Value, AppError>,
 ) -> Result<(u16, Value), AppError> {
     actor.require(Permission::EvaluationRecord)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -349,7 +349,7 @@ pub async fn replace(
 /// kept for the audit trail). Same scope as recording it.
 pub async fn remove(pool: &PgPool, actor: &Actor, id: Uuid) -> Result<(), AppError> {
     actor.require(Permission::EvaluationRecord)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let scope = RecordScope::load(&mut tx, actor).await?;
     void_checked(&mut tx, actor, &scope, id).await?;
     tx.commit().await?;

@@ -268,7 +268,7 @@ pub async fn sheet(
     month: Option<Month>,
 ) -> Result<AttendanceSheet, AppError> {
     actor.require(Permission::AttendanceRecord)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let today = period::today(&mut tx).await?;
     let month = month.unwrap_or_else(|| Month::of(today));
     let (rules, _) = rules::load(&mut tx).await?;
@@ -325,7 +325,7 @@ pub async fn record(
     entries: &[Entry],
 ) -> Result<Vec<AttendanceDay>, AppError> {
     actor.require(Permission::AttendanceRecord)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let today = period::today(&mut tx).await?;
     let profiles = org::profile::profiles_in(&mut tx).await?;
     RecordScope::load(&mut tx, actor)

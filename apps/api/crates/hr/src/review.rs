@@ -137,7 +137,7 @@ pub async fn sheet(
     month: Option<Month>,
 ) -> Result<ReviewSheet, AppError> {
     actor.require(Permission::EvaluationRecord)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let today = period::today(&mut tx).await?;
     let month = month.unwrap_or_else(|| Month::of(today));
     let info = period::info(&mut tx, month).await?;
@@ -177,7 +177,7 @@ pub async fn record(
     entries: &[ReviewEntry],
 ) -> Result<Vec<DailyReview>, AppError> {
     actor.require(Permission::EvaluationRecord)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let today = period::today(&mut tx).await?;
     let profiles = org::profile::profiles_in(&mut tx).await?;
     RecordScope::load(&mut tx, actor)
