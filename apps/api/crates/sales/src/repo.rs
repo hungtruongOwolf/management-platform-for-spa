@@ -268,7 +268,6 @@ pub struct LockedSale {
     pub sells_packages: bool,
 }
 
-/// Locks a sale row for a void.
 /// A package sale of the day list (`GET /sales?date=`).
 pub struct DaySaleHead {
     pub id: Uuid,
@@ -314,6 +313,7 @@ pub async fn day_sales(
     .await?)
 }
 
+/// Locks a sale row for a void.
 pub async fn lock_sale(tx: &mut TenantTx, id: Uuid) -> Result<Option<LockedSale>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(

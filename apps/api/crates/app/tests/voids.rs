@@ -453,6 +453,15 @@ async fn closed_days_are_locked_for_managers_and_open_to_owners_without_reauth(
     );
     let owner_sale = s.void_sale(&s.owner, &other.sale, json!("nhầm")).await;
     assert_eq!(owner_sale.status, StatusCode::OK, "{}", owner_sale.body);
+    // F17: the day lock comes before the sale's state. Red before: the manager heard
+    // `409 sale.voided` about a closed day's sale.
+    let again = s.void_sale(&s.manager, &other.sale, json!("nhầm")).await;
+    assert_eq!(code(&again), (StatusCode::FORBIDDEN, Some("day.locked")));
+    let owner_again = s.void_sale(&s.owner, &other.sale, json!("nhầm")).await;
+    assert_eq!(
+        code(&owner_again),
+        (StatusCode::CONFLICT, Some("sale.voided"))
+    );
     Ok(())
 }
 
