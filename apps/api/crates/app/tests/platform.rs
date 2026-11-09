@@ -1223,7 +1223,10 @@ async fn accounts_across_spas(owner: PgPool) -> TestResult {
         searches[0],
         json!({"q": "090****", "by": "phone", "results": 1})
     );
-    assert_eq!(searches[1], json!({"q": "c… s…", "by": "name", "results": 1}));
+    assert_eq!(
+        searches[1],
+        json!({"q": "c… s…", "by": "name", "results": 1})
+    );
     assert!(
         !searches
             .iter()
