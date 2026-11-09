@@ -19,7 +19,7 @@ import type {
   Revenue,
 } from "./contract";
 import type { FollowUp, InactiveCustomer } from "@vpyd/api-client";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
 
 function rng(seedText: string): () => number {
   let h = 2166136261;

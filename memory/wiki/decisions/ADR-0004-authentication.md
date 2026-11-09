@@ -52,7 +52,7 @@ Người dùng R1–R3 là nhân sự spa (chủ, quản lý, KTV): vài ngườ
 Một số điểm ở Decision đã được thay, phần còn lại vẫn đúng:
 - **Tạo tài khoản và quên mật khẩu**: không có link kích hoạt / link đặt lại. Thay bằng [ADR-0016](ADR-0016-accounts-and-passwords.md): chủ spa tạo tài khoản từ hồ sơ với mật khẩu tạm một lần, bắt đổi ở lần đăng nhập đầu; "Quên mật khẩu?" gửi yêu cầu cho chủ spa (`POST /auth/password-reset-requests`).
 - **Đổi mật khẩu** đã có route `POST /auth/password` (ADR-0016). Câu "chưa có route" ở update 2026-11-05 không còn đúng.
-- **Mật khẩu**: chỉ kiểm độ dài 10–128 ký tự (`identity::password::check_policy`). Kiểm danh sách mật khẩu bị lộ **chưa làm**.
+- **Mật khẩu**: độ dài 10–128 ký tự và không nằm trong danh sách mật khẩu phổ biến (`identity::password::check_policy`). Danh sách đi kèm binary, không gọi dịch vụ ngoài ([ADR-0019](ADR-0019-audit-decisions-2026-11-09.md) D18, 2026-11-09): các mục ≥ 10 ký tự của danh sách NCSC 100k (SecLists, MIT) cộng một danh sách tiếng Việt tự giữ; so khớp không phân biệt hoa thường; lỗi `422 too_common`.
 - **Quyền mỗi request** đọc trong một câu `app.session_actor(token_hash)` ([ADR-0017](ADR-0017-one-statement-request-auth.md)), không còn nạp riêng từng phần.
 - **Spa bị tạm ngưng**: đăng nhập trả `403 auth.spa_suspended` khi mọi membership còn hiệu lực đều ở spa đang ngưng ([ADR-0018](ADR-0018-platform-admin-console.md)); session đang mở vẫn không nhận permission nào (M3).
 - **Platform admin** không còn là role trong spa: operator đăng nhập riêng (`__Host-op-session`, TOTP luôn bắt buộc, ADR-0018). Nhánh "role giữ `platform.tenant.manage` phải MFA" trong `app.user_requires_mfa` đã bị bỏ ở migration 0041 (permission đó không còn cấp được từ 0040).

@@ -119,11 +119,13 @@ pub struct VisitRow {
     pub created_at: DateTime<Utc>,
 }
 
-/// One visit (`id`) or the visits of a business day (`day`), latest check-in first.
+/// One visit (`id`) or the visits of a business day (`day`), latest check-in first; `limit` =
+/// only the newest N (never more than 500).
 pub async fn visits(
     tx: &mut TenantTx,
     id: Option<Uuid>,
     day: Option<NaiveDate>,
+    limit: Option<i64>,
 ) -> Result<Vec<VisitRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
@@ -141,10 +143,11 @@ pub async fn visits(
              AND ($2::uuid IS NULL OR v.id = $2)
              AND ($3::date IS NULL OR v.business_date = $3)
            ORDER BY v.check_in_at DESC, v.id DESC
-           LIMIT 500"#,
+           LIMIT LEAST(COALESCE($4::int8, 500), 500)"#,
         tenant,
         id,
-        day
+        day,
+        limit
     )
     .fetch_all(tx.conn())
     .await?)

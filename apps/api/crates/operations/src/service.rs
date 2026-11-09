@@ -957,7 +957,7 @@ pub(crate) async fn load_one(
     id: Uuid,
     with_note: bool,
 ) -> Result<VisitDto, AppError> {
-    load(tx, cipher, actor, Some(id), None, with_note)
+    load(tx, cipher, actor, Selection::One(id), with_note)
         .await?
         .pop()
         .ok_or_else(|| AppError::Internal("visit vanished".into()))
@@ -1000,6 +1000,14 @@ fn line_dto(l: LineRow) -> Result<VisitLineDto, AppError> {
     })
 }
 
+/// Which visits [`load`] reads.
+#[derive(Debug, Clone, Copy)]
+enum Selection {
+    One(Uuid),
+    /// The visits of a business day, latest first; `Some(n)` = only the newest `n`.
+    Day(NaiveDate, Option<u32>),
+}
+
 /// Visits with their lines, payments and package sales in a fixed number of queries (no N+1).
 /// `with_note` decrypts the note for callers holding `customer.health_notes.read`; otherwise the
 /// key is omitted.
@@ -1007,11 +1015,14 @@ async fn load(
     tx: &mut TenantTx,
     cipher: &FieldCipher,
     actor: &Actor,
-    id: Option<Uuid>,
-    day: Option<NaiveDate>,
+    selection: Selection,
     with_note: bool,
 ) -> Result<Vec<VisitDto>, AppError> {
-    let rows: Vec<VisitRow> = repo::visits(tx, id, day).await?;
+    let (id, day, limit) = match selection {
+        Selection::One(id) => (Some(id), None, None),
+        Selection::Day(day, limit) => (None, Some(day), limit.map(i64::from)),
+    };
+    let rows: Vec<VisitRow> = repo::visits(tx, id, day, limit).await?;
     let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
     let mut lines: HashMap<Uuid, Vec<VisitLineDto>> = HashMap::new();
     for l in repo::lines(tx, &ids).await? {
@@ -1131,21 +1142,23 @@ pub async fn get(
 ) -> Result<VisitDto, AppError> {
     actor.require(Permission::VisitRead)?;
     let mut tx = TenantTx::for_actor(pool, actor).await?;
-    let visit = load(&mut tx, cipher, actor, Some(id), None, true)
+    let visit = load(&mut tx, cipher, actor, Selection::One(id), true)
         .await?
         .pop();
     tx.commit().await?;
     visit.ok_or(AppError::NotFound)
 }
 
-/// `GET /visits?date=` (`visit.read`): the visits of one business day (default today), latest
-/// first. Each carries its session note only for callers holding `customer.health_notes.read`
-/// (EM 2026-11-07: the note is seen in the day list, not only on the visit).
+/// `GET /visits?date=&limit=` (`visit.read`): the visits of one business day (default today),
+/// latest first; `limit` = only the newest N, and only those are read. Each carries its session
+/// note only for callers holding `customer.health_notes.read` (EM 2026-11-07: the note is seen in
+/// the day list, not only on the visit).
 pub async fn for_day(
     pool: &PgPool,
     cipher: &FieldCipher,
     actor: &Actor,
     day: Option<NaiveDate>,
+    limit: Option<u32>,
 ) -> Result<Vec<VisitDto>, AppError> {
     actor.require(Permission::VisitRead)?;
     let mut tx = TenantTx::for_actor(pool, actor).await?;
@@ -1156,7 +1169,7 @@ pub async fn for_day(
             .business_date
             .as_naive(),
     };
-    let visits = load(&mut tx, cipher, actor, None, Some(day), true).await?;
+    let visits = load(&mut tx, cipher, actor, Selection::Day(day, limit), true).await?;
     tx.commit().await?;
     Ok(visits)
 }
@@ -1324,7 +1337,7 @@ pub async fn update(
         },
     )
     .await?;
-    let visit = load(&mut tx, cipher, actor, Some(id), None, true)
+    let visit = load(&mut tx, cipher, actor, Selection::One(id), true)
         .await?
         .pop()
         .ok_or_else(|| AppError::Internal("visit vanished".into()))?;
@@ -1371,7 +1384,7 @@ pub async fn void(
     void_locked(&mut tx, actor, id, &visit, &reason, today).await?;
 
     // Like `POST /visits`, the stored response never carries the note.
-    let dto = load(&mut tx, cipher, actor, Some(id), None, false)
+    let dto = load(&mut tx, cipher, actor, Selection::One(id), false)
         .await?
         .pop()
         .ok_or_else(|| AppError::Internal("visit vanished".into()))?;

@@ -17,6 +17,10 @@ export default defineConfig({
     ],
   },
   build: {
+    // Every browser the spa uses honours <link rel="modulepreload"> natively (Safari 17+); an older
+    // one still loads the module through its import, just without the head start. Dropping the
+    // polyfill takes 0.25 KiB off the startup JS (frontend.md "Perf budget", ADR-0019 D21).
+    modulePreload: { polyfill: false },
     rolldownOptions: {
       output: {
         // Everything the first screen needs in one chunk: left alone, the bundler splits modules

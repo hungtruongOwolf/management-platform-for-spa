@@ -380,3 +380,188 @@ async fn search_stays_fast_with_ten_thousand_customers(pool: PgPool) -> TestResu
     );
     Ok(())
 }
+
+/// ADR-0019 D13: the audit trail outlives an anonymised profile, so it never holds the name, phone
+/// or birth date: only which fields are filled and which an edit changed (red before: the rows
+/// carried all three in clear).
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn customer_audit_keeps_who_and_what_field_but_no_personal_values(
+    pool: PgPool,
+) -> TestResult {
+    let h = harness(pool).await?;
+    let owner = session_for(&h, OWNER_PHONE).await;
+    let created = call(
+        &h.app,
+        "POST",
+        "/customers",
+        Some(&owner),
+        Some(
+            json!({"full_name": "Trần Thị Lụa", "phone": "0905 111 222", "gender": "female",
+                    "birth_date": "1985-04-12"}),
+        ),
+    )
+    .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    let id = created.body["id"].as_str().unwrap_or_default().to_owned();
+    let updated = call_with_headers(
+        &h.app,
+        "PUT",
+        &format!("/customers/{id}"),
+        Some(&owner),
+        Some(
+            json!({"full_name": "Trần Thị Lụa B", "phone": "0905 333 444", "gender": "female",
+                    "birth_date": "1985-04-12", "note": "Khách quen"}),
+        ),
+        &[("if-match", "\"1\"")],
+    )
+    .await;
+    assert_eq!(updated.status, StatusCode::OK, "{}", updated.body);
+
+    let rows: Vec<(String, Option<Value>, Option<Value>, bool)> = sqlx::query_as(
+        "SELECT action, before, after, actor_user_id IS NOT NULL FROM app.audit_log
+         WHERE entity_type = 'customer' AND entity_id = $1::uuid ORDER BY at, id",
+    )
+    .bind(&id)
+    .fetch_all(&h.owner)
+    .await?;
+    let text = format!("{rows:?}");
+    for value in ["Lụa", "905111222", "905333444", "1985"] {
+        assert!(!text.contains(value), "audit holds {value:?}: {text}");
+    }
+    let [
+        (create, None, Some(after_create), true),
+        (update, Some(before), Some(after), true),
+    ] = rows.as_slice()
+    else {
+        panic!("one create and one update, each naming its actor: {text}");
+    };
+    assert_eq!(
+        (create.as_str(), update.as_str()),
+        ("customer.create", "customer.update")
+    );
+    assert_eq!(
+        (
+            &after_create["has_name"],
+            &after_create["has_phone"],
+            &after_create["has_birth_date"]
+        ),
+        (&json!(true), &json!(true), &json!(true))
+    );
+    assert_eq!(before["has_phone"], json!(true));
+    assert_eq!(after["changed"], json!(["full_name", "phone", "note"]));
+    Ok(())
+}
+
+/// 0047 rewrites the customer audit rows written before D13 the same way, keeping who, when and
+/// which field changed. Runs the migrations before 0047, plants rows in the old shape, then the rest.
+#[sqlx::test(migrations = false)]
+async fn migration_0047_scrubs_personal_values_from_old_customer_audit_rows(
+    pool: PgPool,
+) -> TestResult {
+    kernel::MIGRATOR.run_to(46, &pool).await?;
+    let tenant = uuid::Uuid::now_v7();
+    sqlx::query("INSERT INTO app.tenant (id, name, slug) VALUES ($1, 'Spa', 'spa')")
+        .bind(tenant)
+        .execute(&pool)
+        .await?;
+    let old = [
+        (
+            "customer.create",
+            None,
+            json!({"full_name": "Lê Thị Mai", "phone_e164": "+84905111222", "gender": "female",
+                   "birth_year": 1990, "birth_date": "1990-05-01", "health_note": "[redacted]"}),
+        ),
+        (
+            "customer.update",
+            Some(
+                json!({"full_name": "Lê Thị Mai", "phone_e164": "+84905111222", "gender": "female",
+                       "birth_year": null, "birth_date": null, "health_note": null}),
+            ),
+            json!({"full_name": "Lê Thị Mai", "phone_e164": "+84905333444", "gender": "female",
+                   "birth_year": 1990, "birth_date": null, "health_note": null}),
+        ),
+    ];
+    for (action, before, after) in &old {
+        sqlx::query(
+            "INSERT INTO app.audit_log (id, tenant_id, actor_kind, action, entity_type, entity_id, before, after)
+             VALUES ($1, $2, 'system', $3, 'customer', $4, $5, $6)",
+        )
+        .bind(uuid::Uuid::now_v7())
+        .bind(tenant)
+        .bind(action)
+        .bind(uuid::Uuid::now_v7())
+        .bind(before)
+        .bind(after)
+        .execute(&pool)
+        .await?;
+    }
+    kernel::MIGRATOR.run(&pool).await?;
+
+    let rows: Vec<(String, Option<Value>, Value)> = sqlx::query_as(
+        "SELECT action, before, after FROM app.audit_log WHERE entity_type = 'customer' ORDER BY action",
+    )
+    .fetch_all(&pool)
+    .await?;
+    let text = format!("{rows:?}");
+    for value in ["Mai", "905111222", "905333444", "1990"] {
+        assert!(!text.contains(value), "audit still holds {value:?}: {text}");
+    }
+    assert_eq!(
+        rows,
+        vec![
+            (
+                "customer.create".to_owned(),
+                None,
+                json!({"gender": "female", "has_name": true, "has_phone": true, "has_birth_year": true,
+                       "has_birth_date": true, "has_health_note": true}),
+            ),
+            (
+                "customer.update".to_owned(),
+                Some(
+                    json!({"gender": "female", "has_name": true, "has_phone": true,
+                            "has_birth_year": false, "has_birth_date": false, "has_health_note": false})
+                ),
+                json!({"gender": "female", "has_name": true, "has_phone": true, "has_birth_year": true,
+                       "has_birth_date": false, "has_health_note": false,
+                       "changed": ["birth_year", "phone"]}),
+            ),
+        ]
+    );
+    Ok(())
+}
+
+/// ADR-0019 D12: the database refuses what `PhoneE164` refuses, a +84 number without a mobile
+/// prefix (red before: the CHECKs took any +84 and 9 digits). Staff and appointment guests carry
+/// the same CHECK (migration 0047).
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn database_refuses_a_phone_without_a_mobile_prefix(pool: PgPool) -> TestResult {
+    let h = harness(pool).await?;
+    let tenant: uuid::Uuid = sqlx::query_scalar("SELECT id FROM app.tenant WHERE slug = 'vpyd'")
+        .fetch_one(&h.owner)
+        .await?;
+    let owner = &h.owner;
+    let insert_customer = move |phone: &'static str| {
+        sqlx::query(
+            "INSERT INTO app.customer (id, tenant_id, full_name, search_text, phone_e164)
+             VALUES (gen_random_uuid(), $1, 'Khách', 'khach', $2)",
+        )
+        .bind(tenant)
+        .bind(phone)
+        .execute(owner)
+    };
+    let landline = "+84212345678";
+    let customer = insert_customer(landline).await;
+    let login = sqlx::query(
+        "UPDATE app.user_account SET phone_e164 = $1 WHERE phone_e164 = '+84905123456'",
+    )
+    .bind(landline)
+    .execute(&h.owner)
+    .await;
+    for (table, result) in [("customer", customer), ("user_account", login)] {
+        let err = result.err().map(|e| e.to_string()).unwrap_or_default();
+        assert!(err.contains("phone_mobile"), "{table}: {err:?}");
+    }
+    let mobile = insert_customer("+84355123456").await;
+    assert!(mobile.is_ok(), "{mobile:?}");
+    Ok(())
+}
