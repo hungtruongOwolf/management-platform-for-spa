@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Merge a PR only after every CI check has run and passed. The repo is private on GitHub Free, so
-# branch protection is unavailable — this script is the merge gate. Agents and humans use it instead
-# of calling `gh pr merge` directly.
+# Merge a PR only after every CI check has run and passed. `main` has no branch protection (none was
+# available while the repo was private on GitHub Free), so this script is the merge gate. Agents and
+# humans use it instead of calling `gh pr merge` directly.
 #   scripts/merge-when-green.sh <pr-number>
 set -euo pipefail
 pr="${1:?usage: merge-when-green.sh <pr-number>}"

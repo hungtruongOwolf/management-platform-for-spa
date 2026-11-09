@@ -1,6 +1,6 @@
 ---
 title: Runbook — staging trên Vercel + Supabase
-updated: 2026-11-05
+updated: 2026-11-09
 ---
 
 # Staging trên Vercel + Supabase
@@ -16,7 +16,7 @@ Quyết định và các đánh đổi xem ở [ADR-0005](../decisions/ADR-0005-
 | Bí mật | `.env.staging` ở gốc repo, đã gitignore, giữ owner URL, mật khẩu `app_rw`, mật khẩu chủ spa, `STAGING_APP_DATA_KEY` |
 
 ## Biến môi trường trên Vercel (Production)
-`APP_ENV=staging`, `APP_BIND_ADDR=0.0.0.0:8080`, `PORT=8080`, `APP_DB_MAX_CONNECTIONS=3`, `RUST_LOG=info`, `APP_PUBLIC_ORIGIN=https://vien-phuc-y-duong.vercel.app`. Hai biến sensitive:
+`APP_ENV=staging`, `APP_BIND_ADDR=0.0.0.0:8080`, `PORT=8080`, `APP_DB_MAX_CONNECTIONS=3`, `RUST_LOG=info`, `APP_PUBLIC_ORIGIN=https://vien-phuc-y-duong.vercel.app`. `APP_ADMIN_ORIGIN` (tùy chọn, ADR-0018): để trống thì console `/admin` dùng chung origin; chỉ đặt khi console lên subdomain riêng. Hai biến sensitive:
 - `APP_DATABASE_URL`: user `app_rw.<ref>` với `?sslmode=verify-full&sslrootcert=/etc/ssl/certs/supabase-root-2021.crt`.
 - `APP_DATA_KEY`.
 
@@ -60,7 +60,7 @@ SQLX_OFFLINE=true DATABASE_URL="$STAGING_OWNER_URL" APP_DATABASE_URL="<app_rw UR
 | Lượt khách | ~120 lượt trong 21 ngày (4–7 lượt/ngày), trừ buổi liệu trình hoặc dịch vụ lẻ, đôi khi thêm dịch vụ bổ sung trả ngay; **12 lượt hôm nay** cho `/quay`, trong đó 1 lượt **bị hủy** |
 | Hủy liệu trình | 1 gói đã dùng dở, chủ spa hủy + hoàn tiền mặt phần chưa dùng |
 
-**Chưa có trong demo (do spec, không phải do lệnh):** công nợ / trả một phần (US5 hoãn, R1 thu đủ ngay) và khách không có SĐT (D6: SĐT bắt buộc). Lượt và hóa đơn của các ngày trước có `business_date` và giờ vào đúng ngày đó, nhưng `created_at` / `paid_at` là lúc chạy lệnh: đó là sự thật về lúc dữ liệu được ghi.
+**Chưa có trong demo:** công nợ / trả một phần (US5 hoãn, R1 thu đủ ngay) và khách không có SĐT: D6 đã được thay bằng [ADR-0011](../decisions/ADR-0011-anonymous-walk-in-and-optional-phone.md) (SĐT tùy chọn, khách vãng lai không tên), nhưng `seed-demo` vẫn chỉ tạo khách có tên + SĐT. Lượt và hóa đơn của các ngày trước có `business_date` và giờ vào đúng ngày đó, nhưng `created_at` / `paid_at` là lúc chạy lệnh: đó là sự thật về lúc dữ liệu được ghi.
 
 ## Deploy
 - Từ máy dev: `npx vercel deploy --prod --yes` ở gốc repo. Vercel build cả hai service: Rust release build trong Docker, nên lần đầu lâu.

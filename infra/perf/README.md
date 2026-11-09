@@ -30,6 +30,11 @@ Evidence for `memory/wiki/architecture/db-review-2026-11.md`. Docker + psql in t
 | `db/seed-busy-spa.sql` | Three years of a busy spa into a **throwaway** database (~400 MB, a few minutes). `-v days=… -v customers=…` | local only |
 | `db/explain_hot.py` | Writes a psql script that `EXPLAIN (ANALYZE, BUFFERS)`s 40 hot statements verbatim from `apps/api/.sqlx`, prepared, as `app_rw` with the RLS tenant set and staging's planner settings | local only |
 | `db/experiments.sql` | The comparisons behind the findings (trigram owner vs `app_rw`, history rewrite, generic plans, one-statement auth draft, index drops in a rolled-back transaction) | local only |
+| `db/sizes.sql` | Database size, heap vs index, the ten largest tables, the indexes migration 0033 dropped | any |
+| `db/actor_column_orphans.sql` | "Who did it" columns holding a value that is no `user_account` id (C4); zero everywhere = the FKs of migration 0036 validate | any (read-only) |
+| `db/session_actor_checks.sql` | Behaviour checks of `app.session_actor` (0034, ADR-0017) on fixtures; with a broken copy of the function loaded first, at least one check must fail (mutation check) | throwaway DB, inside `BEGIN … ROLLBACK` |
+| `db/rtt_proxy.py` | TCP proxy between a local API and Postgres: counts round trips (statements, BEGIN/COMMIT, pool pings) and can add per-answer delay (`--delay-ms 2.6` ≈ Vercel ↔ Supabase) | local only, plain TCP |
+| `db/local_requests.py` | Signed-in requests against a local API behind `rtt_proxy.py`: Server-Timing plus the round trips the proxy saw per request. Password from `PERF_PASSWORD` only | local only |
 
 ```sh
 # Local: throwaway copy, migrate, seed, measure, drop.

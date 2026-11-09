@@ -1,8 +1,7 @@
-# Secrets — never commit
-.env
-.env.*
-!.env.example
-!infra/.env.production.example
+# Secrets — never commit (.env, .env.staging, .envrc, infra/.env.production …); only the documented examples
+.env*
+!**/.env.example
+!**/.env.production.example
 /secrets/
 /.prodtest/
 *.pem
@@ -27,8 +26,9 @@ lighthouse-report/
 # E2E run credentials and signed-in browser state (generated per run)
 apps/web/e2e/.auth/
 
-# Local Claude settings & scratch
+# Local Claude settings, scratch and agent worktrees
 .claude/settings.local.json
+.claude/worktrees/
 
 # OS / editors
 .DS_Store
@@ -36,10 +36,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
-.claude/worktrees/
 
+# Vercel CLI link (vercel link / deploy)
 .vercel
-.env*
-!.env.example
-!**/.env.example
-!**/.env.production.example

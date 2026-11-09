@@ -1,12 +1,16 @@
 ---
-title: Runbook — local merge gate (khi GitHub Actions tắt)
-updated: 2026-11-06
+title: Runbook — local merge gate (dự phòng khi GitHub Actions không chạy được)
+updated: 2026-11-09
 sources: []
 ---
 
 # Local merge gate
 
-GitHub Actions đang tắt vì hết phút miễn phí (log 2026-11-05). Đường merge duy nhất là `scripts/merge-local-gate.sh`: dựng cây "main + PR", chạy các bước kiểm tra trên đó, rồi `gh pr merge --squash` và xóa branch. Từ 2026-11-06 gate **theo thay đổi**: chỉ chạy những bước mà các file của PR có thể làm hỏng. Quy tắc nằm trong `scripts/gate-lib.sh`, test trong `scripts/gate-lib.test.sh` (`bash scripts/gate-lib.test.sh`, không cần build).
+**Trạng thái (2026-11-09):** GitHub Actions đã chạy lại từ 2026-11-06 (repo chuyển public, phút không giới hạn; workflow `CI` và `Deploy (staging)` đều `active`). Đường merge bình thường là `bash scripts/merge-when-green.sh <pr>` ([testing §5](../conventions/testing.md)). Gate local là **dự phòng**: dùng khi Actions lại bị tắt (ví dụ repo về private và hết phút) hoặc để thử một batch PR trên máy. Nó không chạy Docker build, gitleaks, Lighthouse.
+
+`scripts/gate-lib.sh` vẫn là code đang chạy trong CI: `scripts/ci-changes.sh` dùng `gate_classify` của nó để chọn scope job. Bảng `gate_feature_specs` thì chỉ gate local dùng.
+
+Lịch sử: Actions bị tắt 2026-11-05 vì hết phút miễn phí (log 2026-11-05); khi đó `scripts/merge-local-gate.sh` là đường merge duy nhất: dựng cây "main + PR", chạy các bước kiểm tra trên đó, rồi `gh pr merge --squash` và xóa branch. Từ 2026-11-06 gate **theo thay đổi**: chỉ chạy những bước mà các file của PR có thể làm hỏng. Quy tắc nằm trong `scripts/gate-lib.sh`, test trong `scripts/gate-lib.test.sh` (`bash scripts/gate-lib.test.sh`, không cần build).
 
 ## Cách dùng
 ```bash
@@ -54,7 +58,7 @@ Không dùng `playwright --only-changed`: nó chỉ chọn spec theo import grap
 
 ## Khi nào tin gate chọn lọc
 - Merge PR bình thường: tin được, với điều kiện quy tắc ở trên. Rủi ro còn lại: lỗi chỉ lộ ra khi kết hợp với màn khác mà spec chọn lọc không đi qua (layout + a11y giảm bớt), và các bước gate không bao giờ chạy (Docker build, gitleaks, Lighthouse).
-- **Bắt buộc `--full`** trước mọi deploy staging / Vercel ([vercel-staging](vercel-staging.md), [staging-setup](staging-setup.md)) và trước khi bật lại GitHub Actions. Có thể chạy `--full` trên PR cuối cùng trước deploy.
+- **Trước mọi deploy staging / Vercel**: commit trên `main` phải có CI xanh đủ job (push lên `main` luôn chạy scope `full`). Chỉ khi Actions tắt mới thay bằng `--full` trên PR cuối cùng ([vercel-staging](vercel-staging.md), [staging-setup](staging-setup.md)).
 - Nghi ngờ, hoặc PR đụng nhiều vùng: `--full`.
 
 ## Thời gian
@@ -64,4 +68,4 @@ Cuối mỗi lần chạy gate in thời gian từng bước + tổng, và ghi m
 `api:spec` cũ là `cargo run … > openapi.json`: shell cắt file về rỗng trước khi cargo chạy xong, agent ngắt giữa chừng → commit `openapi.json` rỗng. Nay `pnpm api:spec` = `node scripts/api-spec.mjs`: lấy stdout, kiểm JSON có `openapi` + `paths`, ghi file tạm rồi rename; lỗi thì giữ nguyên file cũ. `scripts/contract-files.mjs` kiểm cả hai file (rỗng, không parse được, `schema.ts` thiếu `paths`/`components`/`operations`); gate chạy nó đầu tiên, `check:extra` cũng vậy.
 
 ## Bật lại CI
-`gh workflow enable CI` và `gh workflow enable "Deploy (staging)"`, quay về `merge-when-green.sh`. Gate local vẫn dùng được cho batch.
+Đã làm 2026-11-06. Nếu Actions lại bị tắt: `gh workflow enable CI` và `gh workflow enable "Deploy (staging)"` khi bật lại, rồi quay về `merge-when-green.sh`.

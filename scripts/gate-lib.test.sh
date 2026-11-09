@@ -73,7 +73,7 @@ plan $'memory/log.md\nmemory/wiki/overview.md'
 eq "docs only" "rust= contract= tc= vitest= ui= e2e= specs= full=" "$(summary)"
 
 plan $'apps/web/src/features/staff/PayrollTab.tsx\napps/web/src/features/staff/Staff.test.tsx'
-eq "feature only" "rust= contract= tc=1 vitest=changed ui= e2e=targeted specs=a11y layout staff full=" "$(summary)"
+eq "feature only" "rust= contract= tc=1 vitest=changed ui= e2e=targeted specs=a11y layout onboarding staff technician full=" "$(summary)"
 
 plan 'apps/web/src/features/staff/Staff.test.tsx'
 eq "feature test only: no e2e" "rust= contract= tc=1 vitest=changed ui= e2e= specs= full=" "$(summary)"
@@ -87,6 +87,9 @@ eq "shared web" "rust= contract= tc=1 vitest=full ui=1 e2e=full specs= full=" "$
 plan $'apps/web/public/favicon.svg
 apps/web/src/app/icons.test.ts'
 eq "favicon + its test" "rust= contract= tc=1 vitest=changed ui= e2e=targeted specs=a11y auth layout full=" "$(summary)"
+
+plan 'apps/web/src/features/notes/NotesPage.tsx'
+eq "notes feature" "rust= contract= tc=1 vitest=changed ui= e2e=targeted specs=a11y layout notes full=" "$(summary)"
 
 plan 'apps/web/src/features/newthing/Page.tsx'
 eq "unmapped feature: full e2e" "rust= contract= tc=1 vitest=changed ui= e2e=full specs= full=" "$(summary)"
