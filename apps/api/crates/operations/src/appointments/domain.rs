@@ -240,13 +240,6 @@ pub fn place(
     Ok((ends_at, local.date_naive()))
 }
 
-/// Who counts as a technician for the calendar columns: position mentions "kỹ thuật"
-/// or "KTV". A spa that names no one so counts every active staff member.
-pub fn is_technician(position: &str) -> bool {
-    let p = position.to_lowercase();
-    p.contains("kỹ thuật") || p.contains("ky thuat") || p.contains("ktv")
-}
-
 /// A start whose whole first slot is already over (F12, EM 2026-11-08): it cannot be booked. The
 /// slot under way can (19:00 at 19:08 with 15- or 30-minute slots: the customer is arriving).
 pub fn slot_is_over(starts_at: DateTime<Utc>, now: DateTime<Utc>, slot_minutes: u32) -> bool {
@@ -397,13 +390,6 @@ mod tests {
         );
         // The end is exclusive, like every interval on the grid.
         assert_eq!(served_phase(false, at(11, 0), at(11, 0)), Phase::Done);
-    }
-
-    #[test]
-    fn technicians_are_recognised_by_position() {
-        assert!(is_technician("Kỹ thuật viên"));
-        assert!(is_technician("KTV chính"));
-        assert!(!is_technician("Quản lý"));
     }
 
     #[test]

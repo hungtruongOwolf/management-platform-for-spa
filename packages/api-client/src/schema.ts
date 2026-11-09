@@ -2218,7 +2218,10 @@ export interface components {
             opens_at: string;
             /** Format: int32 */
             slot_minutes: number;
-            /** @description Columns of the day view (active technicians). */
+            /**
+             * @description Columns of the day view: active staff who serve customers, by login role (technician or
+             *     manager; a profile without a login counts as a technician; never the owner).
+             */
             technicians: components["schemas"]["CalendarTechnician"][];
             time_zone: string;
             /** Format: date */

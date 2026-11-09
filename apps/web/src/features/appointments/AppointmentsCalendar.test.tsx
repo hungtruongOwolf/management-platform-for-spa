@@ -1,6 +1,6 @@
 import type { Calendar } from "@vpyd/api-client";
 import { createMemoryHistory } from "@tanstack/react-router";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../app/App";
@@ -89,6 +89,40 @@ describe("Lịch hẹn: booking only where the server takes it", () => {
     expect(
       await screen.findByRole("button", { name: "Đặt lịch" }),
     ).toBeInTheDocument();
+  });
+
+  it("offers none today once the spa has closed, tomorrow still (ADR-0019 D20)", async () => {
+    // 21:05 in the spa, closing time 21:00: no start is left today.
+    vi.setSystemTime(new Date("2026-11-06T14:05:00Z"));
+    serve(OWNER);
+    const user = userEvent.setup();
+    at("/quay?view=lich");
+    expect(
+      await screen.findByText(/Chưa có lịch hẹn hôm nay\./),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Đặt lịch" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Ngày sau" }));
+    expect(
+      await screen.findByRole("button", { name: "Đặt lịch" }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides it at closing time while the screen stays open", async () => {
+    // 100 ms before 21:00: the button is there, then goes with the clock (no reload).
+    vi.setSystemTime(new Date("2026-11-06T13:59:59.900Z"));
+    serve(OWNER);
+    at("/quay?view=lich");
+    expect(
+      await screen.findByRole("button", { name: "Đặt lịch" }),
+    ).toBeInTheDocument();
+    vi.setSystemTime(new Date("2026-11-06T14:00:00Z"));
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: "Đặt lịch" }),
+      ).not.toBeInTheDocument();
+    });
   });
 
   it("starts a late booking on the last slot of the day, not after closing", async () => {
