@@ -1,10 +1,21 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, line_type, package_plan_id, customer_package_id, service_id, description_snapshot, qty,\n                  unit_price, line_total\n           FROM app.sale_line WHERE tenant_id = $1 AND sale_id = $2 ORDER BY position",
+  "query": "SELECT sale_id, id, line_type, package_plan_id, customer_package_id, service_id, description_snapshot,\n                  qty, unit_price, line_total\n           FROM app.sale_line WHERE tenant_id = $1 AND sale_id = ANY($2) ORDER BY sale_id, position",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
+        "name": "sale_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.sale_line",
+            "name": "sale_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
         "name": "id",
         "type_info": "Uuid",
         "origin": {
@@ -15,7 +26,7 @@
         }
       },
       {
-        "ordinal": 1,
+        "ordinal": 2,
         "name": "line_type",
         "type_info": "Text",
         "origin": {
@@ -26,7 +37,7 @@
         }
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "package_plan_id",
         "type_info": "Uuid",
         "origin": {
@@ -37,7 +48,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "customer_package_id",
         "type_info": "Uuid",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "service_id",
         "type_info": "Uuid",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "description_snapshot",
         "type_info": "Text",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "qty",
         "type_info": "Int4",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "unit_price",
         "type_info": "Int8",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "line_total",
         "type_info": "Int8",
         "origin": {
@@ -106,10 +117,11 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Uuid"
+        "UuidArray"
       ]
     },
     "nullable": [
+      false,
       false,
       false,
       true,
@@ -121,5 +133,5 @@
       false
     ]
   },
-  "hash": "07051832f1cc3a6ff49018e7745628e319791073d91ea123c20d4064f3c94bea"
+  "hash": "8f02e97a00c2f6412b08ebc9018678b7aae85b644cf9d2a200d5c72e7fc64341"
 }

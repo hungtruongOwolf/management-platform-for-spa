@@ -297,6 +297,7 @@ export function mockHistory(customerId: string, today: string): HistoryPage {
     purchase: {
       sale_id: "mock-sale",
       voided: false,
+      version: 1,
       lines: [{ description: pkg, qty: 1, line_total: total, customer_package_id: "mock-package" }],
       subtotal: total,
       discount_amount: 0,
