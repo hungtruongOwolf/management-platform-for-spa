@@ -694,3 +694,22 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Raw: [2026-11-09-em-request-docs-and-platform-admin](raw/2026-11-09-em-request-docs-and-platform-admin.md) (mục 2; mục 1 docs/README do agent khác). EM chọn "Admin nền tảng".
 - Spec [platform-admin](wiki/product/specs/platform-admin.md) (US1–US9, Q-PA1…4), [ADR-0018](wiki/decisions/ADR-0018-platform-admin-console.md) (principal operator riêng, `/admin` cùng deployment + `APP_ADMIN_ORIGIN`, hàm definer có cổng token, cờ tính năng, mẫu vai trò), thiết kế [architecture/platform-admin](wiki/architecture/platform-admin.md); authz-matrix + threat-model thêm mục "Admin nền tảng".
 - Build chờ #109 (`app.session_actor`) + #110 vào main (điều phối với agent DB); migration lấy số trống tiếp theo (dự kiến 0038–0040).
+## [2026-11-09] build + secure + record | Rà soát DB PR 4: dọn session, kiểm bất biến hằng ngày, FK cột người làm (C1, C2, C4)
+- 0035: `app.maintenance_run` + `claim_maintenance` (một instance mỗi khoảng, sửa F10), `purge_sessions` (30 ngày, EM Q-DB4), `invariant_violations` (11 phép kiểm, chỉ đếm); job `app::jobs::run_maintenance` thay purge cũ; drift → log ERROR `data invariant violated`.
+- 0036/0037: FK `created_by`/`voided_by`/`cancelled_by`/`closed_by` → `user_account` (NOT VALID rồi VALIDATE; staging 0 mồ côi). `TenantTx` thêm `idle_in_transaction_session_timeout` 30 s.
+- Sửa dòng wiki backend nói sai là session được dọn mỗi giờ. `audit_log` giữ hết. Test `app/tests/maintenance.rs`.
+## [2026-11-09] build + perf | Rà soát DB PR 2: migration 0033 bỏ 8 index (B1)
+- Bỏ 2 GIN trigram (vô dụng dưới RLS), 2 index tiền tố trùng, 4 index ngày theo chi nhánh; `SET LOCAL lock_timeout`; hoàn tác `CREATE INDEX CONCURRENTLY` ghi trong file. Test `kernel/tests/indexes.rs`.
+- Đo lại trên hai DB sạch 3 năm (0032 vs 0033): index 125 → 108 MB (−16 MB). 40 câu nóng: câu từng dùng index bị bỏ chuyển sang index unique thay thế, không có seq scan mới.
+- ⚠️ Sửa số trong trang review: lần đo đầu (397 MB / index 208 MB / −31 MB) bị phồng do hai lần seed bị hủy; số đúng 312 MB / 125 MB / −16 MB.
+- Tiếp theo: PR 3 (A3, `app.session_actor`, ADR-0017).
+## [2026-11-09] decision + build + perf | Rà soát DB: EM duyệt hết; PR 1 = A1 + A2 + A4
+- Raw: [2026-11-09-em-decision-db-plan](raw/2026-11-09-em-decision-db-plan.md) ("ok bạn cứ làm hết đi"). Q-DB1..4 ghi ở [db-review §7](wiki/architecture/db-review-2026-11.md); `audit_log` giữ, không có hạn.
+- A1 `app::db_pool` (ping chỉ khi rảnh >= 30 s, test giết backend); A2 lịch sử khách `UNION` (test hồi quy so câu cũ); A4 `TenantFacts` trong `Actor`, `TenantTx::for_actor` (96 chỗ gọi).
+- Đo local qua `rtt_proxy.py`: `/staff` 13 → 10 lượt đi về (ping 6 → 3, 3 còn lại là ping nền khi trả kết nối), `/appointments` 20 → 16, lịch sử khách 24 → 20.
+- Tiếp theo: PR 2 (B1, migration 0033).
+
+## [2026-11-09] build + secure + record | Rà soát DB PR 3: một câu xác thực mỗi request (A3, ADR-0017)
+- Migration 0034 `app.session_actor(token_hash)` (SECURITY DEFINER, `search_path` pin, chỉ `app_rw` EXECUTE). `AuthUser` -> `service::authenticate`, `/me` -> `resolve_with_access`; transaction quyền riêng bỏ: -3 lượt đi về mỗi request nghiệp vụ, `/me` còn 3 câu.
+- `secure`: threat-model TB2 thêm dòng hàm definer; ADR-0017. Test `app/tests/session_actor.rs`; mutation-check SQL 11 đột biến (10 bị bắt, 1 tương đương do CHECK idle <= absolute).
+- Xếp chồng trên PR 1 (dùng `MemberAccess` / `TenantFacts` của A4). Tiếp theo: PR 4 (dọn session, kiểm bất biến hằng ngày, C4).

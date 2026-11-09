@@ -44,6 +44,7 @@ sources: [architecture/system.md, product/specs/front-desk-and-packages.md]
 | I | Truy cập qua Supabase Data API / anon key | Data API tắt; bảng ở schema `app`; RLS bật trên mọi bảng (ADR-0002) |
 | I | Bug quên lọc tenant | RLS theo `app.tenant_id` (ADR-0003) + newtype `TenantId` bắt buộc trong repo |
 | D | Hết connection | Pool giới hạn; dùng Supavisor; timeout query |
+| I/E | Hàm `SECURITY DEFINER` đọc vượt RLS (`app.session_actor`, 0034, [ADR-0017](../decisions/ADR-0017-one-statement-request-auth.md); cùng loại với `tenants_of_user`, `user_requires_mfa`, `purge_idempotency_records`) | `SET search_path = app, pg_temp`; `REVOKE ALL FROM PUBLIC`, chỉ `app_rw` có `EXECUTE`; SQL tĩnh, không dynamic SQL; đầu vào là SHA-256 của bí mật cookie. Chỉ trả session đó, membership của chính user đó trong chính `active_tenant_id` của session, quyền và cờ người đã nghỉ của membership đó. Quyết định (MFA chờ, mật khẩu tạm, không có spa, không phải thành viên, người đã nghỉ) vẫn ở Rust như trước. Test `app/tests/session_actor.rs` (grant, `search_path`, chỉ spa đang chọn, session đã thu hồi = không có gì) + mutation-check 11 đột biến SQL (PR db review A3). Rủi ro còn lại: `app_rw` bị chiếm thì đọc được tên quyền của mọi session; bảng `session` vốn không có RLS |
 
 ## TB3: API ↔ R2 (backup)
 | STRIDE | Mối đe dọa | Biện pháp |

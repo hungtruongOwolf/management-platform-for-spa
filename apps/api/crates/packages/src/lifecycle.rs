@@ -161,7 +161,7 @@ pub async fn extend(
     actor.require(Permission::PackageExtendExpiry)?;
     let reason = corrections::reason(input.reason.as_deref())?;
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -275,7 +275,7 @@ pub async fn cancel(
     actor.require(Permission::PackageCancelRefund)?;
     let order = parse_cancel(input)?;
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {

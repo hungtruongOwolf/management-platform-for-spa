@@ -215,7 +215,7 @@ async fn open_full_session(
         recent_auth_at: now,
         absolute_expires_at: now + Duration::days(ABSOLUTE_TIMEOUT_DAYS),
     };
-    let me = build_me(pool, &session, Some(tenants)).await?;
+    let me = build_me(pool, &session, Some(tenants), None).await?;
     Ok((token, me))
 }
 
@@ -312,37 +312,24 @@ async fn run_blocking_dummy(password_input: &str) {
     let _ = tokio::task::spawn_blocking(move || password::verify_against_dummy(&candidate)).await;
 }
 
-/// A live session of either kind, sliding the idle timeout (never past the absolute expiry).
-async fn live(pool: &PgPool, secret: &str) -> Result<SessionRow, AppError> {
-    let row: SessionRow = repo::live_session(pool, &token::hash_secret(secret))
+/// A live session of either kind with its membership access (one statement,
+/// `app.session_actor`), sliding the idle timeout (never past the absolute expiry).
+async fn live(pool: &PgPool, secret: &str) -> Result<repo::LiveSession, AppError> {
+    let live = repo::session_actor(pool, &token::hash_secret(secret))
         .await?
         .ok_or(AppError::Unauthenticated)?;
+    let row = &live.row;
     let now = Utc::now();
     if now - row.last_seen_at > Duration::seconds(TOUCH_INTERVAL_SECONDS) {
         let idle = (now + Duration::hours(IDLE_TIMEOUT_HOURS)).min(row.absolute_expires_at);
         repo::touch_session(pool, row.id, idle).await?;
     }
-    Ok(row)
+    Ok(live)
 }
 
-/// Resolves a cookie secret into a live, fully authenticated session. A session that still owes
-/// its second factor is refused here, which is what keeps it off `/me` and every business route.
-pub async fn resolve(pool: &PgPool, secret: &str) -> Result<Session, AppError> {
-    let session = resolve_for_password_change(pool, secret).await?;
-    if session.1 {
-        // A temporary password (ADR-0016): only `POST /auth/password` and logout take it.
-        return Err(AppError::PasswordChangeRequired);
-    }
-    Ok(session.0)
-}
-
-/// Like [`resolve`], also for an account that must still replace its temporary password: the
-/// one extractor `POST /auth/password` uses. `.1` = the password must be changed.
-pub async fn resolve_for_password_change(
-    pool: &PgPool,
-    secret: &str,
-) -> Result<(Session, bool), AppError> {
-    let row = live(pool, secret).await?;
+/// A fully authenticated session: the second factor is done. `.1` = the password must still be
+/// changed (temporary password, ADR-0016).
+fn full_session(row: &SessionRow) -> Result<(Session, bool), AppError> {
     if row.mfa_pending {
         return Err(if row.mfa_enrolled {
             AppError::MfaRequired
@@ -350,7 +337,6 @@ pub async fn resolve_for_password_change(
             AppError::MfaEnrollmentRequired
         });
     }
-    let must_change = row.must_change_password;
     Ok((
         Session {
             id: row.id,
@@ -359,13 +345,75 @@ pub async fn resolve_for_password_change(
             recent_auth_at: row.recent_auth_at,
             absolute_expires_at: row.absolute_expires_at,
         },
-        must_change,
+        row.must_change_password,
     ))
+}
+
+/// Resolves a cookie secret into a live, fully authenticated session. A session that still owes
+/// its second factor is refused here, which is what keeps it off `/me` and every business route.
+pub async fn resolve(pool: &PgPool, secret: &str) -> Result<Session, AppError> {
+    resolve_with_access(pool, secret).await.map(|(s, _)| s)
+}
+
+/// [`resolve`], plus the permissions of the session's active membership (`None` = no active spa
+/// or not an active member there), read in the same statement.
+pub async fn resolve_with_access(
+    pool: &PgPool,
+    secret: &str,
+) -> Result<(Session, Option<repo::MemberAccess>), AppError> {
+    let live = live(pool, secret).await?;
+    let (session, must_change) = full_session(&live.row)?;
+    if must_change {
+        // A temporary password (ADR-0016): only `POST /auth/password` and logout take it.
+        return Err(AppError::PasswordChangeRequired);
+    }
+    Ok((session, live.access))
+}
+
+/// The caller of a business route: a fully authenticated session (as [`resolve`]) acting in its
+/// active spa with that spa's permissions — one statement for all of it (db review A3,
+/// ADR-0017). Same refusals, in the same order, as `resolve` followed by [`actor_for`].
+pub async fn authenticate(
+    pool: &PgPool,
+    secret: &str,
+    ip: Option<IpAddr>,
+) -> Result<(Session, Actor), AppError> {
+    let (session, access) = resolve_with_access(pool, secret).await?;
+    let tenant = session.active_tenant.ok_or(AppError::Forbidden {
+        code: "auth.no_active_tenant",
+    })?;
+    let access = access.ok_or(AppError::Forbidden {
+        code: "auth.not_a_member",
+    })?;
+    let actor = actor_with(session.user_id, tenant, access, ip);
+    Ok((session, actor))
+}
+
+fn actor_with(
+    user: UserId,
+    tenant: TenantId,
+    access: repo::MemberAccess,
+    ip: Option<IpAddr>,
+) -> Actor {
+    let actor = Actor::new(user, tenant, access.permissions, ip);
+    match access.facts {
+        Some(facts) => actor.with_tenant_facts(facts),
+        None => actor,
+    }
+}
+
+/// Like [`resolve`], also for an account that must still replace its temporary password: the
+/// one extractor `POST /auth/password` uses. `.1` = the password must be changed.
+pub async fn resolve_for_password_change(
+    pool: &PgPool,
+    secret: &str,
+) -> Result<(Session, bool), AppError> {
+    full_session(&live(pool, secret).await?.row)
 }
 
 /// Resolves a cookie secret into a session that is waiting for its second factor (and only that).
 pub async fn resolve_pending(pool: &PgPool, secret: &str) -> Result<PendingMfa, AppError> {
-    let row = live(pool, secret).await?;
+    let row = live(pool, secret).await?.row;
     if !row.mfa_pending {
         return Err(AppError::Conflict {
             code: "auth.mfa_not_pending",
@@ -380,7 +428,7 @@ pub async fn resolve_pending(pool: &PgPool, secret: &str) -> Result<PendingMfa, 
 
 /// Ends the session behind `secret`, whether full or pending MFA.
 pub async fn logout(pool: &PgPool, secret: &str) -> Result<(), AppError> {
-    let row = live(pool, secret).await?;
+    let row = live(pool, secret).await?.row;
     repo::revoke_session(pool, row.id).await
 }
 
@@ -611,18 +659,31 @@ pub async fn switch_tenant(
         active_tenant: Some(tenant),
         ..session.clone()
     };
-    let me = build_me(pool, &moved, Some(tenants)).await?;
+    let me = build_me(pool, &moved, Some(tenants), None).await?;
     Ok((token, me))
 }
 
 pub async fn me(pool: &PgPool, session: &Session) -> Result<Me, AppError> {
-    build_me(pool, session, None).await
+    build_me(pool, session, None, None).await
 }
 
+/// `GET /me` with the session's permissions already read by [`resolve_with_access`]: no second
+/// permission transaction (db review A3).
+pub async fn me_with_access(
+    pool: &PgPool,
+    session: &Session,
+    access: Option<repo::MemberAccess>,
+) -> Result<Me, AppError> {
+    build_me(pool, session, None, Some(access.map(|a| a.permissions))).await
+}
+
+/// `known`: the active membership's permissions when the caller already has them (`Some(None)`
+/// = not an active member); `None` = read them here.
 async fn build_me(
     pool: &PgPool,
     session: &Session,
     tenants: Option<Vec<TenantRef>>,
+    known: Option<Option<Vec<Permission>>>,
 ) -> Result<Me, AppError> {
     let account = repo::account_by_id(pool, session.user_id)
         .await?
@@ -632,7 +693,10 @@ async fn build_me(
         None => repo::tenants_of_user(pool, session.user_id).await?,
     };
     let (active_tenant, permissions) = match session.active_tenant {
-        Some(tenant) => match tenant_permissions(pool, session.user_id, tenant).await? {
+        Some(tenant) => match match known {
+            Some(permissions) => permissions,
+            None => tenant_permissions(pool, session.user_id, tenant).await?,
+        } {
             Some(perms) => (
                 tenants
                     .iter()
@@ -687,12 +751,14 @@ pub async fn actor_for(
     let tenant = session.active_tenant.ok_or(AppError::Forbidden {
         code: "auth.no_active_tenant",
     })?;
-    let permissions = tenant_permissions(pool, session.user_id, tenant)
-        .await?
-        .ok_or(AppError::Forbidden {
-            code: "auth.not_a_member",
-        })?;
-    Ok(Actor::new(session.user_id, tenant, permissions, ip))
+    let mut tx = TenantTx::begin(pool, tenant).await?;
+    let access = repo::member_access(&mut tx, session.user_id).await?;
+    tx.commit().await?;
+    let access = access.ok_or(AppError::Forbidden {
+        code: "auth.not_a_member",
+    })?;
+    // The spa settings ride along, so the request's own transactions skip re-reading them.
+    Ok(actor_with(session.user_id, tenant, access, ip))
 }
 
 /// `POST /auth/password` (ADR-0016): the signed-in person replaces their own password — the

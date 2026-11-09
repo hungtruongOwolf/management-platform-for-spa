@@ -611,6 +611,134 @@ async fn a_booking_completes_with_a_package_and_keeps_its_companions(pool: PgPoo
 
 // ------------------------------------------------------------------------------------ US13
 
+/// The history's purchases before the db review (F4): `customer_id = $2 OR EXISTS (package of
+/// $2 in the sale)`, with the visit's own sales left out. Kept verbatim to prove the indexed
+/// rewrite (`id IN (… UNION …)`) answers exactly the same set.
+const PURCHASES_BEFORE: &str = "SELECT s.id FROM app.sale s
+     WHERE s.tenant_id = $1 AND (s.customer_id = $2 OR EXISTS (
+             SELECT 1 FROM app.customer_package cp
+             WHERE cp.tenant_id = s.tenant_id AND cp.sale_id = s.id AND cp.customer_id = $2))
+       AND NOT EXISTS (SELECT 1 FROM app.visit v WHERE v.tenant_id = s.tenant_id AND v.sale_id = s.id)
+       AND NOT EXISTS (SELECT 1 FROM app.visit_line l WHERE l.tenant_id = s.tenant_id AND l.sale_id = s.id)
+     ORDER BY s.id";
+const PURCHASES_NOW: &str = "SELECT s.id FROM app.sale s
+     WHERE s.tenant_id = $1 AND s.id IN (
+             SELECT x.id FROM app.sale x WHERE x.tenant_id = $1 AND x.customer_id = $2
+             UNION
+             SELECT cp.sale_id FROM app.customer_package cp
+             WHERE cp.tenant_id = $1 AND cp.customer_id = $2 AND cp.sale_id IS NOT NULL)
+       AND NOT EXISTS (SELECT 1 FROM app.visit v WHERE v.tenant_id = s.tenant_id AND v.sale_id = s.id)
+       AND NOT EXISTS (SELECT 1 FROM app.visit_line l WHERE l.tenant_id = s.tenant_id AND l.sale_id = s.id)
+     ORDER BY s.id";
+
+/// A package sale paid by `payer` for `user` (themselves when `None`), no closer; its sale id.
+async fn sell_package(s: &Spa, payer: &str, user: Option<&str>) -> String {
+    let r = s
+        .post(
+            &s.manager,
+            "/sales",
+            json!({"customer_id": payer, "beneficiary_customer_id": user,
+                   "closer_staff_id": null, "lines": [{"package_plan_id": s.plan}],
+                   "payments": [{"method": "cash", "amount": PLAN_PRICE}]}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.body);
+    str_of(&r.body["id"])
+}
+
+/// Db review F4: the customer history's purchases are the sales the customer paid plus the
+/// sales of packages bought for them — payer, beneficiary, voided, bought for someone else —
+/// and never the visit's own sale. The rewrite returns the same rows as the old predicate.
+#[sqlx::test(migrations = "../../migrations")]
+async fn history_purchases_are_paid_or_used_by_the_customer(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let own = sell_package(&s, &s.ha, None).await;
+    let for_binh = sell_package(&s, &s.ha, Some(&s.binh)).await;
+    let from_binh = sell_package(&s, &s.binh, Some(&s.ha)).await;
+    let voided = sell_package(&s, &s.ha, None).await;
+    let void = s
+        .post(
+            &s.manager,
+            &format!("/sales/{voided}/void"),
+            json!({"reason": "Ghi nhầm"}),
+        )
+        .await;
+    assert_eq!(void.status, StatusCode::OK, "{}", void.body);
+    // A paid one-off visit: its sale belongs to the visit, never a purchase of its own.
+    s.one_off_visit(None).await;
+
+    let tenant: Uuid = sqlx::query_scalar("SELECT id FROM app.tenant WHERE slug = 'vpyd'")
+        .fetch_one(&s.h.owner)
+        .await?;
+    let purchases = |sql: &'static str, customer: &str| {
+        let customer: Uuid = customer.parse().unwrap_or_default();
+        let owner = s.h.owner.clone();
+        async move {
+            sqlx::query_scalar::<_, Uuid>(sql)
+                .bind(tenant)
+                .bind(customer)
+                .fetch_all(&owner)
+                .await
+        }
+    };
+    let sorted = |mut ids: Vec<String>| {
+        ids.sort();
+        ids
+    };
+    for (customer, expected) in [
+        (
+            &s.ha,
+            vec![
+                own.clone(),
+                for_binh.clone(),
+                from_binh.clone(),
+                voided.clone(),
+            ],
+        ),
+        (&s.binh, vec![for_binh.clone(), from_binh.clone()]),
+    ] {
+        let before = purchases(PURCHASES_BEFORE, customer).await?;
+        let now = purchases(PURCHASES_NOW, customer).await?;
+        assert_eq!(before, now, "same rows as the old predicate for {customer}");
+        let now: Vec<String> = now.iter().map(Uuid::to_string).collect();
+        assert_eq!(
+            sorted(now),
+            sorted(expected),
+            "payer, user, voided; no visit sale"
+        );
+    }
+
+    // The endpoint lists exactly those purchases, the voided one as `purchase_voided`.
+    let history = s
+        .get(&s.manager, &format!("/customers/{}/history", s.ha))
+        .await;
+    assert_eq!(history.status, StatusCode::OK, "{}", history.body);
+    let events = history.body["events"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let listed: Vec<String> = events
+        .iter()
+        .filter(|e| matches!(e["kind"].as_str(), Some("purchase" | "purchase_voided")))
+        .map(|e| str_of(&e["purchase"]["sale_id"]))
+        .collect();
+    assert_eq!(
+        sorted(listed),
+        sorted(vec![own, for_binh, from_binh, voided.clone()])
+    );
+    assert!(
+        events
+            .iter()
+            .any(|e| e["kind"] == "purchase_voided" && e["purchase"]["sale_id"] == json!(voided)),
+        "{events:?}"
+    );
+    assert!(
+        events.iter().any(|e| e["kind"] == "visit"),
+        "the visit is there, its sale is not a purchase"
+    );
+    Ok(())
+}
+
 /// AC13.1–13.2: the payer pays, the package belongs to the user; packages are not shared.
 #[sqlx::test(migrations = "../../migrations")]
 async fn a_package_bought_for_someone_else_belongs_to_them(pool: PgPool) -> TestResult {

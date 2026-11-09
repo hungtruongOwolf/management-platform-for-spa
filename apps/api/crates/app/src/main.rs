@@ -5,7 +5,6 @@ use app::{AppState, jobs};
 use secrecy::ExposeSecret;
 use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
-use std::time::Duration;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::SubscriberExt;
@@ -77,16 +76,14 @@ async fn serve() -> anyhow::Result<()> {
         .and_then(|v| v.parse::<u32>().ok())
         .filter(|n| *n > 0)
         .unwrap_or(10);
-    let pool = PgPoolOptions::new()
-        .max_connections(max_connections)
-        .acquire_timeout(Duration::from_secs(3))
+    let pool = app::db_pool::options(max_connections, app::db_pool::PING_WHEN_IDLE_FOR)
         .connect(config.app_database_url.expose_secret())
         .await
         .context("cannot connect to the database as app_rw")?;
     app::db_guard::check_runtime_role(&pool)
         .await
         .context("refusing to start: APP_DATABASE_URL must be the app_rw role (RLS applies)")?;
-    jobs::spawn_idempotency_purge(pool.clone());
+    jobs::spawn_maintenance(pool.clone());
 
     let mut policy = HttpPolicy::standard(config.public_origin.clone());
     policy.admin_origin = config.admin_origin.clone();

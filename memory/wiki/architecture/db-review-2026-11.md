@@ -13,8 +13,8 @@ EM nhờ rà kỹ schema (bảng, index, FK, lưu trữ, toàn vẹn, xung độ
 - **Thời gian Postgres chạy query không phải nút thắt.** Trên bản sao local 3 năm của một spa đông (60k lượt, 43k hóa đơn, 47k lịch hẹn, 208k dòng audit), 29/40 câu nóng chạy **≤ 3 ms** (11 câu còn lại 3–135 ms, đều là màn quản lý hoặc lịch sử khách), câu xác thực chạy mỗi request **0,07–0,35 ms**.
 - **Nút thắt phía DB là số lượt đi về API ↔ DB.** Một GET đơn giản đang tốn **~10 lượt đi về**, trong đó chỉ **1** là truy vấn nghiệp vụ. Trên staging mỗi lượt ~2,6 ms, nên `GET /staff` mất 26 ms ở server dù Postgres chỉ chạy < 1 ms. Ba trong số đó là **ping ẩn** của pool sqlx. Gộp lại (§5 A1–A4) đưa GET đơn giản từ ~10 xuống ~4 lượt: **−15 ms mỗi request trên staging**, `/me` từ ~10 xuống ~3 lượt.
 - **Một câu sẽ chậm dần theo dữ liệu:** lịch sử khách (`GET /customers/{id}/history`) quét **toàn bộ** hóa đơn và lượt của spa mỗi lần mở hồ sơ: **66–94 ms ở 3 năm**, tăng tuyến tính. Viết lại bằng `UNION` hai lần tra index: **0,4–0,6 ms** (×100), không cần đổi schema.
-- **Index:** 2 GIN trigram trên `customer` **không bao giờ dùng được** dưới RLS (toán tử `LIKE` không leakproof), 2 index trùng tiền tố, 4 index ngày dẫn đầu bằng `branch_id` không được dùng. Bỏ 8 index này: **−31 MB ở 3 năm (−15 % dung lượng index)**, bớt một lần ghi index cho mỗi lượt, dòng lượt, hóa đơn, dòng hóa đơn, thanh toán. Plan không đổi (đã thử trong transaction rồi rollback).
-- **Dung lượng không phải vấn đề:** 3 năm ≈ **397 MB** (heap 176 MB, index 208 MB, audit 126 MB = 32 %). Supabase Pro có sẵn 8 GB đĩa. Việc cần làm là **vệ sinh dữ liệu cá nhân**: bảng `session` (IP + user agent) **không bao giờ được dọn**.
+- **Index:** 2 GIN trigram trên `customer` **không bao giờ dùng được** dưới RLS (toán tử `LIKE` không leakproof), 2 index trùng tiền tố, 4 index ngày dẫn đầu bằng `branch_id` không được dùng. Bỏ 8 index này: **−16 MB ở 3 năm (−13 % dung lượng index; số đo ban đầu −31 MB bị phồng, xem ⚠️ ở §2)**, bớt một lần ghi index cho mỗi lượt, dòng lượt, hóa đơn, dòng hóa đơn, thanh toán. Plan không đổi (đã thử trong transaction rồi rollback).
+- **Dung lượng không phải vấn đề:** 3 năm ≈ **312 MB** (heap 176 MB, index 125 MB, audit 126 MB = 40 %; đã sửa, xem §2). Supabase Pro có sẵn 8 GB đĩa. Việc cần làm là **vệ sinh dữ liệu cá nhân**: bảng `session` (IP + user agent) **không bao giờ được dọn**.
 
 ## 1. Cách đo
 - **Đọc tĩnh:** 29 migration (0001…0032; 0008, 0010, 0031 bỏ trống) và 257 câu SQL trong `apps/api/.sqlx`. Danh mục index, FK, constraint, trigger và grant lấy từ một DB local mới migrate tới 0032.
@@ -42,6 +42,21 @@ EM nhờ rà kỹ schema (bảng, index, FK, lưu trữ, toàn vẹn, xung độ
 | Toàn DB | | 176 MB | **208 MB** | 1,18 |
 
 Index chiếm nhiều hơn dữ liệu. Phần lớn là chủ ý: `PK (id)` + `UNIQUE (tenant_id, id)` làm đích cho FK kép (§6). Phần bỏ được nằm ở F5–F6.
+
+> ⚠️ **Sửa số đo (2026-11-09).** Bảng trên đo trên một DB tạm đã chạy hai lần seed bị hủy giữa chừng trước lần seed cuối. `VACUUM` dọn dòng chết nhưng không thu nhỏ trang index, nên index bị phồng.
+>
+> Đo lại trên DB sạch: cùng script seed, migrate tới 0032, `VACUUM ANALYZE`, script `infra/perf/db/sizes.sql`.
+> - Toàn DB **312 MB**: heap 176 MB, **index 125 MB**, audit 126 MB = 40 %.
+> - Index của `visit` 20 MB, `visit_line` 19 MB, `appointment` 14 MB, `sale_line` 13 MB, `customer` 5,9 MB.
+> - 8 index của B1 cộng lại **16 MB** (13 % index), không phải 31 MB: `visit_day_idx` 5,2 MB, `visit_line_visit_idx` 3,2, `sale_line_sale_idx` 3,0, hai GIN trigram 2,2 + 2,1, 3 index ngày còn lại 1,0.
+> - Sau 0033: DB **295 MB**, index **108 MB**.
+>
+> Trên DB sạch, các câu theo tháng (F7) chạy index nested loop và nhanh hơn: "ngày có lượt" 2,5 ms, lương dòng dịch vụ 8 ms, báo cáo 30 ngày 21 ms. Các số độ trễ khác ở §3c không đổi đáng kể.
+
+**B1 đã làm (migration 0033, 2026-11-09).** Chạy lại 40 câu nóng trên hai DB sạch (0032 và 0033, `explain_hot.py`, `app_rw` + RLS).
+- Mọi plan từng dùng index bị bỏ giờ dùng index unique thay thế. Gồm `visit_line_visit_idx` (11 câu) → `visit_line_tenant_id_visit_id_position_key`, và `sale_line_sale_idx` → `sale_line_tenant_id_sale_id_position_key`.
+- Không có seq scan mới. Thời gian nằm trong nhiễu (±0,5 ms).
+- Index ngày theo chi nhánh và GIN trigram không câu nào dùng.
 
 ## 3. Độ trễ: DB chạy bao lâu, đi về bao nhiêu lượt
 
@@ -132,10 +147,10 @@ Thứ tự theo (lợi ích ÷ rủi ro). Chưa làm gì. Bước nào đụng s
 |---|---|---|---|---|
 | **A1** | Pool: `test_before_acquire(false)` + `before_acquire` chỉ ping khi `idle_for > 30 s` (đúng mẫu trong docs sqlx), thêm `idle_timeout` < timeout rảnh của Supavisor | Code (`app/src/main.rs`), không migration | **−3 lượt/request ≈ −8 ms** trên staging (GET đơn giản 26 → ~18 ms) | Bỏ hai dòng cấu hình |
 | **A2** | Viết lại nhánh hóa đơn của lịch sử khách bằng `UNION` | Code (`reporting::customer`), `cargo sqlx prepare` | **79–94 → < 1 ms** ở 3 năm; hết tăng tuyến tính | Revert commit |
-| **A3** | `app.session_actor(token_hash)` (migration chỉ thêm hàm) + `identity::resolve/actor_for` dùng nó: session + cờ MFA / đổi mật khẩu + quyền + người đã nghỉ trong **một** câu, không cần transaction | Migration 0033 (hàm) + code + test authz / cách ly / `request_plumbing` + `secure` + ADR | **−3 lượt nữa** (−8 ms); `/me` ~10 → ~3 lượt | Code quay về đường cũ; hàm để lại vô hại hoặc `DROP FUNCTION` |
+| **A3** | `app.session_actor(token_hash)` (migration chỉ thêm hàm) + `identity::resolve/actor_for` dùng nó: session + cờ MFA / đổi mật khẩu + quyền + người đã nghỉ trong **một** câu, không cần transaction | Migration 0034 (hàm) + code + test authz / cách ly / `request_plumbing` + `secure` + ADR | **−3 lượt nữa** (−8 ms); `/me` ~10 → ~3 lượt | Code quay về đường cũ; hàm để lại vô hại hoặc `DROP FUNCTION` |
 | **A4** | Đưa timezone / chi nhánh / trần giảm giá vào `Actor` (từ A3), bỏ câu `profile` trong transaction | Code | −1 lượt ở lệnh ghi và màn dùng profile | Revert |
 | A5 | (tùy chọn) Gộp touch session vào A3 (`UPDATE … WHERE last_seen_at < now() − 60 s`) | Theo A3 | −2 lượt + một commit WAL ~5 ms, mỗi phút một lần | Revert |
-| **B1** | Migration 0034 bỏ 8 index (F5 + F6), `SET LOCAL lock_timeout = '3s'`. Hoặc `DROP INDEX CONCURRENTLY`, mỗi file một câu với dòng đầu `-- no-transaction` (sqlx 0.9 hỗ trợ; một chuỗi nhiều câu thì Postgres coi là một transaction ngầm và từ chối `CONCURRENTLY`) | Migration | **−31 MB / 3 năm (−15 % index)**; mỗi lần ghi lượt / dòng lượt / hóa đơn / dòng hóa đơn / thanh toán bớt 1 index, ghi khách bớt 2 GIN; plan không đổi | Tạo lại bằng `CREATE INDEX CONCURRENTLY` (định nghĩa bên dưới); 3 năm dữ liệu dựng < 1 s mỗi index |
+| **B1** | Migration 0033 bỏ 8 index (F5 + F6), `SET LOCAL lock_timeout = '3s'`. Hoặc `DROP INDEX CONCURRENTLY`, mỗi file một câu với dòng đầu `-- no-transaction` (sqlx 0.9 hỗ trợ; một chuỗi nhiều câu thì Postgres coi là một transaction ngầm và từ chối `CONCURRENTLY`) | Migration | **−31 MB / 3 năm (−15 % index)**; mỗi lần ghi lượt / dòng lượt / hóa đơn / dòng hóa đơn / thanh toán bớt 1 index, ghi khách bớt 2 GIN; plan không đổi | Tạo lại bằng `CREATE INDEX CONCURRENTLY` (định nghĩa bên dưới); 3 năm dữ liệu dựng < 1 s mỗi index |
 | **C1** | `app.purge_sessions(interval)` (`SECURITY DEFINER`, như `purge_idempotency_records`) + gọi cùng job dọn idempotency: xóa session đã thu hồi hoặc hết hạn quá 30 ngày | Migration + code + test | Tối thiểu hóa dữ liệu cá nhân (IP / UA); sửa lệch giữa wiki và code | Bỏ lời gọi job; hàm vô hại |
 | **C2** | Chạy `infra/perf/db/invariants.sql` định kỳ (hằng ngày, chỉ đọc) và báo khi có dòng | Job / CI | Phát hiện lệch bản sao trước khi thành lỗi tiền (skill data-integrity §7) | Tắt job |
 | C3 | Index `membership (user_id)` khi có spa thứ hai | Migration nhỏ | Login / `/me` không quét membership | Drop index |
@@ -199,11 +214,48 @@ Những thứ dưới đây trông như "thừa" hoặc "tốn" khi nhìn riêng
 | Unique một phần: `customer_phone_uq`, `package_plan_active_name_uq`, `staff_user_idx`, `staff_employment_open_idx`, `password_reset_request_open_idx` | — | Bất biến nghiệp vụ: một SĐT một hồ sơ còn hiệu lực, một đợt mở, … |
 | Supavisor **session mode** + prepared statements của sqlx | — | Transaction mode không hỗ trợ prepared statement ([Supabase](https://supabase.com/docs/guides/database/connecting-to-postgres)) |
 
-## 7. Cần EM quyết
-- **Q-DB1:** Duyệt làm A1 + A2 ngay? Chỉ đổi code, không migration, rủi ro thấp.
-- **Q-DB2:** Duyệt hướng A3 (hàm `SECURITY DEFINER` gộp xác thực, kèm ADR + `secure` review) trước khi build?
-- **Q-DB3:** Duyệt migration B1 (bỏ 8 index)?
-- **Q-DB4:** Giữ session đã hết hạn / đã thu hồi bao lâu rồi xóa (đề xuất **30 ngày**)? Có cần chính sách giữ `audit_log` không? Câu này là pháp lý / riêng tư, không phải dung lượng: 3 năm mới 126 MB.
+## 7. Quyết định của EM (2026-11-09, [raw](../../raw/2026-11-09-em-decision-db-plan.md): "ok bạn cứ làm hết đi")
+- **Q-DB1 ✅** Làm A1 + A2. **A4** đi cùng (profile của spa mang theo trong `Actor`).
+- **Q-DB2 ✅** Làm A3: hàm `SECURITY DEFINER` gộp xác thực, qua `secure`, kèm ADR mới.
+- **Q-DB3 ✅** Làm B1: bỏ 8 index, giữ DDL hoàn tác.
+- **Q-DB4 ✅** Session đã hết hạn / đã thu hồi xóa sau **30 ngày** (C1). **`audit_log` không có hạn giữ, giữ lại hết:** đây là sổ ai đã đổi tiền, chấm công và dữ liệu nhân sự. Xóa là lựa chọn pháp lý, mà chứng từ kế toán ở Việt Nam thường giữ nhiều năm, nên mặc định thận trọng là giữ. Lead có thể bàn lại với EM.
+- **C2 ✅** Kiểm bất biến hằng ngày và báo khi lệch. **C3/C4** làm phần ít rủi ro: `idle_in_transaction_session_timeout` cho `app_rw`, FK cột "người làm" (`NOT VALID` → `VALIDATE`) nếu không xung đột. Index `membership (user_id)` chờ tới khi có nhiều spa.
+- Danh sách "không được đổi" (§6) giữ nguyên.
+
+Thứ tự triển khai, mỗi bước một PR có test: (1) A1 + A2 + A4, (2) B1, (3) A3 + ADR, (4) C1 + C2 + C4 + sửa wiki backend.
+
+### 7a. Trạng thái triển khai
+**PR 1 (A1 + A2 + A4).** Đo ở local, cùng dữ liệu `seed-demo`, cùng 8 mẫu mỗi endpoint, so binary của `main` với binary của nhánh. API trỏ vào Postgres qua `infra/perf/db/rtt_proxy.py`; proxy đếm **mọi** lượt đi về, kể cả ping (một `Sync` trơn).
+
+| Endpoint | Lượt đi về trước → sau | trong đó ping | Câu sqlx (Server-Timing) |
+|---|---|---|---|
+| `GET /me` | 14 → **10** | 8 → 4 | 5 → 5 |
+| `GET /staff` | 13 → **10** | 6 → 3 | 5 → 5 |
+| `GET /visits?date=` | 17 → **14** | 6 → 3 | 9 → 9 |
+| `GET /appointments` (ngày) | 20 → **16** | 6 → 3 | 12 → **11** (A4: bỏ câu profile) |
+| `GET /attendance?month=` | 21 → **17** | 6 → 3 | 13 → **12** (A4) |
+| `GET /reports/daily` | 16 → **13** | 6 → 3 | 8 → 8 |
+| `GET /customers/{id}/history` | 24 → **20** | 6 → 3 | 16 → **15** (A4) |
+
+- 3 ping còn lại là ping sqlx 0.9 gửi khi **trả** kết nối về pool. Ping này chạy ở task nền, không nằm trên đường đi của request.
+- Trên đường đi của request, mỗi request bớt 3–4 lượt, ≈ **8–10 ms trên staging** (2,6 ms/lượt, §3a).
+- Số ms đo ở local không có ý nghĩa: proxy Python + build debug chiếm phần lớn, và độ phân giải timer của Windows (~15 ms) làm `--delay-ms` vô dụng.
+- A2 đo ở §4 F4: 79–94 → 0,4–0,6 ms ở 3 năm. Test hồi quy chạy câu cũ và câu mới trên cùng dữ liệu (người trả, người dùng gói, hóa đơn đã hủy, gói mua cho người khác, hóa đơn của lượt bị loại).
+
+**PR 3 (A3, migration 0034, [ADR-0017](../decisions/ADR-0017-one-statement-request-auth.md)).** `app.session_actor(token_hash)` gộp tra session, cờ tài khoản, quyền của membership đang chọn, cờ người đã nghỉ và cài đặt spa thành **một câu**.
+- Dùng ở `AuthUser` (`service::authenticate`), `/me` (`resolve_with_access`), và `CurrentSession` / `resolve` / `resolve_pending` / logout (bỏ phần quyền).
+- Bỏ transaction quyền riêng (`BEGIN; set_config`, `SELECT`, `COMMIT`): **−3 lượt đi về mỗi request nghiệp vụ**.
+- `/me` còn 3 câu: hàm, tài khoản, danh sách spa.
+- Test `app/tests/session_actor.rs`:
+  - grant: chỉ `app_rw`, không có PUBLIC;
+  - `search_path` được pin;
+  - chỉ trả quyền của spa đang chọn, không trả của spa khác cùng người;
+  - session đã thu hồi = không có gì;
+  - `GET /staff` và `GET /me` mỗi cái ≤ 3 câu.
+- **Mutation check:** `infra/perf/db/session_actor_checks.sql` chạy 13 phép kiểm trên fixture, trên hàm gốc và trên 11 đột biến. Mỗi đột biến bỏ một quy tắc: thu hồi, hết hạn rảnh, hết hạn tuyệt đối, tài khoản bị khóa, membership bị khóa, spa bị đình chỉ, mật khẩu tạm, người đã nghỉ, membership của spa khác, membership của người khác, MFA chờ.
+  - Hàm gốc đạt hết. 10 đột biến bị bắt (8 bằng phép kiểm hỏng, 2 bằng lỗi "nhiều hơn một dòng").
+  - Đột biến "bỏ hạn tuyệt đối" là **tương đương**: `CHECK (idle_expires_at <= absolute_expires_at)` của bảng `session` khiến điều kiện hạn rảnh đã bao luôn hạn tuyệt đối.
+- Các luồng từ chối ở Rust (`full_session`, thứ tự `no_active_tenant` → `not_a_member`, `effective_permissions`) giữ nguyên code. Chúng được phủ bởi `auth.rs` (hết hạn, thu hồi, tài khoản / membership bị khóa, spa đình chỉ, hai spa), `staff_logins.rs` (mật khẩu tạm, #103), `authz_matrix.rs` (người đã nghỉ, ADR-0014) và `staff.rs` (`staff.link_required`, #99, không đụng tới).
 
 ## 8. Tooling (`infra/perf/db/`)
 | File | Làm gì | Chạy ở đâu |
@@ -217,3 +269,11 @@ Những thứ dưới đây trông như "thừa" hoặc "tốn" khi nhìn riêng
 | `seed-busy-spa.sql` | Seed 3 năm một spa đông vào DB **tạm** (~400 MB, vài phút) | chỉ local |
 | `explain_hot.py` | Sinh script `EXPLAIN (ANALYZE, BUFFERS)` cho 40 câu nóng, nguyên văn từ `.sqlx`, với `app_rw` + RLS | chỉ local |
 | `experiments.sql` | Trigram owner vs `app_rw`, viết lại lịch sử, generic plan, bản nháp gộp xác thực, bỏ index (rollback) | chỉ local |
+
+**C1 + C2 + C4 đã làm (PR 4, migration 0035–0037, 2026-11-09):**
+- Session đã thu hồi / hết hạn bị xóa sau 30 ngày (`app.purge_sessions`).
+- Kiểm bất biến hằng ngày (`app.invariant_violations`, log ERROR khi có dòng lệch). Trên dữ liệu `seed-demo` cả 11 phép kiểm đều 0. Trên seed 3 năm, phép kiểm `sessions_remaining` báo 2 918 dòng, đúng như dự kiến, vì seed này đặt số buổi giả.
+- Mỗi job chạy một lần mỗi khoảng cho cả hệ thống (`app.claim_maintenance`, sửa F10).
+- FK cột "người làm" (`NOT VALID` → `VALIDATE`; staging 0 dòng mồ côi, `infra/perf/db/actor_column_orphans.sql`).
+- `idle_in_transaction_session_timeout = 30s` trong `TenantTx`.
+- `audit_log` giữ, không có hạn. Index `membership (user_id)` để sau.

@@ -2,6 +2,7 @@
 
 pub mod config;
 pub mod db_guard;
+pub mod db_pool;
 pub mod demo;
 mod health;
 pub mod jobs;

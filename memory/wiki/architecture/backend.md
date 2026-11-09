@@ -241,13 +241,21 @@ domain: kiểu dữ liệu & bất biến thuần (Money, PhoneE164, SessionCoun
 - **Đồ thị phụ thuộc crate:** `reporting → {packages, crm}` (chỉ đọc; SQL thẳng trên các bảng sổ, như một read model) · `operations → {packages, sales, catalog, crm}` (chỉ qua `service` API, truyền chung `&mut TenantTx`) · `sales → {catalog, crm}` · `packages → {catalog, crm}` · mọi crate → `kernel`. Không vòng; `ledger` (spec #2) chỉ **đọc** `sales`.
 - **Cross-cutting ở `app`:** config (validate khi khởi động, fail-fast), middleware tower (tracing request-id, timeout 10 giây, giới hạn body 64 KB, rate limit, kiểm tra `Origin` cho request ghi), error mapping `AppError → problem+json` tại một chỗ, header bảo mật do Caddy đặt.
 - **Chi phí mỗi request (perf giai đoạn 0, 2026-11-07):** `TenantTx::begin` gửi `BEGIN; SELECT set_config('app.tenant_id', …, true), set_config('statement_timeout','5s', true)` trong **một** simple query (`begin_with`; vẫn transaction-local, test `request_plumbing.rs`). Quyền của member = **một** câu (`array_agg` + `LEFT JOIN` role). Một request đăng nhập: tra session (+ touch mỗi vài phút) → tx quyền (BEGIN+settings, quyền, COMMIT) → tx nghiệp vụ. Trước: 8–17 câu/request, nay bớt 3 (1 ở quyền, 1 ở mỗi `TenantTx`).
+- **Rà soát DB A1/A4 (2026-11-09, [db-review](db-review-2026-11.md)):**
+  - **A1:** pool `app::db_pool::options` tắt `test_before_acquire`. Chỉ kết nối đã rảnh ≥ `PING_WHEN_IDLE_FOR` (30 s) mới bị ping trước khi giao ra. Ping hỏng thì sqlx đóng kết nối và đưa kết nối khác. `idle_timeout` 5 phút. Bớt một lượt đi về mỗi lần lấy kết nối, ~3 lượt mỗi request. sqlx 0.9 vẫn ping khi **trả** kết nối về pool, nhưng việc đó chạy ở task nền, không nằm trên đường đi của request.
+  - **A4:** câu quyền (`identity::repo::member_access`) đọc luôn timezone, chi nhánh và trần giảm giá của spa (`kernel::tenant::TenantFacts`) rồi gắn vào `Actor`. `TenantTx::for_actor` mang chúng vào transaction, nên `kernel::tenant::profile` không còn query. Transaction mở bằng `TenantTx::begin` (tooling, test) vẫn đọc như cũ.
+  - **A3 ([ADR-0017](../decisions/ADR-0017-one-statement-request-auth.md), 0034):** `app.session_actor(token_hash)` trả session + cờ MFA / mật khẩu tạm + quyền + người đã nghỉ + cài đặt spa trong **một** câu, không cần transaction.
+    - `AuthUser` = `identity::service::authenticate`; `/me` = `resolve_with_access` + tài khoản + danh sách spa.
+    - Một request đăng nhập giờ là: `session_actor` (+ touch mỗi phút) → tx nghiệp vụ.
+    - `actor_for` / `tenant_permissions` (dưới RLS) vẫn dùng cho tooling, demo, đổi mật khẩu.
 - **`Server-Timing`** (`app::server_timing`): mọi response trừ `/auth/*` có `db;dur=<ms>;desc="<n> statements", total;dur=<ms>`. `db` = tổng thời gian các câu sqlx của request (layer tracing riêng nghe event `sqlx::query` DEBUG, filter theo layer nên `RUST_LOG` không ảnh hưởng; task-local theo request). `/auth/*` không có: số câu lệnh phân biệt được SĐT lạ / bị khóa / đúng. Đọc bằng DevTools hoặc `infra/perf/endpoints.mjs`.
 - **Tiện ích domain:** chuẩn hóa SĐT VN → E.164 (`phonenumber`); tạo `search_text` (NFC → lowercase → bỏ dấu → `đ→d`); mã hóa field AES-256-GCM (`aes-gcm`, key qua `secrecy`).
 
 ## 6. Background jobs (in-process, `tokio`)
 | Job | Lịch | Retry |
 |---|---|---|
-| Dọn `idempotency_record` > 48 giờ, session hết hạn, auth token hết hạn | Mỗi giờ | Idempotent, chạy lại thoải mái. ⚠ Code (2026-11-08) **chỉ** dọn idempotency (lúc khởi động + mỗi giờ); session chưa bao giờ được dọn, xem [db-review F9 / C1](db-review-2026-11.md) |
+| Dọn `idempotency_record` > 48 giờ và session đã thu hồi / hết hạn quá **30 ngày** (`app.purge_sessions`, 0035, EM Q-DB4); `audit_log` giữ hết, không có hạn | Mỗi giờ cho cả hệ thống (`app.claim_maintenance`: một instance mỗi khoảng, dù Vercel dựng bao nhiêu instance) | Idempotent, chạy lại thoải mái (`app::jobs::run_maintenance`) |
+| Kiểm bất biến dữ liệu: 11 phép kiểm bản sao / liên kết (`app.invariant_violations`, 0035 = `infra/perf/db/invariants.sql`) | Mỗi ngày (claim 23 giờ) | Phép kiểm có dòng lệch → log **ERROR** `data invariant violated` với `check` + `rows`; log của Vercel / VPS là chỗ báo |
 | Backup `pg_dump` → mã hóa → R2 | 02:00 hằng ngày (cron trên VPS, ở `/devops`) | Alert nếu không có backup mới trong 26 giờ |
 Nhắc nhở (spec #3) sẽ dùng bảng job trên Postgres (`FOR UPDATE SKIP LOCKED`) có dead-letter.
 

@@ -137,7 +137,7 @@ pub async fn packages(
         .map(|raw| cursor::decode(raw, 2))
         .transpose()?;
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
@@ -333,7 +333,7 @@ pub async fn inactive(
         }
         None => (None, None, None),
     };
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date

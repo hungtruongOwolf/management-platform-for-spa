@@ -439,7 +439,7 @@ pub async fn record_as_of(
     actor.require(Permission::VisitRecord)?;
     let order = parse(actor, input)?;
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -1121,7 +1121,7 @@ pub async fn get(
     id: Uuid,
 ) -> Result<VisitDto, AppError> {
     actor.require(Permission::VisitRead)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let visit = load(&mut tx, cipher, actor, Some(id), None, true)
         .await?
         .pop();
@@ -1139,7 +1139,7 @@ pub async fn for_day(
     day: Option<NaiveDate>,
 ) -> Result<Vec<VisitDto>, AppError> {
     actor.require(Permission::VisitRead)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let day = match day {
         Some(d) => d,
         None => kernel::tenant::profile(&mut tx)
@@ -1164,7 +1164,7 @@ pub async fn authorized_then(
     refused: AppError,
 ) -> AppError {
     let check = async {
-        let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+        let mut tx = TenantTx::for_actor(pool, actor).await?;
         let visit = repo::lock(&mut tx, id).await?.ok_or(AppError::NotFound)?;
         let today = kernel::tenant::profile(&mut tx)
             .await?
@@ -1244,7 +1244,7 @@ pub async fn update(
         }
     };
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let visit = repo::lock(&mut tx, id).await?.ok_or(AppError::NotFound)?;
     ensure_current(&visit)?;
     let profile = kernel::tenant::profile(&mut tx).await?;
@@ -1345,7 +1345,7 @@ pub async fn void(
         Err(invalid) => return Err(authorized_then(pool, actor, id, invalid).await),
     };
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -1496,7 +1496,7 @@ pub async fn correct(
         Err(refused) => return Err(authorized_then(pool, actor, id, refused).await),
     };
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -1635,7 +1635,7 @@ pub async fn add(
         )]));
     }
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -1720,7 +1720,7 @@ pub async fn convert(
     require_package_note_rights(actor, &package_sales)?;
     let id = request.id;
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {

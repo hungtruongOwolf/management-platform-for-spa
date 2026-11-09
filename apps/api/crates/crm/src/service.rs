@@ -233,7 +233,7 @@ pub async fn create(
     health_note: Option<&str>,
 ) -> Result<CustomerView, AppError> {
     actor.require(Permission::CustomerWrite)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let view = create_in(&mut tx, cipher, actor, input, health_note).await?;
     tx.commit().await?;
     Ok(view)
@@ -288,7 +288,7 @@ pub async fn get(
     id: Uuid,
 ) -> Result<CustomerView, AppError> {
     actor.require(Permission::CustomerRead)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let row = repo::get(&mut tx, id).await?.ok_or(AppError::NotFound)?;
     tx.commit().await?;
     view(cipher, actor, row)
@@ -303,7 +303,7 @@ pub async fn update(
     input: ProfileInput,
 ) -> Result<CustomerView, AppError> {
     actor.require(Permission::CustomerWrite)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let c = validate(&input, spa_today(&mut tx).await?)?;
     let before = repo::get(&mut tx, id).await?.ok_or(AppError::NotFound)?;
     // A package owner stays someone the spa can tell apart (same rule as selling one).
@@ -352,7 +352,7 @@ pub async fn set_health_note(
         .map(|n| cipher.encrypt(n, &customer_aad(actor.tenant_id.as_uuid(), id)))
         .transpose()
         .map_err(|e| AppError::Internal(e.to_string()))?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if !repo::set_health_note(&mut tx, id, expected_version, ct.as_deref()).await? {
         return Err(if repo::exists(&mut tx, id).await? {
             AppError::StaleVersion
@@ -487,7 +487,7 @@ pub async fn phone_check(
     let Ok(phone) = PhoneE164::parse(raw) else {
         return Ok(PhoneCheck::Invalid);
     };
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let holder = phone_holder_in(&mut tx, &phone).await?;
     tx.commit().await?;
     Ok(match holder {
@@ -507,7 +507,7 @@ pub async fn search(
     if query.chars().count() > MAX_QUERY_CHARS {
         return Err(AppError::Validation(vec![FieldError::new("q", "too_long")]));
     }
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let rows = if query.is_empty() {
         repo::recent(&mut tx, SEARCH_LIMIT).await?
     } else if query.chars().all(|c| {

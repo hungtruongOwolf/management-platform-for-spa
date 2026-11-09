@@ -365,7 +365,7 @@ pub async fn list(
     status: Option<StaffStatus>,
 ) -> Result<Vec<ProfileView>, AppError> {
     actor.require(Permission::StaffRead)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let profiles = load(&mut tx, None, false).await?;
     let pays = if actor.can(Permission::PayrollRead) {
         repo::pays(&mut tx).await?
@@ -390,7 +390,7 @@ pub async fn list(
 /// ([`hidden_from`]: they read it in "Công và lương của tôi").
 pub async fn get(pool: &PgPool, actor: &Actor, id: Uuid) -> Result<ProfileView, AppError> {
     actor.require(Permission::StaffRead)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if hidden_from(&mut tx, actor).await? == Some(id) {
         return Err(AppError::NotFound);
     }
@@ -417,7 +417,7 @@ pub async fn create(
 ) -> Result<ProfileView, AppError> {
     actor.require(Permission::StaffManage)?;
     let clean = validate_profile(input)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let id = Uuid::now_v7();
     check_link(&mut tx, user_id, id).await?;
     let branch = kernel::tenant::profile(&mut tx).await?.branch;
@@ -465,7 +465,7 @@ pub async fn update(
 ) -> Result<ProfileView, AppError> {
     actor.require(Permission::StaffManage)?;
     let clean = validate_profile(input)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let before = load_one(&mut tx, id, true).await?;
     fresh(&before, version)?;
     let periods = before.employment.periods();
@@ -533,7 +533,7 @@ pub async fn set_account(
     user_id: Option<Uuid>,
 ) -> Result<ProfileView, AppError> {
     actor.require(Permission::StaffManage)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let before = load_one(&mut tx, id, true).await?;
     fresh(&before, version)?;
     check_link(&mut tx, user_id, id).await?;
@@ -607,7 +607,7 @@ pub async fn end(
     input: &EndInput,
 ) -> Result<ProfileView, AppError> {
     actor.require(Permission::StaffManage)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let before = load_one(&mut tx, id, true).await?;
     fresh(&before, version)?;
     let reason = input.reason.trim();
@@ -706,7 +706,7 @@ pub async fn rehire(
     started_on: NaiveDate,
 ) -> Result<ProfileView, AppError> {
     actor.require(Permission::StaffManage)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let before = load_one(&mut tx, id, true).await?;
     fresh(&before, version)?;
     if before.employment.current().is_some() {
@@ -761,7 +761,7 @@ pub async fn set_pay(
     actor.require(Permission::StaffManage)?;
     actor.require(Permission::PayrollRead)?;
     validate_pay(input)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     repo::profile(&mut tx, id, true)
         .await?
         .ok_or(AppError::NotFound)?;
@@ -853,7 +853,7 @@ pub async fn history(
 ) -> Result<Vec<HistoryEntry>, AppError> {
     actor.require(Permission::StaffManage)?;
     let pay_visible = actor.can(Permission::PayrollRead);
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     repo::profile(&mut tx, id, false)
         .await?
         .ok_or(AppError::NotFound)?;
@@ -902,7 +902,7 @@ impl From<AccountRow> for Account {
 /// `GET /staff/accounts` (`staff.manage`): the spa's logins, for linking a profile.
 pub async fn accounts(pool: &PgPool, actor: &Actor) -> Result<Vec<Account>, AppError> {
     actor.require(Permission::StaffManage)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let rows = repo::accounts(&mut tx).await?;
     tx.commit().await?;
     Ok(rows.into_iter().map(Account::from).collect())

@@ -56,7 +56,7 @@ pub async fn list(
     status: Option<StaffStatus>,
 ) -> Result<Vec<Staff>, AppError> {
     actor.require(Permission::StaffReadBasic)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let rows = repo::list(&mut tx, status.map(StaffStatus::as_str)).await?;
     tx.commit().await?;
     rows.into_iter().map(Staff::try_from).collect()

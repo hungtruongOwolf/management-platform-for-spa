@@ -305,7 +305,7 @@ pub async fn daily(
 ) -> Result<DailyReport, AppError> {
     actor.require(Permission::ReportRead)?;
     let with_money = actor.can(Permission::ReportRevenueRead);
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let date = match date {
         Some(d) => d,
         None => today(&mut tx).await?,
@@ -400,7 +400,7 @@ pub async fn range(
 ) -> Result<RangeReport, AppError> {
     actor.require(Permission::ReportRead)?;
     let with_money = actor.can(Permission::ReportRevenueRead);
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let today = today(&mut tx).await?;
     let (from, to, granularity) =
         range_window(query, today, actor.can(Permission::ReportLongRange))?;
@@ -564,7 +564,7 @@ pub async fn ledger(
         }
         None => None,
     };
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let today = today(&mut tx).await?;
     let from = from.unwrap_or(today);
     let (from, to) = window(

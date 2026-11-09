@@ -84,7 +84,7 @@ pub async fn authorized_then(
     refused: AppError,
 ) -> AppError {
     let check = async {
-        let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+        let mut tx = TenantTx::for_actor(pool, actor).await?;
         let sale = repo::lock_sale(&mut tx, id)
             .await?
             .ok_or(AppError::NotFound)?;
@@ -116,7 +116,7 @@ pub async fn void_sale(
         Err(invalid) => return Err(authorized_then(pool, actor, id, invalid).await),
     };
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {

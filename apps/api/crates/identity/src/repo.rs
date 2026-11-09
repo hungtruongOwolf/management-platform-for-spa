@@ -2,6 +2,7 @@
 //! tenant tables (memberships, roles) only inside a `TenantTx`.
 
 use chrono::{DateTime, Utc};
+use kernel::tenant::TenantFacts;
 use kernel::{AppError, Permission, PhoneE164, TenantId, TenantTx, UserId};
 use sqlx::PgPool;
 use sqlx::types::ipnetwork::IpNetwork;
@@ -159,33 +160,83 @@ pub struct SessionRow {
     pub must_change_password: bool,
 }
 
-/// A live session: not revoked, not past either expiry, owner account active.
-pub async fn live_session(
+/// A live session and, when its spa is active and the user an active member there, what they
+/// may do in it.
+pub struct LiveSession {
+    pub row: SessionRow,
+    /// `None` = no active spa on the session, the spa is suspended, or no active membership.
+    pub access: Option<MemberAccess>,
+}
+
+/// A live session (not revoked, not past either expiry, owner account active) with its active
+/// membership's permissions, in one statement (`app.session_actor`, 0034, ADR-0017): no
+/// separate permission transaction before the request's own.
+pub async fn session_actor(
     pool: &PgPool,
     token_hash: &[u8; 32],
-) -> Result<Option<SessionRow>, AppError> {
+) -> Result<Option<LiveSession>, AppError> {
     let row = sqlx::query!(
-        r#"SELECT s.id, s.user_id, s.active_tenant_id, s.last_seen_at, s.absolute_expires_at, s.recent_auth_at,
-                  s.mfa_pending, u.mfa_enabled_at IS NOT NULL AS "mfa_enrolled!", u.must_change_password
-           FROM app.session s JOIN app.user_account u ON u.id = s.user_id
-           WHERE s.token_hash = $1 AND s.revoked_at IS NULL
-             AND now() < s.idle_expires_at AND now() < s.absolute_expires_at
-             AND u.status = 'active'"#,
+        r#"SELECT session_id AS "session_id!", user_id AS "user_id!", active_tenant_id,
+                  last_seen_at AS "last_seen_at!", absolute_expires_at AS "absolute_expires_at!",
+                  recent_auth_at AS "recent_auth_at!", mfa_pending AS "mfa_pending!",
+                  mfa_enrolled AS "mfa_enrolled!", must_change_password AS "must_change_password!",
+                  member AS "member!", permissions AS "permissions!", former_staff AS "former_staff!",
+                  timezone, manager_discount_max_pct, branch_id
+           FROM app.session_actor($1)"#,
         &token_hash[..]
     )
     .fetch_optional(pool)
     .await?;
-    Ok(row.map(|r| SessionRow {
-        id: r.id,
-        user_id: UserId::from_uuid(r.user_id),
-        active_tenant: r.active_tenant_id.map(TenantId::from_uuid),
-        last_seen_at: r.last_seen_at,
-        absolute_expires_at: r.absolute_expires_at,
-        recent_auth_at: r.recent_auth_at,
-        mfa_pending: r.mfa_pending,
-        mfa_enrolled: r.mfa_enrolled,
-        must_change_password: r.must_change_password,
+    let Some(r) = row else {
+        return Ok(None);
+    };
+    let active_tenant = r.active_tenant_id.map(TenantId::from_uuid);
+    let access = match (r.member, active_tenant) {
+        (true, Some(tenant)) => Some(MemberAccess {
+            permissions: kernel::permission::effective_permissions(
+                known_permissions(&r.permissions),
+                r.former_staff,
+            ),
+            facts: r.timezone.as_deref().and_then(|tz| {
+                TenantFacts::from_row(
+                    tenant,
+                    tz,
+                    r.manager_discount_max_pct.as_deref(),
+                    r.branch_id,
+                )
+                .ok()
+            }),
+        }),
+        _ => None,
+    };
+    Ok(Some(LiveSession {
+        row: SessionRow {
+            id: r.session_id,
+            user_id: UserId::from_uuid(r.user_id),
+            active_tenant,
+            last_seen_at: r.last_seen_at,
+            absolute_expires_at: r.absolute_expires_at,
+            recent_auth_at: r.recent_auth_at,
+            mfa_pending: r.mfa_pending,
+            mfa_enrolled: r.mfa_enrolled,
+            must_change_password: r.must_change_password,
+        },
+        access,
     }))
+}
+
+/// Permission names of the catalog; a name the code no longer knows is skipped (and logged).
+fn known_permissions(names: &[String]) -> Vec<Permission> {
+    names
+        .iter()
+        .filter_map(|name| match Permission::from_str(name) {
+            Ok(p) => Some(p),
+            Err(_) => {
+                tracing::warn!(permission = %name, "ignoring unknown permission in role");
+                None
+            }
+        })
+        .collect()
 }
 
 pub async fn touch_session(
@@ -381,18 +432,34 @@ pub async fn tenants_of_user(pool: &PgPool, user: UserId) -> Result<Vec<TenantRe
         .collect())
 }
 
-/// Permissions of an active member of an active spa (the transaction's tenant). `None` = not an
-/// active member, or the spa is suspended: a suspended spa grants nothing, even to live sessions.
-/// A member whose linked staff profile has left holds only `kernel::permission::FORMER_STAFF`
-/// (ADR-0014): derived here on every request from the roster, never from the client.
+/// What an active member of an active spa (the transaction's tenant) may do, plus the spa's
+/// settings the request's use cases need (db review A4: read here, in the same statement, rather
+/// than once more in every transaction). `None` = not an active member, or the spa is suspended:
+/// a suspended spa grants nothing, even to live sessions. A member whose linked staff profile has
+/// left holds only `kernel::permission::FORMER_STAFF` (ADR-0014): derived here on every request
+/// from the roster, never from the client.
+pub struct MemberAccess {
+    pub permissions: Vec<Permission>,
+    pub facts: Option<TenantFacts>,
+}
+
+/// [`member_access`] without the spa settings.
 pub async fn member_permissions(
     tx: &mut TenantTx,
     user: UserId,
 ) -> Result<Option<Vec<Permission>>, AppError> {
+    Ok(member_access(tx, user).await?.map(|a| a.permissions))
+}
+
+pub async fn member_access(
+    tx: &mut TenantTx,
+    user: UserId,
+) -> Result<Option<MemberAccess>, AppError> {
     // One statement (perf page §3.4: every authenticated request paid two round trips here). A
     // member with no role still gets a row, with an empty list; no row = not an active member.
     // `(tenant_id, user_id)` is unique, so at most one row. `staff.status` mirrors the latest
     // employment period (0025): `left` = no open period (`staff_user_idx` answers the lookup).
+    let tenant = tx.tenant();
     let member = sqlx::query!(
         r#"SELECT COALESCE(
                     array_agg(DISTINCT rp.permission) FILTER (WHERE rp.permission IS NOT NULL),
@@ -400,14 +467,18 @@ pub async fn member_permissions(
                   ) AS "permissions!",
                   EXISTS (SELECT 1 FROM app.staff s
                           WHERE s.tenant_id = m.tenant_id AND s.user_id = m.user_id
-                            AND s.status = 'left') AS "former_staff!"
+                            AND s.status = 'left') AS "former_staff!",
+                  t.timezone,
+                  (t.settings ->> 'manager_discount_max_pct') AS manager_discount_max_pct,
+                  (SELECT b.id FROM app.branch b WHERE b.tenant_id = t.id AND b.active
+                   ORDER BY b.created_at, b.id LIMIT 1) AS branch_id
            FROM app.membership m
            JOIN app.tenant t ON t.id = m.tenant_id
            LEFT JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
            LEFT JOIN app.role_permission rp ON rp.tenant_id = mr.tenant_id AND rp.role_id = mr.role_id
            WHERE m.tenant_id = $1 AND m.user_id = $2 AND m.status = 'active' AND t.status = 'active'
-           GROUP BY m.id"#,
-        tx.tenant().as_uuid(),
+           GROUP BY m.id, t.id"#,
+        tenant.as_uuid(),
         user.as_uuid()
     )
     .fetch_optional(tx.conn())
@@ -415,21 +486,22 @@ pub async fn member_permissions(
     let Some(member) = member else {
         return Ok(None);
     };
-    let roles = member
-        .permissions
-        .iter()
-        .filter_map(|name| match Permission::from_str(name) {
-            Ok(p) => Some(p),
-            Err(_) => {
-                tracing::warn!(permission = %name, "ignoring unknown permission in role");
-                None
-            }
-        })
-        .collect();
-    Ok(Some(kernel::permission::effective_permissions(
-        roles,
-        member.former_staff,
-    )))
+    // A spa without an active branch or with an unknown zone authorizes as before; only the use
+    // cases that need its profile fail, when they read it (no facts carried = read in the tx).
+    let facts = TenantFacts::from_row(
+        tenant,
+        &member.timezone,
+        member.manager_discount_max_pct.as_deref(),
+        member.branch_id,
+    )
+    .ok();
+    Ok(Some(MemberAccess {
+        permissions: kernel::permission::effective_permissions(
+            known_permissions(&member.permissions),
+            member.former_staff,
+        ),
+        facts,
+    }))
 }
 
 // ------------------------------------------------------------------ passwords (ADR-0016)
