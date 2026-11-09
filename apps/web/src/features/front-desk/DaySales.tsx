@@ -37,7 +37,7 @@ function daySalesQuery(date?: string) {
 type Payment = DaySale["sale"]["payments"][number];
 
 /** "Tiền mặt" / "Chuyển khoản" / "Tiền mặt + CK" of the money taken; "" when none. */
-function methodText(payments: Payment[]): string {
+export function methodText(payments: Pick<Payment, "kind" | "method">[]): string {
   const methods = new Set(payments.filter((p) => p.kind === "payment").map((p) => p.method));
   if (methods.size === 0) return "";
   if (methods.size > 1) return "Tiền mặt + CK";

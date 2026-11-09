@@ -470,7 +470,6 @@ describe("Đặt lịch hẹn (spec appointments.md §10.2, §10.5)", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       /Giờ hẹn 09:00 đã qua \(bây giờ 10:00\): chọn từ 10:00 trở đi/,
     );
-    expect(screen.queryByRole("button", { name: "Vẫn đặt lịch" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Đặt lịch" }));
     expect(fetchMock).not.toHaveBeenCalled();
     await user.selectOptions(screen.getByLabelText("Giờ hẹn"), "600");

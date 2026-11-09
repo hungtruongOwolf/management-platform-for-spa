@@ -726,9 +726,6 @@ button.appt-member:hover {
 .appt-companions > .btn-ghost {
   margin-left: -16px;
 }
-.callout > .appt-callout-body {
-  color: var(--text);
-}
 .appt-sheet {
   display: grid;
   gap: 16px;

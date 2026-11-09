@@ -28,8 +28,8 @@ import { ReferrerOptions } from "./CartOptions";
 import { defaultCloser } from "./upsell";
 import "./cart-packages.css";
 
-export { SELF_CHOSEN, packageSalesBody, sellCart, sellPackageOnly } from "./checkout";
-export { LineReferrer, ReferrerOptions } from "./CartOptions";
+export { packageSalesBody, sellCart, sellPackageOnly } from "./checkout";
+export { LineReferrer } from "./CartOptions";
 
 /** Why a nameless walk-in cannot own the package (server: `422 customer.name_required`). */
 export const OWNER_NAME_NEEDED =
