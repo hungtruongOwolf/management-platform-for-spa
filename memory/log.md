@@ -689,3 +689,9 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Kết luận: Postgres không phải nút thắt (29/40 câu ≤ 3 ms); ~10 lượt đi về API↔DB mỗi GET (3 ping `test_before_acquire`, xác thực 2 transaction). Lịch sử khách seq scan 66–94 ms → `UNION` < 1 ms; GIN trigram không dùng được dưới RLS; 8 index bỏ được (−31 MB); session không bao giờ được dọn.
 - Đề xuất theo thứ tự A1 (pool ping) → A2 (lịch sử) → A3/A4 (gộp xác thực, cần ADR + secure) → B1 (bỏ index) → C1 (dọn session) → C2 (job bất biến); danh sách không được đổi ở §6. Tooling `infra/perf/db/`.
 - Tiếp theo: EM trả lời Q-DB1…Q-DB4; chưa đổi schema, chưa merge.
+
+## [2026-11-09] decision + build + perf | Rà soát DB: EM duyệt hết; PR 1 = A1 + A2 + A4
+- Raw: [2026-11-09-em-decision-db-plan](raw/2026-11-09-em-decision-db-plan.md) ("ok bạn cứ làm hết đi"). Q-DB1..4 ghi ở [db-review §7](wiki/architecture/db-review-2026-11.md); `audit_log` giữ, không có hạn.
+- A1 `app::db_pool` (ping chỉ khi rảnh >= 30 s, test giết backend); A2 lịch sử khách `UNION` (test hồi quy so câu cũ); A4 `TenantFacts` trong `Actor`, `TenantTx::for_actor` (96 chỗ gọi).
+- Đo local qua `rtt_proxy.py`: `/staff` 13 → 10 lượt đi về (ping 6 → 3, 3 còn lại là ping nền khi trả kết nối), `/appointments` 20 → 16, lịch sử khách 24 → 20.
+- Tiếp theo: PR 2 (B1, migration 0033).
