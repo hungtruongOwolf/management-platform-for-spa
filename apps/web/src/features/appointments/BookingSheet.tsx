@@ -297,9 +297,12 @@ export function BookingSheet({
   const [attempted, setAttempted] = useState(false);
   // One key per booking, kept across retries so a resend never books twice.
   const [key] = useState(() => crypto.randomUUID());
-  // Editing runs several requests: what already went through is not sent again on a retry.
-  const patched = useRef<Appointment | null>(null);
-  const groupMoved = useRef<Appointment | null>(null);
+  // Editing runs several requests: what already went through is not sent again on a retry, until
+  // the form changes (then it goes again with the new values). `latest` is the newest copy the
+  // server returned: its version is the one the next request must match.
+  const latest = useRef<Appointment | null>(null);
+  const groupMoved = useRef(false);
+  const patched = useRef(false);
   const formRef = useRef<HTMLFormElement | null>(null);
 
   const serviceOf = (id: string): Service | undefined =>
@@ -438,17 +441,22 @@ export function BookingSheet({
       const withNotes = notes.length > 0 ? { companions: notes } : {};
       if (editing) {
         // The whole group first (one server transaction); then this booking's other changes.
-        if (wholeGroup)
-          groupMoved.current ??=
-            (await moveGroup(editing, starts_at)).moved.find((x) => x.id === editing.id) ?? editing;
-        patched.current ??= await updateAppointment(groupMoved.current ?? editing, {
-          starts_at,
-          duration_min: minutesOfPerson(first),
-          staff_id: first.staffId || null,
-          service_ids: first.serviceIds,
-          note: note.trim() || null,
-          companions: notes,
-        });
+        if (wholeGroup && !groupMoved.current) {
+          const moved = await moveGroup(latest.current ?? editing, starts_at);
+          latest.current = moved.moved.find((x) => x.id === editing.id) ?? latest.current;
+          groupMoved.current = true;
+        }
+        if (!patched.current) {
+          latest.current = await updateAppointment(latest.current ?? editing, {
+            starts_at,
+            duration_min: minutesOfPerson(first),
+            staff_id: first.staffId || null,
+            service_ids: first.serviceIds,
+            note: note.trim() || null,
+            companions: notes,
+          });
+          patched.current = true;
+        }
         for (const p of others)
           await bookAppointment(
             {
@@ -458,7 +466,7 @@ export function BookingSheet({
             },
             p.bookingKey,
           );
-        return patched.current;
+        return latest.current ?? editing;
       }
       if (others.length === 0)
         return bookAppointment(
@@ -496,9 +504,18 @@ export function BookingSheet({
     save.error instanceof ApiError && save.error.code === "customer.phone_taken"
       ? save.error.existingId
       : undefined;
+  /** "Dùng hồ sơ này" could not open that record (offline, no longer there): said, not swallowed. */
+  const [adoptProblem, setAdoptProblem] = useState<string | null>(null);
   /** The newcomer whose phone already has a record becomes that customer. */
   const adoptExisting = async (id: string) => {
-    const c = await queryClient.query(customerQuery(id));
+    const c = await queryClient
+      .query(customerQuery(id))
+      .catch((e: unknown) => {
+        setAdoptProblem(messageFor(e));
+        return null;
+      });
+    if (!c) return;
+    setAdoptProblem(null);
     const digits = (s: string) => s.replace(/\D/g, "").replace(/^84/, "0");
     const guest =
       people.find(
@@ -559,6 +576,11 @@ export function BookingSheet({
     // Only on an edit of the form, not when the refusal itself arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day, start, people]);
+  // An edit after a partial failure: the steps that went through are sent again with the new values.
+  useEffect(() => {
+    groupMoved.current = false;
+    patched.current = false;
+  }, [day, start, people, note, wholeGroup]);
 
   // A server refusal: bring the field it is about into view (the sentence is in the footer).
   useEffect(() => {
@@ -651,7 +673,10 @@ export function BookingSheet({
         <>
           {taken ? (
             <div role="alert" className="alert appt-footer-note">
-              <span>Số điện thoại của khách mới đã có hồ sơ khách.</span>
+              <span>
+                Số điện thoại của khách mới đã có hồ sơ khách.
+                {adoptProblem && ` Chưa mở được hồ sơ: ${adoptProblem}`}
+              </span>
               <button
                 type="button"
                 className="btn btn-secondary"

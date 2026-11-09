@@ -5,6 +5,7 @@ import { authQuery, can, meQuery, type Me } from "../features/auth/session";
 import { spaToday } from "../features/corrections/api";
 import { dailyReportQuery } from "../features/reports/api";
 import { StatCard, StatSkeleton, count, money } from "../features/reports/ui";
+import { mayOpen } from "./access";
 import { BrandLogo } from "./BrandLogo";
 import { canSeeManagement } from "./features";
 import { Icon } from "./Icon";
@@ -57,7 +58,8 @@ export function prefetchHome(queryClient: QueryClient): void {
     void queryClient.query(dailyReportQuery(spaToday())).catch(() => undefined);
 }
 
-function Today() {
+/** `reportsOpen`: the link only when "Báo cáo kinh doanh" opens (the spa may have the feature off). */
+function Today({ reportsOpen }: { reportsOpen: boolean }) {
   const daily = useQuery(dailyReportQuery(spaToday()));
   return (
     <section aria-labelledby="today-title" className="grid content-start gap-3">
@@ -65,12 +67,14 @@ function Today() {
         <h2 id="today-title" className="section-heading">
           Hôm nay
         </h2>
-        <Link
-          to="/bao-cao"
-          className="link inline-flex min-h-11 items-center gap-1 text-sm"
-        >
-          Xem báo cáo <Icon name="arrow-right" className="size-4" />
-        </Link>
+        {reportsOpen && (
+          <Link
+            to="/bao-cao"
+            className="link inline-flex min-h-11 items-center gap-1 text-sm"
+          >
+            Xem báo cáo <Icon name="arrow-right" className="size-4" />
+          </Link>
+        )}
       </div>
       <div className="stat-grid">
         {daily.data ? (
@@ -129,7 +133,7 @@ export function HomePage() {
           <ResetRequestsNotice />
         </Suspense>
       )}
-      {canSeeManagement(me) && <Today />}
+      {canSeeManagement(me) && <Today reportsOpen={mayOpen.reports(me)} />}
 
       <section
         aria-labelledby="shortcuts-title"

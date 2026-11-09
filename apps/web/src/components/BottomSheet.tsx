@@ -1,6 +1,6 @@
 import { useId, useRef, type ReactNode } from "react";
 import { Icon } from "../app/Icon";
-import { useModalDialog } from "./useModalDialog";
+import { useBackdropClose, useModalDialog } from "./useModalDialog";
 
 export { useModalDialog };
 
@@ -31,6 +31,7 @@ export interface BottomSheetProps {
  */
 export function BottomSheet({ open, onClose, title, description, children, footer, wide = false, className = "" }: BottomSheetProps) {
   const ref = useModalDialog(open);
+  const backdrop = useBackdropClose(onClose);
   const titleId = useId();
   const drag = useRef<{ y: number; dy: number } | null>(null);
 
@@ -59,10 +60,7 @@ export function BottomSheet({ open, onClose, title, description, children, foote
       aria-labelledby={titleId}
       className={`sheet ${wide ? "sheet-wide" : ""} ${className}`}
       onClose={onClose}
-      onClick={(e) => {
-        // A click on the backdrop lands on the dialog element itself.
-        if (e.target === e.currentTarget) onClose();
-      }}
+      {...backdrop}
     >
       {open && (
         <div className="sheet-inner">

@@ -3918,8 +3918,8 @@ export interface components {
         };
         PayrollRules: {
             /**
-             * @description Pay the "chốt liệu trình mới" commission to the closer of a package sale (⚠️ #3; R1
-             *     always collects in full, so collected = sold value).
+             * @description Pay the upsell commission (§3.2): packages closed and one-off services recommended (⚠️ #3;
+             *     R1 always collects in full, so collected = sold value).
              * @default true
              */
             closing_commission: boolean;

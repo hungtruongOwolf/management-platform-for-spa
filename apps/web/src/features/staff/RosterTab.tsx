@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Icon } from "../../app/Icon";
 import { BottomSheet } from "../../components/BottomSheet";
 import { DateField, isoToDmy } from "../../components/DateField";
@@ -32,7 +32,7 @@ import { POSITIONS, ROSTER_FILTERS, ROSTER_FILTER_LABEL, inFilter, tenureLabel, 
 import { vnd } from "./ui";
 
 /**
- * "Nhân sự" (spec staff-management §13): the roster — who works here, since when, for how long,
+ * "Hồ sơ nhân viên" (spec staff-management §13): the roster — who works here, since when, for how long,
  * who has left and why — with hiring, editing, ending employment (soft: history stays) and
  * rehiring. Owner (`staff.manage`) writes; a manager (`staff.read`) reads names, positions,
  * periods and tenure only: the server sends nothing more (no phone, note, login or reason).
@@ -392,6 +392,13 @@ function HistorySection({ id }: { id: string }) {
 
 const digits = (v: string) => Number(v.replace(/\D/g, "") || "0");
 
+/** Server bounds of the pay terms (org/src/profile.rs `validate_pay`), named in its errors. */
+const PAY_MAX: Record<string, number> = {
+  base_salary: 1_000_000_000,
+  loyalty_bonus_monthly: 100_000_000,
+  meal_allowance: 100_000_000,
+};
+
 /** Add (hire) or edit a profile; pay terms only when the server says pay is visible. */
 function ProfileForm({
   profile,
@@ -424,6 +431,10 @@ function ProfileForm({
   const [rate, setRate] = useState(pay ? String(pay.commission_rate_bp / 100) : "5");
   const [loyalty, setLoyalty] = useState(pay ? String(pay.loyalty_bonus_monthly) : "0");
   const [meal, setMeal] = useState(pay ? String(pay.meal_allowance) : "0");
+  // The profile and its pay are two writes. When the pay is refused, the profile is already saved:
+  // the retry updates that one (its id and version) instead of hiring the person twice or sending
+  // a version the server has moved past.
+  const written = useRef<StaffProfile | null>(null);
   const save = useMutation({
     mutationFn: async () => {
       const body = {
@@ -434,7 +445,9 @@ function ProfileForm({
         shift_start: shift || null,
         note: note.trim() || null,
       };
-      const saved = profile ? await updateProfile(profile.id, profile.version, body) : await createProfile({ ...body, user_id: null });
+      const target = written.current ?? profile;
+      const saved = target ? await updateProfile(target.id, target.version, body) : await createProfile({ ...body, user_id: null });
+      written.current = saved;
       if (payVisible && base) {
         await savePay(saved.id, {
           base_salary: digits(base),
@@ -451,8 +464,17 @@ function ProfileForm({
       if (!profile && onCreated && withLogin && loginPhone.trim()) onCreated(saved.id, { phone: loginPhone.trim(), role: loginRole });
       else onClose();
     },
+    onError: async () => {
+      // Part of it was saved: show it behind the sheet.
+      if (written.current) await invalidateStaff(queryClient);
+    },
   });
   const err = (f: string) => fieldMessage(save.error, f);
+  const payErr = (f: string) => {
+    const message = err(f);
+    const max = PAY_MAX[f];
+    return message && max !== undefined ? `Tối đa ${vnd(max)}.` : message;
+  };
   const formId = "profile-form";
   const leftAlready = profile?.status === "left";
   return (
@@ -486,6 +508,7 @@ function ProfileForm({
           <label className="filter-field">
             Họ tên
             <input required maxLength={200} value={name} onChange={(e) => { setName(e.target.value); }} aria-invalid={err("full_name") ? true : undefined} />
+            {err("full_name") && <span className="text-sm text-danger">{err("full_name")}</span>}
           </label>
           <label className="filter-field">
             Vị trí
@@ -566,7 +589,8 @@ function ProfileForm({
             <legend className="mb-1 text-sm font-semibold">Lương (chỉ chủ spa thấy)</legend>
             <label className="filter-field">
               Lương cứng thực nhận / tháng (đ)
-              <input inputMode="numeric" value={base} onChange={(e) => { setBase(e.target.value.replace(/[^\d.]/g, "")); }} />
+              <input inputMode="numeric" value={base} onChange={(e) => { setBase(e.target.value.replace(/[^\d.]/g, "")); }} aria-invalid={payErr("base_salary") ? true : undefined} />
+              {payErr("base_salary") && <span className="text-sm text-danger">{payErr("base_salary")}</span>}
             </label>
             <label className="filter-field">
               Hoa hồng (%)
@@ -580,11 +604,13 @@ function ProfileForm({
             </label>
             <label className="filter-field">
               Thưởng gắn bó / tháng (đ)
-              <input inputMode="numeric" value={loyalty} onChange={(e) => { setLoyalty(e.target.value.replace(/[^\d.]/g, "")); }} />
+              <input inputMode="numeric" value={loyalty} onChange={(e) => { setLoyalty(e.target.value.replace(/[^\d.]/g, "")); }} aria-invalid={payErr("loyalty_bonus_monthly") ? true : undefined} />
+              {payErr("loyalty_bonus_monthly") && <span className="text-sm text-danger">{payErr("loyalty_bonus_monthly")}</span>}
             </label>
             <label className="filter-field">
               Hỗ trợ tiền ăn / tháng (đ)
-              <input inputMode="numeric" value={meal} onChange={(e) => { setMeal(e.target.value.replace(/[^\d.]/g, "")); }} />
+              <input inputMode="numeric" value={meal} onChange={(e) => { setMeal(e.target.value.replace(/[^\d.]/g, "")); }} aria-invalid={payErr("meal_allowance") ? true : undefined} />
+              {payErr("meal_allowance") && <span className="text-sm text-danger">{payErr("meal_allowance")}</span>}
             </label>
           </fieldset>
         ) : null}

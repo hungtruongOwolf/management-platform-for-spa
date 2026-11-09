@@ -1,7 +1,7 @@
 ---
 title: "Spec R1-1: Màn hình quầy & liệu trình khách hàng"
 status: approved
-updated: 2026-11-07
+updated: 2026-11-09
 sources: [raw/2026-11-04-idea-internal-platform.md, raw/2026-11-06-em-upsell-and-convert-to-package.md, raw/2026-11-06-em-answers-round6-upsell.md]
 related: [../vision.md, ../personas.md, ../glossary.md, ../paper-books-analysis.md]
 ---
@@ -17,7 +17,7 @@ Thay **sổ dịch vụ**, **sổ theo dõi liệu trình khách hàng** và ph�
 - **Quản lý (kiêm thu ngân):** thực hiện mọi thao tác trong spec.
 - **Chủ spa:** mọi quyền của Quản lý, cộng thêm hủy/sửa sau khi đã chốt ngày, hoàn tiền, cấu hình bảng giá.
 - **Kỹ thuật viên:** không thao tác trong spec này. Chỉ được gắn tên vào buổi làm và người chốt gói.
-- Quyền được kiểm tra bằng permission (xem [principles](../../architecture/principles.md) #2). Bảng dưới là **mặc định ban đầu**; chủ spa đổi được ở spec #4.
+- Quyền được kiểm tra bằng permission (xem [principles](../../architecture/principles.md) #2). Bảng dưới là **mặc định ban đầu**; chủ spa đổi được ở spec #4 *(thay bằng [ADR-0018](../../decisions/ADR-0018-platform-admin-console.md) D5: hiện chỉ operator nền tảng sửa role của spa ở console admin; mặc định hiện hành ở [authz-matrix](../../security/authz-matrix.md))*.
 
 | Permission | Quản lý | Chủ spa |
 |---|---|---|
@@ -29,7 +29,9 @@ Thay **sổ dịch vụ**, **sổ theo dõi liệu trình khách hàng** và ph�
 | `sale.discount` | ✓ (≤ ngưỡng **[D10]**) | ✓ |
 | `record.void_same_day` | ✓ | ✓ |
 | `record.void_closed_day`, `package.cancel_refund`, `package.extend_expiry` | — | ✓ |
-| `opening_balance.import` | ✓ | ✓ |
+| `opening_balance.import` | ✓ → **— (bỏ, migration 0013, [management-views §7](management-views.md))** | ✓ |
+
+Permission thêm sau (seed mặc định, `role_template_permission` 0040): `package.use_expired_override` (AC4.6; Quản lý + Chủ spa), `sale.discount_unlimited` (chỉ Chủ spa: giảm không trần; trần của Quản lý là cài đặt spa `manager_discount_max_pct`, mặc định 10 %), `visit.read`, `sale.read` (Quản lý + Chủ spa), `visit.backdate` (chỉ Chủ spa, [spec R1-3](appointments.md)).
 
 ## 3. User stories & acceptance criteria
 Áp dụng cho **mọi** endpoint trong spec:
@@ -70,7 +72,7 @@ Thay **sổ dịch vụ**, **sổ theo dõi liệu trình khách hàng** và ph�
 
 ### US3: Bán liệu trình mới
 *Là quản lý, tôi muốn bán gói liệu trình cho khách, ghi quà tặng, người tư vấn chốt và số tiền khách trả, để liệu trình được theo dõi tự động.*
-- **Hóa đơn (Sale)** gồm dòng gói liệu trình. Chọn **người tư vấn chốt** (một nhân viên, bắt buộc **[D9]**). Giảm giá tùy chọn **[D10]**. **Thu đủ ngay khi bán**: 1 hoặc 2 hình thức (TM + CK), tổng bằng đúng số phải trả.
+- **Hóa đơn (Sale)** gồm dòng gói liệu trình. Chọn **người tư vấn chốt** (một nhân viên, bắt buộc **[D9]**; *thay bằng §10.8 Q-U2: không bắt buộc, `null` = "Khách tự chọn"*). Giảm giá tùy chọn **[D10]**. **Thu đủ ngay khi bán**: 1 hoặc 2 hình thức (TM + CK), tổng bằng đúng số phải trả.
 - Tạo **CustomerPackage**: số buổi = buổi mua + buổi tặng; ngày bắt đầu = ngày bán; hạn dùng = ngày bán + số tháng của gói (nếu có); **giá trị mỗi buổi = giá sau giảm ÷ số buổi mua**, buổi tặng có giá trị 0 **[D4]**.
 - AC3.1: Given gói 10 buổi + tặng 2 giá 1.500.000đ, khách trả đủ 1.500.000đ → liệu trình "còn 12/12 buổi"; giá trị mỗi buổi mua = 150.000đ.
 - AC3.2: Given trả kết hợp (500.000đ TM + 1.000.000đ CK) → hai Payment, tổng 1.500.000đ.
@@ -151,6 +153,8 @@ Quyền và ngày (theo `kernel::corrections`, giống AC6.3):
 - AC7.4 (neg): Hoàn nhiều hơn số khách đã trả cho liệu trình đó → `422`.
 
 ### US8: Nhập liệu trình đang dùng dở (chuyển đổi từ sổ giấy)
+> **Đã thay một phần** bởi [management-views §7](management-views.md) (EM 2026-11-05): nhập sổ giấy là migration một lần của team (CLI `app import-paper-book`); quản lý không còn quyền, màn `/nhap-so-cu` đã xóa; `POST /opening-balances` còn, chỉ chủ spa. AC8.1 / AC8.3 đổi một phần (EM 2026-11-05, management-views §3 "Quy ước tiền"): gói có `paid_amount` > 0 được ghi thành hóa đơn + thanh toán vào **ngày trên sổ** (`paid_on`) và **là doanh thu** của ngày đó; ngày nhập vẫn không có khoản thu nào.
+
 *Là quản lý, tôi muốn nhập các liệu trình khách đang dùng dở từ sổ giấy trong 1–2 phút mỗi khách, để bắt đầu dùng platform mà không mất buổi nào khách đã trả.*
 - **Nhập:** khách (tạo mới hoặc chọn), gói (chọn từ bảng giá hoặc nhập tay tên + dịch vụ), **số buổi còn lại**, tổng số buổi gốc, **giá đã bán**, ngày đăng ký gốc, hạn dùng (nếu có), quà tặng.
 - AC8.1: Given liệu trình 10 buổi đã dùng 6, giá 1.500.000đ, còn nợ 0 → tạo CustomerPackage "còn 4/10", đánh dấu `opening_balance`, **không** tạo doanh thu hay Payment trong ngày nhập.
@@ -158,7 +162,7 @@ Quyền và ngày (theo `kernel::corrections`, giống AC6.3):
 - AC8.4 (neg): Số buổi còn lại > tổng số buổi → `422`.
 - ~~AC8.5: Bản ghi opening balance hiển thị nhãn "Nhập từ sổ cũ" ở mọi nơi.~~ **Bỏ** (EM 2026-11-05, [management-views §7](management-views.md)): gói chuyển từ sổ giấy trông như mọi gói khác; nhập sổ giấy là migration của team (`app import-paper-book`), quản lý không còn `opening_balance.import`.
 - **Quyết định EM 2026-11-05 (thay bản M2 của PR #23; nguồn `raw/2026-11-05-em-opening-balance-same-day.md` và `raw/2026-11-05-em-simplify-owner-and-opening-balance.md`):** "nếu trong ngày thì cứ nhập thôi còn nếu quá ngày thì không được chỉnh sửa hay nhập thông tin của ngày đó hoặc các ngày trước nữa … cái đấy tự động"; "nếu account là chủ spa thì cứ allow hết"; trần hoàn tiền riêng cho sổ cũ "tính sau".
-  - AC8.6: Không có công tắc "mở nhập sổ cũ". Người có `opening_balance.import` (chủ spa, quản lý) nhập được bất cứ lúc nào; gói nhập luôn ghi vào **ngày kinh doanh hôm nay** (múi giờ spa, Asia/Ho_Chi_Minh).
+  - AC8.6: Không có công tắc "mở nhập sổ cũ". Người có `opening_balance.import` (chủ spa, quản lý; *từ migration 0013 chỉ chủ spa, management-views §7*) nhập được bất cứ lúc nào; gói nhập luôn ghi vào **ngày kinh doanh hôm nay** (múi giờ spa, Asia/Ho_Chi_Minh).
   - AC8.7: Sửa / hủy bản ghi của một ngày đã qua theo quy tắc ngày đã chốt (AC6.3): qua 0 giờ là tự khóa với quản lý (`403 day.locked`); chủ spa làm được và **không** phải nhập lại mật khẩu.
   - AC8.8: Hoàn tiền khi hủy gói sổ cũ ≤ giá ghi trong sổ (`sold_price`), giống gói bán (AC7.4: vượt → `422 refund.exceeds_paid`); chỉ chủ spa hủy + hoàn (AC7.3). Trần hoàn riêng cho gói sổ cũ do quản lý nhập: **để sau**.
 
@@ -183,11 +187,13 @@ Quyền và ngày (theo `kernel::corrections`, giống AC6.3):
 | `PackagePlan` + `PackagePlanItem` | name, price, validity_months?, gift_note; item: service_id, sessions, **bonus_sessions** (buổi tặng theo từng dòng để combo rõ ràng) | snapshot khi bán; chi tiết ở [data](../../architecture/data.md) |
 | `Customer` | full_name (NFC), phone_e164 (unique per tenant), gender?, birth_year?, address?, source?, note, **health_note (nhạy cảm)** | |
 | `CustomerPackage` + `CustomerPackageItem` | plan snapshot, sold_price, per_session_value, sessions_total, sessions_remaining, starts_on, expires_on?, status, origin (`sale` / `opening_balance`), closer_staff_id | `version` cho optimistic lock; `CHECK sessions_remaining >= 0` |
-| `Visit` + `VisitLine` | customer, check_in_at, check_out_at?, note (nhạy cảm), status; line: service, source (`package` / `one_off`), customer_package_item_id?, staff_id, qty, unit_value | |
+| `Visit` + `VisitLine` | customer, check_in_at, note (nhạy cảm), status; line: service, source (`package` / `one_off`), customer_package_item_id?, staff_id, qty, unit_value | |
 | `Sale` + `SaleLine` | customer, lines (type: `package` / `service`; đã chừa chỗ cho `product`), discount, discount_reason, total, status | |
 | `Payment` | sale_id, method (`cash` / `bank_transfer`), amount, paid_at, reference?, reversal_of? | append-only |
 | `Refund` | customer_package_id, amount, method, reason | |
 | `AuditLog` | actor, action, entity, before/after, at | |
+
+Bảng trên là phác thảo lúc viết spec; schema thật ở [data](../../architecture/data.md). Khác biệt đáng nhớ: không có giờ ra (`check_out_at`, bỏ 2026-11-04); trạng thái gói **không lưu** mà suy ra từ `cancelled_at`, số buổi còn, `expires_on` (`app.package_status`, 0013); số buổi và `per_session_value` nằm ở `customer_package_item`; dữ liệu nhạy cảm lưu mã hóa (`customer.health_note_ct`, `visit.note_ct`, `sale.note_ct`); `phone_e164` nullable từ 0023 (§10.11).
 
 - Mọi bảng có `tenant_id`, `branch_id`, `created_at`, `created_by`.
 - Tiền là `BIGINT` VND. Thời gian là `timestamptz`; "ngày nghiệp vụ" theo múi giờ Asia/Ho_Chi_Minh.
@@ -215,7 +221,7 @@ Sổ quỹ & chốt quỹ (spec #2; spec này chỉ phát sinh Payment/Refund ch
 | D6 | SĐT bắt buộc và duy nhất? | ~~Bắt buộc~~ → **không bắt buộc** (EM 2026-11-07, quyết định E, §10.11); khi có thì **duy nhất** trong một spa |
 | D7 | ~~Chưa trả hết tiền gói có được dùng buổi không?~~ | **Bỏ** (EM 2026-11-04): R1 mọi giao dịch thu đủ ngay, không có công nợ |
 | D8 | Một lượt dùng nhiều buổi của cùng dịch vụ? | Được, số lượng mặc định 1 |
-| D9 | Người tư vấn chốt gói có bắt buộc không? | **Bắt buộc** (cần cho hoa hồng R2); được chọn "Quản lý / Chủ spa" nếu không có KTV chốt |
+| D9 | Người tư vấn chốt gói có bắt buộc không? | Bắt buộc *(thay bằng §10.8 Q-U2, EM 2026-11-06)* → **không bắt buộc**: một nhân viên bất kỳ (kể cả quản lý / chủ spa) hoặc "Khách tự chọn" (`null`) |
 | D10 | Giảm giá: ai được giảm và giảm tối đa bao nhiêu? | Quản lý giảm tối đa **10%** mỗi hóa đơn, chủ spa không giới hạn; luôn bắt buộc ghi lý do |
 
 ## 9. Open questions
@@ -233,6 +239,8 @@ Sổ quỹ & chốt quỹ (spec #2; spec này chỉ phát sinh Payment/Refund ch
 **Personas & roles:** Quản lý (kiêm thu ngân) thao tác; Chủ spa thêm quyền với ngày đã qua; KTV tư vấn nhưng **không** thao tác (báo quầy), được gắn tên là người chốt.
 
 ### 10.1 Hành trình ở quầy hôm nay (đối chiếu code, 2026-11-06)
+> Ảnh chụp **trước khi build vòng 6** (2026-11-06): cột "App cho phép hôm nay" và số dòng code là của lúc đó; các điểm [CỤT] / [THIẾU] / [NHẬP 2 LẦN] đã được xử lý ở §10.4–§10.15.
+
 Ký hiệu: **[CỤT]** = bế tắc, không có đường đi; **[THIẾU]** = làm được nhưng thiếu một phần; **[NHẬP 2 LẦN]** = phải ghi lại hoặc ghi ở chỗ khác; **[OK]** = đủ dùng.
 
 | # | Bước | App cho phép hôm nay | Bằng chứng | Đánh giá |
@@ -298,14 +306,14 @@ Giỏ ở `/quay` (và giỏ điền sẵn khi hoàn tất lịch hẹn) có ba 
 - **"+ Bán gói liệu trình"** trong giỏ mở một khối inline (mẫu gói, người chốt, quà, giảm giá gói). Tối đa 3 gói mỗi lượt. Không mất giỏ, không rời trang.
 - **"Dùng gói này cho buổi hôm nay"** tự bật khi mẫu gói chứa một dịch vụ đang có trong giỏ dưới dạng dịch vụ lẻ (hoặc dịch vụ đã đặt của lịch hẹn): dòng lẻ đó đổi thành dòng trừ buổi của gói mới, giá dòng về 0đ, gói hiện xem trước "còn 11/12". Bỏ chọn → dòng trở lại dịch vụ lẻ. Một dịch vụ có nhiều dòng thì đổi lần lượt theo số buổi của gói.
 - **Người tư vấn chốt** mặc định = KTV của dòng dịch vụ hôm nay khớp với gói (không có thì KTV của dòng đầu); quầy đổi được, kể cả "Khách tự chọn" (không ai được tính, §10.8 Q-U2).
-- Thẻ khách (cột trái) thêm nút "Bán gói liệu trình" (= mở khối trong giỏ), và trên dòng gói hết buổi / sắp hết hạn có "Mua lại gói này" (điền sẵn mẫu gói), thay cho chữ gợi ý cụt ở `CustomerCard.tsx:185`.
+- Thẻ khách (cột trái) thêm nút "Bán gói liệu trình" (= mở khối trong giỏ) *(thay bằng §10.12 "Một lối vào": nút này chỉ còn ở giỏ)*, và trên dòng gói hết buổi / sắp hết hạn có "Mua lại gói này" (điền sẵn mẫu gói), thay cho chữ gợi ý cụt ở `CustomerCard.tsx:185`.
 - Khách chỉ mua gói, không làm dịch vụ (trường hợp a): giỏ chỉ có khối "Gói bán hôm nay", nút đổi thành "Lưu hóa đơn gói" và gọi `POST /sales` như hiện nay (không tạo lượt, không tính vào số khách của KTV). **Từ §10.13:** hai hoặc ba gói → `POST /sales/checkout` (một lần lưu).
 - Giỏ chưa lưu được giữ nháp theo khách trong `sessionStorage` (try/catch), để tải lại trang hoặc 401 không mất giỏ (đúng như flows đã hứa).
 - ~~Sheet "Khách đến cả nhóm": mỗi người có thêm "+ Bán gói"~~ (bỏ 2026-11-07, spec lịch hẹn §10.12: mỗi người ghi lượt bằng giỏ riêng, bán gói trong giỏ). Vòng này chưa có một người trả cho cả nhóm.
 - States: đang lưu (nút khóa + spinner); lỗi ở khối gói hiện ngay tại khối (ví dụ "Vượt 10 %, cần chủ spa"), giỏ giữ nguyên; thành công → toast "Đã lưu lượt + bán Gói … (còn 11/12)".
 
 #### 10.4.2 API và dữ liệu
-- **Mở rộng `POST /visits`** (và thân của `POST /appointments/{id}/complete`, check-in nhóm, vì cùng dùng `operations::service::record_in`) thêm `package_sales[]` (0–3):
+- **Mở rộng `POST /visits`** (và thân của `POST /appointments/{id}/complete`, check-in nhóm *(bỏ 2026-11-07, [spec lịch hẹn §10.12](appointments.md))*, vì cùng dùng `operations::service::record_in`) thêm `package_sales[]` (0–3):
   ```json
   { "customer_id": "…", "lines": [
       { "service_id": "…", "source": "package", "package_ref": "p1", "staff_id": "…", "qty": 1 },
@@ -315,16 +323,16 @@ Giỏ ở `/quay` (và giỏ điền sẵn khi hoàn tất lịch hẹn) có ba 
                          "discount": null, "beneficiary_customer_id": null } ],
     "payments": [ { "method": "cash", "amount": 3600000 } ] }
   ```
-  Không thêm endpoint `/checkouts` riêng: lượt vẫn là use case gốc, đã có sẵn idempotency, nhập bù, ngày đã chốt, giảm giá lẻ.
-- **Thứ tự trong một transaction:** claim idempotency → kiểm quyền → tạo từng hóa đơn gói bằng `sales::service::sell_in(tx, …)` (tách thân của `POST /sales` ra, giống cách `record_in` đã tách) → tạo `customer_package` → ghi dòng lượt; dòng `new_package` được nối với item của gói vừa tạo (trong DB vẫn là `source = 'package'`, không thêm giá trị enum) → hóa đơn dịch vụ lẻ như cũ → chia thanh toán → audit → lưu response. Lỗi ở bất kỳ bước nào → rollback cả lượt lẫn gói.
+  Không thêm endpoint `/checkouts` riêng: lượt vẫn là use case gốc, đã có sẵn idempotency, nhập bù, ngày đã chốt, giảm giá lẻ. *(Giỏ chỉ có 2–3 gói, không có lượt: `POST /sales/checkout`, §10.13.)*
+- **Thứ tự trong một transaction:** claim idempotency → kiểm quyền → tạo từng hóa đơn gói bằng `sales::service::price_package_sale` + `record_package_sale` (tách thân của `POST /sales` ra, giống cách `record_in` đã tách; bản thiết kế gọi là `sell_in`) → tạo `customer_package` → ghi dòng lượt; dòng `new_package` được nối với item của gói vừa tạo (trong DB vẫn là `source = 'package'`, không thêm giá trị enum) → hóa đơn dịch vụ lẻ như cũ → chia thanh toán → audit → lưu response. Lỗi ở bất kỳ bước nào → rollback cả lượt lẫn gói.
 - **Mỗi loại một hóa đơn** (ràng buộc §10.1 #11): hóa đơn dịch vụ lẻ của lượt (như hôm nay) + một hóa đơn cho mỗi gói. Báo cáo theo loại không phải đổi.
-- **Chia thanh toán** (`sales::domain::allocate_payments`, hàm thuần, có unit test): `sum(payments)` phải bằng tổng mọi hóa đơn (`422 payment.amount_mismatch`). Một hình thức → mọi hóa đơn cùng hình thức. TM + CK → tiền mặt trả hóa đơn lẻ trước, rồi tới các hóa đơn gói theo thứ tự `ref`; phần còn lại là CK. Mỗi hóa đơn có Payment riêng nên hủy / đảo từng hóa đơn vẫn đúng.
-- **Liên kết:** thêm `sale.visit_id uuid NULL` (FK theo tenant tới `visit`, index `(tenant_id, visit_id)`): mọi hóa đơn sinh ra trong một lượt (lẻ, gói, thêm sau) trỏ về lượt đó. `visit.sale_id` giữ cho hóa đơn lẻ ban đầu trong giai đoạn chuyển, sau đó bỏ khi `sale.visit_id` đã đủ dùng (một lượt có thể có nhiều hóa đơn, cần cho §10.4.4). `customer_package.sale_id` không đổi. Lịch sử khách nhóm hóa đơn theo `visit_id`: "Lượt 09:12 · mua Gói Đại Thông Lạc".
+- **Chia thanh toán** (`sales::service::allocate_payments`, hàm thuần, có unit test): `sum(payments)` phải bằng tổng mọi hóa đơn (`422 payment.amount_mismatch`). Một hình thức → mọi hóa đơn cùng hình thức. TM + CK → tiền mặt trả hóa đơn lẻ trước, rồi tới các hóa đơn gói theo thứ tự `ref`; phần còn lại là CK. Mỗi hóa đơn có Payment riêng nên hủy / đảo từng hóa đơn vẫn đúng.
+- **Liên kết:** thêm `sale.visit_id uuid NULL` (FK theo tenant tới `visit`, index `(tenant_id, visit_id)`): mọi hóa đơn sinh ra trong một lượt (lẻ, gói, thêm sau) trỏ về lượt đó. `visit.sale_id` giữ cho hóa đơn lẻ ban đầu trong giai đoạn chuyển, sau đó bỏ khi `sale.visit_id` đã đủ dùng (một lượt có thể có nhiều hóa đơn, cần cho §10.4.4). *(Đã build, 0021: `visit.sale_id` vẫn còn = hóa đơn lẻ đầu tiên; mỗi dòng lẻ trỏ hóa đơn của nó qua `visit_line.sale_id`.)* `customer_package.sale_id` không đổi. Lịch sử khách nhóm hóa đơn theo `visit_id`: "Lượt 09:12 · mua Gói Đại Thông Lạc".
 - **Mua cho người khác** (nếu Q-U5 = có): `sale.customer_id` = người trả tiền; `customer_package.customer_id` = `beneficiary_customer_id` (mặc định = người trả). Người dùng phải là khách có hồ sơ trong cùng spa (`404` nếu không). Hồ sơ người trả: "Đã mua tặng Gói … cho <tên>"; hồ sơ người dùng: gói hiện như mọi gói. Không dùng chung (D5). Dữ liệu: không thêm cột, chỉ bỏ giả định `sale.customer_id = customer_package.customer_id` ở code đọc (lịch sử, báo cáo khách).
 - **Server quyết định mọi số tiền:** giá gói, giá dịch vụ, giá trị buổi lấy từ catalog trong transaction; `unit_price`, `total` client gửi lên bị bỏ qua như hiện nay.
 
 #### 10.4.3 "Chuyển sang gói liệu trình" sau khi đã trả lẻ (trường hợp c)
-- Ở "Lượt khách hôm nay", menu ⋯ của lượt có dòng lẻ → **"Chuyển sang gói liệu trình"**. Sheet: chọn mẫu gói (ưu tiên gói chứa dịch vụ lẻ của lượt), người chốt (mặc định KTV của dòng), quà, giảm giá gói; dòng tóm tắt "Hôm nay khách đã trả 399.000đ (Tiền mặt) cho Đại Thông Lạc".
+- Ở "Lượt khách hôm nay", menu ⋯ của lượt có dòng lẻ → **"Chuyển sang gói liệu trình"** *(thay bằng §10.12 / AC-F5: không còn mục riêng; chuyển đổi = ô "Tính buổi hôm nay vào gói" trong "Thêm dịch vụ / bán gói")*. Sheet: chọn mẫu gói (ưu tiên gói chứa dịch vụ lẻ của lượt), người chốt (mặc định KTV của dòng), quà, giảm giá gói; dòng tóm tắt "Hôm nay khách đã trả 399.000đ (Tiền mặt) cho Đại Thông Lạc".
 - **Cách A (đề xuất, Q-U1): buổi hôm nay thành buổi 1 của gói.** Server làm **một lệnh sửa lượt nguyên tử**, dùng cùng cơ chế "Sửa lượt" đang build (hủy + ghi lại có lý do trong một transaction): lượt cũ → `voided` với lý do tự sinh "Chuyển sang gói <tên>"; hóa đơn lẻ của nó được đảo (reversal cùng hình thức, cùng số tiền, như hủy hiện nay); ghi lại lượt mới cùng giờ làm, cùng KTV, các dòng khớp gói thành dòng trừ buổi của gói mới; dòng lẻ không khớp vẫn là dòng lẻ (hóa đơn lẻ mới, thu lại đúng số đã trả, cùng hình thức). Hóa đơn gói thu đủ giá gói; màn hình ghi rõ **"Khách đưa thêm 3.101.000đ"** (= giá gói − tiền lẻ đã trả hôm nay). Ví dụ: Đại Thông Lạc (Nam) 399.000đ → Gói 10 + tặng 2 giá 3.500.000đ: gói còn 11/12; sổ ngày: −399.000đ dịch vụ lẻ (đảo), +3.500.000đ liệu trình; thu ròng trong ngày từ khách 3.500.000đ.
 - ~~**Cách B: trừ tiền hôm nay vào giá gói.**~~ **Không làm** (Q-U1: tùy case; trường hợp gói không liên quan thì chỉ bán gói mới qua `additions`). Giữ lượt lẻ; hóa đơn gói có thêm khoản **"Trừ tiền lượt lẻ ngày dd/mm"** (`sale.credit_amount` + `credit_visit_id`, không phải giảm giá, không tính trần 10 %); gói đủ 12/12; khách đưa thêm 3.101.000đ. Spa chịu thêm một buổi. Mỗi lượt lẻ chỉ được trừ một lần (`UNIQUE credit_visit_id`).
 - `POST /visits/{id}/convert-to-package` `{package_sale: {package_plan_id, closer_staff_id?, gift_note?, discount?}, payments[]}` + `Idempotency-Key` (hash gồm `{id}`) + `If-Match` (version của lượt). `201 {voided, visit, difference}` (`difference` = khách đưa thêm). Lý do hủy tự sinh: "Chuyển sang gói <tên>".
@@ -341,7 +349,7 @@ Giỏ ở `/quay` (và giỏ điền sẵn khi hoàn tất lịch hẹn) có ba 
 | `POST /visits` có `package_sales` | `visit.record` + `package.sell` + `payment.collect` (+ `sale.discount*` nếu giảm giá gói) |
 | `POST /visits/{id}/additions` | `visit.record` (+ `package.sell`, `payment.collect`, `sale.discount*` theo nội dung); ngày trước: thêm `record.void_closed_day` |
 | `POST /visits/{id}/convert-to-package` | `visit.record` + `package.sell` + `payment.collect` + `record.void_same_day`; ngày trước: `record.void_closed_day` |
-| KTV | Không có quyền nào ở trên (KTV báo quầy). Cho KTV thấy gói mình chốt ở "Khách của tôi" (`GET /me/work`) là việc sau |
+| KTV | Không có quyền nào ở trên (KTV báo quầy). Cho KTV thấy gói mình chốt ở "Khách của tôi" (`GET /me/appointments`, thay `GET /me/work` từ 2026-11-07) là việc sau |
 
 - Mỗi route mới có dòng trong `authz_matrix.rs`; tài nguyên của spa khác → `404`.
 - **Audit:** `sale.create` cho mỗi hóa đơn gói (có `visit_id`, `closer_staff_id`, `beneficiary_customer_id`); `visit.addition` (hóa đơn mới, dòng mới); `visit.convert_to_package` (lượt cũ, lượt mới, gói, số tiền chuyển, cách A/B). Không ghi ghi chú buổi vào audit (như hiện nay).
@@ -438,18 +446,18 @@ EM ([raw](../../../raw/2026-11-07-em-review-round3-small.md)): *"trong cái đ�
 - **Một danh sách "Người đi cùng"** trong form đặt lịch (gộp hai khái niệm). Mỗi dòng = **tên** (tìm khách có hồ sơ, hoặc "Chỉ ghi tên": chữ tự do như "Chồng của chị Hà") + **dịch vụ (không bắt buộc)**. Chọn dịch vụ thì hiện thêm **KTV làm cho người đi cùng**, thời lượng, **giờ bắt đầu** (mặc định "Cùng giờ với khách") và SĐT (không bắt buộc). Không chọn dịch vụ → vẫn là **ghi chú** như Q-U5 (không làm, không tính tiền). Tối đa 5 người đi cùng.
 - Người đi cùng có dịch vụ = **một lịch hẹn riêng trong nhóm** của khách (`group_id`): thẻ riêng ở cột KTV đó trên lịch, cùng quy tắc trùng KTV (`409 appointment.staff_busy`), sức chứa, khách đến / ghi lượt riêng. Không có kiểu dữ liệu mới.
 - **Chỉ có tên, chưa có SĐT** được phép cho người đi cùng (`people[1..]` của nhóm, hoặc `group_with`); người đặt lịch (khách chính) vẫn bắt buộc SĐT. DB chặn khách mới không SĐT nằm ngoài nhóm.
-- **Ghi lượt** cho người đi cùng chưa có hồ sơ: như khách mới hiện nay, quầy bấm "Tạo hồ sơ khách" (điền sẵn tên, thêm SĐT) rồi mới ghi lượt; KTV đã gán giữ nguyên, nên **hoa hồng "làm"** đi đúng KTV của dòng lượt (`visit_line.staff_id`). Lượt, lương, lịch sử không đổi đường đi.
-- **Sửa lịch** ("Đổi lịch"): danh sách người đi cùng ghi chú sửa được (`PATCH /appointments` nhận `companions`, hết lỗ hổng cũ); thêm người đi cùng có dịch vụ vào lịch đã đặt = `POST /appointments` với `group_with` (lịch chưa có nhóm thì mở nhóm). Sheet lịch hẹn, phần "Cùng nhóm", hiện từng người: giờ · dịch vụ · KTV; bấm tên để mở lịch của họ và đổi dịch vụ / KTV như mọi lịch.
+- **Ghi lượt** cho người đi cùng chưa có hồ sơ: như khách mới hiện nay, quầy bấm "Tạo hồ sơ khách" (điền sẵn tên, thêm SĐT) rồi mới ghi lượt *(thay bằng §10.11: SĐT không bắt buộc; sheet lịch có "Tạo hồ sơ" / "Ghi là khách vãng lai")*; KTV đã gán giữ nguyên, nên **hoa hồng "làm"** đi đúng KTV của dòng lượt (`visit_line.staff_id`). Lượt, lương, lịch sử không đổi đường đi.
+- **Sửa lịch** ("Đổi lịch"): danh sách người đi cùng ghi chú sửa được (`PATCH /appointments/{id}` nhận `companions`, hết lỗ hổng cũ); thêm người đi cùng có dịch vụ vào lịch đã đặt = `POST /appointments` với `group_with` (lịch chưa có nhóm thì mở nhóm). Sheet lịch hẹn, phần "Cùng nhóm", hiện từng người: giờ · dịch vụ · KTV; bấm tên để mở lịch của họ và đổi dịch vụ / KTV như mọi lịch.
 
 **AC:**
 - AC-C2: nhóm Hà (Lan) + "Chồng của chị Hà" (không SĐT, Đại Thông Lạc, Tuấn, 01:30) + ghi chú "Bé Na" → 201, người đi cùng `customer_phone: null`, `is_guest`, KTV Tuấn, giờ riêng; lịch Tuấn chồng giờ → `409 staff_busy` với `existing_id` = lịch người đi cùng.
 - AC-C3: khách chính không SĐT (`POST /appointments` không `group_with`, hoặc `people[0]`) → `422 guest.phone required`; bỏ `group_id` của khách không SĐT ở DB → vi phạm `appointment_guest_phone_or_group`.
 - AC-C4: người đi cùng đã đến → ghi lượt khi chưa có hồ sơ → `422 appointment.customer_required`; tạo hồ sơ + `PATCH customer_id` → ghi lượt được, dòng lượt có `staff_id` = Tuấn.
 - AC-C5: `group_with`: lịch chưa có nhóm → mở nhóm (version +1); khách đã có trong nhóm → `422 customer_id duplicate`; khác ngày → `422 starts_at not_same_day`; lịch không tồn tại / spa khác → `404`; lịch đã đóng → `409 appointment.closed`; ngày đã chốt → `403 day.locked` cho quản lý.
-- AC-C6: `PATCH /appointments` `companions` (cả danh sách): cắt khoảng trắng; vắng = giữ nguyên; 6 mục → `422`; `[]` = xóa.
-- AC-C7 (web): form đặt lịch → "Người đi cùng" → tên + dịch vụ + KTV + giờ bắt đầu → "Đặt lịch 2 người" → sheet "Cùng nhóm (2 người)" hiện KTV; lọc "Xem theo KTV" = KTV đó → thẻ 14:00 của người đi cùng ở cột đó; sheet của họ: SĐT "Chưa có", "Tạo hồ sơ khách".
+- AC-C6: `PATCH /appointments/{id}` `companions` (cả danh sách): cắt khoảng trắng; vắng = giữ nguyên; 6 mục → `422`; `[]` = xóa.
+- AC-C7 (web): form đặt lịch → "Người đi cùng" → tên + dịch vụ + KTV + giờ bắt đầu → "Đặt lịch 2 người" → sheet "Cùng nhóm · 2 người" hiện KTV; lọc "Xem theo KTV" = KTV đó → thẻ 14:00 của người đi cùng ở cột đó; sheet của họ: "Chưa có SĐT", "Tạo hồ sơ" (từ §10.11 thêm "Ghi là khách vãng lai").
 
-**Câu hỏi cho EM:** Q-C9 — người đi cùng chỉ có tên muốn ghi lượt thì vẫn cần hồ sơ có SĐT (SĐT là duy nhất mỗi spa). Có cần **hồ sơ khách không SĐT** (ví dụ chồng / con không muốn cho số) không? Mặc định: giữ quy tắc cũ (giống Q11 của spec lịch hẹn).
+**Câu hỏi cho EM:** Q-C9 — người đi cùng chỉ có tên muốn ghi lượt thì vẫn cần hồ sơ có SĐT (SĐT là duy nhất mỗi spa). Có cần **hồ sơ khách không SĐT** (ví dụ chồng / con không muốn cho số) không? Mặc định: giữ quy tắc cũ (giống Q11 của spec lịch hẹn). **Đã trả lời** (EM 2026-11-07, quyết định E, §10.11): SĐT không bắt buộc trên mọi hồ sơ.
 
 **Tiếp theo:** đã chạy `/backend-design` ([backend §3e](../../architecture/backend.md), [data 0021](../../architecture/data.md)) → `/frontend-design` ([front-desk-flows vòng 6](../../design/front-desk-flows.md)) → `/breakdown` ([plan r1-6-upsell](../../plans/r1-6-upsell.md)).
 
@@ -483,7 +491,7 @@ EM ([raw](../../../raw/2026-11-07-em-flow-review-hr-latency.md), ảnh 58, 59, 6
 - **"Làm 1 buổi hôm nay"** trên khối gói trong giỏ (thay cho việc phải thêm dịch vụ lẻ trước rồi tick "Dùng gói này…"). Dòng buổi hôm nay gửi `source: package` + `package_ref` như AC9.1 — không đổi API. Một lần lưu: hóa đơn gói + lượt, buổi trừ từ gói mới (còn 11/12).
 - **Giỏ gập món đã xong**, một món mở một lúc.
 - **Khách vãng lai**: "Thêm thông tin khách" sửa ngay hồ sơ không tên (tên, SĐT, giới tính, ngày sinh, ghi chú chung), lịch sử và giỏ giữ nguyên (ADR-0011). Gói của khách không tên bị chặn ở giỏ trước khi gửi (server vẫn `422 customer.name_required`).
-- **Ghi chú buổi mọi lượt**: API đã lưu `note` ở mọi đường ghi lượt (`POST /visits`, hoàn tất lịch hẹn, Sửa lượt giữ / đổi, chuyển sang gói giữ); không cần migration (0027 không dùng). Thay đổi: `GET /visits` (danh sách ngày) và `GET /customers/{id}/history` (`visit.note`) **trả ghi chú cho người có `customer.health_notes.read`** (trước đây chỉ `GET /visits/{id}`). Ghi chú vẫn mã hóa, không vào audit / phản hồi idempotent; KTV không có quyền này nên không thấy. Giỏ chỉ bán gói không có ô ghi chú (không có lượt để gắn).
+- **Ghi chú buổi mọi lượt**: API đã lưu `note` ở mọi đường ghi lượt (`POST /visits`, hoàn tất lịch hẹn, Sửa lượt giữ / đổi, chuyển sang gói giữ); không cần migration. Thay đổi: `GET /visits` (danh sách ngày) và `GET /customers/{id}/history` (`visit.note`) **trả ghi chú cho người có `customer.health_notes.read`** (trước đây chỉ `GET /visits/{id}`). Ghi chú vẫn mã hóa, không vào audit / phản hồi idempotent; KTV không có quyền này nên không thấy. Giỏ chỉ bán gói không có ô ghi chú (không có lượt để gắn).
 - **Một lối vào**: "Bán gói liệu trình" chỉ ở giỏ; menu ⋯ của lượt gộp "Chuyển sang gói liệu trình" vào "Thêm dịch vụ / bán gói" (ô "Tính buổi hôm nay vào gói" hiện khi chỉ bán một gói chứa dịch vụ lẻ của lượt; Q-U1 giữ nguyên: mặc định tắt).
 
 **AC:**

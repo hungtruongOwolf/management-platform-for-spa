@@ -28,7 +28,14 @@ pub struct Config {
     /// browser on 127.0.0.1 drives a whole suite. Accepted only in development: staging and
     /// production always run the standard limit (`HttpPolicy::standard`).
     pub rate_limit: Option<RateLimit>,
+    /// `APP_DB_MAX_CONNECTIONS` (default 10): this instance's share of the database's
+    /// connections. Serverless hosts (Vercel) run several small instances against one pooler,
+    /// so each keeps few (staging: 3); a single VPS keeps the default.
+    pub db_max_connections: u32,
 }
+
+/// Pool size when `APP_DB_MAX_CONNECTIONS` is unset.
+pub const DEFAULT_DB_MAX_CONNECTIONS: u32 = 10;
 
 /// Per-IP API rate limit: sustained requests per second and the burst on top.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,6 +166,17 @@ impl Config {
 
         let rate_limit = rate_limit_override(&lookup, environment)?;
 
+        let db_max_connections =
+            match lookup("APP_DB_MAX_CONNECTIONS").filter(|v| !v.trim().is_empty()) {
+                None => DEFAULT_DB_MAX_CONNECTIONS,
+                Some(raw) => raw.trim().parse::<u32>().ok().filter(|n| *n > 0).ok_or(
+                    ConfigError::Invalid {
+                        name: "APP_DB_MAX_CONNECTIONS",
+                        value: raw,
+                    },
+                )?,
+            };
+
         Ok(Self {
             bind_addr,
             environment,
@@ -167,6 +185,7 @@ impl Config {
             admin_origin,
             data_key: SecretString::from(data_key),
             rate_limit,
+            db_max_connections,
         })
     }
 }
@@ -456,6 +475,70 @@ mod tests {
             (RATE_PER_SECOND_VAR, "10"),
             (RATE_BURST_VAR, "-1")
         ]));
+    }
+
+    #[test]
+    fn the_pool_size_defaults_and_refuses_nonsense() {
+        let size = |extra: &[(&'static str, &'static str)]| {
+            let mut pairs = valid();
+            pairs.extend_from_slice(extra);
+            Config::from_lookup(lookup(&pairs)).map(|c| c.db_max_connections)
+        };
+        assert_eq!(size(&[]), Ok(DEFAULT_DB_MAX_CONNECTIONS));
+        assert_eq!(size(&[("APP_DB_MAX_CONNECTIONS", "3")]), Ok(3));
+        for bad in ["0", "-1", "ten"] {
+            assert!(
+                matches!(
+                    size(&[("APP_DB_MAX_CONNECTIONS", bad)]),
+                    Err(ConfigError::Invalid {
+                        name: "APP_DB_MAX_CONNECTIONS",
+                        ..
+                    })
+                ),
+                "{bad}"
+            );
+        }
+    }
+
+    /// ADR-0018 D2: the console's own origin is an https origin (http only in development),
+    /// without a trailing slash, and never the spa's origin.
+    #[test]
+    fn the_admin_origin_is_validated() {
+        let admin = |env: &'static str, origin: &'static str| {
+            let mut pairs = if env == "development" {
+                valid()
+            } else {
+                deployed(env)
+            };
+            pairs.push(("APP_ADMIN_ORIGIN", origin));
+            Config::from_lookup(lookup(&pairs)).map(|c| c.admin_origin)
+        };
+        assert_eq!(
+            admin("production", "https://admin.example"),
+            Ok(Some("https://admin.example".to_owned()))
+        );
+        assert_eq!(
+            admin("development", "http://localhost:5174"),
+            Ok(Some("http://localhost:5174".to_owned()))
+        );
+        assert_eq!(admin("production", ""), Ok(None), "empty = shared origin");
+        for (env, bad) in [
+            ("production", "http://admin.example"),
+            ("production", "https://admin.example/"),
+            ("production", "https://staging.example"),
+            ("development", "http://localhost:5173"),
+        ] {
+            assert!(
+                matches!(
+                    admin(env, bad),
+                    Err(ConfigError::Invalid {
+                        name: "APP_ADMIN_ORIGIN",
+                        ..
+                    })
+                ),
+                "{env} {bad}"
+            );
+        }
     }
 
     #[test]

@@ -31,6 +31,7 @@ export function BookCard({
   canAttendance,
   canReview,
   readOnly,
+  linkRequired,
   busy,
   savingStatus,
   savingReview,
@@ -47,6 +48,8 @@ export function BookCard({
   canAttendance: boolean;
   canReview: boolean;
   readOnly: boolean;
+  /** The caller's login is linked to no profile: the page's notice explains, not each card. */
+  linkRequired: boolean;
   busy: boolean;
   savingStatus: AttendanceStatus | null;
   savingReview: DailyReviewEntryWrite | undefined;
@@ -108,7 +111,7 @@ export function BookCard({
           onChange={onStatus}
         />
       )}
-      {locked && !readOnly && (canAttendance || canReview) && (
+      {locked && !readOnly && !linkRequired && (canAttendance || canReview) && (
         <p className="book-card-hint">
           <Icon name="lock" className="size-4 shrink-0" />
           Chỉ chủ spa chấm công, ghi khen/phàn nàn và thưởng/phạt cho quản lý.

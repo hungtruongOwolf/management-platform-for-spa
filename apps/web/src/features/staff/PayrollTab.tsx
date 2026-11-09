@@ -3,12 +3,12 @@ import { useState } from "react";
 import { BottomSheet } from "../../components/BottomSheet";
 import { TimeField } from "../../components/TimeField";
 import { ResponsiveTable, type Column } from "../../components/ResponsiveTable";
-import { messageFor } from "../../lib/errors";
+import { fieldMessage, messageFor } from "../../lib/errors";
 import { EmptyState, ErrorState, RowsSkeleton } from "../reports/ui";
 import { closePayroll, invalidateStaff, payrollQuery, rulesQuery, saveRules, type Payslip, type PayrollRules } from "./api";
 import { FLAG_LABEL, LEVEL_SHORT, monthLabel, percentOfBp } from "./labels";
 import { serviceWork, upsellWork } from "./payslipWork";
-import { vnd } from "./ui";
+import { signedVnd, vnd } from "./ui";
 import { WorkTable } from "./WorkTable";
 
 /**
@@ -47,7 +47,7 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
     { id: "base", header: "Lương cứng", numeric: true, width: "11%", cell: (s) => vnd(s.base_salary) },
     { id: "deduct", header: "Trừ nghỉ, muộn", numeric: true, width: "12%", cell: (s) => (s.leave_deduction + s.late_deduction > 0 ? `−${vnd(s.leave_deduction + s.late_deduction)}` : "–") },
     { id: "commission", header: "Hoa hồng", numeric: true, width: "10%", cell: (s) => vnd(s.service_commission + s.closing_commission) },
-    { id: "adjust", header: "Thưởng − phạt", numeric: true, width: "11%", cell: (s) => vnd(s.bonuses - s.penalties) },
+    { id: "adjust", header: "Thưởng − phạt", numeric: true, width: "11%", cell: (s) => signedVnd(s.bonuses - s.penalties) },
     { id: "net", header: "Thực lĩnh", numeric: true, card: "aside", width: "11%", cell: (s) => <strong>{vnd(s.net_pay)}</strong> },
     {
       id: "flags",
@@ -88,7 +88,7 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
       </div>
       {p.payslips.length === 0 ? (
         <EmptyState title="Chưa có nhân viên nào trong tháng này">
-          Thêm người ở tab “Hồ sơ”, rồi chấm công ở “Sổ hằng ngày”: bảng lương tự tính từ đó.
+          Thêm người ở tab “Hồ sơ nhân viên”, rồi chấm công ở “Sổ hằng ngày”: bảng lương tự tính từ đó.
         </EmptyState>
       ) : (
         <div className="card overflow-hidden">
@@ -107,7 +107,7 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
                 <td className="num">{vnd(p.totals.base_salary)}</td>
                 <td className="num">{p.totals.deductions > 0 ? `−${vnd(p.totals.deductions)}` : "–"}</td>
                 <td className="num">{vnd(p.totals.commission)}</td>
-                <td className="num">{vnd(p.totals.bonuses - p.totals.penalties)}</td>
+                <td className="num">{signedVnd(p.totals.bonuses - p.totals.penalties)}</td>
                 <td className="num">
                   <strong>{vnd(p.totals.net_pay)}</strong>
                 </td>
@@ -317,6 +317,15 @@ function RulesSheet({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** The server's bounds on the numeric rules (hr/src/rules.rs `PayrollRules::validate`). */
+const RULE_MAX = { free_leave_days: 10, late_grace_minutes: 240, late_penalty_amount: 10_000_000 } as const;
+type BoundedRule = keyof typeof RULE_MAX;
+const RULE_MAX_LABEL: Record<BoundedRule, string> = {
+  free_leave_days: `Tối đa ${String(RULE_MAX.free_leave_days)} ngày.`,
+  late_grace_minutes: `Tối đa ${String(RULE_MAX.late_grace_minutes)} phút.`,
+  late_penalty_amount: `Tối đa ${vnd(RULE_MAX.late_penalty_amount)}.`,
+};
+
 function RulesForm({ initial, onDone }: { initial: PayrollRules; onDone: () => void }) {
   const queryClient = useQueryClient();
   const [r, setR] = useState(initial);
@@ -329,18 +338,31 @@ function RulesForm({ initial, onDone }: { initial: PayrollRules; onDone: () => v
   });
   const kFree = r.free_leave_codes.includes("absent_k");
   const num = (v: string) => Number(v.replace(/\D/g, "") || "0");
+  const tooHigh = (Object.keys(RULE_MAX) as BoundedRule[]).filter((f) => r[f] > RULE_MAX[f]);
+  const ruleError = (f: BoundedRule) => (tooHigh.includes(f) || fieldMessage(save.error, f) ? RULE_MAX_LABEL[f] : undefined);
+  const bounded = (f: BoundedRule, label: string) => (
+    <label className="filter-field">
+      {label}
+      <input
+        inputMode="numeric"
+        value={r[f]}
+        onChange={(e) => {
+          setR({ ...r, [f]: num(e.target.value) });
+        }}
+        aria-invalid={ruleError(f) ? true : undefined}
+      />
+      {ruleError(f) && <span className="text-sm text-danger">{ruleError(f)}</span>}
+    </label>
+  );
   return (
     <form
       className="grid gap-4"
       onSubmit={(e) => {
         e.preventDefault();
-        if (!save.isPending) save.mutate();
+        if (!save.isPending && tooHigh.length === 0) save.mutate();
       }}
     >
-      <label className="filter-field">
-        Số ngày nghỉ không trừ lương mỗi tháng
-        <input inputMode="numeric" value={r.free_leave_days} onChange={(e) => { setR({ ...r, free_leave_days: num(e.target.value) }); }} />
-      </label>
+      {bounded("free_leave_days", "Số ngày nghỉ không trừ lương mỗi tháng")}
       <label className="choice">
         <input
           type="checkbox"
@@ -356,14 +378,8 @@ function RulesForm({ initial, onDone }: { initial: PayrollRules; onDone: () => v
           Giờ vào ca mặc định
           <TimeField value={r.default_shift_start} onChange={(hm) => { setR({ ...r, default_shift_start: hm || "09:00" }); }} />
         </label>
-        <label className="filter-field">
-          Muộn dưới (phút) không tính
-          <input inputMode="numeric" value={r.late_grace_minutes} onChange={(e) => { setR({ ...r, late_grace_minutes: num(e.target.value) }); }} />
-        </label>
-        <label className="filter-field">
-          Phạt mỗi lần muộn (đ)
-          <input inputMode="numeric" value={r.late_penalty_amount} onChange={(e) => { setR({ ...r, late_penalty_amount: num(e.target.value) }); }} />
-        </label>
+        {bounded("late_grace_minutes", "Muộn dưới (phút) không tính")}
+        {bounded("late_penalty_amount", "Phạt mỗi lần muộn (đ)")}
       </div>
       <label className="choice">
         <input type="checkbox" checked={r.commission_on_bonus_sessions} onChange={(e) => { setR({ ...r, commission_on_bonus_sessions: e.target.checked }); }} />
@@ -387,7 +403,7 @@ function RulesForm({ initial, onDone }: { initial: PayrollRules; onDone: () => v
         </p>
       )}
       <div className="flex justify-end">
-        <button type="submit" className="btn btn-primary" aria-busy={save.isPending || undefined}>
+        <button type="submit" className="btn btn-primary" aria-busy={save.isPending || undefined} disabled={tooHigh.length > 0}>
           Lưu quy tắc
         </button>
       </div>

@@ -1,7 +1,7 @@
 // Measurements from real probes in Vietnam (perf page §2a) through the public Globalping API.
 // Never sends cookies to the third party: public endpoints only.
 //
-//   node infra/perf/globalping.mjs http vien-phuc-y-duong.vercel.app /api/v1/health [country=VN] [probes=3]
+//   node infra/perf/globalping.mjs http <staging-host> /api/v1/health [country=VN] [probes=3]
 //   node infra/perf/globalping.mjs ping ec2.ap-southeast-1.amazonaws.com
 const [type, target, requestPath = "/", country = "VN", limit = "3"] = process.argv.slice(2);
 if (!type || !target) {

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT app.user_in_other_spa($1) AS \"other!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "other!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8ff94a2fcfaae511b075e0cd42d45727edb139e5c47c229adae8a35c6c71cac3"
+}

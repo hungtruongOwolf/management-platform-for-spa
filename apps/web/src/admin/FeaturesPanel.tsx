@@ -1,9 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type SyntheticEvent } from "react";
 import { BottomSheet } from "../components/BottomSheet";
-import { adminApi, adminDateTime, adminKeys, type TenantFeature } from "./api";
+import { adminApi, adminDateTime, adminKeys, markAuditStale, REASON_MAX, type TenantFeature } from "./api";
 import { adminFieldError, adminMessage } from "./messages";
 import { StepUpCancelled, useStepUp } from "./StepUp";
+import { useResetOnOpen } from "./useResetOnOpen";
 
 /** Spec US5: a spa's feature switches. Off = hidden in the spa's app and refused by its API. */
 export function FeaturesPanel({ tenantId }: { tenantId: string }) {
@@ -70,6 +71,10 @@ function SwitchSheet({
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const turningOff = feature?.enabled ?? false;
+  useResetOnOpen(feature !== null, () => {
+    setReason("");
+    setError(null);
+  });
 
   const submit = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -79,7 +84,7 @@ function SwitchSheet({
     try {
       await stepUp(() => adminApi.setFeature(tenantId, feature.key, !feature.enabled, reason.trim()));
       await queryClient.invalidateQueries({ queryKey: adminKeys.features(tenantId) });
-      setReason("");
+      markAuditStale(queryClient);
       onClose();
     } catch (err) {
       if (!(err instanceof StepUpCancelled)) setError(err);
@@ -121,6 +126,7 @@ function SwitchSheet({
           <textarea
             id="feature-reason"
             className="input"
+            maxLength={REASON_MAX}
             value={reason}
             onChange={(e) => {
               setReason(e.target.value);

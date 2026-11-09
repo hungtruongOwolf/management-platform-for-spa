@@ -18,7 +18,7 @@ const me = (permissions: string[]): Me => ({
   tenants: [{ id: "t1", name: "Viên Phúc Y Đường" }],
   permissions,
 });
-const MANAGER = ["visit.record", "customer.read", "catalog.read", "report.read"];
+const MANAGER = ["visit.record", "visit.read", "customer.read", "catalog.read", "report.read"];
 
 // The shell's home page asks the management API for today's numbers: use the contract-shaped fake.
 const serve = (permissions: string[], searchHits: unknown[] = []) => serveManagement({ permissions, searchHits });
@@ -60,6 +60,21 @@ describe("navigation model", () => {
     expect(tabs.map((t) => t.short)).toEqual(["Lịch hẹn", "Quầy", "Khách", "Báo cáo"]);
     // The record tab is only active without `view`, so the two never light up together.
     expect(tabs[1]?.search).toEqual({ view: undefined });
+  });
+});
+
+describe("home", () => {
+  it("keeps today's numbers but drops the link to the reports when the spa has them off", async () => {
+    serveManagement({ permissions: MANAGER, features: ["appointments", "follow_ups"] });
+    at("/");
+    expect(await screen.findByRole("heading", { name: "Hôm nay" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Xem báo cáo/ })).not.toBeInTheDocument();
+  });
+
+  it("links today's numbers to the reports otherwise", async () => {
+    serve(MANAGER);
+    at("/");
+    expect(await screen.findByRole("link", { name: /Xem báo cáo/ })).toHaveAttribute("href", "/bao-cao");
   });
 });
 

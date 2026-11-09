@@ -5,6 +5,7 @@ import type {
   Staff,
   Visit,
 } from "@vpyd/api-client";
+import { QueryClient } from "@tanstack/react-query";
 import { createMemoryHistory } from "@tanstack/react-router";
 import {
   fireEvent,
@@ -747,6 +748,14 @@ describe("/quay", () => {
     expect(
       within(closedList).queryByRole("button", { hidden: true }),
     ).toBeNull();
+
+    // The reason is bounded like the server's (operations MAX_REASON = 500).
+    await user.click(
+      within(open).getByRole("button", { name: "Trừ 1 buổi Gói old" }),
+    );
+    expect(
+      await screen.findByLabelText(/Lý do cho dùng tiếp “Gói old”/),
+    ).toHaveAttribute("maxlength", "500");
   });
 
   it("does not offer an expired package to a desk without the override", async () => {
@@ -1016,6 +1025,7 @@ describe("/quay day list (EM live test 2026-11-08)", () => {
       [],
       [sale],
     );
+    const invalidated = vi.spyOn(QueryClient.prototype, "invalidateQueries");
     const user = userEvent.setup();
     at("/quay");
     const table = await screen.findByRole("table", {
@@ -1043,6 +1053,12 @@ describe("/quay day list (EM live test 2026-11-08)", () => {
       expect(
         calls.find((c) => c.method === "POST" && c.url === "/api/v1/sales/s1/void")?.body,
       ).toEqual({ reason: "Khách đổi ý" });
+    });
+    // Bought for Nam: his history goes stale too, not only the payer's (the row has no id for him).
+    await waitFor(() => {
+      expect(invalidated).toHaveBeenCalledWith({
+        queryKey: ["customers", "history"],
+      });
     });
   });
 
@@ -1105,5 +1121,169 @@ describe("/quay day list (EM live test 2026-11-08)", () => {
     expect(
       await screen.findByText("Đã lưu ghi chú gói của Nguyễn Thị Hà."),
     ).toBeInTheDocument();
+  });
+});
+
+describe("/quay cart review (front-desk audit 2026-11-09)", () => {
+  async function pickHa(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(
+      await screen.findByRole("combobox", {
+        name: "Tìm khách theo SĐT hoặc tên",
+      }),
+      "ha",
+    );
+    await user.click(
+      await screen.findByRole("option", { name: /Nguyễn Thị Hà/ }),
+    );
+  }
+  async function cartWithSession(user: ReturnType<typeof userEvent.setup>) {
+    await pickHa(user);
+    await user.click(
+      await screen.findByRole("button", { name: "Trừ 1 buổi Gói cp1" }),
+    );
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "KTV" }),
+      "st1",
+    );
+  }
+  const visitPosts = (calls: Call[]) =>
+    calls.filter((c) => c.method === "POST" && c.url === "/api/v1/visits");
+
+  it("saves once no one-off amount is left: a discount started earlier is dropped, not blocking", async () => {
+    const calls = serve([...MANAGER, "sale.discount"]);
+    const user = userEvent.setup();
+    at("/quay");
+    await pickHa(user);
+    await screen.findByRole("option", { name: /Đại Thông Lạc/ });
+    await user.selectOptions(screen.getByLabelText("Thêm dịch vụ lẻ"), "s5");
+    await user.click(
+      await screen.findByRole("button", { name: "Thêm giảm giá" }),
+    );
+    // The one-off goes; a package session is all that is left, so the discount field is gone.
+    await user.click(
+      screen.getByRole("button", { name: "Bỏ dòng Đại Thông Lạc" }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Trừ 1 buổi Gói cp1" }),
+    );
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "KTV" }),
+      "st1",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Bỏ giảm giá" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Lưu lượt khách" }));
+    await waitFor(() => {
+      expect(visitPosts(calls)).toHaveLength(1);
+    });
+    expect(visitPosts(calls)[0]?.body).not.toHaveProperty("discount");
+  });
+
+  it("offers the discount to a role holding only sale.discount_unlimited (the server allows it)", async () => {
+    serve([...MANAGER, "sale.discount_unlimited"]);
+    const user = userEvent.setup();
+    at("/quay");
+    await pickHa(user);
+    await screen.findByRole("option", { name: /Đại Thông Lạc/ });
+    await user.selectOptions(screen.getByLabelText("Thêm dịch vụ lẻ"), "s5");
+    expect(
+      await screen.findByRole("button", { name: "Thêm giảm giá" }),
+    ).toBeInTheDocument();
+  });
+
+  it("puts the saved visit into the opened full day list too (Xem tất cả)", async () => {
+    const many = Array.from({ length: 31 }, (_, i) => ({
+      ...VISIT,
+      id: `d${String(i)}`,
+      customer_name: `Khách ${String(i)}`,
+    }));
+    serve(MANAGER, undefined, undefined, many);
+    const user = userEvent.setup();
+    at("/quay");
+    await user.click(
+      await screen.findByRole("button", { name: "Xem tất cả lượt trong ngày" }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: /Lượt khách hôm nay \(31\)/ }),
+    ).toBeInTheDocument();
+    await cartWithSession(user);
+    await user.click(screen.getByRole("button", { name: "Lưu lượt khách" }));
+    expect(
+      await screen.findByRole("heading", { name: /Lượt khách hôm nay \(32\)/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps Ctrl+Enter and Esc away from the hidden cart while the calendar tab is open", async () => {
+    const calls = serve([...MANAGER, "appointment.manage"]);
+    const user = userEvent.setup();
+    at("/quay");
+    await cartWithSession(user);
+    await user.click(screen.getByRole("button", { name: "Lịch hẹn" }));
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Ghi lượt khách" }));
+    // Esc on the calendar did not drop the customer (or ask to): the cart is still there.
+    expect(
+      await screen.findByRole("list", { name: "Dịch vụ trong lượt" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Đổi khách\?/)).not.toBeInTheDocument();
+    expect(visitPosts(calls)).toHaveLength(0);
+  });
+
+  it("still answers Esc on the Ghi lượt tab: it asks before dropping the cart", async () => {
+    serve(MANAGER);
+    const user = userEvent.setup();
+    at("/quay");
+    await cartWithSession(user);
+    (document.activeElement as HTMLElement | null)?.blur();
+    await user.keyboard("{Escape}");
+    expect(
+      await screen.findByRole("alertdialog", { name: /Đổi khách\?/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves Ctrl+Enter inside an open dialog to the dialog, not the cart", async () => {
+    const calls = serve(MANAGER);
+    const user = userEvent.setup();
+    at("/quay");
+    await cartWithSession(user);
+    await user.keyboard("{Control>}k{/Control}");
+    const palette = await screen.findByRole("combobox", {
+      name: "Tìm khách hoặc màn hình",
+    });
+    // jsdom does not run autoFocus inside a modal dialog.
+    palette.focus();
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    expect(visitPosts(calls)).toHaveLength(0);
+  });
+
+  it("does not carry a failed save over to the next customer", async () => {
+    serve(MANAGER, () => {
+      throw new TypeError("Failed to fetch");
+    });
+    const user = userEvent.setup();
+    at("/quay");
+    await cartWithSession(user);
+    await user.click(screen.getByRole("button", { name: "Lưu lượt khách" }));
+    const failed = /Chưa lưu được. Bấm Lưu để thử lại/;
+    expect(await screen.findByText(failed)).toBeInTheDocument();
+    // Leave her (the cart stays as a draft), then pick her again: the draft comes back clean.
+    await user.click(screen.getByRole("button", { name: "Đổi khách" }));
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Đổi khách",
+      }),
+    );
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("list", { name: "Dịch vụ trong lượt" }),
+      ).toBeNull();
+    });
+    await pickHa(user);
+    expect(
+      await screen.findByRole("list", { name: "Dịch vụ trong lượt" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(failed)).not.toBeInTheDocument();
   });
 });

@@ -16,6 +16,7 @@ describe("invalidateManagementViews", () => {
       ["customers", "inactive", 7, "all", "all", "due", ""],
       ["customers", "history", "c1", "", "", "", ""],
       ["customers", "summary", "c1"],
+      ["notes", "from=2026-11-01&to=2026-11-05"],
       // commission and served days move with visits and sales
       ["staff", "payroll", "2026-11"],
       ["staff", "attendance", "2026-11"],

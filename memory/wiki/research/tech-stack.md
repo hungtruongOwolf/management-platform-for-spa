@@ -6,7 +6,7 @@ sources: [raw/2026-11-04-kickoff-request.md]
 
 # Nghiên cứu tech stack
 
-> **Đã chốt ở [ADR-0001](../decisions/ADR-0001-tech-stack.md)** (2026-11-04): app nội bộ dùng **Vite React SPA** thay cho Next.js, vì R1 không cần SEO. Next.js/Astro dành cho site công khai sau này. Trang này giữ lại làm tư liệu.
+> **Đã chốt ở [ADR-0001](../decisions/ADR-0001-tech-stack.md)** (2026-11-04): app nội bộ dùng **Vite React SPA** thay cho Next.js, vì R1 không cần SEO. Next.js/Astro dành cho site công khai sau này. Trang này giữ lại làm tư liệu. Khi build, shadcn/ui, Motion, GSAP/Lenis và vite-plugin-pwa **không** được dùng: design system tự viết bằng token CSS, hiệu ứng bằng CSS transition (xem [ADR-0001 § Hiện trạng](../decisions/ADR-0001-tech-stack.md#hiện-trạng-kiểm-lại-2026-11-09)).
 
 Tiêu chí của EM: **backend nhanh, scale tốt**; **frontend làm UI/UX đẹp, nhiều hiệu ứng, 3D, prototype nhanh**. Kèm theo đó là các tiêu chí ngầm: bảo mật, agent (AI) code hiệu quả, chi phí vận hành, tuyển người sau này.
 

@@ -43,7 +43,7 @@ Chọn **A**: migration 0034 tạo `app.session_actor(p_token_hash bytea)` (`LAN
 - `AuthUser`: `service::authenticate`.
 - `/me`: `resolve_with_access`.
 - `CurrentSession` / `resolve` và `resolve_pending`: đọc qua cùng hàm, bỏ phần quyền.
-- `actor_for` / `tenant_permissions` giữ lại cho tooling, demo và luồng đổi mật khẩu. Chúng vẫn đọc quyền dưới RLS.
+- `tenant_permissions` giữ lại cho tooling và demo; vẫn đọc quyền dưới RLS. (Cập nhật 2026-11-09: `actor_for` không còn ai gọi nên đã xóa; đổi mật khẩu chỉ ghi audit, không cần quyền.)
 
 ## Consequences
 **Tích cực:**
@@ -58,7 +58,10 @@ Chọn **A**: migration 0034 tạo `app.session_actor(p_token_hash bytea)` (`LAN
 - `member_access` (đường cũ dưới RLS) và hàm phải trả cùng quyền cho cùng người. Test so hai đường trên role quản lý; các luồng `auth.rs` / `staff_logins.rs` / `authz_matrix.rs` chạy qua hàm.
 
 **Hoàn tác:**
-- Đổi `AuthUser` / `/me` về `resolve` + `actor_for` (chỉ đổi code). Hàm để lại vô hại, hoặc `DROP FUNCTION app.session_actor(bytea)`.
+- Đổi `AuthUser` / `/me` về `resolve` + đọc quyền trong một `TenantTx` (`repo::member_access`, như `actor_for` cũ — đã xóa, lấy lại từ git nếu cần). Hàm để lại vô hại, hoặc `DROP FUNCTION app.session_actor(bytea)`.
+
+## Hiện trạng (kiểm lại 2026-11-09)
+Migration 0039 (cờ tính năng, [ADR-0018](ADR-0018-platform-admin-console.md) D4) `CREATE OR REPLACE` hàm này để trả thêm `disabled_features` của spa; quyền bị rút theo cờ vẫn quyết ở Rust. Đúng ràng buộc "sửa cả hàm và test" ở trên.
 
 ## Revisit when
 - Có nhiều spa và nhiều chi nhánh mỗi người.

@@ -19,7 +19,7 @@ import { serveManagement } from "./testServer";
 import { SearchField } from "./filters";
 import { isSearchable } from "../customers/api";
 
-const MANAGER = ["visit.record", "customer.read", "catalog.read", "report.read", "report.revenue.read"];
+const MANAGER = ["visit.record", "visit.read", "customer.read", "catalog.read", "report.read", "report.revenue.read"];
 
 const at = (path: string) => {
   const history = createMemoryHistory({ initialEntries: [path] });

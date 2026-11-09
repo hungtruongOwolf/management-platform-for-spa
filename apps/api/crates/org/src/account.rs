@@ -5,7 +5,7 @@
 //! Every use case needs `staff.manage`; the HTTP layer also asks for a recent re-authentication
 //! (create, reset, role). Temporary passwords come back once and are never audited or logged.
 
-use crate::profile::{self, ProfileView};
+use crate::profile::{self, Profile, ProfileView};
 use crate::repo;
 use identity::account::{self as login, LoginRole, TemporaryPassword};
 use kernel::audit::{self, AuditEntry};
@@ -28,8 +28,12 @@ const fn owner_protected() -> AppError {
     }
 }
 
-/// The profile's login, refusing one the owner may not touch here.
-async fn managed_login(tx: &mut TenantTx, actor: &Actor, id: Uuid) -> Result<UserId, AppError> {
+/// The profile and its login, refusing a login the owner may not touch here.
+async fn managed_login(
+    tx: &mut TenantTx,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<(Profile, UserId), AppError> {
     let p = profile::profile_in(tx, id).await?;
     let user = p.user_id.ok_or(AppError::Conflict {
         code: "staff.no_login",
@@ -37,7 +41,7 @@ async fn managed_login(tx: &mut TenantTx, actor: &Actor, id: Uuid) -> Result<Use
     if user == actor.user_id.as_uuid() || repo::login_manages_staff(tx, user).await? {
         return Err(owner_protected());
     }
-    Ok(UserId::from_uuid(user))
+    Ok((p, UserId::from_uuid(user)))
 }
 
 /// `POST /staff/{id}/login` (`staff.manage`, `If-Match`): a login for a working profile that has
@@ -104,13 +108,15 @@ pub async fn reset_password(
 ) -> Result<TemporaryPassword, AppError> {
     actor.require(Permission::StaffManage)?;
     let mut tx = TenantTx::for_actor(pool, actor).await?;
-    let user = managed_login(&mut tx, actor, id).await?;
+    let (_, user) = managed_login(&mut tx, actor, id).await?;
     if !repo::is_active_member(&mut tx, user.as_uuid()).await? {
         return Err(AppError::Conflict {
             code: "account.locked",
         });
     }
-    if login::spa_count(pool, user).await? > 1 {
+    // Any membership elsewhere, even locked or in a suspended spa: unlocked later, the password
+    // would open it (0042).
+    if repo::user_in_other_spa(&mut tx, user.as_uuid()).await? {
         return Err(AppError::Unprocessable {
             code: "account.other_spa",
         });
@@ -145,8 +151,7 @@ pub async fn set_role(
 ) -> Result<ProfileView, AppError> {
     actor.require(Permission::StaffManage)?;
     let mut tx = TenantTx::for_actor(pool, actor).await?;
-    let user = managed_login(&mut tx, actor, id).await?;
-    let p = profile::profile_in(&mut tx, id).await?;
+    let (p, user) = managed_login(&mut tx, actor, id).await?;
     if p.employment.current().is_none() {
         return Err(AppError::Conflict {
             code: "staff.already_left",

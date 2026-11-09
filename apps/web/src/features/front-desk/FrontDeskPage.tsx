@@ -358,14 +358,17 @@ export function FrontDeskPage() {
     },
     onSuccess: (visit: Visit, body) => {
       const sentNote = body.note;
-      queryClient.setQueryData<Visit[]>(todayVisitsQuery.queryKey, (old) =>
-        visit.business_date === todayIso
-          ? byServiceTime([
-              // The saved response never carries the note (health data): show the one just typed.
-              { ...visit, ...(sentNote ? { note: sentNote } : {}) },
-              ...(old ?? []).filter((v) => v.id !== visit.id),
-            ])
-          : old,
+      // Both cached lists of today: the peek and, once "Xem tất cả" opened it, the whole day.
+      queryClient.setQueriesData<Visit[]>(
+        { queryKey: todayVisitsQuery.queryKey },
+        (old) =>
+          old && visit.business_date === todayIso
+            ? byServiceTime([
+                // The saved response never carries the note (health data): show the one just typed.
+                { ...visit, ...(sentNote ? { note: sentNote } : {}) },
+                ...old.filter((v) => v.id !== visit.id),
+              ])
+            : old,
       );
       // Walk-ins are on the calendar too (spec appointments.md §10.1), not only completed bookings.
       void queryClient.invalidateQueries({ queryKey: ["appointments"] });
@@ -500,8 +503,11 @@ export function FrontDeskPage() {
           .reduce((n, l) => n + l.qty, 0)
       : 0;
 
+  // No one-off amount left (a package covers the lines): the field is gone and nothing is sent.
   const discountProblem =
-    discount !== null && (discountAmount <= 0 || discount.reason.trim() === "");
+    due > 0 &&
+    discount !== null &&
+    (discountAmount <= 0 || discount.reason.trim() === "");
   const problems = {
     staff: lines.some((l) => l.staffId === ""),
     cash:
@@ -586,9 +592,16 @@ export function FrontDeskPage() {
     record();
   };
 
+  /** A save that failed for the previous customer says nothing about the next one. */
+  const forgetSaveErrors = () => {
+    mutation.reset();
+    correction.reset();
+    packageOnly.reset();
+  };
   // Keyboard: "/" → search, Ctrl+Enter → save, Esc → drop the selected customer.
   const dropCustomer = () => {
     if (!customer) return;
+    forgetSaveErrors();
     setCustomer(null);
     setLines([]);
     setCreating(null);
@@ -617,7 +630,14 @@ export function FrontDeskPage() {
     };
   });
   useEffect(() => {
+    // The cart is hidden behind the calendar tab; a sheet or palette keeps its own keys.
+    if (showsCalendar) return;
     const onKey = (e: KeyboardEvent) => {
+      if (
+        e.defaultPrevented ||
+        (e.target instanceof Element && e.target.closest("dialog[open]"))
+      )
+        return;
       const typing = isTyping(document.activeElement);
       if (e.key === "/" && !typing) {
         e.preventDefault();
@@ -633,10 +653,11 @@ export function FrontDeskPage() {
     return () => {
       document.removeEventListener("keydown", onKey);
     };
-  }, []);
+  }, [showsCalendar]);
 
   /** `fresh`: a booking, a correction or "Bỏ giỏ" starts clean (no draft comes back). */
   const select = (c: CustomerSummary, fresh = false) => {
+    forgetSaveErrors();
     setCreating(null);
     setCustomer(c);
     setLines([]);
@@ -1120,7 +1141,9 @@ export function FrontDeskPage() {
                           onTime={setServiceTime}
                         />
                       )}
-                      {due > 0 && can(me, "sale.discount") && (
+                      {due > 0 &&
+                        (can(me, "sale.discount") ||
+                          can(me, "sale.discount_unlimited")) && (
                         <DiscountField
                           due={due}
                           draft={discount}

@@ -25,6 +25,8 @@ export interface FakeOptions {
   searchHits?: unknown[];
   /** Numbers `GET /customers/phone-check` reports as taken (digits only), with the owner's name. */
   takenPhones?: Record<string, { id: string; name: string }>;
+  /** `/me.features`: the features the spa has on (absent: every feature on). */
+  features?: string[];
 }
 
 export const ME = (permissions: string[]) => ({
@@ -68,12 +70,13 @@ function route(
     withoutRevenue = false,
     searchHits = [],
     takenPhones = {},
+    features,
   } = options;
   const ok = (json: unknown) => ({ status: 200, json });
   const q = url.searchParams;
   const p = url.pathname.replace(/^\/api\/v1/, "");
   const today = spaToday();
-  if (p === "/me") return ok(ME(permissions));
+  if (p === "/me") return ok({ ...ME(permissions), ...(features ? { features } : {}) });
   if (p === "/customers" && q.has("q")) return ok(searchHits);
   if (p === "/customers/phone-check") {
     const digits = (q.get("phone") ?? "")

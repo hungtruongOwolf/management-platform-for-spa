@@ -3,6 +3,7 @@ import { BottomSheet } from "../components/BottomSheet";
 import { ApiError } from "../lib/api";
 import { adminApi } from "./api";
 import { adminMessage } from "./messages";
+import { useResetOnOpen } from "./useResetOnOpen";
 
 type Run = <T>(write: () => Promise<T>) => Promise<T>;
 
@@ -86,6 +87,11 @@ function StepUpDialog({ open, onDone, onCancel }: { open: boolean; onDone: () =>
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  useResetOnOpen(open, () => {
+    setPassword("");
+    setCode("");
+    setError(null);
+  });
 
   const submit = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();

@@ -207,30 +207,62 @@ pub async fn consume(
     .await?)
 }
 
-/// The usable item for `service` that should be used first (AC4.3): not cancelled, not expired,
-/// sessions left; soonest expiry first (no expiry = last), then oldest purchase.
-pub async fn default_item(
+pub struct LineUsage {
+    /// Sessions of the item's lines on completed visits.
+    pub sessions: i64,
+    /// Their `line_value`: `per_session_value` × the paid sessions among them.
+    pub value: i64,
+}
+
+/// What the item's lines on completed visits used (voided visits gave theirs back). Reads the
+/// visits module's tables, like `app.invariant_violations` does: the lines are the only record of
+/// which sessions were paid.
+pub async fn completed_line_usage(tx: &mut TenantTx, item_id: Uuid) -> Result<LineUsage, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        LineUsage,
+        r#"SELECT coalesce(sum(l.qty), 0)::bigint AS "sessions!",
+                  coalesce(sum(l.line_value), 0)::bigint AS "value!"
+           FROM app.visit_line l
+           JOIN app.visit v ON v.tenant_id = l.tenant_id AND v.id = l.visit_id
+           WHERE l.tenant_id = $1 AND l.customer_package_item_id = $2 AND v.status = 'completed'"#,
+        tenant,
+        item_id
+    )
+    .fetch_one(tx.conn())
+    .await?)
+}
+
+pub struct UsableItem {
+    pub id: Uuid,
+    pub sessions_remaining: i32,
+}
+
+/// The usable items for `service` in the order they should be used (AC4.3): not cancelled, not
+/// expired, sessions left; soonest expiry first (no expiry = last), then oldest purchase.
+pub async fn usable_items(
     tx: &mut TenantTx,
     customer_id: Uuid,
     service_id: Uuid,
     today: NaiveDate,
-) -> Result<Option<Uuid>, AppError> {
+) -> Result<Vec<UsableItem>, AppError> {
     let tenant = tx.tenant().as_uuid();
-    Ok(sqlx::query_scalar!(
-        r#"SELECT i.id
+    Ok(sqlx::query_as!(
+        UsableItem,
+        r#"SELECT i.id, i.sessions_remaining
            FROM app.customer_package_item i
            JOIN app.customer_package p ON p.tenant_id = i.tenant_id AND p.id = i.customer_package_id
            WHERE i.tenant_id = $1 AND p.customer_id = $2 AND i.service_id = $3
              AND p.cancelled_at IS NULL AND (p.expires_on IS NULL OR p.expires_on >= $4)
              AND i.sessions_remaining > 0
-           ORDER BY p.expires_on ASC NULLS LAST, p.created_at ASC, p.id ASC
-           LIMIT 1"#,
+           ORDER BY p.expires_on ASC NULLS LAST, p.created_at ASC, p.id ASC, i.id ASC
+           LIMIT 50"#,
         tenant,
         customer_id,
         service_id,
         today
     )
-    .fetch_optional(tx.conn())
+    .fetch_all(tx.conn())
     .await?)
 }
 

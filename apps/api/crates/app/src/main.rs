@@ -69,14 +69,7 @@ async fn serve() -> anyhow::Result<()> {
     let config = Config::from_env().context("invalid configuration")?;
     init_tracing(config.environment);
 
-    // Serverless hosts (Vercel) run several small instances against one Supabase pooler: keep each
-    // instance's share small there (`APP_DB_MAX_CONNECTIONS`); a single VPS keeps the default.
-    let max_connections = std::env::var("APP_DB_MAX_CONNECTIONS")
-        .ok()
-        .and_then(|v| v.parse::<u32>().ok())
-        .filter(|n| *n > 0)
-        .unwrap_or(10);
-    let pool = app::db_pool::options(max_connections, app::db_pool::PING_WHEN_IDLE_FOR)
+    let pool = app::db_pool::options(config.db_max_connections, app::db_pool::PING_WHEN_IDLE_FOR)
         .connect(config.app_database_url.expose_secret())
         .await
         .context("cannot connect to the database as app_rw")?;

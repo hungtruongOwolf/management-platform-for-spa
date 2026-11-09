@@ -39,6 +39,6 @@ Use **Supabase Pro** as **plain managed PostgreSQL**, in region **Singapore (ap-
 Credits are about to run out; DB exceeds ~8 GB or needs larger compute; legal advice requires data residency in Vietnam; health records become a core data type.
 
 ## Update 2026-11-04 (EM, S11)
-- Project **staging** `vpyd-staging` (ref `zyyiukcysjntjgjabiqe`, org "For my future") nằm ở **vùng Mỹ** và **Data API vẫn bật**. Đây là ngoại lệ chỉ dành cho staging, giảm thiểu bằng: schema `app` không nằm trong exposed schemas; `REVOKE ALL` + `ALTER DEFAULT PRIVILEGES … REVOKE` cho `anon`/`authenticated`; RLS; chỉ dùng dữ liệu giả. Checklist ở [runbooks/staging-setup](../runbooks/staging-setup.md) §4.
+- Project **staging** `vpyd-staging` nằm ở **vùng Mỹ** và **Data API vẫn bật**. Đây là ngoại lệ chỉ dành cho staging, giảm thiểu bằng: schema `app` không nằm trong exposed schemas; `REVOKE ALL` + `ALTER DEFAULT PRIVILEGES … REVOKE` cho `anon`/`authenticated`; RLS; chỉ dùng dữ liệu giả. Checklist ở [runbooks/staging-setup](../runbooks/staging-setup.md) §4.
 - **Production** sẽ là một project mới ở Singapore, tắt Data API ngay khi tạo, đúng như phần Decision ở trên.
 - SQLx kết nối qua Supavisor **session mode** (port 5432, user `app_rw.<ref>`), không dùng transaction mode (vì prepared statements).

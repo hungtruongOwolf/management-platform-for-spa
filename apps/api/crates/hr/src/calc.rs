@@ -18,7 +18,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-/// `a × b ÷ c`, rounded half up, without overflow. `c` must be positive.
+/// `a × b ÷ c`, rounded half away from zero (a refund takes back exactly what its sale paid),
+/// without overflow. `c` must be positive.
 pub fn mul_div_round(a: i64, b: i64, c: i64) -> i64 {
     if c <= 0 {
         return 0;
@@ -80,8 +81,8 @@ pub struct MonthInput<'a> {
     pub pay: Option<PayTerms>,
     pub days: &'a [Day],
     pub commission_lines: &'a [CommissionLine],
-    /// Upsell credits: packages closed (Σ = `sale.total` of open sales) and one-off services
-    /// recommended by this person.
+    /// Upsell credits: packages closed (Σ = `sale.total` of open sales), refunds this month of
+    /// packages they closed (negative, ADR-0010), and one-off services recommended by this person.
     pub upsell_lines: &'a [UpsellLine],
     pub bonuses: i64,
     pub penalties: i64,
@@ -177,19 +178,6 @@ pub struct Payslip {
     pub flags: Vec<PayFlag>,
 }
 
-fn employed(input: &MonthInput<'_>, day: NaiveDate) -> bool {
-    input.employment.on(day)
-}
-
-fn totals(input: &MonthInput<'_>) -> AttendanceTotals {
-    summarize(
-        input.month,
-        input.recorded_until,
-        &input.employment,
-        input.days,
-    )
-}
-
 /// Month totals of one person's recorded days (the sheet's "Cộng" row). Days before
 /// `recorded_until` (or all days) without a record while employed count as unrecorded.
 pub fn summarize(
@@ -250,15 +238,15 @@ pub fn compute(
         version: 0,
     });
     let dim = input.month.days();
-    let employed_days = u32::try_from(
-        input
-            .month
-            .iter_days()
-            .filter(|d| employed(input, *d))
-            .count(),
-    )
-    .unwrap_or(0);
-    let att = totals(input);
+    let employed_days = input
+        .employment
+        .days_in(input.month.first_day(), input.month.last_day());
+    let att = summarize(
+        input.month,
+        input.recorded_until,
+        &input.employment,
+        input.days,
+    );
 
     let count = |code: LeaveCode| match code {
         LeaveCode::LeaveP => att.leave_p,
