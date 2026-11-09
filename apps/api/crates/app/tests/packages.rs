@@ -45,11 +45,16 @@ async fn fixture(pool: PgPool) -> Result<Fixture, Box<dyn std::error::Error>> {
         sqlx::query_scalar("SELECT id FROM app.service WHERE name = 'Cơ Bản – Dầu thảo dược'")
             .fetch_one(&h.owner)
             .await?;
+    // A real account: who-did-it columns reference user_account (0036).
+    let user: Uuid =
+        sqlx::query_scalar("SELECT id FROM app.user_account ORDER BY created_at, id LIMIT 1")
+            .fetch_one(&h.owner)
+            .await?;
     Ok(Fixture {
         app_pool: app_pool(&h.owner).await?,
         owner: h.owner,
         actor: Actor::new(
-            UserId::new(),
+            UserId::from_uuid(user),
             TenantId::from_uuid(tenant),
             [Permission::OpeningBalanceImport],
             None,
