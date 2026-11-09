@@ -681,12 +681,14 @@ pub async fn actor_for(
     let tenant = session.active_tenant.ok_or(AppError::Forbidden {
         code: "auth.no_active_tenant",
     })?;
-    let permissions = tenant_permissions(pool, session.user_id, tenant)
-        .await?
-        .ok_or(AppError::Forbidden {
-            code: "auth.not_a_member",
-        })?;
-    Ok(Actor::new(session.user_id, tenant, permissions, ip))
+    let mut tx = TenantTx::begin(pool, tenant).await?;
+    let access = repo::member_access(&mut tx, session.user_id).await?;
+    tx.commit().await?;
+    let access = access.ok_or(AppError::Forbidden {
+        code: "auth.not_a_member",
+    })?;
+    // The spa settings ride along, so the request's own transactions skip re-reading them.
+    Ok(Actor::new(session.user_id, tenant, access.permissions, ip).with_tenant_facts(access.facts))
 }
 
 /// `POST /auth/password` (ADR-0016): the signed-in person replaces their own password — the

@@ -134,3 +134,60 @@ async fn responses_report_db_time_statement_count_and_total(pool: PgPool) -> Tes
     );
     Ok(())
 }
+
+async fn backend_pid(pool: &PgPool) -> Result<i32, sqlx::Error> {
+    sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(pool)
+        .await
+}
+
+async fn terminate(owner: &PgPool, pid: i32) -> TestResult {
+    // sqlx pings a connection when it goes back to the pool (in a background task): let that
+    // finish first, so the kill lands on an idle connection, as in production.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let killed: bool = sqlx::query_scalar("SELECT pg_terminate_backend($1)")
+        .bind(pid)
+        .fetch_one(owner)
+        .await?;
+    assert!(killed, "backend {pid} terminated");
+    // Give the server a moment to close the socket.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    Ok(())
+}
+
+/// Db review A1: the pool no longer pings on every checkout, only a connection idle for
+/// `PING_WHEN_IDLE_FOR`. A connection that died while idle that long (instance frozen, pooler or
+/// Postgres closed it) is still caught by the ping, dropped and replaced: the caller never sees it.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_dead_idle_connection_is_detected_and_replaced(owner: PgPool) -> TestResult {
+    let options = (*app_pool(&owner).await?.connect_options()).clone();
+    // Threshold 0: every idle connection is "idle long enough" (the same code path as 30 s).
+    let pool = app::db_pool::options(1, std::time::Duration::ZERO)
+        .connect_with(options)
+        .await?;
+    let first = backend_pid(&pool).await?;
+    terminate(&owner, first).await?;
+    let second = backend_pid(&pool).await?;
+    assert_ne!(first, second, "the dead connection was replaced");
+    Ok(())
+}
+
+/// The other side of A1: a connection used again within the threshold is handed out without a
+/// round trip. If it died in that window, the next statement fails once and sqlx closes the
+/// connection; the statement after that runs on a fresh one.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_recently_used_connection_is_not_pinged(owner: PgPool) -> TestResult {
+    let options = (*app_pool(&owner).await?.connect_options()).clone();
+    let pool = app::db_pool::options(1, std::time::Duration::from_secs(3600))
+        .connect_with(options)
+        .await?;
+    let first = backend_pid(&pool).await?;
+    terminate(&owner, first).await?;
+    assert!(
+        backend_pid(&pool).await.is_err(),
+        "no ping within the threshold: the dead connection reaches the statement"
+    );
+    let next = backend_pid(&pool).await?;
+    assert_ne!(first, next, "a broken connection is never reused");
+    Ok(())
+}

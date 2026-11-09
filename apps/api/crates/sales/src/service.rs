@@ -315,7 +315,7 @@ pub async fn create_sale_as_of(
     }
     require_note_right(actor, order.package.note.as_ref())?;
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -441,7 +441,7 @@ pub async fn create_checkout(
         require_note_right(actor, order.note.as_ref())?;
     }
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -898,7 +898,7 @@ pub async fn for_day(
 ) -> Result<Vec<DaySaleDto>, AppError> {
     actor.require(Permission::SaleRead)?;
     actor.require(Permission::CustomerRead)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
@@ -930,7 +930,7 @@ pub async fn get_sale(
     id: Uuid,
 ) -> Result<SaleDto, AppError> {
     actor.require(Permission::SaleRead)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
@@ -959,7 +959,7 @@ pub async fn update_note(
     actor.require(Permission::PackageSell)?;
     actor.require(Permission::CustomerHealthNotesWrite)?;
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let sale = repo::lock_sale(&mut tx, id)
         .await?
         .ok_or(AppError::NotFound)?;

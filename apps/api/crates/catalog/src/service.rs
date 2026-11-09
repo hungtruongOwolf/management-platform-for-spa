@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 pub async fn categories(pool: &PgPool, actor: &Actor) -> Result<Vec<CategoryRow>, AppError> {
     actor.require(Permission::CatalogRead)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let rows = repo::categories(&mut tx).await?;
     tx.commit().await?;
     Ok(rows)
@@ -20,7 +20,7 @@ pub async fn services(
     active_only: bool,
 ) -> Result<Vec<ServiceRow>, AppError> {
     actor.require(Permission::CatalogRead)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let rows = repo::services(&mut tx, active_only, None).await?;
     tx.commit().await?;
     Ok(rows)
@@ -32,7 +32,7 @@ pub async fn package_plans(
     active_only: bool,
 ) -> Result<Vec<PlanRow>, AppError> {
     actor.require(Permission::CatalogRead)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let rows = repo::package_plans(&mut tx, active_only, None).await?;
     tx.commit().await?;
     Ok(rows)
