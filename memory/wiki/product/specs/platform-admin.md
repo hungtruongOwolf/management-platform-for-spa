@@ -133,4 +133,5 @@ Bảng mới: `platform_operator`, `platform_session`, `platform_recovery_code`,
 - **Q-PA4** Khóa chủ spa cuối cùng: v1 từ chối (`platform.last_owner`), phải ngưng spa trước. Đồng ý?
 
 ## Status
-draft (lead's design 2026-11-09, EM to review). Build theo 3 PR (ADR-0018 §Rollout).
+draft (lead's design 2026-11-09, EM to review). Đã build theo 3 PR chồng nhau (ADR-0018 §Rollout): **#111** danh tính operator + spa + nhật ký nền tảng (0038), **#112** cờ tính năng (0039) + e2e, **#113** vai trò + tài khoản + nhật ký spa (0040). Chưa merge (chờ EM).
+- Ghi chú build: tính năng `evaluations` chỉ chặn đánh giá tháng (route), không rút `evaluation.record` vì quyền này còn giữ đánh giá ngày + thưởng/phạt; `staff.read_own_past` không còn lưu trong role owner (0040, vốn luôn bị rút lúc request).
