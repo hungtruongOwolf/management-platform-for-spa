@@ -160,7 +160,10 @@ describe("Sheet lịch hẹn (EM 2026-11-07: mỗi người một lịch, không
     expect(rows[1]).toHaveTextContent("Chưa gán KTV");
     await user.click(within(rows[1] as HTMLElement).getByRole("button"));
     expect(onOpenOther).toHaveBeenCalledWith("a2");
-    expect(screen.queryByText(/cả nhóm/)).not.toBeInTheDocument();
+    // No group check-in: the one arrival button is this person's own.
+    expect(
+      screen.getAllByRole("button", { name: /Khách đến/ }),
+    ).toHaveLength(1);
   });
 
   it("saves the technician as a plain update when picked, and says so", async () => {
