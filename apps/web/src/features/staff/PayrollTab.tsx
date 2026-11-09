@@ -44,7 +44,7 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
       ),
     },
     { id: "position", header: "Vị trí", card: "subtitle", width: "12%", cell: (s) => s.position },
-    { id: "base", header: "Lương cứng", numeric: true, width: "11%", cell: (s) => vnd(s.base_salary) },
+    { id: "base", header: "Lương cứng", numeric: true, width: "11%", cell: (s) => vnd(s.base_pay) },
     { id: "deduct", header: "Trừ nghỉ, muộn", numeric: true, width: "12%", cell: (s) => (s.leave_deduction + s.late_deduction > 0 ? `−${vnd(s.leave_deduction + s.late_deduction)}` : "–") },
     { id: "commission", header: "Hoa hồng", numeric: true, width: "10%", cell: (s) => vnd(s.service_commission + s.closing_commission) },
     { id: "adjust", header: "Thưởng − phạt", numeric: true, width: "11%", cell: (s) => signedVnd(s.bonuses - s.penalties) },
@@ -164,6 +164,16 @@ function Row({ label, value, strong = false, hint }: { label: string; value: str
   );
 }
 
+/**
+ * How the month's base was reached: the day rate always (it is on the full monthly salary), and
+ * the employed share when the person did not work the whole month (ADR-0019 D4).
+ */
+function baseHint(slip: Payslip): string {
+  const dayRate = `Lương 1 ngày ${vnd(slip.day_rate)} = lương cứng ÷ (${String(slip.days_in_month)} − ${String(slip.free_leave_days)})`;
+  if (slip.base_pay === slip.base_salary) return dayRate;
+  return `${vnd(slip.base_salary)} × ${String(slip.employed_days)}/${String(slip.days_in_month)} ngày làm việc, làm tròn đến nghìn đồng. ${dayRate}`;
+}
+
 /** Phiếu lương: every line the sheet had, so a technician can check each amount. */
 export function PayslipView({ slip, closed, showFlags = true }: { slip: Payslip; closed: boolean; showFlags?: boolean }) {
   const a = slip.attendance;
@@ -183,7 +193,7 @@ export function PayslipView({ slip, closed, showFlags = true }: { slip: Payslip;
         </ul>
       )}
       <dl className="payslip">
-        <Row label="Lương cứng" value={vnd(slip.base_salary)} hint={`Lương 1 ngày ${vnd(slip.day_rate)} = lương cứng ÷ (${String(slip.days_in_month)} − ${String(slip.free_leave_days)})`} />
+        <Row label="Lương cứng" value={vnd(slip.base_pay)} hint={baseHint(slip)} />
         <Row
           label="Trừ ngày nghỉ"
           value={slip.leave_deduction > 0 ? `−${vnd(slip.leave_deduction)}` : "0đ"}
@@ -207,6 +217,13 @@ export function PayslipView({ slip, closed, showFlags = true }: { slip: Payslip;
         <Row label="Hỗ trợ tiền ăn" value={vnd(slip.meal_allowance)} />
         <Row label="Thưởng" value={vnd(slip.bonuses)} hint={slip.bonus_points ? `${String(slip.bonus_points)} điểm thưởng` : undefined} />
         <Row label="Phạt" value={slip.penalties > 0 ? `−${vnd(slip.penalties)}` : "0đ"} hint={slip.penalty_points ? `${String(slip.penalty_points)} điểm phạt` : undefined} />
+        {(slip.net_pay_shortfall ?? 0) > 0 && (
+          <Row
+            label="Khoản trừ vượt lương (không trừ)"
+            value={vnd(slip.net_pay_shortfall ?? 0)}
+            hint="Thực lĩnh không bao giờ âm: phần trừ vượt quá lương của tháng do spa chịu."
+          />
+        )}
         <Row label="Thực lĩnh" value={vnd(slip.net_pay)} strong />
       </dl>
       <dl className="payslip payslip-muted" aria-label="Ghi nhận, chưa trả trong tháng">
@@ -392,9 +409,17 @@ function RulesForm({ initial, onDone }: { initial: PayrollRules; onDone: () => v
       <label className="filter-field">
         Thưởng gắn bó tháng vào làm hoặc nghỉ giữa chừng
         <select value={r.loyalty_partial_month} onChange={(e) => { setR({ ...r, loyalty_partial_month: e.target.value as PayrollRules["loyalty_partial_month"] }); }}>
+          <option value="fifteen_days">Đủ cả tháng nếu làm từ 15 ngày trở lên, dưới 15 ngày không tính</option>
           <option value="prorate">Theo số ngày làm trong tháng</option>
           <option value="full">Đủ cả tháng</option>
           <option value="none_if_partial">Không tính</option>
+        </select>
+      </label>
+      <label className="filter-field">
+        Hỗ trợ tiền ăn
+        <select value={r.meal_allowance_basis} onChange={(e) => { setR({ ...r, meal_allowance_basis: e.target.value as PayrollRules["meal_allowance_basis"] }); }}>
+          <option value="monthly">Cố định mỗi tháng (tháng không đi làm ngày nào thì 0đ)</option>
+          <option value="days_worked">Theo số ngày đi làm thực tế</option>
         </select>
       </label>
       {save.isError && (

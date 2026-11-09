@@ -9611,6 +9611,14 @@
           }
         }
       },
+      "MealAllowanceBasis": {
+        "type": "string",
+        "description": "How the monthly meal allowance (`staff_pay.meal_allowance`) is paid (ADR-0019 D3).",
+        "enum": [
+          "monthly",
+          "days_worked"
+        ]
+      },
       "MethodSplit": {
         "type": "object",
         "description": "One amount split by how the money moved.",
@@ -11153,6 +11161,7 @@
         "type": "string",
         "description": "How Thưởng gắn bó is accrued in a month the person did not work in full (⚠️ #7).",
         "enum": [
+          "fifteen_days",
           "prorate",
           "full",
           "none_if_partial"
@@ -11266,7 +11275,8 @@
           "no_pay_terms",
           "unrecorded_days",
           "absent_k5_plus",
-          "evaluation_missing"
+          "evaluation_missing",
+          "net_pay_shortfall"
         ]
       },
       "PaymentCreate": {
@@ -11476,7 +11486,12 @@
           "loyalty_partial_month": {
             "$ref": "#/components/schemas/PartialMonthLoyalty",
             "description": "⚠️ #7.",
-            "default": "prorate"
+            "default": "fifteen_days"
+          },
+          "meal_allowance_basis": {
+            "$ref": "#/components/schemas/MealAllowanceBasis",
+            "description": "How the meal allowance is paid (ADR-0019 D3).",
+            "default": "monthly"
           },
           "tet_level_amounts": {
             "type": "array",
@@ -11525,7 +11540,8 @@
         "properties": {
           "base_salary": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "Σ of the payslips' `base_pay` (the month's base, prorated for a month not worked in full)."
           },
           "bonuses": {
             "type": "integer",
@@ -11565,6 +11581,7 @@
           "days_in_month",
           "employed_days",
           "base_salary",
+          "base_pay",
           "commission_rate_bp",
           "day_rate",
           "attendance",
@@ -11593,9 +11610,15 @@
           "attendance": {
             "$ref": "#/components/schemas/AttendanceTotals"
           },
+          "base_pay": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The month's base: `base_salary` for a month worked in full, else `base_salary ×\nemployed_days ÷ days_in_month` rounded to 1.000đ (ADR-0019 D4). Snapshots closed before\nit existed read it as `base_salary`."
+          },
           "base_salary": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "The monthly salary of the pay terms."
           },
           "bonus_points": {
             "type": "integer",
@@ -11687,7 +11710,8 @@
           },
           "leave_deduction": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "Deducted days × day rate, at most `base_pay` (ADR-0019 D3)."
           },
           "loyalty_bonus_accrued": {
             "type": "integer",
@@ -11704,7 +11728,13 @@
           },
           "net_pay": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "Never below 0đ (ADR-0019 D3)."
+          },
+          "net_pay_shortfall": {
+            "type": "integer",
+            "format": "int64",
+            "description": "What the deductions exceeded the month's pay by, not deducted: the spa bears it (flag\n`net_pay_shortfall`). 0 otherwise."
           },
           "penalties": {
             "type": "integer",

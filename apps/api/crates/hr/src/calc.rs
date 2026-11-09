@@ -2,15 +2,18 @@
 //! terms, attendance, commission inputs, adjustments, evaluation — and the spa's rules, computes
 //! the payslip. No I/O: every rule is unit-tested here.
 //!
-//! Net pay = base − leave deduction − late deduction + service commission + closing commission
-//!         + meal allowance + bonuses − penalties.
+//! Net pay = the month's base − leave deduction − late deduction + service commission
+//!         + closing commission + meal allowance + bonuses − penalties, never below 0đ.
+//! The month's base is the monthly salary, prorated by employed days for a month not worked in
+//! full (ADR-0019 D4); the leave deduction never exceeds it and a net below zero is paid as 0đ
+//! with the shortfall shown (D3).
 //! Thưởng gắn bó and the Tết level are *recorded* on the payslip (paid at the milestone / at Tết),
 //! never added to the month's net (compensation-rules.md §6–7).
 
 use crate::attendance::{AttendanceStatus, LeaveCode};
 use crate::evaluation::Level;
 use crate::month::Month;
-use crate::rules::{PartialMonthLoyalty, PayrollRules};
+use crate::rules::{MealAllowanceBasis, PartialMonthLoyalty, PayrollRules};
 use chrono::NaiveDate;
 use org::Employment;
 use org::profile::PayTerms;
@@ -33,6 +36,15 @@ pub fn mul_div_round(a: i64, b: i64, c: i64) -> i64 {
     };
     i64::try_from(q).unwrap_or(i64::MAX)
 }
+
+/// `a × b ÷ c` rounded half up to the nearest 1.000đ (ADR-0019 D4: prorated amounts are paid in
+/// whole thousands). `c` must be positive.
+pub fn mul_div_round_thousand(a: i64, b: i64, c: i64) -> i64 {
+    mul_div_round(a, b, c.saturating_mul(1_000)).saturating_mul(1_000)
+}
+
+/// Employed days that make a month a "working month" for Thưởng gắn bó (ADR-0019 D4).
+pub const LOYALTY_MIN_DAYS: u32 = 15;
 
 /// One recorded day as the calculator needs it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,6 +132,9 @@ pub enum PayFlag {
     AbsentK5Plus,
     /// No evaluation for the month: no Tết level.
     EvaluationMissing,
+    /// Deductions exceeded the month's pay: net pay is 0đ and `net_pay_shortfall` is what was
+    /// not deducted (ADR-0019 D3: net pay is never negative).
+    NetPayShortfall,
 }
 
 /// The computed payslip. Stored as JSON in `app.payslip.detail` when the month closes.
@@ -132,7 +147,12 @@ pub struct Payslip {
     pub month: String,
     pub days_in_month: u32,
     pub employed_days: u32,
+    /// The monthly salary of the pay terms.
     pub base_salary: i64,
+    /// The month's base: `base_salary` for a month worked in full, else `base_salary ×
+    /// employed_days ÷ days_in_month` rounded to 1.000đ (ADR-0019 D4). Snapshots closed before
+    /// it existed read it as `base_salary`.
+    pub base_pay: i64,
     pub commission_rate_bp: i32,
     /// base ÷ (days in month − free leave days), rounded.
     pub day_rate: i64,
@@ -142,6 +162,7 @@ pub struct Payslip {
     pub leave_days_counted: u32,
     /// Days deducted: counted days beyond the allowance + days of codes never free.
     pub deducted_leave_days: u32,
+    /// Deducted days × day rate, at most `base_pay` (ADR-0019 D3).
     pub leave_deduction: i64,
     /// Late arrivals beyond the grace minutes.
     pub late_penalised: u32,
@@ -162,7 +183,12 @@ pub struct Payslip {
     pub penalties: i64,
     pub bonus_points: i64,
     pub penalty_points: i64,
+    /// Never below 0đ (ADR-0019 D3).
     pub net_pay: i64,
+    /// What the deductions exceeded the month's pay by, not deducted: the spa bears it (flag
+    /// `net_pay_shortfall`). 0 otherwise.
+    #[serde(default)]
+    pub net_pay_shortfall: i64,
     /// Thưởng gắn bó recorded this month (paid at the milestone; not in `net_pay`).
     pub loyalty_bonus_accrued: i64,
     pub evaluation_level: Option<Level>,
@@ -176,6 +202,21 @@ pub struct Payslip {
     #[serde(default)]
     pub upsell_lines: Vec<UpsellLine>,
     pub flags: Vec<PayFlag>,
+}
+
+impl Payslip {
+    /// Reads a stored snapshot (`app.payslip.detail`) as it was closed: a snapshot from before
+    /// ADR-0019 has no `base_pay`, and its base was the monthly salary unprorated. The stored row
+    /// is never rewritten.
+    pub fn from_snapshot(mut raw: serde_json::Value) -> Result<Self, serde_json::Error> {
+        if let Some(o) = raw.as_object_mut()
+            && !o.contains_key("base_pay")
+            && let Some(base) = o.get("base_salary").cloned()
+        {
+            o.insert("base_pay".to_owned(), base);
+        }
+        serde_json::from_value(raw)
+    }
 }
 
 /// Month totals of one person's recorded days (the sheet's "Cộng" row). Days before
@@ -265,9 +306,17 @@ pub fn compute(
         .map(|c| count(*c))
         .sum();
     let deducted = counted.saturating_sub(rules.free_leave_days) + never_free;
+    // D4: a month not worked in full pays the employed share of the base, in whole thousands.
+    let base_pay = if employed_days >= dim {
+        pay.base_salary
+    } else {
+        mul_div_round_thousand(pay.base_salary, i64::from(employed_days), i64::from(dim))
+    };
     let divisor = i64::from(dim.saturating_sub(rules.free_leave_days).max(1));
     let day_rate = mul_div_round(pay.base_salary, 1, divisor);
-    let leave_deduction = mul_div_round(pay.base_salary, i64::from(deducted), divisor);
+    // D3: leave never takes more than the month's base.
+    let leave_deduction =
+        mul_div_round(pay.base_salary, i64::from(deducted), divisor).min(base_pay);
 
     let late_penalised = u32::try_from(
         input
@@ -316,19 +365,33 @@ pub fn compute(
     let closing_base = package_base + referred_base;
     let closing_commission = mul_div_round(closing_base, rate, 10_000);
 
-    let meal = if employed_days > 0 {
-        pay.meal_allowance
-    } else {
-        0
+    // D3: no meal allowance for a month without a day worked.
+    let meal = match rules.meal_allowance_basis {
+        MealAllowanceBasis::Monthly if att.present > 0 => pay.meal_allowance,
+        MealAllowanceBasis::DaysWorked => mul_div_round_thousand(
+            pay.meal_allowance,
+            i64::from(
+                att.present
+                    .min(dim.saturating_sub(rules.free_leave_days).max(1)),
+            ),
+            divisor,
+        ),
+        MealAllowanceBasis::Monthly => 0,
     };
-    let net_pay = pay.base_salary - leave_deduction - late_deduction
+    let gross = base_pay - leave_deduction - late_deduction
         + service_commission
         + closing_commission
         + meal
         + input.bonuses
         - input.penalties;
+    // D3: never below zero; what the deductions exceed is shown, not deducted.
+    let net_pay = gross.max(0);
+    let net_pay_shortfall = net_pay - gross;
 
     let loyalty = match rules.loyalty_partial_month {
+        PartialMonthLoyalty::FifteenDays if employed_days >= LOYALTY_MIN_DAYS => {
+            pay.loyalty_bonus_monthly
+        }
         PartialMonthLoyalty::Prorate => mul_div_round(
             pay.loyalty_bonus_monthly,
             i64::from(employed_days),
@@ -336,7 +399,9 @@ pub fn compute(
         ),
         PartialMonthLoyalty::Full if employed_days > 0 => pay.loyalty_bonus_monthly,
         PartialMonthLoyalty::NoneIfPartial if employed_days == dim => pay.loyalty_bonus_monthly,
-        PartialMonthLoyalty::Full | PartialMonthLoyalty::NoneIfPartial => 0,
+        PartialMonthLoyalty::FifteenDays
+        | PartialMonthLoyalty::Full
+        | PartialMonthLoyalty::NoneIfPartial => 0,
     };
 
     let tet_level = input
@@ -362,6 +427,9 @@ pub fn compute(
     if input.evaluation.is_none() {
         flags.push(PayFlag::EvaluationMissing);
     }
+    if net_pay_shortfall > 0 {
+        flags.push(PayFlag::NetPayShortfall);
+    }
 
     Payslip {
         staff_id,
@@ -371,6 +439,7 @@ pub fn compute(
         days_in_month: dim,
         employed_days,
         base_salary: pay.base_salary,
+        base_pay,
         commission_rate_bp: pay.commission_rate_bp,
         day_rate,
         attendance: att,
@@ -392,6 +461,7 @@ pub fn compute(
         bonus_points: input.bonus_points,
         penalty_points: input.penalty_points,
         net_pay,
+        net_pay_shortfall,
         loyalty_bonus_accrued: loyalty,
         evaluation_level: input.evaluation,
         tet_level,
@@ -652,7 +722,143 @@ mod tests {
             s.attendance.unrecorded, 1,
             "only the unrecorded 1st, not the gap"
         );
-        assert_eq!(s.loyalty_bonus_accrued, 333_333, "20 / 30 of 500k");
+        assert_eq!(s.base_pay, 3_333_000, "20 / 30 of 5tr, in thousands");
+        assert_eq!(s.loyalty_bonus_accrued, 500_000, "20 days: a working month");
+        let prorate = PayrollRules {
+            loyalty_partial_month: PartialMonthLoyalty::Prorate,
+            ..PayrollRules::default()
+        };
+        assert_eq!(
+            slip(&i, &prorate).loyalty_bonus_accrued,
+            333_333,
+            "20 / 30 of 500k"
+        );
+    }
+
+    /// ADR-0019 D4: the base of a month not worked in full is the employed share, rounded to
+    /// 1.000đ; the free leave days and the day rate stay as for a full month.
+    #[test]
+    fn a_mid_month_joiner_is_paid_the_employed_share_of_the_base() {
+        let ds: Vec<Day> = days(&[(18, AttendanceStatus::LeaveP)])
+            .into_iter()
+            .filter(|x| x.date >= d("2026-11-16"))
+            .collect();
+        let mut i = input(&ds, &[]);
+        i.employment = Employment::between(Some(d("2026-11-16")), None);
+        let s = slip(&i, &PayrollRules::default());
+        assert_eq!((s.base_salary, s.base_pay), (5_000_000, 2_500_000));
+        assert_eq!(s.day_rate, 178_571, "5tr ÷ (30 − 2), as a full month");
+        assert_eq!(s.leave_deduction, 0, "one day off: within the 2 free days");
+        assert_eq!(s.net_pay, 2_500_000 + 300_000);
+
+        // 10 of 30 days of 5,5tr = 1.833.333,3 → 1.833.000đ.
+        let late: Vec<Day> = days(&[])
+            .into_iter()
+            .filter(|x| x.date >= d("2026-11-21"))
+            .collect();
+        let mut i = input(&late, &[]);
+        i.employment = Employment::between(Some(d("2026-11-21")), None);
+        if let Some(p) = i.pay.as_mut() {
+            p.base_salary = 5_500_000;
+        }
+        assert_eq!(slip(&i, &PayrollRules::default()).base_pay, 1_833_000);
+
+        // A leaver on the 30th of a 30-day month worked it in full: no rounding.
+        let mut i = input(&ds, &[]);
+        i.employment = Employment::between(None, Some(d("2026-11-30")));
+        if let Some(p) = i.pay.as_mut() {
+            p.base_salary = 5_123_456;
+        }
+        assert_eq!(slip(&i, &PayrollRules::default()).base_pay, 5_123_456);
+    }
+
+    /// ADR-0019 D3: the leave deduction never takes more than the month's base.
+    #[test]
+    fn leave_never_takes_more_than_the_months_base() {
+        // Employed 5 days, all K, K never free: 5 × 178.571 = 892.857 > 833.000 base.
+        let ds: Vec<Day> = days(&[
+            (26, AttendanceStatus::AbsentK),
+            (27, AttendanceStatus::AbsentK),
+            (28, AttendanceStatus::AbsentK),
+            (29, AttendanceStatus::AbsentK),
+            (30, AttendanceStatus::AbsentK),
+        ])
+        .into_iter()
+        .filter(|x| x.date >= d("2026-11-26"))
+        .collect();
+        let mut i = input(&ds, &[]);
+        i.employment = Employment::between(Some(d("2026-11-26")), None);
+        let rules = PayrollRules {
+            free_leave_codes: vec![LeaveCode::LeaveP, LeaveCode::LeaveDx],
+            ..PayrollRules::default()
+        };
+        let s = slip(&i, &rules);
+        assert_eq!(s.base_pay, 833_000);
+        assert_eq!(s.deducted_leave_days, 5);
+        assert_eq!(s.leave_deduction, 833_000, "capped at the month's base");
+        assert_eq!(s.meal_allowance, 0, "no day worked");
+        assert_eq!((s.net_pay, s.net_pay_shortfall), (0, 0));
+        assert!(!s.flags.contains(&PayFlag::NetPayShortfall));
+    }
+
+    /// ADR-0019 D3: net pay is never negative; what the deductions exceed is shown and flagged.
+    #[test]
+    fn net_pay_is_never_negative_and_the_shortfall_is_shown() {
+        let ds = days(&[]);
+        let mut i = input(&ds, &[]);
+        i.penalties = 6_000_000;
+        let s = slip(&i, &PayrollRules::default());
+        assert_eq!(s.net_pay, 0);
+        assert_eq!(s.net_pay_shortfall, 700_000, "5tr + 300k − 6tr");
+        assert!(s.flags.contains(&PayFlag::NetPayShortfall));
+        i.penalties = 5_300_000;
+        let even = slip(&i, &PayrollRules::default());
+        assert_eq!((even.net_pay, even.net_pay_shortfall), (0, 0));
+        assert!(!even.flags.contains(&PayFlag::NetPayShortfall));
+    }
+
+    /// ADR-0019 D3: the meal allowance is a monthly amount (compensation-rules §8) paid only for a
+    /// month with a day worked; the owner may pay it by days worked instead.
+    #[test]
+    fn meal_needs_a_day_worked_and_can_follow_days_worked() {
+        let all_leave: Vec<Day> = days(&[])
+            .into_iter()
+            .map(|x| Day {
+                status: AttendanceStatus::LeaveP,
+                ..x
+            })
+            .collect();
+        let s = slip(&input(&all_leave, &[]), &PayrollRules::default());
+        assert_eq!(s.meal_allowance, 0);
+
+        let by_days = PayrollRules {
+            meal_allowance_basis: MealAllowanceBasis::DaysWorked,
+            ..PayrollRules::default()
+        };
+        // 14 days present of 30 − 2: half of 300k.
+        let half: Vec<Day> = days(&[])
+            .into_iter()
+            .enumerate()
+            .map(|(n, x)| Day {
+                status: if n < 14 {
+                    AttendanceStatus::Present
+                } else {
+                    AttendanceStatus::LeaveP
+                },
+                ..x
+            })
+            .collect();
+        assert_eq!(slip(&input(&half, &[]), &by_days).meal_allowance, 150_000);
+        let full = days(&[]);
+        assert_eq!(
+            slip(&input(&full, &[]), &by_days).meal_allowance,
+            300_000,
+            "30 days present: at most the monthly amount"
+        );
+        assert_eq!(
+            slip(&input(&full, &[]), &PayrollRules::default()).meal_allowance,
+            300_000
+        );
     }
 
     #[test]
@@ -666,7 +872,22 @@ mod tests {
         let s = slip(&i, &PayrollRules::default());
         assert_eq!(s.employed_days, 15);
         assert_eq!(s.attendance.unrecorded, 0);
-        assert_eq!(s.loyalty_bonus_accrued, 250_000);
+        assert_eq!(
+            s.loyalty_bonus_accrued, 500_000,
+            "15 days: a working month (D4)"
+        );
+        let mut fourteen = input(&ds[1..], &[]);
+        fourteen.employment = Employment::between(Some(d("2026-11-17")), None);
+        assert_eq!(
+            slip(&fourteen, &PayrollRules::default()).loyalty_bonus_accrued,
+            0,
+            "14 days: not a working month"
+        );
+        let prorate = PayrollRules {
+            loyalty_partial_month: PartialMonthLoyalty::Prorate,
+            ..PayrollRules::default()
+        };
+        assert_eq!(slip(&i, &prorate).loyalty_bonus_accrued, 250_000);
         let none = PayrollRules {
             loyalty_partial_month: PartialMonthLoyalty::NoneIfPartial,
             ..PayrollRules::default()
@@ -761,8 +982,14 @@ mod tests {
             o.remove("upsell_lines");
             o.remove("upsell_package_base");
             o.remove("upsell_service_base");
+            o.remove("base_pay");
+            o.remove("net_pay_shortfall");
         }
-        let back: Result<Payslip, _> = serde_json::from_value(json);
-        assert!(back.is_ok_and(|b| b.upsell_lines.is_empty() && b.upsell_package_base == 0));
+        let back = Payslip::from_snapshot(json);
+        assert!(back.is_ok_and(|b| b.upsell_lines.is_empty()
+            && b.upsell_package_base == 0
+            && b.base_pay == b.base_salary
+            && b.net_pay_shortfall == 0
+            && b.net_pay == s.net_pay));
     }
 }
