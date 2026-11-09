@@ -172,7 +172,16 @@ async fn creating_a_customer_twice_with_one_key_makes_one_profile(pool: PgPool) 
             Some("idempotency.key_reuse_mismatch")
         )
     );
-    let no_key = post_customer(&h.app, Some(&owner), Some(walk_in)).await;
+    // No key at all (`post_customer` would add one).
+    let no_key = call_with_headers(
+        &h.app,
+        "POST",
+        "/customers",
+        Some(&owner),
+        Some(walk_in),
+        &[],
+    )
+    .await;
     assert_eq!(
         (no_key.status, no_key.body["code"].as_str()),
         (StatusCode::BAD_REQUEST, Some("idempotency.key_required"))
