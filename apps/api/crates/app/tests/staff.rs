@@ -230,15 +230,19 @@ impl Spa {
             .await
     }
 
+    /// Sets pay terms with `If-Match` = the terms' current version (0 when none: ADR-0019 D10).
     async fn pay(&self, staff: Uuid, base: i64, rate_bp: i32) {
+        let current = self.profile(staff).await["pay"]["version"].clone();
         let r = self
-            .put(
+            .versioned(
                 &self.owner,
+                "PUT",
                 &format!("/staff/{staff}/pay"),
                 json!({
                     "base_salary": base, "commission_rate_bp": rate_bp,
                     "loyalty_bonus_monthly": 500_000, "meal_allowance": 300_000
                 }),
+                &current,
             )
             .await;
         assert_eq!(r.status, StatusCode::OK, "{}", r.body);
@@ -327,10 +331,12 @@ async fn salary_is_only_sent_to_payroll_readers(pool: PgPool) -> TestResult {
         false
     );
     let set = s
-        .put(
+        .versioned(
             &s.manager,
+            "PUT",
             &format!("/staff/{}/pay", s.lan),
             json!({"base_salary": 1, "commission_rate_bp": 0}),
+            &json!(1),
         )
         .await;
     assert_eq!(set.status, StatusCode::FORBIDDEN);
@@ -1291,12 +1297,14 @@ async fn commission_reconciles_with_visits(pool: PgPool) -> TestResult {
 
     // Rules: gift sessions can count, closing commission can be switched off.
     let rules = s
-        .put(
+        .versioned(
             &s.owner,
+            "PUT",
             "/payroll/rules",
             json!({
                 "commission_on_bonus_sessions": true, "closing_commission": false
             }),
+            &json!(0),
         )
         .await;
     assert_eq!(rules.status, StatusCode::OK, "{}", rules.body);
@@ -1309,31 +1317,38 @@ async fn commission_reconciles_with_visits(pool: PgPool) -> TestResult {
 async fn rules_and_attendance_drive_deductions(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
     s.pay(s.lan, 5_000_000, 500).await;
+    let never = json!(0);
     let bad = s
-        .put(
+        .versioned(
             &s.owner,
+            "PUT",
             "/payroll/rules",
             json!({"late_penalty_amount": -5}),
+            &never,
         )
         .await;
     assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
     let unknown = s
-        .put(
+        .versioned(
             &s.owner,
+            "PUT",
             "/payroll/rules",
             json!({"pay_everyone_double": true}),
+            &never,
         )
         .await;
     assert_eq!(unknown.status, StatusCode::UNPROCESSABLE_ENTITY);
-    let ok = s.put(&s.owner, "/payroll/rules", json!({
+    let ok = s.versioned(&s.owner, "PUT", "/payroll/rules", json!({
         "free_leave_codes": ["leave_p", "leave_dx"], "late_grace_minutes": 10, "late_penalty_amount": 20_000
-    })).await;
+    }), &never).await;
     assert_eq!(
         (ok.status, ok.body["version"].clone()),
         (StatusCode::OK, json!(1))
     );
     assert_eq!(
-        s.put(&s.manager, "/payroll/rules", json!({})).await.status,
+        s.versioned(&s.manager, "PUT", "/payroll/rules", json!({}), &json!(1))
+            .await
+            .status,
         StatusCode::FORBIDDEN
     );
 
@@ -2373,10 +2388,12 @@ async fn the_roster_hires_ends_and_rehires_without_losing_history(pool: PgPool) 
         .await;
     assert_eq!(tech_link.status, StatusCode::FORBIDDEN);
     let manager_pay = s
-        .put(
+        .versioned(
             &s.manager,
+            "PUT",
             &format!("/staff/{thu}/pay"),
             json!({"base_salary": 1, "commission_rate_bp": 0}),
+            &json!(0),
         )
         .await;
     assert_eq!(manager_pay.status, StatusCode::FORBIDDEN);
@@ -2881,6 +2898,96 @@ async fn adjustments_need_a_month_the_person_worked_in(pool: PgPool) -> TestResu
         StatusCode::CREATED,
         "{}",
         this_month.body
+    );
+    Ok(())
+}
+
+/// D10: pay terms and payroll rules are optimistic. A write names the version it read (`0` =
+/// none yet); a write over someone else's save is `412`, never a silent overwrite.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn pay_terms_and_rules_refuse_a_stale_write(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let path = format!("/staff/{}/pay", s.lan);
+    let terms = json!({"base_salary": 5_000_000, "commission_rate_bp": 500});
+    let bare = s.put(&s.owner, &path, terms.clone()).await;
+    assert_eq!(
+        (bare.status, bare.body["code"].clone()),
+        (
+            StatusCode::BAD_REQUEST,
+            json!("precondition.if_match_required")
+        )
+    );
+    let first = s
+        .versioned(&s.owner, "PUT", &path, terms.clone(), &json!(0))
+        .await;
+    assert_eq!(first.status, StatusCode::OK, "{}", first.body);
+    assert_eq!(first.body["version"], 1);
+    assert_eq!(
+        first.headers.get("etag").and_then(|v| v.to_str().ok()),
+        Some("\"1\"")
+    );
+    assert_eq!(s.profile(s.lan).await["pay"]["version"], 1);
+    // A second tab still holding "no terms yet", then one holding version 1 after a save.
+    let stale_new = s
+        .versioned(&s.owner, "PUT", &path, terms.clone(), &json!(0))
+        .await;
+    assert_eq!(
+        (stale_new.status, stale_new.body["code"].clone()),
+        (
+            StatusCode::PRECONDITION_FAILED,
+            json!("conflict.stale_version")
+        )
+    );
+    let second = s
+        .versioned(
+            &s.owner,
+            "PUT",
+            &path,
+            json!({"base_salary": 6_000_000, "commission_rate_bp": 500}),
+            &json!(1),
+        )
+        .await;
+    assert_eq!(second.body["version"], 2, "{}", second.body);
+    let stale = s
+        .versioned(&s.owner, "PUT", &path, terms.clone(), &json!(1))
+        .await;
+    assert_eq!(stale.status, StatusCode::PRECONDITION_FAILED);
+    assert_eq!(
+        s.profile(s.lan).await["pay"]["base_salary"],
+        6_000_000,
+        "the stale write changed nothing"
+    );
+
+    let rules = json!({"late_grace_minutes": 5});
+    let bare = s.put(&s.owner, "/payroll/rules", rules.clone()).await;
+    assert_eq!(bare.status, StatusCode::BAD_REQUEST);
+    let saved = s
+        .versioned(&s.owner, "PUT", "/payroll/rules", rules.clone(), &json!(0))
+        .await;
+    assert_eq!(saved.body["version"], 1, "{}", saved.body);
+    for stale in [0, 2] {
+        let r = s
+            .versioned(
+                &s.owner,
+                "PUT",
+                "/payroll/rules",
+                json!({"late_grace_minutes": 30}),
+                &json!(stale),
+            )
+            .await;
+        assert_eq!(
+            r.status,
+            StatusCode::PRECONDITION_FAILED,
+            "If-Match {stale}"
+        );
+    }
+    let now = s.get(&s.owner, "/payroll/rules").await;
+    assert_eq!(
+        (
+            now.body["version"].clone(),
+            now.body["rules"]["late_grace_minutes"].clone()
+        ),
+        (json!(1), json!(5))
     );
     Ok(())
 }

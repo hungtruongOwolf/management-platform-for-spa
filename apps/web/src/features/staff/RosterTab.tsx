@@ -23,6 +23,7 @@ import {
   type LoginRole,
   type StaffHistoryEntry,
   type StaffProfile,
+  STAFF_FIELDS,
 } from "./api";
 import { percentOfBp } from "./labels";
 import { LoginSection, type PendingLogin } from "./LoginSection";
@@ -436,6 +437,8 @@ function ProfileForm({
   // the retry updates that one (its id and version) instead of hiring the person twice or sending
   // a version the server has moved past.
   const written = useRef<StaffProfile | null>(null);
+  // The pay terms' version this form edits (0: none yet); moves on with each save (ADR-0019 D10).
+  const payVersion = useRef(pay?.version ?? 0);
   const save = useMutation({
     mutationFn: async () => {
       const body = {
@@ -450,12 +453,13 @@ function ProfileForm({
       const saved = target ? await updateProfile(target.id, target.version, body) : await createProfile({ ...body, user_id: null });
       written.current = saved;
       if (payVisible && base) {
-        await savePay(saved.id, {
+        const terms = await savePay(saved.id, payVersion.current, {
           base_salary: digits(base),
           commission_rate_bp: Math.round(Number(rate.replace(",", ".")) * 100),
           loyalty_bonus_monthly: digits(loyalty),
           meal_allowance: digits(meal),
         });
+        payVersion.current = terms.version;
       }
       return saved;
     },
@@ -470,7 +474,7 @@ function ProfileForm({
       if (written.current) await invalidateStaff(queryClient);
     },
   });
-  const err = (f: string) => fieldMessage(save.error, f);
+  const err = (f: string) => fieldMessage(save.error, f, STAFF_FIELDS);
   const payErr = (f: string) => {
     const message = err(f);
     const max = PAY_MAX[f];
@@ -548,7 +552,7 @@ function ProfileForm({
           {leftAlready ? (
             <p className="note sm:col-span-2">Đã nghỉ việc: ngày vào làm của đợt đã kết thúc không sửa được. Dùng &quot;Nhận lại làm&quot; để mở đợt mới.</p>
           ) : (
-            <DateField label={profile && profile.periods.length > 1 ? "Ngày vào làm (đợt hiện tại)" : "Ngày vào làm"} value={joined} onChange={setJoined} invalid={Boolean(err("joined_on"))} />
+            <DateField label={profile && profile.periods.length > 1 ? "Ngày vào làm (đợt hiện tại)" : "Ngày vào làm"} value={joined} onChange={setJoined} invalid={Boolean(err("joined_on"))} describedBy={err("joined_on") ? "roster-joined-error" : undefined} />
           )}
           {profile === null && (
             <fieldset className="grid gap-3 sm:col-span-2">
@@ -584,7 +588,11 @@ function ProfileForm({
             <textarea rows={3} maxLength={1000} value={note} onChange={(e) => { setNote(e.target.value); }} />
           </label>
         </div>
-        {err("joined_on") && <p className="text-sm text-danger">Ngày vào làm: {err("joined_on")}</p>}
+        {err("joined_on") && (
+          <p id="roster-joined-error" className="text-sm text-danger">
+            Ngày vào làm: {err("joined_on")}
+          </p>
+        )}
         {payVisible ? (
           <fieldset className="grid gap-4 sm:grid-cols-2">
             <legend className="mb-1 text-sm font-semibold">Lương (chỉ chủ spa thấy)</legend>
@@ -641,7 +649,7 @@ function EndSheet({ profile: p, onClose, onBack }: { profile: StaffProfile; onCl
     },
   });
   const formId = "end-form";
-  const dateError = fieldMessage(save.error, "ended_on");
+  const dateError = fieldMessage(save.error, "ended_on", STAFF_FIELDS);
   return (
     <BottomSheet
       open
@@ -689,8 +697,12 @@ function EndSheet({ profile: p, onClose, onBack }: { profile: StaffProfile; onCl
             Khóa tài khoản (không cho đăng nhập nữa)
           </label>
         )}
-        <DateField label="Ngày làm cuối cùng" value={on} max={today} onChange={setOn} invalid={Boolean(dateError)} />
-        {dateError && <p className="text-sm text-danger">{dateError}</p>}
+        <DateField label="Ngày làm cuối cùng" value={on} max={today} onChange={setOn} invalid={Boolean(dateError)} describedBy={dateError ? "end-date-error" : undefined} />
+        {dateError && (
+          <p id="end-date-error" className="text-sm text-danger">
+            {dateError}
+          </p>
+        )}
         <label className="filter-field">
           Lý do nghỉ việc
           <textarea
@@ -769,7 +781,7 @@ function RehireSheet({ profile: p, onClose, onBack }: { profile: StaffProfile; o
     },
   });
   const formId = "rehire-form";
-  const dateError = fieldMessage(save.error, "started_on");
+  const dateError = fieldMessage(save.error, "started_on", STAFF_FIELDS);
   return (
     <BottomSheet
       open
@@ -797,8 +809,12 @@ function RehireSheet({ profile: p, onClose, onBack }: { profile: StaffProfile; o
         <p className="text-sm">
           Mở một đợt làm việc mới; các đợt trước giữ nguyên.{p.login_linked ? " Tài khoản đăng nhập được mở lại đầy đủ quyền." : ""}
         </p>
-        <DateField label="Ngày vào làm lại" value={on} min={earliest} onChange={setOn} invalid={Boolean(dateError)} />
-        {dateError && <p className="text-sm text-danger">{dateError}</p>}
+        <DateField label="Ngày vào làm lại" value={on} min={earliest} onChange={setOn} invalid={Boolean(dateError)} describedBy={dateError ? "rehire-date-error" : undefined} />
+        {dateError && (
+          <p id="rehire-date-error" className="text-sm text-danger">
+            {dateError}
+          </p>
+        )}
         {save.isError && !dateError && (
           <p role="alert" className="text-sm text-danger">
             {messageFor(save.error)}

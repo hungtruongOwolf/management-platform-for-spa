@@ -215,8 +215,14 @@ impl Spa {
             .map(|_| ())
     }
 
+    /// Sets pay terms with `If-Match` = their current version (0 when none: ADR-0019 D10).
     async fn pay(&self, staff: &str, rate_bp: i32) {
-        let r = call(
+        let profile = self.get(&self.owner, &format!("/staff/{staff}")).await;
+        let tag = format!(
+            "\"{}\"",
+            profile.body["pay"]["version"].as_i64().unwrap_or_default()
+        );
+        let r = call_with_headers(
             &self.h.app,
             "PUT",
             &format!("/staff/{staff}/pay"),
@@ -225,6 +231,7 @@ impl Spa {
                 "base_salary": 5_000_000, "commission_rate_bp": rate_bp,
                 "loyalty_bonus_monthly": 0, "meal_allowance": 0
             })),
+            &[("If-Match", tag.as_str())],
         )
         .await;
         assert_eq!(r.status, StatusCode::OK, "{}", r.body);

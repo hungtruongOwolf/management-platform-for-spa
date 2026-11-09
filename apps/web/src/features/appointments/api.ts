@@ -13,7 +13,7 @@ import type {
 } from "@vpyd/api-client";
 import { queryOptions } from "@tanstack/react-query";
 import { api, ifMatch } from "../../lib/api";
-import { addMessages } from "../../lib/errors";
+import { addMessages, type FieldTexts } from "../../lib/errors";
 
 // Error messages only the calendar and booking sheets can meet: here, not in the startup chunk (lib/errors.ts).
 addMessages(
@@ -32,14 +32,16 @@ addMessages(
       "Lịch hẹn này chưa báo đã đến (có thể vừa được hoàn tác ở máy khác).",
     "appointment.not_in_group": "Lịch hẹn này không thuộc nhóm nào.",
   },
-  {
-    not_on_slot: "Giờ hẹn phải đúng ô 15 phút (ví dụ 10:00, 10:15).",
-    too_far: "Chỉ đặt lịch trước tối đa 90 ngày.",
-    customer_or_guest: "Chọn khách có hồ sơ hoặc nhập khách mới.",
-    not_same_day: "Mọi người trong nhóm phải hẹn cùng một ngày.",
-    range_too_long: "Chỉ xem tối đa 14 ngày.",
-  },
 );
+
+/** Field refusals of the booking sheet (`fieldMessage(…, APPOINTMENT_FIELDS)`). */
+export const APPOINTMENT_FIELDS: FieldTexts = {
+  not_on_slot: "Giờ hẹn phải đúng ô 15 phút (ví dụ 10:00, 10:15).",
+  too_far: "Chỉ đặt lịch trước tối đa 90 ngày.",
+  customer_or_guest: "Chọn khách có hồ sơ hoặc nhập khách mới.",
+  not_same_day: "Mọi người trong nhóm phải hẹn cùng một ngày.",
+  range_too_long: "Chỉ xem tối đa 14 ngày.",
+};
 
 /** Calendar of `from..to` (spa business days, inclusive; ≤ 14 days). */
 export function calendarQuery(from: string, to: string = from) {

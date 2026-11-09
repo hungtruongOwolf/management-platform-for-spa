@@ -43,7 +43,6 @@ addMessages(
     "visit.check_in_in_future": "Giờ làm không được ở tương lai.",
     "visit.check_in_too_old": "Chỉ nhập bù được trong vòng 1 năm.",
   },
-  {},
 );
 
 const CustomerForm = lazy(() =>

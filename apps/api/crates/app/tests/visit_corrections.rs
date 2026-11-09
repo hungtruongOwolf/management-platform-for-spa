@@ -6,7 +6,7 @@ mod common;
 
 use axum::http::StatusCode;
 use catalog::service::seed_menu;
-use chrono::{FixedOffset, NaiveDate, Utc};
+use chrono::{Datelike, FixedOffset, NaiveDate, Utc};
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
     post_customer, session_for,
@@ -906,5 +906,334 @@ async fn the_appointment_moves_to_the_corrected_visit(pool: PgPool) -> TestResul
         .execute(&s.h.owner)
         .await;
     assert!(tamper.is_err(), "a done appointment cannot point back");
+    Ok(())
+}
+
+// ------------------------------------------------------------------- ADR-0019 D8 (audit 2026-11-09)
+
+async fn plan_id(s: &Spa) -> Result<Uuid, sqlx::Error> {
+    sqlx::query_scalar("SELECT id FROM app.package_plan")
+        .fetch_one(&s.h.owner)
+        .await
+}
+
+/// A correction keeps the price each line was sold at (today's price list only prices a service
+/// the old visit did not have), and the package sold in the original checkout stays with the
+/// corrected visit (it used to show only under the replaced one).
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_correction_keeps_prices_and_the_package_sold_in_the_checkout(
+    pool: PgPool,
+) -> TestResult {
+    let s = spa(pool).await?;
+    let plan = plan_id(&s).await?;
+    let v = call_with_headers(
+        &s.h.app,
+        "POST",
+        "/visits",
+        Some(&s.manager),
+        Some(
+            json!({"customer_id": s.ha, "lines": [s.one_off(&s.shampoo)],
+                    "package_sales": [{"package_plan_id": plan, "closer_staff_id": s.lan}],
+                    "payments": [{"method": "cash", "amount": 1_549_000}]}),
+        ),
+        &[("idempotency-key", &key())],
+    )
+    .await;
+    assert_eq!(v.status, StatusCode::CREATED, "{}", v.body);
+    let id = str_of(&v.body["id"]);
+    let sold = v.body["package_sales"][0]["sale_id"].clone();
+    // The price list changes after the visit.
+    s.exec(&format!(
+        "UPDATE app.service_price SET amount = 59000 WHERE service_id = '{}'",
+        s.shampoo
+    ))
+    .await?;
+
+    let r = s
+        .correct(
+            &s.manager,
+            &id,
+            1,
+            json!({"reason": "thêm dịch vụ", "customer_id": s.ha,
+                   "lines": [s.one_off(&s.shampoo), s.one_off(&s.cheaper)],
+                   "payments": [{"method": "cash", "amount": 88_000}]}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.body);
+    let new = &r.body["visit"];
+    assert_eq!(
+        new["lines"][0]["unit_price"], 49_000,
+        "the price it was sold at"
+    );
+    assert_eq!(new["lines"][1]["unit_price"], 39_000, "a service added now");
+    assert_eq!(new["total"], 88_000);
+    assert_eq!(r.body["difference"], 39_000);
+    assert_eq!(
+        new["package_sales"].as_array().map(Vec::len),
+        Some(1),
+        "{new}"
+    );
+    assert_eq!(new["package_sales"][0]["sale_id"], sold);
+
+    // The day list shows the package, with its payment, on both versions of the visit.
+    let day = s.get("/visits").await;
+    let rows = day.body.as_array().cloned().unwrap_or_default();
+    assert_eq!(rows.len(), 2, "{}", day.body);
+    for row in &rows {
+        assert_eq!(row["package_sales"][0]["sale_id"], sold, "{row}");
+        assert_eq!(
+            row["package_sales"][0]["payments"].as_array().map(Vec::len),
+            Some(1),
+            "{row}"
+        );
+    }
+    // Never sold twice.
+    assert_eq!(
+        s.count("SELECT count(*) FROM app.customer_package").await?,
+        2,
+        "the setup package and the checkout's"
+    );
+    Ok(())
+}
+
+/// The appointment completed by the old visit moves to the corrected one with the package sold
+/// at its checkout: it still reads as paid.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_appointment_keeps_the_package_sold_at_its_checkout(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let plan = plan_id(&s).await?;
+    sqlx::query(
+        r#"UPDATE app.tenant SET settings = settings || '{"opening_hours": {"open": "00:00", "close": "23:45"}}'"#,
+    )
+    .execute(&s.h.owner)
+    .await?;
+    let booked = call_with_headers(
+        &s.h.app,
+        "POST",
+        "/appointments",
+        Some(&s.manager),
+        Some(json!({"customer_id": s.ha, "service_ids": [s.shampoo],
+                    "starts_at": format!("{}T00:00:00+07:00", spa_today() + chrono::Duration::days(1))})),
+        &[("idempotency-key", &key())],
+    )
+    .await;
+    assert_eq!(booked.status, StatusCode::CREATED, "{}", booked.body);
+    let appointment = str_of(&booked.body["id"]);
+    common::bookings_to_today(&s.h, &[&appointment]).await?;
+    let done = call_with_headers(
+        &s.h.app,
+        "POST",
+        &format!("/appointments/{appointment}/complete"),
+        Some(&s.manager),
+        Some(json!({
+            "lines": [{"service_id": s.shampoo, "source": "package", "package_ref": "p1", "staff_id": s.lan}],
+            "package_sales": [{"ref": "p1", "package_plan_id": plan, "closer_staff_id": s.lan}],
+            "payments": [{"method": "cash", "amount": 1_500_000}],
+        })),
+        &[("idempotency-key", &key())],
+    )
+    .await;
+    assert_eq!(done.status, StatusCode::OK, "{}", done.body);
+    let old = str_of(&done.body["visit"]["id"]);
+    let item = str_of(&done.body["visit"]["lines"][0]["customer_package_item_id"]);
+    let r = s
+        .correct(
+            &s.manager,
+            &old,
+            1,
+            json!({"reason": "nhầm KTV", "customer_id": s.ha,
+                   "lines": [{"service_id": s.shampoo, "source": "package",
+                              "customer_package_item_id": item, "staff_id": s.mai}]}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.body);
+    assert_eq!(
+        r.body["visit"]["package_sales"].as_array().map(Vec::len),
+        Some(1)
+    );
+    let read = s.get(&format!("/appointments/{appointment}")).await;
+    assert_eq!(read.body["visit_id"], r.body["visit"]["id"]);
+    assert_eq!(read.body["payment_state"], "paid", "{}", read.body);
+    Ok(())
+}
+
+/// Moves `visit` (and its sales) into last month and closes that month's payroll.
+async fn into_closed_month(s: &Spa, visit: &str) -> TestResult {
+    let today = spa_today();
+    let first_of_month = today.with_day(1).unwrap_or(today);
+    let last_month = first_of_month - chrono::Duration::days(1);
+    let back = (today - last_month).num_days();
+    s.exec(&format!(
+        "UPDATE app.visit SET business_date = business_date - {back}, check_in_at = check_in_at - interval '{back} days' WHERE id = '{visit}'"
+    ))
+    .await?;
+    s.exec(&format!(
+        "UPDATE app.sale SET business_date = business_date - {back} WHERE visit_id = '{visit}'"
+    ))
+    .await?;
+    let owner_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM app.user_account WHERE full_name = 'Chủ Spa'")
+            .fetch_one(&s.h.owner)
+            .await?;
+    s.exec(&format!(
+        "INSERT INTO app.payroll_period (tenant_id, period, status, closed_at, closed_by)
+         SELECT id, '{}', 'closed', now(), '{owner_id}' FROM app.tenant WHERE slug = 'vpyd'",
+        last_month.with_day(1).unwrap_or(last_month)
+    ))
+    .await?;
+    Ok(())
+}
+
+/// Another technician moves a commission: refused once the month's payroll is closed, by a direct
+/// edit and by a correction alike. What does not move one (a note, the same technician, another
+/// payment method) still goes through.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_closed_payroll_month_refuses_a_technician_change(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let v = s
+        .record(
+            vec![s.one_off(&s.shampoo)],
+            json!([{"method": "cash", "amount": 49_000}]),
+        )
+        .await;
+    let id = str_of(&v.body["id"]);
+    let line = str_of(&v.body["lines"][0]["id"]);
+    into_closed_month(&s, &id).await?;
+
+    let moved = s
+        .patch(
+            &s.owner,
+            &id,
+            1,
+            json!({"lines": [{"id": line, "staff_id": s.mai}]}),
+        )
+        .await;
+    assert_eq!(
+        code(&moved),
+        (StatusCode::CONFLICT, Some("payroll.period_closed")),
+        "{}",
+        moved.body
+    );
+    assert_eq!(
+        s.get(&format!("/visits/{id}")).await.body["lines"][0]["staff_name"],
+        "KTV Lan",
+        "nothing changed"
+    );
+    let same = s
+        .patch(
+            &s.owner,
+            &id,
+            1,
+            json!({"lines": [{"id": line, "staff_id": s.lan}], "note": "Khách dễ chịu"}),
+        )
+        .await;
+    assert_eq!(same.status, StatusCode::OK, "{}", same.body);
+
+    let corrected = s
+        .correct(
+            &s.owner,
+            &id,
+            2,
+            json!({"reason": "nhầm KTV", "customer_id": s.ha,
+                   "lines": [{"service_id": s.shampoo, "source": "one_off", "staff_id": s.mai}],
+                   "payments": [{"method": "cash", "amount": 49_000}]}),
+        )
+        .await;
+    assert_eq!(
+        code(&corrected),
+        (StatusCode::CONFLICT, Some("payroll.period_closed")),
+        "{}",
+        corrected.body
+    );
+    let method = s
+        .correct(
+            &s.owner,
+            &id,
+            2,
+            json!({"reason": "khách chuyển khoản", "customer_id": s.ha,
+                   "lines": [s.one_off(&s.shampoo)],
+                   "payments": [{"method": "bank_transfer", "amount": 49_000}]}),
+        )
+        .await;
+    assert_eq!(method.status, StatusCode::CREATED, "{}", method.body);
+    Ok(())
+}
+
+/// "Tính buổi hôm nay vào gói" keeps the discount the visit was sold with on the lines it keeps,
+/// without checking it again against the limit of whoever converts (a manager, 10 %): the owner
+/// granted it.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_conversion_keeps_the_discount_already_granted(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let plan = plan_id(&s).await?;
+    let v = call_with_headers(
+        &s.h.app,
+        "POST",
+        "/visits",
+        Some(&s.owner),
+        Some(json!({"customer_id": s.ha,
+                    "lines": [s.one_off(&s.shampoo), s.one_off(&s.dearer)],
+                    "discount": {"percent": 50, "reason": "Khách quen"},
+                    "payments": [{"method": "cash", "amount": 64_000}]})),
+        &[("idempotency-key", &key())],
+    )
+    .await;
+    assert_eq!(v.status, StatusCode::CREATED, "{}", v.body);
+    let id = str_of(&v.body["id"]);
+    // Shampoo (share 24.500) becomes session 1; the dearer line keeps its 39.500 share.
+    let r = call_with_headers(
+        &s.h.app,
+        "POST",
+        &format!("/visits/{id}/convert-to-package"),
+        Some(&s.manager),
+        Some(
+            json!({"package_sale": {"package_plan_id": plan, "closer_staff_id": s.lan},
+                    "payments": [{"method": "cash", "amount": 1_475_500}]}),
+        ),
+        &[("idempotency-key", &key()), ("If-Match", "\"1\"")],
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.body);
+    assert_eq!(r.body["visit"]["discount_amount"], 39_500);
+    assert_eq!(r.body["visit"]["discount_reason"], "Khách quen");
+    assert_eq!(r.body["difference"], 1_475_500);
+    Ok(())
+}
+
+/// The discount reason of a visit lists every one-off bill's (its sale and each addition), not only
+/// the first one's, the way its discount amount sums them.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_discount_reason_lists_every_bill(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let v = call_with_headers(
+        &s.h.app,
+        "POST",
+        "/visits",
+        Some(&s.manager),
+        Some(
+            json!({"customer_id": s.ha, "lines": [s.one_off(&s.shampoo)],
+                    "discount": {"amount": 4_000, "reason": "Khách quen"},
+                    "payments": [{"method": "cash", "amount": 45_000}]}),
+        ),
+        &[("idempotency-key", &key())],
+    )
+    .await;
+    assert_eq!(v.status, StatusCode::CREATED, "{}", v.body);
+    let id = str_of(&v.body["id"]);
+    let added = call_with_headers(
+        &s.h.app,
+        "POST",
+        &format!("/visits/{id}/additions"),
+        Some(&s.manager),
+        Some(json!({"lines": [s.one_off(&s.cheaper)],
+                    "discount": {"amount": 3_000, "reason": "Sinh nhật"},
+                    "payments": [{"method": "cash", "amount": 36_000}]})),
+        &[("idempotency-key", &key())],
+    )
+    .await;
+    assert_eq!(added.status, StatusCode::CREATED, "{}", added.body);
+    let read = s.get(&format!("/visits/{id}")).await;
+    assert_eq!(read.body["discount_amount"], 7_000);
+    assert_eq!(read.body["discount_reason"], "Khách quen; Sinh nhật");
     Ok(())
 }

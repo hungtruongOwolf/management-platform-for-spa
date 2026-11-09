@@ -6,6 +6,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { saveService } from "./api";
+import { CATALOG_FIELDS } from "./messages";
 
 const amount = z
   .string()
@@ -131,7 +132,7 @@ export function ServiceForm({
   });
   const { errors } = form.formState;
   const mode = useWatch({ control: form.control, name: "mode" });
-  const serverField = (field: string) => fieldMessage(mutation.error, field);
+  const serverField = (field: string) => fieldMessage(mutation.error, field, CATALOG_FIELDS);
   const title = service ? `Sửa: ${service.name}` : "Thêm dịch vụ";
   const err = {
     name: errors.name?.message ?? serverField("name"),

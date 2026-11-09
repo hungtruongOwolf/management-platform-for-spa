@@ -1090,6 +1090,10 @@ pub enum DiscountAsk {
 pub struct ServiceDiscount {
     pub ask: DiscountAsk,
     pub reason: String,
+    /// Part of the discount granted earlier, on the bill this sale replaces ("convert to package"
+    /// keeps the kept lines' discount, ADR-0019 D8): only the amount above it is checked against
+    /// the caller's authority. `Money::ZERO` for a discount asked now.
+    pub granted: Money,
 }
 
 /// Shape rules for a visit's `discount`: exactly one of `percent` / `amount`, a reason (D10).
@@ -1129,7 +1133,11 @@ pub fn parse_service_discount(
     }
     let ask = ask?;
     match reason {
-        Some(reason) => Some(ServiceDiscount { ask, reason }),
+        Some(reason) => Some(ServiceDiscount {
+            ask,
+            reason,
+            granted: Money::ZERO,
+        }),
         None => {
             // Same code as a package sale without a reason (AC3.5).
             errors.push(FieldError::new("discount.reason", "required"));
@@ -1212,7 +1220,8 @@ pub fn price_services(
                     "exceeds_subtotal",
                 )]));
             }
-            domain::check_discount(subtotal, amount, authority(actor, manager_discount_max_pct))
+            let new = amount.checked_sub(d.granted).unwrap_or(Money::ZERO);
+            domain::check_discount(subtotal, new, authority(actor, manager_discount_max_pct))
                 .map_err(discount_error)?;
             amount
         }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO app.payroll_rules (tenant_id, rules, updated_by) VALUES ($1, $2, $3)\n           ON CONFLICT (tenant_id) DO UPDATE SET rules = EXCLUDED.rules,\n             updated_by = EXCLUDED.updated_by, version = app.payroll_rules.version + 1,\n             updated_at = now()\n           RETURNING version",
+  "query": "INSERT INTO app.payroll_rules (tenant_id, rules, updated_by) VALUES ($1, $2, $3)\n               ON CONFLICT (tenant_id) DO NOTHING\n               RETURNING version",
   "describe": {
     "columns": [
       {
@@ -26,5 +26,5 @@
       false
     ]
   },
-  "hash": "a30ce38ad599b251d0cef60f29a9700dfa7bdb9e305a75d99c82c2798f591f2b"
+  "hash": "f50e98ba8cad16a026b2c725b6d34427a6689860023a9a7af0c2c5a53993621b"
 }

@@ -238,7 +238,7 @@ pub async fn read_visit(
     params(("id" = Uuid, Path), ("If-Match" = String, Header)),
     responses((status = 200, body = VisitDto),
         (status = 403, description = "auth.forbidden / day.locked"), (status = 404),
-        (status = 409, description = "visit.voided / visit.corrected (open the newest version)"),
+        (status = 409, description = "visit.voided / visit.corrected (open the newest version), payroll.period_closed (another technician in a month whose payroll is closed)"),
         (status = 412),
         (status = 422, description = "validation_failed (check_in_at not_visit_day), visit.check_in_in_future, staff.inactive")))]
 pub async fn update_visit(
@@ -312,7 +312,7 @@ pub async fn void_visit(
         (status = 400, description = "idempotency.key_required / precondition.if_match_required"),
         (status = 403, description = "auth.forbidden / day.locked (manager, a day before today)"),
         (status = 404, description = "visit, customer or service not in this spa"),
-        (status = 409, description = "visit.voided / visit.corrected (already corrected: open the newest version), package.*"),
+        (status = 409, description = "visit.voided / visit.corrected (already corrected: open the newest version), payroll.period_closed (a service moved to another technician in a month whose payroll is closed), package.*"),
         (status = 412, description = "conflict.stale_version"),
         (status = 422, description = "validation_failed (reason required / too_long, check_in_at not_visit_day), payment.amount_mismatch and every rule of POST /visits")))]
 pub async fn correct_visit(

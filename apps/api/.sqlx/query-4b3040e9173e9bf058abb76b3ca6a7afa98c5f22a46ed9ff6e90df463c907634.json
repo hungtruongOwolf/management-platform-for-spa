@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT cp.plan_id, min(cp.name_snapshot) AS \"name!\", count(*) AS \"sold!\",\n                  coalesce(sum(cp.sold_price), 0)::bigint AS \"revenue!\"\n           FROM app.sale s\n           JOIN app.customer_package cp ON cp.tenant_id = s.tenant_id AND cp.sale_id = s.id\n           WHERE s.tenant_id = $1 AND s.business_date BETWEEN $2 AND $3 AND s.status = 'open'\n           GROUP BY cp.plan_id\n           ORDER BY 3 DESC, 2, cp.plan_id\n           LIMIT $4",
+  "query": "SELECT cp.plan_id, min(cp.name_snapshot) AS \"name!\", count(*) AS \"sold!\",\n                  coalesce(sum(CASE WHEN s.source = 'paper_book' THEN s.amount_paid ELSE cp.sold_price END\n                               - coalesce(r.amount, 0)), 0)::bigint AS \"revenue!\"\n           FROM app.sale s\n           JOIN app.customer_package cp ON cp.tenant_id = s.tenant_id AND cp.sale_id = s.id\n           LEFT JOIN app.refund r ON r.tenant_id = cp.tenant_id AND r.customer_package_id = cp.id\n           WHERE s.tenant_id = $1 AND s.business_date BETWEEN $2 AND $3 AND s.status = 'open'\n           GROUP BY cp.plan_id, CASE WHEN cp.plan_id IS NULL THEN cp.name_snapshot END\n           ORDER BY 3 DESC, 2, cp.plan_id\n           LIMIT $4",
   "describe": {
     "columns": [
       {
@@ -48,5 +48,5 @@
       null
     ]
   },
-  "hash": "0efc8d0b5187178f406741e63020069be591e84b2477f6f764d0acffda4bdadf"
+  "hash": "4b3040e9173e9bf058abb76b3ca6a7afa98c5f22a46ed9ff6e90df463c907634"
 }
