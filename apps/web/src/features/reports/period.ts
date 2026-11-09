@@ -237,10 +237,6 @@ export function resolvePeriod(preset: Preset, today: string, custom?: { from?: s
   }
 }
 
-export function isPreset(v: unknown): v is Preset {
-  return typeof v === "string" && (PRESETS as readonly string[]).includes(v);
-}
-
 /** Bucket label on the chart axis: "05/11", "T11/26", "2026"; weeks show their Monday. */
 export function bucketLabel(start: string, bucket: Bucket): string {
   if (bucket === "year") return start.slice(0, 4);

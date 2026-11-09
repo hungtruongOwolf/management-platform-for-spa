@@ -59,8 +59,6 @@ export const CRITERION_LABEL: Record<string, string> = {
   learning: "Tinh thần học hỏi",
 };
 
-export const LEVELS: Level[] = ["m1", "m2", "m3", "fail"];
-
 export const FLAG_LABEL: Record<PayFlag, string> = {
   no_pay_terms: "Chưa có lương cứng",
   unrecorded_days: "Còn ngày chưa chấm công",
