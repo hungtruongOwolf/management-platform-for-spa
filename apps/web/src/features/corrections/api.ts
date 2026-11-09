@@ -117,13 +117,3 @@ export function mayEditSaleNote(
     (sale.business_date >= today || has("record.void_closed_day"))
   );
 }
-
-/** Today in the spa's time zone, "YYYY-MM-DD". */
-export function spaToday(now: Date = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Ho_Chi_Minh",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(now);
-}

@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.full_name, s.user_id IS NOT NULL AS \"linked!\",\n                  coalesce((SELECT array_agg(r.key ORDER BY r.key)\n                   FROM app.membership m\n                   JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id\n                   JOIN app.role r ON r.tenant_id = mr.tenant_id AND r.id = mr.role_id\n                   WHERE m.tenant_id = s.tenant_id AND m.user_id = s.user_id), '{}') AS \"role_keys!\"\n           FROM app.staff s\n           WHERE s.tenant_id = $1 AND s.status = 'active'\n           ORDER BY s.full_name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.staff",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "full_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.staff",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "linked!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "role_keys!",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "6079d6169cf352700638253335a8d6b5977585e7d1d4d378b9f6186fdeda592a"
+}

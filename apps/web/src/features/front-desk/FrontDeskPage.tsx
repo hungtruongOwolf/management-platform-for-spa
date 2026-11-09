@@ -64,7 +64,7 @@ const DayCountdown = lazy(() =>
   import("./DayCountdown").then((m) => ({ default: m.DayCountdown })),
 );
 import { frontDeskSearch } from "./search";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
 
 // The new-customer form (react-hook-form + zod) is only needed when no match is found, so it is a
 // separate chunk: it stays off the front desk's first paint (frontend.md, perf budget).

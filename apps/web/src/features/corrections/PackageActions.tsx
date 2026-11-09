@@ -8,14 +8,8 @@ import { fieldMessage, messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
 import { formatDate, parseAmount } from "../sales/api";
 import { isClosedPackage } from "../sales/packageState";
-import {
-  addMonths,
-  cancelPackage,
-  extendPackage,
-  isUnused,
-  spaToday,
-  voidSale,
-} from "./api";
+import { spaToday } from "../../lib/format";
+import { addMonths, cancelPackage, extendPackage, isUnused, voidSale } from "./api";
 import { useFormAction } from "./useFormAction";
 import { VoidForm } from "./VoidForm";
 import { invalidateManagementViews } from "../../lib/invalidate";

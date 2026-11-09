@@ -220,7 +220,7 @@ Test 1–2 và cổng CI "route chưa khai báo permission" nằm ở `apps/api/
 ## Tài khoản đăng nhập và mật khẩu (ADR-0016, 2026-11-08, migration 0032)
 | Route | Quyền | Owner | Manager | Technician | Ghi chú |
 |---|---|---|---|---|---|
-| `POST /auth/password` | phiên (kể cả phiên mật khẩu tạm) | ✓ | ✓ | ✓ | mật khẩu hiện tại (sai đếm vào khóa), chính sách 10–128 ký tự / khác cũ / không phải SĐT; thu hồi mọi phiên, cấp phiên mới; `/auth/*` giới hạn theo IP |
+| `POST /auth/password` | phiên (kể cả phiên mật khẩu tạm) | ✓ | ✓ | ✓ | mật khẩu hiện tại (sai đếm vào khóa), chính sách 10–128 ký tự / không phổ biến (`too_common`) / khác cũ / không phải SĐT; thu hồi mọi phiên, cấp phiên mới; `/auth/*` giới hạn theo IP |
 | `POST /auth/password-reset-requests` | công khai | — | — | — | luôn `202 {status: received}`; chỉ ghi khi tài khoản hoạt động, thành viên không có `staff.manage`; một yêu cầu mở + một mỗi giờ mỗi spa; hết hạn 24 h; audit `system` không SĐT |
 | `POST /staff/{id}/login` | `staff.manage` 🔒 `If-Match` | ✓ | 403 | 403 | SĐT chưa có tài khoản nào (`409 account.phone_taken`); hồ sơ đang làm, chưa có tài khoản; mật khẩu tạm một lần, `no-store` |
 | `POST /staff/{id}/login/reset-password` | `staff.manage` 🔒 | ✓ | 403 | 403 | không chính mình / chủ spa (`422 account.owner_protected`), không tài khoản thuộc spa khác (`422 account.other_spa`; mọi membership ở spa khác đều tính, kể cả bị khóa hay spa tạm ngưng, `app.user_in_other_spa` 0042), không tài khoản bị khóa khi nghỉ (`409 account.locked`); thu hồi mọi phiên; đóng yêu cầu quên mật khẩu |

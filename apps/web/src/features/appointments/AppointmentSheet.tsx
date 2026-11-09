@@ -13,7 +13,8 @@ import { Icon } from "../../app/Icon";
 import { BottomSheet } from "../../components/BottomSheet";
 import { ApiError } from "../../lib/api";
 import { messageFor } from "../../lib/errors";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
+import { useReached } from "../../lib/useReached";
 import { createCustomer, createWalkIn, customerQuery } from "../customers/api";
 import { activeStaffQuery, formatDate } from "../sales/api";
 import { putAppointment } from "./cache";
@@ -171,8 +172,8 @@ export function AppointmentSheet({
   const today = spaToday();
   const open = isOpen(a);
   const editable = open && !locked;
-  const [openedAt] = useState(() => Date.now());
-  const started = new Date(a.starts_at).getTime() <= openedAt;
+  // "Không đến" appears once the time passes, also while the sheet stays open (ADR-0019 D20).
+  const started = useReached(new Date(a.starts_at).getTime());
   const start = spaMinutes(a.starts_at);
   const group = a.group_id
     ? cal.appointments.filter((x) => x.group_id === a.group_id)

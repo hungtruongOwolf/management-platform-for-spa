@@ -14,6 +14,8 @@ const FIELD_TEXT: Record<string, string> = {
   too_long: "Mật khẩu mới dài quá 128 ký tự.",
   same_as_current: "Mật khẩu mới phải khác mật khẩu hiện tại.",
   is_phone: "Không dùng số điện thoại làm mật khẩu.",
+  // ADR-0019 D18: on the server's bundled list of common passwords.
+  too_common: "Mật khẩu này quá phổ biến, dễ bị đoán. Chọn một câu hoặc cụm từ của riêng bạn.",
 };
 
 async function changePassword(current: string, next: string): Promise<Me> {
