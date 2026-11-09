@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { ownerState } from "../stack";
 import { WRITE, createPlan, flatService } from "../support/fixtures";
+import { settled } from "../support/layout";
 import { expectAccessible, uniquePhone } from "../support/run";
 
 // Round 6 at /quay (spec R1-1 §10, plan r1-6-upsell B6): sell a package in the cart and use
@@ -223,7 +224,10 @@ test.describe("vòng 6: bán gói trong giỏ, giỏ nháp, chuyển sang gói",
       .filter({ hasText: f.name })
       .filter({ hasNotText: "Đã sửa" })
       .first();
-    await page.waitForLoadState("networkidle");
+    // The day list has refetched (no busy/skeleton state) and the row is painted, so the menu
+    // opens on the row that stays, not one the refetch is about to replace.
+    await settled(page);
+    await expect(current).toBeVisible();
     await rowAction(
       page,
       current.getByRole("button", { name: /^Thao tác lượt/ }),
