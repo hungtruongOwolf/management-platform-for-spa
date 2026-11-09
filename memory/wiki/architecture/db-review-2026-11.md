@@ -13,8 +13,8 @@ EM nhờ rà kỹ schema (bảng, index, FK, lưu trữ, toàn vẹn, xung độ
 - **Thời gian Postgres chạy query không phải nút thắt.** Trên bản sao local 3 năm của một spa đông (60k lượt, 43k hóa đơn, 47k lịch hẹn, 208k dòng audit), 29/40 câu nóng chạy **≤ 3 ms** (11 câu còn lại 3–135 ms, đều là màn quản lý hoặc lịch sử khách), câu xác thực chạy mỗi request **0,07–0,35 ms**.
 - **Nút thắt phía DB là số lượt đi về API ↔ DB.** Một GET đơn giản đang tốn **~10 lượt đi về**, trong đó chỉ **1** là truy vấn nghiệp vụ. Trên staging mỗi lượt ~2,6 ms, nên `GET /staff` mất 26 ms ở server dù Postgres chỉ chạy < 1 ms. Ba trong số đó là **ping ẩn** của pool sqlx. Gộp lại (§5 A1–A4) đưa GET đơn giản từ ~10 xuống ~4 lượt: **−15 ms mỗi request trên staging**, `/me` từ ~10 xuống ~3 lượt.
 - **Một câu sẽ chậm dần theo dữ liệu:** lịch sử khách (`GET /customers/{id}/history`) quét **toàn bộ** hóa đơn và lượt của spa mỗi lần mở hồ sơ: **66–94 ms ở 3 năm**, tăng tuyến tính. Viết lại bằng `UNION` hai lần tra index: **0,4–0,6 ms** (×100), không cần đổi schema.
-- **Index:** 2 GIN trigram trên `customer` **không bao giờ dùng được** dưới RLS (toán tử `LIKE` không leakproof), 2 index trùng tiền tố, 4 index ngày dẫn đầu bằng `branch_id` không được dùng. Bỏ 8 index này: **−31 MB ở 3 năm (−15 % dung lượng index)**, bớt một lần ghi index cho mỗi lượt, dòng lượt, hóa đơn, dòng hóa đơn, thanh toán. Plan không đổi (đã thử trong transaction rồi rollback).
-- **Dung lượng không phải vấn đề:** 3 năm ≈ **397 MB** (heap 176 MB, index 208 MB, audit 126 MB = 32 %). Supabase Pro có sẵn 8 GB đĩa. Việc cần làm là **vệ sinh dữ liệu cá nhân**: bảng `session` (IP + user agent) **không bao giờ được dọn**.
+- **Index:** 2 GIN trigram trên `customer` **không bao giờ dùng được** dưới RLS (toán tử `LIKE` không leakproof), 2 index trùng tiền tố, 4 index ngày dẫn đầu bằng `branch_id` không được dùng. Bỏ 8 index này: **−16 MB ở 3 năm (−13 % dung lượng index; số đo ban đầu −31 MB bị phồng, xem ⚠️ ở §2)**, bớt một lần ghi index cho mỗi lượt, dòng lượt, hóa đơn, dòng hóa đơn, thanh toán. Plan không đổi (đã thử trong transaction rồi rollback).
+- **Dung lượng không phải vấn đề:** 3 năm ≈ **312 MB** (heap 176 MB, index 125 MB, audit 126 MB = 40 %; đã sửa, xem §2). Supabase Pro có sẵn 8 GB đĩa. Việc cần làm là **vệ sinh dữ liệu cá nhân**: bảng `session` (IP + user agent) **không bao giờ được dọn**.
 
 ## 1. Cách đo
 - **Đọc tĩnh:** 29 migration (0001…0032; 0008, 0010, 0031 bỏ trống) và 257 câu SQL trong `apps/api/.sqlx`. Danh mục index, FK, constraint, trigger và grant lấy từ một DB local mới migrate tới 0032.
@@ -42,6 +42,21 @@ EM nhờ rà kỹ schema (bảng, index, FK, lưu trữ, toàn vẹn, xung độ
 | Toàn DB | | 176 MB | **208 MB** | 1,18 |
 
 Index chiếm nhiều hơn dữ liệu. Phần lớn là chủ ý: `PK (id)` + `UNIQUE (tenant_id, id)` làm đích cho FK kép (§6). Phần bỏ được nằm ở F5–F6.
+
+> ⚠️ **Sửa số đo (2026-11-09).** Bảng trên đo trên một DB tạm đã chạy hai lần seed bị hủy giữa chừng trước lần seed cuối. `VACUUM` dọn dòng chết nhưng không thu nhỏ trang index, nên index bị phồng.
+>
+> Đo lại trên DB sạch: cùng script seed, migrate tới 0032, `VACUUM ANALYZE`, script `infra/perf/db/sizes.sql`.
+> - Toàn DB **312 MB**: heap 176 MB, **index 125 MB**, audit 126 MB = 40 %.
+> - Index của `visit` 20 MB, `visit_line` 19 MB, `appointment` 14 MB, `sale_line` 13 MB, `customer` 5,9 MB.
+> - 8 index của B1 cộng lại **16 MB** (13 % index), không phải 31 MB: `visit_day_idx` 5,2 MB, `visit_line_visit_idx` 3,2, `sale_line_sale_idx` 3,0, hai GIN trigram 2,2 + 2,1, 3 index ngày còn lại 1,0.
+> - Sau 0033: DB **295 MB**, index **108 MB**.
+>
+> Trên DB sạch, các câu theo tháng (F7) chạy index nested loop và nhanh hơn: "ngày có lượt" 2,5 ms, lương dòng dịch vụ 8 ms, báo cáo 30 ngày 21 ms. Các số độ trễ khác ở §3c không đổi đáng kể.
+
+**B1 đã làm (migration 0033, 2026-11-09).** Chạy lại 40 câu nóng trên hai DB sạch (0032 và 0033, `explain_hot.py`, `app_rw` + RLS).
+- Mọi plan từng dùng index bị bỏ giờ dùng index unique thay thế. Gồm `visit_line_visit_idx` (11 câu) → `visit_line_tenant_id_visit_id_position_key`, và `sale_line_sale_idx` → `sale_line_tenant_id_sale_id_position_key`.
+- Không có seq scan mới. Thời gian nằm trong nhiễu (±0,5 ms).
+- Index ngày theo chi nhánh và GIN trigram không câu nào dùng.
 
 ## 3. Độ trễ: DB chạy bao lâu, đi về bao nhiêu lượt
 
@@ -132,10 +147,10 @@ Thứ tự theo (lợi ích ÷ rủi ro). Chưa làm gì. Bước nào đụng s
 |---|---|---|---|---|
 | **A1** | Pool: `test_before_acquire(false)` + `before_acquire` chỉ ping khi `idle_for > 30 s` (đúng mẫu trong docs sqlx), thêm `idle_timeout` < timeout rảnh của Supavisor | Code (`app/src/main.rs`), không migration | **−3 lượt/request ≈ −8 ms** trên staging (GET đơn giản 26 → ~18 ms) | Bỏ hai dòng cấu hình |
 | **A2** | Viết lại nhánh hóa đơn của lịch sử khách bằng `UNION` | Code (`reporting::customer`), `cargo sqlx prepare` | **79–94 → < 1 ms** ở 3 năm; hết tăng tuyến tính | Revert commit |
-| **A3** | `app.session_actor(token_hash)` (migration chỉ thêm hàm) + `identity::resolve/actor_for` dùng nó: session + cờ MFA / đổi mật khẩu + quyền + người đã nghỉ trong **một** câu, không cần transaction | Migration 0033 (hàm) + code + test authz / cách ly / `request_plumbing` + `secure` + ADR | **−3 lượt nữa** (−8 ms); `/me` ~10 → ~3 lượt | Code quay về đường cũ; hàm để lại vô hại hoặc `DROP FUNCTION` |
+| **A3** | `app.session_actor(token_hash)` (migration chỉ thêm hàm) + `identity::resolve/actor_for` dùng nó: session + cờ MFA / đổi mật khẩu + quyền + người đã nghỉ trong **một** câu, không cần transaction | Migration 0034 (hàm) + code + test authz / cách ly / `request_plumbing` + `secure` + ADR | **−3 lượt nữa** (−8 ms); `/me` ~10 → ~3 lượt | Code quay về đường cũ; hàm để lại vô hại hoặc `DROP FUNCTION` |
 | **A4** | Đưa timezone / chi nhánh / trần giảm giá vào `Actor` (từ A3), bỏ câu `profile` trong transaction | Code | −1 lượt ở lệnh ghi và màn dùng profile | Revert |
 | A5 | (tùy chọn) Gộp touch session vào A3 (`UPDATE … WHERE last_seen_at < now() − 60 s`) | Theo A3 | −2 lượt + một commit WAL ~5 ms, mỗi phút một lần | Revert |
-| **B1** | Migration 0034 bỏ 8 index (F5 + F6), `SET LOCAL lock_timeout = '3s'`. Hoặc `DROP INDEX CONCURRENTLY`, mỗi file một câu với dòng đầu `-- no-transaction` (sqlx 0.9 hỗ trợ; một chuỗi nhiều câu thì Postgres coi là một transaction ngầm và từ chối `CONCURRENTLY`) | Migration | **−31 MB / 3 năm (−15 % index)**; mỗi lần ghi lượt / dòng lượt / hóa đơn / dòng hóa đơn / thanh toán bớt 1 index, ghi khách bớt 2 GIN; plan không đổi | Tạo lại bằng `CREATE INDEX CONCURRENTLY` (định nghĩa bên dưới); 3 năm dữ liệu dựng < 1 s mỗi index |
+| **B1** | Migration 0033 bỏ 8 index (F5 + F6), `SET LOCAL lock_timeout = '3s'`. Hoặc `DROP INDEX CONCURRENTLY`, mỗi file một câu với dòng đầu `-- no-transaction` (sqlx 0.9 hỗ trợ; một chuỗi nhiều câu thì Postgres coi là một transaction ngầm và từ chối `CONCURRENTLY`) | Migration | **−31 MB / 3 năm (−15 % index)**; mỗi lần ghi lượt / dòng lượt / hóa đơn / dòng hóa đơn / thanh toán bớt 1 index, ghi khách bớt 2 GIN; plan không đổi | Tạo lại bằng `CREATE INDEX CONCURRENTLY` (định nghĩa bên dưới); 3 năm dữ liệu dựng < 1 s mỗi index |
 | **C1** | `app.purge_sessions(interval)` (`SECURITY DEFINER`, như `purge_idempotency_records`) + gọi cùng job dọn idempotency: xóa session đã thu hồi hoặc hết hạn quá 30 ngày | Migration + code + test | Tối thiểu hóa dữ liệu cá nhân (IP / UA); sửa lệch giữa wiki và code | Bỏ lời gọi job; hàm vô hại |
 | **C2** | Chạy `infra/perf/db/invariants.sql` định kỳ (hằng ngày, chỉ đọc) và báo khi có dòng | Job / CI | Phát hiện lệch bản sao trước khi thành lỗi tiền (skill data-integrity §7) | Tắt job |
 | C3 | Index `membership (user_id)` khi có spa thứ hai | Migration nhỏ | Login / `/me` không quét membership | Drop index |
