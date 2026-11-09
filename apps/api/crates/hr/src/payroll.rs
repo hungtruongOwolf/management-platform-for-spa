@@ -24,6 +24,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct PayrollTotals {
     pub staff: u32,
+    /// Σ of the payslips' `base_pay` (the month's base, prorated for a month not worked in full).
     pub base_salary: i64,
     pub deductions: i64,
     pub commission: i64,
@@ -47,7 +48,7 @@ pub struct PayrollMonth {
 fn totals(slips: &[Payslip]) -> PayrollTotals {
     PayrollTotals {
         staff: u32::try_from(slips.len()).unwrap_or(u32::MAX),
-        base_salary: slips.iter().map(|s| s.base_salary).sum(),
+        base_salary: slips.iter().map(|s| s.base_pay).sum(),
         deductions: slips
             .iter()
             .map(|s| s.leave_deduction + s.late_deduction)
@@ -151,7 +152,7 @@ async fn compute_in(
 
 fn parse_slips(raw: Vec<Value>) -> Result<Vec<Payslip>, AppError> {
     raw.into_iter()
-        .map(|v| serde_json::from_value(v).map_err(|e| AppError::Internal(format!("payslip: {e}"))))
+        .map(|v| Payslip::from_snapshot(v).map_err(|e| AppError::Internal(format!("payslip: {e}"))))
         .collect()
 }
 

@@ -167,6 +167,7 @@ function slip(): Payslip {
     days_in_month: 30,
     employed_days: 30,
     base_salary: 5_000_000,
+    base_pay: 5_000_000,
     commission_rate_bp: 500,
     day_rate: 178_571,
     attendance: totals,
@@ -447,7 +448,8 @@ function serve(permissions: string[], options: ServeOptions = {}) {
           free_leave_days: 2,
           late_grace_minutes: 5,
           late_penalty_amount: 20_000,
-          loyalty_partial_month: "prorate",
+          loyalty_partial_month: "fifteen_days",
+          meal_allowance_basis: "monthly",
           tet_level_amounts: [],
         },
       });
@@ -1020,6 +1022,38 @@ describe("/nhan-vien", () => {
     expect(within(sheetDialog).getByText("Hoa hồng làm liệu trình")).toBeInTheDocument();
     expect(within(sheetDialog).getByText("Hoa hồng giới thiệu / chốt")).toBeInTheDocument();
     expect(within(sheetDialog).queryByRole("region", { name: "Giới thiệu / chốt được" })).not.toBeInTheDocument();
+  });
+
+  it("payslip: a mid-month joiner's base is the employed share; deductions beyond the pay show, net stays 0đ (ADR-0019 D3/D4)", () => {
+    render(
+      <PayslipView
+        slip={{
+          ...slip(),
+          employed_days: 15,
+          base_pay: 2_500_000,
+          penalties: 3_000_000,
+          net_pay: 0,
+          net_pay_shortfall: 185_000,
+          flags: ["net_pay_shortfall"],
+        }}
+        closed={false}
+      />,
+    );
+    expect(screen.getByText(/5\.000\.000đ × 15\/30 ngày làm việc, làm tròn đến nghìn đồng/)).toBeInTheDocument();
+    expect(screen.getByText("2.500.000đ")).toBeInTheDocument();
+    expect(screen.getByText("Khoản trừ vượt lương (không trừ)")).toBeInTheDocument();
+    expect(screen.getByText("185.000đ")).toBeInTheDocument();
+    expect(screen.getByText("Khoản trừ vượt lương: thực lĩnh 0đ")).toBeInTheDocument();
+  });
+
+  it("owner: the pay rules offer the 15-day working month and the meal allowance basis (ADR-0019)", async () => {
+    serve(OWNER);
+    at("/nhan-vien?tab=payroll");
+    await userEvent.click(await screen.findByRole("button", { name: "Quy tắc lương" }));
+    const sheet = await screen.findByRole("dialog", { name: "Quy tắc lương của spa" });
+    const loyalty = await within(sheet).findByLabelText("Thưởng gắn bó tháng vào làm hoặc nghỉ giữa chừng");
+    expect(loyalty).toHaveValue("fifteen_days");
+    expect(within(sheet).getByLabelText("Hỗ trợ tiền ăn")).toHaveValue("monthly");
   });
 
   it("payslip lists what the upsell commission is computed from", () => {

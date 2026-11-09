@@ -40,6 +40,8 @@ Nguồn: 2 văn bản chương trình (học viên, KTV có kinh nghiệm) + fil
 - Ký hiệu: ✓ đi làm; **P** có lý do, báo trước ≥ 3 ngày; **ĐX** đột xuất (bổ sung giấy tờ sau); **K** không lý do / không báo / không bổ sung giấy. *(Ký hiệu của sổ giấy / Excel. App hiện chữ + icon, không mã: "Đi làm" / "Nghỉ có phép" / "Nghỉ đột xuất" / "Nghỉ không phép"; code `present` / `leave_p` / `leave_dx` / `absent_k` — F20, [staff-management](specs/staff-management.md) §16.)*
 - Mỗi tháng được nghỉ **2 ngày không trừ lương**. Mỗi ngày vượt quá bị trừ 1 ngày lương.
 - **Lương ngày = lương cứng tháng ÷ (số ngày trong tháng − 2).**
+- **Vào làm hoặc nghỉ giữa tháng (ADR-0019 D4, lead quyết thay EM, Q-S4):** lương cứng của tháng = lương cứng × số ngày thuộc thời gian làm việc ÷ số ngày trong tháng, làm tròn đến nghìn đồng. Lương ngày và 2 ngày nghỉ miễn trừ vẫn như tháng đủ.
+- **Thực lĩnh không bao giờ âm (ADR-0019 D3):** tiền trừ ngày nghỉ tối đa bằng lương cứng của tháng. Nếu các khoản trừ (phạt, trừ lại hoa hồng gói hoàn tiền…) vẫn vượt, thực lĩnh là 0đ và phiếu lương ghi phần vượt ("Khoản trừ vượt lương"); spa chịu phần đó.
 - Đi muộn = giờ đến − giờ vào ca (phút), chỉ ghi nhận, chưa có quy tắc phạt (⚠️ #4).
 
 ## 5. Đánh giá năng lực tháng (100 điểm), chấm ngày 1–5 tháng sau
@@ -62,6 +64,7 @@ Mức tháng = **mức thấp hơn** giữa mức theo ngày nghỉ và mức th
 
 ## 7. Thưởng gắn bó & các mốc chi trả
 - Cộng 500k mỗi tháng làm việc trong HĐ, kể cả tháng có ngày nghỉ. Khoản này được ghi trên phiếu lương.
+- **"Tháng làm việc" (ADR-0019 D4, trả lời ⚠️ #7):** tháng có từ 15 ngày thuộc thời gian làm việc trở lên thì được đủ 500k; dưới 15 ngày thì không tính. Chủ spa vẫn đổi được sang "theo tỷ lệ ngày" ở Quy tắc lương.
 - Gói 12 tháng: nhận đủ 6tr ở mốc 12. Gói 24 tháng: mốc 12 nhận 3tr (50% năm 1), mốc 24 nhận 9tr.
 - Trả cùng kỳ lương (ngày 1–5 tháng sau mốc).
 - Nghỉ ngang không lý do chính đáng → mất cọc hoặc mất phần Thưởng gắn bó chưa tới mốc.
@@ -69,6 +72,8 @@ Mức tháng = **mức thấp hơn** giữa mức theo ngày nghỉ và mức th
 
 ## 8. Phúc lợi
 Tiền ăn 300–600k/tháng · BHXH 308k/tháng từ tháng thứ 13 HĐ chính thức · BHYT (chưa có số) · quà lễ.
+
+**Tiền ăn (ADR-0019 D3):** văn bản ghi là khoản **cố định mỗi tháng** ("300.000 – 600.000đ mỗi tháng"), nên app trả đủ số tháng của từng người khi tháng đó có ít nhất 1 ngày đi làm, và 0đ khi không đi làm ngày nào. Vào làm giữa tháng vẫn nhận đủ (khoản cố định tháng; lương cứng thì theo tỷ lệ, §4). Chủ spa đổi được sang "theo số ngày đi làm thực tế" ở Quy tắc lương: tiền ăn × ngày đi làm ÷ (số ngày trong tháng − 2), tối đa bằng số tháng, làm tròn đến nghìn đồng.
 
 ## 9. Cảnh báo kỷ luật (hệ thống **chỉ gắn cờ**, chủ spa quyết định)
 - Chưa đạt **2 tháng liên tiếp**, hoặc **3 trong 6 tháng** gần nhất (Nhóm A #5).
@@ -84,5 +89,5 @@ Mặc định đã build và quy tắc chỉnh được cho từng mục: [spec 
 4. **Đi muộn**: chỉ ghi nhận hay có phạt? Ngưỡng bao nhiêu phút?
 5. **Hỗ trợ tiền ăn 300–600k** và **hỗ trợ học viên tháng 2 (khoảng)**: dựa vào đâu để chọn con số? Quản lý nhập tay hay có quy tắc?
 6. **Ngày lễ / Chủ nhật**: có tính ngày công đặc biệt không?
-7. "Tháng làm việc" để cộng Thưởng gắn bó: vào làm giữa tháng thì tính thế nào?
+7. ~~"Tháng làm việc" để cộng Thưởng gắn bó: vào làm giữa tháng thì tính thế nào?~~ → ADR-0019 D4: từ 15 ngày làm việc trong tháng trở lên (§7).
 8. Excel công thức lương "trong HĐ cam kết" luôn trừ 500k, kể cả học viên **có cọc**, trong khi văn bản nói người có cọc không bị trừ. Đây có thể là lỗi do Excel chỉ mô phỏng chương trình KTV.
