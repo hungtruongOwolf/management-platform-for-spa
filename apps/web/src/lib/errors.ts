@@ -55,7 +55,7 @@ const MESSAGES: Record<string, string> = {
     "Lượt này vừa được sửa (có thể ở máy khác). Mở lượt mới nhất để sửa tiếp.",
   "day.locked": "Ngày đã chốt, liên hệ chủ spa.",
   "idempotency.key_reuse_mismatch":
-    "Hóa đơn này có thể đã được lưu. Vui lòng đóng hộp thoại và kiểm tra lại liệu trình.",
+    "Thao tác này có thể đã được lưu ở lần gửi trước. Đóng hộp thoại, tải lại rồi kiểm tra trước khi làm lại.",
 };
 
 /** Messages for field-level validation codes. */
