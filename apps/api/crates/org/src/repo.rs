@@ -333,7 +333,8 @@ pub async fn accounts(tx: &mut TenantTx) -> Result<Vec<AccountRow>, AppError> {
 }
 
 /// Locks (`disabled`) or unlocks (`active`) a login's membership of this spa. A disabled member
-/// gets no permission on their next request (`identity::repo::member_permissions`).
+/// gets no permission on their next request (`app.session_actor` reads active memberships only,
+/// ADR-0017).
 pub async fn set_membership_active(
     tx: &mut TenantTx,
     user_id: Uuid,

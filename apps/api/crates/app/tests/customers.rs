@@ -28,7 +28,20 @@ async fn creates_a_customer_and_finds_her_by_phone_or_accentless_name(pool: PgPo
     );
     assert_eq!(created.body["health_note"], "Huyết áp cao — tránh đá nóng");
 
-    for q in ["0905", "905111", "222", "ha", "nguyen thi", "Hà", "NGUYỄN"] {
+    // A whole number in any form `PhoneE164` accepts finds her (red before for "84905111222":
+    // the 84 was dropped only after a '+', while the phone check accepts it without).
+    for q in [
+        "0905",
+        "905111",
+        "222",
+        "0905 111 222",
+        "+84 905 111 222",
+        "84905111222",
+        "ha",
+        "nguyen thi",
+        "Hà",
+        "NGUYỄN",
+    ] {
         let found = call(
             &h.app,
             "GET",
