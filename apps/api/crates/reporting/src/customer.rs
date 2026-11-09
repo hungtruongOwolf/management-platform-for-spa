@@ -28,7 +28,7 @@ fn field(name: &'static str, code: &'static str) -> AppError {
 }
 
 /// The timeline shows money and sessions, so it needs the profile, the visits and the sales.
-fn require_history(actor: &Actor) -> Result<(), AppError> {
+pub(crate) fn require_history(actor: &Actor) -> Result<(), AppError> {
     actor.require(Permission::CustomerRead)?;
     actor.require(Permission::VisitRead)?;
     actor.require(Permission::SaleRead)
