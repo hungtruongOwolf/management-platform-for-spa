@@ -14,7 +14,7 @@ Contract-first: các bảng dưới đây là hợp đồng API, hiện thực b
 - **Danh sách:** cursor (`?cursor=&limit=`), `limit` mặc định 20, tối đa 100 (server ép). Sort và filter chỉ theo allowlist.
 - **Idempotency:** mọi `POST` có tạo tiền hoặc trừ buổi bắt buộc header `Idempotency-Key` (UUID). Thiếu key → `400 idempotency.key_required`.
   - Cùng key, cùng body → trả lại response cũ.
-  - Cùng key, khác body → `422 idempotency.key_reuse_mismatch`. Với lệnh trên một bản ghi (`/visits/{id}/void`, `/sales/{id}/void`, `/customer-packages/{id}/extend|cancel`), hash gồm cả `{id}` (`kernel::idempotency::hash_request_on`), nên dùng lại key cho bản ghi khác → `422`, không bao giờ replay nhầm (S8).
+  - Cùng key, khác body → `422 idempotency.key_reuse_mismatch`. Với lệnh trên một bản ghi (`/visits/{id}/void`, `/sales/{id}/void`, `/customer-packages/{id}/extend|cancel`), hash gồm method + route + `{id}` (`kernel::idempotency::hash_route`), nên dùng lại key cho bản ghi khác hoặc endpoint khác → `422`, không bao giờ replay nhầm (S8).
   - Request đầu vẫn đang chạy → request trùng **chờ** (khóa PK của Postgres) cho tới khi request đầu commit, rồi replay; nếu request đầu rollback thì request trùng chạy mới. (`409 idempotency.in_progress` chỉ là nhánh phòng thủ.) Hiện thực: `kernel::idempotency` (S1).
 - **Optimistic lock:** DTO có trường `version`; ghi xong trả về `ETag: "<version>"`. Lệnh sửa (`PUT`, thay toàn bộ bản ghi) bắt buộc `If-Match`: thiếu → `400 precondition.if_match_required`, lệch phiên bản → `412 conflict.stale_version` (S4 ✅).
 - **Cache:** mọi response `/api` mang `Cache-Control`. Handler không tự đặt → mặc định `private, no-store` (layer ngoài cùng, `app::middleware`, 2026-11-07). Endpoint nào muốn cache phải tự đặt `private, no-cache` + `ETag` (chưa có endpoint nào; `ETag` hiện chỉ cho `If-Match`). Không `public`/`s-maxage`: CDN sẽ chia dữ liệu giữa người dùng.
@@ -247,7 +247,7 @@ domain: kiểu dữ liệu & bất biến thuần (Money, PhoneE164, SessionCoun
   - **A3 ([ADR-0017](../decisions/ADR-0017-one-statement-request-auth.md), 0034):** `app.session_actor(token_hash)` trả session + cờ MFA / mật khẩu tạm + quyền + người đã nghỉ + cài đặt spa trong **một** câu, không cần transaction.
     - `AuthUser` = `identity::service::authenticate`; `/me` = `resolve_with_access` + tài khoản + danh sách spa.
     - Một request đăng nhập giờ là: `session_actor` (+ touch mỗi phút) → tx nghiệp vụ.
-    - `actor_for` / `tenant_permissions` (dưới RLS) vẫn dùng cho tooling, demo, đổi mật khẩu.
+    - `tenant_permissions` (dưới RLS) vẫn dùng cho tooling (`seed-demo`, `import-paper-book`); `actor_for` và `service::me` (không còn ai gọi) đã xóa 2026-11-09.
 - **`Server-Timing`** (`app::server_timing`): mọi response trừ `/auth/*` có `db;dur=<ms>;desc="<n> statements", total;dur=<ms>`. `db` = tổng thời gian các câu sqlx của request (layer tracing riêng nghe event `sqlx::query` DEBUG, filter theo layer nên `RUST_LOG` không ảnh hưởng; task-local theo request). `/auth/*` không có: số câu lệnh phân biệt được SĐT lạ / bị khóa / đúng. Đọc bằng DevTools hoặc `infra/perf/endpoints.mjs`.
 - **Tiện ích domain:** chuẩn hóa SĐT VN → E.164 (`phonenumber`); tạo `search_text` (NFC → lowercase → bỏ dấu → `đ→d`); mã hóa field AES-256-GCM (`aes-gcm`, key qua `secrecy`).
 

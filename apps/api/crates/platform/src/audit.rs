@@ -77,6 +77,28 @@ impl AuditQuery {
     }
 }
 
+/// One page of a newest-first trail from up to `limit + 1` rows, and the `before` of the next
+/// page. The next page asks for `at < next_before`, so the page never ends in the middle of the
+/// entries of one instant (a transaction writes several with the same `now()`): the rest of that
+/// instant would be skipped. A single instant with more than `limit` entries cannot be kept
+/// whole; that page is cut at `limit`.
+fn page<T>(
+    mut rows: Vec<T>,
+    limit: i64,
+    at: impl Fn(&T) -> DateTime<Utc>,
+) -> (Vec<T>, Option<DateTime<Utc>>) {
+    let limit = usize::try_from(limit).unwrap_or(usize::MAX);
+    let Some(first_left_out) = rows.get(limit).map(&at) else {
+        return (rows, None);
+    };
+    rows.truncate(limit);
+    if let Some(last_whole) = rows.iter().rposition(|r| at(r) != first_left_out) {
+        rows.truncate(last_whole + 1);
+    }
+    let next_before = rows.last().map(&at);
+    (rows, next_before)
+}
+
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PlatformAuditItem {
     pub id: Uuid,
@@ -115,8 +137,7 @@ pub async fn list(pool: &PgPool, query: &AuditQuery) -> Result<PlatformAuditPage
     )
     .fetch_all(pool)
     .await?;
-    let more = i64::try_from(rows.len()).unwrap_or(i64::MAX) > limit;
-    let mut items: Vec<PlatformAuditItem> = rows
+    let items: Vec<PlatformAuditItem> = rows
         .into_iter()
         .map(|r| PlatformAuditItem {
             id: r.id,
@@ -132,10 +153,7 @@ pub async fn list(pool: &PgPool, query: &AuditQuery) -> Result<PlatformAuditPage
             ip: r.ip,
         })
         .collect();
-    if more {
-        items.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
-    }
-    let next_before = more.then(|| items.last().map(|i| i.at)).flatten();
+    let (items, next_before) = page(items, limit, |i| i.at);
     Ok(PlatformAuditPage { items, next_before })
 }
 
@@ -187,8 +205,7 @@ pub async fn of_tenant(
     )
     .fetch_all(tx.conn())
     .await?;
-    let more = i64::try_from(rows.len()).unwrap_or(i64::MAX) > limit;
-    let mut items: Vec<SpaAuditItem> = rows
+    let items: Vec<SpaAuditItem> = rows
         .into_iter()
         .map(|r| SpaAuditItem {
             id: r.id,
@@ -199,10 +216,7 @@ pub async fn of_tenant(
             actor_name: r.actor_name,
         })
         .collect();
-    if more {
-        items.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
-    }
-    let next_before = more.then(|| items.last().map(|i| i.at)).flatten();
+    let (items, next_before) = page(items, limit, |i| i.at);
     record(
         tx.conn(),
         op.operator_id,
@@ -229,6 +243,31 @@ mod tests {
     fn only_the_last_three_digits_of_a_phone_are_kept() {
         assert_eq!(phone_tail("+84905123456"), "…456");
         assert_eq!(phone_tail("12"), "…12");
+    }
+
+    #[test]
+    fn a_page_never_splits_one_instant() {
+        let t = |s: i64| DateTime::from_timestamp(s, 0).unwrap_or_default();
+        // Newest first; three entries share the instant 7 (one transaction).
+        let rows = vec![t(9), t(8), t(7), t(7), t(7), t(6)];
+        let (items, next) = page(rows.clone(), 3, |r| *r);
+        assert_eq!((items, next), (vec![t(9), t(8)], Some(t(8))));
+        // The next page (`at < 8`) starts with the whole instant.
+        let rest: Vec<_> = rows.iter().copied().filter(|r| *r < t(8)).collect();
+        let (items, next) = page(rest, 3, |r| *r);
+        assert_eq!((items, next), (vec![t(7), t(7), t(7)], Some(t(7))));
+        // No more rows than the limit: no next page.
+        assert_eq!(page(vec![t(9), t(8)], 3, |r| *r), (vec![t(9), t(8)], None));
+        // A boundary between two instants cuts at the limit as before.
+        assert_eq!(
+            page(vec![t(9), t(8), t(7), t(6)], 3, |r| *r),
+            (vec![t(9), t(8), t(7)], Some(t(7)))
+        );
+        // One instant with more entries than a page: cut at the limit.
+        assert_eq!(
+            page(vec![t(7), t(7), t(7)], 2, |r| *r),
+            (vec![t(7), t(7)], Some(t(7)))
+        );
     }
 
     #[test]

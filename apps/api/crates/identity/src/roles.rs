@@ -1,5 +1,8 @@
-//! Built-in roles seeded for every new tenant. Owners can edit roles later (spec #4); this is only
-//! the starting point. Must match memory/wiki/security/authz-matrix.md.
+//! The three system roles of every spa. A new spa's roles are seeded from the role templates in
+//! the database (`app.role_template_permission`, edited by the platform operator, ADR-0018 D5);
+//! [`SystemRole::default_permissions`] is the code default those templates were seeded with
+//! (migration 0040, checked by a test on a fresh database). Must match
+//! memory/wiki/security/authz-matrix.md.
 
 use kernel::Permission;
 
@@ -143,7 +146,7 @@ mod tests {
         assert!(!technician.contains(&Permission::CustomerHealthNotesRead));
         // EM Q7 (2026-11-05): technicians do not manage customers, so never follow up.
         assert!(!technician.contains(&Permission::CustomerFollowUp));
-        // No user <-> staff link yet, so "own schedule only" is not safe: no appointments at all.
+        // Bookings are the front desk's; a technician sees their own through `/me/appointments`.
         assert!(!technician.contains(&Permission::AppointmentManage));
         assert_eq!(
             technician,
