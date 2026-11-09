@@ -220,5 +220,8 @@ Không có bảng mới. 0013:
 - Ghi lúc tạo hóa đơn (`sales::service::record_package_sale`, chỗ ghi duy nhất của mọi đường bán gói) và `PATCH /sales/{id}` (`repo::set_note`, `version + 1`). Hóa đơn đã hủy không đổi được (trigger `sale_voided_is_final`, 0009). app_rw đã có `UPDATE` trên `app.sale` (0005), không grant mới.
 - Index một phần `sale_note_day_idx (tenant_id, business_date) WHERE note_ct IS NOT NULL` cho nhánh `package_note` của `GET /notes` (16 loại). Không backfill (hóa đơn cũ không có ghi chú).
 
+## Rà soát 2026-11
+Đo trên 3 năm dữ liệu + staging, findings và đề xuất (bỏ 8 index, gộp xác thực, sửa lịch sử khách, dọn session, job kiểm bất biến), danh sách cơ chế không được đổi: [db-review-2026-11](db-review-2026-11.md). Chưa có migration nào theo đề xuất.
+
 ## Seed
 Dữ liệu tenant Viên Phúc Y Đường: 1 chi nhánh (Phường Đông Hà), 10 nhóm và 35 dịch vụ từ [service-catalog](../product/service-catalog.md), role hệ thống, tài khoản chủ spa. Giá "Ôn ấm tử cung" và các gói liệu trình: chờ EM.

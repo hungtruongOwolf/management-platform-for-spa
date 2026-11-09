@@ -682,3 +682,10 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 
 ## [2026-11-08] decision | Tài khoản: một spa / chủ spa quên mật khẩu / người đã nghỉ
 - Raw: [2026-11-08-em-decisions-accounts-open-questions](raw/2026-11-08-em-decisions-accounts-open-questions.md). Giữ nguyên hành vi của #103: không nhiều spa; chủ spa khôi phục qua hỗ trợ / CLI; người đã nghỉ chưa khóa vẫn được đặt lại mật khẩu. Ghi vào ADR-0016.
+
+## [2026-11-08] ingest + perf + secure + record | Rà soát thiết kế database (chỉ rà + đề xuất)
+- Raw: [2026-11-08-em-request-db-design-review](raw/2026-11-08-em-request-db-design-review.md). Trang mới [db-review-2026-11](wiki/architecture/db-review-2026-11.md); link từ data, backend (⚠ dọn session lệch code), performance-latency.
+- Đo: DB tạm local 3 năm (60k lượt, 43k hóa đơn, 47k lịch, 208k audit ≈ 397 MB, đã drop), `EXPLAIN (ANALYZE, BUFFERS)` 40 câu nóng nguyên văn từ `.sqlx` với `app_rw` + RLS; staging chỉ đọc (catalog, `pg_stat_*`, `pg_stat_statements`, 11 phép kiểm bất biến = 0 dòng lệch); Server-Timing staging.
+- Kết luận: Postgres không phải nút thắt (29/40 câu ≤ 3 ms); ~10 lượt đi về API↔DB mỗi GET (3 ping `test_before_acquire`, xác thực 2 transaction). Lịch sử khách seq scan 66–94 ms → `UNION` < 1 ms; GIN trigram không dùng được dưới RLS; 8 index bỏ được (−31 MB); session không bao giờ được dọn.
+- Đề xuất theo thứ tự A1 (pool ping) → A2 (lịch sử) → A3/A4 (gộp xác thực, cần ADR + secure) → B1 (bỏ index) → C1 (dọn session) → C2 (job bất biến); danh sách không được đổi ở §6. Tooling `infra/perf/db/`.
+- Tiếp theo: EM trả lời Q-DB1…Q-DB4; chưa đổi schema, chưa merge.

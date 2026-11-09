@@ -193,6 +193,8 @@ Mục tiêu đo lại (từ VN): số lượt nối tiếp mỗi màn ≤ 2, m�
 - **Staging ở lại Mỹ** (`pdx1` + `us-west-2`): EM test từ Mỹ, nên staging đang gần người dùng của nó. Giai đoạn 1 (dời Singapore) **không làm cho staging**.
 - **Production chạy ở châu Á (Singapore)** khi công bố sản phẩm dùng thật: giai đoạn 1 của trang này trở thành kế hoạch dựng production ([ADR-0012](../decisions/ADR-0012-colocate-api-db-singapore.md) update, vẫn Proposed). Số đo từ VN ở §2 là căn cứ cho production; ngân sách p95 của quầy (< 300 ms tìm khách, < 500 ms lưu lượt) sẽ đo lại trên production. Q-P1/Q-P2 dưới đây áp cho production, không cho staging.
 
+> Cập nhật 2026-11-08: phần DB (lượt đi về API↔DB mỗi request, ping ẩn của pool, câu chậm theo dữ liệu, index) đo lại ở [db-review-2026-11](db-review-2026-11.md).
+
 ## 6. Cần EM quyết vs engineering tự làm
 **Cần EM quyết (vendor / vùng / tiền):**
 - **Q-P1 Vùng:** đồng ý dời staging sang Singapore (Supabase project mới + API Singapore)? Dữ liệu demo tạo lại được; mật khẩu và URL DB mới thì EM giữ như lần trước. Cũng là bước chuẩn bị cho production (ADR-0002/0005 đã chọn Singapore).

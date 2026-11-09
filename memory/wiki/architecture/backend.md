@@ -247,7 +247,7 @@ domain: kiểu dữ liệu & bất biến thuần (Money, PhoneE164, SessionCoun
 ## 6. Background jobs (in-process, `tokio`)
 | Job | Lịch | Retry |
 |---|---|---|
-| Dọn `idempotency_record` > 48 giờ, session hết hạn, auth token hết hạn | Mỗi giờ | Idempotent, chạy lại thoải mái |
+| Dọn `idempotency_record` > 48 giờ, session hết hạn, auth token hết hạn | Mỗi giờ | Idempotent, chạy lại thoải mái. ⚠ Code (2026-11-08) **chỉ** dọn idempotency (lúc khởi động + mỗi giờ); session chưa bao giờ được dọn, xem [db-review F9 / C1](db-review-2026-11.md) |
 | Backup `pg_dump` → mã hóa → R2 | 02:00 hằng ngày (cron trên VPS, ở `/devops`) | Alert nếu không có backup mới trong 26 giờ |
 Nhắc nhở (spec #3) sẽ dùng bảng job trên Postgres (`FOR UPDATE SKIP LOCKED`) có dead-letter.
 
