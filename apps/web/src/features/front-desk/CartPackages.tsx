@@ -476,7 +476,7 @@ function SaleBlock({
           <input
             className="input"
             value={sale.giftNote}
-            maxLength={200}
+            maxLength={500}
             onChange={(e) => {
               onChange({ giftNote: e.target.value });
             }}
@@ -572,6 +572,7 @@ function SaleBlock({
               <input
                 className="input"
                 value={sale.discountReason}
+                maxLength={500}
                 onChange={(e) => {
                   onChange({ discountReason: e.target.value });
                 }}

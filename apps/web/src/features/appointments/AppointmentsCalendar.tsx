@@ -99,6 +99,8 @@ export function AppointmentsCalendar({
   const [limitOpen, setLimitOpen] = useState(false);
   const isOwner = can(me, "record.void_closed_day");
   const locked = day < today && !isOwner;
+  // The server refuses a booking on a past day for everyone, the owner too (`check_day`).
+  const bookable = day >= today;
 
   const opened = cal.data
     ? (entriesOf(cal.data).find((e) => e.id === openId) ?? null)
@@ -110,8 +112,15 @@ export function AppointmentsCalendar({
     const now = spaMinutes(new Date().toISOString());
     const slot = cal.data?.slot_minutes ?? 15;
     const opens = minutesOf(cal.data?.opens_at ?? "09:00");
+    const closes = minutesOf(cal.data?.closes_at ?? "21:00");
+    // Late in the day "now" is past the last start the sheet offers: keep to that one.
     const start =
-      day === today ? Math.max(opens, Math.ceil(now / slot) * slot) : opens;
+      day === today
+        ? Math.max(
+            opens,
+            Math.min(closes - slot, Math.ceil(now / slot) * slot),
+          )
+        : opens;
     // Looking at one technician: the booking is for them.
     const staffId = shown && shown !== cal.data && who !== "none" ? who : "";
     setDraft({ mode: "new", day, start, staffId });
@@ -146,7 +155,7 @@ export function AppointmentsCalendar({
           )}
         </div>
         {/* The primary action, top right (EM round 6); phones keep it in the bottom bar. */}
-        {!locked && !phone && (
+        {bookable && !phone && (
           <button type="button" className="btn btn-primary" onClick={book}>
             <Icon name="plus" /> Đặt lịch
           </button>
@@ -298,8 +307,8 @@ export function AppointmentsCalendar({
                   : "ngày này"
             }
             filtered={shown !== cal.data}
-            onGrid={layout === "ngay" && !locked}
-            canBook={!locked}
+            onGrid={layout === "ngay" && bookable}
+            canBook={bookable}
           />
         )}
       {cal.data && shown && (
@@ -309,7 +318,7 @@ export function AppointmentsCalendar({
               cal={shown}
               everyone={cal.data}
               day={day}
-              canBook={!locked}
+              canBook={bookable}
               unassigned={shown === cal.data || who === "none"}
               onOpen={setOpenId}
               onBook={(start, staffId) => {
@@ -337,7 +346,7 @@ export function AppointmentsCalendar({
           )}
         </div>
       )}
-      {!locked && phone && (
+      {bookable && phone && (
         // Phones keep the primary action in thumb reach (design-system StickyActions).
         <StickyActions label="Đặt lịch">
           <button type="button" className="btn btn-primary" onClick={book}>

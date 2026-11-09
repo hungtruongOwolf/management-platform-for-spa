@@ -271,6 +271,7 @@ export function CustomerCard({
               <input
                 autoFocus
                 value={reason}
+                maxLength={500}
                 onChange={(e) => {
                   setReason(e.target.value);
                 }}

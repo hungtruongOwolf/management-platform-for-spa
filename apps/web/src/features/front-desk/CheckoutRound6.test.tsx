@@ -721,6 +721,29 @@ describe("/quay round 6", () => {
     });
   });
 
+  it("says why a service picked for a saved visit was not added (no Nữ/Nam yet)", async () => {
+    serve([{ ...ONE_OFF_VISIT, customer_gender: null }]);
+    const user = userEvent.setup();
+    render(
+      <App history={createMemoryHistory({ initialEntries: ["/quay"] })} />,
+    );
+    const table = await screen.findByRole("table", {
+      name: "Lượt khách hôm nay",
+    });
+    await user.click(
+      within(table).getByRole("button", {
+        name: /^Thao tác lượt .* của Nguyễn Thị Hà$/,
+      }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "Thêm dịch vụ / bán gói" }),
+    );
+    await pickService(user, "Thêm dịch vụ vào lượt", "s5");
+    expect(
+      await screen.findByText("Chọn Nữ hoặc Nam để tính giá dịch vụ này."),
+    ).toBeInTheDocument();
+  });
+
   it("“Thêm dịch vụ / bán gói” sells a new package by default; “Tính buổi hôm nay vào gói” converts (Q-U1)", async () => {
     const calls = serve([ONE_OFF_VISIT]);
     const user = userEvent.setup();
