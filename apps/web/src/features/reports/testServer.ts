@@ -5,7 +5,9 @@ import type {
 } from "@vpyd/api-client";
 import { vi } from "vitest";
 import { spaToday } from "../corrections/api";
+import { NEXT_TRY_DAYS } from "../customers/followUps";
 import type { PackageFilter } from "./api";
+import { shiftDays } from "./period";
 import {
   mockCustomerStats,
   mockDaily,
@@ -177,14 +179,18 @@ function route(
     const customerId = followUps[1] ?? "";
     if (method === "POST") {
       const b = body as FollowUpCreate;
+      const contactedOn = b.contacted_on ?? today;
+      // Like the server: `null` = "Không hẹn", only an omitted field takes the suggestion.
+      const suggestedDays = NEXT_TRY_DAYS[b.outcome];
+      const suggested = suggestedDays === null ? null : shiftDays(contactedOn, suggestedDays);
       const saved: FollowUp = {
         id: `fu-${String(state.followUps.length + 1)}`,
         customer_id: customerId,
-        contacted_on: b.contacted_on ?? today,
+        contacted_on: contactedOn,
         channel: b.channel,
         outcome: b.outcome,
         note: b.note ?? null,
-        next_follow_up_on: b.next_follow_up_on ?? null,
+        next_follow_up_on: b.next_follow_up_on === undefined ? suggested : b.next_follow_up_on,
         by_user_id: "u1",
         by_name: "Quản lý Hà",
         created_at: new Date().toISOString(),

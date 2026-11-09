@@ -2779,8 +2779,8 @@ export interface components {
             contacted_on?: string | null;
             /**
              * Format: date
-             * @description When to try again (≥ `contacted_on`, ≤ 365 days after it). Omitted: `no_answer` → contact
-             *     day + 3, `will_come` → + 7, `not_interested` / `other` → none.
+             * @description When to try again (≥ `contacted_on`, ≤ 365 days after it); `null` = no next try. Omitted:
+             *     `no_answer` → contact day + 3, `will_come` → + 7, `not_interested` / `other` → none.
              */
             next_follow_up_on?: string | null;
             /** @description ≤ 500 characters. A contact note, not a health note. */
