@@ -21,7 +21,7 @@ use crate::review::{self, DailyReview};
 use crate::rules;
 use chrono::{DateTime, NaiveDate, Utc};
 use kernel::crypto::FieldCipher;
-use kernel::{Actor, AppError, FieldError, TenantTx};
+use kernel::{Actor, AppError, Feature, FieldError, TenantTx};
 use serde::Serialize;
 use sqlx::PgPool;
 use utoipa::ToSchema;
@@ -137,8 +137,12 @@ pub async fn my_day(
     let month = Month::of(date);
     let info = period::info(&mut tx, month).await?;
     let (rules, _) = rules::load(&mut tx).await?;
-    // A closed month keeps the rate frozen in its payslip; an open one uses today's pay terms.
-    let rate = if info.closed {
+    // A spa that switched payroll off (ADR-0018 D4) shows no commission, like `GET /me/staff`
+    // shows no payslip. A closed month keeps the rate frozen in its payslip; an open one uses
+    // today's pay terms.
+    let rate = if !actor.feature_enabled(Feature::Payroll) {
+        None
+    } else if info.closed {
         payroll::payslips_in(&mut tx, month, Some(staff_id), &info, today)
             .await?
             .pop()
