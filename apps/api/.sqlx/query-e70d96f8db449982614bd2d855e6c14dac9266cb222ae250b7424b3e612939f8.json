@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.key, r.follows_template,\n                  COALESCE(array_agg(rp.permission ORDER BY rp.permission)\n                           FILTER (WHERE rp.permission IS NOT NULL), '{}') AS \"permissions!\"\n           FROM app.role r\n           LEFT JOIN app.role_permission rp ON rp.tenant_id = r.tenant_id AND rp.role_id = r.id\n           WHERE r.tenant_id = $1 AND r.is_system\n           GROUP BY r.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.role",
+            "name": "key"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "follows_template",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "app.role",
+            "name": "follows_template"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "permissions!",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "e70d96f8db449982614bd2d855e6c14dac9266cb222ae250b7424b3e612939f8"
+}

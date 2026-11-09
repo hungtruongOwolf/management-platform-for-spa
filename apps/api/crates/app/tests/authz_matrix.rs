@@ -62,6 +62,8 @@ enum Target {
     ResetRequest,
     /// The spa itself (platform console routes).
     Tenant,
+    /// A login (the spa owner's account; platform console routes).
+    Account,
 }
 
 struct Route {
@@ -829,6 +831,62 @@ const ROUTES: &[Route] = &[
     )
     .id(Target::Tenant)
     .body(feature_switch_body),
+    route("GET", "/api/v1/admin/tenants/{id}/roles", Access::Operator).id(Target::Tenant),
+    route(
+        "PUT",
+        "/api/v1/admin/tenants/{id}/roles/{key}",
+        Access::Operator,
+    )
+    .id(Target::Tenant)
+    .body(role_edit_body),
+    route(
+        "POST",
+        "/api/v1/admin/tenants/{id}/roles/{key}/reset",
+        Access::Operator,
+    )
+    .id(Target::Tenant)
+    .body(reason_body),
+    route("GET", "/api/v1/admin/tenants/{id}/audit", Access::Operator).id(Target::Tenant),
+    route("GET", "/api/v1/admin/permissions", Access::Operator),
+    route("GET", "/api/v1/admin/role-templates", Access::Operator),
+    route(
+        "PUT",
+        "/api/v1/admin/role-templates/{key}",
+        Access::Operator,
+    )
+    .body(role_edit_body),
+    route("GET", "/api/v1/admin/accounts", Access::Operator),
+    route("POST", "/api/v1/admin/accounts/{id}/lock", Access::Operator)
+        .id(Target::Account)
+        .body(reason_body),
+    route(
+        "POST",
+        "/api/v1/admin/accounts/{id}/unlock",
+        Access::Operator,
+    )
+    .id(Target::Account)
+    .body(reason_body),
+    route(
+        "POST",
+        "/api/v1/admin/accounts/{id}/reset-mfa",
+        Access::Operator,
+    )
+    .id(Target::Account)
+    .body(reason_body),
+    route(
+        "POST",
+        "/api/v1/admin/accounts/{id}/revoke-sessions",
+        Access::Operator,
+    )
+    .id(Target::Account)
+    .body(reason_body),
+    route(
+        "POST",
+        "/api/v1/admin/accounts/{id}/reset-password",
+        Access::Operator,
+    )
+    .id(Target::Account)
+    .body(reason_body),
 ];
 
 /// Mounted but deliberately left out of the OpenAPI contract. Must answer without a session.
@@ -857,6 +915,16 @@ fn new_tenant_body(_: &Fixture) -> Option<Value> {
         "slug": format!("spa-moi-{n}"),
         "owner": {"phone": format!("0908{n:06}"), "full_name": "Chủ spa mới"},
     }))
+}
+
+/// `{key}` = `technician` (concrete): its current default grants, unchanged.
+fn role_edit_body(_: &Fixture) -> Option<Value> {
+    let permissions: Vec<&str> = Technician
+        .default_permissions()
+        .iter()
+        .map(|p| p.as_str())
+        .collect();
+    Some(json!({"permissions": permissions, "reason": "Kiểm thử ma trận quyền"}))
 }
 
 /// Keeps the feature on (`{key}` = `appointments`), so later rows still see it.
@@ -1105,6 +1173,8 @@ struct Fixture {
     appointment: String,
     adjustment: String,
     reset_request: String,
+    /// The owner's login.
+    account: String,
 }
 
 impl Fixture {
@@ -1123,6 +1193,7 @@ impl Fixture {
             Target::Adjustment => &self.adjustment,
             Target::ResetRequest => &self.reset_request,
             Target::Tenant => &self.tenant_id,
+            Target::Account => &self.account,
         }
     }
 }
@@ -1291,6 +1362,7 @@ async fn fixture(
         appointment: String::new(),
         adjustment: String::new(),
         reset_request: String::new(),
+        account: String::new(),
     };
     f.service = created_id(
         app,
@@ -1391,6 +1463,10 @@ async fn fixture(
     .bind(format!("+84{}", &owner_phone[1..]))
     .fetch_one(db)
     .await?;
+    f.account = sqlx::query_scalar("SELECT id::text FROM app.user_account WHERE phone_e164 = $1")
+        .bind(format!("+84{}", &owner_phone[1..]))
+        .fetch_one(db)
+        .await?;
     Ok(f)
 }
 
@@ -1433,10 +1509,14 @@ async fn link_manager(w: &World) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn concrete(route: &Route, f: &Fixture) -> String {
-    route
-        .path
-        .replace("{id}", f.id_of(route.id))
-        .replace("{key}", "appointments")
+    route.path.replace("{id}", f.id_of(route.id)).replace(
+        "{key}",
+        if route.path.contains("/roles/") || route.path.contains("/role-templates/") {
+            "technician"
+        } else {
+            "appointments"
+        },
+    )
 }
 
 fn label(route: &Route) -> String {

@@ -208,7 +208,7 @@ async fn audit_everywhere(
             "SELECT set_config('app.tenant_id', $1, true)",
             spa.tenant_id.to_string()
         )
-        .execute(&mut *conn)
+        .fetch_one(&mut *conn)
         .await?;
         sqlx::query!(
             r#"INSERT INTO app.audit_log
@@ -227,7 +227,7 @@ async fn audit_everywhere(
         .await?;
     }
     sqlx::query!("SELECT set_config('app.tenant_id', '', true)")
-        .execute(&mut *conn)
+        .fetch_one(&mut *conn)
         .await?;
     audit::record(
         conn,

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.role_permission (tenant_id, role_id, permission)\n             SELECT $1, $2, permission FROM app.role_template_permission WHERE role_key = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "10329b72edec07852ba9871e1c6179205752839c3345d5b997b20ebf9a283ef9"
+}

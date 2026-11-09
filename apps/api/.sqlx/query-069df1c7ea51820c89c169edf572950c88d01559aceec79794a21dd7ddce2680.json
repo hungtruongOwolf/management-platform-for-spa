@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT role_key, permission FROM app.role_template_permission ORDER BY role_key, permission",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "role_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.role_template_permission",
+            "name": "role_key"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "permission",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.role_template_permission",
+            "name": "permission"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "069df1c7ea51820c89c169edf572950c88d01559aceec79794a21dd7ddce2680"
+}
