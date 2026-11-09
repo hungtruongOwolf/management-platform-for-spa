@@ -399,6 +399,29 @@
         }
       }
     },
+    "/api/v1/admin/features": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "list_features",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FeatureInfo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {}
+        }
+      }
+    },
     "/api/v1/admin/me": {
       "get": {
         "tags": [
@@ -507,6 +530,98 @@
           },
           "401": {},
           "404": {}
+        }
+      }
+    },
+    "/api/v1/admin/tenants/{id}/features": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "tenant_features",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TenantFeature"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/admin/tenants/{id}/features/{key}": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "set_tenant_feature",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeatureSwitch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Effective on the spa members' next request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantFeature"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "platform.step_up_required"
+          },
+          "404": {
+            "description": "unknown spa or feature key"
+          },
+          "422": {}
         }
       }
     },
@@ -7483,6 +7598,48 @@
         },
         "additionalProperties": false
       },
+      "FeatureInfo": {
+        "type": "object",
+        "description": "One feature of the registry.",
+        "required": [
+          "key",
+          "name",
+          "permissions"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Permissions a spa loses while it is off."
+          }
+        }
+      },
+      "FeatureSwitch": {
+        "type": "object",
+        "description": "Body of `PUT /admin/tenants/{id}/features/{key}`.",
+        "required": [
+          "enabled",
+          "reason"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "description": "3–500 characters."
+          }
+        },
+        "additionalProperties": false
+      },
       "FollowUpChannelDto": {
         "type": "string",
         "enum": [
@@ -8749,7 +8906,8 @@
         "required": [
           "user",
           "tenants",
-          "permissions"
+          "permissions",
+          "features"
         ],
         "properties": {
           "active_tenant": {
@@ -8761,6 +8919,13 @@
                 "type": "null"
               }
             ]
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Features the active spa has on (ADR-0018 D4): the UI hides the others. Empty without an\nactive spa."
           },
           "permissions": {
             "type": "array",
@@ -12837,6 +13002,34 @@
         "properties": {
           "temporary_password": {
             "type": "string"
+          }
+        }
+      },
+      "TenantFeature": {
+        "type": "object",
+        "description": "A feature's state in one spa.",
+        "required": [
+          "key",
+          "name",
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When an operator last switched it (`null` = never: on by default)."
           }
         }
       },

@@ -151,6 +151,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/features": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_features"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/me": {
         parameters: {
             query?: never;
@@ -192,6 +208,38 @@ export interface paths {
         };
         get: operations["get_tenant"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tenants/{id}/features": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["tenant_features"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tenants/{id}/features/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set_tenant_feature"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2466,6 +2514,19 @@ export interface components {
             /** Format: uuid */
             staff_id: string;
         };
+        /** @description One feature of the registry. */
+        FeatureInfo: {
+            key: string;
+            name: string;
+            /** @description Permissions a spa loses while it is off. */
+            permissions: string[];
+        };
+        /** @description Body of `PUT /admin/tenants/{id}/features/{key}`. */
+        FeatureSwitch: {
+            enabled: boolean;
+            /** @description 3–500 characters. */
+            reason: string;
+        };
         /** @enum {string} */
         FollowUpChannelDto: "phone" | "zalo" | "in_person" | "other";
         /** @description Body of `POST /customers/{id}/follow-ups`. The recorder is the signed-in user. */
@@ -2936,6 +2997,11 @@ export interface components {
         /** @description Body of `GET /me` and of a successful login. */
         Me: {
             active_tenant?: components["schemas"]["TenantSummary"] | null;
+            /**
+             * @description Features the active spa has on (ADR-0018 D4): the UI hides the others. Empty without an
+             *     active spa.
+             */
+            features: string[];
             permissions: string[];
             tenants: components["schemas"]["TenantSummary"][];
             user: components["schemas"]["UserSummary"];
@@ -4534,6 +4600,17 @@ export interface components {
         TemporaryPasswordDto: {
             temporary_password: string;
         };
+        /** @description A feature's state in one spa. */
+        TenantFeature: {
+            enabled: boolean;
+            key: string;
+            name: string;
+            /**
+             * Format: date-time
+             * @description When an operator last switched it (`null` = never: on by default).
+             */
+            updated_at?: string | null;
+        };
         /** @description One spa in the console's list: metadata and counts only (ADR-0003, ADR-0018 D3). */
         TenantRow: {
             /** Format: date-time */
@@ -5499,6 +5576,31 @@ export interface operations {
             };
         };
     };
+    list_features: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureInfo"][];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     admin_me: {
         parameters: {
             query?: never;
@@ -5625,6 +5727,92 @@ export interface operations {
                 content?: never;
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    tenant_features: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantFeature"][];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_tenant_feature: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeatureSwitch"];
+            };
+        };
+        responses: {
+            /** @description Effective on the spa members' next request */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantFeature"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description platform.step_up_required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unknown spa or feature key */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
