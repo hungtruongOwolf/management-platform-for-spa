@@ -689,3 +689,9 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Kết luận: Postgres không phải nút thắt (29/40 câu ≤ 3 ms); ~10 lượt đi về API↔DB mỗi GET (3 ping `test_before_acquire`, xác thực 2 transaction). Lịch sử khách seq scan 66–94 ms → `UNION` < 1 ms; GIN trigram không dùng được dưới RLS; 8 index bỏ được (−31 MB); session không bao giờ được dọn.
 - Đề xuất theo thứ tự A1 (pool ping) → A2 (lịch sử) → A3/A4 (gộp xác thực, cần ADR + secure) → B1 (bỏ index) → C1 (dọn session) → C2 (job bất biến); danh sách không được đổi ở §6. Tooling `infra/perf/db/`.
 - Tiếp theo: EM trả lời Q-DB1…Q-DB4; chưa đổi schema, chưa merge.
+
+## [2026-11-09] build + perf | Rà soát DB PR 2: migration 0033 bỏ 8 index (B1)
+- Bỏ 2 GIN trigram (vô dụng dưới RLS), 2 index tiền tố trùng, 4 index ngày theo chi nhánh; `SET LOCAL lock_timeout`; hoàn tác `CREATE INDEX CONCURRENTLY` ghi trong file. Test `kernel/tests/indexes.rs`.
+- Đo lại trên hai DB sạch 3 năm (0032 vs 0033): index 125 → 108 MB (−16 MB). 40 câu nóng: câu từng dùng index bị bỏ chuyển sang index unique thay thế, không có seq scan mới.
+- ⚠️ Sửa số trong trang review: lần đo đầu (397 MB / index 208 MB / −31 MB) bị phồng do hai lần seed bị hủy; số đúng 312 MB / 125 MB / −16 MB.
+- Tiếp theo: PR 3 (A3, `app.session_actor`, ADR-0017).
