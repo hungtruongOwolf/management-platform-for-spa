@@ -36,6 +36,7 @@ import {
   peopleAt,
   spaMinutes,
   updateAppointment,
+  APPOINTMENT_FIELDS,
 } from "./api";
 
 export type Draft =
@@ -232,7 +233,7 @@ export function bookingErrorText(
               ? "một lịch có tối đa 6 người được làm."
               : f.code === "count_out_of_range"
                 ? `chọn 1–${String(MAX_SERVICES)} dịch vụ.`
-                : `${name} — ${(fieldMessage(error, f.field) ?? "không hợp lệ.").toLowerCase()}`;
+                : `${name} — ${(fieldMessage(error, f.field, APPOINTMENT_FIELDS) ?? "không hợp lệ.").toLowerCase()}`;
         return `${who}${text}`;
       })
       .join(" ");
@@ -303,6 +304,9 @@ export function BookingSheet({
   const latest = useRef<Appointment | null>(null);
   const groupMoved = useRef(false);
   const patched = useRef(false);
+  // Companions that joined the group on an earlier try, by their row's `bookingKey`, with the body
+  // that booked them: a retry never books them again (audit 2026-11-09, companion bookingKey).
+  const joined = useRef(new Map<string, { appointment: Appointment; sent: string }>());
   const formRef = useRef<HTMLFormElement | null>(null);
 
   const serviceOf = (id: string): Service | undefined =>
@@ -457,15 +461,27 @@ export function BookingSheet({
           });
           patched.current = true;
         }
-        for (const p of others)
-          await bookAppointment(
-            {
-              ...person(p),
-              starts_at: instantAt(day, startOf(p)),
-              group_with: editing.id,
-            },
-            p.bookingKey,
-          );
+        for (const p of others) {
+          const body = { ...person(p), starts_at: instantAt(day, startOf(p)) };
+          const sent = JSON.stringify(body);
+          const done = joined.current.get(p.bookingKey);
+          if (!done) {
+            // First time: booked into the group under the row's own key (a lost answer replays).
+            const booked = await bookAppointment({ ...body, group_with: editing.id }, p.bookingKey);
+            joined.current.set(p.bookingKey, { appointment: booked, sent });
+          } else if (done.sent !== sent) {
+            // Booked on an earlier try, edited since: its key would now be a mismatch (422), and a
+            // fresh key a second booking. The booking that exists takes the new values instead.
+            const updated = await updateAppointment(done.appointment, {
+              starts_at: body.starts_at,
+              duration_min: body.duration_min,
+              staff_id: body.staff_id,
+              service_ids: body.service_ids,
+              ...("customer_id" in body ? { customer_id: body.customer_id } : {}),
+            });
+            joined.current.set(p.bookingKey, { appointment: updated, sent });
+          }
+        }
         return latest.current ?? editing;
       }
       if (others.length === 0)

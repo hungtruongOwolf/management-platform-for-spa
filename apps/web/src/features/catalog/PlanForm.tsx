@@ -7,6 +7,7 @@ import { Icon } from "../../app/Icon";
 import { z } from "zod";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { savePlan } from "./api";
+import { CATALOG_FIELDS } from "./messages";
 
 const count = (min: number, message: string) =>
   z
@@ -108,10 +109,10 @@ export function PlanForm({
   const { errors } = form.formState;
   const sellable = services.filter((s) => s.active);
   const title = plan ? `Sửa mẫu gói: ${plan.name}` : "Tạo mẫu gói liệu trình";
-  const nameError = errors.name?.message ?? fieldMessage(mutation.error, "name");
-  const priceError = errors.price?.message ?? fieldMessage(mutation.error, "price");
+  const nameError = errors.name?.message ?? fieldMessage(mutation.error, "name", CATALOG_FIELDS);
+  const priceError = errors.price?.message ?? fieldMessage(mutation.error, "price", CATALOG_FIELDS);
   const validityError = errors.validity?.message;
-  const itemsError = errors.items?.root?.message ?? errors.items?.message ?? fieldMessage(mutation.error, "items");
+  const itemsError = errors.items?.root?.message ?? errors.items?.message ?? fieldMessage(mutation.error, "items", CATALOG_FIELDS);
 
   return (
     <form
@@ -195,7 +196,7 @@ export function PlanForm({
                 errors.items?.[index]?.service_id?.message ??
                 errors.items?.[index]?.sessions?.message ??
                 errors.items?.[index]?.bonus?.message ??
-                fieldMessage(mutation.error, `items[${String(index)}].service_id`);
+                fieldMessage(mutation.error, `items[${String(index)}].service_id`, CATALOG_FIELDS);
               return (
                 <div key={field.id} className="plan-line">
                   <label className="field" htmlFor={`${id}-svc-${n}`}>

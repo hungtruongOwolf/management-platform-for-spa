@@ -10,5 +10,4 @@ addMessages(
     "refund.exceeds_paid": "Số tiền hoàn lớn hơn số khách đã trả cho liệu trình.",
     "package.restore_exceeds_total": "Buổi của lượt này đã được cộng lại trước đó. Vui lòng tải lại.",
   },
-  {},
 );

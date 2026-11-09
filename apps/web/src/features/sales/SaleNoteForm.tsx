@@ -87,7 +87,7 @@ export function SaleNoteForm({
           maxLength={2000}
           rows={3}
           aria-invalid={problem ? true : undefined}
-          aria-describedby={`${noteId}-hint`}
+          aria-describedby={problem ? `${noteId}-hint ${noteId}-error` : `${noteId}-hint`}
           onChange={(e) => {
             setNote(e.target.value);
           }}
@@ -97,7 +97,11 @@ export function SaleNoteForm({
           Bảo mật như ghi chú buổi: chỉ người được xem lưu ý sức khỏe mới đọc
           được. Để trống để xóa ghi chú.
         </span>
-        {problem && <p className="field-error">{problem}</p>}
+        {problem && (
+          <p id={`${noteId}-error`} className="field-error">
+            {problem}
+          </p>
+        )}
         {save.isError && !problem && (
           <p role="alert" className="alert">
             {messageFor(save.error)}

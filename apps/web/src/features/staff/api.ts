@@ -1,7 +1,7 @@
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import type { Schemas } from "@vpyd/api-client";
 import { api, ifMatch } from "../../lib/api";
-import { addMessages } from "../../lib/errors";
+import { addMessages, type FieldTexts } from "../../lib/errors";
 
 // Error messages only the staff screens can meet: here, not in the startup chunk (lib/errors.ts).
 addMessages(
@@ -29,22 +29,24 @@ addMessages(
     "account.owner_protected": "Không đổi được tài khoản của chủ spa ở đây.",
     "account.other_spa": "Tài khoản này còn dùng ở spa khác nên không đặt lại mật khẩu ở đây được.",
   },
-  {
-    not_employed: "Ngày này nhân viên chưa vào làm hoặc đã nghỉ.",
-    only_when_present: "Chỉ ghi giờ khi đi làm.",
-    above_max: "Vượt điểm tối đa của tiêu chí.",
-    amount_or_points_required: "Nhập số tiền hoặc số điểm.",
-    not_closed: "Tháng này chưa chốt, không cần điều chỉnh.",
-    not_earlier: "Tháng điều chỉnh phải trước tháng ghi.",
-    invalid_month: "Tháng không hợp lệ.",
-    before_joined_on: "Ngày nghỉ việc trước ngày vào làm.",
-    not_a_member: "Tài khoản không thuộc spa này.",
-    has_later_records: "Sau ngày này nhân viên vẫn có chấm công hoặc lượt khách. Chọn ngày làm cuối cùng.",
-    period_ended: "Đợt làm việc này đã kết thúc. Dùng \u201cNhận lại làm\u201d để mở đợt mới.",
-    overlaps_previous: "Ngày vào làm phải sau ngày nghỉ của đợt trước.",
-    before_last_end: "Ngày nhận lại phải sau ngày nghỉ việc của đợt trước.",
-  },
 );
+
+/** Field refusals of the staff forms (`fieldMessage(…, STAFF_FIELDS)`). */
+export const STAFF_FIELDS: FieldTexts = {
+  not_employed: "Ngày này nhân viên chưa vào làm hoặc đã nghỉ.",
+  only_when_present: "Chỉ ghi giờ khi đi làm.",
+  above_max: "Vượt điểm tối đa của tiêu chí.",
+  amount_or_points_required: "Nhập số tiền hoặc số điểm.",
+  not_closed: "Tháng này chưa chốt, không cần điều chỉnh.",
+  not_earlier: "Tháng điều chỉnh phải trước tháng ghi.",
+  invalid_month: "Tháng không hợp lệ.",
+  before_joined_on: "Ngày nghỉ việc trước ngày vào làm.",
+  not_a_member: "Tài khoản không thuộc spa này.",
+  has_later_records: "Sau ngày này nhân viên vẫn có chấm công hoặc lượt khách. Chọn ngày làm cuối cùng.",
+  period_ended: "Đợt làm việc này đã kết thúc. Dùng \u201cNhận lại làm\u201d để mở đợt mới.",
+  overlaps_previous: "Ngày vào làm phải sau ngày nghỉ của đợt trước.",
+  before_last_end: "Ngày nhận lại phải sau ngày nghỉ việc của đợt trước.",
+};
 
 export type StaffProfile = Schemas["StaffProfileDto"];
 export type StaffProfileWrite = Schemas["StaffProfileWrite"];
