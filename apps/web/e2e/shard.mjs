@@ -1,12 +1,17 @@
 // Splits the desktop e2e specs into CI shards by measured duration instead of Playwright's
-// `--shard`, which cuts by test count at file granularity (layout.spec.ts alone is ~110 s of the
-// ~200 s suite, so `--shard=1/2` left one shard at 2.7 min and the other at 36 s).
+// `--shard`, which cuts by test count at file granularity (layout.spec.ts alone is ~160 s of the
+// ~390 s suite).
 //
 //   node e2e/shard.mjs <index> <total>   → prints the spec paths of shard <index> (1-based)
 //
 // Every file in e2e/specs/ lands in exactly one shard; a spec missing from WEIGHTS still runs, with
 // the median weight. Weights: seconds per file on CI (sum of the list reporter's test durations,
 // run 42606122131, 2026-11-09); refresh when a spec grows or the shards drift apart.
+//
+// Specs of one shard share that shard's spa, so a spec sees what the specs before it created.
+// ALONE specs get a shard to themselves: layout.spec.ts sweeps every screen at many widths and is
+// written against an almost empty spa (next to front-desk/sales data it flagged a package name
+// clipped on /quay at 1040 px, PR #118).
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -29,15 +34,20 @@ const WEIGHTS = {
   "voids.spec.ts": 22,
 };
 
+const ALONE = new Set(["layout.spec.ts"]);
+
 export function shards(files, total) {
   const known = Object.values(WEIGHTS).sort((a, b) => a - b);
   const median = known[Math.floor(known.length / 2)] ?? 1;
   const weight = (file) => WEIGHTS[file] ?? median;
   // Longest first onto the lightest shard (LPT); ties broken by name so the split is stable.
   const sorted = [...files].sort((a, b) => weight(b) - weight(a) || a.localeCompare(b));
-  const buckets = Array.from({ length: total }, () => ({ load: 0, files: [] }));
-  for (const file of sorted) {
-    const lightest = buckets.reduce((min, b) => (b.load < min.load ? b : min));
+  const alone = sorted.filter((file) => ALONE.has(file));
+  if (alone.length >= total) throw new Error(`${alone.join(", ")} run alone: use more than ${String(alone.length)} shards`);
+  const buckets = alone.map((file) => ({ load: weight(file), files: [file], closed: true }));
+  while (buckets.length < total) buckets.push({ load: 0, files: [], closed: false });
+  for (const file of sorted.filter((f) => !ALONE.has(f))) {
+    const lightest = buckets.filter((b) => !b.closed).reduce((min, b) => (b.load < min.load ? b : min));
     lightest.files.push(file);
     lightest.load += weight(file);
   }
