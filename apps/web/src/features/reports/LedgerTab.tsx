@@ -8,8 +8,8 @@ import { CustomerCell } from "./PackagesOverviewPage";
 import { daysBetween, type Period } from "./period";
 import { EmptyState, ErrorState, RowsSkeleton, money } from "./ui";
 
-/** `GET /reports/ledger` accepts at most 92 days after `from`. */
-export const LEDGER_MAX_DAYS = 93;
+/** Days a `GET /reports/ledger` range may cover, `from` and `to` included (server `MAX_LEDGER_DAYS`). */
+export const LEDGER_MAX_DAYS = 92;
 
 
 const ENTRY_LABEL: Record<LedgerRow["entry"], string> = { sale: "", void: "Hủy hóa đơn", refund: "Hoàn tiền" };

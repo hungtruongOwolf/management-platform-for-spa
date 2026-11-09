@@ -270,7 +270,7 @@ Không có bảng mới. 0013:
 
 ## Gia cố sau rà soát code + schema (0042–0043, 2026-11-09)
 - `app.user_in_other_spa(user_id)` (definer, `IS DISTINCT FROM current_tenant()`, thiếu tenant thì trả true): đặt lại mật khẩu bị chặn khi tài khoản có **bất kỳ** membership ở spa khác, kể cả bị khóa ở đó hoặc spa đó đang tạm ngưng (trước đây dùng `tenants_of_user` chỉ đếm membership + spa đang hoạt động).
-- `purge_idempotency_records` không bao giờ xóa bản ghi < 48 giờ, `purge_sessions` không bao giờ chạm phiên kết thúc < 1 ngày, bất kể tham số.
+- `purge_idempotency_records` không bao giờ xóa bản ghi < 48 giờ, `purge_sessions` không bao giờ chạm phiên kết thúc < 1 ngày, bất kể tham số. **0044** khôi phục phần xóa `platform_session` của 0041 (0042 viết song song đã ghi đè hàm bằng bản chỉ xóa `session`); bản hiện hành = thân 0041 + sàn 1 ngày.
 - Quyền `app_rw` hẹp lại: `role` chỉ `UPDATE (follows_template)`, không `DELETE`; `membership` chỉ `UPDATE (status)`; `branch` không `UPDATE`.
 - FK `visit_line (tenant_id, customer_package_id, customer_package_item_id)` → `customer_package_item (tenant_id, customer_package_id, id)` (UNIQUE mới): item của dòng phải thuộc đúng gói. FK `appointment_setting.updated_by` → `user_account`. Thêm `NOT VALID` ở 0042, `VALIDATE` ở 0043.
 - Tổng quan mọi nhóm bảng (ER theo nhóm, RLS, toàn vẹn, migration theo dải): [docs/database-design.md](../../../docs/database-design.md).

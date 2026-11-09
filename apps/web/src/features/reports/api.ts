@@ -30,17 +30,13 @@ export function dailyReportQuery(date: string) {
   });
 }
 
-/** API bucket of a period's chart (`/reports/range` `granularity`). */
-export function granularityOf(bucket: Bucket): Granularity {
-  return bucket;
-}
-
 /**
  * `GET /reports/range` for a period. The previous render stays on screen while the next period
  * loads (dataviz: refetch keeps the frame); the caller dims it through `isPlaceholderData`.
  */
 export function rangeReportQuery(from: string, to: string, bucket: Bucket = "day") {
-  const granularity = granularityOf(bucket);
+  // The chart bucket is the API granularity (same names).
+  const granularity: Granularity = bucket;
   return queryOptions({
     queryKey: ["reports", "range", from, to, granularity],
     queryFn: async () => (await api(`/reports/range?from=${from}&to=${to}&granularity=${granularity}`)) as RangeReport,

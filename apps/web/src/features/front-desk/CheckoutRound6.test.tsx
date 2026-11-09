@@ -913,7 +913,9 @@ describe("/quay round 6", () => {
     await pickHa(user);
     await addOneOff(user, "s10");
     // ADR-0009: companions are entered on the booking, not as free text in the cart.
-    expect(screen.queryByText("Người đi cùng (ghi chú)")).toBeNull();
+    expect(
+      screen.queryByRole("textbox", { name: /Người đi cùng/ }),
+    ).toBeNull();
     await user.click(screen.getByRole("button", { name: "Đổi khách" }));
     const ask = await screen.findByRole("alertdialog", {
       name: /Đổi khách\? Giỏ của Nguyễn Thị Hà chưa lưu/,
@@ -994,7 +996,12 @@ describe("/quay EM flow review 2026-11-07", () => {
       await screen.findByRole("combobox", { name: "Mẫu gói" }),
       "pl1",
     );
-    expect(screen.queryByText(/Bán thêm gói/)).toBeNull();
+    // Several packages in one checkout (EM 2026-11-07 item 4): another one can still be added.
+    expect(
+      within(
+        screen.getByRole("region", { name: "Gói bán hôm nay" }),
+      ).getByRole("button", { name: "Bán gói liệu trình" }),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Làm 1 buổi hôm nay" }));
     const ktv = await screen.findByRole("combobox", { name: "KTV" });
     await waitFor(() => {

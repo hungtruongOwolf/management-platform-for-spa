@@ -17,6 +17,7 @@ export function SearchField({
   value,
   onCommit,
   minLength = 2,
+  sendable,
   className = "",
 }: {
   label: string;
@@ -25,8 +26,11 @@ export function SearchField({
   onCommit: (next: string) => void;
   /** Shorter input is not sent (the API answers 422 `too_short` below 2 characters). */
   minLength?: number;
+  /** A stricter rule than `minLength` (e.g. phone numbers count their national digits, like the API). */
+  sendable?: (term: string) => boolean;
   className?: string;
 }) {
+  const accepts = sendable ?? ((t: string) => t.length >= minLength);
   const id = useId();
   const [draft, setDraft] = useState(value);
   const committed = useRef(value);
@@ -44,10 +48,10 @@ export function SearchField({
 
   const commit = (next: string) => {
     const t = next.trim();
-    const sendable = t === "" || t.length >= minLength ? t : committed.current;
-    if (sendable === committed.current) return;
-    committed.current = sendable;
-    commitRef.current(sendable);
+    const term = t === "" || accepts(t) ? t : committed.current;
+    if (term === committed.current) return;
+    committed.current = term;
+    commitRef.current(term);
   };
 
   useEffect(() => {
@@ -61,7 +65,7 @@ export function SearchField({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft]);
 
-  const tooShort = draft.trim() !== "" && draft.trim().length < minLength;
+  const tooShort = draft.trim() !== "" && !accepts(draft.trim());
   return (
     <div className={`search-field ${className}`}>
       <label htmlFor={id} className="sr-only">
@@ -100,7 +104,7 @@ export function SearchField({
       )}
       {tooShort && (
         <span id={`${id}-hint`} className="sr-only">
-          Gõ ít nhất {minLength} ký tự.
+          {sendable ? "Gõ ít nhất 2 chữ, hoặc 3 số của số điện thoại." : `Gõ ít nhất ${String(minLength)} ký tự.`}
         </span>
       )}
     </div>

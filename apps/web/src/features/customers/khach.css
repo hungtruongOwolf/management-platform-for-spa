@@ -71,12 +71,6 @@
     font-weight: 600;
     overflow-wrap: anywhere;
   }
-  .row-side {
-    display: flex;
-    flex-shrink: 0;
-    align-items: center;
-    gap: 8px;
-  }
   .row-meta {
     color: var(--text-muted);
     font-size: var(--fs-sm);
@@ -86,12 +80,6 @@
     color: var(--text);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
-  }
-  .row-list > li.is-muted {
-    color: var(--text-muted);
-  }
-  .row-list > li.is-muted .row-title {
-    color: var(--text-muted);
   }
   /* A link row (recent customers): the whole row is the target. */
   .row-link {
@@ -179,41 +167,6 @@
     margin-top: 0;
     padding-top: 0;
     border-top: 0;
-  }
-
-  /* --- Catalog rows: name + meta | prices | Sửa ---------------------------------------------- */
-  .price-row {
-    display: grid;
-    min-width: 0;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 4px 16px;
-  }
-  .price-amounts {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 2px 16px;
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-    white-space: nowrap;
-  }
-  .price-amounts .price-value {
-    font-weight: 600;
-  }
-  @media (max-width: 639px) {
-    .price-row {
-      grid-template-columns: minmax(0, 1fr) auto;
-    }
-    .price-row > .price-amounts {
-      grid-column: 1;
-      justify-content: flex-start;
-      text-align: left;
-    }
-    .price-row > .row-side {
-      grid-column: 2;
-      grid-row: 1 / span 2;
-    }
   }
 
   /* Plan form: one line per service — service | sessions | bonus | remove. */
