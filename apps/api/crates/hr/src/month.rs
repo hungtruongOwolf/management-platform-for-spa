@@ -16,10 +16,6 @@ impl Month {
         Self(day.with_day(1).unwrap_or(day))
     }
 
-    pub fn from_first_day(day: NaiveDate) -> Option<Self> {
-        (day.day() == 1).then_some(Self(day))
-    }
-
     /// Parses `YYYY-MM`; `field` names the input in the validation error.
     pub fn parse(field: &str, raw: &str) -> Result<Self, AppError> {
         let invalid = || AppError::Validation(vec![FieldError::new(field, "invalid_month")]);

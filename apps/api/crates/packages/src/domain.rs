@@ -64,18 +64,39 @@ pub fn per_session_value(sold_price: Money, sessions_purchased: u32) -> Money {
         .unwrap_or(Money::ZERO)
 }
 
-/// Value of `qty` sessions taken when `used_before` were already used. Purchased sessions are
-/// consumed first, then bonus ones, so commission (R2) is earned on paid sessions before free ones.
+/// Value of `qty` sessions taken when `paid_used_before` purchased sessions were already used.
+/// Purchased sessions are consumed first, then bonus ones, so commission (R2) is earned on paid
+/// sessions before free ones.
 pub fn consumed_value(
     per_session: Money,
     sessions_purchased: u32,
-    used_before: u32,
+    paid_used_before: u32,
     qty: u32,
 ) -> Money {
-    let paid_left = sessions_purchased.saturating_sub(used_before);
+    let paid_left = sessions_purchased.saturating_sub(paid_used_before);
     per_session
         .checked_mul(qty.min(paid_left))
         .unwrap_or(Money::ZERO)
+}
+
+/// Purchased sessions already used, from the item's lines on completed visits: their paid
+/// sessions (`line_paid`) plus every session used outside those lines (`used_before −
+/// line_sessions`: an opening balance's past use, or earlier lines of the same checkout), counted
+/// paid first.
+///
+/// `used_before` alone (`total − remaining`) is not enough once a void has given sessions back:
+/// a void restores the sessions of its lines whatever they were, so after "10 paid + 1 bonus used,
+/// void a paid visit" the count says 10 used, of which 9 are paid; the next session is paid.
+pub fn paid_used_from_lines(
+    sessions_purchased: u32,
+    used_before: u32,
+    line_sessions: u32,
+    line_paid: u32,
+) -> u32 {
+    used_before
+        .saturating_sub(line_sessions)
+        .saturating_add(line_paid)
+        .min(sessions_purchased)
 }
 
 #[cfg(test)]
@@ -105,6 +126,24 @@ mod tests {
         assert_eq!(consumed_value(v, 10, 10, 1), Money::ZERO, "11th = bonus");
         assert_eq!(consumed_value(v, 10, 9, 2), v, "one paid + one bonus");
         assert_eq!(consumed_value(v, 10, 11, 1), Money::ZERO);
+    }
+
+    #[test]
+    fn a_paid_session_given_back_by_a_void_is_paid_again() {
+        // 10 paid + 2 bonus: 10 paid lines and 1 bonus line, then the first paid visit is voided.
+        // 10 used, the lines left hold 9 paid sessions: the next one is the 10th paid one.
+        assert_eq!(paid_used_from_lines(10, 10, 10, 9), 9);
+        // Without a void the lines agree with the plain count.
+        assert_eq!(paid_used_from_lines(10, 11, 11, 10), 10);
+        // Opening balance "4 left of 10 + 2": 8 used before the books, no line yet → 8 paid.
+        assert_eq!(paid_used_from_lines(10, 8, 0, 0), 8);
+        // Earlier lines of the same checkout are not stored yet: counted paid first.
+        assert_eq!(paid_used_from_lines(10, 10, 9, 8), 9);
+        assert_eq!(
+            paid_used_from_lines(10, 12, 0, 0),
+            10,
+            "never more than purchased"
+        );
     }
 
     #[test]

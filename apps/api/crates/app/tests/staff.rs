@@ -2668,3 +2668,107 @@ async fn the_login_link_is_owner_only(pool: PgPool) -> TestResult {
     assert_eq!(history.body[0]["action"], "staff.account_link");
     Ok(())
 }
+
+/// AC3a.1 ("Lỗi giống AC2.3"): a daily review on a day outside the person's employment is
+/// `422 not_employed`, exactly like attendance. Red before the fix: the review was stored (200) and
+/// then never shown in any sheet.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn daily_reviews_refuse_days_outside_employment(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let hired = s
+        .post(
+            &s.owner,
+            "/staff",
+            json!({"full_name": "Nguyễn Hòa", "position": "Kỹ thuật viên", "joined_on": today()}),
+        )
+        .await;
+    assert_eq!(hired.status, StatusCode::CREATED, "{}", hired.body);
+    let hoa = id(&hired);
+
+    let attendance = s.attend(&s.owner, hoa, yesterday(), "present").await;
+    let review = s
+        .put(
+            &s.owner,
+            "/daily-reviews",
+            json!({"entries": [{"staff_id": hoa, "date": yesterday(), "compliments": 1}]}),
+        )
+        .await;
+    for r in [&attendance, &review] {
+        assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{}", r.body);
+        assert_eq!(
+            r.body["errors"][0]["field"], "entries[0].date",
+            "{}",
+            r.body
+        );
+        assert_eq!(r.body["errors"][0]["code"], "not_employed", "{}", r.body);
+    }
+    let stored: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM app.staff_daily_review WHERE staff_id = $1")
+            .bind(hoa)
+            .fetch_one(&s.h.owner)
+            .await?;
+    assert_eq!(stored, 0);
+
+    let first_day = s
+        .put(
+            &s.owner,
+            "/daily-reviews",
+            json!({"entries": [{"staff_id": hoa, "date": today(), "compliments": 1}]}),
+        )
+        .await;
+    assert_eq!(first_day.status, StatusCode::OK, "{}", first_day.body);
+    Ok(())
+}
+
+/// ADR-0018 D4: a spa with payroll switched off shows no commission anywhere, so "Ngày của tôi"
+/// drops the rate and every line's commission, like `GET /me/staff` drops the payslip. Red before
+/// the fix: the rate and the per-line commission were still sent.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn my_day_shows_no_commission_when_payroll_is_off(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    s.pay(s.lan, 6_000_000, 1_000).await;
+    let customer = s.customer("0905123988").await;
+    s.one_off_visit(customer, s.lan, 1).await;
+    let path = format!("/me/staff/day?date={}", today());
+
+    let on = s.get(&s.tech, &path).await;
+    assert_eq!(on.status, StatusCode::OK, "{}", on.body);
+    assert_eq!(on.body["data"]["commission_rate_bp"], 1_000);
+    assert_eq!(
+        on.body["data"]["visits"][0]["lines"][0]["commission"],
+        PRICE / 10
+    );
+
+    let operator = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO app.platform_operator (id, username, full_name, password_hash)
+         VALUES ($1, 'ops-test', 'Ops', '$argon2id$v=19$m=19456,t=2,p=1$x$y')",
+    )
+    .bind(operator)
+    .execute(&s.h.owner)
+    .await?;
+    sqlx::query(
+        "INSERT INTO app.tenant_feature (tenant_id, feature, enabled, updated_by)
+         VALUES ($1, 'payroll', false, $2)",
+    )
+    .bind(s.tenant)
+    .bind(operator)
+    .execute(&s.h.owner)
+    .await?;
+
+    let off = s.get(&s.tech, &path).await;
+    assert_eq!(off.status, StatusCode::OK, "{}", off.body);
+    let d = &off.body["data"];
+    assert_eq!(d["commission_rate_bp"], Value::Null, "{}", off.body);
+    assert_eq!(
+        d["visits"][0]["lines"][0]["commission"],
+        Value::Null,
+        "{}",
+        off.body
+    );
+    assert_eq!(
+        d["visits"][0]["lines"][0]["value"], PRICE,
+        "the work itself stays"
+    );
+    Ok(())
+}

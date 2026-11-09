@@ -4,7 +4,7 @@ Bản tổng quan cho người mới: bảng chia thành những nhóm nào, ch�
 
 ## 1. Quy ước chung
 
-- **PostgreSQL 16, một schema `app`.** 48 bảng, 2 view (`customer_package_state`, `revenue_book`), các hàm SQL ở mục 3. Extension: `pg_trgm`, `btree_gist`.
+- **PostgreSQL (16 ở local/CI, 17 trên Supabase staging), một schema `app`.** 48 bảng, 2 view (`customer_package_state`, `revenue_book`), các hàm SQL ở mục 3. Extension: `pg_trgm`, `btree_gist`.
 - **Khóa chính** `id uuid` dạng UUIDv7, do app sinh. Bảng thuộc spa có `tenant_id uuid NOT NULL` và `UNIQUE (tenant_id, id)`; **FK luôn kép** `(tenant_id, x_id) → x (tenant_id, id)`, nên ở mức DB không bản ghi nào trỏ được sang spa khác.
 - **Tiền** là `bigint` đồng VND, không có số lẻ, có `CHECK` hình dạng (mục 4). **Thời điểm** là `timestamptz`. **Ngày nghiệp vụ** `business_date date` do server tính theo `tenant.timezone` (mặc định `Asia/Ho_Chi_Minh`), không bao giờ nhận từ client.
 - **Bản chụp (snapshot)** tên dịch vụ, tên gói, giá bán, `per_session_value` được chép vào dòng hóa đơn / dòng lượt / gói của khách, để lịch sử và tiền không đổi khi bảng giá đổi.
@@ -228,7 +228,7 @@ Những cơ chế dưới đây trông như trùng với logic ở service, như
 | Loại | Ví dụ cụ thể |
 |---|---|
 | CHECK tiền | `sale`: `total = subtotal − discount_amount AND total ≥ 0`, giảm giá phải có lý do, `amount_paid BETWEEN 0 AND total`; `sale_line.line_total = qty × unit_price`; `payment.amount > 0` và `(kind = 'reversal') = (reversal_of IS NOT NULL)`; `visit_line_check` theo `source` |
-| Chỉ thêm (`app.reject_mutation`) | `payment`, `sale_line`, `refund`, `customer_follow_up`, `customer_package_extension`, `payslip`, `staff_adjustment` (chỉ cho hủy mềm); `audit_log` qua grant. Chặn cả schema owner |
+| Chỉ thêm (`app.reject_mutation`) | `payment`, `sale_line`, `refund`, `customer_follow_up`, `customer_package_extension`, `payslip`, `payroll_period` (chặn DELETE); `staff_adjustment` dùng trigger riêng `staff_adjustment_void_only` (0024: chỉ cho hủy mềm một lần); `audit_log` qua grant. Trigger chặn cả schema owner |
 | Đảo / hoàn đúng một lần | `payment_reversal_mirrors_original` (cùng hóa đơn, hình thức, số tiền) + `UNIQUE (tenant_id, reversal_of)`; `refund` `UNIQUE (tenant_id, customer_package_id)` + `refund_within_paid` (≤ giá bán) |
 | Trạng thái chỉ đi tới | `visit_voided_is_final`, `sale_voided_is_final`, `customer_package_cancelled_is_final`, `customer_package_item_no_restore_when_cancelled`, `appointment_closed_is_final`, `payroll_period_forward_only` (+ không DELETE), `staff_employment_forward_only` |
 | Liên kết bất biến | `visit_correction_link` (lượt bị thay phải đã hủy, cùng ngày), `sale_visit_link` (gắn một lần, cùng khách), `customer_package_sale_link` (gói sổ giấy gắn một lần vào hóa đơn sổ giấy của cùng khách) |
@@ -247,7 +247,7 @@ Những cơ chế dưới đây trông như trùng với logic ở service, như
 |---|---|
 | `customer.health_note_ct`, `visit.note_ct`, `sale.note_ct` | AES-256-GCM ở tầng app (`kernel::crypto`). Ciphertext = tiền tố phiên bản key + nonce 12 byte + ciphertext. **AAD gắn với bản ghi** (tenant + khách, tenant + lượt, `sale.note` + tenant + hóa đơn), nên chép ciphertext sang bản ghi khác thì không giải mã được. Không có bản rõ trong DB, audit hay bảng idempotency |
 | `user_account.mfa_secret_ct`, `platform_operator.mfa_secret_ct` | AES-256-GCM, AAD gắn id tài khoản |
-| Key | `APP_DATA_KEY` (32 byte base64) chỉ ở env / secret store, không bao giờ ở DB. Mất key = mất ghi chú sức khỏe và secret MFA, nên phải backup key. Xoay key: có chỗ cho `APP_DATA_KEY_V{n}`, chưa làm |
+| Key | `APP_DATA_KEY` (32 byte base64) chỉ ở env / secret store, không bao giờ ở DB. Mất key = mất ghi chú sức khỏe và secret MFA, nên phải backup key. Xoay key: ciphertext đã mang byte `v` + số phiên bản key nên làm được về sau, hiện chỉ có một key, chưa làm |
 | Mật khẩu | Argon2id (`CHECK password_hash LIKE '$argon2id$%'`) |
 | Token session, mã khôi phục MFA | Chỉ lưu SHA-256 (32 byte) |
 

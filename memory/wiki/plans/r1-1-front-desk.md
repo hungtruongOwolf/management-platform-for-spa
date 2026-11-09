@@ -1,10 +1,12 @@
 ---
 title: Plan R1-1 — Màn hình quầy & liệu trình
-updated: 2026-11-04
+updated: 2026-11-09
 sources: [product/specs/front-desk-and-packages.md, architecture/backend.md, architecture/data.md, architecture/frontend.md, security/authz-matrix.md]
 ---
 
 # Plan R1-1: Màn hình quầy & liệu trình
+
+> **Trạng thái (2026-11-09):** S0–S9 xong. S10 xong phần hardening, chưa tick vì buổi dùng thử theo [kịch bản](r1-1-trial-session.md) chưa chạy (thay vào đó EM đã live test trên staging 2026-11-07 và 2026-11-08, xem `memory/raw/2026-11-07-em-live-test-desk.md`, `2026-11-08-live-test-owner.md`, `2026-11-08-live-test-manager-technician.md`). S11 chạy theo đường khác: staging trên **Vercel + Supabase** từ 2026-11-05 ([ADR-0005](../decisions/ADR-0005-compute-hosting.md) update, [vercel-staging](../runbooks/vercel-staging.md)), không phải VPS. Plan này là nhật ký build: các quy tắc về sau bị thay được đánh dấu tại chỗ; quy tắc hiện hành ở [authz-matrix](../security/authz-matrix.md) và [backend](../architecture/backend.md).
 
 Thứ tự ưu tiên: phụ thuộc trước, sau đó rủi ro cao trước. **S3 là tracer bullet**: lát mỏng nhất chạy xuyên DB → API → UI có đăng nhập và tenant, dùng để chứng minh kiến trúc. Mỗi ticket chạy `/build` (kèm impact analysis), `/qa` và `/pr-review`.
 
@@ -67,7 +69,7 @@ Quy ước chung cho mọi ticket có endpoint:
   - **Depends on:** S2. Làm trước S11 (staging).
   - **Kết quả:**
     - Migration `0006_mfa`: `role.requires_mfa` (role là dữ liệu; CHECK không cho bỏ MFA ở role hệ thống `owner`), `user_account.mfa_secret_ct` (AES-256-GCM, AAD gắn với user id), `mfa_enabled_at`, `mfa_last_step` (chống replay), bảng `mfa_recovery_code` (SHA-256(user id ‖ mã), dùng 1 lần), `session.mfa_pending`, hàm `app.user_requires_mfa` (SECURITY DEFINER, giống `tenants_of_user`). Migration thu hồi session cũ của tài khoản bắt buộc MFA.
-    - MFA áp dụng khi user có role `requires_mfa` hoặc role giữ `platform.tenant.manage` ở bất kỳ spa nào, hoặc user đã tự bật MFA.
+    - MFA áp dụng khi user có role `requires_mfa` hoặc role giữ `platform.tenant.manage` ở bất kỳ spa nào, hoặc user đã tự bật MFA. (Từ 0040 `platform.tenant.manage` không cấp được cho role nào; quản trị nền tảng là operator riêng, [ADR-0018](../decisions/ADR-0018-platform-admin-console.md).)
     - Luồng: `POST /auth/login` trả `{next: done | mfa_verify | mfa_enroll, me}`. Khi chưa xong MFA, session ở trạng thái **pending** (hạn 10 phút, không có spa, `me = null`): `CurrentSession`/`AuthUser` từ chối với `401 auth.mfa_required | auth.mfa_enrollment_required`; chỉ `/auth/mfa/*` và `/auth/logout` nhận nó. `POST /auth/mfa/verify` (TOTP hoặc mã khôi phục) và `POST /auth/mfa/enroll/confirm` thu hồi session pending và cấp session đầy đủ mới (xoay token). `enroll/start` trả `otpauth_uri` + `manual_key`; đã enroll thì `409`.
     - TOTP: crate `totp-rs` 6 (MIT), RFC 6238 SHA-1, 6 số, 30 giây, lệch ±1 bước. Mỗi bước thời gian chỉ được chấp nhận 1 lần (`UPDATE … WHERE mfa_last_step < $step`, nguyên tử).
     - Khóa tài khoản: mã sai tính chung bộ đếm `failed_logins` (tăng bằng SQL, không mất lượt khi gửi song song). Nhập lại đúng mật khẩu **không** reset bộ đếm với tài khoản MFA; chỉ hoàn tất MFA mới reset. Rate limit IP của `/auth/*` áp dụng cho `/auth/mfa/*`.
@@ -164,14 +166,14 @@ Quy ước chung cho mọi ticket có endpoint:
   - **Goal:** hủy lượt/hóa đơn có lý do (hoàn buổi, bút toán đảo); chủ spa gia hạn, hủy gói kèm hoàn tiền.
   - **Acceptance:** AC6.1–AC6.4, AC7.1–AC7.4.
   - **Touches:** `POST /visits/{id}/void`, `POST /sales/{id}/void`, `POST /customer-packages/{id}/extend|cancel`; `refund`; quy tắc "ngày đã chốt" tạm thời = trước hôm nay (cho tới spec #2). Web: nút hủy trong danh sách lượt, hành động trên liệu trình, hộp thoại nhập lại mật khẩu.
-  - **Tests:** hủy lượt → buổi được cộng lại, lượt còn trong lịch sử với trạng thái đã hủy; hủy 2 lần → lần 2 bị chặn; hủy không lý do → 422; Manager hủy ngày cũ → 403 `day.locked`, Owner được nhưng phải reauth; hủy hóa đơn gói đã dùng buổi → 409; hoàn tiền > đã thu → 422; Manager gia hạn → 403; reversal không đảo được 2 lần.
-  - **Security:** thao tác 🔒 cần reauth; append-only; audit có lý do.
+  - **Tests:** hủy lượt → buổi được cộng lại, lượt còn trong lịch sử với trạng thái đã hủy; hủy 2 lần → lần 2 bị chặn; hủy không lý do → 422; Manager hủy ngày cũ → 403 `day.locked`, Owner được nhưng phải reauth (bỏ reauth 2026-11-05, [ADR-0004](../decisions/ADR-0004-authentication.md) update); hủy hóa đơn gói đã dùng buổi → 409; hoàn tiền > đã thu → 422; Manager gia hạn → 403; reversal không đảo được 2 lần.
+  - **Security:** thao tác 🔒 cần reauth (bỏ cho thao tác nghiệp vụ 2026-11-05, ADR-0004 update); append-only; audit có lý do.
   - **Depends on:** S7
   - **Kết quả:**
     - Migration `0009_void_lifecycle` (0008 để trống, từng giữ cho S9). Bảng `refund` (append-only, một gói hoàn tối đa 1 lần, trigger hoàn ≤ `sold_price`), cột `customer_package.cancelled_by`. Trigger: reversal phải "soi gương" payment gốc (cùng sale, method, amount) và không đảo được reversal; `voided`/`cancelled` là trạng thái cuối (visit, sale, customer_package không UPDATE được nữa); không cộng buổi vào gói đã hủy. CHECK: sale `voided` phải có `voided_by`, `amount_paid = 0`, lý do; gói `cancelled` phải có `cancelled_by` + lý do.
     - **Thiết kế bút toán đảo:** dùng lại `payment.kind='reversal'` + `reversal_of` đã có từ 0005 (không tạo bảng `sale_reversal`). Lý do: sổ quỹ một ngày = tổng `payment` theo `business_date`, payment − reversal; reversal mang `business_date` của ngày hủy nên sổ ngày cũ không đổi; `UNIQUE (tenant_id, reversal_of)` chặn đảo 2 lần ngay trong DB; một bảng duy nhất cho mọi dòng tiền vào nên báo cáo spec #2 không phải `UNION`.
-    - Endpoint (đều bắt buộc `Idempotency-Key`): `POST /visits/{id}/void`, `POST /sales/{id}/void` (chỉ hóa đơn bán gói; hóa đơn dịch vụ lẻ → `409 sale.void_via_visit`), `POST /customer-packages/{id}/extend` (If-Match), `POST /customer-packages/{id}/cancel` 🔒. Body hủy `{reason}`; gia hạn `{expires_on, reason}`; hủy gói `{reason, refund_amount, refund_method?}`.
-    - Quy tắc ngày đã chốt ở một chỗ: `kernel::corrections::authorize_void` (trước hôm nay theo múi giờ spa: Manager → `403 day.locked`, Owner cần reauth). Reauth: `Actor::require_recent_auth()`, cờ đặt trong extractor `AuthUser` từ `session.recent_auth_at` (mặc định tắt = deny).
+    - Endpoint (đều bắt buộc `Idempotency-Key`): `POST /visits/{id}/void`, `POST /sales/{id}/void` (chỉ hóa đơn bán gói; hóa đơn dịch vụ lẻ → `409 sale.void_via_visit`), `POST /customer-packages/{id}/extend` (If-Match), `POST /customer-packages/{id}/cancel` 🔒 (không còn 🔒 từ 2026-11-05). Body hủy `{reason}`; gia hạn `{expires_on, reason}`; hủy gói `{reason, refund_amount, refund_method?}`.
+    - Quy tắc ngày đã chốt ở một chỗ: `kernel::corrections::authorize_void` (trước hôm nay theo múi giờ spa: Manager → `403 day.locked`, Owner cần reauth). Reauth: `Actor::require_recent_auth()`, cờ đặt trong extractor `AuthUser` từ `session.recent_auth_at` (mặc định tắt = deny). **Thay 2026-11-05:** Owner không cần reauth; `Actor` bỏ cờ `recent_auth`, guard còn lại là `identity::AuthUser::require_recent_auth` chỉ cho thao tác bảo mật tài khoản ([authz-matrix](../security/authz-matrix.md)).
     - API in-transaction mới: `packages::lifecycle::{restore_sessions, cancel_for_sale}`, `sales::voids::void_in` (dùng cho cả hủy lượt). Thứ tự khóa: visit/sale → gói (theo id) → item (theo id). Hủy gói đưa buổi về 0, nên lượt đang trừ buổi song song bị `409`.
     - DTO thêm (additive): `VisitDto.void_reason/voided_at`, `SaleDto.void_reason/voided_at`, `PaymentDto.reversal_of`, `CustomerPackageDto.cancelled_at/cancel_reason/refund`.
     - Web: nút "Hủy" trên từng lượt ở danh sách `/quay` (+ ô "Xem ngày" để chủ spa hủy lượt ngày cũ; Manager thấy "Ngày đã chốt"), lượt đã hủy hiện nhãn + lý do; trên hồ sơ khách mỗi liệu trình có "Gia hạn" (+1/2/3/6 tháng), "Hủy liệu trình + hoàn tiền" (chặn hoàn > đã trả ngay trên form), "Hủy hóa đơn bán gói" (khi chưa dùng buổi). `ReauthDialog` (mật khẩu, hiện ô mã TOTP khi server đòi) dùng chung qua `useGuardedAction`: gặp `401 auth.reauth_required` → hỏi lại → gửi lại cùng key (đã bỏ 2026-11-05: thao tác nghiệp vụ không hỏi lại mật khẩu, form dùng `useFormAction`).
@@ -187,13 +189,13 @@ Quy ước chung cho mọi ticket có endpoint:
   - **Security:** permission `opening_balance.import`; audit.
   - **Depends on:** S6
   - **Kết quả:**
-    - Không cần migration: permission `opening_balance.import` đã có trong `kernel::perm` và seed role (Owner, Manager) từ S2, nên tenant đã tạo cũng có quyền.
+    - Không cần migration: permission `opening_balance.import` đã có trong `kernel::perm` và seed role (Owner, Manager) từ S2, nên tenant đã tạo cũng có quyền. (Quản lý mất quyền này ở migration 0013; nhập sổ giấy nay là việc của team qua CLI `app import-paper-book`, route chỉ còn tạm cho chủ spa.)
     - `POST /opening-balances` (bắt buộc `Idempotency-Key`), module `packages::opening_balance`. Body: `customer_id` **hoặc** `customer` (hồ sơ khách mới, giống `POST /customers`) + `packages[1..10]` gồm `package_plan_id?`, `name?` (mặc định tên gói), `sold_price`, `starts_on` (không ở tương lai), `expires_on?`, `gift_note?`, `items[{service_id, sessions_purchased, sessions_bonus=0, sessions_remaining}]`. Trả `201 {customer_id, customer_created, customer_packages[]}`.
     - Một transaction: claim idempotency → tìm hoặc tạo khách → kiểm tra tất cả gói (báo mọi lỗi một lần, field có tiền tố `customer.` / `packages[j].`) → `packages::service::create(origin=OpeningBalance)` → audit `opening_balance.import` + `customer_package.create`. Không tạo `sale`, `sale_line`, `payment`, nên doanh thu và sổ quỹ không bị ảnh hưởng (AC8.1, AC8.3).
     - Số buổi và giá lấy theo sổ giấy (client gửi), vì đây là dữ liệu lịch sử chứ không phải bán mới; gói trong bảng giá chỉ để tham chiếu và lấy tên mặc định. Dịch vụ phải thuộc spa (`422 …service_id not_found`); khách hoặc gói của spa khác → `404`; trùng SĐT → `409 customer.phone_taken` + `existing_id`.
     - Hàm public mới (thêm, không phá vỡ): `crm::service::create_in(tx, cipher, actor, input, health_note)` (`create` giờ gọi nó), `catalog::service::service_name(tx, id)`, `packages::service::validate(&NewPackage)`. `packages::http::routes` cần thêm `Arc<FieldCipher>` trong state.
-    - Web `/nhap-so-cu` (menu "Nhập sổ cũ" theo quyền): tìm khách (↑↓ Enter) hoặc "+ Khách mới" ngay trong form; mỗi gói chọn từ bảng giá (kể cả gói ngừng bán) hoặc "Gói khác (nhập tay)" nhiều dịch vụ; kiểm tra còn lại ≤ tổng ngay trên form; "Lưu và nhập tiếp" xóa form, tạo key mới, đưa con trỏ về ô tìm khách; đếm số liệu trình đã nhập; trùng SĐT → nút "Dùng hồ sơ đó". Nhãn "Nhập từ sổ cũ" trên hồ sơ đã có từ S6, nay có test.
-    - Test: 8 E2E API `opening_balances.rs` + 1 dòng `authz_matrix.rs` + 1 unit; 10 web; Playwright `e2e/specs/opening-balance.spec.ts` (axe sạch). Mutation check: bỏ guard còn lại ≤ tổng và cho import ghi một payment → test đỏ, rồi khôi phục.
+    - Web `/nhap-so-cu` (menu "Nhập sổ cũ" theo quyền; **đã gỡ khỏi web** sau 2026-11-05, cùng nhãn "Nhập từ sổ cũ" trên UI): tìm khách (↑↓ Enter) hoặc "+ Khách mới" ngay trong form; mỗi gói chọn từ bảng giá (kể cả gói ngừng bán) hoặc "Gói khác (nhập tay)" nhiều dịch vụ; kiểm tra còn lại ≤ tổng ngay trên form; "Lưu và nhập tiếp" xóa form, tạo key mới, đưa con trỏ về ô tìm khách; đếm số liệu trình đã nhập; trùng SĐT → nút "Dùng hồ sơ đó". Nhãn "Nhập từ sổ cũ" trên hồ sơ đã có từ S6, nay có test.
+    - Test: 8 E2E API `opening_balances.rs` + 1 dòng `authz_matrix.rs` + 1 unit; 10 web; Playwright `e2e/specs/opening-balance.spec.ts` (axe sạch; đã xóa cùng màn). Mutation check: bỏ guard còn lại ≤ tổng và cho import ghi một payment → test đỏ, rồi khôi phục.
     - Chưa làm: "còn nợ" của US8/front-desk-flows (công nợ hoãn ở R1, US5); bộ đếm là theo phiên trình duyệt chứ không phải "hôm nay" từ server.
 
 - [ ] **S10 Hardening & nghiệm thu với quản lý** (size: S)
@@ -208,19 +210,19 @@ Quy ước chung cho mọi ticket có endpoint:
     - Playwright `apps/web/e2e/`: stack riêng (API :8091 + Vite :5181, DB `vpyd_e2e`), setup project provision qua CLI. Spec phủ login → bảng giá, guard `next`, `next` ngoài site, tạo khách → tìm không dấu → cảnh báo sức khỏe, và axe trên login/bảng giá/khách hàng/hồ sơ.
     - Perf: p95 `/customers?q=` và catalog < 300 ms. `lighthouserc.json` (LCP < 2,5 s) hiện chỉ đo `/dang-nhap`.
     - CI: job `e2e`.
-    - **Còn lại cho S10:** (matrix đã có dòng cho mọi route S6–S9) `PATCH /visits/{id}` ngày cũ cần reauth như hủy; `/quay` đã có trong Lighthouse (S7); test role PlatformAdmin/support grant khi có role; `/qa` tìm khoảng trống; buổi dùng thử với quản lý.
+    - **Còn lại cho S10:** (matrix đã có dòng cho mọi route S6–S9) `PATCH /visits/{id}` ngày cũ cần reauth như hủy (về sau bỏ reauth, 2026-11-05); `/quay` đã có trong Lighthouse (S7); test role PlatformAdmin/support grant khi có role (thay bằng lớp operator của ADR-0018, test `every_admin_route_needs_a_full_operator_session`; support grant chưa xây); `/qa` tìm khoảng trống; buổi dùng thử với quản lý.
   - **Kết quả hardening (2026-11-04, branch `test/s10-hardening`; ticket chưa tick, chờ buổi dùng thử [r1-1-trial-session](r1-1-trial-session.md)):**
     - **Lỗi tìm ra và đã sửa** (mỗi lỗi có test hoặc số đo đỏ trước khi sửa):
       1. **[high] Deadlock → 500** khi ghi lượt trừ buổi **song song** với hủy hóa đơn bán gói, hủy lượt, hoặc chủ spa hủy liệu trình trên cùng gói. Ghi lượt khóa `customer_package_item` trước, rồi FK `visit_line → customer_package` lấy `FOR KEY SHARE` trên gói; hủy thì khóa gói `FOR UPDATE` rồi mới tới item → 40P01. Sửa: `packages::service::lock_for_consumption` khóa `FOR SHARE` các gói (theo id) trước khi trừ buổi, nên thứ tự khóa luôn là gói → item. Test `hardening.rs::voiding_a_package_sale_while_a_visit_uses_it_leaves_one_consistent_outcome` (5 vòng hủy hóa đơn + 5 vòng hủy liệu trình, đúng một bên thắng, không 5xx).
-      2. **[medium] `PATCH /visits/{id}` ngày đã chốt** không đòi reauth (Owner sửa KTV/ghi chú ngày cũ không cần nhập lại mật khẩu). Sửa: `kernel::corrections::authorize_closed_day` dùng chung với `authorize_void`. Test `voids.rs::correcting_a_closed_day_visit_follows_the_void_rule`.
+      2. **[medium] `PATCH /visits/{id}` ngày đã chốt** không đòi reauth (Owner sửa KTV/ghi chú ngày cũ không cần nhập lại mật khẩu). Sửa: `kernel::corrections::authorize_closed_day` dùng chung với `authorize_void`. Test `voids.rs::correcting_a_closed_day_visit_follows_the_void_rule`. (Từ 2026-11-05 quy tắc ngày đã chốt giữ nguyên nhưng Owner không còn phải reauth.)
       3. **[medium] Ký tự NUL (`\u0000`) trong JSON → 500** ở mọi field text (tên khách, tên dịch vụ, lý do, ô tìm). Postgres `text` không chứa được NUL. Sửa ở một chỗ: `AppError::Database` với SQLSTATE `22021`/`22P05` → `422 validation_failed` (`body: invalid_character`), log mức warn. Test `nul_characters_are_rejected_as_422_not_500`.
       4. **[low] Giá trong bảng giá không có trần** (G6 "vượt giới hạn → 422"): giá dịch vụ / giá gói `i64::MAX` được lưu. Sửa: `Money::MAX_INPUT` = 10 tỷ đồng (đã dùng cho giá sổ cũ ở S9), `prices`/`price` vượt → `422 out_of_range`. Test `catalog_amounts_above_the_limit_are_422`.
       5. **[low] Ô tìm khách không giới hạn độ dài** → giới hạn 100 ký tự, `422 q:too_long`. Test `search_queries_are_bounded`.
       6. **[low] AC8.5** nhãn "Nhập từ sổ cũ" chỉ có ở hồ sơ, thiếu trên thẻ khách ở `/quay`. Đã thêm + test web (mutation ✓).
       7. **[perf] CLS `/quay` 0,156 (> 0,1) vào ngày đông khách** (104 lượt, do perf spec mới tạo): lần tải đầu, web font swap làm chữ xuống dòng khác và đẩy cả trang. Sửa: `@font-face` fallback khớp số đo (`size-adjust`…) trong `packages/ui/src/tokens/tokens.css` → CLS 0,013 với cùng dữ liệu. Quy tắc ở [frontend](../architecture/frontend.md) "Perf budget".
-      8. **[test] E2E reauth không tất định**: `voids.spec.ts` giờ làm cũ `recent_auth_at` của chủ spa qua `e2e/support/db.ts` (client `postgres`, chỉ DB E2E) nên hộp thoại xác nhận lại mật khẩu luôn hiện.
+      8. **[test] E2E reauth không tất định**: `voids.spec.ts` giờ làm cũ `recent_auth_at` của chủ spa qua `e2e/support/db.ts` (client `postgres`, chỉ DB E2E) nên hộp thoại xác nhận lại mật khẩu luôn hiện. (Từ 2026-11-05 test này kiểm ngược lại: `recent_auth_at` cũ mà **không** có hộp thoại.)
     - **Test mới** `apps/api/crates/app/tests/hardening.rs`: Unicode (NFD → NFC, tìm "Đặng"/"đặng"/"ĐẶNG"/"dang"/chuỗi NFD, emoji, giới hạn 200 *ký tự* với chữ 3 byte, tên toàn khoảng trắng Unicode), ranh giới ngày nghiệp vụ (00:00:00 giờ VN = 17:00 UTC hôm trước vẫn là hôm nay; 23:59:59 hôm trước → `422 visit.check_in_not_today`; payment ghi đúng ngày VN), tiền (trần 10 tỷ, overflow 2 payment `i64::MAX` → 422, `per_session_value` 1.000.000 ÷ 3 = 333.333 làm tròn xuống, gói 0đ không thu tiền, chủ spa giảm 100%, giảm > giá → 422), đồng thời (hủy hóa đơn/hủy gói vs ghi lượt; 2 PATCH cùng version → 200 + 412), gửi đôi ở route không có Idempotency-Key (khách: khóa tự nhiên SĐT → 201 + 409 kèm `existing_id`; dịch vụ: tên duy nhất → đúng 1 bản ghi), body hỏng (`{`, `[]`, sai kiểu) trên 15 route ghi → 4xx `application/problem+json` có `code`, G5 audit cho 9 action chưa có test audit (+ ghi chú sức khỏe không lọt vào audit).
-    - **Authz matrix:** đủ 37 route của `ApiDoc` có dòng trong `ROUTES` (cổng CI `every_mounted_route_has_a_matrix_row`); mọi ô role × route (Owner/Manager/Technician) được chạy trong `each_role_gets_exactly_what_the_matrix_grants`. **PlatformAdmin / support grant: ngoài phạm vi R1-1** (không có role, bảng hay route trong code), ghi ở [authz-matrix](../security/authz-matrix.md).
+    - **Authz matrix:** đủ 37 route của `ApiDoc` (lúc đó; 2026-11-09 là 133 dòng) có dòng trong `ROUTES` (cổng CI `every_mounted_route_has_a_matrix_row`); mọi ô role × route (Owner/Manager/Technician) được chạy trong `each_role_gets_exactly_what_the_matrix_grants`. **PlatformAdmin / support grant: ngoài phạm vi R1-1** (không có role, bảng hay route trong code), ghi ở [authz-matrix](../security/authz-matrix.md). (Từ 2026-11-09: console operator riêng, ADR-0018; support grant vẫn chưa có.)
     - **A11y:** axe giờ chạy trên mọi màn hình: thêm `e2e/specs/a11y.spec.ts` (trang chủ, `/bang-gia/goi` + form gói, form dịch vụ) và axe ở bước MFA (`/xac-thuc` enroll/verify) trong `signIn`. Luồng nhanh bàn phím `/quay` đã có (S7, `front-desk.spec.ts`).
     - **Perf:** `e2e/perf/api-latency.spec.ts` thêm test thứ hai: `POST /sales`, `POST /visits` (trừ buổi + dịch vụ lẻ), `POST /opening-balances` (ngân sách 500 ms p95, spec §6 "lưu lượt") và `GET /visits` (ngày > 100 lượt), `GET /customers/{id}`, `/customers/{id}/packages` (> 200 gói), `GET /sales/{id}`, `GET /staff` (300 ms). p95 (local, API debug, 1 client): tìm khách 14 ms, catalog 13–16 ms, `POST /sales` 41, `POST /visits` 37, `POST /opening-balances` 24, `GET /visits` (104 lượt) 38, hồ sơ 13, liệu trình của khách (> 200 gói) 34. Lighthouse: `/dang-nhap` LCP ~1,9–2,1 s, `/quay` ~2,5 s (máy đang tải nặng vì nhiều agent chạy song song), CLS ≤ 0,013; `pnpm lhci` xanh. Chi tiết: log 2026-11-04 "S10 hardening".
     - **Độ phủ AC** (Rust = `apps/api/crates/app/tests/<file>::<test>`, web = Vitest, E2E = Playwright `e2e/specs`):
@@ -247,7 +249,7 @@ Quy ước chung cho mọi ticket có endpoint:
       | AC2.3 | `customers::equivalent_phone_spellings_are_one_customer`, `kernel::phone` unit |
       | AC2.4 | `customers::equivalent_phone_spellings_are_one_customer`, `hardening::double_submits_of_natural_key_writes_create_one_record` |
       | AC2.5 | `customers::equivalent_phone_spellings_are_one_customer` (sai định dạng → 422) |
-      | AC2.6 | `customers::health_notes_are_encrypted_and_hidden_without_permission`, `visits::session_note_is_encrypted_and_only_shown_on_the_visit` |
+      | AC2.6 | `customers::health_notes_are_encrypted_and_hidden_without_permission`, `visits::session_note_is_encrypted_and_shown_only_to_health_readers` |
       | AC2.7 | `customers::decomposed_unicode_names_are_stored_composed_and_found`, `hardening::names_from_any_keyboard_are_stored_nfc_and_found_with_or_without_accents` |
       | AC3.1 | `sales::ten_plus_two_at_1_5m_gives_12_sessions_worth_150k_each` |
       | AC3.2 | `sales::mixed_cash_and_transfer_is_two_payments` |
@@ -276,15 +278,15 @@ Quy ước chung cho mọi ticket có endpoint:
       | AC8.1 | `opening_balances::four_of_ten_left_is_imported_without_any_sale_or_payment`, `packages::opening_balance_creates_a_package_without_money` |
       | AC8.3 | như AC8.1 (không có `sale`/`payment` nên báo cáo/sổ quỹ không thấy; báo cáo thuộc spec #2/#3) |
       | AC8.4 | `opening_balances::more_left_than_total_is_422_and_nothing_is_written` |
-      | AC8.5 | web `Sales.test` (hồ sơ), `FrontDesk.test` "labels a package imported from the paper books" (quầy, S10), E2E `opening-balance.spec` |
-      | AC8.6–8.7 | `opening_balances::anyone_who_may_import_imports_today_without_a_window_or_reauth`, AC6.3 tests, E2E `opening-balance.spec` (không có công tắc) |
+      | AC8.5 | web `Sales.test` (hồ sơ), `FrontDesk.test` "labels a package imported from the paper books" (quầy, S10), E2E `opening-balance.spec` — nhãn và E2E đã gỡ cùng màn sổ cũ (EM 2026-11-05 bỏ phân biệt sổ cũ trên UI) |
+      | AC8.6–8.7 | `opening_balances::only_the_owner_imports_today_without_a_window_or_reauth`, AC6.3 tests |
       | AC8.8 | `opening_balances::an_opening_balance_refund_is_capped_by_its_book_price` |
       | §6 perf | `e2e/perf/api-latency.spec.ts` (2 test), `customers::search_stays_fast_with_ten_thousand_customers`, `pnpm lhci` (`/dang-nhap`, `/quay`) |
       | §6 a11y | axe trong mọi spec E2E + `a11y.spec.ts`; bàn phím `front-desk.spec.ts`; Lighthouse a11y ≥ 0,95 |
 
-    - **Còn mở (không phải lỗi, để EM quyết):** lịch sử buổi làm trên hồ sơ khách (US2 "Màn hình hồ sơ", `GET /customers/{id}/visits` hoãn từ S7) chưa có; báo cáo "số khách của KTV trong ngày" (AC4.4) mới chỉ là dữ liệu; `GET /visits` không phân trang (một ngày của một spa nhỏ, chấp nhận được); NUL bị chặn ở tầng DB nên lỗi trả về field `body` chứ không chỉ đúng field.
+    - **Còn mở (không phải lỗi, để EM quyết):** lịch sử buổi làm trên hồ sơ khách (US2 "Màn hình hồ sơ", `GET /customers/{id}/visits` hoãn từ S7) chưa có (**đã có ở R1-2**: `GET /customers/{id}/history`); báo cáo "số khách của KTV trong ngày" (AC4.4) mới chỉ là dữ liệu (**đã có ở R1-2**: bảng KTV trong `GET /reports/daily`); `GET /visits` không phân trang (một ngày của một spa nhỏ, chấp nhận được); NUL bị chặn ở tầng DB nên lỗi trả về field `body` chứ không chỉ đúng field.
 
-- [ ] **S11 Staging trên VPS** (size: S)
+- [ ] **S11 Staging trên VPS** (size: S) — **thay bằng staging Vercel + Supabase (2026-11-05)**: đã chạy, có `app seed-demo`; phần VPS / backup R2 / uptime alert dưới đây chưa làm, để cho production ([ADR-0012](../decisions/ADR-0012-colocate-api-db-singapore.md)). Runbook hiện hành: [vercel-staging](../runbooks/vercel-staging.md).
   - **Goal:** chạy thật trên VPS Singapore + Supabase để quản lý dùng thử bằng dữ liệu giả.
   - **Acceptance:** ADR-0002/0005: Data API tắt, RLS bật, backup đêm ra R2, uptime alert.
   - **Touches:** `/devops`: chọn nhà cung cấp VPS, domain, Caddy production, deploy, backup, restore drill.
@@ -303,7 +305,7 @@ Quy ước chung cho mọi ticket có endpoint:
       - `deploy.yml` (`workflow_dispatch` → GHCR → SSH).
       - `infra/prodtest/run.sh` (smoke test local).
       - Runbook [staging-setup](../runbooks/staging-setup.md).
-    - EM đã quyết: staging Supabase `zyyiukcysjntjgjabiqe` ở **Mỹ**, Data API bật → VPS staging phải cùng vùng, giảm thiểu bằng REVOKE. Lead tự bootstrap DB staging. Production sau này là project Singapore mới.
+    - EM đã quyết: staging Supabase ở **Mỹ**, Data API bật → VPS staging phải cùng vùng, giảm thiểu bằng REVOKE. Lead tự bootstrap DB staging. Production sau này là project Singapore mới.
     - Còn chờ EM (runbook §9):
       - Mua VPS (DigitalOcean 2 GiB $12, datacenter khớp vùng Supabase) + domain.
       - R2 bucket + token.

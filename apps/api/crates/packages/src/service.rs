@@ -252,20 +252,30 @@ pub async fn consume_session(tx: &mut TenantTx, c: Consume) -> Result<Consumed, 
     {
         let as_u32 = |v: i32| u32::try_from(v).unwrap_or(0);
         let used_before = as_u32(row.sessions_total - row.sessions_remaining - qty);
+        let purchased = as_u32(row.sessions_purchased);
         let per_session = Money::vnd(row.per_session_value)
             .map_err(|_| AppError::Internal("corrupt per_session_value".into()))?;
+        // The plain count never overstates the paid sessions used. Only when it says this
+        // consumption reaches bonus sessions can a void have given a paid one back: then count
+        // from the lines (one more query, while the item row is locked by the UPDATE above).
+        let mut paid_used = used_before.min(purchased);
+        if purchased - paid_used < c.qty && row.per_session_value > 0 {
+            let usage = repo::completed_line_usage(tx, c.item_id).await?;
+            let as_count = |v: i64| u32::try_from(v).unwrap_or(u32::MAX);
+            paid_used = domain::paid_used_from_lines(
+                purchased,
+                used_before,
+                as_count(usage.sessions),
+                as_count(usage.value / row.per_session_value),
+            );
+        }
         return Ok(Consumed {
             customer_package_id: row.customer_package_id,
             service_id: row.service_id,
             service_name: row.name_snapshot,
             sessions_total: row.sessions_total,
             sessions_remaining: row.sessions_remaining,
-            value: domain::consumed_value(
-                per_session,
-                as_u32(row.sessions_purchased),
-                used_before,
-                c.qty,
-            ),
+            value: domain::consumed_value(per_session, purchased, paid_used, c.qty),
             per_session_value: per_session,
             package_name: row.package_name,
             used_expired: row.expired,

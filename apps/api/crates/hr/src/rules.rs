@@ -42,8 +42,8 @@ pub struct PayrollRules {
     /// Count bonus (gift) package sessions at their per-session value for commission (⚠️ #3;
     /// default false: a gift session earns nothing, as `visit_line.line_value`).
     pub commission_on_bonus_sessions: bool,
-    /// Pay the "chốt liệu trình mới" commission to the closer of a package sale (⚠️ #3; R1
-    /// always collects in full, so collected = sold value).
+    /// Pay the upsell commission (§3.2): packages closed and one-off services recommended (⚠️ #3;
+    /// R1 always collects in full, so collected = sold value).
     pub closing_commission: bool,
     /// ⚠️ #7.
     pub loyalty_partial_month: PartialMonthLoyalty,
