@@ -3,9 +3,21 @@ import { useState } from "react";
 import { BottomSheet } from "../../components/BottomSheet";
 import { TimeField } from "../../components/TimeField";
 import { ResponsiveTable, type Column } from "../../components/ResponsiveTable";
+import { ApiError } from "../../lib/api";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { EmptyState, ErrorState, RowsSkeleton } from "../reports/ui";
-import { closePayroll, invalidateStaff, payrollQuery, rulesQuery, saveRules, type Payslip, type PayrollRules } from "./api";
+import {
+  closePayroll,
+  invalidateStaff,
+  payrollQuery,
+  rulesQuery,
+  saveRules,
+  type LeaverRefund,
+  type MissingItem,
+  type MissingPayrollData,
+  type Payslip,
+  type PayrollRules,
+} from "./api";
 import { FLAG_LABEL, LEVEL_SHORT, monthLabel, percentOfBp } from "./labels";
 import { serviceWork, upsellWork } from "./payslipWork";
 import { signedVnd, vnd } from "./ui";
@@ -132,9 +144,11 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
           }}
         />
       )}
+      {p.leaver_refunds.length > 0 && <LeaverRefunds refunds={p.leaver_refunds} />}
       {closing && (
         <CloseSheet
           month={p.month}
+          missing={p.missing}
           incomplete={p.payslips.some((s) => s.flags.includes("unrecorded_days"))}
           onClose={() => {
             setClosing(false);
@@ -263,7 +277,49 @@ function PayslipSheet({ slip, closed, onClose }: { slip: Payslip; closed: boolea
   );
 }
 
-function CloseSheet({ month, incomplete, onClose }: { month: string; incomplete: boolean; onClose: () => void }) {
+/**
+ * Refunds of packages whose closer no longer works in the month (ADR-0019 D2b): where each was
+ * taken back, or that it was not (their last month was already closed). Never silently dropped.
+ */
+function LeaverRefunds({ refunds }: { refunds: LeaverRefund[] }) {
+  return (
+    <section className="card grid gap-2 p-4" aria-labelledby="leaver-refunds">
+      <h2 id="leaver-refunds" className="font-semibold">
+        Hoàn tiền gói của người đã nghỉ
+      </h2>
+      <ul className="grid gap-1 text-sm">
+        {refunds.map((r) => (
+          <li key={r.refund_id}>
+            {r.full_name} · {r.description} · hoàn {vnd(r.amount)} ngày {dayLabel(r.refund_date)}:{" "}
+            {r.deducted_in
+              ? `trừ lại hoa hồng chốt ở phiếu lương ${monthLabel(r.deducted_in).toLowerCase()}`
+              : "không trừ lại được (tháng làm cuối đã chốt lương), spa chịu"}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** "2026-11-05" → "05/11/2026". */
+function dayLabel(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return `${d ?? ""}/${m ?? ""}/${y ?? ""}`;
+}
+
+const MISSING_LABEL: Record<MissingItem, string> = { pay_terms: "chưa có lương cứng", evaluation: "chưa đánh giá tháng" };
+
+function CloseSheet({
+  month,
+  missing,
+  incomplete,
+  onClose,
+}: {
+  month: string;
+  missing: MissingPayrollData[];
+  incomplete: boolean;
+  onClose: () => void;
+}) {
   const queryClient = useQueryClient();
   const [key] = useState(() => crypto.randomUUID());
   const [allow, setAllow] = useState(false);
@@ -273,7 +329,12 @@ function CloseSheet({ month, incomplete, onClose }: { month: string; incomplete:
       await invalidateStaff(queryClient);
       onClose();
     },
+    // Someone else's change made the month incomplete meanwhile: refresh the list shown above.
+    onError: async (error) => {
+      if (error instanceof ApiError && error.code === "payroll.missing_data") await invalidateStaff(queryClient);
+    },
   });
+  const blocked = missing.length > 0;
   return (
     <BottomSheet
       open
@@ -288,7 +349,7 @@ function CloseSheet({ month, incomplete, onClose }: { month: string; incomplete:
             type="button"
             className="btn btn-primary"
             aria-busy={close.isPending || undefined}
-            disabled={incomplete && !allow}
+            disabled={blocked || (incomplete && !allow)}
             onClick={() => {
               if (!close.isPending) close.mutate();
             }}
@@ -303,6 +364,19 @@ function CloseSheet({ month, incomplete, onClose }: { month: string; incomplete:
           Chốt xong, phiếu lương được giữ nguyên. Chấm công, đánh giá và thưởng/phạt của tháng sẽ chỉ còn xem được, <strong>không mở lại được</strong>.
           Cần sửa thì ghi khoản điều chỉnh vào tháng sau.
         </p>
+        {blocked && (
+          <div role="alert" className="grid gap-1">
+            <p className="font-semibold">Chưa chốt được: bổ sung cho những người sau trước (nếu không, phiếu lương bị giữ ở 0đ).</p>
+            <ul className="list-disc pl-5 text-sm">
+              {missing.map((m) => (
+                <li key={m.staff_id}>
+                  {m.full_name}: {m.missing.map((x) => MISSING_LABEL[x]).join(", ")}
+                </li>
+              ))}
+            </ul>
+            <p className="text-sm text-text-muted">Lương cứng nhập ở “Hồ sơ nhân viên”, đánh giá tháng ở “Đánh giá tháng”.</p>
+          </div>
+        )}
         {incomplete && (
           <label className="choice">
             <input

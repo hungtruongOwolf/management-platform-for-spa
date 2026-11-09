@@ -209,6 +209,8 @@ function payroll(): PayrollMonth {
     ended: false,
     payslips: [s],
     totals: { staff: 1, base_salary: s.base_salary, deductions: 0, commission: 15_000, bonuses: 0, penalties: 0, net_pay: s.net_pay },
+    missing: [],
+    leaver_refunds: [],
   };
 }
 
@@ -351,6 +353,8 @@ interface ServeOptions {
   payRefusedOnce?: boolean;
   /** `POST /adjustments` answers 422 with this field error. */
   adjustmentRefused?: { field: string; code: string };
+  /** Overrides of `GET /payroll` (an ended month, close blockers, leaver refunds). */
+  payroll?: Partial<PayrollMonth>;
 }
 
 /** A scorecard as `GET /evaluations` / `/me/staff` send it. */
@@ -453,7 +457,7 @@ function serve(permissions: string[], options: ServeOptions = {}) {
           tet_level_amounts: [],
         },
       });
-    if (p === "/payroll") return permissions.includes("payroll.read") ? ok(payroll()) : ok({ code: "auth.forbidden" }, 403);
+    if (p === "/payroll") return permissions.includes("payroll.read") ? ok({ ...payroll(), ...options.payroll }) : ok({ code: "auth.forbidden" }, 403);
     if (p === "/me/staff") {
       const left = options.leftOn;
       const asked = url.searchParams.get("month") ?? (left ? left.slice(0, 7) : month);
@@ -1054,6 +1058,35 @@ describe("/nhan-vien", () => {
     const loyalty = await within(sheet).findByLabelText("Thưởng gắn bó tháng vào làm hoặc nghỉ giữa chừng");
     expect(loyalty).toHaveValue("fifteen_days");
     expect(within(sheet).getByLabelText("Hỗ trợ tiền ăn")).toHaveValue("monthly");
+  });
+
+  it("owner: closing a month lists who still needs pay terms or an evaluation, and refuses until then (ADR-0019 D1)", async () => {
+    serve(OWNER, {
+      payroll: {
+        ended: true,
+        missing: [{ staff_id: "s-mai", full_name: "Trần Thị Mai", missing: ["pay_terms", "evaluation"] }],
+      },
+    });
+    at("/nhan-vien?tab=payroll");
+    await userEvent.click(await screen.findByRole("button", { name: /^Chốt lương/ }));
+    const dialog = await screen.findByRole("dialog", { name: /^Chốt lương/ });
+    expect(within(dialog).getByText("Trần Thị Mai: chưa có lương cứng, chưa đánh giá tháng")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Chốt lương" })).toBeDisabled();
+  });
+
+  it("owner: a leaver's package refund says where it was taken back, or that it was not (ADR-0019 D2b)", async () => {
+    serve(OWNER, {
+      payroll: {
+        leaver_refunds: [
+          { refund_id: "r1", staff_id: "s-mai", full_name: "Trần Thị Mai", description: "Gói 10 buổi", amount: 1_000_000, refund_date: "2026-11-05", deducted_in: "2026-10" },
+          { refund_id: "r2", staff_id: "s-mai", full_name: "Trần Thị Mai", description: "Gói 10 buổi", amount: 500_000, refund_date: "2026-11-20", deducted_in: null },
+        ],
+      },
+    });
+    at("/nhan-vien?tab=payroll");
+    const section = await screen.findByRole("region", { name: "Hoàn tiền gói của người đã nghỉ" });
+    expect(within(section).getByText(/hoàn 1\.000\.000đ ngày 05\/11\/2026: trừ lại hoa hồng chốt ở phiếu lương tháng 10\/2026/)).toBeInTheDocument();
+    expect(within(section).getByText(/hoàn 500\.000đ ngày 20\/11\/2026: không trừ lại được/)).toBeInTheDocument();
   });
 
   it("payslip lists what the upsell commission is computed from", () => {

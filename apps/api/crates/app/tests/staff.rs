@@ -952,7 +952,7 @@ async fn another_spa_cannot_reach_our_staff(pool: PgPool) -> TestResult {
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn a_closed_month_is_locked_and_corrected_by_adjustments(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    linked_profile(&s, MANAGER_PHONE, "Quản lý Hoa").await?;
+    let hoa = linked_profile(&s, MANAGER_PHONE, "Quản lý Hoa").await?;
     s.pay(s.lan, 5_000_000, 500).await;
     let last = end_of_last_month();
     let month = ym(last);
@@ -983,6 +983,54 @@ async fn a_closed_month_is_locked_and_corrected_by_adjustments(pool: PgPool) -> 
         .post(&s.owner, "/payroll/close", json!({"month": ym(today())}))
         .await;
     assert_eq!(current.body["code"], "payroll.month_not_ended");
+
+    // ADR-0019 D1: no one's month freezes at 0đ. Everyone on the payroll needs pay terms and the
+    // month's evaluation first; the 409 lists who misses what, as GET /payroll does.
+    let blocked = s
+        .post(
+            &s.owner,
+            "/payroll/close",
+            json!({"month": month, "allow_incomplete": true}),
+        )
+        .await;
+    assert_eq!(
+        (blocked.status, blocked.body["code"].clone()),
+        (StatusCode::CONFLICT, json!("payroll.missing_data")),
+        "{}",
+        blocked.body
+    );
+    let mut missing: Vec<(String, Value)> = blocked.body["details"]["staff"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|m| (m["staff_id"].to_string(), m["missing"].clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    missing.sort();
+    let mut expected = vec![
+        (json!(s.mai).to_string(), json!(["pay_terms", "evaluation"])),
+        (json!(hoa).to_string(), json!(["pay_terms", "evaluation"])),
+    ];
+    expected.sort();
+    assert_eq!(missing, expected, "{}", blocked.body);
+    let view = s.get(&s.owner, &format!("/payroll?month={month}")).await;
+    assert_eq!(view.body["missing"], blocked.body["details"]["staff"]);
+    s.pay(s.mai, 4_000_000, 500).await;
+    s.pay(hoa, 7_000_000, 0).await;
+    for (who, staff) in [(&s.manager, s.mai), (&s.owner, hoa)] {
+        let r = s
+            .put(
+                who,
+                "/evaluations",
+                json!({"staff_id": staff, "month": month, "criteria": criteria("m1")}),
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    }
+    let view = s.get(&s.owner, &format!("/payroll?month={month}")).await;
+    assert_eq!(view.body["missing"], json!([]));
+
     let incomplete = s
         .post(&s.owner, "/payroll/close", json!({"month": month}))
         .await;
@@ -2770,5 +2818,199 @@ async fn my_day_shows_no_commission_when_payroll_is_off(pool: PgPool) -> TestRes
         d["visits"][0]["lines"][0]["value"], PRICE,
         "the work itself stays"
     );
+    Ok(())
+}
+
+// ------------------------------------------------------------------- ADR-0019 (2026-11-09)
+
+/// D2: a bonus / penalty in a month the person worked no day of is refused, never accepted and
+/// then dropped from every payslip.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn adjustments_need_a_month_the_person_worked_in(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let first = today().with_day(1).unwrap_or_default();
+    let new = call(
+        &s.h.app,
+        "POST",
+        "/staff",
+        Some(&s.owner),
+        Some(json!({"full_name": "Đỗ Thị Thu", "position": "Kỹ thuật viên", "joined_on": first})),
+    )
+    .await;
+    assert_eq!(new.status, StatusCode::CREATED, "{}", new.body);
+    let thu = id(&new);
+    let before_joining = s
+        .post(
+            &s.owner,
+            "/adjustments",
+            json!({
+                "staff_id": thu, "kind": "bonus", "amount": 100_000, "reason": "Thưởng",
+                "occurred_on": end_of_last_month()
+            }),
+        )
+        .await;
+    assert_eq!(
+        before_joining.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{}",
+        before_joining.body
+    );
+    assert_eq!(
+        (
+            before_joining.body["errors"][0]["field"].clone(),
+            before_joining.body["errors"][0]["code"].clone()
+        ),
+        (json!("occurred_on"), json!("not_employed"))
+    );
+    let entries: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM app.staff_adjustment WHERE tenant_id = $1 AND staff_id = $2",
+    )
+    .bind(s.tenant)
+    .bind(thu)
+    .fetch_one(&s.h.owner)
+    .await?;
+    assert_eq!(entries, 0, "nothing written");
+    let this_month = s
+        .post(
+            &s.owner,
+            "/adjustments",
+            json!({"staff_id": thu, "kind": "bonus", "amount": 100_000, "reason": "Thưởng"}),
+        )
+        .await;
+    assert_eq!(
+        this_month.status,
+        StatusCode::CREATED,
+        "{}",
+        this_month.body
+    );
+    Ok(())
+}
+
+impl Spa {
+    /// A package of the plan sold today with `closer`; returns the customer package id.
+    async fn sell_closed_by(&self, closer: Uuid, phone: &str) -> Uuid {
+        let customer = self.customer(phone).await;
+        let sale = self.post(&self.owner, "/sales", json!({
+            "customer_id": customer, "closer_staff_id": closer, "lines": [{"package_plan_id": self.plan}],
+            "payments": [{"method": "cash", "amount": PLAN_PRICE}]
+        })).await;
+        assert_eq!(sale.status, StatusCode::CREATED, "{}", sale.body);
+        sale.body["customer_packages"][0]["id"]
+            .as_str()
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .unwrap_or_default()
+    }
+
+    async fn refund(&self, package: Uuid, amount: i64) {
+        let r = self
+            .post(
+                &self.owner,
+                &format!("/customer-packages/{package}/cancel"),
+                json!({"reason": "Khách chuyển nhà", "refund_amount": amount, "refund_method": "cash"}),
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    }
+}
+
+/// D2b: the closer of a package left before it was refunded. While their last month is open the
+/// refund comes back from that payslip (ADR-0010); once it is closed the refund is not clawed
+/// back. Both are on record (`GET /payroll` of the refund's month, the close audit), never dropped.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_leavers_refund_is_settled_in_their_last_open_month_or_shown_as_not_clawed_back(
+    pool: PgPool,
+) -> TestResult {
+    let s = spa(pool).await?;
+    s.pay(s.mai, 5_000_000, 700).await;
+    s.pay(s.lan, 5_000_000, 500).await;
+    let first = s.sell_closed_by(s.mai, "0905 222 101").await;
+    let second = s.sell_closed_by(s.mai, "0905 222 102").await;
+    s.refund(first, 1_000_000).await;
+    // Mai's last day was the end of last month (the sales above are only the way to get a refund
+    // of a package she closed today).
+    let last = end_of_last_month();
+    let month = ym(last);
+    sqlx::query(
+        "UPDATE app.staff_employment SET ended_on = $2, end_reason = 'Nghỉ' WHERE staff_id = $1",
+    )
+    .bind(s.mai)
+    .bind(last)
+    .execute(&s.h.owner)
+    .await?;
+    sqlx::query("UPDATE app.staff SET status = 'left', left_on = $2 WHERE id = $1")
+        .bind(s.mai)
+        .bind(last)
+        .execute(&s.h.owner)
+        .await?;
+
+    let open = s.get(&s.owner, &format!("/payroll?month={month}")).await;
+    assert_eq!(open.status, StatusCode::OK, "{}", open.body);
+    let mai = slip(&open.body, s.mai);
+    assert_eq!(mai["upsell_package_base"], -1_000_000, "{}", mai);
+    assert_eq!(mai["closing_commission"], -70_000);
+    let now = s.get(&s.owner, "/payroll").await;
+    assert!(slip(&now.body, s.mai).is_null(), "she has no payslip now");
+    let listed = now.body["leaver_refunds"].clone();
+    assert_eq!(listed.as_array().map(Vec::len), Some(1), "{listed}");
+    assert_eq!(
+        (
+            listed[0]["staff_id"].clone(),
+            listed[0]["amount"].clone(),
+            listed[0]["deducted_in"].clone()
+        ),
+        (json!(s.mai), json!(1_000_000), json!(month))
+    );
+
+    for staff in [s.lan, s.mai] {
+        let r = s
+            .put(
+                &s.owner,
+                "/evaluations",
+                json!({"staff_id": staff, "month": month, "criteria": criteria("m1")}),
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    }
+    let closed = s
+        .post(
+            &s.owner,
+            "/payroll/close",
+            json!({"month": month, "allow_incomplete": true}),
+        )
+        .await;
+    assert_eq!(closed.status, StatusCode::OK, "{}", closed.body);
+    assert_eq!(slip(&closed.body, s.mai)["closing_commission"], -70_000);
+    let audit: Value = sqlx::query_scalar(
+        "SELECT after FROM app.audit_log WHERE tenant_id = $1 AND action = 'payroll.close'",
+    )
+    .bind(s.tenant)
+    .fetch_one(&s.h.owner)
+    .await?;
+    assert_eq!(
+        audit["leaver_refunds_deducted"],
+        json!([listed[0]["refund_id"]])
+    );
+
+    // After her last month closed: not clawed back, and said so.
+    s.refund(second, 500_000).await;
+    let now = s.get(&s.owner, "/payroll").await;
+    let mut refunds: Vec<(Value, Value)> = now.body["leaver_refunds"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|r| (r["amount"].clone(), r["deducted_in"].clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    refunds.sort_by_key(|(amount, _)| amount.as_i64());
+    assert_eq!(
+        refunds,
+        vec![
+            (json!(500_000), Value::Null),
+            (json!(1_000_000), json!(month))
+        ]
+    );
+    let frozen = s.get(&s.owner, &format!("/payroll?month={month}")).await;
+    assert_eq!(slip(&frozen.body, s.mai)["closing_commission"], -70_000);
     Ok(())
 }

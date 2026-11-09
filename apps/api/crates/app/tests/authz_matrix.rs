@@ -450,7 +450,8 @@ const ROUTES: &[Route] = &[
         Access::Perm(P::PayrollRead, OWNER_ONLY),
     )
     .id(Target::Staff),
-    // Last month still has unrecorded days in the fixture: the owner gets 422, never a close.
+    // Last month still has unrecorded days and staff without pay terms in the fixture: the owner
+    // gets 409 payroll.missing_data or 422, never a close.
     route(
         "POST",
         "/api/v1/payroll/close",
