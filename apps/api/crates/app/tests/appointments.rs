@@ -2107,3 +2107,57 @@ async fn a_group_moves_together_or_not_at_all(pool: PgPool) -> TestResult {
     );
     Ok(())
 }
+
+/// Two "Đổi cả nhóm" started at the same time from different members of one group: one moves the
+/// group, the other is told the group changed under it. Before the fix each locked its own member
+/// first, then the others, so the pair could deadlock (Postgres 40P01 → 500).
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn two_group_moves_from_different_members_never_deadlock(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    s.open_all_day().await?;
+    let group = s
+        .post(
+            &s.manager,
+            "/appointments/group",
+            json!({"starts_at": at(1, "10:00"), "people": [
+                {"customer_id": s.ha, "service_ids": [s.shampoo], "staff_id": s.lan},
+                {"customer_id": s.duc, "service_ids": [s.shampoo], "staff_id": s.tuan},
+            ]}),
+        )
+        .await;
+    assert_eq!(group.status, StatusCode::CREATED, "{}", group.body);
+    let move_from = |a: Value, starts_at: String| {
+        let app = s.h.app.clone();
+        let who = s.manager.clone();
+        async move {
+            let path = format!(
+                "/appointments/{}/move-group",
+                a["id"].as_str().unwrap_or_default()
+            );
+            let tag = format!("\"{}\"", a["version"].as_i64().unwrap_or_default());
+            call_with_headers(
+                &app,
+                "POST",
+                &path,
+                Some(&who),
+                Some(json!({"starts_at": starts_at})),
+                &[("if-match", tag.as_str())],
+            )
+            .await
+        }
+    };
+    let (a, b) = tokio::join!(
+        move_from(group.body["appointments"][0].clone(), at(1, "14:00")),
+        move_from(group.body["appointments"][1].clone(), at(1, "15:00")),
+    );
+    let mut statuses = [a.status, b.status];
+    statuses.sort();
+    assert_eq!(
+        statuses,
+        [StatusCode::OK, StatusCode::PRECONDITION_FAILED],
+        "{} / {}",
+        a.body,
+        b.body
+    );
+    Ok(())
+}

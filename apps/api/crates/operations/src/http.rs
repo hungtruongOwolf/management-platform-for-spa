@@ -1,5 +1,6 @@
 //! `POST /visits`, `GET /visits?date=`, `GET /visits/{id}`, `PATCH /visits/{id}`,
-//! `POST /visits/{id}/void`, `POST /visits/{id}/correct`.
+//! `POST /visits/{id}/void`, `POST /visits/{id}/correct`, `POST /visits/{id}/additions`,
+//! `POST /visits/{id}/convert-to-package`.
 
 use crate::dto::{
     VisitAdditions, VisitConversion, VisitCorrected, VisitCorrection, VisitCreate, VisitDto,

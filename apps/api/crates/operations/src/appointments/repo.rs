@@ -288,8 +288,21 @@ pub async fn group_customers(tx: &mut TenantTx, group: Uuid) -> Result<Vec<Uuid>
     .await?)
 }
 
-/// Every appointment of a group, in id order (the order a whole-group move locks them in, so two
-/// moves of one group never deadlock).
+/// The group of an appointment, read without a lock (`None` = not in this tenant; `Some(None)` =
+/// not in a group): a whole-group move learns which rows to lock before locking any.
+pub async fn group_of(tx: &mut TenantTx, id: Uuid) -> Result<Option<Option<Uuid>>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_scalar!(
+        "SELECT group_id FROM app.appointment WHERE tenant_id = $1 AND id = $2",
+        tenant,
+        id
+    )
+    .fetch_optional(tx.conn())
+    .await?)
+}
+
+/// Every appointment of a group, in id order: a whole-group move locks them all in this order,
+/// the moved appointment included, so two moves of one group never deadlock.
 pub async fn group_member_ids(tx: &mut TenantTx, group: Uuid) -> Result<Vec<Uuid>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_scalar!(
