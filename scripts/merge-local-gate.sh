@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Merge gate while GitHub Actions is disabled (minutes exhausted, EM 2026-11-05): runs the CI checks
-# locally on the PR head merged with origin/main, then squash-merges. Change-aware: the steps that
+# Fallback merge gate for when GitHub Actions cannot run (it was disabled 2026-11-05 when a private
+# repo ran out of minutes; CI is back since 2026-11-06 and the normal path is merge-when-green.sh).
+# Runs the CI checks locally on the PR head merged with origin/main, then squash-merges. It does not
+# cover Docker builds, gitleaks or Lighthouse. Change-aware: the steps that
 # run depend on which paths the PR changes (rules in scripts/gate-lib.sh, runbook in
 # memory/wiki/runbooks/local-merge-gate.md).
 #
@@ -27,7 +29,7 @@ script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=scripts/gate-lib.sh
 . "$script_dir/gate-lib.sh"
 
-usage() { sed -n '7,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '9,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
 dry_run="" full="" e2e_mode=auto batch="" prs=()
 for arg in "$@"; do
   case "$arg" in

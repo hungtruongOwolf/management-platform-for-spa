@@ -8,6 +8,8 @@ sources: [scripts/merge-local-gate.sh, scripts/gate-lib.sh, scripts/merge-when-g
 
 **Trạng thái (2026-11-09): GitHub Actions đang bật** (`CI` và `Deploy (staging)` đều `active`; tắt 2026-11-05 vì hết phút khi repo còn private, bật lại 2026-11-06 khi repo chuyển public). Đường merge bình thường là `scripts/merge-when-green.sh <pr>` (chờ mọi check `pass|skipping` và đòi `CI ok: pass`, rồi squash-merge và xóa branch qua API; xem [testing §5](../conventions/testing.md#5-ci)). Gate local dưới đây là **dự phòng** khi Actions lại không chạy được, hoặc để gộp nhiều PR (`--batch`).
 
+`scripts/gate-lib.sh` vẫn chạy trong CI (`scripts/ci-changes.sh` dùng `gate_classify` để chọn scope job); bảng `gate_feature_specs` thì chỉ gate local dùng.
+
 `scripts/merge-local-gate.sh` dựng cây "main + PR", chạy các bước kiểm tra trên đó, rồi `gh pr merge --squash` và xóa branch. Từ 2026-11-06 gate **theo thay đổi**: chỉ chạy những bước mà các file của PR có thể làm hỏng. Quy tắc nằm trong `scripts/gate-lib.sh`, test trong `scripts/gate-lib.test.sh` (`bash scripts/gate-lib.test.sh`, không cần build).
 
 ## Cách dùng
@@ -57,7 +59,7 @@ Không dùng `playwright --only-changed`: nó chỉ chọn spec theo import grap
 
 ## Khi nào tin gate chọn lọc
 - Merge PR bình thường: tin được, với điều kiện quy tắc ở trên. Rủi ro còn lại: lỗi chỉ lộ ra khi kết hợp với màn khác mà spec chọn lọc không đi qua (layout + a11y giảm bớt), và các bước gate không bao giờ chạy (Docker build, gitleaks, Lighthouse).
-- **Bắt buộc `--full`** trước mọi deploy staging / Vercel ([vercel-staging](vercel-staging.md), [staging-setup](staging-setup.md)) và trước khi bật lại GitHub Actions. Có thể chạy `--full` trên PR cuối cùng trước deploy.
+- **Trước mọi deploy staging / Vercel**: commit trên `main` phải có CI xanh đủ job (push lên `main` luôn chạy scope `full`). Chỉ khi Actions tắt mới thay bằng `--full` trên PR cuối cùng ([vercel-staging](vercel-staging.md), [staging-setup](staging-setup.md)).
 - Nghi ngờ, hoặc PR đụng nhiều vùng: `--full`.
 
 ## Thời gian

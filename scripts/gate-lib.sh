@@ -44,10 +44,11 @@ gate_feature_specs() {
     catalog) echo "auth" ;;
     corrections) echo "voids" ;;
     customers) echo "customers management sales voids" ;;
-    front-desk) echo "front-desk appointments voids" ;;
+    front-desk) echo "front-desk appointments quay-upsell voids" ;;
+    notes) echo "notes" ;;
     reports) echo "management" ;;
-    sales) echo "sales" ;;
-    staff) echo "staff" ;;
+    sales) echo "sales quay-upsell" ;;
+    staff) echo "staff technician onboarding" ;;
     _static) echo "auth" ;;
     *) echo "" ;;
   esac

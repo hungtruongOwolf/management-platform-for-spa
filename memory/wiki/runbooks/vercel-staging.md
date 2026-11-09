@@ -77,7 +77,7 @@ SQLX_OFFLINE=true DATABASE_URL="$STAGING_OWNER_URL" APP_DATABASE_URL="<app_rw UR
 | Lượt khách | ~120 lượt trong 21 ngày (4–7 lượt/ngày), trừ buổi liệu trình hoặc dịch vụ lẻ, đôi khi thêm dịch vụ bổ sung trả ngay; **12 lượt hôm nay** cho `/quay`, trong đó 1 lượt **bị hủy** |
 | Hủy liệu trình | 1 gói đã dùng dở, chủ spa hủy + hoàn tiền mặt phần chưa dùng |
 
-**Chưa có trong demo (do spec, không phải do lệnh):** công nợ / trả một phần (US5 hoãn, R1 thu đủ ngay) và khách không có SĐT (D6: SĐT bắt buộc). Lượt và hóa đơn của các ngày trước có `business_date` và giờ vào đúng ngày đó, nhưng `created_at` / `paid_at` là lúc chạy lệnh: đó là sự thật về lúc dữ liệu được ghi.
+**Chưa có trong demo:** công nợ / trả một phần (US5 hoãn, R1 thu đủ ngay) và khách không có SĐT: D6 đã được thay bằng [ADR-0011](../decisions/ADR-0011-anonymous-walk-in-and-optional-phone.md) (SĐT tùy chọn, khách vãng lai không tên), nhưng `seed-demo` vẫn chỉ tạo khách có tên + SĐT. Lượt và hóa đơn của các ngày trước có `business_date` và giờ vào đúng ngày đó, nhưng `created_at` / `paid_at` là lúc chạy lệnh: đó là sự thật về lúc dữ liệu được ghi.
 
 ## Deploy
 - Từ máy dev: `npx vercel deploy --prod --yes` ở gốc repo. Vercel build cả hai service: Rust release build trong Docker, nên lần đầu lâu.
