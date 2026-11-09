@@ -38,7 +38,6 @@ addMessages(
     not_earlier: "Tháng điều chỉnh phải trước tháng ghi.",
     invalid_month: "Tháng không hợp lệ.",
     before_joined_on: "Ngày nghỉ việc trước ngày vào làm.",
-    must_be_empty: "Nhân viên đang làm thì không có ngày nghỉ việc.",
     not_a_member: "Tài khoản không thuộc spa này.",
     has_later_records: "Sau ngày này nhân viên vẫn có chấm công hoặc lượt khách. Chọn ngày làm cuối cùng.",
     period_ended: "Đợt làm việc này đã kết thúc. Dùng \u201cNhận lại làm\u201d để mở đợt mới.",
