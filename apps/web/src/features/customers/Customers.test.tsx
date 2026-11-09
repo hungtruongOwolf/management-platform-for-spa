@@ -162,6 +162,13 @@ describe("customers page", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("offers 'Khách mới' only to a role that may create customers (customer.write)", async () => {
+    serve(["customer.read"]);
+    at("/khach-hang");
+    expect(await screen.findByRole("combobox")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Khách mới" })).not.toBeInTheDocument();
+  });
+
   it("creating a duplicate phone offers to open the existing profile", async () => {
     const calls = serve(ALL, (c) =>
       c.method === "POST"

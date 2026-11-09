@@ -1,10 +1,10 @@
-import { render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Delta } from "./ui";
 
 const shown = (now: number, before: number) => {
-  const { unmount } = render(<Delta now={now} before={before} label="so với hôm qua" />);
-  const text = screen.getByText("so với hôm qua").parentElement?.textContent ?? "";
+  const { container, unmount } = render(<Delta now={now} before={before} label="so với hôm qua" />);
+  const text = container.textContent;
   unmount();
   return text.replace("so với hôm qua", "").trim();
 };

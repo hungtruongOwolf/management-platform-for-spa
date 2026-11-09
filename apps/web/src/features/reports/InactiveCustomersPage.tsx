@@ -16,6 +16,7 @@ import { THRESHOLDS, inactiveSearch } from "./search";
 import { EmptyState, ErrorState, ManagementOnly, PageHeader, RowsSkeleton } from "./ui";
 import { useToast } from "../customers/Toast";
 import "../customers/khach.css";
+import { isSearchable } from "../customers/api";
 
 const FOLLOW_UPS: [FollowUpFilter, string][] = [
   ["due", "Cần liên hệ"],
@@ -80,6 +81,7 @@ function InactiveCustomersPageBody() {
         }}
         search={
           <SearchField
+            sendable={isSearchable}
             label="Tìm theo tên hoặc số điện thoại"
             placeholder="Tên khách, SĐT…"
             value={filter.q}
