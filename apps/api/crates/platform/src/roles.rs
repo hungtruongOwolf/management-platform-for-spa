@@ -260,58 +260,23 @@ pub async fn set_for_tenant(
         Some(edit) => Some(names(&check_grants(role, &edit.permissions)?)),
         None => None,
     };
-    crate::tenants::get(pool, op, tenant).await?;
     let mut tx = TenantTx::begin(pool, TenantId::from_uuid(tenant)).await?;
-    let Some(role_id) = sqlx::query_scalar!(
-        "SELECT id FROM app.role WHERE tenant_id = $1 AND key = $2 AND is_system FOR UPDATE",
+    // The write checks the operator's step-up itself (0041); no row = no such spa or role.
+    let Some(changed) = sqlx::query!(
+        r#"SELECT role_id AS "role_id!", before AS "before!", after AS "after!"
+           FROM app.platform_set_tenant_role($1, $2, $3, $4)"#,
+        &op.token_hash[..],
         tenant,
-        role.key()
+        role.key(),
+        permissions.as_ref()
     )
     .fetch_optional(tx.conn())
-    .await?
+    .await
+    .map_err(gate_refusal)?
     else {
         return Err(AppError::NotFound);
     };
-    let before = sqlx::query_scalar!(
-        "SELECT permission FROM app.role_permission WHERE tenant_id = $1 AND role_id = $2 ORDER BY permission",
-        tenant,
-        role_id
-    )
-    .fetch_all(tx.conn())
-    .await?;
-    let after = match permissions {
-        Some(p) => p,
-        None => sqlx::query_scalar!(
-            "SELECT permission FROM app.role_template_permission WHERE role_key = $1 ORDER BY permission",
-            role.key()
-        )
-        .fetch_all(tx.conn())
-        .await?,
-    };
-    sqlx::query!(
-        "DELETE FROM app.role_permission WHERE tenant_id = $1 AND role_id = $2",
-        tenant,
-        role_id
-    )
-    .execute(tx.conn())
-    .await?;
-    sqlx::query!(
-        "INSERT INTO app.role_permission (tenant_id, role_id, permission)
-         SELECT $1, $2, unnest($3::text[])",
-        tenant,
-        role_id,
-        &after
-    )
-    .execute(tx.conn())
-    .await?;
-    sqlx::query!(
-        "UPDATE app.role SET follows_template = $3 WHERE tenant_id = $1 AND id = $2",
-        tenant,
-        role_id,
-        edit.is_none()
-    )
-    .execute(tx.conn())
-    .await?;
+    let (role_id, before, after) = (changed.role_id, changed.before, changed.after);
     let (spa_action, platform_action) = if edit.is_some() {
         ("role.permissions_changed", "platform.role.set")
     } else {
