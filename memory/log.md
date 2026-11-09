@@ -763,3 +763,8 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 
 ## [2026-11-09] decision | EM ủy quyền lead quyết câu hỏi mở của đợt rà soát → ADR-0019
 - Raw: [2026-11-09-em-delegates-audit-decisions](raw/2026-11-09-em-delegates-audit-decisions.md). Quyết định D1–D21 trong [ADR-0019](wiki/decisions/ADR-0019-audit-decisions-2026-11-09.md); thực hiện bởi 3 agent (lương; bán hàng/lượt/báo cáo/khách/lịch hẹn; nền tảng + web shell + ngân sách JS). Public/private: EM nói để sau.
+
+## [2026-11-09] record | ADR-0019 đã làm xong, migration 0045–0049, deploy staging
+- PR #151–#169 merge (lương; bán hàng/lượt/khách/lịch; nền tảng + web). Chi tiết: [audit-2026-11-09 § Cập nhật](wiki/plans/audit-2026-11-09.md).
+- Lead kiểm dữ liệu staging (0 vi phạm FK 0045, 0 SĐT sai cho 0048) rồi migrate local + staging → 49; Vercel main 8a86179; 15 API 200. Không có `payroll_rules` lưu riêng → mặc định `loyalty_partial_month = fifteen_days` tự áp dụng.
+- Bài học điều phối: mỗi agent sở hữu số migration và tập hàm DB riêng (không trùng lần nào); agent có fork con phải tự land PR của fork trước khi báo xong.
