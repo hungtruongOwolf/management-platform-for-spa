@@ -51,7 +51,6 @@ export type StaffProfile = Schemas["StaffProfileDto"];
 export type StaffProfileWrite = Schemas["StaffProfileWrite"];
 export type StaffCreate = Schemas["StaffCreate"];
 export type StaffHistoryEntry = Schemas["StaffHistoryEntryDto"];
-export type EmploymentPeriod = Schemas["EmploymentPeriodDto"];
 export type StaffPayWrite = Schemas["StaffPayWrite"];
 export type StaffAccount = Schemas["StaffAccountDto"];
 export type AttendanceSheet = Schemas["AttendanceSheet"];
@@ -172,8 +171,6 @@ export function myMonthQuery(month: string) {
 
 export type MyDay = Schemas["MyDay"];
 export type MyDayData = Schemas["MyDayData"];
-export type MyDayVisit = Schemas["MyDayVisit"];
-export type MyDayUpsell = Schemas["MyDayUpsell"];
 
 /** One day of my month in detail (`GET /me/staff/day`): the person is the session's, never a parameter. */
 export function myDayQuery(date: string) {
@@ -277,11 +274,6 @@ export async function rehire(id: string, version: number, startedOn: string): Pr
 
 export async function savePay(id: string, body: StaffPayWrite): Promise<unknown> {
   return api(`/staff/${id}/pay`, { method: "PUT", body });
-}
-
-/** Current month `YYYY-MM` in the spa's time zone. */
-export function currentMonth(today: string): string {
-  return today.slice(0, 7);
 }
 
 // ------------------------------------------------------------- logins (ADR-0016, spec §17)

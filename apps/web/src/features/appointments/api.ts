@@ -6,7 +6,6 @@ import type {
   AppointmentGroupMoved,
   AppointmentService,
   AppointmentSettings,
-  AppointmentStatus,
   AppointmentUpdate,
   Calendar,
   CalendarVisit,
@@ -157,14 +156,6 @@ export async function closeAppointment(
     body: { reason },
   })) as Appointment;
 }
-
-export const STATUS_LABEL: Record<AppointmentStatus, string> = {
-  booked: "Đã đặt",
-  arrived: "Đã đến",
-  done: "Hoàn tất",
-  no_show: "Không đến",
-  cancelled: "Đã hủy",
-};
 
 /** Text for "đã thanh toán chưa" (R1 collects in full when the visit is recorded). */
 export function paymentLabel(
