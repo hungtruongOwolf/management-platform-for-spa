@@ -398,7 +398,7 @@ describe("Đặt lịch hẹn (spec appointments.md §10.2, §10.5)", () => {
     const third = calls().slice(before);
     expect(third.filter(([, init]) => init.method === "POST" && keyOf(init) === firstKey)).toEqual([]);
     const patch = third.find(([url]) => url.endsWith("/appointments/c-1"));
-    expect(JSON.parse(String(patch?.[1].body))).toMatchObject({ service_ids: ["s1", "s2"] });
+    expect(JSON.parse(patch?.[1].body as string)).toMatchObject({ service_ids: ["s1", "s2"] });
   });
 
   it("shows n / max of the slot and warns, without blocking, when it is full", () => {
