@@ -597,7 +597,7 @@ pub struct EndInput {
 /// `POST /staff/{id}/end` (`staff.manage`, `If-Match`): nghỉ việc. Closes the open period with
 /// its last day and reason; the person leaves every picker and every later month and keeps every
 /// past record. Their linked login stays, but from the next request it holds only
-/// `staff.read_own_past` (ADR-0014, derived from the roster in `identity::repo`), unless the
+/// `staff.read_own_past` (ADR-0014, derived from the roster by `app.session_actor`), unless the
 /// owner also locks it (`lock_login`).
 pub async fn end(
     pool: &PgPool,
