@@ -835,6 +835,48 @@ async fn a_package_bought_for_someone_else_belongs_to_them(pool: PgPool) -> Test
 
 // ------------------------------------------------------------------------------------ US12
 
+/// ADR-0019 D20: adding a 0đ service collects nothing, so it needs no `payment.collect`; an
+/// addition that costs money still does. Pins the server rule the web's "Thêm dịch vụ" relies on.
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_free_addition_needs_no_right_to_collect_money(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let v = s.one_off_visit(None).await;
+    let id = str_of(&v.body["id"]);
+    sqlx::query(
+        "DELETE FROM app.role_permission WHERE permission = 'payment.collect'
+           AND role_id IN (SELECT id FROM app.role WHERE key = 'manager')",
+    )
+    .execute(&s.h.owner)
+    .await?;
+    sqlx::query("UPDATE app.service_price SET amount = 0 WHERE service_id = $1::uuid")
+        .bind(&s.cheaper)
+        .execute(&s.h.owner)
+        .await?;
+    let path = format!("/visits/{id}/additions");
+    let free = s
+        .post(
+            &s.manager,
+            &path,
+            json!({"lines": [{"service_id": s.cheaper, "source": "one_off", "staff_id": s.lan}],
+                   "payments": []}),
+        )
+        .await;
+    assert_eq!(free.status, StatusCode::CREATED, "{}", free.body);
+    let priced = s
+        .post(
+            &s.manager,
+            &path,
+            json!({"lines": [{"service_id": s.shampoo, "source": "one_off", "staff_id": s.lan}],
+                   "payments": [{"method": "cash", "amount": SHAMPOO}]}),
+        )
+        .await;
+    assert_eq!(
+        code(&priced),
+        (StatusCode::FORBIDDEN, Some("auth.forbidden"))
+    );
+    Ok(())
+}
+
 /// AC12.1–12.3: "Thêm dịch vụ vào lượt" adds lines and a sale of its own, never touches the old
 /// ones; a void of the visit later reverses every one-off sale but keeps a package sold in it.
 #[sqlx::test(migrations = "../../migrations")]

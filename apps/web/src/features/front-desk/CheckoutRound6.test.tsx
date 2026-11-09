@@ -61,6 +61,14 @@ const GAC_HOI: Service = {
   recommended: false,
   prices: { all: 100_000 },
 };
+/** A free extra ("tặng"): adding it collects nothing. */
+const TRA_GUNG: Service = {
+  ...DTL,
+  id: "s11",
+  name: "Trà gừng tặng",
+  recommended: false,
+  prices: { all: 0 },
+};
 const PLAN: PackagePlan = {
   id: "pl1",
   name: "Gói Đại Thông Lạc 10 + 2",
@@ -239,7 +247,7 @@ function serve(
           status: "active",
         },
       ]);
-    if (url === "/api/v1/services") return json([DTL, GAC_HOI]);
+    if (url === "/api/v1/services") return json([DTL, GAC_HOI, TRA_GUNG]);
     if (url === "/api/v1/service-categories")
       return json([{ id: "cat1", name: "Cổ vai gáy", sort_order: 0 }]);
     if (url === "/api/v1/package-plans") return json([PLAN]);
@@ -718,6 +726,46 @@ describe("/quay round 6", () => {
         },
       ],
       payments: [{ method: "cash", amount: 100_000 }],
+    });
+  });
+
+  it("adds a 0đ service to a saved visit without payment.collect; a priced one says why not (ADR-0019 D20)", async () => {
+    const calls = serve(
+      [ONE_OFF_VISIT],
+      [],
+      HA,
+      PERMS.filter((p) => p !== "payment.collect"),
+    );
+    const user = userEvent.setup();
+    render(
+      <App history={createMemoryHistory({ initialEntries: ["/quay"] })} />,
+    );
+    const table = await screen.findByRole("table", {
+      name: "Lượt khách hôm nay",
+    });
+    await user.click(
+      within(table).getByRole("button", {
+        name: /^Thao tác lượt .* của Nguyễn Thị Hà$/,
+      }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "Thêm dịch vụ / bán gói" }),
+    );
+    await pickService(user, "Thêm dịch vụ vào lượt", "s10");
+    await user.click(screen.getByRole("button", { name: "Lưu phần thêm" }));
+    expect(
+      await screen.findByText(/chỉ thêm được dịch vụ 0đ/),
+    ).toBeInTheDocument();
+    expect(posted(calls, "/api/v1/visits/v1/additions")).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "Bỏ dòng Giác hơi" }));
+    await pickService(user, "Thêm dịch vụ vào lượt", "s11");
+    await user.click(screen.getByRole("button", { name: "Lưu phần thêm" }));
+    await waitFor(() => {
+      expect(posted(calls, "/api/v1/visits/v1/additions")).toHaveLength(1);
+    });
+    expect(posted(calls, "/api/v1/visits/v1/additions")[0]?.body).toMatchObject({
+      lines: [{ service_id: "s11", source: "one_off" }],
+      payments: [],
     });
   });
 

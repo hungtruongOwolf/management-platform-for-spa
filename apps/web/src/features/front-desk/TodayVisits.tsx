@@ -487,15 +487,15 @@ export function TodayVisits({
       mayEditSaleNote(me?.permissions ?? [], p, todayIso),
     );
   // Round 6 (UX only, the server decides): adding to a saved visit needs the same rights as
-  // recording one, a past day the owner's; converting also voids the one-off part.
+  // recording one, a past day the owner's; converting also voids the one-off part. Collecting
+  // money is asked only when the addition costs something (ADR-0019 D20: a 0đ service needs no
+  // payment.collect, the server asks for it only when payments are sent).
   const pastOk = isToday || can(me, "record.void_closed_day");
   const mayAdd = (v: Visit) =>
-    v.status === "completed" &&
-    pastOk &&
-    can(me, "visit.record") &&
-    can(me, "payment.collect");
+    v.status === "completed" && pastOk && can(me, "visit.record");
   const mayConvert = (v: Visit) =>
     mayAdd(v) &&
+    can(me, "payment.collect") &&
     can(me, "package.sell") &&
     can(me, "record.void_same_day") &&
     v.lines.some((l) => l.source === "one_off");
