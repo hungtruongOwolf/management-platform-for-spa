@@ -174,12 +174,6 @@ pub async fn set_role(tx: &mut TenantTx, user: UserId, role: LoginRole) -> Resul
     repo::replace_role(tx, user, role.system().key()).await
 }
 
-/// How many active spas the login belongs to (an owner may reset only a login of their spa
-/// alone: the password also opens the other spa).
-pub async fn spa_count(pool: &sqlx::PgPool, user: UserId) -> Result<usize, AppError> {
-    Ok(repo::tenants_of_user(pool, user).await?.len())
-}
-
 /// A forgotten-password request (option A) as the owner sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResetRequest {

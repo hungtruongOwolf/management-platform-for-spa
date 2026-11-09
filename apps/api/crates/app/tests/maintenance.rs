@@ -72,6 +72,17 @@ async fn sessions_ended_over_30_days_ago_are_purged_and_only_those(owner: PgPool
     for kept in [recent_revoked, recent_expired, live] {
         assert!(left.contains(&kept), "{kept} kept");
     }
+
+    // 0042: whatever interval a caller passes, a live session is never touched (floor 1 day).
+    // Red before: a negative interval deleted the live session too.
+    let purged: i64 = sqlx::query_scalar("SELECT app.purge_sessions(interval '-40 days')")
+        .fetch_one(&app)
+        .await?;
+    assert_eq!(purged, 2, "only the two that ended 2 days ago");
+    let left: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM app.session")
+        .fetch_all(&h.owner)
+        .await?;
+    assert!(left.contains(&live), "the live session stays");
     Ok(())
 }
 
