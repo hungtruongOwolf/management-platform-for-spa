@@ -163,6 +163,15 @@ where
         let secret = session_secret(&parts.headers).ok_or(AppError::Unauthenticated)?;
         let pool = PgPool::from_ref(state);
         let (session, actor) = service::authenticate(&pool, &secret, client_meta(parts).ip).await?;
+        // A route of a feature the spa switched off (ADR-0018 D4): refused before the handler,
+        // for every role, from one table (`kernel::feature`).
+        if let Some(feature) = parts
+            .extensions
+            .get::<axum::extract::MatchedPath>()
+            .and_then(|path| kernel::feature::for_route(path.as_str()))
+        {
+            actor.require_feature(feature)?;
+        }
         Ok(Self { actor, session })
     }
 }

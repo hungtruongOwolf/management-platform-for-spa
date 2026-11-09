@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type SyntheticEvent } from "react";
 import { BottomSheet } from "../components/BottomSheet";
 import { adminApi, adminDateTime, adminKeys, type TenantRow } from "./api";
+import { FeaturesPanel } from "./FeaturesPanel";
 import { adminFieldError, adminMessage } from "./messages";
 import { AdminLink } from "./nav";
 import { StepUpCancelled, useStepUp } from "./StepUp";
@@ -80,6 +81,7 @@ export function TenantPage({ id }: { id: string }) {
           Chỉ có số đếm: console không xem được khách, ghi chú hay tiền của spa.
         </p>
       </section>
+      <FeaturesPanel tenantId={t.id} />
       <StatusSheet
         tenant={t}
         open={changing}

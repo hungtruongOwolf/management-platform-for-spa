@@ -815,6 +815,20 @@ const ROUTES: &[Route] = &[
     .id(Target::Tenant)
     .body(reason_body),
     route("GET", "/api/v1/admin/audit", Access::Operator),
+    route("GET", "/api/v1/admin/features", Access::Operator),
+    route(
+        "GET",
+        "/api/v1/admin/tenants/{id}/features",
+        Access::Operator,
+    )
+    .id(Target::Tenant),
+    route(
+        "PUT",
+        "/api/v1/admin/tenants/{id}/features/{key}",
+        Access::Operator,
+    )
+    .id(Target::Tenant)
+    .body(feature_switch_body),
 ];
 
 /// Mounted but deliberately left out of the OpenAPI contract. Must answer without a session.
@@ -843,6 +857,11 @@ fn new_tenant_body(_: &Fixture) -> Option<Value> {
         "slug": format!("spa-moi-{n}"),
         "owner": {"phone": format!("0908{n:06}"), "full_name": "Chủ spa mới"},
     }))
+}
+
+/// Keeps the feature on (`{key}` = `appointments`), so later rows still see it.
+fn feature_switch_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"enabled": true, "reason": "Kiểm thử ma trận quyền"}))
 }
 
 fn reason_body(_: &Fixture) -> Option<Value> {
@@ -1414,7 +1433,10 @@ async fn link_manager(w: &World) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn concrete(route: &Route, f: &Fixture) -> String {
-    route.path.replace("{id}", f.id_of(route.id))
+    route
+        .path
+        .replace("{id}", f.id_of(route.id))
+        .replace("{key}", "appointments")
 }
 
 fn label(route: &Route) -> String {
@@ -2006,6 +2028,74 @@ async fn operator_pending(app: &Router) -> String {
     .await
     .op_session()
     .unwrap_or_default()
+}
+
+/// ADR-0018 D4: with a feature switched off for the spa, every route of that feature answers
+/// `403 feature.disabled` to every role (the owner included), before its own permission check;
+/// another spa keeps it.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn switched_off_features_refuse_their_routes(pool: PgPool) -> TestResult {
+    let w = world(pool).await?;
+    let operator = common::add_operator(&w.h).await?;
+    sqlx::query(
+        "INSERT INTO app.tenant_feature (tenant_id, feature, enabled, updated_by)
+         SELECT $1::uuid, unnest($2::text[]), false, $3",
+    )
+    .bind(&w.home.tenant_id)
+    .bind(
+        kernel::Feature::ALL
+            .iter()
+            .map(|f| f.key().to_owned())
+            .collect::<Vec<_>>(),
+    )
+    .bind(operator)
+    .execute(&w.h.owner)
+    .await?;
+    let mut failures = Vec::new();
+    let mut swept = 0;
+    for role in SystemRole::ALL {
+        let token = session(&w.h, phone_of(role)).await?;
+        for route in ROUTES
+            .iter()
+            .filter(|r| kernel::feature::for_route(r.path).is_some())
+        {
+            swept += 1;
+            let reply = send_route(
+                &w.app,
+                route,
+                &concrete(route, &w.home),
+                Some(&token),
+                (route.body)(&w.home),
+            )
+            .await;
+            if (reply.status, reply.body["code"].as_str())
+                != (StatusCode::FORBIDDEN, Some("feature.disabled"))
+            {
+                failures.push(format!(
+                    "{} as {} with the feature off: expected 403 feature.disabled, got {} {}",
+                    label(route),
+                    role.key(),
+                    reply.status,
+                    reply.body
+                ));
+            }
+        }
+    }
+    assert!(swept > 0);
+    // The other spa keeps every feature.
+    let other = session(&w.h, OTHER_OWNER_PHONE).await?;
+    let me = send(&w.app, "GET", "/api/v1/me", Some(&other), None, &[]).await;
+    assert_eq!(
+        me.body["features"].as_array().map(Vec::len),
+        Some(kernel::Feature::ALL.len())
+    );
+    assert!(
+        me.body["permissions"]
+            .as_array()
+            .is_some_and(|p| p.contains(&json!("appointment.manage")))
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
 }
 
 #[test]

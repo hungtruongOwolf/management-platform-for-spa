@@ -124,6 +124,9 @@ use utoipa::OpenApi;
         platform::http::suspend_tenant,
         platform::http::unsuspend_tenant,
         platform::http::list_audit,
+        platform::http::list_features,
+        platform::http::tenant_features,
+        platform::http::set_tenant_feature,
     ),
     // Enums used only as query parameters are not reached from any body, so register them.
     components(schemas(

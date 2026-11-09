@@ -2,6 +2,7 @@
 //! tenant tables (memberships, roles) only inside a `TenantTx`.
 
 use chrono::{DateTime, Utc};
+use kernel::Feature;
 use kernel::tenant::TenantFacts;
 use kernel::{AppError, Permission, PhoneE164, TenantId, TenantTx, UserId};
 use sqlx::PgPool;
@@ -181,7 +182,8 @@ pub async fn session_actor(
                   recent_auth_at AS "recent_auth_at!", mfa_pending AS "mfa_pending!",
                   mfa_enrolled AS "mfa_enrolled!", must_change_password AS "must_change_password!",
                   member AS "member!", permissions AS "permissions!", former_staff AS "former_staff!",
-                  timezone, manager_discount_max_pct, branch_id
+                  timezone, manager_discount_max_pct, branch_id,
+                  disabled_features AS "disabled_features!"
            FROM app.session_actor($1)"#,
         &token_hash[..]
     )
@@ -192,12 +194,13 @@ pub async fn session_actor(
     };
     let active_tenant = r.active_tenant_id.map(TenantId::from_uuid);
     let access = match (r.member, active_tenant) {
-        (true, Some(tenant)) => Some(MemberAccess {
-            permissions: kernel::permission::effective_permissions(
+        (true, Some(tenant)) => Some(MemberAccess::new(
+            kernel::permission::effective_permissions(
                 known_permissions(&r.permissions),
                 r.former_staff,
             ),
-            facts: r.timezone.as_deref().and_then(|tz| {
+            kernel::feature::parse_keys(&r.disabled_features),
+            r.timezone.as_deref().and_then(|tz| {
                 TenantFacts::from_row(
                     tenant,
                     tz,
@@ -206,7 +209,7 @@ pub async fn session_actor(
                 )
                 .ok()
             }),
-        }),
+        )),
         _ => None,
     };
     Ok(Some(LiveSession {
@@ -439,8 +442,27 @@ pub async fn tenants_of_user(pool: &PgPool, user: UserId) -> Result<Vec<TenantRe
 /// left holds only `kernel::permission::FORMER_STAFF` (ADR-0014): derived here on every request
 /// from the roster, never from the client.
 pub struct MemberAccess {
+    /// Effective permissions: the roles', after the former-staff rule, without those of the
+    /// spa's switched-off features (ADR-0018 D4).
     pub permissions: Vec<Permission>,
+    /// Features the spa has switched off.
+    pub disabled_features: Vec<Feature>,
     pub facts: Option<TenantFacts>,
+}
+
+impl MemberAccess {
+    fn new(
+        permissions: Vec<Permission>,
+        disabled_features: Vec<Feature>,
+        facts: Option<TenantFacts>,
+    ) -> Self {
+        let off: std::collections::BTreeSet<Feature> = disabled_features.iter().copied().collect();
+        Self {
+            permissions: kernel::feature::strip(permissions, &off),
+            disabled_features,
+            facts,
+        }
+    }
 }
 
 /// [`member_access`] without the spa settings.
@@ -471,7 +493,9 @@ pub async fn member_access(
                   t.timezone,
                   (t.settings ->> 'manager_discount_max_pct') AS manager_discount_max_pct,
                   (SELECT b.id FROM app.branch b WHERE b.tenant_id = t.id AND b.active
-                   ORDER BY b.created_at, b.id LIMIT 1) AS branch_id
+                   ORDER BY b.created_at, b.id LIMIT 1) AS branch_id,
+                  COALESCE((SELECT array_agg(f.feature) FROM app.tenant_feature f
+                            WHERE f.tenant_id = t.id AND NOT f.enabled), '{}') AS "disabled_features!"
            FROM app.membership m
            JOIN app.tenant t ON t.id = m.tenant_id
            LEFT JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
@@ -495,13 +519,14 @@ pub async fn member_access(
         member.branch_id,
     )
     .ok();
-    Ok(Some(MemberAccess {
-        permissions: kernel::permission::effective_permissions(
+    Ok(Some(MemberAccess::new(
+        kernel::permission::effective_permissions(
             known_permissions(&member.permissions),
             member.former_staff,
         ),
+        kernel::feature::parse_keys(&member.disabled_features),
         facts,
-    }))
+    )))
 }
 
 // ------------------------------------------------------------------ passwords (ADR-0016)

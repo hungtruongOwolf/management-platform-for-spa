@@ -773,3 +773,136 @@ fn platform_sql_stays_in_platform() -> TestResult {
     );
     Ok(())
 }
+
+/// Spec US5: the operator switches a feature off for one spa; the spa's next request loses it —
+/// `/me` no longer lists it or its permissions, its routes answer `403 feature.disabled` — and
+/// switching it back on restores everything. Audited on both sides.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn an_operator_switches_a_feature_for_one_spa(owner: PgPool) -> TestResult {
+    let h = harness(owner).await?;
+    add_operator(&h).await?;
+    let op = operator_session(&h).await?;
+    let spa_owner = session_for(&h, common::OWNER_PHONE).await;
+    let id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM app.tenant WHERE slug = 'vpyd'")
+        .fetch_one(&h.owner)
+        .await?;
+    let registry = admin_call(&h.app, "GET", "/admin/features", Some(&op), None).await;
+    assert_eq!(
+        registry.body.as_array().map(Vec::len),
+        Some(kernel::Feature::ALL.len())
+    );
+    let before = admin_call(
+        &h.app,
+        "GET",
+        &format!("/admin/tenants/{id}/features"),
+        Some(&op),
+        None,
+    )
+    .await;
+    assert!(
+        before
+            .body
+            .as_array()
+            .is_some_and(|f| f.iter().all(|x| x["enabled"] == true)),
+        "every feature is on by default: {}",
+        before.body
+    );
+
+    let path = format!("/admin/tenants/{id}/features/appointments");
+    let unknown = admin_call(
+        &h.app,
+        "PUT",
+        &format!("/admin/tenants/{id}/features/packages"),
+        Some(&op),
+        Some(json!({"enabled": false, "reason": "Thử"})),
+    )
+    .await;
+    assert_eq!(unknown.status, StatusCode::NOT_FOUND);
+    let off = admin_call(
+        &h.app,
+        "PUT",
+        &path,
+        Some(&op),
+        Some(json!({"enabled": false, "reason": "Gói cơ bản"})),
+    )
+    .await;
+    assert_eq!(off.status, StatusCode::OK, "{}", off.body);
+    assert_eq!(off.body["enabled"], false);
+
+    let me = call(&h.app, "GET", "/me", Some(&spa_owner), None).await;
+    let has = |v: &Value, key: &str, value: &str| {
+        v[key].as_array().is_some_and(|a| a.contains(&json!(value)))
+    };
+    assert!(!has(&me.body, "features", "appointments"), "{}", me.body);
+    assert!(has(&me.body, "features", "payroll"));
+    assert!(!has(&me.body, "permissions", "appointment.manage"));
+    assert!(has(&me.body, "permissions", "customer.read"));
+    let refused = call(
+        &h.app,
+        "PUT",
+        "/appointment-settings",
+        Some(&spa_owner),
+        Some(json!({"max_per_slot": null})),
+    )
+    .await;
+    assert_eq!(refused.status, StatusCode::FORBIDDEN);
+    assert_eq!(refused.body["code"], "feature.disabled");
+
+    let on = admin_call(
+        &h.app,
+        "PUT",
+        &path,
+        Some(&op),
+        Some(json!({"enabled": true, "reason": "Nâng gói"})),
+    )
+    .await;
+    assert_eq!(on.status, StatusCode::OK);
+    let me = call(&h.app, "GET", "/me", Some(&spa_owner), None).await;
+    assert!(has(&me.body, "features", "appointments"));
+    assert!(has(&me.body, "permissions", "appointment.manage"));
+
+    let trail = count(
+        &h.owner,
+        &format!(
+            "SELECT (SELECT count(*) FROM app.audit_log WHERE tenant_id = '{id}'
+                       AND action = 'feature.changed' AND actor_kind = 'platform_admin')
+                  + (SELECT count(*) FROM app.platform_audit_log WHERE action = 'platform.feature.set')"
+        ),
+    )
+    .await?;
+    assert_eq!(trail, 4);
+    Ok(())
+}
+
+/// A spa can never write its own switches, not even through a bug: app_rw only reads them.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn app_rw_cannot_write_flags(owner: PgPool) -> TestResult {
+    let h = harness(owner).await?;
+    let operator = add_operator(&h).await?;
+    let id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM app.tenant WHERE slug = 'vpyd'")
+        .fetch_one(&h.owner)
+        .await?;
+    let app_pool = kernel::testing::app_pool(&h.owner).await?;
+    let mut tx = kernel::TenantTx::begin(&app_pool, kernel::TenantId::from_uuid(id)).await?;
+    let insert = sqlx::query(
+        "INSERT INTO app.tenant_feature (tenant_id, feature, enabled, updated_by) VALUES ($1, 'payroll', false, $2)",
+    )
+    .bind(id)
+    .bind(operator)
+    .execute(tx.conn())
+    .await;
+    assert!(insert.is_err(), "app_rw must not insert feature switches");
+    drop(tx);
+    // Without an operator session the function refuses too.
+    let direct = sqlx::query("SELECT * FROM app.platform_set_feature($1, $2, 'payroll', false)")
+        .bind(vec![0_u8; 32])
+        .bind(id)
+        .fetch_all(&app_pool)
+        .await;
+    let code = direct.err().and_then(|e| {
+        e.as_database_error()
+            .and_then(|d| d.code().map(|c| c.into_owned()))
+    });
+    assert_eq!(code.as_deref(), Some("42501"));
+    Ok(())
+}

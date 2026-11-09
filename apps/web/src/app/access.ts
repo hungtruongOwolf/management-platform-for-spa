@@ -1,4 +1,4 @@
-import { can, type Me } from "../features/auth/session";
+import { can, hasFeature, type Me } from "../features/auth/session";
 import { canSeeManagement } from "./features";
 
 /**
@@ -9,6 +9,9 @@ export const mayOpen = {
   frontDesk: (me: Me | null) => can(me, "visit.record"),
   customers: (me: Me | null) => can(me, "customer.read"),
   management: (me: Me | null) => canSeeManagement(me),
+  /** "Báo cáo kinh doanh" and "Nhật ký ghi chú": features a spa may have off (ADR-0018). */
+  reports: (me: Me | null) => canSeeManagement(me) && hasFeature(me, "reports"),
+  notes: (me: Me | null) => canSeeManagement(me) && hasFeature(me, "notes_journal"),
   catalog: (me: Me | null) => can(me, "catalog.read"),
   /** Keeps the staff books (attendance, reviews, payroll, profiles). */
   staffBooks: (me: Me | null) =>

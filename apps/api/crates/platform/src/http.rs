@@ -7,13 +7,14 @@ use crate::auth::{
     self, Operator, OperatorAuth, OperatorEnrolled, OperatorEnrollment, OperatorLogin, OperatorMe,
     OperatorSummary, PendingOperatorSession,
 };
+use crate::features::{self, FeatureInfo, FeatureSwitch, TenantFeature};
 use crate::tenants::{
     self, CreatedTenant, NewTenant, Reason, StatusChanged, TenantRow, TenantStatus,
 };
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use identity::http::Client;
 use kernel::crypto::FieldCipher;
@@ -47,7 +48,13 @@ where
         .route("/admin/tenants/{id}", get(get_tenant))
         .route("/admin/tenants/{id}/suspend", post(suspend_tenant))
         .route("/admin/tenants/{id}/unsuspend", post(unsuspend_tenant))
-        .route("/admin/audit", get(list_audit));
+        .route("/admin/audit", get(list_audit))
+        .route("/admin/features", get(list_features))
+        .route("/admin/tenants/{id}/features", get(tenant_features))
+        .route(
+            "/admin/tenants/{id}/features/{key}",
+            put(set_tenant_feature),
+        );
     (auth, console)
 }
 
@@ -270,4 +277,35 @@ pub async fn list_audit(
     Query(query): Query<AuditQuery>,
 ) -> Result<Json<PlatformAuditPage>, AppError> {
     audit::list(&pool, &query).await.map(Json)
+}
+
+#[utoipa::path(get, path = "/api/v1/admin/features", tag = "admin",
+    responses((status = 200, body = Vec<FeatureInfo>), (status = 401)))]
+pub async fn list_features(Operator(_op): Operator) -> Json<Vec<FeatureInfo>> {
+    Json(features::registry())
+}
+
+#[utoipa::path(get, path = "/api/v1/admin/tenants/{id}/features", tag = "admin",
+    params(("id" = Uuid, Path)),
+    responses((status = 200, body = Vec<TenantFeature>), (status = 401), (status = 404)))]
+pub async fn tenant_features(
+    State(pool): State<PgPool>,
+    Operator(op): Operator,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<TenantFeature>>, AppError> {
+    features::of_tenant(&pool, &op, id).await.map(Json)
+}
+
+#[utoipa::path(put, path = "/api/v1/admin/tenants/{id}/features/{key}", tag = "admin",
+    params(("id" = Uuid, Path), ("key" = String, Path)), request_body = FeatureSwitch,
+    responses((status = 200, body = TenantFeature, description = "Effective on the spa members' next request"),
+        (status = 401), (status = 403, description = "platform.step_up_required"),
+        (status = 404, description = "unknown spa or feature key"), (status = 422)))]
+pub async fn set_tenant_feature(
+    State(pool): State<PgPool>,
+    Operator(op): Operator,
+    Path((id, key)): Path<(Uuid, String)>,
+    Json(body): Json<FeatureSwitch>,
+) -> Result<Json<TenantFeature>, AppError> {
+    features::set(&pool, &op, id, &key, &body).await.map(Json)
 }

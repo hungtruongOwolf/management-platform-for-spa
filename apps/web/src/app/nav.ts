@@ -103,14 +103,14 @@ export function navFor(me: Me | null): NavGroup[] {
     [
       "Báo cáo",
       [
-        mgmt && {
+        mayOpen.reports(me) && {
           to: "/bao-cao",
           label: "Báo cáo kinh doanh",
           short: "Báo cáo",
           icon: "chart",
         },
         // Reading back what was written is a review, like the reports (spec management-views §10).
-        mgmt && {
+        mayOpen.notes(me) && {
           to: "/nhat-ky-ghi-chu",
           label: "Nhật ký ghi chú",
           icon: "history",
