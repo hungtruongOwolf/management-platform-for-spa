@@ -77,6 +77,7 @@ Thước đo: quản lý không phải cộng tay lương và hoa hồng ([perso
 ### US4: Thưởng / phạt
 - AC4.1 `POST /adjustments` (`Idempotency-Key`): `staff_id`, `kind` (`bonus`/`penalty`), `amount?` (1–100tr), `points?` (1–100), cần ít nhất một trong hai. `reason` bắt buộc. `occurred_on` mặc định hôm nay, không được ở tương lai. Người ghi lấy từ session.
 - AC4.2 ~~Chỉ thêm, không sửa hay xóa~~ **(EM 2026-11-07, §11):** một khoản ghi nhầm được **xóa** (`DELETE /adjustments/{id}` → `204`, có hộp xác nhận) hoặc **sửa** (`PUT /adjustments/{id}` + `Idempotency-Key` → `200` khoản mới, id mới: khoản cũ bị hủy và khoản đúng được ghi trong một transaction). "Xóa" = hủy (`voided_at`, `voided_by`, migration 0024): ra khỏi sổ và bảng lương, dòng vẫn còn cho audit (`staff.adjustment_void`). Đã hủy → `409 adjustment.voided`; tháng đã chốt → `409 payroll.period_closed`; quyền như khi ghi (§11 quyết định C). DB: chỉ được đặt `voided_at` một lần, mọi thay đổi khác và DELETE bị trigger chặn.
+- AC4.2b **(ADR-0019 D2)** Tháng của `occurred_on` không có ngày nào thuộc thời gian làm việc của người đó (chưa vào làm, đã nghỉ) → `422 occurred_on not_employed`, không ghi gì. Trước đây khoản này được nhận rồi không vào phiếu lương nào. Điều chỉnh cho người đã nghỉ phải ghi vào một tháng họ còn làm và còn mở.
 - AC4.3 Tháng của `occurred_on` đã chốt → `409`. Để sửa tháng đã chốt: ghi vào tháng đang mở, kèm `corrects_month` là tháng đã chốt (phải trước tháng ghi và đã chốt, nếu không → `422`).
 - AC4.4 `GET /adjustments?month=`: mới nhất trước, kèm tên người ghi.
 
@@ -105,8 +106,10 @@ Thước đo: quản lý không phải cộng tay lương và hoa hồng ([perso
 - AC5.4 `POST /payroll/close {month, allow_incomplete?}` (`payroll.close`, `Idempotency-Key`):
   - tháng chưa kết thúc → `422 payroll.month_not_ended`;
   - còn ngày chưa chấm mà `allow_incomplete` không bật → `422 payroll.unrecorded_days`;
-  - đã chốt → `409 payroll.period_closed`; gửi lại cùng key thì trả lại response cũ.
+  - đã chốt → `409 payroll.period_closed`; gửi lại cùng key thì trả lại response cũ;
+  - **ADR-0019 D1:** còn người trong bảng lương chưa có điều kiện lương hoặc chưa có đánh giá tháng → `409 payroll.missing_data`, `details.staff = [{staff_id, full_name, missing: ["pay_terms" | "evaluation"]}]`. `allow_incomplete` không bỏ qua được. Miễn: hồ sơ gắn với tài khoản có `payroll.close` (chủ spa). `GET /payroll` trả cùng danh sách ở `missing` (rỗng khi đã chốt); màn chốt lương hiện danh sách và khóa nút "Chốt lương".
   Khi chốt, mọi phiếu lương được lưu thành bản chụp và tháng bị khóa: chấm công, đánh giá ngày, đánh giá tháng, thưởng/phạt của tháng đó đều → `409`. Khóa có ở cả service (row lock `FOR SHARE`/`FOR UPDATE` trên `payroll_period`) và DB (trigger `reject_closed_period`). Tháng đã chốt **không bao giờ mở lại** (trigger `payroll_period_forward_only`).
+- AC5.4b **(ADR-0019 D2b) Hoàn tiền gói sau khi người chốt đã nghỉ.** Khoản hoàn được trừ ở tháng hoàn tiền như ADR-0010 nếu người chốt còn làm trong tháng đó. Nếu không, nó thuộc **tháng làm cuối** của họ (tháng của ngày nghỉ việc gần nhất trước ngày hoàn): tháng đó còn mở thì phiếu lương tháng đó có dòng `package_refund` âm; đã chốt thì không thu hồi (spa chịu). `GET /payroll?month=` của tháng hoàn tiền liệt kê mọi khoản như vậy ở `leaver_refunds` (`deducted_in` = tháng đã trừ, `null` = không thu hồi); audit `payroll.close` ghi `leaver_refunds_deducted` (id các khoản trừ vào tháng đang chốt) và `leaver_refunds_not_clawed_back`. Một khoản tính là "đã trừ" khi được ghi trước lúc tháng làm cuối chốt.
 - AC5.5 `GET /payroll/payslips/{staff_id}?month=` trả về phiếu lương một người, gồm hoa hồng theo từng dịch vụ. Nhân viên của spa khác → `404`.
 - AC5.6 Lượt khách bị hủy (void) **sau khi** đã chốt tháng không làm đổi phiếu đã chốt. Chủ spa ghi một khoản điều chỉnh vào tháng đang mở.
 

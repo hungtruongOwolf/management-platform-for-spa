@@ -3130,6 +3130,36 @@ export interface components {
          * @enum {string}
          */
         LeaveCode: "leave_p" | "leave_dx" | "absent_k";
+        /**
+         * @description A refund of a package closed by someone who does not work in the refund's month (ADR-0019
+         *     D2b): deducted from their last month while it was open, else not clawed back. Listed with the
+         *     month of the refund so it is never dropped silently.
+         */
+        LeaverRefund: {
+            /**
+             * Format: int64
+             * @description The amount refunded (positive).
+             */
+            amount: number;
+            /**
+             * @description `YYYY-MM` of the payslip it is deducted from (the closer's last month, open when the
+             *     refund was made); `null` = not clawed back: that month was already closed, the spa bears
+             *     it.
+             */
+            deducted_in?: string | null;
+            /** @description The package. */
+            description: string;
+            full_name: string;
+            /** Format: date */
+            refund_date: string;
+            /** Format: uuid */
+            refund_id: string;
+            /**
+             * Format: uuid
+             * @description The closer of the package.
+             */
+            staff_id: string;
+        };
         /** @description Daily subtotal of the book, for every day of the range (not only the current page). */
         LedgerDay: {
             /** Format: int64 */
@@ -3286,6 +3316,18 @@ export interface components {
             manual_key: string;
             /** @description `otpauth://totp/...` URI; the client renders it as a QR code. */
             otpauth_uri: string;
+        };
+        /**
+         * @description What is missing for someone on the month's payroll.
+         * @enum {string}
+         */
+        MissingItem: "pay_terms" | "evaluation";
+        /** @description Someone whose data must be completed before the month can close (ADR-0019 D1). */
+        MissingPayrollData: {
+            full_name: string;
+            missing: components["schemas"]["MissingItem"][];
+            /** Format: uuid */
+            staff_id: string;
         };
         /** @description `GET /me/appointments`: the signed-in technician's own calendar. */
         MyCalendar: {
@@ -3925,6 +3967,17 @@ export interface components {
             closed_by_name?: string | null;
             /** @description The month has ended (it can be closed). */
             ended: boolean;
+            /**
+             * @description Refunds dated this month of packages closed by someone who does not work in it, and where
+             *     each was settled (ADR-0019 D2b).
+             */
+            leaver_refunds: components["schemas"]["LeaverRefund"][];
+            /**
+             * @description Who must get pay terms or an evaluation before the month can close (ADR-0019 D1;
+             *     `POST /payroll/close` answers `409 payroll.missing_data` with the same list). Empty once
+             *     closed.
+             */
+            missing: components["schemas"]["MissingPayrollData"][];
             month: string;
             payslips: components["schemas"]["Payslip"][];
             totals: components["schemas"]["PayrollTotals"];
@@ -5047,8 +5100,8 @@ export interface components {
         UpsellLine: {
             description: string;
             /**
-             * @description `package`, `package_refund` (a package closed earlier, cancelled with a refund this month)
-             *     or `service`.
+             * @description `package`, `package_refund` (a package closed earlier, cancelled with a refund this month,
+             *     or after the closer's last month when this is it: ADR-0019 D2b) or `service`.
              */
             kind: string;
             /**
@@ -9657,7 +9710,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description payroll.period_closed */
+            /** @description payroll.period_closed | payroll.missing_data (ADR-0019 D1: details.staff = [MissingPayrollData], who needs pay terms or the month's evaluation first; allow_incomplete does not skip it) */
             409: {
                 headers: {
                     [name: string]: unknown;

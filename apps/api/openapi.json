@@ -3894,7 +3894,7 @@
           "401": {},
           "403": {},
           "409": {
-            "description": "payroll.period_closed"
+            "description": "payroll.period_closed | payroll.missing_data (ADR-0019 D1: details.staff = [MissingPayrollData], who needs pay terms or the month's evaluation first; allow_incomplete does not skip it)"
           },
           "422": {
             "description": "payroll.month_not_ended | payroll.unrecorded_days"
@@ -9312,6 +9312,52 @@
           "absent_k"
         ]
       },
+      "LeaverRefund": {
+        "type": "object",
+        "description": "A refund of a package closed by someone who does not work in the refund's month (ADR-0019\nD2b): deducted from their last month while it was open, else not clawed back. Listed with the\nmonth of the refund so it is never dropped silently.",
+        "required": [
+          "refund_id",
+          "staff_id",
+          "full_name",
+          "description",
+          "amount",
+          "refund_date"
+        ],
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The amount refunded (positive)."
+          },
+          "deducted_in": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`YYYY-MM` of the payslip it is deducted from (the closer's last month, open when the\nrefund was made); `null` = not clawed back: that month was already closed, the spa bears\nit."
+          },
+          "description": {
+            "type": "string",
+            "description": "The package."
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "refund_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "refund_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The closer of the package."
+          }
+        }
+      },
       "LedgerDay": {
         "type": "object",
         "description": "Daily subtotal of the book, for every day of the range (not only the current page).",
@@ -9711,6 +9757,38 @@
           "otpauth_uri": {
             "type": "string",
             "description": "`otpauth://totp/...` URI; the client renders it as a QR code."
+          }
+        }
+      },
+      "MissingItem": {
+        "type": "string",
+        "description": "What is missing for someone on the month's payroll.",
+        "enum": [
+          "pay_terms",
+          "evaluation"
+        ]
+      },
+      "MissingPayrollData": {
+        "type": "object",
+        "description": "Someone whose data must be completed before the month can close (ADR-0019 D1).",
+        "required": [
+          "staff_id",
+          "full_name",
+          "missing"
+        ],
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MissingItem"
+            }
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -11416,7 +11494,9 @@
           "closed",
           "ended",
           "payslips",
-          "totals"
+          "totals",
+          "missing",
+          "leaver_refunds"
         ],
         "properties": {
           "closed": {
@@ -11438,6 +11518,20 @@
           "ended": {
             "type": "boolean",
             "description": "The month has ended (it can be closed)."
+          },
+          "leaver_refunds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeaverRefund"
+            },
+            "description": "Refunds dated this month of packages closed by someone who does not work in it, and where\neach was settled (ADR-0019 D2b)."
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MissingPayrollData"
+            },
+            "description": "Who must get pay terms or an evaluation before the month can close (ADR-0019 D1;\n`POST /payroll/close` answers `409 payroll.missing_data` with the same list). Empty once\nclosed."
           },
           "month": {
             "type": "string"
@@ -14119,7 +14213,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "`package`, `package_refund` (a package closed earlier, cancelled with a refund this month)\nor `service`."
+            "description": "`package`, `package_refund` (a package closed earlier, cancelled with a refund this month,\nor after the closer's last month when this is it: ADR-0019 D2b) or `service`."
           },
           "qty": {
             "type": "integer",
