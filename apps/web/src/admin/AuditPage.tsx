@@ -21,10 +21,20 @@ const ACTIONS: Record<string, string> = {
   "platform.account.reset_mfa": "Đặt lại xác thực hai bước",
   "platform.account.revoke_sessions": "Đăng xuất mọi thiết bị",
   "platform.tenant_audit.read": "Xem nhật ký spa",
+  "platform.account.search": "Tìm tài khoản",
 };
 
 export function actionLabel(action: string): string {
   return ACTIONS[action] ?? action;
+}
+
+/** The action, plus the masked query of an account search (ADR-0019 D17: "090****", "N… A…"). */
+function actionText(item: { action: string; detail?: unknown }): string {
+  const label = actionLabel(item.action);
+  const detail = item.detail;
+  if (item.action !== "platform.account.search" || typeof detail !== "object" || detail === null) return label;
+  const q = (detail as { q?: unknown }).q;
+  return typeof q === "string" ? `${label}: ${q}` : label;
 }
 
 /** Spec US9: every operator action, newest first. */
@@ -71,7 +81,7 @@ export function AuditPage() {
                     <tr key={item.id}>
                       <td>{adminDateTime(item.at)}</td>
                       <td>{item.operator_username}</td>
-                      <td>{actionLabel(item.action)}</td>
+                      <td>{actionText(item)}</td>
                       <td>{spaName(item.tenant_id)}</td>
                       <td>{item.reason ?? "—"}</td>
                     </tr>
