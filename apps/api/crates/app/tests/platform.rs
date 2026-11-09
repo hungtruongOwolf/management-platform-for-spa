@@ -906,3 +906,476 @@ async fn app_rw_cannot_write_flags(owner: PgPool) -> TestResult {
     assert_eq!(code.as_deref(), Some("42501"));
     Ok(())
 }
+
+// ------------------------------------------------------------------ part C: roles, accounts, spa audit
+
+/// The templates a fresh database starts with are the code defaults (ADR-0018 D5): the matrix
+/// and the seeded roles stay in agreement.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn role_templates_start_as_the_code_defaults(owner: PgPool) -> TestResult {
+    let h = harness(owner).await?;
+    for role in identity::SystemRole::ALL {
+        let mut stored: Vec<String> = sqlx::query_scalar(
+            "SELECT permission FROM app.role_template_permission WHERE role_key = $1",
+        )
+        .bind(role.key())
+        .fetch_all(&h.owner)
+        .await?;
+        stored.sort();
+        let mut code: Vec<String> = role
+            .default_permissions()
+            .iter()
+            .map(|p| p.as_str().to_owned())
+            .collect();
+        code.sort();
+        assert_eq!(stored, code, "{}", role.key());
+    }
+    let follows: bool =
+        sqlx::query_scalar("SELECT bool_and(follows_template) FROM app.role WHERE is_system")
+            .fetch_one(&h.owner)
+            .await?;
+    assert!(follows, "a freshly created spa follows every template");
+    Ok(())
+}
+
+/// Spec US7: a template edit reaches every spa that follows it on the next request; a spa with
+/// its own grants keeps them until "Về mẫu"; the guardrails hold.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn role_edits_take_effect_on_the_next_request(owner: PgPool) -> TestResult {
+    let h = harness(owner).await?;
+    add_operator(&h).await?;
+    common::add_member(
+        &h.owner,
+        "vpyd",
+        "0905000002",
+        "Quản lý",
+        identity::SystemRole::Manager,
+    )
+    .await?;
+    let op = operator_session(&h).await?;
+    let manager = session_for(&h, "0905000002").await;
+    let new_customer =
+        || json!({"full_name": "Khách Thử", "phone": "0912345678", "gender": "female"});
+    let before = call(
+        &h.app,
+        "POST",
+        "/customers",
+        Some(&manager),
+        Some(new_customer()),
+    )
+    .await;
+    assert_eq!(before.status, StatusCode::CREATED, "{}", before.body);
+
+    let mut grants: Vec<String> = identity::SystemRole::Manager
+        .default_permissions()
+        .iter()
+        .map(|p| p.as_str().to_owned())
+        .filter(|p| p != "customer.write")
+        .collect();
+    let edited = admin_call(
+        &h.app,
+        "PUT",
+        "/admin/role-templates/manager",
+        Some(&op),
+        Some(json!({"permissions": grants, "reason": "Quản lý không sửa hồ sơ khách"})),
+    )
+    .await;
+    assert_eq!(edited.status, StatusCode::OK, "{}", edited.body);
+    assert_eq!(edited.body["updated_spas"], 1);
+    let refused = call(
+        &h.app,
+        "POST",
+        "/customers",
+        Some(&manager),
+        Some(json!({"full_name": "Khách Hai", "phone": "0912345679", "gender": "female"})),
+    )
+    .await;
+    assert_eq!(refused.status, StatusCode::FORBIDDEN, "{}", refused.body);
+
+    // This spa's own grants: customer.write back for its manager only.
+    let id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM app.tenant WHERE slug = 'vpyd'")
+        .fetch_one(&h.owner)
+        .await?;
+    grants.push("customer.write".to_owned());
+    let own = admin_call(
+        &h.app,
+        "PUT",
+        &format!("/admin/tenants/{id}/roles/manager"),
+        Some(&op),
+        Some(json!({"permissions": grants, "reason": "Spa này cho phép"})),
+    )
+    .await;
+    assert_eq!(own.status, StatusCode::OK, "{}", own.body);
+    assert_eq!(own.body["follows_template"], false);
+    let allowed = call(
+        &h.app,
+        "POST",
+        "/customers",
+        Some(&manager),
+        Some(json!({"full_name": "Khách Ba", "phone": "0912345670", "gender": "female"})),
+    )
+    .await;
+    assert_eq!(allowed.status, StatusCode::CREATED, "{}", allowed.body);
+    // A later template edit leaves the spa's own grants alone.
+    let again = admin_call(
+        &h.app,
+        "PUT",
+        "/admin/role-templates/manager",
+        Some(&op),
+        Some(json!({"permissions": grants[..grants.len() - 1].to_vec(), "reason": "Lần nữa"})),
+    )
+    .await;
+    assert_eq!(again.body["updated_spas"], 0, "{}", again.body);
+    let reset = admin_call(
+        &h.app,
+        "POST",
+        &format!("/admin/tenants/{id}/roles/manager/reset"),
+        Some(&op),
+        Some(json!({"reason": "Về mẫu"})),
+    )
+    .await;
+    assert_eq!(reset.body["follows_template"], true, "{}", reset.body);
+    assert!(
+        reset.body["permissions"]
+            .as_array()
+            .is_some_and(|p| !p.contains(&json!("customer.write")))
+    );
+
+    let roles = admin_call(
+        &h.app,
+        "GET",
+        &format!("/admin/tenants/{id}/roles"),
+        Some(&op),
+        None,
+    )
+    .await;
+    assert_eq!(roles.body.as_array().map(Vec::len), Some(3));
+    let trail = count(
+        &h.owner,
+        &format!(
+            "SELECT count(*) FROM app.audit_log WHERE tenant_id = '{id}' AND actor_kind = 'platform_admin'
+               AND action IN ('role.permissions_changed', 'role.permissions_reset')"
+        ),
+    )
+    .await?;
+    assert_eq!(trail, 3, "template, own grants, reset");
+    Ok(())
+}
+
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_owner_floor_is_kept(owner: PgPool) -> TestResult {
+    let h = harness(owner).await?;
+    add_operator(&h).await?;
+    let op = operator_session(&h).await?;
+    let owner_without = |drop: &str| -> Vec<String> {
+        identity::SystemRole::Owner
+            .default_permissions()
+            .iter()
+            .map(|p| p.as_str().to_owned())
+            .filter(|p| p != drop)
+            .collect()
+    };
+    let floor = admin_call(
+        &h.app,
+        "PUT",
+        "/admin/role-templates/owner",
+        Some(&op),
+        Some(json!({"permissions": owner_without("staff.manage"), "reason": "Thử"})),
+    )
+    .await;
+    assert_eq!(floor.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(floor.body["code"], "role.owner_floor");
+    assert_eq!(floor.body["details"]["missing"], json!(["staff.manage"]));
+    let manager_admin = admin_call(
+        &h.app,
+        "PUT",
+        "/admin/role-templates/manager",
+        Some(&op),
+        Some(json!({"permissions": ["catalog.read", "staff.manage"], "reason": "Thử"})),
+    )
+    .await;
+    assert_eq!(manager_admin.body["code"], "role.owner_only_permission");
+    let derived = admin_call(
+        &h.app,
+        "PUT",
+        "/admin/role-templates/technician",
+        Some(&op),
+        Some(json!({"permissions": ["staff.read_own_past"], "reason": "Thử"})),
+    )
+    .await;
+    assert_eq!(derived.body["code"], "role.not_grantable");
+    let custom = admin_call(
+        &h.app,
+        "PUT",
+        "/admin/role-templates/cashier",
+        Some(&op),
+        Some(json!({"permissions": ["catalog.read"], "reason": "Thử"})),
+    )
+    .await;
+    assert_eq!(custom.status, StatusCode::NOT_FOUND);
+    Ok(())
+}
+
+/// Spec US8: find a login, lock it (never the last owner of an active spa), unlock it, reset
+/// its password or MFA, end its sessions — audited in every spa of the account.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn accounts_across_spas(owner: PgPool) -> TestResult {
+    let h = harness(owner).await?;
+    add_operator(&h).await?;
+    let op = operator_session(&h).await?;
+    let spa_owner = session_for(&h, common::OWNER_PHONE).await;
+
+    let by_phone = admin_call(&h.app, "GET", "/admin/accounts?q=0905123", Some(&op), None).await;
+    assert_eq!(by_phone.status, StatusCode::OK, "{}", by_phone.body);
+    let found = by_phone.body[0].clone();
+    let mut keys: Vec<String> = found
+        .as_object()
+        .map(|o| o.keys().cloned().collect())
+        .unwrap_or_default();
+    keys.sort();
+    assert_eq!(
+        keys,
+        [
+            "created_at",
+            "full_name",
+            "id",
+            "locked_until",
+            "memberships",
+            "mfa_enabled",
+            "must_change_password",
+            "phone",
+            "status"
+        ]
+    );
+    assert_eq!(found["memberships"][0]["is_owner"], true);
+    assert_eq!(found["mfa_enabled"], true);
+    let by_name = admin_call(
+        &h.app,
+        "GET",
+        "/admin/accounts?q=chu%20spa",
+        Some(&op),
+        None,
+    )
+    .await;
+    assert_eq!(
+        by_name.body.as_array().map(Vec::len),
+        Some(1),
+        "{}",
+        by_name.body
+    );
+    let short = admin_call(&h.app, "GET", "/admin/accounts?q=ab", Some(&op), None).await;
+    assert_eq!(short.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let id = found["id"].as_str().unwrap_or_default().to_owned();
+    let reason = || Some(json!({"reason": "Chủ spa gọi hỗ trợ"}));
+
+    let last = admin_call(
+        &h.app,
+        "POST",
+        &format!("/admin/accounts/{id}/lock"),
+        Some(&op),
+        reason(),
+    )
+    .await;
+    assert_eq!(last.status, StatusCode::CONFLICT);
+    assert_eq!(last.body["code"], "platform.last_owner");
+
+    // The owner forgot their password: a temporary one, every session ended.
+    let reset = admin_call(
+        &h.app,
+        "POST",
+        &format!("/admin/accounts/{id}/reset-password"),
+        Some(&op),
+        reason(),
+    )
+    .await;
+    assert_eq!(reset.status, StatusCode::OK, "{}", reset.body);
+    assert_eq!(
+        reset
+            .headers
+            .get("cache-control")
+            .and_then(|v| v.to_str().ok()),
+        Some("no-store")
+    );
+    let temporary = reset.body["temporary_password"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    assert_eq!(reset.body["account"]["must_change_password"], true);
+    assert_eq!(
+        call(&h.app, "GET", "/me", Some(&spa_owner), None)
+            .await
+            .status,
+        StatusCode::UNAUTHORIZED
+    );
+    let first = login(&h.app, common::OWNER_PHONE, &temporary).await;
+    assert_eq!(first.body["next"], "mfa_verify", "{}", first.body);
+
+    // MFA lost too: the next sign-in enrolls again.
+    let mfa = admin_call(
+        &h.app,
+        "POST",
+        &format!("/admin/accounts/{id}/reset-mfa"),
+        Some(&op),
+        reason(),
+    )
+    .await;
+    assert_eq!(mfa.status, StatusCode::OK, "{}", mfa.body);
+    let again = admin_call(
+        &h.app,
+        "POST",
+        &format!("/admin/accounts/{id}/reset-mfa"),
+        Some(&op),
+        reason(),
+    )
+    .await;
+    assert_eq!(again.body["code"], "account.mfa_not_enabled");
+    assert_eq!(
+        login(&h.app, common::OWNER_PHONE, &temporary).await.body["next"],
+        "mfa_enroll"
+    );
+
+    // With a second owner, the first can be locked; locked = no sign-in, no reset.
+    common::add_member(
+        &h.owner,
+        "vpyd",
+        "0906000009",
+        "Chủ thứ hai",
+        identity::SystemRole::Owner,
+    )
+    .await?;
+    let locked = admin_call(
+        &h.app,
+        "POST",
+        &format!("/admin/accounts/{id}/lock"),
+        Some(&op),
+        reason(),
+    )
+    .await;
+    assert_eq!(locked.status, StatusCode::OK, "{}", locked.body);
+    assert_eq!(locked.body["account"]["status"], "disabled");
+    assert_eq!(
+        login(&h.app, common::OWNER_PHONE, &temporary).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    let blocked = admin_call(
+        &h.app,
+        "POST",
+        &format!("/admin/accounts/{id}/reset-password"),
+        Some(&op),
+        reason(),
+    )
+    .await;
+    assert_eq!(blocked.body["code"], "account.locked");
+    let unlocked = admin_call(
+        &h.app,
+        "POST",
+        &format!("/admin/accounts/{id}/unlock"),
+        Some(&op),
+        reason(),
+    )
+    .await;
+    assert_eq!(unlocked.body["account"]["status"], "active");
+    let revoked = admin_call(
+        &h.app,
+        "POST",
+        &format!("/admin/accounts/{id}/revoke-sessions"),
+        Some(&op),
+        reason(),
+    )
+    .await;
+    assert_eq!(revoked.status, StatusCode::OK);
+    let missing = admin_call(
+        &h.app,
+        "POST",
+        &format!("/admin/accounts/{}/revoke-sessions", uuid::Uuid::now_v7()),
+        Some(&op),
+        reason(),
+    )
+    .await;
+    assert_eq!(missing.status, StatusCode::NOT_FOUND);
+
+    // Both trails; never the temporary password.
+    let spa_rows = count(
+        &h.owner,
+        &format!(
+            "SELECT count(*) FROM app.audit_log WHERE actor_kind = 'platform_admin' AND entity_id = '{id}'"
+        ),
+    )
+    .await?;
+    assert_eq!(
+        spa_rows, 5,
+        "reset-password, reset-mfa, lock, unlock, revoke; refusals leave none"
+    );
+    let leaks = count(
+        &h.owner,
+        &format!(
+            "SELECT (SELECT count(*) FROM app.audit_log WHERE concat(before, after, reason) LIKE '%{temporary}%')
+                  + (SELECT count(*) FROM app.platform_audit_log WHERE concat(detail, reason) LIKE '%{temporary}%')"
+        ),
+    )
+    .await?;
+    assert_eq!(leaks, 0);
+    Ok(())
+}
+
+/// Spec US9 AC9.2: the spa's trail for support is metadata only, and the read is audited.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn tenant_audit_is_metadata_only(owner: PgPool) -> TestResult {
+    let h = harness(owner).await?;
+    add_operator(&h).await?;
+    let op = operator_session(&h).await?;
+    let spa_owner = session_for(&h, common::OWNER_PHONE).await;
+    let created = call(
+        &h.app,
+        "POST",
+        "/customers",
+        Some(&spa_owner),
+        Some(json!({"full_name": "Khách Bí Mật", "phone": "0912345678", "gender": "female"})),
+    )
+    .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    let id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM app.tenant WHERE slug = 'vpyd'")
+        .fetch_one(&h.owner)
+        .await?;
+    let page = admin_call(
+        &h.app,
+        "GET",
+        &format!("/admin/tenants/{id}/audit"),
+        Some(&op),
+        None,
+    )
+    .await;
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    let items = page.body["items"].as_array().cloned().unwrap_or_default();
+    assert!(!items.is_empty());
+    for item in &items {
+        let mut keys: Vec<String> = item
+            .as_object()
+            .map(|o| o.keys().cloned().collect())
+            .unwrap_or_default();
+        keys.sort();
+        assert_eq!(
+            keys,
+            [
+                "action",
+                "actor_kind",
+                "actor_name",
+                "at",
+                "entity_type",
+                "id"
+            ]
+        );
+    }
+    assert!(
+        !page.body.to_string().contains("Khách Bí Mật"),
+        "no customer data"
+    );
+    assert!(!page.body.to_string().contains("0912345678"));
+    let reads = count(
+        &h.owner,
+        "SELECT count(*) FROM app.platform_audit_log WHERE action = 'platform.tenant_audit.read'",
+    )
+    .await?;
+    assert_eq!(reads, 1);
+    Ok(())
+}

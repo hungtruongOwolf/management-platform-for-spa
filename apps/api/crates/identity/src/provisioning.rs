@@ -57,16 +57,16 @@ pub async fn create_tenant(
         )
         .execute(&mut *tx)
         .await?;
-        for permission in role.default_permissions() {
-            sqlx::query!(
-                "INSERT INTO app.role_permission (tenant_id, role_id, permission) VALUES ($1, $2, $3)",
-                tenant.as_uuid(),
-                role_id,
-                permission.as_str()
-            )
-            .execute(&mut *tx)
-            .await?;
-        }
+        // The role templates the platform operator edits (ADR-0018 D5, migration 0040).
+        sqlx::query!(
+            "INSERT INTO app.role_permission (tenant_id, role_id, permission)
+             SELECT $1, $2, permission FROM app.role_template_permission WHERE role_key = $3",
+            tenant.as_uuid(),
+            role_id,
+            role.key()
+        )
+        .execute(&mut *tx)
+        .await?;
     }
     tx.commit().await?;
     Ok(tenant)

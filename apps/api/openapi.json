@@ -180,6 +180,286 @@
         }
       }
     },
+    "/api/v1/admin/accounts": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "search_accounts",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "A phone number (or its start) or part of a name, at least 3 characters.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AccountRow"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "422": {
+            "description": "q too_short"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/accounts/{id}/lock": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "lock_account",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reason"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionsRevoked"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "platform.step_up_required"
+          },
+          "404": {},
+          "409": {
+            "description": "platform.last_owner | account.status_unchanged"
+          },
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/admin/accounts/{id}/reset-mfa": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "reset_account_mfa",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reason"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionsRevoked"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "platform.step_up_required"
+          },
+          "404": {},
+          "409": {
+            "description": "account.mfa_not_enabled"
+          },
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/admin/accounts/{id}/reset-password": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "reset_account_password",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reason"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The temporary password is in this response only (no-store)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordReset"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "platform.step_up_required"
+          },
+          "404": {},
+          "409": {
+            "description": "account.locked"
+          },
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/admin/accounts/{id}/revoke-sessions": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "revoke_account_sessions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reason"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionsRevoked"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "platform.step_up_required"
+          },
+          "404": {},
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/admin/accounts/{id}/unlock": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "unlock_account",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reason"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionsRevoked"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "platform.step_up_required"
+          },
+          "404": {},
+          "409": {
+            "description": "account.status_unchanged"
+          },
+          "422": {}
+        }
+      }
+    },
     "/api/v1/admin/audit": {
       "get": {
         "tags": [
@@ -442,6 +722,101 @@
         }
       }
     },
+    "/api/v1/admin/permissions": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "list_permissions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PermissionInfo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {}
+        }
+      }
+    },
+    "/api/v1/admin/role-templates": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "list_role_templates",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RoleGrants"
+                  }
+                }
+              }
+            }
+          },
+          "401": {}
+        }
+      }
+    },
+    "/api/v1/admin/role-templates/{key}": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "set_role_template",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "description": "owner | manager | technician",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleEdit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "`updated_spas`: spas following the template, changed in the same transaction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleGrants"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "platform.step_up_required"
+          },
+          "404": {},
+          "422": {
+            "description": "role.not_grantable | role.owner_only_permission | role.owner_floor | reason"
+          }
+        }
+      }
+    },
     "/api/v1/admin/tenants": {
       "get": {
         "tags": [
@@ -533,6 +908,60 @@
         }
       }
     },
+    "/api/v1/admin/tenants/{id}/audit": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "tenant_audit",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "Only entries strictly older than this instant (the previous page's `next_before`).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "1–100, default 50.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadata only; the read is audited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpaAuditPage"
+                }
+              }
+            }
+          },
+          "401": {},
+          "404": {},
+          "422": {}
+        }
+      }
+    },
     "/api/v1/admin/tenants/{id}/features": {
       "get": {
         "tags": [
@@ -621,6 +1050,154 @@
           "404": {
             "description": "unknown spa or feature key"
           },
+          "422": {}
+        }
+      }
+    },
+    "/api/v1/admin/tenants/{id}/roles": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "tenant_roles",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RoleGrants"
+                  }
+                }
+              }
+            }
+          },
+          "401": {},
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/admin/tenants/{id}/roles/{key}": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "set_tenant_role",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "description": "owner | manager | technician",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleEdit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "This spa's own grants (no longer follows the template); next request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleGrants"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "platform.step_up_required"
+          },
+          "404": {},
+          "422": {
+            "description": "role.not_grantable | role.owner_only_permission | role.owner_floor (details.missing) | permissions unknown_permission | reason"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/tenants/{id}/roles/{key}/reset": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "reset_tenant_role",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reason"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Back to the template, and following it again",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleGrants"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "platform.step_up_required"
+          },
+          "404": {},
           "422": {}
         }
       }
@@ -5220,6 +5797,96 @@
   },
   "components": {
     "schemas": {
+      "AccountMembership": {
+        "type": "object",
+        "description": "One spa an account belongs to.",
+        "required": [
+          "tenant_id",
+          "tenant_name",
+          "tenant_status",
+          "status",
+          "role_keys",
+          "is_owner"
+        ],
+        "properties": {
+          "is_owner": {
+            "type": "boolean"
+          },
+          "role_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tenant_name": {
+            "type": "string"
+          },
+          "tenant_status": {
+            "type": "string"
+          }
+        }
+      },
+      "AccountRow": {
+        "type": "object",
+        "description": "A login as the console shows it: who, which spas, and the state of its security — nothing\nelse.",
+        "required": [
+          "id",
+          "full_name",
+          "phone",
+          "status",
+          "mfa_enabled",
+          "must_change_password",
+          "created_at",
+          "memberships"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locked_until": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Temporarily locked after wrong passwords, until then."
+          },
+          "memberships": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccountMembership"
+            }
+          },
+          "mfa_enabled": {
+            "type": "boolean"
+          },
+          "must_change_password": {
+            "type": "boolean"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "`active` | `disabled` (locked by an operator)."
+          }
+        }
+      },
       "Adjustment": {
         "type": "object",
         "required": [
@@ -10510,6 +11177,23 @@
         },
         "additionalProperties": false
       },
+      "PasswordReset": {
+        "type": "object",
+        "description": "Body of `POST /admin/accounts/{id}/reset-password`.",
+        "required": [
+          "temporary_password",
+          "account"
+        ],
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/AccountRow"
+          },
+          "temporary_password": {
+            "type": "string",
+            "description": "Shown this once (`no-store`); the person must replace it at the next sign-in."
+          }
+        }
+      },
       "PasswordResetRequestBody": {
         "type": "object",
         "description": "Body of `POST /auth/password-reset-requests` (\"Quên mật khẩu?\").",
@@ -11095,6 +11779,45 @@
           }
         }
       },
+      "PermissionInfo": {
+        "type": "object",
+        "description": "One permission of the catalogue.",
+        "required": [
+          "key",
+          "group",
+          "grantable",
+          "owner_only",
+          "owner_floor"
+        ],
+        "properties": {
+          "feature": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The feature whose switch removes it, if any."
+          },
+          "grantable": {
+            "type": "boolean",
+            "description": "May a role hold it (`platform.*` and the derived former-staff permission may not)."
+          },
+          "group": {
+            "type": "string",
+            "description": "Area: the part before the first dot (`customer`, `staff`, …)."
+          },
+          "key": {
+            "type": "string"
+          },
+          "owner_floor": {
+            "type": "boolean",
+            "description": "The owner role must keep it."
+          },
+          "owner_only": {
+            "type": "boolean",
+            "description": "Only the owner role may hold it."
+          }
+        }
+      },
       "PhaseDto": {
         "type": "string",
         "description": "Where it stands on the desk's timeline (spec §10.1), derived when read: `waiting` (booked),\n`in_service` (arrived, or its visit is within its service time), `done`, `no_show`,\n`cancelled`, `voided` (the visit was voided).",
@@ -11598,6 +12321,65 @@
           "today": {
             "type": "string",
             "format": "date"
+          }
+        }
+      },
+      "RoleEdit": {
+        "type": "object",
+        "description": "Body of the role edits.",
+        "required": [
+          "permissions",
+          "reason"
+        ],
+        "properties": {
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason": {
+            "type": "string",
+            "description": "3–500 characters."
+          }
+        },
+        "additionalProperties": false
+      },
+      "RoleGrants": {
+        "type": "object",
+        "description": "A default template, or one spa's role.",
+        "required": [
+          "key",
+          "name",
+          "permissions"
+        ],
+        "properties": {
+          "follows_template": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Spa roles only: `true` = follows the template (a template edit changes it too)."
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "updated_spas": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Template edits only: how many spas changed with it."
           }
         }
       },
@@ -12148,6 +12930,82 @@
           }
         },
         "additionalProperties": false
+      },
+      "SessionsRevoked": {
+        "type": "object",
+        "description": "Body of `POST /admin/accounts/{id}/revoke-sessions`.",
+        "required": [
+          "revoked",
+          "account"
+        ],
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/AccountRow"
+          },
+          "revoked": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "SpaAuditItem": {
+        "type": "object",
+        "description": "One entry of a spa's own audit trail, as support sees it (spec US9 AC9.2): metadata only. No\n`before` / `after`, no `reason` (free text that may name a customer), no `entity_id` (may be a\ncustomer's id), no IP. The full entry needs the owner's support grant (ADR-0003, later).",
+        "required": [
+          "id",
+          "at",
+          "action",
+          "entity_type",
+          "actor_kind"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor_kind": {
+            "type": "string",
+            "description": "`user` | `platform_admin` | `system`."
+          },
+          "actor_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The spa member's name, or the operator's username."
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "entity_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "SpaAuditPage": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpaAuditItem"
+            }
+          },
+          "next_before": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
       },
       "StaffAccountDto": {
         "type": "object",

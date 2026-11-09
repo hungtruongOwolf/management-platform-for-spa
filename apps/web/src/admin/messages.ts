@@ -8,6 +8,13 @@ addMessages(
     "tenant.slug_taken": "Mã spa này đã có. Chọn mã khác.",
     "tenant.status_unchanged": "Spa đã ở trạng thái này.",
     "account.phone_taken": "Số điện thoại này đã có tài khoản (mỗi người chỉ thuộc một spa).",
+    "platform.last_owner": "Đây là chủ spa duy nhất của một spa đang hoạt động. Tạm ngưng spa trước, hoặc đặt lại mật khẩu thay vì khóa.",
+    "account.status_unchanged": "Tài khoản đã ở trạng thái này.",
+    "account.locked": "Tài khoản đang bị khóa. Mở khóa trước.",
+    "account.mfa_not_enabled": "Tài khoản chưa bật xác thực hai bước.",
+    "role.owner_floor": "Chủ spa phải giữ các quyền quản trị (quản lý nhân sự, xem nhân sự, xem nhật ký).",
+    "role.owner_only_permission": "Quyền quản lý nhân sự chỉ dành cho chủ spa.",
+    "role.not_grantable": "Có quyền không được cấp cho vai trò.",
   },
   {},
 );
@@ -28,6 +35,7 @@ const FIELD_LABELS: Record<string, string> = {
   "owner.phone": "Số điện thoại di động không hợp lệ.",
   "owner.full_name": "Nhập tên chủ spa.",
   reason: "Nhập lý do (ít nhất 3 ký tự).",
+  q: "Nhập ít nhất 3 ký tự.",
 };
 
 export function adminFieldError(error: unknown, field: string): string | undefined {

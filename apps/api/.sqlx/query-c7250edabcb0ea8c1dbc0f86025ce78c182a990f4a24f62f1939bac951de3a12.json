@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.user_account\n                 SET status = 'active', failed_logins = 0, locked_until = NULL, updated_at = now()\n                 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c7250edabcb0ea8c1dbc0f86025ce78c182a990f4a24f62f1939bac951de3a12"
+}

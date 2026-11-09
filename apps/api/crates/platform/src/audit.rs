@@ -139,6 +139,88 @@ pub async fn list(pool: &PgPool, query: &AuditQuery) -> Result<PlatformAuditPage
     Ok(PlatformAuditPage { items, next_before })
 }
 
+/// One entry of a spa's own audit trail, as support sees it (spec US9 AC9.2): metadata only. No
+/// `before` / `after`, no `reason` (free text that may name a customer), no `entity_id` (may be a
+/// customer's id), no IP. The full entry needs the owner's support grant (ADR-0003, later).
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct SpaAuditItem {
+    pub id: Uuid,
+    pub at: DateTime<Utc>,
+    pub action: String,
+    pub entity_type: String,
+    /// `user` | `platform_admin` | `system`.
+    pub actor_kind: String,
+    /// The spa member's name, or the operator's username.
+    pub actor_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct SpaAuditPage {
+    pub items: Vec<SpaAuditItem>,
+    pub next_before: Option<DateTime<Utc>>,
+}
+
+/// `GET /admin/tenants/{id}/audit`: read in the spa's own RLS scope; the read itself is audited
+/// (`platform.tenant_audit.read`).
+pub async fn of_tenant(
+    pool: &PgPool,
+    op: &crate::auth::OperatorSession,
+    tenant: Uuid,
+    query: &AuditQuery,
+) -> Result<SpaAuditPage, AppError> {
+    let limit = query.limit()?;
+    crate::tenants::get(pool, op, tenant).await?;
+    let mut tx = kernel::TenantTx::begin(pool, kernel::TenantId::from_uuid(tenant)).await?;
+    let rows = sqlx::query!(
+        r#"SELECT a.id, a.at, a.action, a.entity_type, a.actor_kind,
+                  COALESCE(u.full_name, o.username) AS actor_name
+           FROM app.audit_log a
+           LEFT JOIN app.user_account u ON a.actor_kind = 'user' AND u.id = a.actor_user_id
+           LEFT JOIN app.platform_operator o
+             ON a.actor_kind = 'platform_admin' AND o.id = a.actor_user_id
+           WHERE a.tenant_id = $1 AND ($2::timestamptz IS NULL OR a.at < $2)
+           ORDER BY a.at DESC, a.id DESC
+           LIMIT $3"#,
+        tenant,
+        query.before,
+        limit + 1
+    )
+    .fetch_all(tx.conn())
+    .await?;
+    let more = i64::try_from(rows.len()).unwrap_or(i64::MAX) > limit;
+    let mut items: Vec<SpaAuditItem> = rows
+        .into_iter()
+        .map(|r| SpaAuditItem {
+            id: r.id,
+            at: r.at,
+            action: r.action,
+            entity_type: r.entity_type,
+            actor_kind: r.actor_kind,
+            actor_name: r.actor_name,
+        })
+        .collect();
+    if more {
+        items.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
+    }
+    let next_before = more.then(|| items.last().map(|i| i.at)).flatten();
+    record(
+        tx.conn(),
+        op.operator_id,
+        op.meta.ip,
+        PlatformEntry {
+            action: "platform.tenant_audit.read",
+            tenant: Some(tenant),
+            target_type: Some("tenant"),
+            target_id: Some(tenant),
+            detail: Some(serde_json::json!({"rows": items.len()})),
+            reason: None,
+        },
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(SpaAuditPage { items, next_before })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

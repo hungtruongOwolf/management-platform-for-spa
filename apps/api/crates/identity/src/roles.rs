@@ -3,6 +3,13 @@
 
 use kernel::Permission;
 
+/// Permissions no role may hold: platform administration belongs to the operator (ADR-0018), and
+/// `staff.read_own_past` is derived at request time for former staff (ADR-0014).
+pub const NOT_GRANTABLE: &[Permission] = &[
+    Permission::PlatformTenantManage,
+    Permission::StaffReadOwnPast,
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SystemRole {
     Owner,
@@ -42,11 +49,12 @@ impl SystemRole {
     pub fn default_permissions(self) -> Vec<Permission> {
         use Permission as P;
         match self {
-            // Everything inside the tenant; platform administration is never a tenant permission.
+            // Everything inside the tenant; platform administration is never a tenant permission,
+            // and the former-staff permission is derived, never granted (ADR-0014, ADR-0018).
             Self::Owner => P::ALL
                 .iter()
                 .copied()
-                .filter(|p| *p != P::PlatformTenantManage)
+                .filter(|p| !NOT_GRANTABLE.contains(p))
                 .collect(),
             Self::Manager => vec![
                 P::CatalogRead,
@@ -95,7 +103,8 @@ mod tests {
         assert!(owner.contains(&Permission::RecordVoidClosedDay));
         assert!(owner.contains(&Permission::CustomerAnonymize));
         assert!(!owner.contains(&Permission::PlatformTenantManage));
-        assert_eq!(owner.len(), Permission::ALL.len() - 1);
+        assert!(!owner.contains(&Permission::StaffReadOwnPast));
+        assert_eq!(owner.len(), Permission::ALL.len() - NOT_GRANTABLE.len());
     }
 
     #[test]

@@ -4,9 +4,11 @@ import { ApiError } from "../lib/api";
 import { createQueryClient } from "../lib/queryClient";
 import { adminApi, adminKeys } from "./api";
 import { AdminLogin } from "./AdminLogin";
+import { AccountsPage } from "./AccountsPage";
 import { AuditPage } from "./AuditPage";
 import { adminMessage } from "./messages";
 import { AdminLink, AdminNavProvider, matchAdminRoute, useAdminNav, type AdminRoute } from "./nav";
+import { RolesPage } from "./RolesPage";
 import { StepUpProvider } from "./StepUp";
 import { TenantPage } from "./TenantPage";
 import { TenantsPage } from "./TenantsPage";
@@ -83,6 +85,10 @@ function Page({ route }: { route: AdminRoute }) {
       return <TenantPage id={route.id} />;
     case "audit":
       return <AuditPage />;
+    case "roles":
+      return <RolesPage />;
+    case "accounts":
+      return <AccountsPage />;
     default:
       return (
         <div className="grid gap-3">
@@ -97,6 +103,8 @@ function Page({ route }: { route: AdminRoute }) {
 
 const NAV: { to: string; label: string; pages: AdminRoute["page"][] }[] = [
   { to: "/admin", label: "Spa", pages: ["tenants", "tenant"] },
+  { to: "/admin/vai-tro", label: "Mẫu vai trò", pages: ["roles"] },
+  { to: "/admin/tai-khoan", label: "Tài khoản", pages: ["accounts"] },
   { to: "/admin/nhat-ky", label: "Nhật ký", pages: ["audit"] },
 ];
 

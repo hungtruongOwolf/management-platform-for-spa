@@ -3,6 +3,7 @@ import { useState, type SyntheticEvent } from "react";
 import { BottomSheet } from "../components/BottomSheet";
 import { adminApi, adminDateTime, adminKeys, type TenantRow } from "./api";
 import { FeaturesPanel } from "./FeaturesPanel";
+import { SpaAuditPanel, SpaRolesPanel } from "./SpaPanels";
 import { adminFieldError, adminMessage } from "./messages";
 import { AdminLink } from "./nav";
 import { StepUpCancelled, useStepUp } from "./StepUp";
@@ -82,6 +83,8 @@ export function TenantPage({ id }: { id: string }) {
         </p>
       </section>
       <FeaturesPanel tenantId={t.id} />
+      <SpaRolesPanel tenantId={t.id} />
+      <SpaAuditPanel tenantId={t.id} />
       <StatusSheet
         tenant={t}
         open={changing}
