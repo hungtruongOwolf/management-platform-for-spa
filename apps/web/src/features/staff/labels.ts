@@ -64,6 +64,7 @@ export const FLAG_LABEL: Record<PayFlag, string> = {
   unrecorded_days: "Còn ngày chưa chấm công",
   absent_k5_plus: "Nghỉ không phép từ 5 ngày (cần chủ spa xem)",
   evaluation_missing: "Chưa đánh giá tháng",
+  net_pay_shortfall: "Khoản trừ vượt lương: thực lĩnh 0đ",
 };
 
 /** "2026-11" → "Tháng 11/2026". */

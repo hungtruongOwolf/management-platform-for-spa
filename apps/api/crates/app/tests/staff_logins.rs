@@ -225,6 +225,8 @@ async fn the_owner_onboards_a_manager_who_must_set_their_own_password(pool: PgPo
         ("ngan", "too_short"),
         (temporary.as_str(), "same_as_current"),
         ("0912300111", "is_phone"),
+        // ADR-0019 D18: on the bundled common-password list (case ignored).
+        ("Password1234", "too_common"),
     ] {
         let r = change(&s.h.app, &pending, &temporary, new).await;
         assert_eq!(r.body["errors"][0]["code"], code, "{new}: {}", r.body);
@@ -281,6 +283,19 @@ async fn only_the_owner_looks_after_logins(pool: PgPool) -> TestResult {
         )
         .await;
         assert_eq!(role.status, StatusCode::FORBIDDEN);
+        // F17: the right comes before the If-Match header and the body (each was 400/422 first).
+        for (method, path) in [
+            ("POST", format!("/staff/{}/login", s.ha)),
+            ("PUT", format!("/staff/{}/login/role", s.ha)),
+        ] {
+            let r = call(&s.h.app, method, &path, Some(who), Some(json!({"role": 7}))).await;
+            assert_eq!(
+                r.status,
+                StatusCode::FORBIDDEN,
+                "{method} {path}: {}",
+                r.body
+            );
+        }
         let list = call(
             &s.h.app,
             "GET",

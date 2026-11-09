@@ -120,16 +120,7 @@ pub async fn add_user(owner: &PgPool, new: NewUser<'_>) -> Result<UserId, AppErr
             let hashed = tokio::task::spawn_blocking(move || password::hash(&candidate))
                 .await
                 .map_err(|e| AppError::Internal(e.to_string()))?
-                .map_err(|e| {
-                    AppError::Validation(vec![FieldError::new(
-                        "password",
-                        match e {
-                            password::PasswordError::TooShort => "too_short",
-                            password::PasswordError::TooLong => "too_long",
-                            password::PasswordError::Hashing => "invalid",
-                        },
-                    )])
-                })?;
+                .map_err(|e| AppError::Validation(vec![FieldError::new("password", e.code())]))?;
             let id = UserId::new();
             sqlx::query!(
                 "INSERT INTO app.user_account (id, phone_e164, full_name, password_hash) VALUES ($1, $2, $3, $4)",
