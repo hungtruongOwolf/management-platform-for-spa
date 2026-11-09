@@ -48,7 +48,7 @@ pub async fn create_category(
     let mut errors = Vec::new();
     let name = clean_name(name, "name", &mut errors);
     fail_if_any(errors)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let row = repo::insert_category(&mut tx, Uuid::now_v7(), &name, None).await?;
     audit::record(
         &mut tx,
@@ -81,7 +81,7 @@ pub async fn update_category(
         errors.push(FieldError::new("sort_order", "out_of_range"));
     }
     fail_if_any(errors)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let row = repo::update_category(&mut tx, id, &name, sort_order)
         .await?
         .ok_or(AppError::NotFound)?;
@@ -156,7 +156,7 @@ pub async fn create_service(
 ) -> Result<ServiceRow, AppError> {
     actor.require(Permission::CatalogManage)?;
     let (name, description) = validate_service(&input)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if !repo::category_exists(&mut tx, input.category_id).await? {
         return Err(AppError::Validation(vec![FieldError::new(
             "category_id",
@@ -204,7 +204,7 @@ pub async fn update_service(
 ) -> Result<ServiceRow, AppError> {
     actor.require(Permission::CatalogManage)?;
     let (name, description) = validate_service(&input)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let before = repo::service(&mut tx, id)
         .await?
         .ok_or(AppError::NotFound)?;
@@ -351,7 +351,7 @@ pub async fn create_plan(
     input: PlanInput,
 ) -> Result<PlanRow, AppError> {
     actor.require(Permission::CatalogManage)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let (name, gift_note) = validate_plan(&mut tx, &input).await?;
     let id = Uuid::now_v7();
     let fields = PlanFields {
@@ -391,7 +391,7 @@ pub async fn update_plan(
     input: PlanInput,
 ) -> Result<PlanRow, AppError> {
     actor.require(Permission::CatalogManage)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let before = repo::package_plan(&mut tx, id)
         .await?
         .ok_or(AppError::NotFound)?;

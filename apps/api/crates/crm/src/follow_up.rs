@@ -236,7 +236,7 @@ pub async fn record(
     to_body: impl FnOnce(FollowUp) -> Result<Value, AppError>,
 ) -> Result<(u16, Value), AppError> {
     actor.require(Permission::CustomerFollowUp)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -301,7 +301,7 @@ pub async fn list(
     customer_id: Uuid,
 ) -> Result<(Vec<FollowUp>, bool, Suggestions), AppError> {
     actor.require(Permission::CustomerRead)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if !repo::exists(&mut tx, customer_id).await? {
         return Err(AppError::NotFound);
     }

@@ -214,11 +214,33 @@ Những thứ dưới đây trông như "thừa" hoặc "tốn" khi nhìn riêng
 | Unique một phần: `customer_phone_uq`, `package_plan_active_name_uq`, `staff_user_idx`, `staff_employment_open_idx`, `password_reset_request_open_idx` | — | Bất biến nghiệp vụ: một SĐT một hồ sơ còn hiệu lực, một đợt mở, … |
 | Supavisor **session mode** + prepared statements của sqlx | — | Transaction mode không hỗ trợ prepared statement ([Supabase](https://supabase.com/docs/guides/database/connecting-to-postgres)) |
 
-## 7. Cần EM quyết
-- **Q-DB1:** Duyệt làm A1 + A2 ngay? Chỉ đổi code, không migration, rủi ro thấp.
-- **Q-DB2:** Duyệt hướng A3 (hàm `SECURITY DEFINER` gộp xác thực, kèm ADR + `secure` review) trước khi build?
-- **Q-DB3:** Duyệt migration B1 (bỏ 8 index)?
-- **Q-DB4:** Giữ session đã hết hạn / đã thu hồi bao lâu rồi xóa (đề xuất **30 ngày**)? Có cần chính sách giữ `audit_log` không? Câu này là pháp lý / riêng tư, không phải dung lượng: 3 năm mới 126 MB.
+## 7. Quyết định của EM (2026-11-09, [raw](../../raw/2026-11-09-em-decision-db-plan.md): "ok bạn cứ làm hết đi")
+- **Q-DB1 ✅** Làm A1 + A2. **A4** đi cùng (profile của spa mang theo trong `Actor`).
+- **Q-DB2 ✅** Làm A3: hàm `SECURITY DEFINER` gộp xác thực, qua `secure`, kèm ADR mới.
+- **Q-DB3 ✅** Làm B1: bỏ 8 index, giữ DDL hoàn tác.
+- **Q-DB4 ✅** Session đã hết hạn / đã thu hồi xóa sau **30 ngày** (C1). **`audit_log` không có hạn giữ, giữ lại hết:** đây là sổ ai đã đổi tiền, chấm công và dữ liệu nhân sự. Xóa là lựa chọn pháp lý, mà chứng từ kế toán ở Việt Nam thường giữ nhiều năm, nên mặc định thận trọng là giữ. Lead có thể bàn lại với EM.
+- **C2 ✅** Kiểm bất biến hằng ngày và báo khi lệch. **C3/C4** làm phần ít rủi ro: `idle_in_transaction_session_timeout` cho `app_rw`, FK cột "người làm" (`NOT VALID` → `VALIDATE`) nếu không xung đột. Index `membership (user_id)` chờ tới khi có nhiều spa.
+- Danh sách "không được đổi" (§6) giữ nguyên.
+
+Thứ tự triển khai, mỗi bước một PR có test: (1) A1 + A2 + A4, (2) B1, (3) A3 + ADR, (4) C1 + C2 + C4 + sửa wiki backend.
+
+### 7a. Trạng thái triển khai
+**PR 1 (A1 + A2 + A4).** Đo ở local, cùng dữ liệu `seed-demo`, cùng 8 mẫu mỗi endpoint, so binary của `main` với binary của nhánh. API trỏ vào Postgres qua `infra/perf/db/rtt_proxy.py`; proxy đếm **mọi** lượt đi về, kể cả ping (một `Sync` trơn).
+
+| Endpoint | Lượt đi về trước → sau | trong đó ping | Câu sqlx (Server-Timing) |
+|---|---|---|---|
+| `GET /me` | 14 → **10** | 8 → 4 | 5 → 5 |
+| `GET /staff` | 13 → **10** | 6 → 3 | 5 → 5 |
+| `GET /visits?date=` | 17 → **14** | 6 → 3 | 9 → 9 |
+| `GET /appointments` (ngày) | 20 → **16** | 6 → 3 | 12 → **11** (A4: bỏ câu profile) |
+| `GET /attendance?month=` | 21 → **17** | 6 → 3 | 13 → **12** (A4) |
+| `GET /reports/daily` | 16 → **13** | 6 → 3 | 8 → 8 |
+| `GET /customers/{id}/history` | 24 → **20** | 6 → 3 | 16 → **15** (A4) |
+
+- 3 ping còn lại là ping sqlx 0.9 gửi khi **trả** kết nối về pool. Ping này chạy ở task nền, không nằm trên đường đi của request.
+- Trên đường đi của request, mỗi request bớt 3–4 lượt, ≈ **8–10 ms trên staging** (2,6 ms/lượt, §3a).
+- Số ms đo ở local không có ý nghĩa: proxy Python + build debug chiếm phần lớn, và độ phân giải timer của Windows (~15 ms) làm `--delay-ms` vô dụng.
+- A2 đo ở §4 F4: 79–94 → 0,4–0,6 ms ở 3 năm. Test hồi quy chạy câu cũ và câu mới trên cùng dữ liệu (người trả, người dùng gói, hóa đơn đã hủy, gói mua cho người khác, hóa đơn của lượt bị loại).
 
 ## 8. Tooling (`infra/perf/db/`)
 | File | Làm gì | Chạy ở đâu |

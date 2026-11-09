@@ -452,7 +452,7 @@ pub async fn calendar(
     query: &CalendarQuery,
 ) -> Result<CalendarDto, AppError> {
     actor.require(Permission::AppointmentManage)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let spa = spa(&mut tx).await?;
     let from = query.from.unwrap_or(spa.today());
     let to = query.to.unwrap_or(from);
@@ -498,7 +498,7 @@ pub async fn my_calendar(
     query: &CalendarQuery,
 ) -> Result<MyCalendar, AppError> {
     actor.require(Permission::StaffReadOwn)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let Some(staff) = org::profile::own_staff_id(&mut tx, actor).await? else {
         tx.commit().await?;
         return Ok(MyCalendar {
@@ -627,7 +627,7 @@ pub async fn update_settings(
         .map(i32::try_from)
         .transpose()
         .map_err(|_| invalid("max_per_slot", "out_of_range"))?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let before = repo::set_max_per_slot(&mut tx, stored, actor.user_id.as_uuid()).await?;
     audit::record(
         &mut tx,
@@ -651,7 +651,7 @@ pub async fn update_settings(
 /// `GET /appointments/{id}` (`appointment.manage`). Another spa's is `404`.
 pub async fn get(pool: &PgPool, actor: &Actor, id: Uuid) -> Result<AppointmentDto, AppError> {
     actor.require(Permission::AppointmentManage)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let found = load(&mut tx, Some(id), None, None).await?.pop();
     tx.commit().await?;
     found.ok_or(AppError::NotFound)
@@ -865,7 +865,7 @@ pub async fn book(
     let note = clean_note(input.note.as_ref())?;
     let companions = companions(&input.companions)?;
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -943,7 +943,7 @@ pub async fn book_group(
         });
     }
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -1056,7 +1056,7 @@ pub async fn update(
         .transpose()?;
     let new_companions = input.companions.as_deref().map(companions).transpose()?;
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let spa = spa(&mut tx).await?;
     let current = lock_open(&mut tx, actor, &spa, id).await?;
     if current.version != version {
@@ -1185,7 +1185,7 @@ pub async fn arrive(
     input: &AppointmentArrive,
 ) -> Result<AppointmentDto, AppError> {
     actor.require(Permission::AppointmentManage)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let spa = spa(&mut tx).await?;
     let current = lock_open(&mut tx, actor, &spa, id).await?;
     if parse_status(&current.status)? != Status::Booked {
@@ -1236,7 +1236,7 @@ pub async fn undo_arrival(
     id: Uuid,
 ) -> Result<AppointmentDto, AppError> {
     actor.require(Permission::AppointmentManage)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let spa = spa(&mut tx).await?;
     let current = lock_open(&mut tx, actor, &spa, id).await?;
     if parse_status(&current.status)? != Status::Arrived {
@@ -1309,7 +1309,7 @@ pub async fn move_group(
     input: &AppointmentGroupMove,
 ) -> Result<AppointmentGroupMoved, AppError> {
     actor.require(Permission::AppointmentManage)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let spa = spa(&mut tx).await?;
     let anchor = lock_open(&mut tx, actor, &spa, id).await?;
     if anchor.version != version {
@@ -1426,7 +1426,7 @@ pub async fn close(
 ) -> Result<AppointmentDto, AppError> {
     actor.require(Permission::AppointmentManage)?;
     let reason = kernel::corrections::reason(reason)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let spa = spa(&mut tx).await?;
     let current = lock_open(&mut tx, actor, &spa, id).await?;
     if outcome == Outcome::NoShow {
@@ -1501,7 +1501,7 @@ pub async fn complete(
     };
     let now = Utc::now();
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {

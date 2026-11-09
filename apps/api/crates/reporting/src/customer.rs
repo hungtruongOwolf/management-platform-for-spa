@@ -450,7 +450,7 @@ pub async fn history(
     let (a_day, a_at, a_rank, a_id) = after.map_or((None, None, None, None), |(d, t, r, i)| {
         (Some(d), Some(t), Some(r), Some(i))
     });
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     require_customer(&mut tx, customer_id).await?;
     let tz = kernel::tenant::profile(&mut tx).await?.timezone.name();
     let tenant = tx.tenant().as_uuid();
@@ -467,9 +467,14 @@ pub async fn history(
                     CASE WHEN s.status = 'voided' THEN 3 ELSE 2 END,
                     s.created_at, s.business_date, s.id
              FROM app.sale s
-             WHERE s.tenant_id = $1 AND (s.customer_id = $2 OR EXISTS (
-                     SELECT 1 FROM app.customer_package cp
-                     WHERE cp.tenant_id = s.tenant_id AND cp.sale_id = s.id AND cp.customer_id = $2))
+             -- Paid by the customer, or sold a package the customer uses (bought for them). Two
+             -- index lookups joined by UNION: an OR across the two tables scanned every sale and
+             -- every visit of the spa (db review F4: 66–94 ms at three years, < 1 ms like this).
+             WHERE s.tenant_id = $1 AND s.id IN (
+                     SELECT x.id FROM app.sale x WHERE x.tenant_id = $1 AND x.customer_id = $2
+                     UNION
+                     SELECT cp.sale_id FROM app.customer_package cp
+                     WHERE cp.tenant_id = $1 AND cp.customer_id = $2 AND cp.sale_id IS NOT NULL)
                AND NOT EXISTS (SELECT 1 FROM app.visit v WHERE v.tenant_id = s.tenant_id AND v.sale_id = s.id)
                AND NOT EXISTS (SELECT 1 FROM app.visit_line l WHERE l.tenant_id = s.tenant_id AND l.sale_id = s.id)
              UNION ALL
@@ -649,7 +654,7 @@ pub async fn summary(
     customer_id: Uuid,
 ) -> Result<CustomerStats, AppError> {
     require_history(actor)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     require_customer(&mut tx, customer_id).await?;
     let today = kernel::tenant::profile(&mut tx)
         .await?
@@ -744,7 +749,7 @@ pub async fn package_usage(
     actor.require(Permission::CustomerRead)?;
     actor.require(Permission::VisitRead)?;
     let package = packages::service::get(pool, actor, package_id).await?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let tenant = tx.tenant().as_uuid();
     let uses = sqlx::query_as!(
         PackageUse,

@@ -3,6 +3,7 @@
 
 use crate::error::AppError;
 use crate::ids::{TenantId, UserId};
+use crate::tenant::TenantFacts;
 use std::collections::BTreeSet;
 use std::net::IpAddr;
 
@@ -105,6 +106,9 @@ pub struct Actor {
     pub tenant_id: TenantId,
     pub ip: Option<IpAddr>,
     permissions: BTreeSet<Permission>,
+    /// The spa's settings, read with the permissions (db review A4); `None` for actors built by
+    /// tooling and tests, whose transactions then read them.
+    tenant_facts: Option<TenantFacts>,
 }
 
 impl Actor {
@@ -119,7 +123,20 @@ impl Actor {
             tenant_id,
             ip,
             permissions: permissions.into_iter().collect(),
+            tenant_facts: None,
         }
+    }
+
+    /// Carries the spa's settings, so the request's transactions do not read them again.
+    /// They must be the settings of `self.tenant_id`.
+    #[must_use]
+    pub fn with_tenant_facts(mut self, facts: TenantFacts) -> Self {
+        self.tenant_facts = Some(facts);
+        self
+    }
+
+    pub const fn tenant_facts(&self) -> Option<&TenantFacts> {
+        self.tenant_facts.as_ref()
     }
 
     pub fn can(&self, permission: Permission) -> bool {

@@ -5,7 +5,6 @@ use app::{AppState, jobs};
 use secrecy::ExposeSecret;
 use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
-use std::time::Duration;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::SubscriberExt;
@@ -67,9 +66,7 @@ async fn serve() -> anyhow::Result<()> {
         .and_then(|v| v.parse::<u32>().ok())
         .filter(|n| *n > 0)
         .unwrap_or(10);
-    let pool = PgPoolOptions::new()
-        .max_connections(max_connections)
-        .acquire_timeout(Duration::from_secs(3))
+    let pool = app::db_pool::options(max_connections, app::db_pool::PING_WHEN_IDLE_FOR)
         .connect(config.app_database_url.expose_secret())
         .await
         .context("cannot connect to the database as app_rw")?;

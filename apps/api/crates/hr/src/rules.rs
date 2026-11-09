@@ -131,7 +131,7 @@ pub async fn load(tx: &mut TenantTx) -> Result<(PayrollRules, i64), AppError> {
 /// `GET /payroll/rules` (`payroll.read`).
 pub async fn get(pool: &PgPool, actor: &Actor) -> Result<(PayrollRules, i64), AppError> {
     actor.require(Permission::PayrollRead)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let rules = load(&mut tx).await?;
     tx.commit().await?;
     Ok(rules)
@@ -145,7 +145,7 @@ pub async fn put(
 ) -> Result<(PayrollRules, i64), AppError> {
     actor.require(Permission::PayrollClose)?;
     rules.validate()?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let (before, _) = load(&mut tx).await?;
     let value = serde_json::to_value(rules).map_err(|e| AppError::Internal(e.to_string()))?;
     let version = repo::put_rules(&mut tx, &value, actor.user_id.as_uuid()).await?;

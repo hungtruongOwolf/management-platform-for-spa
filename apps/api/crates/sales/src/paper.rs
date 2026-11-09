@@ -115,7 +115,7 @@ pub async fn book(
     package_id: Uuid,
     payment: &PaperPayment,
 ) -> Result<Option<Uuid>, AppError> {
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let booked = book_in(&mut tx, actor, package_id, payment).await?;
     tx.commit().await?;
     Ok(booked)
@@ -136,7 +136,7 @@ pub async fn import_opening_balance(
     if input.packages.iter().any(|p| p.paid_amount != 0) {
         actor.require(Permission::PaymentCollect)?;
     }
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
