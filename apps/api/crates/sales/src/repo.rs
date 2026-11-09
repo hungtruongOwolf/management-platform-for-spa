@@ -191,26 +191,30 @@ pub struct SaleRow {
     pub closer_name: Option<String>,
     pub visit_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
+    pub version: i64,
     pub note_ct: Option<Vec<u8>>,
 }
 
-pub async fn sale(tx: &mut TenantTx, id: Uuid) -> Result<Option<SaleRow>, AppError> {
+/// Sales by id in one query (a day list reads all of its sales at once), in no order.
+pub async fn sales(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Vec<SaleRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         SaleRow,
         r#"SELECT s.id, s.customer_id, s.business_date, s.subtotal, s.discount_amount, s.discount_reason, s.total,
-                  s.amount_paid, s.status, s.void_reason, s.voided_at, s.closer_staff_id, st.full_name AS "closer_name?", s.visit_id, s.created_at, s.note_ct
+                  s.amount_paid, s.status, s.void_reason, s.voided_at, s.closer_staff_id, st.full_name AS "closer_name?",
+                  s.visit_id, s.created_at, s.version, s.note_ct
            FROM app.sale s
            LEFT JOIN app.staff st ON st.tenant_id = s.tenant_id AND st.id = s.closer_staff_id
-           WHERE s.tenant_id = $1 AND s.id = $2"#,
+           WHERE s.tenant_id = $1 AND s.id = ANY($2)"#,
         tenant,
-        id
+        ids
     )
-    .fetch_optional(tx.conn())
+    .fetch_all(tx.conn())
     .await?)
 }
 
 pub struct LineRow {
+    pub sale_id: Uuid,
     pub id: Uuid,
     pub line_type: String,
     pub package_plan_id: Option<Uuid>,
@@ -222,38 +226,16 @@ pub struct LineRow {
     pub line_total: i64,
 }
 
-pub async fn lines(tx: &mut TenantTx, sale_id: Uuid) -> Result<Vec<LineRow>, AppError> {
+/// Lines of several sales, each sale's in its order.
+pub async fn lines(tx: &mut TenantTx, sale_ids: &[Uuid]) -> Result<Vec<LineRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         LineRow,
-        r#"SELECT id, line_type, package_plan_id, customer_package_id, service_id, description_snapshot, qty,
-                  unit_price, line_total
-           FROM app.sale_line WHERE tenant_id = $1 AND sale_id = $2 ORDER BY position"#,
+        r#"SELECT sale_id, id, line_type, package_plan_id, customer_package_id, service_id, description_snapshot,
+                  qty, unit_price, line_total
+           FROM app.sale_line WHERE tenant_id = $1 AND sale_id = ANY($2) ORDER BY sale_id, position"#,
         tenant,
-        sale_id
-    )
-    .fetch_all(tx.conn())
-    .await?)
-}
-
-pub struct PaymentRow {
-    pub id: Uuid,
-    pub kind: String,
-    pub reversal_of: Option<Uuid>,
-    pub method: String,
-    pub amount: i64,
-    pub reference: Option<String>,
-    pub paid_at: DateTime<Utc>,
-}
-
-pub async fn payments(tx: &mut TenantTx, sale_id: Uuid) -> Result<Vec<PaymentRow>, AppError> {
-    let tenant = tx.tenant().as_uuid();
-    Ok(sqlx::query_as!(
-        PaymentRow,
-        r#"SELECT id, kind, reversal_of, method, amount, reference, paid_at
-           FROM app.payment WHERE tenant_id = $1 AND sale_id = $2 ORDER BY paid_at, id"#,
-        tenant,
-        sale_id
+        sale_ids
     )
     .fetch_all(tx.conn())
     .await?)
@@ -266,6 +248,7 @@ pub struct LockedSale {
     pub status: String,
     /// The sale created packages (a package sale); otherwise it is a visit's one-off services.
     pub sells_packages: bool,
+    pub version: i64,
 }
 
 /// A package sale of the day list (`GET /sales?date=`).
@@ -318,7 +301,7 @@ pub async fn lock_sale(tx: &mut TenantTx, id: Uuid) -> Result<Option<LockedSale>
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         LockedSale,
-        r#"SELECT s.business_date, s.status,
+        r#"SELECT s.business_date, s.status, s.version,
                   EXISTS (SELECT 1 FROM app.sale_line l
                           WHERE l.tenant_id = s.tenant_id AND l.sale_id = s.id AND l.line_type = 'package')
                     AS "sells_packages!"

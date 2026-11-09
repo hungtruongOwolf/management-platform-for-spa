@@ -21,6 +21,7 @@ sources: [architecture/system.md, product/specs/front-desk-and-packages.md, prod
 | STRIDE | Mối đe dọa | Biện pháp | Test |
 |---|---|---|---|
 | S | Dò hoặc nhồi mật khẩu (A1) | Argon2id, rate limit IP + tài khoản, lỗi đồng nhất, MFA cho chủ/admin (ADR-0004) | Đăng nhập sai lần thứ N → bị chậm hoặc khóa tạm |
+| S | Người dùng chọn mật khẩu phổ biến, đoán được trong vài lần thử (ADR-0019 D18) | `password::check_policy` từ chối mục trong danh sách đi kèm binary (NCSC 100k ≥ 10 ký tự + danh sách tiếng Việt), không phân biệt hoa thường, ở mọi chỗ người dùng / operator đặt mật khẩu (đổi mật khẩu, CLI provisioning, CLI operator); không gọi dịch vụ ngoài | `password::tests::refuses_a_common_password_whatever_its_case`, `staff_logins.rs` (`Password1234` → `422 too_common`) |
 | S | Lộ mật khẩu chủ spa (A4): kẻ tấn công chỉ có mật khẩu | TOTP bắt buộc; session sau mật khẩu chỉ là **pending MFA** (10 phút, bị `CurrentSession`/`AuthUser` từ chối, không lộ spa/permission, không gọi được `logout-all`/reauth) | `tests/mfa.rs`: session pending gọi `/me`, `/services`, `/customers` → 401; mutation đã kiểm |
 | S | Dò mã TOTP 6 số | Mã sai tính vào khóa tài khoản (tăng nguyên tử trong SQL); nhập lại mật khẩu không reset bộ đếm; rate limit IP `/auth/*` | 5 mã sai → khóa, mã đúng cũng bị từ chối; 3 sai + login lại + 2 sai → khóa |
 | S | Phát lại mã TOTP đã thấy/bị phishing | Mỗi bước thời gian chỉ chấp nhận 1 lần (`mfa_last_step`, UPDATE nguyên tử); mã khôi phục dùng 1 lần | Cùng mã ở lần đăng nhập thứ hai → 401; mutation đã kiểm |
@@ -158,9 +159,16 @@ Tài sản mới: quyền vận hành **mọi** spa (tạo / ngưng spa, cờ t�
 | T | Spa tự bật tính năng bị tắt / tự sửa mẫu vai trò (A2) | `app_rw` chỉ `SELECT` trên `tenant_feature` và `role_template_permission`; ghi chỉ qua hàm có cổng operator | `platform.rs::app_rw_cannot_write_flags` |
 | T | Operator (hoặc bug) làm spa mất quyền quản trị | Rào chắn vai trò (owner giữ `staff.manage`, `staff.read`, `staff.read_basic`, `audit.read`; `staff.manage` chỉ owner); không khóa chủ spa cuối cùng của spa đang hoạt động (`409 platform.last_owner`) | `platform.rs::the_owner_floor_is_kept`, `::accounts_across_spas` (khóa chủ spa cuối → `409 platform.last_owner`) |
 | R | Operator chối đã làm gì | `platform_audit_log` append-only (`app_rw` không UPDATE/DELETE), cùng transaction với thao tác, lý do bắt buộc; audit spa `platform_admin` để chủ spa thấy | `every_operator_write_is_audited` |
+| R / I | Operator dò tài khoản xuyên spa không để lại dấu, hoặc dùng `%` / `_` để liệt kê mọi tài khoản (ADR-0019 D17) | Mỗi lượt tìm ghi `platform.account.search` cùng transaction, chuỗi tìm đã che (SĐT 3 số đầu, tên chữ đầu mỗi từ); `\`, `%`, `_` escape trước `LIKE … ESCAPE` | `platform.rs::accounts_across_spas` (`%%%`, `___`, `a\%b` → `[]`; 5 dòng audit, không chứa SĐT / tên rõ), `audit::tests::a_search_is_kept_without_the_number_or_name` |
 | D | Spa ngưng vẫn dùng session cũ | Ngưng thu hồi session thành viên; `session_actor` đã từ chối spa không active (M3); đăng nhập → `403 auth.spa_suspended` | `platform.rs::a_suspended_spa_cannot_sign_in` |
 
 **TB2 (bổ sung):** không role `BYPASSRLS`, không kết nối owner ở runtime; cổng token trong hàm chống lỗi ứng dụng, **không** chống chiếm `app_rw` (cùng lớp rủi ro đã ghi ở ADR-0017: `app_rw` đặt được `app.tenant_id` của bất kỳ spa nào). **Còn mở:** TOFU ở lần enroll đầu của operator (như owner, ADR-0004 L3); cùng origin đến khi có subdomain (Q-PA3); chưa có support grant nên hỗ trợ chỉ thấy metadata (Q-PA1).
+
+## Dữ liệu cá nhân trong audit khách (ADR-0019 D13, secure review 2026-11-09)
+| STRIDE | Lạm dụng | Kiểm soát | Test |
+|---|---|---|---|
+| I | Hồ sơ đã ẩn danh nhưng tên / SĐT / ngày sinh vẫn còn mãi trong `audit_log` (giữ không hạn), ai có `audit.read` hay bản backup đều đọc được | `customer.create` / `customer.update` chỉ ghi cờ `has_*`, `gender` và `after.changed` (tên trường); 0047 viết lại các dòng cũ, giữ ai / lúc nào / trường nào | `customers.rs::customer_audit_keeps_who_and_what_field_but_no_personal_values`, `::migration_0047_scrubs_personal_values_from_old_customer_audit_rows` |
+| T | Dòng ghi thẳng vào DB (CLI, script, bug) lưu SĐT mà code không bao giờ nhận (máy bàn, sai đầu số) | CHECK `^\+84[35789][0-9]{8}$` ở 4 bảng (0047 `NOT VALID`, 0048 `VALIDATE`) | `customers.rs::database_refuses_a_phone_without_a_mobile_prefix` |
 
 ## Còn mở
 - Danh sách thao tác yêu cầu nhập lại mật khẩu: chỉ thao tác bảo mật tài khoản (EM 2026-11-05). Hiện dùng `AuthUser::require_recent_auth` ở tạo / đặt lại mật khẩu / đổi vai trò tài khoản nhân viên (ADR-0016, `staff_logins.rs::owner_login_actions_need_a_recent_reauth`); đổi mật khẩu của chính mình đòi mật khẩu hiện tại; cài đặt MFA sau đăng nhập chưa có route. Route mới loại này: dùng guard + test `401 auth.reauth_required`.

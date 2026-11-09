@@ -15,7 +15,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use crm::FieldCipher;
 use identity::AuthUser;
-use kernel::http::{IdempotencyKey, invalid_query};
+use kernel::http::{IdempotencyKey, IfMatch, etag, invalid_query};
 use kernel::idempotency::hash_route;
 use kernel::{AppError, FieldError, Permission};
 use packages::opening_balance::{OpeningBalanceCreate, OpeningBalanceDto};
@@ -172,7 +172,7 @@ pub async fn list_sales(
 }
 
 #[utoipa::path(get, path = "/api/v1/sales/{id}", tag = "sales", params(("id" = Uuid, Path)),
-    responses((status = 200, body = SaleDto, description = "`note` only for customer.health_notes.read"),
+    responses((status = 200, body = SaleDto, description = "`note` only for customer.health_notes.read; `ETag` = `version`"),
         (status = 401), (status = 403), (status = 404)))]
 pub async fn read_sale(
     State(pool): State<PgPool>,
@@ -181,30 +181,44 @@ pub async fn read_sale(
     Path(id): Path<Uuid>,
 ) -> Result<Response, AppError> {
     let sale = service::get_sale(&pool, &cipher, &user.actor, id).await?;
-    Ok(no_store(StatusCode::OK, sale))
+    Ok(with_etag(sale))
+}
+
+/// `200` with the sale and its `ETag` (the `If-Match` of `PATCH /sales/{id}`).
+fn with_etag(sale: SaleDto) -> Response {
+    let version = sale.version;
+    let mut response = no_store(StatusCode::OK, sale);
+    response.headers_mut().insert(header::ETAG, etag(version));
+    response
 }
 
 #[utoipa::path(patch, path = "/api/v1/sales/{id}", tag = "sales", request_body = SaleUpdate,
-    params(("id" = Uuid, Path)),
+    params(("id" = Uuid, Path),
+        ("If-Match" = String, Header, description = "The sale's `version` as read (`\"3\"`); required")),
     responses(
-        (status = 200, body = SaleDto, description = "\"Sửa ghi chú gói\": the note replaced (null / blank = removed); audited without its text"),
+        (status = 200, body = SaleDto, description = "\"Sửa ghi chú gói\": the note replaced (null / blank = removed, absent = unchanged); audited without its text; `ETag` = the new `version`"),
+        (status = 400, description = "precondition.if_match_required / if_match_invalid"),
         (status = 401),
         (status = 403, description = "auth.forbidden (needs package.sell + customer.health_notes.write) / day.locked (a day before today without record.void_closed_day)"),
         (status = 404),
         (status = 409, description = "sale.voided, sale.not_package (a visit's one-off sale: its note is the visit's)"),
+        (status = 412, description = "conflict.stale_version: the sale changed since it was read"),
         (status = 422, description = "validation_failed: note too_long, body invalid")))]
 pub async fn update_sale(
     State(pool): State<PgPool>,
     State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
     Path(id): Path<Uuid>,
+    if_match: Result<IfMatch, AppError>,
     body: Bytes,
 ) -> Result<Response, AppError> {
-    // The rights first, then the body (F17): the service answers 404 / day.locked before it
-    // looks at what is wrong with the body.
+    // The rights first, then the headers and the body (F17): the service answers 404 /
+    // day.locked before it looks at what is wrong with either.
     let input: Option<SaleUpdate> = serde_json::from_slice(&body).ok();
-    let sale = service::update_note(&pool, &cipher, &user.actor, id, input.as_ref()).await?;
-    Ok(no_store(StatusCode::OK, sale))
+    let version = if_match.map(|IfMatch(v)| v);
+    let sale =
+        service::update_note(&pool, &cipher, &user.actor, id, version, input.as_ref()).await?;
+    Ok(with_etag(sale))
 }
 
 #[utoipa::path(post, path = "/api/v1/sales/{id}/void", tag = "sales", request_body = VoidCreate,

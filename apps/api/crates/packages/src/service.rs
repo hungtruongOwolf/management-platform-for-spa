@@ -469,17 +469,20 @@ pub async fn load(
     id: Uuid,
     today: NaiveDate,
 ) -> Result<Option<CustomerPackage>, AppError> {
-    let rows = repo::packages(tx, Some(id), None, None).await?;
+    let rows = repo::packages(tx, Some(id), None).await?;
     Ok(assemble(tx, rows, today).await?.into_iter().next())
 }
 
-/// Packages created by one sale, inside the caller's transaction.
-pub async fn of_sale(
+/// Packages created by the given sales (newest first), inside the caller's transaction.
+pub async fn of_sales(
     tx: &mut TenantTx,
-    sale_id: Uuid,
+    sale_ids: &[Uuid],
     today: NaiveDate,
 ) -> Result<Vec<CustomerPackage>, AppError> {
-    let rows = repo::packages(tx, None, None, Some(sale_id)).await?;
+    if sale_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = repo::packages_of_sales(tx, sale_ids).await?;
     assemble(tx, rows, today).await
 }
 
@@ -511,7 +514,7 @@ pub async fn for_customer(
         .await?
         .business_date
         .as_naive();
-    let rows = repo::packages(&mut tx, None, Some(customer_id), None).await?;
+    let rows = repo::packages(&mut tx, None, Some(customer_id)).await?;
     let packages = assemble(&mut tx, rows, today).await?;
     tx.commit().await?;
     Ok(packages)

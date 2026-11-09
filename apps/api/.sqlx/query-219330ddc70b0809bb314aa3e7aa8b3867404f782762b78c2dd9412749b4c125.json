@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id AS \"id!\", name AS \"name!\", slug AS \"slug!\", status AS \"status!\",\n                  created_at AS \"created_at!\", staff_count AS \"staff_count!\",\n                  customer_count AS \"customer_count!\", visits_30d AS \"visits_30d!\",\n                  owner_count AS \"owner_count!\", last_activity_at\n           FROM app.platform_tenant_overview($1)",
+  "query": "SELECT id AS \"id!\", name AS \"name!\", slug AS \"slug!\", status AS \"status!\",\n                  created_at AS \"created_at!\", staff_count AS \"staff_count!\",\n                  customer_count AS \"customer_count!\", visits_30d AS \"visits_30d!\",\n                  owner_count AS \"owner_count!\", last_activity_at\n           FROM app.platform_tenant_overview($1, $2)",
   "describe": {
     "columns": [
       {
@@ -66,7 +66,8 @@
     ],
     "parameters": {
       "Left": [
-        "Bytea"
+        "Bytea",
+        "Uuid"
       ]
     },
     "nullable": [
@@ -82,5 +83,5 @@
       null
     ]
   },
-  "hash": "f2a6683834f58a9795d4f8bcb968a8abff0a42240a0bf874d306e564a2b47bf3"
+  "hash": "219330ddc70b0809bb314aa3e7aa8b3867404f782762b78c2dd9412749b4c125"
 }

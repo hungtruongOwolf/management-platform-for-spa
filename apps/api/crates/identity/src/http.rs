@@ -379,7 +379,7 @@ pub async fn mfa_enroll_confirm(
 #[utoipa::path(post, path = "/api/v1/auth/password", tag = "auth", request_body = PasswordChangeBody,
     responses((status = 200, body = Me, description = "Password changed: every session of the account ended, this browser got a new one (cookie)"),
         (status = 401, description = "auth.invalid_credentials (wrong current password; counts toward the lockout) | auth.unauthenticated"),
-        (status = 422, description = "new_password too_short | too_long | same_as_current | is_phone"), (status = 429)))]
+        (status = 422, description = "new_password too_short | too_long | too_common | same_as_current | is_phone"), (status = 429)))]
 pub async fn change_password(
     State(pool): State<PgPool>,
     PasswordChangeSession(session): PasswordChangeSession,

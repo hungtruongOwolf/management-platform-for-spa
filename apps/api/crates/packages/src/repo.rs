@@ -114,7 +114,6 @@ pub async fn packages(
     tx: &mut TenantTx,
     id: Option<Uuid>,
     customer: Option<Uuid>,
-    sale: Option<Uuid>,
 ) -> Result<Vec<PackageRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
@@ -127,13 +126,33 @@ pub async fn packages(
            WHERE p.tenant_id = $1
              AND ($2::uuid IS NULL OR p.id = $2)
              AND ($3::uuid IS NULL OR p.customer_id = $3)
-             AND ($4::uuid IS NULL OR p.sale_id = $4)
            ORDER BY p.created_at DESC, p.id DESC
            LIMIT 200"#,
         tenant,
         id,
-        customer,
-        sale
+        customer
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
+/// Every package the given sales created (a sale sells at most 10), newest first.
+pub async fn packages_of_sales(
+    tx: &mut TenantTx,
+    sale_ids: &[Uuid],
+) -> Result<Vec<PackageRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        PackageRow,
+        r#"SELECT p.id, p.customer_id, p.plan_id, p.name_snapshot, p.gift_note, p.sold_price, p.origin, p.sale_id,
+                  p.closer_staff_id, s.full_name AS "closer_name?", p.starts_on, p.expires_on, p.cancelled_at,
+                  p.cancel_reason, p.version, p.created_at
+           FROM app.customer_package p
+           LEFT JOIN app.staff s ON s.tenant_id = p.tenant_id AND s.id = p.closer_staff_id
+           WHERE p.tenant_id = $1 AND p.sale_id = ANY($2)
+           ORDER BY p.created_at DESC, p.id DESC"#,
+        tenant,
+        sale_ids
     )
     .fetch_all(tx.conn())
     .await?)

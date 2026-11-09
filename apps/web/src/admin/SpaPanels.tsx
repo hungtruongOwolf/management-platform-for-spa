@@ -3,6 +3,7 @@ import { useState } from "react";
 import { adminApi, adminDateTime, adminKeys, markAuditStale } from "./api";
 import { adminMessage } from "./messages";
 import { RoleList } from "./RolesPage";
+import { spaActionLabel, spaEntityLabel } from "./spaAuditLabels";
 
 /** One spa's system roles: follow the template, or grants of its own (spec US7). */
 export function SpaRolesPanel({ tenantId }: { tenantId: string }) {
@@ -97,18 +98,24 @@ export function SpaAuditPanel({ tenantId }: { tenantId: string }) {
               </thead>
               <tbody>
                 {audit.data.pages.flatMap((page) =>
-                  page.items.map((item) => (
-                    <tr key={item.id}>
-                      <td>{adminDateTime(item.at)}</td>
-                      <td className="font-mono text-xs">{item.action}</td>
-                      <td>{item.entity_type}</td>
-                      <td>
-                        {item.actor_name ?? "—"}
-                        {item.actor_kind === "platform_admin" && <span className="badge badge-gold ml-1">Vận hành</span>}
-                        {item.actor_kind === "system" && <span className="badge badge-muted ml-1">Hệ thống</span>}
-                      </td>
-                    </tr>
-                  )),
+                  page.items.map((item) => {
+                    const action = spaActionLabel(item.action);
+                    return (
+                      <tr key={item.id}>
+                        <td>{adminDateTime(item.at)}</td>
+                        <td title={item.action}>
+                          {action.text}
+                          {!action.known && <span className="ml-1 font-mono text-xs text-text-muted">{item.action}</span>}
+                        </td>
+                        <td>{spaEntityLabel(item.entity_type)}</td>
+                        <td>
+                          {item.actor_name ?? "—"}
+                          {item.actor_kind === "platform_admin" && <span className="badge badge-gold ml-1">Vận hành</span>}
+                          {item.actor_kind === "system" && <span className="badge badge-muted ml-1">Hệ thống</span>}
+                        </td>
+                      </tr>
+                    );
+                  }),
                 )}
               </tbody>
             </table>

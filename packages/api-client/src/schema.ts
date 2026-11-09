@@ -2963,6 +2963,11 @@ export interface components {
             /** Format: int64 */
             total: number;
             /**
+             * Format: int64
+             * @description The sale's optimistic-lock version: the `If-Match` of `PATCH /sales/{id}` ("Sửa ghi chú gói").
+             */
+            version: number;
+            /**
              * Format: uuid
              * @description The visit this package was sold in, if any.
              */
@@ -4500,6 +4505,11 @@ export interface components {
             /** Format: int64 */
             total: number;
             /**
+             * Format: int64
+             * @description Optimistic-lock version: `PATCH /sales/{id}` takes it as `If-Match` (also sent as `ETag`).
+             */
+            version: number;
+            /**
              * Format: uuid
              * @description The visit this sale was made in (its one-off lines, a package sold in the cart, an
              *     addition); null = a sale at the desk without a visit.
@@ -4546,8 +4556,8 @@ export interface components {
          */
         SaleUpdate: {
             /**
-             * @description The new note (≤ 2000 characters); null or blank = no note. Needs
-             *     `customer.health_notes.write`.
+             * @description The new note (≤ 2000 characters). Absent = unchanged (`{}` changes nothing, ADR-0019 D9);
+             *     null or blank = no note. Needs `customer.health_notes.write`.
              */
             note?: string | null;
         };
@@ -5466,6 +5476,11 @@ export interface components {
             sale_id: string;
             /** Format: int64 */
             total: number;
+            /**
+             * Format: int64
+             * @description The sale's optimistic-lock version: the `If-Match` of `PATCH /sales/{id}` ("Sửa ghi chú gói").
+             */
+            version: number;
             voided: boolean;
         };
         /** @enum {string} */
@@ -7955,7 +7970,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description new_password too_short | too_long | same_as_current | is_phone */
+            /** @description new_password too_short | too_long | too_common | same_as_current | is_phone */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -10169,7 +10184,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description `note` only for customer.health_notes.read */
+            /** @description `note` only for customer.health_notes.read; `ETag` = `version` */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -10201,7 +10216,10 @@ export interface operations {
     update_sale: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description The sale's `version` as read (`"3"`); required */
+                "If-Match": string;
+            };
             path: {
                 id: string;
             };
@@ -10213,7 +10231,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description "Sửa ghi chú gói": the note replaced (null / blank = removed); audited without its text */
+            /** @description "Sửa ghi chú gói": the note replaced (null / blank = removed, absent = unchanged); audited without its text; `ETag` = the new `version` */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -10221,6 +10239,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SaleDto"];
                 };
+            };
+            /** @description precondition.if_match_required / if_match_invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: {
                 headers: {
@@ -10243,6 +10268,13 @@ export interface operations {
             };
             /** @description sale.voided, sale.not_package (a visit's one-off sale: its note is the visit's) */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description conflict.stale_version: the sale changed since it was read */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };

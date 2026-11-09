@@ -146,23 +146,48 @@ pub async fn search(
             None => format!("+84{digits}"),
         }
     });
-    let mut conn = pool.acquire().await?;
+    // One transaction: the search and its platform audit row (ADR-0019 D17) land together, so
+    // no lookup across spas goes unrecorded.
+    let mut tx = pool.begin().await?;
+    // The name is a LIKE pattern: `%`, `_` and `\` are escaped so they match themselves (a
+    // search for "%%%" must not list every account). The phone prefix is digits and `+` only.
     let users = sqlx::query_as!(
         UserRow,
         r#"SELECT id, full_name, phone_e164, status, locked_until,
                   mfa_enabled_at IS NOT NULL AS "mfa_enabled!", must_change_password, created_at
            FROM app.user_account
            WHERE ($1::text IS NOT NULL AND phone_e164 LIKE $1 || '%')
-              OR ($1::text IS NULL AND app.search_fold(full_name) LIKE '%' || app.search_fold($2) || '%')
+              OR ($1::text IS NULL AND app.search_fold(full_name) LIKE
+                    '%' || replace(replace(replace(app.search_fold($2), '\', '\\'), '%', '\%'), '_', '\_') || '%'
+                    ESCAPE '\')
            ORDER BY full_name, id
            LIMIT 50"#,
         phone_prefix,
         q
     )
-    .fetch_all(&mut *conn)
+    .fetch_all(&mut *tx)
     .await?;
     let ids: Vec<Uuid> = users.iter().map(|u| u.id).collect();
-    let spas = memberships(&mut conn, op, &ids).await?;
+    let spas = memberships(&mut tx, op, &ids).await?;
+    audit::record(
+        &mut tx,
+        op.operator_id,
+        op.meta.ip,
+        PlatformEntry {
+            action: "platform.account.search",
+            tenant: None,
+            target_type: None,
+            target_id: None,
+            detail: Some(json!({
+                "q": audit::masked_query(q, phone_prefix.is_some()),
+                "by": if phone_prefix.is_some() { "phone" } else { "name" },
+                "results": users.len(),
+            })),
+            reason: None,
+        },
+    )
+    .await?;
+    tx.commit().await?;
     Ok(users.into_iter().map(|u| row(u, &spas)).collect())
 }
 
