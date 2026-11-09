@@ -1,6 +1,6 @@
 ---
 title: Quy tắc chấm công, đánh giá, lương thưởng (trích từ tài liệu Spa)
-updated: 2026-11-07
+updated: 2026-11-09
 sources: [raw/2026-11-04-idea-internal-platform.md, raw/2026-11-07-em-decisions-after-live-test.md]
 ---
 
@@ -37,7 +37,7 @@ Nguồn: 2 văn bản chương trình (học viên, KTV có kinh nghiệm) + fil
 **Gói bị hủy có hoàn tiền (2026-11-07, lead's decision — EM to review, [ADR-0010](../decisions/ADR-0010-commission-follows-kept-money.md)):** hoa hồng chốt tính trên tiền spa **giữ lại**: khoản hoàn trừ vào cơ sở hoa hồng chốt của người chốt, ở tháng hoàn tiền. Hủy không hoàn thì giữ nguyên. Ví dụ: Xông chân 1.290.000đ, 7 %, hoàn 1.000.000đ cùng tháng → 7 % × 290.000 = 20.300đ.
 
 ## 4. Ngày nghỉ & chấm công
-- Ký hiệu: ✓ đi làm; **P** có lý do, báo trước ≥ 3 ngày; **ĐX** đột xuất (bổ sung giấy tờ sau); **K** không lý do / không báo / không bổ sung giấy.
+- Ký hiệu: ✓ đi làm; **P** có lý do, báo trước ≥ 3 ngày; **ĐX** đột xuất (bổ sung giấy tờ sau); **K** không lý do / không báo / không bổ sung giấy. *(Ký hiệu của sổ giấy / Excel. App hiện chữ + icon, không mã: "Đi làm" / "Nghỉ có phép" / "Nghỉ đột xuất" / "Nghỉ không phép"; code `present` / `leave_p` / `leave_dx` / `absent_k` — F20, [staff-management](specs/staff-management.md) §16.)*
 - Mỗi tháng được nghỉ **2 ngày không trừ lương**. Mỗi ngày vượt quá bị trừ 1 ngày lương.
 - **Lương ngày = lương cứng tháng ÷ (số ngày trong tháng − 2).**
 - Đi muộn = giờ đến − giờ vào ca (phút), chỉ ghi nhận, chưa có quy tắc phạt (⚠️ #4).

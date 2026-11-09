@@ -1,6 +1,6 @@
 ---
 title: ADR-0018 Platform admin console — danh tính operator riêng, /admin, truy cập dữ liệu qua hàm hẹp có kiểm session
-status: proposed (lead's design 2026-11-09, EM to review)
+status: accepted (lead's design 2026-11-09, đã làm ở #111–#113 / migration 0038–0040; EM to review)
 date: 2026-11-09
 deciders: EM (what), agent (how)
 ---
@@ -41,7 +41,7 @@ deciders: EM (what), agent (how)
 
 ### D1 — Principal riêng (option C)
 - Bảng `platform_operator` (username `^[a-z0-9][a-z0-9._-]{2,39}$`, tên, hash Argon2id, `status`, đếm sai / khóa, secret TOTP mã hóa AES-256-GCM với AAD `platform_operator.mfa:<id>` — khác AAD của `user_account` nên ciphertext không chuyển chéo được), `platform_recovery_code`, `platform_session` (chỉ lưu SHA-256 token, `recent_auth_at` không default).
-- Tạo operator **chỉ bằng CLI** `app add-operator --username U --name N` (mật khẩu từ env `APP_NEW_OPERATOR_PASSWORD`, không argv). `app reset-operator-mfa --username U`, `app disable-operator --username U`. Không route đăng ký, không route tạo operator.
+- Tạo operator **chỉ bằng CLI** `app add-operator --username U --name N` (mật khẩu từ env `APP_NEW_OPERATOR_PASSWORD`, không argv). `app reset-operator-mfa --username U`, `app disable-operator --username U` / `app enable-operator --username U`. Không route đăng ký, không route tạo operator.
 - **MFA luôn bắt buộc**: mật khẩu đúng → session pending (10 phút, chỉ `/admin/auth/mfa/*` + logout) → TOTP / mã khôi phục → session đầy đủ (token mới). Lần đầu: enroll ngay (TOFU giống owner; giảm thiểu: operator enroll ngay sau khi CLI tạo, CLI in cảnh báo).
 - Session: **idle 30 phút, tối đa 8 giờ**, cookie `__Host-op-session; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=28800`. API spa không đọc cookie này; API admin không đọc `__Host-session`.
 - **Step-up**: mọi request không phải `GET/HEAD` dưới `/admin` (trừ `/admin/auth/*`) cần `recent_auth_at` ≤ 5 phút → `403 platform.step_up_required`; `POST /admin/auth/reauth {password, code}` luôn cần cả hai. Kiểm ở extractor `Operator` theo method (không handler nào quên được) **và** ở hàm DB ghi (D3).
@@ -51,13 +51,13 @@ deciders: EM (what), agent (how)
 ### D2 — `/admin` cùng deployment, có đường lên subdomain
 - Web: `/admin/*` là một **ứng dụng con lazy** (`src/admin/`), nạp từ `main.tsx` theo pathname; router, query client, khung riêng; không vào bundle khởi động của spa.
 - `APP_ADMIN_ORIGIN` (tùy chọn): khi đặt, request ghi tới `/api/v1/admin/*` phải có `Origin` = giá trị đó (và request ghi tới API spa không được mang origin admin). Khi có tên miền (production, Q-PA3): thêm `admin.<domain>` vào cùng project Vercel + đặt biến → cookie `__Host-` host-only tách theo host, XSS của app spa không còn chạm console.
-- Rủi ro còn lại khi cùng origin (chấp nhận cho staging / giai đoạn đầu): XSS ở app spa chạy trong trình duyệt operator đang đăng nhập console. Giảm: CSP nonce, không `dangerouslySetInnerHTML`; step-up 5 phút cho mọi thao tác ghi (XSS không biết mật khẩu + mã); session ngắn; runbook: dùng profile trình duyệt riêng cho console, không đăng nhập spa trong cùng profile.
+- Rủi ro còn lại khi cùng origin (chấp nhận cho staging / giai đoạn đầu): XSS ở app spa chạy trong trình duyệt operator đang đăng nhập console. Giảm: CSP `script-src 'self'` (không inline script, `vercel.json`), không `dangerouslySetInnerHTML`; step-up 5 phút cho mọi thao tác ghi (XSS không biết mật khẩu + mã); session ngắn; runbook: dùng profile trình duyệt riêng cho console, không đăng nhập spa trong cùng profile.
 
 ### D3 — Mô hình truy cập dữ liệu
 1. **Không bypass ngầm:** không role `BYPASSRLS`, không kết nối owner ở runtime, không policy mở rộng cho bảng nghiệp vụ.
 2. **Việc xuyên spa = hàm `SECURITY DEFINER` hẹp** (migration 0038+), `SET search_path = app, pg_temp`, SQL tĩnh, `REVOKE ALL FROM PUBLIC`, `GRANT EXECUTE TO app_rw`. **Tham số đầu luôn là `p_token_hash`** (SHA-256 cookie operator); hàm gọi `app.platform_gate(p_token_hash, p_write)` (không grant cho ai) → id operator, hoặc `RAISE insufficient_privilege` nếu không có session operator đầy đủ còn sống (hoặc step-up quá 5 phút khi ghi). Danh sách hàm và đúng những gì mỗi hàm đọc / trả: [architecture/platform-admin § Hàm DB](../architecture/platform-admin.md#hàm-db).
    - `platform_tenant_overview` — chỉ số đếm (`count(*)`) và mốc thời gian, không một dòng khách / lượt nào ra khỏi hàm.
-   - `platform_insert_tenant`, `platform_set_tenant_status` (thu hồi session thành viên), `platform_set_feature`, `platform_apply_role_template`, `platform_account_search`, `platform_account_memberships`.
+   - `platform_insert_tenant`, `platform_set_tenant_status` (thu hồi session thành viên), `platform_set_feature`, `platform_apply_role_template`, `platform_account_memberships`. (Bản thiết kế có thêm `platform_account_search`; khi làm PR C, tìm tài khoản đọc thẳng bảng global `user_account` như CLI, không cần hàm definer, xem [architecture/platform-admin](../architecture/platform-admin.md).)
 3. **Việc trong một spa** (seed role / chi nhánh / chủ spa khi tạo spa, sửa role của spa, đọc metadata audit spa, ghi audit spa) chạy bằng `TenantTx` của **đúng spa đó**: cùng RLS như request của thành viên spa; quyền quyết định ở Rust bởi extractor `Operator`. Mỗi transaction một spa.
 4. **Bảng global của operator** (`platform_operator`, `platform_session`, `platform_recovery_code`): `app_rw` truy cập trực tiếp như `user_account` / `session` (crate `platform` là nơi duy nhất có SQL chạm `app.platform_*`, có test kiến trúc). RLS bật + policy `TO app_rw` để role khác (Supabase `anon` / `authenticated`) không đọc được dù grant lỡ tay. `platform_audit_log`: chỉ `SELECT, INSERT` (append-only).
 5. **Cờ tính năng** `tenant_feature`: `app_rw` chỉ `SELECT` (RLS theo spa); ghi chỉ qua `platform_set_feature`. Spa không tự bật / tắt được, kể cả có bug.
@@ -90,7 +90,7 @@ deciders: EM (what), agent (how)
 
 ## Consequences
 - Positive: operator không cần chuỗi kết nối DB cho việc hằng ngày; mọi thao tác có audit hai phía; lỗi ở app spa không leo thang thành nền tảng; CLI owner chỉ còn cho migrate / provisioning khẩn cấp.
-- Negative / accepted: cùng origin ở giai đoạn đầu (D2); thêm 7 hàm plpgsql phải giữ đầu ra hẹp (test từng hàm: không có session → lỗi, đầu ra không có cột nhạy cảm); mẫu vai trò trong DB làm "nguồn sự thật" của quyền mặc định chuyển từ code sang DB (code giữ làm giá trị seed + test).
+- Negative / accepted: cùng origin ở giai đoạn đầu (D2); thêm 7 hàm plpgsql (`platform_gate` + 6 hàm ở D3) phải giữ đầu ra hẹp (test từng hàm: không có session → lỗi, đầu ra không có cột nhạy cảm); mẫu vai trò trong DB làm "nguồn sự thật" của quyền mặc định chuyển từ code sang DB (code giữ làm giá trị seed + test).
 - Follow-ups: support grant (ADR-0003) cho xem chi tiết audit / dữ liệu spa; subdomain khi có domain; tính năng `packages` (Q-PA2); WebAuthn cho operator.
 
 ## Revisit when

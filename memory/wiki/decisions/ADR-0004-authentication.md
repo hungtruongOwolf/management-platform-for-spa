@@ -48,6 +48,16 @@ Người dùng R1–R3 là nhân sự spa (chủ, quản lý, KTV): vài ngườ
 - **Biện pháp còn lại:** MFA TOTP bắt buộc khi đăng nhập cho chủ spa; cookie `__Host-` HttpOnly + SameSite=Strict + kiểm Origin; idle timeout 12 giờ, hạn tuyệt đối 30 ngày (switch-tenant không kéo dài, H1); nút khóa nhanh; mọi hủy/hoàn có lý do bắt buộc và nằm trong `audit_log` append-only (ai, lúc nào, IP, trước/sau); hoàn ≤ giá đã bán, mỗi gói hoàn tối đa một lần (trigger DB).
 - **Xem lại khi:** có lần hoàn/hủy bất thường trong audit, spa có nhiều chủ/quản lý dùng chung máy, hoặc có báo cáo sổ quỹ (spec #2) cho phép đối soát; lúc đó cân nhắc re-auth chỉ cho hoàn tiền trên một ngưỡng, hoặc idle timeout ngắn hơn cho session chủ spa.
 
+## Hiện trạng (kiểm lại 2026-11-09)
+Một số điểm ở Decision đã được thay, phần còn lại vẫn đúng:
+- **Tạo tài khoản và quên mật khẩu**: không có link kích hoạt / link đặt lại. Thay bằng [ADR-0016](ADR-0016-accounts-and-passwords.md): chủ spa tạo tài khoản từ hồ sơ với mật khẩu tạm một lần, bắt đổi ở lần đăng nhập đầu; "Quên mật khẩu?" gửi yêu cầu cho chủ spa (`POST /auth/password-reset-requests`).
+- **Đổi mật khẩu** đã có route `POST /auth/password` (ADR-0016). Câu "chưa có route" ở update 2026-11-05 không còn đúng.
+- **Mật khẩu**: chỉ kiểm độ dài 10–128 ký tự (`identity::password::check_policy`). Kiểm danh sách mật khẩu bị lộ **chưa làm**.
+- **Quyền mỗi request** đọc trong một câu `app.session_actor(token_hash)` ([ADR-0017](ADR-0017-one-statement-request-auth.md)), không còn nạp riêng từng phần.
+- **Spa bị tạm ngưng**: đăng nhập trả `403 auth.spa_suspended` khi mọi membership còn hiệu lực đều ở spa đang ngưng ([ADR-0018](ADR-0018-platform-admin-console.md)); session đang mở vẫn không nhận permission nào (M3).
+- **Platform admin** không còn là role trong spa: operator đăng nhập riêng (`__Host-op-session`, TOTP luôn bắt buộc, ADR-0018). Câu "role giữ `platform.tenant.manage` phải MFA" vẫn còn trong `app.user_requires_mfa` (0006).
+- Lệnh operator hiện có: `app reset-mfa`, `app unlock`, `app add-operator`, `app reset-operator-mfa`, `app disable-operator` / `enable-operator` (`apps/api/crates/app/src/main.rs`).
+
 ## Consequences
 - Positive: không có service phụ; token không bao giờ nằm trong JS (chống XSS lấy cắp).
 - Negative: tự viết luồng auth. Giảm rủi ro bằng checklist `secure/authn-authz.md` và test tích hợp đầy đủ.

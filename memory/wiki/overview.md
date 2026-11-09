@@ -14,6 +14,10 @@ sources: [raw/2026-11-04-kickoff-request.md, raw/2026-11-04-idea-internal-platfo
 - **Đa spa (multi-tenant) từ đầu**: dữ liệu tách theo spa + chi nhánh; launch cho 1 spa (EM chọn 2026-11-04).
 - Stack đã chốt: [ADR-0001](decisions/ADR-0001-tech-stack.md); kiến trúc: [system](architecture/system.md).
 
-## Câu hỏi mở
-- Q-M2 (2026-11-08, F4): **đã quyết** — mỗi hóa đơn gói một ghi chú mã hóa (`sale.note_ct`, 0030), xem [front-desk §10.15](product/specs/front-desk-and-packages.md). Câu hỏi còn mở nằm cuối mỗi spec (Q-PA1…4 ở [platform-admin](product/specs/platform-admin.md)).
-- 8 ⚠️ quy tắc lương: [compensation-rules](product/compensation-rules.md) (cần trước R2).
+## Câu hỏi mở (chờ EM)
+Mỗi spec giữ câu hỏi của mình ở cuối trang; đây là những việc còn chờ quyết, gom một chỗ:
+- **Production**: vùng và nơi chạy API (Vercel / Fly.io / VPS Singapore), Vercel Pro khi dùng thật: [ADR-0012](decisions/ADR-0012-colocate-api-db-singapore.md) (Q-P2, Q-P3; staging ở lại Mỹ).
+- **Admin nền tảng**: Q-PA1…4 ở [platform-admin](product/specs/platform-admin.md) §cuối; [ADR-0018](decisions/ADR-0018-platform-admin-console.md) đã làm, EM chưa duyệt.
+- **Quy tắc lương**: 8 ⚠️ mâu thuẫn ở [compensation-rules](product/compensation-rules.md) (đã có mặc định chỉnh được, cần chốt trước R2); ADR-0010 (hoa hồng khi hoàn gói) chờ EM xác nhận.
+- **ADR do lead quyết, EM chưa duyệt**: [ADR-0008](decisions/ADR-0008-payroll-close-snapshots.md), [ADR-0010](decisions/ADR-0010-commission-follows-kept-money.md), [ADR-0013](decisions/ADR-0013-employment-periods.md), [ADR-0014](decisions/ADR-0014-former-staff-login.md) (phần thiết kế), ADR-0018.
+- **Trước khi dùng dữ liệu thật**: thủ tục chuyển dữ liệu ra nước ngoài (Luật 91/2025/QH15, [ADR-0002](decisions/ADR-0002-database-hosting.md)), Supabase Pro có backup, việc ở cuối [vercel-staging](runbooks/vercel-staging.md).

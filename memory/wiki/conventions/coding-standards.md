@@ -1,7 +1,7 @@
 ---
 title: Coding standards
-updated: 2026-11-04
-sources: []
+updated: 2026-11-09
+sources: [runbooks/local-merge-gate.md, conventions/testing.md]
 ---
 
 # Coding standards
@@ -21,20 +21,20 @@ Single source of truth for code quality. `build` and `pr-review` skills apply ev
 
 ## Rust (backend)
 - `cargo fmt` + `cargo clippy --all-targets -- -D warnings` clean.
-- Layering: `routes/handlers` (HTTP only) → `services` (business rules, authorization) → `repositories` (SQL). Handlers hold no business logic; repositories hold no authorization decisions.
+- Layering (per crate: `http.rs` → `service.rs` → `repo.rs`, ADR-0006): handlers (HTTP only) → services (business rules, authorization) → repositories (SQL). Handlers hold no business logic; repositories hold no authorization decisions.
 - Errors: `thiserror` for typed domain/app errors, mapped to HTTP in one `IntoResponse` impl. `anyhow` only in binaries/scripts.
 - Production paths use `?` and typed errors; `unwrap`/`expect` only in tests or with a comment proving it cannot fail.
 - SQL through `sqlx` with bound parameters and compile-time checked queries (`query!`/`query_as!`). After adding or changing a query run `pnpm db:prepare` and commit `apps/api/.sqlx` (CI builds with `SQLX_OFFLINE=true`).
 - Every use case runs in one `kernel::TenantTx`; repository functions take `&mut TenantTx` and still filter by `tx.tenant()` explicitly (RLS is the second layer, not the only one).
-- Integration tests use `#[sqlx::test(migrator = "kernel::MIGRATOR")]` and `kernel::testing::app_pool` so they run as `app_rw` with RLS, exactly like production. Security-critical tests are mutation-checked once (break the guard, see red).
-- `#![forbid(unsafe_code)]` in application crates.
+- Integration tests use `#[sqlx::test(migrator = "kernel::MIGRATOR")]` (a few older files pass `migrations = "../../migrations"`, same set) and `kernel::testing::app_pool` so they run as `app_rw` with RLS, exactly like production. Security-critical tests are mutation-checked once (break the guard, see red).
+- No `unsafe`: `[workspace.lints.rust] unsafe_code = "forbid"` in `apps/api/Cargo.toml`, every crate opts in with `[lints] workspace = true`.
 - Async: never block the runtime (`spawn_blocking` for CPU-heavy work such as hashing).
 - Structured logging via `tracing`; secrets wrapped in `secrecy::SecretString`.
 
 ## TypeScript (frontend)
 - `strict: true`, `noUncheckedIndexedAccess: true`. `any` is banned; use `unknown` + narrowing.
 - API response types come from the generated contract (`@vpyd/api-client`, `pnpm api:gen` after any endpoint/DTO change; CI diffs both files). Validate other untrusted input (forms, URL params, storage) with `zod`.
-- Server state via the framework (Server Components) or TanStack Query; client state minimal and local.
+- Server state via TanStack Query (the web app is a Vite SPA with TanStack Router); client state minimal and local.
 - Components: one responsibility, props typed, every async UI has loading / empty / error / success states.
 - Styling through design tokens only; raw hex colors and magic pixel values live in the token layer.
 - ESLint + `tsc --noEmit` clean (`pnpm lint`, `pnpm typecheck`; CI enforces both). No formatter is enforced: Prettier was listed but never configured or run (≈150 of 213 web files differ from its output), and was removed 2026-11-09; adopting one means a one-time reformat PR plus a CI check.
@@ -44,6 +44,6 @@ Single source of truth for code quality. `build` and `pr-review` skills apply ev
 - Branch per slice: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`.
 - Conventional Commits: `feat(api): add booking endpoint`.
 - Small PRs (one slice), description links the spec/plan page in `memory/wiki/`.
-- Trước khi push: `pnpm check` (fmt, clippy, test, lint, typecheck, unit test, contract OpenAPI/TS khớp code, cargo-deny nếu đã cài).
-- **Merge chỉ qua `bash scripts/merge-when-green.sh <pr>`**: chờ check xuất hiện, chờ chạy xong, chỉ merge khi mọi check pass. Không gọi `gh pr merge` trực tiếp (repo private gói Free không có branch protection; PR #8 từng bị merge trước khi CI chạy).
+- Trước khi push: `pnpm check` (= `check:api` fmt + clippy + `cargo test`, rồi lint, typecheck, unit test, `check:extra`: file contract hợp lệ, OpenAPI/TS khớp code, cargo-deny nếu đã cài).
+- **Merge chỉ qua `bash scripts/merge-when-green.sh <pr>`**: chờ check xuất hiện, chờ chạy xong, chỉ merge khi mọi check `pass`/`skipping` và có `CI ok: pass`. Không gọi `gh pr merge` trực tiếp (PR #8 từng bị merge trước khi CI chạy). Khi GitHub Actions không chạy được: `scripts/merge-local-gate.sh` ([local-merge-gate](../runbooks/local-merge-gate.md)).
 - Không force-push (bị chặn). Cần thay lịch sử sau rebase → push sang branch mới `…-v2`, mở PR mới, đóng PR cũ.
