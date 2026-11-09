@@ -5,26 +5,28 @@
 //   node e2e/shard.mjs <index> <total>   → prints the spec paths of shard <index> (1-based)
 //
 // Every file in e2e/specs/ lands in exactly one shard; a spec missing from WEIGHTS still runs, with
-// the median weight. Weights: seconds per file on CI (run 42189960683); refresh when a spec grows.
+// the median weight. Weights: seconds per file on CI (sum of the list reporter's test durations,
+// run 42606122131, 2026-11-09); refresh when a spec grows or the shards drift apart.
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const WEIGHTS = {
-  "a11y.spec.ts": 5,
-  "appointments.spec.ts": 16,
-  "auth.spec.ts": 15,
-  "customers.spec.ts": 4,
-  "front-desk.spec.ts": 3,
+  "a11y.spec.ts": 7,
+  "admin.spec.ts": 7,
+  "appointments.spec.ts": 44,
+  "auth.spec.ts": 31,
+  "customers.spec.ts": 7,
+  "front-desk.spec.ts": 6,
   "head.spec.ts": 1,
-  "layout.spec.ts": 110,
-  "management.spec.ts": 12,
-  "notes.spec.ts": 6,
+  "layout.spec.ts": 160,
+  "management.spec.ts": 16,
+  "notes.spec.ts": 7,
   "onboarding.spec.ts": 6,
-  "quay-upsell.spec.ts": 8,
-  "sales.spec.ts": 3,
-  "staff.spec.ts": 7,
-  "technician.spec.ts": 8,
-  "voids.spec.ts": 12,
+  "quay-upsell.spec.ts": 31,
+  "sales.spec.ts": 4,
+  "staff.spec.ts": 30,
+  "technician.spec.ts": 11,
+  "voids.spec.ts": 22,
 };
 
 export function shards(files, total) {

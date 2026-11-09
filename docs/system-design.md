@@ -174,7 +174,7 @@ Không có cron ngoài. `app::jobs::spawn_maintenance` ([`jobs.rs`](../apps/api/
 | Ngân sách | Giá trị | Kiểm bằng |
 |---|---|---|
 | JS khởi động (entry + modulepreload, gzip -9) | ≤ 125 KB (hiện ~124,7 KB) | Đo khi build, ghi trong [frontend § Perf budget](../memory/wiki/architecture/frontend.md) |
-| LCP mobile (Slow 4G, CPU 4×) `/dang-nhap`, `/quay` | ≤ 2,5 s (median-run) | Lighthouse CI chặn merge ([`lighthouserc.json`](../apps/web/lighthouserc.json)) |
+| LCP mobile (Slow 4G, CPU 4×) `/dang-nhap`, `/quay` | ≤ 2,5 s (trung vị 5 lần) | Lighthouse CI chặn merge ([`lighthouserc.json`](../apps/web/lighthouserc.json)) |
 | CLS / accessibility | ≤ 0,1 / ≥ 0,95 | Lighthouse CI |
 | API p95 tìm khách + catalog | < 300 ms | `apps/web/e2e/perf/api-latency.spec.ts` |
 | Báo cáo trên 3 năm dữ liệu | p95 ≤ 300 ms; báo cáo 3–5 năm của chủ spa ≤ 1,5 s | `app/tests/reports_bench.rs` (`--ignored`) |

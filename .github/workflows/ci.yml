@@ -45,7 +45,7 @@ jobs:
       - name: Classifier self-test
         run: |
           bash scripts/ci-changes.test.sh
-          if [ -f scripts/gate-lib.test.sh ]; then bash scripts/gate-lib.test.sh; fi
+          bash scripts/gate-lib.test.sh
       - id: scope
         name: Decide scope
         env:
@@ -339,6 +339,7 @@ jobs:
       # seeds 300 customers and 100 visits, so /quay is audited with data on it, as before.
       - name: API p95
         run: pnpm e2e --project=perf
+      # Median of 5 runs per URL (lighthouserc.json): the first run on a cold API is often the slowest.
       - name: Lighthouse CI (LCP < 2.5 s)
         run: pnpm lhci
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
