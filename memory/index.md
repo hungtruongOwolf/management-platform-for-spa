@@ -63,6 +63,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [r1-2-management-views](wiki/plans/r1-2-management-views.md) — ticket M1–M10 cho màn quản lý / báo cáo; M8 (xóa `POST /opening-balances`) còn mở
 - [r1-6-upsell](wiki/plans/r1-6-upsell.md) — **done**: ticket A1–A11 (backend upsell trong lượt) + B1–B6 (giỏ); ghi rõ dòng nào bị spec §10.12–§10.13 thay
 - [r1-1-trial-session](wiki/plans/r1-1-trial-session.md) — kịch bản buổi dùng thử với quản lý (chưa chạy): chuẩn bị dữ liệu, 15 nhiệm vụ bấm giờ, phiếu góp ý
+- [audit-2026-11-09](wiki/plans/audit-2026-11-09.md) — rà soát toàn bộ 2026-11-09: ~35 PR (#117–#148), migration 0041–0044, việc đã sửa, câu hỏi chờ EM, ticket còn lại
 
 ## Runbooks
 - [vercel-staging](wiki/runbooks/vercel-staging.md) — staging hiện tại: Vercel (web tĩnh + API container, pdx1) + Supabase us-west-2; biến môi trường, CLI `app`, bootstrap DB, dữ liệu demo, deploy, kiểm tra sau deploy, việc trước khi dùng thật
