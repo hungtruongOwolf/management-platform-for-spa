@@ -63,6 +63,7 @@ const ACTIONS: Record<string, string> = {
   "tenant.created": "Tạo spa",
   "tenant.suspended": "Tạm ngưng spa",
   "tenant.unsuspended": "Mở lại spa",
+  "tenant.owner_mfa_changed": "Nền tảng bật / tắt xác thực 2 bước cho chủ spa",
   "visit.create": "Ghi lượt",
   "visit.addition": "Thêm vào lượt",
   "visit.update": "Sửa lượt",

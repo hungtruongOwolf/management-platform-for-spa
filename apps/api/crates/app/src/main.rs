@@ -20,7 +20,8 @@ use tracing_subscriber::util::SubscriberInitExt;
 ///                                      (password from env APP_NEW_USER_PASSWORD, never argv)
 ///   `app add-staff --tenant S --name N --position P`   closer / technician for the pickers
 ///   `app reset-mfa --phone P`          lost authenticator: clear TOTP + recovery codes, end
-///                                      sessions; next login re-enrolls (verify identity first)
+///                                      sessions; next login re-enrolls where MFA is required
+///                                      (verify identity first)
 ///   `app unlock --phone P`             clear a login lockout (verify identity first)
 ///   `app add-operator --username U --name N`
 ///                                      platform console operator (ADR-0018; password from env
@@ -256,7 +257,9 @@ async fn reset_mfa() -> anyhow::Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("reset-mfa failed: {}", e.code()))?;
     anyhow::ensure!(found, "no account with that phone number");
-    tracing::info!("MFA reset; the next login will ask to enroll an authenticator again");
+    tracing::info!(
+        "MFA reset; the next login enrolls an authenticator again where the spa requires MFA"
+    );
     Ok(())
 }
 

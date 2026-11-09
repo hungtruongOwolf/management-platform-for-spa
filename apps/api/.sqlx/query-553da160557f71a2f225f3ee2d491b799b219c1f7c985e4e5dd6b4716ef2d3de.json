@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id AS \"id!\", name AS \"name!\", slug AS \"slug!\", status AS \"status!\",\n                  created_at AS \"created_at!\", staff_count AS \"staff_count!\",\n                  customer_count AS \"customer_count!\", visits_30d AS \"visits_30d!\",\n                  owner_count AS \"owner_count!\", last_activity_at\n           FROM app.platform_tenant_overview($1, $2)",
+  "query": "SELECT id AS \"id!\", name AS \"name!\", slug AS \"slug!\", status AS \"status!\",\n                  created_at AS \"created_at!\", staff_count AS \"staff_count!\",\n                  customer_count AS \"customer_count!\", visits_30d AS \"visits_30d!\",\n                  owner_count AS \"owner_count!\", last_activity_at,\n                  owner_mfa_required AS \"owner_mfa_required!\"\n           FROM app.platform_tenant_overview($1, $2)",
   "describe": {
     "columns": [
       {
@@ -62,6 +62,12 @@
         "name": "last_activity_at",
         "type_info": "Timestamptz",
         "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "owner_mfa_required!",
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -80,8 +86,9 @@
       null,
       null,
       null,
+      null,
       null
     ]
   },
-  "hash": "219330ddc70b0809bb314aa3e7aa8b3867404f782762b78c2dd9412749b4c125"
+  "hash": "553da160557f71a2f225f3ee2d491b799b219c1f7c985e4e5dd6b4716ef2d3de"
 }

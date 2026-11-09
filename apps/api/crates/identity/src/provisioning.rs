@@ -156,9 +156,12 @@ pub async fn add_user(owner: &PgPool, new: NewUser<'_>) -> Result<UserId, AppErr
     .execute(&mut *tx)
     .await?;
     // A role that requires MFA must not be usable from a session that never passed a second
-    // factor (security review L4): end every session, so the next login goes through MFA.
+    // factor (security review L4): end every session, so the next login goes through MFA. Only
+    // where the spa's policy asks for MFA (ADR-0020); with it OFF the role signs in password-only.
     let requires_mfa = sqlx::query_scalar!(
-        "SELECT requires_mfa FROM app.role WHERE tenant_id = $1 AND key = $2",
+        r#"SELECT r.requires_mfa AND t.owner_mfa_required AS "required!"
+           FROM app.role r JOIN app.tenant t ON t.id = r.tenant_id
+           WHERE r.tenant_id = $1 AND r.key = $2"#,
         tenant,
         new.role.key()
     )
@@ -198,7 +201,8 @@ async fn revoke_sessions(conn: &mut sqlx::PgConnection, user: Uuid) -> Result<u6
 }
 
 /// Operator action for a lost authenticator: clears the TOTP secret and recovery codes and ends
-/// every session, so the next login goes through enrollment again. Identity must be verified
+/// every session, so the next login goes through enrollment again (where MFA is required: with
+/// the spa's policy OFF the next login is password-only, ADR-0020). Identity must be verified
 /// out of band (in person / known phone) before running it. Returns false for an unknown phone.
 pub async fn reset_mfa(owner: &PgPool, phone: &str) -> Result<bool, AppError> {
     let phone = PhoneE164::parse(phone)

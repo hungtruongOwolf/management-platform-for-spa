@@ -123,6 +123,7 @@ use utoipa::OpenApi;
         platform::http::get_tenant,
         platform::http::suspend_tenant,
         platform::http::unsuspend_tenant,
+        platform::http::set_owner_mfa,
         platform::http::list_audit,
         platform::http::list_features,
         platform::http::tenant_features,

@@ -1054,6 +1054,56 @@
         }
       }
     },
+    "/api/v1/admin/tenants/{id}/owner-mfa": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "set_owner_mfa",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerMfaSwitch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Effective at the owners' next sign-in; switching ON ends the sessions of members who now need MFA",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerMfaChanged"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "platform.step_up_required"
+          },
+          "404": {},
+          "409": {
+            "description": "tenant.owner_mfa_unchanged"
+          },
+          "422": {}
+        }
+      }
+    },
     "/api/v1/admin/tenants/{id}/roles": {
       "get": {
         "tags": [
@@ -10873,6 +10923,42 @@
           }
         }
       },
+      "OwnerMfaChanged": {
+        "type": "object",
+        "required": [
+          "tenant",
+          "revoked_sessions"
+        ],
+        "properties": {
+          "revoked_sessions": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Sessions ended because their user needs MFA from now on (switching ON only; OFF ends none)."
+          },
+          "tenant": {
+            "$ref": "#/components/schemas/TenantRow"
+          }
+        }
+      },
+      "OwnerMfaSwitch": {
+        "type": "object",
+        "description": "Body of `PUT /admin/tenants/{id}/owner-mfa`.",
+        "required": [
+          "required",
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "3–500 characters."
+          },
+          "required": {
+            "type": "boolean",
+            "description": "`true` = the spa's owners must use a second factor (the default); `false` = password only."
+          }
+        },
+        "additionalProperties": false
+      },
       "PackageCancel": {
         "type": "object",
         "description": "Body of `POST /customer-packages/{id}/cancel`.",
@@ -14106,7 +14192,8 @@
           "staff_count",
           "customer_count",
           "visits_30d",
-          "owner_count"
+          "owner_count",
+          "owner_mfa_required"
         ],
         "properties": {
           "created_at": {
@@ -14137,6 +14224,10 @@
             "type": "integer",
             "format": "int64",
             "description": "Active logins holding `staff.manage`."
+          },
+          "owner_mfa_required": {
+            "type": "boolean",
+            "description": "The spa's MFA policy (ADR-0020): `true` (the default) = its owners must use a second\nfactor; `false` = they sign in with the password only."
           },
           "slug": {
             "type": "string"

@@ -68,7 +68,7 @@ export function ReauthDialog({ onDone, onClose }: { onDone: () => void; onClose:
           <input type="password" autoComplete="current-password" required value={password} onChange={(e) => { setPassword(e.target.value); }} />
         </label>
         <label className="filter-field">
-          Mã xác thực (nếu tài khoản có)
+          Mã xác thực (nếu đăng nhập có hỏi mã)
           <input inputMode="numeric" autoComplete="one-time-code" maxLength={20} value={code} onChange={(e) => { setCode(e.target.value); }} />
         </label>
         {message && (
