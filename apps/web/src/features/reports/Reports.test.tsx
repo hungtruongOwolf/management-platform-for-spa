@@ -201,6 +201,14 @@ describe("/bao-cao", () => {
     expect(urls(spy).some((u) => u.includes("/reports/ledger"))).toBe(false);
   });
 
+  it("stops at 92 days, from and to included, like the API (93 is refused there)", async () => {
+    const spy = serveManagement({ permissions: MANAGER });
+    // 2026-08-01 … 2026-10-31 is 92 days; one more day is too long.
+    at("/bao-cao?tab=ledger&period=custom&from=2026-07-31&to=2026-10-31");
+    expect(await screen.findByText(/xem tối đa 3 tháng/)).toBeInTheDocument();
+    expect(urls(spy).some((u) => u.includes("/reports/ledger"))).toBe(false);
+  });
+
   it("is closed to users without report.read (UX gate; the API decides)", async () => {
     serveManagement({ permissions: ["catalog.read", "sale.read"] });
     at("/bao-cao");

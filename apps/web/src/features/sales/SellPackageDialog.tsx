@@ -125,6 +125,8 @@ export function SellPackageDialog({
       );
       for (const owner of owners)
         void invalidateManagementViews(queryClient, owner);
+      // The desk's "Bán gói không kèm lượt" list of the day.
+      void queryClient.invalidateQueries({ queryKey: ["sales", "day"] });
       onDone(soldText(result, sale, customer.data?.full_name ?? "khách"));
     },
   });

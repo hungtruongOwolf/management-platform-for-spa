@@ -73,6 +73,7 @@ export function PackageActions({
     setOpen(null);
     void queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
     void queryClient.invalidateQueries({ queryKey: ["visits"] });
+    void queryClient.invalidateQueries({ queryKey: ["sales", "day"] });
     void invalidateManagementViews(queryClient, pkg.customer_id);
     onDone(message);
   };
