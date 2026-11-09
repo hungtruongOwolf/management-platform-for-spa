@@ -50,9 +50,13 @@ export function CustomersPage() {
           onSelect={(c) => {
             open(c.id);
           }}
-          onCreate={(typed) => {
-            setCreating(typed);
-          }}
+          onCreate={
+            can(me, "customer.write")
+              ? (typed) => {
+                  setCreating(typed);
+                }
+              : undefined
+          }
         />
         {creating !== null && can(me, "customer.write") && (
           <div className="panel-section">

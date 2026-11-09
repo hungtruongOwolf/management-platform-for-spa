@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { DateField } from "../../components/DateField";
 import { StickyActions } from "../../components/StickyActions";
+import { ApiError } from "../../lib/api";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { spaToday } from "../corrections/api";
 import { shiftDays } from "../reports/period";
@@ -16,6 +17,11 @@ import {
   invalidateAfterFollowUp,
   putFollowUp,
 } from "./followUps";
+
+const NEXT_TRY_ERRORS: Record<string, string> = {
+  before_contact: "Ngày hẹn lại phải từ ngày liên hệ trở đi.",
+  too_far: "Ngày hẹn lại tối đa 365 ngày sau ngày liên hệ.",
+};
 
 /** "08/11" (vi-VN Intl would print "08-11"). */
 const shortDate = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
@@ -76,7 +82,12 @@ export function FollowUpForm({
       onDone(saved);
     },
   });
-  const err = (field: string) => fieldMessage(mutation.error, field);
+  // Field codes are shared across screens (`too_far` also means "booking > 90 days"): the
+  // next-try date's own two codes are worded here (crm follow_up.rs validate).
+  const err = (field: string) => {
+    const code = mutation.error instanceof ApiError ? mutation.error.fieldCode(field) : undefined;
+    return (field === "next_follow_up_on" && code !== undefined && NEXT_TRY_ERRORS[code]) || fieldMessage(mutation.error, field);
+  };
 
   return (
     <form

@@ -87,6 +87,11 @@ describe("search rules", () => {
     expect(isSearchable("09")).toBe(false);
     expect(isSearchable("090")).toBe(false); // leading 0 does not count
     expect(isSearchable("0905")).toBe(true);
+    // "+84" is the country code, not digits of the number (crm search_customers).
+    expect(isSearchable("+84 9")).toBe(false);
+    expect(isSearchable("+84 90")).toBe(false);
+    expect(isSearchable("+84 905")).toBe(true);
+    expect(isSearchable("849")).toBe(true);
     expect(isSearchable("h")).toBe(false);
     expect(isSearchable("ha")).toBe(true);
   });
@@ -155,6 +160,13 @@ describe("customers page", () => {
     expect(
       screen.queryByRole("button", { name: "Sửa hồ sơ" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("offers 'Khách mới' only to a role that may create customers (customer.write)", async () => {
+    serve(["customer.read"]);
+    at("/khach-hang");
+    expect(await screen.findByRole("combobox")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Khách mới" })).not.toBeInTheDocument();
   });
 
   it("creating a duplicate phone offers to open the existing profile", async () => {
@@ -282,6 +294,10 @@ describe("customer identity (EM 2026-11-07, ADR-0011)", () => {
     await user.click(await screen.findByRole("button", { name: "Khách mới" }));
     const form = screen.getByRole("form", { name: "Khách mới" });
     expect(within(form).getByLabelText("Họ tên")).toHaveAccessibleDescription(/Không bắt buộc/);
+    // The server's limits (crm validate: address 500, note 2000, health note 2000).
+    expect(within(form).getByLabelText("Địa chỉ")).toHaveAttribute("maxLength", "500");
+    expect(within(form).getByLabelText("Ghi chú chung")).toHaveAttribute("maxLength", "2000");
+    expect(within(form).getByLabelText(/Lưu ý sức khỏe/)).toHaveAttribute("maxLength", "2000");
     await user.click(within(form).getByRole("button", { name: "Lưu khách" }));
     await vi.waitFor(() => {
       expect(calls.some((c) => c.method === "POST")).toBe(true);

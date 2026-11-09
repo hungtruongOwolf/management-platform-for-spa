@@ -16,6 +16,7 @@ import { THRESHOLDS, inactiveSearch } from "./search";
 import { EmptyState, ErrorState, ManagementOnly, PageHeader, RowsSkeleton } from "./ui";
 import { useToast } from "../customers/Toast";
 import "../customers/khach.css";
+import { isSearchable } from "../customers/api";
 
 const FOLLOW_UPS: [FollowUpFilter, string][] = [
   ["due", "Cần liên hệ"],
@@ -34,6 +35,7 @@ const SCOPES = [
   ["with_sessions", "Chỉ khách còn buổi"],
 ] as const;
 
+// Every API filter has a line; `not_contacted` has no tab (EM 2026-11-05) but stays valid for the API.
 const EMPTY: Record<FollowUpFilter, string> = {
   due: "Không còn ai cần liên hệ hôm nay. Chọn “Đã hẹn” để xem khách đã hẹn gọi lại.",
   not_contacted: "Khách vắng lâu nào cũng đã được liên hệ.",
@@ -44,7 +46,7 @@ const EMPTY: Record<FollowUpFilter, string> = {
 /**
  * /khach-lau-khong-quay-lai: package and one-off customers who have not come back (EM round 3
  * item 4), longest absence first, with the follow-up state (item 16): last contact, next try,
- * filters "Cần liên hệ / Chưa liên hệ / Đã hẹn", and "Đã liên hệ" to record a contact. Every
+ * tabs "Cần liên hệ / Đã hẹn / Tất cả", and "Đã liên hệ" to record a contact. Every
  * filter lives in the URL, so back from a profile returns to the same list.
  */
 export function InactiveCustomersPage() {
@@ -79,6 +81,7 @@ function InactiveCustomersPageBody() {
         }}
         search={
           <SearchField
+            sendable={isSearchable}
             label="Tìm theo tên hoặc số điện thoại"
             placeholder="Tên khách, SĐT…"
             value={filter.q}

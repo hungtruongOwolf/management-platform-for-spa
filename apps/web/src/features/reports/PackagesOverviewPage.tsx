@@ -12,6 +12,7 @@ import { packagesSearch } from "./search";
 import { longDay, packagesOverviewQuery, relativeDay, type PackageFilter } from "./api";
 import type { PackageOverviewRow } from "./contract";
 import { EmptyState, ErrorState, ManagementOnly, PageHeader, RowsSkeleton } from "./ui";
+import { isSearchable } from "../customers/api";
 
 /** "+84905123456" → "0905 123 456" (design-system.md "Định dạng"); other shapes stay as they are. */
 export function displayPhone(phone: string): string {
@@ -93,6 +94,7 @@ function PackagesOverviewPageBody() {
       <PageHeader title="Gói liệu trình của khách" />
       <div role="search" aria-label="Tìm và lọc gói" className="grid content-start gap-3">
         <SearchField
+          sendable={isSearchable}
           label="Tìm theo tên khách, tên gói hoặc số điện thoại"
           placeholder="Tên khách, tên gói, SĐT…"
           value={q}
