@@ -343,6 +343,8 @@ interface ServeOptions {
   resetRequests?: PasswordResetRequest[];
   /** `POST /staff/{id}/login` asks for re-auth until `POST /auth/reauth`. */
   reauthFirst?: boolean;
+  /** `POST /auth/reauth` answers 401 `auth.unauthenticated`: the session itself ended. */
+  reauthExpired?: boolean;
 }
 
 /** A scorecard as `GET /evaluations` / `/me/staff` send it. */
@@ -478,6 +480,7 @@ function serve(permissions: string[], options: ServeOptions = {}) {
       return ok({ profile: { ...lan, details: { ...lan?.details, login: { phone: "0912 300 111", role: "manager", locked: false } } }, temporary_password: "ABCD-EFGH-JKLM" }, 201);
     }
     if (/^\/staff\/[^/]+\/login\/reset-password$/.test(p)) return ok({ temporary_password: "NEWT-EMPP-ASSW" }); // gitleaks:allow (a fake temporary password)
+    if (p === "/auth/reauth" && options.reauthExpired) return ok({ code: "auth.unauthenticated" }, 401);
     if (p === "/auth/reauth") {
       reauthed.done = true;
       return Promise.resolve(new Response(null, { status: 204 }));
@@ -1335,6 +1338,22 @@ describe("logins (ADR-0016)", () => {
     expect(posts).toHaveLength(2);
     expect(posts[1]?.body).toEqual({ phone: "0912300111", role: "manager" });
     expect(requests(spy).find((r) => r.url.endsWith("/auth/reauth"))?.body).toEqual({ password: "mat-khau-chu-spa", code: "123456" });
+  });
+
+  it("owner: an ended session during re-auth says so, not 'wrong password'", async () => {
+    serve(OWNER, { reauthFirst: true, reauthExpired: true });
+    at("/nhan-vien?tab=profiles");
+    const table = await screen.findByRole("table", { name: "Danh sách nhân sự" });
+    await userEvent.click(within(table).getByRole("button", { name: "Phạm Thị Hoa" }));
+    const sheet = await screen.findByRole("dialog", { name: "Phạm Thị Hoa" });
+    await userEvent.type(within(sheet).getByLabelText("Số điện thoại đăng nhập"), "0912300111");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Tạo tài khoản đăng nhập" }));
+    const again = await screen.findByRole("dialog", { name: "Xác nhận lại mật khẩu" });
+    await userEvent.type(within(again).getByLabelText("Mật khẩu của bạn"), "mat-khau-chu-spa");
+    await userEvent.type(within(again).getByLabelText(/Mã xác thực/), "123456");
+    await userEvent.click(within(again).getByRole("button", { name: "Xác nhận" }));
+    expect(await within(again).findByText(/Phiên đăng nhập đã hết/)).toBeInTheDocument();
+    expect(within(again).queryByText("Mật khẩu hoặc mã xác thực không đúng.")).not.toBeInTheDocument();
   });
 
   it("owner: forgotten-password requests in Hồ sơ nhân viên — reset shows the new temporary password, or Bỏ qua", async () => {

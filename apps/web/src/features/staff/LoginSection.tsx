@@ -30,7 +30,7 @@ export function ReauthDialog({ onDone, onClose }: { onDone: () => void; onClose:
   const confirm = useMutation({ mutationFn: () => reauth(password, code.trim()), onSuccess: onDone });
   const error = confirm.error;
   const message =
-    error instanceof ApiError && error.status === 401
+    error instanceof ApiError && (error.code === "auth.invalid_credentials" || error.code === "auth.invalid_mfa_code")
       ? "Mật khẩu hoặc mã xác thực không đúng."
       : error && fieldMessage(error, "code")
         ? "Nhập mã xác thực trong ứng dụng xác thực."
