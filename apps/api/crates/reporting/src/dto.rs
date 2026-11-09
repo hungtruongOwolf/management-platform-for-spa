@@ -157,7 +157,7 @@ pub struct DayCounts {
     pub sessions_used: i64,
     /// One-off services performed in completed visits.
     pub one_off_services: i64,
-    /// Packages sold in sales that are not voided.
+    /// Packages sold in sales that are not voided, less those refunded in full since (ADR-0019 D7).
     pub packages_sold: i64,
 }
 
@@ -315,7 +315,7 @@ pub struct TopPackage {
     /// Null = paper-book packages without a plan, one row per package name.
     pub plan_id: Option<Uuid>,
     pub name: String,
-    /// Packages sold in sales that are not voided.
+    /// Packages sold in sales that are not voided, less those refunded in full since (ADR-0019 D7).
     pub sold: i64,
     /// What was actually paid for them (price after discount; a paper-book package's paid
     /// amount), minus what was refunded since (ADR-0019 D7); only with `report.revenue.read`.

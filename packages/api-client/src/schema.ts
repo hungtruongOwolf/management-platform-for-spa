@@ -2636,7 +2636,7 @@ export interface components {
             one_off_services: number;
             /**
              * Format: int64
-             * @description Packages sold in sales that are not voided.
+             * @description Packages sold in sales that are not voided, less those refunded in full since (ADR-0019 D7).
              */
             packages_sold: number;
             /**
@@ -5096,7 +5096,7 @@ export interface components {
             revenue?: number | null;
             /**
              * Format: int64
-             * @description Packages sold in sales that are not voided.
+             * @description Packages sold in sales that are not voided, less those refunded in full since (ADR-0019 D7).
              */
             sold: number;
         };

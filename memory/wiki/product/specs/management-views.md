@@ -63,7 +63,7 @@ Thiếu `report.revenue.read` thì response **không chứa** các trường ti�
 - AC2.1: `from`/`to` (mặc định 7 ngày gần nhất), `granularity` = `day` | `week` (tuần ISO, bắt đầu thứ Hai) | `month`. `series` có **đủ mọi kỳ** trong khoảng, kỳ không có dữ liệu = 0 (biểu đồ liền mạch); kỳ đầu/cuối được cắt theo `from`/`to`.
 - AC2.2: Tổng các kỳ = `totals` (trừ `customers` = số khách **khác nhau** trên cả khoảng, không phải tổng các kỳ).
 - AC2.3: Tổng tiền của các ngày trong khoảng = `revenue` của khoảng; mỗi ngày khớp dashboard US1 của ngày đó.
-- AC2.4: `top_services` (10): theo số buổi + số lần làm lẻ; `one_off_revenue` chỉ khi có quyền tiền. `top_packages` (10): số gói bán (hóa đơn chưa hủy); gói sổ cũ không có mẫu gom theo tên gói; `revenue` = **số tiền thực trả** (giá sau giảm; gói sổ cũ = số đã trả trên sổ) **trừ số đã hoàn** của các gói đó (ADR-0019 D7), chỉ khi có quyền tiền.
+- AC2.4: `top_services` (10): theo số buổi + số lần làm lẻ; `one_off_revenue` chỉ khi có quyền tiền. `top_packages` (10): số gói bán (hóa đơn chưa hủy, **không đếm gói đã hoàn toàn bộ**; `packages_sold` ở tổng cũng vậy); gói sổ cũ không có mẫu gom theo tên gói; `revenue` = **số tiền thực trả** (giá sau giảm; gói sổ cũ = số đã trả trên sổ) **trừ số đã hoàn** của các gói đó (ADR-0019 D7), chỉ khi có quyền tiền.
 - AC2.5 (neg): `from > to` → `422 from after_to`; khoảng > 366 ngày → `422 to range_too_long` *(giới hạn đổi ở "US2 — báo cáo linh hoạt", vòng 3: theo tháng/năm ≤ 732 ngày, chủ spa ≤ 1830)*. Thiếu `report.read` → `403`.
 
 ### US3: Sổ doanh thu hằng ngày (bản số của sổ giấy)

@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT cp.plan_id, min(cp.name_snapshot) AS \"name!\",\n                  count(*) FILTER (WHERE NOT (m.refunded > 0 AND m.refunded >= m.paid)) AS \"sold!\",\n                  coalesce(sum(m.paid - m.refunded), 0)::bigint AS \"revenue!\"\n           FROM app.sale s\n           JOIN app.customer_package cp ON cp.tenant_id = s.tenant_id AND cp.sale_id = s.id\n           CROSS JOIN LATERAL (\n             SELECT CASE WHEN s.source = 'paper_book' THEN s.amount_paid ELSE cp.sold_price END AS paid,\n                    coalesce((SELECT sum(r.amount) FROM app.refund r\n                              WHERE r.tenant_id = cp.tenant_id AND r.customer_package_id = cp.id), 0)::bigint AS refunded\n           ) m\n           WHERE s.tenant_id = $1 AND s.business_date BETWEEN $2 AND $3 AND s.status = 'open'\n           GROUP BY cp.plan_id, CASE WHEN cp.plan_id IS NULL THEN cp.name_snapshot END\n           HAVING count(*) FILTER (WHERE NOT (m.refunded > 0 AND m.refunded >= m.paid)) > 0\n               OR sum(m.paid - m.refunded) <> 0\n           ORDER BY 3 DESC, 2, cp.plan_id\n           LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "plan_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package",
+            "name": "plan_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "sold!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "revenue!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "491df91d55dbdc3193f0586e3d3e690a597dae4d089fab4947ecf555dae54c04"
+}
