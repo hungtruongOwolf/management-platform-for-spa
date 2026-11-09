@@ -7,7 +7,7 @@ import { usePhone } from "../../components/useMediaQuery";
 import { useSearchState } from "../../lib/searchState";
 import { PHASE_BADGE, PHASE_LABEL, counts, daysFrom, hhmm, minutesOf, mondayOf, spaMinutes, type EntryView } from "../appointments/api";
 import { TimeGrid, range, servicesText, type TimeColumn } from "../appointments/TimeGrid";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
 import { EmptyState, ErrorState } from "../reports/ui";
 import { myCalendarQuery, type MyCalendarData, type MyCalendarEntry } from "./api";
 import { shiftMonth, weekdayShort } from "./labels";

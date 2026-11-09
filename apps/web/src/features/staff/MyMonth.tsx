@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Suspense, lazy, useState } from "react";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
 import { EmptyState, ErrorState, RowsSkeleton } from "../reports/ui";
 import { myMonthQuery, type AttendanceDay, type MyStaff } from "./api";
 import { FLAG_LABEL, LEVEL_SHORT, STATUS_LABEL, daysOf } from "./labels";

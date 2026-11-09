@@ -12,6 +12,11 @@ export function monthLabel(iso: string): string {
 
 const spaParts = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "Asia/Ho_Chi_Minh" });
 
+/** Today in the spa's time zone, "YYYY-MM-DD" (the business day every screen starts from). */
+export function spaToday(now: Date = new Date()): string {
+  return spaParts.format(now);
+}
+
 /** "Thứ 5" … "Thứ 7", "Chủ nhật" for a business day (numbers, as the paper books write them). */
 export function weekdayLabel(iso: string): string {
   const day = new Date(`${iso}T00:00:00Z`).getUTCDay();

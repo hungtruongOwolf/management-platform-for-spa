@@ -12,7 +12,8 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../../app/App";
 import { staffByUse } from "../front-desk/api";
-import { addMonths, isUnused, spaToday } from "./api";
+import { spaToday } from "../../lib/format";
+import { addMonths, isUnused } from "./api";
 import { cancelLabel } from "./PackageActions";
 
 const OWNER = [
