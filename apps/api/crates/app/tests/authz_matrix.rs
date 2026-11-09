@@ -1908,7 +1908,10 @@ async fn every_admin_route_needs_a_full_operator_session(pool: PgPool) -> TestRe
     }
     // Enroll once, so the pending sessions below are `mfa_verify` ones.
     let mut full = common::operator_session(&w.h).await?;
-    for route in admin_rows().filter(|r| matches!(r.access, Access::Operator)) {
+    // Logout takes a pending session by design (an operator may abandon the MFA step).
+    for route in admin_rows()
+        .filter(|r| matches!(r.access, Access::Operator) && r.path != "/api/v1/admin/auth/logout")
+    {
         let pending = operator_pending(&w.app).await;
         let reply = operator_send(&w.app, route, &w.home, &pending).await;
         if reply.status != StatusCode::UNAUTHORIZED {
