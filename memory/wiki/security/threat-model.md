@@ -21,6 +21,7 @@ sources: [architecture/system.md, product/specs/front-desk-and-packages.md, prod
 | STRIDE | Mối đe dọa | Biện pháp | Test |
 |---|---|---|---|
 | S | Dò hoặc nhồi mật khẩu (A1) | Argon2id, rate limit IP + tài khoản, lỗi đồng nhất, MFA cho chủ/admin (ADR-0004) | Đăng nhập sai lần thứ N → bị chậm hoặc khóa tạm |
+| S | Người dùng chọn mật khẩu phổ biến, đoán được trong vài lần thử (ADR-0019 D18) | `password::check_policy` từ chối mục trong danh sách đi kèm binary (NCSC 100k ≥ 10 ký tự + danh sách tiếng Việt), không phân biệt hoa thường, ở mọi chỗ người dùng / operator đặt mật khẩu (đổi mật khẩu, CLI provisioning, CLI operator); không gọi dịch vụ ngoài | `password::tests::refuses_a_common_password_whatever_its_case`, `staff_logins.rs` (`Password1234` → `422 too_common`) |
 | S | Lộ mật khẩu chủ spa (A4): kẻ tấn công chỉ có mật khẩu | TOTP bắt buộc; session sau mật khẩu chỉ là **pending MFA** (10 phút, bị `CurrentSession`/`AuthUser` từ chối, không lộ spa/permission, không gọi được `logout-all`/reauth) | `tests/mfa.rs`: session pending gọi `/me`, `/services`, `/customers` → 401; mutation đã kiểm |
 | S | Dò mã TOTP 6 số | Mã sai tính vào khóa tài khoản (tăng nguyên tử trong SQL); nhập lại mật khẩu không reset bộ đếm; rate limit IP `/auth/*` | 5 mã sai → khóa, mã đúng cũng bị từ chối; 3 sai + login lại + 2 sai → khóa |
 | S | Phát lại mã TOTP đã thấy/bị phishing | Mỗi bước thời gian chỉ chấp nhận 1 lần (`mfa_last_step`, UPDATE nguyên tử); mã khôi phục dùng 1 lần | Cùng mã ở lần đăng nhập thứ hai → 401; mutation đã kiểm |
