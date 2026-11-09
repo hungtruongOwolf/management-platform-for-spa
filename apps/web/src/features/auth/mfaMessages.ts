@@ -11,5 +11,4 @@ addMessages(
     "auth.mfa_enrollment_changed": "Mã QR đã được tạo lại ở nơi khác. Vui lòng đăng nhập lại.",
     "auth.mfa_enrollment_not_started": "Vui lòng đăng nhập lại để thiết lập.",
   },
-  {},
 );

@@ -52,7 +52,7 @@ const MESSAGES: Record<string, string> = {
     "Thao tác này có thể đã được lưu ở lần gửi trước. Đóng hộp thoại, tải lại rồi kiểm tra trước khi làm lại.",
 };
 
-/** Messages for field-level validation codes. */
+/** Messages for field-level validation codes every form shares. */
 const FIELD_MESSAGES: Record<string, string> = {
   required: "Bắt buộc nhập.",
   too_long: "Quá dài.",
@@ -80,10 +80,19 @@ const FIELD_MESSAGES: Record<string, string> = {
   conflicts_with_birth_date: "Năm sinh khác năm của ngày sinh.",
 };
 
-/** Registers the messages of a lazy feature (called once at the top of its module). */
-export function addMessages(codes: Record<string, string>, fields: Record<string, string>): void {
+/**
+ * Field texts of one feature's forms, passed to `fieldMessage` by those forms only. Never
+ * registered globally: two lazy screens that give one code different meanings (a field `taken`,
+ * `not_closed`…) cannot overwrite each other's text depending on which chunk loaded last.
+ */
+export type FieldTexts = Readonly<Record<string, string>>;
+
+/**
+ * Registers the API error codes of a lazy feature (called once at the top of its module). The
+ * codes are namespaced (`staff.account_taken`), so one table serves every screen.
+ */
+export function addMessages(codes: Record<string, string>): void {
   Object.assign(MESSAGES, codes);
-  Object.assign(FIELD_MESSAGES, fields);
 }
 
 /** Retrying cannot help a 403: the role lacks the permission ("Thử lại" is hidden). */
@@ -98,13 +107,15 @@ export function messageFor(error: unknown): string {
   return "Không kết nối được máy chủ. Vui lòng kiểm tra mạng.";
 }
 
+/** The text of the server's refusal of `field`: the form's own `texts` first, then the shared ones. */
 export function fieldMessage(
   error: unknown,
   field: string,
+  texts?: FieldTexts,
 ): string | undefined {
   if (!(error instanceof ApiError)) return undefined;
   const code = error.fieldCode(field);
   return code === undefined
     ? undefined
-    : (FIELD_MESSAGES[code] ?? "Giá trị không hợp lệ.");
+    : (texts?.[code] ?? FIELD_MESSAGES[code] ?? "Giá trị không hợp lệ.");
 }

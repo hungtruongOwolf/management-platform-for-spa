@@ -3,8 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { DateField } from "../../components/DateField";
 import { StickyActions } from "../../components/StickyActions";
-import { ApiError } from "../../lib/api";
-import { fieldMessage, messageFor } from "../../lib/errors";
+import { fieldMessage, messageFor, type FieldTexts } from "../../lib/errors";
 import { spaToday } from "../../lib/format";
 import { shiftDays } from "../reports/period";
 import {
@@ -18,7 +17,7 @@ import {
   putFollowUp,
 } from "./followUps";
 
-const NEXT_TRY_ERRORS: Record<string, string> = {
+const NEXT_TRY_ERRORS: FieldTexts = {
   before_contact: "Ngày hẹn lại phải từ ngày liên hệ trở đi.",
   too_far: "Ngày hẹn lại tối đa 365 ngày sau ngày liên hệ.",
 };
@@ -82,12 +81,12 @@ export function FollowUpForm({
       onDone(saved);
     },
   });
-  // Field codes are shared across screens (`too_far` also means "booking > 90 days"): the
-  // next-try date's own two codes are worded here (crm follow_up.rs validate).
-  const err = (field: string) => {
-    const code = mutation.error instanceof ApiError ? mutation.error.fieldCode(field) : undefined;
-    return (field === "next_follow_up_on" && code !== undefined && NEXT_TRY_ERRORS[code]) || fieldMessage(mutation.error, field);
-  };
+  // The next-try date's own two codes are worded here (crm follow_up.rs validate): for this field
+  // `too_far` means "more than 365 days after the contact".
+  const err = (field: string) =>
+    fieldMessage(mutation.error, field, field === "next_follow_up_on" ? NEXT_TRY_ERRORS : undefined);
+  const contactedError = err("contacted_on");
+  const nextError = err("next_follow_up_on");
 
   return (
     <form
@@ -106,11 +105,17 @@ export function FollowUpForm({
             value={contactedOn}
             min={minDay}
             max={today}
+            describedBy={contactedError ? `${id}-contacted-error` : undefined}
+            invalid={Boolean(contactedError)}
             onChange={(iso) => {
               setContactedOn(iso || today);
             }}
           />
-          {err("contacted_on") && <span className="field-error">{err("contacted_on")}</span>}
+          {contactedError && (
+            <span id={`${id}-contacted-error`} className="field-error">
+              {contactedError}
+            </span>
+          )}
         </div>
         <label className="field">
           Cách liên hệ
@@ -167,8 +172,8 @@ export function FollowUpForm({
           value={next}
           min={contactedOn}
           max={shiftDays(contactedOn, 365)}
-          describedBy={`${id}-next-hint`}
-          invalid={nextTooEarly || Boolean(err("next_follow_up_on"))}
+          describedBy={nextError ? `${id}-next-hint ${id}-next-error` : `${id}-next-hint`}
+          invalid={nextTooEarly || Boolean(nextError)}
           onChange={(iso) => {
             setNextChoice(iso);
           }}
@@ -206,9 +211,13 @@ export function FollowUpForm({
             </button>
           )}
         </p>
-        {err("next_follow_up_on") && <span className="field-error">{err("next_follow_up_on")}</span>}
+        {nextError && (
+          <span id={`${id}-next-error`} className="field-error">
+            {nextError}
+          </span>
+        )}
       </div>
-      {mutation.isError && !err("contacted_on") && !err("next_follow_up_on") && (
+      {mutation.isError && !contactedError && !nextError && (
         <p role="alert" className="alert">
           {messageFor(mutation.error)}
         </p>

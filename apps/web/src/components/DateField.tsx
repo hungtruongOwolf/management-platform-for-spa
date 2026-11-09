@@ -41,8 +41,8 @@ export function DateField({
   onChange: (iso: string) => void;
   min?: string | undefined;
   max?: string | undefined;
-  /** Id of a hint under the field (read with it). */
-  describedBy?: string;
+  /** Id(s) of a hint or error under the field (read with it). */
+  describedBy?: string | undefined;
   /** The form knows the value is wrong (e.g. a server error). */
   invalid?: boolean;
   className?: string;

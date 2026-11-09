@@ -17,7 +17,6 @@ addMessages(
     "role.owner_only_permission": "Quyền quản lý nhân sự chỉ dành cho chủ spa.",
     "role.not_grantable": "Có quyền không được cấp cho vai trò.",
   },
-  {},
 );
 
 /** The console signs in with a username, so the spa's "phone or password" wording does not fit. */
