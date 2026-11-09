@@ -2218,7 +2218,10 @@ export interface components {
             opens_at: string;
             /** Format: int32 */
             slot_minutes: number;
-            /** @description Columns of the day view (active technicians). */
+            /**
+             * @description Columns of the day view: active staff who serve customers, by login role (technician or
+             *     manager; a profile without a login counts as a technician; never the owner).
+             */
             technicians: components["schemas"]["CalendarTechnician"][];
             time_zone: string;
             /** Format: date */
@@ -3246,6 +3249,11 @@ export interface components {
             tenants: components["schemas"]["TenantSummary"][];
             user: components["schemas"]["UserSummary"];
         };
+        /**
+         * @description How the monthly meal allowance (`staff_pay.meal_allowance`) is paid (ADR-0019 D3).
+         * @enum {string}
+         */
+        MealAllowanceBasis: "monthly" | "days_worked";
         /** @description One amount split by how the money moved. */
         MethodSplit: {
             /** Format: int64 */
@@ -3823,7 +3831,7 @@ export interface components {
          * @description How Thưởng gắn bó is accrued in a month the person did not work in full (⚠️ #7).
          * @enum {string}
          */
-        PartialMonthLoyalty: "prorate" | "full" | "none_if_partial";
+        PartialMonthLoyalty: "fifteen_days" | "prorate" | "full" | "none_if_partial";
         /** @description Body of `POST /auth/password`. */
         PasswordChangeBody: {
             /** @description The current password (the temporary one after an owner's reset). */
@@ -3864,7 +3872,7 @@ export interface components {
             status: string;
         };
         /** @enum {string} */
-        PayFlag: "no_pay_terms" | "unrecorded_days" | "absent_k5_plus" | "evaluation_missing";
+        PayFlag: "no_pay_terms" | "unrecorded_days" | "absent_k5_plus" | "evaluation_missing" | "net_pay_shortfall";
         PaymentCreate: {
             /**
              * Format: int64
@@ -3965,9 +3973,14 @@ export interface components {
             late_penalty_amount: number;
             /**
              * @description ⚠️ #7.
-             * @default prorate
+             * @default fifteen_days
              */
             loyalty_partial_month: components["schemas"]["PartialMonthLoyalty"];
+            /**
+             * @description How the meal allowance is paid (ADR-0019 D3).
+             * @default monthly
+             */
+            meal_allowance_basis: components["schemas"]["MealAllowanceBasis"];
             /**
              * @description Tết bonus recorded per month for Mức 1, 2, 3 (§6: 500k / 400k / 300k).
              * @default [
@@ -3987,7 +4000,10 @@ export interface components {
             version: number;
         };
         PayrollTotals: {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Σ of the payslips' `base_pay` (the month's base, prorated for a month not worked in full).
+             */
             base_salary: number;
             /** Format: int64 */
             bonuses: number;
@@ -4005,7 +4021,17 @@ export interface components {
         /** @description The computed payslip. Stored as JSON in `app.payslip.detail` when the month closes. */
         Payslip: {
             attendance: components["schemas"]["AttendanceTotals"];
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description The month's base: `base_salary` for a month worked in full, else `base_salary ×
+             *     employed_days ÷ days_in_month` rounded to 1.000đ (ADR-0019 D4). Snapshots closed before
+             *     it existed read it as `base_salary`.
+             */
+            base_pay: number;
+            /**
+             * Format: int64
+             * @description The monthly salary of the pay terms.
+             */
             base_salary: number;
             /** Format: int64 */
             bonus_points: number;
@@ -4052,7 +4078,10 @@ export interface components {
              * @description Leave days that use up the free allowance (codes in `free_leave_codes`).
              */
             leave_days_counted: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Deducted days × day rate, at most `base_pay` (ADR-0019 D3).
+             */
             leave_deduction: number;
             /**
              * Format: int64
@@ -4063,8 +4092,17 @@ export interface components {
             meal_allowance: number;
             /** @description `YYYY-MM`. */
             month: string;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Never below 0đ (ADR-0019 D3).
+             */
             net_pay: number;
+            /**
+             * Format: int64
+             * @description What the deductions exceeded the month's pay by, not deducted: the spa bears it (flag
+             *     `net_pay_shortfall`). 0 otherwise.
+             */
+            net_pay_shortfall?: number;
             /** Format: int64 */
             penalties: number;
             /** Format: int64 */

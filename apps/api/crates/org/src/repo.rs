@@ -34,6 +34,35 @@ pub async fn list(tx: &mut TenantTx, status: Option<&str>) -> Result<Vec<StaffRo
     .await?)
 }
 
+/// An active profile and, when it is linked to a login (`linked`), that login's role keys in
+/// this spa (empty when the login holds no role).
+pub struct ServingRow {
+    pub id: Uuid,
+    pub full_name: String,
+    pub linked: bool,
+    pub role_keys: Vec<String>,
+}
+
+/// Active profiles with their login's role keys, by name, in one statement.
+pub async fn active_with_login_roles(tx: &mut TenantTx) -> Result<Vec<ServingRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        ServingRow,
+        r#"SELECT s.id, s.full_name, s.user_id IS NOT NULL AS "linked!",
+                  coalesce((SELECT array_agg(r.key ORDER BY r.key)
+                   FROM app.membership m
+                   JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
+                   JOIN app.role r ON r.tenant_id = mr.tenant_id AND r.id = mr.role_id
+                   WHERE m.tenant_id = s.tenant_id AND m.user_id = s.user_id), '{}') AS "role_keys!"
+           FROM app.staff s
+           WHERE s.tenant_id = $1 AND s.status = 'active'
+           ORDER BY s.full_name"#,
+        tenant
+    )
+    .fetch_all(tx.conn())
+    .await?)
+}
+
 /// Locks the row (`FOR SHARE`) so the staff member cannot be marked as left while the caller's
 /// transaction records them as closer or technician.
 pub async fn get_for_share(tx: &mut TenantTx, id: Uuid) -> Result<Option<StaffRow>, AppError> {

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Icon } from "../../app/Icon";
 import { useSearchState } from "../../lib/searchState";
 import { can, meQuery } from "../auth/session";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
 import { CHANNEL_LABEL, OUTCOME_LABEL } from "../customers/followUps";
 import { FollowUpForm } from "../customers/FollowUpForm";
 import { inactiveCustomersQuery, relativeDay, shortDay, type InactiveFilter } from "./api";

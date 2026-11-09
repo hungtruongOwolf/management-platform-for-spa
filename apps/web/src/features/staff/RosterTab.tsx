@@ -7,9 +7,8 @@ import { DateField, isoToDmy } from "../../components/DateField";
 import { ResponsiveTable, type Column } from "../../components/ResponsiveTable";
 import { TimeField } from "../../components/TimeField";
 import { ApiError } from "../../lib/api";
-import { spaDateTime } from "../../lib/format";
+import { spaDateTime, spaToday } from "../../lib/format";
 import { fieldMessage, messageFor } from "../../lib/errors";
-import { spaToday } from "../corrections/api";
 import { ErrorState, RowsSkeleton } from "../reports/ui";
 import {
   createProfile,

@@ -93,12 +93,15 @@ Thước đo: quản lý không phải cộng tay lương và hoa hồng ([perso
   - `hoa hồng chốt liệu trình = round(tỷ lệ × Σ sale.total)` trên các hóa đơn gói người đó chốt, không tính hóa đơn đã hủy.
   - **Vòng 6 (EM 2026-11-06, Q-U3):** khoản này thành **hoa hồng giới thiệu / chốt (upsell)** = `round(tỷ lệ × (Σ giá gói đã thu mà người đó chốt + Σ line_value dịch vụ lẻ người đó giới thiệu trong lượt hoàn tất))`. Phiếu lương ghi `upsell_package_base`, `upsell_service_base`, `upsell_lines[]` (từng gói / dịch vụ); `closing_commission_base` = tổng. "Khách tự chọn" không tính cho ai. Hoa hồng làm không đổi.
   - `thực lĩnh = lương cứng − trừ nghỉ − trừ muộn + hoa hồng làm + hoa hồng chốt + tiền ăn + thưởng − phạt`.
+  - **ADR-0019 D4:** "lương cứng" trong công thức là `base_pay` của tháng: tháng làm đủ thì bằng `base_salary`; vào làm hoặc nghỉ giữa tháng (kể cả khoảng nghỉ giữa hai đợt) thì `round_nghìn(base_salary × employed_days ÷ days_in_month)`. Lương ngày vẫn tính trên `base_salary` đủ tháng. `totals.base_salary` = Σ `base_pay`. Bản chụp chốt trước ADR-0019 không có `base_pay`: đọc ra bằng `base_salary`, dòng lưu trong DB không đổi.
+  - **ADR-0019 D3:** `trừ nghỉ` tối đa bằng `base_pay`. Thực lĩnh `max(0, …)`; phần âm ghi ở `net_pay_shortfall` kèm cờ `net_pay_shortfall`, không trừ. Tiền ăn theo quy tắc `meal_allowance_basis`: `monthly` (mặc định, compensation-rules §8 ghi khoản cố định tháng) = đủ số khi tháng có ≥ 1 ngày đi làm, 0đ khi không có; `days_worked` = tiền ăn × ngày đi làm ÷ (số ngày − miễn trừ), tối đa đủ số, làm tròn nghìn.
   - **Ghi nhận, không cộng vào thực lĩnh**: Thưởng gắn bó của tháng (trả ở mốc 12/24) và mức Tết của tháng (mức thấp hơn giữa mức theo ngày nghỉ và mức theo đánh giá; số tiền theo `tet_level_amounts`).
 - AC5.3 Cờ trên phiếu lương:
   - `no_pay_terms`: chưa có điều kiện lương, mọi khoản bằng 0;
   - `unrecorded_days`: có ngày làm việc chưa chấm công;
   - `absent_k5_plus`: K ≥ 5 ngày trong tháng (Nhóm A #8). Hệ thống chỉ gắn cờ, chủ spa quyết định;
-  - `evaluation_missing`.
+  - `evaluation_missing`;
+  - `net_pay_shortfall` (ADR-0019 D3): các khoản trừ vượt lương của tháng, thực lĩnh 0đ.
 - AC5.4 `POST /payroll/close {month, allow_incomplete?}` (`payroll.close`, `Idempotency-Key`):
   - tháng chưa kết thúc → `422 payroll.month_not_ended`;
   - còn ngày chưa chấm mà `allow_incomplete` không bật → `422 payroll.unrecorded_days`;
@@ -143,9 +146,9 @@ Quy tắc nằm ở `PUT /payroll/rules` (chủ spa) và áp dụng cho mọi th
 | 2 | 2 ngày miễn trừ áp dụng cho K không? | Như Excel: P, ĐX, K đều dùng 2 ngày miễn trừ | ✓ `free_leave_codes`, `free_leave_days` | Q-C2 |
 | 3 | Hoa hồng: giá trị một buổi của gói / chốt khi trả góp / 2 KTV | Buổi gói = giá gói ÷ số buổi trả tiền, **buổi tặng = 0** (`line_value`); chốt = tổng hóa đơn (R1 luôn thu đủ, nên tiền đã thu = giá trị bán); mỗi dòng dịch vụ một KTV, hai người làm thì ghi hai dòng | ✓ `commission_on_bonus_sessions`, `closing_commission` | Q-C3 |
 | 4 | Đi muộn: có phạt không, ngưỡng bao nhiêu | Chỉ ghi nhận, phạt 0đ, ngưỡng 0 phút | ✓ `late_grace_minutes`, `late_penalty_amount`, `default_shift_start` | Q-C4 |
-| 5 | Tiền ăn 300–600k, hỗ trợ học viên tháng 2 | Nhập tay theo từng người (`meal_allowance`, `base_salary`) | ✓ (dữ liệu theo người) | Q-C5 |
+| 5 | Tiền ăn 300–600k, hỗ trợ học viên tháng 2 | Nhập tay theo từng người (`meal_allowance`, `base_salary`). ADR-0019 D3: tiền ăn là khoản cố định tháng, 0đ khi tháng không có ngày đi làm | ✓ (dữ liệu theo người) + `meal_allowance_basis` = `monthly`/`days_worked` | Q-C5 |
 | 6 | Ngày lễ / Chủ nhật | Không xử lý riêng: mọi ngày như nhau, mẫu số lương ngày vẫn là số ngày − 2 | Chưa (chưa có quy tắc để cấu hình) | Q-C6 |
-| 7 | Vào làm giữa tháng: Thưởng gắn bó tính thế nào | Theo tỷ lệ số ngày làm trong tháng; ngày trước khi vào làm không bị tính là nghỉ | ✓ `loyalty_partial_month` = `prorate`/`full`/`none_if_partial` | Q-C7 |
+| 7 | Vào làm giữa tháng: Thưởng gắn bó tính thế nào | ~~Theo tỷ lệ số ngày làm trong tháng~~ → **ADR-0019 D4:** "tháng làm việc" = tháng có ≥ 15 ngày thuộc thời gian làm việc: đủ 500k, dưới 15 ngày thì 0đ. Ngày trước khi vào làm không bị tính là nghỉ | ✓ `loyalty_partial_month` = `fifteen_days` (mặc định)/`prorate`/`full`/`none_if_partial`. Spa đã lưu quy tắc trước đây giữ giá trị đã lưu | Q-C7 (đã quyết) |
 | 8 | Excel trừ 500k cả với học viên có cọc | Theo văn bản: lương cứng nhập là **mức thực nhận**, hệ thống không tự trừ 500k. Người có cọc thì đặt `loyalty_bonus_monthly = 0` | ✓ (dữ liệu theo người) | Q-C8 |
 
 Một số mặc định khác cũng lấy từ sheet và chỉnh được: mức Tết 500k/400k/300k (`tet_level_amounts`), giờ vào ca 09:00.
@@ -162,7 +165,7 @@ Hoa hồng bán sản phẩm (chưa có module sản phẩm). Chi trả theo m�
 - **Q-S1**: Quản lý có được xem lương không? Mặc định là **không** (chỉ chủ spa có `payroll.*`). Quản lý vẫn chấm công, đánh giá và ghi thưởng/phạt (thấy số tiền thưởng/phạt mình ghi, không thấy lương cứng, hoa hồng hay thực lĩnh).
 - **Q-S2**: "Đánh giá từng ngày" nghĩa là khen/phàn nàn/ghi chú hằng ngày như cột của sheet (đã build), hay muốn chấm cả 6 tiêu chí mỗi ngày? Sheet chỉ chấm 6 tiêu chí một lần mỗi tháng.
 - **Q-S3**: Ghi thưởng/phạt bằng tiền: quản lý ghi được (mặc định) hay chỉ chủ spa?
-- **Q-S4**: Người vào làm hoặc nghỉ giữa tháng: lương cứng có tính theo tỷ lệ ngày không? Hiện tại là **không** (giống Excel); ngày trước khi vào làm chỉ không bị tính là nghỉ.
+- ~~**Q-S4**: Người vào làm hoặc nghỉ giữa tháng: lương cứng có tính theo tỷ lệ ngày không?~~ → **ADR-0019 D4: có**, theo số ngày thuộc thời gian làm việc ÷ số ngày trong tháng, làm tròn nghìn đồng (AC5.2).
 - **Q-C1 … Q-C8**: các dòng tương ứng ở §6 (giữ mặc định hay chọn cách khác).
 
 ## 10. Vòng 5 (EM 2026-11-06, [raw](../../../raw/2026-11-06-em-review-round5.md), mục 9–11)

@@ -162,5 +162,11 @@ Tài sản mới: quyền vận hành **mọi** spa (tạo / ngưng spa, cờ t�
 
 **TB2 (bổ sung):** không role `BYPASSRLS`, không kết nối owner ở runtime; cổng token trong hàm chống lỗi ứng dụng, **không** chống chiếm `app_rw` (cùng lớp rủi ro đã ghi ở ADR-0017: `app_rw` đặt được `app.tenant_id` của bất kỳ spa nào). **Còn mở:** TOFU ở lần enroll đầu của operator (như owner, ADR-0004 L3); cùng origin đến khi có subdomain (Q-PA3); chưa có support grant nên hỗ trợ chỉ thấy metadata (Q-PA1).
 
+## Dữ liệu cá nhân trong audit khách (ADR-0019 D13, secure review 2026-11-09)
+| STRIDE | Lạm dụng | Kiểm soát | Test |
+|---|---|---|---|
+| I | Hồ sơ đã ẩn danh nhưng tên / SĐT / ngày sinh vẫn còn mãi trong `audit_log` (giữ không hạn), ai có `audit.read` hay bản backup đều đọc được | `customer.create` / `customer.update` chỉ ghi cờ `has_*`, `gender` và `after.changed` (tên trường); 0047 viết lại các dòng cũ, giữ ai / lúc nào / trường nào | `customers.rs::customer_audit_keeps_who_and_what_field_but_no_personal_values`, `::migration_0047_scrubs_personal_values_from_old_customer_audit_rows` |
+| T | Dòng ghi thẳng vào DB (CLI, script, bug) lưu SĐT mà code không bao giờ nhận (máy bàn, sai đầu số) | CHECK `^\+84[35789][0-9]{8}$` ở 4 bảng (0047 `NOT VALID`, 0048 `VALIDATE`) | `customers.rs::database_refuses_a_phone_without_a_mobile_prefix` |
+
 ## Còn mở
 - Danh sách thao tác yêu cầu nhập lại mật khẩu: chỉ thao tác bảo mật tài khoản (EM 2026-11-05). Hiện dùng `AuthUser::require_recent_auth` ở tạo / đặt lại mật khẩu / đổi vai trò tài khoản nhân viên (ADR-0016, `staff_logins.rs::owner_login_actions_need_a_recent_reauth`); đổi mật khẩu của chính mình đòi mật khẩu hiện tại; cài đặt MFA sau đăng nhập chưa có route. Route mới loại này: dùng guard + test `401 auth.reauth_required`.

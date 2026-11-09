@@ -7,7 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { App } from "../../app/App";
 import { isoToDmy } from "../../components/DateField";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
 import { addDays, compactVnd, packagesPath, relativeDay } from "./api";
 import { niceTicks } from "./LineChart";
 import { daysBetween, rangeLabel, resolvePeriod } from "./period";

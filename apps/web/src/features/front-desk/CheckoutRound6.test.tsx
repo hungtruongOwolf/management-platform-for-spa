@@ -13,7 +13,7 @@ import { StrictMode } from "react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../../app/App";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
 
 const PERMS = [
   "customer.read",

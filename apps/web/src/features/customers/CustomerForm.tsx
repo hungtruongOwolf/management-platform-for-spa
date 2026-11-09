@@ -7,7 +7,7 @@ import { z } from "zod";
 import { DateField } from "../../components/DateField";
 import { ApiError } from "../../lib/api";
 import { fieldMessage, messageFor } from "../../lib/errors";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
 import "./khach.css";
 import {
   PHONE_CHECK_DEBOUNCE_MS,

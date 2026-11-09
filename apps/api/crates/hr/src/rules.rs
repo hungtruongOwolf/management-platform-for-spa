@@ -15,12 +15,27 @@ use utoipa::ToSchema;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PartialMonthLoyalty {
-    /// By calendar days employed in the month (default).
+    /// A "working month" (ADR-0019 D4, default): the full monthly amount when the person was
+    /// employed on at least 15 days of the month, else nothing.
+    FifteenDays,
+    /// By calendar days employed in the month (the default before ADR-0019).
     Prorate,
     /// The full monthly amount as soon as one day was worked.
     Full,
     /// Nothing for a month not worked in full.
     NoneIfPartial,
+}
+
+/// How the monthly meal allowance (`staff_pay.meal_allowance`) is paid (ADR-0019 D3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MealAllowanceBasis {
+    /// A fixed monthly amount, as compensation-rules §8 writes it ("300–600k/tháng", default):
+    /// the full amount for a month with at least one day worked, 0đ for a month with none.
+    Monthly,
+    /// By days worked: amount × days worked ÷ (days in month − free leave days), at most the
+    /// amount, rounded to 1.000đ.
+    DaysWorked,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -47,6 +62,8 @@ pub struct PayrollRules {
     pub closing_commission: bool,
     /// ⚠️ #7.
     pub loyalty_partial_month: PartialMonthLoyalty,
+    /// How the meal allowance is paid (ADR-0019 D3).
+    pub meal_allowance_basis: MealAllowanceBasis,
     /// Tết bonus recorded per month for Mức 1, 2, 3 (§6: 500k / 400k / 300k).
     pub tet_level_amounts: [i64; 3],
 }
@@ -61,7 +78,8 @@ impl Default for PayrollRules {
             late_penalty_amount: 0,
             commission_on_bonus_sessions: false,
             closing_commission: true,
-            loyalty_partial_month: PartialMonthLoyalty::Prorate,
+            loyalty_partial_month: PartialMonthLoyalty::FifteenDays,
+            meal_allowance_basis: MealAllowanceBasis::Monthly,
             tet_level_amounts: [500_000, 400_000, 300_000],
         }
     }

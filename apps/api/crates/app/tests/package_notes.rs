@@ -714,7 +714,7 @@ async fn a_package_sold_in_a_visit_keeps_its_own_note(pool: PgPool) -> TestResul
 
     // Without the health read right: no key on the visit's packages either.
     let blind = d.manager_without(P::CustomerHealthNotesRead);
-    let seen = operations::service::for_day(&app, &d.h.cipher, &blind, None).await?;
+    let seen = operations::service::for_day(&app, &d.h.cipher, &blind, None, None).await?;
     let hidden: Vec<bool> = seen
         .first()
         .map(|v| v.package_sales.iter().map(|p| p.note.is_none()).collect())

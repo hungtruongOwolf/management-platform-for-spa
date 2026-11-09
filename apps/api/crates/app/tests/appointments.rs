@@ -115,8 +115,9 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
     }
     let lan = org::provisioning::add_staff(&h.owner, "vpyd", "KTV Lan", "Kỹ thuật viên").await?;
     let tuan = org::provisioning::add_staff(&h.owner, "vpyd", "KTV Tuấn", "Kỹ thuật viên").await?;
-    // Not a technician: does not add a column or capacity.
-    org::provisioning::add_staff(&h.owner, "vpyd", "Chị Ngọc", "Quản lý").await?;
+    // The owner's own profile: not a column (ADR-0019 D14) and no capacity.
+    let own = org::provisioning::add_staff(&h.owner, "vpyd", "Chị Hương", "Chủ spa").await?;
+    link_login(&h, own, OWNER_PHONE).await?;
     let sold = call_with_headers(
         &h.app,
         "POST",
@@ -147,6 +148,19 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
         shampoo,
         h,
     })
+}
+
+/// Links staff profile `staff` to the login of `phone` (national form, `09…`).
+async fn link_login(h: &Harness, staff: Uuid, phone: &str) -> Setup<()> {
+    sqlx::query(
+        "UPDATE app.staff SET user_id = (SELECT id FROM app.user_account WHERE phone_e164 = $2)
+         WHERE id = $1",
+    )
+    .bind(staff)
+    .bind(format!("+84{}", &phone[1..]))
+    .execute(&h.owner)
+    .await?;
+    Ok(())
 }
 
 impl Spa {
@@ -220,7 +234,7 @@ async fn bookings_respect_technicians_and_the_grid(pool: PgPool) -> TestResult {
     let later = s.book_ha(&s.manager, &at(1, "11:30"), Some(&s.lan)).await;
     assert_eq!(later.status, StatusCode::CREATED, "{}", later.body);
 
-    // Columns: the two technicians ("Quản lý" is not one). No capacity derived from them
+    // Columns: the two technicians (the owner's profile is not one). No capacity derived from them
     // (round 5, AC10.4): with no owner setting, overlapping bookings are all accepted.
     let calendar = call(
         &s.h.app,
@@ -2149,5 +2163,42 @@ async fn two_group_moves_from_different_members_never_deadlock(pool: PgPool) -> 
         a.body,
         b.body
     );
+    Ok(())
+}
+
+/// ADR-0019 D14: the calendar's columns (and its technician picker) are chosen by the linked
+/// login's role, never by the position text: a linked manager has a column like a technician, the
+/// owner's own profile has none, and a profile without a login is a technician whatever it says.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn calendar_columns_follow_the_login_role(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let ngoc = org::provisioning::add_staff(&s.h.owner, "vpyd", "Chị Ngọc", "Quản lý").await?;
+    link_login(&s.h, ngoc, MANAGER_PHONE).await?;
+    org::provisioning::add_staff(&s.h.owner, "vpyd", "Chị Mai", "Lễ tân").await?;
+
+    let calendar = call(
+        &s.h.app,
+        "GET",
+        &format!("/appointments?from={}", spa_today()),
+        Some(&s.manager),
+        None,
+    )
+    .await;
+    assert_eq!(calendar.status, StatusCode::OK, "{}", calendar.body);
+    let names: Vec<&str> = calendar.body["technicians"]
+        .as_array()
+        .map(|l| l.iter().filter_map(|t| t["full_name"].as_str()).collect())
+        .unwrap_or_default();
+    assert_eq!(
+        names,
+        ["Chị Mai", "Chị Ngọc", "KTV Lan", "KTV Tuấn"],
+        "linked manager and unlinked profiles are columns; the owner's profile is not"
+    );
+
+    // The manager's column takes bookings like any technician's.
+    let ngoc = ngoc.to_string();
+    let booked = s.book_ha(&s.manager, &at(1, "10:00"), Some(&ngoc)).await;
+    assert_eq!(booked.status, StatusCode::CREATED, "{}", booked.body);
+    assert_eq!(booked.body["staff_name"], "Chị Ngọc");
     Ok(())
 }

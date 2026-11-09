@@ -2,7 +2,7 @@ import type { CustomerKindFilter, FollowUpFilter, Granularity, HistoryKind, Inac
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from "@tanstack/react-query";
 import type { Bucket } from "./period";
 import { api } from "../../lib/api";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
 import type {
   CustomerStats,
   DailyReport,

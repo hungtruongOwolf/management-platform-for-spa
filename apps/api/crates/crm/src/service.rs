@@ -219,11 +219,33 @@ fn view(cipher: &FieldCipher, actor: &Actor, row: CustomerRow) -> Result<Custome
     Ok(CustomerView { row, health_note })
 }
 
-fn audit_snapshot(row: &CustomerRow) -> serde_json::Value {
+/// What a customer audit row keeps of a profile (ADR-0019 D13, Nghị định 13/2023): which personal
+/// fields are filled, never their values. The trail outlives an anonymised profile (`audit_log`
+/// has no retention), so a name, phone or birth date written here would never go away. Migration
+/// 0047 rewrote the rows written before this shape.
+fn audit_presence(row: &CustomerRow) -> serde_json::Value {
     json!({
-        "full_name": row.full_name, "phone_e164": row.phone_e164, "gender": row.gender,
-        "birth_year": row.birth_year, "birth_date": row.birth_date, "health_note": row.health_note_ct.as_ref().map(|_| REDACTED),
+        "has_name": row.full_name.is_some(), "has_phone": row.phone_e164.is_some(),
+        "gender": row.gender, "has_birth_year": row.birth_year.is_some(),
+        "has_birth_date": row.birth_date.is_some(), "has_health_note": row.health_note_ct.is_some(),
     })
+}
+
+/// Profile fields an update changed, named like the API fields (their values are not recorded).
+fn changed_fields(before: &CustomerRow, after: &CustomerRow) -> Vec<&'static str> {
+    [
+        ("full_name", before.full_name != after.full_name),
+        ("phone", before.phone_e164 != after.phone_e164),
+        ("gender", before.gender != after.gender),
+        ("birth_year", before.birth_year != after.birth_year),
+        ("birth_date", before.birth_date != after.birth_date),
+        ("address", before.address != after.address),
+        ("source", before.source != after.source),
+        ("note", before.note != after.note),
+    ]
+    .into_iter()
+    .filter_map(|(field, changed)| changed.then_some(field))
+    .collect()
 }
 
 /// `POST /customers`, idempotent on `key` (ADR-0019 D11): a double click or a retry with the same
@@ -294,7 +316,7 @@ pub async fn create_in(
             entity_type: "customer",
             entity_id: id,
             before: None,
-            after: Some(audit_snapshot(&row)),
+            after: Some(audit_presence(&row)),
             reason: None,
         },
     )
@@ -341,6 +363,8 @@ pub async fn update(
         });
     }
     let after = repo::get(&mut tx, id).await?.ok_or(AppError::NotFound)?;
+    let mut after_audit = audit_presence(&after);
+    after_audit["changed"] = json!(changed_fields(&before, &after));
     audit::record(
         &mut tx,
         actor,
@@ -348,8 +372,8 @@ pub async fn update(
             action: "customer.update",
             entity_type: "customer",
             entity_id: id,
-            before: Some(audit_snapshot(&before)),
-            after: Some(audit_snapshot(&after)),
+            before: Some(audit_presence(&before)),
+            after: Some(after_audit),
             reason: None,
         },
     )
@@ -449,7 +473,7 @@ pub async fn fill_gender_in(
             entity_type: "customer",
             entity_id: id,
             before: Some(json!({ "gender": null })),
-            after: Some(json!({ "gender": gender.as_str() })),
+            after: Some(json!({ "gender": gender.as_str(), "changed": ["gender"] })),
             reason: Some("gender picked to price a visit"),
         },
     )
