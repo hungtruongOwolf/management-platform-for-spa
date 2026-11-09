@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import "./calendar.css";
 import { serviceLabel } from "../../lib/names";
-import { spaToday } from "../corrections/api";
+import { spaToday } from "../../lib/format";
 import {
   type Block,
   type Lane,

@@ -394,4 +394,13 @@ describe("Sheet lịch hẹn (EM 2026-11-07: mỗi người một lịch, không
     expect(await screen.findByRole("button", { name: "Chỉ báo đã đến" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Hoàn tác đã đến" })).not.toBeInTheDocument();
   });
+
+  it("shows “Không đến” once the time passes, with the sheet still open (ADR-0019 D20)", async () => {
+    // The booking starts 200 ms after "now" (15:00 in the spa).
+    renderSheet({ ...base, starts_at: "2026-11-07T08:00:00.200Z" });
+    expect(await screen.findByRole("button", { name: /Hủy lịch/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Không đến" })).not.toBeInTheDocument();
+    vi.setSystemTime(new Date("2026-11-07T08:00:01Z"));
+    expect(await screen.findByRole("button", { name: "Không đến" })).toBeInTheDocument();
+  });
 });
