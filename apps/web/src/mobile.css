@@ -337,7 +337,7 @@
 /* --- Filters: inline from 640 px, a "Bộ lọc" button + sheet on phones ------------------------- */
 .filter-trigger {
   display: inline-flex;
-  min-height: 44px;
+  min-height: var(--size-control);
   flex-shrink: 0;
   align-items: center;
   gap: 8px;
@@ -354,7 +354,7 @@
   height: 22px;
   place-items: center;
   padding: 0 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--primary);
   color: var(--on-primary);
   font-size: var(--fs-xs);
@@ -384,7 +384,7 @@
 .date-field > input[type="text"] {
   width: 100%;
   min-width: 9.5em;
-  padding-right: 44px;
+  padding-right: var(--size-control);
   font-variant-numeric: tabular-nums;
 }
 .date-field > .date-field-btn {

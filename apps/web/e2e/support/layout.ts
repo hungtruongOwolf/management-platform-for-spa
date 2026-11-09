@@ -1,4 +1,4 @@
-import type { Locator, Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 /**
  * Layout stability (EM 2026-11-05: "khi bấm ra hiệu ứng ảnh hưởng luôn các phần khác"). Hover and
@@ -92,4 +92,24 @@ export function interactiveSample(page: Page, max = 12): Promise<Locator[]> {
       const step = all.length / max;
       return Array.from({ length: max }, (_, i) => all[Math.floor(i * step)]).filter((l): l is Locator => l !== undefined);
     });
+}
+
+/** Two animation frames: whatever a resize or a state change scheduled is laid out and painted. */
+export async function nextPaint(page: Page): Promise<void> {
+  await page.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => { resolve(); }))),
+  );
+}
+
+/**
+ * The screen has finished loading: no skeleton or "Đang tải…" placeholder, nothing `aria-busy`,
+ * web fonts in, then one painted frame. Waits on what the page shows, not on the network going
+ * quiet (`networkidle`: slow, flaky, discouraged by Playwright) or on a fixed delay.
+ */
+export async function settled(page: Page): Promise<void> {
+  await expect(page.locator(".skeleton, [role='status'][aria-label^='Đang'], [aria-busy='true']")).toHaveCount(0);
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+  await nextPaint(page);
 }

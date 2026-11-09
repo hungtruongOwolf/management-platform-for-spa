@@ -1,39 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ownerState, stack } from "../stack";
+import { ownerState } from "../stack";
+import { WRITE, createPlan } from "../support/fixtures";
 import { expectAccessible, uniquePhone } from "../support/run";
 
 test.use({ storageState: ownerState });
 
-interface Service {
-  id: string;
-  name: string;
-  active: boolean;
-  prices: { all?: number };
-}
-
-const write = { Origin: stack.webOrigin };
-
 /** A customer who already owns a fresh "10 + 2" package (set up through the API, like S6 did). */
 async function regularWithPackage(page: Page, phone: string): Promise<void> {
-  const services = (await (
-    await page.request.get("/api/v1/services")
-  ).json()) as Service[];
-  const service = services.find((s) => s.active && s.prices.all != null);
-  expect(service, "seeded menu has a flat-priced service").toBeDefined();
-  const plan = await page.request.post("/api/v1/package-plans", {
-    headers: write,
-    data: {
-      name: `Gói quầy ${String(Date.now())}`,
-      price: 1_500_000,
-      validity_months: 6,
-      gift_note: null,
-      active: true,
-      items: [{ service_id: service?.id, sessions: 10, bonus_sessions: 2 }],
-    },
-  });
-  expect(plan.status()).toBe(201);
+  const plan = await createPlan(page.request, { name: `Gói quầy ${String(Date.now())}`, price: 1_500_000 });
   const customer = await page.request.post("/api/v1/customers", {
-    headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+    headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
     data: { full_name: "Lê Thị Quầy", phone, gender: "female" },
   });
   expect(customer.status()).toBe(201);
@@ -41,11 +17,11 @@ async function regularWithPackage(page: Page, phone: string): Promise<void> {
     id: string;
   }[];
   const sale = await page.request.post("/api/v1/sales", {
-    headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+    headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
     data: {
       customer_id: ((await customer.json()) as { id: string }).id,
       closer_staff_id: staff[0]?.id,
-      lines: [{ package_plan_id: ((await plan.json()) as { id: string }).id }],
+      lines: [{ package_plan_id: plan.id }],
       payments: [{ method: "cash", amount: 1_500_000 }],
     },
   });

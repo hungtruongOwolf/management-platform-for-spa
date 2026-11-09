@@ -8,7 +8,8 @@ import { describe, expect, it } from "vitest";
  * colour, gradient and font size comes from the tokens (packages/ui/src/tokens/tokens.css), so the
  * screens cannot drift back into two visual languages. Fails on:
  * - CSS: a raw colour (#hex, rgb()/hsl()/oklch()…, a named colour), a gradient, a font size that is
- *   not a `--fs-*` token;
+ *   not a `--fs-*` token, a `999px` pill radius or a `44px` control size (`--radius-pill`,
+ *   `--size-control`);
  * - TSX/TS: a Tailwind palette colour (bg-white, text-red-600…), an arbitrary colour, gradient,
  *   radius or font size in a class (`bg-[#…]`, `rounded-[10px]`, `text-[14px]`), a hex string.
  * Only tokens.css may define raw values. A genuine exception goes in ALLOWED with its reason.
@@ -39,6 +40,9 @@ const CSS_RULES: [string, RegExp][] = [
   ["gradient", /\b(?:repeating-)?(?:linear|radial|conic)-gradient\(/gi],
   ["named colour", new RegExp(String.raw`(?:color|background(?:-color)?|border(?:-[a-z]+)?-?color|fill|stroke|outline-color)\s*:\s*(?:${NAMED})\b`, "gi")],
   ["font size off the scale", /font-size:\s*(?!\s|var\(--fs-|inherit\b|1em\b)[^;]+;/gi],
+  // The control scale and the pill shape are tokens too (audit 2026-11-09): one place to change them.
+  ["raw pill radius (use var(--radius-pill))", /(?<![\w.-])999px\b/g],
+  ["raw control size (use var(--size-control))", /(?<![\w.-])44px\b/g],
 ];
 const PALETTE =
   "slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose";
@@ -102,5 +106,6 @@ describe("colours, gradients and type come from the tokens only", { timeout: 30_
     const tsx = 'className="bg-white text-red-600 rounded-[10px] text-[13px] bg-[#abc] hover:bg-gradient-to-r" fill="#123456"';
     expect(violations("a.tsx", tsx, CODE_RULES, "").length).toBeGreaterThanOrEqual(7);
     expect(violations("a.css", ".x { color: var(--text); font-size: var(--fs-sm); }", CSS_RULES, "")).toEqual([]);
+    expect(violations("a.css", ".x { border-radius: 999px; min-height: 44px; width: 144px; }", CSS_RULES, "")).toHaveLength(2);
   });
 });

@@ -1,11 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { ownerState, stack } from "../stack";
+import { ownerState } from "../stack";
+import { WRITE } from "../support/fixtures";
 import { sidewaysOverflow } from "../support/responsive";
 import { expectAccessible, uniquePhone } from "../support/run";
 
 test.use({ storageState: ownerState });
-
-const write = { Origin: stack.webOrigin };
 
 /** "Nhật ký ghi chú" (spec management-views §10) on the real API: notes written elsewhere read back here. */
 test.describe("nhật ký ghi chú", () => {
@@ -13,7 +12,7 @@ test.describe("nhật ký ghi chú", () => {
     const stamp = String(Date.now()).slice(-6);
     const name = `Khách ghi chú ${stamp}`;
     const created = await page.request.post("/api/v1/customers", {
-      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+      headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
       data: { full_name: name, phone: uniquePhone(), gender: "female", note: `Thích trà gừng ${stamp}`, health_note: `Dị ứng tinh dầu ${stamp}` },
     });
     expect(created.status()).toBe(201);

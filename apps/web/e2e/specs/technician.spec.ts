@@ -1,7 +1,8 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { ownerState, runFile, stack } from "../stack";
+import { ownerState, runFile } from "../stack";
+import { WRITE, flatService, spaDay } from "../support/fixtures";
 import { sidewaysOverflow } from "../support/responsive";
 import { credentials, expectAccessible, uniquePhone } from "../support/run";
 
@@ -11,20 +12,8 @@ import { credentials, expectAccessible, uniquePhone } from "../support/run";
  * a real technician whose profile the owner links here. Never a phone number on screen.
  */
 
-const write = { Origin: stack.webOrigin };
 const techState = join(dirname(runFile), "tech.json");
 const CUSTOMER = "Phạm Thị Ngày Công";
-
-function spaDay(offsetDays = 0): string {
-  return new Date(Date.now() + 7 * 3_600_000 + offsetDays * 86_400_000).toISOString().slice(0, 10);
-}
-
-interface Service {
-  id: string;
-  name: string;
-  active: boolean;
-  prices: { all?: number | null };
-}
 
 let phone = "";
 let serviceName = "";
@@ -44,7 +33,7 @@ async function seedTechnicianDay(page: Page): Promise<void> {
   let staffId = login?.staff_id ?? null;
   if (!staffId) {
     const created = await page.request.post("/api/v1/staff", {
-      headers: write,
+      headers: WRITE,
       data: { full_name: "KTV Thảo E2E", position: "Kỹ thuật viên", user_id: login?.user_id },
     });
     expect(created.status(), await created.text()).toBe(201);
@@ -55,44 +44,42 @@ async function seedTechnicianDay(page: Page): Promise<void> {
   expect(profile.status(), await profile.text()).toBe(200);
   const payVersion = ((await profile.json()) as { pay?: { version: number } | null }).pay?.version ?? 0;
   const pay = await page.request.put(`/api/v1/staff/${staffId}/pay`, {
-    headers: { ...write, "If-Match": `"${String(payVersion)}"` },
+    headers: { ...WRITE, "If-Match": `"${String(payVersion)}"` },
     data: { base_salary: 6_000_000, commission_rate_bp: 500, loyalty_bonus_monthly: 0, meal_allowance: 0 },
   });
   expect(pay.status(), await pay.text()).toBe(200);
   const attendance = await page.request.put("/api/v1/attendance", {
-    headers: write,
+    headers: WRITE,
     data: { entries: [{ staff_id: staffId, date: spaDay(), status: "present", check_in: "09:14" }] },
   });
   expect(attendance.status(), await attendance.text()).toBe(200);
 
   phone = uniquePhone();
   const customer = await page.request.post("/api/v1/customers", {
-    headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+    headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
     data: { full_name: CUSTOMER, phone, gender: "female" },
   });
   expect(customer.status(), await customer.text()).toBe(201);
   const customerId = ((await customer.json()) as { id: string }).id;
-  const services = (await (await page.request.get("/api/v1/services")).json()) as Service[];
-  const service = services.find((s) => s.active && s.prices.all != null);
-  expect(service, "seeded menu has a flat-priced service").toBeDefined();
-  serviceName = service?.name ?? "";
+  const service = await flatService(page.request);
+  serviceName = service.name;
   // The walk-in is recorded "now", whatever the hour: the technician's grid widens to show work
   // outside opening hours (CI 2026-11-08 00:03 ICT hid a visit before 09:00; the old 20:00+
   // workaround moved it to 09:30 instead of fixing the grid).
   const visit = await page.request.post("/api/v1/visits", {
-    headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+    headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
     data: {
       customer_id: customerId,
-      lines: [{ service_id: service?.id, source: "one_off", staff_id: staffId, qty: 1 }],
-      payments: [{ method: "cash", amount: service?.prices.all ?? 0 }],
+      lines: [{ service_id: service.id, source: "one_off", staff_id: staffId, qty: 1 }],
+      payments: [{ method: "cash", amount: service.prices.all ?? 0 }],
     },
   });
   expect(visit.status(), await visit.text()).toBe(201);
   const booking = await page.request.post("/api/v1/appointments", {
-    headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
+    headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
     data: {
       customer_id: customerId,
-      service_ids: [service?.id],
+      service_ids: [service.id],
       staff_id: staffId,
       starts_at: `${spaDay(1)}T10:00:00+07:00`,
     },
@@ -222,42 +209,5 @@ test.describe("KTV: màn của tôi", () => {
     // The managers' route stays closed to them.
     expect((await page.request.get("/api/v1/evaluations/history?staff_id=00000000-0000-0000-0000-000000000000")).status()).toBe(403);
     await context.close();
-  });
-
-  test("screenshots 1280 / 390, light / dark (TECH_SHOTS_DIR)", async ({ browser }) => {
-    const dir = process.env["TECH_SHOTS_DIR"];
-    test.skip(!dir, "set TECH_SHOTS_DIR to capture");
-    test.setTimeout(5 * 60_000);
-    for (const scheme of ["light", "dark"] as const) {
-      for (const width of [1280, 390]) {
-        const context = await browser.newContext({
-          storageState: techState,
-          colorScheme: scheme,
-          viewport: { width, height: width > 600 ? 900 : 844 },
-        });
-        const page = await context.newPage();
-        const shot = async (name: string) => {
-          await page.waitForTimeout(300);
-          await page.screenshot({ path: join(dir ?? "", `${name}-${String(width)}-${scheme}.png`), fullPage: true });
-        };
-        await page.goto("/nhan-vien");
-        await expect(page.getByRole("region", { name: "Tổng quan tháng" })).toBeVisible();
-        await shot("month");
-        await page.goto(`/nhan-vien?day=${spaDay()}`);
-        await expect(page.getByRole("dialog", { name: /^Ngày / }).getByText(CUSTOMER)).toBeVisible();
-        await page.screenshot({ path: join(dir ?? "", `day-${String(width)}-${scheme}.png`) });
-        await page.goto(`/khach-cua-toi?ngay=${spaDay(1)}`);
-        await expect(page.getByRole("button", { name: new RegExp(CUSTOMER) }).first()).toBeVisible();
-        await shot("calendar");
-        if (width > 600) {
-          await page.goto(`/khach-cua-toi?ngay=${spaDay(1)}&kieu=ds`);
-        } else {
-          await page.getByRole("button", { name: "Danh sách tuần" }).click();
-        }
-        await expect(page.getByRole("button", { name: new RegExp(CUSTOMER) }).first()).toBeVisible();
-        await shot("calendar-list");
-        await context.close();
-      }
-    }
   });
 });
