@@ -277,3 +277,20 @@ Thứ tự triển khai, mỗi bước một PR có test: (1) A1 + A2 + A4, (2) 
 - FK cột "người làm" (`NOT VALID` → `VALIDATE`; staging 0 dòng mồ côi, `infra/perf/db/actor_column_orphans.sql`).
 - `idle_in_transaction_session_timeout = 30s` trong `TenantTx`.
 - `audit_log` giữ, không có hạn. Index `membership (user_id)` để sau.
+
+## 9. Đo lại sau khi deploy (2026-11-09)
+Migration 0033–0040 đã chạy trên local và staging, Vercel prod đã deploy main 0855167 (gồm #107–#113). Đo bằng `node infra/perf/endpoints.mjs 6` (từ Mỹ, tài khoản quản lý demo, p50), cùng phép đo §3a:
+
+| Endpoint | Câu sqlx trước → sau | Tổng server trước → sau (ms) |
+|---|---|---|
+| `GET /me` | 5 → 3 | 26,5 → 8,4 |
+| `GET /staff` | 5 → 3 | 26 → 10,3 |
+| `GET /customers?q=` | 5 → 3 | 26 → 10,4 |
+| `GET /service-categories` | 5 → 3 | 26 → 10,1 |
+| `GET /services`, `/package-plans` | 6 → 4 | 30 → 12,9–13,0 |
+| `GET /visits?date=` (Quầy) | 8 → 6 | 38,5 → 22,1 |
+| `GET /reports/daily` | 8 → 6 | 37,0 → 19,4 |
+| `GET /appointments` (ngày / tuần) | 12 → 9 | 48 → 25,4–26,7 |
+| `GET /attendance?month=` | 13 → 10 | 50,4 → 28,7 |
+
+Thời gian server giảm 40–70 %, khớp dự kiến §5 (GET đơn giản ~11 ms, Quầy ~22 ms). Tổng p50 phía client vẫn ~130–160 ms vì phần lớn là mạng tới Vercel `pdx1`; muốn giảm tiếp phải đặt API + DB gần người dùng (ADR-0012).
