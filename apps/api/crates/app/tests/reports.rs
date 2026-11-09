@@ -467,6 +467,39 @@ async fn the_business_day_turns_at_midnight_in_vietnam(pool: PgPool) -> TestResu
     Ok(())
 }
 
+/// F17: the right is checked before the query string is read. A technician sending a malformed
+/// query gets `403` (never learns the parameters); the owner hears `400 query.invalid` as
+/// problem+json. Red before the fix: axum answered a plain-text 400 to both.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn report_routes_check_the_right_before_the_query(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let customer = Uuid::now_v7();
+    for path in [
+        "/reports/daily?date=hom-nay".to_owned(),
+        "/reports/range?from=hom-nay".to_owned(),
+        "/reports/ledger?limit=abc".to_owned(),
+        "/customers/inactive?days=abc".to_owned(),
+        format!("/customers/{customer}/history?limit=abc"),
+        "/packages?limit=abc".to_owned(),
+    ] {
+        let tech = s.get(&s.tech, &path).await;
+        assert_eq!(tech.status, StatusCode::FORBIDDEN, "{path}: {}", tech.body);
+        let owner = s.get(&s.owner, &path).await;
+        assert_eq!(
+            owner.status,
+            StatusCode::BAD_REQUEST,
+            "{path}: {}",
+            owner.body
+        );
+        assert_eq!(
+            owner.body["code"], "query.invalid",
+            "{path}: {}",
+            owner.body
+        );
+    }
+    Ok(())
+}
+
 /// AC1.10, AC2.5, AC3.4 + tenant isolation of aggregates (they have no {id} for the matrix).
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn money_is_only_sent_to_holders_of_report_revenue_read(pool: PgPool) -> TestResult {

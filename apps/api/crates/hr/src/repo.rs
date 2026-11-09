@@ -28,18 +28,6 @@ pub async fn supervising_staff(
     .await?)
 }
 
-/// The staff profile linked to a login (at most one per spa).
-pub async fn staff_of_user(tx: &mut TenantTx, user: Uuid) -> Result<Option<Uuid>, AppError> {
-    let tenant = tx.tenant().as_uuid();
-    Ok(sqlx::query_scalar!(
-        "SELECT id FROM app.staff WHERE tenant_id = $1 AND user_id = $2",
-        tenant,
-        user
-    )
-    .fetch_optional(tx.conn())
-    .await?)
-}
-
 pub struct VisitDayRow {
     pub staff_id: Uuid,
     pub day: NaiveDate,
@@ -605,7 +593,7 @@ pub async fn commission_lines(
 
 pub struct UpsellRow {
     pub staff_id: Uuid,
-    /// `package` or `service`.
+    /// `package`, `package_refund` or `service` (as `calc::UpsellLine::kind`).
     pub kind: String,
     pub description: String,
     pub qty: i64,

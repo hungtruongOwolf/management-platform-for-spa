@@ -1,7 +1,7 @@
 ---
 title: "Spec R1-3: Lịch hẹn, giờ làm thực tế, nhập bù của chủ spa, giảm giá lượt (vòng 4 + vòng 5)"
 status: draft (lead quyết mặc định; câu hỏi EM ở §9 và §10.8; §10.11 theo quyết định EM 2026-11-07; §10.12 nhóm đơn giản hóa 2026-11-07)
-updated: 2026-11-07
+updated: 2026-11-09
 sources: [raw/2026-11-05-em-review-round4.md, raw/2026-11-05-em-simplify-owner-and-opening-balance.md, raw/2026-11-06-em-review-round5.md, raw/2026-11-07-em-appointments-live-test.md, raw/2026-11-07-em-flow-review-hr-latency.md]
 related: [front-desk-and-packages.md, ../../design/front-desk-flows.md, ../../architecture/backend.md, ../../security/authz-matrix.md]
 ---
@@ -11,7 +11,7 @@ related: [front-desk-and-packages.md, ../../design/front-desk-flows.md, ../../ar
 Phạm vi: mục **1, 5, 6, 8** của [EM review vòng 4](../../../raw/2026-11-05-em-review-round4.md). Spec R1-1 ([front-desk-and-packages](front-desk-and-packages.md)) vẫn đúng; spec này **mở rộng** US4 và bỏ "lịch hẹn (R3)" khỏi out-of-scope của R1-1.
 
 ## 1. Goal
-- Quầy biết **trước khi khách đến** ai sẽ đến, giờ nào, KTV nào rảnh. Với 3–4 KTV, quầy không nhận quá số khách một khung giờ làm được.
+- Quầy biết **trước khi khách đến** ai sẽ đến, giờ nào, KTV nào rảnh. Với 3–4 KTV, quầy không nhận quá số khách một khung giờ làm được *(vòng 5 thay, §10.4: không chặn theo số KTV; chủ spa đặt "số khách tối đa" tùy chọn, chỉ cảnh báo)*.
 - Lượt khách lưu **giờ làm thật** (không phải giờ bấm lưu). Chủ spa nhập bù được lượt của ngày đã qua.
 - Giảm giá dịch vụ lẻ ngay trong lượt, cùng quy tắc với bán gói (D10).
 - Danh sách lượt hôm nay rộng hơn, bấm vào xem được khách.
@@ -34,14 +34,14 @@ Phạm vi: mục **1, 5, 6, 8** của [EM review vòng 4](../../../raw/2026-11-0
 - **KTV:** một KTV không có hai lịch `booked`/`arrived` chồng giờ. Vi phạm → `409 appointment.staff_busy`, `existing_id` = lịch hẹn đang chiếm chỗ (web nêu giờ + tên khách).
 - **Khách (từ 2026-11-07, §10.11):** một khách không có hai lịch mở chồng giờ → `409 appointment.customer_busy` + `existing_id`.
 - ~~**Cả spa:** tại mọi thời điểm, số lịch `booked`/`arrived` ≤ số KTV đang làm. Vượt → `409 appointment.slot_full`.~~ **Bỏ ở vòng 5 (§10.4):** số khách tối đa mỗi khung giờ là cài đặt tùy chọn của chủ spa, chỉ cảnh báo.
-- **KTV** = nhân viên đang làm có chức vụ chứa "kỹ thuật" hoặc "KTV" (không phân biệt hoa thường); spa chưa ghi chức vụ nào như vậy thì mọi nhân viên đang làm. Danh sách lấy qua service của `GET /staff` (crate `org`).
+- **KTV** = nhân viên đang làm có chức vụ chứa "kỹ thuật" hoặc "KTV" (không phân biệt hoa thường); spa chưa ghi chức vụ nào như vậy thì mọi nhân viên đang làm. Danh sách lấy qua service của `GET /staff` (crate `org`). Từ vòng 5 quy tắc này chỉ chọn **cột KTV** của lịch (`domain::is_technician`), không còn quyết định sức chứa; hồ sơ đã gắn tài khoản có chức vụ = tên role của tài khoản ([staff-management](staff-management.md) §16 US16c).
 - Ô giờ **15 phút**; giờ mở cửa mặc định **09:00–21:00**, cấu hình theo spa ở `tenant.settings.opening_hours = {"open":"09:00","close":"21:00"}` và `settings.slot_minutes`. Giờ bắt đầu phải rơi đúng ô; lịch phải nằm trọn trong giờ mở cửa (`422 appointment.outside_opening_hours`, `starts_at not_on_slot`).
 - Hai lần đặt cùng lúc: khóa `pg_advisory_xact_lock` theo (spa, ngày) rồi mới kiểm, nên không lọt; ràng buộc `EXCLUDE USING gist` (staff + khoảng thời gian) ở DB là lớp thứ hai.
 
 ### Ngày & quyền
 - Quản lý: đặt lịch cho hôm nay → 90 ngày tới. Mọi thay đổi lịch hẹn của **ngày đã qua** theo quy tắc ngày đã chốt: Quản lý `403 day.locked`, chủ spa được (không nhập lại mật khẩu). **Từ 2026-11-07 (§10.11): không ai đặt lịch mới / dời lịch sang ngày đã qua, kể cả chủ spa** (`422 appointment.in_the_past`); việc đã làm thì nhập bù lượt ở Quầy.
 - Chủ spa: được mọi thứ, kể cả hoàn tất lịch hẹn của ngày cũ thành lượt nhập bù (§3).
-- Permission mới **`appointment.manage`** (đọc + ghi lịch): Owner, Manager. **KTV: không có** (chưa có liên kết tài khoản ↔ nhân viên nên "chỉ lịch của mình" chưa làm an toàn được; xem Q8).
+- Permission mới **`appointment.manage`** (đọc + ghi lịch): Owner, Manager. **KTV: không có** (chưa có liên kết tài khoản ↔ nhân viên nên "chỉ lịch của mình" chưa làm an toàn được; xem Q8). *(Q8 đã làm: KTV xem lịch của chính mình qua `GET /me/appointments` (`staff.read_own`), màn "Khách của tôi", [staff-management](staff-management.md) §12; KTV vẫn không có `appointment.manage`.)*
 
 ## 3. Giờ làm thực tế & nhập bù (mục 5)
 - `visit.check_in_at` **là giờ làm dịch vụ** (khác `created_at` = lúc ghi). Quầy chọn được giờ làm (mặc định = bây giờ); ngày nghiệp vụ của lượt = ngày của giờ làm theo Asia/Ho_Chi_Minh.
@@ -93,14 +93,14 @@ Kéo thả · nhắc lịch Zalo/SMS · khách tự đặt online · lịch làm
 | Q5 | Giảm giá trên **cả bill dịch vụ lẻ** đủ chưa, hay cần giảm từng dòng? | Cả bill, chia theo tỷ lệ cho từng dòng |
 | Q6 | Nhập bù của chủ spa: tối đa 366 ngày, không bắt lý do. Có cần lý do không? | Không bắt lý do; audit đánh dấu `backdated` |
 | Q7 | Một lịch hẹn có thể nhiều KTV (mỗi dịch vụ một người)? | Một KTV / lịch hẹn; lúc hoàn tất từng dòng vẫn chọn KTV riêng |
-| Q8 | KTV xem lịch của chính mình? Cần nối tài khoản ↔ nhân viên (thuộc quản lý nhân viên) | Chưa: KTV không xem lịch |
+| Q8 | KTV xem lịch của chính mình? Cần nối tài khoản ↔ nhân viên (thuộc quản lý nhân viên) | ~~Chưa: KTV không xem lịch~~ Đã làm: `GET /me/appointments`, "Khách của tôi" ([staff-management](staff-management.md) §12) |
 ## 10. Vòng 5: lịch = dòng thời gian của quầy (mục 3–7 của [EM review vòng 5](../../../raw/2026-11-06-em-review-round5.md))
 
 ### 10.1 Lịch và lượt khách là một (mục 3)
 EM: lịch không chỉ để đặt; nó phải phản ánh cả lượt khách đã ghi để quầy biết **ai đang làm, ai chưa làm**.
 - Lịch ngày / tuần / danh sách hiện **hai loại thẻ** trên cùng trục giờ:
   - **Lịch hẹn** (như vòng 4). Lịch `done` nối với lượt qua `appointment.visit_id`, lượt đó không hiện lần thứ hai.
-  - **Lượt ghi thẳng** (khách vãng lai ghi ở `/quay`, không qua lịch hẹn): hiện tại giờ làm (`visit.check_in_at`), ở cột KTV của dòng dịch vụ đầu tiên, dài bằng tổng thời lượng dịch vụ (trống = 60 phút, đúng số phút từ §10.11, 5 phút – 8 giờ), nhãn "Vãng lai". Không cần đặt lịch riêng.
+  - **Lượt ghi thẳng** (khách vãng lai ghi ở `/quay`, không qua lịch hẹn): hiện tại giờ làm (`visit.check_in_at`), ở cột KTV của dòng dịch vụ đầu tiên, dài bằng tổng thời lượng dịch vụ (trống = 60 phút, đúng số phút từ §10.11, 5 phút – 8 giờ), nhãn "Vãng lai" (nay "Không đặt lịch", F23 §10.14). Không cần đặt lịch riêng.
 - **Trạng thái hiển thị** (`phase`, server tính mỗi lần đọc lịch):
   | phase | Nhãn | Từ đâu |
   |---|---|---|
@@ -151,7 +151,7 @@ EM: lịch không chỉ để đặt; nó phải phản ánh cả lượt khách
 - **AC10.11** Web (Playwright): lưới ngày không còn số "còn N" / "Kín" ở mỗi ô; chủ spa đặt tối đa 3 → nút "Số khách tối đa: 3", mỗi giờ "n/3"; để trống → về không giới hạn. Quản lý không thấy nút (UI theo `appointment.settings`; server 403 là ranh giới thật).
 
 ### 10.7 UX
-- Màu theo phase: Chưa đến (xanh dương), Đang làm (vàng hổ phách), Xong (xanh lá), Không đến (đỏ), Đã hủy / Lượt đã hủy (xám, gạch ngang ở danh sách). Lượt vãng lai có viền nét đứt + chữ "Vãng lai". Luôn kèm chữ, không chỉ màu.
+- Màu theo phase: Chưa đến (xanh dương), Đang làm (vàng hổ phách), Xong (xanh lá), Không đến (đỏ), Đã hủy / Lượt đã hủy (xám, gạch ngang ở danh sách). Lượt vãng lai có viền nét đứt + chữ "Vãng lai" (nay "Không đặt lịch", F23 §10.14). Luôn kèm chữ, không chỉ màu.
 - Tóm tắt ngày: "Chưa đến n · Đang làm n · Xong n · Hủy/không đến n" (gồm cả lượt vãng lai).
 - Lưới ngày ẩn thẻ đã hủy / không đến / lượt đã hủy (giải phóng chỗ); danh sách và tuần vẫn hiện.
 
@@ -172,7 +172,7 @@ EM: "khi 1 lịch được tạo thì UI lại bị lỗi… nó nên là 1 comp
 - **Xem theo KTV:** ô chọn "Xem theo KTV" (Tất cả KTV / từng KTV / Chưa gán KTV), lưu trên URL (`ktv`); một KTV → lưới một cột rộng cả khung, tuần / danh sách chỉ lịch của người đó. Chỉ là bộ lọc hiển thị: kiểm tra trùng KTV khi đặt vẫn dùng cả lịch. Cột lấy từ danh sách KTV của server (không cố định số). "KTV đi làm theo ca" chưa có (chấm công chưa nối lịch) → mặc định tất cả KTV.
 - **Nút "Đặt lịch"** lên thanh công cụ (bên phải, nút chính) từ 640px; điện thoại giữ `StickyActions` dính đáy (design-system: thao tác chính trong tầm ngón cái). Đang xem một KTV mà bấm → form điền sẵn KTV đó.
 - **Canh hàng:** mọi điều khiển thanh công cụ cao 44px trên một hàng (nhãn "Ngày" chỉ cho trình đọc màn hình), cột KTV bằng nhau (tối thiểu 168px), trang cuộn một lần (không cuộn dọc lồng, quy tắc vòng 6 của layout) với hàng tên KTV dính dưới thanh trên cùng; nhiều cột hơn khung thì khung cuộn ngang, cột giờ dính trái; tên dài cắt "…" (lỗi cũ: chữ căn giữa tràn cả hai mép nên cột đầu như bị cắt; cột có lịch chồng được nhiều track hơn nên rộng không đều).
-- Test: unit `layout.test.ts` (chiều cao = khoảng giờ, lượt lệch ô, cắt giờ mở cửa, làn), `api.test.ts` (`autoMinutes` kèm, `forStaff`), Rust `duration_comes_from_services_rounded_to_the_slot` / `a_visit_occupies_its_services_time_clamped_to_the_grid`; Playwright `regression (round 6)` (lịch 30 phút + dịch vụ kèm = 30 phút, cao 2 ô ±4px; lượt vãng lai cũng vậy; ô dưới thẻ vẫn còn, điểm ngay dưới thẻ là ô; bấm ô 10:30 cùng cột → "Đặt lịch hẹn" 10:30; cột bằng nhau ±1px, tên cột đầu không bị cắt, điều khiển cao 44px cùng hàng; nút Đặt lịch nằm trên lưới) và `view one technician's day and week`.
+- Test: unit `layout.test.ts` (chiều cao = khoảng giờ, lượt lệch ô, cắt giờ mở cửa, làn), `api.test.ts` (`autoMinutes` kèm, `forStaff`), Rust `duration_comes_from_services_rounded_to_the_slot` / `a_visit_occupies_its_services_time_clamped_to_the_grid` (§10.11 bỏ làm tròn, hai test nay là `duration_is_the_services_exact_time` / `a_visit_occupies_its_services_exact_time`); Playwright `regression (round 6)` (lịch 30 phút + dịch vụ kèm = 30 phút, cao 2 ô ±4px; lượt vãng lai cũng vậy; ô dưới thẻ vẫn còn, điểm ngay dưới thẻ là ô; bấm ô 10:30 cùng cột → "Đặt lịch hẹn" 10:30; cột bằng nhau ±1px, tên cột đầu không bị cắt, điều khiển cao 44px cùng hàng; nút Đặt lịch nằm trên lưới) và `view one technician's day and week`.
 
 ### 10.11 Quyết định EM 2026-11-07 + phát hiện khi test thật ([raw](../../../raw/2026-11-07-em-appointments-live-test.md))
 - **A. Thời lượng chính xác.** Lịch hẹn, lượt vãng lai, giờ kết thúc, kiểm trùng KTV / khách và đếm khách mỗi giờ dùng **đúng số phút của dịch vụ**: dịch vụ 70 phút = 09:00–10:10 (trước: 10:15). Chỉ **giờ bắt đầu** nằm trên ô 15 phút; giờ kết thúc rơi đâu thì ở đó (≤ giờ đóng cửa). Thời lượng quầy tự chọn cũng chính xác: 5–480 phút (trước: bội số của ô). Server `domain::duration_minutes` / `visit_minutes` (bỏ `div_ceil`), web `autoMinutes` (bỏ tham số ô) + `lengthChoices` (ô "Thời lượng" có các bội số của ô **và** số phút theo dịch vụ, ví dụ 60 · 70 · 75). Lưới vẽ chiều cao lẻ ô (70/15 ô) bằng lớp sự kiện có sẵn. Lịch đã lưu trước giữ thời lượng đã lưu (75); "Dùng lại theo dịch vụ" để về 70. Không migration (cột `ends_at` vốn tự do).

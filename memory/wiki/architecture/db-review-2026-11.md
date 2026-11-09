@@ -6,7 +6,9 @@ sources: [raw/2026-11-08-em-request-db-design-review.md, architecture/data.md, a
 
 # Rà soát thiết kế database (2026-11-08)
 
-EM nhờ rà kỹ schema (bảng, index, FK, lưu trữ, toàn vẹn, xung đột, độ trễ) **trước khi đổi gì** ([raw](../../raw/2026-11-08-em-request-db-design-review.md)). Trang này là **rà soát + đề xuất**: không migration nào được chạy, không merge gì. Mọi số đo đều có script trong `infra/perf/db/` để đo lại.
+EM nhờ rà kỹ schema (bảng, index, FK, lưu trữ, toàn vẹn, xung đột, độ trễ) **trước khi đổi gì** ([raw](../../raw/2026-11-08-em-request-db-design-review.md)). Trang này là **rà soát + đề xuất** viết ngày 2026-11-08 (lúc đó chưa migration nào được chạy); phần findings và đề xuất giữ nguyên như lúc viết. Mọi số đo đều có script trong `infra/perf/db/` để đo lại.
+
+> **Trạng thái (2026-11-09):** EM duyệt gần hết (§7) và đã làm: A1, A2, A4 (PR 1), B1 (migration 0033), A3 (0034, [ADR-0017](../decisions/ADR-0017-one-statement-request-auth.md)), C1, C2, C4 (0035–0037). Chưa làm: A5, C3. Bảng trạng thái từng đề xuất: §5a. Số đo sau deploy: §9. Schema hiện hành: [data](data.md).
 
 ## Tóm tắt
 - **Toàn vẹn dữ liệu đang rất chắc.** RLS + FK kép theo tenant, CHECK tiền, trigger chỉ-thêm, trigger trạng thái chỉ đi tới, `EXCLUDE` chống đặt trùng KTV, idempotency, `If-Match`, thứ tự khóa. 11 phép kiểm bất biến trên staging (chỉ đọc) đều **0 dòng lệch**. Không có đề xuất nào nới lỏng chúng (§6).
@@ -76,6 +78,7 @@ Index chiếm nhiều hơn dữ liệu. Phần lớn là chủ ý: `PK (id)` + `
 **DB time so với lượt đi về:** Postgres chạy các câu của `GET /staff` chưa tới 1 ms (staging `pg_stat_statements`: tra session 0,17 ms, quyền 0,4 ms, danh sách nhân viên 0,3 ms; local 3 năm tương tự). Tức là **trên 95 % thời gian server là chờ mạng giữa API và DB**. Với người dùng ở Việt Nam, request còn cộng thêm 180–400 ms Thái Bình Dương ([perf](performance-latency-2026-11.md)). Bớt lượt đi về giúp ~15 ms mỗi request, tức 3–6 % cảm nhận từ VN hôm nay, và ~10 % từ Mỹ. Khi production chạy API + DB cùng Singapore (ADR-0012), mạng xa không còn nên tỷ lệ này lớn hơn nhiều.
 
 ### 3b. Một request đã đăng nhập hôm nay đi về những gì
+Đường đi ngày 2026-11-08, trước A1–A4. Hiện nay (sau A1 + A3 + A4): `session_actor` một câu (+ touch mỗi phút) → `TenantTx` nghiệp vụ, không ping khi kết nối mới rảnh < 30 s.
 ```
 pool checkout → ping                      ┐ CurrentSession
 SELECT session JOIN user_account          ┘ (mỗi 60 s: + checkout, ping, UPDATE session ~5 ms do commit WAL)
@@ -135,13 +138,23 @@ Thang điểm: **Ảnh hưởng** (L = độ trễ, S = dung lượng / ghi, I =
 | F15 | Kết nối bị dựng lại liên tục: 471 `DISCARD ALL` và 218 lần kiểm role lúc khởi động trong 10 ngày. Kết nối mới thì cache prepared statement của sqlx trống, mỗi câu tốn thêm một lượt Parse/Describe | Staging `pg_stat_statements` | L TB trên Vercel (cold start) | — | Hạ tầng (ADR-0012) |
 | F16 | Sổ doanh thu: trên staging tí hon, planner chạy lại cả view `revenue_book` cho **từng khách** (loops = 47, 8,7k buffer, 20 ms cho 28 dòng); ở 3 năm thì thành hash join 12–14 ms | `staging-ledger-explain.sql` (chỉ SELECT) và local | L Thấp | — | — |
 
+**Trạng thái findings (2026-11-09):**
+- F1–F3: đã xử lý bằng A1 + A3 + A4 (GET đơn giản còn 3 câu sqlx, §9).
+- F4: đã sửa (A2).
+- F5, F6: đã sửa (B1, 0033). Số dung lượng ở F6 (22,5 MB) và F11 (3 năm ≈ 397 MB, audit 32 %) đo trên DB phồng; số đúng ở ⚠️ §2: 3 năm ≈ 312 MB, 8 index của B1 = 16 MB.
+- F9: đã sửa (C1, 0035). Câu "chỉ `jobs::spawn_idempotency_purge`" là code lúc rà; nay là `app::jobs::spawn_maintenance` (dọn idempotency + session, kiểm bất biến), backend §6 đã sửa theo.
+- F10: đã sửa (`app.claim_maintenance`, 0035).
+- F12: có job phát hiện lệch (C2, `app.invariant_violations`, hằng ngày).
+- F13: phần FK cột "người làm" đã làm (C4, 0036–0037); index cho FK bên con: không làm (không cần, như F13 ghi). Index `membership (user_id)` (C3): chờ có nhiều spa.
+- F7, F8, F14, F16: giữ / theo dõi (D). F15: hạ tầng, chờ ADR-0012.
+
 ### Chi tiết đáng chú ý
 - **F4, lịch sử khách.** Một chữ `OR` giữa hai bảng làm Postgres không dùng được `sale_customer_idx` lẫn `customer_package_customer_idx`. Hai `NOT EXISTS` sau đó (hóa đơn của lượt, hóa đơn của dòng lượt) thành hash anti-join trên **toàn bộ** `visit`. Cách sửa: `s.id IN (SELECT id FROM sale WHERE customer_id = $2 UNION SELECT sale_id FROM customer_package WHERE customer_id = $2)`. Plan mới: tra 2 index, 10 + 5 dòng, rồi kiểm từng hóa đơn theo index. Ý nghĩa giữ nguyên, kể cả trường hợp gói mua cho người khác. Quầy mở hồ sơ khách rất thường xuyên, nên đây là thắng lớn nhất về độ trễ thuần DB.
 - **F5, trigram và RLS.** Đây không phải lỗi index mà là giới hạn bảo mật có chủ đích của Postgres: điều kiện không leakproof của người dùng phải chạy **sau** policy, nên không thành Index Cond. Không có cách sạch nào trên Supabase (không có superuser để đặt `LEAKPROOF`). Một hàm `SECURITY DEFINER` để tìm kiếm thì làm yếu lớp RLS, nên **không** đề xuất. Ở 8 000 khách, seq scan 1,1–1,5 ms. Ở 50 000 khách (nhiều chi nhánh) ước chừng 7–10 ms, vẫn ổn.
 - **F2/F3, gộp xác thực.** Bản nháp một câu (`experiments.sql` D) nối session → user → tenant → membership → quyền → cờ người đã nghỉ → profile (timezone, chi nhánh, trần giảm giá) và chạy 0,34–0,44 ms. Khi đưa vào app, câu này phải chạy **trước** khi biết tenant, nên cần một hàm `SECURITY DEFINER` (`app.session_actor(token_hash)`, `SET search_path = app, pg_temp`, `REVOKE … FROM PUBLIC`, `GRANT EXECUTE … TO app_rw`). Cùng mẫu với `app.tenants_of_user` đã có. Hàm chỉ đọc membership của **đúng** `session.active_tenant_id` và `session.user_id`. Đầu vào là hash của bí mật trong cookie, nên người gọi được hàm thì vốn đã là chủ session. Không có định danh nào đến từ client. Cần `secure` review và ADR (bổ sung ADR-0003/0004).
 
 ## 5. Đề xuất theo thứ tự
-Thứ tự theo (lợi ích ÷ rủi ro). Chưa làm gì. Bước nào đụng schema hoặc xác thực cần EM duyệt.
+Thứ tự theo (lợi ích ÷ rủi ro). Bảng dưới là đề xuất gốc ngày 2026-11-08, lúc chưa làm gì; trạng thái thực hiện ở §5a. Bước nào đụng schema hoặc xác thực cần EM duyệt.
 
 | Bước | Việc | Loại | Lợi ích dự kiến | Hoàn tác |
 |---|---|---|---|---|
@@ -189,6 +202,22 @@ DROP INDEX app.refund_day_idx;         -- → refund_tenant_day_idx
 - Hàm definer để tìm khách bằng trigram: làm yếu RLS.
 - Thêm `business_date` vào `visit_line`: phi chuẩn hóa vì 10–20 ms trong màn tháng.
 - Gom "Quầy" thành một câu `json_agg`: −4 lượt nhưng SQL khó bảo trì. Chỉ làm khi A1–A4 xong mà số đo vẫn thiếu.
+
+### 5a. Trạng thái từng đề xuất (2026-11-09)
+| Bước | Trạng thái | Làm ở đâu / khác đề xuất ra sao |
+|---|---|---|
+| A1 | ✅ PR 1 | `app::db_pool::options`: `test_before_acquire(false)`, ping khi rảnh ≥ `PING_WHEN_IDLE_FOR` (30 s), `idle_timeout` 5 phút. Nằm ở `app/src/db_pool.rs`, không phải `main.rs` |
+| A2 | ✅ PR 1 | `reporting::customer`: nhánh hóa đơn dùng `UNION` hai lần tra index |
+| A3 | ✅ PR 3, migration 0034 | `app.session_actor(token_hash)` + [ADR-0017](../decisions/ADR-0017-one-statement-request-auth.md). 0039 thay hàm bằng bản trả thêm `disabled_features` (cờ tính năng, ADR-0018) |
+| A4 | ✅ PR 1 | `kernel::tenant::TenantFacts` (timezone, chi nhánh, trần giảm giá) đi cùng `Actor`; sau A3 đọc từ `session_actor` |
+| A5 | ❌ chưa làm | Touch session vẫn là một `UPDATE` riêng, tối đa mỗi phút một lần (`identity::repo::touch_session`) |
+| B1 | ✅ migration 0033 | Đúng như câu B1 ở dưới (`SET LOCAL lock_timeout`, không `CONCURRENTLY`). Lợi ích đo lại: −16 MB / 3 năm, không phải −31 MB (⚠️ §2) |
+| C1 | ✅ migration 0035 | `app.purge_sessions`, job truyền 30 ngày |
+| C2 | ✅ migration 0035 | Không chạy `invariants.sql` qua CI mà chuyển thành hàm `app.invariant_violations()` (cùng 11 phép kiểm), job trong API gọi hằng ngày, log ERROR khi lệch. `infra/perf/db/invariants.sql` vẫn để chạy tay |
+| C3 | ⏸ chờ | Index `membership (user_id)`: khi có spa thứ hai (EM §7) |
+| C4 | ✅ migration 0036–0037 | FK cột "người làm" `NOT VALID` → `VALIDATE`. `idle_in_transaction_session_timeout = 30s` đặt trong `TenantTx` (transaction-local, code) thay cho `ALTER ROLE app_rw` như đề xuất, nên không cần bước runbook |
+| D | 🔁 theo dõi | Chạy lại `explain_hot.py` khi dữ liệu gấp 3 lần hoặc mỗi năm |
+| (F10) | ✅ migration 0035 | `app.claim_maintenance`: dọn dẹp chạy một lần mỗi khoảng cho cả hệ thống |
 
 ## 6. Không được đổi (bảo vệ toàn vẹn / xung đột)
 Những thứ dưới đây trông như "thừa" hoặc "tốn" khi nhìn riêng lẻ, nhưng là lớp chặn cuối cùng. Mọi đề xuất ở §5 đều giữ nguyên chúng.
@@ -257,6 +286,16 @@ Thứ tự triển khai, mỗi bước một PR có test: (1) A1 + A2 + A4, (2) 
   - Đột biến "bỏ hạn tuyệt đối" là **tương đương**: `CHECK (idle_expires_at <= absolute_expires_at)` của bảng `session` khiến điều kiện hạn rảnh đã bao luôn hạn tuyệt đối.
 - Các luồng từ chối ở Rust (`full_session`, thứ tự `no_active_tenant` → `not_a_member`, `effective_permissions`) giữ nguyên code. Chúng được phủ bởi `auth.rs` (hết hạn, thu hồi, tài khoản / membership bị khóa, spa đình chỉ, hai spa), `staff_logins.rs` (mật khẩu tạm, #103), `authz_matrix.rs` (người đã nghỉ, ADR-0014) và `staff.rs` (`staff.link_required`, #99, không đụng tới).
 
+**PR 4 (C1 + C2 + C4, migration 0035–0037, 2026-11-09):**
+- Session đã thu hồi / hết hạn bị xóa sau 30 ngày (`app.purge_sessions`).
+- Kiểm bất biến hằng ngày (`app.invariant_violations`, log ERROR khi có dòng lệch). Trên dữ liệu `seed-demo` cả 11 phép kiểm đều 0. Trên seed 3 năm, phép kiểm `sessions_remaining` báo 2 918 dòng, đúng như dự kiến, vì seed này đặt số buổi giả.
+- Mỗi job chạy một lần mỗi khoảng cho cả hệ thống (`app.claim_maintenance`, sửa F10).
+- FK cột "người làm" (`NOT VALID` → `VALIDATE`; staging 0 dòng mồ côi, `infra/perf/db/actor_column_orphans.sql`).
+- `idle_in_transaction_session_timeout = 30s` trong `TenantTx`.
+- `audit_log` giữ, không có hạn. Index `membership (user_id)` để sau.
+
+**PR 2 (B1, migration 0033):** xem §2 ("B1 đã làm").
+
 ## 8. Tooling (`infra/perf/db/`)
 | File | Làm gì | Chạy ở đâu |
 |---|---|---|
@@ -269,14 +308,10 @@ Thứ tự triển khai, mỗi bước một PR có test: (1) A1 + A2 + A4, (2) 
 | `seed-busy-spa.sql` | Seed 3 năm một spa đông vào DB **tạm** (~400 MB, vài phút) | chỉ local |
 | `explain_hot.py` | Sinh script `EXPLAIN (ANALYZE, BUFFERS)` cho 40 câu nóng, nguyên văn từ `.sqlx`, với `app_rw` + RLS | chỉ local |
 | `experiments.sql` | Trigram owner vs `app_rw`, viết lại lịch sử, generic plan, bản nháp gộp xác thực, bỏ index (rollback) | chỉ local |
-
-**C1 + C2 + C4 đã làm (PR 4, migration 0035–0037, 2026-11-09):**
-- Session đã thu hồi / hết hạn bị xóa sau 30 ngày (`app.purge_sessions`).
-- Kiểm bất biến hằng ngày (`app.invariant_violations`, log ERROR khi có dòng lệch). Trên dữ liệu `seed-demo` cả 11 phép kiểm đều 0. Trên seed 3 năm, phép kiểm `sessions_remaining` báo 2 918 dòng, đúng như dự kiến, vì seed này đặt số buổi giả.
-- Mỗi job chạy một lần mỗi khoảng cho cả hệ thống (`app.claim_maintenance`, sửa F10).
-- FK cột "người làm" (`NOT VALID` → `VALIDATE`; staging 0 dòng mồ côi, `infra/perf/db/actor_column_orphans.sql`).
-- `idle_in_transaction_session_timeout = 30s` trong `TenantTx`.
-- `audit_log` giữ, không có hạn. Index `membership (user_id)` để sau.
+| `sizes.sql` | Cỡ DB, heap / index, từng bảng, các index 0033 bỏ (số đo đã sửa ở ⚠️ §2) | mọi môi trường |
+| `rtt_proxy.py` + `local_requests.py` | Proxy TCP giữa API và Postgres đếm **mọi** lượt đi về (kể cả ping) / gọi API local có đăng nhập và ghép với Server-Timing (§7a) | chỉ local |
+| `session_actor_checks.sql` | 13 phép kiểm hành vi của `app.session_actor` trên fixture, chạy cả với hàm đột biến (§7a) | DB tạm |
+| `actor_column_orphans.sql` | Đếm giá trị cột "người làm" không phải id `user_account` (trước C4) | mọi môi trường (chỉ đọc) |
 
 ## 9. Đo lại sau khi deploy (2026-11-09)
 Migration 0033–0040 đã chạy trên local và staging, Vercel prod đã deploy main 0855167 (gồm #107–#113). Đo bằng `node infra/perf/endpoints.mjs 6` (từ Mỹ, tài khoản quản lý demo, p50), cùng phép đo §3a:

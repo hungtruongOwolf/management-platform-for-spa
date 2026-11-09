@@ -24,12 +24,13 @@ wiki/
 ├── overview.md        # Bức tranh tổng: dự án là gì, đang ở giai đoạn nào
 ├── product/           # Vision, personas, glossary, specs/ (PRD từng tính năng)
 ├── design/            # Design system, UX flows, prototype notes
-├── architecture/      # system.md, backend.md, frontend.md, data.md
+├── architecture/      # system, backend, frontend, data, platform-admin + báo cáo đo đạc (db-review, latency)
 ├── decisions/         # ADR-XXXX — các quyết định kỹ thuật quan trọng
-├── security/          # Threat model, authz matrix, content-protection plan
+├── security/          # Threat model, authz matrix
 ├── plans/             # Breakdown thành ticket/slice, checklist tiến độ
+├── runbooks/          # Cách làm từng việc vận hành: staging Vercel, merge gate local
 ├── research/          # Nghiên cứu công nghệ, so sánh lựa chọn
-└── conventions/       # Coding standards, git workflow
+└── conventions/       # Coding standards, testing, git workflow
 ```
 
 Mẹo: mở thư mục `memory/` bằng **Obsidian** để xem graph liên kết giữa các trang.

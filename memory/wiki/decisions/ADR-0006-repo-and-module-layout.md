@@ -38,6 +38,9 @@ memory/  .claude/  CLAUDE.md
 - Quan hệ phụ thuộc giữa các crate là đồ thị không vòng; `cargo deny`/CI kiểm tra.
 - OpenAPI sinh từ code (`utoipa`), commit vào repo; client TS sinh lại trong CI và frontend typecheck theo nó.
 
+## Hiện trạng (kiểm lại 2026-11-09)
+Danh sách crate trong cây ở trên là bản dự kiến. Crate thật trong `apps/api/crates/`: `kernel`, `identity`, `org`, `catalog`, `crm`, `packages`, `operations` (lượt khách + lịch hẹn), `sales`, `hr` (chấm công, đánh giá, lương), `reporting`, `platform` (admin nền tảng, ADR-0018), `app` (binary). Chưa có `ledger` và `notifications`. OpenAPI vẫn sinh từ code: `pnpm api:spec` ghi `apps/api/openapi.json` (lệnh `app openapi`), `pnpm api:types` sinh `packages/api-client/src/schema.ts` bằng openapi-typescript; `scripts/contract-files.mjs` chặn commit file rỗng/hỏng.
+
 ## Consequences
 - Positive: ranh giới rõ, impact analysis dễ (crate nào phụ thuộc crate nào là thấy ngay), thay đổi cục bộ.
 - Negative: chút boilerplate khi thêm context mới.

@@ -72,8 +72,13 @@ fn validate(entries: &[ReviewEntry], today: NaiveDate, staff: &[Profile]) -> Res
         if e.date > today {
             errors.push(FieldError::new(f("date"), "in_future"));
         }
-        if !staff.iter().any(|p| p.id == e.staff_id) {
-            errors.push(FieldError::new(f("staff_id"), "unknown"));
+        // Same errors as attendance (AC3a.1 → AC2.3), `not_employed` included.
+        match staff.iter().find(|p| p.id == e.staff_id) {
+            None => errors.push(FieldError::new(f("staff_id"), "unknown")),
+            Some(p) if !p.employment.on(e.date) => {
+                errors.push(FieldError::new(f("date"), "not_employed"));
+            }
+            Some(_) => {}
         }
         if e.compliments > MAX_COUNT {
             errors.push(FieldError::new(f("compliments"), "out_of_range"));
