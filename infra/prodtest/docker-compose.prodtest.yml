@@ -1,8 +1,8 @@
 # Local prod-like smoke test (infra/prodtest/run.sh). Layered on top of docker-compose.prod.yml:
-# a throwaway Postgres 16 stands in for Supabase, and backups go to a local volume instead of R2.
+# a throwaway Postgres 17 (the Supabase major) stands in for Supabase, and backups go to a local volume instead of R2.
 services:
   fakedb:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${FAKEDB_PASSWORD:?set FAKEDB_PASSWORD}
