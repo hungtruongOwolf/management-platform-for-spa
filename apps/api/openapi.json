@@ -11427,7 +11427,7 @@
         "properties": {
           "closing_commission": {
             "type": "boolean",
-            "description": "Pay the \"chốt liệu trình mới\" commission to the closer of a package sale (⚠️ #3; R1\nalways collects in full, so collected = sold value).",
+            "description": "Pay the upsell commission (§3.2): packages closed and one-off services recommended (⚠️ #3;\nR1 always collects in full, so collected = sold value).",
             "default": true
           },
           "commission_on_bonus_sessions": {

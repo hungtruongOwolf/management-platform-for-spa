@@ -57,8 +57,11 @@ fn no_store(body: impl Serialize) -> Response {
 pub async fn daily_report(
     State(pool): State<PgPool>,
     user: AuthUser,
-    Query(query): Query<DailyQuery>,
+    query: Result<Query<DailyQuery>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    // The right first, then the query (F17), on every route here.
+    user.actor.require(Permission::ReportRead)?;
+    let Query(query) = query.map_err(invalid_query)?;
     Ok(no_store(day::daily(&pool, &user.actor, query.date).await?))
 }
 
@@ -70,8 +73,10 @@ pub async fn daily_report(
 pub async fn range_report(
     State(pool): State<PgPool>,
     user: AuthUser,
-    Query(query): Query<RangeQuery>,
+    query: Result<Query<RangeQuery>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    user.actor.require(Permission::ReportRead)?;
+    let Query(query) = query.map_err(invalid_query)?;
     Ok(no_store(day::range(&pool, &user.actor, &query).await?))
 }
 
@@ -83,8 +88,10 @@ pub async fn range_report(
 pub async fn ledger(
     State(pool): State<PgPool>,
     user: AuthUser,
-    Query(query): Query<LedgerQuery>,
+    query: Result<Query<LedgerQuery>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    user.actor.require(Permission::ReportRevenueRead)?;
+    let Query(query) = query.map_err(invalid_query)?;
     Ok(no_store(
         day::ledger(
             &pool,
@@ -106,8 +113,11 @@ pub async fn ledger(
 pub async fn inactive_customers(
     State(pool): State<PgPool>,
     user: AuthUser,
-    Query(query): Query<InactiveQuery>,
+    query: Result<Query<InactiveQuery>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    user.actor.require(Permission::CustomerRead)?;
+    user.actor.require(Permission::VisitRead)?;
+    let Query(query) = query.map_err(invalid_query)?;
     Ok(no_store(
         overview::inactive(&pool, &user.actor, &query).await?,
     ))
@@ -144,8 +154,10 @@ pub async fn customer_history(
     State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
     Path(id): Path<Uuid>,
-    Query(query): Query<HistoryQuery>,
+    query: Result<Query<HistoryQuery>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    customer::require_history(&user.actor)?;
+    let Query(query) = query.map_err(invalid_query)?;
     Ok(no_store(
         customer::history(&pool, &cipher, &user.actor, id, &query).await?,
     ))
@@ -190,8 +202,10 @@ pub async fn package_usage(
 pub async fn list_packages(
     State(pool): State<PgPool>,
     user: AuthUser,
-    Query(query): Query<PackagesQuery>,
+    query: Result<Query<PackagesQuery>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    user.actor.require(Permission::CustomerRead)?;
+    let Query(query) = query.map_err(invalid_query)?;
     Ok(no_store(
         overview::packages(&pool, &user.actor, &query).await?,
     ))

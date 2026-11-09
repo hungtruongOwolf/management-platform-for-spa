@@ -1,16 +1,16 @@
 ---
 title: Runbook — local merge gate (dự phòng khi GitHub Actions không chạy được)
 updated: 2026-11-09
-sources: []
+sources: [scripts/merge-local-gate.sh, scripts/gate-lib.sh, scripts/merge-when-green.sh]
 ---
 
 # Local merge gate
 
-**Trạng thái (2026-11-09):** GitHub Actions đã chạy lại từ 2026-11-06 (repo chuyển public, phút không giới hạn; workflow `CI` và `Deploy (staging)` đều `active`). Đường merge bình thường là `bash scripts/merge-when-green.sh <pr>` ([testing §5](../conventions/testing.md)). Gate local là **dự phòng**: dùng khi Actions lại bị tắt (ví dụ repo về private và hết phút) hoặc để thử một batch PR trên máy. Nó không chạy Docker build, gitleaks, Lighthouse.
+**Trạng thái (2026-11-09): GitHub Actions đang bật** (`CI` và `Deploy (staging)` đều `active`; tắt 2026-11-05 vì hết phút khi repo còn private, bật lại 2026-11-06 khi repo chuyển public). Đường merge bình thường là `scripts/merge-when-green.sh <pr>` (chờ mọi check `pass|skipping` và đòi `CI ok: pass`, rồi squash-merge và xóa branch qua API; xem [testing §5](../conventions/testing.md#5-ci)). Gate local dưới đây là **dự phòng** khi Actions lại không chạy được, hoặc để gộp nhiều PR (`--batch`).
 
-`scripts/gate-lib.sh` vẫn là code đang chạy trong CI: `scripts/ci-changes.sh` dùng `gate_classify` của nó để chọn scope job. Bảng `gate_feature_specs` thì chỉ gate local dùng.
+`scripts/gate-lib.sh` vẫn chạy trong CI (`scripts/ci-changes.sh` dùng `gate_classify` để chọn scope job); bảng `gate_feature_specs` thì chỉ gate local dùng.
 
-Lịch sử: Actions bị tắt 2026-11-05 vì hết phút miễn phí (log 2026-11-05); khi đó `scripts/merge-local-gate.sh` là đường merge duy nhất: dựng cây "main + PR", chạy các bước kiểm tra trên đó, rồi `gh pr merge --squash` và xóa branch. Từ 2026-11-06 gate **theo thay đổi**: chỉ chạy những bước mà các file của PR có thể làm hỏng. Quy tắc nằm trong `scripts/gate-lib.sh`, test trong `scripts/gate-lib.test.sh` (`bash scripts/gate-lib.test.sh`, không cần build).
+`scripts/merge-local-gate.sh` dựng cây "main + PR", chạy các bước kiểm tra trên đó, rồi `gh pr merge --squash` và xóa branch. Từ 2026-11-06 gate **theo thay đổi**: chỉ chạy những bước mà các file của PR có thể làm hỏng. Quy tắc nằm trong `scripts/gate-lib.sh`, test trong `scripts/gate-lib.test.sh` (`bash scripts/gate-lib.test.sh`, không cần build).
 
 ## Cách dùng
 ```bash
@@ -27,9 +27,10 @@ Mỗi file trong `git diff` giữa `origin/main` và cây đã merge được g�
 
 | Nhãn | File | Kéo theo |
 |---|---|---|
-| `docs` | `memory/**`, `docs/**`, `*.md`, `prototypes/**`, `.claude/**`, `scripts/brand/**`, `.gitignore`… | chỉ lint |
+| `docs` | `memory/**`, `docs/**`, `docs for reference/**`, `*.md`, `prototypes/**`, `.claude/**`, `scripts/brand/**`, `.gitignore`, `.gitattributes`, `.editorconfig`, `.env.example`, `LICENSE` | chỉ lint |
 | `rust:<crate>` | `apps/api/crates/<crate>/**` | fmt + clippy + `cargo test -p` crate đó và mọi crate phụ thuộc ngược (đồ thị path-dependency đọc từ các `Cargo.toml`, gồm dev-deps) |
-| `rust:all` | `migrations/`, crate `kernel` hoặc `app`, `Cargo.toml`/`Cargo.lock` (kèm cargo-deny), toolchain, file lạ trong `apps/api` | `cargo test --workspace` |
+| `rust:all` | `migrations/`, crate `kernel` hoặc `app`, `Cargo.toml`/`Cargo.lock` (kèm nhãn `deny`), `rust-toolchain.toml`, file lạ trong `apps/api` | `cargo test --workspace` |
+| `deny` | `apps/api/deny.toml` (và `Cargo.toml`/`Cargo.lock`) | cargo-deny |
 | `sqlx` | `apps/api/.sqlx/**` | không nới rộng nếu có crate đổi cùng; đứng một mình → workspace |
 | `spec` | `apps/api/openapi.json`, `scripts/api-spec.mjs`, `contract-files.mjs`, `check-extra.mjs` | sinh lại contract từ code (cần binary `app`) + full e2e |
 | `client` | `packages/api-client/**` | `pnpm api:types` từ `openapi.json` đã commit rồi diff `schema.ts` (không build Rust) |
@@ -37,13 +38,13 @@ Mỗi file trong `git diff` giữa `origin/main` và cây đã merge được g�
 | `webtest` | mọi `*.test.ts(x)` trong `apps/web/src` | typecheck, `vitest --changed`, không e2e |
 | `e2e:<spec>` | `apps/web/e2e/specs/<spec>.spec.ts` | chạy spec đó |
 | `shared` | phần còn lại của `apps/web` (app shell, router, `components/`, `lib/`, css, `e2e/support`, `e2e/setup`, `stack.ts`, config vite/playwright, `package.json`), `packages/ui/**`, `package.json`/`pnpm-lock.yaml` gốc, tsconfig/eslint | full vitest + `@vpyd/ui` test + full e2e |
-| `gate` | chính các script gate | self-test của gate |
-| `infra` | `.github/**`, Dockerfile, `vercel.json`… | không có gì chạy được; plan in ghi chú "not exercised" |
+| `gate` | `scripts/merge-local-gate.sh`, `gate-lib.sh`, `gate-lib.test.sh`, `merge-when-green.sh` | self-test của gate |
+| `infra` | `.github/**`, `apps/api/Dockerfile`, `.dockerignore`, `vercel.json`, `.vercelignore`, `infra/**` (trừ hai file của `full`) | không có gì chạy được; plan in ghi chú "not exercised" |
 | `full` | `infra/postgres-init/**`, `infra/docker-compose.dev.yml`, mọi đường dẫn không khớp quy tắc nào | **mọi bước** (fail safe) |
 
 Luôn chạy: kiểm tra `openapi.json` / `schema.ts` không rỗng và parse được (trước mọi build), `pnpm install`, lint. Có Rust thay đổi thì contract luôn sinh lại từ code. Plan in ra trước khi chạy, kèm danh sách file đã làm nới rộng plan.
 
-**E2E (mặc định bật khi code app đổi).** Chọn lọc khi chỉ có `web:<feature>` / `e2e:<spec>`: setup + spec theo bảng `gate_feature_specs` (ví dụ `customers` → customers, management, sales, voids) + `layout` + `a11y` (hai spec này quét mọi màn). Full suite khi có `shared`, Rust, contract, migration hoặc feature chưa có trong bảng. Thêm feature mới thì thêm một dòng vào `gate_feature_specs`.
+**E2E (mặc định bật khi code app đổi).** Chọn lọc khi chỉ có `web:<feature>` / `e2e:<spec>`: setup + spec theo bảng `gate_feature_specs` (ví dụ `customers` → customers, management, sales, voids) + `layout` + `a11y` (hai spec này quét mọi màn). Full suite khi có `shared`, Rust, contract, migration hoặc feature chưa có trong bảng. Thêm feature mới thì thêm một dòng vào `gate_feature_specs` (hiện `notes` chưa có dòng nên kéo full e2e).
 
 Không dùng `playwright --only-changed`: nó chỉ chọn spec theo import graph của chính file spec, mà spec e2e không import code app, nên sửa một màn sẽ không chọn spec nào. Bảng feature → spec thay cho nó. `vitest --changed <base>` thì đúng (unit test import code app); Vitest 5.1, Playwright 1.64.
 
@@ -67,5 +68,5 @@ Cuối mỗi lần chạy gate in thời gian từng bước + tổng, và ghi m
 ## Contract rỗng (PR #44, #45)
 `api:spec` cũ là `cargo run … > openapi.json`: shell cắt file về rỗng trước khi cargo chạy xong, agent ngắt giữa chừng → commit `openapi.json` rỗng. Nay `pnpm api:spec` = `node scripts/api-spec.mjs`: lấy stdout, kiểm JSON có `openapi` + `paths`, ghi file tạm rồi rename; lỗi thì giữ nguyên file cũ. `scripts/contract-files.mjs` kiểm cả hai file (rỗng, không parse được, `schema.ts` thiếu `paths`/`components`/`operations`); gate chạy nó đầu tiên, `check:extra` cũng vậy.
 
-## Bật lại CI
-Đã làm 2026-11-06. Nếu Actions lại bị tắt: `gh workflow enable CI` và `gh workflow enable "Deploy (staging)"` khi bật lại, rồi quay về `merge-when-green.sh`.
+## Tắt / bật CI
+Khi Actions lại hết phút: `gh workflow disable CI` (và `"Deploy (staging)"`), merge bằng gate này. Bật lại: `gh workflow enable CI` và `gh workflow enable "Deploy (staging)"`, quay về `merge-when-green.sh`. `Deploy (staging)` (`deploy.yml`) là đường VPS ([staging-setup](staging-setup.md)), không dùng cho staging Vercel hiện tại.

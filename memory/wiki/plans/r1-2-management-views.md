@@ -1,12 +1,12 @@
 ---
 title: "Plan R1-2: Xem lại & theo dõi"
-updated: 2026-11-05
+updated: 2026-11-09
 sources: [product/specs/management-views.md, raw/2026-11-05-em-management-views-logo-ui.md]
 ---
 
 # Plan R1-2: Xem lại & theo dõi
 
-Spec: [management-views](../product/specs/management-views.md) (draft, chờ EM trả lời Q1–Q4). Backend và UI làm song song trên contract `apps/api/openapi.json`.
+Spec: [management-views](../product/specs/management-views.md) (draft; Q1–Q7 đã chốt, §9). Backend và UI làm song song trên contract `apps/api/openapi.json`.
 
 | # | Việc | Ai | Trạng thái |
 |---|---|---|---|
@@ -15,10 +15,10 @@ Spec: [management-views](../product/specs/management-views.md) (draft, chờ EM 
 | M3 | Bỏ `origin` khỏi `CustomerPackageDto`; `POST /opening-balances` chỉ chủ spa (tạm) | backend | ✅ |
 | M4 | CLI `app import-paper-book --tenant --file [--dry-run]` | backend | ✅ |
 | M5 | Test: `reports.rs` (9: tiền với giảm giá / hủy / hủy ngày hôm sau / hoàn, 00:00 ICT, quyền tiền, cách ly tenant, phân trang, đối soát `seed-demo`), `paper_book.rs` (2), matrix +8 dòng, bench 3 năm (`reports_bench.rs`, `--ignored`) | backend | ✅ |
-| M6 | UI: dashboard Hôm nay (trang chủ), báo cáo khoảng ngày + biểu đồ, sổ doanh thu, hồ sơ khách (timeline, trang liệu trình, tóm tắt), theo dõi liệu trình + lâu không quay lại | UI (`feat/ui-overhaul`) | ⏳ |
-| M7 | UI: bỏ `/nhap-so-cu`, nhãn "Nhập từ sổ cũ", ô trang chủ; `PackageActions` dùng `sale_id != null` thay `origin === "sale"`; `CustomerCard.tsx`, `CustomerPackages.tsx` bỏ nhãn | UI | ⏳ |
-| M8 | Xóa `POST /opening-balances` + `OpeningBalance*` khỏi contract sau M7 | backend | ⏳ (sau M7) |
-| M9 | E2E + axe cho các màn mới; thêm các GET mới vào `api-latency.spec.ts` | UI | ⏳ |
-| M10 | Sổ thu chi (phiếu chi, tồn quỹ, chốt quỹ): spec riêng R1-3 | — | để sau |
+| M6 | UI: dashboard Hôm nay (trang chủ), báo cáo khoảng ngày + biểu đồ, sổ doanh thu, hồ sơ khách (timeline, trang liệu trình, tóm tắt), theo dõi liệu trình + lâu không quay lại | UI (`feat/ui-overhaul`) | ✅ (`/`, `/bao-cao` + `?tab=ledger`, `/khach-hang/$customerId`, `/goi-lieu-trinh`, `/khach-lau-khong-quay-lai`) |
+| M7 | UI: bỏ `/nhap-so-cu`, nhãn "Nhập từ sổ cũ", ô trang chủ; `PackageActions` dùng `sale_id != null` thay `origin === "sale"`; `CustomerCard.tsx`, `CustomerPackages.tsx` bỏ nhãn | UI | ✅ |
+| M8 | Xóa `POST /opening-balances` + `OpeningBalance*` khỏi contract sau M7 | backend | ⏳ chưa làm: M7 xong nhưng route vẫn còn (chỉ chủ spa) và đã được mở rộng thêm `paid_amount` / `paid_on` / `method` (tiền sổ giấy, 0018); cần quyết giữ hay xóa |
+| M9 | E2E + axe cho các màn mới; thêm các GET mới vào `api-latency.spec.ts` | UI | ◐ E2E + axe xong (`management.spec.ts`, `layout.spec.ts`; axe `reports`, `reports-ledger`, `inactive`, `customer-history`…); `e2e/perf/api-latency.spec.ts` **chưa** có các GET báo cáo (độ trễ đo bằng `reports_bench.rs`) |
+| M10 | Sổ thu chi (phiếu chi, tồn quỹ, chốt quỹ): spec riêng (số R1-3 sau đó dùng cho lịch hẹn) | — | để sau |
 
 Thứ tự merge: PR backend trước (UI build trên contract). PR backend làm web typecheck đỏ ở 3 chỗ dùng `origin` (M7) cho tới khi nhánh UI rebase; nếu cần xanh ngay thì UI làm M7 trước.

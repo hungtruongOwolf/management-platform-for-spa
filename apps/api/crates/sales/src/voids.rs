@@ -71,10 +71,6 @@ pub async fn void_in(
     Ok(VoidedSale { reversals })
 }
 
-/// `POST /sales/{id}/void` (`record.void_same_day`; a closed day needs `record.void_closed_day`;
-/// Idempotency-Key). Only package sales: the sale of a visit's one-off
-/// services is voided with its visit (`409 sale.void_via_visit`), so a visit never keeps lines
-/// whose money was returned. Any session of its packages used → `409 sale.has_used_sessions`.
 /// Authorize before reporting what is wrong with a void request (F17): `404` / `403 day.locked`
 /// first, then `refused`. Error path only; the caller has checked `record.void_same_day`.
 pub async fn authorized_then(
@@ -102,6 +98,12 @@ pub async fn authorized_then(
     }
 }
 
+/// `POST /sales/{id}/void` (`record.void_same_day`; a closed day needs `record.void_closed_day`;
+/// Idempotency-Key). Only package sales: the sale of a visit's one-off
+/// services is voided with its visit (`409 sale.void_via_visit`), so a visit never keeps lines
+/// whose money was returned. Any session of its packages used → `409 sale.has_used_sessions`.
+/// The day lock is checked before the sale's state (F17): a caller who may not touch that day
+/// learns nothing more about the sale.
 pub async fn void_sale(
     pool: &PgPool,
     actor: &Actor,
@@ -126,6 +128,11 @@ pub async fn void_sale(
     let sale = repo::lock_sale(&mut tx, id)
         .await?
         .ok_or(AppError::NotFound)?;
+    let today = kernel::tenant::profile(&mut tx)
+        .await?
+        .business_date
+        .as_naive();
+    corrections::authorize_void(actor, sale.business_date, today)?;
     if sale.status != "open" {
         return Err(AppError::Conflict {
             code: "sale.voided",
@@ -136,11 +143,6 @@ pub async fn void_sale(
             code: "sale.void_via_visit",
         });
     }
-    let today = kernel::tenant::profile(&mut tx)
-        .await?
-        .business_date
-        .as_naive();
-    corrections::authorize_void(actor, sale.business_date, today)?;
     packages::lifecycle::cancel_for_sale(&mut tx, actor, id, &reason).await?;
     void_in(&mut tx, actor, id, &reason, today).await?;
 

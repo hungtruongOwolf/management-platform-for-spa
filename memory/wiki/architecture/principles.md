@@ -1,6 +1,6 @@
 ---
 title: Architecture principles — extensibility & changeability
-updated: 2026-11-04
+updated: 2026-11-09
 sources: [raw/2026-11-04-idea-internal-platform.md]
 ---
 
@@ -18,3 +18,11 @@ Yêu cầu của EM: code phải mở rộng và chỉnh sửa được dễ dà
 8. **Contract-first API + client sinh tự động.** OpenAPI là hợp đồng giữa backend và frontend. Client TypeScript được sinh từ đó, nên backend đổi field thì frontend báo lỗi type ngay khi build.
 9. **Tính năng mới có cờ bật/tắt (feature flag)** theo tenant: đặt lịch online, bán hàng, nhắc Zalo... Nhờ vậy có thể bật dần mà không cần nhánh code riêng.
 10. **API-first, đa kênh.** Web app, native app sau này và các tích hợp (Zalo, đặt lịch online) đều dùng chung một Rust API, chung tài khoản và phân quyền. Không có logic nghiệp vụ nào chỉ nằm ở frontend. URL của web app ổn định để làm deep link (universal links / app links) khi có native app.
+
+## Hiện trạng trong code (kiểm 2026-11-09)
+Các nguyên tắc trên là định hướng từ ngày đầu; chỗ code đi khác hoặc chưa tới:
+- **#1:** danh sách module ở trên là bản dự kiến. Crate thật (`apps/api/crates/`): `kernel`, `identity`, `org`, `hr` (thay cho `workforce` + `payroll`), `catalog`, `crm`, `packages`, `sales`, `operations`, `reporting`, `platform`, `app`; chưa có `ledger`, `notifications` ([ADR-0006](../decisions/ADR-0006-repo-and-module-layout.md), [backend §5](backend.md)). Ngoại lệ có chủ ý của "không đọc bảng của module khác": `reporting` là read model, đọc thẳng các bảng sổ.
+- **#2:** đã làm: permission là chuỗi trong `kernel::permission`, role là dữ liệu (`role_permission`), mẫu role do admin nền tảng sửa (`role_template_permission`, ADR-0018). Phạm vi "của chính mình" có (`staff.read_own`, `/me/*`); phạm vi theo **chi nhánh** chưa có (mới một chi nhánh).
+- **#4:** chưa có `CompensationPolicy` có `effective_from`. Quy tắc lương là một bản `payroll_rules` (jsonb) mỗi spa; tháng cũ giữ đúng số nhờ phiếu lương chốt là bản chụp ([ADR-0008](../decisions/ADR-0008-payroll-close-snapshots.md)), không nhờ phiên bản chính sách.
+- **#5:** đã làm: `hr::calc::compute` là hàm thuần, test theo ô Excel.
+- **#9:** đã có cờ theo spa (`app.tenant_feature`, `kernel::feature`, ADR-0018 D4), do admin nền tảng bật/tắt.

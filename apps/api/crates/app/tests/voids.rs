@@ -289,6 +289,59 @@ async fn voiding_a_visit_gives_sessions_back_and_reverses_its_payment(pool: PgPo
     Ok(())
 }
 
+/// A void gives back the sessions of its lines whatever they were. After 10 paid + 1 bonus
+/// sessions, voiding a paid visit leaves 1 paid + 1 bonus: the next visit is worth a paid session
+/// (its performer's commission), the one after it is the free one. Red before the fix: the next
+/// visit was valued 0, so 10 paid sessions were recognised as 9 × 150.000đ.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_paid_session_given_back_by_a_void_keeps_its_value(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let sold = s.sell().await?;
+    let mut visits = Vec::new();
+    for _ in 0..11 {
+        visits.push(str_of(&s.visit(&sold.item, false).await.body["id"]));
+    }
+    let pool = &s.h.owner;
+    assert_eq!(line_value(pool, &visits[0]).await?, 150_000);
+    assert_eq!(line_value(pool, &visits[10]).await?, 0, "11th = bonus");
+
+    let voided = s
+        .void_visit(&s.manager, &visits[0], json!("Ghi nhầm"))
+        .await;
+    assert_eq!(voided.status, StatusCode::OK, "{}", voided.body);
+    assert_eq!(s.remaining(&sold.item).await?, 2);
+
+    let again = str_of(&s.visit(&sold.item, false).await.body["id"]);
+    assert_eq!(
+        line_value(pool, &again).await?,
+        150_000,
+        "the paid session given back"
+    );
+    let last = str_of(&s.visit(&sold.item, false).await.body["id"]);
+    assert_eq!(
+        line_value(pool, &last).await?,
+        0,
+        "the second bonus session"
+    );
+    let recognised: i64 = sqlx::query_scalar(
+        "SELECT sum(l.line_value)::bigint FROM app.visit_line l
+         JOIN app.visit v ON v.id = l.visit_id
+         WHERE l.customer_package_item_id = $1::uuid AND v.status = 'completed'",
+    )
+    .bind(&sold.item)
+    .fetch_one(pool)
+    .await?;
+    assert_eq!(recognised, 1_500_000, "10 paid sessions × 150.000đ");
+    Ok(())
+}
+
+async fn line_value(pool: &PgPool, visit: &str) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("SELECT line_value FROM app.visit_line WHERE visit_id = $1::uuid")
+        .bind(visit)
+        .fetch_one(pool)
+        .await
+}
+
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn a_visit_is_voided_once(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
@@ -453,6 +506,15 @@ async fn closed_days_are_locked_for_managers_and_open_to_owners_without_reauth(
     );
     let owner_sale = s.void_sale(&s.owner, &other.sale, json!("nhầm")).await;
     assert_eq!(owner_sale.status, StatusCode::OK, "{}", owner_sale.body);
+    // F17: the day lock comes before the sale's state. Red before: the manager heard
+    // `409 sale.voided` about a closed day's sale.
+    let again = s.void_sale(&s.manager, &other.sale, json!("nhầm")).await;
+    assert_eq!(code(&again), (StatusCode::FORBIDDEN, Some("day.locked")));
+    let owner_again = s.void_sale(&s.owner, &other.sale, json!("nhầm")).await;
+    assert_eq!(
+        code(&owner_again),
+        (StatusCode::CONFLICT, Some("sale.voided"))
+    );
     Ok(())
 }
 

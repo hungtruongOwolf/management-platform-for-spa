@@ -1,6 +1,7 @@
 ---
 title: Runbook — staging trên Vercel + Supabase
 updated: 2026-11-09
+sources: [vercel.json, apps/api/crates/app/src/config.rs, apps/api/crates/app/src/main.rs, decisions/ADR-0005-compute-hosting.md]
 ---
 
 # Staging trên Vercel + Supabase
@@ -10,15 +11,27 @@ Quyết định và các đánh đổi xem ở [ADR-0005](../decisions/ADR-0005-
 ## Thành phần
 | Gì | Ở đâu |
 |---|---|
-| Web (Vite tĩnh) + API (container Rust) | Vercel project `vien-phuc-y-duong`, team `hungtruongowolfs-projects`, region `pdx1` |
-| Database | Supabase project `zyyiukcysjntjgjabiqe` (us-west-2), Session pooler `aws-1-us-west-2.pooler.supabase.com:5432` |
+| Web (Vite tĩnh) + API (container Rust, `apps/api/Dockerfile`) | Vercel project `vien-phuc-y-duong`, region `pdx1` (`vercel.json` → `services.web` + `services.api`, `/api/*` rewrite vào `api`) |
+| Database | Supabase project staging ở `us-west-2`, kết nối qua Session pooler cổng 5432 (ref và host nằm trong `.env.staging`, không ghi ở wiki) |
 | Cấu hình | `vercel.json` (services, rewrites, security headers), `.vercelignore` (không upload `.env*`, `.claude`, `memory`) |
 | Bí mật | `.env.staging` ở gốc repo, đã gitignore, giữ owner URL, mật khẩu `app_rw`, mật khẩu chủ spa, `STAGING_APP_DATA_KEY` |
 
 ## Biến môi trường trên Vercel (Production)
-`APP_ENV=staging`, `APP_BIND_ADDR=0.0.0.0:8080`, `PORT=8080`, `APP_DB_MAX_CONNECTIONS=3`, `RUST_LOG=info`, `APP_PUBLIC_ORIGIN=https://vien-phuc-y-duong.vercel.app`. `APP_ADMIN_ORIGIN` (tùy chọn, ADR-0018): để trống thì console `/admin` dùng chung origin; chỉ đặt khi console lên subdomain riêng. Hai biến sensitive:
-- `APP_DATABASE_URL`: user `app_rw.<ref>` với `?sslmode=verify-full&sslrootcert=/etc/ssl/certs/supabase-root-2021.crt`.
-- `APP_DATA_KEY`.
+Tên biến khớp `apps/api/crates/app/src/config.rs` (đọc lúc khởi động, sai thì API không chạy) và `main.rs`:
+
+| Biến | Giá trị staging | Ghi chú |
+|---|---|---|
+| `APP_ENV` | `staging` | `development` / `staging` / `production`; image Docker mặc định `production` |
+| `APP_BIND_ADDR` | `0.0.0.0:8080` | bắt buộc (image đã đặt sẵn) |
+| `PORT` | `8080` | cho Vercel, API không đọc |
+| `APP_PUBLIC_ORIGIN` | origin `https://…` của deployment, không `/` cuối | bắt buộc; kiểm `Origin` của request ghi |
+| `APP_ADMIN_ORIGIN` | không đặt | tùy chọn (ADR-0018): origin riêng cho `/api/v1/admin/*` khi có subdomain; phải khác `APP_PUBLIC_ORIGIN` |
+| `APP_DB_MAX_CONNECTIONS` | `3` | mặc định 10; nhỏ vì nhiều instance dùng chung pooler |
+| `RUST_LOG` | `info` | mặc định `info` |
+| `APP_DATABASE_URL` (sensitive) | user `app_rw.<ref>`, `?sslmode=verify-full&sslrootcert=/etc/ssl/certs/supabase-root-2021.crt` | ngoài development bắt buộc `verify-full`/`verify-ca` |
+| `APP_DATA_KEY` (sensitive) | 32 byte base64 | khóa mã hóa trường; phải trùng key dùng khi chạy CLI ghi dữ liệu |
+
+`APP_RATE_PER_SECOND` / `APP_RATE_BURST` **không được đặt**: ngoài `development` API từ chối khởi động nếu có. `APP_DB_INSECURE_TLS_FOR_LOCAL_TEST` chỉ cho prodtest local.
 
 Đặt giá trị bằng stdin, không bao giờ đưa vào argv: `printf '%s' "$VAL" | npx vercel env add NAME production --sensitive`.
 
@@ -27,10 +40,14 @@ Script `staging-bootstrap.sh` (scratchpad của lead, nên chuyển vào `infra/
 1. Tạo role `app_rw` NOBYPASSRLS.
 2. `app migrate`.
 3. REVOKE quyền của `anon`/`authenticated` trên schema `app`, để Data API của Supabase không chạm được dữ liệu.
-4. `create-tenant vien-phuc-y-duong`, `add-user` chủ spa `0905000001`, `seed-catalog`.
+4. `create-tenant --slug vien-phuc-y-duong`, `add-user` chủ spa `0905000001`, `seed-catalog`.
+
+CLI `app` (danh sách đầy đủ ở đầu `apps/api/crates/app/src/main.rs`): `migrate`, `create-tenant`, `add-user`, `add-staff`, `seed-catalog`, `seed-demo`, `import-paper-book`, `reset-mfa`, `unlock`, `add-operator`, `reset-operator-mfa`, `disable-operator` / `enable-operator`, `openapi`. Mật khẩu chỉ qua env (`APP_NEW_USER_PASSWORD`, `APP_NEW_OPERATOR_PASSWORD`), không qua argv. Lệnh ghi qua use case (`seed-demo`, `import-paper-book`) cần cả `DATABASE_URL` (owner) và `APP_DATABASE_URL` + `APP_DATA_KEY`.
+
+**Operator console** (`/admin`, ADR-0018): tạo operator bằng `add-operator --username U --name N` với `APP_NEW_OPERATOR_PASSWORD`; MFA cài ở lần đăng nhập đầu tại `/admin`.
 5. Kiểm tra `app_rw` bị RLS chặn (không có tenant context thì thấy 0 dòng).
 
-Ba bảng không có RLS là `user_account`, `session`, `mfa_recovery_code`. Đây là thiết kế: identity dùng chung cho mọi tenant.
+Ba bảng không có RLS là `user_account`, `session`, `mfa_recovery_code` (kiểm lại đến migration 0040). Đây là thiết kế: identity dùng chung cho mọi tenant. Bảng của console (`platform_*`, `role_template_permission`, `tenant_feature`) có RLS và chỉ ghi qua hàm có cổng operator.
 
 ## Dữ liệu demo
 Staging trống thì EM không thử được luồng nào ([raw](../../raw/2026-11-05-em-brand-colors-and-demo-data.md)). Lệnh `app seed-demo` đổ dữ liệu giống thật vào một spa, đi qua đúng các use case của quầy (validation, audit, payment append-only đều giữ nguyên).
@@ -69,9 +86,11 @@ SQLX_OFFLINE=true DATABASE_URL="$STAGING_OWNER_URL" APP_DATABASE_URL="<app_rw UR
 - Sau này: kết nối Git integration (`vercel git connect`, EM duyệt GitHub app) để push lên `main` là tự deploy.
 
 ## Kiểm tra sau deploy
-- `curl -s https://vien-phuc-y-duong.vercel.app/api/v1/health`
+Thay `<staging>` bằng origin trong `APP_PUBLIC_ORIGIN`:
+- `curl -s <staging>/api/v1/health` → 200.
+- `curl -s -o /dev/null -w '%{http_code}' <staging>/api/v1/me` → 401; `<staging>/api/v1/admin/me` → 401; `<staging>/admin` → 200.
 - Mở `/dang-nhap`, đăng nhập chủ spa (mật khẩu ở `.env.staging`), cài MFA lần đầu.
-- `curl -sI https://vien-phuc-y-duong.vercel.app/` phải có CSP và HSTS.
+- `curl -sI <staging>/` phải có CSP và HSTS (từ `vercel.json`).
 
 ## Trước khi spa dùng thật
 - Lên Supabase **Pro** để có backup hằng ngày, hoặc dựng job backup riêng.

@@ -29,5 +29,10 @@ EM chọn hướng SaaS: platform về sau có thể phục vụ nhiều spa; la
 - Negative: mọi query phải nhớ tenant. Rủi ro này được giảm bằng newtype bắt buộc, RLS và **test cách ly bắt buộc** (spa A đọc ID của spa B → 404) cho mọi endpoint.
 - **Platform admin access (EM chốt 2026-11-04):** mặc định **không** đọc được dữ liệu khách, sức khỏe, tài chính, lương của spa. Khi cần hỗ trợ, chủ spa cấp **support grant** có thời hạn (mặc định 24 giờ, thu hồi được). Mọi truy cập trong thời gian grant đều được audit và chủ spa xem được. Không cần grant cho: tạo spa, cấu hình kỹ thuật, xem metadata vận hành (số user, dung lượng, lỗi).
 
+## Hiện trạng (kiểm lại 2026-11-09)
+- RLS đọc tenant qua `app.current_tenant()` (0001), giá trị do `kernel::TenantTx` đặt bằng `set_config('app.tenant_id', …, true)` (tương đương `SET LOCAL`); chưa đặt thì `NULL`, mọi policy không khớp gì (deny by default).
+- **Platform admin** đã làm theo [ADR-0018](ADR-0018-platform-admin-console.md): operator là principal riêng, không có quyền đọc dữ liệu khách/sức khỏe/tài chính/lương, chỉ gọi hàm `SECURITY DEFINER` hẹp trong `TenantTx` của từng spa, audit hai phía.
+- **Support grant chưa làm**: permission `support_grant.manage` có trong danh sách (`kernel::permission`, 0040) nhưng chưa có bảng, route hay màn nào. Khi cần operator xem dữ liệu của spa để hỗ trợ thì phải làm phần này trước.
+
 ## Revisit when
 Có spa lớn yêu cầu dữ liệu tách hẳn (hợp đồng/pháp lý) → chuyển spa đó sang DB riêng.

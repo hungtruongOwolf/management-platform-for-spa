@@ -207,6 +207,32 @@ pub async fn consume(
     .await?)
 }
 
+pub struct LineUsage {
+    /// Sessions of the item's lines on completed visits.
+    pub sessions: i64,
+    /// Their `line_value`: `per_session_value` × the paid sessions among them.
+    pub value: i64,
+}
+
+/// What the item's lines on completed visits used (voided visits gave theirs back). Reads the
+/// visits module's tables, like `app.invariant_violations` does: the lines are the only record of
+/// which sessions were paid.
+pub async fn completed_line_usage(tx: &mut TenantTx, item_id: Uuid) -> Result<LineUsage, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    Ok(sqlx::query_as!(
+        LineUsage,
+        r#"SELECT coalesce(sum(l.qty), 0)::bigint AS "sessions!",
+                  coalesce(sum(l.line_value), 0)::bigint AS "value!"
+           FROM app.visit_line l
+           JOIN app.visit v ON v.tenant_id = l.tenant_id AND v.id = l.visit_id
+           WHERE l.tenant_id = $1 AND l.customer_package_item_id = $2 AND v.status = 'completed'"#,
+        tenant,
+        item_id
+    )
+    .fetch_one(tx.conn())
+    .await?)
+}
+
 /// The usable item for `service` that should be used first (AC4.3): not cancelled, not expired,
 /// sessions left; soonest expiry first (no expiry = last), then oldest purchase.
 pub async fn default_item(

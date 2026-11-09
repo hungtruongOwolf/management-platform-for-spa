@@ -7,6 +7,8 @@ sources: [raw/2026-11-04-kickoff-request.md]
 # Lưu trữ & hosting dài hạn
 
 > **Phạm vi hiện tại (EM, 2026-11-04):** chưa có video, chỉ có **dữ liệu khách hàng**. Giai đoạn này chỉ cần **Postgres (Supabase) + backup ra R2**. Phần video bên dưới để dành cho sau.
+>
+> **Hiện trạng (2026-11-09):** compute không theo đề xuất VPS ở cuối trang. Staging chạy **Vercel (web tĩnh + API container) + Supabase Mỹ** ([ADR-0005](../decisions/ADR-0005-compute-hosting.md) update 2026-11-05, [vercel-staging](../runbooks/vercel-staging.md)); production đang chờ [ADR-0012](../decisions/ADR-0012-colocate-api-db-singapore.md). Backup R2 chưa dựng (staging chỉ có dữ liệu giả).
 
 Giá lấy từ các bài tổng hợp của bên thứ ba, cập nhật trong khoảng 06–10/2026. Trước khi trả tiền phải kiểm tra lại trên trang giá chính thức.
 
