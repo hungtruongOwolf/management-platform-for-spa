@@ -328,6 +328,73 @@ describe("console sheets and caches (review 2026-11)", () => {
     });
   });
 
+  it("names the spa's audit actions in Vietnamese, never a bare code (ADR-0019 D20)", async () => {
+    const row = (id: string, action: string, entity_type: string) => ({
+      id,
+      at: "2026-11-09T03:00:00Z",
+      action,
+      entity_type,
+      actor_kind: "user",
+      actor_name: "Quản lý",
+    });
+    server((_method, path) => {
+      if (path === "/api/v1/admin/me") return Response.json(ME);
+      if (path === "/api/v1/admin/tenants") return Response.json([SPA]);
+      if (path === `/api/v1/admin/tenants/${SPA.id}`) return Response.json(SPA);
+      if (path === `/api/v1/admin/tenants/${SPA.id}/features`) return Response.json([]);
+      if (path === `/api/v1/admin/tenants/${SPA.id}/roles`) return Response.json([]);
+      if (path === "/api/v1/admin/permissions") return Response.json([]);
+      if (path.startsWith(`/api/v1/admin/tenants/${SPA.id}/audit`)) {
+        return Response.json({
+          items: [row("a1", "visit.create", "visit"), row("a2", "customer_package.cancel", "customer_package"), row("a3", "future.thing", "gizmo")],
+          next_before: null,
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
+    at(`/admin/spa/${SPA.id}`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Xem nhật ký" }));
+    const trail = await screen.findByRole("table");
+    const rows = await within(trail).findAllByRole("row");
+    expect(rows.slice(1).map((r) => within(r).getAllByRole("cell").slice(1, 3).map((c) => c.textContent))).toEqual([
+      ["Ghi lượt", "Lượt"],
+      ["Hủy gói", "Gói của khách"],
+      ["Thao tác khácfuture.thing", "gizmo"],
+    ]);
+    expect(within(trail).queryByText("visit.create")).not.toBeInTheDocument();
+  });
+
+  it("shows an account search in the platform log with its masked query (ADR-0019 D17)", async () => {
+    server((_method, path) => {
+      if (path === "/api/v1/admin/me") return Response.json(ME);
+      if (path === "/api/v1/admin/tenants") return Response.json([SPA]);
+      if (path.startsWith("/api/v1/admin/audit")) {
+        return Response.json({
+          items: [
+            {
+              id: "p1",
+              at: "2026-11-09T03:00:00Z",
+              operator_id: "o1",
+              operator_username: "ops",
+              action: "platform.account.search",
+              tenant_id: null,
+              target_type: null,
+              target_id: null,
+              detail: { q: "090****", by: "phone", results: 1 },
+              reason: null,
+              ip: null,
+            },
+          ],
+          next_before: null,
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
+    at("/admin/nhat-ky");
+    expect(await screen.findByText("Tìm tài khoản: 090****")).toBeInTheDocument();
+  });
+
   it("caps the create-spa names at the server's 200 characters", async () => {
     spaServer({});
     at("/admin");
