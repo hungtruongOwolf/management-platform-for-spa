@@ -6,11 +6,12 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
-import { useModalDialog } from "../components/useModalDialog";
+import { useBackdropClose, useModalDialog } from "../components/useModalDialog";
 import { can, logout, meQuery } from "../features/auth/session";
 import { longDate } from "../lib/format";
 import { BrandLogo } from "./BrandLogo";
 import { Icon } from "./Icon";
+import { InShell } from "./inShell";
 import { navFor, navKey, tabsFor, type NavGroup, type NavItem } from "./nav";
 
 /** A tab inside a screen links with its search and is active only on exactly that search. */
@@ -111,16 +112,14 @@ export function Modal({
   children: ReactNode;
 }) {
   const ref = useModalDialog(open);
+  const backdrop = useBackdropClose(onClose);
   return (
     <dialog
       ref={ref}
       aria-label={label}
       className={className}
       onClose={onClose}
-      // A click on the backdrop lands on the dialog element itself.
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+      {...backdrop}
     >
       {open && children}
     </dialog>
@@ -244,7 +243,9 @@ export function AppShell() {
 
         <main id="main" className="shell-content">
           <div key={pathname} className={navigated ? "page-enter" : undefined}>
-            <Outlet />
+            <InShell value>
+              <Outlet />
+            </InShell>
           </div>
         </main>
       </div>

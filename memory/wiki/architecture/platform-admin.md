@@ -14,7 +14,7 @@ Spec: [platform-admin](../product/specs/platform-admin.md). Quyết định: [AD
 - `kernel::feature` (registry, dùng chung spa + platform), `kernel::audit::record_platform` (ghi `audit_log` của spa với `actor_kind = 'platform_admin'`).
 - `app` mount `platform::http::routes()` dưới `/api/v1`, lớp rate limit riêng cho `/admin/auth/*`.
 
-## Dữ liệu (migration 0038–0040)
+## Dữ liệu (migration 0038–0041)
 ```sql
 -- 0038 (PR A)
 platform_operator (id uuid PK, username text UNIQUE CHECK (~ '^[a-z0-9][a-z0-9._-]{2,39}$'),
@@ -51,12 +51,16 @@ Tất cả: `SECURITY DEFINER`, `SET search_path = app, pg_temp`, SQL tĩnh, `RE
 | `platform_set_tenant_status(t, tenant, status)` (ghi) | UPDATE `tenant.status`; ngưng ⇒ thu hồi mọi session còn mở có `active_tenant_id` = spa **hoặc** của bất kỳ user nào có membership ở spa đó (kể cả khi user còn làm ở spa khác) | `previous text, revoked int` (không dòng = không có spa) |
 | `platform_set_feature(t, tenant, feature, enabled)` (ghi, PR B) | UPSERT `tenant_feature` | `previous bool` (true khi chưa có dòng) |
 | `platform_apply_role_template(t, key, perms text[])` (ghi, PR C) | thay `role_template_permission` của key; thay `role_permission` của mọi role `is_system AND key AND follows_template`; INSERT `audit_log` mỗi spa bị đổi (`platform_admin`) | `updated_spas int` |
-| `platform_account_memberships(t, users uuid[])` (PR C) | `membership` + `tenant` + role key + có `staff.manage` của những user đó; số chủ spa đang hoạt động khác trong mỗi spa | `user_id, tenant_id, tenant_name, tenant_status, membership_status, role_keys text[], is_owner, other_active_owners` |
+| `platform_account_memberships(t, users uuid[])` (PR C) | `membership` + `tenant` + role key + có `staff.manage` của những user đó; số chủ spa đang hoạt động khác trong mỗi spa | `user_id, tenant_id, tenant_name, tenant_status, membership_status, role_keys text[], is_owner, other_active_owners` (Rust không còn đọc cột cuối từ 0041: rào chắn chủ spa nằm trong `platform_account_action`) |
+| `platform_account_action(t, user, action, password_hash)` (ghi, 0041) | `action` = `lock` / `unlock` / `reset_mfa` / `reset_password` (kèm hash Argon2id của mật khẩu tạm, khác ⇒ 22023) / `revoke_sessions`; mọi action trừ `unlock` thu hồi mọi session của user; `lock`: khóa advisory theo từng spa của user rồi kiểm **rào chắn chủ spa** (chủ spa đang hoạt động cuối cùng của spa đang hoạt động ⇒ `23514`, constraint `platform_owner_floor` → `409 platform.last_owner`) | `revoked bigint` |
+| `platform_set_tenant_role(t, tenant, key, perms text[] \| NULL)` (ghi, 0041) | khóa role hệ thống `key` của spa; thay `role_permission` bằng `perms` (NULL = mẫu hiện tại); `follows_template = perms IS NULL`; không dòng = không có spa / role | `role_id, before text[], after text[]` (sắp theo tên) |
 | `user_spa_suspended(user) → bool` (không token; như `tenants_of_user`) | membership active của user ở spa `suspended` và không spa active nào | bool — chỉ dùng sau khi mật khẩu đã đúng |
 
 Tìm tài khoản (PR C) **không** có hàm definer riêng (bản thiết kế ban đầu có `platform_account_search`, khi build đã bỏ): `user_account` là bảng toàn cục không RLS, nên `platform::accounts` (sau extractor `Operator`) truy vấn thẳng nó (SĐT tiền tố E.164 hoặc `search_fold(full_name) LIKE`, ≤ 50), rồi gọi `platform_account_memberships` cho các id tìm được (sửa theo code 2026-11-09).
 
-Test các hàm nằm trong `app/tests/platform.rs` (`platform_functions_check_the_operator_session_themselves`, `app_rw_cannot_write_flags`, …): hash lạ / session spa / session pending / step-up cũ → 42501, `app_rw` không ghi thẳng được bảng cờ.
+**Mọi thao tác ghi của console đi qua một hàm có `platform_gate(t, true)`** (0041, sau review PR C): trước đó khóa / mở khóa / reset MFA / đặt lại mật khẩu / đăng xuất tài khoản và quyền riêng của một spa là câu ghi `app_rw` thường, step-up chỉ được kiểm ở extractor Rust. Phần ghi vào `audit_log` của spa vẫn là INSERT dưới RLS của spa đó (append-only). `app.purge_sessions` (0035) từ 0041 xóa cả `platform_session` đã hết hạn / thu hồi quá 30 ngày.
+
+Test (`app/tests/platform.rs`, `platform_functions_check_the_operator_session_themselves`): mọi hàm `platform_*` là definer + search_path ghim; `PUBLIC` không execute; `app_rw` execute (trừ `platform_gate`); hash lạ / session spa / session pending / sau logout → 42501. `writes_need_a_recent_step_up` và `account_and_role_writes_check_the_step_up_in_the_database`: step-up cũ → 42501 khi gọi thẳng hàm ghi; rào chắn chủ spa ở DB; `maintenance.rs` `operator_sessions_are_purged_like_spa_sessions`.
 
 ## Auth operator
 - `POST /admin/auth/login {username, password}` → `200 {next: "mfa_enroll" | "mfa_verify"}` + cookie pending. Lỗi: `401 auth.invalid_credentials` (đồng nhất, dummy Argon2), `422`, `429`.
@@ -104,6 +108,7 @@ Test các hàm nằm trong `app/tests/platform.rs` (`platform_functions_check_th
 - **Phiên**: query `GET /admin/me` (`adminKeys.me` trong `admin/api.ts`) quyết định phiên của console; `401` ⇒ `/admin/dang-nhap`. Không đụng `authQuery` của spa (khóa query khác: `["admin", …]`, `QueryClient` riêng).
 - **Step-up** (`admin/StepUp.tsx`): hook `useStepUp()` (trong `StepUpProvider`) bọc mỗi lệnh ghi, bắt `403 platform.step_up_required` → mở `StepUpDialog` (mật khẩu + mã 6 số, `autocomplete="one-time-code"`) → `POST /admin/auth/reauth` → chạy lại đúng request một lần.
 - **Thao tác phá hủy**: `btn-danger-outline` → `ReasonSheet` có ô lý do bắt buộc (≥ 3 ký tự) → `btn-danger`. Mật khẩu tạm: sheet hiện một lần ("Sao chép", "Tôi đã lưu mật khẩu") trong `TenantsPage` (tạo spa) và `AccountsPage` (đặt lại mật khẩu).
+- **Cache sau khi ghi** (review 2026-11): mỗi thao tác ghi gọi `markAuditStale` (`admin/api.ts`): nhật ký nền tảng invalidate bình thường; nhật ký của spa chỉ đánh dấu stale (`refetchType: "none"`, query không refetch khi focus) vì mỗi lần đọc nó ghi một dòng `platform.tenant_audit.read`, nên nó chỉ tải lại khi operator mở lại. Danh sách spa invalidate `exact` (prefix `["admin","tenants"]` sẽ kéo lại cả các panel của spa đang mở). Sheet lý do / step-up xóa chữ và lỗi cũ mỗi lần mở (`useResetOnOpen`); ô tên 200 ký tự, ô lý do 500 (`NAME_MAX`, `REASON_MAX`) vì server trả `required` cho cả trường hợp quá dài.
 - **Trạng thái**: mỗi màn skeleton khi tải, trống ("Chưa có spa nào"), lỗi (problem `code` → thông báo tiếng Việt trong `admin/messages.ts`, không vào `lib/errors.ts`).
 - **Spa (PR B)**: `Me.features`; `hasFeature(me, key)`; nav ẩn "Nhật ký ghi chú" khi `notes_journal` tắt, "Báo cáo kinh doanh" / sổ doanh thu khi `reports` tắt; lịch hẹn / lương / đánh giá / gọi lại tự ẩn vì permission bị rút; màn mở bằng URL khi tính năng tắt → "Không có quyền" (route guard dùng cùng `mayOpen`).
 

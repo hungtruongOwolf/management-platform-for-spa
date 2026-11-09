@@ -110,7 +110,9 @@ pub async fn reset_password(
             code: "account.locked",
         });
     }
-    if login::spa_count(pool, user).await? > 1 {
+    // Any membership elsewhere, even locked or in a suspended spa: unlocked later, the password
+    // would open it (0042).
+    if repo::user_in_other_spa(&mut tx, user.as_uuid()).await? {
         return Err(AppError::Unprocessable {
             code: "account.other_spa",
         });

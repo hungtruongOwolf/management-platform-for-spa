@@ -291,6 +291,16 @@ pub async fn is_active_member(tx: &mut TenantTx, user_id: Uuid) -> Result<bool, 
     .await?)
 }
 
+/// Whether the login has a membership in any spa but this one, whatever its status
+/// (`app.user_in_other_spa`, SECURITY DEFINER: app_rw sees only this spa's memberships).
+pub async fn user_in_other_spa(tx: &mut TenantTx, user_id: Uuid) -> Result<bool, AppError> {
+    Ok(
+        sqlx::query_scalar!(r#"SELECT app.user_in_other_spa($1) AS "other!""#, user_id)
+            .fetch_one(tx.conn())
+            .await?,
+    )
+}
+
 pub struct AccountRow {
     pub user_id: Uuid,
     pub full_name: String,

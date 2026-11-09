@@ -79,8 +79,6 @@ pub enum AppError {
     StaleVersion,
     #[error("bad request: {code}")]
     BadRequest { code: &'static str },
-    #[error("rate limited")]
-    RateLimited,
     #[error("database error")]
     Database(#[from] sqlx::Error),
     #[error("internal error: {0}")]
@@ -124,7 +122,6 @@ impl AppError {
             }
             Self::StaleVersion => StatusCode::PRECONDITION_FAILED,
             Self::BadRequest { .. } => StatusCode::BAD_REQUEST,
-            Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             Self::Database(e) if is_unstorable_text(e) => StatusCode::UNPROCESSABLE_ENTITY,
             Self::Database(_) | Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -149,7 +146,6 @@ impl AppError {
             Self::NotFound => "not_found",
             Self::Validation(_) => "validation_failed",
             Self::StaleVersion => "conflict.stale_version",
-            Self::RateLimited => "rate_limited",
             Self::Database(e) if is_unstorable_text(e) => "validation_failed",
             Self::Database(_) | Self::Internal(_) => "internal_error",
         }

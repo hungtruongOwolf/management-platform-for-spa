@@ -4,7 +4,8 @@
 //!
 //! Every action is one transaction: the account change, the platform audit row and one row in
 //! the audit trail of each spa the account belongs to (`actor_kind = 'platform_admin'`), written
-//! under that spa's RLS scope.
+//! under that spa's RLS scope. The change itself goes through `app.platform_account_action`
+//! (0041), which checks the operator's step-up and the owner floor in the database.
 
 use crate::audit::{self, PlatformEntry};
 use crate::auth::OperatorSession;
@@ -50,7 +51,6 @@ pub struct AccountRow {
 struct Membership {
     user_id: Uuid,
     view: AccountMembership,
-    other_active_owners: i64,
 }
 
 async fn memberships(
@@ -61,8 +61,7 @@ async fn memberships(
     let rows = sqlx::query!(
         r#"SELECT user_id AS "user_id!", tenant_id AS "tenant_id!", tenant_name AS "tenant_name!",
                   tenant_status AS "tenant_status!", membership_status AS "membership_status!",
-                  role_keys AS "role_keys!", is_owner AS "is_owner!",
-                  other_active_owners AS "other_active_owners!"
+                  role_keys AS "role_keys!", is_owner AS "is_owner!"
            FROM app.platform_account_memberships($1, $2)"#,
         &op.token_hash[..],
         users
@@ -74,7 +73,6 @@ async fn memberships(
         .into_iter()
         .map(|r| Membership {
             user_id: r.user_id,
-            other_active_owners: r.other_active_owners,
             view: AccountMembership {
                 tenant_id: r.tenant_id,
                 tenant_name: r.tenant_name,
@@ -168,11 +166,12 @@ pub async fn search(
     Ok(users.into_iter().map(|u| row(u, &spas)).collect())
 }
 
+/// The account, its row locked until the transaction ends (two actions on one account queue).
 async fn load(
     conn: &mut PgConnection,
     op: &OperatorSession,
     id: Uuid,
-) -> Result<(AccountRow, Vec<Membership>), AppError> {
+) -> Result<AccountRow, AppError> {
     let user = sqlx::query_as!(
         UserRow,
         r#"SELECT id, full_name, phone_e164, status, locked_until,
@@ -184,7 +183,7 @@ async fn load(
     .await?
     .ok_or(AppError::NotFound)?;
     let spas = memberships(conn, op, &[id]).await?;
-    Ok((row(user, &spas), spas))
+    Ok(row(user, &spas))
 }
 
 /// What an account action did, for both audit trails.
@@ -245,14 +244,67 @@ async fn audit_everywhere(
     .await
 }
 
-async fn end_sessions(conn: &mut PgConnection, user: Uuid) -> Result<i64, AppError> {
-    let done = sqlx::query!(
-        "UPDATE app.session SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL",
-        user
+/// What `app.platform_account_action` does to the account (its `p_action`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Change<'a> {
+    Lock,
+    Unlock,
+    ResetMfa,
+    RevokeSessions,
+    /// The Argon2id hash of the temporary password.
+    ResetPassword(&'a str),
+}
+
+impl<'a> Change<'a> {
+    const fn key(self) -> &'static str {
+        match self {
+            Self::Lock => "lock",
+            Self::Unlock => "unlock",
+            Self::ResetMfa => "reset_mfa",
+            Self::RevokeSessions => "revoke_sessions",
+            Self::ResetPassword(_) => "reset_password",
+        }
+    }
+
+    fn password_hash(self) -> Option<&'a str> {
+        match self {
+            Self::ResetPassword(hash) => Some(hash),
+            _ => None,
+        }
+    }
+}
+
+/// The account change, in the database (0041): refused without a recent step-up (gate refusal,
+/// `401`) and, for a lock, when the account is the last active owner of an active spa
+/// (`409 platform.last_owner`, ADR-0018 D5: suspend the spa first). Returns the sessions ended.
+async fn apply(
+    conn: &mut PgConnection,
+    op: &OperatorSession,
+    id: Uuid,
+    change: Change<'_>,
+) -> Result<i64, AppError> {
+    sqlx::query_scalar!(
+        r#"SELECT app.platform_account_action($1, $2, $3, $4) AS "revoked!""#,
+        &op.token_hash[..],
+        id,
+        change.key(),
+        change.password_hash()
     )
-    .execute(conn)
-    .await?;
-    Ok(i64::try_from(done.rows_affected()).unwrap_or(i64::MAX))
+    .fetch_one(conn)
+    .await
+    .map_err(|e| {
+        let owner_floor = e
+            .as_database_error()
+            .and_then(sqlx::error::DatabaseError::constraint)
+            == Some("platform_owner_floor");
+        if owner_floor {
+            AppError::Conflict {
+                code: "platform.last_owner",
+            }
+        } else {
+            gate_refusal(e)
+        }
+    })
 }
 
 /// The action an operator takes on an account.
@@ -262,6 +314,46 @@ pub enum AccountAction {
     Unlock,
     ResetMfa,
     RevokeSessions,
+}
+
+impl AccountAction {
+    const fn change(self) -> Change<'static> {
+        match self {
+            Self::Lock => Change::Lock,
+            Self::Unlock => Change::Unlock,
+            Self::ResetMfa => Change::ResetMfa,
+            Self::RevokeSessions => Change::RevokeSessions,
+        }
+    }
+
+    /// `(platform audit action, spa audit action)`.
+    const fn audit_actions(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Lock => ("platform.account.lock", "account.locked_by_platform"),
+            Self::Unlock => ("platform.account.unlock", "account.unlocked_by_platform"),
+            Self::ResetMfa => (
+                "platform.account.reset_mfa",
+                "account.mfa_reset_by_platform",
+            ),
+            Self::RevokeSessions => (
+                "platform.account.revoke_sessions",
+                "account.sessions_revoked_by_platform",
+            ),
+        }
+    }
+
+    /// The `409` when the action would change nothing.
+    fn unchanged(self, account: &AccountRow) -> Option<AppError> {
+        let code = match self {
+            Self::Lock if account.status == "disabled" => "account.status_unchanged",
+            Self::Unlock if account.status == "active" && account.locked_until.is_none() => {
+                "account.status_unchanged"
+            }
+            Self::ResetMfa if !account.mfa_enabled => "account.mfa_not_enabled",
+            _ => return None,
+        };
+        Some(AppError::Conflict { code })
+    }
 }
 
 /// Body of `POST /admin/accounts/{id}/revoke-sessions`.
@@ -281,82 +373,12 @@ pub async fn act(
 ) -> Result<SessionsRevoked, AppError> {
     let reason = reason.checked()?;
     let mut tx = pool.begin().await?;
-    let (account, spas) = load(&mut tx, op, id).await?;
-    let (platform_action, spa_action, revoked) = match action {
-        AccountAction::Lock => {
-            if account.status == "disabled" {
-                return Err(AppError::Conflict {
-                    code: "account.status_unchanged",
-                });
-            }
-            // At least one owner per active spa (ADR-0018 D5): suspend the spa first.
-            if spas.iter().any(|m| {
-                m.view.is_owner
-                    && m.view.status == "active"
-                    && m.view.tenant_status == "active"
-                    && m.other_active_owners == 0
-            }) {
-                return Err(AppError::Conflict {
-                    code: "platform.last_owner",
-                });
-            }
-            sqlx::query!(
-                "UPDATE app.user_account SET status = 'disabled', updated_at = now() WHERE id = $1",
-                id
-            )
-            .execute(&mut *tx)
-            .await?;
-            (
-                "platform.account.lock",
-                "account.locked_by_platform",
-                end_sessions(&mut tx, id).await?,
-            )
-        }
-        AccountAction::Unlock => {
-            if account.status == "active" && account.locked_until.is_none() {
-                return Err(AppError::Conflict {
-                    code: "account.status_unchanged",
-                });
-            }
-            sqlx::query!(
-                "UPDATE app.user_account
-                 SET status = 'active', failed_logins = 0, locked_until = NULL, updated_at = now()
-                 WHERE id = $1",
-                id
-            )
-            .execute(&mut *tx)
-            .await?;
-            ("platform.account.unlock", "account.unlocked_by_platform", 0)
-        }
-        AccountAction::ResetMfa => {
-            if !account.mfa_enabled {
-                return Err(AppError::Conflict {
-                    code: "account.mfa_not_enabled",
-                });
-            }
-            sqlx::query!(
-                "UPDATE app.user_account
-                 SET mfa_secret_ct = NULL, mfa_enabled_at = NULL, mfa_last_step = NULL, updated_at = now()
-                 WHERE id = $1",
-                id
-            )
-            .execute(&mut *tx)
-            .await?;
-            sqlx::query!("DELETE FROM app.mfa_recovery_code WHERE user_id = $1", id)
-                .execute(&mut *tx)
-                .await?;
-            (
-                "platform.account.reset_mfa",
-                "account.mfa_reset_by_platform",
-                end_sessions(&mut tx, id).await?,
-            )
-        }
-        AccountAction::RevokeSessions => (
-            "platform.account.revoke_sessions",
-            "account.sessions_revoked_by_platform",
-            end_sessions(&mut tx, id).await?,
-        ),
-    };
+    let account = load(&mut tx, op, id).await?;
+    if let Some(conflict) = action.unchanged(&account) {
+        return Err(conflict);
+    }
+    let revoked = apply(&mut tx, op, id, action.change()).await?;
+    let (platform_action, spa_action) = action.audit_actions();
     audit_everywhere(
         &mut tx,
         op,
@@ -369,7 +391,7 @@ pub async fn act(
         },
     )
     .await?;
-    let (account, _) = load(&mut tx, op, id).await?;
+    let account = load(&mut tx, op, id).await?;
     tx.commit().await?;
     Ok(SessionsRevoked { revoked, account })
 }
@@ -394,23 +416,13 @@ pub async fn reset_password(
     let temporary = TemporaryPassword::generate().map_err(|e| AppError::Internal(e.to_string()))?;
     let hashed = identity::account::hash("temporary_password", temporary.expose()).await?;
     let mut tx = pool.begin().await?;
-    let (account, _) = load(&mut tx, op, id).await?;
+    let account = load(&mut tx, op, id).await?;
     if account.status == "disabled" {
         return Err(AppError::Conflict {
             code: "account.locked",
         });
     }
-    sqlx::query!(
-        "UPDATE app.user_account
-         SET password_hash = $2, must_change_password = true, failed_logins = 0, locked_until = NULL,
-             updated_at = now()
-         WHERE id = $1",
-        id,
-        hashed
-    )
-    .execute(&mut *tx)
-    .await?;
-    let revoked = end_sessions(&mut tx, id).await?;
+    let revoked = apply(&mut tx, op, id, Change::ResetPassword(&hashed)).await?;
     audit_everywhere(
         &mut tx,
         op,
@@ -423,7 +435,7 @@ pub async fn reset_password(
         },
     )
     .await?;
-    let (account, _) = load(&mut tx, op, id).await?;
+    let account = load(&mut tx, op, id).await?;
     tx.commit().await?;
     Ok(PasswordReset {
         temporary_password: temporary.expose().to_owned(),

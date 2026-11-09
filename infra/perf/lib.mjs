@@ -36,9 +36,9 @@ export function required(env, key) {
   return value;
 }
 
-/** Origin under test: PERF_ORIGIN, default the staging deployment. */
+/** Origin under test: PERF_ORIGIN (e.g. in .env.staging). No default: deployment URLs stay out of the public repo. */
 export function origin(env) {
-  return env.PERF_ORIGIN ?? "https://vien-phuc-y-duong.vercel.app";
+  return required(env, "PERF_ORIGIN");
 }
 
 /** Spa "today" (Asia/Ho_Chi_Minh, UTC+7) as YYYY-MM-DD. */
