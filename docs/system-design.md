@@ -25,7 +25,7 @@ flowchart TB
   end
   subgraph Supabase["Supabase (us-west-2)"]
     pooler["Supavisor session pooler"]
-    db[("Postgres 16<br/>schema app, RLS theo tenant")]
+    db[("Postgres 17<br/>schema app, RLS theo tenant")]
   end
   spa -- "HTTPS, cookie __Host-session" --> edge
   admin -- "HTTPS, cookie __Host-op-session" --> edge
@@ -149,12 +149,12 @@ flowchart LR
 
 | Môi trường | Ở đâu | Ghi chú |
 |---|---|---|
-| Local dev | Postgres 16 trong Docker (`infra/docker-compose.dev.yml`), API `127.0.0.1:8080`, Vite `localhost:5173` proxy `/api` | Xem [README](../README.md#chạy-local) |
+| Local dev | Postgres 16 trong Docker (CI cũng 16; Supabase staging chạy 17) (`infra/docker-compose.dev.yml`), API `127.0.0.1:8080`, Vite `localhost:5173` proxy `/api` | Xem [README](../README.md#chạy-local) |
 | Staging (đang chạy) | Vercel project, region **`pdx1`**; Supabase **`us-west-2`** qua Supavisor **session mode** (prepared statements của sqlx cần session mode) | `APP_DB_MAX_CONNECTIONS=3` mỗi instance; instance scale về 0 khi rảnh nên có cold start. Runbook: [vercel-staging](../memory/wiki/runbooks/vercel-staging.md). Staging ở Mỹ vì EM test từ Mỹ ([ADR-0012 update](../memory/wiki/decisions/ADR-0012-colocate-api-db-singapore.md)) |
-| Production (kế hoạch) | API + DB cùng Singapore (Supabase `ap-southeast-1`, Vercel `sin1` hoặc VPS) | [ADR-0012](../memory/wiki/decisions/ADR-0012-colocate-api-db-singapore.md) (proposed), [ADR-0002](../memory/wiki/decisions/ADR-0002-database-hosting.md). Trước khi dùng thật: Supabase Pro (backup), Vercel Pro |
-| Đường VPS dự phòng | Docker Compose + Caddy (`infra/docker-compose.prod.yml`, `infra/Caddyfile`, `.github/workflows/deploy.yml` chạy tay) | Thiết kế gốc của [ADR-0005](../memory/wiki/decisions/ADR-0005-compute-hosting.md), runbook [staging-setup](../memory/wiki/runbooks/staging-setup.md); hiện không dùng |
+| Production (kế hoạch) | API + DB cùng Singapore (Supabase `ap-southeast-1`; API trên Vercel `sin1`, Fly.io `sin` luôn chạy, hoặc VPS — chưa chọn) | [ADR-0012](../memory/wiki/decisions/ADR-0012-colocate-api-db-singapore.md) (proposed), [ADR-0002](../memory/wiki/decisions/ADR-0002-database-hosting.md). Trước khi dùng thật: Supabase Pro (backup), Vercel Pro |
+| Đường VPS dự phòng | Docker Compose + Caddy (`infra/docker-compose.prod.yml`, `infra/Caddyfile`, `.github/workflows/deploy.yml` chạy tay) | Thiết kế gốc của [ADR-0005](../memory/wiki/decisions/ADR-0005-compute-hosting.md), runbook [staging-setup](../memory/wiki/runbooks/staging-setup.md) (đã đánh dấu superseded cho staging); hiện không có VPS nào chạy |
 
-**CI và merge.** `.github/workflows/ci.yml` phân loại file thay đổi rồi chạy job tương ứng: Rust fmt/clippy, test Rust chia shard (nextest), build API + kiểm contract OpenAPI, web lint/typecheck/test, E2E Playwright chia theo thời gian, perf (API p95 + Lighthouse), images, gitleaks; job `CI ok` gom kết quả. Repo private trên GitHub Free nên không có branch protection: **`scripts/merge-when-green.sh <pr>` là cổng merge**. Khi GitHub Actions tắt có `scripts/merge-local-gate.sh` ([local-merge-gate](../memory/wiki/runbooks/local-merge-gate.md)). Chi tiết job graph: [testing](../memory/wiki/conventions/testing.md).
+**CI và merge.** `.github/workflows/ci.yml` phân loại file thay đổi rồi chạy job tương ứng: Rust fmt/clippy, test Rust chia shard (nextest), build API + kiểm contract OpenAPI, web lint/typecheck/test, E2E Playwright chia theo thời gian, perf (API p95 + Lighthouse), images, gitleaks; job `CI ok` gom kết quả. Nhánh `main` chưa bật branch protection, nên **`scripts/merge-when-green.sh <pr>` là cổng merge** (chỉ merge khi `CI ok` xanh). Khi GitHub Actions không chạy được thì dùng `scripts/merge-local-gate.sh` ([local-merge-gate](../memory/wiki/runbooks/local-merge-gate.md)). Chi tiết job graph: [testing](../memory/wiki/conventions/testing.md).
 
 **Migration** chạy bằng role owner (`DATABASE_URL`, `pnpm db:migrate`) **trước** khi deploy code mới; runtime không bao giờ kết nối bằng owner.
 
@@ -167,14 +167,14 @@ Không có cron ngoài. `app::jobs::spawn_maintenance` ([`jobs.rs`](../apps/api/
 | `purge` | 55 phút | `app.purge_idempotency_records('48 hours')`; `app.purge_sessions('30 days')`: xóa session đã thu hồi / hết hạn quá 30 ngày (tối thiểu hóa IP + user agent, EM Q-DB4) |
 | `invariants` | 23 giờ | `app.invariant_violations()`: 11 phép kiểm bản sao dữ liệu trên mọi spa, **chỉ trả số đếm** (không dữ liệu khách). Có dòng lệch → log `ERROR data invariant violated` để hosting log alert |
 
-11 phép kiểm: `sale_amount_paid`, `payment_branch`, `visit_sale_link`, `voided_visit_open_sale`, `sessions_remaining`, `cancelled_package_sessions`, `package_sale_copy`, `staff_mirrors_employment`, `customer_search_text`, `business_date_local_day`, `appointment_visit_customer` (định nghĩa ở migration 0035, bản chạy tay `infra/perf/db/invariants.sql`). Cả ba hàm là `SECURITY DEFINER`, nên `app_rw` không cần quyền `DELETE` trên `session` hay `BYPASSRLS`. `audit_log` **không có hạn giữ** (EM Q-DB4).
+11 phép kiểm: `sale_amount_paid`, `payment_branch`, `visit_sale_link`, `voided_visit_open_sale`, `sessions_remaining`, `cancelled_package_sessions`, `package_sale_copy`, `staff_mirrors_employment`, `customer_search_text`, `business_date_local_day`, `appointment_visit_customer` (định nghĩa ở migration 0035, bản chạy tay `infra/perf/db/invariants.sql`). Cả bốn hàm (`claim_maintenance`, `purge_idempotency_records`, `purge_sessions`, `invariant_violations`) là `SECURITY DEFINER`, nên `app_rw` không cần quyền `DELETE` trên `session` hay `BYPASSRLS`. `audit_log` **không có hạn giữ** (EM Q-DB4).
 
 ## 6. Hiệu năng (performance budgets)
 
 | Ngân sách | Giá trị | Kiểm bằng |
 |---|---|---|
 | JS khởi động (entry + modulepreload, gzip -9) | ≤ 125 KB (hiện ~124,7 KB) | Đo khi build, ghi trong [frontend § Perf budget](../memory/wiki/architecture/frontend.md) |
-| LCP mobile (Slow 4G, CPU 4×) `/dang-nhap`, `/quay` | ≤ 2,5 s (median-run) | Lighthouse CI chặn merge ([`lighthouserc.json`](../apps/web/lighthouserc.json)) |
+| LCP mobile (Slow 4G, CPU 4×) `/dang-nhap`, `/quay` | ≤ 2,5 s (trung vị 5 lần) | Lighthouse CI chặn merge ([`lighthouserc.json`](../apps/web/lighthouserc.json)) |
 | CLS / accessibility | ≤ 0,1 / ≥ 0,95 | Lighthouse CI |
 | API p95 tìm khách + catalog | < 300 ms | `apps/web/e2e/perf/api-latency.spec.ts` |
 | Báo cáo trên 3 năm dữ liệu | p95 ≤ 300 ms; báo cáo 3–5 năm của chủ spa ≤ 1,5 s | `app/tests/reports_bench.rs` (`--ignored`) |
@@ -185,7 +185,7 @@ Không có cron ngoài. `app::jobs::spawn_maintenance` ([`jobs.rs`](../apps/api/
 
 ## 7. Frontend tóm tắt
 
-- `apps/web`: SPA React + Vite, **TanStack Router** (route + loader + trạng thái danh sách trên URL, [ADR-0007](../memory/wiki/decisions/ADR-0007-navigation-and-url-state.md)) và **TanStack Query** (cache server state, invalidation theo query key). Form dùng react-hook-form + zod, lỗi `422` map vào field theo `errors[].pointer`.
+- `apps/web`: SPA React + Vite, **TanStack Router** (route + loader + trạng thái danh sách trên URL, [ADR-0007](../memory/wiki/decisions/ADR-0007-navigation-and-url-state.md)) và **TanStack Query** (cache server state, invalidation theo query key). Form khách hàng, dịch vụ và mẫu gói dùng react-hook-form + zod; các form khác dùng state thường + `useFormAction`. Lỗi `422` map vào field theo `errors[].field` (`ApiError.fieldCode`).
 - Điều hướng một mô hình (`app/nav.ts`) cấp cho sidebar, drawer điện thoại, tab bar và command palette, lọc theo permission của `/me` (chỉ là UX).
 - Console nền tảng `/admin` là **ứng dụng con riêng** trong `src/admin/`: `main.tsx` chỉ `import("./admin/boot")` khi pathname bắt đầu bằng `/admin`, nên bundle của spa không đổi. Console có `QueryClient` riêng và điều hướng đơn giản bằng History API (không dùng router thứ hai).
 - Design system "Trà thất Đông y": token màu/chữ/khoảng cách, component class dùng chung (`packages/ui`, `components.css`), test chặn màu ngoài token ([design-system](../memory/wiki/design/design-system.md)).

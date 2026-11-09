@@ -51,10 +51,10 @@ EM ([raw](../../raw/2026-11-07-em-decisions-hr-notes-group-region.md) câu 6): "
   - B thêm một vendor, một bí mật (header origin) và một bước deploy (`fly deploy`).
   - Vercel rewrite tôn trọng cache upstream, nên API **phải** gửi `Cache-Control: private, no-store` (hoặc `private, no-cache` + ETag) trên mọi response.
 - Follow-ups:
-  - Thêm layer `Cache-Control` mặc định cho API (secure).
+  - Thêm layer `Cache-Control` mặc định cho API (secure). **Đã làm (2026-11-07):** mọi response API có `Cache-Control: private, no-store` (`apps/api/crates/app/src/lib.rs`).
   - Cập nhật runbook [vercel-staging](../runbooks/vercel-staging.md) và CSP/`APP_PUBLIC_ORIGIN` nếu cần.
   - Chạy lại script đo + Globalping và ghi số trước/sau.
-  - Job purge idempotency chạy theo lịch thay vì chỉ lúc khởi động, vì server sống lâu.
+  - Job purge idempotency chạy theo lịch thay vì chỉ lúc khởi động, vì server sống lâu. **Đã làm (0035):** `app.claim_maintenance` cho purge chạy mỗi 55 phút và kiểm tra bất biến mỗi 23 giờ, chung cho mọi instance (`apps/api/crates/app/src/jobs.rs`).
   - Rate limit trong bộ nhớ chính xác hơn khi chỉ có một instance.
 
 ## Revisit when

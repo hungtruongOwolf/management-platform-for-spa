@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT coalesce(sum(l.qty), 0)::bigint AS \"sessions!\",\n                  coalesce(sum(l.line_value), 0)::bigint AS \"value!\"\n           FROM app.visit_line l\n           JOIN app.visit v ON v.tenant_id = l.tenant_id AND v.id = l.visit_id\n           WHERE l.tenant_id = $1 AND l.customer_package_item_id = $2 AND v.status = 'completed'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sessions!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "value!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "3d92beb358ad9a44a8ba8fa11d9a4548b2cedea769c2372d8715274e852d01a0"
+}

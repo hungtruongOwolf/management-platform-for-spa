@@ -3,12 +3,15 @@ name: CI
 # Job graph (memory/wiki/conventions/testing.md §5):
 #   changes ─┬─ rust-lint                       fmt, clippy, doctests, cargo-deny      (scope full)
 #            ├─ rust-test-build ── rust-test×3  nextest archive once, 3 shards        (scope full)
-#            ├─ api-build ─┬─ e2e×2             Playwright desktop project, 2 shards  (scope web|full)
+#            ├─ api-build ─┬─ e2e×3             Playwright desktop project, 3 shards  (scope web|full)
 #            │             └─ perf              API p95 + Lighthouse CI               (scope web|full)
 #            ├─ web, images                                                           (scope web|full)
 #   secrets (always)
 #   ci-ok: the one status to require — fails if any job failed or was cancelled; skipped is fine.
 # Scope comes from scripts/ci-changes.sh (same path buckets as the local gate); pushes to main run everything.
+# Runners are pinned to ubuntu-24.04: `ubuntu-latest` moves to 26.04 from 2026-10-19, and the e2e/perf
+# Playwright cache-hit path relies on the 24.04 image's Chrome libraries. Move deliberately, all at once.
+# Actions are pinned by commit SHA (comment = release); all run on Node 24.
 
 on:
   pull_request:
@@ -34,18 +37,18 @@ env:
 jobs:
   changes:
     name: Changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       scope: ${{ steps.scope.outputs.scope }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           sparse-checkout: scripts
       - name: Classifier self-test
         run: |
           bash scripts/ci-changes.test.sh
-          if [ -f scripts/gate-lib.test.sh ]; then bash scripts/gate-lib.test.sh; fi
+          bash scripts/gate-lib.test.sh
       - id: scope
         name: Decide scope
         env:
@@ -74,13 +77,13 @@ jobs:
     name: Rust lint (fmt, clippy, doctests, deny)
     needs: changes
     if: needs.changes.outputs.scope == 'full'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
         working-directory: apps/api
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
@@ -102,13 +105,13 @@ jobs:
     name: Rust tests (build)
     needs: changes
     if: needs.changes.outputs.scope == 'full'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
         working-directory: apps/api
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
@@ -121,7 +124,7 @@ jobs:
           tool: cargo-nextest@0.9
       - name: Build every test binary once
         run: cargo nextest archive --workspace --archive-file "$RUNNER_TEMP/nextest-archive.tar.zst"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: nextest-archive
           path: ${{ runner.temp }}/nextest-archive.tar.zst
@@ -131,7 +134,7 @@ jobs:
   rust-test:
     name: Rust tests (shard ${{ matrix.partition }}/3)
     needs: rust-test-build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -139,7 +142,7 @@ jobs:
         partition: [1, 2, 3]
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: vpyd
           POSTGRES_PASSWORD: vpyd_ci_password
@@ -157,13 +160,13 @@ jobs:
         working-directory: apps/api
     steps:
       # Sources are needed at run time: authz_matrix.rs reads the router files.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Create runtime role app_rw
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ../../infra/postgres-init/01-roles.sql
       - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: cargo-nextest@0.9
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: nextest-archive
           path: ${{ runner.temp }}/nextest
@@ -178,10 +181,10 @@ jobs:
     name: API binary + OpenAPI contract
     needs: changes
     if: needs.changes.outputs.scope != 'docs'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
@@ -191,7 +194,7 @@ jobs:
         working-directory: apps/api
         run: echo "key=api-bin-v1-debug${CARGO_PROFILE_DEV_DEBUG}-$(rustc --version | sha256sum | cut -c1-12)-${{ hashFiles('apps/api/**') }}" >> "$GITHUB_OUTPUT"
       - id: bin
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: apps/api/target/debug/app
           key: ${{ steps.key.outputs.key }}
@@ -204,30 +207,30 @@ jobs:
         if: steps.bin.outputs.cache-hit != 'true'
         run: cargo build --manifest-path apps/api/Cargo.toml -p app
       - if: steps.bin.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: apps/api/target/debug/app
           key: ${{ steps.key.outputs.key }}
       - name: OpenAPI contract is up to date
         run: apps/api/target/debug/app openapi | diff -u apps/api/openapi.json -
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: api-bin
           path: apps/api/target/debug/app
           retention-days: 1
 
   e2e:
-    name: E2E + a11y (shard ${{ matrix.shard }}/2)
+    name: E2E + a11y (shard ${{ matrix.shard }}/3)
     needs: api-build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: vpyd
           POSTGRES_PASSWORD: vpyd_ci_password
@@ -242,16 +245,16 @@ jobs:
       E2E_DATABASE_URL: postgres://vpyd:vpyd_ci_password@localhost:5432/vpyd_e2e
       E2E_APP_DATABASE_URL: postgres://app_rw:app_rw_dev_password@localhost:5432/vpyd_e2e
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Create runtime role app_rw
         run: psql "$E2E_DATABASE_URL" -v ON_ERROR_STOP=1 -f infra/postgres-init/01-roles.sql
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: api-bin
           path: apps/api/target/debug
       - run: chmod +x apps/api/target/debug/app
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
           cache: pnpm
@@ -260,7 +263,7 @@ jobs:
         name: Playwright version
         run: echo "version=$(pnpm --filter web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       - id: pw-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
@@ -272,13 +275,13 @@ jobs:
       # (a missing library fails the browser launch loudly, it cannot pass silently).
       # Each shard provisions its own spa (setup project) on its own Postgres. Specs are split by
       # measured duration (e2e/shard.mjs): Playwright's --shard splits by test count per file.
-      - name: E2E and axe (shard ${{ matrix.shard }}/2)
+      - name: E2E and axe (shard ${{ matrix.shard }}/3)
         run: |
-          specs=$(cd apps/web && node e2e/shard.mjs ${{ matrix.shard }} 2)
+          specs=$(cd apps/web && node e2e/shard.mjs ${{ matrix.shard }} 3)
           echo "specs: $specs"
           # shellcheck disable=SC2086 # one argument per spec
           pnpm e2e --project=desktop --reporter=list,github,html e2e/setup/ $specs
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: failure()
         with:
           name: playwright-report-${{ matrix.shard }}
@@ -290,11 +293,11 @@ jobs:
   perf:
     name: API p95 + Lighthouse CI
     needs: api-build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: vpyd
           POSTGRES_PASSWORD: vpyd_ci_password
@@ -309,16 +312,16 @@ jobs:
       E2E_DATABASE_URL: postgres://vpyd:vpyd_ci_password@localhost:5432/vpyd_e2e
       E2E_APP_DATABASE_URL: postgres://app_rw:app_rw_dev_password@localhost:5432/vpyd_e2e
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Create runtime role app_rw
         run: psql "$E2E_DATABASE_URL" -v ON_ERROR_STOP=1 -f infra/postgres-init/01-roles.sql
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: api-bin
           path: apps/api/target/debug
       - run: chmod +x apps/api/target/debug/app
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
           cache: pnpm
@@ -327,7 +330,7 @@ jobs:
         name: Playwright version
         run: echo "version=$(pnpm --filter web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       - id: pw-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
@@ -339,9 +342,10 @@ jobs:
       # seeds 300 customers and 100 visits, so /quay is audited with data on it, as before.
       - name: API p95
         run: pnpm e2e --project=perf
+      # Median of 5 runs per URL (lighthouserc.json): the first run on a cold API is often the slowest.
       - name: Lighthouse CI (LCP < 2.5 s)
         run: pnpm lhci
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: failure()
         with:
           name: perf-failure-report
@@ -350,7 +354,7 @@ jobs:
             apps/web/test-results
             apps/web/lighthouse-report
           retention-days: 14
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: success()
         with:
           name: perf-report
@@ -363,12 +367,12 @@ jobs:
     name: Web (TypeScript)
     needs: changes
     if: needs.changes.outputs.scope != 'docs'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
           cache: pnpm
@@ -385,25 +389,25 @@ jobs:
     name: Docker images (build only)
     needs: changes
     if: needs.changes.outputs.scope != 'docs'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Production compose file is valid
         run: |
           # Fill every empty variable of the documented example with a dummy value, then let compose parse it.
           sed -E 's/^([A-Z0-9_]+)=[[:space:]]*(#.*)?$/\1=x/' infra/.env.production.example > /tmp/ci.env
           docker compose --env-file /tmp/ci.env -f infra/docker-compose.prod.yml --profile ops --profile drill config -q
       - name: API image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: apps/api
           push: false
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
       - name: Web image (Caddy + SPA)
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: infra/Caddy.Dockerfile
@@ -411,7 +415,7 @@ jobs:
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
       - name: Backup image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: infra/backup
           push: false
@@ -420,13 +424,13 @@ jobs:
 
   secrets:
     name: Secret scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -434,7 +438,7 @@ jobs:
     name: CI ok
     if: always()
     needs: [changes, rust-lint, rust-test-build, rust-test, api-build, e2e, perf, web, images, secrets]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Every job that ran passed (skipped by scope is fine)

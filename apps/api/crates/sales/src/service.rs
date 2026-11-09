@@ -519,11 +519,6 @@ impl PricedPackageSale {
             .iter()
             .any(|p| p.items.iter().any(|i| i.service_id == service_id))
     }
-
-    /// Names of the plans sold, for audit and reasons ("Chuyển sang gói …").
-    pub fn plan_names(&self) -> Vec<&str> {
-        self.plans.iter().map(|p| p.name.as_str()).collect()
-    }
 }
 
 fn discount_error(e: DiscountError) -> AppError {
@@ -1314,7 +1309,7 @@ pub async fn record_service_sale(
     }))
 }
 
-// Payments of several sales, read inside the caller's transaction (`sale_id → payments`, oldest
+/// Payments of several sales, read inside the caller's transaction (`sale_id → payments`, oldest
 /// first). The caller authorizes.
 pub async fn payments_of(
     tx: &mut TenantTx,

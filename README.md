@@ -2,7 +2,7 @@
 
 Nền tảng vận hành cho spa dưỡng sinh đông y, thay cho các sổ giấy đang dùng ở quầy: **nhập một lần, mọi sổ tự sinh**. Quầy ghi lượt khách, bán và trừ buổi gói liệu trình, thu tiền; từ đó hệ thống tự ra sổ doanh thu, báo cáo, lịch sử khách, công và lương nhân viên. Thiết kế đa spa (multi-tenant) từ đầu, chạy thật cho một spa, có console để operator bán cho nhiều spa.
 
-- Stack: Rust (Axum, SQLx) + PostgreSQL 16 có RLS · React + Vite + TanStack Router/Query · Vercel + Supabase.
+- Stack: Rust (Axum, SQLx) + PostgreSQL có RLS (16 ở local/CI, 17 trên Supabase) · React + Vite + TanStack Router/Query · Vercel + Supabase.
 - Kiến thức dự án (spec, ADR, thiết kế, nhật ký) nằm trong wiki [`memory/`](memory/README.md), bắt đầu từ [`memory/index.md`](memory/index.md). Quy tắc làm việc cho agent: [`CLAUDE.md`](CLAUDE.md).
 
 ## Tài liệu
@@ -96,7 +96,7 @@ pnpm check                  # cargo fmt/clippy/test + lint + typecheck + test fr
 pnpm e2e                    # Playwright: tự dựng API :8091 + web :5181 trên DB riêng vpyd_e2e (tạo DB một lần, xem testing.md)
 pnpm lhci                   # Lighthouse: LCP ≤ 2,5 s cho /dang-nhap và /quay
 ```
-CI (`.github/workflows/ci.yml`) chạy các bước trên theo phạm vi file thay đổi, cộng `cargo deny`, `pnpm audit`, gitleaks, E2E chia shard, perf (API p95 + Lighthouse). Repo private không có branch protection, nên merge bằng `bash scripts/merge-when-green.sh <pr>`: script chỉ merge khi mọi check đã xanh. Khi GitHub Actions tắt: `scripts/merge-local-gate.sh` ([local-merge-gate](memory/wiki/runbooks/local-merge-gate.md)). Quy ước test: [testing](memory/wiki/conventions/testing.md).
+CI (`.github/workflows/ci.yml`) chạy các bước trên theo phạm vi file thay đổi, cộng `cargo deny`, `pnpm audit`, gitleaks, E2E chia shard, perf (API p95 + Lighthouse). Nhánh `main` chưa bật branch protection, nên merge bằng `bash scripts/merge-when-green.sh <pr>`: script chỉ merge khi mọi check đã xanh. Khi GitHub Actions tắt: `scripts/merge-local-gate.sh` ([local-merge-gate](memory/wiki/runbooks/local-merge-gate.md)). Quy ước test: [testing](memory/wiki/conventions/testing.md).
 
 ## Triển khai
 Staging chạy trên Vercel (web tĩnh + API container, region `pdx1`) với Supabase `us-west-2` qua session pooler. Migration chạy trước khi deploy; deploy bằng `npx vercel deploy --prod`. Biến môi trường, bootstrap DB và kiểm tra sau deploy: [vercel-staging](memory/wiki/runbooks/vercel-staging.md). Production dự kiến đặt API + DB cùng Singapore ([ADR-0012](memory/wiki/decisions/ADR-0012-colocate-api-db-singapore.md)). Không bao giờ đưa secret, URL DB hay mật khẩu vào git hoặc tài liệu.

@@ -17,7 +17,7 @@ The API reports its own time in every response (except `/auth/*`):
 
 ## Database review scripts (`db/`)
 
-Evidence for `memory/wiki/architecture/db-review-2026-11.md`. Docker + psql in the `postgres:16-alpine` image, Python ≥ 3.10 for the generator. No cargo build needed.
+Evidence for `memory/wiki/architecture/db-review-2026-11.md`. Docker + psql in the `postgres:17-alpine` image (the staging major), Python ≥ 3.10 for the generator. No cargo build needed.
 
 | Script | Does | Where |
 |---|---|---|
