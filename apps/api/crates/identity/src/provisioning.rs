@@ -1,10 +1,11 @@
-//! Platform provisioning (CLI only, schema-owner connection — runs outside tenant RLS, like an
-//! operator action): create a spa with its default branch and system roles, add users to it.
+//! Platform provisioning from the CLI (schema-owner connection — runs outside tenant RLS): create
+//! a spa with its default branch and system roles, add users to it, clear a lockout or an
+//! authenticator. [`seed_spa`] is shared with the platform console's "Tạo spa".
 
 use crate::password;
 use crate::roles::SystemRole;
 use kernel::{AppError, FieldError, PhoneE164, TenantId, UserId};
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 pub async fn create_tenant(
@@ -37,14 +38,29 @@ pub async fn create_tenant(
             _ => AppError::Database(e),
         }
     })?;
+    seed_spa(&mut tx, tenant, branch_name).await?;
+    tx.commit().await?;
+    Ok(tenant)
+}
+
+/// What every new spa starts with, in the caller's transaction (the CLI's schema-owner one, or
+/// the console's `TenantTx` of the new spa): its default branch and the three system roles, their
+/// grants copied from the role templates the platform operator edits (ADR-0018 D5, 0040).
+/// Returns the owner role's id.
+pub async fn seed_spa(
+    conn: &mut PgConnection,
+    tenant: TenantId,
+    branch_name: &str,
+) -> Result<Uuid, AppError> {
     sqlx::query!(
         "INSERT INTO app.branch (id, tenant_id, name) VALUES ($1, $2, $3)",
         Uuid::now_v7(),
         tenant.as_uuid(),
         branch_name
     )
-    .execute(&mut *tx)
+    .execute(&mut *conn)
     .await?;
+    let mut owner_role = None;
     for role in SystemRole::ALL {
         let role_id = Uuid::now_v7();
         sqlx::query!(
@@ -55,9 +71,8 @@ pub async fn create_tenant(
             role.display_name(),
             role.requires_mfa()
         )
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
-        // The role templates the platform operator edits (ADR-0018 D5, migration 0040).
         sqlx::query!(
             "INSERT INTO app.role_permission (tenant_id, role_id, permission)
              SELECT $1, $2, permission FROM app.role_template_permission WHERE role_key = $3",
@@ -65,11 +80,13 @@ pub async fn create_tenant(
             role_id,
             role.key()
         )
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
+        if role == SystemRole::Owner {
+            owner_role = Some(role_id);
+        }
     }
-    tx.commit().await?;
-    Ok(tenant)
+    owner_role.ok_or(AppError::Internal("no owner role".to_owned()))
 }
 
 pub struct NewUser<'a> {

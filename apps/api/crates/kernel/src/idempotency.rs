@@ -44,19 +44,10 @@ pub fn hash_route(method: &str, route: &str, record: Option<Uuid>, body: &[u8]) 
     hasher.finalize().into()
 }
 
-/// Body-only fingerprint (kernel tests). Endpoints use [`hash_route`], which also binds method and route.
+/// Body-only fingerprint, for callers that are not an HTTP route: operator tooling (`seed-demo`,
+/// `import-paper-book`) and tests. Endpoints use [`hash_route`], which also binds method and route.
 pub fn hash_request(body: &[u8]) -> [u8; 32] {
     Sha256::digest(body).into()
-}
-
-/// Hash of a request acting on one record (`POST /visits/{id}/void`, …): the record id is part
-/// of it, so a key reused on another record is a mismatch (422), never a replay of the first.
-/// Endpoints use [`hash_route`], which also binds method and route.
-pub fn hash_request_on(record: Uuid, body: &[u8]) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(record.as_bytes());
-    hasher.update(body);
-    hasher.finalize().into()
 }
 
 pub async fn claim(
@@ -148,13 +139,6 @@ mod tests {
     fn hash_is_stable_and_body_sensitive() {
         assert_eq!(hash_request(b"{\"a\":1}"), hash_request(b"{\"a\":1}"));
         assert_ne!(hash_request(b"{\"a\":1}"), hash_request(b"{\"a\":2}"));
-    }
-
-    #[test]
-    fn record_hash_binds_the_record() {
-        let (a, b) = (Uuid::now_v7(), Uuid::now_v7());
-        assert_eq!(hash_request_on(a, b"{}"), hash_request_on(a, b"{}"));
-        assert_ne!(hash_request_on(a, b"{}"), hash_request_on(b, b"{}"));
     }
 
     #[test]

@@ -378,7 +378,7 @@ pub async fn resolve_with_access(
 
 /// The caller of a business route: a fully authenticated session (as [`resolve`]) acting in its
 /// active spa with that spa's permissions — one statement for all of it (db review A3,
-/// ADR-0017). Same refusals, in the same order, as `resolve` followed by [`actor_for`].
+/// ADR-0017): `auth.no_active_tenant`, then `auth.not_a_member` (or a suspended spa).
 pub async fn authenticate(
     pool: &PgPool,
     secret: &str,
@@ -670,10 +670,6 @@ pub async fn switch_tenant(
     Ok((token, me))
 }
 
-pub async fn me(pool: &PgPool, session: &Session) -> Result<Me, AppError> {
-    build_me(pool, session, None, None).await
-}
-
 /// `GET /me` with the session's permissions already read by [`resolve_with_access`]: no second
 /// permission transaction (db review A3).
 pub async fn me_with_access(
@@ -754,8 +750,9 @@ async fn tenant_access(
 }
 
 /// Permissions of `user` in `tenant` from their roles; `None` = not an active member of an active
-/// spa. Requests get them through [`actor_for`]; operator tooling (`app seed-demo`) acts as a
-/// named member with exactly these, so audit and permission checks stay truthful.
+/// spa. Requests get them through [`authenticate`]; operator tooling (`app seed-demo`,
+/// `app import-paper-book`) acts as a named member with exactly these, so audit and permission
+/// checks stay truthful.
 pub async fn tenant_permissions(
     pool: &PgPool,
     user: UserId,
@@ -765,25 +762,6 @@ pub async fn tenant_permissions(
     let permissions = repo::member_permissions(&mut tx, user).await?;
     tx.commit().await?;
     Ok(permissions)
-}
-
-/// The authorization subject for a request: requires an active spa and an active membership in it.
-pub async fn actor_for(
-    pool: &PgPool,
-    session: &Session,
-    ip: Option<IpAddr>,
-) -> Result<Actor, AppError> {
-    let tenant = session.active_tenant.ok_or(AppError::Forbidden {
-        code: "auth.no_active_tenant",
-    })?;
-    let mut tx = TenantTx::begin(pool, tenant).await?;
-    let access = repo::member_access(&mut tx, session.user_id).await?;
-    tx.commit().await?;
-    let access = access.ok_or(AppError::Forbidden {
-        code: "auth.not_a_member",
-    })?;
-    // The spa settings ride along, so the request's own transactions skip re-reading them.
-    Ok(actor_with(session.user_id, tenant, access, ip))
 }
 
 /// `POST /auth/password` (ADR-0016): the signed-in person replaces their own password — the
