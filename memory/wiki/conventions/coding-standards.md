@@ -37,7 +37,7 @@ Single source of truth for code quality. `build` and `pr-review` skills apply ev
 - Server state via the framework (Server Components) or TanStack Query; client state minimal and local.
 - Components: one responsibility, props typed, every async UI has loading / empty / error / success states.
 - Styling through design tokens only; raw hex colors and magic pixel values live in the token layer.
-- ESLint + Prettier + `tsc --noEmit` clean.
+- ESLint + `tsc --noEmit` clean (`pnpm lint`, `pnpm typecheck`; CI enforces both). No formatter is enforced: Prettier was listed but never configured or run (≈150 of 213 web files differ from its output), and was removed 2026-11-09; adopting one means a one-time reformat PR plus a CI check.
 - Accessibility: semantic HTML first, keyboard reachable, visible focus, `prefers-reduced-motion` respected.
 
 ## Git
