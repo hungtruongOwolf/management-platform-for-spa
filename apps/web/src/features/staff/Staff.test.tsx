@@ -359,6 +359,8 @@ interface ServeOptions {
   adjustmentRefused?: { field: string; code: string };
   /** Overrides of `GET /payroll` (an ended month, close blockers, leaver refunds). */
   payroll?: Partial<PayrollMonth>;
+  /** `PUT /payroll/rules` answers 412: someone saved the rules since they were read. */
+  rulesStale?: boolean;
 }
 
 /** A scorecard as `GET /evaluations` / `/me/staff` send it. */
@@ -537,8 +539,9 @@ function serve(permissions: string[], options: ServeOptions = {}) {
         payRefused.left -= 1;
         return ok({ code: "validation_failed", errors: [{ field: "base_salary", code: "out_of_range" }] }, 422);
       }
-      return ok({});
+      return ok({ base_salary: 6_000_000, commission_rate_bp: 500, loyalty_bonus_monthly: 0, meal_allowance: 0, version: 1 });
     }
+    if (p === "/payroll/rules" && method === "PUT" && options.rulesStale) return ok({ code: "conflict.stale_version" }, 412);
     if (p === "/staff" && method === "POST") {
       hired.version = 1;
       return ok({ ...roster(true)[1], id: "s-new", full_name: "Võ Thị Ngọc", version: hired.version }, 201);
@@ -1394,6 +1397,20 @@ describe("Hồ sơ nhân viên (roster)", () => {
     ]);
     // The update carries the version the create answered, not a stale one.
     expect(new Headers(writes[2]?.init?.headers).get("If-Match")).toBe('"1"');
+    // Pay terms are optimistic too (ADR-0019 D10): "0" = none yet, both times (the first was refused).
+    expect(new Headers(writes[1]?.init?.headers).get("If-Match")).toBe('"0"');
+    expect(new Headers(writes[3]?.init?.headers).get("If-Match")).toBe('"0"');
+  });
+
+  it("owner: rules are saved at the version read; a save over someone else's asks to reopen (ADR-0019 D10)", async () => {
+    const spy = serve(OWNER, { rulesStale: true });
+    at("/nhan-vien?tab=payroll");
+    await userEvent.click(await screen.findByRole("button", { name: "Quy tắc lương" }));
+    const sheet = await screen.findByRole("dialog", { name: "Quy tắc lương của spa" });
+    await userEvent.click(await within(sheet).findByRole("button", { name: "Lưu quy tắc" }));
+    expect(await within(sheet).findByText(/Quy tắc vừa được lưu ở máy khác/)).toBeInTheDocument();
+    const i = requests(spy).findIndex((r) => r.url.endsWith("/payroll/rules") && r.method === "PUT");
+    expect(new Headers(spy.mock.calls[i]?.[1]?.headers).get("If-Match")).toBe('"1"');
   });
 
   it("owner: ends employment with a last day and a reason, confirmed", async () => {

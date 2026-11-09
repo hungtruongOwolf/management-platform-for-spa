@@ -155,10 +155,12 @@ pub async fn get(pool: &PgPool, actor: &Actor) -> Result<(PayrollRules, i64), Ap
     Ok(rules)
 }
 
-/// `PUT /payroll/rules` (`payroll.close`). Applies to every month not yet closed.
+/// `PUT /payroll/rules` (`payroll.close`, `If-Match`: the version read, `0` = never saved;
+/// `412` when someone saved in between — ADR-0019 D10). Applies to every month not yet closed.
 pub async fn put(
     pool: &PgPool,
     actor: &Actor,
+    version: i64,
     rules: &PayrollRules,
 ) -> Result<(PayrollRules, i64), AppError> {
     actor.require(Permission::PayrollClose)?;
@@ -166,7 +168,9 @@ pub async fn put(
     let mut tx = TenantTx::for_actor(pool, actor).await?;
     let (before, _) = load(&mut tx).await?;
     let value = serde_json::to_value(rules).map_err(|e| AppError::Internal(e.to_string()))?;
-    let version = repo::put_rules(&mut tx, &value, actor.user_id.as_uuid()).await?;
+    let version = repo::put_rules(&mut tx, &value, actor.user_id.as_uuid(), version)
+        .await?
+        .ok_or(AppError::StaleVersion)?;
     audit::record(
         &mut tx,
         actor,

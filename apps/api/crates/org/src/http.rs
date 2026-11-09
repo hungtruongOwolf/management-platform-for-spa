@@ -16,7 +16,7 @@ use axum::{Json, Router};
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use identity::AuthUser;
 use identity::account::LoginRole;
-use kernel::http::{IfMatch, etag};
+use kernel::http::{IfMatch, IfMatchOrNew, etag};
 use kernel::{AppError, FieldError};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -103,6 +103,8 @@ pub struct StaffPayDto {
     pub commission_rate_bp: i32,
     pub loyalty_bonus_monthly: i64,
     pub meal_allowance: i64,
+    /// Send as `If-Match` on `PUT /staff/{id}/pay` (ADR-0019 D10; `0` while no terms exist).
+    pub version: i64,
 }
 
 impl From<PayTerms> for StaffPayDto {
@@ -112,6 +114,7 @@ impl From<PayTerms> for StaffPayDto {
             commission_rate_bp: p.commission_rate_bp,
             loyalty_bonus_monthly: p.loyalty_bonus_monthly,
             meal_allowance: p.meal_allowance,
+            version: p.version,
         }
     }
 }
@@ -620,17 +623,21 @@ pub async fn staff_history(
 
 #[utoipa::path(put, path = "/api/v1/staff/{id}/pay", tag = "staff", params(("id" = Uuid, Path)),
     request_body = StaffPayWrite,
-    responses((status = 200, body = StaffPayDto), (status = 401), (status = 403), (status = 404), (status = 422)))]
+    responses((status = 200, body = StaffPayDto), (status = 400, description = "precondition.if_match_required | precondition.if_match_invalid: If-Match is the terms' version, \"0\" when none exist yet"),
+              (status = 401), (status = 403), (status = 404),
+              (status = 412, description = "conflict.stale_version: the terms changed since they were read"), (status = 422)))]
 pub async fn set_staff_pay(
     State(pool): State<PgPool>,
     user: AuthUser,
     Path(id): Path<Uuid>,
+    IfMatchOrNew(version): IfMatchOrNew,
     Json(body): Json<StaffPayWrite>,
 ) -> Result<Response, AppError> {
     let terms = profile::set_pay(
         &pool,
         &user.actor,
         id,
+        version,
         &PayInput {
             base_salary: body.base_salary,
             commission_rate_bp: body.commission_rate_bp,
@@ -639,11 +646,9 @@ pub async fn set_staff_pay(
         },
     )
     .await?;
-    Ok(no_store(
-        StatusCode::OK,
-        HeaderMap::new(),
-        StaffPayDto::from(terms),
-    ))
+    let mut h = HeaderMap::new();
+    h.insert(header::ETAG, etag(terms.version));
+    Ok(no_store(StatusCode::OK, h, StaffPayDto::from(terms)))
 }
 
 #[utoipa::path(get, path = "/api/v1/staff/accounts", tag = "staff",

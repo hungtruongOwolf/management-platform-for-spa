@@ -750,22 +750,29 @@ pub async fn rehire(
     Ok(after)
 }
 
-/// `PUT /staff/{id}/pay` (`staff.manage` + `payroll.read`: whoever sets a salary sees it).
-/// Takes effect for every month not yet closed; closed payslips keep the terms they used.
+/// `PUT /staff/{id}/pay` (`staff.manage` + `payroll.read`: whoever sets a salary sees it;
+/// `If-Match`: the terms' version, `0` when the person has none yet — ADR-0019 D10). Takes
+/// effect for every month not yet closed; closed payslips keep the terms they used.
 pub async fn set_pay(
     pool: &PgPool,
     actor: &Actor,
     id: Uuid,
+    version: i64,
     input: &PayInput,
 ) -> Result<PayTerms, AppError> {
     actor.require(Permission::StaffManage)?;
     actor.require(Permission::PayrollRead)?;
     validate_pay(input)?;
     let mut tx = TenantTx::for_actor(pool, actor).await?;
+    // The profile row lock serializes writers of this person's terms, so the check below holds
+    // until commit.
     repo::profile(&mut tx, id, true)
         .await?
         .ok_or(AppError::NotFound)?;
     let before = repo::pay_for_update(&mut tx, id).await?;
+    if before.as_ref().map_or(0, |b| b.version) != version {
+        return Err(AppError::StaleVersion);
+    }
     repo::upsert_pay(
         &mut tx,
         &PayRow {

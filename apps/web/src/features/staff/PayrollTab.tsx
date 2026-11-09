@@ -403,7 +403,7 @@ function RulesSheet({ onClose }: { onClose: () => void }) {
   const query = useQuery(rulesQuery);
   return (
     <BottomSheet open wide onClose={onClose} title="Quy tắc lương của spa" description="Áp dụng cho các tháng chưa chốt">
-      {query.isPending ? <RowsSkeleton rows={4} /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : <RulesForm initial={query.data.rules} onDone={onClose} />}
+      {query.isPending ? <RowsSkeleton rows={4} /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : <RulesForm initial={query.data.rules} version={query.data.version} onDone={onClose} />}
     </BottomSheet>
   );
 }
@@ -417,16 +417,28 @@ const RULE_MAX_LABEL: Record<BoundedRule, string> = {
   late_penalty_amount: `Tối đa ${vnd(RULE_MAX.late_penalty_amount)}.`,
 };
 
-function RulesForm({ initial, onDone }: { initial: PayrollRules; onDone: () => void }) {
+/**
+ * `version` is what the form was read at: saving over someone else's later save is refused
+ * (`412`, ADR-0019 D10) and the form asks to reopen it, so neither save is lost silently.
+ */
+function RulesForm({ initial, version, onDone }: { initial: PayrollRules; version: number; onDone: () => void }) {
   const queryClient = useQueryClient();
   const [r, setR] = useState(initial);
+  // The version these values were read at, fixed while the form is open: a refetch behind it
+  // must not turn the next save into an overwrite of someone else's.
+  const [readAt] = useState(version);
   const save = useMutation({
-    mutationFn: () => saveRules(r),
+    mutationFn: () => saveRules(r, readAt),
     onSuccess: async () => {
       await invalidateStaff(queryClient);
       onDone();
     },
+    // Reopening then shows the newer rules (and their version) at once.
+    onError: async (error) => {
+      if (error instanceof ApiError && error.code === "conflict.stale_version") await invalidateStaff(queryClient);
+    },
   });
+  const stale = save.error instanceof ApiError && save.error.code === "conflict.stale_version";
   const kFree = r.free_leave_codes.includes("absent_k");
   const num = (v: string) => Number(v.replace(/\D/g, "") || "0");
   const tooHigh = (Object.keys(RULE_MAX) as BoundedRule[]).filter((f) => r[f] > RULE_MAX[f]);
@@ -498,7 +510,7 @@ function RulesForm({ initial, onDone }: { initial: PayrollRules; onDone: () => v
       </label>
       {save.isError && (
         <p role="alert" className="text-sm text-danger">
-          {messageFor(save.error)}
+          {stale ? "Quy tắc vừa được lưu ở máy khác. Đóng rồi mở lại “Quy tắc lương” để xem bản mới nhất, rồi sửa lại." : messageFor(save.error)}
         </p>
       )}
       <div className="flex justify-end">

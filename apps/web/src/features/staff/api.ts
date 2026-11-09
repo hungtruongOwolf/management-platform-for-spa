@@ -54,6 +54,7 @@ export type StaffProfileWrite = Schemas["StaffProfileWrite"];
 export type StaffCreate = Schemas["StaffCreate"];
 export type StaffHistoryEntry = Schemas["StaffHistoryEntryDto"];
 export type StaffPayWrite = Schemas["StaffPayWrite"];
+export type StaffPay = Schemas["StaffPayDto"];
 export type StaffAccount = Schemas["StaffAccountDto"];
 export type AttendanceSheet = Schemas["AttendanceSheet"];
 export type StaffSheet = Schemas["StaffSheet"];
@@ -237,8 +238,9 @@ export async function closePayroll(month: string, allowIncomplete: boolean, key:
   })) as PayrollMonth;
 }
 
-export async function saveRules(rules: PayrollRules): Promise<PayrollRulesDto> {
-  return (await api("/payroll/rules", { method: "PUT", body: rules })) as PayrollRulesDto;
+/** `version`: as read from `GET /payroll/rules`, 0 when never saved (ADR-0019 D10: 412 if stale). */
+export async function saveRules(rules: PayrollRules, version: number): Promise<PayrollRulesDto> {
+  return (await api("/payroll/rules", { method: "PUT", body: rules, headers: ifMatch(version) })) as PayrollRulesDto;
 }
 
 export async function createProfile(body: StaffCreate): Promise<StaffProfile> {
@@ -277,8 +279,9 @@ export async function rehire(id: string, version: number, startedOn: string): Pr
   return (await api(`/staff/${id}/rehire`, { method: "POST", body: { started_on: startedOn }, headers: ifMatch(version) })) as StaffProfile;
 }
 
-export async function savePay(id: string, body: StaffPayWrite): Promise<unknown> {
-  return api(`/staff/${id}/pay`, { method: "PUT", body });
+/** `version`: the terms' version as read, 0 when the person has none yet (ADR-0019 D10: 412 if stale). */
+export async function savePay(id: string, version: number, body: StaffPayWrite): Promise<StaffPay> {
+  return (await api(`/staff/${id}/pay`, { method: "PUT", body, headers: ifMatch(version) })) as StaffPay;
 }
 
 // ------------------------------------------------------------- logins (ADR-0016, spec §17)
