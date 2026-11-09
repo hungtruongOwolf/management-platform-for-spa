@@ -49,7 +49,7 @@ export function MfaPage({ step, next }: { step: MfaStep; next?: string | undefin
     setAuthState(queryClient, { state: "signed_in", me });
     // An owner created with a temporary password (platform console, ADR-0018) passes MFA first
     // and must then set their own password: the server refuses the session until then, so ask it.
-    const auth = await queryClient.fetchQuery({ ...authQuery, staleTime: 0 }).catch(() => null);
+    const auth = await queryClient.query({ ...authQuery, staleTime: 0 }).catch(() => null);
     await navigate({ to: auth?.state === "password_change" ? "/doi-mat-khau" : safeNextPath(next) });
   };
   const restart = async () => {
