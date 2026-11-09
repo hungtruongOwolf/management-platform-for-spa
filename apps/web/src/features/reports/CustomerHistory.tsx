@@ -178,11 +178,14 @@ function EventBody({ e }: { e: HistoryEvent }) {
     );
   }
   if (e.cancellation) {
-
+    // A refund goes back to who paid (ADR-0019 D6): the payer sees it; the user sees who paid.
+    const c = e.cancellation;
     return (
       <p className="mt-1 text-sm">
-        {e.cancellation.package_name} · {e.cancellation.reason}
-        {e.cancellation.refund && <span className="text-text-muted"> · hoàn {money(e.cancellation.refund.amount)}</span>}
+        {c.package_name} · {c.reason}
+        {c.beneficiary_name && <span className="text-text-muted"> · gói của {c.beneficiary_name}</span>}
+        {c.payer_name && <span className="text-text-muted"> · {c.payer_name} mua tặng</span>}
+        {c.refund && <span className="text-text-muted"> · hoàn {money(c.refund.amount)}</span>}
       </p>
     );
   }

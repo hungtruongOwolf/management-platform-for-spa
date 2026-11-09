@@ -49,6 +49,14 @@ export const LONG_RANGE_PRESETS: readonly Preset[] = ["3y", "5y"];
  */
 export const MAX_RANGE_DAYS = 732;
 
+/** With `report.long_range` (owner): five (leap) years by month or year, the API's own limit (ADR-0019 D20). */
+export const MAX_LONG_RANGE_DAYS = 5 * 366;
+
+/** Longest custom range this caller may ask for, and how the picker says it. */
+export function rangeLimit(longRange: boolean): { days: number; label: string } {
+  return longRange ? { days: MAX_LONG_RANGE_DAYS, label: "5 năm" } : { days: MAX_RANGE_DAYS, label: "2 năm" };
+}
+
 const DAY_MS = 86_400_000;
 
 function toDate(iso: string): Date {
@@ -124,7 +132,12 @@ function sameLengthBefore(from: string, to: string) {
  * Resolves a preset (or a custom `from`/`to`) on the spa's `today`. Invalid custom input
  * (missing, reversed, future) falls back to the last 7 days so a hand-edited URL never breaks.
  */
-export function resolvePeriod(preset: Preset, today: string, custom?: { from?: string; to?: string }): Period {
+export function resolvePeriod(
+  preset: Preset,
+  today: string,
+  custom?: { from?: string; to?: string },
+  maxDays: number = MAX_RANGE_DAYS,
+): Period {
   const [y, m, d] = ymd(today);
   switch (preset) {
     case "today":
@@ -221,7 +234,7 @@ export function resolvePeriod(preset: Preset, today: string, custom?: { from?: s
       const valid = (s: string | undefined): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s) && s <= today;
       const from = custom?.from;
       const to = custom?.to;
-      if (!valid(from) || !valid(to) || from > to || daysBetween(from, to) > MAX_RANGE_DAYS) {
+      if (!valid(from) || !valid(to) || from > to || daysBetween(from, to) > maxDays) {
         return { ...resolvePeriod("7d", today), preset: "custom" };
       }
       return {

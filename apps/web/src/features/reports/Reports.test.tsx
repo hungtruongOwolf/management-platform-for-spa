@@ -10,7 +10,7 @@ import { isoToDmy } from "../../components/DateField";
 import { spaToday } from "../../lib/format";
 import { addDays, compactVnd, packagesPath, relativeDay } from "./api";
 import { niceTicks } from "./LineChart";
-import { daysBetween, rangeLabel, resolvePeriod } from "./period";
+import { daysBetween, rangeLabel, rangeLimit, resolvePeriod } from "./period";
 import { inactiveSearch, reportsSearch } from "./search";
 import { mockDaily, mockRange } from "./fixtures";
 import { displayPhone } from "./PackagesOverviewPage";
@@ -202,6 +202,26 @@ describe("/bao-cao", () => {
     expect(urls(spy).some((u) => u.includes("/reports/ledger"))).toBe(false);
   });
 
+  it("lets the owner pick a custom range up to the API's 5 years; others up to 2 (ADR-0019 D20)", async () => {
+    // 4 years back: past the 2-year limit of the others, within the owner's 5 (by year).
+    const from = addDays(today, -4 * 365);
+    const path = `/bao-cao?period=custom&from=${from}&to=${today}`;
+    const owner = serveManagement({ permissions: [...MANAGER, "report.long_range"] });
+    at(path);
+    await waitFor(() => {
+      expect(urls(owner)).toContain(`/api/v1/reports/range?from=${from}&to=${today}&granularity=year`);
+    });
+    cleanup();
+    owner.mockRestore();
+    const manager = serveManagement({ permissions: MANAGER });
+    at(path);
+    // Too long for a manager: the screen falls back to the last 7 days instead of a 422.
+    await waitFor(() => {
+      expect(urls(manager)).toContain(`/api/v1/reports/range?from=${addDays(today, -6)}&to=${today}&granularity=day`);
+    });
+    expect(urls(manager).some((u) => u.includes(`from=${from}`))).toBe(false);
+  });
+
   it("stops at 92 days, from and to included, like the API (93 is refused there)", async () => {
     const spy = serveManagement({ permissions: MANAGER });
     // 2026-08-01 … 2026-10-31 is 92 days; one more day is too long.
@@ -230,6 +250,11 @@ describe("report periods", () => {
     expect(resolvePeriod("custom", "2026-11-05", { from: "2026-10-01", to: "2026-11-05" })).toMatchObject({ bucket: "week", previous: { from: "2026-08-26", to: "2026-09-30" } });
     // A broken or future custom range falls back to 7 days instead of breaking the screen.
     expect(resolvePeriod("custom", "2026-11-05", { from: "2026-11-09", to: "2026-11-01" })).toMatchObject({ from: "2026-10-30", to: "2026-11-05" });
+    // Longer than 2 years: only within the owner's limit (rangeLimit(true)), by year.
+    expect(resolvePeriod("custom", "2026-11-05", { from: "2022-11-06", to: "2026-11-05" })).toMatchObject({ from: "2026-10-30" });
+    expect(resolvePeriod("custom", "2026-11-05", { from: "2022-11-06", to: "2026-11-05" }, rangeLimit(true).days)).toMatchObject({ from: "2022-11-06", bucket: "year" });
+    expect(rangeLimit(true)).toEqual({ days: 1830, label: "5 năm" });
+    expect(rangeLimit(false)).toEqual({ days: 732, label: "2 năm" });
     expect(daysBetween("2026-01-01", "2026-12-31")).toBe(365);
     expect(rangeLabel("2026-10-30", "2026-11-05")).toBe("30/10 – 05/11/2026");
     expect(rangeLabel("2025-12-30", "2026-01-02")).toBe("30/12/2025 – 02/01/2026");

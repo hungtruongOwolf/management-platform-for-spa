@@ -7636,7 +7636,8 @@
           },
           "refunded": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "Money given back to this customer for packages they paid for, including packages they\nbought for someone else (ADR-0019 D6: a refund goes to the payer)."
           },
           "sessions_remaining": {
             "type": "integer",
@@ -8582,18 +8583,33 @@
       },
       "HistoryCancellation": {
         "type": "object",
+        "description": "A package cancelled (US7). Its `refund` is on the payer's timeline only (ADR-0019 D6): a\npackage bought for someone else is refunded to who paid, so its user's timeline shows none.",
         "required": [
           "customer_package_id",
           "package_name",
           "reason"
         ],
         "properties": {
+          "beneficiary_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Bought for someone else: who the package belonged to. Null on its user's own timeline."
+          },
           "customer_package_id": {
             "type": "string",
             "format": "uuid"
           },
           "package_name": {
             "type": "string"
+          },
+          "payer_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Bought by someone else for this customer: who paid (and got any refund). Null on the\npayer's own timeline."
           },
           "reason": {
             "type": "string"
@@ -13991,7 +14007,8 @@
               "string",
               "null"
             ],
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Null = paper-book packages without a plan, one row per package name."
           },
           "revenue": {
             "type": [
@@ -13999,7 +14016,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Sum of their prices after discount; only with `report.revenue.read`."
+            "description": "What was actually paid for them (price after discount; a paper-book package's paid\namount), minus what was refunded since (ADR-0019 D7); only with `report.revenue.read`."
           },
           "sold": {
             "type": "integer",
