@@ -44,13 +44,13 @@ deciders: lead (EM ủy quyền: "cứ đúng nhất mà làm")
 - **D7. Báo cáo kỳ:**
   - Gói từ sổ cũ không có mẫu được gom theo tên gói.
   - Doanh thu dùng **số tiền thực trả**, không dùng giá niêm yết.
-  - Gói bị hoàn sau đó tính theo số ròng: số bán trừ số hoàn.
+  - Gói bị hoàn sau đó tính theo số ròng: số bán trừ số hoàn. Cụ thể (lead 2026-11-09): doanh thu trừ số tiền đã hoàn; gói **hoàn toàn bộ** không còn được đếm vào "đã bán" (cả xếp hạng gói lẫn tổng `packages_sold`), gói hoàn một phần vẫn đếm.
 - **D8. "Sửa lượt":**
   - Giữ gói đã bán trong checkout gốc, cả trên lượt mới và lịch hẹn.
   - Giữ **giá gốc** của các dòng; không tính lại theo bảng giá hôm nay.
   - Thêm dòng vào một ngày đã qua thì ghi tiền vào ngày đó (giữ như hiện tại). Ngày đã khóa thì vẫn theo quy tắc khóa ngày.
-  - Đổi KTV của một dòng trong tháng đã chốt lương: từ chối với `409 payroll.month_closed`.
-  - Đổi sang gói: giảm giá đã có từ trước giữ nguyên, không kiểm lại theo hạn mức của người đổi. Chỉ phần giảm giá **mới** bị kiểm.
+  - Đổi KTV của một dòng trong tháng đã chốt lương: từ chối với `409 payroll.period_closed` (mã đã dùng sẵn trong code và web cho tháng đã chốt; lead 2026-11-09 giữ mã này thay cho `payroll.month_closed` ghi lúc đầu).
+  - Đổi sang gói: giảm giá đã có từ trước giữ nguyên, không kiểm lại theo hạn mức của người đổi. Chỉ phần giảm giá **mới** bị kiểm. Ngoại lệ này **chỉ** áp cho "Chuyển sang gói"; "Sửa lượt" thường vẫn kiểm toàn bộ giảm giá theo hạn mức của người sửa.
   - `discount_reason` hiện đủ lý do của mọi hóa đơn.
 - **D9.** `PATCH /sales/{id}` với `{}` không được xóa ghi chú gói. Thiếu trường nghĩa là giữ nguyên; muốn xóa phải gửi `null` rõ ràng.
 - **D10.** Thêm optimistic lock (`If-Match`, version) cho `PUT /staff/{id}/pay`, `PUT /payroll/rules` và `PATCH /sales/{id}`, web gửi kèm version.

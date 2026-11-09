@@ -206,10 +206,16 @@ impl Books {
         }
 
         for r in sqlx::query!(
+            // ADR-0019 D7: a package refunded in full since does not count as sold.
             r#"SELECT date_trunc($3, s.business_date::timestamp)::date AS "bucket!",
-                      count(*) AS "sold!"
+                      count(*) FILTER (WHERE NOT (m.refunded > 0 AND m.refunded >= m.paid)) AS "sold!"
                FROM app.sale s
                JOIN app.customer_package cp ON cp.tenant_id = s.tenant_id AND cp.sale_id = s.id
+               CROSS JOIN LATERAL (
+                 SELECT CASE WHEN s.source = 'paper_book' THEN s.amount_paid ELSE cp.sold_price END AS paid,
+                        coalesce((SELECT sum(r.amount) FROM app.refund r
+                                  WHERE r.tenant_id = cp.tenant_id AND r.customer_package_id = cp.id), 0)::bigint AS refunded
+               ) m
                WHERE s.tenant_id = $1 AND s.business_date BETWEEN $2 AND $4 AND s.status = 'open'
                GROUP BY 1"#,
             tenant,
@@ -478,16 +484,23 @@ pub async fn range(
 
     // ADR-0019 D7: a paper-book package without a plan is its own row (by name, not one "no plan"
     // row); revenue is what was paid for it (the paper amount, or the price after discount), net
-    // of any refund since.
+    // of any refund since; a package refunded in full since does not count as sold (a row left
+    // with nothing sold and no money is dropped).
     let top_packages = sqlx::query!(
-        r#"SELECT cp.plan_id, min(cp.name_snapshot) AS "name!", count(*) AS "sold!",
-                  coalesce(sum(CASE WHEN s.source = 'paper_book' THEN s.amount_paid ELSE cp.sold_price END
-                               - coalesce(r.amount, 0)), 0)::bigint AS "revenue!"
+        r#"SELECT cp.plan_id, min(cp.name_snapshot) AS "name!",
+                  count(*) FILTER (WHERE NOT (m.refunded > 0 AND m.refunded >= m.paid)) AS "sold!",
+                  coalesce(sum(m.paid - m.refunded), 0)::bigint AS "revenue!"
            FROM app.sale s
            JOIN app.customer_package cp ON cp.tenant_id = s.tenant_id AND cp.sale_id = s.id
-           LEFT JOIN app.refund r ON r.tenant_id = cp.tenant_id AND r.customer_package_id = cp.id
+           CROSS JOIN LATERAL (
+             SELECT CASE WHEN s.source = 'paper_book' THEN s.amount_paid ELSE cp.sold_price END AS paid,
+                    coalesce((SELECT sum(r.amount) FROM app.refund r
+                              WHERE r.tenant_id = cp.tenant_id AND r.customer_package_id = cp.id), 0)::bigint AS refunded
+           ) m
            WHERE s.tenant_id = $1 AND s.business_date BETWEEN $2 AND $3 AND s.status = 'open'
            GROUP BY cp.plan_id, CASE WHEN cp.plan_id IS NULL THEN cp.name_snapshot END
+           HAVING count(*) FILTER (WHERE NOT (m.refunded > 0 AND m.refunded >= m.paid)) > 0
+               OR sum(m.paid - m.refunded) <> 0
            ORDER BY 3 DESC, 2, cp.plan_id
            LIMIT $4"#,
         tenant,

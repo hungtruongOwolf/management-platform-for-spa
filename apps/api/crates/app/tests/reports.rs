@@ -1544,6 +1544,13 @@ async fn the_range_report_ranks_packages_by_what_was_paid_net_of_refunds(
         .unwrap_or_default()
         .to_owned();
     s.cancel(&package, 500_000, "cash").await;
+    // Refunded in full: not sold at all (lead 2026-11-09 on D7, red before: sold 3).
+    let returned = s.sell(lan, 0, "cash", None).await?;
+    let returned = returned["customer_packages"][0]["id"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    s.cancel(&returned, PLAN_PRICE, "cash").await;
 
     let range = s
         .get(&s.owner, &format!("/reports/range?from={day}&to={day}"))
@@ -1559,6 +1566,11 @@ async fn the_range_report_ranks_packages_by_what_was_paid_net_of_refunds(
         ]),
         "{}",
         range.body["top_packages"]
+    );
+    assert_eq!(
+        range.body["totals"]["packages_sold"],
+        json!(4),
+        "the headline count is net of the package refunded in full, like the ranking"
     );
     Ok(())
 }

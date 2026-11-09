@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT date_trunc($3, s.business_date::timestamp)::date AS \"bucket!\",\n                      count(*) FILTER (WHERE NOT (m.refunded > 0 AND m.refunded >= m.paid)) AS \"sold!\"\n               FROM app.sale s\n               JOIN app.customer_package cp ON cp.tenant_id = s.tenant_id AND cp.sale_id = s.id\n               CROSS JOIN LATERAL (\n                 SELECT CASE WHEN s.source = 'paper_book' THEN s.amount_paid ELSE cp.sold_price END AS paid,\n                        coalesce((SELECT sum(r.amount) FROM app.refund r\n                                  WHERE r.tenant_id = cp.tenant_id AND r.customer_package_id = cp.id), 0)::bigint AS refunded\n               ) m\n               WHERE s.tenant_id = $1 AND s.business_date BETWEEN $2 AND $4 AND s.status = 'open'\n               GROUP BY 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bucket!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "sold!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Text",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "5b7db86d58a0459cec0328df4b9740e31caef7aaec71ac6107960ec8cd4f09c0"
+}
