@@ -9,7 +9,7 @@ use chrono::{DateTime, Datelike, Duration, Months, NaiveDate, TimeZone, Utc};
 use chrono_tz::Asia::Ho_Chi_Minh;
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
-    session_for,
+    post_customer, session_for,
 };
 use identity::SystemRole;
 use identity::provisioning::create_tenant;
@@ -177,10 +177,8 @@ impl Spa {
     }
 
     async fn customer(&self, name: &str, phone: &str) -> Uuid {
-        let reply = call(
+        let reply = post_customer(
             &self.h.app,
-            "POST",
-            "/customers",
             Some(&self.owner),
             Some(json!({"full_name": name, "phone": phone, "gender": "female"})),
         )
@@ -895,10 +893,8 @@ async fn phone_check_finds_duplicates_like_create_does(pool: PgPool) -> TestResu
         .await;
     assert_eq!(theirs.body, json!({"valid": true, "taken": false}));
     // Create still refuses the duplicate.
-    let dup = call(
+    let dup = post_customer(
         &s.h.app,
-        "POST",
-        "/customers",
         Some(&s.manager),
         Some(json!({"full_name": "Hà khác", "phone": "+84905111222"})),
     )

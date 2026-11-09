@@ -559,10 +559,13 @@ impl Spa<'_> {
             let id = if i < 2 {
                 Uuid::nil()
             } else {
+                let (key, hash) = idempotency();
                 let view = crm::service::create(
                     self.app,
                     self.cipher,
                     &self.manager,
+                    key,
+                    hash,
                     crm::service::ProfileInput {
                         full_name: Some(c.full_name.to_owned()),
                         phone: Some(demo_phone(run, i)),

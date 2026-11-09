@@ -2505,6 +2505,18 @@
           "customers"
         ],
         "operationId": "create",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per create attempt (ADR-0019 D11): a double click or a retry answers with the profile the first request created, never a second one",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -2517,7 +2529,7 @@
         },
         "responses": {
           "201": {
-            "description": "Created; with no name and no phone it is an anonymous walk-in profile (\"Khách vãng lai\")",
+            "description": "Created (a replay of the same key answers with that profile as it is now); with no name and no phone it is an anonymous walk-in profile (\"Khách vãng lai\")",
             "content": {
               "application/json": {
                 "schema": {
@@ -2526,12 +2538,18 @@
               }
             }
           },
+          "400": {
+            "description": "idempotency.key_required / key_invalid"
+          },
           "403": {},
+          "404": {
+            "description": "replay of a profile anonymised since"
+          },
           "409": {
             "description": "customer.phone_taken with existing_id"
           },
           "422": {
-            "description": "validation_failed: full_name too_long, phone invalid_format, birth_date in_future / too_old, birth_year out_of_range / conflicts_with_birth_date"
+            "description": "validation_failed: full_name too_long, phone invalid_format, birth_date in_future / too_old, birth_year out_of_range / conflicts_with_birth_date, body invalid; idempotency.key_reuse_mismatch"
           }
         }
       }

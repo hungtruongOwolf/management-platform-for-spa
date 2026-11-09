@@ -14,7 +14,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use identity::AuthUser;
 use kernel::http::{IdempotencyKey, IfMatch, etag};
 use kernel::idempotency::hash_route;
-use kernel::{AppError, PhoneE164};
+use kernel::{AppError, Permission, PhoneE164};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -479,14 +479,14 @@ pub async fn record_follow_up(
     State(pool): State<PgPool>,
     user: AuthUser,
     Path(id): Path<Uuid>,
-    IdempotencyKey(key): IdempotencyKey,
+    key: Result<IdempotencyKey, AppError>,
     body: Bytes,
 ) -> Result<Response, AppError> {
-    let invalid = || AppError::Validation(vec![kernel::FieldError::new("body", "invalid")]);
-    // Hash the re-serialised JSON, so whitespace or key order never makes a retry a mismatch.
-    let value: serde_json::Value = serde_json::from_slice(&body).map_err(|_| invalid())?;
-    let canonical = serde_json::to_vec(&value).map_err(|e| AppError::Internal(e.to_string()))?;
-    let b: FollowUpCreate = serde_json::from_value(value).map_err(|_| invalid())?;
+    // The right first, then the key and the body (F17): a caller without it learns nothing
+    // about what the route takes.
+    user.actor.require(Permission::CustomerFollowUp)?;
+    let IdempotencyKey(key) = key?;
+    let (canonical, b): (_, FollowUpCreate) = read_json(&body)?;
     let hash = hash_route("POST", "/customers/{id}/follow-ups", Some(id), &canonical);
     let input = FollowUpInput {
         contacted_on: b.contacted_on,
@@ -543,23 +543,45 @@ pub async fn search(
 }
 
 #[utoipa::path(post, path = "/api/v1/customers", tag = "customers", request_body = CustomerCreate,
-    responses((status = 201, body = CustomerDto, description = "Created; with no name and no phone it is an anonymous walk-in profile (\"Khách vãng lai\")"), (status = 403), (status = 409, description = "customer.phone_taken with existing_id"), (status = 422, description = "validation_failed: full_name too_long, phone invalid_format, birth_date in_future / too_old, birth_year out_of_range / conflicts_with_birth_date")))]
+    params(("Idempotency-Key" = Uuid, Header, description = "One key per create attempt (ADR-0019 D11): a double click or a retry answers with the profile the first request created, never a second one")),
+    responses((status = 201, body = CustomerDto, description = "Created (a replay of the same key answers with that profile as it is now); with no name and no phone it is an anonymous walk-in profile (\"Khách vãng lai\")"),
+        (status = 400, description = "idempotency.key_required / key_invalid"),
+        (status = 403), (status = 404, description = "replay of a profile anonymised since"),
+        (status = 409, description = "customer.phone_taken with existing_id"),
+        (status = 422, description = "validation_failed: full_name too_long, phone invalid_format, birth_date in_future / too_old, birth_year out_of_range / conflicts_with_birth_date, body invalid; idempotency.key_reuse_mismatch")))]
 pub async fn create(
     State(pool): State<PgPool>,
     State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
-    Json(mut b): Json<CustomerCreate>,
+    key: Result<IdempotencyKey, AppError>,
+    body: Bytes,
 ) -> Result<Response, AppError> {
+    // The right first, then the key and the body (F17).
+    user.actor.require(Permission::CustomerWrite)?;
+    let IdempotencyKey(key) = key?;
+    let (canonical, mut b): (_, CustomerCreate) = read_json(&body)?;
     let health_note = b.health_note.take();
     let v = service::create(
         &pool,
         &cipher,
         &user.actor,
+        key,
+        hash_route("POST", "/customers", None, &canonical),
         b.into(),
         health_note.as_deref(),
     )
     .await?;
     Ok(versioned(StatusCode::CREATED, v.into()))
+}
+
+/// A JSON body as its canonical bytes (re-serialised, so whitespace or key order never makes a
+/// retry an idempotency mismatch) and as `T`. Any malformed body is `422 body invalid`.
+fn read_json<T: serde::de::DeserializeOwned>(body: &[u8]) -> Result<(Vec<u8>, T), AppError> {
+    let invalid = || AppError::Validation(vec![kernel::FieldError::new("body", "invalid")]);
+    let value: serde_json::Value = serde_json::from_slice(body).map_err(|_| invalid())?;
+    let canonical = serde_json::to_vec(&value).map_err(|e| AppError::Internal(e.to_string()))?;
+    let parsed = serde_json::from_value(value).map_err(|_| invalid())?;
+    Ok((canonical, parsed))
 }
 
 #[utoipa::path(get, path = "/api/v1/customers/{id}", tag = "customers", params(("id" = Uuid, Path)),
