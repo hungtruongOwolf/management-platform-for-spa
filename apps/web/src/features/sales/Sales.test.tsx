@@ -206,6 +206,11 @@ describe("sell package dialog", () => {
     expect(within(dialog).getByLabelText("Quà tặng")).toHaveValue(
       "Tặng dầu gội",
     );
+    // sales MAX_GIFT_NOTE = 500.
+    expect(within(dialog).getByLabelText("Quà tặng")).toHaveAttribute(
+      "maxlength",
+      "500",
+    );
     expect(
       within(dialog).getByText("Phải trả: 1.500.000đ"),
     ).toBeInTheDocument();
@@ -271,6 +276,11 @@ describe("sell package dialog", () => {
     expect(
       within(dialog).getByText("Giảm giá gói phải ghi lý do."),
     ).toBeInTheDocument();
+    // sales MAX_REASON = 500.
+    expect(within(dialog).getByLabelText("Lý do giảm giá")).toHaveAttribute(
+      "maxlength",
+      "500",
+    );
     await user.type(within(dialog).getByLabelText("Lý do giảm giá"), "Khách quen");
     await save();
     expect(

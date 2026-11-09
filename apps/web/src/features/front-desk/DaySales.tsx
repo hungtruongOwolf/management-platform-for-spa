@@ -222,7 +222,11 @@ export function DaySales({
                   onNotice(`Đã hủy hóa đơn bán gói của ${s.customer_name}.`);
                   void queryClient.invalidateQueries({ queryKey: ["sales", "day"] });
                   void queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
-                  void invalidateManagementViews(queryClient, s.sale.customer_id);
+                  // Bought for someone else: their history changes too, and the row has no id for them.
+                  void invalidateManagementViews(
+                    queryClient,
+                    s.beneficiary_name ? undefined : s.sale.customer_id,
+                  );
                 }}
               />
             ) : noting === s.sale.id ? (
