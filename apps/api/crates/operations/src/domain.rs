@@ -177,11 +177,11 @@ pub struct KeptPrice<Id> {
 
 /// The kept price of `service_id` for a line priced with `gender`: a flat price fits any gender, a
 /// Nữ / Nam price only the same one.
-pub fn kept_price<Id: PartialEq>(
-    kept: &[KeptPrice<Id>],
+pub fn kept_price<'a, Id: PartialEq>(
+    kept: &'a [KeptPrice<Id>],
     service_id: &Id,
     gender: Option<PriceGender>,
-) -> Option<&KeptPrice<Id>> {
+) -> Option<&'a KeptPrice<Id>> {
     kept.iter().find(|k| {
         &k.service_id == service_id
             && match k.variant {
