@@ -22,9 +22,13 @@ permissions:
   contents: read
   pull-requests: read   # gitleaks lists PR commits; `changes` lists PR files
 
+# A new push to a PR replaces its running CI. Each push to main gets its own group (its sha), so no
+# merged commit is cancelled or dropped from the queue (one shared group keeps only the newest
+# pending run): "main is green" stays checkable before a deploy. With one group and cancel on main,
+# 4 of 5 main runs on 2026-11-09 were cancelled by the next merge.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # No debuginfo in CI builds: smaller target dir, Rust cache and nextest archive. Panic messages
