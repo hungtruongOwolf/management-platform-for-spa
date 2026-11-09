@@ -1007,12 +1007,12 @@ async fn a_closed_month_is_locked_and_corrected_by_adjustments(pool: PgPool) -> 
                 .collect()
         })
         .unwrap_or_default();
-    missing.sort();
+    missing.sort_by_key(|(id, _)| id.clone());
     let mut expected = vec![
         (json!(s.mai).to_string(), json!(["pay_terms", "evaluation"])),
         (json!(hoa).to_string(), json!(["pay_terms", "evaluation"])),
     ];
-    expected.sort();
+    expected.sort_by_key(|(id, _)| id.clone());
     assert_eq!(missing, expected, "{}", blocked.body);
     let view = s.get(&s.owner, &format!("/payroll?month={month}")).await;
     assert_eq!(view.body["missing"], blocked.body["details"]["staff"]);
