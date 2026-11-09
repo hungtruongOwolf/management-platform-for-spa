@@ -8,6 +8,11 @@ use crate::permission::Actor;
 use crate::tenant::TenantFacts;
 use sqlx::{AssertSqlSafe, PgConnection, PgPool, Postgres, Transaction};
 
+/// A use case never waits on anything outside the database while its transaction is open; a
+/// transaction left idle this long (a stuck task, a bug) is ended by Postgres and its locks freed
+/// (db review C4). Transaction-local like the other settings, so nothing else is affected.
+pub const IDLE_IN_TRANSACTION: &str = "30s";
+
 /// `BEGIN` and the transaction-local settings in one simple-query round trip (perf page §3.4:
 /// every request opened two transactions at two round trips each before its first real query).
 /// `set_config(..., true)` keeps RLS exactly as before: it lasts until this transaction ends and
@@ -17,7 +22,9 @@ use sqlx::{AssertSqlSafe, PgConnection, PgPool, Postgres, Transaction};
 fn begin_statement(tenant: TenantId) -> AssertSqlSafe<String> {
     let id: uuid::Uuid = tenant.as_uuid();
     AssertSqlSafe(format!(
-        "BEGIN; SELECT set_config('app.tenant_id', '{}', true), set_config('statement_timeout', '5s', true)",
+        "BEGIN; SELECT set_config('app.tenant_id', '{}', true), \
+         set_config('statement_timeout', '5s', true), \
+         set_config('idle_in_transaction_session_timeout', '{IDLE_IN_TRANSACTION}', true)",
         id.hyphenated()
     ))
 }

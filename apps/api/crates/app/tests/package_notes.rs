@@ -41,6 +41,8 @@ struct Desk {
     manager: String,
     tech: String,
     tenant: Uuid,
+    /// A real account to act as (who-did-it columns reference user_account, 0036).
+    user: Uuid,
     /// The payer (Nguyễn Thị Hà) and the person she buys for (Trần Thị Mẹ).
     ha: String,
     mother: String,
@@ -133,11 +135,16 @@ async fn desk(pool: PgPool) -> Setup<Desk> {
     let tenant: Uuid = sqlx::query_scalar("SELECT id FROM app.tenant WHERE slug = 'vpyd'")
         .fetch_one(&h.owner)
         .await?;
+    let user: Uuid =
+        sqlx::query_scalar("SELECT id FROM app.user_account ORDER BY created_at, id LIMIT 1")
+            .fetch_one(&h.owner)
+            .await?;
     Ok(Desk {
         owner,
         manager,
         tech,
         tenant,
+        user,
         mother: people.pop().unwrap_or_default(),
         ha: people.pop().unwrap_or_default(),
         plan: id_of(&plan),
@@ -184,7 +191,7 @@ impl Desk {
 
     fn actor(&self, permissions: &[P]) -> Actor {
         Actor::new(
-            UserId::new(),
+            UserId::from_uuid(self.user),
             TenantId::from_uuid(self.tenant),
             permissions.iter().copied(),
             None,
@@ -197,7 +204,12 @@ impl Desk {
             SystemRole::Manager.default_permissions(),
             true,
         );
-        Actor::new(UserId::new(), TenantId::from_uuid(self.tenant), perms, None)
+        Actor::new(
+            UserId::from_uuid(self.user),
+            TenantId::from_uuid(self.tenant),
+            perms,
+            None,
+        )
     }
 
     /// The seeded manager minus `without`.

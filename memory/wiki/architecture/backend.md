@@ -254,7 +254,8 @@ domain: kiểu dữ liệu & bất biến thuần (Money, PhoneE164, SessionCoun
 ## 6. Background jobs (in-process, `tokio`)
 | Job | Lịch | Retry |
 |---|---|---|
-| Dọn `idempotency_record` > 48 giờ, session hết hạn, auth token hết hạn | Mỗi giờ | Idempotent, chạy lại thoải mái. ⚠ Code (2026-11-08) **chỉ** dọn idempotency (lúc khởi động + mỗi giờ); session chưa bao giờ được dọn, xem [db-review F9 / C1](db-review-2026-11.md) |
+| Dọn `idempotency_record` > 48 giờ và session đã thu hồi / hết hạn quá **30 ngày** (`app.purge_sessions`, 0035, EM Q-DB4); `audit_log` giữ hết, không có hạn | Mỗi giờ cho cả hệ thống (`app.claim_maintenance`: một instance mỗi khoảng, dù Vercel dựng bao nhiêu instance) | Idempotent, chạy lại thoải mái (`app::jobs::run_maintenance`) |
+| Kiểm bất biến dữ liệu: 11 phép kiểm bản sao / liên kết (`app.invariant_violations`, 0035 = `infra/perf/db/invariants.sql`) | Mỗi ngày (claim 23 giờ) | Phép kiểm có dòng lệch → log **ERROR** `data invariant violated` với `check` + `rows`; log của Vercel / VPS là chỗ báo |
 | Backup `pg_dump` → mã hóa → R2 | 02:00 hằng ngày (cron trên VPS, ở `/devops`) | Alert nếu không có backup mới trong 26 giờ |
 Nhắc nhở (spec #3) sẽ dùng bảng job trên Postgres (`FOR UPDATE SKIP LOCKED`) có dead-letter.
 

@@ -73,7 +73,7 @@ async fn serve() -> anyhow::Result<()> {
     app::db_guard::check_runtime_role(&pool)
         .await
         .context("refusing to start: APP_DATABASE_URL must be the app_rw role (RLS applies)")?;
-    jobs::spawn_idempotency_purge(pool.clone());
+    jobs::spawn_maintenance(pool.clone());
 
     let mut policy = HttpPolicy::standard(config.public_origin.clone());
     if let Some(limit) = config.rate_limit {
