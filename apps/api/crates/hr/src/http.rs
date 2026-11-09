@@ -23,7 +23,7 @@ use axum::{Json, Router};
 use chrono::NaiveDate;
 use identity::AuthUser;
 use kernel::crypto::FieldCipher;
-use kernel::http::IdempotencyKey;
+use kernel::http::{IdempotencyKey, IfMatchOrNew};
 use kernel::idempotency::hash_route;
 use kernel::{AppError, FieldError};
 use serde::{Deserialize, Serialize};
@@ -504,7 +504,7 @@ pub async fn close_payroll(
 #[derive(Debug, Serialize, ToSchema)]
 pub struct PayrollRulesDto {
     pub rules: PayrollRules,
-    /// 0 = never saved (all defaults).
+    /// 0 = never saved (all defaults). Send as `If-Match` on `PUT /payroll/rules` (ADR-0019 D10).
     pub version: i64,
 }
 
@@ -516,14 +516,17 @@ pub async fn get_rules(State(pool): State<PgPool>, user: AuthUser) -> Result<Res
 }
 
 #[utoipa::path(put, path = "/api/v1/payroll/rules", tag = "staff", request_body = PayrollRules,
-    responses((status = 200, body = PayrollRulesDto), (status = 401), (status = 403), (status = 422)))]
+    responses((status = 200, body = PayrollRulesDto), (status = 400, description = "precondition.if_match_required | precondition.if_match_invalid: If-Match is the version read, \"0\" when never saved"),
+              (status = 401), (status = 403),
+              (status = 412, description = "conflict.stale_version: the rules were saved since they were read"), (status = 422)))]
 pub async fn put_rules(
     State(pool): State<PgPool>,
     user: AuthUser,
+    IfMatchOrNew(expected): IfMatchOrNew,
     body: Bytes,
 ) -> Result<Response, AppError> {
     let (rules, _): (PayrollRules, _) = canonical(&body)?;
-    let (rules, version) = rules::put(&pool, &user.actor, &rules).await?;
+    let (rules, version) = rules::put(&pool, &user.actor, expected, &rules).await?;
     Ok(no_store(StatusCode::OK, PayrollRulesDto { rules, version }))
 }
 

@@ -16,12 +16,12 @@ import { LedgerTab } from "./LedgerTab";
 import { LineChart } from "./LineChart";
 import {
   LONG_RANGE_PRESETS,
-  MAX_RANGE_DAYS,
   PRESETS,
   PRESET_LABEL,
   bucketLabel,
   daysBetween,
   rangeLabel,
+  rangeLimit,
   resolvePeriod,
   type Bucket,
   type Period,
@@ -53,11 +53,12 @@ export function ReportsPage() {
 function reportView(me: Me | null, search: ReturnType<typeof reportsSearch.parse>, today: string) {
   const canLong = can(me, "report.long_range");
   const preset = LONG_RANGE_PRESETS.includes(search.period) && !canLong ? "12m" : search.period;
-  const period = resolvePeriod(preset, today, { from: search.from, to: search.to });
+  const limit = rangeLimit(canLong);
+  const period = resolvePeriod(preset, today, { from: search.from, to: search.to }, limit.days);
   const presets = canLong ? PRESETS : PRESETS.filter((p) => !LONG_RANGE_PRESETS.includes(p));
   const canLedger = can(me, "report.revenue.read");
   const tab: "ledger" | "overview" = search.tab === "ledger" && canLedger ? "ledger" : "overview";
-  return { period, presets, canLedger, tab };
+  return { period, presets, canLedger, tab, limit };
 }
 
 /** Route loader: the overview's two ranges (this period and the one before) start with the chunk. */
@@ -75,7 +76,7 @@ function ReportsPageBody() {
   const { data: me } = useSuspenseQuery(meQuery);
   const [search, patch] = useSearchState(reportsSearch);
   const today = spaToday();
-  const { period, presets, canLedger, tab } = reportView(me, search, today);
+  const { period, presets, canLedger, tab, limit } = reportView(me, search, today);
 
   return (
     <section className="grid content-start gap-5">
@@ -108,6 +109,7 @@ function ReportsPageBody() {
         period={period}
         presets={presets}
         today={today}
+        limit={limit}
         onPreset={(p) => {
           patch(p === "custom" ? { period: p, from: period.from, to: period.to } : { period: p, from: "", to: "" });
         }}
@@ -137,12 +139,15 @@ function PeriodPicker({
   period,
   presets,
   today,
+  limit,
   onPreset,
   onCustom,
 }: {
   period: Period;
   presets: readonly Preset[];
   today: string;
+  /** Longest custom range the API serves this caller (`rangeLimit`). */
+  limit: { days: number; label: string };
   onPreset: (p: Preset) => void;
   onCustom: (from: string, to: string) => void;
 }) {
@@ -152,7 +157,7 @@ function PeriodPicker({
     setDraft(next);
     if (!next.from || !next.to) return;
     const problem =
-      next.from > next.to ? "Ngày bắt đầu phải trước ngày kết thúc." : daysBetween(next.from, next.to) > MAX_RANGE_DAYS ? "Chọn tối đa 2 năm." : null;
+      next.from > next.to ? "Ngày bắt đầu phải trước ngày kết thúc." : daysBetween(next.from, next.to) > limit.days ? `Chọn tối đa ${limit.label}.` : null;
     if (problem) {
       setError(problem);
       return;

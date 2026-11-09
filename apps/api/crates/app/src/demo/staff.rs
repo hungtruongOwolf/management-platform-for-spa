@@ -99,6 +99,7 @@ impl StaffDemo<'_> {
             let view = org::profile::get(self.app, self.owner, *staff)
                 .await
                 .map_err(fail("read a staff profile"))?;
+            let pay_version = view.pay.map_or(0, |t| t.version);
             let p = view.profile;
             let updated = org::profile::update(
                 self.app,
@@ -140,6 +141,7 @@ impl StaffDemo<'_> {
                 self.app,
                 self.owner,
                 *staff,
+                pay_version,
                 &PayInput {
                     base_salary: *base,
                     commission_rate_bp: *rate,

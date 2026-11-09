@@ -81,13 +81,6 @@ struct Visits {
     sessions: HashMap<Uuid, i64>,
 }
 
-/// Associated data of a visit note: the very purpose and ids `operations` encrypts it under
-/// (`operations::service::visit_aad`); the history integration test reads a note written by
-/// `POST /visits`, so a drift fails there.
-fn visit_note_aad(tenant: Uuid, visit: Uuid) -> Vec<u8> {
-    kernel::crypto::record_aad("visit.note", &[tenant, visit])
-}
-
 /// `notes`: the cipher when the caller may read session notes; `None` leaves them out.
 async fn visits(
     tx: &mut TenantTx,
@@ -169,14 +162,10 @@ async fn visits(
     let visits = heads
         .into_iter()
         .map(|h| -> Result<(Uuid, HistoryVisit), AppError> {
-            let note = match (notes, h.note_ct.as_deref()) {
-                (Some(cipher), Some(ct)) => Some(
-                    cipher
-                        .decrypt(ct, &visit_note_aad(tenant, h.id))
-                        .map_err(|e| AppError::Internal(format!("visit note of {}: {e}", h.id)))?,
-                ),
-                _ => None,
-            };
+            let note = notes
+                .map(|c| kernel::crypto::open_visit_note(c, tenant, h.id, h.note_ct.as_deref()))
+                .transpose()?
+                .flatten();
             let money = sale_of.get(&h.id).map_or_else(Paid::default, |sales| {
                 sales
                     .iter()
@@ -297,26 +286,39 @@ async fn purchases(
     Ok((sales, paid))
 }
 
+/// Cancelled packages as `viewer`'s timeline shows them. The refund is the payer's money back
+/// (ADR-0019 D6): it is on the payer's timeline only, never as a negative line for the person
+/// the package was bought for. A package without a sale (paper book) is paid by its owner.
 async fn cancellations(
     tx: &mut TenantTx,
+    viewer: Uuid,
     ids: &[Uuid],
 ) -> Result<HashMap<Uuid, HistoryCancellation>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query!(
         r#"SELECT cp.id, cp.name_snapshot, cp.cancel_reason,
-                  r.amount AS "amount?", r.method AS "method?", r.business_date AS "refund_date?"
+                  r.amount AS "amount?", r.method AS "method?", r.business_date AS "refund_date?",
+                  coalesce(s.customer_id, cp.customer_id) = $3 AS "viewer_paid!",
+                  CASE WHEN cp.customer_id <> $3 THEN app.customer_label(o.full_name) END
+                    AS "beneficiary_name?",
+                  CASE WHEN s.customer_id <> $3 THEN app.customer_label(p.full_name) END
+                    AS "payer_name?"
            FROM app.customer_package cp
+           JOIN app.customer o ON o.tenant_id = cp.tenant_id AND o.id = cp.customer_id
+           LEFT JOIN app.sale s ON s.tenant_id = cp.tenant_id AND s.id = cp.sale_id
+           LEFT JOIN app.customer p ON p.tenant_id = s.tenant_id AND p.id = s.customer_id
            LEFT JOIN app.refund r ON r.tenant_id = cp.tenant_id AND r.customer_package_id = cp.id
            WHERE cp.tenant_id = $1 AND cp.id = ANY($2)"#,
         tenant,
-        ids
+        ids,
+        viewer
     )
     .fetch_all(tx.conn())
     .await?
     .into_iter()
     .map(|c| {
-        let refund = match (c.amount, c.method, c.refund_date) {
-            (Some(amount), Some(method), Some(business_date)) => Some(HistoryRefund {
+        let refund = match (c.viewer_paid, c.amount, c.method, c.refund_date) {
+            (true, Some(amount), Some(method), Some(business_date)) => Some(HistoryRefund {
                 amount,
                 method,
                 business_date,
@@ -330,6 +332,8 @@ async fn cancellations(
                 package_name: c.name_snapshot,
                 reason: c.cancel_reason.unwrap_or_default(),
                 refund,
+                beneficiary_name: c.beneficiary_name,
+                payer_name: c.payer_name,
             },
         )
     })
@@ -482,8 +486,16 @@ pub async fn history(
              SELECT 'package_cancelled', 4, cp.cancelled_at, (cp.cancelled_at AT TIME ZONE $3)::date, cp.id
              FROM app.customer_package cp
              LEFT JOIN app.sale s ON s.tenant_id = cp.tenant_id AND s.id = cp.sale_id
-             WHERE cp.tenant_id = $1 AND cp.customer_id = $2 AND cp.cancelled_at IS NOT NULL
+             WHERE cp.tenant_id = $1 AND cp.cancelled_at IS NOT NULL
                AND (s.id IS NULL OR s.status <> 'voided')
+               -- The user's package, or one this customer paid for someone else (its refund is the
+               -- payer's, ADR-0019 D6). Two index lookups, as for purchases.
+               AND cp.id IN (
+                     SELECT x.id FROM app.customer_package x WHERE x.tenant_id = $1 AND x.customer_id = $2
+                     UNION
+                     SELECT y.id FROM app.sale z
+                     JOIN app.customer_package y ON y.tenant_id = z.tenant_id AND y.sale_id = z.id
+                     WHERE z.tenant_id = $1 AND z.customer_id = $2)
              UNION ALL
              SELECT 'package_extended', 5, e.created_at, e.business_date, e.id
              FROM app.customer_package_extension e
@@ -567,7 +579,7 @@ pub async fn history(
         .then_some(cipher);
     let mut v = visits(&mut tx, &visit_ids, notes).await?;
     let (sales, sale_money) = purchases(&mut tx, customer_id, &sale_ids, notes).await?;
-    let mut cancels = cancellations(&mut tx, &cancel_ids).await?;
+    let mut cancels = cancellations(&mut tx, customer_id, &cancel_ids).await?;
     let mut extended = extensions(&mut tx, &extension_ids).await?;
     let visit_sale_ids: Vec<Uuid> = v.sale_of.values().flatten().copied().collect();
     let visit_money = payments(&mut tx, &visit_sale_ids).await?;
@@ -684,8 +696,19 @@ pub async fn summary(
     let money = sqlx::query!(
         r#"SELECT coalesce(sum(p.amount) FILTER (WHERE p.kind = 'payment'), 0)::bigint AS "paid!",
                   coalesce(sum(p.amount) FILTER (WHERE p.kind = 'reversal'), 0)::bigint AS "voided!",
+                  -- Refunds go back to whoever paid (ADR-0019 D6): this customer's own packages
+                  -- they paid for (or got from the paper book), and packages they bought for others.
                   coalesce((SELECT sum(r.amount) FROM app.refund r
-                            WHERE r.tenant_id = $1 AND r.customer_id = $2), 0)::bigint AS "refunded!"
+                            WHERE r.tenant_id = $1 AND r.customer_package_id IN (
+                              SELECT x.id FROM app.customer_package x
+                              LEFT JOIN app.sale xs ON xs.tenant_id = x.tenant_id AND xs.id = x.sale_id
+                              WHERE x.tenant_id = $1 AND x.customer_id = $2
+                                AND (xs.id IS NULL OR xs.customer_id = $2)
+                              UNION ALL
+                              SELECT y.id FROM app.sale z
+                              JOIN app.customer_package y ON y.tenant_id = z.tenant_id AND y.sale_id = z.id
+                              WHERE z.tenant_id = $1 AND z.customer_id = $2 AND y.customer_id <> $2)),
+                           0)::bigint AS "refunded!"
            FROM app.payment p
            JOIN app.sale s ON s.tenant_id = p.tenant_id AND s.id = p.sale_id
            WHERE p.tenant_id = $1 AND s.customer_id = $2"#,

@@ -343,6 +343,64 @@ describe("Đặt lịch hẹn (spec appointments.md §10.2, §10.5)", () => {
     });
   });
 
+  it("a retry never books a companion twice: unchanged it is skipped, edited it is updated (audit 2026-11-09)", async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = renderSheet(CAL, {
+      mode: "edit",
+      appointment: {
+        ...CAL_APPT,
+        services: [{ service_id: "s1", service_name: "Gội đầu", category_name: "Dưỡng sinh", duration_min: 30 }],
+      },
+    });
+    const json = (body: unknown, status = 200) =>
+      Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }));
+    let posts = 0;
+    fetchMock.mockImplementation(((url: string, init: RequestInit) => {
+      if (init.method === "POST") {
+        posts += 1;
+        // The first companion joins; the second is refused once (its KTV is busy).
+        if (posts === 1) return json({ ...CAL_APPT, id: "c-1", group_id: "g1" });
+        if (posts === 2) return json({ status: 409, code: "appointment.staff_busy" }, 409);
+        return json({ ...CAL_APPT, id: "c-2", group_id: "g1" });
+      }
+      return json({ ...CAL_APPT, id: url.split("/").pop() ?? "a1", version: 2 });
+    }) as unknown as () => Promise<Response>);
+    for (const [i, name] of ["Chồng của chị Hà", "Con của chị Hà"].entries()) {
+      await user.click(screen.getByRole("button", { name: "Người đi cùng" }));
+      await user.type(screen.getByLabelText(`Tên hoặc ghi chú · Người đi cùng ${String(i + 1)}`), name);
+      await user.selectOptions(screen.getByLabelText(`Thêm dịch vụ · Người đi cùng ${String(i + 1)}`), "s1");
+    }
+    await user.click(screen.getByRole("button", { name: "Lưu thay đổi" }));
+    await vi.waitFor(() => {
+      expect(posts).toBe(2);
+    });
+    const calls = () => fetchMock.mock.calls as unknown as [string, RequestInit][];
+    const keyOf = (init: RequestInit) => new Headers(init.headers).get("Idempotency-Key");
+    const firstTry = calls().filter(([, init]) => init.method === "POST");
+    const [firstKey, secondKey] = firstTry.map(([, init]) => keyOf(init));
+
+    // Unchanged: only the refused one goes again, under its own key.
+    await user.click(screen.getByRole("button", { name: "Lưu thay đổi" }));
+    await vi.waitFor(() => {
+      expect(posts).toBe(3);
+    });
+    const retried = calls().filter(([, init]) => init.method === "POST").slice(2);
+    expect(retried.map(([, init]) => keyOf(init))).toEqual([secondKey]);
+    expect(calls().filter(([url]) => url.endsWith("/appointments/c-1"))).toEqual([]);
+
+    // Edited after it joined: the existing booking is updated, never booked again.
+    await user.selectOptions(screen.getByLabelText("Thêm dịch vụ · Người đi cùng 1"), "s2");
+    const before = calls().length;
+    await user.click(screen.getByRole("button", { name: "Lưu thay đổi" }));
+    await vi.waitFor(() => {
+      expect(calls().some(([url, init]) => url.endsWith("/appointments/c-1") && init.method === "PATCH")).toBe(true);
+    });
+    const third = calls().slice(before);
+    expect(third.filter(([, init]) => init.method === "POST" && keyOf(init) === firstKey)).toEqual([]);
+    const patch = third.find(([url]) => url.endsWith("/appointments/c-1"));
+    expect(JSON.parse(patch?.[1].body as string)).toMatchObject({ service_ids: ["s1", "s2"] });
+  });
+
   it("shows n / max of the slot and warns, without blocking, when it is full", () => {
     const booked = (id: string) => ({
       ...CAL_APPT,

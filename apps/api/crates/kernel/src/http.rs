@@ -44,6 +44,34 @@ impl<S: Send + Sync> FromRequestParts<S> for IfMatch {
     }
 }
 
+/// `If-Match` on a record that may not exist yet and is created by its first write (pay terms,
+/// payroll rules; ADR-0019 D10): `"0"` = the client saw none, otherwise the version it edited.
+/// A missing or malformed header is `400`, a stale version `412 conflict.stale_version`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IfMatchOrNew(pub i64);
+
+impl<S: Send + Sync> FromRequestParts<S> for IfMatchOrNew {
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        let raw = parts
+            .headers
+            .get(axum::http::header::IF_MATCH)
+            .ok_or(AppError::BadRequest {
+                code: "precondition.if_match_required",
+            })?;
+        raw.to_str()
+            .ok()
+            .map(|s| s.trim().trim_start_matches("W/").trim_matches('"'))
+            .and_then(|s| s.parse::<i64>().ok())
+            .filter(|v| *v >= 0)
+            .map(IfMatchOrNew)
+            .ok_or(AppError::BadRequest {
+                code: "precondition.if_match_invalid",
+            })
+    }
+}
+
 /// `ETag` header value for a record version.
 pub fn etag(version: i64) -> axum::http::HeaderValue {
     axum::http::HeaderValue::from_str(&format!("\"{version}\""))
@@ -126,6 +154,42 @@ mod tests {
             );
         }
         assert_eq!(etag(4).to_str().ok(), Some("\"4\""));
+    }
+
+    async fn if_match_or_new(header: Option<&str>) -> Result<IfMatchOrNew, AppError> {
+        let mut builder = Request::put("/");
+        if let Some(value) = header {
+            builder = builder.header(axum::http::header::IF_MATCH, value);
+        }
+        let (mut parts, ()) = builder
+            .body(())
+            .map_err(|e| AppError::Internal(e.to_string()))?
+            .into_parts();
+        IfMatchOrNew::from_request_parts(&mut parts, &()).await
+    }
+
+    #[tokio::test]
+    async fn if_match_or_new_also_takes_version_zero_for_a_record_not_created_yet() {
+        let extract = if_match_or_new;
+        assert_eq!(extract(Some("\"0\"")).await.ok(), Some(IfMatchOrNew(0)));
+        assert_eq!(extract(Some("W/\"2\"")).await.ok(), Some(IfMatchOrNew(2)));
+        assert!(matches!(
+            extract(None).await,
+            Err(AppError::BadRequest {
+                code: "precondition.if_match_required"
+            })
+        ));
+        for bad in ["*", "\"abc\"", "-1"] {
+            assert!(
+                matches!(
+                    extract(Some(bad)).await,
+                    Err(AppError::BadRequest {
+                        code: "precondition.if_match_invalid"
+                    })
+                ),
+                "{bad}"
+            );
+        }
     }
 
     #[tokio::test]

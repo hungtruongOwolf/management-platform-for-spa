@@ -4009,8 +4009,14 @@
               }
             }
           },
+          "400": {
+            "description": "precondition.if_match_required | precondition.if_match_invalid: If-Match is the version read, \"0\" when never saved"
+          },
           "401": {},
           "403": {},
+          "412": {
+            "description": "conflict.stale_version: the rules were saved since they were read"
+          },
           "422": {}
         }
       }
@@ -5296,9 +5302,15 @@
               }
             }
           },
+          "400": {
+            "description": "precondition.if_match_required | precondition.if_match_invalid: If-Match is the terms' version, \"0\" when none exist yet"
+          },
           "401": {},
           "403": {},
           "404": {},
+          "412": {
+            "description": "conflict.stale_version: the terms changed since they were read"
+          },
           "422": {}
         }
       }
@@ -7669,7 +7681,8 @@
           },
           "refunded": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "Money given back to this customer for packages they paid for, including packages they\nbought for someone else (ADR-0019 D6: a refund goes to the payer)."
           },
           "sessions_remaining": {
             "type": "integer",
@@ -8615,18 +8628,33 @@
       },
       "HistoryCancellation": {
         "type": "object",
+        "description": "A package cancelled (US7). Its `refund` is on the payer's timeline only (ADR-0019 D6): a\npackage bought for someone else is refunded to who paid, so its user's timeline shows none.",
         "required": [
           "customer_package_id",
           "package_name",
           "reason"
         ],
         "properties": {
+          "beneficiary_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Bought for someone else: who the package belonged to. Null on its user's own timeline."
+          },
           "customer_package_id": {
             "type": "string",
             "format": "uuid"
           },
           "package_name": {
             "type": "string"
+          },
+          "payer_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Bought by someone else for this customer: who paid (and got any refund). Null on the\npayer's own timeline."
           },
           "reason": {
             "type": "string"
@@ -11655,7 +11683,7 @@
           "version": {
             "type": "integer",
             "format": "int64",
-            "description": "0 = never saved (all defaults)."
+            "description": "0 = never saved (all defaults). Send as `If-Match` on `PUT /payroll/rules` (ADR-0019 D10)."
           }
         }
       },
@@ -13571,7 +13599,8 @@
           "base_salary",
           "commission_rate_bp",
           "loyalty_bonus_monthly",
-          "meal_allowance"
+          "meal_allowance",
+          "version"
         ],
         "properties": {
           "base_salary": {
@@ -13590,6 +13619,11 @@
           "meal_allowance": {
             "type": "integer",
             "format": "int64"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Send as `If-Match` on `PUT /staff/{id}/pay` (ADR-0019 D10; `0` while no terms exist)."
           }
         }
       },
@@ -14160,7 +14194,8 @@
               "string",
               "null"
             ],
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Null = paper-book packages without a plan, one row per package name."
           },
           "revenue": {
             "type": [
@@ -14168,7 +14203,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Sum of their prices after discount; only with `report.revenue.read`."
+            "description": "What was actually paid for them (price after discount; a paper-book package's paid\namount), minus what was refunded since (ADR-0019 D7); only with `report.revenue.read`."
           },
           "sold": {
             "type": "integer",

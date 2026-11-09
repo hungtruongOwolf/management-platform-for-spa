@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT cp.id, cp.name_snapshot, cp.cancel_reason,\n                  r.amount AS \"amount?\", r.method AS \"method?\", r.business_date AS \"refund_date?\"\n           FROM app.customer_package cp\n           LEFT JOIN app.refund r ON r.tenant_id = cp.tenant_id AND r.customer_package_id = cp.id\n           WHERE cp.tenant_id = $1 AND cp.id = ANY($2)",
+  "query": "SELECT cp.id, cp.name_snapshot, cp.cancel_reason,\n                  r.amount AS \"amount?\", r.method AS \"method?\", r.business_date AS \"refund_date?\",\n                  coalesce(s.customer_id, cp.customer_id) = $3 AS \"viewer_paid!\",\n                  CASE WHEN cp.customer_id <> $3 THEN app.customer_label(o.full_name) END\n                    AS \"beneficiary_name?\",\n                  CASE WHEN s.customer_id <> $3 THEN app.customer_label(p.full_name) END\n                    AS \"payer_name?\"\n           FROM app.customer_package cp\n           JOIN app.customer o ON o.tenant_id = cp.tenant_id AND o.id = cp.customer_id\n           LEFT JOIN app.sale s ON s.tenant_id = cp.tenant_id AND s.id = cp.sale_id\n           LEFT JOIN app.customer p ON p.tenant_id = s.tenant_id AND p.id = s.customer_id\n           LEFT JOIN app.refund r ON r.tenant_id = cp.tenant_id AND r.customer_package_id = cp.id\n           WHERE cp.tenant_id = $1 AND cp.id = ANY($2)",
   "describe": {
     "columns": [
       {
@@ -68,22 +68,44 @@
             "name": "business_date"
           }
         }
+      },
+      {
+        "ordinal": 6,
+        "name": "viewer_paid!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "beneficiary_name?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "payer_name?",
+        "type_info": "Text",
+        "origin": "Expression"
       }
     ],
     "parameters": {
       "Left": [
         "Uuid",
-        "UuidArray"
+        "UuidArray",
+        "Uuid"
       ]
     },
     "nullable": [
       false,
       false,
       true,
-      true,
-      true,
-      true
+      false,
+      false,
+      false,
+      null,
+      null,
+      null
     ]
   },
-  "hash": "e19cb8cabb82810b53023b40e0c2548e0b53633cec5c361927cfb18bbab9a6d4"
+  "hash": "868c562de8243b649ed0212ca7d526e71526966923af26b91f2baa2d8574af1d"
 }

@@ -15,6 +15,7 @@ import {
   reviewsQuery,
   updateAdjustment,
   type Adjustment,
+  STAFF_FIELDS,
 } from "./api";
 import { dayLabel, vnd } from "./ui";
 
@@ -288,7 +289,7 @@ export function AdjustmentForm({
     },
   });
   const missing = adjustmentMissing({ staffId: chosen, amount, points, reason });
-  const err = (f: string) => fieldMessage(save.error, f);
+  const err = (f: string) => fieldMessage(save.error, f, STAFF_FIELDS);
   const pointsOutOfRange = points !== "" && (Number(points) < 1 || Number(points) > MAX_POINTS);
   const pointsError = pointsOutOfRange || err("points") ? `Từ 1 đến ${String(MAX_POINTS)} điểm.` : undefined;
   const reasonError = err("reason") ? "Ghi lý do, tối đa 500 ký tự." : undefined;
@@ -403,8 +404,19 @@ export function AdjustmentForm({
           />
           {reasonError && <span className="text-sm text-danger">{reasonError}</span>}
         </label>
-        <DateField label="Ngày" value={on} max={today} onChange={setOn} invalid={Boolean(err("occurred_on"))} />
-        {err("occurred_on") && <p className="text-sm text-danger">Ngày: {err("occurred_on")}</p>}
+        <DateField
+          label="Ngày"
+          value={on}
+          max={today}
+          onChange={setOn}
+          invalid={Boolean(err("occurred_on"))}
+          describedBy={err("occurred_on") ? "adjustment-date-error" : undefined}
+        />
+        {err("occurred_on") && (
+          <p id="adjustment-date-error" className="text-sm text-danger">
+            Ngày: {err("occurred_on")}
+          </p>
+        )}
         {/* Derived from the month being viewed, not an input: said as a sentence. */}
         {err("corrects_month") && <p className="text-sm text-danger">{err("corrects_month")}</p>}
         {save.isError && (

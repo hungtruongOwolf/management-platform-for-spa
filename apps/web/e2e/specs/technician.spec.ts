@@ -39,8 +39,12 @@ async function seedTechnicianDay(page: Page): Promise<void> {
     expect(created.status(), await created.text()).toBe(201);
     staffId = ((await created.json()) as { id: string }).id;
   }
+  // Pay terms are optimistic (ADR-0019 D10): If-Match is their version, "0" while none exist.
+  const profile = await page.request.get(`/api/v1/staff/${staffId}`);
+  expect(profile.status(), await profile.text()).toBe(200);
+  const payVersion = ((await profile.json()) as { pay?: { version: number } | null }).pay?.version ?? 0;
   const pay = await page.request.put(`/api/v1/staff/${staffId}/pay`, {
-    headers: WRITE,
+    headers: { ...WRITE, "If-Match": `"${String(payVersion)}"` },
     data: { base_salary: 6_000_000, commission_rate_bp: 500, loyalty_bonus_monthly: 0, meal_allowance: 0 },
   });
   expect(pay.status(), await pay.text()).toBe(200);
