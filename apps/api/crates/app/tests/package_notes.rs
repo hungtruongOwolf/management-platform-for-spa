@@ -21,6 +21,7 @@ use kernel::testing::app_pool;
 use kernel::{Actor, AppError, Permission as P, TenantId, UserId};
 use serde_json::{Value, json};
 use sqlx::PgPool;
+use tracing_subscriber::layer::SubscriberExt;
 use uuid::Uuid;
 
 const MANAGER_PHONE: &str = "0912000111";
@@ -176,8 +177,28 @@ impl Desk {
         call(&self.h.app, "GET", path, Some(session), None).await
     }
 
+    /// `PATCH` with the record's current version as `If-Match` (read by the owner first).
     async fn patch(&self, session: &str, path: &str, body: Value) -> Reply {
-        call(&self.h.app, "PATCH", path, Some(session), Some(body)).await
+        let tag = self.etag(path).await;
+        self.patch_if(session, path, &tag, body).await
+    }
+
+    async fn patch_if(&self, session: &str, path: &str, tag: &str, body: Value) -> Reply {
+        call_with_headers(
+            &self.h.app,
+            "PATCH",
+            path,
+            Some(session),
+            Some(body),
+            &[("If-Match", tag)],
+        )
+        .await
+    }
+
+    /// `"<version>"` of the record at `path` as the owner reads it (`"0"` = not readable).
+    async fn etag(&self, path: &str) -> String {
+        let read = self.get(&self.owner, path).await;
+        format!("\"{}\"", read.body["version"].as_i64().unwrap_or_default())
     }
 
     fn sale(&self, note: Option<&str>) -> Value {
@@ -797,7 +818,7 @@ async fn the_desk_edits_a_package_note_in_place(pool: PgPool) -> TestResult {
     );
     let app = app_pool(&d.h.owner).await?;
     let input = sales::dto::SaleUpdate {
-        note: Some("x".into()),
+        note: Some(Some("x".into())),
     };
     for actor in [
         d.manager_without(P::CustomerHealthNotesWrite),
@@ -809,6 +830,7 @@ async fn the_desk_edits_a_package_note_in_place(pool: PgPool) -> TestResult {
             &d.h.cipher,
             &actor,
             Uuid::parse_str(&sale)?,
+            Ok(1),
             Some(&input),
         )
         .await;
@@ -889,5 +911,153 @@ async fn the_desk_edits_a_package_note_in_place(pool: PgPool) -> TestResult {
     let stranger = session_for(&d.h, "0987000999").await;
     let r = d.patch(&stranger, &path, json!({"note": "x"})).await;
     assert_eq!(r.status, StatusCode::NOT_FOUND, "{}", r.body);
+    Ok(())
+}
+
+/// ADR-0019 D9 + D10: `PATCH /sales/{id}` takes the version it read (`If-Match`), refuses a stale
+/// one, and a body without `note` leaves the encrypted note alone (`{}` used to erase it).
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_package_note_edit_needs_the_version_it_read_and_absent_keeps_the_note(
+    pool: PgPool,
+) -> TestResult {
+    let d = desk(pool).await?;
+    let sold = d.post(&d.manager, "/sales", d.sale(Some(NOTE_A))).await;
+    assert_eq!(sold.status, StatusCode::CREATED, "{}", sold.body);
+    let sale = id_of(&sold);
+    let path = format!("/sales/{sale}");
+    let read = d.get(&d.manager, &path).await;
+    let v1 = read.body["version"].as_i64().unwrap_or_default();
+    assert!(v1 > 0, "{}", read.body);
+    let tag1 = format!("\"{v1}\"");
+    assert_eq!(
+        read.headers.get("etag").and_then(|v| v.to_str().ok()),
+        Some(tag1.as_str())
+    );
+    let listed = d.get(&d.manager, "/sales").await;
+    assert_eq!(listed.body[0]["sale"]["version"], v1, "{}", listed.body);
+
+    // No If-Match: refused, nothing changes.
+    let bare = call(
+        &d.h.app,
+        "PATCH",
+        &path,
+        Some(&d.manager),
+        Some(json!({"note": null})),
+    )
+    .await;
+    assert_eq!(
+        (bare.status, bare.body["code"].as_str()),
+        (
+            StatusCode::BAD_REQUEST,
+            Some("precondition.if_match_required")
+        ),
+        "{}",
+        bare.body
+    );
+    // Rights before the header (F17): a technician learns nothing about the precondition.
+    let tech = call(&d.h.app, "PATCH", &path, Some(&d.tech), Some(json!({}))).await;
+    assert_eq!(tech.status, StatusCode::FORBIDDEN, "{}", tech.body);
+
+    // `{}`: the note stays, encrypted as before; nothing audited, the version does not move.
+    let ct_before = d.note_ct(&sale).await?;
+    assert!(ct_before.is_some());
+    let empty = d.patch_if(&d.manager, &path, &tag1, json!({})).await;
+    assert_eq!(empty.status, StatusCode::OK, "{}", empty.body);
+    assert_eq!(empty.body["note"], NOTE_A);
+    assert_eq!(empty.body["version"], v1);
+    assert_eq!(d.note_ct(&sale).await?, ct_before);
+    let audited: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM app.audit_log WHERE action = 'sale.note_update'")
+            .fetch_one(&d.h.owner)
+            .await?;
+    assert_eq!(audited, 0);
+
+    // A real edit moves the version and answers the new ETag.
+    let edited = d
+        .patch_if(&d.manager, &path, &tag1, json!({"note": NOTE_B}))
+        .await;
+    assert_eq!(edited.status, StatusCode::OK, "{}", edited.body);
+    let v2 = edited.body["version"].as_i64().unwrap_or_default();
+    assert_eq!(v2, v1 + 1);
+    let tag2 = format!("\"{v2}\"");
+    assert_eq!(
+        edited.headers.get("etag").and_then(|v| v.to_str().ok()),
+        Some(tag2.as_str())
+    );
+
+    // The version read before that edit is stale: 412, the newer note is kept.
+    let stale = d
+        .patch_if(&d.manager, &path, &tag1, json!({"note": null}))
+        .await;
+    assert_eq!(
+        (stale.status, stale.body["code"].as_str()),
+        (
+            StatusCode::PRECONDITION_FAILED,
+            Some("conflict.stale_version")
+        ),
+        "{}",
+        stale.body
+    );
+    assert_eq!(d.get(&d.manager, &path).await.body["note"], NOTE_B);
+
+    // An explicit null clears it.
+    let cleared = d
+        .patch_if(&d.manager, &path, &tag2, json!({"note": null}))
+        .await;
+    assert_eq!(cleared.status, StatusCode::OK, "{}", cleared.body);
+    assert_eq!(cleared.body.get("note"), Some(&Value::Null));
+    assert_eq!(d.note_ct(&sale).await?, None);
+    Ok(())
+}
+
+fn statements(reply: &Reply) -> Option<u32> {
+    let timing = reply.headers.get("server-timing")?.to_str().ok()?;
+    timing
+        .split("desc=\"")
+        .nth(1)?
+        .split(' ')
+        .next()?
+        .parse()
+        .ok()
+}
+
+/// Audit 2026-11-09 (N+1): Quầy's day list of package sales reads every sale with a fixed number
+/// of statements; it used to read each sale's lines, payments and packages one sale at a time.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_day_list_of_package_sales_costs_the_same_statements_for_any_number(
+    pool: PgPool,
+) -> TestResult {
+    // Global like `main` (see request_plumbing.rs): the statement count comes from this layer.
+    let subscriber =
+        tracing_subscriber::registry().with(app::server_timing::DbTimingLayer::filtered());
+    let _ = tracing::subscriber::set_global_default(subscriber);
+    let d = desk(pool).await?;
+    let sold = d.post(&d.manager, "/sales", d.sale(Some(NOTE_A))).await;
+    assert_eq!(sold.status, StatusCode::CREATED, "{}", sold.body);
+    let _ = d.get(&d.manager, "/sales").await; // warm up (session touch)
+    let one = d.get(&d.manager, "/sales").await;
+    assert_eq!(one.body.as_array().map(Vec::len), Some(1), "{}", one.body);
+    let n_one = statements(&one).ok_or("no statement count")?;
+    for _ in 0..3 {
+        let more = d.post(&d.manager, "/sales", d.sale(None)).await;
+        assert_eq!(more.status, StatusCode::CREATED, "{}", more.body);
+    }
+    let four = d.get(&d.manager, "/sales").await;
+    assert_eq!(four.body.as_array().map(Vec::len), Some(4), "{}", four.body);
+    assert_eq!(
+        four.body[3]["sale"]["note"], NOTE_A,
+        "oldest last, note kept"
+    );
+    assert_eq!(
+        four.body[0]["sale"]["customer_packages"]
+            .as_array()
+            .map(Vec::len),
+        Some(1),
+        "{}",
+        four.body
+    );
+    let n_four = statements(&four).ok_or("no statement count")?;
+    assert!(n_one > 0);
+    assert_eq!(n_four, n_one, "4 sales cost what 1 does");
     Ok(())
 }

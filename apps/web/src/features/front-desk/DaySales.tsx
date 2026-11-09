@@ -233,6 +233,7 @@ export function DaySales({
             ) : noting === s.sale.id ? (
               <SaleNoteForm
                 saleId={s.sale.id}
+                version={s.sale.version}
                 note={s.sale.note}
                 customerId={s.sale.customer_id}
                 title={`Ghi chú gói ${s.sale.lines.map((l) => `"${l.description}"`).join(", ")} của ${s.customer_name}`}
