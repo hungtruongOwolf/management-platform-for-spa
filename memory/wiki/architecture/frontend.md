@@ -57,7 +57,7 @@ Kiểu từ `packages/api-client` (contract r3b của `feat/followup-and-reports
 - **Query keys:** `['reports','range',from,to,granularity]` (60 s, giữ dữ liệu cũ khi đổi kỳ), `['reports','ledger',from,to]` (infinite), `['packages','overview',status,q]` (infinite), `['customers','inactive',days,scope,kind,follow,q]` (infinite), `['customers','history',id,q,kind,from,to]` (infinite), `['customers','summary',id]`, `['customers','follow-ups',id]`, `['customers','phone-check',digits]` (30 s).
 - **Invalidation:**
   - follow-up → `['customers','inactive']` + follow-ups + summary của khách đó;
-  - ghi / hủy lượt, bán gói, hủy / gia hạn gói → `lib/invalidate.ts` `invalidateManagementViews`: `['reports']`, `['packages','overview']`, `['customers','inactive']`, history + summary của khách. Chỉ đánh dấu stale; trên `/quay` không có query nào trong số này đang mount nên không tốn request ở lần vẽ đầu.
+  - ghi / hủy lượt, bán gói, hủy / gia hạn gói → `lib/invalidate.ts` `invalidateManagementViews`: `['reports']`, `['packages','overview']`, `['customers','inactive']`, `['notes']` (Nhật ký ghi chú; liên hệ chăm sóc và lưu ý sức khỏe cũng invalidate key này), history + summary của khách. Chỉ đánh dấu stale; trên `/quay` không có query nào trong số này đang mount nên không tốn request ở lần vẽ đầu.
 - **Test:** `fixtures.ts` + `testServer.ts` giả API đúng contract, gồm follow-up GET/POST giữ trong bộ nhớ, lọc và sắp xếp như server, phone-check. E2E `e2e/specs/management.spec.ts` dùng `support/db.ts` `backdateCustomer` để có khách vắng 20 ngày.
 
 ## Mobile (vòng 4, EM mục 3)
@@ -141,7 +141,7 @@ Lighthouse CI chặn merge khi LCP > 2,5 s (mobile, Slow 4G, CPU 4×, `/dang-nha
 - Session là cookie `__Host-session` HttpOnly ([ADR-0004](../decisions/ADR-0004-authentication.md)). **JS không bao giờ đọc hay lưu token.** Fetch dùng `credentials: 'same-origin'`.
 - `GET /api/v1/me` → user, tenant, branch, **danh sách permission** → `AuthContext`. Route guard và ẩn/hiện nút đọc từ đây. **Đây chỉ là UX**: server luôn kiểm tra lại; giao diện xử lý `403` đúng cách.
 - Field nhạy cảm (`health_note`, `visit.note`) render **theo việc API có trả về hay không**, không dựa vào role ở client. Không có field thì không render gì.
-- `401` từ bất kỳ request nào → xóa cache Query → `/dang-nhap?next=<url>`. Nút **Khóa nhanh** gọi logout.
+- `401` từ bất kỳ request nào → xóa cache Query → `/dang-nhap?next=<url>`. Cách làm (audit 2026-11-09): `QueryCache`/`MutationCache` `onError` (`lib/queryClient.ts`) gặp `auth.unauthenticated` thì invalidate `['me']`; `/me` trả về không còn đăng nhập → `AppShell` xóa mọi query trừ `['me']` (giỏ nháp trong sessionStorage giữ nguyên) rồi chuyển `/dang-nhap?next=<href>`. Nút **Khóa nhanh** gọi logout.
 - Thao tác nghiệp vụ (hủy/sửa ngày đã chốt, hủy gói + hoàn tiền, nhập sổ cũ) **không** hỏi lại mật khẩu (EM 2026-11-05): form dùng `useFormAction` (một mutation, hiện lỗi server). Hộp thoại nhập lại mật khẩu (`POST /auth/reauth`) chỉ dành cho thao tác bảo mật tài khoản (đổi mật khẩu, cài đặt MFA), dựng lại khi có các màn đó. `/nhap-so-cu` không có công tắc mở nhập.
 
 ## i18n

@@ -232,6 +232,48 @@ describe("auth flow", () => {
   });
 });
 
+describe("session ending while the app is open", () => {
+  it("a 401 from any screen asks /me again and lands on the login page, back to that screen", async () => {
+    let expired = false;
+    server((_method, path) => {
+      if (path === "/api/v1/me") return expired ? unauthorized() : Response.json(ME);
+      if (path === "/api/v1/service-categories" || path === "/api/v1/services")
+        return expired ? unauthorized() : Response.json([]);
+      return new Response(null, { status: 404 });
+    });
+    const history = createMemoryHistory({ initialEntries: ["/"] });
+    render(<App history={history} />);
+    const nav = await screen.findByRole("navigation", { name: "Chính" });
+    expired = true;
+    await userEvent.click(within(nav).getByRole("link", { name: "Bảng giá dịch vụ" }));
+    expect(await screen.findByRole("button", { name: "Đăng nhập" })).toBeInTheDocument();
+    expect(history.location.pathname).toBe("/dang-nhap");
+    expect(new URLSearchParams(history.location.search).get("next")).toBe("/bang-gia");
+  });
+
+  it("signing in again returns to `next` with its query", async () => {
+    let loggedIn = false;
+    server((method, path) => {
+      if (path === "/api/v1/me") return loggedIn ? Response.json({ ...ME, permissions: ["customer.read"] }) : unauthorized();
+      if (path === "/api/v1/auth/login" && method === "POST") {
+        loggedIn = true;
+        return Response.json({ next: "done", me: { ...ME, permissions: ["customer.read"] } });
+      }
+      return Response.json([]);
+    });
+    const history = createMemoryHistory({ initialEntries: ["/dang-nhap?next=%2Fkhach-hang%3Fq%3Dabc"] });
+    render(<App history={history} />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText("Số điện thoại"), "0905123456");
+    await user.type(screen.getByLabelText("Mật khẩu"), "mat-khau-dung");
+    await user.click(screen.getByRole("button", { name: "Đăng nhập" }));
+    await vi.waitFor(() => {
+      expect(history.location.pathname).toBe("/khach-hang");
+    });
+    expect(new URLSearchParams(history.location.search).get("q")).toBe("abc");
+  });
+});
+
 describe("unknown address", () => {
   it("says the page does not exist and offers the way home (rulebook §9)", async () => {
     server((_method, path) =>

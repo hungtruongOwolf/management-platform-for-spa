@@ -18,7 +18,7 @@ import { isEmptyRange } from "./ReportsPage";
 import { serveManagement } from "./testServer";
 import { SearchField } from "./filters";
 
-const MANAGER = ["visit.record", "customer.read", "catalog.read", "report.read", "report.revenue.read"];
+const MANAGER = ["visit.record", "visit.read", "customer.read", "catalog.read", "report.read", "report.revenue.read"];
 
 const at = (path: string) => {
   const history = createMemoryHistory({ initialEntries: [path] });

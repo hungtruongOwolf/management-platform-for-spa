@@ -2030,9 +2030,6 @@ h2 .gender-chip {
 .tone-primary {
   background: var(--primary);
 }
-.tone-accent {
-  background: var(--accent);
-}
 .tone-muted {
   background: var(--border-strong);
 }

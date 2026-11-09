@@ -64,11 +64,12 @@ export function putFollowUp(queryClient: QueryClient, customerId: string, saved:
   );
 }
 
-/** After a contact is recorded: the overdue list (every filter) and that customer's profile. */
+/** After a contact is recorded: the overdue list (every filter), that customer's profile and "Nhật ký ghi chú". */
 export async function invalidateAfterFollowUp(queryClient: QueryClient, customerId: string): Promise<void> {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: ["customers", "inactive"] }),
     queryClient.invalidateQueries({ queryKey: ["customers", "follow-ups", customerId] }),
     queryClient.invalidateQueries({ queryKey: ["customers", "summary", customerId] }),
+    queryClient.invalidateQueries({ queryKey: ["notes"] }),
   ]);
 }

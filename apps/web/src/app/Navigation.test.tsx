@@ -7,7 +7,7 @@ import { App } from "./App";
 import { CustomerName } from "./CustomerName";
 import { resetTrail } from "./trail";
 
-const MANAGER = ["visit.record", "customer.read", "catalog.read", "report.read"];
+const MANAGER = ["visit.record", "visit.read", "customer.read", "catalog.read", "report.read"];
 
 function at(path: string) {
   const history = createMemoryHistory({ initialEntries: [path] });

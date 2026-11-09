@@ -6,11 +6,12 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
-import { useModalDialog } from "../components/useModalDialog";
+import { useBackdropClose, useModalDialog } from "../components/useModalDialog";
 import { can, logout, meQuery } from "../features/auth/session";
 import { longDate } from "../lib/format";
 import { BrandLogo } from "./BrandLogo";
 import { Icon } from "./Icon";
+import { InShell } from "./inShell";
 import { navFor, navKey, tabsFor, type NavGroup, type NavItem } from "./nav";
 
 /** A tab inside a screen links with its search and is active only on exactly that search. */
@@ -111,16 +112,14 @@ export function Modal({
   children: ReactNode;
 }) {
   const ref = useModalDialog(open);
+  const backdrop = useBackdropClose(onClose);
   return (
     <dialog
       ref={ref}
       aria-label={label}
       className={className}
       onClose={onClose}
-      // A click on the backdrop lands on the dialog element itself.
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+      {...backdrop}
     >
       {open && children}
     </dialog>
@@ -163,6 +162,17 @@ export function AppShell() {
       document.removeEventListener("keydown", onKey);
     };
   }, []);
+
+  // The session ended while the app was open (a 401 refetched `/me`, lib/queryClient.ts): forget
+  // what was cached for it and sign in again, back to this screen. Unsaved carts stay in
+  // sessionStorage. Sign-out and "Khóa nhanh" navigate on their own.
+  useEffect(() => {
+    if (me) return;
+    queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
+    void navigate({ to: "/dang-nhap", search: { next: href } });
+    // Only a change of `me` matters, not the URL it was on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me]);
 
   // "Khóa nhanh": leave the counter safely; signing in again comes back to this screen.
   const lock = async () => {
@@ -244,7 +254,9 @@ export function AppShell() {
 
         <main id="main" className="shell-content">
           <div key={pathname} className={navigated ? "page-enter" : undefined}>
-            <Outlet />
+            <InShell value>
+              <Outlet />
+            </InShell>
           </div>
         </main>
       </div>
