@@ -132,12 +132,19 @@ pub async fn visits(
         VisitRow,
         r#"SELECT v.id, v.customer_id, app.customer_label(c.full_name) AS "customer_name!", c.gender AS customer_gender, v.business_date, v.check_in_at, v.note_ct,
                   v.status, v.void_reason, v.voided_at, v.sale_id,
-                  s.discount_reason AS "discount_reason?",
+                  -- Every bill of the visit's one-off lines (its first sale and each addition), in
+                  -- the order they were made: the reason of each discount summed in the visit.
+                  (SELECT string_agg(r.discount_reason, '; ' ORDER BY r.first_at)
+                   FROM (SELECT ds.discount_reason, min(ds.created_at) AS first_at
+                         FROM app.sale ds
+                         WHERE ds.tenant_id = v.tenant_id AND ds.discount_reason IS NOT NULL
+                           AND ds.id IN (SELECT l.sale_id FROM app.visit_line l
+                                         WHERE l.tenant_id = v.tenant_id AND l.visit_id = v.id)
+                         GROUP BY ds.discount_reason) r) AS "discount_reason?",
                   v.corrects_visit_id, n.id AS "corrected_by_visit_id?", v.companions,
                   v.version, v.created_at
            FROM app.visit v
            JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id
-           LEFT JOIN app.sale s ON s.tenant_id = v.tenant_id AND s.id = v.sale_id
            LEFT JOIN app.visit n ON n.tenant_id = v.tenant_id AND n.corrects_visit_id = v.id
            WHERE v.tenant_id = $1
              AND ($2::uuid IS NULL OR v.id = $2)
@@ -453,7 +460,9 @@ pub struct PackageSaleRow {
     pub note_ct: Option<Vec<u8>>,
 }
 
-/// Package sales made in these visits (`sale.visit_id`), oldest first. The beneficiary is set only
+/// Package sales made in these visits (`sale.visit_id`), oldest first. A visit recorded by "Sửa
+/// lượt" also shows the packages still standing that the visits it replaced sold to the same
+/// customer (ADR-0019 D8: the package stays with the corrected visit). The beneficiary is set only
 /// when the packages belong to someone other than the payer.
 pub async fn package_sales(
     tx: &mut TenantTx,
@@ -462,7 +471,16 @@ pub async fn package_sales(
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         PackageSaleRow,
-        r#"SELECT s.visit_id AS "visit_id!", s.id AS sale_id, s.status, s.business_date,
+        r#"WITH RECURSIVE lineage AS (
+             SELECT v.id AS shown_on, v.id AS made_in, v.customer_id
+             FROM app.visit v WHERE v.tenant_id = $1 AND v.id = ANY($2)
+             UNION ALL
+             SELECT l.shown_on, p.corrects_visit_id, l.customer_id
+             FROM lineage l
+             JOIN app.visit p ON p.tenant_id = $1 AND p.id = l.made_in
+             WHERE p.corrects_visit_id IS NOT NULL
+           )
+           SELECT l.shown_on AS "visit_id!", s.id AS sale_id, s.status, s.business_date,
                   d.description AS "description!", d.packages AS "customer_package_ids!",
                   s.total, s.closer_staff_id, st.full_name AS "closer_name?",
                   b.id AS "beneficiary_customer_id?",
@@ -470,7 +488,9 @@ pub async fn package_sales(
                   CASE WHEN b.id IS NOT NULL THEN app.customer_label(b.full_name) END AS "beneficiary_name?",
                   s.note_ct
 
-           FROM app.sale s
+           FROM lineage l
+           JOIN app.sale s ON s.tenant_id = $1 AND s.visit_id = l.made_in
+             AND (l.made_in = l.shown_on OR (s.status = 'open' AND s.customer_id = l.customer_id))
            CROSS JOIN LATERAL (
              SELECT string_agg(sl.description_snapshot, ', ' ORDER BY sl.position) AS description,
                     array_agg(sl.customer_package_id ORDER BY sl.position) AS packages
@@ -484,7 +504,7 @@ pub async fn package_sales(
              WHERE cp.tenant_id = s.tenant_id AND cp.sale_id = s.id AND cp.customer_id <> s.customer_id
              LIMIT 1
            ) b ON true
-           WHERE s.tenant_id = $1 AND s.visit_id = ANY($2) AND d.description IS NOT NULL
+           WHERE d.description IS NOT NULL
            ORDER BY s.id"#,
         tenant,
         visit_ids

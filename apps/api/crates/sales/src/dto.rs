@@ -146,7 +146,7 @@ pub enum PaymentKindDto {
     Reversal,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaymentDto {
     pub id: Uuid,
     pub kind: PaymentKindDto,

@@ -154,10 +154,104 @@ pub fn gender_to_record(
     picked
 }
 
+/// Does a correction give a service of the old visit to another technician (ADR-0019 D8)? Lines
+/// are `(service, technician)` pairs. A pair the old visit had that the new one has fewer of,
+/// while that service is still done, is a technician change; a service removed or added is not.
+pub fn technician_changed<T: PartialEq + Copy>(old: &[(T, T)], new: &[(T, T)]) -> bool {
+    let count = |lines: &[(T, T)], pair: (T, T)| lines.iter().filter(|&&p| p == pair).count();
+    old.iter().any(|&(service, staff)| {
+        new.iter().any(|&(s, _)| s == service)
+            && count(new, (service, staff)) < count(old, (service, staff))
+    })
+}
+
+/// A one-off line's price on the visit a correction replaces (ADR-0019 D8: kept, never re-read
+/// from today's price list).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeptPrice<Id> {
+    pub service_id: Id,
+    pub variant: PriceVariant,
+    pub name: String,
+    pub unit_price: kernel::Money,
+}
+
+/// The kept price of `service_id` for a line priced with `gender`: a flat price fits any gender, a
+/// Nữ / Nam price only the same one.
+pub fn kept_price<Id: PartialEq>(
+    kept: &[KeptPrice<Id>],
+    service_id: &Id,
+    gender: Option<PriceGender>,
+) -> Option<&KeptPrice<Id>> {
+    kept.iter().find(|k| {
+        &k.service_id == service_id
+            && match k.variant {
+                PriceVariant::All => true,
+                PriceVariant::Female => gender == Some(PriceGender::Female),
+                PriceVariant::Male => gender == Some(PriceGender::Male),
+            }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::TimeZone;
+
+    #[test]
+    fn a_technician_change_is_a_service_moved_to_someone_else() {
+        // (service, technician)
+        let old = [(1, 10), (2, 20)];
+        assert!(!technician_changed(&old, &old), "nothing changed");
+        assert!(
+            technician_changed(&old, &[(1, 11), (2, 20)]),
+            "service 1 moved"
+        );
+        assert!(!technician_changed(&old, &[(1, 10)]), "service 2 removed");
+        assert!(
+            !technician_changed(&old, &[(1, 10), (2, 20), (3, 30)]),
+            "service 3 added"
+        );
+        assert!(
+            !technician_changed(&old, &[(2, 20), (1, 10)]),
+            "order does not matter"
+        );
+        // Two sessions of one service: one of them moved.
+        assert!(technician_changed(&[(1, 10), (1, 10)], &[(1, 10), (1, 11)]));
+        assert!(
+            !technician_changed(&[(1, 10)], &[(1, 10), (1, 11)]),
+            "a session added"
+        );
+    }
+
+    #[test]
+    fn a_kept_price_matches_the_line_gender() {
+        let price = |variant, amount| KeptPrice {
+            service_id: 1,
+            variant,
+            name: "Gội".to_owned(),
+            unit_price: kernel::Money::vnd(amount).unwrap_or(kernel::Money::ZERO),
+        };
+        let kept = [
+            price(PriceVariant::Female, 79_000),
+            price(PriceVariant::Male, 89_000),
+        ];
+        let female = kept_price(&kept, &1, Some(PriceGender::Female));
+        assert_eq!(female.map(|k| k.unit_price.as_i64()), Some(79_000));
+        let male = kept_price(&kept, &1, Some(PriceGender::Male));
+        assert_eq!(male.map(|k| k.unit_price.as_i64()), Some(89_000));
+        assert_eq!(
+            kept_price(&kept, &1, None),
+            None,
+            "gendered price, no gender"
+        );
+        assert_eq!(kept_price(&kept, &2, Some(PriceGender::Female)), None);
+        let flat = [price(PriceVariant::All, 49_000)];
+        assert_eq!(
+            kept_price(&flat, &1, Some(PriceGender::Male)).map(|k| k.unit_price.as_i64()),
+            Some(49_000)
+        );
+        assert!(kept_price(&flat, &1, None).is_some());
+    }
 
     #[test]
     fn the_price_gender_fills_an_empty_profile_only() {

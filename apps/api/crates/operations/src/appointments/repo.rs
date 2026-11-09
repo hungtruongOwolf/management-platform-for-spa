@@ -418,8 +418,18 @@ pub async fn appointments(
                   c.gender AS "customer_gender?", a.staff_id, st.full_name AS "staff_name?",
                   a.note, a.status_reason, a.arrived_at, a.closed_at, a.visit_id,
                   v.status AS "visit_status?", v.check_in_at AS "visit_check_in_at?",
-                  (SELECT sum(s.total) FROM app.sale s
-                   WHERE s.tenant_id = v.tenant_id AND s.visit_id = v.id AND s.status = 'open')::bigint AS "sale_total?", a.group_id, a.companions, a.version, a.created_at
+                  (WITH RECURSIVE lineage(id) AS (
+                     SELECT v.id
+                     UNION ALL
+                     SELECT p.corrects_visit_id FROM lineage l
+                     JOIN app.visit p ON p.tenant_id = v.tenant_id AND p.id = l.id
+                     WHERE p.corrects_visit_id IS NOT NULL)
+                   -- The visit's open sales, plus the packages that the visits it replaced ("Sửa
+                   -- lượt") sold to the same customer: they stay with the corrected visit (D8).
+                   SELECT sum(s.total) FROM app.sale s
+                   WHERE s.tenant_id = v.tenant_id AND s.visit_id IN (SELECT id FROM lineage)
+                     AND s.status = 'open' AND s.customer_id = v.customer_id)::bigint AS "sale_total?",
+                  a.group_id, a.companions, a.version, a.created_at
            FROM app.appointment a
            LEFT JOIN app.customer c ON c.tenant_id = a.tenant_id AND c.id = a.customer_id
            LEFT JOIN app.staff st ON st.tenant_id = a.tenant_id AND st.id = a.staff_id
@@ -488,8 +498,18 @@ pub async fn walk_ins(
         r#"SELECT v.id, v.business_date, v.check_in_at, v.customer_id,
                   app.customer_label(c.full_name) AS "customer_name!",
 
-                  c.gender AS "customer_gender?", v.status, (SELECT sum(s.total) FROM app.sale s
-                   WHERE s.tenant_id = v.tenant_id AND s.visit_id = v.id AND s.status = 'open')::bigint AS "sale_total?"
+                  c.gender AS "customer_gender?", v.status,
+                  (WITH RECURSIVE lineage(id) AS (
+                     SELECT v.id
+                     UNION ALL
+                     SELECT p.corrects_visit_id FROM lineage l
+                     JOIN app.visit p ON p.tenant_id = v.tenant_id AND p.id = l.id
+                     WHERE p.corrects_visit_id IS NOT NULL)
+                   -- The visit's open sales, plus the packages that the visits it replaced ("Sửa
+                   -- lượt") sold to the same customer: they stay with the corrected visit (D8).
+                   SELECT sum(s.total) FROM app.sale s
+                   WHERE s.tenant_id = v.tenant_id AND s.visit_id IN (SELECT id FROM lineage)
+                     AND s.status = 'open' AND s.customer_id = v.customer_id)::bigint AS "sale_total?"
            FROM app.visit v
            JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id
            WHERE v.tenant_id = $1 AND v.branch_id = $2 AND v.business_date BETWEEN $3 AND $4
