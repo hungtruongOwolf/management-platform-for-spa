@@ -111,6 +111,8 @@ export function VisitUpsell({
   const [payMode, setPayMode] = useState<PaymentMode>("cash");
   const [cashText, setCashText] = useState("");
   const [attempted, setAttempted] = useState(false);
+  /** Why the last service pick was not added (no Nữ/Nam yet, not offered, no price). */
+  const [pickProblem, setPickProblem] = useState<string | null>(null);
   const nextKey = useRef(1);
 
   const covered = coverage(lines, sales);
@@ -316,6 +318,7 @@ export function VisitUpsell({
               label="Thêm dịch vụ vào lượt"
               customer={customer}
               onAdd={(service, priceVariant, price, categoryName) => {
+                setPickProblem(null);
                 setLines((ls) => [
                   ...ls,
                   {
@@ -332,9 +335,14 @@ export function VisitUpsell({
                   },
                 ]);
               }}
-              onProblem={() => undefined}
+              onProblem={setPickProblem}
             />
           </Suspense>
+          {pickProblem && (
+            <p role="alert" className="field-error">
+              {pickProblem}
+            </p>
+          )}
         </>
       )}
       {can(me, "package.sell") && (

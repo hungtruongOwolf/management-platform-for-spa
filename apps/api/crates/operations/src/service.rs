@@ -510,6 +510,8 @@ async fn price_checkout(
 
     // Every amount comes from the catalog or the package, read inside this transaction.
     let mut priced = Vec::with_capacity(order.lines.len());
+    // Sessions earlier lines take from each item: a default pick skips an item they empty.
+    let mut planned: HashMap<Uuid, u32> = HashMap::new();
     for (i, line) in order.lines.iter().enumerate() {
         priced.push(match (line.source, line.new_package) {
             (Source::OneOff, _) => {
@@ -550,14 +552,20 @@ async fn price_checkout(
             (Source::Package, None) => {
                 let item_id = match line.item_id {
                     Some(id) => id,
-                    None => {
-                        packages::service::default_item(tx, customer.id, line.service_id, today)
-                            .await?
-                            .ok_or(AppError::Unprocessable {
-                                code: "package.item_not_found",
-                            })?
-                    }
+                    None => packages::service::default_item(
+                        tx,
+                        customer.id,
+                        line.service_id,
+                        today,
+                        line.qty,
+                        &planned,
+                    )
+                    .await?
+                    .ok_or(AppError::Unprocessable {
+                        code: "package.item_not_found",
+                    })?,
                 };
+                *planned.entry(item_id).or_insert(0) += line.qty;
                 Priced::Package { item_id }
             }
         });

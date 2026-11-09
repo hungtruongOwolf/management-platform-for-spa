@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.id, i.sessions_remaining\n           FROM app.customer_package_item i\n           JOIN app.customer_package p ON p.tenant_id = i.tenant_id AND p.id = i.customer_package_id\n           WHERE i.tenant_id = $1 AND p.customer_id = $2 AND i.service_id = $3\n             AND p.cancelled_at IS NULL AND (p.expires_on IS NULL OR p.expires_on >= $4)\n             AND i.sessions_remaining > 0\n           ORDER BY p.expires_on ASC NULLS LAST, p.created_at ASC, p.id ASC, i.id ASC\n           LIMIT 50",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_item",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "sessions_remaining",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.customer_package_item",
+            "name": "sessions_remaining"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "e32b6eeee8731bdf04aece2b42ff22f687c706eb9c7a13b2368d625bfbd0c929"
+}

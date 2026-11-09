@@ -1,3 +1,4 @@
+import { QueryClient } from "@tanstack/react-query";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -197,6 +198,7 @@ describe("sale helpers", () => {
 describe("sell package dialog", () => {
   it("sells a package once even when Lưu is clicked twice, then lists 12/12", async () => {
     const calls = serve(MANAGER);
+    const invalidated = vi.spyOn(QueryClient.prototype, "invalidateQueries");
     const { user, dialog, planSelect, closerSelect } = await openDialog();
     expect(
       await screen.findByText(/^Chưa có gói liệu trình nào./),
@@ -205,6 +207,11 @@ describe("sell package dialog", () => {
     await user.selectOptions(closerSelect, "st1");
     expect(within(dialog).getByLabelText("Quà tặng")).toHaveValue(
       "Tặng dầu gội",
+    );
+    // sales MAX_GIFT_NOTE = 500.
+    expect(within(dialog).getByLabelText("Quà tặng")).toHaveAttribute(
+      "maxlength",
+      "500",
     );
     expect(
       within(dialog).getByText("Phải trả: 1.500.000đ"),
@@ -232,6 +239,9 @@ describe("sell package dialog", () => {
     });
     expect(within(list).getByText("Còn 12/12 buổi")).toBeInTheDocument();
     expect(within(list).getByText(/HSD 04\/05\/2027/)).toBeInTheDocument();
+    // The desk's list of the day's package-only sales is stale too.
+    expect(invalidated.mock.calls.some(([f]) => JSON.stringify(f?.queryKey) === JSON.stringify(["sales", "day"]))).toBe(true);
+    invalidated.mockRestore();
   });
 
   it("records a package the customer chose themselves with nobody credited (Q-U2)", async () => {
@@ -271,6 +281,11 @@ describe("sell package dialog", () => {
     expect(
       within(dialog).getByText("Giảm giá gói phải ghi lý do."),
     ).toBeInTheDocument();
+    // sales MAX_REASON = 500.
+    expect(within(dialog).getByLabelText("Lý do giảm giá")).toHaveAttribute(
+      "maxlength",
+      "500",
+    );
     await user.type(within(dialog).getByLabelText("Lý do giảm giá"), "Khách quen");
     await save();
     expect(

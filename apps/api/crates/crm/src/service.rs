@@ -459,7 +459,7 @@ pub async fn phone_holder_in(
 /// Result of a duplicate-phone check while the number is typed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PhoneCheck {
-    /// Not (yet) a valid Vietnamese mobile/landline number: nothing to look up.
+    /// Not (yet) a valid Vietnamese mobile number: nothing to look up.
     Invalid,
     Free,
     Taken {
@@ -514,12 +514,18 @@ pub async fn search(
         c.is_ascii_digit() || c.is_whitespace() || matches!(c, '.' | '-' | '+' | '(' | ')')
     }) {
         let digits: String = query.chars().filter(char::is_ascii_digit).collect();
-        // Search the national number: drop a leading trunk 0 or country code 84.
-        let national = digits
-            .strip_prefix("84")
-            .filter(|_| query.trim_start().starts_with('+'))
-            .or_else(|| digits.strip_prefix('0'))
-            .unwrap_or(&digits);
+        // Search the national number. A whole number in any form the phone check accepts
+        // (`84905…` included) is its national part; otherwise drop a leading trunk 0, or a
+        // country code 84 written after '+' (a bare "849…" may be part of a number).
+        let whole = PhoneE164::parse(query).ok();
+        let national = match &whole {
+            Some(phone) => phone.as_str().strip_prefix("+84").unwrap_or(phone.as_str()),
+            None => digits
+                .strip_prefix("84")
+                .filter(|_| query.trim_start().starts_with('+'))
+                .or_else(|| digits.strip_prefix('0'))
+                .unwrap_or(&digits),
+        };
         if national.len() < 3 {
             return Err(AppError::Validation(vec![FieldError::new(
                 "q",

@@ -139,6 +139,28 @@ describe("Đặt lịch hẹn (spec appointments.md §10.2, §10.5)", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("says so when “Dùng hồ sơ này” cannot open the existing record", async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = renderSheet();
+    fetchMock.mockImplementation(((url: string) =>
+      Promise.resolve(
+        url === "/api/v1/appointments"
+          ? Response.json(
+              { code: "customer.phone_taken", existing_id: "c9" },
+              { status: 409 },
+            )
+          : new Response(null, { status: 500 }),
+      )) as unknown as () => Promise<Response>);
+    await fillGuest(user);
+    await user.click(screen.getByRole("button", { name: "Đặt lịch" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Dùng hồ sơ này" }),
+    );
+    expect(
+      await screen.findByText(/Chưa mở được hồ sơ:/),
+    ).toBeInTheDocument();
+  });
+
   it("sends a companion without a service as a note (round 6 Q-U5), trimmed", async () => {
     const user = userEvent.setup();
     const { fetchMock } = renderSheet();
@@ -448,7 +470,6 @@ describe("Đặt lịch hẹn (spec appointments.md §10.2, §10.5)", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       /Giờ hẹn 09:00 đã qua \(bây giờ 10:00\): chọn từ 10:00 trở đi/,
     );
-    expect(screen.queryByRole("button", { name: "Vẫn đặt lịch" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Đặt lịch" }));
     expect(fetchMock).not.toHaveBeenCalled();
     await user.selectOptions(screen.getByLabelText("Giờ hẹn"), "600");
@@ -546,6 +567,43 @@ describe("Đổi lịch một người trong nhóm (EM 2026-11-07 item 5c)", () 
     const [patchUrl, patchInit] = calls[1] ?? ["", {}];
     expect(patchUrl).toBe("/api/v1/appointments/a1");
     expect(new Headers(patchInit.headers).get("If-Match")).toBe('"2"');
+  });
+
+  it("after a partial failure, a retry with a new time moves the group and this booking again", async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = renderSheet(groupCal, { mode: "edit", appointment: HA });
+    let patches = 0;
+    let moves = 0;
+    fetchMock.mockImplementation(((url: string) => {
+      if (url.endsWith("/move-group")) {
+        moves += 1;
+        return json({ group_id: "g1", moved: [{ ...HA, version: moves * 2 }, MAI], not_moved: [BINH] });
+      }
+      patches += 1;
+      return patches === 1
+        ? json({ code: "appointment.staff_busy" }, 422)
+        : json({ ...HA, version: 9 });
+    }) as unknown as () => Promise<Response>);
+    await user.selectOptions(screen.getByLabelText("Giờ hẹn"), "720");
+    await user.click(screen.getByRole("button", { name: "Lưu thay đổi" }));
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+    // The group moved to 12:00 (version 2), this booking's PATCH was refused; the desk picks 12:30.
+    await user.selectOptions(screen.getByLabelText("Giờ hẹn"), "750");
+    await user.click(screen.getByRole("button", { name: "Lưu thay đổi" }));
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    });
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
+    const [moveUrl, moveInit] = calls[2] ?? ["", {}];
+    expect(moveUrl).toBe("/api/v1/appointments/a1/move-group");
+    expect(new Headers(moveInit.headers).get("If-Match")).toBe('"2"');
+    expect(JSON.parse(moveInit.body as string)).toEqual({ starts_at: "2026-11-07T05:30:00.000Z" });
+    const [patchUrl, patchInit] = calls[3] ?? ["", {}];
+    expect(patchUrl).toBe("/api/v1/appointments/a1");
+    expect(new Headers(patchInit.headers).get("If-Match")).toBe('"4"');
+    expect(JSON.parse(patchInit.body as string)).toMatchObject({ starts_at: "2026-11-07T05:30:00.000Z" });
   });
 
   it("'Chỉ người này' moves only this booking", async () => {

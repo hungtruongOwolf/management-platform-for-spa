@@ -721,6 +721,29 @@ describe("/quay round 6", () => {
     });
   });
 
+  it("says why a service picked for a saved visit was not added (no Nữ/Nam yet)", async () => {
+    serve([{ ...ONE_OFF_VISIT, customer_gender: null }]);
+    const user = userEvent.setup();
+    render(
+      <App history={createMemoryHistory({ initialEntries: ["/quay"] })} />,
+    );
+    const table = await screen.findByRole("table", {
+      name: "Lượt khách hôm nay",
+    });
+    await user.click(
+      within(table).getByRole("button", {
+        name: /^Thao tác lượt .* của Nguyễn Thị Hà$/,
+      }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "Thêm dịch vụ / bán gói" }),
+    );
+    await pickService(user, "Thêm dịch vụ vào lượt", "s5");
+    expect(
+      await screen.findByText("Chọn Nữ hoặc Nam để tính giá dịch vụ này."),
+    ).toBeInTheDocument();
+  });
+
   it("“Thêm dịch vụ / bán gói” sells a new package by default; “Tính buổi hôm nay vào gói” converts (Q-U1)", async () => {
     const calls = serve([ONE_OFF_VISIT]);
     const user = userEvent.setup();
@@ -890,7 +913,9 @@ describe("/quay round 6", () => {
     await pickHa(user);
     await addOneOff(user, "s10");
     // ADR-0009: companions are entered on the booking, not as free text in the cart.
-    expect(screen.queryByText("Người đi cùng (ghi chú)")).toBeNull();
+    expect(
+      screen.queryByRole("textbox", { name: /Người đi cùng/ }),
+    ).toBeNull();
     await user.click(screen.getByRole("button", { name: "Đổi khách" }));
     const ask = await screen.findByRole("alertdialog", {
       name: /Đổi khách\? Giỏ của Nguyễn Thị Hà chưa lưu/,
@@ -971,7 +996,12 @@ describe("/quay EM flow review 2026-11-07", () => {
       await screen.findByRole("combobox", { name: "Mẫu gói" }),
       "pl1",
     );
-    expect(screen.queryByText(/Bán thêm gói/)).toBeNull();
+    // Several packages in one checkout (EM 2026-11-07 item 4): another one can still be added.
+    expect(
+      within(
+        screen.getByRole("region", { name: "Gói bán hôm nay" }),
+      ).getByRole("button", { name: "Bán gói liệu trình" }),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Làm 1 buổi hôm nay" }));
     const ktv = await screen.findByRole("combobox", { name: "KTV" });
     await waitFor(() => {

@@ -1,4 +1,5 @@
 import type { CustomerPackage, Visit } from "@vpyd/api-client";
+import { QueryClient } from "@tanstack/react-query";
 import { createMemoryHistory } from "@tanstack/react-router";
 import {
   fireEvent,
@@ -380,6 +381,7 @@ describe("package actions on the customer profile", () => {
   });
 
   it("cancels with a refund in one request, without asking the owner for the password", async () => {
+    const invalidated = vi.spyOn(QueryClient.prototype, "invalidateQueries");
     const calls = serve(OWNER, (c) =>
       c.url === "/api/v1/customer-packages/cp1/cancel"
         ? Response.json(
@@ -436,6 +438,9 @@ describe("package actions on the customer profile", () => {
       refund_method: "cash",
     });
     expect(posts(calls, "/auth/reauth")).toHaveLength(0);
+    // The refund leaves the day's money: the desk's list of the day's sales is stale too.
+    expect(invalidated.mock.calls.some(([f]) => JSON.stringify(f?.queryKey) === JSON.stringify(["sales", "day"]))).toBe(true);
+    invalidated.mockRestore();
   });
 
   it("shows the server's 409 when the sale's sessions were used meanwhile", async () => {

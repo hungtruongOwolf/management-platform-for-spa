@@ -39,7 +39,8 @@ function HealthNoteEditor({ customer, onSaved, onCancel }: { customer: Customer;
           id={`${id}-note`}
           autoFocus
           value={text}
-          maxLength={1000}
+          // crm MAX_HEALTH_NOTE.
+          maxLength={2000}
           aria-describedby={`${id}-hint`}
           onChange={(e) => {
             setText(e.target.value);
