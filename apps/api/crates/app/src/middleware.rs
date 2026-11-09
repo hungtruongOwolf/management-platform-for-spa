@@ -183,7 +183,9 @@ pub fn with_admin_auth_rate_limit<S: Clone + Send + Sync + 'static>(
     match client_limiter(6_000, 5) {
         Some(config) => router.layer(GovernorLayer::new(config)),
         None => {
-            tracing::error!("invalid admin auth rate limit policy; admin auth rate limiting disabled");
+            tracing::error!(
+                "invalid admin auth rate limit policy; admin auth rate limiting disabled"
+            );
             router
         }
     }
@@ -290,15 +292,27 @@ mod tests {
             public: "https://app.example".into(),
             admin: None,
         };
-        assert_eq!(shared.expected_for("/api/v1/admin/tenants"), "https://app.example");
+        assert_eq!(
+            shared.expected_for("/api/v1/admin/tenants"),
+            "https://app.example"
+        );
         let split = Origins {
             public: "https://app.example".into(),
             admin: Some("https://admin.example".into()),
         };
-        assert_eq!(split.expected_for("/api/v1/admin/tenants"), "https://admin.example");
+        assert_eq!(
+            split.expected_for("/api/v1/admin/tenants"),
+            "https://admin.example"
+        );
         assert_eq!(split.expected_for("/api/v1/admin"), "https://admin.example");
-        assert_eq!(split.expected_for("/api/v1/customers"), "https://app.example");
-        assert_eq!(split.expected_for("/api/v1/administrator"), "https://app.example");
+        assert_eq!(
+            split.expected_for("/api/v1/customers"),
+            "https://app.example"
+        );
+        assert_eq!(
+            split.expected_for("/api/v1/administrator"),
+            "https://app.example"
+        );
     }
 
     #[test]

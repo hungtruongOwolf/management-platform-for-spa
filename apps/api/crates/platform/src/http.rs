@@ -7,7 +7,9 @@ use crate::auth::{
     self, Operator, OperatorAuth, OperatorEnrolled, OperatorEnrollment, OperatorLogin, OperatorMe,
     OperatorSummary, PendingOperatorSession,
 };
-use crate::tenants::{self, CreatedTenant, NewTenant, Reason, StatusChanged, TenantRow, TenantStatus};
+use crate::tenants::{
+    self, CreatedTenant, NewTenant, Reason, StatusChanged, TenantRow, TenantStatus,
+};
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -30,14 +32,17 @@ where
     S: Clone + Send + Sync + 'static,
 {
     let auth = Router::new()
-        .route("/admin/auth/login", post(login))
-        .route("/admin/auth/logout", post(logout))
-        .route("/admin/auth/reauth", post(reauth))
-        .route("/admin/auth/mfa/verify", post(mfa_verify))
-        .route("/admin/auth/mfa/enroll/start", post(mfa_enroll_start))
-        .route("/admin/auth/mfa/enroll/confirm", post(mfa_enroll_confirm));
+        .route("/admin/auth/login", post(admin_login))
+        .route("/admin/auth/logout", post(admin_logout))
+        .route("/admin/auth/reauth", post(admin_reauth))
+        .route("/admin/auth/mfa/verify", post(admin_mfa_verify))
+        .route("/admin/auth/mfa/enroll/start", post(admin_mfa_enroll_start))
+        .route(
+            "/admin/auth/mfa/enroll/confirm",
+            post(admin_mfa_enroll_confirm),
+        );
     let console = Router::new()
-        .route("/admin/me", get(me))
+        .route("/admin/me", get(admin_me))
         .route("/admin/tenants", get(list_tenants).post(create_tenant))
         .route("/admin/tenants/{id}", get(get_tenant))
         .route("/admin/tenants/{id}/suspend", post(suspend_tenant))
@@ -87,7 +92,7 @@ pub struct OperatorReauthBody {
 #[utoipa::path(post, path = "/api/v1/admin/auth/login", tag = "admin", request_body = OperatorLoginBody,
     responses((status = 200, body = OperatorLogin, description = "Sets a pending __Host-op-session cookie: always a second factor next"),
         (status = 401, description = "auth.invalid_credentials"), (status = 422), (status = 429)))]
-pub async fn login(
+pub async fn admin_login(
     State(pool): State<PgPool>,
     headers: HeaderMap,
     Client(meta): Client,
@@ -100,8 +105,14 @@ pub async fn login(
         )]));
     }
     let previous = auth::operator_secret(&headers);
-    let (token, next) =
-        auth::login(&pool, &body.username, &body.password, previous.as_deref(), &meta).await?;
+    let (token, next) = auth::login(
+        &pool,
+        &body.username,
+        &body.password,
+        previous.as_deref(),
+        &meta,
+    )
+    .await?;
     with_cookie(&auth::operator_cookie(&token.secret), Some(next))
 }
 
@@ -109,7 +120,7 @@ pub async fn login(
     responses((status = 200, body = OperatorSummary, description = "Signed in: new full-session cookie"),
         (status = 401, description = "auth.invalid_mfa_code | auth.mfa_enrollment_required | auth.unauthenticated"),
         (status = 409, description = "auth.mfa_not_pending"), (status = 429)))]
-pub async fn mfa_verify(
+pub async fn admin_mfa_verify(
     State(pool): State<PgPool>,
     State(cipher): State<Arc<FieldCipher>>,
     PendingOperatorSession(pending): PendingOperatorSession,
@@ -122,7 +133,7 @@ pub async fn mfa_verify(
 #[utoipa::path(post, path = "/api/v1/admin/auth/mfa/enroll/start", tag = "admin",
     responses((status = 200, body = OperatorEnrollment), (status = 401),
         (status = 409, description = "auth.mfa_already_enrolled | auth.mfa_not_pending"), (status = 429)))]
-pub async fn mfa_enroll_start(
+pub async fn admin_mfa_enroll_start(
     State(pool): State<PgPool>,
     State(cipher): State<Arc<FieldCipher>>,
     PendingOperatorSession(pending): PendingOperatorSession,
@@ -136,7 +147,7 @@ pub async fn mfa_enroll_start(
         (status = 401, description = "auth.invalid_mfa_code"),
         (status = 409, description = "auth.mfa_already_enrolled | auth.mfa_enrollment_not_started | auth.mfa_enrollment_changed | auth.mfa_not_pending"),
         (status = 429)))]
-pub async fn mfa_enroll_confirm(
+pub async fn admin_mfa_enroll_confirm(
     State(pool): State<PgPool>,
     State(cipher): State<Arc<FieldCipher>>,
     PendingOperatorSession(pending): PendingOperatorSession,
@@ -150,7 +161,7 @@ pub async fn mfa_enroll_confirm(
     responses((status = 204, description = "Step-up open for 5 minutes"),
         (status = 401, description = "auth.invalid_credentials | auth.invalid_mfa_code | auth.unauthenticated"),
         (status = 422, description = "code required"), (status = 429)))]
-pub async fn reauth(
+pub async fn admin_reauth(
     State(pool): State<PgPool>,
     State(cipher): State<Arc<FieldCipher>>,
     OperatorAuth(session): OperatorAuth,
@@ -163,7 +174,7 @@ pub async fn reauth(
 /// Works for full and pending sessions alike.
 #[utoipa::path(post, path = "/api/v1/admin/auth/logout", tag = "admin",
     responses((status = 204), (status = 401)))]
-pub async fn logout(
+pub async fn admin_logout(
     State(pool): State<PgPool>,
     headers: HeaderMap,
     Client(meta): Client,
@@ -175,11 +186,13 @@ pub async fn logout(
 
 #[utoipa::path(get, path = "/api/v1/admin/me", tag = "admin",
     responses((status = 200, body = OperatorMe), (status = 401)))]
-pub async fn me(
+pub async fn admin_me(
     State(pool): State<PgPool>,
     OperatorAuth(session): OperatorAuth,
 ) -> Result<Response, AppError> {
-    Ok(no_store(Json(auth::me(&pool, &session).await?).into_response()))
+    Ok(no_store(
+        Json(auth::me(&pool, &session).await?).into_response(),
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v1/admin/tenants", tag = "admin",
@@ -201,7 +214,9 @@ pub async fn create_tenant(
     Json(body): Json<NewTenant>,
 ) -> Result<Response, AppError> {
     let created = tenants::create(&pool, &op, &body).await?;
-    Ok(no_store((StatusCode::CREATED, Json(created)).into_response()))
+    Ok(no_store(
+        (StatusCode::CREATED, Json(created)).into_response(),
+    ))
 }
 
 #[utoipa::path(get, path = "/api/v1/admin/tenants/{id}", tag = "admin",

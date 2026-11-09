@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM app.platform_recovery_code WHERE operator_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e2a9d4f3d83ac3f1b8262dfc0e76a345dadccece808d2c7c94dde6dea7dcf3a5"
+}

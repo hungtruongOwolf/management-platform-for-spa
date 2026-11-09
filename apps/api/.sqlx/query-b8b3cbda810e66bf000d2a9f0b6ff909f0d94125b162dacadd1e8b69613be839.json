@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.platform_session\n             (id, token_hash, operator_id, idle_expires_at, absolute_expires_at, recent_auth_at,\n              mfa_pending, ip, user_agent)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea",
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz",
+        "Bool",
+        "Inet",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b8b3cbda810e66bf000d2a9f0b6ff909f0d94125b162dacadd1e8b69613be839"
+}

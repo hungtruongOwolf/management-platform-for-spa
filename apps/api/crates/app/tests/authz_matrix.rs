@@ -1825,8 +1825,7 @@ async fn ids_from_another_spa_are_not_found(pool: PgPool) -> TestResult {
     let intruder = session(&w.h, OTHER_OWNER_PHONE).await?;
     let mut failures = Vec::new();
     let mut swept = 0;
-    let spa_scoped =
-        |r: &&Route| !matches!(r.access, Access::Operator | Access::OperatorPending);
+    let spa_scoped = |r: &&Route| !matches!(r.access, Access::Operator | Access::OperatorPending);
     for route in ROUTES
         .iter()
         .filter(|r| r.id != Target::None)

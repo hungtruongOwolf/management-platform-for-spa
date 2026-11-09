@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.role_permission (tenant_id, role_id, permission)\n             SELECT $1, $2, unnest($3::text[])",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "30a4e5df8c381da8a480f1d2ca7ab319a894bad2ae9040247850eaf71a754720"
+}

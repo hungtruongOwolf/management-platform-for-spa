@@ -500,7 +500,13 @@ mod tests {
 
     #[test]
     fn a_reason_is_required() {
-        assert!(Reason { reason: "  ab ".into() }.checked().is_err());
+        assert!(
+            Reason {
+                reason: "  ab ".into()
+            }
+            .checked()
+            .is_err()
+        );
         assert_eq!(
             Reason {
                 reason: " Chưa thanh toán ".into()

@@ -56,7 +56,9 @@ async fn an_operator_always_signs_in_with_a_second_factor(owner: PgPool) -> Test
     assert_eq!(me.body["operator"]["username"], OPERATOR);
     assert!(me.body["step_up_until"].is_string());
     assert_eq!(
-        me.headers.get("cache-control").and_then(|v| v.to_str().ok()),
+        me.headers
+            .get("cache-control")
+            .and_then(|v| v.to_str().ok()),
         Some("no-store")
     );
 
@@ -172,9 +174,10 @@ async fn writes_need_a_recent_step_up(owner: PgPool) -> TestResult {
         .bind(&hash[..])
         .execute(&app_pool)
         .await;
-    let code = direct
-        .err()
-        .and_then(|e| e.as_database_error().and_then(|d| d.code().map(|c| c.into_owned())));
+    let code = direct.err().and_then(|e| {
+        e.as_database_error()
+            .and_then(|d| d.code().map(|c| c.into_owned()))
+    });
     assert_eq!(code.as_deref(), Some("42501"));
 
     // Re-auth needs password and a code; a wrong code counts as a failure.
@@ -230,7 +233,10 @@ async fn creating_a_spa_shows_the_password_once(owner: PgPool) -> TestResult {
         .to_owned();
     assert_eq!(temporary.len(), 14);
     assert_eq!(created.body["tenant"]["slug"], "hoa-sen");
-    let tenant_id = created.body["tenant"]["id"].as_str().unwrap_or_default().to_owned();
+    let tenant_id = created.body["tenant"]["id"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
 
     // Three system roles with the default grants, one owner membership.
     let roles = count(
@@ -348,7 +354,11 @@ async fn a_failed_creation_leaves_nothing_behind(owner: PgPool) -> TestResult {
     assert_eq!(extra.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(tenants().await?, before);
     assert_eq!(
-        count(&h.owner, "SELECT count(*) FROM app.user_account WHERE phone_e164 = '+84907000111'").await?,
+        count(
+            &h.owner,
+            "SELECT count(*) FROM app.user_account WHERE phone_e164 = '+84907000111'"
+        )
+        .await?,
         0
     );
     Ok(())
@@ -387,7 +397,14 @@ async fn the_spa_list_is_counts_only(owner: PgPool) -> TestResult {
     assert_eq!(spas[0]["owner_count"], 1);
     assert_eq!(spas[0]["status"], "active");
     let id = spas[0]["id"].as_str().unwrap_or_default();
-    let one = admin_call(&h.app, "GET", &format!("/admin/tenants/{id}"), Some(&op), None).await;
+    let one = admin_call(
+        &h.app,
+        "GET",
+        &format!("/admin/tenants/{id}"),
+        Some(&op),
+        None,
+    )
+    .await;
     assert_eq!(one.body["slug"], "vpyd");
     let missing = admin_call(
         &h.app,
@@ -412,7 +429,14 @@ async fn a_suspended_spa_cannot_sign_in(owner: PgPool) -> TestResult {
         .fetch_one(&h.owner)
         .await?;
     let path = format!("/admin/tenants/{id}/suspend");
-    let no_reason = admin_call(&h.app, "POST", &path, Some(&op), Some(json!({"reason": " "}))).await;
+    let no_reason = admin_call(
+        &h.app,
+        "POST",
+        &path,
+        Some(&op),
+        Some(json!({"reason": " "})),
+    )
+    .await;
     assert_eq!(no_reason.status, StatusCode::UNPROCESSABLE_ENTITY);
     let suspended = admin_call(
         &h.app,
@@ -424,14 +448,26 @@ async fn a_suspended_spa_cannot_sign_in(owner: PgPool) -> TestResult {
     .await;
     assert_eq!(suspended.status, StatusCode::OK, "{}", suspended.body);
     assert_eq!(suspended.body["tenant"]["status"], "suspended");
-    assert!(suspended.body["revoked_sessions"].as_i64().unwrap_or_default() >= 1);
+    assert!(
+        suspended.body["revoked_sessions"]
+            .as_i64()
+            .unwrap_or_default()
+            >= 1
+    );
 
     let old = call(&h.app, "GET", "/customers", Some(&spa_owner), None).await;
     assert_eq!(old.status, StatusCode::UNAUTHORIZED);
     let refused = login(&h.app, common::OWNER_PHONE, PASSWORD).await;
     assert_eq!(refused.status, StatusCode::FORBIDDEN);
     assert_eq!(refused.body["code"], "auth.spa_suspended");
-    let again = admin_call(&h.app, "POST", &path, Some(&op), Some(json!({"reason": "Lần nữa"}))).await;
+    let again = admin_call(
+        &h.app,
+        "POST",
+        &path,
+        Some(&op),
+        Some(json!({"reason": "Lần nữa"})),
+    )
+    .await;
     assert_eq!(again.status, StatusCode::CONFLICT);
     assert_eq!(again.body["code"], "tenant.status_unchanged");
 
@@ -474,7 +510,10 @@ async fn every_operator_write_is_audited(owner: PgPool) -> TestResult {
         Some(new_spa("hoa-sen", "0907000111")),
     )
     .await;
-    let id = created.body["tenant"]["id"].as_str().unwrap_or_default().to_owned();
+    let id = created.body["tenant"]["id"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
     admin_call(
         &h.app,
         "POST",
@@ -489,14 +528,20 @@ async fn every_operator_write_is_audited(owner: PgPool) -> TestResult {
         .as_array()
         .map(|items| items.iter().filter_map(|i| i["action"].as_str()).collect())
         .unwrap_or_default();
-    assert_eq!(actions, ["platform.tenant.suspend", "platform.tenant.create"]);
+    assert_eq!(
+        actions,
+        ["platform.tenant.suspend", "platform.tenant.create"]
+    );
     assert_eq!(page.body["items"][0]["reason"], "Thử nghiệm");
     assert_eq!(page.body["items"][0]["operator_username"], OPERATOR);
     let before = page.body["next_before"].as_str().unwrap_or_default();
     let older = admin_call(
         &h.app,
         "GET",
-        &format!("/admin/audit?limit=100&before={}", before.replace('+', "%2B")),
+        &format!(
+            "/admin/audit?limit=100&before={}",
+            before.replace('+', "%2B")
+        ),
         Some(&op),
         None,
     )
@@ -542,7 +587,11 @@ async fn platform_functions_check_the_operator_session_themselves(owner: PgPool)
             "{name}"
         );
         assert!(!public, "{name} must not be executable by PUBLIC");
-        assert_eq!(*app_rw, name != "platform_gate", "{name}: EXECUTE for app_rw");
+        assert_eq!(
+            *app_rw,
+            name != "platform_gate",
+            "{name}: EXECUTE for app_rw"
+        );
     }
 
     let app_pool = kernel::testing::app_pool(&h.owner).await?;
@@ -554,7 +603,10 @@ async fn platform_functions_check_the_operator_session_themselves(owner: PgPool)
                 .fetch_all(&pool)
                 .await
                 .err()
-                .and_then(|e| e.as_database_error().and_then(|d| d.code().map(|c| c.into_owned())))
+                .and_then(|e| {
+                    e.as_database_error()
+                        .and_then(|d| d.code().map(|c| c.into_owned()))
+                })
         }
     };
     assert_eq!(refused(vec![0; 32]).await.as_deref(), Some("42501"));
@@ -583,14 +635,17 @@ async fn platform_functions_check_the_operator_session_themselves(owner: PgPool)
     assert_eq!(out.status, StatusCode::NO_CONTENT);
     assert_eq!(refused(op_hash).await.as_deref(), Some("42501"));
     assert_eq!(
-        admin_call(&h.app, "GET", "/admin/me", Some(&op), None).await.status,
+        admin_call(&h.app, "GET", "/admin/me", Some(&op), None)
+            .await
+            .status,
         StatusCode::UNAUTHORIZED
     );
 
     // app_rw cannot insert a tenant on its own: only through the gated function.
-    let direct = sqlx::query("INSERT INTO app.tenant (id, name, slug) VALUES (gen_random_uuid(), 'x', 'x')")
-        .execute(&app_pool)
-        .await;
+    let direct =
+        sqlx::query("INSERT INTO app.tenant (id, name, slug) VALUES (gen_random_uuid(), 'x', 'x')")
+            .execute(&app_pool)
+            .await;
     assert!(direct.is_err());
     Ok(())
 }
@@ -609,8 +664,18 @@ async fn operator_codes_are_single_use(owner: PgPool) -> TestResult {
     )
     .await;
     let pending = first.op_session().unwrap_or_default();
-    let start = admin_call(&h.app, "POST", "/admin/auth/mfa/enroll/start", Some(&pending), None).await;
-    let key = start.body["manual_key"].as_str().unwrap_or_default().to_owned();
+    let start = admin_call(
+        &h.app,
+        "POST",
+        "/admin/auth/mfa/enroll/start",
+        Some(&pending),
+        None,
+    )
+    .await;
+    let key = start.body["manual_key"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
     let code = code_now(&key);
     let confirmed = admin_call(
         &h.app,
@@ -621,8 +686,14 @@ async fn operator_codes_are_single_use(owner: PgPool) -> TestResult {
     )
     .await;
     assert_eq!(confirmed.status, StatusCode::OK, "{}", confirmed.body);
-    let recovery = confirmed.body["recovery_codes"][0].as_str().unwrap_or_default().to_owned();
-    assert_eq!(confirmed.body["recovery_codes"].as_array().map(Vec::len), Some(10));
+    let recovery = confirmed.body["recovery_codes"][0]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    assert_eq!(
+        confirmed.body["recovery_codes"].as_array().map(Vec::len),
+        Some(10)
+    );
 
     let sign_in = || {
         admin_call(
@@ -642,7 +713,11 @@ async fn operator_codes_are_single_use(owner: PgPool) -> TestResult {
         Some(json!({"code": code})),
     )
     .await;
-    assert_eq!(replay.status, StatusCode::UNAUTHORIZED, "a used step is a replay");
+    assert_eq!(
+        replay.status,
+        StatusCode::UNAUTHORIZED,
+        "a used step is a replay"
+    );
     let with_recovery = admin_call(
         &h.app,
         "POST",
@@ -651,7 +726,12 @@ async fn operator_codes_are_single_use(owner: PgPool) -> TestResult {
         Some(json!({"code": recovery})),
     )
     .await;
-    assert_eq!(with_recovery.status, StatusCode::OK, "{}", with_recovery.body);
+    assert_eq!(
+        with_recovery.status,
+        StatusCode::OK,
+        "{}",
+        with_recovery.body
+    );
     let reused_pending = sign_in().await.op_session().unwrap_or_default();
     let reused = admin_call(
         &h.app,
@@ -662,5 +742,34 @@ async fn operator_codes_are_single_use(owner: PgPool) -> TestResult {
     )
     .await;
     assert_eq!(reused.status, StatusCode::UNAUTHORIZED);
+    Ok(())
+}
+
+/// ADR-0018 D3: only the platform crate's SQL names the operator tables and functions, so no spa
+/// route can reach them by accident.
+#[test]
+fn platform_sql_stays_in_platform() -> TestResult {
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut offenders = Vec::new();
+    let mut stack = vec![crates];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir)? {
+            let path = entry?.path();
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if path.is_dir() {
+                if !matches!(name, "tests" | "target" | "platform") {
+                    stack.push(path);
+                }
+            } else if name.ends_with(".rs")
+                && std::fs::read_to_string(&path)?.contains("app.platform_")
+            {
+                offenders.push(path.display().to_string());
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "app.platform_* outside crates/platform: {offenders:?}"
+    );
     Ok(())
 }

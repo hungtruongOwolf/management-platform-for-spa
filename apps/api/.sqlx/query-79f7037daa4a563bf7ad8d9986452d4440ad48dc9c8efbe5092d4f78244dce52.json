@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.platform_recovery_code SET used_at = now()\n                 WHERE operator_id = $1 AND code_hash = $2 AND used_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "79f7037daa4a563bf7ad8d9986452d4440ad48dc9c8efbe5092d4f78244dce52"
+}

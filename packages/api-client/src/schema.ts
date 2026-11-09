@@ -38,6 +38,199 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_audit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["admin_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Works for full and pending sessions alike. */
+        post: operations["admin_logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/auth/mfa/enroll/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["admin_mfa_enroll_confirm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/auth/mfa/enroll/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["admin_mfa_enroll_start"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/auth/mfa/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["admin_mfa_verify"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/auth/reauth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["admin_reauth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["admin_me"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tenants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_tenants"];
+        put?: never;
+        post: operations["create_tenant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tenants/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_tenant"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tenants/{id}/suspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["suspend_tenant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tenants/{id}/unsuspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["unsuspend_tenant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/appointment-settings": {
         parameters: {
             query?: never;
@@ -1842,6 +2035,17 @@ export interface components {
              */
             value: number;
         };
+        CreatedOwner: {
+            phone: string;
+            /** @description Shown this once (`Cache-Control: no-store`); the owner must replace it at first sign-in. */
+            temporary_password: string;
+            /** Format: uuid */
+            user_id: string;
+        };
+        CreatedTenant: {
+            owner: components["schemas"]["CreatedOwner"];
+            tenant: components["schemas"]["TenantRow"];
+        };
         Criterion: {
             key: string;
             label: string;
@@ -2952,6 +3156,20 @@ export interface components {
             /** @description `false`: this login is not linked to a staff profile (ask the owner). */
             linked: boolean;
         };
+        NewOwner: {
+            full_name: string;
+            /** @description Vietnamese mobile number that has no login yet (one person, one spa: ADR-0016). */
+            phone: string;
+        };
+        /** @description Body of `POST /admin/tenants`. */
+        NewTenant: {
+            /** @description Default "Cơ sở chính". */
+            branch_name?: string | null;
+            name: string;
+            owner: components["schemas"]["NewOwner"];
+            /** @description `^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$`, unique. */
+            slug: string;
+        };
         /** @description One note. `customer_*` for notes about a customer, `staff_*` for notes about a staff member. */
         NoteEntry: {
             /**
@@ -3090,6 +3308,50 @@ export interface components {
              * @description Original registration date (not in the future).
              */
             starts_on: string;
+        };
+        OperatorCodeBody: {
+            /** @description 6-digit TOTP code, or (verify / re-auth) a recovery code. */
+            code: string;
+        };
+        OperatorEnrolled: {
+            operator: components["schemas"]["OperatorSummary"];
+            /** @description Shown this once; stored hashed. */
+            recovery_codes: string[];
+        };
+        OperatorEnrollment: {
+            manual_key: string;
+            otpauth_uri: string;
+        };
+        OperatorLogin: {
+            next: components["schemas"]["OperatorLoginNext"];
+        };
+        OperatorLoginBody: {
+            password: string;
+            username: string;
+        };
+        /**
+         * @description What the browser does after the password step: always a second factor.
+         * @enum {string}
+         */
+        OperatorLoginNext: "mfa_verify" | "mfa_enroll";
+        /** @description Body of `GET /admin/me`. */
+        OperatorMe: {
+            operator: components["schemas"]["OperatorSummary"];
+            /**
+             * Format: date-time
+             * @description Writes are allowed until then without a new step-up (`null` = step-up needed now).
+             */
+            step_up_until?: string | null;
+        };
+        OperatorReauthBody: {
+            code: string;
+            password: string;
+        };
+        OperatorSummary: {
+            full_name: string;
+            /** Format: uuid */
+            id: string;
+            username: string;
         };
         /** @description Body of `POST /customer-packages/{id}/cancel`. */
         PackageCancel: {
@@ -3565,6 +3827,32 @@ export interface components {
             /** Format: int32 */
             validity_months?: number | null;
         };
+        PlatformAuditItem: {
+            action: string;
+            /** Format: date-time */
+            at: string;
+            detail?: unknown;
+            /** Format: uuid */
+            id: string;
+            ip?: string | null;
+            /** Format: uuid */
+            operator_id: string;
+            operator_username: string;
+            reason?: string | null;
+            /** Format: uuid */
+            target_id?: string | null;
+            target_type?: string | null;
+            /** Format: uuid */
+            tenant_id?: string | null;
+        };
+        PlatformAuditPage: {
+            items: components["schemas"]["PlatformAuditItem"][];
+            /**
+             * Format: date-time
+             * @description Pass as `before` for the next (older) page; absent on the last page.
+             */
+            next_before?: string | null;
+        };
         /** @enum {string} */
         PriceVariant: "all" | "female" | "male";
         /** @description Prices in đồng: either `all`, or `female` and/or `male` (a missing gender = not offered). */
@@ -3624,6 +3912,11 @@ export interface components {
             top_services: components["schemas"]["TopService"][];
             /** @description Whole range; `customers` = distinct customers over the range. */
             totals: components["schemas"]["DayCounts"];
+        };
+        /** @description Body of suspend / unsuspend (and every other operator write): why, for the audit trail. */
+        Reason: {
+            /** @description 3–500 characters. */
+            reason: string;
         };
         ReauthBody: {
             /** @description Current TOTP (or a recovery code); required when the account has MFA enabled. */
@@ -4185,6 +4478,14 @@ export interface components {
         };
         /** @enum {string} */
         StaffStatusDto: "active" | "left";
+        StatusChanged: {
+            /**
+             * Format: int32
+             * @description Sessions of the spa's members ended by a suspension.
+             */
+            revoked_sessions: number;
+            tenant: components["schemas"]["TenantRow"];
+        };
         /**
          * @description The next date the rules would store for a contact made today, per outcome (`null` = none).
          *     The form pre-fills `next_follow_up_on` with it; whatever the user leaves there is sent.
@@ -4233,6 +4534,43 @@ export interface components {
         TemporaryPasswordDto: {
             temporary_password: string;
         };
+        /** @description One spa in the console's list: metadata and counts only (ADR-0003, ADR-0018 D3). */
+        TenantRow: {
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: int64
+             * @description Customer profiles not anonymised.
+             */
+            customer_count: number;
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: date-time
+             * @description Latest entry of the spa's audit trail.
+             */
+            last_activity_at?: string | null;
+            name: string;
+            /**
+             * Format: int64
+             * @description Active logins holding `staff.manage`.
+             */
+            owner_count: number;
+            slug: string;
+            /**
+             * Format: int64
+             * @description Staff profiles still working.
+             */
+            staff_count: number;
+            status: components["schemas"]["TenantStatus"];
+            /**
+             * Format: int64
+             * @description Completed (not voided) visits in the last 30 days.
+             */
+            visits_30d: number;
+        };
+        /** @enum {string} */
+        TenantStatus: "active" | "suspended";
         TenantSummary: {
             /** Format: uuid */
             id: string;
@@ -4884,6 +5222,523 @@ export interface operations {
             };
             /** @description adjustment.voided, payroll.period_closed */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_audit: {
+        parameters: {
+            query?: {
+                /** @description Only entries strictly older than this instant (the previous page's `next_before`). */
+                before?: string;
+                /** @description 1–100, default 50. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformAuditPage"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperatorLoginBody"];
+            };
+        };
+        responses: {
+            /** @description Sets a pending __Host-op-session cookie: always a second factor next */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperatorLogin"];
+                };
+            };
+            /** @description auth.invalid_credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_mfa_enroll_confirm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperatorCodeBody"];
+            };
+        };
+        responses: {
+            /** @description MFA on; recovery codes shown once; new full-session cookie */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperatorEnrolled"];
+                };
+            };
+            /** @description auth.invalid_mfa_code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.mfa_already_enrolled | auth.mfa_enrollment_not_started | auth.mfa_enrollment_changed | auth.mfa_not_pending */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_mfa_enroll_start: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperatorEnrollment"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.mfa_already_enrolled | auth.mfa_not_pending */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_mfa_verify: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperatorCodeBody"];
+            };
+        };
+        responses: {
+            /** @description Signed in: new full-session cookie */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperatorSummary"];
+                };
+            };
+            /** @description auth.invalid_mfa_code | auth.mfa_enrollment_required | auth.unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.mfa_not_pending */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_reauth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperatorReauthBody"];
+            };
+        };
+        responses: {
+            /** @description Step-up open for 5 minutes */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.invalid_credentials | auth.invalid_mfa_code | auth.unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description code required */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperatorMe"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_tenants: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantRow"][];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_tenant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewTenant"];
+            };
+        };
+        responses: {
+            /** @description The owner's temporary password is in this response only (no-store) */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedTenant"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description platform.step_up_required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description tenant.slug_taken | account.phone_taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_tenant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantRow"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    suspend_tenant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Reason"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusChanged"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description platform.step_up_required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description tenant.status_unchanged */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    unsuspend_tenant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Reason"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusChanged"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description platform.step_up_required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description tenant.status_unchanged */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

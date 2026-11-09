@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.platform_operator SET failed_logins = 0, locked_until = NULL, updated_at = now()\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5847123aa45d41ceb70a24ec51dbcea1173e491ba6c5e4fcc894204efc466929"
+}

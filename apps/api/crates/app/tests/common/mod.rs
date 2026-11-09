@@ -294,13 +294,10 @@ pub const OPERATOR_PASSWORD: &str = "mat-khau-cua-operator";
 
 /// The CLI path (`app add-operator`): the only way an operator exists.
 pub async fn add_operator(h: &Harness) -> Result<uuid::Uuid, Box<dyn std::error::Error>> {
-    Ok(platform::operator::add_operator(
-        &h.owner,
-        OPERATOR,
-        "Người vận hành",
-        OPERATOR_PASSWORD,
+    Ok(
+        platform::operator::add_operator(&h.owner, OPERATOR, "Người vận hành", OPERATOR_PASSWORD)
+            .await?,
     )
-    .await?)
 }
 
 impl Reply {

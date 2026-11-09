@@ -105,6 +105,12 @@ Test mỗi hàm (`app/tests/platform_db.rs`): là definer + search_path ghim; `P
 - **Trạng thái**: mỗi màn skeleton khi tải, trống ("Chưa có spa nào"), lỗi (problem `code` → thông báo tiếng Việt trong `admin/messages.ts`, không vào `lib/errors.ts`).
 - **Spa (PR B)**: `Me.features`; `hasFeature(me, key)`; nav ẩn "Nhật ký ghi chú" khi `notes_journal` tắt, "Báo cáo kinh doanh" / sổ doanh thu khi `reports` tắt; lịch hẹn / lương / đánh giá / gọi lại tự ẩn vì permission bị rút; màn mở bằng URL khi tính năng tắt → "Không có quyền" (route guard dùng cùng `mayOpen`).
 
+## Vận hành
+- Tạo operator đầu tiên (máy có `DATABASE_URL` schema owner): `APP_NEW_OPERATOR_PASSWORD=… app add-operator --username ops --name "…"` (mật khẩu ≥ 10 ký tự, từ env — không argv), rồi **ngay** mở `/admin/dang-nhap` để enroll TOTP (TOFU) và cất 10 mã khôi phục.
+- Mất authenticator: `app reset-operator-mfa --username U` (xác minh người thật trước). Tạm khóa: `app disable-operator --username U` / `enable-operator`.
+- Dùng một profile trình duyệt riêng cho console (không đăng nhập spa trong cùng profile) đến khi có `APP_ADMIN_ORIGIN` + subdomain.
+- Lệnh CLI cũ `app unlock` / `reset-mfa` vẫn còn cho trường hợp không vào được console; PR C thay việc hằng ngày bằng màn Tài khoản.
+
 ## Test (bắt buộc theo spec)
 - Rust `app/tests/platform_auth.rs`, `platform_tenants.rs`, `platform_features.rs`, `platform_roles.rs`, `platform_accounts.rs`, `platform_db.rs`; `authz_matrix.rs` thêm lớp **operator** (mọi route `/admin/*`: không cookie → 401; cookie owner / manager / technician → 401; operator pending MFA → 401; operator đầy đủ → 2xx; ghi không step-up → 403).
 - Vitest: `admin/*.test.tsx` (đăng nhập + MFA, step-up retry, danh sách spa, tạo spa + mật khẩu một lần, công tắc tính năng, rào chắn vai trò); spa: `features.test.ts` (ẩn nav).

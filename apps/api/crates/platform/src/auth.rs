@@ -289,7 +289,10 @@ struct OperatorRow {
     mfa_enabled: bool,
 }
 
-async fn operator_by_username(pool: &PgPool, username: &str) -> Result<Option<OperatorRow>, AppError> {
+async fn operator_by_username(
+    pool: &PgPool,
+    username: &str,
+) -> Result<Option<OperatorRow>, AppError> {
     Ok(sqlx::query_as!(
         OperatorRow,
         r#"SELECT id, username, full_name, password_hash, status = 'active' AS "active!",
@@ -435,7 +438,9 @@ pub async fn login(
         dummy_work(password_input).await;
         return Err(AppError::InvalidCredentials);
     };
-    let locked = operator.locked_until.is_some_and(|until| until > Utc::now());
+    let locked = operator
+        .locked_until
+        .is_some_and(|until| until > Utc::now());
     let matches = verify_password(password_input, &operator.password_hash).await?;
     if locked || !operator.active || !matches {
         if !locked && !matches {
@@ -517,9 +522,16 @@ async fn second_factor_ok(
     }
 }
 
-async fn pending_operator(pool: &PgPool, pending: &PendingOperator) -> Result<OperatorRow, AppError> {
+async fn pending_operator(
+    pool: &PgPool,
+    pending: &PendingOperator,
+) -> Result<OperatorRow, AppError> {
     let operator = operator_by_id(pool, pending.operator_id).await?;
-    if operator.locked_until.is_some_and(|until| until > Utc::now()) || !operator.active {
+    if operator
+        .locked_until
+        .is_some_and(|until| until > Utc::now())
+        || !operator.active
+    {
         return Err(AppError::InvalidMfaCode);
     }
     Ok(operator)
@@ -701,7 +713,10 @@ pub async fn reauth(
         )]));
     }
     let operator = operator_by_id(pool, session.operator_id).await?;
-    if operator.locked_until.is_some_and(|until| until > Utc::now()) {
+    if operator
+        .locked_until
+        .is_some_and(|until| until > Utc::now())
+    {
         return Err(AppError::InvalidCredentials);
     }
     if !verify_password(password_input, &operator.password_hash).await? {

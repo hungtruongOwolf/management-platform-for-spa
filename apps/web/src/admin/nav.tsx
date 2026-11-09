@@ -25,7 +25,7 @@ export function AdminNavProvider({ children }: { children: ReactNode }) {
   const go = useCallback((next: string) => {
     if (next !== window.location.pathname) window.history.pushState(null, "", next);
     setPath(next);
-    window.scrollTo?.(0, 0);
+    window.scrollTo({ top: 0 });
   }, []);
   return <NavContext.Provider value={{ path, go }}>{children}</NavContext.Provider>;
 }

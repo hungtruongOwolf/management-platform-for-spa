@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.platform_operator\n         SET status = CASE WHEN $2 THEN 'active' ELSE 'disabled' END,\n             failed_logins = 0, locked_until = NULL, updated_at = now()\n         WHERE username = $1 RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.platform_operator",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c732a9eb9ef7bd9dc6ca0cbf005093b81b814a64d7299a06a7937dda3c1eb4a4"
+}

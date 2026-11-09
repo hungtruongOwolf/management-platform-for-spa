@@ -13,9 +13,9 @@ fn username_ok(username: &str) -> bool {
             .bytes()
             .next()
             .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
-        && username
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-'))
+        && username.bytes().all(|b| {
+            b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-')
+        })
 }
 
 /// `app add-operator --username U --name N`. `409 operator.username_taken` when it exists.
@@ -139,7 +139,14 @@ mod tests {
         for ok in ["hung", "em.ops", "ops_1", "a-b-c"] {
             assert!(username_ok(ok), "{ok}");
         }
-        for bad in ["ab", "Hung", ".ops", "ops admin", "0905123456789012345678901234567890123456789", "ộps"] {
+        for bad in [
+            "ab",
+            "Hung",
+            ".ops",
+            "ops admin",
+            "0905123456789012345678901234567890123456789",
+            "ộps",
+        ] {
             assert!(!username_ok(bad), "{bad}");
         }
     }
