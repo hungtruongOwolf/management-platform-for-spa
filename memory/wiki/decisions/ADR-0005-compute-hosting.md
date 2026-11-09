@@ -1,6 +1,6 @@
 ---
 title: ADR-0005 Compute hosting
-status: accepted (provider chọn ở /devops sau khi kiểm tra giá)
+status: accepted cho production (VPS, chưa mua); staging thay bằng Vercel + Supabase (update 2026-11-05); production đang chờ ADR-0012 (proposed)
 date: 2026-11-04
 deciders: EM, agent
 ---
@@ -39,6 +39,7 @@ EM muốn bắt đầu đơn giản: "dùng vercel và supabase cho đơn giản
 - **TLS DB**: dùng `sslmode=verify-full` với Supabase Root 2021 CA, file công khai được bake vào image ở `/etc/ssl/certs/supabase-root-2021.crt`. Fingerprint SHA-256 `80:70:25:AD:…:CA:FA` khớp giữa file tải từ Supabase và chain mà pooler trả về.
 - **Pool**: `APP_DB_MAX_CONNECTIONS=3` mỗi instance, vì Vercel chạy nhiều instance nhỏ trỏ vào cùng một pooler.
 - **Job nền**: tick đầu tiên của job purge idempotency chạy ngay khi instance khởi động. Vercel scale về 0 sau 5 phút không có traffic, nên lần chạy lúc khởi động là đủ.
+  - *Sửa 2026-11-09:* từ migration 0035 cách này không còn đúng. Vòng bảo trì vẫn thức dậy lúc khởi động rồi mỗi giờ, nhưng mỗi job chỉ chạy khi `app.claim_maintenance(job, every)` trả `true`, tức là chưa instance nào chạy nó trong khoảng đó: purge idempotency + session mỗi 55 phút, kiểm tra bất biến dữ liệu mỗi 23 giờ, chung cho mọi instance chứ không theo từng lần khởi động (`apps/api/crates/app/src/jobs.rs`, [db-review F10](../architecture/db-review-2026-11.md)).
 - **Đánh đổi chấp nhận**:
   1. Cold start vài giây sau khi nghỉ.
   2. Rate limit theo IP nằm trong bộ nhớ của từng instance. Khóa tài khoản sau 5 lần sai vẫn lưu ở DB nên vẫn giữ.

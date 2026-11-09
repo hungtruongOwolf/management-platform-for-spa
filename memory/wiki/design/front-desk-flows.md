@@ -1,6 +1,6 @@
 ---
 title: Front-desk screen flows (spec R1-1)
-updated: 2026-11-07
+updated: 2026-11-09
 sources: [product/specs/front-desk-and-packages.md, product/specs/appointments.md, design/design-system.md, raw/2026-11-06-em-ui-redesign-direction.md]
 ---
 
@@ -34,11 +34,11 @@ sources: [product/specs/front-desk-and-packages.md, product/specs/appointments.m
 > - Toast lên trên cùng giữa màn (không che checkout). Ảnh trước/sau: scratchpad của agent `redesign-quay/before|after` (1347 sáng/tối, 1024, 390 sáng/tối × trống / chọn khách / giỏ / từ lịch hẹn).
 
 > **Rollout /quay theo rulebook + vòng 6 phần B (2026-11-06, [raw](../../raw/2026-11-06-em-rollout-quay.md)):**
-> - **Chi tiết lượt = dòng phụ phẳng** (không card trong bảng): các dòng chi tiết dùng **đúng 6 cột của bảng** (Giờ trống · Khách: SĐT · Dịch vụ: tên + "KTV … · Giới thiệu: …" · Thanh toán: "Dịch vụ lẻ" / "Trừ buổi · còn 4/12" / "Gói liệu trình · CK" · Số tiền canh phải đúng cột · ⋯ trống); "Giảm giá dịch vụ lẻ −39.000đ", gói bán trong lượt ("Người chốt", "Mua cho …"), dòng tổng "Đã thanh toán" có đường kẻ, người đi cùng, nhập bù, lưu ý sức khỏe. Dòng mở giữ nguyên padding 12px; dòng phụ bắt đầu bằng đường kẻ từ cột Khách + 8px, cùng nền nhạt với dòng mở (EM: "bị liền nhau"); e2e đo đỉnh chi tiết ≥ đáy nội dung dòng + 8px và số tiền lệch cột < 2px. **Không nút trong chi tiết**: mọi thao tác ở ⋯ (Mở hồ sơ khách · Sửa lượt · Thêm dịch vụ / bán gói · Chuyển sang gói liệu trình · Hủy lượt). Chip: "Đã hủy" `badge-danger`, "Đã sửa" `badge-muted`. "Số tiền" = lẻ + gói bán trong lượt. Dưới 1024px: thẻ, chi tiết xếp "tên · số tiền / meta".
+> - **Chi tiết lượt = dòng phụ phẳng** (không card trong bảng): các dòng chi tiết dùng **đúng 6 cột của bảng** (Giờ trống · Khách: SĐT · Dịch vụ: tên + "KTV … · Giới thiệu: …" · Thanh toán: "Dịch vụ lẻ" / "Trừ buổi · còn 4/12" / "Gói liệu trình · CK" · Số tiền canh phải đúng cột · ⋯ trống); "Giảm giá dịch vụ lẻ −39.000đ", gói bán trong lượt ("Người chốt", "Mua cho …"), dòng tổng "Đã thanh toán" có đường kẻ, người đi cùng, nhập bù, lưu ý sức khỏe. Dòng mở giữ nguyên padding 12px; dòng phụ bắt đầu bằng đường kẻ từ cột Khách + 8px, cùng nền nhạt với dòng mở (EM: "bị liền nhau"); e2e đo đỉnh chi tiết ≥ đáy nội dung dòng + 8px và số tiền lệch cột < 2px. **Không nút trong chi tiết**: mọi thao tác ở ⋯ (Mở hồ sơ khách · Sửa lượt · Thêm dịch vụ / bán gói · Chuyển sang gói liệu trình · Hủy lượt). (Mục "Chuyển sang gói liệu trình" bỏ ở EM flow review 2026-11-07, đầu trang; menu hiện tại trong `TodayVisits.tsx`: Mở hồ sơ khách · Sửa lượt · Thêm dịch vụ / bán gói · Hủy lượt.) Chip: "Đã hủy" `badge-danger`, "Đã sửa" `badge-muted`. "Số tiền" = lẻ + gói bán trong lượt. Dưới 1024px: thẻ, chi tiết xếp "tên · số tiền / meta".
 > - **Giỏ vòng 6:** xem [plan B1–B6](../plans/r1-6-upsell.md). Thanh ngữ cảnh (Đang sửa lượt / Đang ghi cho lịch hẹn / Đã khôi phục giỏ) chuyển vào chunk lazy `CartOptions` (chỉ hiện sau một thao tác).
 > - **Hoàn tất lịch hẹn dịch vụ lẻ** (câu hỏi EM): giỏ hiện giá từng dòng, giảm giá, 3 chip thanh toán và "Phải trả" như khách vãng lai — đã đúng từ pilot (ảnh pilot là lịch có buổi trong gói nên 0đ); ảnh trước/sau `rollout-quay/*/06-appointment-oneoff-*`.
 
-> **Vòng 6 (draft, 2026-11-06):** bán gói trong giỏ, "Dùng gói này cho buổi hôm nay", "Chuyển sang gói liệu trình", "Thêm dịch vụ vào lượt" — xem [spec R1-1 §10](../product/specs/front-desk-and-packages.md#10-vòng-6-upsell-trong-lượt-và-chuyển-sang-gói-liệu-trình). Lưu ý: dòng "giỏ chưa lưu được giữ trong sessionStorage" (bảng States chung, 401) **chưa có trong code** (`FrontDeskPage.tsx` giữ giỏ bằng `useState`); §10.4.1 đưa vào phạm vi.
+> **Vòng 6 (draft, 2026-11-06):** bán gói trong giỏ, "Dùng gói này cho buổi hôm nay", "Chuyển sang gói liệu trình", "Thêm dịch vụ vào lượt" — xem [spec R1-1 §10](../product/specs/front-desk-and-packages.md#10-vòng-6-upsell-trong-lượt-và-chuyển-sang-gói-liệu-trình). Lưu ý (đã làm): giỏ chưa lưu được giữ trong `sessionStorage` (`features/front-desk/draftCart.ts`, xem § Vòng 6 "Giỏ nháp"), đúng dòng 401 của bảng States chung.
 
 > **Cập nhật 2026-11-04 (EM):** R1 **không có ghi nợ / thu nợ / công nợ** (mọi giao dịch thu đủ) và **không theo dõi giờ ra**. Bỏ qua các phần mô tả những luồng đó bên dưới; spec là nguồn đúng.
 
@@ -47,6 +47,7 @@ sources: [product/specs/front-desk-and-packages.md, product/specs/appointments.m
 Prototype bấm thử: `prototypes/front-desk/index.html` (dữ liệu giả). Đã cover US2, US4, một phần US5; các luồng còn lại mô tả dưới đây.
 
 ## Bố cục chung `/quay`
+> Bố cục R1-1 gốc (có nợ, nút "+ Bán liệu trình" trên thẻ khách, header cũ): **đã thay** bằng bố cục ở § Lịch hẹn vòng 4 và redesign pilot (ghi chú đầu trang): hai panel từ 1024px, "Lượt khách hôm nay" rộng toàn trang, bán gói chỉ trong giỏ, không ghi nợ.
 ```
 ┌──────────────── Header: logo · chi nhánh · người dùng · khóa nhanh ────────────────┐
 │ CỘT TRÁI                               │ CỘT PHẢI                                   │
@@ -58,7 +59,7 @@ Prototype bấm thử: `prototypes/front-desk/index.html` (dữ liệu giả). �
 │ [+ Bán liệu trình]                     │                                             │
 └────────────────────────────────────────┴─────────────────────────────────────────────┘
 ```
-< 900px: một cột, thứ tự tìm → thẻ khách → lượt đang ghi → thanh toán → hôm nay; nút Lưu dính đáy màn hình.
+< 1024px (bản gốc ghi 900px; code `.desk-grid`): một cột, thứ tự tìm → thẻ khách → lượt đang ghi → thanh toán → hôm nay; nút Lưu dính đáy màn hình.
 Phím tắt: `/` về ô tìm · `↑↓ Enter` chọn khách · `Ctrl+Enter` lưu · `Esc` bỏ khách đang chọn.
 
 ## Fast path (≤ 4 thao tác): khách quen, trừ 1 buổi, không phát sinh tiền
@@ -70,9 +71,9 @@ Phím tắt: `/` về ô tìm · `↑↓ Enter` chọn khách · `Ctrl+Enter` l�
 ## US2: Tìm & tạo khách
 | Bước | Mô tả |
 |---|---|
-| Tìm | ≥ 3 chữ số → so SĐT (chuẩn hóa `+84`/`.`/khoảng trắng); ≥ 2 ký tự → so tên đã bỏ dấu ("ha" → "Hà"). Debounce 150ms, gọi `GET /customers?q=` |
+| Tìm | ≥ 3 chữ số → so SĐT (chuẩn hóa `+84`/`.`/khoảng trắng); ≥ 2 ký tự → so tên đã bỏ dấu ("ha" → "Hà"). Debounce 250ms (`CustomerSearch.tsx`), gọi `GET /customers?q=` |
 | Chọn | Click hoặc `Enter` → thẻ khách |
-| Khách mới | "+ Khách mới" mở form inline, điền sẵn SĐT hoặc tên từ ô tìm. Bắt buộc tên + SĐT; giới tính khuyến khích chọn (cần để tính giá) |
+| Khách mới | "+ Khách mới" mở form inline, điền sẵn SĐT hoặc tên từ ô tìm. Bắt buộc tên + SĐT (thay bằng [ADR-0011](../decisions/ADR-0011-anonymous-walk-in-and-optional-phone.md): tên và SĐT đều không bắt buộc, hồ sơ không tên hiện "Khách vãng lai"; chủ gói phải có tên); giới tính khuyến khích chọn (cần để tính giá) |
 | Trùng SĐT | `409` → "SĐT đã có: <tên>" kèm link mở hồ sơ đó |
 | States | đang tìm: 3 dòng skeleton · không thấy: "Không tìm thấy khách" + nút Khách mới · lỗi mạng: "Không tìm được, thử lại" + nút thử lại, giữ nguyên chữ đã gõ |
 | Ghi chú sức khỏe | Callout ⚠ màu cảnh báo ngay dưới tên. Không có quyền xem → API không trả field nên callout **không render**, kể cả chỗ trống |
@@ -82,18 +83,20 @@ Phím tắt: `/` về ô tìm · `↑↓ Enter` chọn khách · `Ctrl+Enter` l�
 |---|---|
 | Trừ buổi | "Trừ 1 buổi" trên PackageRow → thêm dòng `Trừ liệu trình`, số còn lại hiển thị trừ tạm ngay (chưa lưu) |
 | Nhiều liệu trình cùng dịch vụ | Mặc định gói hết hạn sớm nhất; dòng có menu "Đổi liệu trình" |
-| Dịch vụ lẻ / dùng thêm | Combobox nhóm theo category, ★ khuyên dùng lên đầu nhóm; giá theo giới tính của khách. Khách chưa rõ giới tính → toggle Nữ/Nam bắt buộc trước khi thêm |
+| Dịch vụ lẻ / dùng thêm | `<select>` nhóm theo category (`<optgroup>`, chọn là thêm), ★ khuyên dùng lên đầu nhóm; giá theo giới tính của khách. Khách chưa rõ giới tính → toggle Nữ/Nam bắt buộc trước khi thêm |
 | Không áp dụng | Dịch vụ không có giá cho giới tính đó (ví dụ Ôn ấm tử cung cho Nam) → không thêm được, báo "không áp dụng cho khách Nam" |
 | KTV | Bắt buộc mỗi dòng; lưu khi thiếu → viền đỏ + "Cần chọn KTV", focus vào ô đầu tiên bị thiếu |
-| Giờ vào/ra | Giờ vào = lúc lưu (sửa được trong ngày qua "Chi tiết"); "Xong" ở danh sách hôm nay ghi giờ ra |
-| Gói hết buổi | Row xám, badge "Đã hết buổi", nút aria-disabled; bấm → toast lỗi + gợi ý **Bán gói mới** |
-| Gói hết hạn | Badge "Hết hạn"; bấm trừ → ReasonDialog "Cho dùng tiếp (ghi lý do)" nếu có quyền, ngược lại báo lỗi |
+| Giờ vào/ra | Giờ vào = lúc lưu (sửa được trong ngày qua "Chi tiết"); "Xong" ở danh sách hôm nay ghi giờ ra (thay bằng cập nhật 2026-11-04: không theo dõi giờ ra; giờ làm mặc định "bây giờ", đổi bằng "Đổi giờ làm", xem § Lịch hẹn vòng 4) |
+| Gói hết buổi | Row xám, badge "Đã hết buổi", nút aria-disabled; bấm → toast lỗi + gợi ý **Bán gói mới** (thay bằng redesign pilot đầu trang: gom vào disclosure "Gói đã hết / đã hủy (n)", không có nút Trừ 1 buổi) |
+| Gói hết hạn | Badge "Hết hạn"; có `package.use_expired_override` → "Trừ 1 buổi" mở form lý do ngay tại chỗ (không có dialog riêng); không có quyền → dòng chữ "Đã hết hạn: cần quản lý cho dùng tiếp." (redesign pilot) |
 | Lưu | Nút loading và khóa lại; gửi kèm `Idempotency-Key` sinh khi mở lượt |
-| Thành công | Toast tóm tắt (số buổi còn lại, nợ phát sinh); danh sách hôm nay thêm dòng mới ở đầu; reset |
+| Thành công | Toast tóm tắt (số buổi còn lại; R1 không có nợ); danh sách hôm nay thêm dòng mới ở đầu; reset |
 | `409` (hai máy cùng trừ buổi cuối) | Toast lỗi "Liệu trình vừa được dùng ở máy khác, đã cập nhật số buổi"; refetch khách, giữ lại các dòng khác |
 | Lỗi mạng | Giữ nguyên giỏ; banner "Chưa lưu được. Thử lại" gửi lại **cùng** Idempotency-Key nên không bị ghi đôi |
 
 ## US3: Bán liệu trình (Dialog từ thẻ khách)
+> **Đã thay:** bán gói ở quầy nằm **trong giỏ** (§ Vòng 6 và EM flow review 2026-11-07: bỏ "+ Bán gói liệu trình" trên thẻ khách); hồ sơ khách bán qua `SellPackageDialog` trong `BottomSheet`. Không có "Ghi nợ" / "Còn nợ" (cập nhật 2026-11-04). Các bước dưới đây là thiết kế R1-1 gốc.
+
 1. Chọn gói (combobox; hiển thị giá, số buổi + tặng, HSD).
 2. Quà hiện vật (điền sẵn từ gói, sửa được) · **Người tư vấn chốt** (bắt buộc; có lựa chọn "Quản lý / Chủ spa").
 3. Giảm giá (tùy chọn): số tiền hoặc %; bắt buộc lý do; vượt 10% với Quản lý → "Cần chủ spa duyệt" và không lưu được.
@@ -102,13 +105,15 @@ Phím tắt: `/` về ô tìm · `↑↓ Enter` chọn khách · `Ctrl+Enter` l�
 States: validation inline; thu > phải trả → lỗi tại ô tiền; lưu trùng → idempotent; lỗi mạng như US4.
 
 ## US5: Thu nợ & danh sách công nợ
+> **Hoãn** (EM 2026-11-04: R1 thu đủ): không có badge nợ, không có route `/cong-no` trong code. Giữ để tham chiếu khi làm lại.
+
 - Thẻ khách có badge "Còn nợ X". Bấm → Sheet liệt kê từng hóa đơn còn nợ → "Thu" → số tiền (mặc định = còn nợ) + hình thức.
 - Trang `/cong-no`: bảng khách · hóa đơn · còn nợ · số ngày nợ (giảm dần); lọc ≥ 30 ngày. Empty: "Không có công nợ 🎉".
 - Thu vượt số nợ → lỗi tại ô; payment không có nút sửa/xóa (chỉ hủy theo US6).
 
 ## US6: Hủy / sửa sai
 - **Sửa lượt (US6b, 2026-11-06, lead's design — EM review):** ⋯ của dòng hoặc nút "Sửa lượt" trong chi tiết lượt (và link "Sửa lượt" trong lịch sử khách → `/quay?sua=<id>`), chỉ hiện khi server cho phép (`visit.record` + `record.void_same_day`, ngày trước chỉ chủ spa, lượt mới nhất). Giỏ "Sửa lượt khách" mở với lượt cũ (dòng, KTV, giờ làm, giảm giá dạng số tiền, hình thức thanh toán, ghi chú), banner "Đang sửa lượt HH:MM · dd/mm của X" + "Bỏ sửa". Ô liệu trình tính buổi lượt cũ đang giữ là còn dùng được. Khung dưới tổng tiền nói trước điều sẽ xảy ra: "Chưa có gì thay đổi" / "Chỉ đổi KTV, giờ làm hoặc ghi chú: lưu thẳng, không đổi tiền" (PATCH) / khung cảnh báo "lượt cũ được hủy và ghi lại" + **"Thu thêm 50.000đ" / "Hoàn 50.000đ" / "Không đổi tiền"** + ô "Lý do sửa (bắt buộc)". Nút "Lưu sửa lượt"; một Idempotency-Key cho tới khi lưu xong. Sau khi lưu: toast "Đã sửa lượt của X · Thu thêm …", danh sách có lượt cũ (badge "Đã sửa", "Thay bằng lượt mới") và lượt mới. Lỗi `409 visit.corrected` (máy khác vừa sửa) → làm mới danh sách.
-- Danh sách "Lượt khách hôm nay" → ⋯ của dòng → **Hủy lượt** (vòng 5; form lý do mở ngay dưới dòng) → ReasonDialog (bắt buộc lý do) → lượt hiển thị gạch ngang + nhãn "Đã hủy: <lý do>", buổi đã trừ được cộng lại, toast xác nhận.
+- Danh sách "Lượt khách hôm nay" → ⋯ của dòng → **Hủy lượt** (vòng 5; form lý do bắt buộc mở ngay dưới dòng, `VoidVisitForm`; không có dialog riêng) → lượt hiển thị gạch ngang + nhãn "Đã hủy: <lý do>", buổi đã trừ được cộng lại, toast xác nhận.
 - Hóa đơn bán gói chưa dùng buổi nào → **Hủy hóa đơn**; đã dùng → nút bị khóa, tooltip "Đã dùng buổi, dùng Hủy liệu trình (chủ spa)".
 - Ngày đã chốt → nút Hủy chỉ hiện với chủ spa (không hỏi lại mật khẩu, EM 2026-11-05); Quản lý thấy "Ngày đã chốt, liên hệ chủ spa".
 
@@ -117,6 +122,8 @@ States: validation inline; thu > phải trả → lỗi tại ô tiền; lưu tr
 - Quản lý không thấy các mục này (UX); server vẫn trả `403` nếu gọi thẳng.
 
 ## US8: Nhập liệu trình dở dang (`/nhap-so-cu`)
+> **Đã xóa** (EM 2026-11-05): không có màn `/nhap-so-cu`; dữ liệu sổ giấy nhập bằng CLI `app import-paper-book` (`POST /opening-balances` chỉ chủ spa), gói chuyển từ sổ giấy ghi thành hóa đơn thường theo ngày gốc và **không** có badge "Nhập từ sổ cũ" ([design-system § Component inventory](design-system.md#component-inventory), "Đã chi"). Thiết kế cũ dưới đây chỉ để tham chiếu.
+
 - Form tối ưu nhập liên tục: khách (tìm/tạo) → gói (chọn từ bảng giá **hoặc** "Gói khác" nhập tay tên + dịch vụ) → tổng buổi gốc · **còn lại** · giá đã bán · **còn nợ** · ngày đăng ký · HSD · quà.
 - "Lưu & nhập tiếp" giữ form mở, focus về ô khách. Bộ đếm "Đã nhập N liệu trình hôm nay".
 - Validation: còn lại ≤ tổng; nợ ≤ giá bán. Bản ghi có badge **"Nhập từ sổ cũ"** ở mọi nơi.
@@ -154,7 +161,7 @@ Nguồn: [EM review vòng 4](../../raw/2026-11-05-em-review-round4.md) mục 1, 
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 - **Thông tin khách ngay dưới tên vừa chọn** (cùng ô tìm, không còn thẻ riêng): tên + giới tính, SĐT, "N gói liệu trình đang dùng, còn M buổi", lưu ý sức khỏe, gói + "Trừ 1 buổi", nút "Đổi khách" (= Esc).
-- **Lượt khách hôm nay** rộng toàn trang. **Vòng 5 (EM mục 1: "không hàng không lối")**: bảng thật, cột cố định `Giờ 80px · Khách 24% · Dịch vụ · KTV (phần còn lại, tối đa 2 dòng + "…", KTV dòng dưới) · Thanh toán 16% (Tiền mặt / Chuyển khoản / Tiền mặt + CK / Trừ liệu trình / Đã hoàn tiền) · Số tiền 112px canh phải tabular · ⋯ 60px`. Bỏ nút "Chi tiết": **bấm vào dòng** (hoặc Enter trên tên khách, là nút `aria-expanded`) mở/đóng chi tiết ngay dưới dòng; ⋯ (`RowMenu`) gồm "Mở hồ sơ khách" và "Hủy lượt" (chỉ khi có quyền + lượt chưa hủy). Lượt đã hủy: dòng mờ, số tiền gạch ngang, badge "Đã hủy" cạnh tên, **lý do nằm trong chi tiết** (hủy xong chi tiết tự mở). Dưới 1024px: thẻ (tên, giờ · dịch vụ, số tiền, thanh toán, ⋯), bấm thẻ = mở chi tiết. "Mở hồ sơ khách" đi qua trail nên nút quay lại trên hồ sơ ghi tên màn quầy. Ô ngày dùng `DateField` (luôn dd/mm/yyyy).
+- **Lượt khách hôm nay** rộng toàn trang. **Vòng 5 (EM mục 1: "không hàng không lối")**: bảng thật, cột cố định `Giờ 80px · Khách 24% · Dịch vụ · KTV (phần còn lại, tối đa 2 dòng + "…", KTV dòng dưới) · Thanh toán 16% (Tiền mặt / Chuyển khoản / Tiền mặt + CK / Trừ liệu trình / Đã hoàn tiền) · Số tiền 112px canh phải tabular · ⋯ 60px`. Bỏ nút "Chi tiết": **bấm vào dòng** (hoặc Enter trên tên khách, là nút `aria-expanded`) mở/đóng chi tiết ngay dưới dòng; ⋯ (`RowMenu`) gồm "Mở hồ sơ khách" và "Hủy lượt" (chỉ khi có quyền + lượt chưa hủy; từ vòng 6 thêm "Sửa lượt", "Thêm dịch vụ / bán gói", xem § Rollout /quay). Lượt đã hủy: dòng mờ, số tiền gạch ngang, badge "Đã hủy" cạnh tên, **lý do nằm trong chi tiết** (hủy xong chi tiết tự mở). Dưới 1024px: thẻ (tên, giờ · dịch vụ, số tiền, thanh toán, ⋯), bấm thẻ = mở chi tiết. "Mở hồ sơ khách" đi qua trail nên nút quay lại trên hồ sơ ghi tên màn quầy. Ô ngày dùng `DateField` (luôn dd/mm/yyyy).
 - **Giờ làm:** mặc định "bây giờ" (một dòng chữ, fast path không thêm thao tác). "Đổi giờ làm" mở ô giờ; chủ spa (`visit.backdate`) có thêm ô ngày (lùi ≤ 366 ngày) + ghi chú "Nhập bù: lượt, hóa đơn và tiền thu được ghi vào ngày …"; toast sau khi lưu ghi "nhập bù ngày …".
 - **Giảm giá:** chỉ hiện khi có dòng lẻ và có `sale.discount`; % hoặc số tiền + lý do; xem trước "Giảm X", tổng gạch giá cũ; quản lý vượt 10% thấy "cần chủ spa" (server quyết định).
 
@@ -205,13 +212,13 @@ Nguồn: [EM review vòng 4](../../raw/2026-11-05-em-review-round4.md) mục 1, 
 **Giỏ của lượt (3 phần, một tổng, một nút):**
 1. *Dịch vụ hôm nay*: mỗi dòng có dịch vụ · KTV làm · nguồn (trừ gói / lẻ / **trừ gói vừa mua**) · giá. Dòng lẻ có thêm ô **"Người giới thiệu"** (select: Khách tự chọn [mặc định] · từng nhân viên kèm chức vụ). Dòng trừ gói không có ô này.
 2. *Gói bán hôm nay*: "+ Bán gói liệu trình" mở khối inline gồm mẫu gói, **Người giới thiệu / chốt** (mặc định KTV của dòng hôm nay khớp gói, không có thì KTV dòng đầu; có "Khách tự chọn"), quà, giảm giá gói (quản lý ≤ 10 % của gói, lý do bắt buộc), "Mua cho người khác" (tìm khách có hồ sơ). Ô **"Dùng gói này cho buổi hôm nay"** chỉ hiện khi mẫu gói chứa dịch vụ đang ở dạng lẻ trong giỏ; bật thì dòng đó đổi sang "Trừ gói (mua hôm nay)", giá 0đ, xem trước "còn 11/12". Gói mua cho người khác thì ô này ẩn (gói không dùng chung).
-3. *Người đi cùng (ghi chú)*: "+ Người đi cùng" mở ô chữ ("Chồng của chị Hà"), tối đa 5; không tính tiền, không chọn dịch vụ.
+3. *Người đi cùng (ghi chú)*: "+ Người đi cùng" mở ô chữ ("Chồng của chị Hà"), tối đa 5; không tính tiền, không chọn dịch vụ. (Thay bằng EM live test 2026-11-07 đầu trang + [ADR-0009](../decisions/ADR-0009-served-companions.md): bỏ khỏi giỏ; người đi cùng nhập ở lịch hẹn, giỏ từ lịch hẹn chỉ hiện ghi chú của lịch, chỉ đọc.)
 - Tổng: "Phải trả: lẻ X + gói Y = Z" · TM / CK / TM + CK. Một request `POST /visits` (hoặc `/appointments/{id}/complete`). Chỉ có gói, không có dịch vụ: nút "Lưu hóa đơn gói" gọi `POST /sales`.
-- **Giỏ nháp:** lưu `sessionStorage` khóa `vpyd.cart.v1:<userId>:<customerId>` (try/catch; chỉ id, số lượng, lựa chọn; không ghi chú sức khỏe, không giá ngoài cái trang đang hiện). Xóa khi lưu thành công, bấm "Hủy giỏ", đăng xuất. Tải lại trang: banner "Đã khôi phục giỏ chưa lưu" + "Bỏ".
+- **Giỏ nháp:** lưu `sessionStorage` khóa `vpyd.cart.v1:<userId>:<customerId>` (try/catch; chỉ id, số lượng, lựa chọn; không ghi chú sức khỏe, không giá ngoài cái trang đang hiện). Xóa khi lưu thành công, bấm "Bỏ giỏ", đăng xuất. Tải lại trang: banner "Đã khôi phục giỏ chưa lưu" + "Bỏ".
 
 **Lượt khách hôm nay, menu ⋯:**
 - **"Thêm dịch vụ / bán gói"**: sheet giỏ ở chế độ thêm (chỉ thêm, không lý do), gọi `POST /visits/{id}/additions`. Mặc định người giới thiệu của dòng thêm = KTV của lượt (đây là upsell).
-- **"Bán gói cho lượt này"**: sheet gồm mẫu gói (ưu tiên gói chứa dịch vụ lẻ của lượt), người chốt, quà, giảm giá. Ô **"Tính buổi hôm nay vào gói"** (mặc định **tắt**, Q-U1) chỉ hiện khi gói chứa dịch vụ lẻ của lượt; bật thì hiện "Hôm nay khách đã trả 49.000đ (TM) cho Gội đầu · Khách đưa thêm 1.451.000đ" và gọi `convert-to-package` (If-Match); tắt thì bán gói thường qua `additions`, lượt lẻ giữ nguyên.
+- **"Bán gói cho lượt này"** (không còn là mục riêng trong ⋯: gộp vào "Thêm dịch vụ / bán gói", EM flow review 2026-11-07 đầu trang; ô "Tính buổi hôm nay vào gói" giữ nguyên, `VisitUpsell.tsx`): sheet gồm mẫu gói (ưu tiên gói chứa dịch vụ lẻ của lượt), người chốt, quà, giảm giá. Ô **"Tính buổi hôm nay vào gói"** (mặc định **tắt**, Q-U1) chỉ hiện khi gói chứa dịch vụ lẻ của lượt; bật thì hiện "Hôm nay khách đã trả 49.000đ (TM) cho Gội đầu · Khách đưa thêm 1.451.000đ" và gọi `convert-to-package` (If-Match); tắt thì bán gói thường qua `additions`, lượt lẻ giữ nguyên.
 - Lượt của ngày trước: chỉ chủ spa thấy; tháng đã chốt lương thì nút tắt + "Tháng đã chốt lương" (server vẫn `409`).
 
 **States:** đang lưu (nút khóa + spinner); lỗi tại khối gói ("Vượt 10 %, cần chủ spa", "Mẫu gói đã ngừng bán"); `409 visit.corrected`: "Lượt đã được sửa ở máy khác, mở bản mới"; `412`: tải lại lượt; thành công: toast "Đã lưu lượt + bán Gói … (còn 11/12)". Bàn phím: khối gói mở/đóng bằng Enter, focus vào mẫu gói; select người giới thiệu có nhãn.

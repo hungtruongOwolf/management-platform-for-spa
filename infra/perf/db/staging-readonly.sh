@@ -19,7 +19,7 @@ if [ -z "$PGURL" ]; then
 fi
 export PGURL
 
-docker run --rm -i -e PGURL postgres:16-alpine sh -c \
+docker run --rm -i -e PGURL postgres:17-alpine sh -c \
   'psql "$PGURL" -X -q -v ON_ERROR_STOP=1 -P pager=off \
      -c "SET default_transaction_read_only = on" -c "BEGIN READ ONLY" -f /dev/stdin -c "ROLLBACK"' \
   < "$sql_file"

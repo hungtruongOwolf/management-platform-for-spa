@@ -20,8 +20,5 @@ export type {
 export type PackageStatus = Schemas["PackageStatusFilter"];
 export type DayCounts = Schemas["DayCounts"];
 export type RangeBucket = Schemas["RangeBucket"];
-export type TechnicianDay = Schemas["TechnicianDay"];
-export type TopService = Schemas["TopService"];
-export type TopPackage = Schemas["TopPackage"];
 export type LedgerDay = Schemas["LedgerDay"];
 export type MethodSplit = Schemas["MethodSplit"];

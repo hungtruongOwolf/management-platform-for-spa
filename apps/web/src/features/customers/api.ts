@@ -112,8 +112,3 @@ export function phoneCheckQuery(digits: string) {
 
 /** Wait between the last keystroke and the check, so a number typed fast costs one request. */
 export const PHONE_CHECK_DEBOUNCE_MS = 400;
-
-export const GENDER_LABEL: Record<string, string> = {
-  female: "Nữ",
-  male: "Nam",
-};

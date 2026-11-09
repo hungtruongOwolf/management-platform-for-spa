@@ -1,12 +1,14 @@
 ---
 title: Performance & latency — đo staging và phương án kiến trúc (2026-11)
-updated: 2026-11-07
+updated: 2026-11-09
 sources: [raw/2026-11-07-em-latency-request.md, decisions/ADR-0005-compute-hosting.md, runbooks/vercel-staging.md, architecture/frontend.md, architecture/backend.md]
 ---
 
 # Performance & latency: đo staging, nguyên nhân, phương án (2026-11-07)
 
-EM thấy "API và UI đang rất chậm" ([raw](../../raw/2026-11-07-em-latency-request.md)). Trang này ghi số đo thật trên staging, nguyên nhân xếp theo mức ảnh hưởng, các phương án có chi phí, và kế hoạch theo giai đoạn. Đợt này **chỉ đo và nghiên cứu**: không đổi code, không đổi cấu hình Vercel/Supabase.
+EM thấy "API và UI đang rất chậm" ([raw](../../raw/2026-11-07-em-latency-request.md)). Trang này ghi số đo thật trên staging, nguyên nhân xếp theo mức ảnh hưởng, các phương án có chi phí, và kế hoạch theo giai đoạn. Đợt đo **chỉ đo và nghiên cứu**: không đổi code, không đổi cấu hình Vercel/Supabase. Số đo §2 là của ngày 2026-11-07, giữ nguyên.
+
+> **Trạng thái (2026-11-09):** giai đoạn 0 đã làm hết (§5). Phần "ống nước" phía DB làm tiếp ở [db-review-2026-11](db-review-2026-11.md) (A1–A4): GET đơn giản còn 3 câu sqlx, thời gian server 8–29 ms tùy endpoint thay vì 26–50 ms (db-review §9). Giai đoạn 1 (dời Singapore) **không làm cho staging** theo quyết định EM (§5b); là kế hoạch production, chưa chốt nơi chạy API ([ADR-0012](../decisions/ADR-0012-colocate-api-db-singapore.md), Proposed). Giai đoạn 2 chưa làm. Cold start của Vercel (§2c, §2e) vẫn còn trên staging.
 
 **Kết luận ngắn:** gần như toàn bộ độ trễ là **khoảng cách mạng**. API và DB đặt ở Oregon (Vercel `pdx1` + Supabase `us-west-2`), còn người dùng ở Việt Nam. Thời gian DB chạy query **dưới 2 ms** mỗi request, thời gian server khoảng 25–50 ms, còn mỗi lượt đi về giữa Việt Nam và Oregon mất **~200–450 ms**. Một màn hình cần 2–4 lượt nối tiếp nhau, nên thành 0,6–1,5 s. Chỉ cần nghỉ **~45 giây** là lần gọi đầu tiếp theo tốn thêm **~1,2–1,7 s** (cold start của container Vercel). Cách sửa lớn nhất là **dời cả API lẫn DB sang Singapore cùng lúc**. Có thêm vài việc engineering làm ngay được, không tốn tiền.
 
@@ -66,7 +68,7 @@ So sánh: từ Texas cùng endpoint `health` chỉ mất ~125 ms. Request từ V
 ### 2c. Cold start (scale to zero)
 - Request đầu sau khi nghỉ ~7 phút: **1 772 ms**, các request ngay sau: 220–236 ms (kết nối mới mỗi lần). Request đầu của mỗi lần chạy script (login, health) cũng mất **1,3–1,5 s**, lần sau ~200 ms.
 - `pg_stat_statements` từ 2026-11-04 có **91 lần** câu kiểm tra role lúc khởi động (`check_runtime_role`, chạy một lần mỗi instance) và **190 lần** `DISCARD ALL` (Supavisor dọn kết nối khi client đóng). Nghĩa là trong 3 ngày có ~90 instance được dựng (cả deploy) và kết nối DB bị mở/đóng liên tục.
-- Mỗi cold start gồm: boot container, mở pool (TLS tới pooler + auth), kiểm tra role, job purge idempotency. Spa chỉ có vài người và nghỉ giữa các khách, nên **lần bấm đầu sau mỗi khoảng nghỉ** sẽ hay gặp cold start.
+- Mỗi cold start gồm: boot container, mở pool (TLS tới pooler + auth), kiểm tra role, job purge idempotency (từ 0035, 2026-11-09: instance mới chỉ chạy job khi `app.claim_maintenance` cho phép, nên phần lớn lần khởi động không còn purge). Spa chỉ có vài người và nghỉ giữa các khách, nên **lần bấm đầu sau mỗi khoảng nghỉ** sẽ hay gặp cold start.
 - Đo theo khoảng nghỉ (`gaps.mjs`): xem §2e. Lần gọi đầu chậm xuất hiện sau chỉ ~45 s nghỉ.
 
 ### 2d. UI (code + Lighthouse CI)
@@ -106,7 +108,7 @@ Docs của Vercel nói container scale down sau 5 phút không có traffic. Như
 1. **Vùng: API + DB ở Oregon, người dùng ở Việt Nam.** Mỗi request API cộng ~180–400 ms mạng (2a). Đây là >80 % thời gian của mọi request. Không tối ưu code nào bù được.
 2. **Lần gọi đầu sau khi nghỉ chậm thêm ~1,2–1,7 s** (container Vercel scale to zero / dựng lại). Thực đo, chỉ cần nghỉ ~45 s là đã gặp (§2e). Ở spa ít người, cứ vài phút mới có một thao tác, nên đây là tình huống **thường gặp nhất** chứ không phải hiếm. Theo cảm nhận người dùng thì nó còn đau hơn (1): một lần đứng 1,5–2 s rõ hơn nhiều so với 0,3 s mỗi request.
 3. **Waterfall + refetch phía UI** nhân (1) lên: màn hình cần 2–4 lượt nối tiếp (`/me` → chunk → query → query con), và staleTime 0 + refetch-on-focus gọi lại khi quay lại tab. Hồ sơ khách là màn tệ nhất (L4).
-4. **Nhiều câu SQL nối tiếp mỗi request** (8–17, trong đó ~8 là "ống nước": tra session, BEGIN, `set_config`, membership, quyền, COMMIT, rồi BEGIN/`set_config`/COMMIT lần hai). Hiện tại chỉ ~25–40 ms vì API nằm cạnh DB. Nhưng nếu **chỉ dời API** sang Singapore mà DB vẫn ở Oregon, thì 17 × ~170 ms ≈ **3 s mỗi request**. Hai thứ phải dời cùng nhau.
+4. **Nhiều câu SQL nối tiếp mỗi request** (8–17, trong đó ~8 là "ống nước": tra session, BEGIN, `set_config`, membership, quyền, COMMIT, rồi BEGIN/`set_config`/COMMIT lần hai; *2026-11-09: còn 3–10 câu sqlx sau giai đoạn 0 + db-review A1–A4, [db-review §9](db-review-2026-11.md)*). Hiện tại chỉ ~25–40 ms vì API nằm cạnh DB. Nhưng nếu **chỉ dời API** sang Singapore mà DB vẫn ở Oregon, thì 17 × ~170 ms ≈ **3 s mỗi request**. Hai thứ phải dời cùng nhau.
 5. **Không phải nguyên nhân** (đã kiểm): thời gian chạy query (0,25–1,7 ms; bench 3 năm p95 ≤ 150 ms ở [backend §3b](backend.md)), N+1 (số câu lệnh cố định theo endpoint), kích thước response (≤ 21 KB JSON, br còn ≤ 4 KB), bundle JS, font, ảnh, nén (Vercel nén br cho response > ~1 KB), HTTP/2 (edge đã dùng h2).
 
 **Phát hiện phụ (bảo mật, chuyển `secure`):** endpoint không tự đặt `Cache-Control` (`/customers?q=`, `/services`, `/staff`, `/payroll` 403…) bị Vercel gắn mặc định `public, max-age=0, must-revalidate`. Dữ liệu cá nhân (tên + SĐT khách) không nên mang `public`. Đề xuất một layer mặc định `Cache-Control: private, no-store` (`if_not_present`) cho mọi `/api`. **Đã làm (2026-11-07, `fix/api-cache-control-default`):** layer ngoài cùng trong router Axum, test `cache_control.rs`. `vercel.json` không có rule header nào cho `/api` (rule `no-cache` chỉ thuộc service `web`), nên không cần thêm.
@@ -153,6 +155,12 @@ Nguồn tra ngày 2026-11-07. Trang nào không ghi ngày cập nhật thì đá
 | **ETag + `private, no-cache`** cho catalog (`/services`, `/service-categories`, `/package-plans`, `/staff`) | `304` không body khi không đổi ([MDN caching](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Caching), 2026-08; [RFC 9111](https://www.rfc-editor.org/rfc/rfc9111.html)). **Không bao giờ** `public`/`s-maxage` cho `/api` vì CDN sẽ chia sẻ dữ liệu giữa người dùng. | Ít: payload đã ≤ 2 KB br, vẫn tốn một lượt đi về. Ưu tiên thấp. |
 | **"Day bundle" (BFF)** cho Quầy: `/me` + `/staff` + `/visits` trong một response | Giảm 3 → 1 request ở lần tải lạnh | Chỉ −1 lượt (hai request kia đang song song). Làm **sau** khi đổi vùng nếu vẫn cần. |
 
+Trạng thái các việc trên (2026-11-09, chi tiết ở bảng giai đoạn 0 §5):
+- ✅ Bỏ waterfall hồ sơ khách; preload theo intent + loader (trừ `/quay` cố ý, `/nhan-vien` chưa); staleTime mặc định; tab lịch không gọi `/visits`; `Server-Timing` (`db;dur;desc="n statements"`, `total;dur`, không có `app;dur`); `private, no-store` mặc định.
+- ✅ một phần: toast không chờ refetch và ghi thẳng câu trả lời của server vào cache; **optimistic update (`onMutate`) không làm** (web không có `onMutate` nào).
+- ✅ Gộp ống nước auth: giai đoạn 0 bớt 3 câu, rồi db-review A3 (`app.session_actor`) gộp hẳn.
+- ❌ Chưa làm (giai đoạn 2): ETag + `private, no-cache` cho catalog, "day bundle".
+
 **Không đáng làm bây giờ:** thêm index (query 0,25–1,7 ms, bench 3 năm đạt ngân sách), tách bundle thêm (124,8/125 KB, hãy giữ ngân sách), HTTP/3 (Vercel chưa hỗ trợ theo [community](https://community.vercel.com/t/http-3-support/41935), ⚠ forum; h2 đã có), nén (đã có br), CDN cho asset (đã HIT ở `hkg1`/`sin1`, `immutable`).
 
 **Giữ ấm (keep-warm ping):** cold start xuất hiện sau ~45 s nghỉ (§2e), nên phải ping dày, nhiều lần mỗi phút. Cron của Vercel Hobby chỉ chạy hằng ngày, còn GitHub schedule tối thiểu 5 phút và hay trễ. Đây là chắp vá. Phương án B/C giải gọn hơn.
@@ -175,18 +183,18 @@ Nguồn tra ngày 2026-11-07. Trang nào không ghi ngày cập nhật thì đá
 | 3c. `defaultPreload: "intent"` + loader | ✅ `/`, `/khach-hang`, `/khach-hang/$id`, `/bao-cao` | `/quay` cố ý không (LCP); `/nhan-vien` để sau (agent HR đang sửa) |
 | 3d. Toast không chờ refetch; ghi thẳng câu trả lời | ✅ | ghi lượt, bán gói lẻ, hồ sơ, chấm công, điểm ngày, liên hệ, lịch hẹn: −1 lượt đi về mỗi lần lưu |
 | 3e. Tab lịch không gọi `/visits` | ✅ | −1 request |
-| 4. Gộp ống nước auth | ✅ | quyền 2 câu → 1; `BEGIN`+`set_config` 2 → 1 mỗi `TenantTx` (2 tx/request): **−3 câu SQL mỗi request đăng nhập** |
+| 4. Gộp ống nước auth | ✅ | quyền 2 câu → 1; `BEGIN`+`set_config` 2 → 1 mỗi `TenantTx` (2 tx/request): **−3 câu SQL mỗi request đăng nhập**. Sau đó (2026-11-09) db-review A3 bỏ hẳn tx quyền: `app.session_actor` một câu (0034, ADR-0017) |
 
 Bundle entry gzip -9: main sau #78 = 124,99 KiB; nhánh này thêm ~0,2 KiB rồi bù bằng cách tách panel tài khoản (`UserPanel`, lazy, nạp khi hover/focus nút) và chuyển 5 thông báo lỗi chỉ dùng ở form hủy/hoàn sang `corrections/messages.ts` (lazy) → **124,90 KiB** (ngân sách 125). Chưa đo lại từ VN trên staging (cần deploy).
 
 Mục tiêu đo lại (từ VN): số lượt nối tiếp mỗi màn ≤ 2, mỗi lần chuyển màn nhanh hơn ~0,3–0,5 s, không còn loạt request khi quay lại tab. Giai đoạn này **không** giải được phần ~200–400 ms mỗi request và cold start.
 
-**Giai đoạn 1: đổi vùng, cần EM quyết (~1 ngày, cho staging)**
+**Giai đoạn 1: đổi vùng, cần EM quyết (~1 ngày, cho staging)** — *không làm cho staging (EM 2026-11-07, §5b); thành kế hoạch dựng production ở Singapore, chưa làm.*
 5. Tạo Supabase project `ap-southeast-1`, bootstrap + migrate + `seed-demo` (runbook [vercel-staging](../runbooks/vercel-staging.md)).
 6. API chạy ở Singapore, **luôn chạy** (đề xuất B hoặc C, xem [ADR-0012](../decisions/ADR-0012-colocate-api-db-singapore.md)). Nếu EM muốn ít thay đổi nhất: A (Vercel `sin1`) là bước trung gian, nhưng vẫn còn cold start.
 7. Đo lại bằng cùng script + Globalping. Mục tiêu: API p50 ≤ 120 ms, p95 ≤ 250 ms từ VN; lần bấm đầu sau 10 phút nghỉ ≤ 300 ms (với B/C).
 
-**Giai đoạn 2: chỉ khi số đo sau giai đoạn 1 còn thiếu**
+**Giai đoạn 2: chỉ khi số đo sau giai đoạn 1 còn thiếu** — *chưa làm (2026-11-09).*
 8. "Day bundle" cho Quầy, ETag catalog, kết nối direct IPv6 tới DB.
 
 ## 5b. Quyết định vùng (EM 2026-11-07, [raw](../../raw/2026-11-07-em-decisions-hr-notes-group-region.md) câu 6)
@@ -196,7 +204,7 @@ Mục tiêu đo lại (từ VN): số lượt nối tiếp mỗi màn ≤ 2, m�
 > Cập nhật 2026-11-08: phần DB (lượt đi về API↔DB mỗi request, ping ẩn của pool, câu chậm theo dữ liệu, index) đo lại ở [db-review-2026-11](db-review-2026-11.md).
 
 ## 6. Cần EM quyết vs engineering tự làm
-**Cần EM quyết (vendor / vùng / tiền):**
+**Cần EM quyết (vendor / vùng / tiền):** *(2026-11-09: Q-P1 đã quyết ở §5b — staging ở lại Mỹ; Q-P2, Q-P3 còn mở, chuyển sang quyết định production ở [ADR-0012](../decisions/ADR-0012-colocate-api-db-singapore.md).)*
 - **Q-P1 Vùng:** đồng ý dời staging sang Singapore (Supabase project mới + API Singapore)? Dữ liệu demo tạo lại được; mật khẩu và URL DB mới thì EM giữ như lần trước. Cũng là bước chuẩn bị cho production (ADR-0002/0005 đã chọn Singapore).
 - **Q-P2 Nơi chạy API:** A (Vercel `sin1`, ~$0 thêm nhưng còn cold start 1,3–1,8 s, phải lên Pro $20 khi dùng thật), B (Fly.io `sin` luôn chạy, ~$5–9), hay C (VPS SGP1 $6–12, đúng ADR-0005, tự vận hành). **Khuyến nghị: B cho staging ngay** (ít vận hành, giữ một origin qua Vercel). Production chốt giữa B và C.
 - **Q-P3 Vercel Pro ($20/tháng):** bắt buộc khi spa dùng thật nếu SPA hoặc API còn ở Vercel (Hobby cấm thương mại). Thay thế: Caddy trên VPS phục vụ luôn SPA (C) thì không cần Vercel.

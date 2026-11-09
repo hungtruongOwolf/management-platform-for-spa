@@ -7,7 +7,7 @@ sources: [raw/2026-11-09-em-request-docs-and-platform-admin.md, decisions/ADR-00
 
 # Spec: Admin nền tảng
 
-Raw: [2026-11-09-em-request-docs-and-platform-admin](../../raw/2026-11-09-em-request-docs-and-platform-admin.md) (mục 2). EM chọn **"Admin nền tảng"**: màn cho người vận hành sản phẩm (operator) khi bán cho nhiều spa, tách khỏi app của từng spa. Thiết kế: [ADR-0018](../../decisions/ADR-0018-platform-admin-console.md), [architecture/platform-admin](../../architecture/platform-admin.md).
+Raw: [2026-11-09-em-request-docs-and-platform-admin](../../../raw/2026-11-09-em-request-docs-and-platform-admin.md) (mục 2). EM chọn **"Admin nền tảng"**: màn cho người vận hành sản phẩm (operator) khi bán cho nhiều spa, tách khỏi app của từng spa. Thiết kế: [ADR-0018](../../decisions/ADR-0018-platform-admin-console.md), [architecture/platform-admin](../../architecture/platform-admin.md).
 
 ## 1. Goal
 Hôm nay mọi việc vận hành (tạo spa, tạo chủ spa, mở khóa, reset MFA, khôi phục mật khẩu chủ spa) đi qua CLI với kết nối schema owner — chỉ người có máy dev + chuỗi kết nối DB làm được, không có nhật ký thao tác. Khi bán cho nhiều spa, operator cần một console **an toàn hơn CLI**: danh tính riêng có MFA bắt buộc, mọi thao tác có audit, không đọc dữ liệu khách của spa. Thước đo: mở một spa mới (spa + chủ spa đăng nhập được) < 3 phút, không cần DB; 100 % thao tác operator có một dòng audit.
@@ -27,7 +27,7 @@ Hôm nay mọi việc vận hành (tạo spa, tạo chủ spa, mở khóa, reset
 
 ### US1 — Operator đăng nhập (MFA bắt buộc)
 As an operator, I want to sign in with my own credentials and a TOTP code, so that only I can run the console even if my password leaks.
-- **AC1.1** Given operator do CLI tạo, When `POST /admin/auth/login` đúng username + mật khẩu, Then `200 {next: "mfa_enroll" | "mfa_verify"}` + cookie `__Host-op-session` **pending** (10 phút); `GET /admin/me` với session đó → `401 auth.mfa_required`. Không bao giờ có `next: done` khi chưa qua TOTP.
+- **AC1.1** Given operator do CLI tạo, When `POST /admin/auth/login` đúng username + mật khẩu, Then `200 {next: "mfa_enroll" | "mfa_verify"}` + cookie `__Host-op-session` **pending** (10 phút); `GET /admin/me` với session đó → `401 auth.mfa_required` (chưa enroll: `401 auth.mfa_enrollment_required`). Không bao giờ có `next: done` khi chưa qua TOTP.
 - **AC1.2** Lần đầu: `enroll/start` → QR + khóa nhập tay; `enroll/confirm` với mã đúng → session đầy đủ (token mới) + 10 mã khôi phục (một lần). Lần sau: `mfa/verify` với TOTP hoặc mã khôi phục.
 - **AC1.3** Sai mật khẩu / username không có / tài khoản bị khóa → cùng `401 auth.invalid_credentials` sau cùng lượng việc Argon2. 5 lần sai (mật khẩu hoặc mã) → khóa tăng dần (`identity::lockout`).
 - **AC1.4** Rate limit riêng cho `/admin/auth/*` theo IP (1 request / 6 giây, burst 5) → `429`.
@@ -62,7 +62,7 @@ As an operator, I want to turn a feature off for a spa, so that a spa on a small
   |---|---|---|---|
   | `appointments` | Lịch hẹn | `appointment.manage`, `appointment.settings` | `/appointments*`, `/appointment-settings`, `/me/appointments` |
   | `payroll` | Bảng lương | `payroll.read`, `payroll.close` | `/payroll*` (+ phiếu lương biến khỏi `/me/staff`, lương khỏi hồ sơ) |
-  | `evaluations` | Đánh giá nhân viên | `evaluation.record` | `/evaluations*`, `/me/evaluations*` (+ đánh giá biến khỏi `/me/staff`) |
+  | `evaluations` | Đánh giá tháng | — (không rút `evaluation.record`, xem ghi chú build ở Status) | `/evaluations*`, `/me/evaluations*` (+ đánh giá biến khỏi `/me/staff`) |
   | `follow_ups` | Gọi lại khách vắng | `customer.follow_up` | (qua permission) |
   | `notes_journal` | Nhật ký ghi chú | — | `/notes` |
   | `reports` | Báo cáo kinh doanh (khoảng ngày + sổ doanh thu) | `report.long_range` | `/reports/range`, `/reports/ledger` |
@@ -83,7 +83,7 @@ As an operator, I want to change what a manager may do for all spas (or for one 
 - **AC7.2** `PUT /admin/tenants/{id}/roles/{key} {permissions, reason}` (step-up) → role của spa đó đổi, `follows_template = false` (mẫu đổi sau không ghi đè). `POST /admin/tenants/{id}/roles/{key}/reset {reason}` → quay về mẫu, `follows_template = true`.
 - **AC7.3** Có hiệu lực ở **request kế tiếp** (quyền đọc mỗi request): ví dụ bỏ `customer.write` khỏi manager → manager `POST /customers` → `403`.
 - **AC7.4** Rào chắn (cả mẫu và spa), lỗi `422`:
-  - permission lạ → `role.unknown_permission`; `platform.*`, `staff.read_own_past` → `role.not_grantable`;
+  - permission lạ → `422` lỗi field `permissions unknown_permission`; `platform.*`, `staff.read_own_past` → `role.not_grantable`;
   - owner phải giữ `staff.manage`, `staff.read`, `staff.read_basic`, `audit.read` → `role.owner_floor` (`details.missing`);
   - `staff.manage` chỉ ở owner → `role.owner_only_permission` (giữ quyết định C, ADR-0015/0016 "owner_protected" dựa trên `staff.manage`);
   - chỉ role hệ thống (`owner`, `manager`, `technician`) → key khác `404`.
@@ -133,5 +133,5 @@ Bảng mới: `platform_operator`, `platform_session`, `platform_recovery_code`,
 - **Q-PA4** Khóa chủ spa cuối cùng: v1 từ chối (`platform.last_owner`), phải ngưng spa trước. Đồng ý?
 
 ## Status
-draft (lead's design 2026-11-09, EM to review). Đã build theo 3 PR chồng nhau (ADR-0018 §Rollout): **#111** danh tính operator + spa + nhật ký nền tảng (0038), **#112** cờ tính năng (0039) + e2e, **#113** vai trò + tài khoản + nhật ký spa (0040). Chưa merge (chờ EM).
+draft (lead's design 2026-11-09, EM to review). Đã build theo 3 PR chồng nhau (ADR-0018 §Rollout): **#111** danh tính operator + spa + nhật ký nền tảng (0038), **#112** cờ tính năng (0039) + e2e, **#113** vai trò + tài khoản + nhật ký spa (0040). Cả ba đã merge vào `main` và chạy trên staging (2026-11-09, `memory/log.md`); spec vẫn chờ EM review.
 - Ghi chú build: tính năng `evaluations` chỉ chặn đánh giá tháng (route), không rút `evaluation.record` vì quyền này còn giữ đánh giá ngày + thưởng/phạt; `staff.read_own_past` không còn lưu trong role owner (0040, vốn luôn bị rút lúc request).

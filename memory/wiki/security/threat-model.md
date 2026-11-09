@@ -1,10 +1,12 @@
 ---
 title: Threat model (R1)
-updated: 2026-11-04
-sources: [architecture/system.md, product/specs/front-desk-and-packages.md]
+updated: 2026-11-09
+sources: [architecture/system.md, product/specs/front-desk-and-packages.md, product/specs/platform-admin.md, decisions/ADR-0018-platform-admin-console.md]
 ---
 
 # Threat model R1 (STRIDE theo trust boundary)
+
+> Các bảng TB1–TB4 viết cho thiết kế gốc R1 (VPS + Caddy + R2, [system](../architecture/system.md)). Staging hiện chạy trên Vercel ([vercel-staging](../runbooks/vercel-staging.md)): vai trò của Caddy (TLS, security headers, proxy `/api`) do Vercel đảm nhận, header và CSP khai trong `vercel.json` (cùng giá trị với `infra/Caddyfile`). Biện pháp ở tầng API và DB không đổi.
 
 **Tài sản cần bảo vệ:** tiền (thanh toán, công nợ, sổ quỹ) · số buổi liệu trình khách đã trả · dữ liệu khách (SĐT, ghi chú sức khỏe) · dữ liệu nhân sự và lương (R2) · tài khoản chủ spa và platform admin · tính cách ly giữa các spa.
 
@@ -24,7 +26,7 @@ sources: [architecture/system.md, product/specs/front-desk-and-packages.md]
 | S | Phát lại mã TOTP đã thấy/bị phishing | Mỗi bước thời gian chỉ chấp nhận 1 lần (`mfa_last_step`, UPDATE nguyên tử); mã khôi phục dùng 1 lần | Cùng mã ở lần đăng nhập thứ hai → 401; mutation đã kiểm |
 | S | Enroll trước chủ spa (TOFU) khi có mật khẩu mà owner chưa enroll | Enroll ngay lần đăng nhập đầu; đã enroll thì không enroll lại được (409), chỉ operator reset; xác nhận gắn đúng ciphertext đã kiểm mã | `enroll/start` sau khi đã bật → 409 |
 | I | Lộ DB (dump/backup) làm lộ secret TOTP / mã khôi phục | Secret AES-256-GCM (`APP_DATA_KEY` ngoài DB), AAD gắn user id; mã khôi phục chỉ lưu SHA-256 (80-bit entropy) | Ciphertext không chứa secret; hash không chứa mã |
-| S | Đánh cắp session qua XSS | Cookie `HttpOnly`; CSP nonce-based, không `unsafe-inline`; React escape; không `dangerouslySetInnerHTML` | CSP header có mặt; XSS payload trong tên khách hiển thị dạng text |
+| S | Đánh cắp session qua XSS | Cookie `HttpOnly`; CSP `script-src 'self'` (không inline script, không `unsafe-inline`; `infra/Caddyfile`, `vercel.json`); React escape; không `dangerouslySetInnerHTML` | CSP header có mặt; XSS payload trong tên khách hiển thị dạng text |
 | S | CSRF | `SameSite=Strict` + kiểm tra `Origin` | Request ghi với `Origin` lạ → 403 |
 | T | Sửa request trong DevTools: đổi `price`, `tenant_id`, `staff_id`, `sessions_remaining`, `is_paid` (A2) | DTO chỉ nhận trường được phép ghi; giá lấy từ bảng giá phía server; giảm giá cần permission + lý do; tenant/user từ session | Gửi `tenant_id`/`price` lạ → bị bỏ qua hoặc `422` |
 | T | Gửi lại request (replay / bấm đôi) → ghi đôi tiền hoặc trừ đôi buổi | Idempotency-Key; khóa lạc quan (optimistic lock); `CHECK sessions_remaining >= 0` | Gửi lặp cùng key → 1 bản ghi; hai request song song trừ buổi cuối → 1 thành công |
@@ -58,7 +60,7 @@ sources: [architecture/system.md, product/specs/front-desk-and-packages.md]
 |---|---|
 | Chiếm quyền SSH | Chỉ SSH key, tắt root login, fail2ban; firewall chỉ mở 80/443/SSH |
 | Lỗ hổng OS/package | Cập nhật bảo mật tự động; image distroless, user non-root |
-| Lỗ hổng dependency | `cargo audit`, `cargo deny`, `pnpm audit` trong CI; Renovate |
+| Lỗ hổng dependency | `cargo deny check advisories bans licenses sources` (job `rust-lint`) và `pnpm audit --prod --audit-level high` trong CI; chưa cấu hình Renovate |
 
 ## Mối đe dọa nội bộ & vận hành
 | Mối đe dọa | Biện pháp |
@@ -72,7 +74,7 @@ sources: [architecture/system.md, product/specs/front-desk-and-packages.md]
 | ID | Phát hiện | Biện pháp | Test (mutation-check) |
 |---|---|---|---|
 | H1 | `switch-tenant` phát session mới với `recent_auth_at = now()` (DEFAULT của cột) và hạn tuyệt đối mới 30 ngày: session bị đánh cắp bỏ qua được 🔒 và sống mãi | `identity::service::Issue::{MfaPending, Authenticated, Rotated}` bắt mọi chỗ phát session nói rõ thời điểm xác thực; switch-tenant giữ `recent_auth_at` + `absolute_expires_at` cũ; migration 0011 bỏ DEFAULT của `recent_auth_at` | `auth.rs::a_rotated_session_needs_a_real_reauth`, `auth.rs::switch_tenant_keeps_absolute_expiry_and_reauth_time`, `auth.rs::login_marks_the_session_as_just_authenticated` |
-| M2 | Nhập sổ cũ không giới hạn ngày; giá trong sổ do quản lý gõ thành trần hoàn tiền | **Đã thay (EM 2026-11-05, migration 0012):** bỏ cửa sổ nhập và `refund_cap`. Gói sổ cũ luôn thuộc ngày nhập (hôm nay), ngày cũ khóa tự động cho Manager; hoàn ≤ `sold_price`, chỉ Owner hoàn, có audit. **Rủi ro còn lại chấp nhận:** quản lý gõ giá sổ cao rồi chủ spa hoàn theo giá đó mà không đối chiếu; trần hoàn riêng cho gói sổ cũ để sau | `opening_balances.rs::anyone_who_may_import_imports_today_without_a_window_or_reauth`, `::an_opening_balance_refund_is_capped_by_its_book_price` |
+| M2 | Nhập sổ cũ không giới hạn ngày; giá trong sổ do quản lý gõ thành trần hoàn tiền | **Đã thay (EM 2026-11-05, migration 0012):** bỏ cửa sổ nhập và `refund_cap`. Gói sổ cũ luôn thuộc ngày nhập (hôm nay), ngày cũ khóa tự động cho Manager; hoàn ≤ `sold_price`, chỉ Owner hoàn, có audit. **Rủi ro còn lại chấp nhận:** quản lý gõ giá sổ cao rồi chủ spa hoàn theo giá đó mà không đối chiếu; trần hoàn riêng cho gói sổ cũ để sau | `opening_balances.rs::only_the_owner_imports_today_without_a_window_or_reauth`, `::an_opening_balance_refund_is_capped_by_its_book_price` |
 | M3 | Spa bị tạm ngưng vẫn dùng được với session đang mở | `member_permissions` yêu cầu `tenant.status = 'active'` → `403 auth.not_a_member`; `user_requires_mfa` không còn bỏ qua spa bị ngưng | `auth.rs::suspending_a_spa_cuts_off_its_open_sessions` |
 | L1 | Map bucket rate limit tăng vô hạn; IPv6 mỗi địa chỉ một bucket | Bucket IPv6 theo /64 (IPv4-mapped → IPv4); task dọn `retain_recent` mỗi 60 giây, tự dừng khi layer bị drop | `middleware::tests::*` (unit) |
 | L2 | Biết SĐT chủ spa là khóa được tài khoản | Giữ khóa theo tài khoản (chống dò phân tán), thêm `app unlock --phone P`; lý do ở ADR-0004 (update 2026-11-04). Rủi ro DoS còn lại được chấp nhận | `auth.rs::operator_unlock_lifts_a_lockout` |
@@ -84,7 +86,7 @@ sources: [architecture/system.md, product/specs/front-desk-and-packages.md]
 | L8 | Action CI không pin SHA; deploy job có `packages: write` và chuyển token đó lên VPS | Pin mọi action theo commit SHA (`# vX`); `packages: write` chỉ ở job build, job deploy `packages: read` | `actionlint` sạch |
 | INFO | `safeNextPath` nhận `/\t/evil.com`; hash idempotency không gắn route; `POST /sales` thu tiền không cần `payment.collect`; phân bổ giảm giá có thể vượt giá dòng | Chặn `[\x00-\x20\\]`; `kernel::idempotency::hash_route` (method + route + record + body) cho mọi endpoint idempotent (sales, packages, operations); `payment.collect` khi có payments; phần dư phân bổ không vượt giá dòng | `api.test.ts`, `idempotency::tests::route_hash_binds_method_route_and_record`, `sales.rs::taking_money_needs_payment_collect`, `domain::tests::shares_always_sum_to_the_discount_and_fit_their_lines` |
 
-## Quản lý nhân viên (0016, secure review 2026-11-05)
+## Quản lý nhân viên (0017, secure review 2026-11-05)
 | Lạm dụng | Kiểm soát (server) | Test |
 |---|---|---|
 | Quản lý/role tùy biến đọc lương qua hồ sơ | `pay` chỉ khi `payroll.read`; ghi lương cần cả hai quyền | `staff.rs::salary_is_only_sent_to_payroll_readers` (mutation-check) |
@@ -145,20 +147,20 @@ Không có Critical/High. Gói bán trong lượt sửa ghi chú được ở Qu
 Tài sản mới: quyền vận hành **mọi** spa (tạo / ngưng spa, cờ tính năng, vai trò, tài khoản). Tác nhân thêm: (A6) operator bị chiếm tài khoản; (A7) lỗi ứng dụng gọi đường nền tảng từ route spa.
 | STRIDE | Mối đe dọa | Biện pháp | Test |
 |---|---|---|---|
-| S | Dò / nhồi mật khẩu operator (A1) | Argon2id, lỗi đồng nhất + dummy hash, rate limit riêng `/admin/auth/*` (1/6 s, burst 5), khóa theo operator (`identity::lockout`), username không phải SĐT | `platform_auth.rs::wrong_passwords_lock_the_operator`, `429` |
-| S | Lộ mật khẩu operator (A6) | TOTP **luôn** bắt buộc; session pending chỉ dùng được cho `/admin/auth/mfa/*`; mã dùng một lần (`mfa_last_step`) | `a_pending_session_reaches_nothing`, replay → `401` |
+| S | Dò / nhồi mật khẩu operator (A1) | Argon2id, lỗi đồng nhất + dummy hash, rate limit riêng `/admin/auth/*` (1/6 s, burst 5), khóa theo operator (`identity::lockout`), username không phải SĐT | `platform.rs::wrong_passwords_lock_the_operator`, `429` |
+| S | Lộ mật khẩu operator (A6) | TOTP **luôn** bắt buộc; session pending chỉ dùng được cho `/admin/auth/mfa/*`; mã dùng một lần (`mfa_last_step`) | `platform.rs::an_operator_always_signs_in_with_a_second_factor` (session pending chỉ tới bước MFA), `operator_codes_are_single_use` |
 | S | Session spa (kể cả chủ spa) được coi là operator (A2/A7) | Principal + bảng + cookie riêng; extractor `Operator` chỉ đọc `__Host-op-session` → `platform_session` | `authz_matrix.rs::every_admin_route_needs_a_full_operator_session` |
 | S | Cookie operator bị ăn cắp / máy bỏ quên | Session ngắn (idle 30 phút, tối đa 8 giờ); **step-up** (mật khẩu + TOTP ≤ 5 phút) cho mọi thao tác ghi, kiểm ở Rust **và** trong hàm DB ghi (mọi thao tác ghi từ 0041) | `writes_need_a_recent_step_up`, `account_and_role_writes_check_the_step_up_in_the_database` (Rust + gọi hàm DB thẳng với `recent_auth_at` cũ → `42501`) |
 | E | XSS ở app spa cùng origin gửi request admin từ trình duyệt operator | CSP `script-src 'self'`, React escape; step-up cho ghi (XSS không có mã TOTP); runbook: profile trình duyệt riêng; `APP_ADMIN_ORIGIN` + subdomain khi có domain (cookie `__Host-` host-only tách hẳn) | unit middleware `admin_origin_is_separate` |
 | E | Lỗi ứng dụng gọi hàm nền tảng xuyên spa không qua kiểm quyền (A7) | Mỗi hàm `SECURITY DEFINER` tự kiểm hash token operator (`platform_gate`, không grant cho ai); SQL `app.platform_*` chỉ ở crate `platform` | `platform.rs`: `platform_functions_check_the_operator_session_themselves` (hash lạ / session spa / pending / sau logout → `42501`), `account_and_role_writes_check_the_step_up_in_the_database` (0041: hàm ghi tài khoản + vai trò spa từ chối step-up cũ), test kiến trúc `platform_sql_stays_in_platform` |
-| I | Operator đọc dữ liệu khách / sức khỏe / lương của spa (ADR-0003) | Hàm xuyên spa chỉ trả số đếm + metadata (cột cố định); nhật ký spa chỉ `at, action, entity_type, actor`; không `before/after`, `reason`, `entity_id`, IP; tìm tài khoản trả tên + SĐT + membership, không hash / secret | `platform.rs`: `platform_functions_return_only_their_columns` (kiểu trả về của từng hàm từ catalog), `tenant_audit_is_metadata_only` |
+| I | Operator đọc dữ liệu khách / sức khỏe / lương của spa (ADR-0003) | Hàm xuyên spa chỉ trả số đếm + metadata (cột cố định); nhật ký spa chỉ `at, action, entity_type, actor`; không `before/after`, `reason`, `entity_id`, IP; tìm tài khoản trả tên + SĐT + membership, không hash / secret | `platform.rs`: `platform_functions_return_only_their_columns` (kiểu trả về của từng hàm từ catalog), `the_spa_list_is_counts_only`, `tenant_audit_is_metadata_only` |
 | I | Mật khẩu tạm lộ qua log / audit / cache | Trả một lần, `Cache-Control: no-store`, không log, audit không có mật khẩu; SĐT trong audit nền tảng chỉ 3 số cuối | `creating_a_spa_shows_the_password_once` (quét `audit_log` + `platform_audit_log`) |
-| T | Spa tự bật tính năng bị tắt / tự sửa mẫu vai trò (A2) | `app_rw` chỉ `SELECT` trên `tenant_feature` và `role_template_permission`; ghi chỉ qua hàm có cổng operator | `platform_features.rs::app_rw_cannot_write_flags` |
-| T | Operator (hoặc bug) làm spa mất quyền quản trị | Rào chắn vai trò (owner giữ `staff.manage`, `staff.read`, `staff.read_basic`, `audit.read`; `staff.manage` chỉ owner); không khóa chủ spa cuối cùng của spa đang hoạt động (`409 platform.last_owner`) | `platform_roles.rs::the_owner_floor_is_kept`, `platform_accounts.rs::the_last_owner_cannot_be_locked` |
+| T | Spa tự bật tính năng bị tắt / tự sửa mẫu vai trò (A2) | `app_rw` chỉ `SELECT` trên `tenant_feature` và `role_template_permission`; ghi chỉ qua hàm có cổng operator | `platform.rs::app_rw_cannot_write_flags` |
+| T | Operator (hoặc bug) làm spa mất quyền quản trị | Rào chắn vai trò (owner giữ `staff.manage`, `staff.read`, `staff.read_basic`, `audit.read`; `staff.manage` chỉ owner); không khóa chủ spa cuối cùng của spa đang hoạt động (`409 platform.last_owner`) | `platform.rs::the_owner_floor_is_kept`, `::accounts_across_spas` (khóa chủ spa cuối → `409 platform.last_owner`) |
 | R | Operator chối đã làm gì | `platform_audit_log` append-only (`app_rw` không UPDATE/DELETE), cùng transaction với thao tác, lý do bắt buộc; audit spa `platform_admin` để chủ spa thấy | `every_operator_write_is_audited` |
-| D | Spa ngưng vẫn dùng session cũ | Ngưng thu hồi session thành viên; `session_actor` đã từ chối spa không active (M3); đăng nhập → `403 auth.spa_suspended` | `platform_tenants.rs::a_suspended_spa_cannot_sign_in` |
+| D | Spa ngưng vẫn dùng session cũ | Ngưng thu hồi session thành viên; `session_actor` đã từ chối spa không active (M3); đăng nhập → `403 auth.spa_suspended` | `platform.rs::a_suspended_spa_cannot_sign_in` |
 
 **TB2 (bổ sung):** không role `BYPASSRLS`, không kết nối owner ở runtime; cổng token trong hàm chống lỗi ứng dụng, **không** chống chiếm `app_rw` (cùng lớp rủi ro đã ghi ở ADR-0017: `app_rw` đặt được `app.tenant_id` của bất kỳ spa nào). **Còn mở:** TOFU ở lần enroll đầu của operator (như owner, ADR-0004 L3); cùng origin đến khi có subdomain (Q-PA3); chưa có support grant nên hỗ trợ chỉ thấy metadata (Q-PA1).
 
 ## Còn mở
-- Danh sách thao tác yêu cầu nhập lại mật khẩu: chỉ thao tác bảo mật tài khoản (đổi mật khẩu, cài đặt MFA), EM 2026-11-05. Khi thêm route đó: dùng `AuthUser::require_recent_auth` + test `401`.
+- Danh sách thao tác yêu cầu nhập lại mật khẩu: chỉ thao tác bảo mật tài khoản (EM 2026-11-05). Hiện dùng `AuthUser::require_recent_auth` ở tạo / đặt lại mật khẩu / đổi vai trò tài khoản nhân viên (ADR-0016, `staff_logins.rs::owner_login_actions_need_a_recent_reauth`); đổi mật khẩu của chính mình đòi mật khẩu hiện tại; cài đặt MFA sau đăng nhập chưa có route. Route mới loại này: dùng guard + test `401 auth.reauth_required`.

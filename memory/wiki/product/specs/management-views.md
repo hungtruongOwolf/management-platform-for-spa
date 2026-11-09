@@ -1,14 +1,14 @@
 ---
 title: "Spec R1-2: Xem lại & theo dõi (management views)"
 status: draft
-updated: 2026-11-05
+updated: 2026-11-09
 sources: [raw/2026-11-05-em-management-views-logo-ui.md]
 related: [../paper-books-analysis.md, ../personas.md, front-desk-and-packages.md, ../../architecture/backend.md, ../../security/authz-matrix.md]
 ---
 
 # Spec R1-2: Xem lại & theo dõi (management views)
 
-**Status: draft** (chờ EM duyệt; backend đã build theo các mặc định dưới đây, câu hỏi mở ở §9). Phần backend (API) do agent backend làm; giao diện do agent UI làm trên contract `apps/api/openapi.json`.
+**Status: draft** (chờ EM duyệt; backend đã build theo các mặc định dưới đây, câu hỏi mở ở §9). *Cập nhật 2026-11-09: mọi câu hỏi ở §9 đã chốt; backend + UI đã build ([plan r1-2](../../plans/r1-2-management-views.md)).* Phần backend (API) do agent backend làm; giao diện do agent UI làm trên contract `apps/api/openapi.json`.
 
 ## 1. Goal
 App hiện chỉ để **nhập**. EM (2026-11-05): "muốn xem tổng hôm nay là bao nhiêu, xem một khách lịch sử dùng thế nào… không có management". Spec này thêm phần **xem lại**: tình hình một ngày, một khoảng ngày, sổ doanh thu, lịch sử từng khách, danh sách liệu trình cần theo dõi. Mọi con số được **tính ra** từ các sự kiện đã nhập (lượt, hóa đơn, thanh toán, hoàn tiền), không ai phải cộng tay. Phục vụ thước đo R1 #1 (bỏ sổ giấy: thay luôn phần "đọc lại" của sổ doanh thu và sổ liệu trình) và #3 (không quên khách: danh sách sắp hết hạn, lâu không quay lại). Persona chủ spa "nắm tình hình trong một màn hình" ([personas](../personas.md)).
@@ -17,8 +17,8 @@ Spec này cũng ghi **quyết định EM bỏ khái niệm "sổ cũ"** khỏi s
 
 ## 2. Personas & quyền
 - **Chủ spa:** xem mọi thứ, kể cả mọi con số tiền.
-- **Quản lý (kiêm thu ngân):** xem mọi số liệu vận hành. Xem **tiền** là một permission riêng (`report.revenue.read`). **Mặc định: bật** cho quản lý, vì quản lý chính là thu ngân, đã cầm tiền và chốt quỹ mỗi ngày ([personas](../personas.md) #1); giấu tổng tiền với người đang đếm tiền không bảo vệ được gì. Chủ spa tắt được khi có màn quản lý role (spec #4). → **Q1** cho EM.
-- **Kỹ thuật viên:** không xem các màn này ở R1 (R2 có "số khách của tôi").
+- **Quản lý (kiêm thu ngân):** xem mọi số liệu vận hành. Xem **tiền** là một permission riêng (`report.revenue.read`). **Mặc định: bật** cho quản lý, vì quản lý chính là thu ngân, đã cầm tiền và chốt quỹ mỗi ngày ([personas](../personas.md) #1); giấu tổng tiền với người đang đếm tiền không bảo vệ được gì. Chủ spa tắt được khi có màn quản lý role (spec #4) *(thay bằng [ADR-0018](../../decisions/ADR-0018-platform-admin-console.md) D5: hiện chỉ operator nền tảng sửa role của spa)*. → **Q1** cho EM.
+- **Kỹ thuật viên:** không xem các màn này ở R1 (R2 có "số khách của tôi"; *đã có: "Khách của tôi" `/khach-cua-toi`, [staff-management](staff-management.md)*).
 
 | Permission | Chủ spa | Quản lý | KTV | Dùng cho |
 |---|---|---|---|---|
@@ -32,7 +32,7 @@ Spec này cũng ghi **quyết định EM bỏ khái niệm "sổ cũ"** khỏi s
 Thiếu `report.revenue.read` thì response **không chứa** các trường tiền (không có key, không phải `null` rồi giấu ở UI).
 
 ## 3. User stories & acceptance criteria
-Áp dụng cho mọi endpoint (như [spec R1-1](front-desk-and-packages.md) G1–G3): chưa đăng nhập → `401`; thiếu permission → `403 auth.forbidden`; ID của spa khác → `404`. Mọi endpoint chỉ **đọc** (không ghi, không audit). Danh sách có thể dài thì phân trang bằng cursor (`limit` 1–100, mặc định 20; cursor hỏng → `422 cursor invalid`).
+Áp dụng cho mọi endpoint (như [spec R1-1](front-desk-and-packages.md) G1–G3): chưa đăng nhập → `401`; thiếu permission → `403 auth.forbidden`; ID của spa khác → `404`. Mọi endpoint chỉ **đọc** (không ghi, không audit) *(trừ `POST /customers/{id}/follow-ups`, thêm ở US5b vòng 3)*. Danh sách có thể dài thì phân trang bằng cursor (`limit` 1–100, mặc định 20; cursor hỏng → `422 cursor invalid`).
 
 **Quy ước tiền (áp dụng US1–US3):** tính theo **tiền thực thu** (cash basis) từ các bảng chỉ-thêm `payment`, `sale_line`, `refund`:
 - **Thu** = các dòng `payment` (đã trừ giảm giá, vì R1 thu đúng số phải trả).
@@ -64,7 +64,7 @@ Thiếu `report.revenue.read` thì response **không chứa** các trường ti�
 - AC2.2: Tổng các kỳ = `totals` (trừ `customers` = số khách **khác nhau** trên cả khoảng, không phải tổng các kỳ).
 - AC2.3: Tổng tiền của các ngày trong khoảng = `revenue` của khoảng; mỗi ngày khớp dashboard US1 của ngày đó.
 - AC2.4: `top_services` (10): theo số buổi + số lần làm lẻ; `one_off_revenue` chỉ khi có quyền tiền. `top_packages` (10): số gói bán (hóa đơn chưa hủy); `revenue` (giá sau giảm) chỉ khi có quyền tiền.
-- AC2.5 (neg): `from > to` → `422 from after_to`; khoảng > 366 ngày → `422 to range_too_long`. Thiếu `report.read` → `403`.
+- AC2.5 (neg): `from > to` → `422 from after_to`; khoảng > 366 ngày → `422 to range_too_long` *(giới hạn đổi ở "US2 — báo cáo linh hoạt", vòng 3: theo tháng/năm ≤ 732 ngày, chủ spa ≤ 1830)*. Thiếu `report.read` → `403`.
 
 ### US3: Sổ doanh thu hằng ngày (bản số của sổ giấy)
 *Là chủ spa / thu ngân, tôi muốn xem sổ doanh thu như sổ giấy: mỗi giao dịch một dòng, cột dịch vụ 1 lần / liệu trình / chuyển khoản / tiền mặt / chưa thanh toán / ghi chú, có cộng từng ngày.*
@@ -78,8 +78,9 @@ Thiếu `report.revenue.read` thì response **không chứa** các trường ti�
 - AC4.1 Timeline (`GET /customers/{id}/history`), mới nhất trước, phân trang cursor. Loại sự kiện:
   - `visit`: giờ vào, từng dòng (dịch vụ, nguồn gói/lẻ, gói nào, số buổi trừ, còn lại sau buổi, KTV, giá dòng lẻ), tiền thu của lượt;
   - `purchase`: mua gói (dòng, tổng, giảm giá + lý do, thanh toán theo hình thức, người chốt);
-  - `visit_voided` / `purchase_voided`: lúc hủy, lý do, tiền đảo, số buổi được cộng lại;
-  - `package_cancelled`: chủ spa hủy gói, lý do, khoản hoàn (nếu có).
+  - `visit_voided` / `purchase_voided`: lúc hủy, lý do, tiền đảo, số buổi được cộng lại *(từ F16, §10.7: một mục ở giờ của lượt / hóa đơn, mang cả nội dung lẫn `void`)*;
+  - `package_cancelled`: chủ spa hủy gói, lý do, khoản hoàn (nếu có);
+  - `package_extended` (thêm 2026-11-07, [front-desk §10.11](front-desk-and-packages.md)): gia hạn gói, hạn cũ → hạn mới, lý do, người làm.
   Lượt đã hủy vẫn nằm trong timeline (có cờ `voided`). **Không bao giờ** có ghi chú sức khỏe. Ghi chú buổi (`visit.note`) chỉ khi người xem có `customer.health_notes.read` (EM 2026-11-07, front-desk §10.12).
 - AC4.2 Trang liệu trình (`GET /customer-packages/{id}/usage`): thông tin gói (tổng/còn lại, hạn, quà tặng, trạng thái) + **mỗi lần dùng** (STT theo thứ tự cũ → mới: ngày, giờ, dịch vụ, số buổi, còn lại sau, KTV, đã hủy hay chưa). Đây là một trang của sổ giấy.
 - AC4.3 Tóm tắt (`GET /customers/{id}/summary`): lần đến đầu, lần đến gần nhất, số ngày từ lần gần nhất, số lượt (hoàn tất / đã hủy), số buổi đã dùng, tiền đã trả / đã đảo / đã hoàn / **thực chi**, số gói theo trạng thái, số buổi còn lại của các gói đang dùng.
@@ -90,7 +91,7 @@ Thiếu `report.revenue.read` thì response **không chứa** các trường ti�
 *Là quản lý, tôi muốn xem các liệu trình đang chạy, sắp hết hạn, đã hết buổi, đã hủy; và danh sách khách còn buổi mà lâu không quay lại, để gọi điện mời.*
 - AC5.1 `GET /packages`: lọc `status` (active / expired / exhausted / cancelled, trạng thái suy ra như R1-1), tìm `q` theo tên (không dấu) hoặc SĐT, mới nhất trước. `counts` đếm cả spa (theo `q`), không phụ thuộc trang.
 - AC5.2 Sắp hết hạn: `expiring_within_days=N` (1–365, mặc định cửa sổ đếm 30) → chỉ gói **active** có hạn ≤ hôm nay + N, hạn gần nhất trước, kèm `days_to_expiry`, `last_used_on`.
-- AC5.3 `GET /customers/inactive?days=N` (mặc định 7, EM 2026-11-05): khách **còn buổi** trên gói đang dùng mà lần đến gần nhất (hoặc ngày bắt đầu gói nếu chưa đến lần nào) cách hôm nay ≥ N ngày; vắng lâu nhất trước; kèm số buổi còn lại. `scope=all`: mọi khách đã từng đến/mua.
+- AC5.3 *(thay bằng AC5.3' ở "Bổ sung vòng 3")* `GET /customers/inactive?days=N` (mặc định 7, EM 2026-11-05): khách **còn buổi** trên gói đang dùng mà lần đến gần nhất (hoặc ngày bắt đầu gói nếu chưa đến lần nào) cách hôm nay ≥ N ngày; vắng lâu nhất trước; kèm số buổi còn lại. `scope=all`: mọi khách đã từng đến/mua.
 - AC5.4 (neg): `days` hoặc `expiring_within_days` ngoài 1–365 → `422`; `q` 1 ký tự → `422 too_short`. KTV → `403`.
 
 ### Bổ sung vòng 3 (EM 2026-11-05, [raw](../../../raw/2026-11-05-em-ui-review-round3.md))
@@ -126,16 +127,19 @@ Thiếu `report.revenue.read` thì response **không chứa** các trường ti�
 **US2 — báo cáo linh hoạt:** `preset` = `last_7_days`, `last_30_days`, `this_month`, `last_month` (theo ngày), `this_year`, `last_12_months`, `last_2_years` (năm nay + năm trước; theo tháng), tính theo "hôm nay" của spa; `granularity` thêm `year` (so sánh các năm); ghi đè được granularity mặc định của preset; `preset` cùng `from`/`to` → `422 preset conflicts_with_range`. Giới hạn: theo ngày/tuần ≤ 366 ngày, theo tháng/năm ≤ 732 ngày (**2 năm**, cho mọi người, trong ngân sách 300 ms). **Chủ spa** (quyền mới `report.long_range`, migration 0015) xem được tới 1830 ngày (5 năm) theo tháng/năm, preset `last_3_years` (theo tháng) và `last_5_years` (theo năm); tính tại chỗ, không có bảng tổng hợp, ngân sách riêng p95 ≤ **1,5 s** trên bench 3 năm (đo: 368–478 ms). Thiếu quyền → `422 to range_too_long` như cũ (cả hai preset này luôn bị từ chối, kể cả ngày đầu năm khi khoảng chưa vượt 2 năm). Mỗi điểm `series` có `counts.customers`, `counts.visits` và `net_revenue` (phẳng, cho biểu đồ đường; chỉ khi có quyền tiền). Thêm `technicians[]` cho cả khoảng (như dashboard ngày).
 
 ### US6 (để sau, R1-3): Sổ thu chi
+*(Số "R1-3" sau đó được dùng cho [spec lịch hẹn](appointments.md); sổ thu chi chưa có spec, chưa build.)*
+
 Sổ thu chi giấy ghi cả **chi** (chi phí vận hành, rút/nộp quỹ) và **tồn quỹ** tiền mặt / tài khoản. Phần **thu** đã có (US3). Phần **chi** là loại dữ liệu mới (phiếu chi: ngày, diễn giải, số tiền, hình thức, người chi, chứng từ) cần spec riêng: quyền ghi/sửa, chốt quỹ cuối ngày, tồn đầu kỳ, đối soát. **Không làm ở R1-2.**
 
 ## 4. UX notes (cho agent UI)
+*Gợi ý ban đầu. Màn đã build (nav, [frontend](../../architecture/frontend.md)): trang chủ `/` "Tổng quan"; `/bao-cao` "Báo cáo kinh doanh" (tab "Tổng quan" / "Sổ doanh thu" `?tab=ledger`, chọn kỳ bằng preset thay cho tab Ngày / Tuần / Tháng); `/goi-lieu-trinh` "Gói liệu trình của khách" và `/khach-lau-khong-quay-lai` "Khách lâu chưa quay lại" là **hai màn riêng** (thay cho một màn "Theo dõi" hai tab); hồ sơ khách `/khach-hang/$customerId`.*
 - **Trang chủ = Dashboard hôm nay**: hàng thẻ số (khách, lượt, buổi, gói bán, thực thu) có mũi tên so với hôm qua / tuần trước; bảng tiền 2×2 (loại × hình thức) + hủy + hoàn; danh sách KTV. Chọn ngày bằng date picker; nút "Hôm qua / Hôm nay".
 - **Báo cáo**: tab Ngày / Tuần / Tháng / Tùy chọn, biểu đồ cột doanh thu + đường lượt khách, top dịch vụ / gói.
 - **Sổ doanh thu**: bảng đúng cột sổ giấy, mỗi ngày một nhóm có dòng cộng; dòng hủy/hoàn màu đỏ, số âm; dòng gốc đã hủy gạch ngang.
 - **Hồ sơ khách**: tab Lịch sử (timeline), tab Liệu trình (mỗi gói một thẻ, bấm vào là trang sổ liệu trình), khối tóm tắt trên cùng.
 - **Theo dõi**: tab Liệu trình (lọc trạng thái, sắp hết hạn), tab "Lâu không quay lại" (gọi điện / Zalo bằng một chạm `tel:`).
 - Mọi màn có trạng thái loading / rỗng / lỗi / có dữ liệu. Tiền hiển thị `1.500.000đ`. Ẩn hẳn khối tiền khi response không có trường tiền (không hiện "0đ").
-- Bỏ khỏi UI: mục menu và màn `/nhap-so-cu`, nhãn "Nhập từ sổ cũ", ô ở trang chủ (§7).
+- Bỏ khỏi UI: mục menu và màn `/nhap-so-cu`, nhãn "Nhập từ sổ cũ", ô ở trang chủ (§7). *(Đã làm.)*
 
 ## 5. Data
 Không có bảng mới; chỉ đọc. Migration `0013_management_views`:
@@ -153,7 +157,7 @@ Dữ liệu cá nhân trong response: tên + SĐT khách (đã có ở `customer
 EM: dữ liệu sổ giấy là **migration một lần** do team tự điền sau, không cần phân biệt sổ cũ / sổ mới.
 - **API:** `CustomerPackageDto` bỏ trường `origin`. Gói chuyển từ sổ giấy giống hệt gói khác; có tiền đã trả thì `sale_id` trỏ tới hóa đơn của khoản tiền đó, không có thì `sale_id = null`. Bảng vẫn giữ cột `origin`; hóa đơn sổ giấy có `sale.source = paper_book` (không bao giờ có trong API) để audit và để chạy lại không ghi trùng.
 - **Nhập sổ giấy chỉ dành cho người vận hành.** Hai lựa chọn: (a) lệnh CLI `app import-paper-book --tenant <slug> --file <csv>`; (b) giữ `POST /opening-balances` chỉ cho chủ spa.
-  **Khuyến nghị và đã làm: (a) CLI.** Lý do: việc này là chuyển dữ liệu một lần của team, không phải thao tác của spa; CLI không có bề mặt HTTP để tấn công, chạy trên máy vận hành, đọc file CSV mà team đã soát lại, có `--dry-run`, chạy lại không nhập trùng. HTTP route vẫn còn **tạm thời** và chỉ chủ spa có quyền (migration 0013 bỏ quyền của quản lý), vì màn `/nhap-so-cu` của web vẫn gọi nó cho tới khi agent UI xóa màn đó; sau đó xóa route (ticket theo dõi trong plan).
+  **Khuyến nghị và đã làm: (a) CLI.** Lý do: việc này là chuyển dữ liệu một lần của team, không phải thao tác của spa; CLI không có bề mặt HTTP để tấn công, chạy trên máy vận hành, đọc file CSV mà team đã soát lại, có `--dry-run`, chạy lại không nhập trùng. HTTP route vẫn còn **tạm thời** và chỉ chủ spa có quyền (migration 0013 bỏ quyền của quản lý), vì màn `/nhap-so-cu` của web vẫn gọi nó cho tới khi agent UI xóa màn đó; sau đó xóa route (ticket theo dõi trong plan). *Hiện trạng 2026-11-09: màn `/nhap-so-cu` đã xóa; route vẫn còn (chỉ chủ spa) và đã nhận thêm `paid_amount` / `paid_on` / `method` (0018); việc xóa route (plan M8) chưa làm.*
 - **CSV** (UTF-8, dòng đầu là header, mỗi dòng = một dịch vụ trong một gói; các dòng cùng `phone` + `package_name` + `starts_on` gộp thành một gói):
 
 | Cột | Bắt buộc | Ý nghĩa |
@@ -175,10 +179,10 @@ EM: dữ liệu sổ giấy là **migration một lần** do team tự điền s
 | `method` | | `cash` (mặc định) / `transfer` (= `bank_transfer`) |
 
   Lệnh đi qua `sales::paper::import_opening_balance` với quyền của chủ spa: use case nhập sổ (`packages::opening_balance::import_in`: validate, audit) rồi, trong cùng transaction, ghi tiền đã trả của từng gói thành hóa đơn `source = paper_book` (một dòng gói, một thanh toán, `business_date = paid_on`, audit `sale.paper_book`). Ghi lùi ngày được vì đây là việc của chủ spa (quyền `opening_balance.import`); ngày tương lai bị từ chối. Mỗi gói gắn tối đa **một** hóa đơn (trigger 0018), nên chạy lại không ghi trùng. Gói đã nhập trước đây mà chưa có tiền: chạy lại file có `paid_amount`/`paid_on` thì tiền được ghi **một lần** (đếm ở `payments_booked`). Các dòng cùng gói lặp lại cùng `paid_amount`/`paid_on`/`method` hoặc để trống ở dòng sau; khác nhau → lỗi, không ghi gì. Hủy hóa đơn sổ giấy (sửa số tiền nhập nhầm) đảo tiền vào ngày hủy như mọi hóa đơn, gói sổ giấy vẫn giữ nguyên. `POST /opening-balances` (chỉ chủ spa) nhận cùng các trường `paid_amount`, `paid_on`, `method` trên mỗi gói (một lần gửi = một lần nhập, chống trùng bằng Idempotency-Key).
-- **Web:** bỏ menu/màn `/nhap-so-cu`, nhãn "Nhập từ sổ cũ", ô trang chủ (agent UI). `PackageActions` dùng `sale_id != null` thay cho `origin === "sale"`.
+- **Web:** bỏ menu/màn `/nhap-so-cu`, nhãn "Nhập từ sổ cũ", ô trang chủ (agent UI). `PackageActions` dùng `sale_id != null` thay cho `origin === "sale"`. *(Đã làm.)*
 
 ## 8. Out of scope
-- Sổ thu chi / phiếu chi / chốt quỹ (US6, R1-3).
+- Sổ thu chi / phiếu chi / chốt quỹ (US6; chưa có spec).
 - Xuất Excel/PDF; gửi báo cáo qua Zalo.
 - Hoa hồng, lương (R2). Báo cáo theo chi nhánh (chỉ 1 chi nhánh ở R1).
 - Nhắc tự động (spec #3); US5 chỉ là danh sách để xem.
@@ -200,7 +204,7 @@ EM: "mấy ghi chú các thứ sau này có quản lý hay chủ spa vào xem l�
 ### US10: Đọc lại mọi ghi chú ở một chỗ
 *Là chủ spa hoặc quản lý, tôi muốn đọc lại mọi ghi chú đã ghi trong app, mới nhất trước, để không phải mở từng lượt / hồ sơ / ngày mới biết đã có chuyện gì.*
 
-**10.1 Chỗ đặt.** Nav **Báo cáo → "Nhật ký ghi chú"** (`/nhat-ky-ghi-chu`, ngắn "Ghi chú"), ngay dưới "Báo cáo kinh doanh". Lý do: nhóm Báo cáo là chỗ "xem lại" (đã chỉ mở cho `report.read` = chủ spa + quản lý, KTV không thấy), không nằm trong Nhân viên vì một nửa ghi chú là về khách, và không nằm trong Khách hàng vì một nửa là về nhân viên. Màn là chunk lazy riêng (ngân sách JS khởi động ≤ 125 KiB).
+**10.1 Chỗ đặt.** Nav **Báo cáo → "Nhật ký ghi chú"** (`/nhat-ky-ghi-chu`; không có tên ngắn, không nằm trên tab bar điện thoại), ngay dưới "Báo cáo kinh doanh". Lý do: nhóm Báo cáo là chỗ "xem lại" (đã chỉ mở cho `report.read` = chủ spa + quản lý, KTV không thấy), không nằm trong Nhân viên vì một nửa ghi chú là về khách, và không nằm trong Khách hàng vì một nửa là về nhân viên. Màn là chunk lazy riêng (ngân sách JS khởi động ≤ 125 KiB).
 
 **10.2 Liệt kê gì, ai đọc được loại nào.** Mỗi loại giữ **đúng quy tắc đọc nó đã có** ở màn gốc (không nới quyền nào). Server bỏ cả nhánh SQL của loại người gọi không được đọc (deny by default); response có `kinds` = các loại được đọc, nên bộ lọc "Loại" chỉ hiện các loại đó.
 
@@ -223,7 +227,7 @@ EM: "mấy ghi chú các thứ sau này có quản lý hay chủ spa vào xem l�
 | `appointment_reason` (F21, 2026-11-08) | Hủy lịch / Không đến | `appointment.status_reason` của lịch `cancelled` / `no_show` (bắt buộc khi đóng) | `appointment.manage` (như ghi chú lịch hẹn; KTV không vào nhật ký) | lúc đóng / **ngày đóng** (`closed_at`); ngày hẹn ở `about_date`; `detail` = `cancelled` \| `no_show` | người đóng (`closed_by`) |
 | `package_note` (F4, 2026-11-08, §10.8) | Ghi chú gói | `sale.note_ct` (mã hóa) | `sale.read` + `customer.read` + `customer.health_notes.read` | lúc lập / ngày hóa đơn; khách = người dùng gói; `detail` = tên gói | người lập hóa đơn |
 
-Không có nguồn mới nào thiếu quy tắc đọc, nên không loại nào phải "mặc định chỉ chủ spa". Ngoài phạm vi: lý do không đến / hủy lịch hẹn (`appointment.status_reason`) và người đi cùng dạng ghi chú (EM chưa hỏi).
+Không có nguồn mới nào thiếu quy tắc đọc, nên không loại nào phải "mặc định chỉ chủ spa". Ngoài phạm vi: lý do không đến / hủy lịch hẹn (`appointment.status_reason`) *(thay bằng §10.6: thêm loại `appointment_reason`, F21 2026-11-08)* và người đi cùng dạng ghi chú (EM chưa hỏi).
 
 Quản lý mặc định thấy mọi loại trừ "Nghỉ việc" và "Ghi chú nhân sự". Quản lý bị bỏ `customer.health_notes.read` thì không thấy ghi chú buổi và lưu ý sức khỏe, kể cả khi lọc đúng loại đó hay tìm đúng chữ trong đó. KTV: `403` (màn trả "Không có quyền").
 
@@ -251,7 +255,7 @@ Quản lý mặc định thấy mọi loại trừ "Nghỉ việc" và "Ghi chú
 
 ### 10.6 Lý do hủy lịch / không đến (F21, test live 2026-11-08)
 - Loại mới `appointment_reason` (bảng 10.2): chip "Hủy lịch" hoặc "Không đến" (theo `detail`), "Lịch hẹn dd/mm/yyyy" là ngày hẹn, link "Mở lịch hẹn" về lịch ngày đó. Khách chưa có hồ sơ: hiện tên khách đặt. Quy tắc đọc như ghi chú lịch hẹn (`appointment.manage`), mặc định từ chối. Migration **0029**: index một phần `appointment (tenant_id, closed_at) WHERE status IN ('cancelled','no_show')`, không cột mới.
-- Test: `notes.rs` — chủ spa đọc 15 loại, hai lý do (của khách có hồ sơ và của khách đặt), người đóng, ngày hẹn; `every_kind_keeps_its_own_read_rule` +1 dòng (bỏ `appointment.manage` → mất loại); lọc theo khách có `appointment_reason`. Vitest `Notes` "F21…".
+- Test: `notes.rs` — chủ spa đọc 15 loại (16 từ §10.8), hai lý do (của khách có hồ sơ và của khách đặt), người đóng, ngày hẹn; `every_kind_keeps_its_own_read_rule` +1 dòng (bỏ `appointment.manage` → mất loại); lọc theo khách có `appointment_reason`. Vitest `Notes` "F21…".
 
 - **Ghi chú về hồ sơ của chính mình (lead 2026-11-08, theo [ADR-0015](../../decisions/ADR-0015-own-profile-out-of-the-books.md)):** người không có `staff.manage` (quản lý) không thấy ghi chú chấm công, khen / phàn nàn, thưởng / phạt, đánh giá tháng **về hồ sơ gắn với tài khoản của mình** trong nhật ký (kể cả khi lọc `staff_id` = mình); xem qua `/me/*` như KTV. Chủ spa vẫn thấy mọi quản lý. Ghi chú quản lý viết về người khác vẫn hiện. Server: `org::profile::hidden_from` → điều kiện `$29` trong `GET /notes`. Test `notes.rs::a_manager_does_not_read_notes_about_their_own_profile`.
 

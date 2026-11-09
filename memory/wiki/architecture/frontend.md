@@ -1,31 +1,34 @@
 ---
 title: Frontend architecture (internal app)
-updated: 2026-11-05
-sources: [decisions/ADR-0001-tech-stack.md, decisions/ADR-0004-authentication.md, design/design-system.md, design/front-desk-flows.md]
+updated: 2026-11-09
+sources: [decisions/ADR-0001-tech-stack.md, decisions/ADR-0004-authentication.md, decisions/ADR-0018-platform-admin-console.md, design/design-system.md, design/front-desk-flows.md]
 ---
 
 # Kiến trúc frontend: app nội bộ
 
-Stack ([ADR-0001](../decisions/ADR-0001-tech-stack.md)): TypeScript strict · React · Vite (SPA) · TanStack Router · TanStack Query · Tailwind (tokens từ [design-system](../design/design-system.md)) · shadcn/ui (Radix) · react-hook-form + zod · Motion · vite-plugin-pwa · Vitest + Testing Library + MSW · Playwright.
+Stack đang chạy (`apps/web/package.json`; quyết định gốc ở [ADR-0001](../decisions/ADR-0001-tech-stack.md)): TypeScript strict · React 19 · Vite (SPA, bundler rolldown) · TanStack Router · TanStack Query · Tailwind v4 (`@tailwindcss/vite`, tokens từ [design-system](../design/design-system.md)) · react-hook-form + zod (chỉ vài form lazy, xem § Forms) · Vitest + Testing Library (API giả bằng `fetch` stub, ví dụ `features/reports/testServer.ts`) · Playwright + `@axe-core/playwright`. **Chưa dùng** dù ADR-0001 có nhắc: shadcn/ui (Radix), Motion, vite-plugin-pwa, MSW, i18next: component là React + class CSS tự viết (`components.css`), chuyển động bằng CSS.
 
 ## Route map
-| Route | Màn hình | Permission (UX gate) | Đợt |
-|---|---|---|---|
-| `/dang-nhap`, `/kich-hoat/:token`, `/dat-lai-mat-khau/:token` | Auth | public | R1 |
-| `/quay?view=&ngay=&kieu=` | Màn hình quầy (mặc định của Quản lý): tab **Ghi lượt khách** (mặc định) / **Lịch hẹn** (`view=lich`, `ngay` = ngày, `kieu` = `ngay`/`tuan`/`ds`; `features/front-desk/search.ts`) | `visit.record` (tab lịch: `appointment.manage`) | R1 (lịch: vòng 4) |
-| `/khach-hang?q=`, `/khach-hang/:id?hq=&hkind=&hfrom=&hto=` | Danh sách / hồ sơ khách (breadcrumb `Khách hàng › Tên`) | `customer.read` | R1 |
-| ~~`/cong-no`~~ | Công nợ: **hoãn** (EM 2026-11-04, R1 thu đủ) | — | sau |
-| `/` | Tổng quan: chào, "Hôm nay", lối tắt (lazy) | session | R1 |
-| ~~`/nhap-so-cu`~~ | **Đã xóa** (EM 2026-11-05): dữ liệu sổ giấy nhập qua CLI `app import-paper-book`; `POST /opening-balances` chỉ chủ spa | — | — |
-| `/bao-cao?tab=&period=&from=&to=&metric=` | Báo cáo theo kỳ (Hôm nay … 12 tháng, Tùy chọn), so với kỳ trước, xu hướng dạng line, chi tiết theo ngày/tuần/tháng, KTV, top dịch vụ/gói; tab **Sổ doanh thu** | `report.read` (tiền + sổ: `report.revenue.read`) | R1 |
-| `/goi-lieu-trinh?status=&q=` | Gói liệu trình của khách: tìm (tên khách, tên gói, SĐT) + lọc trạng thái; gói không hạn hiện "Không hạn" | `report.read` | R1 |
-| `/khach-lau-khong-quay-lai?follow=&days=&kind=&scope=&q=` | Khách liệu trình + khách lẻ lâu không quay lại: 3 tab Cần liên hệ / Đã hẹn / Tất cả, tìm, ngưỡng 7–90 ngày, loại khách, phạm vi; "Đã liên hệ" ghi follow-up | `report.read` (ghi: `customer.follow_up`) | R1 |
-| `/nhat-ky-ghi-chu?from=&to=&kind=&staff=&customer=&q=` | Nhật ký ghi chú (management-views §10): mọi ghi chú gom theo ngày, mới nhất trước, link về nguồn; chunk lazy riêng | `report.read` (từng loại: quyền của màn gốc, server lọc) | R1 |
-| `/cai-dat` | Giao diện (theo thiết bị / sáng / tối) + tài khoản | session | R1 |
-| `/bang-gia`, `/bang-gia/goi` | Bảng giá dịch vụ, Mẫu gói liệu trình (tên: [glossary](../product/glossary.md#tên-màn-hình-và-điều-hướng-em-vòng-4-mục-7-2026-11-05)) | `catalog.read` (sửa: `catalog.manage`) | R1 |
-| `/so-quy` | Sổ quỹ, chốt quỹ | spec #2 | R1 |
-| `/cai-dat/nhan-vien`, `/cai-dat/vai-tro` | Tài khoản, vai trò | spec #4 | R1 |
-| `/toi` | Trang của KTV (lịch, số khách, phiếu lương) | self | R2/R3 |
+Định nghĩa ở `apps/web/src/app/router.tsx` (guard `only(mayOpen.x)` theo `app/access.ts`, cùng quy tắc với nav `app/nav.ts`; guard chỉ là UX, API tự trả 403). Route sai quyền → trang "Không có quyền" (`ForbiddenRoute`, `app/StatusPage.tsx`).
+
+| Route | Màn hình (nhãn nav) | Permission (UX gate, `mayOpen`) |
+|---|---|---|
+| `/dang-nhap?next=`, `/xac-thuc?next=`, `/doi-mat-khau` | Đăng nhập; bước MFA (TOTP / mã khôi phục / bắt buộc cài cho chủ spa; chunk lazy); đổi mật khẩu tạm bắt buộc (ADR-0016) | public (theo trạng thái `/me`) |
+| `/` | **Tổng quan**: chào, "Hôm nay", lối tắt (lazy) | session |
+| `/quay?view=&ngay=&kieu=&ktv=&sua=` | Màn hình quầy: **Ghi lượt khách** (mặc định) / **Lịch hẹn** (`view=lich`, `ngay` = ngày, `kieu` = `ngay`/`tuan`/`ds`, `ktv` = lọc KTV); `sua` = id lượt mở để "Sửa lượt" (`features/front-desk/search.ts`). Nằm trong bundle khởi động (không lazy) | `visit.record` (tab lịch: `appointment.manage`) |
+| `/khach-hang?q=`, `/khach-hang/$customerId?hq=&hkind=&hfrom=&hto=` | **Danh sách khách hàng** / hồ sơ khách (breadcrumb `Khách hàng › Tên`) | `customer.read` |
+| `/khach-lau-khong-quay-lai?follow=&days=&kind=&scope=&q=` | **Khách lâu chưa quay lại**: 3 tab Cần liên hệ / Đã hẹn / Tất cả, tìm, ngưỡng 7–90 ngày, loại khách, phạm vi; "Đã liên hệ" ghi follow-up | `report.read` (ghi: `customer.follow_up`) |
+| `/goi-lieu-trinh?status=&q=` | **Gói liệu trình của khách**: tìm (tên khách, tên gói, SĐT) + lọc trạng thái (mặc định `expiring`); gói không hạn hiện "Không hạn" | `report.read` |
+| `/bao-cao?tab=&period=&from=&to=&metric=` | **Báo cáo kinh doanh** theo kỳ (Hôm nay … 12 tháng, 3/5 năm cho chủ spa, Tùy chọn), so với kỳ trước, xu hướng dạng line, chi tiết theo ngày/tuần/tháng, KTV, top dịch vụ/gói; tab **Sổ doanh thu** | `report.read` + cờ tính năng `reports` (tiền + sổ: `report.revenue.read`) |
+| `/nhat-ky-ghi-chu?from=&to=&kind=&staff=&customer=&q=` | **Nhật ký ghi chú** (management-views §10): mọi ghi chú gom theo ngày, mới nhất trước, link về nguồn; chunk lazy riêng, không `validateSearch` | `report.read` + cờ `notes_journal` (từng loại: quyền của màn gốc, server lọc) |
+| `/nhan-vien?tab=&month=&day=&roster=&staff=` | **Quản lý nhân sự** (người giữ sổ) hoặc **Công và lương của tôi** (KTV / người đã nghỉ) | một trong `attendance.record`, `evaluation.record`, `payroll.read`, `staff.manage`, hoặc `staff.read_own` / `staff.read_own_past` |
+| `/nhan-vien/cua-toi` | **Công và lương của tôi** của quản lý (giữ sổ cho người khác nhưng không có `staff.manage`, EM 2026-11-08) | `staff.read_own` / `staff.read_own_past` |
+| `/khach-cua-toi?ngay=&kieu=` | **Khách của tôi**: lịch + lượt của chính mình (`GET /me/appointments`) | `staff.read_own` (nav: khi không có `visit.read`, hoặc là quản lý) |
+| `/bang-gia`, `/bang-gia/goi` | **Bảng giá dịch vụ**, **Mẫu gói liệu trình** (tên: [glossary](../product/glossary.md#tên-màn-hình-và-điều-hướng-em-vòng-4-mục-7-2026-11-05)) | `catalog.read` (sửa: `catalog.manage`) |
+| `/cai-dat` | **Giao diện & tài khoản**: theme (theo thiết bị / sáng / tối), đổi mật khẩu | session |
+| `/admin`, `/admin/spa/:id`, `/admin/dang-nhap`, `/admin/vai-tro`, `/admin/tai-khoan`, `/admin/nhat-ky` | Console nền tảng ([ADR-0018](../decisions/ADR-0018-platform-admin-console.md)): app riêng (`src/admin/`, router tự viết `admin/nav.tsx`), `main.tsx` tải chunk của nó khi path bắt đầu bằng `/admin`; bundle khởi động của spa không chứa nó | phiên operator riêng |
+
+Đã bỏ / chưa làm: `/cong-no` (**hoãn**, EM 2026-11-04: R1 thu đủ); `/nhap-so-cu` (**đã xóa**, EM 2026-11-05: dữ liệu sổ giấy nhập qua CLI `app import-paper-book`; `POST /opening-balances` chỉ chủ spa); sổ quỹ / chốt quỹ, kích hoạt tài khoản bằng link, đặt lại mật khẩu bằng link: chưa có route (tài khoản + mật khẩu tạm theo ADR-0016, quên mật khẩu = yêu cầu gửi chủ spa).
 URL tiếng Việt không dấu, ổn định để deep link (principle #10). Mọi route ngoài auth đều cần session.
 
 ## Màn quản lý (2026-11-05, cập nhật vòng 3)
@@ -49,7 +52,7 @@ Kiểu từ `packages/api-client` (contract r3b của `feat/followup-and-reports
 | `/bang-gia`, `/bang-gia/goi` | **chưa cần**: 35 dịch vụ / 10 danh mục và ~5 gói vừa một màn, đã nhóm theo danh mục; quầy chọn dịch vụ qua `<select>` nhóm theo danh mục. Thêm ô lọc khi menu > ~80 dịch vụ | — |
 | `/quay` | tìm khách đã có; danh sách lượt hôm nay phân trang 30 | — |
 
-- **Follow-up** (EM mục 16): `FollowUpForm` (state thường, không RHF): ngày liên hệ (mặc định hôm nay, lùi tối đa 30 ngày), cách liên hệ, kết quả, ghi chú ≤ 500, **hẹn lại** điền sẵn ngay khi chọn kết quả, theo một bảng duy nhất `NEXT_TRY_DAYS` trong `followUps.ts` (quyết định lead 2026-11-05): Không nghe máy +3 ngày, Hẹn sẽ quay lại +7, Chưa có nhu cầu: không hẹn + gợi ý "Không nhắc lại trong 90 ngày", Khác: để trống. Ngày nhập tay luôn thắng; "Không hẹn" xóa ngày. Mở bằng `<dialog>` trên danh sách vắng, inline trên hồ sơ (thẻ "Chăm sóc lại" có timeline các lần liên hệ). `POST` có `Idempotency-Key` sinh lúc mở form.
+- **Follow-up** (EM mục 16): `FollowUpForm` (state thường, không RHF): ngày liên hệ (mặc định hôm nay, lùi tối đa 30 ngày), cách liên hệ, kết quả, ghi chú ≤ 500, **hẹn lại** điền sẵn ngay khi chọn kết quả, theo một bảng duy nhất `NEXT_TRY_DAYS` trong `followUps.ts` (quyết định lead 2026-11-05): Không nghe máy +3 ngày, Hẹn sẽ quay lại +7, Chưa có nhu cầu: không hẹn + gợi ý "Không nhắc lại trong 90 ngày", Khác: để trống. Ngày nhập tay luôn thắng; "Không hẹn" xóa ngày. Mở trong `BottomSheet` ở cả danh sách vắng và hồ sơ (nút "Ghi lần liên hệ" trên thẻ "Chăm sóc lại", thẻ có timeline các lần liên hệ). `POST` có `Idempotency-Key` sinh lúc mở form.
 - **SĐT trùng khi gõ** (EM mục 13): `CustomerForm` gọi `GET /customers/phone-check?phone=` sau 400 ms ngừng gõ, chỉ khi số đủ 10 chữ số; hiện "Số này đã có hồ sơ: <tên> — Mở hồ sơ" (vùng `aria-live`) trước khi bấm Lưu; khi sửa hồ sơ không báo trùng với chính nó. 409 `customer.phone_taken` lúc lưu vẫn là chốt chặn cuối (giữ nguyên).
 - **Giới tính cạnh tên** (mục 7): `app/CustomerName` ở bảng gói, danh sách vắng, sổ doanh thu, thẻ khách ở quầy (có "Chưa rõ"), lượt hôm nay, tiêu đề hồ sơ.
 - **Danh mục trước tên dịch vụ** (mục 15): `lib/names.ts` `serviceLabel(name, category_name)` → "Gội đầu dưỡng sinh · Gội đầu thảo dược": giỏ ở quầy, lượt hôm nay, lịch sử, mục trong gói (thẻ quầy + hồ sơ), top dịch vụ. Picker ở quầy đã nhóm theo danh mục (`<optgroup>`).
@@ -68,24 +71,24 @@ Kiểu từ `packages/api-client` (contract r3b của `feat/followup-and-reports
 - Ngân sách: các component này ~1,5 KB gzip, phần lớn nằm trong chunk lazy của màn quản lý; số đo ở § Perf budget.
 
 ## Rendering & data
-- **SPA tĩnh**, Caddy trả `index.html` cho mọi route không phải `/api/*`. Code-split theo route (`lazy`).
-- **API client** `packages/api-client` sinh từ OpenAPI (typed fetch). Frontend **không tự định nghĩa** kiểu DTO; backend đổi contract → `pnpm typecheck` fail (principle #8).
-- **TanStack Query** là nguồn sự thật cho server state. Query keys theo tenant ngầm (session) + resource:
-  - `['catalog']` (staleTime 10 phút) · `['staff','active']` (10 phút) · `['customers','search',q]` (30 giây) · `['customer',id]` · `['visits','today']` · `['receivables']`.
-- **Invalidation sau mutation:**
-  - ghi lượt → `customer(id)`, `visits.today`, `receivables`;
-  - bán gói → `customer(id)`, `receivables`;
-  - thu nợ → `customer(id)`, `receivables`;
-  - hủy → các key liên quan;
-  - `409` → refetch `customer(id)`.
+- **SPA tĩnh**: mọi route không phải `/api/*` trả `index.html` (staging Vercel: `vercel.json` rewrite + `/assets/*` cache immutable; VPS: `infra/Caddyfile` `try_files {path} /index.html`). Code-split theo route (`lazyRouteComponent`); `/quay` và `/dang-nhap` nằm trong bundle khởi động.
+- **API client** `packages/api-client` (kiểu sinh từ OpenAPI, `schema.ts`; `lib/api.ts` bọc `fetch`: `credentials: same-origin`, problem+json → `ApiError`). Frontend **không tự định nghĩa** kiểu DTO; backend đổi contract → `pnpm typecheck` fail (principle #8).
+- **TanStack Query** là nguồn sự thật cho server state. Query keys theo tenant ngầm (session) + resource (staleTime trong ngoặc; không ghi = mặc định 30 s):
+  - `['me']` (phiên, 60 s) · `['catalog','categories'|'services'|'plans',…]` (5 phút) · `['staff','active']` (picker KTV, 5 phút) · `['customers','search',q]` · `['customers','recent']` · `['customers','one',id]` · `['customer-packages',id]` (5 s) · `['visits','today']` / `['visits','today','all']` / `['visits',date,'all'|'peek']` (15 s) · `['sales','day',date]` (15 s) · `['appointments',from,to]` (15 s) · `['notes',params]` · `['staff',…]` (bảng lương `0`).
+- **Invalidation sau mutation** (ghi lượt: `FrontDeskPage.tsx`):
+  - ghi lượt → ghi thẳng lượt vào `['visits','today']` (`setQueryData`), invalidate `['appointments']`, `['customer-packages',khách]` (+ người được mua cho), `invalidateManagementViews(khách)`, và `['customers','one',id]` khi server vừa ghi giới tính;
+  - sửa / hủy lượt → `['visits']`, `['appointments']`, `['customer-packages']`, `invalidateManagementViews`;
+  - bán gói (chỉ gói) → `['customer-packages']`, `['sales','day']`, `invalidateManagementViews`;
+  - nhân sự → `invalidateStaff` = `['staff']` (gồm cả picker `['staff','active']`);
+  - `409` → refetch dữ liệu của màn đó.
 - **Không optimistic update cho tiền và buổi**: chờ server xác nhận rồi mới hiển thị kết quả cuối, vì số tiền phải đúng tuyệt đối. Chỉ hiển thị "trừ tạm" trong giỏ chưa lưu.
 - **Độ tươi & tải trước (perf giai đoạn 0, 2026-11-07, [perf page](performance-latency-2026-11.md) §4d):**
   - `lib/queryClient.ts`: mặc định `staleTime` **30 s**, `refetchOnWindowFocus` bật (TanStack chỉ gọi lại query **đã stale** khi quay lại tab), `retry: false`. Query cần tươi tự đặt: gói của khách (số buổi còn) `5 s` (chỉ để prefetch + mount dùng chung một request), bảng lương `0`. Ghi trong trình duyệt này thì **invalidate rõ ràng**: `invalidateManagementViews` nay gồm cả `['staff','payroll'|'attendance'|'me'|'me-day'|'me-calendar']` (hoa hồng, ngày có lượt), không gồm `['staff','active']` đang mount ở /quay.
-  - Router: `defaultPreload: "intent"` + `defaultPreloadStaleTime: 0` (Query quyết định cache). Loader **import chính module của màn** (cùng chunk với component, không kéo code vào entry), bắn query không chờ, không ném lỗi: `/` (báo cáo hôm nay nếu có `report.read`), `/khach-hang` (gần đây), `/khach-hang/$id` (`prefetchCustomerPage`: hồ sơ, gói, liên hệ, tóm tắt, lịch sử trang đầu theo bộ lọc URL, cùng lúc, ngay khi chunk màn về: L4 → L3, và bằng 0 lượt chờ nếu hover đủ lâu), `/bao-cao` (hai range của tab Tổng quan). `/quay` **không** có loader: request đợi sau lần vẽ đầu (LCP). `/nhan-vien` chưa có (đang được agent HR sửa).
+  - Router: `defaultPreload: "intent"` + `defaultPreloadStaleTime: 0` (Query quyết định cache). Loader **import chính module của màn** (cùng chunk với component, không kéo code vào entry), bắn query không chờ, không ném lỗi: `/` (báo cáo hôm nay nếu có `report.read`), `/khach-hang` (gần đây), `/khach-hang/$id` (`prefetchCustomerPage`: hồ sơ, gói, liên hệ, tóm tắt, lịch sử trang đầu theo bộ lọc URL, cùng lúc, ngay khi chunk màn về: L4 → L3, và bằng 0 lượt chờ nếu hover đủ lâu), `/bao-cao` (hai range của tab Tổng quan). `/quay` **không** có loader: request đợi sau lần vẽ đầu (LCP). Các màn còn lại (`/nhan-vien`, `/goi-lieu-trinh`, `/khach-lau-khong-quay-lai`, `/nhat-ky-ghi-chu`, `/khach-cua-toi`, danh mục) chưa có loader.
   - Lưu không chờ refetch: ghi lượt / bán gói lẻ hiện toast ngay, invalidate chạy nền; hồ sơ khách/ghi chú sức khỏe/khách vãng lai đóng form ngay (`setQueryData` từ reply). **Ghi thẳng câu trả lời của server vào cache** (không đoán trước): chấm công + điểm ngày (`staff/cache.ts`, ô đang lưu vẫn hiện giá trị đang gửi từ `mutation.variables`, lỗi thì tự về dữ liệu server), liên hệ chăm sóc (`putFollowUp`), trạng thái lịch hẹn + đổi KTV (`appointments/cache.ts`). Không ghi đoán cho các thao tác này vì server tính phase/khóa ngày/quyền; lỗi không đụng cache nên không cần rollback riêng.
   - Tab Lịch hẹn của /quay không gọi `/visits` (chỉ "Ghi lượt" dùng).
 - **Idempotency:** mỗi form ghi sinh `Idempotency-Key` (UUID) khi mở; giữ nguyên khi retry; đổi khi lưu thành công.
-- Client state: chỉ state UI cục bộ (giỏ lượt đang ghi trong component; backup vào `sessionStorage` để sống qua 401/reload). Không dùng global store.
+- Client state: chỉ state UI cục bộ (giỏ lượt đang ghi trong component; giỏ nháp backup vào `sessionStorage` khóa `vpyd.cart.v1:<userId>:<customerId>` qua `features/front-desk/draftCart.ts` để sống qua reload/401). Không dùng global store.
 
 ## State management
 EM vòng 3: "state management cũng phải làm". Mỗi loại state có **đúng một chỗ ở**; không chép state từ chỗ này sang chỗ khác ([ADR-0007](../decisions/ADR-0007-navigation-and-url-state.md)).
@@ -101,10 +104,14 @@ EM vòng 3: "state management cũng phải làm". Mỗi loại state có **đún
 Sửa trong shell (vòng 3): theme trước đây là `useState(readTheme)` riêng ở mỗi picker (menu tài khoản và `/cai-dat` có thể lệch nhau) → store chung; bộ lọc `/goi-lieu-trinh`, `/khach-lau-khong-quay-lai`, ngày `/bao-cao`, ô tìm `/khach-hang` từ `useState` → URL. Còn lại cho features agent: query key của reports/customers đã theo resource nhưng chưa gom thành một object `keys` mỗi feature; `CustomerPage` dùng `setQueryData` với response server (đúng quy tắc).
 
 ## Forms
-react-hook-form + zod schema. Schema validation **phản chiếu** lỗi server (server vẫn là nơi quyết định). Lỗi `422` problem+json map vào field theo `errors[].pointer`. Tiền nhập là số nguyên VND; SĐT chuẩn hóa trước khi gửi. Ngoại lệ duy nhất: form đăng nhập (2 field) dùng state React thường, xem "Perf budget".
+Hai kiểu, tùy chỗ form nằm (bundle khởi động có ngân sách, xem "Perf budget"):
+- **react-hook-form + zod** chỉ ở form dài trong chunk lazy: `CustomerForm` (khách mới / sửa hồ sơ, `React.lazy` trong `/quay`), `ServiceForm`, `PlanForm` (danh mục).
+- **State React thường** cho mọi form còn lại (đăng nhập, MFA, giỏ quầy, đặt lịch, follow-up, hủy/sửa, nhân sự…); form ghi một lần dùng `features/corrections/useFormAction.ts` (một mutation, hiện lỗi server).
+
+Validation phía client **phản chiếu** lỗi server (server vẫn là nơi quyết định). Lỗi `422` problem+json có `errors[]` (`{ field, code }`), đọc bằng `ApiError.fieldCode(field)` (`lib/api.ts`). Tiền nhập là số nguyên VND; SĐT chuẩn hóa trước khi gửi.
 
 ## Perf budget (critical path)
-Lighthouse CI chặn merge khi LCP > 2,5 s (mobile, Slow 4G, CPU 4×, `/dang-nhap` và `/quay`). Lighthouse dùng mô phỏng (lantern): **mọi request kết thúc trước lần paint LCP quan sát được đều bị tính**, kể cả font và API. Vì vậy các quy tắc sau áp dụng cho mọi PR:
+Lighthouse CI (`apps/web/lighthouserc.json`, job `pnpm lhci` trong `.github/workflows/ci.yml`) chặn merge khi trung vị của từng chỉ số qua 5 lần chạy (`aggregationMethod: "median"`, 2026-11-09) có LCP > 2500 ms, CLS > 0,1 hoặc điểm accessibility < 0,95 (mobile mặc định của Lighthouse: Slow 4G, CPU 4×; `/dang-nhap` ẩn danh và `/quay` đã đăng nhập). Ngân sách JS khởi động ≤ 125 KB gzip **không có check tự động**: đo tay như mô tả bên dưới. Lighthouse dùng mô phỏng (lantern): **mọi request kết thúc trước lần paint LCP quan sát được đều bị tính**, kể cả font và API. Vì vậy các quy tắc sau áp dụng cho mọi PR:
 - **Không zod, không react-hook-form trên critical path.** Bundle chính (`index-*.js` + chunk preload) chỉ chứa React, TanStack Router/Query, shell, `/dang-nhap` và `/quay`. Parse response trên đường khởi động (`/me`, login, MFA) bằng guard viết tay trong `features/auth/session.ts` (`parseMe`), vì kiểu đã có từ contract. Form dùng RHF + zod thì phải nằm trong chunk lazy: route lazy (`lazyRouteComponent`) hoặc `React.lazy` cho panel/dialog chỉ mở khi cần (ví dụ `CustomerForm` trong `/quay`). Component nhỏ mà màn chính cần thì tách module riêng (ví dụ `HealthNote`), đừng import từ file của màn lazy.
 - **`/xac-thuc` là route lazy** (chỉ chủ spa đi qua; kéo theo `uqr`).
 - **Font:** chỉ subset `latin` + `vietnamese`, chỉ woff2, `font-display: swap`, khai báo tay ở `src/fonts.css` (CSS của @fontsource có `latin-ext`, mà unicode-range của nó trùng chữ Việt nên trình duyệt tải thêm 4 file). Lần tải đầu (chưa có cache) font được tải **sau màn hình đầu tiên** (`app/fonts.ts`, 500 ms sau `onRendered`), text hiện bằng font hệ thống trước. Sau khi tải xong, cờ `localStorage` `vpyd.fonts-cached` cho các lần sau tải font ngay lúc khởi động (từ cache, không nháy font). Không preload font; không thêm weight mới nếu chưa đo lại LCP.
@@ -128,7 +135,7 @@ Lighthouse CI chặn merge khi LCP > 2,5 s (mobile, Slow 4G, CPU 4×, `/dang-nha
 ## Màn Nhân viên (`/nhan-vien`, lazy chunk `StaffPage`, [spec](../product/specs/staff-management.md))
 - URL: `tab` (day|month|evaluation|payroll|profiles; link cũ `attendance` → day, `adjustments` → month), `month` (YYYY-MM), `day` (`features/staff/search.ts`). Tab hiện theo permission; KTV (chỉ `staff.read_own`) thấy "Công và lương của tôi".
 - **Vòng 5 (spec §10):** "Sổ hằng ngày" (`DailyBook`) là tab mặc định: thẻ theo người (chấm công một chạm, bộ đếm khen/phàn nàn lưu ngay, thưởng/phạt của ngày + nút "+ Thưởng / phạt" mở form đúng người/ngày, "Giờ & ghi chú" mở `PersonDaySheet` gộp chấm công + đánh giá ngày). Thanh tiến độ "Đã chấm công x/y", chip "Còn thiếu" (neo tới thẻ), banner ngày cũ chưa chấm đủ, banner "Đến hạn đánh giá" (ngày cuối tháng → ngày 10 tháng sau, `progress.ts::evaluationDueMonth`). "Bảng công tháng" (`MonthSheet`) = lưới người × ngày + cột tổng (công, muộn, P/ĐX/K, chưa chấm, khen/phàn nàn), dùng ở 390 px (cột tên dính trái, hẹp và xuống dòng trên phone), rồi sổ thưởng/phạt. "Đánh giá tháng" chỉ còn phiếu 100 điểm. KTV: lịch tháng 7 cột + ô tổng (`MonthCalendar`).
-- **`/khach-cua-toi`** (`MyWorkPage`, chunk lazy riêng, `GET /me/appointments`, EM 2026-11-07): lịch của KTV trên `features/appointments/TimeGrid.tsx` (lưới giờ dùng chung với `DayGrid` của quầy; cột = KTV ở quầy, = ngày ở tuần của KTV; chỉ đọc khi không có `onBook`), Ngày/Tuần/Danh sách, URL `ngay`, `kieu`. "Công và lương của tôi": `MyMonth` + `MyDaySheet` (`GET /me/staff/day`, URL `day`), bảng công việc phiếu lương `payslipWork.ts` + `WorkTable.tsx`. Nav "Khách của tôi" (tab bar "Khách") chỉ khi có `staff.read_own` và **không** có `visit.read`.
+- **`/khach-cua-toi`** (`MyWorkPage`, chunk lazy riêng, `GET /me/appointments`, EM 2026-11-07): lịch của KTV trên `features/appointments/TimeGrid.tsx` (lưới giờ dùng chung với `DayGrid` của quầy; cột = KTV ở quầy, = ngày ở tuần của KTV; chỉ đọc khi không có `onBook`), Ngày/Tuần/Danh sách, URL `ngay`, `kieu`. "Công và lương của tôi": `MyMonth` + `MyDaySheet` (`GET /me/staff/day`, URL `day`), bảng công việc phiếu lương `payslipWork.ts` + `WorkTable.tsx`. Nav "Khách của tôi" (tab bar "Khách") khi có `staff.read_own` và **không** có `visit.read` (KTV), hoặc khi là quản lý giữ sổ cho người khác (EM 2026-11-08; `myWorkItem` trong `app/nav.ts`). Quản lý xem tháng của mình ở `/nhan-vien/cua-toi` (`MyPayPage`, cùng chunk `StaffPage`).
 - Bảng lương, phiếu lương, sổ thưởng/phạt, hồ sơ: `ResponsiveTable` (thẻ trên phone); form trong `BottomSheet`.
 - CSS riêng `features/staff/staff.css` (chỉ tokens) đi cùng chunk lazy. Query key `["staff", …]`; mọi ghi invalidate `["staff"]` (gồm cả picker `["staff","active"]` của quầy).
 - Perf: chunk `StaffPage` 12.8 KB gzip; startup gzip -9 123.0 → 123.8 KB (ngân sách 125) do route + nav + thông báo lỗi.
@@ -139,48 +146,57 @@ Lighthouse CI chặn merge khi LCP > 2,5 s (mobile, Slow 4G, CPU 4×, `/dang-nha
 
 ## Auth & permission-aware UI
 - Session là cookie `__Host-session` HttpOnly ([ADR-0004](../decisions/ADR-0004-authentication.md)). **JS không bao giờ đọc hay lưu token.** Fetch dùng `credentials: 'same-origin'`.
-- `GET /api/v1/me` → user, tenant, branch, **danh sách permission** → `AuthContext`. Route guard và ẩn/hiện nút đọc từ đây. **Đây chỉ là UX**: server luôn kiểm tra lại; giao diện xử lý `403` đúng cách.
+- `GET /api/v1/me` → user, tenant, branch, **danh sách permission** (+ cờ tính năng của spa) → query `['me']` (`authQuery` trong `features/auth/session.ts`, parse tay bằng `parseMe`; không có React context riêng). Route guard (`app/access.ts` `mayOpen`) và ẩn/hiện nút (`can(me, …)`, `hasFeature`) đọc từ đây. **Đây chỉ là UX**: server luôn kiểm tra lại; giao diện xử lý `403` đúng cách.
 - Field nhạy cảm (`health_note`, `visit.note`) render **theo việc API có trả về hay không**, không dựa vào role ở client. Không có field thì không render gì.
 - `401` từ bất kỳ request nào → xóa cache Query → `/dang-nhap?next=<url>`. Nút **Khóa nhanh** gọi logout.
-- Thao tác nghiệp vụ (hủy/sửa ngày đã chốt, hủy gói + hoàn tiền, nhập sổ cũ) **không** hỏi lại mật khẩu (EM 2026-11-05): form dùng `useFormAction` (một mutation, hiện lỗi server). Hộp thoại nhập lại mật khẩu (`POST /auth/reauth`) chỉ dành cho thao tác bảo mật tài khoản (đổi mật khẩu, cài đặt MFA), dựng lại khi có các màn đó. `/nhap-so-cu` không có công tắc mở nhập.
+- Thao tác nghiệp vụ (hủy/sửa ngày đã chốt, hủy gói + hoàn tiền) **không** hỏi lại mật khẩu (EM 2026-11-05): form dùng `useFormAction` (một mutation, hiện lỗi server). Hộp thoại nhập lại mật khẩu chỉ dành cho thao tác tài khoản đăng nhập: `ReauthDialog` (`features/staff/LoginSection.tsx`) mở khi server trả `auth.reauth_required` (`POST /auth/reauth`) rồi chạy lại thao tác (đặt lại mật khẩu, tạo tài khoản…, ADR-0016). Console `/admin` có step-up riêng (`admin/StepUp.tsx`, `POST /admin/auth/reauth`).
 
 ## i18n
-Chỉ tiếng Việt ở R1, nhưng mọi chuỗi đi qua `t('key')` (ví dụ `i18next`, resource `vi.json`) để thêm ngôn ngữ sau mà không sửa component. Định dạng tiền/ngày qua helper `formatVnd`, `formatDate` trong `packages/ui`.
+Chỉ tiếng Việt: chuỗi giao diện viết thẳng trong component (chưa có lớp `t('key')` / i18next; thêm ngôn ngữ sau là một việc riêng). Thông báo lỗi theo mã server ở `lib/errors.ts` (`messageFor`, `fieldMessage`; thông báo chỉ một màn lazy gặp thì `addMessages` trong chunk của màn đó). Định dạng: tiền `formatVnd` (`packages/ui`), ngày/giờ trong `lib/format.ts` (`dayLabel`, `longDate`, `monthLabel`, `spaTime`, `spaDateTime`), `formatDate` trong `features/sales/api.ts`.
 
 ## PWA
-Icon đã có (`public/favicon.svg`, `favicon-32.png`, `apple-touch-icon.png`, `icons/icon-192|512|maskable-512.png`, sinh từ logo thật bằng `scripts/brand/build_logo_assets.py`) và `public/manifest.webmanifest`. Sau này `vite-plugin-pwa`: manifest (tên, icon từ logo, `display: standalone`, theme color = `primary`); service worker **chỉ precache app shell và font**, `/api/*` luôn `NetworkOnly` (không offline, theo EM). Có prompt "Có phiên bản mới, tải lại".
+Icon đã có (`public/favicon.ico`, `favicon.svg`, `favicon-32.png`, `favicon-16.png`, `apple-touch-icon.png`, `icons/icon-192|512|maskable-512.png`, sinh từ logo thật bằng `scripts/brand/build_logo_assets.py`) và `public/manifest.webmanifest` (khai báo sau lần vẽ đầu, xem Perf budget). **Chưa có service worker** (chưa cài `vite-plugin-pwa`). Khi làm: service worker **chỉ precache app shell và font**, `/api/*` luôn `NetworkOnly` (không offline, theo EM), prompt "Có phiên bản mới, tải lại".
 
 ## Error handling
-- Error boundary theo route: ErrorState + "Tải lại"; báo lỗi (Sentry, đã lọc PII) ở `/devops`.
-- Lỗi mạng hoặc `5xx` → giữ form, banner thử lại. `503` → banner "Hệ thống tạm gián đoạn, ghi phiếu tạm" (failure mode trong [system](system.md)).
+- Lỗi màn hình: `defaultErrorComponent` của router = `ErrorPage` ("Màn hình này gặp lỗi" + "Tải lại trang", `app/StatusPage.tsx`, chunk lazy); 404 = `NotFoundPage`. Trong màn: `ErrorState` (`features/reports/ui.tsx`: câu tiếng Việt theo mã + "Thử lại" khi `retryable`, 403 thì không). Chưa có báo lỗi về server (Sentry…): việc của `/devops`.
+- Lỗi mạng hoặc `5xx` → giữ form, hiện lỗi, thử lại được. `/me` gặp 429/503 thì tự thử lại (xem § Màn Nhân viên, mục `/me` khi API bận). Banner "ghi phiếu tạm" khi `503` (failure mode trong [system](system.md)) **chưa làm**.
 
 ## Accessibility (WCAG 2.2 AA)
 Ưu tiên HTML ngữ nghĩa; mọi chức năng dùng được bằng bàn phím (phím tắt quầy ở [front-desk-flows](../design/front-desk-flows.md)); focus-visible 3px; vùng chạm ≥ 44px; `aria-live` cho toast và kết quả tìm; dialog có focus trap; tương phản theo token; tôn trọng `prefers-reduced-motion`. Kiểm tra tự động bằng `@axe-core/playwright` trong e2e.
 
 ## Bảo mật frontend
-CSP nonce-based do Caddy/API cấp (không `unsafe-inline` script); không `dangerouslySetInnerHTML`; không secret trong `VITE_*`; dependency audit trong CI.
+CSP tĩnh `script-src 'self'; style-src 'self'` (không nonce, không `unsafe-inline`: app không có script/style inline), cùng một chuỗi ở `vercel.json` (staging) và `infra/Caddyfile`; kèm HSTS, `X-Frame-Options: DENY`, `frame-ancestors 'none'`. Không `dangerouslySetInnerHTML`; không secret trong `VITE_*`; CI chạy `pnpm audit --prod --audit-level high`.
 
 ## Cấu trúc thư mục
 ```
 apps/web/
+  index.html        # preload /api/v1/me, <template id="deferred-head"> (icon + manifest sau lần vẽ đầu)
   src/
-    app/            # router, providers (Query, Auth, Theme), AppShell, error boundary
-    components/     # shared UI patterns (vòng 4): ResponsiveTable, BottomSheet, StickyActions, DateField, usePhone
-                    # (CSS in src/mobile.css; API in design-system § Mobile patterns)
-    routes/         # file-based routes (TanStack Router): quay/, khach-hang/, cong-no/, nhap-so-cu/, bang-gia/, ...
-    features/       # theo bounded context, khớp với crate backend
-      customers/  packages/  visits/  sales/  catalog/  auth/
-        components/  hooks/ (useCustomer, useRecordVisit...)  schemas/ (zod)  index.ts
-    lib/            # api (wrap api-client: credentials, problem+json, idempotency), auth, i18n, format
-    locales/vi.json
-  e2e/              # Playwright: luồng quầy, bán gói, hủy, axe
+    main.tsx        # theme trước lần render; /admin/* → chunk console nền tảng
+    styles.css      # Tailwind @theme (map token → utility), element polish, focus rings
+    components.css  # class dùng chung (shell, nút, ô, chip, bảng…), layer components
+    mobile.css      # CSS của components/ (sheet, thẻ bảng, thanh dính)
+    fonts.css       # @font-face tay: chỉ latin + vietnamese, woff2
+    app/            # router.tsx (routes + guard), access.ts, nav.ts, AppShell, PageHeader, trail, prefs,
+                    # CommandPalette, UserMenu/UserPanel, ThemePicker, StatusPage, tokens-only.test.ts
+    components/     # mẫu UI dùng chung: ResponsiveTable, BottomSheet, StickyActions, DateField, TimeField,
+                    # RowMenu, useMediaQuery/usePhone, useModalDialog (API: design-system § Mobile patterns)
+    features/       # theo màn / bounded context: appointments, auth, catalog, corrections, customers,
+                    # front-desk, notes, reports, sales, staff — mỗi feature: *Page.tsx, api.ts (query
+                    # options + mutation), search.ts (URL schema), CSS riêng nếu cần, test cạnh code
+    admin/          # console nền tảng /admin (ADR-0018): app riêng, router tự viết
+    lib/            # api.ts (fetch + ApiError), queryClient, invalidate, searchState, errors, format,
+                    # names, afterFirstPaint
+    assets/         # icons.svg (sprite), brand/emblem.svg (logo)
+    test/setup.ts
+  e2e/              # Playwright: specs/ (quầy, lịch hẹn, bán gói, hủy, nhân sự, layout, a11y, admin…),
+                    # support/, perf/
+  lighthouse/run.mjs, lighthouserc.json
 packages/ui/
-  src/tokens/       # tokens.css (light/dark), tailwind preset
-  src/components/   # Button, Input, MoneyInput, PhoneInput, SearchBox, HealthNote, PackageRow, CartLine, Dialog, Toast...
-  src/format/       # formatVnd, formatDate, formatPhone
-packages/api-client/ # sinh từ apps/api OpenAPI; không sửa tay
+  src/tokens/       # tokens.css (light/dark), contrast.test.ts
+  src/format/       # formatVnd
+packages/api-client/ # src/schema.ts sinh từ apps/api/openapi.json (`pnpm api:types`); không sửa tay
 ```
-> **Liên kết package (2026-11-04):** repo nằm trên ổ exFAT (không có symlink), nên `apps/web` dùng `@vpyd/ui` (và sau này `api-client`) qua **path alias** trong `vite.config.ts` + `tsconfig.json`, không khai báo dependency workspace.
-```
-```
-Quy tắc: `features/*` chỉ import từ `packages/ui`, `lib`, `api-client` và `index.ts` của feature khác (không import sâu). ESLint `import/no-restricted-paths` ép quy tắc này.
+> **Liên kết package (2026-11-04):** repo nằm trên ổ exFAT (không có symlink), nên `apps/web` dùng `@vpyd/ui` và `@vpyd/api-client` qua **path alias** trong `vite.config.ts` + `tsconfig.json`, không khai báo dependency workspace.
+
+Import giữa các feature hiện import thẳng file (ví dụ `features/corrections/api`, `features/sales/api`); chưa có `index.ts` công khai mỗi feature hay rule ESLint ép ranh giới (ESLint chỉ có `typescript-eslint` strict + `react-hooks`).
