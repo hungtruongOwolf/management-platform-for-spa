@@ -45,7 +45,7 @@ test.describe("đăng nhập", () => {
     await submitLogin(page);
     await expect(page).toHaveURL(/\/khach-hang$/);
     await expect(
-      page.getByRole("heading", { name: "Khách hàng", level: 1 }),
+      page.getByRole("heading", { name: "Danh sách khách hàng", level: 1, exact: true }),
     ).toBeVisible();
   });
 

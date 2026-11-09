@@ -226,7 +226,7 @@ const reportsRoute = createRoute({
 const packagesRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/goi-lieu-trinh",
-  beforeLoad: only(mayOpen.management),
+  beforeLoad: only(mayOpen.packages),
   validateSearch: packagesSearch.validate,
   component: lazyRouteComponent(packagesPage, "PackagesOverviewPage"),
 });
@@ -246,7 +246,7 @@ const notesRoute = createRoute({
 const inactiveRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/khach-lau-khong-quay-lai",
-  beforeLoad: only(mayOpen.management),
+  beforeLoad: only(mayOpen.inactive),
   validateSearch: inactiveSearch.validate,
   component: lazyRouteComponent(inactivePage, "InactiveCustomersPage"),
 });
@@ -272,7 +272,7 @@ const myPayRoute = createRoute({
   component: lazyRouteComponent(staffPage, "MyPayPage"),
 });
 
-/** A technician's own customers and bookings (spec staff-management §10 US9); `GET /me/work`. */
+/** A technician's own customers and bookings (spec staff-management §10 US9); `GET /me/appointments`. */
 const myWorkRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/khach-cua-toi",

@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FilterSelect, ResponsiveFilters } from "../features/reports/filters";
@@ -135,6 +135,23 @@ describe("BottomSheet", () => {
     expect(dialog).toHaveTextContent("Nguyễn Thị Hà");
     expect(within(dialog).getByRole("button", { name: "Lưu" })).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: "Đóng" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes on a backdrop press, not on a text selection dragged out of a field", () => {
+    const onClose = vi.fn();
+    render(
+      <BottomSheet open onClose={onClose} title="Sửa hồ sơ">
+        <input aria-label="Họ tên" defaultValue="Nguyễn Thị Hà" />
+      </BottomSheet>,
+    );
+    const dialog = screen.getByRole("dialog", { name: "Sửa hồ sơ" });
+    // Press in the field, release over the backdrop: the browser fires click on the dialog.
+    fireEvent.pointerDown(screen.getByLabelText("Họ tên"));
+    fireEvent.click(dialog);
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.pointerDown(dialog);
+    fireEvent.click(dialog);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

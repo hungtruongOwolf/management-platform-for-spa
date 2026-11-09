@@ -40,7 +40,6 @@ export interface NavGroup {
  * answers 403 on its own. One model feeds the sidebar, the phone drawer and the command palette.
  */
 export function navFor(me: Me | null): NavGroup[] {
-  const mgmt = mayOpen.management(me);
   const desk = mayOpen.frontDesk(me);
   const catalog = mayOpen.catalog(me);
   const groups: [string, (NavItem | false)[]][] = [
@@ -83,7 +82,7 @@ export function navFor(me: Me | null): NavGroup[] {
           short: "Khách",
           icon: "users",
         },
-        mgmt && {
+        mayOpen.inactive(me) && {
           to: "/khach-lau-khong-quay-lai",
           label: "Khách lâu chưa quay lại",
           icon: "user-clock",
@@ -93,7 +92,7 @@ export function navFor(me: Me | null): NavGroup[] {
     [
       "Gói liệu trình",
       [
-        mgmt && {
+        mayOpen.packages(me) && {
           to: "/goi-lieu-trinh",
           label: "Gói liệu trình của khách",
           icon: "package",

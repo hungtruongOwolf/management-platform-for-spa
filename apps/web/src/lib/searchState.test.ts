@@ -25,6 +25,10 @@ describe("search schemas", () => {
       page: 1,
       day: "",
     });
+    // Well-formed but not on the calendar (Date.parse alone rolls these over to the next month).
+    expect(schema.parse({ day: "2026-02-30" }).day).toBe("");
+    expect(schema.parse({ day: "2026-04-31" }).day).toBe("");
+    expect(schema.parse({ day: "2028-02-29" }).day).toBe("2028-02-29");
     expect(schema.parse({ tab: { evil: true }, n: "14", page: "3", day: "2026-11-05" })).toMatchObject({
       tab: "a",
       n: 14,

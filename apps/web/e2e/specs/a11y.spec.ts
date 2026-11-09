@@ -1,7 +1,7 @@
 /**
  * S10: axe (WCAG 2.2 AA) on the screens no journey spec covers — home, the package-plan editor and
- * the service form. Login, MFA, price list, customers, profile, front desk, sell, voids and the
- * paper-book import are audited inside their own journey specs.
+ * the service form. Login, MFA, price list, customers, profile, front desk, sell and voids are
+ * audited inside their own journey specs.
  */
 import { expect, test } from "@playwright/test";
 import { ownerState } from "../stack";

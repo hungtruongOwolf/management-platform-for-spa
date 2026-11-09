@@ -5,7 +5,7 @@ import { PageHeader } from "./PageHeader";
 import { ThemePicker } from "./ThemePicker";
 import { initialOf, roleLabel } from "./UserMenu";
 
-/** /cai-dat — appearance on this device, and who is signed in. Staff and roles come with spec #4. */
+/** /cai-dat — appearance on this device, who is signed in, and changing the password. */
 export function SettingsPage() {
   const { data: me } = useSuspenseQuery(meQuery);
   const queryClient = useQueryClient();

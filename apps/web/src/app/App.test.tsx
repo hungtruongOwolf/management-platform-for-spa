@@ -232,6 +232,30 @@ describe("auth flow", () => {
   });
 });
 
+describe("signing in with a `next` link", () => {
+  it("signing in again returns to `next` with its query", async () => {
+    let loggedIn = false;
+    server((method, path) => {
+      if (path === "/api/v1/me") return loggedIn ? Response.json({ ...ME, permissions: ["customer.read"] }) : unauthorized();
+      if (path === "/api/v1/auth/login" && method === "POST") {
+        loggedIn = true;
+        return Response.json({ next: "done", me: { ...ME, permissions: ["customer.read"] } });
+      }
+      return Response.json([]);
+    });
+    const history = createMemoryHistory({ initialEntries: ["/dang-nhap?next=%2Fkhach-hang%3Fq%3Dabc"] });
+    render(<App history={history} />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText("Số điện thoại"), "0905123456");
+    await user.type(screen.getByLabelText("Mật khẩu"), "mat-khau-dung");
+    await user.click(screen.getByRole("button", { name: "Đăng nhập" }));
+    await vi.waitFor(() => {
+      expect(history.location.pathname).toBe("/khach-hang");
+    });
+    expect(new URLSearchParams(history.location.search).get("q")).toBe("abc");
+  });
+});
+
 describe("unknown address", () => {
   it("says the page does not exist and offers the way home (rulebook §9)", async () => {
     server((_method, path) =>

@@ -17,6 +17,7 @@ function HealthNoteEditor({ customer, onSaved, onCancel }: { customer: Customer;
     mutationFn: () => setHealthNote(customer.id, customer.version, text.trim() === "" ? null : text.trim()),
     onSuccess: (saved) => {
       void queryClient.invalidateQueries({ queryKey: ["customers"] });
+      void queryClient.invalidateQueries({ queryKey: ["notes"] });
       onSaved(saved);
     },
   });
