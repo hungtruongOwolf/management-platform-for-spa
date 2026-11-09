@@ -140,5 +140,24 @@ Một nguồn dữ liệu sức khỏe mới (chữ tự do ở quầy khi bán 
 | Ghi chú nằm lại trên máy dùng chung | giỏ nháp sessionStorage bỏ `note` của từng gói; response `no-store` | vitest `draftCart` |
 Không có Critical/High. Gói bán trong lượt sửa ghi chú được ở Quầy và lịch sử khách (lead 2026-11-08), cùng `PATCH /sales/{id}`; nút chỉ là UX.
 
+## Admin nền tảng (ADR-0018, secure review 2026-11-09, [spec](../product/specs/platform-admin.md))
+Tài sản mới: quyền vận hành **mọi** spa (tạo / ngưng spa, cờ tính năng, vai trò, tài khoản). Tác nhân thêm: (A6) operator bị chiếm tài khoản; (A7) lỗi ứng dụng gọi đường nền tảng từ route spa.
+| STRIDE | Mối đe dọa | Biện pháp | Test |
+|---|---|---|---|
+| S | Dò / nhồi mật khẩu operator (A1) | Argon2id, lỗi đồng nhất + dummy hash, rate limit riêng `/admin/auth/*` (1/6 s, burst 5), khóa theo operator (`identity::lockout`), username không phải SĐT | `platform_auth.rs::wrong_passwords_lock_the_operator`, `429` |
+| S | Lộ mật khẩu operator (A6) | TOTP **luôn** bắt buộc; session pending chỉ dùng được cho `/admin/auth/mfa/*`; mã dùng một lần (`mfa_last_step`) | `a_pending_session_reaches_nothing`, replay → `401` |
+| S | Session spa (kể cả chủ spa) được coi là operator (A2/A7) | Principal + bảng + cookie riêng; extractor `Operator` chỉ đọc `__Host-op-session` → `platform_session` | `authz_matrix.rs::every_admin_route_needs_a_full_operator_session` |
+| S | Cookie operator bị ăn cắp / máy bỏ quên | Session ngắn (idle 30 phút, tối đa 8 giờ); **step-up** (mật khẩu + TOTP ≤ 5 phút) cho mọi thao tác ghi, kiểm ở Rust **và** trong hàm DB ghi | `writes_need_a_recent_step_up` (Rust + gọi hàm DB thẳng với `recent_auth_at` cũ → `42501`) |
+| E | XSS ở app spa cùng origin gửi request admin từ trình duyệt operator | CSP `script-src 'self'`, React escape; step-up cho ghi (XSS không có mã TOTP); runbook: profile trình duyệt riêng; `APP_ADMIN_ORIGIN` + subdomain khi có domain (cookie `__Host-` host-only tách hẳn) | unit middleware `admin_origin_is_separate` |
+| E | Lỗi ứng dụng gọi hàm nền tảng xuyên spa không qua kiểm quyền (A7) | Mỗi hàm `SECURITY DEFINER` tự kiểm hash token operator (`platform_gate`, không grant cho ai); SQL `app.platform_*` chỉ ở crate `platform` | `platform_db.rs` (hash lạ / session pending → `42501`), test kiến trúc `platform_sql_stays_in_platform` |
+| I | Operator đọc dữ liệu khách / sức khỏe / lương của spa (ADR-0003) | Hàm xuyên spa chỉ trả số đếm + metadata (cột cố định); nhật ký spa chỉ `at, action, entity_type, actor`; không `before/after`, `reason`, `entity_id`, IP; tìm tài khoản trả tên + SĐT + membership, không hash / secret | `platform_db.rs::functions_return_only_their_columns`, `tenant_audit_is_metadata_only` |
+| I | Mật khẩu tạm lộ qua log / audit / cache | Trả một lần, `Cache-Control: no-store`, không log, audit không có mật khẩu; SĐT trong audit nền tảng chỉ 3 số cuối | `creating_a_spa_shows_the_password_once` (quét `audit_log` + `platform_audit_log`) |
+| T | Spa tự bật tính năng bị tắt / tự sửa mẫu vai trò (A2) | `app_rw` chỉ `SELECT` trên `tenant_feature` và `role_template_permission`; ghi chỉ qua hàm có cổng operator | `platform_features.rs::app_rw_cannot_write_flags` |
+| T | Operator (hoặc bug) làm spa mất quyền quản trị | Rào chắn vai trò (owner giữ `staff.manage`, `staff.read`, `staff.read_basic`, `audit.read`; `staff.manage` chỉ owner); không khóa chủ spa cuối cùng của spa đang hoạt động (`409 platform.last_owner`) | `platform_roles.rs::the_owner_floor_is_kept`, `platform_accounts.rs::the_last_owner_cannot_be_locked` |
+| R | Operator chối đã làm gì | `platform_audit_log` append-only (`app_rw` không UPDATE/DELETE), cùng transaction với thao tác, lý do bắt buộc; audit spa `platform_admin` để chủ spa thấy | `every_operator_write_is_audited` |
+| D | Spa ngưng vẫn dùng session cũ | Ngưng thu hồi session thành viên; `session_actor` đã từ chối spa không active (M3); đăng nhập → `403 auth.spa_suspended` | `platform_tenants.rs::a_suspended_spa_cannot_sign_in` |
+
+**TB2 (bổ sung):** không role `BYPASSRLS`, không kết nối owner ở runtime; cổng token trong hàm chống lỗi ứng dụng, **không** chống chiếm `app_rw` (cùng lớp rủi ro đã ghi ở ADR-0017: `app_rw` đặt được `app.tenant_id` của bất kỳ spa nào). **Còn mở:** TOFU ở lần enroll đầu của operator (như owner, ADR-0004 L3); cùng origin đến khi có subdomain (Q-PA3); chưa có support grant nên hỗ trợ chỉ thấy metadata (Q-PA1).
+
 ## Còn mở
 - Danh sách thao tác yêu cầu nhập lại mật khẩu: chỉ thao tác bảo mật tài khoản (đổi mật khẩu, cài đặt MFA), EM 2026-11-05. Khi thêm route đó: dùng `AuthUser::require_recent_auth` + test `401`.

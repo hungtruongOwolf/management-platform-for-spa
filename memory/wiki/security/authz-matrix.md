@@ -180,3 +180,19 @@ Test 1–2 và cổng CI "route chưa khai báo permission" nằm ở `apps/api/
 - **Bắt đổi mật khẩu:** tài khoản `must_change_password` (mật khẩu tạm) — `identity::service::resolve` trả `403 auth.password_change_required` cho **mọi** route dùng `CurrentSession`/`AuthUser` (kể cả `/me`, `/auth/reauth`, `/auth/logout-all`); chỉ `POST /auth/password` (`PasswordChangeSession`) và `POST /auth/logout` nhận phiên đó. Đăng nhập trả `next: password_change`, không có `me`.
 - **Không bao giờ:** mật khẩu (tạm hay mới) hay hash trong audit, log, response khác; tài khoản của người khác (SĐT đã có) bị gắn vào spa này.
 - Test `app/tests/staff_logins.rs` (onboarding + cổng đổi mật khẩu, chỉ chủ spa, spa khác `404`, SĐT đã có, đặt lại thu hồi phiên + các trường hợp cấm, đổi vai trò có hiệu lực ngay, re-auth, yêu cầu quên mật khẩu: cùng response / chỉ chủ spa / spa khác / trong giờ không lặp / đặt lại đóng yêu cầu, giới hạn tần suất, không mật khẩu trong log); `authz_matrix.rs` +7 dòng.
+
+## Admin nền tảng (ADR-0018, 2026-11-09, migration 0038–0040)
+Principal riêng: **operator** (`platform_operator`, cookie `__Host-op-session`), không phải membership. Cột "Spa" = gọi bằng cookie spa của owner / manager / technician. 🔐 = step-up (mật khẩu + TOTP ≤ 5 phút): mọi request ghi dưới `/admin` trừ `/admin/auth/*`.
+| Route | Operator | Operator pending MFA | Spa (mọi role) | Không cookie | Ghi chú |
+|---|---|---|---|---|---|
+| `POST /admin/auth/login` | công khai | — | — | — | luôn MFA; lỗi đồng nhất; rate limit riêng 1/6 s burst 5 |
+| `POST /admin/auth/mfa/{enroll/start,enroll/confirm,verify}` | 409 | ✓ | 401 | 401 | chỉ session pending |
+| `POST /admin/auth/reauth`, `GET /admin/me` | ✓ | 401 | 401 | 401 | reauth luôn cần mật khẩu + mã |
+| `POST /admin/auth/logout` | ✓ | ✓ | 401 | 401 | |
+| `GET /admin/{tenants,features,permissions,role-templates,accounts,audit}`, `GET /admin/tenants/{id}[/roles,/audit]` | ✓ | 401 | 401 | 401 | chỉ metadata / số đếm; đọc nhật ký spa ghi `platform.tenant_audit.read` |
+| `POST /admin/tenants`, `…/{id}/suspend`, `…/unsuspend`, `PUT …/features/{key}`, `PUT /admin/role-templates/{key}`, `PUT|POST …/roles/{key}[/reset]`, `POST /admin/accounts/{id}/{lock,unlock,reset-password,reset-mfa,revoke-sessions}` | ✓ 🔐 | 401 | 401 | 401 | thiếu step-up → `403 platform.step_up_required`; lý do bắt buộc; audit nền tảng + audit spa (`actor_kind = platform_admin`) |
+- **Hàm DB** `app.platform_*`: tham số đầu là hash token operator, tự kiểm session (và step-up khi ghi) → không có session operator thì `42501` dù gọi từ code nào (test `platform_db.rs`).
+- **Cờ tính năng** (spa): route của tính năng tắt → `403 feature.disabled` cho **mọi** role (kiểm trước permission); permission của tính năng bị rút khỏi `Actor` và `/me.permissions`. Thứ tự: `401` → `403 auth.password_change_required` → `403 feature.disabled` → `403 auth.forbidden`.
+- **Vai trò do operator sửa**: owner luôn giữ `staff.manage`, `staff.read`, `staff.read_basic`, `audit.read`; `staff.manage` chỉ ở owner; `platform.*` / `staff.read_own_past` không cấp được (`422 role.*`). Bất biến cứng không đổi: ADR-0014 (người đã nghỉ), `staff.link_required`, quyết định C, owner MFA.
+- **Spa ngưng**: đăng nhập mật khẩu đúng → `403 auth.spa_suspended`; session cũ bị thu hồi khi ngưng.
+- Test: `authz_matrix.rs` lớp operator (`every_admin_route_needs_a_full_operator_session`: không cookie / cookie owner / manager / technician / operator pending → `401`, operator → 2xx, ghi không step-up → `403`), `platform_*.rs`.

@@ -689,3 +689,8 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Kết luận: Postgres không phải nút thắt (29/40 câu ≤ 3 ms); ~10 lượt đi về API↔DB mỗi GET (3 ping `test_before_acquire`, xác thực 2 transaction). Lịch sử khách seq scan 66–94 ms → `UNION` < 1 ms; GIN trigram không dùng được dưới RLS; 8 index bỏ được (−31 MB); session không bao giờ được dọn.
 - Đề xuất theo thứ tự A1 (pool ping) → A2 (lịch sử) → A3/A4 (gộp xác thực, cần ADR + secure) → B1 (bỏ index) → C1 (dọn session) → C2 (job bất biến); danh sách không được đổi ở §6. Tooling `infra/perf/db/`.
 - Tiếp theo: EM trả lời Q-DB1…Q-DB4; chưa đổi schema, chưa merge.
+
+## [2026-11-09] ingest + spec + architect + design | Admin nền tảng (ADR-0018)
+- Raw: [2026-11-09-em-request-docs-and-platform-admin](raw/2026-11-09-em-request-docs-and-platform-admin.md) (mục 2; mục 1 docs/README do agent khác). EM chọn "Admin nền tảng".
+- Spec [platform-admin](wiki/product/specs/platform-admin.md) (US1–US9, Q-PA1…4), [ADR-0018](wiki/decisions/ADR-0018-platform-admin-console.md) (principal operator riêng, `/admin` cùng deployment + `APP_ADMIN_ORIGIN`, hàm definer có cổng token, cờ tính năng, mẫu vai trò), thiết kế [architecture/platform-admin](wiki/architecture/platform-admin.md); authz-matrix + threat-model thêm mục "Admin nền tảng".
+- Build chờ #109 (`app.session_actor`) + #110 vào main (điều phối với agent DB); migration lấy số trống tiếp theo (dự kiến 0038–0040).
