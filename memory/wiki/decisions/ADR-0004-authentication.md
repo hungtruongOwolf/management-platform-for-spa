@@ -25,7 +25,7 @@ Người dùng R1–R3 là nhân sự spa (chủ, quản lý, KTV): vài ngườ
 - **Chống dò mật khẩu:** rate limit theo IP và theo tài khoản, chậm dần, thông báo lỗi giống nhau.
 - **Tài khoản do chủ spa/quản lý tạo**, kèm link kích hoạt một lần (token 128-bit, hạn 24 giờ, lưu hash) gửi qua Zalo/tin nhắn thủ công. Quên mật khẩu: quản lý/chủ spa tạo link đặt lại, không cần email.
 - **MFA TOTP bắt buộc** cho Chủ spa và Platform admin; tùy chọn cho người khác. *(Hiện thực ở S2b.)*
-  - Bắt buộc là **dữ liệu**: `role.requires_mfa` (role hệ thống `owner` luôn true, có CHECK), hoặc role giữ `platform.tenant.manage`; user đã tự bật MFA cũng luôn phải nhập mã.
+  - Bắt buộc là **dữ liệu**: `role.requires_mfa` (role hệ thống `owner` luôn true, có CHECK), hoặc (đến 0040) role giữ `platform.tenant.manage`, nhánh này bỏ ở 0041; user đã tự bật MFA cũng luôn phải nhập mã.
   - Đăng nhập 2 bước: mật khẩu đúng → session **pending MFA** (10 phút, chỉ dùng được cho `/auth/mfa/*` và logout) → mã TOTP hoặc mã khôi phục → session đầy đủ mới (xoay token). Owner chưa có MFA bị bắt enroll ngay (QR + khóa nhập tay, xác nhận bằng mã đầu tiên).
   - TOTP RFC 6238 (SHA-1, 6 số, 30 giây, ±1 bước), mỗi bước chỉ dùng 1 lần. Secret mã hóa AES-256-GCM bằng `APP_DATA_KEY`, AAD gắn user id. 10 mã khôi phục 80-bit, lưu SHA-256, dùng 1 lần, chỉ hiện 1 lần.
   - Mã sai tính vào cùng bộ đếm khóa tài khoản; mật khẩu đúng không reset bộ đếm khi MFA còn dang dở.
@@ -55,7 +55,7 @@ Một số điểm ở Decision đã được thay, phần còn lại vẫn đú
 - **Mật khẩu**: chỉ kiểm độ dài 10–128 ký tự (`identity::password::check_policy`). Kiểm danh sách mật khẩu bị lộ **chưa làm**.
 - **Quyền mỗi request** đọc trong một câu `app.session_actor(token_hash)` ([ADR-0017](ADR-0017-one-statement-request-auth.md)), không còn nạp riêng từng phần.
 - **Spa bị tạm ngưng**: đăng nhập trả `403 auth.spa_suspended` khi mọi membership còn hiệu lực đều ở spa đang ngưng ([ADR-0018](ADR-0018-platform-admin-console.md)); session đang mở vẫn không nhận permission nào (M3).
-- **Platform admin** không còn là role trong spa: operator đăng nhập riêng (`__Host-op-session`, TOTP luôn bắt buộc, ADR-0018). Câu "role giữ `platform.tenant.manage` phải MFA" vẫn còn trong `app.user_requires_mfa` (0006).
+- **Platform admin** không còn là role trong spa: operator đăng nhập riêng (`__Host-op-session`, TOTP luôn bắt buộc, ADR-0018). Nhánh "role giữ `platform.tenant.manage` phải MFA" trong `app.user_requires_mfa` đã bị bỏ ở migration 0041 (permission đó không còn cấp được từ 0040).
 - Lệnh operator hiện có: `app reset-mfa`, `app unlock`, `app add-operator`, `app reset-operator-mfa`, `app disable-operator` / `enable-operator` (`apps/api/crates/app/src/main.rs`).
 
 ## Consequences

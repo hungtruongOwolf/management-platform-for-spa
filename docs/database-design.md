@@ -1,6 +1,6 @@
 # Thiết kế cơ sở dữ liệu (database design)
 
-Bản tổng quan cho người mới: bảng chia thành những nhóm nào, chúng nối với nhau ra sao, dữ liệu của các spa được tách thế nào và DB tự bảo vệ toàn vẹn bằng gì. Mọi tên bảng, cột và ràng buộc ở đây lấy từ migration trong [`apps/api/migrations/`](../apps/api/migrations) (0001–0040). Trang chi tiết từng bảng và lịch sử thay đổi theo vòng: [data](../memory/wiki/architecture/data.md). Kết quả đo và các cơ chế không được đổi: [db-review-2026-11](../memory/wiki/architecture/db-review-2026-11.md).
+Bản tổng quan cho người mới: bảng chia thành những nhóm nào, chúng nối với nhau ra sao, dữ liệu của các spa được tách thế nào và DB tự bảo vệ toàn vẹn bằng gì. Mọi tên bảng, cột và ràng buộc ở đây lấy từ migration trong [`apps/api/migrations/`](../apps/api/migrations) (0001–0044). Trang chi tiết từng bảng và lịch sử thay đổi theo vòng: [data](../memory/wiki/architecture/data.md). Kết quả đo và các cơ chế không được đổi: [db-review-2026-11](../memory/wiki/architecture/db-review-2026-11.md).
 
 ## 1. Quy ước chung
 
@@ -277,5 +277,6 @@ Hệ quả: không tìm được trong ghi chú mã hóa bằng SQL; "Nhật ký
 | 0032 | Tài khoản từ hồ sơ nhân viên, mật khẩu tạm, yêu cầu quên mật khẩu ([ADR-0016](../memory/wiki/decisions/ADR-0016-accounts-and-passwords.md)) |
 | 0033–0037 | Rà soát DB 2026-11: bỏ 8 index (0033), `session_actor` (0034), dọn session + kiểm bất biến + `maintenance_run` (0035), FK cột người làm (0036, 0037) |
 | 0038–0040 | Console nền tảng: operator, session, audit, hàm cổng (0038); cờ tính năng theo spa (0039); mẫu vai trò + tài khoản xuyên spa (0040) |
+| 0041–0044 | Rà soát toàn bộ 2026-11-09: mọi thao tác ghi của console (tài khoản, vai trò của một spa) qua hàm DB kiểm step-up, chặn khóa chủ spa cuối dưới advisory lock, dọn `platform_session`, bỏ nhánh `platform.tenant.manage` chết trong `user_requires_mfa` (0041); gia cố schema: `user_in_other_spa` chặn reset mật khẩu khi có membership ở spa khác, sàn cho hàm dọn (48 h idempotency, 1 ngày session), thu hẹp quyền `app_rw` trên `role`/`membership`/`branch`, FK: item của một dòng lượt phải thuộc đúng gói của dòng đó, và FK `appointment_setting.updated_by` (0042, VALIDATE ở 0043); `purge_sessions` dọn cả hai loại session (0044, sửa 0042 ghi đè 0041) |
 
 Số 0008, 0010, 0031 bỏ trống (được giữ chỗ rồi không dùng). Migration nhúng vào binary qua `kernel/build.rs` (`rerun-if-changed`), chạy bằng `pnpm db:migrate`. Sửa query thì chạy `pnpm db:prepare` và commit `apps/api/.sqlx` (CI build ở chế độ offline).
