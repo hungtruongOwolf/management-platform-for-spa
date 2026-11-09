@@ -231,10 +231,9 @@ pub fn place(
     }
     let ends_at = starts_at + Duration::minutes(i64::from(minutes));
     let end_local = ends_at.with_timezone(&tz);
-    let same_day = end_local.date_naive() == local.date_naive()
-        || (end_local.date_naive() == local.date_naive().succ_opt().unwrap_or(NaiveDate::MAX)
-            && end_local.time() == NaiveTime::MIN
-            && settings.close == NaiveTime::MIN);
+    // `close` is always after `open` (`from_settings`), so it is never 00:00 of the next day: a
+    // booking ends on the day it starts.
+    let same_day = end_local.date_naive() == local.date_naive();
     if start < settings.open || !same_day || end_local.time() > settings.close {
         return Err(SlotError::OutsideHours);
     }

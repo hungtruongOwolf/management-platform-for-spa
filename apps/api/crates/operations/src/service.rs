@@ -1504,7 +1504,6 @@ pub async fn correct(
         return Ok((status, body));
     }
     let started = begin_correction(&mut tx, cipher, actor, id, request.version, &reason).await?;
-    // (A later "convert to package" records its package sale here, between the two steps.)
     let done = finish_correction(&mut tx, cipher, actor, started, order, new_note, &reason).await?;
     let body = serde_json::to_value(done).map_err(|e| AppError::Internal(e.to_string()))?;
     idempotency::complete(&mut tx, actor, key, 201, &body).await?;
@@ -1520,8 +1519,8 @@ pub(crate) struct StartedCorrection {
     old_note: Option<String>,
 }
 
-/// Step 1 of every correction (reusable inside one transaction, e.g. by a future
-/// "convert to package" that sells its package between the steps): lock the visit, check it is
+/// Step 1 of every correction ("Sửa lượt" and "convert to package", whose package sale is part of
+/// the new checkout in step 2): lock the visit, check it is
 /// the current version, the closed-day rule and `If-Match`, then void it exactly as
 /// `POST /visits/{id}/void` does. The caller holds the permissions and the idempotency claim.
 pub(crate) async fn begin_correction(

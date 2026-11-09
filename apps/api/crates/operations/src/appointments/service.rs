@@ -1029,13 +1029,18 @@ async fn lock_open(
     id: Uuid,
 ) -> Result<repo::Locked, AppError> {
     let row = repo::lock(tx, id).await?.ok_or(AppError::NotFound)?;
+    check_open(actor, spa, &row)?;
+    Ok(row)
+}
+
+/// A locked appointment may still change: not closed, and its day open to the caller.
+fn check_open(actor: &Actor, spa: &Spa, row: &repo::Locked) -> Result<(), AppError> {
     if !parse_status(&row.status)?.is_open() {
         return Err(AppError::Conflict {
             code: "appointment.closed",
         });
     }
-    kernel::corrections::authorize_closed_day(actor, row.business_date, spa.today())?;
-    Ok(row)
+    kernel::corrections::authorize_closed_day(actor, row.business_date, spa.today())
 }
 
 /// `PATCH /appointments/{id}` (`appointment.manage`, If-Match): reschedule, change technician,
@@ -1311,26 +1316,51 @@ pub async fn move_group(
     actor.require(Permission::AppointmentManage)?;
     let mut tx = TenantTx::for_actor(pool, actor).await?;
     let spa = spa(&mut tx).await?;
-    let anchor = lock_open(&mut tx, actor, &spa, id).await?;
-    if anchor.version != version {
+    // Lock every member in id order, `{id}` among them. Locking `{id}` first and then the others
+    // deadlocked two moves of one group started from different members (40P01 → 500).
+    let mut members = Vec::new();
+    if let Some(group) = repo::group_of(&mut tx, id)
+        .await?
+        .ok_or(AppError::NotFound)?
+    {
+        for member in repo::group_member_ids(&mut tx, group).await? {
+            let row = repo::lock(&mut tx, member)
+                .await?
+                .ok_or_else(|| AppError::Internal("group member vanished".into()))?;
+            members.push((member, row));
+        }
+    }
+    let anchor = match members.iter().find(|(member, _)| *member == id) {
+        Some((_, row)) => {
+            check_open(actor, &spa, row)?;
+            (row.version, row.status.clone(), row.group_id, row.starts_at)
+        }
+        None => {
+            let row = lock_open(&mut tx, actor, &spa, id).await?;
+            (row.version, row.status, row.group_id, row.starts_at)
+        }
+    };
+    let (anchor_version, anchor_status, anchor_group, anchor_starts) = anchor;
+    if anchor_version != version {
         return Err(AppError::StaleVersion);
     }
-    if parse_status(&anchor.status)? != Status::Booked {
+    if parse_status(&anchor_status)? != Status::Booked {
         return Err(AppError::Conflict {
             code: "appointment.already_arrived",
         });
     }
-    let group = anchor.group_id.ok_or(AppError::Unprocessable {
+    let group = anchor_group.ok_or(AppError::Unprocessable {
         code: "appointment.not_in_group",
     })?;
-    let delta = input.starts_at - anchor.starts_at;
+    if !members.iter().any(|(member, _)| *member == id) {
+        // Joined a group between the read and the lock: its version moved on.
+        return Err(AppError::StaleVersion);
+    }
+    let delta = input.starts_at - anchor_starts;
     let now = Utc::now();
     let mut moving = Vec::new();
     let mut staying = Vec::new();
-    for member in repo::group_member_ids(&mut tx, group).await? {
-        let row = repo::lock(&mut tx, member)
-            .await?
-            .ok_or_else(|| AppError::Internal("group member vanished".into()))?;
+    for (member, row) in members {
         match parse_status(&row.status)? {
             Status::Booked => {
                 kernel::corrections::authorize_closed_day(actor, row.business_date, spa.today())?;
