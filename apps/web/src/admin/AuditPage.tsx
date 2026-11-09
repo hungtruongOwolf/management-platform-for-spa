@@ -12,6 +12,15 @@ const ACTIONS: Record<string, string> = {
   "platform.tenant.suspend": "Tạm ngưng spa",
   "platform.tenant.unsuspend": "Mở lại spa",
   "platform.feature.set": "Bật / tắt tính năng",
+  "platform.role_template.set": "Sửa mẫu vai trò",
+  "platform.role.set": "Sửa quyền vai trò của spa",
+  "platform.role.reset": "Đưa vai trò của spa về mẫu",
+  "platform.account.lock": "Khóa tài khoản",
+  "platform.account.unlock": "Mở khóa tài khoản",
+  "platform.account.reset_password": "Đặt lại mật khẩu",
+  "platform.account.reset_mfa": "Đặt lại xác thực hai bước",
+  "platform.account.revoke_sessions": "Đăng xuất mọi thiết bị",
+  "platform.tenant_audit.read": "Xem nhật ký spa",
 };
 
 export function actionLabel(action: string): string {

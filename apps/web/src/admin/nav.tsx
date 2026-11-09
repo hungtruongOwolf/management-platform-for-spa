@@ -66,6 +66,8 @@ export type AdminRoute =
   | { page: "tenants" }
   | { page: "tenant"; id: string }
   | { page: "audit" }
+  | { page: "roles" }
+  | { page: "accounts" }
   | { page: "not_found" };
 
 export function matchAdminRoute(path: string): AdminRoute {
@@ -73,6 +75,8 @@ export function matchAdminRoute(path: string): AdminRoute {
   if (trimmed === "/admin") return { page: "tenants" };
   if (trimmed === "/admin/dang-nhap") return { page: "login" };
   if (trimmed === "/admin/nhat-ky") return { page: "audit" };
+  if (trimmed === "/admin/vai-tro") return { page: "roles" };
+  if (trimmed === "/admin/tai-khoan") return { page: "accounts" };
   const spa = /^\/admin\/spa\/([0-9a-f-]{36})$/.exec(trimmed);
   if (spa?.[1]) return { page: "tenant", id: spa[1] };
   return { page: "not_found" };

@@ -17,6 +17,14 @@ export type StatusChanged = Schemas["StatusChanged"];
 export type PlatformAuditPage = Schemas["PlatformAuditPage"];
 export type PlatformAuditItem = Schemas["PlatformAuditItem"];
 export type TenantFeature = Schemas["TenantFeature"];
+export type PermissionInfo = Schemas["PermissionInfo"];
+export type RoleGrants = Schemas["RoleGrants"];
+export type AccountRow = Schemas["AccountRow"];
+export type SessionsRevoked = Schemas["SessionsRevoked"];
+export type PasswordReset = Schemas["PasswordReset"];
+export type SpaAuditPage = Schemas["SpaAuditPage"];
+
+export type AccountAction = "lock" | "unlock" | "reset-mfa" | "revoke-sessions";
 
 export const adminKeys = {
   me: ["admin", "me"] as const,
@@ -24,6 +32,11 @@ export const adminKeys = {
   tenant: (id: string) => ["admin", "tenants", id] as const,
   audit: ["admin", "audit"] as const,
   features: (id: string) => ["admin", "tenants", id, "features"] as const,
+  roles: (id: string) => ["admin", "tenants", id, "roles"] as const,
+  spaAudit: (id: string) => ["admin", "tenants", id, "audit"] as const,
+  permissions: ["admin", "permissions"] as const,
+  templates: ["admin", "role-templates"] as const,
+  accounts: (q: string) => ["admin", "accounts", q] as const,
 };
 
 export const adminApi = {
@@ -53,6 +66,30 @@ export const adminApi = {
       method: "PUT",
       body: { enabled, reason },
     }) as Promise<TenantFeature>,
+  permissions: () => api("/admin/permissions") as Promise<PermissionInfo[]>,
+  templates: () => api("/admin/role-templates") as Promise<RoleGrants[]>,
+  setTemplate: (key: string, permissions: string[], reason: string) =>
+    api(`/admin/role-templates/${encodeURIComponent(key)}`, { method: "PUT", body: { permissions, reason } }) as Promise<RoleGrants>,
+  roles: (id: string) => api(`/admin/tenants/${encodeURIComponent(id)}/roles`) as Promise<RoleGrants[]>,
+  setRole: (id: string, key: string, permissions: string[], reason: string) =>
+    api(`/admin/tenants/${encodeURIComponent(id)}/roles/${encodeURIComponent(key)}`, {
+      method: "PUT",
+      body: { permissions, reason },
+    }) as Promise<RoleGrants>,
+  resetRole: (id: string, key: string, reason: string) =>
+    api(`/admin/tenants/${encodeURIComponent(id)}/roles/${encodeURIComponent(key)}/reset`, {
+      method: "POST",
+      body: { reason },
+    }) as Promise<RoleGrants>,
+  spaAudit: (id: string, before?: string) =>
+    api(
+      `/admin/tenants/${encodeURIComponent(id)}/audit?limit=50${before ? `&before=${encodeURIComponent(before)}` : ""}`,
+    ) as Promise<SpaAuditPage>,
+  accounts: (q: string) => api(`/admin/accounts?q=${encodeURIComponent(q)}`) as Promise<AccountRow[]>,
+  accountAction: (id: string, action: AccountAction, reason: string) =>
+    api(`/admin/accounts/${encodeURIComponent(id)}/${action}`, { method: "POST", body: { reason } }) as Promise<SessionsRevoked>,
+  resetPassword: (id: string, reason: string) =>
+    api(`/admin/accounts/${encodeURIComponent(id)}/reset-password`, { method: "POST", body: { reason } }) as Promise<PasswordReset>,
   audit: (before?: string) =>
     api(`/admin/audit?limit=50${before ? `&before=${encodeURIComponent(before)}` : ""}`) as Promise<PlatformAuditPage>,
 };
