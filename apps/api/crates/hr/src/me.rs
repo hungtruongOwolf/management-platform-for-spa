@@ -103,7 +103,7 @@ pub async fn my_month(
     month: Option<Month>,
 ) -> Result<MyStaff, AppError> {
     let scope = own_scope(actor)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let Some(staff_id) = org::profile::own_staff_id(&mut tx, actor).await? else {
         tx.commit().await?;
         return Ok(MyStaff {
@@ -198,7 +198,7 @@ pub async fn my_evaluation_history(
     let scope = own_scope(actor)?;
     let from = from.map(|m| Month::parse("from", m)).transpose()?;
     let to = to.map(|m| Month::parse("to", m)).transpose()?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let Some(staff_id) = org::profile::own_staff_id(&mut tx, actor).await? else {
         tx.commit().await?;
         return Ok(MyEvaluationHistory {

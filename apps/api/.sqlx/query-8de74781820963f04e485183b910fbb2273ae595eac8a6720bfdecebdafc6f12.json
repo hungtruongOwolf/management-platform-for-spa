@@ -1,0 +1,57 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(\n                    array_agg(DISTINCT rp.permission) FILTER (WHERE rp.permission IS NOT NULL),\n                    '{}'\n                  ) AS \"permissions!\",\n                  EXISTS (SELECT 1 FROM app.staff s\n                          WHERE s.tenant_id = m.tenant_id AND s.user_id = m.user_id\n                            AND s.status = 'left') AS \"former_staff!\",\n                  t.timezone,\n                  (t.settings ->> 'manager_discount_max_pct') AS manager_discount_max_pct,\n                  (SELECT b.id FROM app.branch b WHERE b.tenant_id = t.id AND b.active\n                   ORDER BY b.created_at, b.id LIMIT 1) AS branch_id\n           FROM app.membership m\n           JOIN app.tenant t ON t.id = m.tenant_id\n           LEFT JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id\n           LEFT JOIN app.role_permission rp ON rp.tenant_id = mr.tenant_id AND rp.role_id = mr.role_id\n           WHERE m.tenant_id = $1 AND m.user_id = $2 AND m.status = 'active' AND t.status = 'active'\n           GROUP BY m.id, t.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "permissions!",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "former_staff!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "timezone",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.tenant",
+            "name": "timezone"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "manager_discount_max_pct",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "branch_id",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "8de74781820963f04e485183b910fbb2273ae595eac8a6720bfdecebdafc6f12"
+}

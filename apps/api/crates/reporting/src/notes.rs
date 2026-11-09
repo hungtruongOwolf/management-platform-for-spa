@@ -484,7 +484,7 @@ pub async fn list(
         .filter(|k| allowed.may(*k))
         .collect();
 
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let profile = kernel::tenant::profile(&mut tx).await?;
     let (from, to) = range(query.from, query.to, profile.business_date.as_naive())?;
     let tz = profile.timezone.name();

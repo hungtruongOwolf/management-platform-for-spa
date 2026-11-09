@@ -2,6 +2,7 @@
 //! tenant tables (memberships, roles) only inside a `TenantTx`.
 
 use chrono::{DateTime, Utc};
+use kernel::tenant::TenantFacts;
 use kernel::{AppError, Permission, PhoneE164, TenantId, TenantTx, UserId};
 use sqlx::PgPool;
 use sqlx::types::ipnetwork::IpNetwork;
@@ -370,18 +371,34 @@ pub async fn tenants_of_user(pool: &PgPool, user: UserId) -> Result<Vec<TenantRe
         .collect())
 }
 
-/// Permissions of an active member of an active spa (the transaction's tenant). `None` = not an
-/// active member, or the spa is suspended: a suspended spa grants nothing, even to live sessions.
-/// A member whose linked staff profile has left holds only `kernel::permission::FORMER_STAFF`
-/// (ADR-0014): derived here on every request from the roster, never from the client.
+/// What an active member of an active spa (the transaction's tenant) may do, plus the spa's
+/// settings the request's use cases need (db review A4: read here, in the same statement, rather
+/// than once more in every transaction). `None` = not an active member, or the spa is suspended:
+/// a suspended spa grants nothing, even to live sessions. A member whose linked staff profile has
+/// left holds only `kernel::permission::FORMER_STAFF` (ADR-0014): derived here on every request
+/// from the roster, never from the client.
+pub struct MemberAccess {
+    pub permissions: Vec<Permission>,
+    pub facts: Option<TenantFacts>,
+}
+
+/// [`member_access`] without the spa settings.
 pub async fn member_permissions(
     tx: &mut TenantTx,
     user: UserId,
 ) -> Result<Option<Vec<Permission>>, AppError> {
+    Ok(member_access(tx, user).await?.map(|a| a.permissions))
+}
+
+pub async fn member_access(
+    tx: &mut TenantTx,
+    user: UserId,
+) -> Result<Option<MemberAccess>, AppError> {
     // One statement (perf page §3.4: every authenticated request paid two round trips here). A
     // member with no role still gets a row, with an empty list; no row = not an active member.
     // `(tenant_id, user_id)` is unique, so at most one row. `staff.status` mirrors the latest
     // employment period (0025): `left` = no open period (`staff_user_idx` answers the lookup).
+    let tenant = tx.tenant();
     let member = sqlx::query!(
         r#"SELECT COALESCE(
                     array_agg(DISTINCT rp.permission) FILTER (WHERE rp.permission IS NOT NULL),
@@ -389,14 +406,18 @@ pub async fn member_permissions(
                   ) AS "permissions!",
                   EXISTS (SELECT 1 FROM app.staff s
                           WHERE s.tenant_id = m.tenant_id AND s.user_id = m.user_id
-                            AND s.status = 'left') AS "former_staff!"
+                            AND s.status = 'left') AS "former_staff!",
+                  t.timezone,
+                  (t.settings ->> 'manager_discount_max_pct') AS manager_discount_max_pct,
+                  (SELECT b.id FROM app.branch b WHERE b.tenant_id = t.id AND b.active
+                   ORDER BY b.created_at, b.id LIMIT 1) AS branch_id
            FROM app.membership m
            JOIN app.tenant t ON t.id = m.tenant_id
            LEFT JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
            LEFT JOIN app.role_permission rp ON rp.tenant_id = mr.tenant_id AND rp.role_id = mr.role_id
            WHERE m.tenant_id = $1 AND m.user_id = $2 AND m.status = 'active' AND t.status = 'active'
-           GROUP BY m.id"#,
-        tx.tenant().as_uuid(),
+           GROUP BY m.id, t.id"#,
+        tenant.as_uuid(),
         user.as_uuid()
     )
     .fetch_optional(tx.conn())
@@ -404,6 +425,15 @@ pub async fn member_permissions(
     let Some(member) = member else {
         return Ok(None);
     };
+    // A spa without an active branch or with an unknown zone authorizes as before; only the use
+    // cases that need its profile fail, when they read it (no facts carried = read in the tx).
+    let facts = TenantFacts::from_row(
+        tenant,
+        &member.timezone,
+        member.manager_discount_max_pct.as_deref(),
+        member.branch_id,
+    )
+    .ok();
     let roles = member
         .permissions
         .iter()
@@ -415,10 +445,10 @@ pub async fn member_permissions(
             }
         })
         .collect();
-    Ok(Some(kernel::permission::effective_permissions(
-        roles,
-        member.former_staff,
-    )))
+    Ok(Some(MemberAccess {
+        permissions: kernel::permission::effective_permissions(roles, member.former_staff),
+        facts,
+    }))
 }
 
 // ------------------------------------------------------------------ passwords (ADR-0016)

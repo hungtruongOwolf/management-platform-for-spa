@@ -113,7 +113,7 @@ pub async fn my_day(
     date: Option<NaiveDate>,
 ) -> Result<MyDay, AppError> {
     let scope = me::own_scope(actor)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let Some(staff_id) = org::profile::own_staff_id(&mut tx, actor).await? else {
         tx.commit().await?;
         return Ok(MyDay {

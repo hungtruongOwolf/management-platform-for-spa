@@ -461,7 +461,7 @@ pub async fn of_sale(
 /// `GET /customer-packages/{id}` (`customer.read`).
 pub async fn get(pool: &PgPool, actor: &Actor, id: Uuid) -> Result<CustomerPackage, AppError> {
     actor.require(Permission::CustomerRead)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
@@ -478,7 +478,7 @@ pub async fn for_customer(
     customer_id: Uuid,
 ) -> Result<Vec<CustomerPackage>, AppError> {
     actor.require(Permission::CustomerRead)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if !crm::service::exists_in(&mut tx, customer_id).await? {
         return Err(AppError::NotFound);
     }
@@ -504,7 +504,7 @@ pub async fn sale_notes(
     if sale_ids.is_empty() || !actor.can(Permission::CustomerHealthNotesRead) {
         return Ok(HashMap::new());
     }
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let tenant = tx.tenant().as_uuid();
     let rows = sqlx::query!(
         r#"SELECT s.id, s.note_ct AS "note_ct!"

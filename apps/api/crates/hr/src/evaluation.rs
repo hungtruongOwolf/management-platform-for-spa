@@ -275,7 +275,7 @@ pub async fn sheet(
     month: Option<Month>,
 ) -> Result<EvaluationSheet, AppError> {
     actor.require(Permission::EvaluationRecord)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let today = period::today(&mut tx).await?;
     let month = month.unwrap_or_else(|| Month::of(today));
     let info = period::info(&mut tx, month).await?;
@@ -460,7 +460,7 @@ pub async fn history(
     let to = to.map(|m| Month::parse("to", m)).transpose()?;
     let staff_id = staff_id
         .ok_or_else(|| AppError::Validation(vec![FieldError::new("staff_id", "required")]))?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let today = period::today(&mut tx).await?;
     let (from, to) = history_range(from, to, Month::of(today))?;
     let scope = RecordScope::load(&mut tx, actor).await?;
@@ -510,7 +510,7 @@ pub async fn record(
     if matches!(s.result, Level::M3 | Level::Fail) && coaching.is_none() {
         errors.push(FieldError::new("coaching_plan", "required"));
     }
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let today = period::today(&mut tx).await?;
     if input.month > Month::of(today) {
         errors.push(FieldError::new("month", "in_future"));

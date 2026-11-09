@@ -52,7 +52,7 @@ pub async fn create(
     role: LoginRole,
 ) -> Result<LoginCreated, AppError> {
     actor.require(Permission::StaffManage)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let before = profile::load_one(&mut tx, id, true).await?;
     profile::fresh(&before, version)?;
     if before.user_id.is_some() {
@@ -103,7 +103,7 @@ pub async fn reset_password(
     id: Uuid,
 ) -> Result<TemporaryPassword, AppError> {
     actor.require(Permission::StaffManage)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let user = managed_login(&mut tx, actor, id).await?;
     if !repo::is_active_member(&mut tx, user.as_uuid()).await? {
         return Err(AppError::Conflict {
@@ -144,7 +144,7 @@ pub async fn set_role(
     role: LoginRole,
 ) -> Result<ProfileView, AppError> {
     actor.require(Permission::StaffManage)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let user = managed_login(&mut tx, actor, id).await?;
     let p = profile::profile_in(&mut tx, id).await?;
     if p.employment.current().is_none() {
@@ -189,7 +189,7 @@ pub struct ResetRequest {
 /// `GET /staff/password-reset-requests` (`staff.manage`): open, unexpired requests, oldest first.
 pub async fn reset_requests(pool: &PgPool, actor: &Actor) -> Result<Vec<ResetRequest>, AppError> {
     actor.require(Permission::StaffManage)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let requests = login::reset_requests(&mut tx).await?;
     let accounts = repo::accounts(&mut tx).await?;
     tx.commit().await?;
@@ -213,7 +213,7 @@ pub async fn reset_requests(pool: &PgPool, actor: &Actor) -> Result<Vec<ResetReq
 /// unknown, closed or another spa's request.
 pub async fn dismiss_request(pool: &PgPool, actor: &Actor, id: Uuid) -> Result<(), AppError> {
     actor.require(Permission::StaffManage)?;
-    let mut tx = TenantTx::begin(pool, actor.tenant_id).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let user = login::dismiss_request(&mut tx, id, actor.user_id)
         .await?
         .ok_or(AppError::NotFound)?;
