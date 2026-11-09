@@ -116,7 +116,9 @@ function roster(details: boolean): StaffProfile[] {
       tenure_days: 615,
       tenure_months: 20,
       login_linked: true,
-      ...(details ? { details: { phone: "0905 111 222", note: null, user_id: "u-lan", user_name: "KTV Lan" } } : {}),
+      ...(details
+        ? { details: { phone: "0905 111 222", note: null, user_id: "u-lan", user_name: "KTV Lan", login: { phone: "0912 300 111", role: "technician", locked: false } } }
+        : {}),
     },
     {
       ...base,
@@ -1329,6 +1331,9 @@ describe("Hồ sơ nhân viên (roster)", () => {
     const table = await screen.findByRole("table", { name: "Danh sách nhân sự" });
     // People without a login: nudged in Hồ sơ nhân viên (they count as technicians until they have one).
     expect(screen.getByText(/Chưa có tài khoản đăng nhập: Phạm Thị Hoa\./)).toBeInTheDocument();
+    // "Tài khoản" shows the phone the person signs in with (ADR-0019 D20), not the login's name.
+    expect(within(table).getByText("0912 300 111")).toBeInTheDocument();
+    expect(within(table).queryByText("KTV Lan")).not.toBeInTheDocument();
     await userEvent.click(within(table).getByRole("button", { name: "Lê Thị Lan" }));
     const sheet = await screen.findByRole("dialog", { name: "Lê Thị Lan" });
     expect(within(sheet).getByRole("heading", { name: "Tài khoản đăng nhập" })).toBeInTheDocument();
@@ -1347,6 +1352,10 @@ describe("Hồ sơ nhân viên (roster)", () => {
     });
     const post = requests(spy).find((r) => r.url.endsWith("/staff/s-lan/end"));
     expect(post?.body).toEqual({ ended_on: today, reason: "Chuyển công tác", lock_login: true });
+    // ADR-0019 D20: done means back to the roster, not to the person's sheet.
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
   });
 
   it("owner: a refusal for future bookings lists them, each opening its day of the calendar (F24)", async () => {
