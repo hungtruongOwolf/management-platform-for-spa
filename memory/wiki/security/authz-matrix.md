@@ -169,7 +169,7 @@ Nguồn sự thật: bảng `ROUTES` trong `apps/api/crates/app/tests/authz_matr
 | `GET /customers`, `/customers/{id}`, `/customers/phone-check`, `/customers/{id}/follow-ups`, `/customers/{id}/packages`, `/customer-packages/{id}`, `/packages` | `customer.read` | O M | ghi chú sức khỏe / ghi chú gói chỉ khi có `customer.health_notes.read` |
 | `GET /customers/inactive`, `/customer-packages/{id}/usage` | `customer.read` | O M | + `visit.read` |
 | `GET /customers/{id}/history`, `/customers/{id}/summary` | `customer.read` | O M | + `visit.read` + `sale.read` |
-| `POST /customers`, `PUT /customers/{id}` | `customer.write` | O M | |
+| `POST /customers`, `PUT /customers/{id}` | `customer.write` | O M | `POST` bắt buộc `Idempotency-Key` (ADR-0019 D11), quyền kiểm trước key/body |
 | `PUT /customers/{id}/health-note` | `customer.health_notes.write` | O M | |
 | `POST /customers/{id}/follow-ups` | `customer.follow_up` | O M | |
 | `GET /staff` | `staff.read_basic` | O M T | picker |

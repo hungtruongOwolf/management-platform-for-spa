@@ -14,7 +14,7 @@ use chrono::Utc;
 use chrono_tz::Asia::Ho_Chi_Minh;
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
-    session_for,
+    post_customer, session_for,
 };
 use identity::SystemRole;
 use kernel::testing::app_pool;
@@ -108,10 +108,8 @@ async fn desk(pool: PgPool) -> Setup<Desk> {
         ("Nguyễn Thị Hà", "0905111222"),
         ("Trần Thị Mẹ", "0905333444"),
     ] {
-        let c = call(
+        let c = post_customer(
             &h.app,
-            "POST",
-            "/customers",
             Some(&owner),
             Some(json!({"full_name": name, "phone": phone, "gender": "female"})),
         )

@@ -10,7 +10,7 @@ use catalog::service::seed_menu;
 use chrono::{Datelike, Duration, FixedOffset, NaiveDate, Utc};
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
-    session_for,
+    post_customer, session_for,
 };
 use identity::SystemRole;
 use serde_json::{Value, json};
@@ -112,14 +112,7 @@ impl Spa {
     }
 
     async fn customer(&self, body: Value) -> Reply {
-        call(
-            &self.h.app,
-            "POST",
-            "/customers",
-            Some(&self.manager),
-            Some(body),
-        )
-        .await
+        post_customer(&self.h.app, Some(&self.manager), Some(body)).await
     }
 
     async fn put_customer(&self, id: &str, version: i64, body: Value) -> Reply {

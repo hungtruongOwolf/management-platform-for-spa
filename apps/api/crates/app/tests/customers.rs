@@ -3,7 +3,10 @@
 mod common;
 
 use axum::http::StatusCode;
-use common::{OWNER_PHONE, TestResult, add_member, call, call_with_headers, harness, session_for};
+use common::{
+    OWNER_PHONE, TestResult, add_member, call, call_with_headers, harness, post_customer,
+    session_for,
+};
 use identity::SystemRole;
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -17,7 +20,7 @@ fn ha() -> Value {
 async fn creates_a_customer_and_finds_her_by_phone_or_accentless_name(pool: PgPool) -> TestResult {
     let h = harness(pool).await?;
     let owner = session_for(&h, OWNER_PHONE).await;
-    let created = call(&h.app, "POST", "/customers", Some(&owner), Some(ha())).await;
+    let created = post_customer(&h.app, Some(&owner), Some(ha())).await;
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
     assert_eq!(
         (
@@ -83,13 +86,11 @@ fn urlencode(s: &str) -> String {
 async fn equivalent_phone_spellings_are_one_customer(pool: PgPool) -> TestResult {
     let h = harness(pool).await?;
     let owner = session_for(&h, OWNER_PHONE).await;
-    let first = call(&h.app, "POST", "/customers", Some(&owner), Some(ha())).await;
+    let first = post_customer(&h.app, Some(&owner), Some(ha())).await;
     let id = first.body["id"].clone();
     for phone in ["0905111222", "+84 905 111 222", "0905.111.222"] {
-        let dup = call(
+        let dup = post_customer(
             &h.app,
-            "POST",
-            "/customers",
             Some(&owner),
             Some(json!({"full_name": "Ai đó", "phone": phone})),
         )
@@ -104,10 +105,8 @@ async fn equivalent_phone_spellings_are_one_customer(pool: PgPool) -> TestResult
             "AC2.4: points at the existing profile"
         );
     }
-    let bad = call(
+    let bad = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&owner),
         Some(json!({"full_name": "X", "phone": "12345"})),
     )
@@ -120,11 +119,103 @@ async fn equivalent_phone_spellings_are_one_customer(pool: PgPool) -> TestResult
     Ok(())
 }
 
+/// ADR-0019 D11: a double click (or a retry after a lost response) on "Tạo khách" sends the same
+/// key twice and gets one profile. Red before: two anonymous walk-in profiles (no phone, so no
+/// unique index stops the second).
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn creating_a_customer_twice_with_one_key_makes_one_profile(pool: PgPool) -> TestResult {
+    let h = harness(pool).await?;
+    let owner = session_for(&h, OWNER_PHONE).await;
+    let key = uuid::Uuid::now_v7().to_string();
+    let headers = [("idempotency-key", key.as_str())];
+    let walk_in = json!({"gender": "female", "health_note": "Dị ứng tinh dầu"});
+    let mut ids = Vec::new();
+    for _ in 0..2 {
+        let r = call_with_headers(
+            &h.app,
+            "POST",
+            "/customers",
+            Some(&owner),
+            Some(walk_in.clone()),
+            &headers,
+        )
+        .await;
+        assert_eq!(r.status, StatusCode::CREATED, "{}", r.body);
+        assert_eq!(r.body["health_note"], "Dị ứng tinh dầu", "{}", r.body);
+        ids.push(r.body["id"].clone());
+    }
+    assert_eq!(ids[0], ids[1], "the replay names the first profile");
+    let profiles: i64 = sqlx::query_scalar("SELECT count(*) FROM app.customer")
+        .fetch_one(&h.owner)
+        .await?;
+    assert_eq!(profiles, 1);
+    // The record holds the id only: no health note, name or phone at rest in it.
+    let stored: String =
+        sqlx::query_scalar("SELECT response_body::text FROM app.idempotency_record")
+            .fetch_one(&h.owner)
+            .await?;
+    assert!(!stored.contains("Dị ứng"), "{stored}");
+
+    let other_body = call_with_headers(
+        &h.app,
+        "POST",
+        "/customers",
+        Some(&owner),
+        Some(json!({"gender": "male"})),
+        &headers,
+    )
+    .await;
+    assert_eq!(
+        (other_body.status, other_body.body["code"].as_str()),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("idempotency.key_reuse_mismatch")
+        )
+    );
+    let no_key = call(&h.app, "POST", "/customers", Some(&owner), Some(walk_in)).await;
+    assert_eq!(
+        (no_key.status, no_key.body["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("idempotency.key_required"))
+    );
+    Ok(())
+}
+
+/// F17: on POST /customers and POST /customers/{id}/follow-ups the right is checked before the
+/// key and the body, so a technician hears 403 and learns nothing about what the route takes.
+/// Red before: 400 idempotency.key_required.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn customer_writes_check_the_right_before_the_key_and_body(pool: PgPool) -> TestResult {
+    let h = harness(pool).await?;
+    add_member(
+        &h.owner,
+        "vpyd",
+        "0912000888",
+        "KTV Lan",
+        SystemRole::Technician,
+    )
+    .await?;
+    let tech = session_for(&h, "0912000888").await;
+    let id = uuid::Uuid::now_v7();
+    for path in [
+        "/customers".to_owned(),
+        format!("/customers/{id}/follow-ups"),
+    ] {
+        let r = call(&h.app, "POST", &path, Some(&tech), Some(json!({"x": 1}))).await;
+        assert_eq!(
+            (r.status, r.body["code"].as_str()),
+            (StatusCode::FORBIDDEN, Some("auth.forbidden")),
+            "{path}: {}",
+            r.body
+        );
+    }
+    Ok(())
+}
+
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn health_notes_are_encrypted_and_hidden_without_permission(pool: PgPool) -> TestResult {
     let h = harness(pool).await?;
     let owner = session_for(&h, OWNER_PHONE).await;
-    let created = call(&h.app, "POST", "/customers", Some(&owner), Some(ha())).await;
+    let created = post_customer(&h.app, Some(&owner), Some(ha())).await;
     let id = created.body["id"].as_str().unwrap_or_default().to_owned();
 
     let stored: Vec<u8> = sqlx::query_scalar("SELECT health_note_ct FROM app.customer")
@@ -169,10 +260,8 @@ async fn health_notes_are_encrypted_and_hidden_without_permission(pool: PgPool) 
         seen.body
     );
 
-    let write = call(
+    let write = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&reception),
         Some(json!({"full_name": "B", "phone": "0905999888", "health_note": "x"})),
     )
@@ -199,7 +288,7 @@ async fn health_notes_are_encrypted_and_hidden_without_permission(pool: PgPool) 
 async fn owner_updates_profile_and_health_note_with_optimistic_locking(pool: PgPool) -> TestResult {
     let h = harness(pool).await?;
     let owner = session_for(&h, OWNER_PHONE).await;
-    let created = call(&h.app, "POST", "/customers", Some(&owner), Some(ha())).await;
+    let created = post_customer(&h.app, Some(&owner), Some(ha())).await;
     let id = created.body["id"].as_str().unwrap_or_default().to_owned();
 
     let profile = json!({"full_name": "Nguyễn Thị Hà", "phone": "0905111222", "gender": "female", "birth_year": 1985, "address": "Đông Hà", "source": null, "note": "Khách quen"});
@@ -253,10 +342,8 @@ async fn decomposed_unicode_names_are_stored_composed_and_found(pool: PgPool) ->
     let h = harness(pool).await?;
     let owner = session_for(&h, OWNER_PHONE).await;
     let decomposed = "Le\u{0302} Thi\u{0323} A\u{0301}nh"; // "Lê Thị Ánh" with combining marks
-    let created = call(
+    let created = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&owner),
         Some(json!({"full_name": decomposed, "phone": "0987654321"})),
     )
@@ -278,7 +365,7 @@ async fn decomposed_unicode_names_are_stored_composed_and_found(pool: PgPool) ->
 async fn technicians_and_other_spas_cannot_reach_customers(pool: PgPool) -> TestResult {
     let h = harness(pool).await?;
     let owner = session_for(&h, OWNER_PHONE).await;
-    let created = call(&h.app, "POST", "/customers", Some(&owner), Some(ha())).await;
+    let created = post_customer(&h.app, Some(&owner), Some(ha())).await;
     let id = created.body["id"].as_str().unwrap_or_default().to_owned();
 
     add_member(
@@ -332,10 +419,8 @@ async fn technicians_and_other_spas_cannot_reach_customers(pool: PgPool) -> Test
         json!([])
     );
     // Spa B may register the same phone: uniqueness is per spa.
-    let same_phone = call(
+    let same_phone = post_customer(
         &h.app,
-        "POST",
-        "/customers",
         Some(&other),
         Some(json!({"full_name": "Hà (spa B)", "phone": "0905111222"})),
     )

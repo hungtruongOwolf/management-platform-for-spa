@@ -8,7 +8,7 @@ use catalog::service::seed_menu;
 use chrono::{Duration, FixedOffset, NaiveDate, Utc};
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
-    session_for,
+    post_customer, session_for,
 };
 use identity::SystemRole;
 use serde_json::{Value, json};
@@ -104,10 +104,8 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
         ("Nguyễn Thị Hà", "0905111222", "female"),
         ("Trần Văn Đức", "0905333444", "male"),
     ] {
-        let c = call(
+        let c = post_customer(
             &h.app,
-            "POST",
-            "/customers",
             Some(&manager),
             Some(json!({"full_name": name, "phone": phone, "gender": gender})),
         )
@@ -410,10 +408,8 @@ async fn phone_less_customers_book_and_the_overlap_rule_keys_on_the_record(
     let s = spa(pool).await?;
     let mut ids = Vec::new();
     for name in ["Chồng của chị Hà", "Con của chị Hà"] {
-        let c = call(
+        let c = post_customer(
             &s.h.app,
-            "POST",
-            "/customers",
             Some(&s.manager),
             Some(json!({"full_name": name, "gender": "male"})),
         )
@@ -668,10 +664,8 @@ async fn an_appointment_becomes_a_visit_through_the_visit_rules(pool: PgPool) ->
             Some("appointment.customer_required")
         )
     );
-    let mai = call(
+    let mai = post_customer(
         &s.h.app,
-        "POST",
-        "/customers",
         Some(&s.manager),
         Some(json!({"full_name": "Chị Mai", "phone": "0905999000", "gender": "female"})),
     )
@@ -1499,10 +1493,8 @@ async fn served_companions_get_their_own_technician_and_block(pool: PgPool) -> T
             Some("appointment.customer_required")
         )
     );
-    let profile = call(
+    let profile = post_customer(
         &s.h.app,
-        "POST",
-        "/customers",
         Some(&s.manager),
         Some(json!({"full_name": "Anh Minh", "phone": "0905123123", "gender": "male"})),
     )
@@ -1626,10 +1618,8 @@ async fn group_members_are_served_one_by_one(pool: PgPool) -> TestResult {
     assert_eq!(twice.body["errors"][0]["field"], "customer_id");
     assert_eq!(twice.body["errors"][0]["code"], "duplicate");
     // ... but becomes an anonymous walk-in profile in one step (ADR-0011).
-    let walk_in = call(
+    let walk_in = post_customer(
         &s.h.app,
-        "POST",
-        "/customers",
         Some(&s.manager),
         Some(json!({"full_name": null, "phone": null})),
     )

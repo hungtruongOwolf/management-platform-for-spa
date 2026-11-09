@@ -91,12 +91,12 @@ async function signedIn(): Promise<{ api: APIRequestContext; cookie: string }> {
 test("hot read endpoints stay under the p95 budget", async () => {
   test.setTimeout(5 * 60_000);
   const { api, cookie } = await signedIn();
-  const headers = () => ({ Cookie: cookie, "X-Forwarded-For": nextIp() });
+  const headers = (extra: Record<string, string> = {}) => ({ Cookie: cookie, "X-Forwarded-For": nextIp(), ...extra });
 
   for (let i = 0; i < SEEDED_CUSTOMERS; i += 1) {
     const name = `${FAMILY[i % FAMILY.length] ?? ""} ${MIDDLE[i % MIDDLE.length] ?? ""} ${GIVEN[i % GIVEN.length] ?? ""}`;
     const response = await api.post("/api/v1/customers", {
-      headers: headers(),
+      headers: headers({ "Idempotency-Key": crypto.randomUUID() }),
       data: {
         full_name: name,
         phone: `0935${String(100_000 + i)}`,
@@ -222,7 +222,7 @@ test("front-desk writes and the reads around them stay under budget", async () =
   expect(plan.status()).toBe(201);
   const planId = ((await plan.json()) as { id: string }).id;
   const customer = await api.post("/api/v1/customers", {
-    headers: headers(),
+    headers: headers({ "Idempotency-Key": crypto.randomUUID() }),
     data: {
       full_name: "Khách Đo Hiệu Năng",
       phone: `0936${String(Date.now()).slice(-6)}`,

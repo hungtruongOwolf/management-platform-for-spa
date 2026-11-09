@@ -1,6 +1,6 @@
 import type { Customer, CustomerSummary } from "@vpyd/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { CustomerName } from "../../app/CustomerName";
 import { Icon } from "../../app/Icon";
 import { messageFor } from "../../lib/errors";
@@ -47,9 +47,12 @@ export function CustomerSearch({
   const [pickedAt, setPickedAt] = useState<string | null>(null);
   const listId = useId();
   const queryClient = useQueryClient();
+  // One key per walk-in attempt (ADR-0019 D11): a double click makes one profile.
+  const walkInKey = useRef(crypto.randomUUID());
   const walkIn = useMutation({
-    mutationFn: createWalkIn,
+    mutationFn: () => createWalkIn(walkInKey.current),
     onSuccess: (c) => {
+      walkInKey.current = crypto.randomUUID();
       void queryClient.invalidateQueries({ queryKey: ["customers"] });
       onWalkIn?.(c);
     },

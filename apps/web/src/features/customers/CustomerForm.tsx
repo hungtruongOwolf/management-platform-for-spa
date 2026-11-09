@@ -1,7 +1,7 @@
 import type { Customer } from "@vpyd/api-client";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { DateField } from "../../components/DateField";
@@ -128,6 +128,8 @@ export function CustomerForm({
       health_note: "",
     },
   });
+  // One key per create attempt (ADR-0019 D11): a double click replays, a success starts the next.
+  const createKey = useRef(crypto.randomUUID());
   const mutation = useMutation({
     mutationFn: (v: Values) => {
       const profile = {
@@ -143,12 +145,16 @@ export function CustomerForm({
       };
       return customer
         ? updateCustomer(customer.id, customer.version, profile)
-        : createCustomer({
-            ...profile,
-            health_note: canWriteHealth ? opt(v.health_note) : null,
-          });
+        : createCustomer(
+            {
+              ...profile,
+              health_note: canWriteHealth ? opt(v.health_note) : null,
+            },
+            createKey.current,
+          );
     },
     onSuccess: (saved) => {
+      createKey.current = crypto.randomUUID();
       // The saved profile comes back in the reply: the form closes now, lists refresh behind it.
       void queryClient.invalidateQueries({ queryKey: ["customers"] });
       onSaved(saved);

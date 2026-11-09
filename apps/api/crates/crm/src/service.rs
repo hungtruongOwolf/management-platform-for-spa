@@ -6,6 +6,7 @@ use crate::repo::{self, CustomerFields, CustomerRow, SummaryRow};
 use crate::text::{clean_name, like_escape, search_key};
 use chrono::{Datelike, NaiveDate};
 use kernel::audit::{self, AuditEntry, REDACTED};
+use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Permission, PhoneE164, TenantTx};
 use serde_json::json;
 use sqlx::PgPool;
@@ -225,16 +226,36 @@ fn audit_snapshot(row: &CustomerRow) -> serde_json::Value {
     })
 }
 
+/// `POST /customers`, idempotent on `key` (ADR-0019 D11): a double click or a retry with the same
+/// key and body answers with the profile the first request created, never a second profile. The
+/// idempotency record keeps only the new id, so no name, phone or health note sits in it; a
+/// replay reads the profile as it is now (`404` once it was anonymised). A refused create
+/// (validation, `409 customer.phone_taken`) rolls the key back with it: nothing is stored, so the
+/// form may send the corrected body under the same key.
 pub async fn create(
     pool: &PgPool,
     cipher: &FieldCipher,
     actor: &Actor,
+    key: Uuid,
+    request_hash: [u8; 32],
     input: ProfileInput,
     health_note: Option<&str>,
 ) -> Result<CustomerView, AppError> {
     actor.require(Permission::CustomerWrite)?;
     let mut tx = TenantTx::for_actor(pool, actor).await?;
+    if let Claim::Replay { body, .. } =
+        idempotency::claim(&mut tx, actor, key, request_hash).await?
+    {
+        let id = body["id"]
+            .as_str()
+            .and_then(|id| Uuid::parse_str(id).ok())
+            .ok_or_else(|| AppError::Internal("customer create replay without an id".into()))?;
+        let row = repo::get(&mut tx, id).await?.ok_or(AppError::NotFound)?;
+        tx.commit().await?;
+        return view(cipher, actor, row);
+    }
     let view = create_in(&mut tx, cipher, actor, input, health_note).await?;
+    idempotency::complete(&mut tx, actor, key, 201, &json!({ "id": view.row.id })).await?;
     tx.commit().await?;
     Ok(view)
 }

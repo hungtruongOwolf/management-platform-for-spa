@@ -89,6 +89,12 @@ interface Job {
  * what is booked → the group as links → who serves + arrival → the rare ways out. The technician
  * is a plain update saved on change; a companion without a profile gets one in one tap.
  */
+const newProfileKeys = () => ({
+  booked: crypto.randomUUID(),
+  phoneless: crypto.randomUUID(),
+  walkIn: crypto.randomUUID(),
+});
+
 export function AppointmentSheet({
   a,
   cal,
@@ -126,10 +132,17 @@ export function AppointmentSheet({
   const [taken, setTaken] = useState<Customer | null>(null);
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["appointments"] });
+  /**
+   * One Idempotency-Key per kind of profile this sheet may create (ADR-0019 D11): a double press
+   * or a retry after the link failed gets the profile made the first time, never a second one.
+   */
+  const profileKeys = useRef(newProfileKeys());
   const action = useMutation({
     mutationFn: (job: Job) => job.run(),
-    onSuccess: (saved) => {
+    onSuccess: (saved, job) => {
       latest.current = saved;
+      // The profile is made and linked: the next profile (another booking) is a new attempt.
+      if (job.kind === "profile") profileKeys.current = newProfileKeys();
       setClosing(null);
       setTaken(null);
       setUndoAsked(false);
@@ -201,10 +214,13 @@ export function AppointmentSheet({
   const createProfile = (withPhone: boolean) => {
     send("profile", async () => {
       try {
-        const c = await createCustomer({
-          full_name: a.customer_name,
-          phone: withPhone ? localPhone(a.customer_phone) : null,
-        });
+        const c = await createCustomer(
+          {
+            full_name: a.customer_name,
+            phone: withPhone ? localPhone(a.customer_phone) : null,
+          },
+          withPhone ? profileKeys.current.booked : profileKeys.current.phoneless,
+        );
         return await link(c.id);
       } catch (e) {
         if (
@@ -217,10 +233,10 @@ export function AppointmentSheet({
           if (group.some((x) => x.customer_id === e.existingId))
             return link(
               (
-                await createCustomer({
-                  full_name: a.customer_name,
-                  phone: null,
-                })
+                await createCustomer(
+                  { full_name: a.customer_name, phone: null },
+                  profileKeys.current.phoneless,
+                )
               ).id,
             );
           setTaken(await queryClient.query(customerQuery(e.existingId)));
@@ -230,7 +246,7 @@ export function AppointmentSheet({
     });
   };
   const asWalkIn = () => {
-    send("profile", async () => link((await createWalkIn()).id));
+    send("profile", async () => link((await createWalkIn(profileKeys.current.walkIn)).id));
   };
 
   const saveStaff = (next: string) => {

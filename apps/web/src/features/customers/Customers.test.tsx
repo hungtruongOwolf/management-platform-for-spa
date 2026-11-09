@@ -40,6 +40,8 @@ interface Call {
   method: string;
   url: string;
   body: unknown;
+  /** The Idempotency-Key header, if sent. */
+  key: string | null;
 }
 
 function serve(
@@ -61,6 +63,7 @@ function serve(
         typeof init?.body === "string"
           ? (JSON.parse(init.body) as unknown)
           : undefined,
+      key: new Headers(init?.headers).get("Idempotency-Key"),
     };
     calls.push(call);
     const custom = handle(call);
@@ -280,6 +283,33 @@ describe("customer identity (EM 2026-11-07, ADR-0011)", () => {
     birth_year: null,
     birth_date: null,
   };
+
+  it("a retried save sends the same Idempotency-Key, the next profile a new one (ADR-0019 D11)", async () => {
+    let posts = 0;
+    const calls = serve(ALL, (c) => {
+      if (c.method !== "POST" || c.url !== "/api/v1/customers") return undefined;
+      posts += 1;
+      // The first answer is lost (the server may have made the profile); the retry replays it.
+      return posts === 1
+        ? new Response(null, { status: 503 })
+        : Response.json(WALK_IN, { status: 201 });
+    });
+    at("/khach-hang");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Khách mới" }));
+    const form = screen.getByRole("form", { name: "Khách mới" });
+    await user.click(within(form).getByRole("button", { name: "Lưu khách" }));
+    await vi.waitFor(() => {
+      expect(posts).toBe(1);
+    });
+    await user.click(within(form).getByRole("button", { name: "Lưu khách" }));
+    await vi.waitFor(() => {
+      expect(posts).toBe(2);
+    });
+    const keys = calls.filter((c) => c.method === "POST").map((c) => c.key);
+    expect(keys[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(keys[1]).toBe(keys[0]);
+  });
 
   it("saves a profile with neither name nor phone (anonymous walk-in)", async () => {
     const calls = serve(ALL, (c) =>

@@ -45,7 +45,7 @@ async function fixture(page: Page, tag: string): Promise<Fixture> {
   const phone = uniquePhone();
   const name = `Khách ${tag} ${phone.slice(-4)}`;
   const customer = await page.request.post("/api/v1/customers", {
-    headers: write,
+    headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
     data: { full_name: name, phone, gender: "female" },
   });
   expect(customer.status()).toBe(201);
@@ -153,7 +153,7 @@ test.describe("vòng 6: bán gói trong giỏ, giỏ nháp, chuyển sang gói",
     const motherPhone = uniquePhone();
     const motherName = `Mẹ của ${f.name}`;
     const mother = await page.request.post("/api/v1/customers", {
-      headers: write,
+      headers: { ...write, "Idempotency-Key": crypto.randomUUID() },
       data: { full_name: motherName, phone: motherPhone, gender: "female" },
     });
     expect(mother.status()).toBe(201);

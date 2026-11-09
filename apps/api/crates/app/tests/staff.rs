@@ -7,7 +7,8 @@ use axum::http::StatusCode;
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use chrono_tz::Asia::Ho_Chi_Minh;
 use common::{
-    Harness, Reply, TestResult, add_member, call, call_with_headers, harness, session_for,
+    Harness, Reply, TestResult, add_member, call, call_with_headers, harness, post_customer,
+    session_for,
 };
 use identity::SystemRole;
 use identity::provisioning::create_tenant;
@@ -253,10 +254,8 @@ impl Spa {
     }
 
     async fn customer(&self, phone: &str) -> Uuid {
-        let r = call(
+        let r = post_customer(
             &self.h.app,
-            "POST",
-            "/customers",
             Some(&self.owner),
             Some(json!({
                 "full_name": "Nguyễn Thị Hằng", "phone": phone, "gender": "female"
