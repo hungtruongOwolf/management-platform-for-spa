@@ -139,6 +139,8 @@ export function VisitUpsell({
   const nothing = lines.length === 0 && sales.length === 0;
   const problems = {
     staff: lines.some((l) => l.staffId === ""),
+    // Money is due but this role does not collect it: only 0đ additions go through.
+    collect: due > 0 && !can(me, "payment.collect"),
     cash:
       due > 0 &&
       payMode === "mixed" &&
@@ -207,9 +209,11 @@ export function VisitUpsell({
     : (problems.sale ??
       (problems.staff
         ? "Mỗi dịch vụ cần chọn KTV thực hiện."
-        : problems.cash
-          ? "Tiền mặt phải lớn hơn 0 và nhỏ hơn số phải thu."
-          : null));
+        : problems.collect
+          ? "Phần thêm có tiền phải thu: tài khoản này không được thu tiền, chỉ thêm được dịch vụ 0đ."
+          : problems.cash
+            ? "Tiền mặt phải lớn hơn 0 và nhỏ hơn số phải thu."
+            : null));
 
   const submit = () => {
     setAttempted(true);
