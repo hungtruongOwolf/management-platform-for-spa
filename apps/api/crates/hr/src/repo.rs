@@ -70,20 +70,42 @@ pub async fn rules(tx: &mut TenantTx) -> Result<Option<(Value, i64)>, AppError> 
     .map(|r| (r.rules, r.version)))
 }
 
-pub async fn put_rules(tx: &mut TenantTx, rules: &Value, by: Uuid) -> Result<i64, AppError> {
+/// Saves the rules if they are still at `expected` (0 = never saved): the new version, or `None`
+/// when another save got there first (optimistic lock, ADR-0019 D10). One statement each way,
+/// so two first saves cannot both win.
+pub async fn put_rules(
+    tx: &mut TenantTx,
+    rules: &Value,
+    by: Uuid,
+    expected: i64,
+) -> Result<Option<i64>, AppError> {
     let tenant = tx.tenant().as_uuid();
-    Ok(sqlx::query_scalar!(
-        r#"INSERT INTO app.payroll_rules (tenant_id, rules, updated_by) VALUES ($1, $2, $3)
-           ON CONFLICT (tenant_id) DO UPDATE SET rules = EXCLUDED.rules,
-             updated_by = EXCLUDED.updated_by, version = app.payroll_rules.version + 1,
-             updated_at = now()
-           RETURNING version"#,
-        tenant,
-        rules,
-        by
-    )
-    .fetch_one(tx.conn())
-    .await?)
+    let saved = if expected == 0 {
+        sqlx::query_scalar!(
+            r#"INSERT INTO app.payroll_rules (tenant_id, rules, updated_by) VALUES ($1, $2, $3)
+               ON CONFLICT (tenant_id) DO NOTHING
+               RETURNING version"#,
+            tenant,
+            rules,
+            by
+        )
+        .fetch_optional(tx.conn())
+        .await?
+    } else {
+        sqlx::query_scalar!(
+            r#"UPDATE app.payroll_rules SET rules = $2, updated_by = $3, version = version + 1,
+                 updated_at = now()
+               WHERE tenant_id = $1 AND version = $4
+               RETURNING version"#,
+            tenant,
+            rules,
+            by,
+            expected
+        )
+        .fetch_optional(tx.conn())
+        .await?
+    };
+    Ok(saved)
 }
 
 // ---------------------------------------------------------------------------------- periods

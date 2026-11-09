@@ -4048,7 +4048,7 @@ export interface components {
             rules: components["schemas"]["PayrollRules"];
             /**
              * Format: int64
-             * @description 0 = never saved (all defaults).
+             * @description 0 = never saved (all defaults). Send as `If-Match` on `PUT /payroll/rules` (ADR-0019 D10).
              */
             version: number;
         };
@@ -4811,6 +4811,11 @@ export interface components {
             loyalty_bonus_monthly: number;
             /** Format: int64 */
             meal_allowance: number;
+            /**
+             * Format: int64
+             * @description Send as `If-Match` on `PUT /staff/{id}/pay` (ADR-0019 D10; `0` while no terms exist).
+             */
+            version: number;
         };
         StaffPayWrite: {
             /** Format: int64 */
@@ -9812,6 +9817,13 @@ export interface operations {
                     "application/json": components["schemas"]["PayrollRulesDto"];
                 };
             };
+            /** @description precondition.if_match_required | precondition.if_match_invalid: If-Match is the version read, "0" when never saved */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -9819,6 +9831,13 @@ export interface operations {
                 content?: never;
             };
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description conflict.stale_version: the rules were saved since they were read */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11206,6 +11225,13 @@ export interface operations {
                     "application/json": components["schemas"]["StaffPayDto"];
                 };
             };
+            /** @description precondition.if_match_required | precondition.if_match_invalid: If-Match is the terms' version, "0" when none exist yet */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -11219,6 +11245,13 @@ export interface operations {
                 content?: never;
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description conflict.stale_version: the terms changed since they were read */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };

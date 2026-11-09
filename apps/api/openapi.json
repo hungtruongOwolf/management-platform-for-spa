@@ -3991,8 +3991,14 @@
               }
             }
           },
+          "400": {
+            "description": "precondition.if_match_required | precondition.if_match_invalid: If-Match is the version read, \"0\" when never saved"
+          },
           "401": {},
           "403": {},
+          "412": {
+            "description": "conflict.stale_version: the rules were saved since they were read"
+          },
           "422": {}
         }
       }
@@ -5263,9 +5269,15 @@
               }
             }
           },
+          "400": {
+            "description": "precondition.if_match_required | precondition.if_match_invalid: If-Match is the terms' version, \"0\" when none exist yet"
+          },
           "401": {},
           "403": {},
           "404": {},
+          "412": {
+            "description": "conflict.stale_version: the terms changed since they were read"
+          },
           "422": {}
         }
       }
@@ -11616,7 +11628,7 @@
           "version": {
             "type": "integer",
             "format": "int64",
-            "description": "0 = never saved (all defaults)."
+            "description": "0 = never saved (all defaults). Send as `If-Match` on `PUT /payroll/rules` (ADR-0019 D10)."
           }
         }
       },
@@ -13526,7 +13538,8 @@
           "base_salary",
           "commission_rate_bp",
           "loyalty_bonus_monthly",
-          "meal_allowance"
+          "meal_allowance",
+          "version"
         ],
         "properties": {
           "base_salary": {
@@ -13545,6 +13558,11 @@
           "meal_allowance": {
             "type": "integer",
             "format": "int64"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Send as `If-Match` on `PUT /staff/{id}/pay` (ADR-0019 D10; `0` while no terms exist)."
           }
         }
       },

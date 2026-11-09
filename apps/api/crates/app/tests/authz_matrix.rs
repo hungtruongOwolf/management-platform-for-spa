@@ -371,7 +371,8 @@ const ROUTES: &[Route] = &[
         Access::Perm(P::StaffManage, OWNER_ONLY),
     )
     .id(Target::Staff)
-    .body(pay_body),
+    .body(pay_body)
+    .if_match(),
     // staff management — hr
     route(
         "GET",
@@ -469,7 +470,8 @@ const ROUTES: &[Route] = &[
         "/api/v1/payroll/rules",
         Access::Perm(P::PayrollClose, OWNER_ONLY),
     )
-    .body(payroll_rules_body),
+    .body(payroll_rules_body)
+    .if_match(),
     route(
         "GET",
         "/api/v1/me/staff",

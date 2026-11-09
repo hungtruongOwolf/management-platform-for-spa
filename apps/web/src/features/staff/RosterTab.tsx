@@ -434,6 +434,8 @@ function ProfileForm({
   // the retry updates that one (its id and version) instead of hiring the person twice or sending
   // a version the server has moved past.
   const written = useRef<StaffProfile | null>(null);
+  // The pay terms' version this form edits (0: none yet); moves on with each save (ADR-0019 D10).
+  const payVersion = useRef(pay?.version ?? 0);
   const save = useMutation({
     mutationFn: async () => {
       const body = {
@@ -448,12 +450,13 @@ function ProfileForm({
       const saved = target ? await updateProfile(target.id, target.version, body) : await createProfile({ ...body, user_id: null });
       written.current = saved;
       if (payVisible && base) {
-        await savePay(saved.id, {
+        const terms = await savePay(saved.id, payVersion.current, {
           base_salary: digits(base),
           commission_rate_bp: Math.round(Number(rate.replace(",", ".")) * 100),
           loyalty_bonus_monthly: digits(loyalty),
           meal_allowance: digits(meal),
         });
+        payVersion.current = terms.version;
       }
       return saved;
     },
