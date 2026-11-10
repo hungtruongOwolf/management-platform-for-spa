@@ -87,6 +87,7 @@ SQLX_OFFLINE=true DATABASE_URL="$STAGING_OWNER_URL" APP_DATABASE_URL="<app_rw UR
 
 ## Kiểm tra sau deploy
 Thay `<staging>` bằng origin trong `APP_PUBLIC_ORIGIN`:
+- `npx vercel ls` phải có deployment **mới** (cột Age vài phút) và output deploy có `Aliased`. Lệnh deploy từng thoát 0 mà không tạo deployment (2026-11-09), khi đó các URL dưới vẫn 200 vì đang chạy bản cũ; gọi thêm một route chỉ bản mới có (không cookie → 401, bản cũ → 404).
 - `curl -s <staging>/api/v1/health` → 200.
 - `curl -s -o /dev/null -w '%{http_code}' <staging>/api/v1/me` → 401; `<staging>/api/v1/admin/me` → 401; `<staging>/admin` → 200.
 - Mở `/dang-nhap`, đăng nhập chủ spa (mật khẩu ở `.env.staging`), cài MFA lần đầu.
