@@ -407,6 +407,7 @@ impl Books<'_> {
     /// Every cell of the plan, the manager's by the owner (decision C), in batches of at most
     /// [`hr::attendance::MAX_ENTRIES`], months side by side.
     async fn attendance(&self, report: &mut StaffReport) -> anyhow::Result<()> {
+        let mut firsts: Vec<(bool, Vec<Entry>)> = Vec::new();
         let mut batches: Vec<(bool, Vec<Entry>)> = Vec::new();
         for month in months(self.window) {
             let (mut own, mut team) = (Vec::new(), Vec::new());
@@ -440,20 +441,32 @@ impl Books<'_> {
                 }
                 day += Duration::days(1);
             }
+            let mut first = true;
             for (by_owner, list) in [(false, team), (true, own)] {
                 for chunk in list.chunks(hr::attendance::MAX_ENTRIES) {
-                    batches.push((by_owner, chunk.to_vec()));
+                    let batch = (by_owner, chunk.to_vec());
+                    if first {
+                        firsts.push(batch);
+                        first = false;
+                    } else {
+                        batches.push(batch);
+                    }
                 }
             }
         }
-        let recorded = each(batches, self.workers, |(by_owner, batch)| async move {
+        let work = |(by_owner, batch): (bool, Vec<Entry>)| async move {
             let actor = if by_owner { self.owner } else { self.manager };
             let days = retry(|| hr::attendance::record(self.app, actor, &batch))
                 .await
                 .map_err(fail("record attendance"))?;
             Ok(days.len())
-        })
-        .await?;
+        };
+        // One batch per month first: it creates that month's `payroll_period` row. Batches of the
+        // same month racing to insert it wait on each other's open transaction (unique index), and
+        // over a slow pooler that wait hits the statement timeout (seen on staging, 2026-11-10).
+        // Months differ in key, so the first batches still run side by side.
+        let mut recorded = each(firsts, self.workers, &work).await?;
+        recorded.extend(each(batches, self.workers, &work).await?);
         report.attendance_days = recorded.iter().sum();
         Ok(())
     }
