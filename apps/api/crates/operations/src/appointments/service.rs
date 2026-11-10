@@ -50,6 +50,8 @@ struct Spa {
     profile: TenantProfile,
     settings: CalendarSettings,
     technicians: Vec<CalendarTechnician>,
+    /// The clock of this use case: the server's, except for operator back-fill (`*_as_of`).
+    now: DateTime<Utc>,
 }
 
 impl Spa {
@@ -59,7 +61,12 @@ impl Spa {
 }
 
 async fn spa(tx: &mut TenantTx) -> Result<Spa, AppError> {
-    let profile = kernel::tenant::profile(tx).await?;
+    spa_at(tx, Utc::now()).await
+}
+
+/// [`spa`] with today and "now" taken from `now` (operator back-fill only, see [`book_as_of`]).
+async fn spa_at(tx: &mut TenantTx, now: DateTime<Utc>) -> Result<Spa, AppError> {
+    let profile = kernel::tenant::profile_as_of(tx, now).await?;
     let (hours, slot) = repo::calendar_settings(tx).await?;
     // Columns: who serves customers, by login role, never by position text (ADR-0019 D14).
     let columns = org::service::serving_customers_in(tx).await?;
@@ -73,6 +80,7 @@ async fn spa(tx: &mut TenantTx) -> Result<Spa, AppError> {
                 full_name: s.full_name,
             })
             .collect(),
+        now,
     })
 }
 
@@ -778,7 +786,7 @@ async fn insert_booking(
     let durations: Vec<Option<i32>> = services.iter().map(|s| s.2).collect();
     let minutes = domain::duration_minutes(&durations, b.duration_min).map_err(slot_error)?;
     // A start already over is refused before any other rule (opening hours, grid) of that time.
-    check_time(spa, b.starts_at, Utc::now())?;
+    check_time(spa, b.starts_at, spa.now)?;
     let p = place(spa, b.starts_at, minutes, b.staff_id)?;
     check_day(spa, p.business_date)?;
     let (guest_name, guest_phone) = match &b.who {
@@ -841,6 +849,20 @@ pub async fn book(
     request_hash: [u8; 32],
     input: &AppointmentCreate,
 ) -> Result<(u16, Value), AppError> {
+    book_as_of(pool, actor, key, request_hash, input, Utc::now()).await
+}
+
+/// [`book`] with `now` as the server clock: "today", the past-slot rule and the 90-day horizon
+/// are checked against it. Operator tooling only (`app seed-demo` back-fills a year of bookings
+/// that were made before their day); no route reaches it — `POST /appointments` calls [`book`].
+pub async fn book_as_of(
+    pool: &PgPool,
+    actor: &Actor,
+    key: Uuid,
+    request_hash: [u8; 32],
+    input: &AppointmentCreate,
+    now: DateTime<Utc>,
+) -> Result<(u16, Value), AppError> {
     actor.require(Permission::AppointmentManage)?;
     let phone_rule = if input.group_with.is_some() {
         GuestPhone::Optional
@@ -864,7 +886,7 @@ pub async fn book(
         tx.commit().await?;
         return Ok((status, body));
     }
-    let spa = spa(&mut tx).await?;
+    let spa = spa_at(&mut tx, now).await?;
     let host = match input.group_with {
         Some(host) => Some(join_group(&mut tx, actor, &spa, host, &booking.who).await?),
         None => None,
@@ -1446,10 +1468,24 @@ pub async fn close(
     outcome: Outcome,
     reason: Option<&str>,
 ) -> Result<AppointmentDto, AppError> {
+    close_as_of(pool, actor, id, outcome, reason, Utc::now()).await
+}
+
+/// [`close`] with `now` as the server clock (the closed-day rule and "the start has passed").
+/// Operator tooling only (`app seed-demo`); `POST /appointments/{id}/cancel|no-show` call
+/// [`close`].
+pub async fn close_as_of(
+    pool: &PgPool,
+    actor: &Actor,
+    id: Uuid,
+    outcome: Outcome,
+    reason: Option<&str>,
+    now: DateTime<Utc>,
+) -> Result<AppointmentDto, AppError> {
     actor.require(Permission::AppointmentManage)?;
     let reason = kernel::corrections::reason(reason)?;
     let mut tx = TenantTx::for_actor(pool, actor).await?;
-    let spa = spa(&mut tx).await?;
+    let spa = spa_at(&mut tx, now).await?;
     let current = lock_open(&mut tx, actor, &spa, id).await?;
     if outcome == Outcome::NoShow {
         if parse_status(&current.status)? == Status::Arrived {
@@ -1457,7 +1493,7 @@ pub async fn close(
                 code: "appointment.already_arrived",
             });
         }
-        if current.starts_at > Utc::now() {
+        if current.starts_at > now {
             return Err(AppError::Unprocessable {
                 code: "appointment.not_started",
             });
@@ -1508,6 +1544,33 @@ pub async fn complete(
     id: Uuid,
     input: AppointmentComplete,
 ) -> Result<(u16, Value), AppError> {
+    complete_as_of(
+        pool,
+        cipher,
+        actor,
+        key,
+        request_hash,
+        id,
+        input,
+        Utc::now(),
+    )
+    .await
+}
+
+/// [`complete`] with `now` as the server clock: the visit lands on the business day of `now`
+/// (see [`crate::service::record_as_of`]). Operator tooling only (`app seed-demo`);
+/// `POST /appointments/{id}/complete` calls [`complete`].
+#[allow(clippy::too_many_arguments)]
+pub async fn complete_as_of(
+    pool: &PgPool,
+    cipher: &FieldCipher,
+    actor: &Actor,
+    key: Uuid,
+    request_hash: [u8; 32],
+    id: Uuid,
+    input: AppointmentComplete,
+    now: DateTime<Utc>,
+) -> Result<(u16, Value), AppError> {
     actor.require(Permission::AppointmentManage)?;
     actor.require(Permission::VisitRecord)?;
     let mut visit = VisitCreate {
@@ -1521,7 +1584,6 @@ pub async fn complete(
         package_sales: input.package_sales,
         companions: input.companions,
     };
-    let now = Utc::now();
 
     let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
@@ -1530,7 +1592,7 @@ pub async fn complete(
         tx.commit().await?;
         return Ok((status, body));
     }
-    let spa = spa(&mut tx).await?;
+    let spa = spa_at(&mut tx, now).await?;
     let current = lock_open(&mut tx, actor, &spa, id).await?;
     if current.business_date > spa.today() {
         return Err(AppError::Unprocessable {

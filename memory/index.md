@@ -68,7 +68,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [audit-2026-11-09](wiki/plans/audit-2026-11-09.md) — rà soát toàn bộ 2026-11-09: ~35 PR (#117–#148), migration 0041–0044, việc đã sửa, câu hỏi chờ EM, ticket còn lại
 
 ## Runbooks
-- [vercel-staging](wiki/runbooks/vercel-staging.md) — staging hiện tại: Vercel (web tĩnh + API container, pdx1) + Supabase us-west-2; biến môi trường, CLI `app`, bootstrap DB, dữ liệu demo, deploy, kiểm tra sau deploy, việc trước khi dùng thật
+- [vercel-staging](wiki/runbooks/vercel-staging.md) — staging hiện tại: Vercel (web tĩnh + API container, pdx1) + Supabase us-west-2; biến môi trường, CLI `app`, bootstrap DB, dữ liệu demo (`reset-demo` + `seed-demo` kịch bản 12 tháng, bảng xóa / giữ), deploy, kiểm tra sau deploy, việc trước khi dùng thật
 - [local-merge-gate](wiki/runbooks/local-merge-gate.md) — merge khi GitHub Actions không chạy được (dự phòng): `merge-local-gate.sh`, bảng nhãn file → bước, `--dry-run` / `--full` / `--batch`, khi nào bắt buộc `--full`
 - [staging-setup](wiki/runbooks/staging-setup.md) — **superseded cho staging** (thay bằng vercel-staging): đường VPS Docker Compose + Caddy + backup R2, còn giữ vì code `infra/` + `deploy.yml` vẫn có và là phương án production; checklist Supabase §4.2 vẫn dùng
 

@@ -30,6 +30,12 @@ impl Rng {
         self.below(100) < percent
     }
 
+    /// Uniform whole days in `0..=max` (0 when `max` is negative).
+    pub fn days(&mut self, max: i64) -> i64 {
+        let n = usize::try_from(max.max(0)).unwrap_or(0).saturating_add(1);
+        i64::try_from(self.below(n)).unwrap_or(0)
+    }
+
     pub fn pick<'a, T>(&mut self, items: &'a [T]) -> Option<&'a T> {
         items.get(self.below(items.len()))
     }

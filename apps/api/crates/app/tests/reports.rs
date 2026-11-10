@@ -1306,6 +1306,23 @@ async fn customers_who_stopped_coming_are_listed_longest_absence_first(pool: PgP
 
 // ------------------------------------------------------------------------------ AC1.11 demo
 
+/// `GET` as the owner from a client address of its own: two months of days take more requests
+/// than the per-address burst, and a `429` must never pass for a report.
+async fn get_unthrottled(h: &Harness, path: &str, session: &str) -> Reply {
+    static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let ip = format!("10.201.{}.{}", (n >> 8) & 0xff, n & 0xff);
+    call_with_headers(
+        &h.app,
+        "GET",
+        path,
+        Some(session),
+        None,
+        &[("X-Forwarded-For", ip.as_str())],
+    )
+    .await
+}
+
 /// After `seed-demo`, every day's dashboard reconciles with sums taken straight from the rows.
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn the_dashboard_reconciles_with_raw_rows_after_seed_demo(pool: PgPool) -> TestResult {
@@ -1317,8 +1334,11 @@ async fn the_dashboard_reconciles_with_raw_rows_after_seed_demo(pool: PgPool) ->
         &h.cipher,
         &app::demo::DemoOptions {
             tenant_slug: "vpyd",
-            manager_password: common::PASSWORD,
-            force_again: false,
+            manager_password: Some(common::PASSWORD),
+            technician_password: Some(common::PASSWORD),
+            former_technician_password: Some(common::PASSWORD),
+            months: 2,
+            workers: 3,
         },
     )
     .await?;
@@ -1333,20 +1353,16 @@ async fn the_dashboard_reconciles_with_raw_rows_after_seed_demo(pool: PgPool) ->
     assert!(days.len() >= 15, "three weeks of demo days: {}", days.len());
     let mut range_net = 0;
     for day in &days {
-        let report = call(
-            &h.app,
-            "GET",
-            &format!("/reports/daily?date={day}"),
-            Some(&owner),
-            None,
-        )
-        .await;
+        let report = get_unthrottled(&h, &format!("/reports/daily?date={day}"), &owner).await;
         assert_eq!(report.status, StatusCode::OK, "{}", report.body);
         let (visits, customers, voided): (i64, i64, i64) = sqlx::query_as(
             "SELECT count(*) FILTER (WHERE status = 'completed'),
                     count(DISTINCT customer_id) FILTER (WHERE status = 'completed'),
-                    count(*) FILTER (WHERE status = 'voided')
-             FROM app.visit WHERE business_date = $1",
+                    -- A visit replaced by \"Sửa lượt\" is not a cancellation.
+                    count(*) FILTER (WHERE status = 'voided' AND NOT EXISTS (
+                      SELECT 1 FROM app.visit n
+                      WHERE n.tenant_id = v.tenant_id AND n.corrects_visit_id = v.id))
+             FROM app.visit v WHERE business_date = $1",
         )
         .bind(day)
         .fetch_one(&h.owner)
@@ -1392,14 +1408,9 @@ async fn the_dashboard_reconciles_with_raw_rows_after_seed_demo(pool: PgPool) ->
             "{day}"
         );
         range_net += paid - reversed - refunded;
-        let book = call(
-            &h.app,
-            "GET",
-            &format!("/reports/ledger?from={day}&to={day}"),
-            Some(&owner),
-            None,
-        )
-        .await;
+        let book =
+            get_unthrottled(&h, &format!("/reports/ledger?from={day}&to={day}"), &owner).await;
+        assert_eq!(book.status, StatusCode::OK, "{}", book.body);
         let book_total = book.body["days"][0]["total"].as_i64().unwrap_or_default();
         assert_eq!(book_total, paid - reversed - refunded, "ledger {day}");
     }
@@ -1407,12 +1418,10 @@ async fn the_dashboard_reconciles_with_raw_rows_after_seed_demo(pool: PgPool) ->
         days.first().copied().unwrap_or_default(),
         days.last().copied().unwrap_or_default(),
     );
-    let range = call(
-        &h.app,
-        "GET",
+    let range = get_unthrottled(
+        &h,
         &format!("/reports/range?from={first}&to={last}"),
-        Some(&owner),
-        None,
+        &owner,
     )
     .await;
     assert_eq!(range.body["revenue"]["net"]["total"], range_net);

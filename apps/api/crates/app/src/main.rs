@@ -29,10 +29,17 @@ use tracing_subscriber::util::SubscriberInitExt;
 ///                                      first sign-in at /admin
 ///   `app reset-operator-mfa --username U`   lost operator authenticator (verify identity first)
 ///   `app disable-operator --username U` | `app enable-operator --username U`
-///   `app seed-demo --tenant S [--force-again]`
-///                                      fill a spa with demo data (staff, a manager login 0905000002
-///                                      whose password comes from APP_NEW_USER_PASSWORD, customers,
-///                                      sales, three weeks of visits); refuses a spa that has it
+///   `app seed-demo --tenant S [--months N] [--workers W]`
+///                                      fill a spa with one full demo scenario: N months (default
+///                                      12) of visits, packages, appointments, staff books and
+///                                      closed payroll up to today; refuses a spa that has demo
+///                                      customers. Logins reused when they exist; new ones take their
+///                                      password from env (APP_NEW_USER_PASSWORD manager,
+///                                      APP_NEW_TECHNICIAN_PASSWORD, APP_NEW_FORMER_TECHNICIAN_PASSWORD)
+///   `app reset-demo --tenant S`        delete every business row of a spa (customers, money,
+///                                      packages, appointments, staff books, its audit log); keeps
+///                                      the spa, roles, catalog, settings and logins. Needs
+///                                      APP_ENV=development or staging, set explicitly
 ///   `app import-paper-book --tenant S --file F.csv [--dry-run]`
 ///                                      one-off migration of the paper package books (columns in
 ///                                      memory/wiki/product/specs/management-views.md §7); acts as
@@ -55,13 +62,14 @@ async fn main() -> anyhow::Result<()> {
         Some("disable-operator") => set_operator_active(false).await,
         Some("enable-operator") => set_operator_active(true).await,
         Some("seed-demo") => seed_demo().await,
+        Some("reset-demo") => reset_demo().await,
         Some("import-paper-book") => import_paper_book().await,
         Some("openapi") => {
             print!("{}", app::openapi::json()?);
             Ok(())
         }
         Some(other) => anyhow::bail!(
-            "unknown command {other:?} (expected: serve | migrate | create-tenant | add-user | add-staff | seed-catalog | reset-mfa | unlock | add-operator | reset-operator-mfa | disable-operator | enable-operator | seed-demo | import-paper-book | openapi)"
+            "unknown command {other:?} (expected: serve | migrate | create-tenant | add-user | add-staff | seed-catalog | reset-mfa | unlock | add-operator | reset-operator-mfa | disable-operator | enable-operator | seed-demo | reset-demo | import-paper-book | openapi)"
         ),
     }
 }
@@ -275,17 +283,38 @@ async fn unlock() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn seed_demo() -> anyhow::Result<()> {
-    init_tracing(Environment::Development);
-    // Invented customers and money must never mix with a real spa's books.
+/// Invented customers and money must never mix with a real spa's books.
+fn refuse_production(command: &str) -> anyhow::Result<()> {
     anyhow::ensure!(
         std::env::var("APP_ENV").as_deref() != Ok("production"),
-        "seed-demo refuses APP_ENV=production: demo data is for development and staging only"
+        "{command} refuses APP_ENV=production: demo data is for development and staging only"
     );
+    Ok(())
+}
+
+/// A password read from env for a demo login that may not exist yet (`None` when unset).
+fn optional_secret(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|v| !v.is_empty())
+}
+
+async fn seed_demo() -> anyhow::Result<()> {
+    init_tracing(Environment::Development);
+    refuse_production("seed-demo")?;
     let tenant = required_flag("tenant")?;
-    let password = std::env::var("APP_NEW_USER_PASSWORD").context(
-        "APP_NEW_USER_PASSWORD is required: the demo manager's password (kept out of argv)",
-    )?;
+    let months = flag("months")
+        .map(|m| m.parse::<u32>().context("--months must be a whole number"))
+        .transpose()?
+        .unwrap_or(app::demo::DEFAULT_MONTHS);
+    let workers = flag("workers")
+        .map(|w| {
+            w.parse::<usize>()
+                .context("--workers must be a whole number")
+        })
+        .transpose()?
+        .unwrap_or(app::demo::DEFAULT_WORKERS);
+    let manager = optional_secret("APP_NEW_USER_PASSWORD");
+    let technician = optional_secret("APP_NEW_TECHNICIAN_PASSWORD");
+    let former = optional_secret("APP_NEW_FORMER_TECHNICIAN_PASSWORD");
     let data_key = std::env::var("APP_DATA_KEY")
         .context("APP_DATA_KEY is required: health notes are encrypted with the API's key")?;
     let cipher = kernel::crypto::FieldCipher::from_base64(&data_key)
@@ -293,26 +322,63 @@ async fn seed_demo() -> anyhow::Result<()> {
     let owner = owner_pool().await?;
     let app_url = std::env::var("APP_DATABASE_URL")
         .context("APP_DATABASE_URL (app_rw) is required: demo data goes through the use cases")?;
+    // Each worker holds one connection per use case; a few spare for the reads in between.
     let app = PgPoolOptions::new()
-        .max_connections(2)
+        .max_connections(u32::try_from(workers).unwrap_or(8).saturating_add(2))
+        .acquire_timeout(std::time::Duration::from_secs(60))
         .connect(&app_url)
         .await
         .context("cannot connect as app_rw")?;
     app::db_guard::check_runtime_role(&app)
         .await
         .context("APP_DATABASE_URL must be the app_rw role (RLS applies)")?;
-    let report = app::demo::seed(
+    let started = std::time::Instant::now();
+    // Boxed: the seed's future is too large for the main thread's stack (see `demo::run`).
+    let report = Box::pin(app::demo::seed(
         &owner,
         &app,
         &cipher,
         &app::demo::DemoOptions {
             tenant_slug: &tenant,
-            manager_password: &password,
-            force_again: switch("force-again"),
+            manager_password: manager.as_deref(),
+            technician_password: technician.as_deref(),
+            former_technician_password: former.as_deref(),
+            months,
+            workers,
         },
-    )
+    ))
     .await?;
-    tracing::info!(%tenant, ?report, "demo data seeded; manager login {}", app::demo::MANAGER_PHONE);
+    let summary = app::demo::summary(&owner, &tenant).await?;
+    println!(
+        "{}",
+        app::demo::render(&report, &summary, started.elapsed())
+    );
+    tracing::info!(
+        %tenant,
+        "demo data seeded; logins: manager {}, technician {}, former technician {}",
+        app::demo::MANAGER_PHONE,
+        app::demo::TECHNICIAN_PHONE,
+        app::demo::FORMER_TECHNICIAN_PHONE
+    );
+    Ok(())
+}
+
+async fn reset_demo() -> anyhow::Result<()> {
+    init_tracing(Environment::Development);
+    // Deleting is worse than inventing: an unset APP_ENV is not enough, it must say so.
+    let env = std::env::var("APP_ENV").unwrap_or_default();
+    anyhow::ensure!(
+        matches!(env.as_str(), "development" | "staging"),
+        "reset-demo deletes a spa's business data: set APP_ENV=development or APP_ENV=staging \
+         explicitly (got {env:?})"
+    );
+    let tenant = required_flag("tenant")?;
+    let owner = owner_pool().await?;
+    let report = app::demo::reset(&owner, &tenant).await?;
+    println!("reset-demo {tenant}: deleted {} rows", report.total());
+    for (table, rows) in &report.deleted {
+        println!("  {table:<28} {rows:>8}");
+    }
     Ok(())
 }
 
