@@ -83,6 +83,7 @@ SQLX_OFFLINE=true DATABASE_URL="$STAGING_OWNER_URL" APP_DATABASE_URL="<app_rw UR
 ```
 - `reset-demo` in số dòng đã xóa theo bảng. Nó tắt trigger append-only của các bảng nghiệp vụ trong transaction (`ALTER TABLE … DISABLE TRIGGER USER`, owner sở hữu bảng; không dùng `session_replication_role` vì Supabase không có superuser) rồi bật lại trước commit; lỗi giữa chừng thì rollback cả trigger. `ALTER TABLE` khóa bảng trong vài giây: API đang chạy sẽ chờ (`lock_timeout` 15 s).
 - Rollback từ backup: `pg_restore --clean --if-exists --schema=app -d "$STAGING_OWNER_URL" "$HOME/staging-before-reset.dump"`.
+- Trong lúc `seed-demo` chạy (~11 phút), API staging trả **500** cho instance mới khởi động: Session pooler giới hạn `pool_size` 15 client, 8 worker của seed + instance đang sống chiếm hết, instance mới không lấy được kết nối nên thoát (log Vercel: `EMAXCONNSESSION`; thông báo đi kèm "must be the app_rw role" là nhãn sai, không phải lỗi role). Hết khi seed xong. Không deploy song song với seed, hoặc chạy `--workers 4` nếu cần staging sống trong lúc seed (2026-11-10).
 - `seed-demo` từ chối spa đã có khách demo (SĐT `0399 00…`, exit 1, không ghi gì): chạy `reset-demo` trước. Không còn `--force-again`.
 
 **Xóa gì / giữ gì** (`apps/api/crates/app/src/demo/reset.rs`; test `every_tenant_table_is_classified_for_reset` fail khi có bảng theo spa mới chưa được xếp loại):
