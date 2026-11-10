@@ -15,7 +15,7 @@ use crate::domain::RefundMethod;
 use crate::http::{CustomerPackageDto, RefundMethodDto};
 use crate::repo::{self, ExtensionInsert, RefundInsert};
 use crate::service;
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Utc};
 use kernel::audit::{self, AuditEntry};
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx, corrections};
@@ -272,6 +272,23 @@ pub async fn cancel(
     id: Uuid,
     input: &PackageCancel,
 ) -> Result<(u16, Value), AppError> {
+    cancel_as_of(pool, actor, key, request_hash, id, input, Utc::now()).await
+}
+
+/// [`cancel`] with `now` as the server clock: the refund is booked on the business day of `now`
+/// and the package's state is read as of that day. Operator tooling only (`app seed-demo` cancels
+/// packages on past days); no route reaches it — `POST /customer-packages/{id}/cancel` calls
+/// [`cancel`]. Audit rows and `created_at` keep the real time of the write. The caller picks a
+/// day on which the package was live and after its last used session.
+pub async fn cancel_as_of(
+    pool: &PgPool,
+    actor: &Actor,
+    key: Uuid,
+    request_hash: [u8; 32],
+    id: Uuid,
+    input: &PackageCancel,
+    now: DateTime<Utc>,
+) -> Result<(u16, Value), AppError> {
     actor.require(Permission::PackageCancelRefund)?;
     let order = parse_cancel(input)?;
 
@@ -301,7 +318,7 @@ pub async fn cancel(
             code: "refund.exceeds_paid",
         });
     }
-    let tenant = kernel::tenant::profile(&mut tx).await?;
+    let tenant = kernel::tenant::profile_as_of(&mut tx, now).await?;
     let today = tenant.business_date.as_naive();
     let before = repo::lock_items(&mut tx, &[id]).await?;
     let remaining_before: i64 = before.iter().map(|i| i64::from(i.sessions_remaining)).sum();

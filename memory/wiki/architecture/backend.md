@@ -1,6 +1,6 @@
 ---
 title: Backend design (R1-1)
-updated: 2026-11-09
+updated: 2026-11-10
 sources: [product/specs/front-desk-and-packages.md, product/specs/management-views.md, architecture/system.md, architecture/data.md, security/authz-matrix.md]
 ---
 
@@ -306,7 +306,7 @@ Chạy trên máy vận hành, không có route HTTP nào tương ứng. Mật k
 | `app reset-operator-mfa --username U` · `app disable-operator --username U` · `app enable-operator --username U` | Operator mất authenticator / tạm khóa / mở lại | owner |
 | `app openapi` | In contract ra stdout | — |
 
-`seed-demo` đi qua đúng các use case (`crm`, `sales`, `operations`, `packages`, `hr`, `org`, lịch hẹn), nên validation, audit và quy tắc append-only vẫn giữ. Để ghi lịch sử nhiều tháng, `sales::service::create_sale_as_of`, `operations::service::record_as_of` và (2026-11-09) `operations::appointments::service::{book_as_of, close_as_of, complete_as_of}` nhận đồng hồ làm tham số (`kernel::tenant::profile_as_of`). Handler HTTP chỉ gọi `create_sale` / `record` / `book` / `close` / `complete`, các hàm này truyền `Utc::now()`: client không có cách nào ghi lùi ngày. Seed chạy song song phần độc lập (mỗi khách một chuỗi theo thời gian, ngày khác nhau của lịch hẹn, tháng khác nhau của chấm công) trên nhiều kết nối pool trong cùng một task (`app::demo::run`), retry lỗi tạm thời với cùng idempotency key; `server_timing::count_statements` đếm câu SQL (= round trip) từng phase.
+`seed-demo` đi qua đúng các use case (`crm`, `sales`, `operations`, `packages`, `hr`, `org`, lịch hẹn), nên validation, audit và quy tắc append-only vẫn giữ. Để ghi lịch sử nhiều tháng, `sales::service::create_sale_as_of`, `operations::service::record_as_of` , (2026-11-09) `operations::appointments::service::{book_as_of, close_as_of, complete_as_of}` và (2026-11-10) `operations::service::{void_as_of, correct_as_of}`, `packages::lifecycle::cancel_as_of` nhận đồng hồ làm tham số (`kernel::tenant::profile_as_of`). Quy tắc giữ nguyên, chỉ "hôm nay" là ngày của đồng hồ đó: quản lý chỉ hủy / sửa lượt trong ngày, ngày cũ cần `record.void_closed_day`, hủy gói hoàn tiền chỉ chủ spa; bút toán đảo và dòng hoàn tiền mang `business_date` của đồng hồ, còn `created_at` và audit là giờ thật. Handler HTTP chỉ gọi `create_sale` / `record` / `book` / `close` / `complete` / `void` / `correct` / `cancel`, các hàm này truyền `Utc::now()`: client không có cách nào ghi lùi ngày. Seed chạy song song phần độc lập (mỗi khách một chuỗi theo thời gian, ngày khác nhau của lịch hẹn, tháng khác nhau của chấm công) trên nhiều kết nối pool trong cùng một task (`app::demo::run`), retry lỗi tạm thời với cùng idempotency key; `server_timing::count_statements` đếm câu SQL (= round trip) từng phase.
 
 ## 7. Truy vết acceptance criteria → endpoint
 | Story | AC chính | Endpoint |

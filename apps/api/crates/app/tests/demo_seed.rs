@@ -221,6 +221,72 @@ async fn a_full_scenario_covers_every_category_through_the_use_cases(pool: PgPoo
         assert_eq!(total, visits, "every completed line belongs to one payslip");
     }
 
+    // Mistakes are fixed on their own day: every reversal sits on its payment's business day, so
+    // past corrections do not pile up on the run date (live test 2026-11-10: today was −989.000đ).
+    assert_eq!(
+        count(
+            &h.owner,
+            "SELECT count(*) FROM app.payment r
+             JOIN app.payment p ON p.tenant_id = r.tenant_id AND p.id = r.reversal_of
+             WHERE r.kind = 'reversal' AND r.business_date <> p.business_date"
+        )
+        .await?,
+        0,
+        "a reversal booked on another day than its payment"
+    );
+    assert!(
+        count(
+            &h.owner,
+            "SELECT count(*) FROM app.payment r
+             JOIN app.payment p ON p.tenant_id = r.tenant_id AND p.id = r.reversal_of
+             WHERE r.kind = 'reversal' AND r.business_date < (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date"
+        )
+        .await?
+            > 0,
+        "past days keep their corrections"
+    );
+    // Both refunds on past days (about three weeks and three months back), after the package was
+    // sold and after its last session: no visit takes a session from a cancelled package.
+    let refund_days: Vec<chrono::NaiveDate> =
+        sqlx::query_scalar("SELECT business_date FROM app.refund ORDER BY business_date")
+            .fetch_all(&h.owner)
+            .await?;
+    assert_eq!(refund_days.len(), 2, "{refund_days:?}");
+    assert!(refund_days.iter().all(|d| *d < today), "{refund_days:?}");
+    assert_ne!(refund_days[0], refund_days[1]);
+    assert_eq!(
+        count(
+            &h.owner,
+            "SELECT count(*) FROM app.refund f
+             JOIN app.customer_package cp ON cp.tenant_id = f.tenant_id AND cp.id = f.customer_package_id
+             JOIN app.sale s ON s.tenant_id = cp.tenant_id AND s.id = cp.sale_id
+             WHERE f.business_date < s.business_date
+                OR EXISTS (SELECT 1 FROM app.visit_line vl
+                           JOIN app.visit v ON v.tenant_id = vl.tenant_id AND v.id = vl.visit_id
+                           WHERE vl.tenant_id = f.tenant_id
+                             AND vl.customer_package_id = f.customer_package_id
+                             AND v.status = 'completed' AND v.business_date >= f.business_date)"
+        )
+        .await?,
+        0,
+        "a refund before its sale, or a session used on or after it"
+    );
+    // Today keeps only today's own corrections: the owner's "Thực thu hôm nay" is not negative.
+    let daily = call(&h.app, "GET", "/reports/daily", Some(&owner), None).await;
+    assert_eq!(daily.status, StatusCode::OK, "{}", daily.body);
+    assert!(
+        daily.body["revenue"]["net"]["total"]
+            .as_i64()
+            .is_some_and(|net| net >= 0),
+        "today's net takings: {}",
+        daily.body["revenue"]
+    );
+    assert_eq!(
+        daily.body["revenue"]["net"]["total"].as_i64(),
+        Some(s.get("net_takings_today_vnd")),
+        "the CLI's count is the report's figure"
+    );
+
     // Each login has its screens: the desk today, the technician's own month, the leaver's past.
     let manager = session_for(&h, MANAGER_PHONE).await;
     let desk = list(

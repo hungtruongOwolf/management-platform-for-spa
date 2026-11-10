@@ -47,6 +47,8 @@ pub struct Package {
     pub cancelled: bool,
     /// Sessions the history leaves untouched (a paper-book package that stays "expiring soon").
     pub keep: u32,
+    /// The last day a visit took one of its sessions: a later cancellation must come after it.
+    pub last_used: Option<NaiveDate>,
 }
 
 impl Package {
@@ -106,6 +108,7 @@ pub fn packages_in(body: &Value, customer: usize) -> anyhow::Result<Vec<Package>
             from_sale: p.sale_id.is_some(),
             cancelled: false,
             keep: 0,
+            last_used: None,
         })
         .collect())
 }
@@ -376,8 +379,17 @@ impl<'a> Chain<'a> {
         let ctx = self.ctx;
         let at = ctx.at(v.day, v.minute)?;
         let is_today = v.day == ctx.window.today;
-        // The desk corrects a past day as the owner (closed-day rights); today as the manager.
-        let corrector = if is_today { &ctx.manager } else { &ctx.owner };
+        // A mistake with money is fixed by the manager later that same day (voids and "Sửa lượt"
+        // with money run on the visit's own clock, so their reversals land on that day); today's
+        // are fixed now.
+        let fixed_at = if is_today {
+            ctx.now
+        } else {
+            ctx.at(v.day, (v.minute + 50).min(24 * 60 - 1))?
+        };
+        // "Sửa lượt" without money uses the real clock: a past day needs the owner's
+        // closed-day rights.
+        let editor = if is_today { &ctx.manager } else { &ctx.owner };
 
         if v.script == Script::WrongSaleVoided {
             let first = self.packages.len();
@@ -524,7 +536,7 @@ impl<'a> Chain<'a> {
         })
         .await
         .map_err(fail("record a visit"))?;
-        self.consume(&lines);
+        self.consume(&lines, v.day);
         self.tally.visits += 1;
         self.tally.visits_today += usize::from(is_today);
         self.tally.package_lines += lines
@@ -541,7 +553,7 @@ impl<'a> Chain<'a> {
         self.tally.companions += usize::from(!companions.is_empty());
         if upsell.is_some() {
             self.tally.upsells_in_visit += 1;
-            self.fetch_upsold(&body).await?;
+            self.fetch_upsold(&body, v.day).await?;
         }
 
         let visit: Uuid = serde_json::from_value(body["id"].clone()).context("visit id")?;
@@ -551,14 +563,15 @@ impl<'a> Chain<'a> {
                 let reason = *self.rng.pick(data::VOID_REASONS).context("reasons")?;
                 let (key, hash) = idempotency();
                 retry(|| {
-                    operations::service::void(
+                    operations::service::void_as_of(
                         ctx.app,
                         ctx.cipher,
-                        corrector,
+                        &ctx.manager,
                         key,
                         hash,
                         visit,
                         Some(reason),
+                        fixed_at,
                     )
                 })
                 .await
@@ -567,11 +580,11 @@ impl<'a> Chain<'a> {
                 self.tally.voided_visits += 1;
             }
             Script::Correct if upsell.is_none() => {
-                self.correct(v.day, visit, version, &lines, corrector)
+                self.correct(v.day, visit, version, &lines, fixed_at)
                     .await?;
             }
             Script::Void | Script::Correct | Script::Edit => {
-                self.edit(v.day, visit, version, &body, corrector).await?;
+                self.edit(v.day, visit, version, &body, editor).await?;
             }
             Script::Plain | Script::ExpiredOverride | Script::WrongSaleVoided => {}
         }
@@ -608,15 +621,14 @@ impl<'a> Chain<'a> {
             .collect()
     }
 
-    fn consume(&mut self, lines: &[Line]) {
+    fn consume(&mut self, lines: &[Line], day: NaiveDate) {
         for l in lines {
-            if let Source::Item { package, item } = l.source
-                && let Some(i) = self.packages[package]
-                    .items
-                    .iter_mut()
-                    .find(|i| i.id == item)
-            {
-                i.remaining = i.remaining.saturating_sub(1);
+            if let Source::Item { package, item } = l.source {
+                let package = &mut self.packages[package];
+                package.last_used = Some(day);
+                if let Some(i) = package.items.iter_mut().find(|i| i.id == item) {
+                    i.remaining = i.remaining.saturating_sub(1);
+                }
             }
         }
     }
@@ -634,8 +646,8 @@ impl<'a> Chain<'a> {
         }
     }
 
-    /// The packages sold inside a visit, read back with today's session already taken.
-    async fn fetch_upsold(&mut self, body: &Value) -> anyhow::Result<()> {
+    /// The packages sold inside a visit on `day`, read back with that day's session taken.
+    async fn fetch_upsold(&mut self, body: &Value, day: NaiveDate) -> anyhow::Result<()> {
         let ctx = self.ctx;
         let ids: Vec<Uuid> = body["package_sales"]
             .as_array()
@@ -672,6 +684,7 @@ impl<'a> Chain<'a> {
                 from_sale: p.sale_id.is_some(),
                 cancelled: false,
                 keep: 0,
+                last_used: Some(day),
             });
         }
         Ok(())
@@ -694,15 +707,16 @@ impl<'a> Chain<'a> {
         })
     }
 
-    /// "Sửa lượt" with money (void + record): the first one-off service was another one, or, on a
-    /// visit of package sessions only, an add-on the customer had was not typed in.
+    /// "Sửa lượt" with money (void + record), by the manager at `at` on the visit's own day: the
+    /// first one-off service was another one, or, on a visit of package sessions only, an add-on
+    /// the customer had was not typed in.
     async fn correct(
         &mut self,
         day: NaiveDate,
         visit: Uuid,
         version: i64,
         lines: &[Line],
-        actor: &kernel::Actor,
+        at: DateTime<Utc>,
     ) -> anyhow::Result<()> {
         let ctx = self.ctx;
         let mut fixed: Vec<Line> = lines.to_vec();
@@ -739,10 +753,10 @@ impl<'a> Chain<'a> {
         let reason = *self.rng.pick(data::CORRECTION_REASONS).context("reasons")?;
         let (key, hash) = idempotency();
         retry(|| {
-            operations::service::correct(
+            operations::service::correct_as_of(
                 ctx.app,
                 ctx.cipher,
-                actor,
+                &ctx.manager,
                 key,
                 hash,
                 operations::service::Correction {
@@ -752,6 +766,7 @@ impl<'a> Chain<'a> {
                     note: None,
                     visit: &input,
                 },
+                at,
             )
         })
         .await

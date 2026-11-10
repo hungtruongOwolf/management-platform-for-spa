@@ -11782,6 +11782,8 @@
           "commission",
           "bonuses",
           "penalties",
+          "meal_allowance",
+          "net_pay_shortfall",
           "net_pay"
         ],
         "properties": {
@@ -11802,9 +11804,19 @@
             "type": "integer",
             "format": "int64"
           },
+          "meal_allowance": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Σ of the payslips' `meal_allowance` (Hỗ trợ tiền ăn, part of net pay)."
+          },
           "net_pay": {
             "type": "integer",
             "format": "int64"
+          },
+          "net_pay_shortfall": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Σ of the payslips' `net_pay_shortfall`: deductions beyond a month's pay, not deducted.\n`base_salary − deductions + commission + meal_allowance + bonuses − penalties +\nnet_pay_shortfall = net_pay`, as on each payslip."
           },
           "penalties": {
             "type": "integer",

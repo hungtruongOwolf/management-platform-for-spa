@@ -32,6 +32,12 @@ pub struct PayrollTotals {
     pub commission: i64,
     pub bonuses: i64,
     pub penalties: i64,
+    /// Σ of the payslips' `meal_allowance` (Hỗ trợ tiền ăn, part of net pay).
+    pub meal_allowance: i64,
+    /// Σ of the payslips' `net_pay_shortfall`: deductions beyond a month's pay, not deducted.
+    /// `base_salary − deductions + commission + meal_allowance + bonuses − penalties +
+    /// net_pay_shortfall = net_pay`, as on each payslip.
+    pub net_pay_shortfall: i64,
     pub net_pay: i64,
 }
 
@@ -68,6 +74,8 @@ fn totals(slips: &[Payslip]) -> PayrollTotals {
             .sum(),
         bonuses: slips.iter().map(|s| s.bonuses).sum(),
         penalties: slips.iter().map(|s| s.penalties).sum(),
+        meal_allowance: slips.iter().map(|s| s.meal_allowance).sum(),
+        net_pay_shortfall: slips.iter().map(|s| s.net_pay_shortfall).sum(),
         net_pay: slips.iter().map(|s| s.net_pay).sum(),
     }
 }
@@ -499,6 +507,7 @@ pub async fn close(
 mod tests {
     use super::*;
     use crate::evaluation::Level;
+    use chrono::Datelike;
     use org::Period;
     use org::profile::PayTerms;
 
@@ -576,6 +585,100 @@ mod tests {
             &input,
             &PayrollRules::default(),
         )
+    }
+
+    /// The payroll table's columns (Lương cứng, Trừ nghỉ / muộn, Hoa hồng, Tiền ăn, Thưởng − phạt)
+    /// add up to Thực lĩnh on every row and in the totals; the shortfall of a month whose
+    /// deductions exceed its pay (ADR-0019 D3) is the one extra term, shown with its flag.
+    #[test]
+    fn the_table_columns_add_up_to_net_pay_on_every_row_and_in_the_totals() {
+        let month = Month::of(d("2026-10-01"));
+        let days = |leave: &[u32], late: u32| -> Vec<Day> {
+            month
+                .iter_days()
+                .map(|date| Day {
+                    date,
+                    status: if leave.contains(&date.day()) {
+                        attendance::AttendanceStatus::AbsentK
+                    } else {
+                        attendance::AttendanceStatus::Present
+                    },
+                    late_minutes: if date.day() <= 4 { late } else { 0 },
+                })
+                .collect()
+        };
+        let lines = [CommissionLine {
+            service_name: "Thư Giãn".to_owned(),
+            source: "one_off".to_owned(),
+            qty: 9,
+            value: 2_250_000,
+            full_value: 2_250_000,
+        }];
+        let full = days(&[], 0);
+        let missed = days(&[3, 9, 10, 17], 40);
+        let rules = PayrollRules {
+            late_penalty_amount: 20_000,
+            ..PayrollRules::default()
+        };
+        let slip =
+            |id: u128, days: &[Day], employment: Employment, bonuses: i64, penalties: i64| {
+                let input = MonthInput {
+                    month,
+                    recorded_until: None,
+                    employment,
+                    pay: Some(PayTerms {
+                        base_salary: 4_500_000,
+                        commission_rate_bp: 700,
+                        loyalty_bonus_monthly: 500_000,
+                        meal_allowance: 400_000,
+                        version: 1,
+                    }),
+                    days,
+                    commission_lines: &lines,
+                    upsell_lines: &[],
+                    bonuses,
+                    penalties,
+                    bonus_points: 0,
+                    penalty_points: 0,
+                    evaluation: Some(Level::M2),
+                };
+                calc::compute(Uuid::from_u128(id), "Lan", "KTV", &input, &rules)
+            };
+        let slips = [
+            slip(1, &full, Employment::always(), 0, 0),
+            slip(2, &missed, Employment::always(), 200_000, 50_000),
+            slip(
+                3,
+                &full,
+                Employment::between(Some(d("2026-10-20")), None),
+                0,
+                0,
+            ),
+            slip(4, &full, Employment::always(), 0, 9_000_000),
+        ];
+        assert!(slips.iter().all(|s| s.meal_allowance > 0), "{slips:?}");
+        assert!(slips[1].leave_deduction > 0 && slips[1].late_deduction > 0);
+        assert!(slips[2].base_pay < slips[2].base_salary, "a partial month");
+        assert!(slips[3].net_pay == 0 && slips[3].net_pay_shortfall > 0);
+        assert!(slips[3].flags.contains(&PayFlag::NetPayShortfall));
+        for s in &slips {
+            let columns = s.base_pay - (s.leave_deduction + s.late_deduction)
+                + (s.service_commission + s.closing_commission)
+                + s.meal_allowance
+                + (s.bonuses - s.penalties);
+            assert_eq!(columns + s.net_pay_shortfall, s.net_pay, "{}", s.staff_id);
+        }
+        let t = totals(&slips);
+        assert_eq!(
+            t.meal_allowance,
+            slips.iter().map(|s| s.meal_allowance).sum::<i64>()
+        );
+        assert_eq!(
+            t.base_salary - t.deductions + t.commission + t.meal_allowance + t.bonuses
+                - t.penalties
+                + t.net_pay_shortfall,
+            t.net_pay
+        );
     }
 
     /// ADR-0019 D1: the close is blocked by anyone on the payroll without pay terms or an

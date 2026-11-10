@@ -34,6 +34,7 @@ import { evaluationDueMonth, incompleteDays, missingOn } from "./progress";
 import { staffSearch } from "./search";
 import { tenureLabel, withoutLogin } from "./roster";
 import { PayslipView } from "./PayrollTab";
+import { columnsTotal, slipColumns, totalColumns } from "./payrollColumns";
 import { signedVnd } from "./ui";
 
 const MANAGER = ["catalog.read", "staff.read_basic", "staff.read", "attendance.record", "evaluation.record", "staff.read_own", "report.read"];
@@ -210,7 +211,7 @@ function payroll(): PayrollMonth {
     closed_by_name: null,
     ended: false,
     payslips: [s],
-    totals: { staff: 1, base_salary: s.base_salary, deductions: 0, commission: 15_000, bonuses: 0, penalties: 0, net_pay: s.net_pay },
+    totals: { staff: 1, base_salary: s.base_pay, deductions: 0, commission: 15_000, bonuses: 0, penalties: 0, meal_allowance: s.meal_allowance, net_pay_shortfall: 0, net_pay: s.net_pay },
     missing: [],
     leaver_refunds: [],
   };
@@ -1035,6 +1036,73 @@ describe("/nhan-vien", () => {
     expect(within(sheetDialog).getByText("Hoa hồng làm liệu trình")).toBeInTheDocument();
     expect(within(sheetDialog).getByText("Hoa hồng giới thiệu / chốt")).toBeInTheDocument();
     expect(within(sheetDialog).queryByRole("region", { name: "Giới thiệu / chốt được" })).not.toBeInTheDocument();
+  });
+
+  it("owner: the payroll table shows Tiền ăn, so every row and the totals add up to Thực lĩnh", async () => {
+    serve(OWNER);
+    at("/nhan-vien?tab=payroll");
+    const table = await screen.findByRole("table", { name: /^Bảng lương/ });
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
+      "Nhân viên",
+      "Vị trí",
+      "Lương cứng",
+      "Trừ nghỉ, muộn",
+      "Hoa hồng",
+      "Tiền ăn",
+      "Thưởng − phạt",
+      "Thực lĩnh",
+      "Lưu ý",
+    ]);
+    // 5.000.000 + 15.000 + 300.000 = 5.315.000, on the row and in the totals.
+    const row = within(table).getByRole("row", { name: /Lê Thị Lan/ });
+    expect(within(row).getAllByRole("cell").map((c) => c.textContent)).toEqual(["Lê Thị Lan", "Kỹ thuật viên", "5.000.000đ", "–", "15.000đ", "300.000đ", "0đ", "5.315.000đ", "Chưa đánh giá tháng"]);
+    const footer = within(table).getByRole("row", { name: /Tổng 1 người/ });
+    expect(within(footer).getAllByRole("cell").map((c) => c.textContent)).toEqual(["5.000.000đ", "–", "15.000đ", "300.000đ", "0đ", "5.315.000đ", ""]);
+  });
+
+  it("owner: when deductions exceed the pay, the row and the totals say what was not deducted, so they still add up (ADR-0019 D3)", async () => {
+    const short = { ...slip(), penalties: 5_500_000, net_pay: 0, net_pay_shortfall: 185_000, flags: ["net_pay_shortfall" as const] };
+    serve(OWNER, {
+      payroll: {
+        payslips: [short],
+        totals: { staff: 1, base_salary: 5_000_000, deductions: 0, commission: 15_000, bonuses: 0, penalties: 5_500_000, meal_allowance: 300_000, net_pay_shortfall: 185_000, net_pay: 0 },
+      },
+    });
+    at("/nhan-vien?tab=payroll");
+    const table = await screen.findByRole("table", { name: /^Bảng lương/ });
+    expect(within(table).getAllByText("+185.000đ trừ vượt lương, không trừ")).toHaveLength(2);
+    expect(columnsTotal(slipColumns(short))).toBe(0);
+  });
+
+  it("owner on a phone: each payroll card lists Tiền ăn with the other amounts, under Thực lĩnh", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      (query: string) =>
+        ({ matches: query.includes("max-width"), media: query, addEventListener: () => undefined, removeEventListener: () => undefined }) as unknown as MediaQueryList,
+    );
+    try {
+      serve(OWNER);
+      at("/nhan-vien?tab=payroll");
+      const cards = await screen.findByRole("list", { name: /^Bảng lương/ });
+      expect(screen.queryByRole("table", { name: /^Bảng lương/ })).not.toBeInTheDocument();
+      const [card] = within(cards).getAllByRole("listitem");
+      if (!card) throw new Error("no payroll card");
+      const field = (label: string) => within(card).getByText(label).nextElementSibling?.textContent;
+      expect(field("Lương cứng")).toBe("5.000.000đ");
+      expect(field("Hoa hồng")).toBe("15.000đ");
+      expect(field("Tiền ăn")).toBe("300.000đ");
+      expect(within(card).getByText("5.315.000đ")).toBeInTheDocument();
+      expect(screen.getByText(/Tổng thực lĩnh/)).toHaveTextContent("Tổng thực lĩnh 5.315.000đ");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("payroll columns add up to net pay on a payslip and in the month's totals", () => {
+    const s = slip();
+    expect(columnsTotal(slipColumns(s))).toBe(s.net_pay);
+    const t = payroll().totals;
+    expect(columnsTotal(totalColumns(t))).toBe(t.net_pay);
   });
 
   it("payslip: a mid-month joiner's base is the employed share; deductions beyond the pay show, net stays 0đ (ADR-0019 D3/D4)", () => {

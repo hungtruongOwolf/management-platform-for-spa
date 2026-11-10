@@ -306,7 +306,7 @@ pub async fn seed(
     let (cancelled, extended) = timed(
         &mut phases,
         "package cancellations and extension",
-        ctx.package_lifecycle(&packages, &initial),
+        ctx.package_lifecycle(&packages, &initial, &people),
     )
     .await?;
     report.cancelled_with_refund = cancelled;
@@ -817,38 +817,50 @@ impl Ctx<'_> {
         Ok(PAPER_CUSTOMERS)
     }
 
-    /// Today, as the owner: two part-used packages cancelled with a refund of the unused share
-    /// (cash, transfer), and the expired paper-book package of customer 3 extended.
+    /// As the owner: two part-used packages cancelled with a refund of the unused share (cash
+    /// about three weeks ago, transfer about three months ago, see [`cancellation`]), and today
+    /// the expired paper-book package of customer 3 extended.
     async fn package_lifecycle(
         &self,
         packages: &[Package],
         initial: &[Vec<Package>],
+        people: &[Person],
     ) -> anyhow::Result<(usize, usize)> {
         let today = self.window.today;
+        let last_visits: Vec<NaiveDate> = people.iter().map(|p| p.last_day).collect();
         let mut cancelled = 0;
         let mut used: Vec<usize> = Vec::new();
-        for method in ["cash", "bank_transfer"] {
-            let Some(p) = packages.iter().find(|p| {
-                p.from_sale
-                    && !used.contains(&p.customer)
-                    && p.usable_on(today)
-                    && p.remaining() >= 2
-                    && p.remaining() < p.sessions_total
-            }) else {
-                break;
+        for (days_ago, method) in [(21, "cash"), (90, "bank_transfer")] {
+            let Some((p, day)) = cancellation(packages, &last_visits, &used, self.window, days_ago)
+            else {
+                continue;
             };
             used.push(p.customer);
             let unused = i64::from(p.remaining());
             let total = i64::from(p.sessions_total.max(1));
             let refund = p.sold_price * unused / total / 10_000 * 10_000;
+            let reason = if last_visits.get(p.customer).is_some_and(|last| *last < day) {
+                "Khách chuyển công tác vào TP.HCM, hoàn tiền các buổi chưa dùng"
+            } else {
+                "Khách không hợp liệu trình, chuyển sang dịch vụ lẻ; hoàn tiền các buổi chưa dùng"
+            };
             let input: packages::lifecycle::PackageCancel = serde_json::from_value(json!({
-                "reason": "Khách chuyển công tác vào TP.HCM, hoàn tiền các buổi chưa dùng",
+                "reason": reason,
                 "refund_amount": refund, "refund_method": method,
             }))
             .context("cancel body")?;
+            let at = self.at(day, 16 * 60)?;
             let (key, hash) = idempotency();
             run::retry(|| {
-                packages::lifecycle::cancel(self.app, &self.owner, key, hash, p.id, &input)
+                packages::lifecycle::cancel_as_of(
+                    self.app,
+                    &self.owner,
+                    key,
+                    hash,
+                    p.id,
+                    &input,
+                    at,
+                )
             })
             .await
             .map_err(fail("cancel a package with refund"))?;
@@ -883,6 +895,36 @@ impl Ctx<'_> {
     }
 }
 
+/// The package to cancel with a refund about `days_ago` days back, and the day: a part-used package
+/// sold at the desk, live that day, cancelled after its last used session (so no visit takes a
+/// session from it later). Customers who had stopped coming by then come first (they moved away),
+/// then the day nearest the target. `None` when no package qualifies (a very short history).
+fn cancellation<'p>(
+    packages: &'p [Package],
+    last_visits: &[NaiveDate],
+    taken: &[usize],
+    window: Window,
+    days_ago: i64,
+) -> Option<(&'p Package, NaiveDate)> {
+    let target = window.today - Duration::days(days_ago);
+    packages
+        .iter()
+        .filter(|p| {
+            p.from_sale
+                && !taken.contains(&p.customer)
+                && p.remaining() >= 2
+                && p.remaining() < p.sessions_total
+        })
+        .filter_map(|p| {
+            let day = target.max(p.last_used? + Duration::days(1));
+            (day < window.today && p.usable_on(day)).then_some((p, day))
+        })
+        .min_by_key(|(p, day)| {
+            let still_coming = last_visits.get(p.customer).is_none_or(|last| last >= day);
+            (still_coming, (*day - target).num_days().abs())
+        })
+}
+
 const fn crm_gender(sex: Sex) -> crm::service::Gender {
     match sex {
         Sex::Female => crm::service::Gender::Female,
@@ -903,6 +945,55 @@ mod tests {
             NaiveDate::from_ymd_opt(2025, 12, 1).unwrap_or_default()
         );
         assert_eq!(Window::new(today, 2).start.to_string(), "2026-10-01");
+    }
+
+    fn package(customer: usize, starts: i64, expires: i64, last_used: i64) -> Package {
+        let today = NaiveDate::from_ymd_opt(2026, 11, 10).unwrap_or_default();
+        Package {
+            id: Uuid::from_u128(u128::try_from(customer).unwrap_or(0) + 1),
+            customer,
+            items: vec![desk::Item {
+                id: Uuid::nil(),
+                service_id: Uuid::nil(),
+                remaining: 6,
+            }],
+            starts_on: today - Duration::days(starts),
+            expires_on: Some(today - Duration::days(expires)),
+            sold_price: 2_000_000,
+            sessions_total: 10,
+            from_sale: true,
+            cancelled: false,
+            keep: 0,
+            last_used: Some(today - Duration::days(last_used)),
+        }
+    }
+
+    #[test]
+    fn a_cancellation_lands_after_the_last_session_and_prefers_a_customer_who_left() {
+        let today = NaiveDate::from_ymd_opt(2026, 11, 10).unwrap_or_default();
+        let w = Window::new(today, 12);
+        let ago = |n: i64| today - Duration::days(n);
+        // Customer 0 still comes (used 10 days ago), customer 1 left 70 days ago, customer 2's
+        // package had expired by then.
+        let packages = [
+            package(0, 200, -100, 10),
+            package(1, 200, -100, 75),
+            package(2, 300, 40, 120),
+        ];
+        let last_visits = [today, ago(70), ago(110)];
+        let pick = |list: &[Package], taken: &[usize], days_ago: i64| {
+            cancellation(list, &last_visits, taken, w, days_ago).map(|(p, day)| (p.customer, day))
+        };
+        assert_eq!(
+            pick(&packages, &[], 21),
+            Some((1, ago(21))),
+            "the one who left, on the target day"
+        );
+        // Without them: the day after the last session of a customer still coming, never before.
+        assert_eq!(pick(&packages, &[1], 21), Some((0, ago(9))));
+        // Customer 2's package expired 40 days ago: live 90 days back, not 21 days back.
+        assert_eq!(pick(&packages, &[0, 1], 90), Some((2, ago(90))));
+        assert_eq!(pick(&packages[2..], &[], 21), None);
     }
 
     #[test]
