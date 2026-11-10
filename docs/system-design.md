@@ -55,7 +55,7 @@ Mỗi context là một crate, chỉ export public API; không crate nào đọc
 | `hr` | Chấm công, khen/phàn nàn, đánh giá tháng, thưởng/phạt, bảng lương + chốt tháng, `/me/staff/*` |
 | `reporting` | Tổng quan hôm nay, báo cáo theo kỳ, sổ doanh thu, lịch sử khách, gói của khách, nhật ký ghi chú |
 | `platform` | Console nền tảng: operator, spa, cờ tính năng, mẫu vai trò, tài khoản xuyên spa, nhật ký nền tảng ([platform-admin](../memory/wiki/architecture/platform-admin.md)) |
-| `app` | Binary: router, middleware, config, job bảo trì, CLI (`migrate`, `create-tenant`, `add-user`, `seed-demo`, `add-operator`…) |
+| `app` | Binary: router, middleware, config, job bảo trì, CLI (`migrate`, `create-tenant`, `add-user`, `seed-demo`, `reset-demo`, `add-operator`…) |
 
 Chi tiết API (endpoint, lỗi, idempotency, ETag): [backend](../memory/wiki/architecture/backend.md). Frontend (route, data fetching, PWA, cấu trúc thư mục): [frontend](../memory/wiki/architecture/frontend.md).
 

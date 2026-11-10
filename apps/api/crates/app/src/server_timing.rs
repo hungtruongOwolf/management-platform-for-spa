@@ -88,6 +88,26 @@ impl<S: Subscriber> Layer<S> for DbTimingLayer {
     }
 }
 
+/// Runs `work` inside a fresh tally and returns how many SQL statements it ran (every future it
+/// polls, also concurrent ones joined into it; not tasks it spawns). An enclosing tally still
+/// counts them too. For operator tooling that reports its round trips (`app seed-demo`); needs
+/// [`DbTimingLayer`] installed, else 0.
+pub async fn count_statements<F: std::future::Future>(work: F) -> (F::Output, u32) {
+    let (out, inner) = DB
+        .scope(Cell::new(DbTally::default()), async move {
+            let out = work.await;
+            (out, DB.with(Cell::get))
+        })
+        .await;
+    let _ = DB.try_with(|outer| {
+        let mut t = outer.get();
+        t.statements = t.statements.saturating_add(inner.statements);
+        t.elapsed = t.elapsed.saturating_add(inner.elapsed);
+        outer.set(t);
+    });
+    (out, inner.statements)
+}
+
 fn millis(d: Duration) -> f64 {
     (d.as_secs_f64() * 1000.0 * 100.0).round() / 100.0
 }
@@ -137,6 +157,21 @@ mod tests {
             value.as_ref().and_then(|v| v.to_str().ok()),
             Some("db;dur=1.23;desc=\"7 statements\", total;dur=5.68")
         );
+    }
+
+    #[tokio::test]
+    async fn a_nested_count_also_counts_in_the_enclosing_one() {
+        let ((_, inner), outer) = count_statements(async {
+            record_statement(Duration::from_millis(1));
+            count_statements(async {
+                record_statement(Duration::from_millis(1));
+                record_statement(Duration::from_millis(1));
+            })
+            .await
+        })
+        .await;
+        assert_eq!((inner, outer), (2, 3));
+        assert_eq!(count_statements(async {}).await.1, 0);
     }
 
     #[tokio::test]

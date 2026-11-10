@@ -1,5 +1,5 @@
 //! What the demo spa is made of: people, package plans and notes a real front desk would type.
-//! Every name is invented; phone numbers come from a reserved block (see [`super::phone`]).
+//! Every name is invented; customer phones come from the demo block `0399 00 CCCC`.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sex {
@@ -44,7 +44,8 @@ const fn c(
 const F: Gender = Gender::Recorded(Sex::Female);
 const M: Gender = Gender::Recorded(Sex::Male);
 
-/// 40 customers. The first two are created by the paper-book import, not by the profile form.
+/// The first 40 customers, written by hand; the rest are generated from the name parts below.
+/// The first two are created by the paper-book import, not by the profile form.
 pub const CUSTOMERS: &[DemoCustomer] = &[
     c(
         "Hoàng Thị Mai",
@@ -361,20 +362,9 @@ pub const CUSTOMERS: &[DemoCustomer] = &[
     ),
 ];
 
-/// Technicians (KTV) for the visit pickers.
-pub const TECHNICIANS: &[&str] = &[
-    "Nguyễn Thị Lan",
-    "Trần Thị Thu",
-    "Lê Thị Hoa",
-    "Phạm Văn Nam",
-    "Võ Thị Hằng",
-];
-pub const TECHNICIAN_POSITION: &str = "Kỹ thuật viên";
-
 /// The demo manager: a login (role manager) and a staff member who closes sales (D9).
 pub const MANAGER_NAME: &str = "Nguyễn Thị Thu Hà";
 pub const MANAGER_PHONE: &str = "0905000002";
-pub const MANAGER_POSITION: &str = "Quản lý";
 
 pub struct DemoPlanItem {
     pub service: &'static str,
@@ -474,3 +464,102 @@ pub const DISCOUNT_REASONS: &[&str] = &[
     "Khuyến mãi tháng 11",
     "Khách giới thiệu bạn mới",
 ];
+
+/// Name parts for the generated customers (common Vietnamese family, middle and given names).
+pub const FAMILY_NAMES: &[&str] = &[
+    "Nguyễn", "Trần", "Lê", "Phạm", "Hoàng", "Huỳnh", "Phan", "Vũ", "Võ", "Đặng", "Bùi", "Đỗ",
+    "Hồ", "Ngô", "Dương", "Lý", "Đinh", "Trương", "Lương", "Mai",
+];
+pub const FEMALE_MIDDLE: &[&str] = &[
+    "Thị",
+    "Thị Thu",
+    "Thị Thanh",
+    "Ngọc",
+    "Thị Kim",
+    "Thị Minh",
+    "Thị Hồng",
+    "Thị Bích",
+    "Thùy",
+    "Thị Mỹ",
+];
+pub const FEMALE_GIVEN: &[&str] = &[
+    "Anh", "Hà", "Hương", "Lan", "Linh", "Mai", "Nga", "Ngân", "Nhung", "Oanh", "Phương", "Quyên",
+    "Thảo", "Trang", "Tuyết", "Uyên", "Vân", "Yến", "Hạnh", "Dung", "Giang", "Hiền", "Loan", "Ly",
+    "My", "Nhi", "Thủy", "Trinh", "Xuân", "Diệp",
+];
+pub const MALE_MIDDLE: &[&str] = &[
+    "Văn", "Minh", "Quốc", "Đức", "Hữu", "Thanh", "Công", "Ngọc", "Xuân", "Đình",
+];
+pub const MALE_GIVEN: &[&str] = &[
+    "Anh", "Bình", "Cường", "Dũng", "Hải", "Hiếu", "Hùng", "Huy", "Khoa", "Long", "Nam", "Phong",
+    "Phúc", "Quang", "Sơn", "Tâm", "Thắng", "Thành", "Trung", "Tuấn", "Việt", "Vinh",
+];
+pub const ADDRESSES: &[&str] = &[
+    "Phường 1, Đông Hà",
+    "Phường 2, Đông Hà",
+    "Phường 3, Đông Hà",
+    "Phường 5, Đông Hà",
+    "Phường Đông Lễ, Đông Hà",
+    "Phường Đông Lương, Đông Hà",
+    "Phường Đông Thanh, Đông Hà",
+    "Thị trấn Cam Lộ",
+    "Thị trấn Gio Linh",
+    "Huyện Triệu Phong",
+    "Thị xã Quảng Trị",
+];
+pub const SOURCES: &[&str] = &[
+    "Facebook",
+    "Zalo",
+    "TikTok",
+    "Người quen giới thiệu",
+    "Đi ngang qua",
+    "Google Maps",
+];
+/// Health notes of the generated customers (encrypted like every health note).
+pub const HEALTH_NOTES: &[&str] = &[
+    "Đau vai gáy kéo dài, ngồi máy tính nhiều",
+    "Huyết áp thấp — xông hơi không quá 15 phút",
+    "Đang mang thai tháng thứ 4 — không bấm huyệt vùng bụng, lưng dưới",
+    "Mất ngủ, hay đau đầu buổi chiều",
+    "Thoái hóa đốt sống cổ — nhẹ tay vùng cổ",
+    "Giãn tĩnh mạch chân — không massage mạnh bắp chân",
+    "Dị ứng tinh dầu sả",
+    "Tiểu đường type 2 — chú ý nhiệt độ ngâm chân",
+    "Sau sinh 3 tháng",
+    "Đau lưng dưới khi đứng lâu",
+];
+
+/// Why a visit was cancelled ("Hủy lượt") in the history.
+pub const VOID_REASONS: &[&str] = &[
+    "Ghi nhầm khách, người làm là khách khác",
+    "Khách đổi ý không làm nữa, đã trả lại tiền",
+    "Bấm lưu hai lần",
+];
+/// Why a visit's money or services were corrected ("Sửa lượt").
+pub const CORRECTION_REASONS: &[&str] = &[
+    "Ghi nhầm dịch vụ, khách làm gói khác",
+    "Khách đổi sang dịch vụ khác lúc đang làm",
+];
+/// Notes typed on a contact with a customer who has not been back for a while.
+pub const FOLLOW_UP_NOTES: &[&str] = &[
+    "Khách bận việc nhà, hẹn tháng sau quay lại",
+    "Gọi 2 lần không nghe máy",
+    "Khách chuyển chỗ làm xa, chưa sắp xếp được",
+    "Khách hỏi chương trình khuyến mãi gói gội đầu",
+    "Đã nhắn Zalo tặng voucher sinh nhật",
+];
+pub const APPOINTMENT_NOTES: &[&str] = &[
+    "Khách hẹn qua Zalo",
+    "Khách muốn KTV nữ",
+    "Gọi nhắc trước 1 tiếng",
+    "Khách đi cùng con nhỏ",
+];
+pub const CANCEL_REASONS: &[&str] = &[
+    "Khách báo bận đột xuất",
+    "Khách đổi sang tuần sau",
+    "Trời mưa to, khách xin hủy",
+];
+pub const NO_SHOW_REASONS: &[&str] =
+    &["Gọi không nghe máy, khách không đến", "Khách quên lịch hẹn"];
+/// Companions known only by a note.
+pub const COMPANIONS: &[&str] = &["Chồng của khách", "Con gái đi cùng", "Bạn của khách"];

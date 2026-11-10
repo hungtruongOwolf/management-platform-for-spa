@@ -1,71 +1,122 @@
-//! `app seed-demo --tenant <slug>`: fills a spa with realistic demo data so every R1-1 screen has
-//! something to show (staging, trial sessions). Operator tool only; no HTTP route reaches it.
+//! `app seed-demo --tenant <slug> [--months N]`: fills a spa with one complete, realistic
+//! scenario — N months (default 12) of front desk, packages, appointments and staff books up to
+//! today — so every screen of every role has something to show (staging, trial sessions).
+//! `app reset-demo` ([`reset`]) empties a spa's business data first. Operator tools only; no HTTP
+//! route reaches them.
 //!
-//! Every record goes through the front desk's own use cases (customers, package sales, visits,
-//! voids, the paper-book import, cancel + refund), acting as the spa's owner or the demo
-//! manager, so validation, invariants, audit and append-only money rules all hold. Three weeks of
-//! history are back-filled with `sales::service::create_sale_as_of` and
-//! `operations::service::record_as_of`, which take the clock as a parameter instead of reading it.
+//! Every record goes through the use cases (customers, sales, visits, voids, corrections, the
+//! paper-book import, appointments, attendance, evaluations, payroll close…), acting as the spa's
+//! owner or the demo manager, so validation, invariants, audit and append-only money rules all
+//! hold. History is back-filled with the `*_as_of` forms of the use cases, which take the clock as
+//! a parameter instead of reading it. Everything is relative to the run date and drawn from a
+//! seeded generator: the same day gives the same spa.
 //!
-//! Demo customers use the reserved phone block `0399 RR CCCC` (RR = run, CCCC = customer): that
-//! is how a second run detects the first one.
+//! Speed: independent work (separate customers, separate days, separate months) runs side by side
+//! on `workers` pool connections ([`run`]); a customer's own records stay in time order. Each
+//! phase reports its SQL statements, i.e. its round trips (`server_timing::count_statements`).
+//!
+//! Demo customers use the phone block `0399 00 CCCC`: that is how a second run detects the first.
 
+mod calendar;
 mod data;
+mod desk;
+mod people;
+mod plan;
+mod reset;
 mod rng;
+mod run;
 mod staff;
+mod summary;
 
+pub use calendar::CalendarReport;
 pub use data::MANAGER_PHONE;
-pub use staff::{StaffDemoReport, TECHNICIAN_PHONE};
+pub use desk::Tally;
+pub use reset::{DELETED, KEPT, ResetReport, reset};
+pub use staff::{FORMER_TECHNICIAN_PHONE, StaffReport, TECHNICIAN_PHONE};
+pub use summary::{Summary, render, summary};
 
 use anyhow::{Context, anyhow, bail};
-use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
-use data::{CUSTOMERS, Gender, PLANS, Sex};
+use data::{PLANS, Sex};
+use desk::{Chain, Package, packages_in};
 use kernel::crypto::FieldCipher;
 use kernel::idempotency::hash_request;
 use kernel::{Actor, AppError, TenantId, TenantTx, UserId};
-use operations::dto::{VisitCreate, VisitLineCreate, VisitLineSourceDto};
+use people::{PAPER_CUSTOMERS, Person};
 use rng::Rng;
-use sales::dto::{DiscountCreate, PaymentCreate, PaymentMethodDto, SaleCreate, SaleLineCreate};
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 use sqlx::PgPool;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::future::Future;
+use std::time::Instant;
 use uuid::Uuid;
 
-/// Days of history before today.
-const HISTORY_DAYS: i64 = 20;
 const SEED: u64 = 0x5EED_0000_D3E0_2026;
-const DEMO_PHONE_PREFIX: &str = "+84399";
+const DEMO_PHONE_PREFIX: &str = "+8439900";
+pub const DEFAULT_MONTHS: u32 = 12;
+pub const DEFAULT_WORKERS: usize = 8;
+/// A leaver mid last month needs last month; reports compare up to two years.
+const MONTHS: std::ops::RangeInclusive<u32> = 2..=24;
+
+/// The days of the history: from the first day of the month `months - 1` before today's, to
+/// today. Every month but the current one ends before today and is closed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Window {
+    pub start: NaiveDate,
+    pub today: NaiveDate,
+}
+
+impl Window {
+    pub fn new(today: NaiveDate, months: u32) -> Self {
+        let first = today.with_day(1).unwrap_or(today);
+        let start = first
+            .checked_sub_months(chrono::Months::new(months.saturating_sub(1)))
+            .unwrap_or(first);
+        Self { start, today }
+    }
+
+    /// Days from the start to today.
+    pub fn days(&self) -> i64 {
+        (self.today - self.start).num_days()
+    }
+}
 
 pub struct DemoOptions<'a> {
     pub tenant_slug: &'a str,
-    /// Password of the demo manager login (from `APP_NEW_USER_PASSWORD`, never argv).
-    pub manager_password: &'a str,
-    /// Seed another batch although demo customers exist (new phone block, same staff and plans).
-    pub force_again: bool,
+    /// Passwords of the demo logins (from env, never argv); needed only for a login that does
+    /// not exist yet — an existing account is reused and keeps its password.
+    pub manager_password: Option<&'a str>,
+    pub technician_password: Option<&'a str>,
+    pub former_technician_password: Option<&'a str>,
+    /// Months of history, this one included (2–24).
+    pub months: u32,
+    /// Use cases in flight at once (the app pool needs a few more connections than this).
+    pub workers: usize,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+/// One step of the run: how long it took and how many SQL statements (round trips) it sent.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Phase {
+    pub name: &'static str,
+    pub seconds: f64,
+    pub statements: u32,
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct DemoReport {
-    pub run: u32,
+    pub window_start: Option<NaiveDate>,
+    pub today: Option<NaiveDate>,
     pub catalog_seeded: bool,
     pub plans_created: usize,
-    pub staff_added: usize,
     pub customers: usize,
-    pub health_notes: usize,
     pub opening_balances: usize,
-    pub package_sales: usize,
-    pub discounted_sales: usize,
-    pub visits: usize,
-    pub visits_today: usize,
-    pub voided_sales: usize,
-    pub voided_visits: usize,
+    pub desk: Tally,
+    pub calendar: CalendarReport,
+    pub staff: StaffReport,
     pub cancelled_with_refund: usize,
-    /// Staff management demo (first run only): attendance, reviews, evaluations, adjustments.
-    pub staff_management: StaffDemoReport,
-    /// Bookings for the next two days (round 4 calendar), one of them for a newcomer.
-    pub appointments: usize,
+    pub extended: usize,
+    pub phases: Vec<Phase>,
 }
 
 /// Seeds the demo spa. `owner` is the schema-owner pool (provisioning, as the other CLI commands);
@@ -76,6 +127,12 @@ pub async fn seed(
     cipher: &FieldCipher,
     options: &DemoOptions<'_>,
 ) -> anyhow::Result<DemoReport> {
+    anyhow::ensure!(
+        MONTHS.contains(&options.months),
+        "--months must be between {} and {}",
+        MONTHS.start(),
+        MONTHS.end()
+    );
     let slug = options.tenant_slug;
     let tenant = TenantId::from_uuid(
         sqlx::query_scalar::<_, Uuid>("SELECT id FROM app.tenant WHERE slug = $1")
@@ -84,34 +141,71 @@ pub async fn seed(
             .await?
             .with_context(|| format!("no spa with slug {slug:?}"))?,
     );
-    let run = next_run(owner, tenant, options.force_again).await?;
-    let mut report = DemoReport {
-        run,
-        ..DemoReport::default()
-    };
-
+    refuse_seeded(owner, tenant).await?;
+    for (phone, password, env) in [
+        (
+            MANAGER_PHONE,
+            options.manager_password,
+            "APP_NEW_USER_PASSWORD",
+        ),
+        (
+            TECHNICIAN_PHONE,
+            options.technician_password,
+            "APP_NEW_TECHNICIAN_PASSWORD",
+        ),
+        (
+            FORMER_TECHNICIAN_PHONE,
+            options.former_technician_password,
+            "APP_NEW_FORMER_TECHNICIAN_PASSWORD",
+        ),
+    ] {
+        if password.is_none() && !login_exists(owner, phone).await? {
+            bail!(
+                "{env} is required: the demo login {phone} does not exist yet; nothing was changed"
+            );
+        }
+    }
+    let mut report = DemoReport::default();
+    let mut phases = Vec::new();
+    let started = Instant::now();
     let owner_actor = member_actor(app, owner_of(owner, tenant).await?, tenant).await?;
     report.catalog_seeded = ensure_catalog(owner, tenant, slug).await?;
-    let catalog = Catalog::load(app, &owner_actor).await?;
-    report.plans_created = ensure_plans(app, &owner_actor, &catalog).await?;
+    report.plans_created = ensure_plans(app, &owner_actor).await?;
     let catalog = Catalog::load(app, &owner_actor).await?;
 
-    let manager_user = identity::provisioning::add_user(
-        owner,
-        identity::provisioning::NewUser {
-            tenant_slug: slug,
-            phone: data::MANAGER_PHONE,
-            full_name: data::MANAGER_NAME,
-            password: options.manager_password,
-            role: identity::SystemRole::Manager,
-        },
-    )
-    .await
-    .map_err(fail("add the demo manager"))?;
-    let manager = member_actor(app, manager_user, tenant).await?;
-    let (staff_added, staff) = ensure_staff(owner, app, &manager, slug).await?;
-    report.staff_added = staff_added;
-
+    let logins = staff::Logins {
+        manager: ensure_login(
+            owner,
+            slug,
+            MANAGER_PHONE,
+            data::MANAGER_NAME,
+            identity::SystemRole::Manager,
+            options.manager_password,
+            "APP_NEW_USER_PASSWORD",
+        )
+        .await?,
+        technician: ensure_login(
+            owner,
+            slug,
+            TECHNICIAN_PHONE,
+            "Nguyễn Thị Lan",
+            identity::SystemRole::Technician,
+            options.technician_password,
+            "APP_NEW_TECHNICIAN_PASSWORD",
+        )
+        .await?,
+        former: ensure_login(
+            owner,
+            slug,
+            FORMER_TECHNICIAN_PHONE,
+            "Đỗ Thị Ngân",
+            identity::SystemRole::Technician,
+            options.former_technician_password,
+            "APP_NEW_FORMER_TECHNICIAN_PASSWORD",
+        )
+        .await?,
+    };
+    let manager = member_actor(app, logins.manager, tenant).await?;
     let tz = {
         let mut tx = TenantTx::begin(app, tenant).await.map_err(fail("open"))?;
         let profile = kernel::tenant::profile(&mut tx)
@@ -120,42 +214,197 @@ pub async fn seed(
         tx.commit().await.map_err(fail("commit"))?;
         profile.timezone
     };
-    let mut spa = Spa {
+    let now = Utc::now();
+    let today = kernel::BusinessDate::of_instant(now, tz).as_naive();
+    let window = Window::new(today, options.months);
+    report.window_start = Some(window.start);
+    report.today = Some(today);
+
+    let roster = staff::roster(today);
+    let staff_ids = staff::setup(
+        owner,
+        app,
+        &owner_actor,
+        slug,
+        &roster,
+        &logins,
+        &mut report.staff,
+    )
+    .await?;
+    phases.push(Phase {
+        name: "setup (catalog, logins, roster)",
+        seconds: started.elapsed().as_secs_f64(),
+        statements: 0,
+    });
+
+    let mut rng = Rng::new(SEED);
+    let attendance = staff::Attendance::plan(window, &roster, &mut rng);
+    let count = 40 + 15 * usize::try_from(options.months).unwrap_or(12);
+    let people = people::people(window, count, &mut rng);
+    let ctx = Ctx {
         app,
         cipher,
         owner: owner_actor,
         manager,
         catalog,
-        staff,
+        roster,
+        staff: staff_ids,
+        attendance,
         tz,
-        today: kernel::BusinessDate::of_instant(Utc::now(), tz).as_naive(),
-        rng: Rng::new(SEED ^ u64::from(run)),
-        customers: Vec::new(),
-        packages: Vec::new(),
-        report,
+        window,
+        now,
+        workers: options.workers.max(1),
     };
-    spa.create_customers(run).await?;
-    spa.import_paper_books(run).await?;
-    spa.back_fill_history().await?;
-    spa.run_today().await?;
-    spa.book_upcoming().await?;
-    spa.cancel_one_with_refund().await?;
-    if run == 0 {
-        let demo = staff::StaffDemo {
-            owner_pool: owner,
-            app,
-            tenant,
-            slug,
-            password: options.manager_password,
-            owner: &spa.owner,
-            manager: &spa.manager,
-            technicians: &spa.staff.technicians,
-            manager_staff: spa.staff.closer,
-            today: spa.today,
-        };
-        spa.report.staff_management = demo.run(&mut spa.rng).await?;
+    let today_minutes = today_minutes(ctx.now_minute(), &mut rng);
+    let schedule = plan::schedule(window, &people, &today_minutes, &mut rng);
+
+    let mut ids = timed(&mut phases, "customers", ctx.create_customers(&people)).await?;
+    report.customers = ids.iter().filter(|id| !id.is_nil()).count();
+    let mut initial: Vec<Vec<Package>> = vec![Vec::new(); people.len()];
+    report.opening_balances = timed(
+        &mut phases,
+        "paper-book opening balances",
+        ctx.import_paper_books(&people, &mut ids, &mut initial),
+    )
+    .await?;
+    report.customers = ids.iter().filter(|id| !id.is_nil()).count();
+
+    let mut chains: Vec<(usize, Vec<plan::Visit>)> = schedule.into_iter().enumerate().collect();
+    // Longest chains first, so no worker is left with a long one at the end.
+    chains.sort_by_key(|(c, visits)| (std::cmp::Reverse(visits.len()), *c));
+    let ctx_ref = &ctx;
+    let (ids_ref, people_ref, initial_ref) = (&ids, &people, &initial);
+    let results = timed(
+        &mut phases,
+        "front desk history (visits, sales, voids, corrections, follow-ups)",
+        run::each(chains, ctx.workers, |(c, visits)| async move {
+            Chain::new(
+                ctx_ref,
+                c,
+                ids_ref[c],
+                &people_ref[c],
+                initial_ref[c].clone(),
+            )
+            .run(&visits)
+            .await
+        }),
+    )
+    .await?;
+    let mut packages: Vec<Package> = Vec::new();
+    for (p, tally) in results {
+        packages.extend(p);
+        report.desk.add(&tally);
     }
-    Ok(spa.report)
+    packages.sort_by_key(|p| (p.customer, p.starts_on));
+
+    report.calendar = timed(
+        &mut phases,
+        "appointments",
+        calendar::write(&ctx, &people, &ids, &mut rng),
+    )
+    .await?;
+    let (cancelled, extended) = timed(
+        &mut phases,
+        "package cancellations and extension",
+        ctx.package_lifecycle(&packages, &initial),
+    )
+    .await?;
+    report.cancelled_with_refund = cancelled;
+    report.extended = extended;
+
+    let books = staff::Books {
+        app,
+        owner: &ctx.owner,
+        manager: &ctx.manager,
+        window,
+        roster: &ctx.roster,
+        staff: &ctx.staff,
+        attendance: &ctx.attendance,
+        workers: ctx.workers,
+    };
+    let mut staff_report = std::mem::take(&mut report.staff);
+    timed(
+        &mut phases,
+        "staff books and payroll close",
+        books.write(&mut rng, &mut staff_report),
+    )
+    .await?;
+    report.staff = staff_report;
+
+    // "Quên mật khẩu?" from the technician: the owner's overview lists it.
+    identity::service::request_password_reset(
+        app,
+        TECHNICIAN_PHONE,
+        &identity::service::ClientMeta {
+            ip: None,
+            user_agent: Some("seed-demo".to_owned()),
+        },
+    )
+    .await
+    .map_err(fail("request a password reset"))?;
+    report.phases = phases;
+    Ok(report)
+}
+
+/// Refuses a spa that already has demo customers: nothing is written.
+async fn refuse_seeded(owner: &PgPool, tenant: TenantId) -> anyhow::Result<()> {
+    let seeded: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM app.customer WHERE tenant_id = $1 AND phone_e164 LIKE $2)",
+    )
+    .bind(tenant.as_uuid())
+    .bind(format!("{DEMO_PHONE_PREFIX}%"))
+    .fetch_one(owner)
+    .await?;
+    if seeded {
+        bail!(
+            "this spa already has demo data (customers with phones 0399 00…); nothing was \
+             changed. Empty it first with `app reset-demo --tenant <slug>`."
+        );
+    }
+    Ok(())
+}
+
+/// Runs one phase, recording its time and SQL statement count.
+async fn timed<T>(
+    phases: &mut Vec<Phase>,
+    name: &'static str,
+    work: impl Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<T> {
+    let started = Instant::now();
+    let (out, statements) = crate::server_timing::count_statements(work).await;
+    phases.push(Phase {
+        name,
+        seconds: started.elapsed().as_secs_f64(),
+        statements,
+    });
+    tracing::info!(
+        phase = name,
+        seconds = started.elapsed().as_secs_f64(),
+        statements,
+        "demo phase done"
+    );
+    out
+}
+
+/// Today's visit times up to now (local minutes): from 08:00 (or half an hour ago when it is
+/// earlier), the last one minutes ago so it is still under way on `/quay`.
+fn today_minutes(now_minute: u32, rng: &mut Rng) -> Vec<u32> {
+    let end = now_minute.saturating_sub(1);
+    let start = (8 * 60).min(end.saturating_sub(30));
+    let span = end - start;
+    let n = (3 + span / 75).min(12);
+    let step = (span / n).max(1);
+    let mut out: Vec<u32> = (1..n)
+        .map(|i| {
+            start + step * i
+                - u32::try_from(rng.below(usize::try_from(step / 2).unwrap_or(0))).unwrap_or(0)
+        })
+        .collect();
+    out.push(
+        end.saturating_sub(u32::try_from(rng.below(10)).unwrap_or(0))
+            .max(start),
+    );
+    out
 }
 
 /// Maps a use-case error to a readable failure naming the step.
@@ -166,35 +415,6 @@ fn fail(step: &'static str) -> impl FnOnce(AppError) -> anyhow::Error {
 fn idempotency() -> (Uuid, [u8; 32]) {
     let key = Uuid::now_v7();
     (key, hash_request(key.as_bytes()))
-}
-
-/// 0 for the first demo batch; refuses a second unless `force_again`.
-async fn next_run(owner: &PgPool, tenant: TenantId, force_again: bool) -> anyhow::Result<u32> {
-    let latest: Option<String> = sqlx::query_scalar(
-        "SELECT max(substring(phone_e164 FROM 7 FOR 2)) FROM app.customer
-         WHERE tenant_id = $1 AND phone_e164 LIKE $2",
-    )
-    .bind(tenant.as_uuid())
-    .bind(format!("{DEMO_PHONE_PREFIX}%"))
-    .fetch_one(owner)
-    .await?;
-    match latest {
-        None => Ok(0),
-        Some(_) if !force_again => bail!(
-            "this spa already has demo data (customers with phones 0399…); \
-             nothing was changed. Pass --force-again to add another batch."
-        ),
-        Some(run) => {
-            let next = run.parse::<u32>().context("demo phone block")? + 1;
-            anyhow::ensure!(next < 100, "the demo phone block is full (100 runs)");
-            Ok(next)
-        }
-    }
-}
-
-/// `0399 RR CCCC` in national form: run `RR`, customer `CCCC` (1-based).
-fn demo_phone(run: u32, customer: usize) -> String {
-    format!("0399{run:02}{:04}", customer + 1)
 }
 
 pub(crate) async fn owner_of(owner: &PgPool, tenant: TenantId) -> anyhow::Result<UserId> {
@@ -210,7 +430,7 @@ pub(crate) async fn owner_of(owner: &PgPool, tenant: TenantId) -> anyhow::Result
     .await?;
     user.map(UserId::from_uuid).context(
         "the spa has no owner yet: run `app add-user --role owner` first \
-         (refunds and the paper-book import act as the owner)",
+         (refunds, payroll and the paper-book import act as the owner)",
     )
 }
 
@@ -227,6 +447,47 @@ pub(crate) async fn member_actor(
     Ok(Actor::new(user, tenant, permissions, None))
 }
 
+async fn login_exists(owner: &PgPool, phone: &str) -> anyhow::Result<bool> {
+    let e164 = kernel::PhoneE164::parse(phone).map_err(|_| anyhow!("demo phone {phone}"))?;
+    Ok(
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM app.user_account WHERE phone_e164 = $1)")
+            .bind(e164.as_str())
+            .fetch_one(owner)
+            .await?,
+    )
+}
+
+/// The login with `phone` as a member of the spa with `role`: an existing account is reused and
+/// keeps its password (and MFA); a new one needs `password`, read by the CLI from `env`.
+async fn ensure_login(
+    owner: &PgPool,
+    slug: &str,
+    phone: &str,
+    name: &str,
+    role: identity::SystemRole,
+    password: Option<&str>,
+    env: &str,
+) -> anyhow::Result<UserId> {
+    let password = match (login_exists(owner, phone).await?, password) {
+        (false, None) => bail!("{env} is required: the demo login {phone} does not exist yet"),
+        (false, Some(p)) => p,
+        // `add_user` never reads the password of an account that exists.
+        (true, p) => p.unwrap_or_default(),
+    };
+    identity::provisioning::add_user(
+        owner,
+        identity::provisioning::NewUser {
+            tenant_slug: slug,
+            phone,
+            full_name: name,
+            password,
+            role,
+        },
+    )
+    .await
+    .map_err(fail("add a demo login"))
+}
+
 async fn ensure_catalog(owner: &PgPool, tenant: TenantId, slug: &str) -> anyhow::Result<bool> {
     let services: i64 = sqlx::query_scalar("SELECT count(*) FROM app.service WHERE tenant_id = $1")
         .bind(tenant.as_uuid())
@@ -241,9 +502,11 @@ async fn ensure_catalog(owner: &PgPool, tenant: TenantId, slug: &str) -> anyhow:
     Ok(true)
 }
 
-struct Catalog {
+/// The catalog the seed sells from: services by name with their prices, and the demo plans (in
+/// [`PLANS`] order) with their current price.
+pub(crate) struct Catalog {
     services: HashMap<String, (Uuid, catalog::ServicePrices)>,
-    plans: HashMap<String, Uuid>,
+    plans: Vec<(Uuid, i64)>,
 }
 
 impl Catalog {
@@ -254,12 +517,19 @@ impl Catalog {
             .into_iter()
             .map(|s| (s.name, (s.id, s.prices)))
             .collect();
-        let plans = catalog::service::package_plans(app, actor, true)
+        let listed = catalog::service::package_plans(app, actor, true)
             .await
-            .map_err(fail("list package plans"))?
-            .into_iter()
-            .map(|p| (p.name, p.id))
-            .collect();
+            .map_err(fail("list package plans"))?;
+        let plans = PLANS
+            .iter()
+            .map(|plan| {
+                listed
+                    .iter()
+                    .find(|p| p.name == plan.name)
+                    .map(|p| (p.id, p.price.as_i64()))
+                    .with_context(|| format!("package plan {:?} missing or inactive", plan.name))
+            })
+            .collect::<anyhow::Result<_>>()?;
         Ok(Self { services, plans })
     }
 
@@ -269,11 +539,10 @@ impl Catalog {
         })
     }
 
-    fn plan(&self, name: &str) -> anyhow::Result<Uuid> {
-        self.plans
-            .get(name)
-            .copied()
-            .with_context(|| format!("package plan {name:?} missing"))
+    /// The service of the plan's first item (today's session of a package sold in a visit).
+    fn plan_service(&self, plan: usize) -> anyhow::Result<Uuid> {
+        let item = PLANS[plan].items.first().context("plan without items")?;
+        self.service(item.service)
     }
 
     /// The listed price of a one-off service for this customer, as the server will charge it.
@@ -294,10 +563,19 @@ impl Catalog {
     }
 }
 
-async fn ensure_plans(app: &PgPool, owner: &Actor, catalog: &Catalog) -> anyhow::Result<usize> {
+async fn ensure_plans(app: &PgPool, owner: &Actor) -> anyhow::Result<usize> {
+    let services: HashMap<String, Uuid> = catalog::service::services(app, owner, true)
+        .await
+        .map_err(fail("list services"))?
+        .into_iter()
+        .map(|s| (s.name, s.id))
+        .collect();
+    let existing = catalog::service::package_plans(app, owner, false)
+        .await
+        .map_err(fail("list package plans"))?;
     let mut created = 0;
     for plan in PLANS {
-        if catalog.plans.contains_key(plan.name) {
+        if existing.iter().any(|p| p.name == plan.name) {
             continue;
         }
         let items = plan
@@ -305,7 +583,9 @@ async fn ensure_plans(app: &PgPool, owner: &Actor, catalog: &Catalog) -> anyhow:
             .iter()
             .map(|i| {
                 Ok(catalog::commands::PlanItemInput {
-                    service_id: catalog.service(i.service)?,
+                    service_id: *services
+                        .get(i.service)
+                        .with_context(|| format!("service {:?} missing", i.service))?,
                     sessions: i.sessions,
                     bonus_sessions: i.bonus_sessions,
                 })
@@ -330,208 +610,24 @@ async fn ensure_plans(app: &PgPool, owner: &Actor, catalog: &Catalog) -> anyhow:
     Ok(created)
 }
 
-/// Active staff by name, adding the demo technicians and the manager's staff entry when missing.
-async fn ensure_staff(
-    owner: &PgPool,
-    app: &PgPool,
-    manager: &Actor,
-    slug: &str,
-) -> anyhow::Result<(usize, Staff)> {
-    let active = |list: Vec<org::service::Staff>| -> HashMap<String, Uuid> {
-        list.into_iter()
-            .map(|s| (s.full_name, s.id))
-            .collect::<HashMap<_, _>>()
-    };
-    let existing = active(
-        org::service::list(app, manager, Some(org::StaffStatus::Active))
-            .await
-            .map_err(fail("list staff"))?,
-    );
-    let wanted = data::TECHNICIANS
-        .iter()
-        .map(|n| (*n, data::TECHNICIAN_POSITION))
-        .chain([(data::MANAGER_NAME, data::MANAGER_POSITION)]);
-    let mut added = 0;
-    for (name, position) in wanted {
-        if !existing.contains_key(name) {
-            org::provisioning::add_staff(owner, slug, name, position)
-                .await
-                .map_err(fail("add staff"))?;
-            added += 1;
-        }
-    }
-    let all = active(
-        org::service::list(app, manager, Some(org::StaffStatus::Active))
-            .await
-            .map_err(fail("list staff"))?,
-    );
-    let technicians = data::TECHNICIANS
-        .iter()
-        .map(|n| all.get(*n).copied().context("technician vanished"))
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    let closer = all
-        .get(data::MANAGER_NAME)
-        .copied()
-        .context("manager staff vanished")?;
-    Ok((
-        added,
-        Staff {
-            technicians,
-            closer,
-        },
-    ))
-}
-
-struct Staff {
-    technicians: Vec<Uuid>,
-    /// The manager's staff entry, who closes most sales (D9).
-    closer: Uuid,
-}
-
-struct Customer {
-    id: Uuid,
-    sex: Sex,
-    gender_recorded: bool,
-}
-
-struct Item {
-    id: Uuid,
-    service_id: Uuid,
-    remaining: u32,
-}
-
-/// What the seeder knows about a package, mirrored from the use-case responses.
-struct Package {
-    id: Uuid,
-    customer: usize,
-    items: Vec<Item>,
-    expires_on: Option<NaiveDate>,
-    sold_on: NaiveDate,
-    sold_price: i64,
-    sessions_total: u32,
-    from_sale: bool,
-    cancelled: bool,
-    /// Sessions the random visits leave untouched (the "expiring soon" package keeps some).
-    keep: u32,
-}
-
-impl Package {
-    fn remaining(&self) -> u32 {
-        self.items.iter().map(|i| i.remaining).sum()
-    }
-
-    fn usable_on(&self, day: NaiveDate) -> bool {
-        !self.cancelled
-            && self.sold_on <= day
-            && self.expires_on.is_none_or(|e| e >= day)
-            && self.remaining() > self.keep
-    }
-}
-
-#[derive(Deserialize)]
-struct PackageJson {
-    id: Uuid,
-    sold_price: i64,
-    expires_on: Option<NaiveDate>,
-    starts_on: NaiveDate,
-    sale_id: Option<Uuid>,
-    items: Vec<ItemJson>,
-}
-
-#[derive(Deserialize)]
-struct ItemJson {
-    id: Uuid,
-    service_id: Uuid,
-    sessions_total: i32,
-    sessions_remaining: i32,
-}
-
-fn packages_in(body: &Value, customer: usize) -> anyhow::Result<Vec<Package>> {
-    let list: Vec<PackageJson> = serde_json::from_value(body["customer_packages"].clone())
-        .context("customer_packages in the response")?;
-    Ok(list
-        .into_iter()
-        .map(|p| {
-            let as_u32 = |v: i32| u32::try_from(v).unwrap_or(0);
-            Package {
-                id: p.id,
-                customer,
-                sessions_total: p.items.iter().map(|i| as_u32(i.sessions_total)).sum(),
-                items: p
-                    .items
-                    .iter()
-                    .map(|i| Item {
-                        id: i.id,
-                        service_id: i.service_id,
-                        remaining: as_u32(i.sessions_remaining),
-                    })
-                    .collect(),
-                expires_on: p.expires_on,
-                sold_on: p.starts_on,
-                sold_price: p.sold_price,
-                from_sale: p.sale_id.is_some(),
-                cancelled: false,
-                keep: 0,
-            }
-        })
-        .collect())
-}
-
-/// One line of a visit the seeder is about to record.
-struct Line {
-    service_id: Uuid,
-    /// `Some` = consume this package item; `None` = one-off at the listed price.
-    item: Option<(usize, Uuid)>,
-    unit_price: i64,
-    override_reason: Option<&'static str>,
-}
-
-enum TodayEvent {
-    Sale(usize),
-    Visit,
-    WrongSaleVoided(usize),
-    WrongVisitVoided,
-    ExpiredOverride,
-}
-
-struct Spa<'a> {
+/// What every phase of the run shares.
+pub(crate) struct Ctx<'a> {
     app: &'a PgPool,
     cipher: &'a FieldCipher,
     owner: Actor,
     manager: Actor,
     catalog: Catalog,
-    staff: Staff,
+    roster: Vec<staff::Member>,
+    staff: staff::Staff,
+    attendance: staff::Attendance,
     tz: Tz,
-    today: NaiveDate,
-    rng: Rng,
-    customers: Vec<Customer>,
-    packages: Vec<Package>,
-    report: DemoReport,
+    window: Window,
+    /// The run's clock, read once: "today" and today's times never move during a run.
+    now: DateTime<Utc>,
+    workers: usize,
 }
 
-/// Customers bought a package on these days (index into `CUSTOMERS`, days before today).
-const PAST_SALES: &[(usize, i64)] = &[
-    (2, 20),
-    (3, 19),
-    (4, 18),
-    (5, 18),
-    (7, 17),
-    (8, 15),
-    (9, 15),
-    (10, 14),
-    (11, 12),
-    (12, 11),
-    (13, 10),
-    (14, 9),
-    (15, 8),
-    (16, 6),
-    (17, 5),
-    (18, 4),
-    (19, 3),
-    (20, 2),
-];
-
-impl Spa<'_> {
+impl Ctx<'_> {
     fn at(&self, day: NaiveDate, minutes: u32) -> anyhow::Result<DateTime<Utc>> {
         let local = day
             .and_hms_opt(minutes / 60, minutes % 60, 0)
@@ -544,61 +640,91 @@ impl Spa<'_> {
             .with_timezone(&Utc))
     }
 
-    fn technician(&mut self) -> Uuid {
-        let i = self.rng.below(self.staff.technicians.len());
-        self.staff.technicians[i]
+    /// Local minutes after midnight of the run's clock.
+    fn now_minute(&self) -> u32 {
+        let local = self.now.with_timezone(&self.tz);
+        local.hour() * 60 + local.minute()
     }
 
-    async fn create_customers(&mut self, run: u32) -> anyhow::Result<()> {
-        for (i, c) in CUSTOMERS.iter().enumerate() {
-            let (sex, recorded) = match c.gender {
-                Gender::Recorded(s) => (s, true),
-                Gender::Unrecorded(s) => (s, false),
+    /// The manager's staff record, who closes most package sales (D9).
+    fn manager_staff(&self) -> Uuid {
+        self.staff.ids[0]
+    }
+
+    fn roster_works(&self, staff: Uuid, day: NaiveDate) -> bool {
+        self.staff
+            .ids
+            .iter()
+            .position(|id| *id == staff)
+            .is_some_and(|m| self.roster[m].works_on(day))
+    }
+
+    fn technicians_on(&self, day: NaiveDate) -> Vec<Uuid> {
+        self.attendance
+            .technicians_on(&self.roster, day)
+            .into_iter()
+            .map(|m| self.staff.ids[m])
+            .collect()
+    }
+
+    /// Technicians still working here (bookings ahead).
+    fn active_technicians(&self) -> Vec<Uuid> {
+        (0..self.roster.len())
+            .filter(|&m| self.roster[m].technician && self.roster[m].left.is_none())
+            .map(|m| self.staff.ids[m])
+            .collect()
+    }
+
+    /// Every customer but the two the paper-book import creates, side by side. Returns their
+    /// ids by index (nil for the paper-book ones until they are imported).
+    async fn create_customers(&self, people: &[Person]) -> anyhow::Result<Vec<Uuid>> {
+        let items: Vec<usize> = (0..people.len()).collect();
+        run::each(items, self.workers, |i| async move {
+            if i < 2 {
+                return Ok(Uuid::nil());
+            }
+            let p = &people[i];
+            let (key, hash) = idempotency();
+            let input = || crm::service::ProfileInput {
+                full_name: p.full_name.clone(),
+                phone: p.phone.clone(),
+                gender: p.gender_recorded.then_some(crm_gender(p.sex)),
+                birth_year: p.birth_year,
+                birth_date: p.birth_date,
+                address: p.address.map(str::to_owned),
+                source: p.source.map(str::to_owned),
+                note: None,
             };
-            // The first two arrive through the paper-book import (`import_paper_books`).
-            let id = if i < 2 {
-                Uuid::nil()
-            } else {
-                let (key, hash) = idempotency();
-                let view = crm::service::create(
+            let view = run::retry(|| {
+                crm::service::create(
                     self.app,
                     self.cipher,
                     &self.manager,
                     key,
                     hash,
-                    crm::service::ProfileInput {
-                        full_name: Some(c.full_name.to_owned()),
-                        phone: Some(demo_phone(run, i)),
-                        gender: recorded.then_some(crm_gender(sex)),
-                        birth_year: c.birth_year,
-                        birth_date: None,
-
-                        address: c.address.map(str::to_owned),
-                        source: c.source.map(str::to_owned),
-                        note: None,
-                    },
-                    c.health_note,
+                    input(),
+                    p.health_note,
                 )
-                .await
-                .map_err(fail("create a customer"))?;
-                self.report.customers += 1;
-                self.report.health_notes += usize::from(c.health_note.is_some());
-                view.row.id
-            };
-            self.customers.push(Customer {
-                id,
-                sex,
-                gender_recorded: recorded,
-            });
-        }
-        Ok(())
+            })
+            .await
+            .map_err(fail("create a customer"))?;
+            Ok(view.row.id)
+        })
+        .await
     }
 
-    /// Three customers carried over from the paper books on go-live day: two new profiles created
-    /// by the import itself, one existing. Includes a package expiring in five days and one that
-    /// expired three days ago (used once today with the manager's override).
-    async fn import_paper_books(&mut self, run: u32) -> anyhow::Result<()> {
-        let today = self.today;
+    /// Four customers carried over from the paper books on go-live day, through the import's
+    /// use case (as the owner): two new profiles created by the import itself, two existing.
+    /// Their packages are the scripted states: expiring in five days (some sessions kept), expired
+    /// three days ago (used today with an override), two sessions left (used up during the
+    /// history), expired 20 days ago (extended today).
+    async fn import_paper_books(
+        &self,
+        people: &[Person],
+        ids: &mut [Uuid],
+        initial: &mut [Vec<Package>],
+    ) -> anyhow::Result<usize> {
+        let today = self.window.today;
         let day = |offset: i64| (today + Duration::days(offset)).to_string();
         let item = |service: &str, purchased: u32, bonus: u32, remaining: u32| {
             Ok::<_, anyhow::Error>(json!({
@@ -607,549 +733,153 @@ impl Spa<'_> {
             }))
         };
         let profile = |i: usize| {
-            let c = &CUSTOMERS[i];
-            let gender = match c.gender {
-                Gender::Recorded(Sex::Female) => Some("female"),
-                Gender::Recorded(Sex::Male) => Some("male"),
-                Gender::Unrecorded(_) => None,
-            };
+            let p = &people[i];
             json!({
-                "full_name": c.full_name, "phone": demo_phone(run, i), "gender": gender,
-                "birth_year": c.birth_year, "address": c.address, "source": c.source,
-                "health_note": c.health_note,
+                "full_name": p.full_name, "phone": p.phone,
+                "gender": p.gender_recorded.then_some(match p.sex {
+                    Sex::Female => "female",
+                    Sex::Male => "male",
+                }),
+                "birth_year": p.birth_year, "address": p.address, "source": p.source,
+                "health_note": p.health_note,
             })
         };
+        let before_window = (self.window.start - today).num_days() - 30;
         let imports = [
             (
                 0,
                 json!({"customer": profile(0), "packages": [
-                    {"package_plan_id": self.catalog.plan(PLANS[0].name)?, "sold_price": 790_000,
+                    {"package_plan_id": self.catalog.plans[0].0, "sold_price": 790_000,
                      "starts_on": day(-176), "expires_on": day(5), "gift_note": "Đã nhận dầu gội",
                      "items": [item("Thư Giãn", 10, 2, 6)?]},
                     {"name": "Xông chân 10 buổi", "sold_price": 1_200_000,
                      "starts_on": day(-200), "expires_on": day(-3),
                      "items": [item("Xông chân thảo dược + Massage chân", 10, 0, 3)?]},
                 ]}),
+                // The expired one keeps two sessions: one for today's override, one so it stays
+                // "expired" rather than "used up".
+                vec![2, 2],
             ),
             (
                 1,
                 json!({"customer": profile(1), "packages": [
-                    {"package_plan_id": self.catalog.plan(PLANS[2].name)?, "sold_price": 2_500_000,
+                    {"package_plan_id": self.catalog.plans[2].0, "sold_price": 2_500_000,
                      "starts_on": day(-60), "expires_on": day(305),
                      "items": [item("Thân Tâm An Định", 10, 2, 9)?]},
                 ]}),
+                vec![0],
             ),
             (
-                6,
-                json!({"customer_id": self.customers[6].id, "packages": [
+                2,
+                json!({"customer_id": ids[2], "packages": [
                     {"name": "Cổ vai gáy 10 buổi", "sold_price": 2_000_000,
-                     "starts_on": day(-90),
-                     "items": [item("An Kiên Lạc", 10, 0, 6)?]},
+                     "starts_on": day(before_window),
+                     "items": [item("An Kiên Lạc", 10, 0, 2)?]},
                 ]}),
+                vec![0],
+            ),
+            (
+                3,
+                json!({"customer_id": ids[3], "packages": [
+                    {"name": "Massage body 10 buổi", "sold_price": 2_200_000,
+                     "starts_on": day(-220), "expires_on": day(-20),
+                     "items": [item("Thân Tâm An Định", 10, 0, 4)?]},
+                ]}),
+                vec![4],
             ),
         ];
-        for (customer, body) in imports {
+        for (customer, body, keep) in imports {
             let input: packages::opening_balance::OpeningBalanceCreate =
                 serde_json::from_value(body).context("opening balance body")?;
             let (key, hash) = idempotency();
-            let (_, reply) = sales::paper::import_opening_balance(
-                self.app,
-                self.cipher,
-                &self.owner,
-                key,
-                hash,
-                &input,
-            )
+            let (_, reply) = run::retry(|| {
+                sales::paper::import_opening_balance(
+                    self.app,
+                    self.cipher,
+                    &self.owner,
+                    key,
+                    hash,
+                    &input,
+                )
+            })
             .await
             .map_err(fail("import a paper-book package"))?;
             if customer < 2 {
-                self.customers[customer].id = serde_json::from_value(reply["customer_id"].clone())
+                ids[customer] = serde_json::from_value(reply["customer_id"].clone())
                     .context("imported customer id")?;
-                self.report.customers += 1;
-                self.report.health_notes += usize::from(CUSTOMERS[customer].health_note.is_some());
             }
             let mut imported = packages_in(&reply, customer)?;
-            for p in &mut imported {
-                // Imported on go-live day, three weeks ago: usable from then on.
-                p.sold_on = today - Duration::days(HISTORY_DAYS);
-                if p.expires_on.is_some_and(|e| e <= today + Duration::days(7)) {
-                    p.keep = 2; // stays "expiring soon" with sessions left
-                }
+            for (p, k) in imported.iter_mut().zip(keep) {
+                p.keep = k;
             }
-            self.packages.extend(imported);
-            self.report.opening_balances += 1;
+            initial[customer].extend(imported);
         }
-        Ok(())
+        Ok(PAPER_CUSTOMERS)
     }
 
-    async fn sell(
-        &mut self,
-        customer: usize,
-        plan: usize,
-        at: DateTime<Utc>,
-    ) -> anyhow::Result<Uuid> {
-        let plan = &PLANS[plan % PLANS.len()];
-        let discount = if self.rng.chance(30) {
-            let pct = if self.rng.chance(50) { 5 } else { 10 };
-            let reason = *self.rng.pick(data::DISCOUNT_REASONS).context("reasons")?;
-            Some((plan.price * pct / 100 / 1000 * 1000, reason))
-        } else {
-            None
-        };
-        let total = plan.price - discount.map_or(0, |(amount, _)| amount);
-        let closer = if self.rng.chance(70) {
-            self.staff.closer
-        } else {
-            self.technician()
-        };
-        let input = SaleCreate {
-            customer_id: self.customers[customer].id,
-            beneficiary_customer_id: None,
-            closer_staff_id: Some(closer),
-            lines: vec![SaleLineCreate {
-                package_plan_id: self.catalog.plan(plan.name)?,
-                gift_note: None,
-            }],
-            discount: discount.map(|(amount, reason)| DiscountCreate {
-                amount,
-                reason: Some(reason.to_owned()),
-            }),
-            payments: self.payments(total),
-            note: None,
-        };
-        let (key, hash) = idempotency();
-        let (_, body) = sales::service::create_sale_as_of(
-            self.app,
-            self.cipher,
-            &self.manager,
-            key,
-            hash,
-            &input,
-            at,
-        )
-        .await
-        .map_err(fail("sell a package"))?;
-        self.packages.extend(packages_in(&body, customer)?);
-        self.report.package_sales += 1;
-        self.report.discounted_sales += usize::from(discount.is_some());
-        serde_json::from_value(body["id"].clone()).context("sale id")
-    }
-
-    /// Cash, transfer, or both (about 55 / 37 / 8), always the exact amount due (R1 collects in full).
-    fn payments(&mut self, total: i64) -> Vec<PaymentCreate> {
-        let pay = |method, amount| PaymentCreate {
-            method,
-            amount,
-            reference: None,
-        };
-        if total <= 0 {
-            return Vec::new();
-        }
-        match self.rng.below(100) {
-            0..55 => vec![pay(PaymentMethodDto::Cash, total)],
-            55..92 => vec![pay(PaymentMethodDto::BankTransfer, total)],
-            _ if total >= 100_000 => {
-                let cash = total / 2 / 10_000 * 10_000;
-                vec![
-                    pay(PaymentMethodDto::Cash, cash),
-                    pay(PaymentMethodDto::BankTransfer, total - cash),
-                ]
-            }
-            _ => vec![pay(PaymentMethodDto::Cash, total)],
-        }
-    }
-
-    /// A package line when the customer has a usable package, else a one-off service; sometimes
-    /// an extra paid on the spot.
-    fn plan_visit(&mut self, customer: usize, day: NaiveDate) -> anyhow::Result<Vec<Line>> {
-        let sex = self.customers[customer].sex;
-        let usable: Vec<usize> = (0..self.packages.len())
-            .filter(|&p| self.packages[p].customer == customer && self.packages[p].usable_on(day))
-            .collect();
-        let mut lines = Vec::new();
-        if let Some(&p) = self.rng.pick(&usable) {
-            let items: Vec<(Uuid, Uuid)> = self.packages[p]
-                .items
-                .iter()
-                .filter(|i| i.remaining > 0)
-                .map(|i| (i.id, i.service_id))
-                .collect();
-            let &(item, service_id) = self.rng.pick(&items).context("usable item")?;
-            lines.push(Line {
-                service_id,
-                item: Some((p, item)),
-                unit_price: 0,
-                override_reason: None,
-            });
-        } else {
-            let name = *self.rng.pick(data::ONE_OFF_SERVICES).context("services")?;
-            let service_id = self.catalog.service(name)?;
-            lines.push(Line {
-                service_id,
-                item: None,
-                unit_price: self.catalog.price(service_id, sex)?,
-                override_reason: None,
-            });
-        }
-        if self.rng.chance(25) {
-            let name = *self.rng.pick(data::ADD_ONS).context("add-ons")?;
-            let service_id = self.catalog.service(name)?;
-            lines.push(Line {
-                service_id,
-                item: None,
-                unit_price: self.catalog.price(service_id, sex)?,
-                override_reason: None,
-            });
-        }
-        Ok(lines)
-    }
-
-    /// Records a visit as the manager at `at` (its business day is the day of `at`) and mirrors
-    /// the sessions it took. Returns the visit id.
-    async fn visit(
-        &mut self,
-        customer: usize,
-        lines: Vec<Line>,
-        at: DateTime<Utc>,
-    ) -> anyhow::Result<Uuid> {
-        let (customer_id, sex, recorded) = {
-            let c = &self.customers[customer];
-            (c.id, c.sex, c.gender_recorded)
-        };
-        let variant = (!recorded).then_some(match sex {
-            Sex::Female => catalog::PriceVariant::Female,
-            Sex::Male => catalog::PriceVariant::Male,
-        });
-        let total: i64 = lines.iter().map(|l| l.unit_price).sum();
-        let mut wire = Vec::with_capacity(lines.len());
-        for l in &lines {
-            wire.push(VisitLineCreate {
-                service_id: l.service_id,
-                source: if l.item.is_some() {
-                    VisitLineSourceDto::Package
-                } else {
-                    VisitLineSourceDto::OneOff
-                },
-                customer_package_item_id: l.item.map(|(_, item)| item),
-                staff_id: Some(self.technician()),
-                qty: None,
-                price_variant: if l.item.is_some() { None } else { variant },
-                expiry_override_reason: l.override_reason.map(str::to_owned),
-                package_ref: None,
-                referrer_staff_id: None,
-            });
-        }
-        let note = if self.rng.chance(15) {
-            self.rng.pick(data::VISIT_NOTES).map(|n| (*n).to_owned())
-        } else {
-            None
-        };
-        let input = VisitCreate {
-            customer_id,
-            check_in_at: None,
-            discount: None,
-            note,
-            lines: wire,
-            payments: self.payments(total),
-            package_sales: Vec::new(),
-            companions: Vec::new(),
-        };
-        let (key, hash) = idempotency();
-        let (_, body) = operations::service::record_as_of(
-            self.app,
-            self.cipher,
-            &self.manager,
-            key,
-            hash,
-            &input,
-            at,
-        )
-        .await
-        .map_err(fail("record a visit"))?;
-        for (p, item) in lines.iter().filter_map(|l| l.item) {
-            if let Some(i) = self.packages[p].items.iter_mut().find(|i| i.id == item) {
-                i.remaining = i.remaining.saturating_sub(1);
-            }
-        }
-        self.report.visits += 1;
-        if kernel::BusinessDate::of_instant(at, self.tz).as_naive() == self.today {
-            self.report.visits_today += 1;
-        }
-        serde_json::from_value(body["id"].clone()).context("visit id")
-    }
-
-    /// Customers for one day's visits: those with a usable package come three times as often.
-    fn customers_for(&mut self, day: NaiveDate, count: usize) -> Vec<usize> {
-        let mut pool = Vec::new();
-        for c in 0..self.customers.len() {
-            let has_package = self
-                .packages
-                .iter()
-                .any(|p| p.customer == c && p.usable_on(day));
-            for _ in 0..if has_package { 3 } else { 1 } {
-                pool.push(c);
-            }
-        }
-        let mut chosen = Vec::new();
-        let mut seen = HashSet::new();
-        while chosen.len() < count && seen.len() < self.customers.len() {
-            let c = pool[self.rng.below(pool.len())];
-            if seen.insert(c) {
-                chosen.push(c);
-            }
-        }
-        chosen
-    }
-
-    async fn back_fill_history(&mut self) -> anyhow::Result<()> {
-        for offset in (1..=HISTORY_DAYS).rev() {
-            let day = self.today - Duration::days(offset);
-            let sales: Vec<usize> = PAST_SALES
-                .iter()
-                .filter(|(_, days_ago)| *days_ago == offset)
-                .map(|(c, _)| *c)
-                .collect();
-            for (k, customer) in sales.into_iter().enumerate() {
-                let at = self.at(day, 8 * 60 + 15 + u32::try_from(k)?)?;
-                self.sell(customer, customer, at).await?;
-            }
-            let count = 4 + self.rng.below(4);
-            let mut minutes: Vec<u32> = (0..count)
-                .map(|_| 8 * 60 + 30 + u32::try_from(self.rng.below(12 * 60)).unwrap_or(0))
-                .collect();
-            minutes.sort_unstable();
-            for (customer, minute) in self.customers_for(day, count).into_iter().zip(minutes) {
-                let lines = self.plan_visit(customer, day)?;
-                let at = self.at(day, minute)?;
-                self.visit(customer, lines, at).await?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Today: a busy front desk up to now — visits, two sales, a sale voided and sold again, a
-    /// visit voided, and an expired package used with the manager's override.
-    async fn run_today(&mut self) -> anyhow::Result<()> {
-        use TodayEvent::{ExpiredOverride, Sale, Visit, WrongSaleVoided, WrongVisitVoided};
-        let events = [
-            Sale(21),
-            Visit,
-            Visit,
-            ExpiredOverride,
-            Visit,
-            WrongSaleVoided(23),
-            Visit,
-            Visit,
-            Sale(22),
-            Visit,
-            WrongVisitVoided,
-            Visit,
-            Visit,
-            Visit,
-            Visit,
-        ];
-        let times = self.times_today(events.len())?;
-        let visitors = self.customers_for(self.today, 11);
-        let mut visitors = visitors.into_iter().filter(|c| *c != 0);
-        for (event, at) in events.into_iter().zip(times) {
-            match event {
-                Sale(customer) => {
-                    self.sell(customer, customer, at).await?;
-                }
-                Visit => {
-                    if let Some(customer) = visitors.next() {
-                        let lines = self.plan_visit(customer, self.today)?;
-                        self.visit(customer, lines, at).await?;
-                    }
-                }
-                ExpiredOverride => self.expired_override(at).await?,
-                WrongSaleVoided(customer) => self.wrong_sale_voided(customer, at).await?,
-                WrongVisitVoided => self.wrong_visit_voided(at).await?,
-            }
-        }
-        Ok(())
-    }
-
-    /// A calendar worth looking at: bookings tomorrow and the day after, through the appointments
-    /// use case (grid, overlap and capacity rules apply), half with a technician, one newcomer.
-    async fn book_upcoming(&mut self) -> anyhow::Result<()> {
-        const SLOTS: &[(i64, u32, bool)] = &[
-            (1, 9 * 60, true),
-            (1, 9 * 60 + 30, false),
-            (1, 10 * 60 + 30, true),
-            (1, 13 * 60, false),
-            (1, 14 * 60 + 30, true),
-            (1, 16 * 60, true),
-            (2, 9 * 60, true),
-            (2, 15 * 60, false),
-        ];
-        for (n, &(days, minutes, with_staff)) in SLOTS.iter().enumerate() {
-            let day = self.today + chrono::Duration::days(days);
-            let name = *self.rng.pick(data::ONE_OFF_SERVICES).context("services")?;
-            let staff = with_staff.then(|| self.technician());
-            let who = if n == 3 {
-                json!({"guest": {"full_name": "Chị Ngọc Anh (khách mới)", "phone": format!("0399{:06}", 990_000 + self.report.run)}})
-            } else {
-                let c = self.rng.below(self.customers.len());
-                json!({"customer_id": self.customers[c].id})
+    /// Today, as the owner: two part-used packages cancelled with a refund of the unused share
+    /// (cash, transfer), and the expired paper-book package of customer 3 extended.
+    async fn package_lifecycle(
+        &self,
+        packages: &[Package],
+        initial: &[Vec<Package>],
+    ) -> anyhow::Result<(usize, usize)> {
+        let today = self.window.today;
+        let mut cancelled = 0;
+        let mut used: Vec<usize> = Vec::new();
+        for method in ["cash", "bank_transfer"] {
+            let Some(p) = packages.iter().find(|p| {
+                p.from_sale
+                    && !used.contains(&p.customer)
+                    && p.usable_on(today)
+                    && p.remaining() >= 2
+                    && p.remaining() < p.sessions_total
+            }) else {
+                break;
             };
-            let mut body = json!({
-                "service_ids": [self.catalog.service(name)?],
-                "staff_id": staff,
-                "starts_at": self.at(day, minutes)?,
-                "note": if n == 0 { Some("Khách hẹn qua Zalo") } else { None },
-            });
-            if let (Some(b), Some(w)) = (body.as_object_mut(), who.as_object()) {
-                b.extend(w.clone());
-            }
-            let input: operations::appointments::dto::AppointmentCreate =
-                serde_json::from_value(body).context("appointment body")?;
+            used.push(p.customer);
+            let unused = i64::from(p.remaining());
+            let total = i64::from(p.sessions_total.max(1));
+            let refund = p.sold_price * unused / total / 10_000 * 10_000;
+            let input: packages::lifecycle::PackageCancel = serde_json::from_value(json!({
+                "reason": "Khách chuyển công tác vào TP.HCM, hoàn tiền các buổi chưa dùng",
+                "refund_amount": refund, "refund_method": method,
+            }))
+            .context("cancel body")?;
             let (key, hash) = idempotency();
-            match operations::appointments::service::book(
-                self.app,
-                &self.manager,
-                key,
-                hash,
-                &input,
-            )
-            .await
-            {
-                Ok(_) => self.report.appointments += 1,
-                // A technician or a customer picked twice for overlapping slots: the rule worked,
-                // skip it.
-                Err(AppError::Conflict { .. } | AppError::ConflictWith { .. }) => {}
-                Err(e) => return Err(fail("book an appointment")(e)),
-            }
-        }
-        Ok(())
-    }
-
-    /// `n` increasing instants from 08:00 (or earlier, when it is early now) up to a minute ago,
-    /// roughly evenly spaced: all on today's business day and never in the future.
-    fn times_today(&mut self, n: usize) -> anyhow::Result<Vec<DateTime<Utc>>> {
-        let midnight = self.at(self.today, 0)?;
-        let end = (Utc::now() - Duration::minutes(1)).max(midnight);
-        let mut start = self.at(self.today, 8 * 60)?;
-        if end - start < Duration::minutes(30) {
-            start = (end - Duration::minutes(30)).max(midnight);
-        }
-        let step = (end - start).num_seconds() / i64::try_from(n.max(1))?;
-        let mut times = Vec::with_capacity(n);
-        for i in 1..=i64::try_from(n)? {
-            // Each instant falls somewhere in the second half of its own slot.
-            let jitter = i64::try_from(self.rng.below(usize::try_from(step / 2).unwrap_or(0)))?;
-            times.push(start + Duration::seconds(step * i - jitter));
-        }
-        Ok(times)
-    }
-
-    async fn expired_override(&mut self, at: DateTime<Utc>) -> anyhow::Result<()> {
-        let today = self.today;
-        let Some((p, item, service_id)) = self.packages.iter().enumerate().find_map(|(p, pkg)| {
-            let expired = pkg.expires_on.is_some_and(|e| e < today) && !pkg.cancelled;
-            let item = pkg.items.iter().find(|i| i.remaining > 0)?;
-            expired.then_some((p, item.id, item.service_id))
-        }) else {
-            return Ok(());
-        };
-        let customer = self.packages[p].customer;
-        let lines = vec![Line {
-            service_id,
-            item: Some((p, item)),
-            unit_price: 0,
-            override_reason: Some("Khách đi công tác nên quá hạn, chủ spa đồng ý cho dùng tiếp"),
-        }];
-        self.visit(customer, lines, at).await?;
-        Ok(())
-    }
-
-    async fn wrong_sale_voided(
-        &mut self,
-        customer: usize,
-        at: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
-        let first_package = self.packages.len();
-        let sale = self.sell(customer, 0, at).await?;
-        let (key, hash) = idempotency();
-        sales::voids::void_sale(
-            self.app,
-            &self.manager,
-            key,
-            hash,
-            sale,
-            Some("Chọn nhầm gói, khách lấy gói khác"),
-        )
-        .await
-        .map_err(fail("void a sale"))?;
-        for p in &mut self.packages[first_package..] {
-            p.cancelled = true;
-        }
-        self.report.voided_sales += 1;
-        self.sell(customer, 2, at).await?;
-        Ok(())
-    }
-
-    async fn wrong_visit_voided(&mut self, at: DateTime<Utc>) -> anyhow::Result<()> {
-        let today = self.today;
-        let Some(customer) = (2..self.customers.len()).find(|c| {
-            self.packages
-                .iter()
-                .any(|p| p.customer == *c && p.usable_on(today))
-        }) else {
-            return Ok(());
-        };
-        let lines = self.plan_visit(customer, today)?;
-        let consumed: Vec<(usize, Uuid)> = lines.iter().filter_map(|l| l.item).collect();
-        let visit = self.visit(customer, lines, at).await?;
-        let (key, hash) = idempotency();
-        operations::service::void(
-            self.app,
-            self.cipher,
-            &self.manager,
-            key,
-            hash,
-            visit,
-            Some("Ghi nhầm khách, người làm là khách khác"),
-        )
-        .await
-        .map_err(fail("void a visit"))?;
-        for (p, item) in consumed {
-            if let Some(i) = self.packages[p].items.iter_mut().find(|i| i.id == item) {
-                i.remaining += 1;
-            }
-        }
-        self.report.voided_visits += 1;
-        Ok(())
-    }
-
-    /// The owner cancels a part-used package sold earlier and refunds the unused share in cash.
-    async fn cancel_one_with_refund(&mut self) -> anyhow::Result<()> {
-        let today = self.today;
-        let Some(p) = self.packages.iter().position(|p| {
-            p.from_sale
-                && !p.cancelled
-                && p.sold_on < today
-                && p.remaining() >= 2
-                && p.remaining() < p.sessions_total
-        }) else {
-            return Ok(());
-        };
-        let package = &self.packages[p];
-        let unused = i64::from(package.remaining());
-        let total = i64::from(package.sessions_total.max(1));
-        let refund = package.sold_price * unused / total / 10_000 * 10_000;
-        let input: packages::lifecycle::PackageCancel = serde_json::from_value(json!({
-            "reason": "Khách chuyển công tác vào TP.HCM, hoàn tiền các buổi chưa dùng",
-            "refund_amount": refund, "refund_method": "cash",
-        }))
-        .context("cancel body")?;
-        let (key, hash) = idempotency();
-        packages::lifecycle::cancel(self.app, &self.owner, key, hash, package.id, &input)
+            run::retry(|| {
+                packages::lifecycle::cancel(self.app, &self.owner, key, hash, p.id, &input)
+            })
             .await
             .map_err(fail("cancel a package with refund"))?;
-        self.packages[p].cancelled = true;
-        self.report.cancelled_with_refund += 1;
-        Ok(())
+            cancelled += 1;
+        }
+        let mut extended = 0;
+        if let Some(p) = initial.get(3).and_then(|list| list.first()) {
+            let current = packages::service::get(self.app, &self.owner, p.id)
+                .await
+                .map_err(fail("read a package"))?;
+            let input = packages::lifecycle::PackageExtend {
+                expires_on: today + Duration::days(60),
+                reason: Some("Khách nằm viện 1 tháng, chủ spa đồng ý gia hạn 2 tháng".to_owned()),
+            };
+            let (key, hash) = idempotency();
+            run::retry(|| {
+                packages::lifecycle::extend(
+                    self.app,
+                    &self.owner,
+                    key,
+                    hash,
+                    p.id,
+                    current.version,
+                    &input,
+                )
+            })
+            .await
+            .map_err(fail("extend a package"))?;
+            extended += 1;
+        }
+        Ok((cancelled, extended))
     }
 }
 
@@ -1165,26 +895,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn demo_phones_are_valid_distinct_and_in_the_reserved_block() {
-        let mut seen = HashSet::new();
-        for run in [0, 1, 99] {
-            for i in 0..CUSTOMERS.len() {
-                let phone = kernel::PhoneE164::parse(&demo_phone(run, i));
-                let e164 = phone.map(|p| p.as_str().to_owned()).unwrap_or_default();
-                assert!(e164.starts_with(DEMO_PHONE_PREFIX), "{e164}");
-                assert_eq!(&e164[6..8], format!("{run:02}"));
-                assert!(seen.insert(e164));
-            }
-        }
+    fn the_window_starts_on_the_first_of_the_month_months_minus_one_ago() {
+        let today = NaiveDate::from_ymd_opt(2026, 11, 9).unwrap_or_default();
+        let w = Window::new(today, 12);
+        assert_eq!(
+            w.start,
+            NaiveDate::from_ymd_opt(2025, 12, 1).unwrap_or_default()
+        );
+        assert_eq!(Window::new(today, 2).start.to_string(), "2026-10-01");
     }
 
     #[test]
-    fn every_past_sale_is_inside_the_history_and_unique_per_customer() {
-        let mut customers = HashSet::new();
-        for (c, days_ago) in PAST_SALES {
-            assert!((1..=HISTORY_DAYS).contains(days_ago));
-            assert!(*c >= 2 && *c < CUSTOMERS.len() && *c != 6);
-            assert!(customers.insert(*c));
+    fn today_times_end_just_before_now_and_increase() {
+        for now in [7 * 60 + 5, 10 * 60, 17 * 60 + 40, 23 * 60] {
+            let t = today_minutes(now, &mut Rng::new(5));
+            assert!(t.len() >= 3, "{now}: {t:?}");
+            assert!(t.windows(2).all(|w| w[0] <= w[1]), "{t:?}");
+            assert!(t.iter().all(|m| *m < now), "{t:?}");
+            assert!(
+                now - t.last().copied().unwrap_or(0) <= 11,
+                "the last one is under way"
+            );
         }
     }
 }

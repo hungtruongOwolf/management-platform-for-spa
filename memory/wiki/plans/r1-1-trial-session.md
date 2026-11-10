@@ -44,7 +44,7 @@ Sau đó, đăng nhập bằng **chủ spa** (lần đầu phải quét mã QR b
 3. 3 khách quen ở `/khach-hang`: **Nguyễn Thị Hà** (Nữ, 0905 111 222, ghi chú sức khỏe "Huyết áp cao, không bấm huyệt mạnh"), **Trần Văn Nam** (Nam, 0905 333 444), **Lê Thị Mai** (chưa ghi giới tính, 0905 555 666).
 4. Bán cho chị Hà gói Gội đầu 10 + 2 (TM 1.500.000đ), rồi ghi 1 lượt trừ 1 buổi để gói còn **11/12**.
 
-Cách nhanh hơn: `APP_NEW_USER_PASSWORD='<mật-khẩu-quản-lý>' $A seed-demo --tenant dung-thu` tạo sẵn 5 KTV, tài khoản quản lý `0905000002`, menu, 5 gói, 40 khách và 3 tuần lượt khách (chi tiết: [vercel-staging § Dữ liệu demo](../runbooks/vercel-staging.md#dữ-liệu-demo)); khi đó bỏ lệnh `add-user` quản lý / `add-staff` ở trên và vẫn tạo 3 khách + gói của mục 1–4 để khớp nhiệm vụ.
+Cách nhanh hơn: `APP_NEW_USER_PASSWORD='<mật-khẩu-quản-lý>' $A seed-demo --tenant dung-thu` (cần thêm `APP_NEW_TECHNICIAN_PASSWORD`, `APP_NEW_FORMER_TECHNICIAN_PASSWORD`; `--months 2` cho nhanh) tạo sẵn nhân viên, tài khoản quản lý `0905000002`, menu, 5 gói, khách và lịch sử lượt khách (chi tiết: [vercel-staging § Dữ liệu demo](../runbooks/vercel-staging.md#dữ-liệu-demo)); khi đó bỏ lệnh `add-user` quản lý / `add-staff` ở trên và vẫn tạo 3 khách + gói của mục 1–4 để khớp nhiệm vụ.
 
 Kiểm tra trước buổi: đăng nhập được bằng tài khoản **quản lý**, `/quay` hiện ô tìm khách, danh sách lượt hôm nay có 1 lượt. Chuẩn bị đồng hồ bấm giờ (điện thoại) và in phiếu góp ý ở §4.
 

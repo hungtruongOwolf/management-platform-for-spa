@@ -16,6 +16,7 @@ chrono = { version = "0.4.45", default-features = false, features = ["std", "clo
 chrono-tz = "0.10.4"
 crm = { version = "0.1.0", path = "../crm" }
 dotenvy = "0.15.7"
+futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 hr = { version = "0.1.0", path = "../hr" }
 governor = { version = "0.10.4", default-features = false, features = ["std", "dashmap", "quanta"] }
 identity = { version = "0.1.0", path = "../identity" }
