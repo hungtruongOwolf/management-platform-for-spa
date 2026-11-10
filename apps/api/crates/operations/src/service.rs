@@ -1205,10 +1205,21 @@ pub async fn authorized_then(
     id: Uuid,
     refused: AppError,
 ) -> AppError {
+    authorized_then_as_of(pool, actor, id, refused, Utc::now()).await
+}
+
+/// [`authorized_then`] with `now` as the server clock (the `*_as_of` use cases).
+async fn authorized_then_as_of(
+    pool: &PgPool,
+    actor: &Actor,
+    id: Uuid,
+    refused: AppError,
+    now: DateTime<Utc>,
+) -> AppError {
     let check = async {
         let mut tx = TenantTx::for_actor(pool, actor).await?;
         let visit = repo::lock(&mut tx, id).await?.ok_or(AppError::NotFound)?;
-        let today = kernel::tenant::profile(&mut tx)
+        let today = kernel::tenant::profile_as_of(&mut tx, now)
             .await?
             .business_date
             .as_naive();
@@ -1388,10 +1399,39 @@ pub async fn void(
     id: Uuid,
     reason: Option<&str>,
 ) -> Result<(u16, Value), AppError> {
+    void_as_of(
+        pool,
+        cipher,
+        actor,
+        key,
+        request_hash,
+        id,
+        reason,
+        Utc::now(),
+    )
+    .await
+}
+
+/// [`void`] with `now` as the server clock: the closed-day rule compares the visit's day with the
+/// business day of `now`, and the reversals are booked on that day. Operator tooling only
+/// (`app seed-demo` voids a past visit on its own day, as the desk does); no route reaches it —
+/// `POST /visits/{id}/void` calls [`void`]. Audit rows and `created_at` keep the real time of the
+/// write.
+#[allow(clippy::too_many_arguments)]
+pub async fn void_as_of(
+    pool: &PgPool,
+    cipher: &FieldCipher,
+    actor: &Actor,
+    key: Uuid,
+    request_hash: [u8; 32],
+    id: Uuid,
+    reason: Option<&str>,
+    now: DateTime<Utc>,
+) -> Result<(u16, Value), AppError> {
     actor.require(Permission::RecordVoidSameDay)?;
     let reason = match kernel::corrections::reason(reason) {
         Ok(r) => r,
-        Err(invalid) => return Err(authorized_then(pool, actor, id, invalid).await),
+        Err(invalid) => return Err(authorized_then_as_of(pool, actor, id, invalid, now).await),
     };
 
     let mut tx = TenantTx::for_actor(pool, actor).await?;
@@ -1403,7 +1443,7 @@ pub async fn void(
     }
     let visit = repo::lock(&mut tx, id).await?.ok_or(AppError::NotFound)?;
     ensure_current(&visit)?;
-    let today = kernel::tenant::profile(&mut tx)
+    let today = kernel::tenant::profile_as_of(&mut tx, now)
         .await?
         .business_date
         .as_naive();
@@ -1525,6 +1565,23 @@ pub async fn correct(
     request_hash: [u8; 32],
     request: Correction<'_>,
 ) -> Result<(u16, Value), AppError> {
+    correct_as_of(pool, cipher, actor, key, request_hash, request, Utc::now()).await
+}
+
+/// [`correct`] with `now` as the server clock: the closed-day rule and the reversals of the old
+/// visit use the business day of `now`, and the corrected visit's time is checked against `now`.
+/// Operator tooling only (`app seed-demo` corrects a past visit on its own day, as the desk
+/// does); no route reaches it — `POST /visits/{id}/correct` calls [`correct`]. Audit rows and
+/// `created_at` keep the real time of the write.
+pub async fn correct_as_of(
+    pool: &PgPool,
+    cipher: &FieldCipher,
+    actor: &Actor,
+    key: Uuid,
+    request_hash: [u8; 32],
+    request: Correction<'_>,
+    now: DateTime<Utc>,
+) -> Result<(u16, Value), AppError> {
     actor.require(Permission::VisitRecord)?;
     actor.require(Permission::RecordVoidSameDay)?;
     let id = request.id;
@@ -1542,7 +1599,7 @@ pub async fn correct(
     })();
     let (reason, new_note, order) = match checked {
         Ok(c) => c,
-        Err(refused) => return Err(authorized_then(pool, actor, id, refused).await),
+        Err(refused) => return Err(authorized_then_as_of(pool, actor, id, refused, now).await),
     };
 
     let mut tx = TenantTx::for_actor(pool, actor).await?;
@@ -1552,8 +1609,12 @@ pub async fn correct(
         tx.commit().await?;
         return Ok((status, body));
     }
-    let started = begin_correction(&mut tx, cipher, actor, id, request.version, &reason).await?;
-    let done = finish_correction(&mut tx, cipher, actor, started, order, new_note, &reason).await?;
+    let started =
+        begin_correction(&mut tx, cipher, actor, id, request.version, &reason, now).await?;
+    let done = finish_correction(
+        &mut tx, cipher, actor, started, order, new_note, &reason, now,
+    )
+    .await?;
     let body = serde_json::to_value(done).map_err(|e| AppError::Internal(e.to_string()))?;
     idempotency::complete(&mut tx, actor, key, 201, &body).await?;
     tx.commit().await?;
@@ -1572,6 +1633,7 @@ pub(crate) struct StartedCorrection {
 /// the new checkout in step 2): lock the visit, check it is
 /// the current version, the closed-day rule and `If-Match`, then void it exactly as
 /// `POST /visits/{id}/void` does. The caller holds the permissions and the idempotency claim.
+/// `now` is the server clock (`Utc::now()` except in the `*_as_of` use cases).
 pub(crate) async fn begin_correction(
     tx: &mut TenantTx,
     cipher: &FieldCipher,
@@ -1579,10 +1641,14 @@ pub(crate) async fn begin_correction(
     id: Uuid,
     version: i64,
     reason: &str,
+    now: DateTime<Utc>,
 ) -> Result<StartedCorrection, AppError> {
     let old = repo::lock(tx, id).await?.ok_or(AppError::NotFound)?;
     ensure_current(&old)?;
-    let today = kernel::tenant::profile(tx).await?.business_date.as_naive();
+    let today = kernel::tenant::profile_as_of(tx, now)
+        .await?
+        .business_date
+        .as_naive();
     kernel::corrections::authorize_void(actor, old.business_date, today)?;
     if old.version != version {
         return Err(AppError::StaleVersion);
@@ -1594,7 +1660,9 @@ pub(crate) async fn begin_correction(
 
 /// Step 2: record the corrected visit with the rules of `POST /visits` on the old visit's day,
 /// linked by `corrects_visit_id`; move a completed appointment to it; audit `visit.correct`.
-/// `new_note`: `None` = keep the old note, `Some(n)` = replace it.
+/// `new_note`: `None` = keep the old note, `Some(n)` = replace it. `now`: as in
+/// [`begin_correction`].
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn finish_correction(
     tx: &mut TenantTx,
     cipher: &FieldCipher,
@@ -1603,6 +1671,7 @@ pub(crate) async fn finish_correction(
     mut order: Order,
     new_note: Option<Option<String>>,
     reason: &str,
+    now: DateTime<Utc>,
 ) -> Result<VisitCorrected, AppError> {
     let StartedCorrection { id, old, old_note } = started;
     // Like `POST /visits`, the stored response never carries a note.
@@ -1657,7 +1726,7 @@ pub(crate) async fn finish_correction(
     if domain::technician_changed(&old_pairs, &new_pairs) {
         require_payroll_open(tx, old.business_date).await?;
     }
-    let new_id = record_in(tx, cipher, actor, order, Utc::now()).await?;
+    let new_id = record_in(tx, cipher, actor, order, now).await?;
     let appointment = crate::appointments::repo::move_to_correction(tx, id, new_id).await?;
 
     // Re-read: the old visit now shows the visit that replaced it.
@@ -1823,7 +1892,16 @@ pub async fn convert(
         .take(kernel::corrections::MAX_REASON)
         .collect();
 
-    let started = begin_correction(&mut tx, cipher, actor, id, request.version, &reason).await?;
+    let started = begin_correction(
+        &mut tx,
+        cipher,
+        actor,
+        id,
+        request.version,
+        &reason,
+        Utc::now(),
+    )
+    .await?;
     let old = load_one(&mut tx, cipher, actor, id, false).await?;
     // What the customer already paid for the visit keeps its method (cash stays cash); the request's
     // payments are only the top-up ("Khách đưa thêm").
@@ -1926,7 +2004,17 @@ pub async fn convert(
         correction: None,
         kept_prices: Vec::new(),
     };
-    let mut done = finish_correction(&mut tx, cipher, actor, started, order, None, &reason).await?;
+    let mut done = finish_correction(
+        &mut tx,
+        cipher,
+        actor,
+        started,
+        order,
+        None,
+        &reason,
+        Utc::now(),
+    )
+    .await?;
     // What the customer hands over now: the new package plus the one-off lines kept, minus what
     // the old visit had collected for its one-off lines (reversed). Packages the visit sold before
     // stay with it (D8) and were paid then: they are not part of the difference.

@@ -156,6 +156,15 @@ const COUNTS: &[(&str, &str)] = &[
         "(SELECT count(*) FROM app.payment p WHERE p.tenant_id = $1 AND p.kind = 'reversal')",
     ),
     (
+        "payment_reversals_today",
+        "(SELECT count(*) FROM app.payment p WHERE p.tenant_id = $1 AND p.kind = 'reversal' AND p.business_date = d.today)",
+    ),
+    // "Thực thu hôm nay" in đồng: payments − reversals − refunds booked today.
+    (
+        "net_takings_today_vnd",
+        "((SELECT COALESCE(sum(CASE p.kind WHEN 'reversal' THEN -p.amount ELSE p.amount END), 0) FROM app.payment p WHERE p.tenant_id = $1 AND p.business_date = d.today) - (SELECT COALESCE(sum(r.amount), 0) FROM app.refund r WHERE r.tenant_id = $1 AND r.business_date = d.today))::bigint",
+    ),
+    (
         "appointments_done",
         "(SELECT count(*) FROM app.appointment a WHERE a.tenant_id = $1 AND a.status = 'done')",
     ),

@@ -4115,8 +4115,20 @@ export interface components {
             commission: number;
             /** Format: int64 */
             deductions: number;
+            /**
+             * Format: int64
+             * @description Σ of the payslips' `meal_allowance` (Hỗ trợ tiền ăn, part of net pay).
+             */
+            meal_allowance: number;
             /** Format: int64 */
             net_pay: number;
+            /**
+             * Format: int64
+             * @description Σ of the payslips' `net_pay_shortfall`: deductions beyond a month's pay, not deducted.
+             *     `base_salary − deductions + commission + meal_allowance + bonuses − penalties +
+             *     net_pay_shortfall = net_pay`, as on each payslip.
+             */
+            net_pay_shortfall: number;
             /** Format: int64 */
             penalties: number;
             /** Format: int32 */

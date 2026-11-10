@@ -1,7 +1,7 @@
 ---
 title: "Spec: Quản lý nhân viên (chấm công, đánh giá, thưởng/phạt, bảng lương)"
 status: draft
-updated: 2026-11-09
+updated: 2026-11-10
 sources: [raw/2026-11-08-em-request-accounts-and-passwords.md, raw/2026-11-08-em-fix-all-and-manager-self-view.md, raw/2026-11-08-live-test-manager-technician.md, raw/2026-11-08-live-test-owner.md, raw/2026-11-07-em-decisions-hr-notes-group-region.md, raw/2026-11-07-em-flow-review-hr-latency.md, raw/2026-11-07-em-technician-pages.md, raw/2026-11-07-em-decisions-after-live-test.md, raw/2026-11-06-em-review-round5.md, raw/2026-11-05-em-review-round4.md, raw/2026-11-04-idea-internal-platform.md]
 related: [../compensation-rules.md, ../personas.md, ../../architecture/backend.md, ../../architecture/data.md, ../../security/authz-matrix.md]
 ---
@@ -96,6 +96,7 @@ Thước đo: quản lý không phải cộng tay lương và hoa hồng ([perso
   - `thực lĩnh = lương cứng − trừ nghỉ − trừ muộn + hoa hồng làm + hoa hồng chốt + tiền ăn + thưởng − phạt`.
   - **ADR-0019 D4:** "lương cứng" trong công thức là `base_pay` của tháng: tháng làm đủ thì bằng `base_salary`; vào làm hoặc nghỉ giữa tháng (kể cả khoảng nghỉ giữa hai đợt) thì `round_nghìn(base_salary × employed_days ÷ days_in_month)`. Lương ngày vẫn tính trên `base_salary` đủ tháng. `totals.base_salary` = Σ `base_pay`. Bản chụp chốt trước ADR-0019 không có `base_pay`: đọc ra bằng `base_salary`, dòng lưu trong DB không đổi.
   - **ADR-0019 D3:** `trừ nghỉ` tối đa bằng `base_pay`. Thực lĩnh `max(0, …)`; phần âm ghi ở `net_pay_shortfall` kèm cờ `net_pay_shortfall`, không trừ. Tiền ăn theo quy tắc `meal_allowance_basis`: `monthly` (mặc định, compensation-rules §8 ghi khoản cố định tháng) = đủ số khi tháng có ≥ 1 ngày đi làm, 0đ khi không có; `days_worked` = tiền ăn × ngày đi làm ÷ (số ngày − miễn trừ), tối đa đủ số, làm tròn nghìn.
+  - **Bảng lương cộng ra thực lĩnh (2026-11-10):** cột của bảng `/nhan-vien?tab=payroll` là Lương cứng, Trừ nghỉ / muộn, Hoa hồng, **Tiền ăn**, Thưởng − phạt, Thực lĩnh; mỗi dòng và dòng tổng: `lương cứng − trừ + hoa hồng + tiền ăn + (thưởng − phạt) + net_pay_shortfall = thực lĩnh`. Khi có `net_pay_shortfall`, ô Thực lĩnh ghi thêm "+X trừ vượt lương, không trừ" (cùng cờ Lưu ý). `totals` có thêm `meal_allowance`, `net_pay_shortfall`. Thẻ trên điện thoại có dòng "Tiền ăn" như các khoản khác.
   - **Ghi nhận, không cộng vào thực lĩnh**: Thưởng gắn bó của tháng (trả ở mốc 12/24) và mức Tết của tháng (mức thấp hơn giữa mức theo ngày nghỉ và mức theo đánh giá; số tiền theo `tet_level_amounts`).
 - AC5.3 Cờ trên phiếu lương:
   - `no_pay_terms`: chưa có điều kiện lương, mọi khoản bằng 0;

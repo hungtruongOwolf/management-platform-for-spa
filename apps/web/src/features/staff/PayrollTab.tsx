@@ -19,13 +19,14 @@ import {
   type PayrollRules,
 } from "./api";
 import { FLAG_LABEL, LEVEL_SHORT, monthLabel, percentOfBp } from "./labels";
+import { slipColumns, totalColumns, type PayColumns } from "./payrollColumns";
 import { serviceWork, upsellWork } from "./payslipWork";
 import { signedVnd, vnd } from "./ui";
 import { WorkTable } from "./WorkTable";
 
 /**
- * Bảng lương (payroll.read): one row per person — base, deductions, commission, bonuses, net — and
- * each payslip. An open month is "tạm tính" (live); closing freezes every payslip and locks the
+ * Bảng lương (payroll.read): one row per person — base, deductions, commission, meal allowance,
+ * bonuses − penalties, net, which the other columns add up to — and each payslip. An open month is "tạm tính" (live); closing freezes every payslip and locks the
  * month's records (payroll.close).
  */
 export function PayrollTab({ month, canClose }: { month: string; canClose: boolean }) {
@@ -37,12 +38,13 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
   if (query.isPending) return <RowsSkeleton rows={6} />;
   if (query.isError) return <ErrorState error={query.error} onRetry={() => void query.refetch()} />;
   const p = query.data;
+  const total = totalColumns(p.totals);
   const columns: Column<Payslip>[] = [
     {
       id: "name",
       header: "Nhân viên",
       card: "title",
-      width: "16%",
+      width: "14%",
       cell: (s) => (
         <button
           type="button"
@@ -55,16 +57,18 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
         </button>
       ),
     },
-    { id: "position", header: "Vị trí", card: "subtitle", width: "12%", cell: (s) => s.position },
-    { id: "base", header: "Lương cứng", numeric: true, width: "11%", cell: (s) => vnd(s.base_pay) },
-    { id: "deduct", header: "Trừ nghỉ, muộn", numeric: true, width: "12%", cell: (s) => (s.leave_deduction + s.late_deduction > 0 ? `−${vnd(s.leave_deduction + s.late_deduction)}` : "–") },
-    { id: "commission", header: "Hoa hồng", numeric: true, width: "10%", cell: (s) => vnd(s.service_commission + s.closing_commission) },
-    { id: "adjust", header: "Thưởng − phạt", numeric: true, width: "11%", cell: (s) => signedVnd(s.bonuses - s.penalties) },
-    { id: "net", header: "Thực lĩnh", numeric: true, card: "aside", width: "11%", cell: (s) => <strong>{vnd(s.net_pay)}</strong> },
+    { id: "position", header: "Vị trí", card: "subtitle", width: "10%", cell: (s) => s.position },
+    // Every money column of a row adds up to its Thực lĩnh (payrollColumns.ts).
+    { id: "base", header: "Lương cứng", numeric: true, width: "10%", cell: (s) => vnd(slipColumns(s).base) },
+    { id: "deduct", header: "Trừ nghỉ, muộn", numeric: true, width: "11%", cell: (s) => deductionCell(slipColumns(s).deductions) },
+    { id: "commission", header: "Hoa hồng", numeric: true, width: "10%", cell: (s) => vnd(slipColumns(s).commission) },
+    { id: "meal", header: "Tiền ăn", numeric: true, width: "9%", cell: (s) => vnd(slipColumns(s).meal) },
+    { id: "adjust", header: "Thưởng − phạt", numeric: true, width: "10%", cell: (s) => signedVnd(slipColumns(s).adjustments) },
+    { id: "net", header: "Thực lĩnh", numeric: true, card: "aside", width: "11%", cell: (s) => <NetCell columns={slipColumns(s)} /> },
     {
       id: "flags",
       header: "Lưu ý",
-      width: "17%",
+      width: "15%",
       cell: (s) => (s.flags.length === 0 ? "–" : s.flags.map((f) => FLAG_LABEL[f]).join(" · ")),
     },
   ];
@@ -116,20 +120,21 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
                 <th scope="row" colSpan={2}>
                   Tổng {p.totals.staff} người
                 </th>
-                <td className="num">{vnd(p.totals.base_salary)}</td>
-                <td className="num">{p.totals.deductions > 0 ? `−${vnd(p.totals.deductions)}` : "–"}</td>
-                <td className="num">{vnd(p.totals.commission)}</td>
-                <td className="num">{signedVnd(p.totals.bonuses - p.totals.penalties)}</td>
+                <td className="num">{vnd(total.base)}</td>
+                <td className="num">{deductionCell(total.deductions)}</td>
+                <td className="num">{vnd(total.commission)}</td>
+                <td className="num">{vnd(total.meal)}</td>
+                <td className="num">{signedVnd(total.adjustments)}</td>
                 <td className="num">
-                  <strong>{vnd(p.totals.net_pay)}</strong>
+                  <NetCell columns={total} />
                 </td>
                 <td />
               </tr>
             ),
             cards: (
-              <p className="rt-card text-right font-semibold tabular">
-                Tổng thực lĩnh {vnd(p.totals.net_pay)}
-              </p>
+              <div className="rt-card text-right font-semibold tabular">
+                Tổng thực lĩnh <NetCell columns={total} />
+              </div>
             ),
           }}
         />
@@ -163,6 +168,25 @@ export function PayrollTab({ month, canClose }: { month: string; canClose: boole
         />
       )}
     </div>
+  );
+}
+
+function deductionCell(amount: number): string {
+  return amount > 0 ? `−${vnd(amount)}` : "–";
+}
+
+/**
+ * Thực lĩnh of a row. When deductions exceeded the month's pay, net pay stays at 0đ (ADR-0019 D3)
+ * and the amount not deducted is said here, so the row's columns still visibly add up to it.
+ */
+function NetCell({ columns }: { columns: PayColumns }) {
+  return (
+    <>
+      <strong>{vnd(columns.net)}</strong>
+      {columns.shortfall > 0 && (
+        <span className="block text-xs font-normal text-text-muted">+{vnd(columns.shortfall)} trừ vượt lương, không trừ</span>
+      )}
+    </>
   );
 }
 

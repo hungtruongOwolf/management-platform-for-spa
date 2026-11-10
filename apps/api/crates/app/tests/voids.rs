@@ -4,12 +4,17 @@ mod common;
 
 use axum::http::StatusCode;
 use catalog::service::seed_menu;
+use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono_tz::Asia::Ho_Chi_Minh;
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
     post_customer, session_for,
 };
 use identity::SystemRole;
+use kernel::idempotency::hash_request;
 use kernel::testing::app_pool;
+use kernel::{Actor, TenantId, UserId};
+use operations::dto::VisitCreate;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -949,5 +954,155 @@ async fn cancelling_without_refund_records_no_money(pool: PgPool) -> TestResult 
         )
         .await;
     assert_eq!(method_needed.body["errors"][0]["field"], "refund_method");
+    Ok(())
+}
+
+// ------------------------------------------------- the `*_as_of` forms (`app seed-demo` only)
+
+/// The member with `phone` as a use-case actor, with exactly their roles' permissions.
+async fn actor_of(app: &PgPool, owner: &PgPool, phone: &str) -> Setup<Actor> {
+    let e164 = kernel::PhoneE164::parse(phone).map_err(|_| "phone")?;
+    let (tenant, user): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT m.tenant_id, m.user_id FROM app.membership m
+         JOIN app.user_account u ON u.id = m.user_id WHERE u.phone_e164 = $1",
+    )
+    .bind(e164.as_str())
+    .fetch_one(owner)
+    .await?;
+    let (t, u) = (TenantId::from_uuid(tenant), UserId::from_uuid(user));
+    let permissions = identity::service::tenant_permissions(app, u, t)
+        .await?
+        .ok_or("not a member")?;
+    Ok(Actor::new(u, t, permissions, None))
+}
+
+/// `minutes` after midnight, `days_ago` days back, in the spa's time zone.
+fn spa_time(days_ago: i64, minutes: i64) -> Setup<DateTime<Utc>> {
+    let day = Utc::now().with_timezone(&Ho_Chi_Minh).date_naive() - Duration::days(days_ago);
+    let local = day.and_hms_opt(0, 0, 0).ok_or("midnight")? + Duration::minutes(minutes);
+    Ok(Ho_Chi_Minh
+        .from_local_datetime(&local)
+        .earliest()
+        .ok_or("local time")?
+        .with_timezone(&Utc))
+}
+
+fn key() -> (Uuid, [u8; 32]) {
+    let k = Uuid::now_v7();
+    (k, hash_request(k.as_bytes()))
+}
+
+/// The seed fixes a past day's mistake on that day: voids, corrections and refunds run on a
+/// clock the caller passes, with the rules of the HTTP routes (same-day for the manager,
+/// owner-only refunds), and book their money on the business day of that clock.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_as_of_forms_keep_the_rules_and_book_on_the_day_of_their_clock(
+    pool: PgPool,
+) -> TestResult {
+    let s = spa(pool).await?;
+    let app = app_pool(&s.h.owner).await?;
+    let manager = actor_of(&app, &s.h.owner, MANAGER_PHONE).await?;
+    let owner = actor_of(&app, &s.h.owner, OWNER_PHONE).await?;
+    let three_days_ago = Utc::now().with_timezone(&Ho_Chi_Minh).date_naive() - Duration::days(3);
+    let (morning, later) = (spa_time(3, 10 * 60)?, spa_time(3, 11 * 60)?);
+    let one_off = |amount: i64, qty: i64| -> Result<VisitCreate, serde_json::Error> {
+        serde_json::from_value(json!({
+            "customer_id": s.ha, "payments": [{"method": "cash", "amount": amount}],
+            "lines": [{"service_id": s.shampoo, "source": "one_off", "staff_id": s.lan, "qty": qty}],
+        }))
+    };
+    let record = |input: VisitCreate| {
+        let (app, cipher, manager) = (&app, &s.h.cipher, &manager);
+        async move {
+            let (k, h) = key();
+            operations::service::record_as_of(app, cipher, manager, k, h, &input, morning).await
+        }
+    };
+
+    // Void: the manager on the visit's own day; the next morning that day is closed to them.
+    let (_, visit) = record(one_off(49_000, 1)?).await?;
+    let id = Uuid::parse_str(&str_of(&visit["id"]))?;
+    let (k, h) = key();
+    let next_day = spa_time(2, 9 * 60)?;
+    let locked = operations::service::void_as_of(
+        &app,
+        &s.h.cipher,
+        &manager,
+        k,
+        h,
+        id,
+        Some("nhầm"),
+        next_day,
+    )
+    .await;
+    assert_eq!(locked.err().map(|e| e.code()), Some("day.locked"));
+    let (k, h) = key();
+    operations::service::void_as_of(&app, &s.h.cipher, &manager, k, h, id, Some("nhầm"), later)
+        .await?;
+
+    // "Sửa lượt" with money: old payment reversed and new one taken, both on that day.
+    let (_, visit) = record(one_off(49_000, 1)?).await?;
+    let fixed = one_off(98_000, 2)?;
+    let correction = || operations::service::Correction {
+        id: Uuid::parse_str(&str_of(&visit["id"])).unwrap_or_default(),
+        version: visit["version"].as_i64().unwrap_or_default(),
+        reason: Some("khách gội 2 lần"),
+        note: None,
+        visit: &fixed,
+    };
+    let (k, h) = key();
+    let locked = operations::service::correct_as_of(
+        &app,
+        &s.h.cipher,
+        &manager,
+        k,
+        h,
+        correction(),
+        next_day,
+    )
+    .await;
+    assert_eq!(locked.err().map(|e| e.code()), Some("day.locked"));
+    let (k, h) = key();
+    operations::service::correct_as_of(&app, &s.h.cipher, &manager, k, h, correction(), later)
+        .await?;
+
+    let days: Vec<(String, chrono::NaiveDate, i64)> =
+        sqlx::query_as("SELECT kind, business_date, amount FROM app.payment ORDER BY id")
+            .fetch_all(&s.h.owner)
+            .await?;
+    let past: Vec<(&str, i64)> = days
+        .iter()
+        .filter(|(_, d, _)| *d == three_days_ago)
+        .map(|(k, _, a)| (k.as_str(), *a))
+        .collect();
+    assert_eq!(
+        past,
+        [
+            ("payment", 49_000),
+            ("reversal", 49_000),
+            ("payment", 49_000),
+            ("reversal", 49_000),
+            ("payment", 98_000),
+        ],
+        "every row of the void and the correction on the visit's day: {days:?}"
+    );
+
+    // A refund on a past day: owner only, booked on that day.
+    let sold = s.sell().await?;
+    let package = Uuid::parse_str(&sold.package)?;
+    let cancel: packages::lifecycle::PackageCancel = serde_json::from_value(
+        json!({"reason": "Khách chuyển nhà", "refund_amount": 300_000, "refund_method": "cash"}),
+    )?;
+    let tomorrow = Utc::now() + Duration::days(1);
+    let (k, h) = key();
+    let refused =
+        packages::lifecycle::cancel_as_of(&app, &manager, k, h, package, &cancel, tomorrow).await;
+    assert_eq!(refused.err().map(|e| e.code()), Some("auth.forbidden"));
+    let (k, h) = key();
+    packages::lifecycle::cancel_as_of(&app, &owner, k, h, package, &cancel, tomorrow).await?;
+    let refunded: chrono::NaiveDate = sqlx::query_scalar("SELECT business_date FROM app.refund")
+        .fetch_one(&s.h.owner)
+        .await?;
+    assert_eq!(refunded, tomorrow.with_timezone(&Ho_Chi_Minh).date_naive());
     Ok(())
 }
