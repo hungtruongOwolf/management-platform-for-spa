@@ -1544,19 +1544,37 @@ async fn fixture(
         .bind(format!("+84{}", &owner_phone[1..]))
         .fetch_one(db)
         .await?;
-    // A refund of the package (1 đồng of what it was paid), as the cancel use case books it.
-    f.refund = sqlx::query_scalar(
-        "INSERT INTO app.refund (id, tenant_id, branch_id, customer_id, customer_package_id,
-                                 business_date, method, amount, reason, created_by)
-         SELECT $1, cp.tenant_id,
-                (SELECT b.id FROM app.branch b WHERE b.tenant_id = cp.tenant_id
-                 ORDER BY b.created_at, b.id LIMIT 1),
-                cp.customer_id, cp.id, current_date, 'cash', 1, 'Kiểm thử ma trận quyền', cp.created_by
-         FROM app.customer_package cp WHERE cp.id = $2::uuid
-         RETURNING id::text",
+    // A refund: a second package of the customer, cancelled with money back (the first package
+    // stays active for the other rows).
+    let second = send(
+        app,
+        "POST",
+        "/sales",
+        Some(&owner),
+        sell_body(&f),
+        &[("Idempotency-Key", &uuid::Uuid::now_v7().to_string())],
     )
-    .bind(uuid::Uuid::now_v7())
-    .bind(&f.customer_package)
+    .await;
+    let second = second.body["customer_packages"][0]["id"]
+        .as_str()
+        .ok_or_else(|| format!("fixture second sale → {} {}", second.status, second.body))?
+        .to_owned();
+    let cancelled = send(
+        app,
+        "POST",
+        &format!("/customer-packages/{second}/cancel"),
+        Some(&owner),
+        cancel_body(&f),
+        &[("Idempotency-Key", &uuid::Uuid::now_v7().to_string())],
+    )
+    .await;
+    if !cancelled.status.is_success() {
+        return Err(format!("fixture cancel → {} {}", cancelled.status, cancelled.body).into());
+    }
+    f.refund = sqlx::query_scalar(
+        "SELECT id::text FROM app.refund WHERE customer_package_id = $1::uuid",
+    )
+    .bind(&second)
     .fetch_one(db)
     .await?;
     Ok(f)
