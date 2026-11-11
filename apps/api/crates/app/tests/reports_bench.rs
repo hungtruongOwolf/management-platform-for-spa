@@ -7,7 +7,7 @@
 mod common;
 
 use axum::http::StatusCode;
-use common::{OWNER_PHONE, TestResult, call, call_with_headers, harness, session_for};
+use common::{Harness, OWNER_PHONE, TestResult, call, call_with_headers, harness, session_for};
 use serde_json::json;
 use sqlx::PgPool;
 use std::time::Instant;
@@ -101,9 +101,61 @@ fn p(samples: &mut [u128], q: f64) -> u128 {
     samples.get(i).copied().unwrap_or_default()
 }
 
-#[sqlx::test(migrator = "kernel::MIGRATOR")]
-#[ignore = "perf bench: seeds three years of data; run with --ignored"]
-async fn three_years_of_books_read_within_budget(pool: PgPool) -> TestResult {
+/// The audit trail of those three years, shaped like the writers store it (ADR-0022 bench,
+/// architecture/record-history §6): ~60.000 rows a year — every visit's `visit.create` and its
+/// sale's `sale.create` at the same instant, each package sale's two rows, a technician change on
+/// one visit in twenty, eight people's attendance and daily reviews, and 25 bookings a day with
+/// their arrival and completion.
+const AUDIT_SEED: &str = r#"
+-- Each one-off sale was made in its visit (the revenue book's `visit_id`, what `edited` looks up).
+-- The link is set once at insert by the writers; the bulk seed sets it after the visits exist.
+SET session_replication_role = replica;
+UPDATE app.sale s SET visit_id = v.visit FROM b_v v WHERE s.id = v.sale;
+SET session_replication_role = DEFAULT;
+INSERT INTO app.audit_log (id, tenant_id, actor_user_id, actor_kind, action, entity_type, entity_id, at, after)
+SELECT gen_random_uuid(), x.tenant, x.usr, 'user', 'visit.create', 'visit', v.visit, v.at,
+       jsonb_build_object('sale_id', v.sale, 'total', 150000, 'discount_amount', 0)
+FROM b_v v, b_ctx x
+UNION ALL
+SELECT gen_random_uuid(), x.tenant, x.usr, 'user', 'sale.create', 'sale', v.sale, v.at,
+       jsonb_build_object('total', 150000, 'discount_amount', 0)
+FROM b_v v, b_ctx x
+UNION ALL
+SELECT gen_random_uuid(), x.tenant, x.usr, 'user', 'visit.create', 'visit', v.visit, v.at,
+       jsonb_build_object('total', 0)
+FROM b_pv v, b_ctx x
+UNION ALL
+SELECT gen_random_uuid(), x.tenant, x.usr, 'user', 'sale.create', 'sale', p.sale, p.day + time '09:00',
+       jsonb_build_object('total', 1200000, 'discount_amount', 0)
+FROM b_ps p, b_ctx x
+UNION ALL
+SELECT gen_random_uuid(), x.tenant, x.usr, 'user', 'customer_package.create', 'customer_package', p.pkg,
+       p.day + time '09:00', jsonb_build_object('sale_id', p.sale, 'origin', 'sale', 'sold_price', 1200000)
+FROM b_ps p, b_ctx x
+UNION ALL
+SELECT gen_random_uuid(), x.tenant, x.usr, 'user', 'visit.update', 'visit', v.visit, v.at + interval '1 hour',
+       jsonb_build_object('staff', jsonb_build_array(jsonb_build_object(
+         'line_id', gen_random_uuid(), 'from', x.staff, 'to', gen_random_uuid())))
+FROM b_v v, b_ctx x WHERE v.k % 20 = 0
+UNION ALL
+SELECT gen_random_uuid(), x.tenant, x.usr, 'user', book.action, 'staff', gen_random_uuid(),
+       d::date + time '18:00', jsonb_build_object('date', d::date, 'status', 'present')
+FROM generate_series(current_date - $DAYS, current_date, interval '1 day') d
+CROSS JOIN generate_series(1, 8) person
+CROSS JOIN (VALUES ('attendance.record'), ('evaluation.daily_review')) book(action), b_ctx x
+UNION ALL
+SELECT gen_random_uuid(), x.tenant, x.usr, 'user', step.action, 'appointment', a.id,
+       a.at + step.after_minutes * interval '1 minute', '{}'::jsonb
+FROM (SELECT gen_random_uuid() AS id, d::date + time '08:00' + k * interval '20 minutes' AS at
+      FROM generate_series(current_date - $DAYS, current_date, interval '1 day') d
+      CROSS JOIN generate_series(1, 25) k) a
+CROSS JOIN (VALUES ('appointment.create', -1440), ('appointment.arrive', 0),
+                   ('appointment.complete', 60)) step(action, after_minutes), b_ctx x;
+ANALYZE app.audit_log;
+"#;
+
+/// The bench spa: one owner, a technician, one service, one plan, then three years of books.
+async fn books(pool: PgPool) -> Result<(Harness, String), Box<dyn std::error::Error>> {
     let h = harness(pool).await?;
     let owner = session_for(&h, OWNER_PHONE).await;
     org::provisioning::add_staff(&h.owner, "vpyd", "KTV Lan", "Kỹ thuật viên").await?;
@@ -140,6 +192,36 @@ async fn three_years_of_books_read_within_budget(pool: PgPool) -> TestResult {
         "seeded {visits} visits, {sales} sales in {:?}",
         started.elapsed()
     );
+    Ok((h, owner))
+}
+
+/// `SAMPLES` timed GETs; `(p50, p95)` in ms. Each from its own client IP (the per-IP rate limit
+/// is not what is measured).
+async fn timed(h: &Harness, session: &str, path: &str, n: &mut u32) -> (u128, u128) {
+    let mut ms = Vec::with_capacity(SAMPLES);
+    for _ in 0..SAMPLES {
+        *n += 1;
+        let ip = format!("10.8.{}.{}", *n / 250, *n % 250);
+        let t = Instant::now();
+        let reply = call_with_headers(
+            &h.app,
+            "GET",
+            path,
+            Some(session),
+            None,
+            &[("X-Forwarded-For", &ip)],
+        )
+        .await;
+        ms.push(t.elapsed().as_millis());
+        assert_eq!(reply.status, StatusCode::OK, "{path}: {}", reply.body);
+    }
+    (p(&mut ms, 0.5), p(&mut ms, 0.95))
+}
+
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+#[ignore = "perf bench: seeds three years of data; run with --ignored"]
+async fn three_years_of_books_read_within_budget(pool: PgPool) -> TestResult {
+    let (h, owner) = books(pool).await?;
     let customer: String = sqlx::query_scalar(
         "SELECT customer_id::text FROM app.visit GROUP BY customer_id ORDER BY count(*) DESC LIMIT 1",
     )
@@ -276,6 +358,184 @@ async fn three_years_of_books_read_within_budget(pool: PgPool) -> TestResult {
     for (index, scans) in used {
         println!("index {index}: {scans} scans");
     }
+    assert!(over.is_empty(), "over budget: {over:?}");
+    Ok(())
+}
+
+/// Budgets of "ai ghi, ai sửa" (ADR-0022, architecture/record-history §6) with a real-sized audit
+/// trail (~60.000 rows a year × 3): one record's history p95 ≤ 100 ms (a three-version "Sửa lượt"
+/// chain, the busiest package, the busiest customer); the day's visits and a 92-day revenue book
+/// with `edited` within +10 ms of the same lists without it; "Nhật ký thao tác" after the
+/// `rows_by_ids` refactor within the management views' 300 ms.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+#[ignore = "perf bench: seeds three years of data and audit; run with --ignored"]
+async fn record_history_reads_within_budget(pool: PgPool) -> TestResult {
+    const HISTORY_BUDGET_MS: u128 = 100;
+    const EDITED_BUDGET_MS: u128 = 10;
+    const EDITED_ROUNDS: usize = 60;
+    let (h, owner) = books(pool).await?;
+    let tenant: uuid::Uuid = sqlx::query_scalar("SELECT id FROM app.tenant WHERE slug = 'vpyd'")
+        .fetch_one(&h.owner)
+        .await?;
+    let started = Instant::now();
+    sqlx::raw_sql(sqlx::AssertSqlSafe(
+        AUDIT_SEED.replace("$DAYS", &DAYS.to_string()),
+    ))
+    .execute(&h.owner)
+    .await?;
+    let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM app.audit_log")
+        .fetch_one(&h.owner)
+        .await?;
+    println!("seeded {rows} audit rows in {:?}", started.elapsed());
+    common::enable_feature(&h, tenant, "activity_log").await?;
+
+    // A real three-version chain through the API (today), on the busiest customer.
+    let customer: String = sqlx::query_scalar(
+        "SELECT customer_id::text FROM app.visit GROUP BY customer_id ORDER BY count(*) DESC LIMIT 1",
+    )
+    .fetch_one(&h.owner)
+    .await?;
+    let package: String = sqlx::query_scalar(
+        "SELECT customer_package_id::text FROM app.visit_line WHERE customer_package_id IS NOT NULL
+         GROUP BY 1 ORDER BY count(*) DESC LIMIT 1",
+    )
+    .fetch_one(&h.owner)
+    .await?;
+    let (service, staff): (String, String) = sqlx::query_as(
+        "SELECT (SELECT id::text FROM app.service LIMIT 1), (SELECT id::text FROM app.staff LIMIT 1)",
+    )
+    .fetch_one(&h.owner)
+    .await?;
+    let line = json!({"service_id": service, "source": "one_off", "staff_id": staff});
+    let first = call_with_headers(
+        &h.app,
+        "POST",
+        "/visits",
+        Some(&owner),
+        Some(json!({"customer_id": customer, "lines": [line],
+                    "payments": [{"method": "cash", "amount": 150_000}]})),
+        &[("idempotency-key", &uuid::Uuid::now_v7().to_string())],
+    )
+    .await;
+    assert_eq!(first.status, StatusCode::CREATED, "{}", first.body);
+    let mut visit = first.body["id"].as_str().unwrap_or_default().to_owned();
+    for _ in 0..2 {
+        let corrected = call_with_headers(
+            &h.app,
+            "POST",
+            &format!("/visits/{visit}/correct"),
+            Some(&owner),
+            Some(
+                json!({"reason": "ghi nhầm", "customer_id": customer, "lines": [line],
+                        "payments": [{"method": "cash", "amount": 150_000}]}),
+            ),
+            &[
+                ("idempotency-key", &uuid::Uuid::now_v7().to_string()),
+                ("If-Match", "\"1\""),
+            ],
+        )
+        .await;
+        assert_eq!(corrected.status, StatusCode::CREATED, "{}", corrected.body);
+        visit = corrected.body["visit"]["id"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+    }
+
+    let mut n = 0_u32;
+    let mut over = Vec::new();
+    for path in [
+        format!("/record-history/visit/{visit}"),
+        format!("/record-history/customer-package/{package}"),
+        format!("/record-history/customer/{customer}"),
+    ] {
+        let (p50, p95) = timed(&h, &owner, &path, &mut n).await;
+        println!("p50 {p50:>4} ms  p95 {p95:>4} ms  {path}");
+        if p95 > HISTORY_BUDGET_MS {
+            over.push(format!(
+                "{path}: p95 {p95} ms (budget {HISTORY_BUDGET_MS} ms)"
+            ));
+        }
+    }
+    let audit = "/audit-log?limit=50";
+    let (p50, p95) = timed(&h, &owner, audit, &mut n).await;
+    println!("p50 {p50:>4} ms  p95 {p95:>4} ms  {audit}");
+    if p95 >= BUDGET_MS {
+        over.push(format!("{audit}: p95 {p95} ms (budget {BUDGET_MS} ms)"));
+    }
+
+    // `edited` costs: the same lists with the right (the owner's default) and without it, in
+    // alternating rounds so a busy machine slows both sides alike.
+    let lists = [
+        "/visits".to_owned(),
+        "/reports/ledger?from=2026-08-06&to=2026-11-05&limit=100".to_owned(),
+        format!("/customers/{customer}/history?limit=50"),
+    ];
+    for path in &lists {
+        let (mut with, mut without) = (Vec::new(), Vec::new());
+        for round in 0..(EDITED_ROUNDS * 2) {
+            let shown = round % 2 == 0;
+            let sql = if shown {
+                "INSERT INTO app.role_permission (tenant_id, role_id, permission)
+                 SELECT r.tenant_id, r.id, 'record.history.read' FROM app.role r
+                 WHERE r.tenant_id = $1 AND r.key = 'owner' ON CONFLICT DO NOTHING"
+            } else {
+                "DELETE FROM app.role_permission
+                 WHERE tenant_id = $1 AND permission = 'record.history.read'"
+            };
+            sqlx::query(sql).bind(tenant).execute(&h.owner).await?;
+            n += 1;
+            let ip = format!("10.7.{}.{}", n / 250, n % 250);
+            let t = Instant::now();
+            let reply = call_with_headers(
+                &h.app,
+                "GET",
+                path,
+                Some(&owner),
+                None,
+                &[("X-Forwarded-For", &ip)],
+            )
+            .await;
+            let ms = t.elapsed().as_millis();
+            assert_eq!(reply.status, StatusCode::OK, "{path}: {}", reply.body);
+            assert_eq!(
+                reply.body.to_string().contains("\"edited\""),
+                shown,
+                "{path}"
+            );
+            if shown {
+                with.push(ms)
+            } else {
+                without.push(ms)
+            }
+        }
+        let (with_p50, with_p95) = (p(&mut with, 0.5), p(&mut with, 0.95));
+        let (p50, p95) = (p(&mut without, 0.5), p(&mut without, 0.95));
+        println!(
+            "edited: p50 {with_p50:>4} / {p50:>4} ms  p95 {with_p95:>4} / {p95:>4} ms  {path}"
+        );
+        if with_p95 > p95 + EDITED_BUDGET_MS {
+            over.push(format!("{path}: edited adds {} ms at p95", with_p95 - p95));
+        }
+    }
+
+    let mut tx = h.owner.begin().await?;
+    for (label, sql) in [
+        (
+            "edited probe (partial index)",
+            "EXPLAIN (ANALYZE, BUFFERS) SELECT v.id FROM app.visit v WHERE v.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND v.business_date = current_date - 3 AND EXISTS (SELECT 1 FROM app.audit_log a WHERE a.tenant_id = v.tenant_id AND a.entity_type = 'visit' AND a.entity_id = v.id AND a.action IN ('visit.update', 'appointment.update') AND a.action = 'visit.update')",
+        ),
+        (
+            "package members (entity index)",
+            "EXPLAIN (ANALYZE, BUFFERS) SELECT a.id FROM app.audit_log a WHERE a.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND a.entity_type = 'customer_package' AND a.entity_id = (SELECT customer_package_id FROM app.visit_line WHERE customer_package_id IS NOT NULL GROUP BY 1 ORDER BY count(*) DESC LIMIT 1)",
+        ),
+    ] {
+        let plan: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(sql.to_owned()))
+            .fetch_all(&mut *tx)
+            .await?;
+        println!("--- {label}\n{}", plan.join("\n"));
+    }
+    tx.rollback().await?;
     assert!(over.is_empty(), "over budget: {over:?}");
     Ok(())
 }

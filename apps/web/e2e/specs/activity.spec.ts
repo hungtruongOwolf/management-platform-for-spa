@@ -1,10 +1,16 @@
 import { expect, test } from "@playwright/test";
 import { ownerState } from "../stack";
+import { switchFeatureOn } from "../support/db";
 import { WRITE } from "../support/fixtures";
 import { sidewaysOverflow } from "../support/responsive";
-import { expectAccessible, uniquePhone } from "../support/run";
+import { credentials, expectAccessible, uniquePhone } from "../support/run";
 
 test.use({ storageState: ownerState });
+
+// The screen is off by default (ADR-0022 D5): the operator switched it on for this spa.
+test.beforeAll(async () => {
+  await switchFeatureOn(credentials().slug, "activity_log");
+});
 
 /** "Nhật ký thao tác" (ADR-0021, spec management-views §11) on the real API: what the owner did reads back as a sentence. */
 test.describe("nhật ký thao tác", () => {

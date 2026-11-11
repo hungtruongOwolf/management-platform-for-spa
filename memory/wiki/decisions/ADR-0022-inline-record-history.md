@@ -55,7 +55,7 @@ Chọn **E + I + K**.
    - "Ghi bởi" chỉ lấy từ thao tác tạo.
 4. **"Đã sửa" hẹp.** Chỉ tính khi điều đã ghi bị đổi: lượt đổi giờ / KTV, Sửa lượt, chuyển sang gói; lịch hẹn đổi giờ / KTV. Upsell, gia hạn, dùng gói hết hạn, ghi chú… là vòng đời.
    - Một định nghĩa dùng cho cả `edited` lẫn "đã sửa N lần".
-   - Chip bản bị thay đổi thành "Đã thay" cho mọi vai trò. Mỗi hàng chỉ một chip, ưu tiên Đã hủy > Đã thay > Đã sửa.
+   - Chip bản bị thay đổi thành "Đã thay" cho mọi vai trò. Mỗi hàng chỉ một chip, ba điều kiện **loại trừ nhau** (spec D9, khớp thứ tự code hiện có: kiểm `corrected_by_visit_id` trước): **Đã thay** = `corrected_by_visit_id` có giá trị; **Đã hủy** = `status = voided` và không có `corrected_by_visit_id`; **Đã sửa** = `edited` và `status != voided`.
 5. Chỗ đã hiện "ai làm" giữ nguyên (hồ sơ NV, đánh giá tháng, chốt lương, gọi lại). Thưởng/phạt có thêm lịch sử (đợt 2).
 
 ## Consequences

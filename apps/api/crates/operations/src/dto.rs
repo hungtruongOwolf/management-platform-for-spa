@@ -342,6 +342,11 @@ pub struct VisitDto {
     /// Set on a voided visit that was corrected: the visit that replaced it. The newest version
     /// of a visit is the one without this field.
     pub corrected_by_visit_id: Option<Uuid>,
+    /// "Đã sửa" (ADR-0022 D9): present only for `record.history.read`; `true` when the visit's
+    /// time or a technician was changed, or "Sửa lượt" replaced it or made it. Equals the
+    /// visit history's `summary.edits >= 1`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edited: Option<bool>,
     /// Present (on a visit and in the day list) only for `customer.health_notes.read`; null = no
     /// note. Never in an idempotent replay.
     #[serde(skip_serializing_if = "Option::is_none")]

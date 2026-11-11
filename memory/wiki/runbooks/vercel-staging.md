@@ -121,6 +121,8 @@ Số "hôm nay" phụ thuộc giờ chạy (chạy trước 9:00 thì không có
 - Có migration mới thì chạy **trước** khi deploy:
   `set -a; . ./.env.staging; set +a; SQLX_OFFLINE=true DATABASE_URL="$STAGING_OWNER_URL" pnpm db:migrate`
 - Sau này: kết nối Git integration (`vercel git connect`, EM duyệt GitHub app) để push lên `main` là tự deploy.
+- **0052 (lịch sử trên từng bản ghi, đợt 1a — [architecture §8](../architecture/record-history.md)):** chỉ deploy khi đợt 1b đã merge (1a ẩn màn Nhật ký thao tác, 1b mới hiện lịch sử tại chỗ). Migrate rồi deploy binary mới **ngay trong cùng phiên**. Trong khoảng hở binary cũ chạy được (đăng nhập, mọi màn spa), trừ hai thao tác console: sửa vai trò spa (`422 unknown_permission`) và bật / tắt cờ ở spa chưa có dòng (`500`) → **operator không ghi gì ở console** cho tới khi binary mới lên. Rollback binary về trước 0052: như khoảng hở; không rollback schema. Sau deploy: chủ spa staging thấy "Nhật ký thao tác" biến mất (cờ `activity_log` mặc định tắt); cần thì operator bật cho spa đó ở `/admin` (có lý do). `app reset-demo` xóa `tenant_feature` → bật lại sau mỗi lần reset (N8).
+- Kiểm tra sau deploy 0052: `GET /api/v1/record-history/visit/<uuid>` không cookie → 401 (bản cũ → 404); chủ spa `GET /api/v1/audit-log` → `403 feature.disabled`.
 
 ## Kiểm tra sau deploy
 Thay `<staging>` bằng origin trong `APP_PUBLIC_ORIGIN`:

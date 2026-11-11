@@ -11,6 +11,9 @@ const ME = {
   permissions: ["catalog.read"],
 };
 
+/** The features on by default (kernel::feature). */
+const ALL_FEATURES = ["appointments", "payroll", "evaluations", "follow_ups", "notes_journal", "reports"];
+
 type Route = (method: string, path: string, body: unknown) => Response;
 
 function server(route: Route) {
@@ -465,7 +468,10 @@ describe("home page", () => {
     ],
   ])("gives the %s one shortcut per screen it can open", async (_role, permissions, expected) => {
     server((_method, path) =>
-      path === "/api/v1/me" ? Response.json({ ...ME, permissions }) : new Response(null, { status: 404 }),
+      // "Nhật ký thao tác" is off by default (ADR-0022): this spa has it switched on.
+      path === "/api/v1/me"
+        ? Response.json({ ...ME, permissions, features: [...ALL_FEATURES, "activity_log"] })
+        : new Response(null, { status: 404 }),
     );
     renderAt("/");
     const shortcuts = await screen.findByRole("navigation", { name: "Lối tắt" });

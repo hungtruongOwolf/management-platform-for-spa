@@ -103,6 +103,8 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
         .fetch_one(&h.owner)
         .await?;
     let manager_user = user_id(&h, "+84912000111").await?;
+    // The screen is off by default (ADR-0022 D5): an operator switched it on for this spa.
+    common::enable_feature(&h, tenant, "activity_log").await?;
     let lan = org::provisioning::add_staff(&h.owner, "vpyd", "KTV Lan", "Kỹ thuật viên").await?;
 
     let category = call(
@@ -777,6 +779,10 @@ async fn another_spas_entries_never_appear(pool: PgPool) -> TestResult {
     )
     .await;
     assert_eq!(theirs.status, StatusCode::CREATED, "{}", theirs.body);
+    let theirs_tenant: Uuid = sqlx::query_scalar("SELECT id FROM app.tenant WHERE slug = 'khac'")
+        .fetch_one(&s.h.owner)
+        .await?;
+    common::enable_feature(&s.h, theirs_tenant, "activity_log").await?;
 
     let mine = log(&s, &s.owner, "?limit=100").await;
     let text = mine.body.to_string();

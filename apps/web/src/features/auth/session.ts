@@ -213,8 +213,16 @@ export function can(me: Me | null | undefined, permission: string): boolean {
   return me?.permissions.includes(permission) ?? false;
 }
 
-/** The spa has this feature on (UX only: its routes answer `403 feature.disabled` anyway). */
-export function hasFeature(me: Me | null | undefined, feature: string): boolean {
+/**
+ * The spa has this feature on (UX only: its routes answer `403 feature.disabled` anyway). An API
+ * without the list (older) means the feature's default: on, unless `defaultOff` (ADR-0022: "Nhật ký
+ * thao tác" is off until an operator switches it on).
+ */
+export function hasFeature(
+  me: Me | null | undefined,
+  feature: string,
+  options?: { defaultOff?: boolean },
+): boolean {
   if (!me) return false;
-  return me.features?.includes(feature) ?? true;
+  return me.features?.includes(feature) ?? !options?.defaultOff;
 }

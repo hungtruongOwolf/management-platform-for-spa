@@ -32,6 +32,16 @@ pub const OWNER_FLOOR: &[Permission] = &[
 /// trail ("Nhật ký thao tác", ADR-0021) names who did what to which customer, old phone included.
 pub const OWNER_ONLY: &[Permission] = &[Permission::StaffManage, Permission::AuditRead];
 
+/// Never a technician's, in a template or a spa (ADR-0022 D3): who recorded / changed customer
+/// records is not their business. The database switch refuses them too.
+pub const NOT_FOR_TECHNICIAN: &[Permission] = &[Permission::RecordHistoryRead];
+
+/// Each spa's own value (ADR-0022 D1): a template sets a new spa's initial value only; applying a
+/// template, editing a spa's role and "Về mẫu" keep the spa's current value (migration 0052), and
+/// only the record-history switch ([`set_record_history`]) changes it. Mirrors
+/// `app.spa_local_permissions()`; a test keeps the two equal.
+pub const SPA_LOCAL: &[Permission] = &[Permission::RecordHistoryRead];
+
 /// One permission of the catalogue.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PermissionInfo {
@@ -46,6 +56,11 @@ pub struct PermissionInfo {
     pub owner_floor: bool,
     /// The feature whose switch removes it, if any.
     pub feature: Option<&'static str>,
+    /// Each spa's own value: read-only in a spa's role editor (changed by its own switch); in a
+    /// template it is only a new spa's initial value.
+    pub spa_local: bool,
+    /// The technician role may never hold it (`role.not_for_technician`).
+    pub not_for_technician: bool,
 }
 
 pub fn catalogue() -> Vec<PermissionInfo> {
@@ -60,6 +75,8 @@ pub fn catalogue() -> Vec<PermissionInfo> {
                 owner_only: OWNER_ONLY.contains(p),
                 owner_floor: OWNER_FLOOR.contains(p),
                 feature: kernel::feature::owning(*p).map(kernel::Feature::key),
+                spa_local: SPA_LOCAL.contains(p),
+                not_for_technician: NOT_FOR_TECHNICIAN.contains(p),
             }
         })
         .collect()
@@ -82,6 +99,11 @@ pub fn check_grants(role: SystemRole, names: &[String]) -> Result<Vec<Permission
     if role != SystemRole::Owner && set.iter().any(|p| OWNER_ONLY.contains(p)) {
         return Err(AppError::Unprocessable {
             code: "role.owner_only_permission",
+        });
+    }
+    if role == SystemRole::Technician && set.iter().any(|p| NOT_FOR_TECHNICIAN.contains(p)) {
+        return Err(AppError::Unprocessable {
+            code: "role.not_for_technician",
         });
     }
     if role == SystemRole::Owner {
@@ -321,6 +343,104 @@ pub async fn set_for_tenant(
     })
 }
 
+/// Body of `PUT /admin/tenants/{id}/record-history/{role}`.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RecordHistorySwitch {
+    /// `true`: the role sees "Ghi bởi … · đã sửa … lần" and each record's history.
+    pub visible: bool,
+    /// 3–500 characters.
+    pub reason: String,
+}
+
+/// `PUT /admin/tenants/{id}/record-history/{role}` (ADR-0022 D2): shows or hides the history of
+/// each record to the spa's owner or manager role. Changes `record.history.read` only, through a
+/// gated function that fixes the permission and the roles itself and leaves `follows_template`
+/// alone. Audited on both sides; effective on the members' next request.
+pub async fn set_record_history(
+    pool: &PgPool,
+    op: &OperatorSession,
+    tenant: Uuid,
+    key: &str,
+    input: &RecordHistorySwitch,
+) -> Result<RoleGrants, AppError> {
+    let role = role_of(key)?;
+    if role == SystemRole::Technician {
+        return Err(AppError::Unprocessable {
+            code: "role.not_for_technician",
+        });
+    }
+    let reason = Reason {
+        reason: input.reason.clone(),
+    };
+    let reason = reason.checked()?;
+    let mut tx = TenantTx::begin(pool, TenantId::from_uuid(tenant)).await?;
+    let Some(changed) = sqlx::query!(
+        r#"SELECT role_id AS "role_id!", before AS "before!", after AS "after!"
+           FROM app.platform_set_record_history($1, $2, $3, $4)"#,
+        &op.token_hash[..],
+        tenant,
+        role.key(),
+        input.visible
+    )
+    .fetch_optional(tx.conn())
+    .await
+    .map_err(gate_refusal)?
+    else {
+        return Err(AppError::NotFound);
+    };
+    let (role_id, before, after) = (changed.role_id, changed.before, changed.after);
+    if before == after {
+        // Dropping the transaction rolls it back: nothing was written.
+        return Err(AppError::Conflict {
+            code: "role.record_history_unchanged",
+        });
+    }
+    let follows_template = sqlx::query_scalar!(
+        "SELECT follows_template FROM app.role WHERE tenant_id = $1 AND id = $2",
+        tenant,
+        role_id
+    )
+    .fetch_one(tx.conn())
+    .await?;
+    record_platform(
+        &mut tx,
+        op.operator_id,
+        op.meta.ip,
+        AuditEntry {
+            action: Action::RolePermissionsChanged,
+            entity_type: "role",
+            entity_id: role_id,
+            before: Some(json!({"permissions": before})),
+            after: Some(json!({"permissions": after})),
+            reason: Some(reason),
+        },
+    )
+    .await?;
+    audit::record(
+        tx.conn(),
+        op.operator_id,
+        op.meta.ip,
+        PlatformEntry {
+            action: "platform.record_history.set",
+            tenant: Some(tenant),
+            target_type: Some("role"),
+            target_id: Some(role_id),
+            detail: Some(json!({"role": role.key(), "visible": input.visible})),
+            reason: Some(reason),
+        },
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(RoleGrants {
+        key: role.key(),
+        name: role.display_name(),
+        permissions: after,
+        follows_template: Some(follows_template),
+        updated_spas: None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,6 +506,52 @@ mod tests {
             check_grants(SystemRole::Technician, &["customer.delete_all".to_owned()]),
             Err(AppError::Validation(_))
         ));
+    }
+
+    #[test]
+    fn a_technician_never_reads_record_history() {
+        // ADR-0022 D3: refused in a template and in a spa alike (both call check_grants).
+        let mut grants = SystemRole::Technician.default_permissions();
+        grants.push(Permission::RecordHistoryRead);
+        assert!(matches!(
+            check_grants(SystemRole::Technician, &keys(&grants)),
+            Err(AppError::Unprocessable {
+                code: "role.not_for_technician"
+            })
+        ));
+        for role in [SystemRole::Owner, SystemRole::Manager] {
+            let mut grants = role.default_permissions();
+            grants.push(Permission::RecordHistoryRead);
+            assert!(check_grants(role, &keys(&grants)).is_ok(), "{role:?}");
+        }
+    }
+
+    #[test]
+    fn an_owner_without_record_history_still_passes_the_owner_floor() {
+        // The switch may hide it from the owner (D3): not part of the floor.
+        assert!(!OWNER_FLOOR.contains(&Permission::RecordHistoryRead));
+        let mut owner = SystemRole::Owner.default_permissions();
+        owner.retain(|p| *p != Permission::RecordHistoryRead);
+        assert!(check_grants(SystemRole::Owner, &keys(&owner)).is_ok());
+    }
+
+    #[test]
+    fn the_catalogue_marks_spa_local_and_technician_rules() {
+        let catalogue = catalogue();
+        let history = catalogue.iter().find(|p| p.key == "record.history.read");
+        assert_eq!(
+            history.map(|p| (
+                p.spa_local,
+                p.not_for_technician,
+                p.owner_only,
+                p.owner_floor
+            )),
+            Some((true, true, false, false))
+        );
+        assert_eq!(
+            catalogue.iter().filter(|p| p.spa_local).count(),
+            SPA_LOCAL.len()
+        );
     }
 
     #[test]

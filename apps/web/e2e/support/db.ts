@@ -83,3 +83,27 @@ export async function bookingsToToday(ids: string[], today: string): Promise<voi
     await sql.end();
   }
 }
+
+/**
+ * Switches a feature ON for the run's spa as an operator's switch leaves it (a `tenant_feature`
+ * row naming the run's operator, made by setup): for the screens that are off by default
+ * (ADR-0022: "Nhật ký thao tác"). A row, not the console API: admin.spec.ts asserts the
+ * operator's first MFA enrollment, which a sign-in here would consume.
+ */
+export async function switchFeatureOn(slug: string, feature: string): Promise<void> {
+  const sql = postgres(stack.ownerDatabaseUrl(), {
+    max: 1,
+    onnotice: () => undefined,
+  });
+  try {
+    const rows = await sql`
+      INSERT INTO app.tenant_feature (tenant_id, feature, enabled, updated_by)
+      SELECT t.id, ${feature}, true, (SELECT o.id FROM app.platform_operator o ORDER BY o.created_at LIMIT 1)
+        FROM app.tenant t WHERE t.slug = ${slug}
+      ON CONFLICT (tenant_id, feature) DO UPDATE SET enabled = true
+      RETURNING tenant_id`;
+    if (rows.length === 0) throw new Error(`no spa ${slug}`);
+  } finally {
+    await sql.end();
+  }
+}

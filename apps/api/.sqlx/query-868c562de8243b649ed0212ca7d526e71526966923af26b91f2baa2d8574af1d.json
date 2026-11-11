@@ -99,9 +99,9 @@
       false,
       false,
       true,
-      false,
-      false,
-      false,
+      true,
+      true,
+      true,
       null,
       null,
       null

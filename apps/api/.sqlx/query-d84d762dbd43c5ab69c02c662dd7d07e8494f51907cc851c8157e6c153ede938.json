@@ -1,0 +1,45 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH fold AS (\n             SELECT f.action, f.rank, f.link, f.key\n             FROM unnest($12::text[], $13::int4[], $14::text[], $15::text[]) AS f(action, rank, link, key)\n           ),\n           k AS NOT MATERIALIZED (\n             SELECT a.id, a.at, a.actor_kind, a.actor_user_id, a.action,\n                    coalesce((SELECT max(f.rank) FROM fold f WHERE f.action = a.action), 0) AS rank,\n                    ARRAY(\n                      SELECT l.v FROM fold f\n                      CROSS JOIN LATERAL (\n                        SELECT a.entity_id::text WHERE f.link = 'entity'\n                        UNION ALL\n                        SELECT a.after ->> f.key WHERE f.link = 'field'\n                        UNION ALL\n                        SELECT e FROM jsonb_array_elements_text(\n                          CASE WHEN f.link = 'list' AND jsonb_typeof(a.after -> f.key) = 'array'\n                               THEN a.after -> f.key ELSE '[]'::jsonb END) e\n                      ) l(v)\n                      WHERE f.action = a.action AND l.v IS NOT NULL\n                    ) AS keys\n             FROM app.audit_log a\n             WHERE a.tenant_id = $1\n           ),\n           hits AS MATERIALIZED (\n             SELECT DISTINCT h.at, h.actor_kind,\n                    coalesce(h.actor_user_id, '00000000-0000-0000-0000-000000000000'::uuid) AS actor\n             FROM app.audit_log h\n             WHERE h.tenant_id = $1 AND h.action = ANY($9)\n               AND h.at >= ($3::date::timestamp AT TIME ZONE $2)\n               AND h.at < (($4::date + 1)::timestamp AT TIME ZONE $2)\n           ),\n           page AS (\n             SELECT a.id, a.at, a.actor_kind, a.actor_user_id, a.rank, a.keys\n             FROM k a\n             WHERE a.at >= ($3::date::timestamp AT TIME ZONE $2)\n               AND a.at < (($4::date + 1)::timestamp AT TIME ZONE $2)\n               AND ($5::timestamptz IS NULL OR (a.at, a.id) < ($5, $6::uuid))\n               AND ($7::text IS NULL OR a.actor_kind = $7)\n               AND ($8::uuid IS NULL OR a.actor_user_id = $8)\n               AND ($10::text[] IS NULL OR NOT (a.action = ANY($10)))\n               -- CASE fixes the order: the group first (cheap), then whether the row is a line.\n               AND CASE\n                 WHEN NOT ($9::text[] IS NULL OR a.action = ANY($9) OR (\n                   a.rank > $16::int4\n                   AND (a.at, a.actor_kind,\n                        coalesce(a.actor_user_id, '00000000-0000-0000-0000-000000000000'::uuid))\n                     IN (SELECT h.at, h.actor_kind, h.actor FROM hits h)\n                   AND EXISTS (\n                     SELECT 1 FROM k c\n                     WHERE c.at = a.at AND c.actor_kind = a.actor_kind\n                       AND c.actor_user_id IS NOT DISTINCT FROM a.actor_user_id\n                       AND c.rank > 0 AND c.rank < a.rank AND c.action = ANY($9)\n                       AND (c.keys && a.keys OR EXISTS (\n                         SELECT 1 FROM k m\n                         WHERE m.at = a.at AND m.actor_kind = a.actor_kind\n                           AND m.actor_user_id IS NOT DISTINCT FROM a.actor_user_id\n                           AND m.rank > c.rank AND m.rank < a.rank\n                           AND m.keys && a.keys AND m.keys && c.keys)))))\n                 THEN false\n                 ELSE a.rank = 0 OR NOT EXISTS (\n                   SELECT 1 FROM k p\n                   WHERE p.at = a.at AND p.actor_kind = a.actor_kind\n                     AND p.actor_user_id IS NOT DISTINCT FROM a.actor_user_id\n                     AND p.rank > a.rank AND p.keys && a.keys)\n               END\n             ORDER BY a.at DESC, a.id DESC\n             LIMIT $11\n           ),\n           lines AS (\n             SELECT p.id, true AS root, p.rank, p.keys FROM page p\n             UNION\n             SELECT c.id, false, c.rank, c.keys\n             FROM page p\n             JOIN k c ON c.at = p.at AND c.actor_kind = p.actor_kind\n               AND c.actor_user_id IS NOT DISTINCT FROM p.actor_user_id\n               AND c.rank > 0 AND c.rank < p.rank\n             WHERE c.id NOT IN (SELECT id FROM page)\n           )\n           SELECT l.id AS \"id!\", l.root AS \"root!\" FROM lines l",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "root!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Date",
+        "Date",
+        "Timestamptz",
+        "Uuid",
+        "Text",
+        "Uuid",
+        "TextArray",
+        "TextArray",
+        "Int8",
+        "TextArray",
+        "Int4Array",
+        "TextArray",
+        "TextArray",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "d84d762dbd43c5ab69c02c662dd7d07e8494f51907cc851c8157e6c153ede938"
+}

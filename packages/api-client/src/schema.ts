@@ -423,6 +423,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/tenants/{id}/record-history/{role}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set_record_history"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/tenants/{id}/roles": {
         parameters: {
             query?: never;
@@ -1348,6 +1364,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/record-history/customer-package/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["customer_package_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/record-history/customer/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["customer_record_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/record-history/refund/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["refund_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/record-history/sale/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["sale_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/record-history/visit/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["visit_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reports/daily": {
         parameters: {
             query?: never;
@@ -1884,6 +1980,8 @@ export interface components {
         };
         ActivityActor: {
             kind: components["schemas"]["ActorKind"];
+            /** @description `true` when the person no longer works here ("Hà (đã nghỉ)"); absent otherwise. */
+            left?: boolean | null;
             /** @description The login's full name (`user` only). */
             name?: string | null;
             /** Format: uuid */
@@ -2928,6 +3026,8 @@ export interface components {
         };
         /** @description One feature of the registry. */
         FeatureInfo: {
+            /** @description The state of a spa no operator switched it for. */
+            default_enabled: boolean;
             key: string;
             name: string;
             /** @description Permissions a spa loses while it is off. */
@@ -3076,6 +3176,11 @@ export interface components {
             /** Format: date */
             business_date: string;
             cancellation?: components["schemas"]["HistoryCancellation"] | null;
+            /**
+             * @description Visit events only, and only for `record.history.read`: the visit was edited (ADR-0022
+             *     D9: its time or a technician changed, or "Sửa lượt" replaced it / made it).
+             */
+            edited?: boolean | null;
             extension?: components["schemas"]["HistoryExtension"] | null;
             kind: components["schemas"]["HistoryKind"];
             purchase?: components["schemas"]["HistoryPurchase"] | null;
@@ -3392,6 +3497,11 @@ export interface components {
             /** Format: uuid */
             customer_id: string;
             customer_name: string;
+            /**
+             * @description "Đã sửa" (ADR-0022 D9): only for `record.history.read`, and only on a `sale` row of
+             *     one-off services, not voided, made in a visit: that visit's `edited`. Absent otherwise.
+             */
+            edited?: boolean | null;
             entry: components["schemas"]["LedgerEntry"];
             /**
              * Format: uuid
@@ -4411,10 +4521,17 @@ export interface components {
             /** @description Area: the part before the first dot (`customer`, `staff`, …). */
             group: string;
             key: string;
+            /** @description The technician role may never hold it (`role.not_for_technician`). */
+            not_for_technician: boolean;
             /** @description The owner role must keep it. */
             owner_floor: boolean;
             /** @description Only the owner role may hold it. */
             owner_only: boolean;
+            /**
+             * @description Each spa's own value: read-only in a spa's role editor (changed by its own switch); in a
+             *     template it is only a new spa's initial value.
+             */
+            spa_local: boolean;
         };
         /**
          * @description Where it stands on the desk's timeline (spec §10.1), derived when read: `waiting` (booked),
@@ -4551,6 +4668,81 @@ export interface components {
             /** @description Current TOTP (or a recovery code); required when the account has MFA enabled. */
             code?: string | null;
             password: string;
+        };
+        /** @description Who recorded it. Absent when nobody is known ("Chưa rõ ai ghi"). */
+        RecordCreated: {
+            actor?: components["schemas"]["ActivityActor"] | null;
+            /**
+             * Format: date-time
+             * @description Absent for a paper-book entry (its day is the book's, it has no time).
+             */
+            at?: string | null;
+            /**
+             * Format: date
+             * @description The spa's day of `at`, or the paper book's day.
+             */
+            day: string;
+            source: components["schemas"]["RecordSource"];
+        };
+        /** @description `GET /record-history/...`: one record's history, oldest first. */
+        RecordHistory: {
+            /**
+             * @description One line per action (a visit's checkout, a correction, a package sale fold into one), the
+             *     100 newest, oldest first. Only what the caller may read: no money without `sale.read`, no
+             *     note change without `customer.health_notes.read`, no phone value without `audit.read`.
+             */
+            items: components["schemas"]["ActivityEntry"][];
+            /**
+             * Format: int32
+             * @description Older lines left out ("Còn {n} thay đổi cũ hơn.").
+             */
+            omitted: number;
+            record: components["schemas"]["RecordRef"];
+            summary: components["schemas"]["RecordSummary"];
+        };
+        /** @description Body of `PUT /admin/tenants/{id}/record-history/{role}`. */
+        RecordHistorySwitch: {
+            /** @description 3–500 characters. */
+            reason: string;
+            /** @description `true`: the role sees "Ghi bởi … · đã sửa … lần" and each record's history. */
+            visible: boolean;
+        };
+        /**
+         * @description The kind of record a history is about, after re-anchoring (a sale's history is its visit's or
+         *     its package's; a refund's is its package's). Later waves add the other kinds.
+         * @enum {string}
+         */
+        RecordKind: "visit" | "customer_package" | "customer";
+        /** @description The latest change, when it is not the creation itself. */
+        RecordLast: {
+            actor: components["schemas"]["ActivityActor"];
+            /** Format: date-time */
+            at: string;
+            /** Format: date */
+            day: string;
+        };
+        RecordRef: {
+            /** Format: uuid */
+            id: string;
+            type: components["schemas"]["RecordKind"];
+        };
+        /**
+         * @description Where "Ghi bởi / Tạo bởi" comes from (spec D12).
+         * @enum {string}
+         */
+        RecordSource: "audit" | "record" | "paper_book";
+        /** @enum {string} */
+        RecordState: "active" | "voided" | "replaced" | "cancelled";
+        RecordSummary: {
+            created?: components["schemas"]["RecordCreated"] | null;
+            /**
+             * Format: int32
+             * @description "đã sửa N lần": the lines below (as this caller sees them) whose action counts as an edit
+             *     (spec D9, D10). The lists' `edited` is true exactly when this is at least 1.
+             */
+            edits: number;
+            last?: components["schemas"]["RecordLast"] | null;
+            state: components["schemas"]["RecordState"];
         };
         /** @description Money paid back when the package was cancelled (US7). */
         RefundDto: {
@@ -5227,12 +5419,14 @@ export interface components {
         };
         /** @description A feature's state in one spa. */
         TenantFeature: {
+            /** @description The state without an operator's switch (`updated_at` null). */
+            default_enabled: boolean;
             enabled: boolean;
             key: string;
             name: string;
             /**
              * Format: date-time
-             * @description When an operator last switched it (`null` = never: on by default).
+             * @description When an operator last switched it (`null` = never: the default applies).
              */
             updated_at?: string | null;
         };
@@ -5498,6 +5692,12 @@ export interface components {
              *     order they were made, joined by "; ".
              */
             discount_reason?: string | null;
+            /**
+             * @description "Đã sửa" (ADR-0022 D9): present only for `record.history.read`; `true` when the visit's
+             *     time or a technician was changed, or "Sửa lượt" replaced it or made it. Equals the
+             *     visit history's `summary.edits >= 1`.
+             */
+            edited?: boolean | null;
             /** Format: uuid */
             id: string;
             lines: components["schemas"]["VisitLineDto"][];
@@ -6979,6 +7179,68 @@ export interface operations {
                 };
                 content?: never;
             };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_record_history: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                /** @description owner | manager */
+                role: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordHistorySwitch"];
+            };
+        };
+        responses: {
+            /** @description The role after the switch (`record.history.read` added or removed); next request */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleGrants"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description platform.step_up_required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unknown spa or role */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description role.record_history_unchanged */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description role.not_for_technician | reason */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -10215,6 +10477,245 @@ export interface operations {
                 content?: never;
             };
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    customer_package_history: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordHistory"];
+                };
+            };
+            /** @description id is not a UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: needs record.history.read + customer.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    customer_record_history: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The customer profile's history; old / new phone values only for audit.read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordHistory"];
+                };
+            };
+            /** @description id is not a UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: needs record.history.read + customer.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    refund_history: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The refunded package's history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordHistory"];
+                };
+            };
+            /** @description id is not a UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: needs record.history.read + sale.read + customer.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    sale_history: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A one-off sale's visit history, or a package sale's package history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordHistory"];
+                };
+            };
+            /** @description id is not a UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: needs record.history.read + sale.read, then visit.read (one-off sale) or customer.read (package sale) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    visit_history: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The visit's history, its whole "Sửa lượt" chain included */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordHistory"];
+                };
+            };
+            /** @description id is not a UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: needs record.history.read + visit.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

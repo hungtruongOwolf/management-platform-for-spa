@@ -7,7 +7,7 @@ related: [../product/specs/record-history.md, ../architecture/record-history.md,
 
 # Plan: lịch sử trên từng bản ghi
 
-Mỗi PR qua `build` → `qa` → `pr-review` → `secure` (quyền + PII) → `scripts/merge-when-green.sh`. Bản sửa sau review độc lập 2026-11-11 (LEAD: gộp đợt 2 cũ vào đợt 1; ẩn màn nhật ký ngay đợt 1). Chưa bắt đầu.
+Mỗi PR qua `build` → `qa` → `pr-review` → `secure` (quyền + PII) → `scripts/merge-when-green.sh`. Bản sửa sau review độc lập 2026-11-11 (LEAD: gộp đợt 2 cũ vào đợt 1; ẩn màn nhật ký ngay đợt 1). **Đợt 1a đã build** (2026-11-11, PR #187; quyết định khi build K1–K11 ở [spec](../product/specs/record-history.md) Review log); **chưa deploy staging** (chờ 1b). Tiếp theo: 1b.
 
 ## Đợt 1 = 1a + 1b — **lên staging cùng nhau**
 1a merge trước nhưng **không deploy staging** cho tới khi 1b merge (1a ẩn màn nhật ký; 1b mới hiện lịch sử tại chỗ). Deploy: migrate 0052 rồi deploy binary ngay; operator không ghi ở console trong khoảng hở ([architecture §8](../architecture/record-history.md)).
@@ -52,7 +52,7 @@ Mỗi PR qua `build` → `qa` → `pr-review` → `secure` (quyền + PII) → `
 - Chip: "Đã thay" thay "Đã sửa" cũ (`TodayVisits`, `CustomerHistory`, chữ "Đã thay bằng lượt mới."), "Đã sửa" theo `edited`, một chip.
 - Quầy (`VisitDetails`, bỏ lặp "Nhập bù · Ghi lúc"), `DaySales` (⋯), Lịch sử khách (giờ là nút), Sổ doanh thu (ô giờ / thẻ → sheet, gồm hàng gói + hoàn tiền), `PackageRow` (nút "Lịch sử"), `CustomerProfile` (sau `detail-grid`).
 - `AMOUNT_LABEL` "Đảo" → "Trả lại".
-**Test 1b:** Vitest `RecordTrace` (meta, mở / đóng, lỗi, `404`, `403` → ẩn + focus, trống, `omitted`, "(đã nghỉ)", "Đội vận hành"), `HISTORY` phủ mọi `AuditAction` (typecheck), `data-row-inert` không gập thẻ, chip ưu tiên; e2e `record-history.spec.ts` (chủ spa mở lượt thấy "Ghi bởi", đổi KTV → "Đã sửa", Sửa lượt → "Đã thay" + "Đã sửa", quản lý mặc định không thấy, Sổ doanh thu sheet, hồ sơ khách SĐT cũ; 360 + 1280 px, axe); `pnpm --filter web budget` ≤ 125 KiB (khởi động không tăng).
+**Test 1b:** Vitest `RecordTrace` (meta, mở / đóng, lỗi, `404`, `403` → ẩn + focus, trống, `omitted`, "(đã nghỉ)", "Đội vận hành"), `HISTORY` phủ mọi `AuditAction` (typecheck), `data-row-inert` không gập thẻ, chip theo điều kiện loại trừ nhau (D9); e2e `record-history.spec.ts` (chủ spa mở lượt thấy "Ghi bởi", đổi KTV → "Đã sửa", Sửa lượt → "Đã thay" + "Đã sửa", quản lý mặc định không thấy, Sổ doanh thu sheet, hồ sơ khách SĐT cũ; 360 + 1280 px, axe); `pnpm --filter web budget` ≤ 125 KiB (4 module khởi động đổi vài dòng, mã lịch sử lazy; design §1.1).
 
 ## Cửa sổ hồi quy (từ khi đợt 1 lên staging tới đợt 2 / 3)
 Màn nhật ký tắt, nên chủ spa **không xem được trên UI** ai làm những việc sau cho tới khi đợt tương ứng xong: đổi / hủy / không đến lịch hẹn, chấm công, khen / phàn nàn, sửa / xóa thưởng phạt (đợt 2); sửa giá, mẫu gói, nhóm dịch vụ, quy tắc lương, cài đặt lịch hẹn (đợt 3); việc của đội vận hành, tài khoản / mật khẩu, vai trò, cờ (không có đợt nào: chỉ nhật ký). Dữ liệu vẫn đủ ở `audit_log`. Giảm thiểu: chủ spa / EM cần thì operator bật cờ `activity_log` cho spa đó (một phút, có lý do + audit). **Lưu ý:** `app reset-demo` xóa `tenant_feature` → cờ operator đã bật cho spa demo mất sau mỗi lần reset, phải bật lại (N8). Ghi vào hướng dẫn nghiệm thu khi deploy.

@@ -6,13 +6,18 @@ import "./messages";
 import { locked } from "./RolesPage";
 
 const ME = { operator: { id: "o1", username: "ops", full_name: "Người vận hành" }, step_up_until: null };
-const perm = (key: string, extra: Partial<Record<"grantable" | "owner_only" | "owner_floor", boolean>> = {}) => ({
+const perm = (
+  key: string,
+  extra: Partial<Record<"grantable" | "owner_only" | "owner_floor" | "spa_local" | "not_for_technician", boolean>> = {},
+) => ({
   key,
   group: key.split(".")[0] ?? key,
   grantable: true,
   owner_only: false,
   owner_floor: false,
   feature: null,
+  spa_local: false,
+  not_for_technician: false,
   ...extra,
 });
 
@@ -36,6 +41,17 @@ describe("role guardrails in the editor", () => {
     expect(locked("manager", manage)).toBe("Chỉ chủ spa");
     expect(locked("technician", perm("platform.tenant.manage", { grantable: false }))).toBe("Không cấp được");
     expect(locked("manager", perm("customer.write"))).toBeNull();
+  });
+
+  it("keeps record history to its own panel in a spa and away from technicians (ADR-0022)", () => {
+    const history = perm("record.history.read", { spa_local: true, not_for_technician: true });
+    expect(locked("technician", history)).toBe("Không cấp cho kỹ thuật viên");
+    expect(locked("technician", history, "spa")).toBe("Không cấp cho kỹ thuật viên");
+    expect(locked("manager", history, "spa")).toBe("Đổi ở panel Lịch sử trên từng bản ghi");
+    expect(locked("owner", history, "spa")).toBe("Đổi ở panel Lịch sử trên từng bản ghi");
+    // In a template it is a new spa's initial value: editable for owner and manager.
+    expect(locked("manager", history, "template")).toBeNull();
+    expect(locked("owner", history)).toBeNull();
   });
 });
 

@@ -498,3 +498,116 @@ describe("console sheets and caches (review 2026-11)", () => {
     }
   });
 });
+
+describe("record history switch (ADR-0022)", () => {
+  const roles = (managerShown: boolean) => [
+    { key: "owner", name: "Chủ spa", permissions: ["audit.read", "record.history.read"], follows_template: true },
+    {
+      key: "manager",
+      name: "Quản lý",
+      permissions: managerShown ? ["visit.read", "record.history.read"] : ["visit.read"],
+      follows_template: true,
+    },
+    { key: "technician", name: "Kỹ thuật viên", permissions: ["catalog.read"], follows_template: true },
+  ];
+
+  it("shows it to the manager after a reason; the activity screen's switch says it is off by default", async () => {
+    let managerShown = false;
+    const puts: unknown[] = [];
+    server((method, path, body) => {
+      if (path === "/api/v1/admin/me") return Response.json(ME);
+      if (path === `/api/v1/admin/tenants/${SPA.id}`) return Response.json(SPA);
+      if (path === `/api/v1/admin/tenants/${SPA.id}/features`) {
+        return Response.json([
+          { key: "activity_log", name: "Nhật ký thao tác", enabled: false, default_enabled: false, updated_at: null },
+        ]);
+      }
+      if (path === `/api/v1/admin/tenants/${SPA.id}/roles`) return Response.json(roles(managerShown));
+      if (path === "/api/v1/admin/permissions") return Response.json([]);
+      if (path === `/api/v1/admin/tenants/${SPA.id}/record-history/manager` && method === "PUT") {
+        puts.push(body);
+        managerShown = (body as { visible: boolean }).visible;
+        return Response.json(roles(managerShown)[1]);
+      }
+      return new Response(null, { status: 404 });
+    });
+    at(`/admin/spa/${SPA.id}`);
+    const user = userEvent.setup();
+    const panel = await screen.findByRole("region", { name: "Lịch sử trên từng bản ghi" });
+    const owner = (await within(panel).findByText("Chủ spa")).closest("li");
+    const manager = within(panel).getByText("Quản lý").closest("li");
+    expect(owner && within(owner).getByText("Đang hiện")).toBeInTheDocument();
+    expect(manager && within(manager).getByText("Đang ẩn")).toBeInTheDocument();
+    expect(within(panel).queryByText("Kỹ thuật viên")).not.toBeInTheDocument();
+
+    await user.click(within(panel).getByRole("button", { name: "Hiện cho Quản lý: lịch sử trên từng bản ghi" }));
+    const sheet = await screen.findByRole("dialog", { name: "Hiện lịch sử cho Quản lý?" });
+    expect(within(sheet).getByText(/Số điện thoại cũ của khách không hiện/)).toBeInTheDocument();
+    await user.type(within(sheet).getByLabelText("Lý do"), "Chủ spa nhờ");
+    await user.click(within(sheet).getByRole("button", { name: "Hiện lịch sử" }));
+    expect(
+      await within(panel).findByRole("button", { name: "Ẩn với Quản lý: lịch sử trên từng bản ghi" }),
+    ).toBeInTheDocument();
+    expect(puts).toEqual([{ visible: true, reason: "Chủ spa nhờ" }]);
+
+    const features = screen.getByRole("region", { name: "Tính năng" });
+    expect(within(features).getByText("Mặc định · tắt")).toBeInTheDocument();
+    expect(within(features).getByText("Đang tắt")).toBeInTheDocument();
+  });
+
+  it("reloads instead of failing when someone else already switched it (409)", async () => {
+    let managerShown = false;
+    server((method, path) => {
+      if (path === "/api/v1/admin/me") return Response.json(ME);
+      if (path === `/api/v1/admin/tenants/${SPA.id}`) return Response.json(SPA);
+      if (path === `/api/v1/admin/tenants/${SPA.id}/features`) return Response.json([]);
+      if (path === `/api/v1/admin/tenants/${SPA.id}/roles`) return Response.json(roles(managerShown));
+      if (path === "/api/v1/admin/permissions") return Response.json([]);
+      if (path === `/api/v1/admin/tenants/${SPA.id}/record-history/manager` && method === "PUT") {
+        managerShown = true;
+        return problem(409, "role.record_history_unchanged");
+      }
+      return new Response(null, { status: 404 });
+    });
+    at(`/admin/spa/${SPA.id}`);
+    const user = userEvent.setup();
+    const panel = await screen.findByRole("region", { name: "Lịch sử trên từng bản ghi" });
+    await user.click(await within(panel).findByRole("button", { name: "Hiện cho Quản lý: lịch sử trên từng bản ghi" }));
+    const sheet = await screen.findByRole("dialog", { name: "Hiện lịch sử cho Quản lý?" });
+    await user.type(within(sheet).getByLabelText("Lý do"), "Chủ spa nhờ");
+    await user.click(within(sheet).getByRole("button", { name: "Hiện lịch sử" }));
+    expect(await within(panel).findByText("Trạng thái đã đổi ở nơi khác, đã tải lại.")).toBeInTheDocument();
+    expect(
+      await within(panel).findByRole("button", { name: "Ẩn với Quản lý: lịch sử trên từng bản ghi" }),
+    ).toBeInTheDocument();
+  });
+
+  it("names the switch in the platform log by its direction and role", async () => {
+    server((_method, path) => {
+      if (path === "/api/v1/admin/me") return Response.json(ME);
+      if (path === "/api/v1/admin/tenants") return Response.json([SPA]);
+      if (path.startsWith("/api/v1/admin/audit")) {
+        return Response.json({
+          items: [
+            {
+              id: "a1",
+              at: "2026-11-11T03:00:00Z",
+              operator_username: "ops",
+              action: "platform.record_history.set",
+              tenant_id: SPA.id,
+              target_type: "role",
+              target_id: null,
+              detail: { role: "manager", visible: true },
+              reason: "Chủ spa nhờ",
+              ip: null,
+            },
+          ],
+          next_before: null,
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
+    at("/admin/nhat-ky");
+    expect(await screen.findByText("Hiện lịch sử bản ghi cho Quản lý")).toBeInTheDocument();
+  });
+});

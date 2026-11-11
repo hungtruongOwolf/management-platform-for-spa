@@ -7,7 +7,7 @@ related: [../product/specs/record-history.md, ../decisions/ADR-0022-inline-recor
 
 # Backend: lịch sử trên từng bản ghi
 
-Spec: [record-history](../product/specs/record-history.md) (D1–D12, review log 4 lượt). Quyết định: [ADR-0022](../decisions/ADR-0022-inline-record-history.md). Chưa build. Bản sửa sau review độc lập 2026-11-11.
+Spec: [record-history](../product/specs/record-history.md) (D1–D12, review log 4 lượt). Quyết định: [ADR-0022](../decisions/ADR-0022-inline-record-history.md). **Đợt 1a đã build** (0052, `reporting::history`, 5 route đợt 1, công tắc, cờ; quyết định khi build K1–K11 ở spec Review log). Bản sửa sau review độc lập 2026-11-11.
 
 ## 1. Tổng quan
 ```
@@ -89,7 +89,7 @@ Không sở hữu permission → `owning(AuditRead) == None`, `administration_is
 
 **Cờ (S12):** `kernel::feature` thêm prefix `/api/v1/record-history/appointment` và `/api/v1/record-history/settings/appointment-settings` vào cờ `appointments`, `/api/v1/record-history/settings/payroll-rules` vào `payroll` (route bị chặn `403 feature.disabled` trước handler, không chỉ nhờ rút permission); test `routes_match_on_segment_boundaries` thêm 3 ca.
 
-Mỗi loại một route Axum (không `{record}` tự do) → loại lạ `404` router; mỗi route một dòng `ROUTES` ở `authz_matrix.rs`. `reporting::history::authorize(actor, Anchor)` là `match` vét cạn trên **loại neo cuối** (B1): đổi neo xong mới kiểm, trước mọi đọc lịch sử. Việc đổi neo chỉ đọc khóa (`sale.visit_id`, có gói trỏ tới hóa đơn không, `refund.customer_package_id`) trong spa của người gọi; id không tồn tại / spa khác → `404` **sau** khi đã qua `record.history.read` + quyền của route (người không có hai quyền đó không phân biệt được). Người có quyền của route nhưng thiếu quyền loại neo cuối (vd. `sale.read` thiếu `visit.read`) phân biệt được `404` / `403` của một id hóa đơn: chấp nhận (id là UUIDv7 của chính spa, không lộ nội dung). Id sai dạng: `Path<Uuid>` trả `400` trước handler.
+Mỗi loại một route Axum (không `{record}` tự do) → loại lạ `404` router; mỗi route một dòng `ROUTES` ở `authz_matrix.rs`. `reporting::history::require_route` (quyền của route) rồi `require_anchor(actor, Anchor)` là `match` vét cạn trên **loại neo cuối** (B1): đổi neo xong mới kiểm, trước mọi đọc lịch sử. Việc đổi neo chỉ đọc khóa trong spa của người gọi: loại hóa đơn quyết bởi `sale_line.line_type = 'package'` (vị từ của Sổ doanh thu, 0021) — hóa đơn bán gói → gói (`customer_package.sale_id` **chỉ để tìm id gói**), còn lại → lượt qua `sale.visit_id`; hoàn tiền → `refund.customer_package_id`; id không tồn tại / spa khác → `404` **sau** khi đã qua `record.history.read` + quyền của route (người không có hai quyền đó không phân biệt được). Người có quyền của route nhưng thiếu quyền loại neo cuối (vd. `sale.read` thiếu `visit.read`) phân biệt được `404` / `403` của một id hóa đơn: chấp nhận (id là UUIDv7 của chính spa, không lộ nội dung). Id sai dạng: `400`, nhưng **sau** quyền của route (handler nhận `Result<Path<Uuid>, PathRejection>`, build-time: người không quyền gửi id rác vẫn `403`, không oracle; xem spec Review log, quyết định khi build).
 
 Thứ tự (F17): `401` → `403 auth.password_change_required` → `403 feature.disabled` → `require(RecordHistoryRead)` → quyền của route → parse (`422`) → đổi neo (`404`) → quyền của loại neo cuối (`403`) → đọc.
 
@@ -171,6 +171,7 @@ Các endpoint danh sách mang `edited` gửi `Cache-Control: no-store` (nội du
 - Có sẵn: `audit_log_entity_idx (tenant_id, entity_type, entity_id, at)` (0001) cho bước 2; `audit_log_tenant_at_id_idx` (0051) cho bước 3.
 - Tạo index trên bảng audit có dữ liệu: `CREATE INDEX` thường trong transaction migration (staging ~7.000 dòng; production chưa có). Khi bảng lớn: `CONCURRENTLY` ở migration riêng (quy ước 0036/0037).
 - Ngân sách: `GET /record-history/*` p95 ≤ 100 ms; `/visits` ngày, ledger 92 ngày, `/appointments?marks=true` 14 ngày: p95 tăng ≤ 10 ms. **Bench `reports_bench.rs` seed audit thật**: ~60.000 dòng / năm × 3 (ước tính: ~14.700 lượt / năm × ~2,5 dòng + chấm công / khen 8 người × 365 × 2 + lịch hẹn + danh mục); số 6.787 dòng / năm của staging (log 2026-11-11) là dữ liệu seed nhỏ (1.990 lượt / năm), không dùng làm ngân sách.
+- **Đo khi build đợt 1a (2026-11-11, máy dev, `reports_bench.rs` `record_history_reads_within_budget`, 44.040 lượt + 179.466 dòng audit / 3 năm):** p95 lịch sử lượt (chuỗi 3 bản, khách bận nhất) 40 ms, gói 10 ms, khách 6 ms; `/audit-log?limit=50` sau refactor `rows_by_ids` 19 ms; `edited` (đo xen kẽ có / không quyền, 60 vòng): `/visits` 17 / 17 ms, sổ doanh thu 92 ngày 83 / 87 ms, lịch sử khách 29 / 26 ms → thêm ≤ 3 ms. Dò `edited` đi qua `audit_log_edit_idx` (EXPLAIN trong bench).
 - Web: `staleTime: 0`, key `["record-history", type, id]`, `MutationCache.onSuccess` invalidate tiền tố (design §5).
 
 ## 7. Impact analysis

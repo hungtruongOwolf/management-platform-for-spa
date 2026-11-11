@@ -56,7 +56,7 @@ As an operator, I want to suspend a spa that stopped paying or is under investig
 
 ### US5 — Cờ tính năng theo spa
 As an operator, I want to turn a feature off for a spa, so that a spa on a smaller plan (or with a broken flow) does not see it.
-- **AC5.1** Registry trong code (`kernel::feature`), 6 tính năng thật, mặc định **bật** cho mọi spa (không dòng = bật; migration không ghi gì → không đổi hành vi). *Thiết kế 2026-11-11 ([ADR-0022](../../decisions/ADR-0022-inline-record-history.md), chưa build): registry thêm `default_enabled`; cờ thứ 7 `activity_log` "Nhật ký thao tác" mặc định **tắt** (không dòng = tắt), chỉ sở hữu route `/audit-log`, không rút `audit.read`; `GET /admin/features` + `…/{id}/features` trả `default_enabled`; console ghi "Mặc định · bật / tắt".*
+- **AC5.1** Registry trong code (`kernel::feature`), 6 tính năng thật, mặc định **bật** cho mọi spa (không dòng = bật; migration không ghi gì → không đổi hành vi). *ADR-0022 ([decision](../../decisions/ADR-0022-inline-record-history.md), đã build đợt 1a, 0052): registry thêm `default_enabled`; cờ thứ 7 `activity_log` "Nhật ký thao tác" mặc định **tắt** (không dòng = tắt), chỉ sở hữu route `/audit-log`, không rút `audit.read`; `GET /admin/features` + `…/{id}/features` trả `default_enabled`; console ghi "Mặc định · bật / tắt".*
 
   | key | Tên | Khi tắt: permission bị rút | Khi tắt: route trả `403 feature.disabled` |
   |---|---|---|---|
@@ -86,7 +86,7 @@ As an operator, I want to change what a manager may do for all spas (or for one 
   - permission lạ → `422` lỗi field `permissions unknown_permission`; `platform.*`, `staff.read_own_past` → `role.not_grantable`;
   - owner phải giữ `staff.manage`, `staff.read`, `staff.read_basic`, `audit.read` → `role.owner_floor` (`details.missing`);
   - `staff.manage` chỉ ở owner → `role.owner_only_permission` (giữ quyết định C, ADR-0015/0016 "owner_protected" dựa trên `staff.manage`);
-  - *(thiết kế, ADR-0022)* `record.history.read` không bao giờ ở `technician` → `role.not_for_technician`;
+  - *(ADR-0022, đã build)* `record.history.read` không bao giờ ở `technician` → `role.not_for_technician`;
   - chỉ role hệ thống (`owner`, `manager`, `technician`) → key khác `404`.
 - **AC7.5** Bất biến cứng không đổi: người đã nghỉ chỉ `staff.read_own_past` (ADR-0014), `staff.link_required`, quyết định C, role `owner` luôn `requires_mfa` (CHECK DB; sửa vai trò không tắt được MFA — chỉ công tắc theo spa ở US10 quyết spa đó có áp dụng không), tính năng tắt rút permission bất kể role.
 - **AC7.6** Audit nền tảng `platform.role_template.set` / `platform.role.set` / `platform.role.reset` + audit spa `role.permissions_changed` (before/after list).
@@ -110,7 +110,7 @@ As an operator, I want to switch off the owner's second factor for one spa (and 
 - **AC10.6** Audit nền tảng `platform.tenant.owner_mfa` (`before`, `after`, `revoked_sessions`, lý do) + audit spa `tenant.owner_mfa_changed` (`platform_admin`, before/after, lý do).
 - **AC10.7** UI: panel "Bảo mật đăng nhập" ở `/admin/spa/$id` (chip Đang bật / Đang tắt, Tắt / Bật → lý do → step-up); khi tắt có cảnh báo chủ spa chỉ dùng mật khẩu; danh sách `/admin` có chip "Không MFA".
 
-### US11 — Lịch sử trên từng bản ghi: bật / tắt theo vai trò (thiết kế 2026-11-11, chưa build)
+### US11 — Lịch sử trên từng bản ghi: bật / tắt theo vai trò (đã build đợt 1a, 2026-11-11)
 As an operator, I want to show or hide "ai ghi, ai sửa" on records for a spa's owner and manager, so that each spa gets what the EM decided. ([raw](../../../raw/2026-11-11-em-decision-inline-record-history.md), [ADR-0022](../../decisions/ADR-0022-inline-record-history.md), [spec record-history](record-history.md))
 - **AC11.1** Mặc định: chủ spa **hiện** (mẫu owner có `record.history.read`), quản lý **ẩn**, KTV không bao giờ. Quyền này **spa-local**: mẫu chỉ áp khi tạo spa; áp mẫu, "Về mẫu", sửa vai trò riêng giữ nguyên giá trị của spa; trình sửa vai trò hiện ô chỉ đọc.
 - **AC11.2** `PUT /admin/tenants/{id}/record-history/{role} {visible, reason}` (step-up; lý do 3–500): `owner` / `manager` → `200` vai trò sau khi đổi, `follows_template` **không đổi**; `technician` → `422 role.not_for_technician`; role lạ / spa lạ → `404`; đã đúng giá trị → `409 role.record_history_unchanged`. Hàm DB `platform_set_record_history` viết cứng permission + vai trò, trả danh sách permission trước / sau. Request `RecordHistorySwitch`, response `RoleGrants`.

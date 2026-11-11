@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id AS \"id!\" FROM app.audit_log a\n           WHERE a.tenant_id = $1 AND a.entity_type = 'customer_package' AND a.entity_id = $2\n           UNION ALL\n           SELECT a.id FROM app.audit_log a\n           WHERE a.tenant_id = $1 AND a.entity_type = 'sale' AND a.entity_id = $3\n             AND a.action IN ('sale.create', 'sale.void', 'sale.note_update', 'sale.paper_book')\n           UNION ALL\n           SELECT a.id FROM app.audit_log a\n           WHERE a.tenant_id = $1 AND a.entity_type = 'customer' AND a.entity_id = $4\n             AND a.action = 'opening_balance.import'\n             AND a.after -> 'customer_package_ids' ? $5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "1d6e80ea0ddb178fe51812a31e98da136e4523d807f6780604eb1d4f070d0efd"
+}

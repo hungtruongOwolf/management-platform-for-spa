@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH one_off AS (\n             SELECT s.id FROM app.sale s\n             WHERE s.tenant_id = $1 AND s.visit_id = ANY($2)\n               AND NOT EXISTS (SELECT 1 FROM app.sale_line sl\n                               WHERE sl.tenant_id = s.tenant_id AND sl.sale_id = s.id\n                                 AND sl.line_type = 'package')\n           ), package_sale AS (\n             SELECT s.id FROM app.sale s\n             WHERE s.tenant_id = $1 AND s.visit_id = ANY($2)\n               AND EXISTS (SELECT 1 FROM app.sale_line sl\n                           WHERE sl.tenant_id = s.tenant_id AND sl.sale_id = s.id\n                             AND sl.line_type = 'package')\n           ), used AS (\n             SELECT DISTINCT vl.customer_package_id AS id FROM app.visit_line vl\n             WHERE vl.tenant_id = $1 AND vl.visit_id = ANY($2) AND vl.customer_package_id IS NOT NULL\n           )\n           SELECT a.id AS \"id!\", true AS \"member!\" FROM app.audit_log a\n           WHERE a.tenant_id = $1 AND a.entity_type = 'visit' AND a.entity_id = ANY($2)\n           UNION ALL\n           SELECT a.id, true FROM app.audit_log a\n           WHERE a.tenant_id = $1 AND a.entity_type = 'sale' AND a.entity_id IN (SELECT id FROM one_off)\n           UNION ALL\n           SELECT a.id, true FROM app.audit_log a\n           WHERE a.tenant_id = $1 AND a.entity_type = 'customer_package'\n             AND a.entity_id IN (SELECT id FROM used)\n             AND a.action = 'customer_package.use_expired_override'\n             AND a.after ->> 'visit_id' = ANY($3)\n           UNION ALL\n           SELECT a.id, false FROM app.audit_log a\n           WHERE a.tenant_id = $1 AND a.entity_type = 'sale' AND a.action = 'sale.create'\n             AND a.entity_id IN (SELECT id FROM package_sale)\n           UNION ALL\n           SELECT a.id, false FROM app.audit_log a\n           WHERE a.tenant_id = $1 AND a.entity_type = 'customer_package'\n             AND a.action = 'customer_package.create'\n             AND a.entity_id IN (SELECT cp.id FROM app.customer_package cp\n                                 WHERE cp.tenant_id = $1 AND cp.sale_id IN (SELECT id FROM package_sale))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "member!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "daef1f0238643de89e0587a0c1da263dc4619542fb7228cb5bb9b4037e4dc129"
+}

@@ -64,6 +64,8 @@ enum Target {
     Tenant,
     /// A login (the spa owner's account; platform console routes).
     Account,
+    /// A refund of the fixture's package.
+    Refund,
 }
 
 struct Route {
@@ -753,12 +755,46 @@ const ROUTES: &[Route] = &[
         "/api/v1/notes",
         Access::Perm(P::ReportRead, OWNER_MANAGER),
     ),
-    // "Nhật ký thao tác" (ADR-0021): the owner alone (tests/activity_log.rs).
+    // "Nhật ký thao tác" (ADR-0021): the owner alone (tests/activity_log.rs); behind the
+    // `activity_log` switch, off by default (ADR-0022, on in this matrix's spa).
     route(
         "GET",
         "/api/v1/audit-log",
         Access::Perm(P::AuditRead, OWNER_ONLY),
     ),
+    // "Ai ghi, ai sửa" (ADR-0022): record.history.read (the owner by default; the operator may
+    // show it to the manager), then the route's and the record kind's read rights
+    // (tests/record_history.rs).
+    route(
+        "GET",
+        "/api/v1/record-history/visit/{id}",
+        Access::Perm(P::RecordHistoryRead, OWNER_ONLY),
+    )
+    .id(Target::Visit),
+    route(
+        "GET",
+        "/api/v1/record-history/sale/{id}",
+        Access::Perm(P::RecordHistoryRead, OWNER_ONLY),
+    )
+    .id(Target::Sale),
+    route(
+        "GET",
+        "/api/v1/record-history/refund/{id}",
+        Access::Perm(P::RecordHistoryRead, OWNER_ONLY),
+    )
+    .id(Target::Refund),
+    route(
+        "GET",
+        "/api/v1/record-history/customer-package/{id}",
+        Access::Perm(P::RecordHistoryRead, OWNER_ONLY),
+    )
+    .id(Target::CustomerPackage),
+    route(
+        "GET",
+        "/api/v1/record-history/customer/{id}",
+        Access::Perm(P::RecordHistoryRead, OWNER_ONLY),
+    )
+    .id(Target::Customer),
     route(
         "GET",
         "/api/v1/customers/inactive",
@@ -864,6 +900,13 @@ const ROUTES: &[Route] = &[
     )
     .id(Target::Tenant)
     .body(reason_body),
+    route(
+        "PUT",
+        "/api/v1/admin/tenants/{id}/record-history/{role}",
+        Access::Operator,
+    )
+    .id(Target::Tenant)
+    .body(record_history_switch_body),
     route("GET", "/api/v1/admin/tenants/{id}/audit", Access::Operator).id(Target::Tenant),
     route("GET", "/api/v1/admin/permissions", Access::Operator),
     route("GET", "/api/v1/admin/role-templates", Access::Operator),
@@ -953,6 +996,11 @@ fn feature_switch_body(_: &Fixture) -> Option<Value> {
 /// OFF, so the operator's allowed call changes something (ON is the default: 409 unchanged).
 fn owner_mfa_body(_: &Fixture) -> Option<Value> {
     Some(json!({"required": false, "reason": "Kiểm thử ma trận quyền"}))
+}
+
+/// Shown to the manager (hidden by default), so the operator's allowed call changes something.
+fn record_history_switch_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"visible": true, "reason": "Kiểm thử ma trận quyền"}))
 }
 
 fn reason_body(_: &Fixture) -> Option<Value> {
@@ -1198,6 +1246,7 @@ struct Fixture {
     reset_request: String,
     /// The owner's login.
     account: String,
+    refund: String,
 }
 
 impl Fixture {
@@ -1217,6 +1266,7 @@ impl Fixture {
             Target::ResetRequest => &self.reset_request,
             Target::Tenant => &self.tenant_id,
             Target::Account => &self.account,
+            Target::Refund => &self.refund,
         }
     }
 }
@@ -1389,6 +1439,7 @@ async fn fixture(
         adjustment: String::new(),
         reset_request: String::new(),
         account: String::new(),
+        refund: String::new(),
     };
     f.service = created_id(
         app,
@@ -1493,6 +1544,38 @@ async fn fixture(
         .bind(format!("+84{}", &owner_phone[1..]))
         .fetch_one(db)
         .await?;
+    // A refund: a second package of the customer, cancelled with money back (the first package
+    // stays active for the other rows).
+    let second = send(
+        app,
+        "POST",
+        "/sales",
+        Some(&owner),
+        sell_body(&f),
+        &[("Idempotency-Key", &uuid::Uuid::now_v7().to_string())],
+    )
+    .await;
+    let second = second.body["customer_packages"][0]["id"]
+        .as_str()
+        .ok_or_else(|| format!("fixture second sale → {} {}", second.status, second.body))?
+        .to_owned();
+    let cancelled = send(
+        app,
+        "POST",
+        &format!("/customer-packages/{second}/cancel"),
+        Some(&owner),
+        cancel_body(&f),
+        &[("Idempotency-Key", &uuid::Uuid::now_v7().to_string())],
+    )
+    .await;
+    if !cancelled.status.is_success() {
+        return Err(format!("fixture cancel → {} {}", cancelled.status, cancelled.body).into());
+    }
+    f.refund =
+        sqlx::query_scalar("SELECT id::text FROM app.refund WHERE customer_package_id = $1::uuid")
+            .bind(&second)
+            .fetch_one(db)
+            .await?;
     Ok(f)
 }
 
@@ -1512,6 +1595,9 @@ async fn world(pool: PgPool) -> Result<World, Box<dyn std::error::Error>> {
     add_member(&h.owner, "other", OTHER_OWNER_PHONE, "Chủ spa khác", Owner).await?;
     let home = fixture(&h, "vpyd", OWNER_PHONE, "0905 777 001").await?;
     let other = fixture(&h, "other", OTHER_OWNER_PHONE, "0905 777 002").await?;
+    // "Nhật ký thao tác" is off by default (ADR-0022 D5): switched on here so its row checks the
+    // permission; `switched_off_features_refuse_their_routes` turns it off again.
+    common::enable_feature(&h, uuid::Uuid::parse_str(&home.tenant_id)?, "activity_log").await?;
     Ok(World {
         app: h.app.clone(),
         h,
@@ -1535,14 +1621,18 @@ async fn link_manager(w: &World) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn concrete(route: &Route, f: &Fixture) -> String {
-    route.path.replace("{id}", f.id_of(route.id)).replace(
-        "{key}",
-        if route.path.contains("/roles/") || route.path.contains("/role-templates/") {
-            "technician"
-        } else {
-            "appointments"
-        },
-    )
+    route
+        .path
+        .replace("{id}", f.id_of(route.id))
+        .replace(
+            "{key}",
+            if route.path.contains("/roles/") || route.path.contains("/role-templates/") {
+                "technician"
+            } else {
+                "appointments"
+            },
+        )
+        .replace("{role}", "manager")
 }
 
 fn label(route: &Route) -> String {
@@ -2148,7 +2238,8 @@ async fn switched_off_features_refuse_their_routes(pool: PgPool) -> TestResult {
     let operator = common::add_operator(&w.h).await?;
     sqlx::query(
         "INSERT INTO app.tenant_feature (tenant_id, feature, enabled, updated_by)
-         SELECT $1::uuid, unnest($2::text[]), false, $3",
+         SELECT $1::uuid, unnest($2::text[]), false, $3
+         ON CONFLICT (tenant_id, feature) DO UPDATE SET enabled = false",
     )
     .bind(&w.home.tenant_id)
     .bind(
@@ -2191,12 +2282,22 @@ async fn switched_off_features_refuse_their_routes(pool: PgPool) -> TestResult {
         }
     }
     assert!(swept > 0);
-    // The other spa keeps every feature.
+    // The other spa keeps every feature on by default (ADR-0022: "Nhật ký thao tác" is off).
     let other = session(&w.h, OTHER_OWNER_PHONE).await?;
     let me = send(&w.app, "GET", "/api/v1/me", Some(&other), None, &[]).await;
     assert_eq!(
         me.body["features"].as_array().map(Vec::len),
-        Some(kernel::Feature::ALL.len())
+        Some(
+            kernel::Feature::ALL
+                .iter()
+                .filter(|f| f.default_enabled())
+                .count()
+        )
+    );
+    assert!(
+        me.body["features"]
+            .as_array()
+            .is_some_and(|f| !f.contains(&json!("activity_log")))
     );
     assert!(
         me.body["permissions"]

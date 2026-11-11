@@ -72,6 +72,8 @@ permissions! {
     ReportRevenueRead => "report.revenue.read",
     ReportLongRange => "report.long_range",
     AuditRead => "audit.read",
+    // Spa-local switch (ADR-0022): who recorded / changed a record, on the record itself.
+    RecordHistoryRead => "record.history.read",
     SupportGrantManage => "support_grant.manage",
     PlatformTenantManage => "platform.tenant.manage",
 }

@@ -44,8 +44,24 @@ describe("feature switches in the spa's UI (ADR-0018)", () => {
     expect(labels(role(["report.read", "customer.read"]))).not.toContain("Khách lâu chưa quay lại");
   });
 
-  it("an API without the list (older) means every feature is on", () => {
+  it("an API without the list (older) means each feature's default", () => {
     expect(hasFeature(owner(), "reports")).toBe(true);
     expect(hasFeature(null, "reports")).toBe(false);
+    expect(hasFeature(owner(), "activity_log", { defaultOff: true })).toBe(false);
+    expect(hasFeature(owner(["activity_log"]), "activity_log", { defaultOff: true })).toBe(true);
+    expect(hasFeature(null, "activity_log", { defaultOff: true })).toBe(false);
+  });
+
+  it("'Nhật ký thao tác' needs audit.read and the activity_log switch, off by default (ADR-0022)", () => {
+    const withAudit = (features?: string[]): Me => ({ ...owner(features), permissions: [...owner().permissions, "audit.read"] });
+    const defaults = ["appointments", "payroll", "evaluations", "follow_ups", "notes_journal", "reports"];
+    expect(mayOpen.activity(withAudit(defaults))).toBe(false);
+    expect(labels(withAudit(defaults))).not.toContain("Nhật ký thao tác");
+    expect(mayOpen.activity(withAudit())).toBe(false);
+    const on = withAudit([...defaults, "activity_log"]);
+    expect(mayOpen.activity(on)).toBe(true);
+    expect(labels(on)).toContain("Nhật ký thao tác");
+    // The switch never opens it without the right.
+    expect(mayOpen.activity(owner([...defaults, "activity_log"]))).toBe(false);
   });
 });

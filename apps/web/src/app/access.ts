@@ -16,7 +16,8 @@ export const mayOpen = {
   reports: (me: Me | null) => canSeeManagement(me) && hasFeature(me, "reports"),
   notes: (me: Me | null) => canSeeManagement(me) && hasFeature(me, "notes_journal"),
   /** "Nhật ký thao tác" (ADR-0021): the owner's audit trail, `audit.read` only (owner-only grant). */
-  activity: (me: Me | null) => can(me, "audit.read"),
+  // Behind the `activity_log` switch, off by default (ADR-0022 D5).
+  activity: (me: Me | null) => can(me, "audit.read") && hasFeature(me, "activity_log", { defaultOff: true }),
   catalog: (me: Me | null) => can(me, "catalog.read"),
   /** Keeps the staff books (attendance, reviews, payroll, profiles). */
   staffBooks: (me: Me | null) =>

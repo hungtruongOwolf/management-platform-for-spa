@@ -25,9 +25,15 @@ const GROUPS: Record<string, string> = {
   platform: "Nền tảng",
 };
 
+/** Whose roles the editor changes: the templates (new spas, spas that follow them) or one spa's. */
+export type RoleScope = "template" | "spa";
+
 /** Can this checkbox be changed for this role (the server enforces the same rules)? */
-export function locked(role: string, p: PermissionInfo): string | null {
+export function locked(role: string, p: PermissionInfo, scope: RoleScope = "template"): string | null {
   if (!p.grantable) return "Không cấp được";
+  if (role === "technician" && p.not_for_technician) return "Không cấp cho kỹ thuật viên";
+  // ADR-0022 D1: each spa's own switch, changed only by its panel; a spa role edit keeps it.
+  if (scope === "spa" && p.spa_local) return "Đổi ở panel Lịch sử trên từng bản ghi";
   if (role === "owner" && p.owner_floor) return "Chủ spa luôn giữ";
   if (role !== "owner" && p.owner_only) return "Chỉ chủ spa";
   return null;
@@ -36,11 +42,13 @@ export function locked(role: string, p: PermissionInfo): string | null {
 /** Checkboxes of the catalogue, grouped by area, for one role. */
 export function PermissionEditor({
   role,
+  scope,
   catalogue,
   value,
   onChange,
 }: {
   role: string;
+  scope: RoleScope;
   catalogue: PermissionInfo[];
   value: string[];
   onChange: (next: string[]) => void;
@@ -54,7 +62,7 @@ export function PermissionEditor({
           {catalogue
             .filter((p) => p.group === group)
             .map((p) => {
-              const why = locked(role, p);
+              const why = locked(role, p, scope);
               const checked = value.includes(p.key);
               return (
                 <label key={p.key} className="flex items-center gap-2 text-sm">
@@ -68,6 +76,9 @@ export function PermissionEditor({
                   />
                   <span className="font-mono">{p.key}</span>
                   {why && <span className="text-xs text-text-muted">({why})</span>}
+                  {!why && scope === "template" && p.spa_local && (
+                    <span className="text-xs text-text-muted">(Chỉ áp cho spa tạo mới)</span>
+                  )}
                   {p.feature && <span className="badge badge-muted">tính năng {p.feature}</span>}
                 </label>
               );
@@ -173,6 +184,7 @@ export function RoleList({
         {editing && (
           <PermissionEditor
             role={editing.role.key}
+            scope={reset ? "spa" : "template"}
             catalogue={catalogue.data}
             value={editing.value}
             onChange={(value) => {

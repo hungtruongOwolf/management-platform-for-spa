@@ -583,6 +583,12 @@ pub async fn history(
     let mut extended = extensions(&mut tx, &extension_ids).await?;
     let visit_sale_ids: Vec<Uuid> = v.sale_of.values().flatten().copied().collect();
     let visit_money = payments(&mut tx, &visit_sale_ids).await?;
+    // "Đã sửa" on visit events, only for record.history.read (ADR-0022 §4.5).
+    let edited = if actor.can(Permission::RecordHistoryRead) {
+        Some(crate::history::edited_visits(&mut tx, &visit_ids).await?)
+    } else {
+        None
+    };
     tx.commit().await?;
 
     let next_cursor = more.then(|| heads.last()).flatten().map(|h| {
@@ -605,7 +611,11 @@ pub async fn history(
             void: None,
             cancellation: None,
             extension: None,
+            edited: None,
         };
+        if matches!(kind, HistoryKind::Visit | HistoryKind::VisitVoided) {
+            event.edited = edited.as_ref().map(|set| set.contains(&h.id));
+        }
         match kind {
             HistoryKind::Visit => event.visit = v.visits.get(&h.id).cloned(),
             HistoryKind::VisitVoided => {

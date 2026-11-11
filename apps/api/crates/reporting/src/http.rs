@@ -7,9 +7,11 @@ use crate::dto::{
     LedgerPage, LedgerQuery, PackageOverviewPage, PackageUsage, PackagesQuery, RangeQuery,
     RangeReport,
 };
+use crate::history::RecordRoute;
+use crate::history_dto::RecordHistory;
 use crate::notes_dto::{NotesPage, NotesQuery};
-use crate::{activity, customer, day, notes, overview};
-use axum::extract::rejection::QueryRejection;
+use crate::{activity, customer, day, history, notes, overview};
+use axum::extract::rejection::{PathRejection, QueryRejection};
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::{HeaderValue, header};
 use axum::response::{IntoResponse, Response};
@@ -41,6 +43,108 @@ where
         .route("/packages", get(list_packages))
         .route("/notes", get(list_notes))
         .route("/audit-log", get(list_activity))
+        .route("/record-history/visit/{id}", get(visit_history))
+        .route("/record-history/sale/{id}", get(sale_history))
+        .route("/record-history/refund/{id}", get(refund_history))
+        .route(
+            "/record-history/customer-package/{id}",
+            get(customer_package_history),
+        )
+        .route(
+            "/record-history/customer/{id}",
+            get(customer_record_history),
+        )
+}
+
+/// Every `/record-history/*` route: the rights first (a caller without them gets `403` whatever
+/// the id, malformed or not), then the id (`400` when it is not a UUID), then the record.
+async fn record_history(
+    pool: &PgPool,
+    user: &AuthUser,
+    route: RecordRoute,
+    id: Result<Path<Uuid>, PathRejection>,
+) -> Result<Response, AppError> {
+    history::require_route(&user.actor, route)?;
+    let id = match id {
+        Ok(Path(id)) => id,
+        Err(rejection) => return Ok(rejection.into_response()),
+    };
+    Ok(no_store(history::read(pool, &user.actor, route, id).await?))
+}
+
+#[utoipa::path(get, path = "/api/v1/record-history/visit/{id}", tag = "reports",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 200, body = RecordHistory, description = "The visit's history, its whole \"Sửa lượt\" chain included"),
+        (status = 400, description = "id is not a UUID"), (status = 401),
+        (status = 403, description = "auth.forbidden: needs record.history.read + visit.read"),
+        (status = 404)))]
+pub async fn visit_history(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    id: Result<Path<Uuid>, PathRejection>,
+) -> Result<Response, AppError> {
+    record_history(&pool, &user, RecordRoute::Visit, id).await
+}
+
+#[utoipa::path(get, path = "/api/v1/record-history/sale/{id}", tag = "reports",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 200, body = RecordHistory, description = "A one-off sale's visit history, or a package sale's package history"),
+        (status = 400, description = "id is not a UUID"), (status = 401),
+        (status = 403, description = "auth.forbidden: needs record.history.read + sale.read, then visit.read (one-off sale) or customer.read (package sale)"),
+        (status = 404)))]
+pub async fn sale_history(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    id: Result<Path<Uuid>, PathRejection>,
+) -> Result<Response, AppError> {
+    record_history(&pool, &user, RecordRoute::Sale, id).await
+}
+
+#[utoipa::path(get, path = "/api/v1/record-history/refund/{id}", tag = "reports",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 200, body = RecordHistory, description = "The refunded package's history"),
+        (status = 400, description = "id is not a UUID"), (status = 401),
+        (status = 403, description = "auth.forbidden: needs record.history.read + sale.read + customer.read"),
+        (status = 404)))]
+pub async fn refund_history(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    id: Result<Path<Uuid>, PathRejection>,
+) -> Result<Response, AppError> {
+    record_history(&pool, &user, RecordRoute::Refund, id).await
+}
+
+#[utoipa::path(get, path = "/api/v1/record-history/customer-package/{id}", tag = "reports",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 200, body = RecordHistory),
+        (status = 400, description = "id is not a UUID"), (status = 401),
+        (status = 403, description = "auth.forbidden: needs record.history.read + customer.read"),
+        (status = 404)))]
+pub async fn customer_package_history(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    id: Result<Path<Uuid>, PathRejection>,
+) -> Result<Response, AppError> {
+    record_history(&pool, &user, RecordRoute::CustomerPackage, id).await
+}
+
+#[utoipa::path(get, path = "/api/v1/record-history/customer/{id}", tag = "reports",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 200, body = RecordHistory, description = "The customer profile's history; old / new phone values only for audit.read"),
+        (status = 400, description = "id is not a UUID"), (status = 401),
+        (status = 403, description = "auth.forbidden: needs record.history.read + customer.read"),
+        (status = 404)))]
+pub async fn customer_record_history(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    id: Result<Path<Uuid>, PathRejection>,
+) -> Result<Response, AppError> {
+    record_history(&pool, &user, RecordRoute::Customer, id).await
 }
 
 fn no_store(body: impl Serialize) -> Response {

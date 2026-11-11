@@ -841,8 +841,8 @@ async fn an_operator_switches_a_feature_for_one_spa(owner: PgPool) -> TestResult
         before
             .body
             .as_array()
-            .is_some_and(|f| f.iter().all(|x| x["enabled"] == true)),
-        "every feature is on by default: {}",
+            .is_some_and(|f| f.iter().all(|x| x["enabled"] == x["default_enabled"])),
+        "every feature has its default: {}",
         before.body
     );
 
@@ -1468,6 +1468,10 @@ async fn platform_functions_return_only_their_columns(owner: PgPool) -> TestResu
             "TABLE(previous boolean, revoked bigint)",
         ),
         (
+            "platform_set_record_history",
+            "TABLE(role_id uuid, before text[], after text[])",
+        ),
+        (
             "platform_set_tenant_role",
             "TABLE(role_id uuid, before text[], after text[])",
         ),
@@ -1927,5 +1931,592 @@ async fn the_owner_mfa_switch_checks_the_step_up_in_the_database(owner: PgPool) 
     )
     .await?;
     assert_eq!(trail, 0, "refused writes leave no trail");
+    Ok(())
+}
+
+// ------------------------------------------------------------------ record history (ADR-0022)
+
+const MANAGER_PHONE: &str = "0905000002";
+const SWITCH_REASON: &str = "Chủ spa nhờ hiện cho quản lý";
+
+/// `PUT /admin/tenants/{id}/record-history/{role}` with a valid reason.
+async fn set_history(
+    h: &common::Harness,
+    op: &str,
+    tenant: uuid::Uuid,
+    role: &str,
+    visible: bool,
+) -> common::Reply {
+    admin_call(
+        &h.app,
+        "PUT",
+        &format!("/admin/tenants/{tenant}/record-history/{role}"),
+        Some(op),
+        Some(json!({"visible": visible, "reason": SWITCH_REASON})),
+    )
+    .await
+}
+
+/// The spa's role, as the console reads it.
+async fn spa_role(h: &common::Harness, op: &str, tenant: uuid::Uuid, key: &str) -> Value {
+    let roles = admin_call(
+        &h.app,
+        "GET",
+        &format!("/admin/tenants/{tenant}/roles"),
+        Some(op),
+        None,
+    )
+    .await;
+    roles
+        .body
+        .as_array()
+        .and_then(|r| r.iter().find(|x| x["key"] == key).cloned())
+        .unwrap_or_default()
+}
+
+fn grants(role: &Value, permission: &str) -> bool {
+    role["permissions"]
+        .as_array()
+        .is_some_and(|p| p.contains(&json!(permission)))
+}
+
+fn me_has(me: &Value, permission: &str) -> bool {
+    me["permissions"]
+        .as_array()
+        .is_some_and(|p| p.contains(&json!(permission)))
+}
+
+/// AC-H5: the operator shows / hides the history per role of one spa. Shown to the owner by
+/// default, hidden from the manager; never a technician's; effective on the next request; audited
+/// on both sides; the role keeps following its template.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_record_history_switch_shows_and_hides_per_role(owner: PgPool) -> TestResult {
+    let h = harness(owner).await?;
+    add_operator(&h).await?;
+    common::add_member(
+        &h.owner,
+        "vpyd",
+        MANAGER_PHONE,
+        "Quản lý",
+        identity::SystemRole::Manager,
+    )
+    .await?;
+    let op = operator_session(&h).await?;
+    let tenant = tenant_id(&h, "vpyd").await?;
+    let spa_owner = session_for(&h, common::OWNER_PHONE).await;
+    let manager = session_for(&h, MANAGER_PHONE).await;
+
+    // Defaults: the owner sees it, the manager does not.
+    assert!(grants(
+        &spa_role(&h, &op, tenant, "owner").await,
+        "record.history.read"
+    ));
+    assert!(!grants(
+        &spa_role(&h, &op, tenant, "manager").await,
+        "record.history.read"
+    ));
+    let me = call(&h.app, "GET", "/me", Some(&manager), None).await;
+    assert!(!me_has(&me.body, "record.history.read"));
+
+    let shown = set_history(&h, &op, tenant, "manager", true).await;
+    assert_eq!(shown.status, StatusCode::OK, "{}", shown.body);
+    assert_eq!(shown.body["key"], "manager");
+    assert_eq!(shown.body["follows_template"], true, "{}", shown.body);
+    assert!(grants(&shown.body, "record.history.read"));
+    // The manager's next request has it; nothing else of the role changed.
+    let me = call(&h.app, "GET", "/me", Some(&manager), None).await;
+    assert!(me_has(&me.body, "record.history.read"), "{}", me.body);
+    assert!(!me_has(&me.body, "audit.read"));
+    let after = spa_role(&h, &op, tenant, "manager").await;
+    let mut expected: Vec<String> = identity::SystemRole::Manager
+        .default_permissions()
+        .iter()
+        .map(|p| p.as_str().to_owned())
+        .chain(["record.history.read".to_owned()])
+        .collect();
+    expected.sort();
+    let mut got: Vec<String> = after["permissions"]
+        .as_array()
+        .map(|p| {
+            p.iter()
+                .filter_map(|x| x.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
+    got.sort();
+    assert_eq!(got, expected);
+
+    // Already shown: 409, nothing written.
+    let again = set_history(&h, &op, tenant, "manager", true).await;
+    assert_eq!(
+        (again.status, again.body["code"].as_str()),
+        (StatusCode::CONFLICT, Some("role.record_history_unchanged"))
+    );
+    // Never a technician; an unknown role or spa is not found.
+    let tech = set_history(&h, &op, tenant, "technician", true).await;
+    assert_eq!(
+        (tech.status, tech.body["code"].as_str()),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("role.not_for_technician")
+        )
+    );
+    assert_eq!(
+        set_history(&h, &op, tenant, "cashier", true).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        set_history(&h, &op, uuid::Uuid::now_v7(), "manager", true)
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    // A reason is required.
+    let unreasoned = admin_call(
+        &h.app,
+        "PUT",
+        &format!("/admin/tenants/{tenant}/record-history/owner"),
+        Some(&op),
+        Some(json!({"visible": false, "reason": ""})),
+    )
+    .await;
+    assert_eq!(unreasoned.status, StatusCode::UNPROCESSABLE_ENTITY);
+    // A spa session never reaches the console.
+    let spa_call = call(
+        &h.app,
+        "PUT",
+        &format!("/admin/tenants/{tenant}/record-history/owner"),
+        Some(&spa_owner),
+        Some(json!({"visible": false, "reason": SWITCH_REASON})),
+    )
+    .await;
+    assert_eq!(spa_call.status, StatusCode::UNAUTHORIZED);
+
+    // Hidden from the owner (not part of the owner floor): their next request is refused.
+    let hidden = set_history(&h, &op, tenant, "owner", false).await;
+    assert_eq!(hidden.status, StatusCode::OK, "{}", hidden.body);
+    let me = call(&h.app, "GET", "/me", Some(&spa_owner), None).await;
+    assert!(!me_has(&me.body, "record.history.read"));
+    assert!(me_has(&me.body, "audit.read"));
+    let customer = post_customer(
+        &h.app,
+        Some(&spa_owner),
+        Some(json!({"full_name": "Khách Thử", "phone": "0912345678", "gender": "female"})),
+    )
+    .await;
+    let customer = customer.body["id"].as_str().unwrap_or_default().to_owned();
+    let refused = call(
+        &h.app,
+        "GET",
+        &format!("/record-history/customer/{customer}"),
+        Some(&spa_owner),
+        None,
+    )
+    .await;
+    assert_eq!(refused.status, StatusCode::FORBIDDEN, "{}", refused.body);
+    let shown_to_manager = call(
+        &h.app,
+        "GET",
+        &format!("/record-history/customer/{customer}"),
+        Some(&manager),
+        None,
+    )
+    .await;
+    assert_eq!(
+        shown_to_manager.status,
+        StatusCode::OK,
+        "{}",
+        shown_to_manager.body
+    );
+
+    // Both trails: one spa row (with the role's permissions before / after) and one platform row
+    // per switch that changed something.
+    let spa_rows: Vec<(Value, Value)> = sqlx::query_as(
+        "SELECT before, after FROM app.audit_log
+         WHERE tenant_id = $1 AND action = 'role.permissions_changed' AND actor_kind = 'platform_admin'
+         ORDER BY at, id",
+    )
+    .bind(tenant)
+    .fetch_all(&h.owner)
+    .await?;
+    assert_eq!(spa_rows.len(), 2);
+    let lists = |v: &Value| v["permissions"].as_array().cloned().unwrap_or_default();
+    assert!(!lists(&spa_rows[0].0).contains(&json!("record.history.read")));
+    assert!(lists(&spa_rows[0].1).contains(&json!("record.history.read")));
+    let platform_rows: Vec<Value> = sqlx::query_scalar(
+        "SELECT detail FROM app.platform_audit_log WHERE action = 'platform.record_history.set'
+         ORDER BY at, id",
+    )
+    .fetch_all(&h.owner)
+    .await?;
+    assert_eq!(
+        platform_rows,
+        [
+            json!({"role": "manager", "visible": true}),
+            json!({"role": "owner", "visible": false})
+        ]
+    );
+    Ok(())
+}
+
+/// D1 (spa-local): a template edit, a spa's own grants and "Về mẫu" all keep each spa's switch;
+/// the template's value is only a new spa's initial one; `follows_template` is untouched by the
+/// switch. The audit row of a template apply records what the spa got.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_record_history_switch_is_the_spas_own(owner: PgPool) -> TestResult {
+    let h = harness(owner).await?;
+    add_operator(&h).await?;
+    let op = operator_session(&h).await?;
+    let tenant = tenant_id(&h, "vpyd").await?;
+    let shown = set_history(&h, &op, tenant, "manager", true).await;
+    assert_eq!(shown.status, StatusCode::OK, "{}", shown.body);
+
+    // A template edit (customer.write out) reaches the spa that follows it, which keeps its switch.
+    let template: Vec<String> = identity::SystemRole::Manager
+        .default_permissions()
+        .iter()
+        .map(|p| p.as_str().to_owned())
+        .filter(|p| p != "customer.write")
+        .collect();
+    let edited = admin_call(
+        &h.app,
+        "PUT",
+        "/admin/role-templates/manager",
+        Some(&op),
+        Some(json!({"permissions": template, "reason": "Quản lý không sửa hồ sơ khách"})),
+    )
+    .await;
+    assert_eq!(edited.status, StatusCode::OK, "{}", edited.body);
+    assert_eq!(edited.body["updated_spas"], 1);
+    let manager = spa_role(&h, &op, tenant, "manager").await;
+    assert!(!grants(&manager, "customer.write"));
+    assert!(grants(&manager, "record.history.read"), "{manager}");
+    assert_eq!(manager["follows_template"], true);
+    let applied: Value = sqlx::query_scalar(
+        "SELECT after FROM app.audit_log
+         WHERE tenant_id = $1 AND action = 'role.permissions_changed' AND before ->> 'source' = 'template'",
+    )
+    .bind(tenant)
+    .fetch_one(&h.owner)
+    .await?;
+    let mut stored: Vec<String> = serde_json::from_value(applied["permissions"].clone())?;
+    stored.sort();
+    let mut now: Vec<String> = serde_json::from_value(manager["permissions"].clone())?;
+    now.sort();
+    assert_eq!(stored, now, "the apply's audit row is the spa's new set");
+    // A template that lists it for the manager does not show it to spas that hid it, and the
+    // reverse: the template is a new spa's initial value only.
+    let hidden = set_history(&h, &op, tenant, "manager", false).await;
+    assert_eq!(hidden.status, StatusCode::OK, "{}", hidden.body);
+    let with_it: Vec<String> = template
+        .iter()
+        .cloned()
+        .chain(["record.history.read".to_owned()])
+        .collect();
+    let edited = admin_call(
+        &h.app,
+        "PUT",
+        "/admin/role-templates/manager",
+        Some(&op),
+        Some(json!({"permissions": with_it, "reason": "Spa mới thấy lịch sử"})),
+    )
+    .await;
+    assert_eq!(edited.status, StatusCode::OK, "{}", edited.body);
+    assert_eq!(
+        edited.body["updated_spas"], 0,
+        "nothing else differs: no write"
+    );
+    assert!(!grants(
+        &spa_role(&h, &op, tenant, "manager").await,
+        "record.history.read"
+    ));
+    // A spa created now starts from the template.
+    let created = admin_call(
+        &h.app,
+        "POST",
+        "/admin/tenants",
+        Some(&op),
+        Some(new_spa("hoa-sen", "0912000999")),
+    )
+    .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    let new_tenant = tenant_id(&h, "hoa-sen").await?;
+    assert!(grants(
+        &spa_role(&h, &op, new_tenant, "manager").await,
+        "record.history.read"
+    ));
+
+    // The spa's own grants ignore it either way: sent with it, it stays hidden here...
+    let own = admin_call(
+        &h.app,
+        "PUT",
+        &format!("/admin/tenants/{tenant}/roles/manager"),
+        Some(&op),
+        Some(json!({"permissions": with_it, "reason": "Spa này riêng"})),
+    )
+    .await;
+    assert_eq!(own.status, StatusCode::OK, "{}", own.body);
+    assert_eq!(own.body["follows_template"], false);
+    assert!(!grants(&own.body, "record.history.read"), "{}", own.body);
+    // ...and once shown, a list without it keeps it; "Về mẫu" keeps it too.
+    assert_eq!(
+        set_history(&h, &op, tenant, "manager", true).await.status,
+        StatusCode::OK
+    );
+    let own = admin_call(
+        &h.app,
+        "PUT",
+        &format!("/admin/tenants/{tenant}/roles/manager"),
+        Some(&op),
+        Some(json!({"permissions": template, "reason": "Spa này riêng"})),
+    )
+    .await;
+    assert!(grants(&own.body, "record.history.read"), "{}", own.body);
+    let reset = admin_call(
+        &h.app,
+        "POST",
+        &format!("/admin/tenants/{tenant}/roles/manager/reset"),
+        Some(&op),
+        Some(json!({"reason": "Về mẫu"})),
+    )
+    .await;
+    assert_eq!(reset.body["follows_template"], true, "{}", reset.body);
+    assert!(grants(&reset.body, "record.history.read"), "{}", reset.body);
+    // The switch never touches follows_template (the role follows the template here).
+    let hidden = set_history(&h, &op, tenant, "manager", false).await;
+    assert_eq!(hidden.body["follows_template"], true, "{}", hidden.body);
+
+    // Never a technician's, in a template or a spa.
+    let mut tech: Vec<String> = identity::SystemRole::Technician
+        .default_permissions()
+        .iter()
+        .map(|p| p.as_str().to_owned())
+        .collect();
+    tech.push("record.history.read".to_owned());
+    for path in [
+        "/admin/role-templates/technician".to_owned(),
+        format!("/admin/tenants/{tenant}/roles/technician"),
+    ] {
+        let refused = admin_call(
+            &h.app,
+            "PUT",
+            &path,
+            Some(&op),
+            Some(json!({"permissions": tech, "reason": "Thử"})),
+        )
+        .await;
+        assert_eq!(
+            (refused.status, refused.body["code"].as_str()),
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Some("role.not_for_technician")
+            ),
+            "{path}"
+        );
+    }
+    // The catalogue marks it for the role editor.
+    let catalogue = admin_call(&h.app, "GET", "/admin/permissions", Some(&op), None).await;
+    let info = catalogue
+        .body
+        .as_array()
+        .and_then(|c| {
+            c.iter()
+                .find(|p| p["key"] == "record.history.read")
+                .cloned()
+        })
+        .unwrap_or_default();
+    assert_eq!(
+        (&info["spa_local"], &info["not_for_technician"]),
+        (&json!(true), &json!(true))
+    );
+    Ok(())
+}
+
+/// The spa-local list lives in Rust and in SQL (0052): the two stay equal.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn spa_local_permissions_agree_between_rust_and_sql(owner: PgPool) -> TestResult {
+    let sql: Vec<String> = sqlx::query_scalar("SELECT unnest(app.spa_local_permissions())")
+        .fetch_all(&owner)
+        .await?;
+    let rust: Vec<String> = platform::roles::SPA_LOCAL
+        .iter()
+        .map(|p| p.as_str().to_owned())
+        .collect();
+    assert_eq!(sql, rust);
+    Ok(())
+}
+
+/// The switch's function checks the step-up and its roles itself (0052): a code path that skipped
+/// the Rust checks is still refused.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_record_history_switch_checks_in_the_database(owner: PgPool) -> TestResult {
+    let h = harness(owner).await?;
+    add_operator(&h).await?;
+    let op = operator_session(&h).await?;
+    let hash = identity::token::hash_secret(&op).to_vec();
+    let tenant = tenant_id(&h, "vpyd").await?;
+    let app_pool = kernel::testing::app_pool(&h.owner).await?;
+    let direct = |hash: Vec<u8>, role: &'static str| {
+        let pool = app_pool.clone();
+        async move {
+            sqlx::query("SELECT * FROM app.platform_set_record_history($1, $2, $3, true)")
+                .bind(hash)
+                .bind(tenant)
+                .bind(role)
+                .execute(&pool)
+                .await
+        }
+    };
+    assert_eq!(
+        refusal(direct(hash.clone(), "technician").await).map(|(code, _)| code),
+        Some("22023".to_owned())
+    );
+    assert_eq!(
+        refusal(direct(hash.clone(), "cashier").await).map(|(code, _)| code),
+        Some("22023".to_owned())
+    );
+    expire_step_up(&h).await?;
+    let insufficient = Some(("42501".to_owned(), String::new()));
+    assert_eq!(refusal(direct(hash, "manager").await), insufficient);
+    let spa_hash =
+        identity::token::hash_secret(&session_for(&h, common::OWNER_PHONE).await).to_vec();
+    assert_eq!(refusal(direct(spa_hash, "manager").await), insufficient);
+    let refused = set_history(&h, &op, tenant, "manager", true).await;
+    assert_eq!(
+        (refused.status, refused.body["code"].as_str()),
+        (StatusCode::FORBIDDEN, Some("platform.step_up_required"))
+    );
+    let granted: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM app.role_permission rp JOIN app.role r ON r.tenant_id = rp.tenant_id AND r.id = rp.role_id
+         WHERE r.tenant_id = $1 AND r.key = 'manager' AND rp.permission = 'record.history.read'",
+    )
+    .bind(tenant)
+    .fetch_one(&h.owner)
+    .await?;
+    assert_eq!(granted, 0);
+    let trail = count(
+        &h.owner,
+        "SELECT count(*) FROM app.platform_audit_log WHERE action = 'platform.record_history.set'",
+    )
+    .await?;
+    assert_eq!(trail, 0, "refused writes leave no trail");
+    Ok(())
+}
+
+/// AC-H6: "Nhật ký thao tác" is off for every spa without a row; the operator switches it on for
+/// one spa (its owner's next request sees it, the manager still never), and the console shows the
+/// default.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_activity_screen_is_off_until_an_operator_switches_it_on(owner: PgPool) -> TestResult {
+    let h = harness(owner).await?;
+    add_operator(&h).await?;
+    common::add_member(
+        &h.owner,
+        "vpyd",
+        MANAGER_PHONE,
+        "Quản lý",
+        identity::SystemRole::Manager,
+    )
+    .await?;
+    let op = operator_session(&h).await?;
+    let tenant = tenant_id(&h, "vpyd").await?;
+    let spa_owner = session_for(&h, common::OWNER_PHONE).await;
+    let manager = session_for(&h, MANAGER_PHONE).await;
+
+    let refused = call(&h.app, "GET", "/audit-log", Some(&spa_owner), None).await;
+    assert_eq!(
+        (refused.status, refused.body["code"].as_str()),
+        (StatusCode::FORBIDDEN, Some("feature.disabled"))
+    );
+    let me = call(&h.app, "GET", "/me", Some(&spa_owner), None).await;
+    assert!(
+        me.body["features"]
+            .as_array()
+            .is_some_and(|f| !f.contains(&json!("activity_log")) && f.contains(&json!("payroll"))),
+        "{}",
+        me.body
+    );
+    // `audit.read` itself stays the owner's (the switch owns the route only).
+    assert!(me_has(&me.body, "audit.read"));
+
+    let registry = admin_call(&h.app, "GET", "/admin/features", Some(&op), None).await;
+    let defaults: Vec<(String, bool)> = registry
+        .body
+        .as_array()
+        .map(|f| {
+            f.iter()
+                .map(|x| {
+                    (
+                        x["key"].as_str().unwrap_or_default().to_owned(),
+                        x["default_enabled"] == true,
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        defaults.contains(&("activity_log".to_owned(), false)),
+        "{defaults:?}"
+    );
+    assert!(defaults.contains(&("payroll".to_owned(), true)));
+    let features = admin_call(
+        &h.app,
+        "GET",
+        &format!("/admin/tenants/{tenant}/features"),
+        Some(&op),
+        None,
+    )
+    .await;
+    for f in features.body.as_array().cloned().unwrap_or_default() {
+        assert_eq!(f["enabled"], f["default_enabled"], "{f}");
+        assert!(f["updated_at"].is_null());
+    }
+
+    let on = admin_call(
+        &h.app,
+        "PUT",
+        &format!("/admin/tenants/{tenant}/features/activity_log"),
+        Some(&op),
+        Some(json!({"enabled": true, "reason": "Chủ spa cần xem nhật ký"})),
+    )
+    .await;
+    assert_eq!(on.status, StatusCode::OK, "{}", on.body);
+    assert_eq!(
+        (&on.body["enabled"], &on.body["default_enabled"]),
+        (&json!(true), &json!(false))
+    );
+    let page = call(&h.app, "GET", "/audit-log", Some(&spa_owner), None).await;
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    let me = call(&h.app, "GET", "/me", Some(&spa_owner), None).await;
+    assert!(
+        me.body["features"]
+            .as_array()
+            .is_some_and(|f| f.contains(&json!("activity_log")))
+    );
+    let manager_page = call(&h.app, "GET", "/audit-log", Some(&manager), None).await;
+    assert_eq!(
+        (manager_page.status, manager_page.body["code"].as_str()),
+        (StatusCode::FORBIDDEN, Some("auth.forbidden"))
+    );
+    // The audit's "before" is the default that was in force.
+    let before: Value = sqlx::query_scalar(
+        "SELECT before FROM app.audit_log WHERE tenant_id = $1 AND action = 'feature.changed'",
+    )
+    .bind(tenant)
+    .fetch_one(&h.owner)
+    .await?;
+    assert_eq!(before, json!({"feature": "activity_log", "enabled": false}));
+    // Off again: refused again.
+    let off = admin_call(
+        &h.app,
+        "PUT",
+        &format!("/admin/tenants/{tenant}/features/activity_log"),
+        Some(&op),
+        Some(json!({"enabled": false, "reason": "Tạm ẩn lại"})),
+    )
+    .await;
+    assert_eq!(off.status, StatusCode::OK, "{}", off.body);
+    let refused = call(&h.app, "GET", "/audit-log", Some(&spa_owner), None).await;
+    assert_eq!(refused.body["code"], "feature.disabled");
     Ok(())
 }

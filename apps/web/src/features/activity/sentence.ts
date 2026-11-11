@@ -25,7 +25,9 @@ export const KIND_LABEL: Record<ActivityKind, string> = {
 export function actorName(e: ActivityEntry): string {
   if (e.actor.kind === "platform") return "Đội vận hành";
   if (e.actor.kind === "system") return "Hệ thống";
-  return e.actor.name ?? "Một tài khoản đã xóa";
+  const name = e.actor.name ?? "Một tài khoản đã xóa";
+  // Same rule as the person filter (ADR-0022 edge case 6).
+  return e.actor.left ? `${name} (đã nghỉ)` : name;
 }
 
 const dmy = (iso: string) => iso.split("-").reverse().join("/");
@@ -252,6 +254,9 @@ const FIELD: Record<string, string> = {
   starts_at: "Giờ hẹn",
   check_in_at: "Giờ vào",
   staff: "KTV",
+  // visit.update (ADR-0022 S3): the session note, set or not; never its text.
+  session_note: "Ghi chú buổi",
+  companions: "Người đi cùng",
   owner_mfa_required: "Bắt buộc xác thực 2 bước",
   enabled: "Bật",
 };

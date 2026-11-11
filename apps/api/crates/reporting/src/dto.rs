@@ -407,6 +407,10 @@ pub struct LedgerRow {
     /// Upsell attribution ("người giới thiệu / chốt"): the closer of a package sale, the
     /// referrers of the one-off lines of a service sale; null = "khách tự chọn".
     pub upsell_by: Option<String>,
+    /// "Đã sửa" (ADR-0022 D9): only for `record.history.read`, and only on a `sale` row of
+    /// one-off services, not voided, made in a visit: that visit's `edited`. Absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edited: Option<bool>,
 }
 
 /// Daily subtotal of the book, for every day of the range (not only the current page).
@@ -607,6 +611,10 @@ pub struct HistoryEvent {
     pub cancellation: Option<HistoryCancellation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extension: Option<HistoryExtension>,
+    /// Visit events only, and only for `record.history.read`: the visit was edited (ADR-0022
+    /// D9: its time or a technician changed, or "Sửa lượt" replaced it / made it).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edited: Option<bool>,
 }
 
 /// `GET /customers/{id}/history`: newest first.

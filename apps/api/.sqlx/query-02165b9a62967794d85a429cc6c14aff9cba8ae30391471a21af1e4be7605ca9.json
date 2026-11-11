@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT previous AS \"previous!\" FROM app.platform_set_feature($1, $2, $3, $4)",
+  "query": "SELECT previous FROM app.platform_set_feature($1, $2, $3, $4)",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "previous!",
+        "name": "previous",
         "type_info": "Bool",
         "origin": "Expression"
       }
@@ -22,5 +22,5 @@
       null
     ]
   },
-  "hash": "6f1ac175e94ab28e0f91c1edf9ec27fd8907f8a8e2e25fb619f541e0789b136f"
+  "hash": "02165b9a62967794d85a429cc6c14aff9cba8ae30391471a21af1e4be7605ca9"
 }

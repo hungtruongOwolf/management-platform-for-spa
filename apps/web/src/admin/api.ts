@@ -102,6 +102,12 @@ export const adminApi = {
       method: "PUT",
       body: { permissions, reason },
     }) as Promise<RoleGrants>,
+  /** ADR-0022: show / hide "ai ghi, ai sửa" to the spa's owner or manager role. */
+  setRecordHistory: (id: string, role: "owner" | "manager", visible: boolean, reason: string) =>
+    api(`/admin/tenants/${encodeURIComponent(id)}/record-history/${encodeURIComponent(role)}`, {
+      method: "PUT",
+      body: { visible, reason },
+    }) as Promise<RoleGrants>,
   resetRole: (id: string, key: string, reason: string) =>
     api(`/admin/tenants/${encodeURIComponent(id)}/roles/${encodeURIComponent(key)}/reset`, {
       method: "POST",
