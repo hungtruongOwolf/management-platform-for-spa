@@ -184,5 +184,24 @@ Một màn gom **ai làm gì với ai** của cả spa, giờ có cả tên / S�
 | S | Lộ danh tính operator cho spa | người làm `platform` hiện "Đội vận hành", không gửi id / tên operator | `each_group_reads_as_a_structured_sentence` |
 | T | Seed demo ghi audit với giờ giả lập | chỉ công cụ dựng `Actor::at_clock`; actor của session không bao giờ có clock; `*_as_of` qua HTTP truyền `Utc::now()` | `demo_seed.rs` (không dòng nào sau giờ chạy) |
 
+## Lịch sử trên từng bản ghi (`GET /record-history/*`, thiết kế + secure review 2026-11-11, [ADR-0022](../decisions/ADR-0022-inline-record-history.md), [spec](../product/specs/record-history.md))
+Tài sản: tên người ghi / sửa, giá trị cũ → mới (tên, SĐT khách, giá, giờ, KTV), tiền, lý do. Ranh giới: browser ↔ API (mọi kiểm ở server), console operator ↔ API (công tắc).
+| STRIDE | Lạm dụng | Kiểm soát (server) | Test (đợt) |
+|---|---|---|---|
+| E | KTV / người đã nghỉ / quản lý chưa được bật gọi thẳng `GET /record-history/visit/{id}` bằng curl | `require(record.history.read)` trước mọi đọc; KTV không thể có quyền (`NOT_FOR_TECHNICIAN` trong `check_grants`); người đã nghỉ chỉ `staff.read_own_past` | `record_history.rs` 403 từng vai trò, `authz_matrix.rs` (1) |
+| E | Có `record.history.read` nhưng không có quyền màn gốc (vd. quản lý xem lịch sử dịch vụ, quy tắc lương) | `reporting::history::authorize` là `match` vét cạn `loại → quyền đọc`; cờ tắt rút quyền → `403 feature.disabled` | matrix mỗi loại × vai trò (1–4) |
+| E | Chủ spa / quản lý tự bật công tắc (sửa body, gọi `/admin/*` bằng cookie spa) | công tắc chỉ là route `/admin/*` (cookie operator `__Host-op-session`, TOTP, step-up); hàm DB `platform_set_role_permission` tự kiểm token + step-up; spa không có route ghi vai trò | `platform.rs` session spa `401`, hàm DB `42501` khi không step-up (1) |
+| T | Hai operator đổi vai trò cùng lúc ghi đè nhau | hàm DB `FOR UPDATE` dòng role, thêm / xóa đúng một permission; audit before / after hai phía | `platform.rs` (1) |
+| I | IDOR: id lượt / khách / ô của spa khác | neo kiểm `tenant_id` tường minh + RLS → `404`; ô chấm công trong `hr::scope` (quyết định C) → `404` | `record_history.rs` (1, 3) |
+| I | Lịch sử lộ dữ liệu màn gốc không cho xem (tiền với người không `sale.read`, ghi chú với người không `customer.health_notes.read`) | lọc sau khi gộp: bỏ `amount` / `discount`, bỏ thay đổi `note`, bỏ dòng `customer.health_note_set` / `sale.note_update`; allowlist `fields()` có sẵn, không `before/after` thô | `record_history.rs` (1, 2) |
+| I | SĐT cũ của khách (có thể đã là số của người khác) lộ cho quản lý | không `audit.read` → mọi SĐT khác số hiện tại che giữa (`mask_phone`); khách ẩn danh: không tên, không giá trị | unit `mask_phone`, `record_history.rs` (2) |
+| I | Tên người làm ở danh sách (trái quyết định EM) | danh sách chỉ có `edited: bool`, vắng khi không quyền | `record_history.rs` key vắng (1) |
+| I | Cache trình duyệt / proxy giữ lịch sử sau khi công tắc tắt | `Cache-Control: no-store`; web `staleTime 0`, `403` → ẩn + refetch `/me` | test header (1) |
+| I | Idempotent replay trả body có `edited` tính theo quyền người ghi | replay chỉ trả cho cùng người + cùng key (idempotency theo actor); `edited` không chứa tên | — (chấp nhận, ghi nhận) |
+| S | Lộ danh tính operator | người làm `platform` = "Đội vận hành", không id / tên | dùng lại `activity` test |
+| D | Quét lịch sử hàng loạt (vòng qua mọi id) | một bản ghi / request, ≤ 100 dòng, 3–4 câu SQL theo index; cùng giới hạn tần suất chung của API; dữ liệu đúng loại người đó vốn xem được | bench p95 ≤ 100 ms (1) |
+| E | Màn Nhật ký thao tác bật lại ngoài ý muốn | cờ `activity_log` chỉ operator ghi (`app_rw` chỉ đọc `tenant_feature`); mặc định ở code là tắt, test khóa mặc định | `feature` unit + `platform.rs` (1) |
+
 ## Còn mở
+- Lịch sử trên từng bản ghi (ADR-0022): quản lý được bật thấy tên cũ của khách và SĐT cũ đã che; nếu EM muốn quản lý thấy SĐT cũ đầy đủ thì xem lại D8 (rủi ro số đã cấp lại cho người khác).
 - Danh sách thao tác yêu cầu nhập lại mật khẩu: chỉ thao tác bảo mật tài khoản (EM 2026-11-05). Hiện dùng `AuthUser::require_recent_auth` ở tạo / đặt lại mật khẩu / đổi vai trò tài khoản nhân viên (ADR-0016, `staff_logins.rs::owner_login_actions_need_a_recent_reauth`); đổi mật khẩu của chính mình đòi mật khẩu hiện tại; cài đặt MFA sau đăng nhập chưa có route. Route mới loại này: dùng guard + test `401 auth.reauth_required`.

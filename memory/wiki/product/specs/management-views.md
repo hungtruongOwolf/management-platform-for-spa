@@ -270,6 +270,8 @@ Quản lý mặc định thấy mọi loại trừ "Nghỉ việc" và "Ghi chú
 - Test: `notes.rs` (chủ spa đọc 16 loại kèm tên gói và khách, quản lý không có quyền sức khỏe không thấy / không tìm ra, `every_kind_keeps_its_own_read_rule` +1 dòng), `package_notes.rs::a_cart_of_packages_keeps_one_note_per_package` (một dòng mỗi gói, khách = người dùng gói, tìm không dấu "huyet ap cao" chỉ ra `package_note`).
 
 ## 11. Nhật ký thao tác (EM 2026-11-11, [raw 1](../../../raw/2026-11-11-em-actor-trace-data-only.md), [raw 2](../../../raw/2026-11-11-em-decision-activity-log-and-customer-old-values.md), [ADR-0021](../../decisions/ADR-0021-activity-log-for-the-owner.md))
+> **Cập nhật 2026-11-11 chiều ([raw](../../../raw/2026-11-11-em-decision-inline-record-history.md), [ADR-0022](../../decisions/ADR-0022-inline-record-history.md), thiết kế, chưa build):** EM đảo ý: "ai ghi, ai sửa" hiện **ngay trên từng bản ghi** ([spec record-history](record-history.md)), và màn này **tạm ẩn**: route `/audit-log` thuộc cờ `activity_log` mặc định tắt, operator bật lại theo spa. Nội dung dưới đây vẫn đúng khi cờ bật.
+
 EM: "cái vụ ai làm đó tôi không cần show đâu… chủ spa có thể xem được đó dễ truy xuất dễ theo dõi". Các màn hiện có **không** thêm "ai làm". Thay vào đó có một màn chỉ đọc cho chủ spa, đọc `app.audit_log` của spa. **Vì sao ở spec này:** cùng mẫu với Nhật ký ghi chú (§10): xem lại, khoảng ngày, bộ lọc trên URL, cursor, nhóm Báo cáo.
 
 ### US11: Tra "ai làm gì, lúc nào"
