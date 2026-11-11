@@ -1,5 +1,5 @@
 ---
-title: "Plan: lịch sử trên từng bản ghi (4 đợt)"
+title: "Plan: lịch sử trên từng bản ghi (đợt 1a + 1b, 2, 3)"
 updated: 2026-11-11
 sources: [raw/2026-11-11-em-decision-inline-record-history.md]
 related: [../product/specs/record-history.md, ../architecture/record-history.md, ../design/record-history.md, ../decisions/ADR-0022-inline-record-history.md]
@@ -7,44 +7,63 @@ related: [../product/specs/record-history.md, ../architecture/record-history.md,
 
 # Plan: lịch sử trên từng bản ghi
 
-Mỗi đợt là một PR (hoặc 2: API rồi web) **ship được riêng**: không đợt nào cần đợt sau để chạy đúng. Mỗi PR qua `build` → `qa` → `pr-review` → `secure` (chạm quyền + PII) → `scripts/merge-when-green.sh`. Chưa bắt đầu.
+Mỗi PR qua `build` → `qa` → `pr-review` → `secure` (quyền + PII) → `scripts/merge-when-green.sh`. Bản sửa sau review độc lập 2026-11-11 (LEAD: gộp đợt 2 cũ vào đợt 1; ẩn màn nhật ký ngay đợt 1). Chưa bắt đầu.
 
-## Đợt 1 — công tắc, ẩn màn nhật ký, lượt + hóa đơn + Sổ doanh thu
-**Backend**
-- R1.1 Migration `0052_record_history.sql`: `record.history.read` vào `role_template_permission` (owner) + `role_permission` của vai trò owner hệ thống mọi spa; `session_actor` thêm `enabled_features`; `platform_set_feature` trả null khi chưa có dòng; hàm `platform_set_role_permission` (gate + step-up + `FOR UPDATE`).
-- R1.2 `kernel`: `Permission::RecordHistoryRead`; `features!` thêm `default_enabled` + cờ `ActivityLog`; `feature::disabled(on, off)`. `identity`: đọc `enabled_features` (session + `tenant_access`), `SystemRole` mặc định. `platform::roles`: `NOT_FOR_TECHNICIAN`, `PermissionInfo.not_for_technician`; `platform::features`: `default_enabled`, `previous` theo mặc định; endpoint `PUT /admin/tenants/{id}/record-history/{role}`.
-- R1.3 `reporting::history`: module, `authorize` (`match` vét cạn), neo lượt (chuỗi) / hóa đơn (route `refund` mount ở đợt 2; mỗi đợt chỉ mount route của mình, nên OpenAPI + matrix luôn khớp), `activity::rows_by_ids`, lọc quyền, tóm tắt; route `visit`, `sale`.
-- R1.4 `edited` ở `VisitDto` (`operations`), `LedgerRow` (`reporting`), `DaySaleDto` (`sales`), `HistoryEvent` mục lượt (`reporting`).
-- R1.5 OpenAPI + `pnpm api:gen`.
+## Đợt 1 = 1a + 1b — **lên staging cùng nhau**
+1a merge trước nhưng **không deploy staging** cho tới khi 1b merge (1a ẩn màn nhật ký; 1b mới hiện lịch sử tại chỗ). Deploy: migrate 0052 rồi deploy binary ngay; operator không ghi ở console trong khoảng hở ([architecture §8](../architecture/record-history.md)).
 
-**Web**
-- W1.1 `mayOpen.activity` thêm `hasFeature("activity_log")`.
-- W1.2 Chunk lazy `record-history`: `RecordTrace`, `HISTORY_VERB` (`Record<AuditAction, string | null>`), `LedgerSaleSheet`.
-- W1.3 Quầy (`VisitDetails` + badge), `DaySales`, Lịch sử khách (chế độ bấm-mới-tải), Sổ doanh thu (hàng bấm được khi có quyền, trừ hàng Hoàn tiền).
-- W1.4 Admin: panel "Lịch sử trên từng bản ghi", `FeaturesPanel` "Mặc định · bật / tắt", nhãn permission + ô KTV tắt trong trình sửa vai trò.
+### 1a — hạ tầng, công tắc, cờ, API (PR backend + console)
+- Migration `0052_record_history.sql`:
+  - `record.history.read` vào mẫu owner + vai trò owner hệ thống của mọi spa (`ON CONFLICT DO NOTHING`);
+  - `CREATE OR REPLACE` `platform_apply_role_template`, `platform_set_tenant_role` (spa-local: bỏ qua / giữ `record.history.read`);
+  - hàm `platform_set_record_history` (gate + step-up, permission + vai trò cứng, `FOR UPDATE`, không đụng `follows_template`), REVOKE / GRANT;
+  - `session_actor` DROP / CREATE + `enabled_features` + **REVOKE / GRANT lại**;
+  - `platform_set_feature` trả null khi chưa có dòng;
+  - index `audit_log_edit_idx`, `audit_log_staff_day_idx`.
+- Rust: `Permission::RecordHistoryRead`; `features!` + `default_enabled` + `ActivityLog`; `feature::disabled` ở cả `session_actor` và `identity::repo::member_access`; `platform::roles` `NOT_FOR_TECHNICIAN`, `SPA_LOCAL`, `PermissionInfo` 2 trường; `platform::features` mặc định; endpoint `PUT /admin/tenants/{id}/record-history/{role}`.
+- `reporting`: `activity::list` → chọn id + `rows_by_ids` (S9); `fields()` `visit.update` thêm `note` (có / không) + `companions`; module `history` (`authorize` vét cạn theo loại neo cuối, chọn id dòng theo loại, gộp chỉ lượt / gói, lọc quyền, `counts_as_edit`, tóm tắt D12); route `visit`, `sale`, `refund`, `customer-package`, `customer`.
+- `edited` ở `VisitDto` (+ reply thao tác lượt), `HistoryEvent` (lượt), `LedgerRow` (hàng dịch vụ lẻ, `EXISTS` sau `LIMIT`); `no-store` cho các danh sách này.
+- OpenAPI + `pnpm api:gen`.
+- Web (nhỏ, cùng PR vì phụ thuộc contract): `mayOpen.activity` + `hasFeature(…, { defaultOff })`; console: panel "Lịch sử trên từng bản ghi", `FeaturesPanel` "Mặc định · bật / tắt", trình sửa vai trò (ô spa-local chỉ đọc, ô KTV tắt), `AuditPage` `ACTIONS`.
 
-**Test**
-- Unit: `feature::disabled` bảng chân trị; `the_activity_screen_switch_owns_its_route_not_audit_read`; `administration_is_never_a_switchable_feature` (không đổi, phải xanh); `check_grants` KTV + `record.history.read` → `role.not_for_technician` (mẫu + spa); owner không có nó vẫn qua owner floor; `mask_phone`; tóm tắt `edits` / `state`.
-- Integration (`app/tests/record_history.rs` mới): chủ spa `200` lượt + hóa đơn; quản lý mặc định `403`, bật → `200`, tắt → `403`; KTV `403`; người đã nghỉ `403`; id spa khác `404`; `no-store`; một dòng cho lượt có thu tiền; chuỗi Sửa lượt A→B→C cùng câu chuyện từ cả 3 id; chuyển sang gói một dòng; hóa đơn trong lượt → `record.type = visit`; quản lý không `sale.read` → không key `amount`; không `customer.health_notes.read` → không thay đổi `note`, không dòng `sale.note_update`; seed giờ lùi giữ đúng giờ; lượt không có audit → `source = record`; người làm đã nghỉ `left: true`; `edited` vắng khi không quyền, có khi có; `GET /audit-log` mặc định `403 feature.disabled`, bật → `200`, `/me.features`.
-- `platform.rs`: endpoint công tắc (step-up, `409` không đổi, `422` KTV, `404` role / spa lạ, session spa `401`, audit hai phía, hàm DB tự từ chối khi không step-up); `platform_set_feature` previous = mặc định của cờ; cờ mặc định tắt hiện `enabled: false`.
-- `authz_matrix.rs`: dòng cho 2 route lịch sử + route admin; `matrix_rows_agree_with_seeded_roles`.
-- Bench `reports_bench.rs`: `record-history/visit` (chuỗi 3 bản) p95 ≤ 100 ms; `/visits` ngày + ledger 92 ngày có `edited` ≤ +10 ms.
-- Web: Vitest `RecordTrace` (meta, mở / đóng, lỗi, trống, `omitted`, người đã nghỉ, "Đội vận hành"), `HISTORY_VERB` phủ mọi `AuditAction` (typecheck), nav ẩn "Nhật ký thao tác"; e2e `record-history.spec.ts` (chủ spa mở lượt thấy "Ghi bởi", sửa lượt thấy "Đã sửa", quản lý không thấy; 360 px, axe), admin e2e panel bật quản lý; `pnpm --filter web budget` ≤ 125 KB.
+**Test 1a**
+- Unit: `feature::disabled` bảng chân trị; khóa `default_enabled` từng cờ; `the_activity_screen_switch_owns_its_route_not_audit_read`; `administration_is_never_a_switchable_feature` (xanh, không sửa); `check_grants` KTV → `role.not_for_technician` (mẫu + spa); owner thiếu `record.history.read` vẫn qua owner floor; `counts_as_edit` từng loại; tóm tắt D12 (gói sổ giấy gia hạn vẫn "Nhập từ sổ giấy"; khách tạo từ sổ giấy rồi sửa vẫn là người nhập); `SPA_LOCAL` Rust = SQL.
+- `record_history.rs` (mới):
+  - quyền: chủ spa `200`; quản lý mặc định `403`, bật `200`, tắt `403`; KTV, người đã nghỉ `403`; spa khác `404`; `no-store`; người không quyền gửi id rác vẫn `403` (không oracle);
+  - B1: `sale.read` + `customer.read` thiếu `visit.read` → hóa đơn dịch vụ lẻ `403`, hóa đơn gói `200` không có dòng lượt; refund cần `sale.read` + `customer.read`;
+  - B2: lượt bán kèm gói X, sau đó gia hạn + hủy hoàn tiền X → lịch sử lượt không có hai dòng đó, lịch sử gói có; `edited` lượt vẫn `false`;
+  - gộp: một dòng cho lượt có thu tiền; chuỗi A→B→C cùng câu chuyện từ cả 3 id, "đã sửa 2 lần"; chuyển sang gói một dòng; `use_expired_override` có ở lượt và gói;
+  - D9: thêm vào lượt không tính sửa; đổi KTV tính; chỉ đổi ghi chú không tính, và **không có dòng** với người thiếu `customer.health_notes.read`;
+  - lọc: không `sale.read` → không `amount`; SĐT: chủ spa có giá trị, quản lý được bật không có chuỗi số nào trong body; khách ẩn danh (giả lập `anonymized_at`) không tên / giá trị;
+  - seed giờ lùi giữ giờ; lượt không có audit → `source = record`; người làm đã nghỉ `left: true`;
+  - `edited` vắng khi không quyền; `edited_agrees_with_summary_edits`;
+  - `GET /audit-log` mặc định `403 feature.disabled`, bật `200`, `/me.features`.
+- `activity_log.rs` (10 + 4 test hiện có) xanh nguyên sau refactor; thêm câu `visit.update` chỉ ghi chú / người đi cùng.
+- `platform.rs`: công tắc (step-up, `409`, `422` KTV, `404`, session spa `401`, audit hai phía, hàm DB `42501` khi không step-up, `22023` khi vai trò lạ gọi thẳng); spa-local: bật cho quản lý → sửa mẫu manager → spa theo mẫu nhận quyền khác, giữ công tắc, `follows_template` không đổi; "Về mẫu" giữ công tắc; `PUT …/roles/manager` có / không `record.history.read` không đổi công tắc; cờ mặc định tắt `enabled: false`, `previous` theo mặc định.
+- `authz_matrix.rs`: 5 route lịch sử + route admin; `matrix_rows_agree_with_seeded_roles`.
+- Bench `reports_bench.rs`: seed audit ~60.000 / năm × 3; `record-history/visit` (chuỗi 3) + `customer-package` + `customer` p95 ≤ 100 ms; `/visits` ngày, ledger 92 ngày có `edited` ≤ +10 ms; nhật ký sau refactor không chậm hơn bench AC11 hiện có.
+- Web: Vitest `hasFeature` `defaultOff`, nav ẩn "Nhật ký thao tác", panel admin (bật / tắt, `409`).
 
-## Đợt 2 — gói của khách, hồ sơ khách, hàng Hoàn tiền
-- Route `customer-package`, `refund`, `customer`; `edited` ở `CustomerPackageDto`; neo gói + hóa đơn bán nó; sổ giấy `source = paper_book`; che SĐT cũ (D8); dòng lưu ý sức khỏe theo quyền.
-- Web: `PackageRow` (bấm-mới-tải), đầu `CustomerProfile` (tự tải), Sổ doanh thu hàng Hoàn tiền bấm được.
-- Test: chủ spa thấy SĐT cũ đủ, quản lý được bật thấy che, số trùng SĐT hiện tại không che; khách ẩn danh không tên / không giá trị (giả lập `anonymized_at`); gói hủy hoàn tiền → `state = cancelled`, dòng hoàn tiền có tiền khi `sale.read`; gói sổ giấy; `edited` gói gia hạn / dùng gói hết hạn; matrix 3 dòng.
+### 1b — các màn (PR web)
+- `features/record-history/query.ts` + chunk lazy `RecordTrace` / `HISTORY` / `LedgerSaleSheet`; prefetch `useAfterFirstPaint` khi có quyền; `MutationCache.onSuccess`.
+- `ResponsiveTable` `[data-row-inert]`.
+- Chip: "Đã thay" thay "Đã sửa" cũ (`TodayVisits`, `CustomerHistory`, chữ "Đã thay bằng lượt mới."), "Đã sửa" theo `edited`, một chip.
+- Quầy (`VisitDetails`, bỏ lặp "Nhập bù · Ghi lúc"), `DaySales` (⋯), Lịch sử khách (giờ là nút), Sổ doanh thu (ô giờ / thẻ → sheet, gồm hàng gói + hoàn tiền), `PackageRow` (nút "Lịch sử"), `CustomerProfile` (sau `detail-grid`).
+- `AMOUNT_LABEL` "Đảo" → "Trả lại".
+**Test 1b:** Vitest `RecordTrace` (meta, mở / đóng, lỗi, `404`, `403` → ẩn + focus, trống, `omitted`, "(đã nghỉ)", "Đội vận hành"), `HISTORY` phủ mọi `AuditAction` (typecheck), `data-row-inert` không gập thẻ, chip ưu tiên; e2e `record-history.spec.ts` (chủ spa mở lượt thấy "Ghi bởi", đổi KTV → "Đã sửa", Sửa lượt → "Đã thay" + "Đã sửa", quản lý mặc định không thấy, Sổ doanh thu sheet, hồ sơ khách SĐT cũ; 360 + 1280 px, axe); `pnpm --filter web budget` ≤ 125 KiB (khởi động không tăng).
 
-## Đợt 3 — lịch hẹn, chấm công, khen / phàn nàn
-- Route `appointment`, `staff-day`; `edited` ở `AppointmentDto`; ô theo `(staff_id, date, book)`, phạm vi `hr::scope`.
-- Web: `AppointmentSheet`, `PersonDaySheet` (2 khối), badge ở lịch dạng danh sách.
-- Test: cờ lịch hẹn tắt → `403 feature.disabled`; quản lý xem ô của chủ spa / quản lý khác → `404` (quyết định C); không có chữ ghi chú chấm công; ô xóa trắng (`cleared`) hiện "xóa chấm công"; bench ô chấm công ≤ 50 ms (nếu vượt: index biểu thức, migration 0053).
+## Cửa sổ hồi quy (từ khi đợt 1 lên staging tới đợt 2 / 3)
+Màn nhật ký tắt, nên chủ spa **không xem được trên UI** ai làm những việc sau cho tới khi đợt tương ứng xong: đổi / hủy / không đến lịch hẹn, chấm công, khen / phàn nàn, sửa / xóa thưởng phạt (đợt 2); sửa giá, mẫu gói, nhóm dịch vụ, quy tắc lương, cài đặt lịch hẹn (đợt 3); việc của đội vận hành, tài khoản / mật khẩu, vai trò, cờ (không có đợt nào: chỉ nhật ký). Dữ liệu vẫn đủ ở `audit_log`. Giảm thiểu: chủ spa / EM cần thì operator bật cờ `activity_log` cho spa đó (một phút, có lý do + audit). Ghi vào hướng dẫn nghiệm thu khi deploy.
 
-## Đợt 4 — danh mục, quy tắc lương, cài đặt lịch hẹn
-- Route `service`, `package-plan`, `service-category`, `settings/payroll-rules`, `settings/appointment-settings`; verb "Sửa lần cuối bởi".
-- Web: `ServiceForm`, `PlanForm`, form nhóm, `RulesSheet`, sheet số khách tối đa.
-- Test: quản lý (không `catalog.manage`) `403` dù được bật; cờ lương tắt → `403 feature.disabled`; giá Nữ / Nam cũ → mới.
+## Đợt 2 — lịch hẹn, chấm công, khen / phàn nàn, thưởng / phạt
+- Route `appointment`, `staff-day`, `adjustment`; `edited` ở `AppointmentDto` khi `marks=true` (+ reply thao tác lịch hẹn); chuỗi thưởng / phạt.
+- Web: `AppointmentSheet` (phần tử cuối), chip ở `kieu=ds`, `PersonDaySheet` (cuối mỗi `fieldset`), `AdjustmentsTab` ⋯.
+- Test: cờ lịch hẹn tắt → `403 feature.disabled`; ô **của chính mình** `404`, ô của quản lý khác / chủ spa `200`, người không làm trong tháng (`employed_in`) `404`; một lần lưu sổ nhiều ô → lịch sử ô chỉ có ngày của nó; không chữ ghi chú chấm công; ô xóa trắng "xóa chấm công"; thưởng / phạt sửa = một chuỗi, "đã sửa 1 lần"; bench ô ≤ 50 ms với index 0052; `/appointments?marks=true` 14 ngày ≤ +10 ms.
 
-## Ngoài kế hoạch (đã có, không làm)
-Lịch sử hồ sơ NV, thưởng/phạt, đánh giá tháng, chốt lương, gọi lại khách: giữ cách hiện hiện tại (spec D11).
+## Đợt 3 — danh mục, quy tắc lương, cài đặt lịch hẹn
+- Route `service`, `package-plan`, `service-category`, `settings/payroll-rules`, `settings/appointment-settings`.
+- Web: phần tử cuối của `ServiceForm`, `PlanForm`, form nhóm, `RulesSheet`, sheet số khách tối đa.
+- Test: quản lý được bật nhưng không `catalog.manage` → `403`; cờ lương tắt → `403 feature.disabled`; giá Nữ / Nam cũ → mới.
+
+## Không làm (đã có cách hiện riêng)
+Lịch sử hồ sơ nhân viên, đánh giá tháng, chốt lương, gọi lại khách (spec D11). Màn riêng cho việc của đội vận hành khi cờ tắt (LEAD: không làm).

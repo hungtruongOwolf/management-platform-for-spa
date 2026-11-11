@@ -835,3 +835,27 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Quyết định chính: permission `record.history.read` (chủ spa mặc định có, quản lý không, KTV không bao giờ `422 role.not_for_technician`), chỉ operator bật / tắt theo vai trò ở `/admin/spa/<id>` (`PUT /admin/tenants/{id}/record-history/{role}`, hàm DB `platform_set_role_permission`); cờ `activity_log` **mặc định tắt** chỉ sở hữu route `/audit-log` (giữ `audit.read` + test quản trị); 12 route `GET /record-history/*` dùng lại `fold_rule` D9 + allowlist; danh sách chỉ `edited`; SĐT cũ che giữa cho người không có `audit.read`. Migration dự kiến 0052.
 - Skip: không qua `idea` / `architect` riêng (EM giao lead quyết + tự review; spec + backend-design + frontend-design + breakdown gộp một PR docs).
 - Tiếp theo: build đợt 1 theo [plan](wiki/plans/record-history.md).
+
+## [2026-11-11] record | Lịch sử trên từng bản ghi: sửa thiết kế sau 2 review độc lập (review lượt 3)
+- Hai reviewer độc lập (bảo mật / backend, UX / frontend) đọc #184. Lead quyết các điểm xung đột (LEAD). Mọi phát hiện đều đã đối chiếu với code; bảng phát hiện → xử lý nằm ở [spec](wiki/product/specs/record-history.md) § Review lượt 3. S5 chỉ bác phần "con số 6.800 dòng / năm không có nguồn": con số lấy từ staging seed, nhưng việc cần làm vẫn làm.
+- LEAD:
+  - `activity_log` mặc định tắt **từ đợt 1**. Đợt 1 gộp gói + hồ sơ khách. Cửa sổ hồi quy ghi ở [plan](wiki/plans/record-history.md).
+  - Sửa [ADR-0018](wiki/decisions/ADR-0018-platform-admin-console.md) D6 và [ADR-0003](wiki/decisions/ADR-0003-multi-tenancy.md): khi cờ tắt, chủ spa không thấy việc của operator trên UI. Không làm màn riêng.
+  - `record.history.read` là **spa-local**: 0052 sửa `platform_apply_role_template` / `platform_set_tenant_role`; hàm mới `platform_set_record_history` viết cứng permission + vai trò.
+  - SĐT cũ / mới chỉ gửi cho `audit.read`, bỏ che giữa.
+- Backend:
+  - Đổi neo xong mới kiểm quyền của loại neo cuối (B1).
+  - Thành viên lịch sử chọn theo id dòng audit; gói bán trong giỏ thuộc lịch sử gói; ô chấm công lọc theo `date` (B2).
+  - "Ghi bởi" chỉ lấy từ thao tác tạo (S3).
+  - `fields()` của `visit.update` thêm ghi chú (có / không) và người đi cùng (S4).
+  - Index 0052 + bench audit thật ~60.000 dòng / năm (S5, S6).
+  - Phạm vi ô chấm công theo `RecordScope::lists` + `employed_in` (S7).
+  - `activity::list` dùng chung `rows_by_ids` (S9).
+  - Thứ tự deploy / rollback 0052.
+- UX:
+  - Chip "Đã thay" cho bản lượt bị thay; "Đã sửa" hẹp, một chip.
+  - Module query nhỏ ngoài chunk lazy (khởi động 124,70 / 125 KiB); `data-row-inert`.
+  - Nút mở dùng phần tử có sẵn; "Ghi bởi" ở mọi nơi; `HISTORY` theo ngữ cảnh.
+  - Sổ doanh thu: nút ở ô giờ; `DaySales` dùng mục ⋯; `MutationCache.onSuccess`.
+  - Thưởng / phạt có lịch sử (đợt 2); "Đảo" → "Trả lại".
+- Kế hoạch: 1a + 1b (lên staging cùng nhau) → 2 → 3. Tiếp theo: build đợt 1a.
