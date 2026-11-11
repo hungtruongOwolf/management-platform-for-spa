@@ -859,3 +859,15 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
   - Sổ doanh thu: nút ở ô giờ; `DaySales` dùng mục ⋯; `MutationCache.onSuccess`.
   - Thưởng / phạt có lịch sử (đợt 2); "Đảo" → "Trả lại".
 - Kế hoạch: 1a + 1b (lên staging cùng nhau) → 2 → 3. Tiếp theo: build đợt 1a.
+
+## [2026-11-11] record | Lịch sử trên từng bản ghi: sửa theo review cổng cuối (lượt 4)
+- Docs: [spec](wiki/product/specs/record-history.md) § Review lượt 4, architecture, design, plan, threat-model, authz-matrix, platform-admin. Đã đối chiếu code, không bác điểm nào. Các hàng review lượt 1–3 lỗi thời được gạch ngang.
+- Backend:
+  - "Đã sửa N lần" đếm dòng đã gộp; `edited` tính cả bản bị thay; chuyển sang gói đếm 1.
+  - KTV đổi = phần tử có `from <> to`, resolve tên NV; trường `session_note` (không đặt tên `note`); lọc sức khỏe theo (action, trường).
+  - Áp mẫu ghi audit theo tập của spa; `use_expired_override` tra qua gói; literal cho index một phần.
+  - Sổ doanh thu: hàng `void` và vị từ `line_type = 'package'`.
+  - Prefix cờ cho route lịch sử lịch hẹn / lương; thưởng/phạt đổi người trong chuỗi.
+- Test: cờ `activity_log` mặc định tắt làm đỏ `activity_log.rs`, `authz_matrix.rs`, `demo_seed.rs`, e2e `activity.spec.ts`. Cách sửa: helper `common::enable_feature`, e2e bật cờ qua API admin, đếm số cờ mặc định bật.
+- UX: chip loại trừ nhau; bảng theo loại thẻ Lịch sử khách; tên truy cập bắt đầu bằng chữ hiển thị; AC-H6 giữ trang "Không có quyền".
+- Tiếp theo: build đợt 1a.
