@@ -201,7 +201,8 @@ describe("/quay: ai ghi, ai sửa (ADR-0022)", () => {
   it("without the history right (a manager by default): no 'Đã sửa', no history, nothing asked; 'Đã thay' and 'Ghi lúc' stay", async () => {
     // The server sends no `edited` to them (AC-H8).
     const strip = (v: Visit): Visit => {
-      const { edited: _, ...rest } = v;
+      const rest = { ...v };
+      delete rest.edited;
       return rest;
     };
     const fetch = serve(DESK, [REPLACED, CORRECTED, BACKFILLED].map(strip));
@@ -214,7 +215,7 @@ describe("/quay: ai ghi, ai sửa (ADR-0022)", () => {
     const details = await screen.findByTestId("visit-details");
     expect(within(details).getByText("Ghi lúc 19:27 08/11/2026")).toBeInTheDocument();
     expect(within(details).queryByRole("button", { name: /^Ghi bởi|^Đang tải ai ghi/ })).toBeNull();
-    expect(fetch.mock.calls.some(([u]) => String(u).includes("/record-history/"))).toBe(false);
+    expect(fetch.mock.calls.some(([u]) => typeof u === "string" && u.includes("/record-history/"))).toBe(false);
   });
 
   it("a package sale without a visit: ⋯ 'Xem ai ghi, ai sửa' opens its history under the row, focused", async () => {

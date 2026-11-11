@@ -215,14 +215,14 @@ test.describe("vòng 6: bán gói trong giỏ, giỏ nháp, chuyển sang gói",
     await expect(page.getByText(`Đã chuyển lượt của ${f.name}`)).toBeVisible();
 
     // The corrected visit is the current one: add a service to it (its own sale, no reason).
-    // Wait for the refetched day: the old visit now reads "Đã sửa".
+    // Wait for the refetched day: the old visit now reads "Đã thay" (ADR-0022 D9).
     await expect(
-      today.getByRole("row").filter({ hasText: f.name }).filter({ hasText: "Đã sửa" }),
+      today.getByRole("row").filter({ hasText: f.name }).filter({ hasText: "Đã thay" }),
     ).toHaveCount(1);
     const current = today
       .getByRole("row")
       .filter({ hasText: f.name })
-      .filter({ hasNotText: "Đã sửa" })
+      .filter({ hasNotText: "Đã thay" })
       .first();
     // The day list has refetched (no busy/skeleton state) and the row is painted, so the menu
     // opens on the row that stays, not one the refetch is about to replace.

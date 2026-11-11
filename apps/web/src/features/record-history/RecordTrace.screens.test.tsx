@@ -123,7 +123,8 @@ describe("Sổ doanh thu", () => {
   });
 });
 
-const visitEvent = (id: string, over: Partial<HistoryEvent> = {}): HistoryEvent => ({
+type HistoryVisit = NonNullable<HistoryEvent["visit"]>;
+const visitEvent = (id: string, over: Partial<HistoryEvent> = {}, visit: Partial<HistoryVisit> = {}): HistoryEvent => ({
   kind: "visit",
   at: `${today}T03:07:00Z`,
   business_date: today,
@@ -132,18 +133,18 @@ const visitEvent = (id: string, over: Partial<HistoryEvent> = {}): HistoryEvent 
     voided: false,
     check_in_at: `${today}T03:07:00Z`,
     lines: [],
-    paid: { cash: 0, bank_transfer: 0 },
+    paid: { cash: 0, bank_transfer: 0, total: 0 },
+    ...visit,
   },
   ...over,
 });
 const EVENTS: HistoryEvent[] = [
-  visitEvent("vb", { edited: true, visit: { ...visitEvent("vb").visit!, corrects_visit_id: "va" } }),
-  visitEvent("va", {
-    kind: "visit_voided",
-    at: `${today}T02:00:00Z`,
-    edited: true,
-    visit: { ...visitEvent("va").visit!, voided: true, corrected_by_visit_id: "vb", void_reason: "Sửa lượt: nhầm" },
-  }),
+  visitEvent("vb", { edited: true }, { corrects_visit_id: "va" }),
+  visitEvent(
+    "va",
+    { kind: "visit_voided", at: `${today}T02:00:00Z`, edited: true },
+    { voided: true, corrected_by_visit_id: "vb", void_reason: "Sửa lượt: nhầm" },
+  ),
   {
     kind: "package_extended",
     at: `${today}T01:00:00Z`,
@@ -187,7 +188,11 @@ describe("Lịch sử khách", () => {
 
   it("without the right: the time is plain text and the new visit of 'Sửa lượt' keeps 'Lượt sửa lại'", async () => {
     // The server sends no `edited` without the right.
-    const plain = EVENTS.map(({ edited: _, ...e }) => e);
+    const plain = EVENTS.map((e) => {
+      const copy = { ...e };
+      delete copy.edited;
+      return copy;
+    });
     serveManagement({ permissions: MANAGER, history: () => ({ customer_id: "c1", events: plain, next_cursor: null }) });
     at("/khach-hang/c1");
     const list = await screen.findByRole("list", { name: "Lịch sử sử dụng" });

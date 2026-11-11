@@ -128,11 +128,14 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     ).toBeVisible();
     const rows = today.getByRole("row").filter({ hasText: "Lý Thị Sửa" });
     await expect(rows).toHaveCount(2);
-    await expect(rows.filter({ hasText: "Đã sửa" })).toHaveCount(1);
+    // One chip a row (ADR-0022 D9): the replaced visit "Đã thay" for everyone; the new one
+    // "Đã sửa" because the owner sees what was edited.
+    await expect(rows.filter({ hasText: "Đã thay" })).toHaveCount(1);
+    await expect(rows.filter({ hasNotText: "Đã thay" }).filter({ hasText: "Đã sửa" })).toHaveCount(1);
     expect(await remaining(page, customerId)).toBe(12);
     // The corrected visit is the one offered for further edits; the old one is not.
     await rows
-      .filter({ hasText: "Đã sửa" })
+      .filter({ hasText: "Đã thay" })
       .getByRole("button", { name: /^Thao tác lượt/ })
       .click();
     await expect(page.getByRole("menuitem", { name: "Sửa lượt" })).toHaveCount(0);
