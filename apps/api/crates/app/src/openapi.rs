@@ -111,6 +111,7 @@ use utoipa::OpenApi;
         reporting::http::package_usage,
         reporting::http::list_packages,
         reporting::http::list_notes,
+        reporting::http::list_activity,
         platform::http::admin_login,
         platform::http::admin_logout,
         platform::http::admin_reauth,
@@ -153,6 +154,9 @@ use utoipa::OpenApi;
         reporting::dto::FollowUpFilter,
         reporting::dto::InactiveSort,
         reporting::notes_dto::NoteKind,
+        reporting::activity_dto::ActivityKind,
+        // Every action key, so the web's sentence table is checked against the code (ADR-0021).
+        reporting::activity_dto::AuditAction,
     )),
     tags(
         (name = "auth", description = "Đăng nhập, phiên, đổi spa"),
@@ -299,6 +303,9 @@ mod tests {
             "FollowUpFilter",
             "NotesPage",
             "NoteKind",
+            "ActivityPage",
+            "ActivityKind",
+            "AuditAction",
         ] {
             assert!(schemas.contains_key(schema), "{schema} missing");
         }

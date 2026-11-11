@@ -1691,6 +1691,7 @@ dependencies = [
  "org",
  "packages",
  "serde",
+ "serde_json",
  "sqlx",
  "utoipa",
  "uuid",

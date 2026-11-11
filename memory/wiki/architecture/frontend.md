@@ -1,6 +1,6 @@
 ---
 title: Frontend architecture (internal app)
-updated: 2026-11-09
+updated: 2026-11-11
 sources: [decisions/ADR-0001-tech-stack.md, decisions/ADR-0004-authentication.md, decisions/ADR-0018-platform-admin-console.md, design/design-system.md, design/front-desk-flows.md]
 ---
 
@@ -21,6 +21,7 @@ Stack đang chạy (`apps/web/package.json`; quyết định gốc ở [ADR-0001
 | `/goi-lieu-trinh?status=&q=` | **Gói liệu trình của khách**: tìm (tên khách, tên gói, SĐT) + lọc trạng thái (mặc định `expiring`); gói không hạn hiện "Không hạn" | `report.read` |
 | `/bao-cao?tab=&period=&from=&to=&metric=` | **Báo cáo kinh doanh** theo kỳ (Hôm nay … 12 tháng, 3/5 năm cho chủ spa, Tùy chọn), so với kỳ trước, xu hướng dạng line, chi tiết theo ngày/tuần/tháng, KTV, top dịch vụ/gói; tab **Sổ doanh thu** | `report.read` + cờ tính năng `reports` (tiền + sổ: `report.revenue.read`) |
 | `/nhat-ky-ghi-chu?from=&to=&kind=&staff=&customer=&q=` | **Nhật ký ghi chú** (management-views §10): mọi ghi chú gom theo ngày, mới nhất trước, link về nguồn; chunk lazy riêng, không `validateSearch` | `report.read` + cờ `notes_journal` (từng loại: quyền của màn gốc, server lọc) |
+| `/nhat-ky-thao-tac?from=&to=&actor=&kind=` | **Nhật ký thao tác** (management-views §11, ADR-0021): `GET /audit-log` gom theo ngày, web ghép câu từ mục có cấu trúc (`features/activity/sentence.ts`, `Record<AuditAction, …>` nên action mới thiếu câu là typecheck đỏ); chỉ `audit.read` (chủ spa); chunk lazy, tự parse URL như nhật ký ghi chú; `staleTime: 0` (mọi thao tác ghi đều thêm dòng) |
 | `/nhan-vien?tab=&month=&day=&roster=&staff=` | **Quản lý nhân sự** (người giữ sổ) hoặc **Công và lương của tôi** (KTV / người đã nghỉ) | một trong `attendance.record`, `evaluation.record`, `payroll.read`, `staff.manage`, hoặc `staff.read_own` / `staff.read_own_past` |
 | `/nhan-vien/cua-toi` | **Công và lương của tôi** của quản lý (giữ sổ cho người khác nhưng không có `staff.manage`, EM 2026-11-08) | `staff.read_own` / `staff.read_own_past` |
 | `/khach-cua-toi?ngay=&kieu=` | **Khách của tôi**: lịch + lượt của chính mình (`GET /me/appointments`) | `staff.read_own` (nav: khi không có `visit.read`, hoặc là quản lý) |

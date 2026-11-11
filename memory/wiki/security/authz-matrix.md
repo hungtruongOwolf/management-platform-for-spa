@@ -1,6 +1,6 @@
 ---
 title: Authorization matrix
-updated: 2026-11-09
+updated: 2026-11-11
 sources: [product/specs/front-desk-and-packages.md, product/specs/management-views.md, product/specs/staff-management.md, product/specs/appointments.md, product/specs/platform-admin.md, decisions/ADR-0003-multi-tenancy.md, decisions/ADR-0004-authentication.md, decisions/ADR-0018-platform-admin-console.md]
 ---
 
@@ -45,7 +45,7 @@ Trang tham chiếu: ai được gọi route nào. Permission là hằng số tro
 | `payroll.close` (0017: chốt tháng, sửa quy tắc lương) | ✓ | — | — |
 | `staff.read_own` (0017; route hiện có: `GET /me/staff`, `GET /me/staff/day`, `GET /me/evaluations/history`, `GET /me/appointments` — tháng công/lương, ngày, đánh giá, lịch của chính mình; quản lý dùng ở "Công và lương của tôi" `/nhan-vien/cua-toi` + "Khách của tôi" `/khach-cua-toi`) | ✓ | ✓ | ✓ |
 | `staff.read_own_past` (**suy ra, không role nào có, không cấp được**, [ADR-0014](../decisions/ADR-0014-former-staff-login.md)): người đã nghỉ — `GET /me/staff`, `GET /me/staff/day`, `GET /me/evaluations/history` cho các tháng có làm, không gì khác | — | — | — |
-| `audit.read` (seed cho Owner, owner luôn giữ khi operator sửa role; **chưa có endpoint spa nào dùng**, nhật ký spa chỉ đọc ở console admin) | ✓ | — | — |
+| `audit.read` (seed cho Owner, owner luôn giữ khi operator sửa role; **chỉ Owner được giữ** từ 0051 / [ADR-0021](../decisions/ADR-0021-activity-log-for-the-owner.md): operator cấp cho role khác → `422 role.owner_only_permission`; `GET /audit-log` "Nhật ký thao tác") | ✓ | — | — |
 | `support_grant.manage` (seed cho Owner; **chưa có endpoint, chưa có bảng `support_grant`**: follow-up của ADR-0018) | ✓ | — | — |
 | `platform.tenant.manage` (**không cấp được**: `identity::roles::NOT_GRANTABLE`, 0040 xóa mọi dòng đã lưu; quản trị nền tảng là principal operator riêng, xem § Admin nền tảng) | — | — | — |
 
@@ -63,6 +63,13 @@ Mỗi mục ghi quy tắc kiểm trên server ngoài cổng permission (thứ t�
   - `GET /customers/{id}/history`, `/customers/{id}/summary` cần `customer.read` + `visit.read` + `sale.read`; `GET /customer-packages/{id}/usage`, `/customers/inactive` cần `customer.read` + `visit.read`; `GET /packages` cần `customer.read`. Matrix kiểm permission đầu tiên (các permission kèm theo có cùng người giữ mặc định).
   - Không bao giờ có ghi chú sức khỏe trong các response này. **Ghi chú buổi** (EM 2026-11-07, spec front-desk §10.12): chỉ `GET /customers/{id}/history` mang `visit.note`, và **chỉ** khi người gọi có `customer.health_notes.read` (không có quyền → không có key); `GET /visits` (danh sách ngày) cùng quy tắc. Test: `app/tests/visits.rs::session_note_is_encrypted_and_shown_only_to_health_readers`.
   - Test: `app/tests/reports.rs::money_is_only_sent_to_holders_of_report_revenue_read` (tắt quyền tiền của quản lý → không còn key tiền nào; KTV 403; ẩn danh 401; chủ spa khác chỉ thấy sổ trống của mình, ID khách → 404). Đã mutation-check: bỏ cổng quyền tiền → test đỏ.
+- **Nhật ký thao tác (EM 2026-11-11, [spec §11](../product/specs/management-views.md), [ADR-0021](../decisions/ADR-0021-activity-log-for-the-owner.md), migration 0051):**
+  - `GET /audit-log` cần **`audit.read`, chỉ chủ spa**. Quản lý / KTV `403` (kiểm trước query, F17), ẩn danh `401`, `Cache-Control: no-store`.
+  - `audit.read` thuộc `platform::roles::OWNER_ONLY` (cùng `staff.manage`); 0051 xóa mọi dòng `audit.read` đã lưu cho role khác (mẫu + spa). Không cờ tính năng.
+  - Tenant lọc tường minh + RLS; chủ thể resolve bằng join trong cùng tenant, nên dòng audit trỏ sang khách spa khác không ra tên.
+  - Response chỉ có trường trong allowlist từng action: không `before` / `after` thô, không ghi chú buổi / lưu ý sức khỏe / ghi chú gói / ghi chú chấm công, không SĐT nhân viên, không id / tên operator ("Đội vận hành"). Khách đã ẩn danh: không tên, không link, không tên / SĐT cũ.
+  - Bộ lọc trên URL chỉ mang id / mã (`actor` = user id \| `platform` \| `system`, `kind`), không tên, không SĐT.
+  - Test: `app/tests/activity_log.rs` (6), `authz_matrix.rs` +1 dòng (`AuditRead`, owner), `platform::roles::staff_management_and_the_audit_trail_stay_with_the_owner`.
 - **Nhật ký ghi chú (EM 2026-11-07, [spec §10](../product/specs/management-views.md), migration 0027 chỉ thêm index):** `GET /notes` cần `report.read` (chủ spa + quản lý; KTV `403`, ẩn danh `401`), rồi **mỗi loại ghi chú giữ quy tắc đọc của màn gốc**, kiểm trên server, không thêm permission:
 
   | Loại | Quyền đọc | Owner | Manager | Technician |
@@ -168,6 +175,7 @@ Nguồn sự thật: bảng `ROUTES` trong `apps/api/crates/app/tests/authz_matr
 | `POST /service-categories`, `PUT /service-categories/{id}`, `POST /services`, `PUT /services/{id}`, `POST /package-plans`, `PUT /package-plans/{id}` | `catalog.manage` | O | |
 | `GET /customers`, `/customers/{id}`, `/customers/phone-check`, `/customers/{id}/follow-ups`, `/customers/{id}/packages`, `/customer-packages/{id}`, `/packages` | `customer.read` | O M | ghi chú sức khỏe / ghi chú gói chỉ khi có `customer.health_notes.read` |
 | `GET /customers/inactive`, `/customer-packages/{id}/usage` | `customer.read` | O M | + `visit.read` |
+| `GET /audit-log` | `audit.read` | O | chỉ chủ spa (owner-only, ADR-0021) |
 | `GET /customers/{id}/history`, `/customers/{id}/summary` | `customer.read` | O M | + `visit.read` + `sale.read` |
 | `POST /customers`, `PUT /customers/{id}` | `customer.write` | O M | `POST` bắt buộc `Idempotency-Key` (ADR-0019 D11), quyền kiểm trước key/body |
 | `PUT /customers/{id}/health-note` | `customer.health_notes.write` | O M | |

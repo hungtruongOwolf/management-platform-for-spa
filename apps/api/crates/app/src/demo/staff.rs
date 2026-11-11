@@ -6,7 +6,7 @@
 
 use super::rng::Rng;
 use super::run::{each, retry};
-use super::{Window, fail, idempotency};
+use super::{Clock, Window, fail, idempotency};
 use anyhow::Context;
 use chrono::{Duration, NaiveDate, NaiveTime};
 use hr::adjustment::{AdjustmentInput, AdjustmentKind};
@@ -266,6 +266,7 @@ pub struct Logins {
 
 /// Adds the roster members that are missing, then sets their start date, shift, pay terms and
 /// login link as the owner.
+#[allow(clippy::too_many_arguments)]
 pub async fn setup(
     owner_pool: &PgPool,
     app: &PgPool,
@@ -273,6 +274,7 @@ pub async fn setup(
     slug: &str,
     roster: &[Member],
     logins: &Logins,
+    (clock, start): (Clock, NaiveDate),
     report: &mut StaffReport,
 ) -> anyhow::Result<Staff> {
     let names = |list: Vec<org::profile::ProfileView>| -> HashMap<String, Uuid> {
@@ -307,6 +309,8 @@ pub async fn setup(
             .map_err(fail("read a staff profile"))?;
         let pay_version = view.pay.map_or(0, |t| t.version);
         let p = view.profile;
+        // The profile, login and pay terms are set the day they started (or the history's first).
+        let owner = &clock.acting(owner, m.joined.max(start), 8 * 60);
         let updated = org::profile::update(
             app,
             owner,
@@ -379,6 +383,8 @@ fn months(window: Window) -> Vec<Month> {
 /// What the staff books need from the rest of the seed.
 pub struct Books<'a> {
     pub app: &'a PgPool,
+    /// When each record is said to be written (its audit entry).
+    pub clock: Clock,
     pub owner: &'a Actor,
     pub manager: &'a Actor,
     pub window: Window,
@@ -407,12 +413,13 @@ impl Books<'_> {
     /// Every cell of the plan, the manager's by the owner (decision C), in batches of at most
     /// [`hr::attendance::MAX_ENTRIES`], months side by side.
     async fn attendance(&self, report: &mut StaffReport) -> anyhow::Result<()> {
-        let mut firsts: Vec<(bool, Vec<Entry>)> = Vec::new();
-        let mut batches: Vec<(bool, Vec<Entry>)> = Vec::new();
+        let mut firsts: Vec<(bool, NaiveDate, Vec<Entry>)> = Vec::new();
+        let mut batches: Vec<(bool, NaiveDate, Vec<Entry>)> = Vec::new();
         for month in months(self.window) {
-            let (mut own, mut team) = (Vec::new(), Vec::new());
+            let mut first = true;
             let mut day = month.first_day().max(self.window.start);
             while day <= month.last_day().min(self.window.today) {
+                let (mut own, mut team) = (Vec::new(), Vec::new());
                 for (m, member) in self.roster.iter().enumerate() {
                     let Some(cell) = self.attendance.cell(m, day) else {
                         continue;
@@ -439,23 +446,26 @@ impl Books<'_> {
                         own.push(entry);
                     }
                 }
-                day += Duration::days(1);
-            }
-            let mut first = true;
-            for (by_owner, list) in [(false, team), (true, own)] {
-                for chunk in list.chunks(hr::attendance::MAX_ENTRIES) {
-                    let batch = (by_owner, chunk.to_vec());
-                    if first {
-                        firsts.push(batch);
-                        first = false;
-                    } else {
-                        batches.push(batch);
+                // Each day's sheet is written that evening, the team's by the manager.
+                for (by_owner, list) in [(false, team), (true, own)] {
+                    for chunk in list.chunks(hr::attendance::MAX_ENTRIES) {
+                        let batch = (by_owner, day, chunk.to_vec());
+                        if first {
+                            firsts.push(batch);
+                            first = false;
+                        } else {
+                            batches.push(batch);
+                        }
                     }
                 }
+                day += Duration::days(1);
             }
         }
-        let work = |(by_owner, batch): (bool, Vec<Entry>)| async move {
+        let work = |(by_owner, day, batch): (bool, NaiveDate, Vec<Entry>)| async move {
             let actor = if by_owner { self.owner } else { self.manager };
+            let actor = &self
+                .clock
+                .acting(actor, day, 18 * 60 + if by_owner { 25 } else { 5 });
             let days = retry(|| hr::attendance::record(self.app, actor, &batch))
                 .await
                 .map_err(fail("record attendance"))?;
@@ -473,11 +483,11 @@ impl Books<'_> {
 
     /// Compliments and complaints on about a fifth of the technicians' working days.
     async fn reviews(&self, rng: &mut Rng) -> anyhow::Result<usize> {
-        let mut batches: Vec<Vec<ReviewEntry>> = Vec::new();
+        let mut batches: Vec<(NaiveDate, Vec<ReviewEntry>)> = Vec::new();
         for month in months(self.window) {
-            let mut list = Vec::new();
             let mut day = month.first_day().max(self.window.start);
             while day < month.last_day().min(self.window.today) + Duration::days(1) {
+                let mut list = Vec::new();
                 for (m, member) in self.roster.iter().enumerate() {
                     let at_work = self
                         .attendance
@@ -499,14 +509,15 @@ impl Books<'_> {
                         });
                     }
                 }
+                for chunk in list.chunks(hr::review::MAX_ENTRIES) {
+                    batches.push((day, chunk.to_vec()));
+                }
                 day += Duration::days(1);
             }
-            for chunk in list.chunks(hr::review::MAX_ENTRIES) {
-                batches.push(chunk.to_vec());
-            }
         }
-        let recorded = each(batches, self.workers, |batch| async move {
-            let rows = retry(|| hr::review::record(self.app, self.manager, &batch))
+        let recorded = each(batches, self.workers, |(day, batch)| async move {
+            let manager = &self.clock.acting(self.manager, day, 18 * 60 + 40);
+            let rows = retry(|| hr::review::record(self.app, manager, &batch))
                 .await
                 .map_err(fail("record daily reviews"))?;
             Ok(rows.len())
@@ -544,8 +555,10 @@ impl Books<'_> {
         }
         let done = each(items, self.workers, |input| async move {
             let (key, hash) = idempotency();
+            let day = input.occurred_on.unwrap_or(self.window.today);
+            let manager = &self.clock.acting(self.manager, day, 17 * 60);
             retry(|| {
-                hr::adjustment::record(self.app, self.manager, key, hash, &input, |a| {
+                hr::adjustment::record(self.app, manager, key, hash, &input, |a| {
                     serde_json::to_value(a).map_err(|e| kernel::AppError::Internal(e.to_string()))
                 })
             })
@@ -621,6 +634,11 @@ impl Books<'_> {
             } else {
                 self.owner
             };
+            let actor = &self.clock.acting(
+                actor,
+                month.last_day() + Duration::days(1),
+                9 * 60 + 30 + u32::try_from(m).unwrap_or(0) * 7,
+            );
             retry(|| hr::evaluation::record(self.app, actor, &input))
                 .await
                 .map_err(fail("record an evaluation"))?;
@@ -646,7 +664,7 @@ impl Books<'_> {
             .map_err(fail("read the leaver"))?;
         org::profile::end(
             self.app,
-            self.owner,
+            &self.clock.acting(self.owner, left, 17 * 60 + 30),
             id,
             view.profile.version,
             &EndInput {
@@ -673,8 +691,12 @@ impl Books<'_> {
                 month,
                 allow_incomplete: false,
             };
+            let owner =
+                &self
+                    .clock
+                    .acting(self.owner, month.last_day() + Duration::days(3), 10 * 60);
             let (_, body) = retry(|| {
-                hr::payroll::close(self.app, self.owner, key, hash, &input, |m| {
+                hr::payroll::close(self.app, owner, key, hash, &input, |m| {
                     serde_json::to_value(m).map_err(|e| kernel::AppError::Internal(e.to_string()))
                 })
             })

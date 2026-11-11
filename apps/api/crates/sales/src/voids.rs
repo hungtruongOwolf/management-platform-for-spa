@@ -9,7 +9,7 @@
 use crate::repo;
 use crate::service::load;
 use chrono::NaiveDate;
-use kernel::audit::{self, AuditEntry};
+use kernel::audit::{self, Action, AuditEntry};
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, Permission, TenantTx, corrections};
 use serde_json::{Value, json};
@@ -54,7 +54,7 @@ pub async fn void_in(
         tx,
         actor,
         AuditEntry {
-            action: "sale.void",
+            action: Action::SaleVoid,
             entity_type: "sale",
             entity_id: sale_id,
             before: Some(json!({"status": "open", "business_date": sale.business_date})),

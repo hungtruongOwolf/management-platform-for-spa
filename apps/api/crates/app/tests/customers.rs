@@ -475,11 +475,11 @@ async fn search_stays_fast_with_ten_thousand_customers(pool: PgPool) -> TestResu
     Ok(())
 }
 
-/// ADR-0019 D13: the audit trail outlives an anonymised profile, so it never holds the name, phone
-/// or birth date: only which fields are filled and which an edit changed (red before: the rows
-/// carried all three in clear).
+/// ADR-0019 D13: the audit trail outlives an anonymised profile, so a create keeps only which
+/// fields are filled and the birth date is never kept. ADR-0021 (EM 2026-11-11): an update keeps
+/// the old and the new full name and phone it changed, for "Nhật ký thao tác" ("0905… → 0912…").
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
-async fn customer_audit_keeps_who_and_what_field_but_no_personal_values(
+async fn customer_audit_keeps_who_what_field_and_old_new_name_and_phone_only(
     pool: PgPool,
 ) -> TestResult {
     let h = harness(pool).await?;
@@ -517,9 +517,7 @@ async fn customer_audit_keeps_who_and_what_field_but_no_personal_values(
     .fetch_all(&h.owner)
     .await?;
     let text = format!("{rows:?}");
-    for value in ["Lụa", "905111222", "905333444", "1985"] {
-        assert!(!text.contains(value), "audit holds {value:?}: {text}");
-    }
+    assert!(!text.contains("1985"), "audit holds the birth date: {text}");
     let [
         (create, None, Some(after_create), true),
         (update, Some(before), Some(after), true),
@@ -539,8 +537,25 @@ async fn customer_audit_keeps_who_and_what_field_but_no_personal_values(
         ),
         (&json!(true), &json!(true), &json!(true))
     );
+    let created = format!("{after_create:?}");
+    for value in ["Lụa", "905111222"] {
+        assert!(
+            !created.contains(value),
+            "create holds {value:?}: {created}"
+        );
+    }
     assert_eq!(before["has_phone"], json!(true));
     assert_eq!(after["changed"], json!(["full_name", "phone", "note"]));
+    assert_eq!(
+        (&before["full_name"], &after["full_name"]),
+        (&json!("Trần Thị Lụa"), &json!("Trần Thị Lụa B"))
+    );
+    assert_eq!(
+        (&before["phone"], &after["phone"]),
+        (&json!("+84905111222"), &json!("+84905333444"))
+    );
+    // The note changed too, but only its name is kept.
+    assert!(before.get("note").is_none() && after.get("note").is_none());
     Ok(())
 }
 

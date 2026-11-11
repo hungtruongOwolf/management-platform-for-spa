@@ -22,6 +22,7 @@ const HINTS: Record<string, string> = {
   "/goi-lieu-trinh": "Gói sắp hết hạn, hết buổi, đã hủy",
   "/bao-cao": "Thực thu, khách, lượt theo kỳ; sổ doanh thu",
   "/nhat-ky-ghi-chu": "Đọc lại mọi ghi chú: buổi, hồ sơ, chấm công, thưởng/phạt",
+  "/nhat-ky-thao-tac": "Ai làm gì, lúc nào: hủy lượt, sửa giá, đổi SĐT khách, chấm công",
   "/khach-cua-toi": "Khách bạn đã làm, lịch hẹn gán cho bạn",
   "/nhan-vien/cua-toi": "Ngày công, đánh giá, phiếu lương của bạn",
   "/bang-gia": "Dịch vụ theo nhóm, giá Nữ/Nam",

@@ -15,7 +15,7 @@ use crate::dto::{
 };
 use crate::repo::{self, PackageLineInsert, PaymentInsert, SaleInsert, ServiceLineInsert};
 use chrono::{DateTime, Months, NaiveDate, Utc};
-use kernel::audit::{self, AuditEntry, REDACTED};
+use kernel::audit::{self, Action, AuditEntry, REDACTED};
 use kernel::crypto::FieldCipher;
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx};
@@ -315,7 +315,7 @@ pub async fn create_sale_as_of(
     }
     require_note_right(actor, order.package.note.as_ref())?;
 
-    let mut tx = TenantTx::for_actor(pool, actor).await?;
+    let mut tx = TenantTx::for_actor_at(pool, actor, now).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -746,7 +746,7 @@ pub async fn record_package_sale(
         tx,
         actor,
         AuditEntry {
-            action: "sale.create",
+            action: Action::SaleCreate,
             entity_type: "sale",
             entity_id: sale_id,
             before: None,
@@ -1016,7 +1016,7 @@ pub async fn update_note(
             &mut tx,
             actor,
             AuditEntry {
-                action: "sale.note_update",
+                action: Action::SaleNoteUpdate,
                 entity_type: "sale",
                 entity_id: id,
                 before: None,
@@ -1322,7 +1322,7 @@ pub async fn record_service_sale(
         tx,
         actor,
         AuditEntry {
-            action: "sale.create",
+            action: Action::SaleCreate,
             entity_type: "sale",
             entity_id: sale_id,
             before: None,

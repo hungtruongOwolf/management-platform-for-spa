@@ -753,6 +753,12 @@ const ROUTES: &[Route] = &[
         "/api/v1/notes",
         Access::Perm(P::ReportRead, OWNER_MANAGER),
     ),
+    // "Nhật ký thao tác" (ADR-0021): the owner alone (tests/activity_log.rs).
+    route(
+        "GET",
+        "/api/v1/audit-log",
+        Access::Perm(P::AuditRead, OWNER_ONLY),
+    ),
     route(
         "GET",
         "/api/v1/customers/inactive",

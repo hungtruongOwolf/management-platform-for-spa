@@ -410,7 +410,7 @@ describe("home page", () => {
       "owner",
       [
         "visit.record", "visit.read", "appointment.manage", "customer.read", "report.read", "catalog.read",
-        "attendance.record", "evaluation.record", "payroll.read", "staff.manage", "staff.read_own",
+        "attendance.record", "evaluation.record", "payroll.read", "staff.manage", "staff.read_own", "audit.read",
       ],
       [
         ["/quay", "Ghi lượt khách"],
@@ -419,6 +419,7 @@ describe("home page", () => {
         ["/goi-lieu-trinh", "Gói liệu trình của khách"],
         ["/bao-cao", "Báo cáo kinh doanh"],
         ["/nhat-ky-ghi-chu", "Nhật ký ghi chú"],
+        ["/nhat-ky-thao-tac", "Nhật ký thao tác"],
         ["/nhan-vien", "Quản lý nhân sự", "Chấm công, đánh giá, bảng lương, hồ sơ nhân viên"],
         ["/bang-gia", "Bảng giá dịch vụ"],
         ["/bang-gia/goi", "Mẫu gói liệu trình"],

@@ -5,6 +5,7 @@ use crate::error::AppError;
 use crate::feature::Feature;
 use crate::ids::{TenantId, UserId};
 use crate::tenant::TenantFacts;
+use chrono::{DateTime, Utc};
 use std::collections::BTreeSet;
 use std::net::IpAddr;
 
@@ -113,6 +114,10 @@ pub struct Actor {
     /// Features the spa has switched off (ADR-0018 D4): their permissions are not in
     /// `permissions`, and requiring one answers `403 feature.disabled`.
     disabled_features: BTreeSet<Feature>,
+    /// Tooling only (`app seed-demo`): the instant this actor's audit entries are stamped with,
+    /// so back-filled history reads as written on its own day (ADR-0021). A session's actor never
+    /// has one: nothing a request sends reaches it.
+    clock: Option<DateTime<Utc>>,
 }
 
 impl Actor {
@@ -129,7 +134,21 @@ impl Actor {
             permissions: permissions.into_iter().collect(),
             tenant_facts: None,
             disabled_features: BTreeSet::new(),
+            clock: None,
         }
+    }
+
+    /// Tooling only: this actor's audit entries are stamped `at` instead of the database clock
+    /// (see [`Actor::clock`]). Use cases that take a clock (`*_as_of`) stamp their own `now`.
+    #[must_use]
+    pub const fn at_clock(mut self, at: DateTime<Utc>) -> Self {
+        self.clock = Some(at);
+        self
+    }
+
+    /// The instant set by [`Actor::at_clock`], if any.
+    pub const fn clock(&self) -> Option<DateTime<Utc>> {
+        self.clock
     }
 
     /// The spa's switched-off features: their permissions are removed, whatever the roles say.

@@ -11,7 +11,7 @@ use crate::employment::{Employment, Period, Tenure};
 use crate::repo::{self, AccountRow, HistoryRow, PayRow, PeriodRow, ProfileRow, ProfileWrite};
 use crate::service::StaffStatus;
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
-use kernel::audit::{self, AuditEntry};
+use kernel::audit::{self, Action, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Permission, PhoneE164, TenantTx};
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -441,7 +441,7 @@ pub async fn create(
         &mut tx,
         actor,
         AuditEntry {
-            action: "staff.create",
+            action: Action::StaffCreate,
             entity_type: "staff",
             entity_id: id,
             before: None,
@@ -509,7 +509,7 @@ pub async fn update(
         &mut tx,
         actor,
         AuditEntry {
-            action: "staff.update",
+            action: Action::StaffUpdate,
             entity_type: "staff",
             entity_id: id,
             before: Some(audit_profile(&before)),
@@ -545,7 +545,7 @@ pub async fn set_account(
         &mut tx,
         actor,
         AuditEntry {
-            action: "staff.account_link",
+            action: Action::StaffAccountLink,
             entity_type: "staff",
             entity_id: id,
             before: Some(json!({"user_id": before.user_id})),
@@ -678,7 +678,7 @@ pub async fn end(
         &mut tx,
         actor,
         AuditEntry {
-            action: "staff.end",
+            action: Action::StaffEnd,
             entity_type: "staff",
             entity_id: id,
             before: Some(json!({"status": "active", "joined_on": current.started_on})),
@@ -734,7 +734,7 @@ pub async fn rehire(
         &mut tx,
         actor,
         AuditEntry {
-            action: "staff.rehire",
+            action: Action::StaffRehire,
             entity_type: "staff",
             entity_id: id,
             before: Some(json!({"status": "left", "left_on": before.left_on})),
@@ -793,7 +793,7 @@ pub async fn set_pay(
         &mut tx,
         actor,
         AuditEntry {
-            action: "staff.pay_update",
+            action: Action::StaffPayUpdate,
             entity_type: "staff",
             entity_id: id,
             before: before.as_ref().map(|b| audit_pay(&PayTerms::from(b))),

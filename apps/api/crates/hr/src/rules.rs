@@ -5,7 +5,7 @@
 use crate::attendance::LeaveCode;
 use crate::repo;
 use chrono::NaiveTime;
-use kernel::audit::{self, AuditEntry};
+use kernel::audit::{self, Action, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -175,7 +175,7 @@ pub async fn put(
         &mut tx,
         actor,
         AuditEntry {
-            action: "payroll.rules_update",
+            action: Action::PayrollRulesUpdate,
             entity_type: "tenant",
             entity_id: actor.tenant_id.as_uuid(),
             before: serde_json::to_value(&before).ok(),

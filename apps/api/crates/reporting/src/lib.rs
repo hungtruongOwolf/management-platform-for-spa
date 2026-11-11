@@ -6,8 +6,11 @@
 //!
 //! - [`day`]: the daily dashboard, the date-range report and the revenue book (ledger);
 //! - [`customer`]: one customer's timeline, summary and per-package usage;
-//! - [`overview`]: packages overview and the re-engagement list.
+//! - [`overview`]: packages overview and the re-engagement list;
+//! - [`activity`]: the owner's "Nhật ký thao tác" over the spa's audit trail (ADR-0021).
 
+pub mod activity;
+pub mod activity_dto;
 mod cursor;
 pub mod customer;
 pub mod day;

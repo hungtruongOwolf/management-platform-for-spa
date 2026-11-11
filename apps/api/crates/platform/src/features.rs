@@ -7,7 +7,7 @@ use crate::auth::OperatorSession;
 use crate::gate_refusal;
 use crate::tenants::Reason;
 use chrono::{DateTime, Utc};
-use kernel::audit::{AuditEntry, record_platform};
+use kernel::audit::{Action, AuditEntry, record_platform};
 use kernel::{AppError, Feature, TenantId, TenantTx};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -117,7 +117,7 @@ pub async fn set(
         op.operator_id,
         op.meta.ip,
         AuditEntry {
-            action: "feature.changed",
+            action: Action::FeatureChanged,
             entity_type: "tenant",
             entity_id: tenant,
             before: Some(json!({"feature": feature.key(), "enabled": previous})),

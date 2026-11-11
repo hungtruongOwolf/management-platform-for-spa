@@ -9,7 +9,7 @@ use chrono::NaiveDate;
 use crm::FieldCipher;
 use crm::http::CustomerCreate;
 use crm::service::ProfileInput;
-use kernel::audit::{self, AuditEntry};
+use kernel::audit::{self, Action, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -362,7 +362,7 @@ pub async fn import_in(
         tx,
         actor,
         AuditEntry {
-            action: "opening_balance.import",
+            action: Action::OpeningBalanceImport,
             entity_type: "customer",
             entity_id: customer_id,
             before: None,

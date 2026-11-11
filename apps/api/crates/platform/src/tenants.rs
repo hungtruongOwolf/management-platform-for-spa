@@ -7,7 +7,7 @@ use crate::auth::OperatorSession;
 use crate::gate_refusal;
 use chrono::{DateTime, Utc};
 use identity::account::TemporaryPassword;
-use kernel::audit::{AuditEntry, record_platform};
+use kernel::audit::{Action, AuditEntry, record_platform};
 use kernel::{AppError, FieldError, PhoneE164, TenantId, TenantTx};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -293,7 +293,7 @@ pub async fn create(
         op.operator_id,
         op.meta.ip,
         AuditEntry {
-            action: "tenant.created",
+            action: Action::TenantCreated,
             entity_type: "tenant",
             entity_id: tenant_id,
             before: None,
@@ -402,8 +402,8 @@ pub async fn set_status(
         });
     }
     let (spa_action, platform_action) = match status {
-        TenantStatus::Suspended => ("tenant.suspended", "platform.tenant.suspend"),
-        TenantStatus::Active => ("tenant.unsuspended", "platform.tenant.unsuspend"),
+        TenantStatus::Suspended => (Action::TenantSuspended, "platform.tenant.suspend"),
+        TenantStatus::Active => (Action::TenantUnsuspended, "platform.tenant.unsuspend"),
     };
     record_platform(
         &mut tx,
@@ -495,7 +495,7 @@ pub async fn set_owner_mfa(
         op.operator_id,
         op.meta.ip,
         AuditEntry {
-            action: "tenant.owner_mfa_changed",
+            action: Action::TenantOwnerMfaChanged,
             entity_type: "tenant",
             entity_id: id,
             before: Some(json!({"owner_mfa_required": changed.previous})),

@@ -1,6 +1,6 @@
 ---
 title: Platform admin console — backend + frontend design
-updated: 2026-11-09
+updated: 2026-11-11
 sources: [product/specs/platform-admin.md, decisions/ADR-0018-platform-admin-console.md, decisions/ADR-0017-one-statement-request-auth.md, decisions/ADR-0020-owner-mfa-per-spa.md]
 ---
 
@@ -29,7 +29,7 @@ platform_session (id, token_hash bytea UNIQUE (32), operator_id FK, created_at, 
 platform_audit_log (id, operator_id FK, action CHECK (~ '^platform(\.[a-z_]+)+$'), tenant_id FK NULL,
   target_type text NULL, target_id uuid NULL, detail jsonb NULL, reason text NULL, ip inet, at)
   + index platform_audit_log_at_idx (at DESC, id DESC)
-audit_log_tenant_at_idx ON audit_log (tenant_id, at DESC)   -- nhật ký spa + "hoạt động gần nhất"
+audit_log_tenant_at_idx ON audit_log (tenant_id, at DESC)   -- nhật ký spa + "hoạt động gần nhất"; 0051 thay bằng (tenant_id, at DESC, id DESC)
 -- 0039 (PR B)
 tenant_feature (tenant_id FK, feature text CHECK (~ '^[a-z_]{2,40}$'), enabled bool,
   updated_at, updated_by uuid FK platform_operator, PK (tenant_id, feature))   -- RLS theo spa

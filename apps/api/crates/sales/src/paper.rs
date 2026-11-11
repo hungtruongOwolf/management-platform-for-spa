@@ -11,7 +11,7 @@
 
 use chrono::{TimeZone, Utc};
 use crm::FieldCipher;
-use kernel::audit::{self, AuditEntry};
+use kernel::audit::{self, Action, AuditEntry};
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, Permission, TenantTx};
 use packages::opening_balance::{self, OpeningBalanceCreate, PaperPayment};
@@ -91,7 +91,7 @@ pub async fn book_in(
         tx,
         actor,
         AuditEntry {
-            action: "sale.paper_book",
+            action: Action::SalePaperBook,
             entity_type: "sale",
             entity_id: sale_id,
             before: None,

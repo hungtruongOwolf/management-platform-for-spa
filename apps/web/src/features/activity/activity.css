@@ -1,0 +1,62 @@
+/* "Nhật ký thao tác" (/nhat-ky-thao-tac). Loaded with the lazy chunk only; tokens only. */
+
+@layer components {
+  .activity-page {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: 16px;
+  }
+  .activity-lede {
+    max-width: 42rem;
+    color: var(--text-muted);
+  }
+  /* A day over its entries: a section label, not a panel title. */
+  .activity-day {
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+  }
+  /* One panel per day, one entry per row, hairlines between (no card in a card). */
+  .activity-list {
+    display: grid;
+    padding: 0 16px;
+  }
+  .activity-row {
+    display: grid;
+    gap: 4px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .activity-row:last-child {
+    border-bottom: 0;
+  }
+  .activity-sentence {
+    max-width: 48rem;
+    overflow-wrap: anywhere;
+  }
+  .activity-subject {
+    font-weight: 600;
+  }
+  .activity-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+  }
+  .activity-reason {
+    overflow-wrap: anywhere;
+  }
+  .activity-changes {
+    display: grid;
+    gap: 2px;
+    max-width: 48rem;
+    padding-left: 16px;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    list-style: disc;
+    overflow-wrap: anywhere;
+  }
+}

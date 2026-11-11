@@ -10,7 +10,7 @@
 use crate::domain::{self, PackageStatus, RefundMethod};
 use crate::repo::{self, ItemInsert, ItemRow, PackageInsert, PackageRow, RefundRow};
 use chrono::{DateTime, NaiveDate, Utc};
-use kernel::audit::{self, AuditEntry};
+use kernel::audit::{self, Action, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx};
 use serde_json::json;
 use sqlx::PgPool;
@@ -176,7 +176,7 @@ pub async fn create(
         tx,
         actor,
         AuditEntry {
-            action: "customer_package.create",
+            action: Action::CustomerPackageCreate,
             entity_type: "customer_package",
             entity_id: id,
             before: None,

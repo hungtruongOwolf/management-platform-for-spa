@@ -15,6 +15,8 @@ export const mayOpen = {
   /** "Báo cáo kinh doanh" and "Nhật ký ghi chú": features a spa may have off (ADR-0018). */
   reports: (me: Me | null) => canSeeManagement(me) && hasFeature(me, "reports"),
   notes: (me: Me | null) => canSeeManagement(me) && hasFeature(me, "notes_journal"),
+  /** "Nhật ký thao tác" (ADR-0021): the owner's audit trail, `audit.read` only (owner-only grant). */
+  activity: (me: Me | null) => can(me, "audit.read"),
   catalog: (me: Me | null) => can(me, "catalog.read"),
   /** Keeps the staff books (attendance, reviews, payroll, profiles). */
   staffBooks: (me: Me | null) =>

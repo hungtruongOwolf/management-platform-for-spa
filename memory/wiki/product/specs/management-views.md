@@ -1,7 +1,7 @@
 ---
 title: "Spec R1-2: Xem lại & theo dõi (management views)"
 status: draft
-updated: 2026-11-09
+updated: 2026-11-11
 sources: [raw/2026-11-05-em-management-views-logo-ui.md]
 related: [../paper-books-analysis.md, ../personas.md, front-desk-and-packages.md, ../../architecture/backend.md, ../../security/authz-matrix.md]
 ---
@@ -268,3 +268,51 @@ Quản lý mặc định thấy mọi loại trừ "Nghỉ việc" và "Ghi chú
 - Một dòng mỗi hóa đơn có ghi chú: giờ = lúc lập hóa đơn, ngày = ngày hóa đơn, tác giả = người lập, khách = **người dùng gói** (người được mua cho khi "Mua cho người khác", không thì người trả), `detail` = tên các gói của hóa đơn (hiện cạnh tên khách), `visit_id` khi gói bán trong lượt. Link "Xem trong lịch sử khách" lọc đúng ngày + "Mua gói".
 - Giải mã bằng đúng associated data của bên ghi (`sale.note` + tenant + hóa đơn, khóa của dòng = id hóa đơn); vào đường tìm chữ trong ghi chú mã hóa như ghi chú buổi (quét ≤ 500 / request, `scan_capped`). Index một phần mới của 0030: `sale (tenant_id, business_date) WHERE note_ct IS NOT NULL`.
 - Test: `notes.rs` (chủ spa đọc 16 loại kèm tên gói và khách, quản lý không có quyền sức khỏe không thấy / không tìm ra, `every_kind_keeps_its_own_read_rule` +1 dòng), `package_notes.rs::a_cart_of_packages_keeps_one_note_per_package` (một dòng mỗi gói, khách = người dùng gói, tìm không dấu "huyet ap cao" chỉ ra `package_note`).
+
+## 11. Nhật ký thao tác (EM 2026-11-11, [raw 1](../../../raw/2026-11-11-em-actor-trace-data-only.md), [raw 2](../../../raw/2026-11-11-em-decision-activity-log-and-customer-old-values.md), [ADR-0021](../../decisions/ADR-0021-activity-log-for-the-owner.md))
+EM: "cái vụ ai làm đó tôi không cần show đâu… chủ spa có thể xem được đó dễ truy xuất dễ theo dõi". Các màn hiện có **không** thêm "ai làm". Thay vào đó có một màn chỉ đọc cho chủ spa, đọc `app.audit_log` của spa. **Vì sao ở spec này:** cùng mẫu với Nhật ký ghi chú (§10): xem lại, khoảng ngày, bộ lọc trên URL, cursor, nhóm Báo cáo.
+
+### US11: Tra "ai làm gì, lúc nào"
+*Là chủ spa, tôi muốn xem lại mọi thao tác trong app (ai hủy lượt, ai sửa giá, ai đổi SĐT khách, ai chấm công…), lọc theo người, loại việc và ngày, để truy được khi có chuyện.*
+
+**11.1 Chỗ đặt.** Nav **Báo cáo → "Nhật ký thao tác"** (`/nhat-ky-thao-tac`), ngay dưới "Nhật ký ghi chú". Chunk lazy riêng; không tên ngắn, không có trên tab bar điện thoại. Chỉ hiện cho `audit.read` (chủ spa).
+
+**11.2 Ai xem.** `GET /api/v1/audit-log` cần `audit.read`, permission **chỉ chủ spa** (operator không cấp được cho vai trò khác, migration 0051 dọn dữ liệu cũ). Quản lý / KTV → `403`; chưa đăng nhập → `401`; quyền kiểm trước query (F17). Spa khác không bao giờ thấy dòng của spa này (lọc tenant tường minh + RLS). Không cờ tính năng.
+
+**11.3 Mỗi dòng.** Một câu tiếng Việt do web ghép từ mục có cấu trúc của server:
+- câu: "**Quản lý Hà** hủy lượt của **chị Lê Thị Mai**" (tên khách là link hồ sơ; "ngày dd/mm/yyyy" khi bản ghi thuộc ngày khác, ví dụ chấm công);
+- dòng phụ: giờ · nhóm · tiền ("Thu 140.000 ₫, giảm 10.000 ₫", "Hoàn …", "Đảo …", "Chênh lệch +…") · "lý do: …";
+- giá trị đổi (gạch đầu dòng): "SĐT: 0905 111 222 → 0912 333 444", "Giá: 150.000 ₫ → 170.000 ₫", "Trạng thái: Đi làm → Nghỉ đột xuất (ĐX)", trường không giữ giá trị thì "Địa chỉ (đã đổi)".
+- Người làm: tên tài khoản; đội vận hành nền tảng → "Đội vận hành" (không bao giờ tên operator); yêu cầu "Quên mật khẩu?" từ màn đăng nhập → "Hệ thống".
+- Gom theo ngày (giờ spa), mới nhất trước; 50 dòng một trang, "Xem thêm".
+
+**11.4 Nhóm "Loại việc"** (mọi action đều thuộc đúng một nhóm, `reporting::activity::kind_of`):
+
+| Nhóm (`kind`) | Action |
+|---|---|
+| Quầy `front_desk` | `visit.create`, `visit.addition`, `visit.update`, `visit.correct`, `visit.void`, `visit.convert_to_package`, `sale.create`, `sale.void`, `sale.note_update` |
+| Gói liệu trình `packages` | `customer_package.create`, `.extend`, `.cancel`, `.use_expired_override`, `opening_balance.import`, `sale.paper_book` |
+| Lịch hẹn `appointments` | `appointment.create`, `.update`, `.arrive`, `.undo_arrival`, `.complete`, `.no_show`, `.cancel` |
+| Khách hàng `customers` | `customer.create`, `customer.update`, `customer.health_note_set`, `customer.follow_up` |
+| Nhân sự `staff` | `attendance.record`, `evaluation.daily_review`, `evaluation.record`, `staff.adjustment`, `staff.adjustment_void`, `staff.create`, `staff.update`, `staff.end`, `staff.rehire` |
+| Lương `payroll` | `staff.pay_update`, `payroll.rules_update`, `payroll.close` |
+| Danh mục & cài đặt `settings` | `catalog.category_*`, `catalog.service_*`, `catalog.plan_*`, `appointment.settings` |
+| Tài khoản & bảo mật `accounts` | `staff.account_link`, `staff.login_create`, `staff.login_password_reset`, `staff.login_role`, `account.password_change`, `account.password_reset_requested`, `account.password_reset_dismissed`, các `account.*_by_platform`, `role.permissions_changed`, `role.permissions_reset`, `feature.changed`, `tenant.created`, `tenant.suspended`, `tenant.unsuspended`, `tenant.owner_mfa_changed` |
+| Khác `other` | key cũ không còn trong code (câu chung, không lỗi) |
+
+**11.5 Bộ lọc** (trên URL: `from`, `to`, `actor`, `kind`; chỉ id / mã, không tên, không SĐT): khoảng ngày (mặc định **7 ngày gần nhất**, tối đa 366), người làm (mọi tài khoản của spa: chủ spa, nhân viên có đăng nhập, người đã nghỉ có nhãn "(đã nghỉ)", cộng "Đội vận hành", "Hệ thống"), loại việc.
+
+**11.6 Không bao giờ hiện:** ghi chú buổi, lưu ý sức khỏe, ghi chú gói, ghi chú chấm công / khen / hồ sơ (chỉ "Ghi chú: Có"), SĐT nhân viên, ngày sinh khách, `before` / `after` thô, id hay tên operator. Server chỉ trả trường nằm trong allowlist của từng action.
+
+**11.7 Tên / SĐT cũ của khách.** `customer.update` lưu `full_name` và `phone` cũ → mới khi đổi (ADR-0021, sửa một phần ADR-0019 D13). Dòng cũ (trước 2026-11-11) chỉ có tên trường, không backfill. Khách đã ẩn danh: không tên, không link, không giá trị cũ / mới. Khi làm `customer.anonymize` phải xóa cả hai giá trị này khỏi audit của khách đó.
+
+**AC**
+- AC11.1: chủ spa `200`; quản lý, KTV `403` (kể cả query sai); chưa đăng nhập `401`; `Cache-Control: no-store`. Operator cấp `audit.read` cho quản lý / KTV → `422 role.owner_only_permission`.
+- AC11.2: chủ spa khác không thấy dòng / tên nào của spa này; dòng audit của spa khác trỏ tới khách spa này không resolve ra tên.
+- AC11.3: mỗi nhóm có câu đúng: hủy lượt (khách, ngày, lý do, tiền), sửa hồ sơ khách (tên + SĐT cũ → mới), chấm công (nhân viên, trạng thái, không có chữ ghi chú), sửa giá dịch vụ (cũ → mới), cài đặt lịch hẹn, thao tác của đội vận hành (không tên).
+- AC11.4: lọc người / `platform` / `system`, nhóm, khoảng ngày đúng; `actor` sai, khoảng > 366 ngày, `from > to`, cursor hỏng, `limit` > 100 → `422`; `kind` lạ → `400`.
+- AC11.5: phân trang 3 dòng đi hết danh sách một lần, không lặp, kể cả 7 dòng cùng một thời điểm.
+- AC11.6: action mới chưa có nhóm → không compile; chưa có câu ở web → typecheck đỏ; key cũ → nhóm "Khác", câu chung.
+- AC11.7: sau `seed-demo`, mọi tháng của khoảng seed có dòng audit, ngày chạy seed chỉ chiếm phần nhỏ, không dòng nào sau giờ chạy, lượt lịch sử được audit đúng ngày của lượt.
+- AC11.8: màn chạy ở 390 px không cuộn ngang, sáng và tối, axe không lỗi serious / critical.
+- Test: `app/tests/activity_log.rs` (6), `authz_matrix.rs` (1 dòng), `customers.rs::customer_audit_keeps_who_what_field_and_old_new_name_and_phone_only`, `demo_seed.rs` (AC11.7), unit test `reporting::activity`, `kernel::audit`, `platform::roles`; Vitest `features/activity/Activity.test.tsx`; e2e `e2e/specs/activity.spec.ts`.

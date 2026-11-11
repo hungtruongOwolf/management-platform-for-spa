@@ -17,7 +17,7 @@ use super::dto::{
 use super::repo::{self, AppointmentInsert, AppointmentRow, Reschedule};
 use crate::dto::VisitCreate;
 use chrono::{DateTime, Duration, NaiveDate, Utc};
-use kernel::audit::{self, AuditEntry};
+use kernel::audit::{self, Action, AuditEntry};
 use kernel::crypto::FieldCipher;
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Permission, PhoneE164, TenantProfile, TenantTx};
@@ -421,7 +421,7 @@ async fn load_one(tx: &mut TenantTx, id: Uuid) -> Result<AppointmentDto, AppErro
 async fn record_audit(
     tx: &mut TenantTx,
     actor: &Actor,
-    action: &'static str,
+    action: Action,
     id: Uuid,
     before: Option<Value>,
     after: Value,
@@ -633,7 +633,7 @@ pub async fn update_settings(
         &mut tx,
         actor,
         AuditEntry {
-            action: "appointment.settings",
+            action: Action::AppointmentSettings,
             entity_type: "tenant",
             entity_id: actor.tenant_id.as_uuid(),
             before: Some(json!({"max_per_slot": before})),
@@ -825,7 +825,7 @@ async fn insert_booking(
     record_audit(
         tx,
         actor,
-        "appointment.create",
+        Action::AppointmentCreate,
         id,
         None,
         json!({
@@ -879,7 +879,7 @@ pub async fn book_as_of(
     let note = clean_note(input.note.as_ref())?;
     let companions = companions(&input.companions)?;
 
-    let mut tx = TenantTx::for_actor(pool, actor).await?;
+    let mut tx = TenantTx::for_actor_at(pool, actor, now).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -1175,7 +1175,7 @@ pub async fn update(
     record_audit(
         &mut tx,
         actor,
-        "appointment.update",
+        Action::AppointmentUpdate,
         id,
         Some(json!({
             "version": version, "starts_at": current.starts_at, "ends_at": current.ends_at,
@@ -1233,7 +1233,7 @@ pub async fn arrive(
     record_audit(
         &mut tx,
         actor,
-        "appointment.arrive",
+        Action::AppointmentArrive,
         id,
         Some(json!({"status": "booked", "staff_id": current.staff_id})),
         json!({"status": "arrived", "staff_id": input.staff_id}),
@@ -1276,7 +1276,7 @@ pub async fn undo_arrival(
     record_audit(
         &mut tx,
         actor,
-        "appointment.undo_arrival",
+        Action::AppointmentUndoArrival,
         id,
         Some(
             json!({"status": "arrived", "arrived_at": current.arrived_at,
@@ -1429,7 +1429,7 @@ pub async fn move_group(
         record_audit(
             &mut tx,
             actor,
-            "appointment.update",
+            Action::AppointmentUpdate,
             *member,
             Some(json!({
                 "version": row.version, "starts_at": row.starts_at, "ends_at": row.ends_at,
@@ -1484,7 +1484,7 @@ pub async fn close_as_of(
 ) -> Result<AppointmentDto, AppError> {
     actor.require(Permission::AppointmentManage)?;
     let reason = kernel::corrections::reason(reason)?;
-    let mut tx = TenantTx::for_actor(pool, actor).await?;
+    let mut tx = TenantTx::for_actor_at(pool, actor, now).await?;
     let spa = spa_at(&mut tx, now).await?;
     let current = lock_open(&mut tx, actor, &spa, id).await?;
     if outcome == Outcome::NoShow {
@@ -1518,8 +1518,8 @@ pub async fn close_as_of(
         &mut tx,
         actor,
         match outcome {
-            Outcome::NoShow => "appointment.no_show",
-            Outcome::Cancelled => "appointment.cancel",
+            Outcome::NoShow => Action::AppointmentNoShow,
+            Outcome::Cancelled => Action::AppointmentCancel,
         },
         id,
         Some(json!({"status": current.status})),
@@ -1585,7 +1585,7 @@ pub async fn complete_as_of(
         companions: input.companions,
     };
 
-    let mut tx = TenantTx::for_actor(pool, actor).await?;
+    let mut tx = TenantTx::for_actor_at(pool, actor, now).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -1632,7 +1632,7 @@ pub async fn complete_as_of(
     record_audit(
         &mut tx,
         actor,
-        "appointment.complete",
+        Action::AppointmentComplete,
         id,
         Some(json!({"status": current.status})),
         json!({"status": "done", "visit_id": visit_id}),

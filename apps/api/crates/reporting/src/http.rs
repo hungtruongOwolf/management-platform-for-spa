@@ -1,13 +1,14 @@
 //! Management view endpoints (spec management-views). All `GET`, all `Cache-Control: no-store`
 //! (they carry customer and money data), all tenant-scoped by the session.
 
+use crate::activity_dto::{ActivityPage, ActivityQuery};
 use crate::dto::{
     CustomerStats, DailyQuery, DailyReport, HistoryPage, HistoryQuery, InactivePage, InactiveQuery,
     LedgerPage, LedgerQuery, PackageOverviewPage, PackageUsage, PackagesQuery, RangeQuery,
     RangeReport,
 };
 use crate::notes_dto::{NotesPage, NotesQuery};
-use crate::{customer, day, notes, overview};
+use crate::{activity, customer, day, notes, overview};
 use axum::extract::rejection::QueryRejection;
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::{HeaderValue, header};
@@ -39,6 +40,7 @@ where
         .route("/customer-packages/{id}/usage", get(package_usage))
         .route("/packages", get(list_packages))
         .route("/notes", get(list_notes))
+        .route("/audit-log", get(list_activity))
 }
 
 fn no_store(body: impl Serialize) -> Response {
@@ -141,6 +143,22 @@ pub async fn list_notes(
     Ok(Json(
         notes::list(&pool, &cipher, &user.actor, &query).await?,
     ))
+}
+
+#[utoipa::path(get, path = "/api/v1/audit-log", tag = "reports", params(ActivityQuery),
+    responses(
+        (status = 200, body = ActivityPage, description = "The spa's audit trail, newest first: structured entries (who, what, about whom, changed values, money, reason); never a note's text"),
+        (status = 401), (status = 403, description = "auth.forbidden: no audit.read (owner only)"),
+        (status = 422, description = "validation_failed: actor invalid, from after_to, to range_too_long (> 366 days), cursor invalid, limit out_of_range")))]
+pub async fn list_activity(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    query: Result<Query<ActivityQuery>, QueryRejection>,
+) -> Result<Response, AppError> {
+    // The right first, then the query (F17).
+    user.actor.require(Permission::AuditRead)?;
+    let Query(query) = query.map_err(invalid_query)?;
+    Ok(no_store(activity::list(&pool, &user.actor, &query).await?))
 }
 
 #[utoipa::path(get, path = "/api/v1/customers/{id}/history", tag = "reports",

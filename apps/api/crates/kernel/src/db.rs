@@ -6,6 +6,7 @@ use crate::error::AppError;
 use crate::ids::TenantId;
 use crate::permission::Actor;
 use crate::tenant::TenantFacts;
+use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, PgConnection, PgPool, Postgres, Transaction};
 
 /// A use case never waits on anything outside the database while its transaction is open; a
@@ -34,6 +35,8 @@ pub struct TenantTx {
     tenant: TenantId,
     /// The spa's settings when the request already read them with its permissions (db review A4).
     facts: Option<TenantFacts>,
+    /// The instant audit entries written in this transaction carry; `None` = the database clock.
+    clock: Option<DateTime<Utc>>,
 }
 
 impl TenantTx {
@@ -43,6 +46,7 @@ impl TenantTx {
             tx,
             tenant,
             facts: None,
+            clock: None,
         })
     }
 
@@ -51,7 +55,26 @@ impl TenantTx {
     pub async fn for_actor(pool: &PgPool, actor: &Actor) -> Result<Self, AppError> {
         let mut tx = Self::begin(pool, actor.tenant_id).await?;
         tx.facts = actor.tenant_facts().copied();
+        tx.clock = actor.clock();
         Ok(tx)
+    }
+
+    /// The transaction of a use case that runs on the clock `now` (the `*_as_of` forms, ADR-0021):
+    /// its audit entries are stamped `now`, so history back-filled by `app seed-demo` reads as
+    /// written on its own day. HTTP handlers pass the server clock.
+    pub async fn for_actor_at(
+        pool: &PgPool,
+        actor: &Actor,
+        now: DateTime<Utc>,
+    ) -> Result<Self, AppError> {
+        let mut tx = Self::for_actor(pool, actor).await?;
+        tx.clock = Some(now);
+        Ok(tx)
+    }
+
+    /// The instant this transaction's audit entries carry (`None`: the database clock).
+    pub const fn clock(&self) -> Option<DateTime<Utc>> {
+        self.clock
     }
 
     /// The spa settings carried in from the actor, if any.

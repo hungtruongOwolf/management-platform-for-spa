@@ -8,7 +8,7 @@ use crate::auth::OperatorSession;
 use crate::gate_refusal;
 use crate::tenants::Reason;
 use identity::roles::{NOT_GRANTABLE, SystemRole};
-use kernel::audit::{AuditEntry, record_platform};
+use kernel::audit::{Action, AuditEntry, record_platform};
 use kernel::{AppError, FieldError, Permission, TenantId, TenantTx};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -28,8 +28,9 @@ pub const OWNER_FLOOR: &[Permission] = &[
 ];
 
 /// Only the owner role may hold these: decision C, ADR-0015/0016 (`account.owner_protected`) and
-/// ADR-0014 (an owner is never downgraded) all recognise the owner by `staff.manage`.
-pub const OWNER_ONLY: &[Permission] = &[Permission::StaffManage];
+/// ADR-0014 (an owner is never downgraded) all recognise the owner by `staff.manage`; the audit
+/// trail ("Nhật ký thao tác", ADR-0021) names who did what to which customer, old phone included.
+pub const OWNER_ONLY: &[Permission] = &[Permission::StaffManage, Permission::AuditRead];
 
 /// One permission of the catalogue.
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -278,9 +279,9 @@ pub async fn set_for_tenant(
     };
     let (role_id, before, after) = (changed.role_id, changed.before, changed.after);
     let (spa_action, platform_action) = if edit.is_some() {
-        ("role.permissions_changed", "platform.role.set")
+        (Action::RolePermissionsChanged, "platform.role.set")
     } else {
-        ("role.permissions_reset", "platform.role.reset")
+        (Action::RolePermissionsReset, "platform.role.reset")
     };
     record_platform(
         &mut tx,
@@ -352,15 +353,23 @@ mod tests {
     }
 
     #[test]
-    fn staff_management_stays_with_the_owner() {
-        let mut manager = SystemRole::Manager.default_permissions();
-        manager.push(Permission::StaffManage);
-        assert!(matches!(
-            check_grants(SystemRole::Manager, &keys(&manager)),
-            Err(AppError::Unprocessable {
-                code: "role.owner_only_permission"
-            })
-        ));
+    fn staff_management_and_the_audit_trail_stay_with_the_owner() {
+        // ADR-0021: the trail names customers and keeps their old phone; only the owner reads it.
+        for owner_only in [Permission::StaffManage, Permission::AuditRead] {
+            for role in [SystemRole::Manager, SystemRole::Technician] {
+                let mut grants = role.default_permissions();
+                grants.push(owner_only);
+                assert!(
+                    matches!(
+                        check_grants(role, &keys(&grants)),
+                        Err(AppError::Unprocessable {
+                            code: "role.owner_only_permission"
+                        })
+                    ),
+                    "{role:?} {owner_only:?}"
+                );
+            }
+        }
     }
 
     #[test]
