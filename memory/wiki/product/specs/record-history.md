@@ -8,16 +8,16 @@ related: [management-views.md, front-desk-and-packages.md, appointments.md, staf
 
 # Spec: Lịch sử trên từng bản ghi + tạm ẩn "Nhật ký thao tác"
 
-**Status: approved** (EM 2026-11-11 giao lead tự phân tích, tự review, không hỏi lại; [raw](../../../raw/2026-11-11-em-decision-inline-record-history.md)). Chưa build. Thiết kế backend: [architecture/record-history](../../architecture/record-history.md). Thiết kế UI: [design/record-history](../../design/record-history.md). Kế hoạch: [plans/record-history](../../plans/record-history.md). Quyết định: [ADR-0022](../../decisions/ADR-0022-inline-record-history.md).
+**Status: approved** (EM 2026-11-11 giao lead tự phân tích, tự review, không hỏi lại; [raw](../../../raw/2026-11-11-em-decision-inline-record-history.md)). Chưa build. **Bản sửa sau review độc lập (lượt 3)**, xem Review log cuối trang. Thiết kế backend: [architecture/record-history](../../architecture/record-history.md). Thiết kế UI: [design/record-history](../../design/record-history.md). Kế hoạch: [plans/record-history](../../plans/record-history.md). Quyết định: [ADR-0022](../../decisions/ADR-0022-inline-record-history.md).
 
-**Vì sao là trang spec riêng, không phải một mục của management-views:** tính năng cắt ngang 4 spec (Quầy + gói, lịch hẹn, nhân sự, danh mục) và màn console nền tảng; management-views §11 chỉ nói về màn "Nhật ký thao tác" độc lập. §11 được thêm một dòng trỏ về đây (màn đó nay ẩn mặc định).
+**Vì sao là trang spec riêng, không phải một mục của management-views:** tính năng cắt ngang 4 spec (Quầy + gói, lịch hẹn, nhân sự, danh mục) và màn console nền tảng; management-views §11 chỉ nói về màn "Nhật ký thao tác" độc lập. §11 có một dòng trỏ về đây (màn đó nay ẩn mặc định).
 
 ## 1. Goal
 Chủ spa muốn **truy được ai ghi, ai sửa, ai hủy** một bản ghi ngay tại chỗ đang xem (lượt, hóa đơn, gói, lịch hẹn, hồ sơ khách, ô chấm công…), không phải mở một màn nhật ký riêng rồi tìm. EM 2026-11-11 đảo quyết định sáng cùng ngày ("không cần show") và chọn:
 1. Mỗi bản ghi có một **dòng nhỏ, màu nhạt**: "Ghi bởi Hà · 15:10 · đã sửa 1 lần". Bấm vào thì mở **lịch sử của chính bản ghi đó** (ai, lúc nào, đổi gì, lý do). **Mặc định đóng.**
 2. **Mặc định hiện cho chủ spa.** Có **công tắc**, đặt ở **console admin nền tảng** (EM: "công tắc bật tắt là admin control nhé chơ không phải ở account của spa và quản lý đâu"). Operator bật/tắt riêng cho chủ spa và cho quản lý. KTV không bao giờ thấy.
 3. **Danh sách** chỉ hiện dấu nhỏ "Đã sửa" / "Đã hủy"; **tên người và lịch sử đầy đủ** chỉ ở chỗ mở chi tiết.
-4. Màn "Nhật ký thao tác" (`/nhat-ky-thao-tac`) **giữ trong code nhưng tạm ẩn**, tắt từ admin (cờ tính năng theo spa, **mặc định tắt**).
+4. Màn "Nhật ký thao tác" (`/nhat-ky-thao-tac`) **giữ trong code nhưng tạm ẩn ngay từ đợt 1** (EM: "tạm thời ẩn … off show cái nhật kí thao tác đi"), tắt từ admin (cờ tính năng theo spa, **mặc định tắt**).
 
 Phục vụ thước đo R1 #1 (bỏ sổ giấy): sổ giấy có chữ người ghi; app phải trả lời được "ai ghi dòng này" ngay trên dòng đó.
 
@@ -31,17 +31,18 @@ Phục vụ thước đo R1 #1 (bỏ sổ giấy): sổ giấy có chữ ngườ
 ### 2.1 Quyết định (lead, theo ủy quyền của EM; chi tiết + lý do ở [ADR-0022](../../decisions/ADR-0022-inline-record-history.md))
 | # | Quyết định | Lý do ngắn |
 |---|---|---|
-| D1 | Công tắc = permission mới **`record.history.read`** ("Xem ai ghi, ai sửa trên từng bản ghi"). Chủ spa có trong mẫu vai trò (mặc định bật), quản lý không (mặc định tắt). | "Permission là dữ liệu" ([principles](../../architecture/principles.md)); operator đã có sẵn công cụ sửa vai trò theo spa có step-up + audit hai phía (ADR-0018 D5); server kiểm bằng `Actor::require` như mọi quyền khác (deny by default). |
-| D2 | Operator bật/tắt bằng **panel riêng** "Lịch sử trên từng bản ghi" ở trang spa `/admin/spa/<id>` (hai công tắc: Chủ spa, Quản lý), gọi endpoint riêng chỉ đổi đúng một permission (hàm DB khóa dòng role). Cũng có trong trình sửa vai trò / mẫu vai trò như mọi permission. | Operator không phải dò 40 ô; đổi một quyền nguyên tử, không đè quyền khác. |
-| D3 | `record.history.read` **không** nằm trong owner floor (tắt được cho chủ spa) và **không bao giờ** cấp được cho KTV (`422 role.not_for_technician`, cả mẫu lẫn spa). | EM: "bật tắt được", "default là hiện cho chủ spa"; KTV không thuộc diện. |
-| D4 | Không có công tắc nào trong app của spa (Cài đặt, tài khoản chủ spa / quản lý). Route `/admin/*` chỉ nhận cookie operator: session spa gọi → `401`. | EM làm rõ: chỉ admin control. |
-| D5 | Màn "Nhật ký thao tác" ẩn bằng **cờ tính năng mới `activity_log`**, **mặc định tắt** (cờ đầu tiên mặc định tắt; registry có thêm `default_enabled`). Cờ chỉ sở hữu **route** `/api/v1/audit-log`, **không** sở hữu `audit.read`. | Giữ test `administration_is_never_a_switchable_feature`: `audit.read` vẫn là quyền quản trị không tắt được (owner floor), chỉ màn bị ẩn. Route tắt → `403 feature.disabled` như 6 cờ cũ. |
-| D6 | Lịch sử đọc từ `app.audit_log` (không bảng mới), **gộp một thao tác một dòng** đúng luật D9 của ADR-0021 (`reporting::activity::fold_rule`), cùng allowlist trường. | Một nguồn sự thật cho màn nhật ký và lịch sử bản ghi; không lộ `before/after` thô. |
-| D7 | Dữ liệu trong lịch sử giữ **quyền đọc của màn gốc**: tiền chỉ khi có `sale.read`; dòng ghi chú buổi / ghi chú gói / lưu ý sức khỏe (chỉ "đã đổi", không bao giờ nội dung) chỉ khi có `customer.health_notes.read`; lương chỉ khi có `payroll.read`. | Entitled data only (non-negotiable #4), giống Nhật ký ghi chú. |
-| D8 | SĐT cũ → mới của khách: chủ spa (`audit.read`) thấy đủ; người khác (quản lý được bật) thấy **che giữa** mọi số khác SĐT hiện tại ("0905 ••• 222"). Tên cũ → mới hiện đủ cho ai mở được hồ sơ. | Số cũ có thể đã thuộc người khác (nhà mạng cấp lại); quản lý không cần số cũ để làm việc. ADR-0021 chỉ cho chủ spa xem SĐT cũ. |
-| D9 | Danh sách chỉ có cờ `edited` (đã sửa) cho người có quyền; "Đã hủy" dùng trạng thái sẵn có (không đổi, mọi người có quyền đọc danh sách vẫn thấy). Tên người chỉ ở chi tiết. | EM câu 3. |
-| D10 | Dòng "ai ghi" + lịch sử tải bằng **một endpoint chung** `GET /record-history/...` khi mở chi tiết; DTO hiện có chỉ thêm `edited`. | Một chỗ kiểm quyền (dễ review, ít rủi ro rò); không đổi hình dạng mọi DTO chi tiết; danh sách không tốn thêm tên. |
-| D11 | Chỗ đã hiện "ai làm" từ trước giữ nguyên, không làm thêm: lịch sử hồ sơ nhân viên (`GET /staff/{id}/history`), "Người ghi" thưởng/phạt, "Chấm bởi" đánh giá tháng, "Chốt bởi" bảng lương, người gọi lại khách. | Tránh hai cách hiện cho cùng một việc. |
+| D1 | Công tắc = permission mới **`record.history.read`** ("Xem ai ghi, ai sửa trên từng bản ghi"), loại **riêng từng spa (spa-local)**: mẫu vai trò chỉ quyết giá trị **ban đầu của spa mới** (chủ spa có, quản lý không); áp mẫu cho các spa đang theo mẫu, so sánh "theo mẫu", và "Về mẫu" đều **bỏ qua** nó (giữ giá trị hiện tại của spa). | "Permission là dữ liệu", kiểm bằng `Actor::require` (deny by default). Spa-local để bật / tắt công tắc **không** làm vai trò "lệch mẫu" và sửa mẫu sau này không âm thầm đổi công tắc của spa (LEAD, review lượt 3). |
+| D2 | Operator đổi bằng **panel riêng** "Lịch sử trên từng bản ghi" ở `/admin/spa/<id>` (hai hàng: Chủ spa, Quản lý), gọi endpoint riêng; hàm DB cứng permission = `record.history.read` và vai trò ∈ {owner, manager}, khóa dòng role, không đụng `follows_template`. Trình sửa vai trò hiện quyền này **chỉ đọc** ("đổi ở panel Lịch sử trên từng bản ghi"). | Một đường ghi duy nhất, nguyên tử; không thể dùng hàm này cấp quyền khác. |
+| D3 | `record.history.read` **không** trong owner floor (tắt được cho chủ spa), **không bao giờ** cho KTV (`422 role.not_for_technician`, mẫu lẫn spa; hàm DB cũng từ chối). | EM: "bật tắt được", "default là hiện cho chủ spa"; KTV không thuộc diện. |
+| D4 | Không có công tắc nào trong app của spa. Route `/admin/*` chỉ nhận cookie operator: session spa → `401`. | EM làm rõ: chỉ admin control. |
+| D5 | Màn "Nhật ký thao tác" ẩn bằng **cờ tính năng mới `activity_log`**, **mặc định tắt từ đợt 1**. Cờ chỉ sở hữu **route** `/api/v1/audit-log`, **không** sở hữu `audit.read`. Khoảng trống: đợt 1 gồm cả gói (kể cả hủy / hoàn tiền) và hồ sơ khách; phần còn lại (lịch hẹn, chấm công, thưởng/phạt, danh mục, quy tắc lương, việc của đội vận hành) là **cửa sổ hồi quy** ghi ở [plan](../../plans/record-history.md); dữ liệu vẫn ở `audit_log`, operator bật cờ cho spa khi cần. Sửa ADR-0018 D6 / ADR-0003: khi cờ tắt, chủ spa **không** xem được việc của đội vận hành trên UI; không làm màn riêng cho việc đó. | EM nói rõ "tạm thời ẩn". Giữ test `administration_is_never_a_switchable_feature`. |
+| D6 | Lịch sử đọc từ `app.audit_log` (không bảng mới). **Thành viên của lịch sử = theo id dòng audit** đã chọn cho bản ghi (không theo "cùng thực thể" hay "cùng thời điểm"). Chỉ lượt / hóa đơn / gói mới gộp một thao tác một dòng (ADR-0021 D9); các loại khác mỗi dòng audit một dòng. | Review B2: cùng thực thể / cùng thời điểm kéo nhầm vòng đời gói vào lượt và ngày công khác vào ô đang xem. |
+| D7 | Dữ liệu giữ **quyền đọc của màn gốc**: (a) kiểm quyền của **loại neo sau khi đổi neo** (hóa đơn → lượt cần `visit.read`; hoàn tiền → gói cần `customer.read`), `403` trước khi đọc; (b) tiền chỉ khi có `sale.read`; (c) ghi chú buổi / ghi chú gói / lưu ý sức khỏe chỉ "đã đổi", và chỉ khi có `customer.health_notes.read` (dòng chỉ đổi ghi chú bị bỏ hẳn với người không có); (d) lương chỉ khi có `payroll.read`. | Entitled data only (non-negotiable #4). Tiền lệ: `GET /customers/{id}/history` cần `customer.read + visit.read + sale.read`. |
+| D8 | SĐT cũ → mới của khách: chủ spa (`audit.read`) thấy đủ; người khác **không nhận giá trị nào** ("SĐT (đã đổi)"). Tên cũ → mới hiện đủ cho ai mở được hồ sơ. | Số cũ có thể đã thuộc người khác; che giữa vẫn lộ một phần (LEAD, review S8). |
+| D9 | **"Đã sửa" chỉ khi điều đã ghi bị đổi** (giờ, KTV, dịch vụ / giá / khách qua Sửa lượt hoặc chuyển sang gói; lịch hẹn đổi giờ / KTV). Thêm vào lượt (upsell), gia hạn gói, dùng gói hết hạn, ghi chú… là **vòng đời**: chỉ ở lịch sử, không tính "đã sửa". Danh sách có dấu: lượt (Quầy, Lịch sử khách, hàng dịch vụ lẻ của Sổ doanh thu) và lịch hẹn (chỉ dạng danh sách). Một chip duy nhất, ưu tiên **Đã hủy > Đã thay > Đã sửa**; chip "Đã sửa" cũ của **bản lượt bị thay** đổi thành **"Đã thay"** cho mọi vai trò. | EM câu 3; review UX B1 + S11: "Đã sửa" đang mang nghĩa "bản cũ bị thay". |
+| D10 | Dòng "ai ghi" + lịch sử tải bằng **một endpoint chung** `GET /record-history/...` khi mở chi tiết; DTO danh sách chỉ thêm `edited`. Cùng một định nghĩa "tính là sửa" cho `edited` và "đã sửa N lần". | Một chỗ kiểm quyền; danh sách không mang tên. |
+| D11 | Chỗ đã hiện "ai làm" từ trước giữ nguyên: lịch sử hồ sơ nhân viên (`GET /staff/{id}/history`), "Chấm bởi" đánh giá tháng, "Chốt bởi" bảng lương, người gọi lại khách. **Thưởng/phạt** chỉ có cột "Người ghi" (người ghi bản hiện tại), không thấy sửa / xóa → **có** lịch sử (đợt 2). | Review UX S12. |
+| D12 | "Ghi bởi / Tạo bởi" chỉ lấy từ **thao tác tạo** (lượt: `visit.create` gốc của chuỗi; gói: `customer_package.create` hoặc `opening_balance.import` có id gói; khách: `customer.create` hoặc `opening_balance.import` có `customer_created`); không có thì lấy cột `created_by` / `created_at` / `origin`, không bao giờ lấy "dòng đầu tiên bất kỳ". | Review S3: gói sổ giấy được gia hạn bị hiện người gia hạn là người ghi. |
 
 ## 3. User stories
 - **US-H1** Là chủ spa, tôi muốn thấy ngay trên một lượt / hóa đơn / gói / lịch hẹn ai ghi, lúc nào, đã sửa mấy lần, để biết hỏi ai khi số liệu lạ.
@@ -52,156 +53,165 @@ Phục vụ thước đo R1 #1 (bỏ sổ giấy): sổ giấy có chữ ngườ
 - **US-H6** Là quản lý được bật lịch sử, tôi muốn thấy cùng dòng "ai ghi" như chủ spa nhưng không thấy số điện thoại cũ của khách, để làm việc mà không lộ dữ liệu không cần.
 
 ## 4. Phạm vi: mọi action audit (64 key của `kernel::audit::Action`) → có lịch sử tại chỗ không
-"Bản ghi" = thứ người dùng mở ra xem. Một dòng lịch sử = một **thao tác** (gộp theo D9 ADR-0021), nên một action có thể chỉ xuất hiện như phần gộp của dòng khác. Cột "Đợt" = wave ở [plan](../../plans/record-history.md).
+"Bản ghi" = thứ người dùng mở ra xem. Cột "Sửa?" = dòng đó có tính vào "Đã sửa" / "đã sửa N lần" không (D9). Cột "Đợt" = wave ở [plan](../../plans/record-history.md) (1 = 1a + 1b).
 
 ### 4.1 Có lịch sử tại chỗ
-| Action | Bản ghi (neo) | Màn hiện dòng "ai ghi" + lịch sử | Dấu ở danh sách | Đợt |
+| Action | Thuộc lịch sử của | Màn | Sửa? | Đợt |
 |---|---|---|---|---|
-| `visit.create` | lượt | Quầy (hàng lượt mở rộng `VisitDetails`), Lịch sử khách (thẻ lượt), Sổ doanh thu (sheet hóa đơn của lượt) | — (dòng đầu) | 1 |
-| `visit.addition` | lượt | như trên | Đã sửa | 1 |
-| `visit.update` (giờ, KTV, người đi cùng, ghi chú buổi: chỉ "đã đổi") | lượt | như trên | Đã sửa | 1 |
-| `visit.correct` (Sửa lượt) | chuỗi lượt (cũ → mới) | như trên, **một câu chuyện cho cả chuỗi** (§6.1) | Đã sửa (cả bản cũ lẫn bản mới) | 1 |
-| `visit.convert_to_package` | chuỗi lượt | như trên | Đã sửa | 1 |
-| `visit.void` | lượt | như trên | Đã hủy (trạng thái sẵn có) | 1 |
-| `sale.create` | hóa đơn | gộp vào dòng lượt khi thuộc lượt; hóa đơn bán gói riêng: Sổ doanh thu, "Bán gói hôm nay" (`DaySales`), gói của khách | — | 1 (gói: 2) |
-| `sale.void` | hóa đơn | như trên | Đã hủy (sẵn có) | 1 |
-| `sale.note_update` (ghi chú gói: chỉ "đã đổi") | hóa đơn bán gói | Sổ doanh thu, gói của khách; chỉ khi có `customer.health_notes.read` | Đã sửa | 1 (gói: 2) |
-| `customer_package.create` | gói | gói của khách (thẻ gói trong hồ sơ khách), sheet dòng "Hoàn tiền" ở Sổ doanh thu | — | 2 |
-| `customer_package.extend` | gói | như trên | Đã sửa | 2 |
-| `customer_package.cancel` | gói | như trên | Đã hủy (sẵn có) | 2 |
-| `customer_package.use_expired_override` | gói | như trên (dòng riêng, có lý do) | Đã sửa | 2 |
-| `opening_balance.import`, `sale.paper_book` | khách / hóa đơn sổ giấy | gói của khách: dòng đầu "Nhập từ sổ giấy" | — | 2 |
-| `customer.create` | khách | hồ sơ khách (dưới tên) | — | 2 |
-| `customer.update` (tên + SĐT cũ → mới, trường khác chỉ "đã đổi") | khách | hồ sơ khách | — (không có danh sách khách mang dấu) | 2 |
-| `customer.health_note_set` (chỉ "đã đổi") | khách | hồ sơ khách, chỉ khi có `customer.health_notes.read` | — | 2 |
-| `appointment.create`, `.update`, `.arrive`, `.undo_arrival`, `.complete`, `.no_show`, `.cancel` | lịch hẹn | sheet lịch hẹn (`AppointmentSheet`) | Đã sửa (`update`, `undo_arrival`) ở dạng danh sách; Đã hủy / Không đến sẵn có | 3 |
-| `attendance.record` | ô chấm công (nhân viên × ngày) | `PersonDaySheet` phần chấm công (không bao giờ nội dung ghi chú) | — (ô lưới quá nhỏ, §4.3) | 3 |
-| `evaluation.daily_review` | ô khen / phàn nàn (nhân viên × ngày) | `PersonDaySheet` phần khen / phàn nàn | — | 3 |
-| `catalog.service_create`, `.service_update` | dịch vụ (giá Nữ / Nam cũ → mới) | form sửa dịch vụ ở Bảng giá | — (§4.3) | 4 |
-| `catalog.plan_create`, `.plan_update` | mẫu gói | form sửa mẫu gói | — | 4 |
-| `catalog.category_create`, `.category_update` | nhóm dịch vụ | form sửa nhóm | — | 4 |
-| `payroll.rules_update` | quy tắc lương của spa | `RulesSheet` "Quy tắc lương của spa" | — | 4 |
-| `appointment.settings` | cài đặt lịch hẹn | sheet số khách tối đa | — | 4 |
+| `visit.create` | lượt (gốc chuỗi) | Quầy (`VisitDetails`), Lịch sử khách (thẻ lượt), Sổ doanh thu (hàng dịch vụ lẻ) | — (tạo) | 1 |
+| `visit.addition` | lượt | như trên | không (upsell) | 1 |
+| `visit.update` | lượt | như trên | **có** khi đổi giờ hoặc KTV; không khi chỉ người đi cùng / ghi chú | 1 |
+| `visit.correct` (Sửa lượt) | chuỗi lượt | như trên, **một câu chuyện cho cả chuỗi** (§6.1) | **có** | 1 |
+| `visit.convert_to_package` | chuỗi lượt | như trên | **có** | 1 |
+| `visit.void` | lượt | như trên | — (trạng thái Đã hủy) | 1 |
+| `sale.create` | hóa đơn dịch vụ lẻ → gộp vào dòng lượt; hóa đơn bán gói → lịch sử **gói** | Sổ doanh thu, "Bán gói hôm nay", gói của khách | — | 1 |
+| `sale.void` | như `sale.create` | như trên | — (Đã hủy) | 1 |
+| `sale.note_update` (chỉ "đã đổi") | gói (hóa đơn bán gói) | gói của khách, Sổ doanh thu; chỉ khi có `customer.health_notes.read` | không | 1 |
+| `customer_package.create` | gói | gói của khách, sheet hàng hóa đơn gói / Hoàn tiền ở Sổ doanh thu; gộp vào dòng lượt khi bán trong giỏ (chỉ ở lịch sử lượt) | — (tạo) | 1 |
+| `customer_package.extend` | gói | như trên | không (vòng đời) | 1 |
+| `customer_package.cancel` | gói | như trên | — (Đã hủy) | 1 |
+| `customer_package.use_expired_override` | gói **và** lượt dùng nó (`after.visit_id`) | gói của khách; lịch sử lượt | không | 1 |
+| `opening_balance.import` | khách (nếu `customer_created`) + gói (nếu id gói trong `customer_package_ids`) | hồ sơ khách, gói của khách: "Nhập từ sổ giấy" | — (tạo) | 1 |
+| `sale.paper_book` | gói của hóa đơn sổ giấy | gói của khách | — | 1 |
+| `customer.create` | khách | hồ sơ khách | — (tạo) | 1 |
+| `customer.update` (tên cũ → mới; SĐT theo D8; trường khác "đã đổi") | khách | hồ sơ khách | **có** | 1 |
+| `customer.health_note_set` (chỉ "đã đổi") | khách | hồ sơ khách, chỉ khi có `customer.health_notes.read` | không | 1 |
+| `appointment.create` | lịch hẹn | `AppointmentSheet` | — (tạo) | 2 |
+| `appointment.update` | lịch hẹn | như trên | **có** khi đổi giờ hoặc KTV | 2 |
+| `appointment.arrive`, `.undo_arrival`, `.complete`, `.no_show`, `.cancel` | lịch hẹn | như trên | không (vòng đời; Đã hủy / Không đến là trạng thái sẵn có) | 2 |
+| `attendance.record` | ô chấm công (nhân viên × ngày, theo `date` của chính dòng) | `PersonDaySheet` phần chấm công (không nội dung ghi chú) | **có** (mọi lần sau lần đầu) | 2 |
+| `evaluation.daily_review` | ô khen / phàn nàn | `PersonDaySheet` phần khen / phàn nàn | **có** (sau lần đầu) | 2 |
+| `staff.adjustment`, `staff.adjustment_void` | khoản thưởng / phạt (chuỗi sửa: hủy bản cũ + ghi bản mới cùng lúc) | sổ thưởng/phạt (⋯ "Xem ai ghi, ai sửa") | **có** (sửa = thay bản) | 2 |
+| `catalog.service_create`, `.service_update` | dịch vụ | form sửa dịch vụ | **có** (`_update`) | 3 |
+| `catalog.plan_create`, `.plan_update` | mẫu gói | form sửa mẫu gói | **có** | 3 |
+| `catalog.category_create`, `.category_update` | nhóm dịch vụ | form sửa nhóm | **có** | 3 |
+| `payroll.rules_update` | quy tắc lương | `RulesSheet` | **có** (sau lần đầu) | 3 |
+| `appointment.settings` | cài đặt lịch hẹn | sheet số khách tối đa | **có** (sau lần đầu) | 3 |
 
 ### 4.2 Không có lịch sử tại chỗ (và vì sao)
 | Action | Vì sao không |
 |---|---|
 | `customer.follow_up` | Đã hiện "kênh · người gọi" trong Lịch sử khách và danh sách khách vắng (D11). |
 | `evaluation.record` | Đã có "Chấm bởi … · giờ" ở đánh giá tháng (D11). |
-| `staff.adjustment`, `staff.adjustment_void` | Đã có cột "Người ghi" ở sổ thưởng/phạt (D11). |
 | `staff.create`, `staff.update`, `staff.end`, `staff.rehire`, `staff.pay_update`, `staff.account_link` | Đã có "Lịch sử thay đổi" của hồ sơ nhân viên (`GET /staff/{id}/history`, chỉ chủ spa) (D11). |
 | `payroll.close` | Đã có "Chốt bởi" (D11). |
-| `staff.login_create`, `staff.login_password_reset`, `staff.login_role` | Việc bảo mật tài khoản chỉ chủ spa làm (`staff.manage` 🔒): người làm luôn là chủ spa, dòng "ai ghi" không thêm thông tin; không phải bản ghi nghiệp vụ. |
-| `account.password_change`, `account.password_reset_requested`, `account.password_reset_dismissed` | Sự kiện bảo mật cá nhân; yêu cầu quên mật khẩu đã có danh sách riêng cho chủ spa. Không có "bản ghi" để gắn dòng. |
-| `account.locked_by_platform`, `account.unlocked_by_platform`, `account.mfa_reset_by_platform`, `account.sessions_revoked_by_platform`, `account.password_reset_by_platform` | Việc của đội vận hành trên tài khoản; spa không có màn bản ghi tương ứng. Vẫn ở `audit_log` (truy vết) và ở Nhật ký thao tác khi operator bật lại. |
+| `staff.login_create`, `staff.login_password_reset`, `staff.login_role` | Việc bảo mật tài khoản chỉ chủ spa làm (`staff.manage` 🔒): người làm luôn là chủ spa; không phải bản ghi nghiệp vụ. |
+| `account.password_change`, `account.password_reset_requested`, `account.password_reset_dismissed` | Sự kiện bảo mật cá nhân; yêu cầu quên mật khẩu đã có danh sách riêng. Không có "bản ghi" để gắn dòng. |
+| `account.locked_by_platform`, `account.unlocked_by_platform`, `account.mfa_reset_by_platform`, `account.sessions_revoked_by_platform`, `account.password_reset_by_platform` | Việc của đội vận hành trên tài khoản; spa không có màn bản ghi tương ứng. Vẫn ở `audit_log`; hiện ở Nhật ký thao tác khi operator bật cờ (D5). |
 | `role.permissions_changed`, `role.permissions_reset`, `feature.changed`, `tenant.created`, `tenant.suspended`, `tenant.unsuspended`, `tenant.owner_mfa_changed` | Cấu hình nền tảng: spa không có màn vai trò / cờ; console có nhật ký nền tảng riêng. |
 
-Đếm: 4.1 có **35** key (9 Quầy + 6 gói + 8 lịch hẹn + 3 khách + 2 sổ nhân sự + 1 lương + 6 danh mục; `customer.follow_up` ở 4.2), 4.2 có **29** key (1 gọi lại + 1 đánh giá tháng + 2 thưởng/phạt + 6 hồ sơ NV + 1 chốt lương + 3 đăng nhập NV + 3 tài khoản + 5 việc operator trên tài khoản + 7 cấu hình nền tảng); tổng **64**. Test web giữ `HISTORY_VERB: Record<AuditAction, string | null>` (null = không hiện tại chỗ), nên action mới chưa được xếp → typecheck đỏ (giống ADR-0021 D3).
+Đếm: 4.1 có **37** key (9 Quầy + 6 gói + 8 lịch hẹn + 3 khách + 2 sổ nhân sự + 2 thưởng/phạt + 1 lương + 6 danh mục), 4.2 có **27** key (1 gọi lại + 1 đánh giá tháng + 6 hồ sơ NV + 1 chốt lương + 3 đăng nhập NV + 3 tài khoản + 5 việc operator trên tài khoản + 7 cấu hình nền tảng); tổng **64**. Web giữ `HISTORY: Record<AuditAction, ((e: ActivityEntry) => string) | null>` (null = không hiện tại chỗ), nên action mới chưa được xếp → typecheck đỏ (giống ADR-0021 D3).
 
 ### 4.3 Chỗ cố ý không đặt dấu / dòng
-- **Ô lưới tháng chấm công** (`MonthSheet`): ô 1 ký tự, thêm dấu là nhiễu; mở ô → `PersonDaySheet` có dòng "ai chấm".
-- **Danh sách Bảng giá / mẫu gói:** dịch vụ nào cũng từng được sửa, dấu "Đã sửa" vô nghĩa; dòng "Sửa lần cuối bởi …" ở form sửa.
-- **Danh sách khách** (`/khach-hang`): không dấu; dòng "Tạo bởi … · đã sửa N lần" ở hồ sơ.
+- **Ô lưới tháng chấm công** (`MonthSheet`): ô 1 ký tự, dấu là nhiễu; mở ô → `PersonDaySheet` có dòng "ai chấm".
+- **Danh sách Bảng giá / mẫu gói:** dịch vụ nào cũng từng được sửa, dấu vô nghĩa; dòng "Sửa lần cuối bởi …" ở form sửa.
+- **Danh sách khách** (`/khach-hang`) và **Tổng quan gói** (`/goi-lieu-trinh`): không dấu.
+- **Gói của khách, "Bán gói hôm nay", hàng gói / Hoàn tiền ở Sổ doanh thu:** không dấu "Đã sửa" (vòng đời gói không phải "sửa", D9); vẫn có lịch sử khi mở.
 - **Lịch dạng ngày / tuần** (khối giờ): không dấu; dạng danh sách (`kieu=ds`) có.
-- **Màn của KTV, màn `/me/*`, "Khách của tôi", Tổng quan hôm nay, báo cáo số liệu, Nhật ký ghi chú:** không.
+- **Màn của KTV, `/me/*`, "Khách của tôi", Tổng quan hôm nay, báo cáo số liệu, Nhật ký ghi chú:** không.
 
 ## 5. Acceptance criteria
-Chung cho mọi endpoint mới: chưa đăng nhập `401`; thiếu `record.history.read` → `403 auth.forbidden` **trước khi đọc dữ liệu** (F17); thiếu quyền đọc của màn gốc → `403`; id của spa khác hoặc không tồn tại → `404`; `Cache-Control: no-store`.
+Chung cho mọi endpoint mới: chưa đăng nhập `401`; thiếu `record.history.read` → `403 auth.forbidden` **trước khi đọc dữ liệu** (F17); thiếu quyền đọc của **loại neo cuối cùng** → `403`; id của spa khác hoặc không tồn tại → `404`; `Cache-Control: no-store`.
 
 **AC-H1 (chủ spa thấy dòng "ai ghi")**
 - Given chủ spa (mặc định có `record.history.read`) và một lượt Hà ghi lúc 15:10, When mở hàng lượt ở Quầy, Then thấy "Ghi bởi Hà · 15:10".
-- Given lượt đó Lan đổi KTV lúc 15:30, Then "Ghi bởi Hà · 15:10 · đã sửa 1 lần"; danh sách Quầy có dấu "Đã sửa" ở hàng đó.
-- Given lượt ghi bù (giờ làm 10/11, ghi lúc 15:10 ngày 12/11), Then "Ghi bởi Hà · 15:10 12/11".
-- Negative: KTV gọi `GET /record-history/visit/{id}` → `403`; response `GET /visits` của KTV/quản lý tắt **không có key** `edited`.
+- Given lượt đó Lan đổi KTV lúc 15:30, Then "Ghi bởi Hà · 15:10 · đã sửa 1 lần"; hàng ở Quầy có chip "Đã sửa".
+- Given Lan chỉ **thêm dịch vụ** vào lượt (upsell), Then lịch sử có dòng "Lan thêm vào lượt", meta **không** "đã sửa", không chip.
+- Given lượt ghi bù (giờ làm 10/11, ghi lúc 15:10 ngày 12/11), Then "Ghi bởi Hà · 15:10 12/11" và chữ sẵn có "Nhập bù · Ghi lúc …" không lặp lại khi dòng meta có mặt.
+- Negative: KTV gọi `GET /record-history/visit/{id}` → `403`; `GET /visits` của KTV / quản lý tắt **không có key** `edited`.
 
 **AC-H2 (mở lịch sử)**
-- When bấm dòng "Ghi bởi …", Then mở danh sách thay đổi cũ → mới; mỗi dòng: giờ, người làm, việc, tiền (nếu có `sale.read`), giá trị đổi, lý do. Mặc định đóng; bấm lần nữa thì đóng.
-- Given lượt có thu tiền, Then **một** dòng "Hà ghi lượt · Thu 300.000 ₫" (không có dòng "thu tiền" riêng, D9 ADR-0021); `audit_log` vẫn đủ hai dòng.
-- Given lượt bị hủy, Then dòng "Lan hủy lượt · Đảo 300.000 ₫ · lý do: khách đổi ý"; dòng meta "… · đã hủy".
-- Negative: không bao giờ có nội dung ghi chú buổi, lưu ý sức khỏe, ghi chú gói, ghi chú chấm công; quản lý không có `sale.read` (nếu operator rút) → không có key `amount` / `discount`.
+- When bấm dòng "Ghi bởi …", Then mở danh sách thay đổi cũ → mới; mỗi dòng: giờ, người làm, việc, tiền (nếu có `sale.read`), giá trị đổi, lý do. Mặc định đóng.
+- Given lượt có thu tiền, Then **một** dòng "Hà ghi lượt · Thu 300.000 ₫"; `audit_log` vẫn đủ hai dòng.
+- Given lượt bị hủy, Then dòng "Lan hủy lượt · Trả lại 300.000 ₫ · lý do: khách đổi ý"; meta "… · đã hủy".
+- Given lượt bán kèm gói X trong giỏ, sau đó gói X được gia hạn và bị hủy hoàn tiền, Then lịch sử **lượt** có "ghi lượt … kèm bán gói X" nhưng **không** có dòng gia hạn / hủy gói; lịch sử **gói X** có cả ba ("bán gói" / gia hạn / hủy · Hoàn …).
+- Given Lan chỉ sửa ghi chú buổi, When người không có `customer.health_notes.read` mở, Then không có dòng đó; When chủ spa mở, Then "Lan sửa lượt · Ghi chú buổi (đã đổi)" (không nội dung); không tính "đã sửa".
+- Negative: không bao giờ có nội dung ghi chú buổi, lưu ý sức khỏe, ghi chú gói, ghi chú chấm công; không `sale.read` → không key `amount` / `discount`.
 
 **AC-H3 (Sửa lượt đọc như một lượt)**
-- Given lượt A sửa thành B (Sửa lượt) rồi B sửa thành C, When mở lịch sử ở A, B hoặc C, Then cùng một danh sách: "ghi lượt" (A) → "sửa lượt (tính lại tiền) · Chênh lệch …" (A→B) → "sửa lượt …" (B→C), không có dòng "hủy lượt" / "ghi lượt" lẻ của từng bản; meta của C: "Ghi bởi <người ghi A> · <giờ A> · đã sửa 2 lần".
+- Given lượt A sửa thành B rồi B sửa thành C, When mở lịch sử ở A, B hoặc C, Then cùng một danh sách: "ghi lượt" (A) → "sửa lượt (tính lại tiền) · Chênh lệch …" (A→B) → "sửa lượt …" (B→C); meta của C: "Ghi bởi <người ghi A> · <giờ A> · đã sửa 2 lần"; chip của A, B "Đã thay", của C "Đã sửa".
 - "Chuyển sang gói" là một dòng "chuyển lượt sang gói X".
 
-**AC-H4 (operator bật / tắt)**
-- `PUT /admin/tenants/{id}/record-history/{role} {visible, reason}` (step-up, lý do 3–500): `owner` / `manager` → `200` (vai trò sau khi đổi); `technician` → `422 role.not_for_technician`; role lạ → `404`; giá trị đang có → `409 role.record_history_unchanged`; thiếu step-up → `403 platform.step_up_required`; spa không có → `404`.
-- Có hiệu lực ở request kế tiếp: bật cho quản lý → quản lý `GET /record-history/visit/{id}` `200`; tắt → `403`, `/me.permissions` không còn `record.history.read`, web ẩn mọi dòng "ai ghi" và dấu.
-- Audit nền tảng `platform.record_history.set` + audit spa `role.permissions_changed` (`actor_kind = platform_admin`, before/after, lý do).
-- Negative: session của chủ spa / quản lý gọi route này → `401`; `PUT /admin/role-templates/technician` hay `PUT /admin/tenants/{id}/roles/technician` có `record.history.read` → `422 role.not_for_technician`.
+**AC-H4 (quyền theo loại neo, B1)**
+- Given người có `record.history.read` + `sale.read` + `customer.read` nhưng **không** `visit.read`, When `GET /record-history/sale/{id}` của hóa đơn dịch vụ lẻ trong lượt, Then `403` (không trả lịch sử lượt). When hóa đơn bán gói, Then `200` lịch sử gói, dòng mua **không** gộp dòng `visit.create` (gốc là "bán gói").
+- `GET /record-history/refund/{id}` cần `sale.read` + `customer.read`; neo gói.
 
-**AC-H5 (màn Nhật ký thao tác ẩn)**
-- Given spa không có dòng `tenant_feature` cho `activity_log` (mọi spa hiện có và spa mới), When chủ spa gọi `GET /audit-log`, Then `403 feature.disabled`; `/me.features` không có `activity_log`; nav Báo cáo không có "Nhật ký thao tác"; vào thẳng `/nhat-ky-thao-tac` → về trang chủ như mọi route bị chặn.
-- When operator bật (`PUT /admin/tenants/{id}/features/activity_log {enabled: true, reason}`), Then chủ spa thấy lại màn ở request kế tiếp; quản lý vẫn `403` (không có `audit.read`).
-- `GET /admin/tenants/{id}/features` trả `activity_log` `enabled: false`, `default_enabled: false`; 6 cờ cũ vẫn `default_enabled: true` và hành vi không đổi.
-- `administration_is_never_a_switchable_feature` vẫn xanh: `owning(audit.read) == None`.
+**AC-H5 (operator bật / tắt)**
+- `PUT /admin/tenants/{id}/record-history/{role} {visible, reason}` (step-up, lý do 3–500): `owner` / `manager` → `200`; `technician` → `422 role.not_for_technician`; role lạ → `404`; giá trị đang có → `409 role.record_history_unchanged`; thiếu step-up → `403 platform.step_up_required`; spa không có → `404`.
+- `follows_template` của vai trò **không đổi**; sau đó operator sửa mẫu vai trò quản lý → spa theo mẫu nhận thay đổi khác nhưng **giữ** công tắc của mình; "Về mẫu" giữ công tắc.
+- Có hiệu lực ở request kế tiếp; audit nền tảng `platform.record_history.set` + audit spa `role.permissions_changed` (`platform_admin`, before/after, lý do).
+- Negative: session spa gọi route này → `401`; mẫu / vai trò KTV có `record.history.read` → `422`; `PUT /admin/tenants/{id}/roles/manager` gửi danh sách có / không có `record.history.read` → giá trị công tắc giữ nguyên (spa-local).
 
-**AC-H6 (PII)**
-- Given khách đổi SĐT 0905 111 222 → 0912 333 444, When chủ spa mở lịch sử hồ sơ, Then "SĐT: 0905 111 222 → 0912 333 444"; When quản lý được bật mở, Then "SĐT: 0905 ••• 222 → 0912 333 444" (số trùng SĐT hiện tại hiện đủ).
-- Given khách đã ẩn danh (khi `customer.anonymize` có), Then không tên, không SĐT cũ / mới (giữ quy tắc ADR-0021).
-- Negative: response không bao giờ có SĐT nhân viên, ngày sinh khách, `before` / `after` thô, id hay tên operator.
+**AC-H6 (màn Nhật ký thao tác ẩn)**
+- Given spa không có dòng `tenant_feature` cho `activity_log` (mọi spa hiện có và spa mới), When chủ spa gọi `GET /audit-log`, Then `403 feature.disabled`; `/me.features` không có `activity_log`; nav không có mục; vào thẳng `/nhat-ky-thao-tac` → về trang chủ.
+- When operator bật, Then chủ spa thấy lại màn ở request kế tiếp; quản lý vẫn `403`.
+- `GET /admin/tenants/{id}/features` trả `activity_log` `enabled: false`, `default_enabled: false`; 6 cờ cũ `default_enabled: true`, hành vi không đổi; `administration_is_never_a_switchable_feature` xanh.
 
-**AC-H7 (dấu danh sách)**
-- `edited` có mặt (true/false) chỉ khi người gọi có `record.history.read`; vắng mặt hoàn toàn khi không (không phải `false`).
-- Bản cũ của Sửa lượt giữ badge "Đã sửa" sẵn có; bản mới (đang có hiệu lực) có `edited: true`.
+**AC-H7 (PII)**
+- Given khách đổi SĐT 0905 111 222 → 0912 333 444, When chủ spa mở lịch sử hồ sơ, Then "SĐT: 0905 111 222 → 0912 333 444"; When quản lý được bật mở, Then "SĐT (đã đổi)" và response không có chuỗi số nào của hai SĐT trong `changes`.
+- Given khách đã ẩn danh, Then không tên, không giá trị cũ / mới (ADR-0021).
+- Negative: không SĐT nhân viên, ngày sinh khách, `before` / `after` thô, id / tên operator.
 
-**AC-H8 (UI)** 360 px không cuộn ngang; sáng + tối; axe không lỗi serious / critical; dòng meta là `<button>` có `aria-expanded`; tải / lỗi / trống có chữ (design page).
+**AC-H8 (dấu danh sách)**
+- `edited` có mặt chỉ khi người gọi có `record.history.read`, vắng mặt khi không; `GET /appointments` chỉ tính khi `marks=true` (web gửi ở dạng danh sách).
+- `edited` = true ⇔ "đã sửa N lần" có N ≥ 1 với cùng người gọi (test đối chiếu).
+- Chip: bản bị thay "Đã thay" (mọi vai trò), bản đang hiệu lực đã sửa "Đã sửa", đã hủy "Đã hủy"; một chip mỗi hàng.
+
+**AC-H9 (UI)** 360 px không cuộn ngang; sáng + tối; axe không lỗi serious / critical; nút mở là `<button>` có `aria-expanded`; bấm vào vùng lịch sử trong thẻ không gập thẻ; tải / lỗi / trống có chữ (design page).
 
 ## 6. Edge cases
-1. **Sửa lượt (chuỗi).** Lịch sử theo **chuỗi** `corrects_visit_id` (lên và xuống, tối đa 20 bản), mở từ bản nào cũng ra cùng câu chuyện. Dòng meta tính từ dòng đầu của chuỗi (người ghi bản gốc), số lần sửa = số dòng sau dòng đầu trừ dòng hủy. Bản cũ trong danh sách giữ chữ sẵn có "Đã sửa, thay bằng lượt mới."
-2. **Chuyển sang gói.** Gộp theo hạng 5 của `fold_rule`; tên gói trong dòng.
-3. **Lượt + hóa đơn + gói trong giỏ.** Gộp như D9; mở lịch sử từ dòng hóa đơn ở Sổ doanh thu mà hóa đơn thuộc lượt → server trả lịch sử **của lượt** (neo đổi thành lượt; `record.type = visit`).
-4. **Dòng "Hoàn tiền" ở Sổ doanh thu** → lịch sử của gói bị hủy (neo đổi thành gói).
-5. **Khách đã ẩn danh:** chủ thể không tên, không link; `customer.update` không giá trị cũ / mới (giống activity).
-6. **Người làm đã nghỉ:** "Hà (đã nghỉ)" (cùng luật `left` với bộ lọc người của Nhật ký thao tác: membership không còn hoạt động hoặc hồ sơ không còn đợt mở). Tài khoản không còn → "Một tài khoản đã xóa".
-7. **Đội vận hành / Hệ thống:** "Đội vận hành" (không tên, không id operator), "Hệ thống" (yêu cầu quên mật khẩu). Trong phạm vi §4.1 hiếm gặp nhưng xử lý chung.
-8. **Dữ liệu seed giờ lùi:** mọi giờ lấy từ `audit_log.at` (seed ghi theo đồng hồ use case, ADR-0021 D8), không trộn `created_at` của bảng nghiệp vụ (giờ chạy seed).
-9. **Bản ghi không có audit** (dữ liệu trước khi có audit, nhập SQL tay, sổ giấy qua CLI): `summary.source`:
-   - `paper_book` → meta "Nhập từ sổ giấy · dd/mm/yyyy";
-   - `record` (bảng có `created_by` / `created_at`: lượt, hóa đơn, gói, lịch hẹn) → meta "Ghi bởi … · giờ" từ cột, danh sách "Chưa có lịch sử chi tiết";
-   - `none` (khách, dịch vụ, mẫu gói, ô chấm công không có dòng audit) → meta "Chưa có lịch sử" (không ẩn dòng, để người dùng biết là không có chứ không phải lỗi).
-10. **Nhiều thay đổi:** tối đa 100 dòng gần nhất (cũ → mới), `omitted` = số dòng cũ hơn; web: "Còn N thay đổi cũ hơn không hiện ở đây."
-11. **Công tắc đổi giữa phiên:** request kế tiếp `403` → web ẩn dòng, gọi lại `/me`.
-12. **Tính năng tắt:** lịch hẹn tắt → `appointment.manage` bị rút → `GET /record-history/appointment/…` `403 feature.disabled`; lương tắt → quy tắc lương tương tự.
-13. **Ô chấm công của chính mình / của quản lý khác:** cùng phạm vi đọc như `GET /attendance` (quyết định C, ADR-0015); ngoài phạm vi → `404`.
-14. **Hai thao tác cùng giây** (seed): không gộp nhầm (khóa gộp là id trong dòng audit, đã test ở AC11.9).
-15. **Key audit cũ** (không còn trong code): hiện câu chung "làm một thao tác khác" (giống activity).
+1. **Sửa lượt (chuỗi).** Chuỗi `corrects_visit_id` lên và xuống (≤ 20 bản). Mở từ bản nào cũng ra cùng câu chuyện. "Ghi bởi" = người làm `visit.create` của bản gốc; số lần sửa theo D9. Bản cũ: chip "Đã thay", chữ "Đã thay bằng lượt mới."
+2. **Chuyển sang gói.** Gộp theo hạng 5 của `fold_rule`; tên gói trong dòng; gói mới có lịch sử riêng bắt đầu bằng dòng mua (gốc "bán gói" trong lịch sử gói).
+3. **Lượt + hóa đơn + gói trong giỏ.** Lịch sử lượt gộp như D9 (kèm tên gói, Thu = mọi hóa đơn). Hóa đơn bán gói (kể cả bán trong giỏ, `sale.visit_id` có giá trị) thuộc lịch sử **gói**: gia hạn / hủy / hoàn tiền / sửa ghi chú gói không vào lịch sử lượt.
+4. **Dòng "Hoàn tiền" ở Sổ doanh thu** → lịch sử gói bị hủy.
+5. **Khách đã ẩn danh:** chủ thể không tên, không link; `customer.update` không giá trị.
+6. **Người làm đã nghỉ:** "Hà (đã nghỉ)" (cùng luật `left` của bộ lọc Nhật ký thao tác). Tài khoản không còn → "Một tài khoản đã xóa".
+7. **Đội vận hành / Hệ thống:** "Đội vận hành" (không tên / id), "Hệ thống".
+8. **Dữ liệu seed giờ lùi:** mọi giờ từ `audit_log.at` (ADR-0021 D8), không trộn `created_at`.
+9. **Không có dòng tạo** (D12): gói sổ giấy → "Nhập từ sổ giấy · dd/mm/yyyy" (từ `opening_balance.import` hoặc `customer_package.origin = 'opening_balance'`); lượt / hóa đơn / gói / lịch hẹn → "Ghi bởi …" từ cột `created_by` / `created_at`; khách, dịch vụ, mẫu gói, ô chấm công không có dòng tạo → "Chưa rõ ai ghi"; danh sách trống "Chưa có lịch sử thay đổi."
+10. **Nhiều thay đổi:** tối đa 100 dòng gần nhất, `omitted`; web "Còn {n} thay đổi cũ hơn."
+11. **Công tắc đổi giữa phiên:** request kế tiếp `403` → web ẩn khối, chuyển focus về nút / tiêu đề của bản ghi, gọi lại `/me`.
+12. **Tính năng tắt:** lịch hẹn tắt → `403 feature.disabled` cho lịch sử lịch hẹn; lương tắt → quy tắc lương tương tự.
+13. **Ô chấm công:** phạm vi như sổ (`hr::scope::RecordScope::lists` + `employed_in(month)`): ô **của chính mình** → `404`; quản lý xem ô của quản lý khác / chủ spa → `200` (sổ hiện họ). Một lần lưu sổ ghi nhiều ô cùng thời điểm: lịch sử ô chỉ lấy dòng có `date` của ô đó.
+14. **Hai thao tác cùng giây** (seed): không gộp nhầm (khóa gộp là id trong dòng audit, AC11.9).
+15. **Key audit cũ:** câu chung "làm một thao tác khác".
+16. **Gói sổ giấy được gia hạn:** "Nhập từ sổ giấy" vẫn là dòng tạo; gia hạn là dòng sau (không thành "người ghi").
 
 ## 7. Ma trận quyền
-| Ai | Dòng "ai ghi" + lịch sử | Dấu "Đã sửa" | SĐT cũ của khách | Màn Nhật ký thao tác |
+| Ai | Dòng "ai ghi" + lịch sử | Chip "Đã sửa" | SĐT cũ / mới của khách | Màn Nhật ký thao tác |
 |---|---|---|---|---|
-| Chủ spa, công tắc bật (mặc định) | ✓ (trong quyền đọc của từng màn) | ✓ | đủ | chỉ khi cờ `activity_log` bật (mặc định tắt) |
+| Chủ spa, công tắc bật (mặc định) | ✓ (trong quyền đọc của loại neo) | ✓ | đủ | chỉ khi cờ `activity_log` bật (mặc định tắt) |
 | Chủ spa, operator tắt | — (`403`, không key `edited`) | — | — | như trên |
-| Quản lý, operator bật | ✓ (trong quyền đọc của từng màn: không lương, không danh mục / cài đặt nếu không có quyền sửa) | ✓ | che giữa | — (`audit.read` owner-only) |
+| Quản lý, operator bật | ✓ (trong quyền đọc của loại neo: không lương, không danh mục / cài đặt) | ✓ | "SĐT (đã đổi)", không giá trị | — (`audit.read` owner-only) |
 | Quản lý, tắt (mặc định) | — | — | — | — |
 | KTV | — (không cấp được) | — | — | — |
 | Người đã nghỉ | — | — | — | — |
 | Operator | không gọi được route spa (`401`); chỉ bật / tắt ở `/admin` | — | — | bật / tắt cờ |
 
-Chi tiết route → permission: [authz-matrix](../../security/authz-matrix.md) § Lịch sử trên từng bản ghi.
+Chip "Đã thay" / "Đã hủy" (trạng thái sẵn có) hiện cho mọi người đọc được danh sách. Chi tiết route → permission: [authz-matrix](../../security/authz-matrix.md).
 
 ## 8. UX notes
-Chi tiết wireframe + chữ ở [design/record-history](../../design/record-history.md). Tóm tắt: dòng meta 13 px màu `--text-muted` ngay dưới phần đầu của bản ghi khi mở chi tiết; bấm → mở danh sách thay đổi ngay bên dưới (disclosure, mặc định đóng); danh sách: badge `badge-muted` "Đã sửa" cạnh trạng thái; Sổ doanh thu: bấm hàng → sheet "Hóa đơn" có dòng meta + lịch sử. Admin: panel "Lịch sử trên từng bản ghi" ở trang spa; cờ "Nhật ký thao tác" hiện trong panel "Tính năng" với nhãn "Mặc định: tắt".
+Chi tiết ở [design/record-history](../../design/record-history.md). Tóm tắt: khi mở **một** bản ghi, dòng meta 13 px `--text-muted` là **phần tử cuối** của phần chi tiết; bấm → mở danh sách ngay bên dưới (disclosure, mặc định đóng). Ở màn **nhiều bản ghi**, nút mở là phần tử có sẵn (giờ của thẻ Lịch sử khách; nút cạnh chip trạng thái của thẻ gói; mục ⋯ ở "Bán gói hôm nay" và sổ thưởng/phạt), không thêm hàng. Sổ doanh thu: nút trong ô giờ / thẻ → sheet. Admin: panel "Lịch sử trên từng bản ghi"; cờ "Nhật ký thao tác" trong panel "Tính năng" với "Mặc định · tắt".
 
 ## 9. Data
-- Không bảng mới; đọc `app.audit_log` + join tên (như `reporting::activity`). PII: tên + SĐT cũ / mới khách (đã có từ ADR-0021), che theo D8. Không ghi gì mới vào audit ngoài thao tác của operator.
-- Migration 0052: permission `record.history.read` cho mẫu chủ spa + vai trò chủ spa của mọi spa; `app.session_actor` trả thêm `enabled_features`; `app.platform_set_feature` trả giá trị trước (null khi chưa có dòng); hàm `app.platform_set_role_permission`. Chi tiết [architecture](../../architecture/record-history.md).
-- Lưu giữ: theo audit (giữ mãi, EM Q-DB4); `customer.anonymize` (chưa build) phải xóa tên / SĐT trong audit như ADR-0021 đã ghi.
+- Không bảng mới; đọc `app.audit_log` + join tên. PII: tên + SĐT cũ / mới khách (ADR-0021), SĐT chỉ cho `audit.read` (D8). Không ghi gì mới vào audit ngoài thao tác của operator.
+- Migration 0052 (đợt 1a): permission + spa-local trong hàm áp mẫu / sửa vai trò, hàm công tắc, `session_actor` + `enabled_features`, `platform_set_feature` trả null, 2 index một phần. Chi tiết + thứ tự deploy: [architecture](../../architecture/record-history.md).
+- Lưu giữ: theo audit (giữ mãi, EM Q-DB4); `customer.anonymize` (chưa build) phải xóa tên / SĐT trong audit (ADR-0021).
 
 ## 10. Non-functional
-- **Perf:** `GET /record-history/*` p95 ≤ 100 ms ở bench 3 năm (ngân sách chung 300 ms của màn xem lại, [backend §3b](../../architecture/backend.md)); danh sách có `edited`: p95 tăng ≤ 10 ms khi bật, 0 khi tắt (không chạy truy vấn). Web: không tăng JS khởi động (Quầy nằm trong chunk khởi động, đang 123,8 / 125 KB): mã lịch sử ở chunk lazy `record-history`, tải khi mở chi tiết.
+- **Perf:** `GET /record-history/*` p95 ≤ 100 ms ở bench có **audit thật cỡ ~60.000 dòng / năm × 3 năm**; danh sách có `edited` p95 tăng ≤ 10 ms khi bật, 0 khi tắt. Web: JS khởi động không tăng (đo 124,70 / 125 KiB theo reviewer; không module lịch sử nào được import từ chunk khởi động).
 - **Bảo mật:** non-negotiable #1–#4; [threat-model](../../security/threat-model.md) § Lịch sử trên từng bản ghi.
-- **A11y:** WCAG 2.2 AA, vùng chạm ≥ 44 px trên điện thoại, focus không mất khi mở / đóng.
-- **i18n:** tiếng Việt; tên người làm giống hệt Nhật ký thao tác (`features/activity/sentence.ts` `actorName`).
+- **A11y:** WCAG 2.2 AA, vùng chạm ≥ 44 px trên điện thoại, focus không mất khi mở / đóng / bị ẩn do `403`.
+- **i18n:** tiếng Việt; tên người làm như Nhật ký thao tác (`actorName`).
 
 ## 11. Out of scope
-- Công tắc trong app của spa; quyền riêng theo từng người (chỉ theo vai trò).
-- Lịch sử cho hồ sơ nhân viên, thưởng/phạt, đánh giá tháng, bảng lương (đã có cách hiện riêng, D11).
-- Xuất lịch sử ra file; tìm kiếm trong lịch sử.
-- Đổi cách ghi audit (không thêm action, không đổi payload).
+- Công tắc trong app của spa; quyền theo từng người.
+- Màn riêng cho chủ spa xem việc của đội vận hành khi cờ nhật ký tắt (LEAD: không làm).
+- Lịch sử hồ sơ nhân viên, đánh giá tháng, bảng lương, gọi lại khách (D11).
+- Xuất / tìm kiếm trong lịch sử; đổi cách ghi audit (không thêm action, không đổi payload).
 
 ## 12. Open questions
-Không (EM ủy quyền quyết). Các điểm có thể xem lại ghi ở ADR-0022 § Revisit when.
+Không (EM ủy quyền quyết). Các điểm xem lại ghi ở ADR-0022 § Revisit when.
 
 ## Review log
 Hai lượt tự rà soát sau bản nháp (EM yêu cầu "review đi review lại kĩ").
@@ -240,3 +250,37 @@ Hai lượt tự rà soát sau bản nháp (EM yêu cầu "review đi review l�
 | Secure checklist "rotate session khi đổi quyền". | Quyền đọc mỗi request (`session_actor`, ADR-0017) nên bật / tắt có hiệu lực ngay request kế tiếp, giống AC7.3 của sửa vai trò; không cần xoay session. |
 | Code: `mayOpen.activity` có thật ở `apps/web/src/app/access.ts` (`can(me, "audit.read")`); `hasFeature` trả `true` khi `/me` thiếu `features`. | Đổi thành `can(…) && hasFeature(me, "activity_log")`; `/me` luôn có `features` khi có spa đang dùng. |
 | Mobile: hàng Sổ doanh thu bấm được trên desktop là bảng tự dựng. | Nút trong ô đầu (không biến cả `<tr>` thành nút), thẻ điện thoại bấm cả thẻ; nhãn "Xem hóa đơn của chị …". |
+
+**Review lượt 3 (độc lập)** — hai reviewer độc lập (bảo mật / backend và UX / frontend) đọc bản của PR #184; lead quyết các điểm xung đột (đánh dấu LEAD). Mỗi phát hiện đã được đối chiếu lại với code trước khi sửa. Vài kết luận của lượt 1–2 ở trên vì thế đã bị thay; bảng này là bản đúng.
+
+| # | Phát hiện | Đối chiếu code | Xử lý |
+|---|---|---|---|
+| LEAD | Màn nhật ký: ẩn ngay hay chờ? | EM: "tạm thời ẩn … off show cái nhật kí thao tác đi" | `activity_log` mặc định tắt từ đợt 1. Đợt 1 gộp cả gói (kể cả hủy / hoàn tiền) và hồ sơ khách. Cửa sổ hồi quy ghi ở plan. ADR-0018 D6 / ADR-0003 được sửa: khi cờ tắt, chủ spa không xem được việc của operator trên UI. Không làm màn riêng (D5). |
+| LEAD | Công tắc làm vai trò "lệch mẫu"; sửa mẫu có thể âm thầm đổi công tắc | `platform_apply_role_template` (0040) và `platform_set_tenant_role` (0041) ghi đè cả danh sách và đặt `follows_template` | `record.history.read` là **spa-local** (D1, D2). 0052 sửa hai hàm để bỏ qua / giữ quyền này. Hàm công tắc cứng permission và vai trò, không đụng `follows_template`. "Về mẫu" giữ giá trị hiện tại. |
+| LEAD + S8 | Che giữa SĐT vẫn lộ một phần | — | Người không có `audit.read` không nhận giá trị nào: "SĐT (đã đổi)" (D8). Bỏ `mask_phone`. |
+| B1 | Đổi neo bỏ qua quyền đọc của loại đích | `customers/{id}/history` cần `customer.read + visit.read + sale.read` (`reporting/src/http.rs`) | Đúng. Sau khi đổi neo thì kiểm quyền của loại neo cuối, `403` trước khi đọc. Lịch sử gói không gộp sang dòng `visit.create` (AC-H4). Thêm test matrix "có `sale.read`, thiếu `visit.read`". |
+| B2a | Gói bán trong giỏ có `sale.visit_id` → vòng đời gói lọt vào lịch sử lượt; Ledger và DaySales tính `edited` khác nhau | 0021: "Every sale made during a visit … points at the visit" | Đúng. Thành viên tính theo **id dòng audit**: lượt = dòng của các lượt trong chuỗi + hóa đơn dịch vụ lẻ + `use_expired_override` của lượt. Hóa đơn bán gói thuộc gói. Một định nghĩa "tính là sửa" cho mỗi loại (D6, D10). |
+| B2b | Ô chấm công: một lần `PUT /attendance` ghi nhiều ô cùng thời điểm, nên lấy "cùng thời điểm" là lọt ngày khác | `hr/src/attendance.rs`: vòng `for (e, before, after) in changed` trong cùng một transaction, `entity_id = staff_id` | Đúng. Các loại chỉ có hạng 0 (lịch hẹn, khách, ô ngày, thưởng/phạt, danh mục, cài đặt) bỏ bước "cùng thời điểm" và bỏ gộp. Ô lọc theo `date` của chính dòng. |
+| S3 | "Ghi bởi" lấy từ dòng đầu bất kỳ | `opening_balance.rs` chỉ ghi `opening_balance.import` trên khách, `after` có `customer_created` và `customer_package_ids` | Đúng. D12: "Ghi bởi" chỉ lấy từ thao tác tạo, nếu không có thì lấy cột. Thêm edge case 16. |
+| S4 | `fields()` của `visit.update` thiếu ghi chú / người đi cùng: dòng "sửa lượt" rỗng, và lộ việc đổi ghi chú | `activity.rs` `A::VisitUpdate => [check_in_at, staff]`; writer ghi `note`, `companions` (`operations/src/service.rs`) | Đúng. Thêm `/note` (chỉ có / không, không giá trị) và `/companions` vào `fields()` (màn nhật ký cũng đổi theo). Người không có `customer.health_notes.read`: bỏ thay đổi ghi chú, và bỏ cả dòng nếu dòng chỉ có thay đổi đó. Đổi ghi chú không tính "đã sửa". |
+| S5 | Bench không có audit; con số "~6.800 dòng / năm" | `reports_bench.rs` có 0 lần `audit_log`. Con số 6.800 **có nguồn**: staging sau seed (log 2026-11-11: 6.787 dòng / 12 tháng), nhưng seed chỉ có 1.990 lượt / năm, còn bench có ~14.700 | Bác một phần (con số có nguồn), nhưng kết luận đúng. Bench seed audit ~60.000 / năm × 3. Index một phần `audit_log_edit_idx`. `edited` của lịch hẹn chỉ khi `marks=true`. Sổ doanh thu chạy `EXISTS` ở câu ngoài, sau `LIMIT`. |
+| S6 | Ô chấm công dò cả lịch sử của nhân viên | — | Index biểu thức ngày một phần cho 2 action ship trong 0052. Query lặp đúng biểu thức. |
+| S7 | Test đợt 3 sai: quản lý đọc được ô của quản lý khác / chủ spa | `RecordScope::lists` chỉ ẩn hồ sơ của chính mình (`hr/src/scope.rs`); `attendance.rs` lọc thêm `employed_in` | Đúng (tên kiểu cũng sai: `RecordScope`, không phải `Scope`). Sửa edge case 13 và test: ô của mình `404`, ô của quản lý khác `200`. |
+| S9 | Hai bản phần làm giàu (list và `rows_by_ids`) | — | Làm ngay ở đợt 1a: `activity::list` = chọn id → `rows_by_ids` dùng chung. Bỏ test đối chiếu tạm. |
+| Nits BE | `member_access`; cửa sổ deploy / rollback; REVOKE/GRANT sau DROP/CREATE; `AuditPage.tsx` ACTIONS; `no-store` cho danh sách có `edited` | `identity/src/repo.rs` có `member_access`, gọi từ `service::tenant_access` | Đúng hết. Đã ghi vào architecture §3, §8 và plan. |
+| UX B1 | "Đã sửa" đang mang nghĩa "bản cũ bị thay" | `TodayVisits.tsx` (chip khi có `corrected_by_visit_id`), `CustomerHistory.tsx` `visit_voided` | Đúng. Đổi chip của bản bị thay thành "Đã thay" cho mọi vai trò. Một chip, thứ tự Đã hủy > Đã thay > Đã sửa (D9). |
+| UX S1 | Ngân sách JS; `TodayVisits` đã lazy | `FrontDeskPage.tsx`: `lazy(() => loadTodayVisits()…)` | Đúng: bản trước viết "Quầy nằm trong chunk khởi động" là sai. Không đo lại được trên máy này (thiếu RAM), nên dùng số của reviewer 124,70 / 125 KiB. Module options query nhỏ đặt ngoài chunk UI; prefetch bằng `useAfterFirstPaint`. |
+| UX S2 | Bấm vào vùng lịch sử thì gập thẻ | Guard `closest("a, button, input, select, textarea, label, [role=menu]")` ở `ResponsiveTable.tsx` | Đúng. Thêm `[data-row-inert]` + Vitest. |
+| UX S3 | Thêm hàng "Xem ai ghi, ai sửa" cho mỗi thẻ thì rối | — | Dùng giờ của thẻ làm nút mở; thẻ gói đặt nút cạnh chip. |
+| UX S4 | "Bán bởi" lẫn với "Người chốt" | `TodayVisits.tsx`, `CustomerHistory.tsx` ("chốt bởi") | "Ghi bởi" ở mọi nơi. |
+| UX S5 | Bảng động từ cần theo ngữ cảnh | — | `HISTORY: Record<AuditAction, ((e) => string) \| null>`. Chữ: "sửa lượt", "thêm khách", "thêm dịch vụ", "sửa mẫu gói", "nhập bù lượt". |
+| UX S7 | Sổ doanh thu: ô đầu là "Giờ" 64 px; thẻ điện thoại có Link khách | `LedgerTab.tsx` `<col style={{ width: "64px" }}>` | Đúng. Tên nút "10:07, xem hóa đơn của chị …". Thẻ dùng guard `closest('a,button')`. Bỏ nút "Mở hồ sơ khách". Giữ mở sẵn, có lý do. |
+| UX S8 | DaySales nên dùng ⋯, không mở modal | — | Thêm mục ⋯ "Xem ai ghi, ai sửa", hiện tại chỗ mở rộng sẵn có. |
+| UX S9 | Invalidation rải rác | `lib/queryClient.ts` đã có `MutationCache({ onError })` | Thêm `onSuccess` invalidate `["record-history"]`. Reply DTO mang `edited` cho các chỗ dùng `setQueriesData`. |
+| UX S10 | Wireframe không khớp component thật | — | Quy tắc chung: khối lịch sử luôn là phần tử cuối. Vị trí cụ thể theo `PersonDaySheet` (fieldset), `CustomerProfile`, `AppointmentSheet`. |
+| UX S11 | "Đã sửa" quá rộng | — | Thu hẹp (D9): upsell, gia hạn, dùng gói hết hạn là vòng đời. |
+| UX S12 | Thưởng/phạt chỉ hiện người ghi bản hiện tại | `AdjustmentsTab.tsx` cột "Người ghi" = `by_name` | Đúng. Thêm lịch sử (đợt 2), sửa D11. `use_expired_override` cũng vào lịch sử lượt. |
+| UX S13 | A11y | — | Focus khi bị ẩn do `403`. Dùng lại mũi tên `.disclosure`. Bỏ `role=region`. Tên nút ổn định. `404` → "Không xem được lịch sử của mục này." |
+| Nits UX | "Đảo" → "Trả lại"; chữ trống / bị cắt; tên nút admin; `hasFeature` mặc định true; "Nhập bù · Ghi lúc" lặp; dấu lịch hẹn chỉ ở dạng danh sách; `/goi-lieu-trinh` | `session.ts` `?? true`; `sentence.ts` `AMOUNT_LABEL` | Đã làm hết. `hasFeature(me, key, { defaultOff: true })`. Badge admin chọn "Đang hiện / Đang ẩn" vì công tắc nói về hiển thị, không phải bật tính năng. |
+
+Không bác phát hiện nào. Riêng S5 chỉ bác phần "con số không có nguồn", có bằng chứng ở log, còn việc cần làm vẫn làm.

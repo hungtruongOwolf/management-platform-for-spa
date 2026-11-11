@@ -81,6 +81,7 @@ deciders: EM (what), agent (how)
 ### D6 — Audit
 - `platform_audit_log` (operator, action `platform.*`, tenant, target, detail jsonb không bí mật, lý do, IP, lúc): mọi thao tác operator, cùng transaction với thao tác. Đọc spa audit cũng ghi (`platform.tenant_audit.read`).
 - Thao tác chạm một spa ghi thêm `audit_log` của spa đó với `actor_kind = 'platform_admin'` (đã có trong CHECK từ 0001) để chủ spa thấy (ADR-0003 "chủ spa xem được").
+  - *Sửa bởi [ADR-0022](ADR-0022-inline-record-history.md) (2026-11-11):* chủ spa xem các dòng này qua màn "Nhật ký thao tác", nay sau cờ `activity_log` **mặc định tắt**. Khi cờ tắt, chủ spa không thấy việc của operator trên UI; dữ liệu vẫn ghi đủ (cả hai phía), operator bật cờ cho spa khi cần. Không có màn riêng cho việc này.
 - Không bao giờ ghi: mật khẩu (tạm / mới), hash, secret, SĐT đầy đủ (chỉ 3 số cuối).
 
 ### Rollout (3 PR, chồng lên nhau, sau khi #109 + #110 vào main)
