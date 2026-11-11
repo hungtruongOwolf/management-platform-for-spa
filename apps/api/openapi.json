@@ -1104,6 +1104,69 @@
         }
       }
     },
+    "/api/v1/admin/tenants/{id}/record-history/{role}": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "set_record_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "role",
+            "in": "path",
+            "description": "owner | manager",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordHistorySwitch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The role after the switch (`record.history.read` added or removed); next request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleGrants"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "platform.step_up_required"
+          },
+          "404": {
+            "description": "unknown spa or role"
+          },
+          "409": {
+            "description": "role.record_history_unchanged"
+          },
+          "422": {
+            "description": "role.not_for_technician | reason"
+          }
+        }
+      }
+    },
     "/api/v1/admin/tenants/{id}/roles": {
       "get": {
         "tags": [
@@ -4157,6 +4220,200 @@
         }
       }
     },
+    "/api/v1/record-history/customer-package/{id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "customer_package_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "id is not a UUID"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs record.history.read + customer.read"
+          },
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/record-history/customer/{id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "customer_record_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The customer profile's history; old / new phone values only for audit.read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "id is not a UUID"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs record.history.read + customer.read"
+          },
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/record-history/refund/{id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "refund_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The refunded package's history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "id is not a UUID"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs record.history.read + sale.read + customer.read"
+          },
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/record-history/sale/{id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "sale_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A one-off sale's visit history, or a package sale's package history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "id is not a UUID"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs record.history.read + sale.read, then visit.read (one-off sale) or customer.read (package sale)"
+          },
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/record-history/visit/{id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "visit_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The visit's history, its whole \"Sửa lượt\" chain included",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "id is not a UUID"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs record.history.read + visit.read"
+          },
+          "404": {}
+        }
+      }
+    },
     "/api/v1/reports/daily": {
       "get": {
         "tags": [
@@ -6076,6 +6333,13 @@
         "properties": {
           "kind": {
             "$ref": "#/components/schemas/ActorKind"
+          },
+          "left": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "`true` when the person no longer works here (\"Hà (đã nghỉ)\"); absent otherwise."
           },
           "name": {
             "type": [
@@ -8823,9 +9087,14 @@
         "required": [
           "key",
           "name",
-          "permissions"
+          "permissions",
+          "default_enabled"
         ],
         "properties": {
+          "default_enabled": {
+            "type": "boolean",
+            "description": "The state of a spa no operator switched it for."
+          },
           "key": {
             "type": "string"
           },
@@ -9203,6 +9472,13 @@
                 "type": "null"
               }
             ]
+          },
+          "edited": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Visit events only, and only for `record.history.read`: the visit was edited (ADR-0022\nD9: its time or a technician changed, or \"Sửa lượt\" replaced it / made it)."
           },
           "extension": {
             "oneOf": [
@@ -10054,6 +10330,13 @@
           },
           "customer_name": {
             "type": "string"
+          },
+          "edited": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "\"Đã sửa\" (ADR-0022 D9): only for `record.history.read`, and only on a `sale` row of\none-off services, not voided, made in a visit: that visit's `edited`. Absent otherwise."
           },
           "entry": {
             "$ref": "#/components/schemas/LedgerEntry"
@@ -12532,7 +12815,9 @@
           "group",
           "grantable",
           "owner_only",
-          "owner_floor"
+          "owner_floor",
+          "spa_local",
+          "not_for_technician"
         ],
         "properties": {
           "feature": {
@@ -12553,6 +12838,10 @@
           "key": {
             "type": "string"
           },
+          "not_for_technician": {
+            "type": "boolean",
+            "description": "The technician role may never hold it (`role.not_for_technician`)."
+          },
           "owner_floor": {
             "type": "boolean",
             "description": "The owner role must keep it."
@@ -12560,6 +12849,10 @@
           "owner_only": {
             "type": "boolean",
             "description": "Only the owner role may hold it."
+          },
+          "spa_local": {
+            "type": "boolean",
+            "description": "Each spa's own value: read-only in a spa's role editor (changed by its own switch); in a\ntemplate it is only a new spa's initial value."
           }
         }
       },
@@ -12960,6 +13253,195 @@
           }
         },
         "additionalProperties": false
+      },
+      "RecordCreated": {
+        "type": "object",
+        "description": "Who recorded it. Absent when nobody is known (\"Chưa rõ ai ghi\").",
+        "required": [
+          "day",
+          "source"
+        ],
+        "properties": {
+          "actor": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ActivityActor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Absent for a paper-book entry (its day is the book's, it has no time)."
+          },
+          "day": {
+            "type": "string",
+            "format": "date",
+            "description": "The spa's day of `at`, or the paper book's day."
+          },
+          "source": {
+            "$ref": "#/components/schemas/RecordSource"
+          }
+        }
+      },
+      "RecordHistory": {
+        "type": "object",
+        "description": "`GET /record-history/...`: one record's history, oldest first.",
+        "required": [
+          "record",
+          "summary",
+          "items",
+          "omitted"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityEntry"
+            },
+            "description": "One line per action (a visit's checkout, a correction, a package sale fold into one), the\n100 newest, oldest first. Only what the caller may read: no money without `sale.read`, no\nnote change without `customer.health_notes.read`, no phone value without `audit.read`."
+          },
+          "omitted": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Older lines left out (\"Còn {n} thay đổi cũ hơn.\").",
+            "minimum": 0
+          },
+          "record": {
+            "$ref": "#/components/schemas/RecordRef"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/RecordSummary"
+          }
+        }
+      },
+      "RecordHistorySwitch": {
+        "type": "object",
+        "description": "Body of `PUT /admin/tenants/{id}/record-history/{role}`.",
+        "required": [
+          "visible",
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "3–500 characters."
+          },
+          "visible": {
+            "type": "boolean",
+            "description": "`true`: the role sees \"Ghi bởi … · đã sửa … lần\" and each record's history."
+          }
+        },
+        "additionalProperties": false
+      },
+      "RecordKind": {
+        "type": "string",
+        "description": "The kind of record a history is about, after re-anchoring (a sale's history is its visit's or\nits package's; a refund's is its package's). Later waves add the other kinds.",
+        "enum": [
+          "visit",
+          "customer_package",
+          "customer"
+        ]
+      },
+      "RecordLast": {
+        "type": "object",
+        "description": "The latest change, when it is not the creation itself.",
+        "required": [
+          "actor",
+          "at",
+          "day"
+        ],
+        "properties": {
+          "actor": {
+            "$ref": "#/components/schemas/ActivityActor"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "day": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
+      "RecordRef": {
+        "type": "object",
+        "required": [
+          "type",
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "$ref": "#/components/schemas/RecordKind"
+          }
+        }
+      },
+      "RecordSource": {
+        "type": "string",
+        "description": "Where \"Ghi bởi / Tạo bởi\" comes from (spec D12).",
+        "enum": [
+          "audit",
+          "record",
+          "paper_book"
+        ]
+      },
+      "RecordState": {
+        "type": "string",
+        "enum": [
+          "active",
+          "voided",
+          "replaced",
+          "cancelled"
+        ]
+      },
+      "RecordSummary": {
+        "type": "object",
+        "required": [
+          "edits",
+          "state"
+        ],
+        "properties": {
+          "created": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RecordCreated"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "edits": {
+            "type": "integer",
+            "format": "int32",
+            "description": "\"đã sửa N lần\": the lines below (as this caller sees them) whose action counts as an edit\n(spec D9, D10). The lists' `edited` is true exactly when this is at least 1.",
+            "minimum": 0
+          },
+          "last": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RecordLast"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/RecordState"
+          }
+        }
       },
       "RefundDto": {
         "type": "object",
@@ -14640,9 +15122,14 @@
         "required": [
           "key",
           "name",
-          "enabled"
+          "enabled",
+          "default_enabled"
         ],
         "properties": {
+          "default_enabled": {
+            "type": "boolean",
+            "description": "The state without an operator's switch (`updated_at` null)."
+          },
           "enabled": {
             "type": "boolean"
           },
@@ -14658,7 +15145,7 @@
               "null"
             ],
             "format": "date-time",
-            "description": "When an operator last switched it (`null` = never: on by default)."
+            "description": "When an operator last switched it (`null` = never: the default applies)."
           }
         }
       },
@@ -15174,6 +15661,13 @@
               "null"
             ],
             "description": "Reasons of the discounts on the visit's one-off bills (its sale and each addition), in the\norder they were made, joined by \"; \"."
+          },
+          "edited": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "\"Đã sửa\" (ADR-0022 D9): present only for `record.history.read`; `true` when the visit's\ntime or a technician was changed, or \"Sửa lượt\" replaced it or made it. Equals the\nvisit history's `summary.edits >= 1`."
           },
           "id": {
             "type": "string",
