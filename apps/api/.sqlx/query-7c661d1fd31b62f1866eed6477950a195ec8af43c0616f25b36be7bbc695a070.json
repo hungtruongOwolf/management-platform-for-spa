@@ -1,0 +1,85 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH RECURSIVE up (id, corrects, depth) AS (\n             SELECT v.id, v.corrects_visit_id, 1 FROM app.visit v WHERE v.tenant_id = $1 AND v.id = $2\n             UNION ALL\n             SELECT p.id, p.corrects_visit_id, up.depth + 1\n             FROM up JOIN app.visit p ON p.tenant_id = $1 AND p.id = up.corrects\n             WHERE up.depth < $3\n           ), down (id, depth) AS (\n             SELECT v.id, 1 FROM app.visit v WHERE v.tenant_id = $1 AND v.id = $2\n             UNION ALL\n             SELECT n.id, down.depth + 1\n             FROM down JOIN app.visit n ON n.tenant_id = $1 AND n.corrects_visit_id = down.id\n             WHERE down.depth < $3\n           )\n           SELECT v.id, v.corrects_visit_id, v.status, v.created_by, v.created_at,\n                  EXISTS (SELECT 1 FROM app.visit n\n                          WHERE n.tenant_id = v.tenant_id AND n.corrects_visit_id = v.id) AS \"replaced!\"\n           FROM app.visit v\n           WHERE v.tenant_id = $1 AND v.id IN (SELECT up.id FROM up UNION SELECT down.id FROM down)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "corrects_visit_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "corrects_visit_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "created_by",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "created_by"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "replaced!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "7c661d1fd31b62f1866eed6477950a195ec8af43c0616f25b36be7bbc695a070"
+}

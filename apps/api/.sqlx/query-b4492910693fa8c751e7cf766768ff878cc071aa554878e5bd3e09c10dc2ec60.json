@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT session_id AS \"session_id!\", user_id AS \"user_id!\", active_tenant_id,\n                  last_seen_at AS \"last_seen_at!\", absolute_expires_at AS \"absolute_expires_at!\",\n                  recent_auth_at AS \"recent_auth_at!\", mfa_pending AS \"mfa_pending!\",\n                  mfa_enrolled AS \"mfa_enrolled!\", must_change_password AS \"must_change_password!\",\n                  member AS \"member!\", permissions AS \"permissions!\", former_staff AS \"former_staff!\",\n                  timezone, manager_discount_max_pct, branch_id,\n                  disabled_features AS \"disabled_features!\"\n           FROM app.session_actor($1)",
+  "query": "SELECT session_id AS \"session_id!\", user_id AS \"user_id!\", active_tenant_id,\n                  last_seen_at AS \"last_seen_at!\", absolute_expires_at AS \"absolute_expires_at!\",\n                  recent_auth_at AS \"recent_auth_at!\", mfa_pending AS \"mfa_pending!\",\n                  mfa_enrolled AS \"mfa_enrolled!\", must_change_password AS \"must_change_password!\",\n                  member AS \"member!\", permissions AS \"permissions!\", former_staff AS \"former_staff!\",\n                  timezone, manager_discount_max_pct, branch_id,\n                  disabled_features AS \"disabled_features!\",\n                  enabled_features AS \"enabled_features!\"\n           FROM app.session_actor($1)",
   "describe": {
     "columns": [
       {
@@ -98,6 +98,12 @@
         "name": "disabled_features!",
         "type_info": "TextArray",
         "origin": "Expression"
+      },
+      {
+        "ordinal": 16,
+        "name": "enabled_features!",
+        "type_info": "TextArray",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -121,8 +127,9 @@
       null,
       null,
       null,
+      null,
       null
     ]
   },
-  "hash": "fda3724dd3f469c5a627c1b097a4f2215800884cfc947fe08945ac786fc1a6cb"
+  "hash": "b4492910693fa8c751e7cf766768ff878cc071aa554878e5bd3e09c10dc2ec60"
 }

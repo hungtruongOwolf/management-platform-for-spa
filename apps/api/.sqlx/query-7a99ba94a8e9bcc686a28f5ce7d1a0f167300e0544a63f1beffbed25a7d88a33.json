@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT customer_package_id FROM app.refund WHERE tenant_id = $1 AND id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "customer_package_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.refund",
+            "name": "customer_package_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7a99ba94a8e9bcc686a28f5ce7d1a0f167300e0544a63f1beffbed25a7d88a33"
+}

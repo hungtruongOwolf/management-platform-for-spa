@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT v.id FROM app.visit v\n           WHERE v.tenant_id = $1 AND v.id = ANY($2)\n             AND (v.corrects_visit_id IS NOT NULL\n                  OR EXISTS (SELECT 1 FROM app.visit w\n                             WHERE w.tenant_id = v.tenant_id AND w.corrects_visit_id = v.id)\n                  OR EXISTS (\n                    SELECT 1 FROM app.audit_log a\n                    WHERE a.tenant_id = v.tenant_id AND a.entity_type = 'visit' AND a.entity_id = v.id\n                      AND a.action IN ('visit.update', 'appointment.update')\n                      AND a.action = 'visit.update'\n                      AND (a.after ->> 'check_in_at' IS NOT NULL\n                           OR EXISTS (\n                             SELECT 1 FROM jsonb_array_elements(\n                               CASE WHEN jsonb_typeof(a.after -> 'staff') = 'array'\n                                    THEN a.after -> 'staff' ELSE '[]'::jsonb END) e\n                             WHERE e ->> 'from' IS DISTINCT FROM e ->> 'to'))))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e06ae3ad16e9331c40be317b9f5868547a8355f795ee66669e98dad64b3a90a9"
+}

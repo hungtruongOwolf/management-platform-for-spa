@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT follows_template FROM app.role WHERE tenant_id = $1 AND id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "follows_template",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "app.role",
+            "name": "follows_template"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7cc7ef46bba41bdb3d7f37114f5bd4978e066c950ec9ed6cc5a5c94b722ebbd6"
+}
