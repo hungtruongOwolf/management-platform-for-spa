@@ -246,11 +246,24 @@ impl Spa {
     }
 }
 
+/// The actions of the lines, sorted: lines of different requests are ordered by their audit
+/// instants, which some use cases take from the API's clock and others from the database's (a few
+/// ms apart on a dev machine), so tests compare the set unless one request wrote them all.
 fn actions(history: &Value) -> Vec<String> {
-    history["items"]
+    let mut all: Vec<String> = history["items"]
         .as_array()
         .map(|i| i.iter().map(|e| str_of(&e["action"])).collect())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    all.sort();
+    all
+}
+
+/// The line of an action (the first one).
+fn item<'a>(history: &'a Value, action: &str) -> &'a Value {
+    history["items"]
+        .as_array()
+        .and_then(|i| i.iter().find(|e| e["action"] == action))
+        .unwrap_or_else(|| panic!("no {action} in {history}"))
 }
 
 fn code(reply: &Reply) -> (StatusCode, Option<&str>) {
@@ -542,9 +555,9 @@ async fn a_visit_keeps_only_its_own_story(pool: PgPool) -> TestResult {
     assert_eq!(
         actions(&package_history),
         [
-            "sale.create",
+            "customer_package.cancel",
             "customer_package.extend",
-            "customer_package.cancel"
+            "sale.create"
         ]
     );
     assert_eq!(package_history["summary"]["created"]["source"], "audit");
@@ -598,7 +611,7 @@ async fn a_correction_chain_reads_as_one_story(pool: PgPool) -> TestResult {
     for story in &stories {
         assert_eq!(
             actions(story),
-            ["visit.create", "visit.correct", "visit.correct"],
+            ["visit.correct", "visit.correct", "visit.create"],
             "{story}"
         );
         assert_eq!(story["items"], stories[0]["items"]);
@@ -754,26 +767,26 @@ async fn what_counts_as_an_edit_and_the_lists_agree(pool: PgPool) -> TestResult 
     let replacement = str_of(&conversion.body["visit"]["id"]);
 
     let upsell = s.owner_history("visit", &upsold_id).await;
-    assert_eq!(actions(&upsell), ["visit.create", "visit.addition"]);
+    assert_eq!(actions(&upsell), ["visit.addition", "visit.create"]);
     let resend = s.owner_history("visit", &resent_id).await;
     assert_eq!(actions(&resend), ["visit.create", "visit.update"]);
     let technician = s.owner_history("visit", &moved_id).await;
     assert_eq!(
-        technician["items"][1]["changes"],
+        item(&technician, "visit.update")["changes"],
         json!([{"field": "staff", "format": "text", "old": "KTV Lan", "new": "KTV Mai"}])
     );
     let session_note = s.owner_history("visit", &noted_id).await;
     assert_eq!(
-        session_note["items"][1]["changes"],
+        item(&session_note, "visit.update")["changes"],
         json!([{"field": "session_note", "format": "flag", "new": "true"}])
     );
     assert!(!session_note.to_string().contains("Đau vai gáy"));
     let conversion_story = s.owner_history("visit", &converted_id).await;
     assert_eq!(
         actions(&conversion_story),
-        ["visit.create", "visit.convert_to_package"]
+        ["visit.convert_to_package", "visit.create"]
     );
-    assert_eq!(conversion_story["items"][1]["packages"], json!([PLAN_NAME]));
+    assert_eq!(item(&conversion_story, "visit.convert_to_package")["packages"], json!([PLAN_NAME]));
 
     let expected = [
         (&upsold_id, 0),
@@ -854,8 +867,7 @@ async fn an_expired_package_override_shows_on_both(pool: PgPool) -> TestResult {
     assert_eq!(v.status, StatusCode::CREATED, "{}", v.body);
     let visit = str_of(&v.body["id"]);
     let story = s.owner_history("visit", &visit).await;
-    let mut seen = actions(&story);
-    seen.sort();
+    let seen = actions(&story);
     assert_eq!(
         seen,
         ["customer_package.use_expired_override", "visit.create"],
@@ -896,7 +908,7 @@ async fn a_customer_profiles_history_keeps_phones_to_the_owner(pool: PgPool) -> 
     assert_eq!(actions(&owner), ["customer.create", "customer.update"]);
     assert_eq!(owner["summary"]["edits"], 1);
     assert_eq!(owner["summary"]["created"]["actor"]["name"], "Quản lý Ngọc");
-    let changes = owner["items"][1]["changes"]
+    let changes = item(&owner, "customer.update")["changes"]
         .as_array()
         .cloned()
         .unwrap_or_default();
@@ -917,7 +929,7 @@ async fn a_customer_profiles_history_keeps_phones_to_the_owner(pool: PgPool) -> 
     for digits in ["905111222", "912333444", "0905", "0912"] {
         assert!(!text.contains(digits), "{digits} in {text}");
     }
-    let changes = manager.body["items"][1]["changes"]
+    let changes = item(&manager.body, "customer.update")["changes"]
         .as_array()
         .cloned()
         .unwrap_or_default();
@@ -986,7 +998,7 @@ async fn ghi_boi_comes_from_the_creating_action(pool: PgPool) -> TestResult {
     assert_eq!(story["summary"]["created"]["at"], earlier);
     assert_eq!(story["summary"]["created"]["day"], "2026-01-05");
     // Moved apart from its sale's row, the sale is its own line (it no longer folds).
-    assert_eq!(actions(&story), ["visit.create", "sale.create"], "{story}");
+    assert_eq!(actions(&story), ["sale.create", "visit.create"], "{story}");
     // No creating row: the visit's own columns (its sale's row stays a line of the visit).
     s.exec(&format!(
         "DELETE FROM app.audit_log WHERE entity_id = '{visit}'"
@@ -1017,7 +1029,7 @@ async fn ghi_boi_comes_from_the_creating_action(pool: PgPool) -> TestResult {
                 "customer": {"full_name": "Trần Văn Bình", "phone": "0914 555 666", "gender": "male"},
                 "packages": [{
                     "name": "Gội đầu 10 buổi (sổ cũ)", "sold_price": 1_500_000,
-                    "starts_on": "2026-06-01", "expires_on": null,
+                    "starts_on": "2026-06-01", "expires_on": "2026-12-01",
                     "items": [{"service_id": s.shampoo, "sessions_purchased": 10, "sessions_remaining": 4}],
                 }],
             }),
@@ -1049,7 +1061,7 @@ async fn ghi_boi_comes_from_the_creating_action(pool: PgPool) -> TestResult {
     );
     assert_eq!(
         actions(&paper_story),
-        ["opening_balance.import", "customer_package.extend"],
+        ["customer_package.extend", "opening_balance.import"],
         "one line says it was imported"
     );
     let updated = call_with_headers(

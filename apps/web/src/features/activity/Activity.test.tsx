@@ -12,6 +12,11 @@ import { activitySearch } from "./search";
 import { changeText, moneyOf, phraseOf, sentence } from "./sentence";
 
 const OWNER = ["report.read", "customer.read", "visit.read", "audit.read", "staff.manage"];
+/** The spa's features with "Nhật ký thao tác" switched on (off by default, ADR-0022). */
+const SPA = (permissions: string[]) => ({
+  ...ME(permissions),
+  features: ["appointments", "payroll", "evaluations", "follow_ups", "notes_journal", "reports", "activity_log"],
+});
 const MANAGER = ["report.read", "customer.read", "visit.read"];
 const HA = "0193a5b0-0000-7000-8000-0000000000d1";
 const CUSTOMER = "0193a5b0-0000-7000-8000-0000000000c1";
@@ -95,7 +100,7 @@ function serve(permissions: string[], page: Partial<ActivityPage> = {}) {
     const url = new URL(raw, "http://app.test");
     const p = url.pathname.replace(/^\/api\/v1/, "");
     const json = (body: unknown, status = 200) => Promise.resolve(Response.json(body, { status }));
-    if (p === "/me") return json(ME(permissions));
+    if (p === "/me") return json(SPA(permissions));
     if (p === "/audit-log") {
       if (!permissions.includes("audit.read")) return json({ status: 403, code: "auth.forbidden" }, 403);
       return json({
@@ -175,9 +180,12 @@ describe("activity sentences", () => {
   });
 
   it("puts 'Nhật ký thao tác' under Báo cáo for the owner only", () => {
-    const report = (perms: string[]) => navFor(ME(perms)).find((g) => g.label === "Báo cáo")?.items.map((i) => i.label);
+    const report = (perms: string[]) => navFor(SPA(perms)).find((g) => g.label === "Báo cáo")?.items.map((i) => i.label);
     expect(report(OWNER)).toEqual(["Báo cáo kinh doanh", "Nhật ký ghi chú", "Nhật ký thao tác"]);
     expect(report(MANAGER)).toEqual(["Báo cáo kinh doanh", "Nhật ký ghi chú"]);
+    // Switched off (the default): hidden from the owner too.
+    const off = navFor(ME(OWNER)).find((g) => g.label === "Báo cáo")?.items.map((i) => i.label);
+    expect(off).not.toContain("Nhật ký thao tác");
   });
 });
 
