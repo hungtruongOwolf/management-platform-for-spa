@@ -890,4 +890,5 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Test: `record_history.rs` (8), `platform.rs` +5, unit (feature, roles, history, activity), matrix +6 dòng, bench `record_history_reads_within_budget`, Vitest admin / nav / activity; test cũ bị cờ mặc định tắt làm đỏ đã sửa (`common::enable_feature`, e2e `switchFeatureOn`).
 - Quyết định khi build K1–K11: [spec](wiki/product/specs/record-history.md) cuối Review log. Sửa docs theo cổng cuối: ADR-0022 Decision 4 (chip loại trừ nhau), spec §10 + plan 1b (≤ 125 KiB, 4 module khởi động, mã lịch sử lazy), architecture §4.1 (loại hóa đơn theo `sale_line.line_type`).
 - Ghi nhận khi test: giờ audit lấy từ đồng hồ API ở vài use case và đồng hồ DB ở use case khác → hai thao tác cách nhau vài ms ở hai request có thể đảo thứ tự trong lịch sử (máy dev Docker). Không đổi trong đợt này.
+- Sửa kèm: `demo_seed.rs` đếm số tháng có audit đúng bằng số tháng lịch mà cửa sổ 5 tháng chạm tới (5 hoặc 6 tùy ngày chạy); test cũ đỏ trên `main` từ 2026-11-11 ("left: 6, right: 5").
 - Tiếp theo: đợt 1b (các màn); deploy 1a + 1b cùng nhau theo runbook vercel-staging.
