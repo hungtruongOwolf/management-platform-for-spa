@@ -72,7 +72,8 @@ async function openVisit(page: Page, which: "only" | "current" = "only") {
 
 async function signInAsManager(browser: Browser): Promise<void> {
   const run = credentials();
-  const context = await browser.newContext();
+  // Signed out: this file's default storage state is the owner's.
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
   await page.goto("/dang-nhap");
   await page.getByLabel("Số điện thoại").fill(run.managerPhone ?? "");
@@ -131,7 +132,8 @@ test.describe("lịch sử trên từng bản ghi (ADR-0022)", () => {
       data: {
         customer_id: (await (await page.request.get(`/api/v1/visits/${visit.id}`)).json() as { customer_id: string }).customer_id,
         lines: [{ service_id: serviceId, source: "one_off", staff_id: staffB, qty: 2 }],
-        payments: [{ method: "cash", amount: price }],
+        // The visit as it should have been: its whole payment (the server works out the difference).
+        payments: [{ method: "cash", amount: 2 * price }],
         reason: "Khách làm hai lần",
       },
     });
@@ -149,7 +151,7 @@ test.describe("lịch sử trên từng bản ghi (ADR-0022)", () => {
     const trace = details.getByRole("button", { name: /^Ghi bởi .+ · đã sửa 2 lần$/ });
     await trace.click();
     await expect(details.getByText(/sửa lượt \(tính lại tiền\) · Chênh lệch \+/)).toBeVisible();
-    await expect(details.getByText(/lý do: Khách làm hai lần/)).toBeVisible();
+    await expect(details.getByText(/lý do: (Sửa lượt: )?Khách làm hai lần/)).toBeVisible();
   });
 
   test("phones (360 px): the history line is a 44 px button at the end of the card, no sideways scroll", async ({ page }) => {

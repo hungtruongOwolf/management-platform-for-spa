@@ -7,7 +7,7 @@ related: [../product/specs/record-history.md, ../architecture/record-history.md,
 
 # UI: lịch sử trên từng bản ghi
 
-Spec: [record-history](../product/specs/record-history.md). Backend: [architecture/record-history](../architecture/record-history.md). Theo rulebook + token của [design-system](design-system.md) (chip trạng thái: quy tắc 7, một bộ `.badge`, luôn có chữ). Bản sửa sau review độc lập 2026-11-11 (spec, Review lượt 3).
+Spec: [record-history](../product/specs/record-history.md). Backend: [architecture/record-history](../architecture/record-history.md). Theo rulebook + token của [design-system](design-system.md) (chip trạng thái: quy tắc 7, một bộ `.badge`, luôn có chữ). Bản sửa sau review độc lập 2026-11-11 (spec, Review lượt 3). **Đợt 1a (§3–4) và 1b (§1, §2.1–2.6) đã build**; chỗ build chọn khi design chưa nói: spec Review log K12–K20 (focus khi `403`, prefetch chunk, tên nút giờ hàng hủy / hoàn, bố cục một dòng, CSS ở `components.css`).
 
 ## 1. Thành phần dùng chung
 

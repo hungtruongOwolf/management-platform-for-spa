@@ -241,6 +241,13 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     await expect(row).toContainText("Đã hủy");
     await expect(row).toContainText("Đã hủy: Khách chuyển nhà");
     await expect(row).toContainText("Còn 0/12 buổi");
-    await expect(row.getByRole("button")).toHaveCount(0);
+    // No lifecycle action is left on a closed package; only its history (ADR-0022, the owner's).
+    await expect(row.getByRole("button")).toHaveCount(1);
+    const history = row.getByRole("button", { name: /^Lịch sử gói / });
+    await history.click();
+    await expect(history).toHaveAttribute("aria-expanded", "true");
+    await expect(row.getByText(/^Ghi bởi .+ · \d{2}\/\d{2}\/\d{4} · đã hủy$/)).toBeVisible();
+    await expect(row.getByText(/hủy gói · Hoàn 300\.000đ · lý do: Khách chuyển nhà$/)).toBeVisible();
+    await expectAccessible(page, "package-history");
   });
 });
