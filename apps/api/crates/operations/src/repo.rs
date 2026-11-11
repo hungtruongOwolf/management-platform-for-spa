@@ -117,15 +117,21 @@ pub struct VisitRow {
     pub companions: Vec<String>,
     pub version: i64,
     pub created_at: DateTime<Utc>,
+    /// "Đã sửa" (ADR-0022 D9); `None` unless asked for (`record.history.read`).
+    pub edited: Option<bool>,
 }
 
 /// One visit (`id`) or the visits of a business day (`day`), latest check-in first; `limit` =
-/// only the newest N (never more than 500).
+/// only the newest N (never more than 500). `with_edited`: also whether each was edited — replaced
+/// or made by "Sửa lượt", or its time / a technician changed (`visit.update`); the same rule as
+/// `reporting::history::edited_visits`, whose action list repeats the partial index's
+/// (`audit_log_edit_idx`, 0052).
 pub async fn visits(
     tx: &mut TenantTx,
     id: Option<Uuid>,
     day: Option<NaiveDate>,
     limit: Option<i64>,
+    with_edited: bool,
 ) -> Result<Vec<VisitRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
@@ -142,7 +148,21 @@ pub async fn visits(
                                          WHERE l.tenant_id = v.tenant_id AND l.visit_id = v.id)
                          GROUP BY ds.discount_reason) r) AS "discount_reason?",
                   v.corrects_visit_id, n.id AS "corrected_by_visit_id?", v.companions,
-                  v.version, v.created_at
+                  v.version, v.created_at,
+                  CASE WHEN $5::bool THEN (
+                    v.corrects_visit_id IS NOT NULL OR n.id IS NOT NULL
+                    OR EXISTS (
+                      SELECT 1 FROM app.audit_log a
+                      WHERE a.tenant_id = v.tenant_id AND a.entity_type = 'visit' AND a.entity_id = v.id
+                        AND a.action IN ('visit.update', 'appointment.update')
+                        AND a.action = 'visit.update'
+                        AND (a.after ->> 'check_in_at' IS NOT NULL
+                             OR EXISTS (
+                               SELECT 1 FROM jsonb_array_elements(
+                                 CASE WHEN jsonb_typeof(a.after -> 'staff') = 'array'
+                                      THEN a.after -> 'staff' ELSE '[]'::jsonb END) e
+                               WHERE e ->> 'from' IS DISTINCT FROM e ->> 'to')))
+                  ) END AS "edited?"
            FROM app.visit v
            JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id
            LEFT JOIN app.visit n ON n.tenant_id = v.tenant_id AND n.corrects_visit_id = v.id
@@ -154,7 +174,8 @@ pub async fn visits(
         tenant,
         id,
         day,
-        limit
+        limit,
+        with_edited
     )
     .fetch_all(tx.conn())
     .await?)

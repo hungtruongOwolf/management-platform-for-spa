@@ -1041,7 +1041,8 @@ async fn load(
         Selection::One(id) => (Some(id), None, None),
         Selection::Day(day, limit) => (None, Some(day), limit.map(i64::from)),
     };
-    let rows: Vec<VisitRow> = repo::visits(tx, id, day, limit).await?;
+    let with_edited = actor.can(Permission::RecordHistoryRead);
+    let rows: Vec<VisitRow> = repo::visits(tx, id, day, limit, with_edited).await?;
     let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
     let mut lines: HashMap<Uuid, Vec<VisitLineDto>> = HashMap::new();
     for l in repo::lines(tx, &ids).await? {
@@ -1134,6 +1135,7 @@ async fn load(
                 voided_at: r.voided_at,
                 corrects_visit_id: r.corrects_visit_id,
                 corrected_by_visit_id: r.corrected_by_visit_id,
+                edited: r.edited,
                 id: r.id,
                 customer_id: r.customer_id,
                 customer_name: r.customer_name,

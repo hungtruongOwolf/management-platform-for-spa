@@ -633,6 +633,21 @@ pub async fn ledger(
     .fetch_all(tx.conn())
     .await?;
 
+    // "Đã sửa" on the page's rows only (after LIMIT, ADR-0022 §4.5): a one-off sale still
+    // standing, made in a visit, carries that visit's `edited`.
+    let page = usize::try_from(limit).unwrap_or(usize::MAX);
+    let edited = if actor.can(Permission::RecordHistoryRead) {
+        let visits: Vec<Uuid> = rows
+            .iter()
+            .take(page)
+            .filter(|r| r.entry == "sale" && r.sale_kind != "package" && !r.voided)
+            .filter_map(|r| r.visit_id)
+            .collect();
+        Some(crate::history::edited_visits(&mut tx, &visits).await?)
+    } else {
+        None
+    };
+
     let days = sqlx::query!(
         r#"SELECT b.business_date AS "date!",
                   coalesce(sum(b.bank_transfer), 0)::bigint AS "bank_transfer!",
@@ -694,6 +709,12 @@ pub async fn ledger(
                 unpaid: r.unpaid,
                 note: r.note,
                 voided: r.voided,
+                edited: edited.as_ref().and_then(|set| {
+                    let visit = r.visit_id.filter(|_| {
+                        r.entry == "sale" && r.sale_kind != "package" && !r.voided
+                    })?;
+                    Some(set.contains(&visit))
+                }),
                 visit_id: r.visit_id,
                 upsell_by: r.upsell_by,
             })
