@@ -13,7 +13,7 @@
 
 use crate::repo::{self, FollowUpInsert, FollowUpRow};
 use chrono::{Days, NaiveDate};
-use kernel::audit::{self, AuditEntry};
+use kernel::audit::{self, Action, AuditEntry};
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use serde_json::{Value, json};
@@ -272,7 +272,7 @@ pub async fn record(
         &mut tx,
         actor,
         AuditEntry {
-            action: "customer.follow_up",
+            action: Action::CustomerFollowUp,
             entity_type: "customer",
             entity_id: customer_id,
             before: None,

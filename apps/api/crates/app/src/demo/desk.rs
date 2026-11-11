@@ -12,7 +12,7 @@ use super::rng::Rng;
 use super::run::retry;
 use super::{Ctx, fail, idempotency};
 use anyhow::{Context, anyhow};
-use chrono::{DateTime, Duration, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
 use crm::follow_up::{Channel, FollowUpInput, Outcome};
 use operations::dto::{
     VisitCreate, VisitLineCreate, VisitLineSourceDto, VisitLineUpdate, VisitPackageSaleCreate,
@@ -855,16 +855,15 @@ impl<'a> Chain<'a> {
                 next_follow_up_on: Some(Some(next)),
             };
             let (key, hash) = idempotency();
+            let manager = ctx.clock().acting(
+                &ctx.manager,
+                contacted,
+                14 * 60 + contacted.ordinal() * 7 % 120,
+            );
             retry(|| {
-                crm::follow_up::record(
-                    ctx.app,
-                    &ctx.manager,
-                    key,
-                    hash,
-                    self.customer,
-                    &input,
-                    |f| Ok(serde_json::json!({ "id": f.id })),
-                )
+                crm::follow_up::record(ctx.app, &manager, key, hash, self.customer, &input, |f| {
+                    Ok(serde_json::json!({ "id": f.id }))
+                })
             })
             .await
             .map_err(fail("record a follow-up"))?;

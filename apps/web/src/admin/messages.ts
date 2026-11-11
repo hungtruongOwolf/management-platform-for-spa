@@ -15,7 +15,7 @@ addMessages(
     "account.locked": "Tài khoản đang bị khóa. Mở khóa trước.",
     "account.mfa_not_enabled": "Tài khoản chưa bật xác thực hai bước.",
     "role.owner_floor": "Chủ spa phải giữ các quyền quản trị (quản lý nhân sự, xem nhân sự, xem nhật ký).",
-    "role.owner_only_permission": "Quyền quản lý nhân sự chỉ dành cho chủ spa.",
+    "role.owner_only_permission": "Quyền này chỉ dành cho chủ spa (quản lý nhân sự, nhật ký thao tác).",
     "role.not_grantable": "Có quyền không được cấp cho vai trò.",
   },
 );

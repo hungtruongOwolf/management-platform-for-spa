@@ -814,7 +814,7 @@ pub async fn change_password(
             &mut tx,
             &actor,
             kernel::audit::AuditEntry {
-                action: "account.password_change",
+                action: kernel::audit::Action::AccountPasswordChange,
                 entity_type: "user",
                 entity_id: account.id.as_uuid(),
                 before: Some(serde_json::json!({"temporary": account.must_change_password})),
@@ -862,7 +862,7 @@ pub async fn request_password_reset(
                 &mut tx,
                 meta.ip,
                 kernel::audit::AuditEntry {
-                    action: "account.password_reset_requested",
+                    action: kernel::audit::Action::AccountPasswordResetRequested,
                     entity_type: "user",
                     entity_id: account.id.as_uuid(),
                     before: None,

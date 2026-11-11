@@ -59,6 +59,30 @@ pub const DEFAULT_WORKERS: usize = 8;
 /// A leaver mid last month needs last month; reports compare up to two years.
 const MONTHS: std::ops::RangeInclusive<u32> = 2..=24;
 
+/// When back-filled history says it was written (ADR-0021): the use cases that take a clock
+/// (`*_as_of`) stamp their own audit entries; every other one runs as an actor carrying the
+/// instant the scenario has it done ([`Actor::at_clock`]), so "Nhật ký thao tác" shows a believable
+/// year instead of one burst at the run time. Rows' own `created_at` columns keep the real clock.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Clock {
+    tz: Tz,
+    now: DateTime<Utc>,
+}
+
+impl Clock {
+    /// `minutes` after local midnight of `day`, never later than the run's clock.
+    pub(crate) fn at(&self, day: NaiveDate, minutes: u32) -> DateTime<Utc> {
+        day.and_hms_opt((minutes / 60).min(23), minutes % 60, 0)
+            .and_then(|local| self.tz.from_local_datetime(&local).earliest())
+            .map_or(self.now, |t| t.with_timezone(&Utc).min(self.now))
+    }
+
+    /// `actor`, with their audit entries stamped [`Clock::at`].
+    pub(crate) fn acting(&self, actor: &Actor, day: NaiveDate, minutes: u32) -> Actor {
+        actor.clone().at_clock(self.at(day, minutes))
+    }
+}
+
 /// The days of the history: from the first day of the month `months - 1` before today's, to
 /// today. Every month but the current one ends before today and is closed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -221,6 +245,7 @@ pub async fn seed(
     report.today = Some(today);
 
     let roster = staff::roster(today);
+    let clock = Clock { tz, now };
     let staff_ids = staff::setup(
         owner,
         app,
@@ -228,6 +253,7 @@ pub async fn seed(
         slug,
         &roster,
         &logins,
+        (clock, window.start),
         &mut report.staff,
     )
     .await?;
@@ -314,6 +340,7 @@ pub async fn seed(
 
     let books = staff::Books {
         app,
+        clock: ctx.clock(),
         owner: &ctx.owner,
         manager: &ctx.manager,
         window,
@@ -640,6 +667,13 @@ impl Ctx<'_> {
             .with_timezone(&Utc))
     }
 
+    const fn clock(&self) -> Clock {
+        Clock {
+            tz: self.tz,
+            now: self.now,
+        }
+    }
+
     /// Local minutes after midnight of the run's clock.
     fn now_minute(&self) -> u32 {
         let local = self.now.with_timezone(&self.tz);
@@ -695,11 +729,14 @@ impl Ctx<'_> {
                 source: p.source.map(str::to_owned),
                 note: None,
             };
+            // Created at the desk just before their first visit.
+            let minute = 8 * 60 + u32::try_from(i % 45).unwrap_or(0);
+            let manager = self.clock().acting(&self.manager, p.first_day, minute);
             let view = run::retry(|| {
                 crm::service::create(
                     self.app,
                     self.cipher,
-                    &self.manager,
+                    &manager,
                     key,
                     hash,
                     input(),

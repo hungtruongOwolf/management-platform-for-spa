@@ -62,6 +62,14 @@ export type FollowUpFilter = Schemas["FollowUpFilter"];
 export type NotesPage = Schemas["NotesPage"];
 export type NoteEntry = Schemas["NoteEntry"];
 export type NoteKind = Schemas["NoteKind"];
+// "Nhật ký thao tác" (ADR-0021): the owner's audit trail.
+export type ActivityPage = Schemas["ActivityPage"];
+export type ActivityEntry = Schemas["ActivityEntry"];
+export type ActivityKind = Schemas["ActivityKind"];
+export type ActivityChange = Schemas["ActivityChange"];
+export type ActivitySubject = Schemas["ActivitySubject"];
+export type ActivityPerson = Schemas["ActivityPerson"];
+export type AuditAction = Schemas["AuditAction"];
 export type FollowUpChannel = Schemas["FollowUpChannelDto"];
 export type FollowUpOutcome = Schemas["FollowUpOutcomeDto"];
 export type FollowUpCreate = Schemas["FollowUpCreate"];

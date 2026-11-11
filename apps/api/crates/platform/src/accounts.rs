@@ -13,6 +13,7 @@ use crate::gate_refusal;
 use crate::tenants::Reason;
 use chrono::{DateTime, Utc};
 use identity::account::TemporaryPassword;
+use kernel::audit::Action;
 use kernel::{AppError, FieldError, PhoneE164};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -214,7 +215,7 @@ async fn load(
 /// What an account action did, for both audit trails.
 struct Done<'a> {
     platform_action: &'static str,
-    spa_action: &'static str,
+    spa_action: Action,
     detail: Value,
     reason: &'a str,
 }
@@ -241,7 +242,7 @@ async fn audit_everywhere(
             Uuid::now_v7(),
             spa.tenant_id,
             op.operator_id,
-            done.spa_action,
+            done.spa_action.as_str(),
             account.id,
             done.detail,
             done.reason,
@@ -352,17 +353,17 @@ impl AccountAction {
     }
 
     /// `(platform audit action, spa audit action)`.
-    const fn audit_actions(self) -> (&'static str, &'static str) {
+    const fn audit_actions(self) -> (&'static str, Action) {
         match self {
-            Self::Lock => ("platform.account.lock", "account.locked_by_platform"),
-            Self::Unlock => ("platform.account.unlock", "account.unlocked_by_platform"),
+            Self::Lock => ("platform.account.lock", Action::AccountLockedByPlatform),
+            Self::Unlock => ("platform.account.unlock", Action::AccountUnlockedByPlatform),
             Self::ResetMfa => (
                 "platform.account.reset_mfa",
-                "account.mfa_reset_by_platform",
+                Action::AccountMfaResetByPlatform,
             ),
             Self::RevokeSessions => (
                 "platform.account.revoke_sessions",
-                "account.sessions_revoked_by_platform",
+                Action::AccountSessionsRevokedByPlatform,
             ),
         }
     }
@@ -454,7 +455,7 @@ pub async fn reset_password(
         &account,
         Done {
             platform_action: "platform.account.reset_password",
-            spa_action: "account.password_reset_by_platform",
+            spa_action: Action::AccountPasswordResetByPlatform,
             detail: json!({"revoked_sessions": revoked}),
             reason,
         },

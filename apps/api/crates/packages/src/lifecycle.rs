@@ -16,7 +16,7 @@ use crate::http::{CustomerPackageDto, RefundMethodDto};
 use crate::repo::{self, ExtensionInsert, RefundInsert};
 use crate::service;
 use chrono::{DateTime, NaiveDate, Utc};
-use kernel::audit::{self, AuditEntry};
+use kernel::audit::{self, Action, AuditEntry};
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx, corrections};
 use serde::Deserialize;
@@ -101,7 +101,7 @@ pub async fn cancel_for_sale(
             tx,
             actor,
             AuditEntry {
-                action: "customer_package.cancel",
+                action: Action::CustomerPackageCancel,
                 entity_type: "customer_package",
                 entity_id: *id,
                 before: None,
@@ -212,7 +212,7 @@ pub async fn extend(
         &mut tx,
         actor,
         AuditEntry {
-            action: "customer_package.extend",
+            action: Action::CustomerPackageExtend,
             entity_type: "customer_package",
             entity_id: id,
             before: Some(json!({"expires_on": current, "version": version})),
@@ -292,7 +292,7 @@ pub async fn cancel_as_of(
     actor.require(Permission::PackageCancelRefund)?;
     let order = parse_cancel(input)?;
 
-    let mut tx = TenantTx::for_actor(pool, actor).await?;
+    let mut tx = TenantTx::for_actor_at(pool, actor, now).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -343,7 +343,7 @@ pub async fn cancel_as_of(
         &mut tx,
         actor,
         AuditEntry {
-            action: "customer_package.cancel",
+            action: Action::CustomerPackageCancel,
             entity_type: "customer_package",
             entity_id: id,
             before: Some(json!({"sessions_remaining": remaining_before, "version": package.version})),

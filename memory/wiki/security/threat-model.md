@@ -1,6 +1,6 @@
 ---
 title: Threat model (R1)
-updated: 2026-11-09
+updated: 2026-11-11
 sources: [architecture/system.md, product/specs/front-desk-and-packages.md, product/specs/platform-admin.md, decisions/ADR-0018-platform-admin-console.md]
 ---
 
@@ -169,8 +169,20 @@ Tài sản mới: quyền vận hành **mọi** spa (tạo / ngưng spa, cờ t�
 ## Dữ liệu cá nhân trong audit khách (ADR-0019 D13, secure review 2026-11-09)
 | STRIDE | Lạm dụng | Kiểm soát | Test |
 |---|---|---|---|
-| I | Hồ sơ đã ẩn danh nhưng tên / SĐT / ngày sinh vẫn còn mãi trong `audit_log` (giữ không hạn), ai có `audit.read` hay bản backup đều đọc được | `customer.create` / `customer.update` chỉ ghi cờ `has_*`, `gender` và `after.changed` (tên trường); 0047 viết lại các dòng cũ, giữ ai / lúc nào / trường nào | `customers.rs::customer_audit_keeps_who_and_what_field_but_no_personal_values`, `::migration_0047_scrubs_personal_values_from_old_customer_audit_rows` |
+| I | Hồ sơ đã ẩn danh nhưng tên / SĐT / ngày sinh vẫn còn mãi trong `audit_log` (giữ không hạn), ai có `audit.read` hay bản backup đều đọc được | `customer.create` / `customer.update` chỉ ghi cờ `has_*`, `gender` và `after.changed` (tên trường); 0047 viết lại các dòng cũ, giữ ai / lúc nào / trường nào | `customers.rs::customer_audit_keeps_who_what_field_and_old_new_name_and_phone_only` (từ ADR-0021: `customer.update` giữ tên + SĐT cũ → mới, xem § Nhật ký thao tác), `::migration_0047_scrubs_personal_values_from_old_customer_audit_rows` |
 | T | Dòng ghi thẳng vào DB (CLI, script, bug) lưu SĐT mà code không bao giờ nhận (máy bàn, sai đầu số) | CHECK `^\+84[35789][0-9]{8}$` ở 4 bảng (0047 `NOT VALID`, 0048 `VALIDATE`) | `customers.rs::database_refuses_a_phone_without_a_mobile_prefix` |
+
+## Nhật ký thao tác (`GET /audit-log`, secure review 2026-11-11, [ADR-0021](../decisions/ADR-0021-activity-log-for-the-owner.md))
+Một màn gom **ai làm gì với ai** của cả spa, giờ có cả tên / SĐT cũ → mới của khách (sửa một phần D13 ở trên).
+| STRIDE | Lạm dụng | Kiểm soát (server) | Test |
+|---|---|---|---|
+| E | Quản lý / KTV đọc nhật ký; operator cấp `audit.read` cho quản lý | `audit.read` kiểm trước query; `OWNER_ONLY` = `staff.manage` + `audit.read` (`422 role.owner_only_permission`); 0051 xóa dòng cũ đã lưu | `activity_log.rs::only_the_owner_reads_the_activity_log`, `authz_matrix.rs`, `platform::roles::staff_management_and_the_audit_trail_stay_with_the_owner` |
+| I | Dữ liệu sức khỏe / ghi chú lọt ra màn qua `before` / `after` | allowlist trường theo từng action (`reporting::activity::fields`), không bao giờ gửi `before` / `after` thô; ghi chú chỉ là cờ "Có / Không" | `activity_log.rs::each_group_reads_as_a_structured_sentence` (không chuỗi ghi chú nào trong body), unit `only_named_fields_leave_and_never_a_note` |
+| I | Chủ spa khác thấy dòng / tên của spa này | lọc tenant tường minh + RLS; join chủ thể theo `tenant_id` của dòng | `activity_log.rs::another_spas_entries_never_appear` |
+| I | Tên / SĐT cũ của khách đã ẩn danh vẫn hiện | màn bỏ tên, link và giá trị cũ / mới khi `anonymized_at` có; **`customer.anonymize` (chưa build) phải xóa `full_name` / `phone` khỏi audit của khách đó** | `activity_log.rs::a_legacy_action_reads_as_other_and_a_gone_subject_as_nameless` |
+| I | PII trên URL / log truy cập | bộ lọc chỉ mang id / mã (`actor`, `kind`, ngày), không tên, không SĐT | Vitest `Activity.test.tsx` (URL state) |
+| S | Lộ danh tính operator cho spa | người làm `platform` hiện "Đội vận hành", không gửi id / tên operator | `each_group_reads_as_a_structured_sentence` |
+| T | Seed demo ghi audit với giờ giả lập | chỉ công cụ dựng `Actor::at_clock`; actor của session không bao giờ có clock; `*_as_of` qua HTTP truyền `Utc::now()` | `demo_seed.rs` (không dòng nào sau giờ chạy) |
 
 ## Còn mở
 - Danh sách thao tác yêu cầu nhập lại mật khẩu: chỉ thao tác bảo mật tài khoản (EM 2026-11-05). Hiện dùng `AuthUser::require_recent_auth` ở tạo / đặt lại mật khẩu / đổi vai trò tài khoản nhân viên (ADR-0016, `staff_logins.rs::owner_login_actions_need_a_recent_reauth`); đổi mật khẩu của chính mình đòi mật khẩu hiện tại; cài đặt MFA sau đăng nhập chưa có route. Route mới loại này: dùng guard + test `401 auth.reauth_required`.

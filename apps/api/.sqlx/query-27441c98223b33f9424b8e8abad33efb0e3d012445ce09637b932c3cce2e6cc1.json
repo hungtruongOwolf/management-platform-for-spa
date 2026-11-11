@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.id AS \"user_id!\", u.full_name AS \"name!\",\n                  (m.status <> 'active'\n                   OR (st.id IS NOT NULL AND NOT EXISTS (\n                         SELECT 1 FROM app.staff_employment e\n                         WHERE e.tenant_id = st.tenant_id AND e.staff_id = st.id AND e.ended_on IS NULL))\n                  ) AS \"left!\"\n           FROM app.membership m\n           JOIN app.user_account u ON u.id = m.user_id\n           LEFT JOIN app.staff st ON st.tenant_id = m.tenant_id AND st.user_id = m.user_id\n           WHERE m.tenant_id = $1\n           ORDER BY 3, u.full_name, u.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.user_account",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.user_account",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "left!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "27441c98223b33f9424b8e8abad33efb0e3d012445ce09637b932c3cce2e6cc1"
+}

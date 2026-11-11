@@ -5,7 +5,7 @@ use crate::cipher::{FieldCipher, customer_aad};
 use crate::repo::{self, CustomerFields, CustomerRow, SummaryRow};
 use crate::text::{clean_name, like_escape, search_key};
 use chrono::{Datelike, NaiveDate};
-use kernel::audit::{self, AuditEntry, REDACTED};
+use kernel::audit::{self, Action, AuditEntry, REDACTED};
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Permission, PhoneE164, TenantTx};
 use serde_json::json;
@@ -220,7 +220,8 @@ fn view(cipher: &FieldCipher, actor: &Actor, row: CustomerRow) -> Result<Custome
 }
 
 /// What a customer audit row keeps of a profile (ADR-0019 D13, Nghị định 13/2023): which personal
-/// fields are filled, never their values. The trail outlives an anonymised profile (`audit_log`
+/// fields are filled, never their values (an update adds the old / new name and phone it changed,
+/// [`update_audit`]). The trail outlives an anonymised profile (`audit_log`
 /// has no retention), so a name, phone or birth date written here would never go away. Migration
 /// 0047 rewrote the rows written before this shape.
 fn audit_presence(row: &CustomerRow) -> serde_json::Value {
@@ -231,7 +232,30 @@ fn audit_presence(row: &CustomerRow) -> serde_json::Value {
     })
 }
 
-/// Profile fields an update changed, named like the API fields (their values are not recorded).
+/// The `before` / `after` of `customer.update`: presence flags, the changed fields and, for a
+/// changed full name or phone only, the old and the new value (ADR-0021, EM 2026-11-11: the owner's
+/// "Nhật ký thao tác" shows "0905… → 0912…"). That partly reverses ADR-0019 D13 on purpose: these
+/// two values now stay in the trail, so anonymising a customer (`customer.anonymize`, not built
+/// yet) must also scrub them from that customer's audit rows. Other fields keep no value.
+fn update_audit(
+    before: &CustomerRow,
+    after: &CustomerRow,
+) -> (serde_json::Value, serde_json::Value) {
+    let mut old = audit_presence(before);
+    let mut new = audit_presence(after);
+    new["changed"] = json!(changed_fields(before, after));
+    if before.full_name != after.full_name {
+        old["full_name"] = json!(before.full_name);
+        new["full_name"] = json!(after.full_name);
+    }
+    if before.phone_e164 != after.phone_e164 {
+        old["phone"] = json!(before.phone_e164);
+        new["phone"] = json!(after.phone_e164);
+    }
+    (old, new)
+}
+
+/// Profile fields an update changed, named like the API fields.
 fn changed_fields(before: &CustomerRow, after: &CustomerRow) -> Vec<&'static str> {
     [
         ("full_name", before.full_name != after.full_name),
@@ -312,7 +336,7 @@ pub async fn create_in(
         tx,
         actor,
         AuditEntry {
-            action: "customer.create",
+            action: Action::CustomerCreate,
             entity_type: "customer",
             entity_id: id,
             before: None,
@@ -363,16 +387,15 @@ pub async fn update(
         });
     }
     let after = repo::get(&mut tx, id).await?.ok_or(AppError::NotFound)?;
-    let mut after_audit = audit_presence(&after);
-    after_audit["changed"] = json!(changed_fields(&before, &after));
+    let (before_audit, after_audit) = update_audit(&before, &after);
     audit::record(
         &mut tx,
         actor,
         AuditEntry {
-            action: "customer.update",
+            action: Action::CustomerUpdate,
             entity_type: "customer",
             entity_id: id,
-            before: Some(audit_presence(&before)),
+            before: Some(before_audit),
             after: Some(after_audit),
             reason: None,
         },
@@ -410,7 +433,7 @@ pub async fn set_health_note(
         &mut tx,
         actor,
         AuditEntry {
-            action: "customer.health_note_set",
+            action: Action::CustomerHealthNoteSet,
             entity_type: "customer",
             entity_id: id,
             before: None,
@@ -469,7 +492,7 @@ pub async fn fill_gender_in(
         tx,
         actor,
         AuditEntry {
-            action: "customer.update",
+            action: Action::CustomerUpdate,
             entity_type: "customer",
             entity_id: id,
             before: Some(json!({ "gender": null })),

@@ -1,6 +1,6 @@
 ---
 title: Data model (R1-1)
-updated: 2026-11-09
+updated: 2026-11-11
 sources: [product/specs/front-desk-and-packages.md, product/specs/management-views.md, architecture/system.md, decisions/ADR-0003-multi-tenancy.md]
 ---
 
@@ -117,7 +117,7 @@ Thứ tự ưu tiên đúng như trên. Không cần job cập nhật trạng th
 | Bảng | Cột chính | Ràng buộc / index |
 |---|---|---|
 | `idempotency_record` | tenant_id, actor_user_id, key, request_hash (32 byte), response_status, response_body `jsonb`, created_at | PK `(tenant_id, actor_user_id, key)`; index `(created_at)`; claim + complete trong **cùng transaction** với use case; job dọn > 48 giờ qua hàm `SECURITY DEFINER` `app.purge_idempotency_records` (app_rw không có DELETE, không cần BYPASSRLS) |
-| `audit_log` *(append-only)* | tenant_id?, actor_user_id, actor_kind (`user`/`platform_admin`/`system`), action, entity_type, entity_id, before `jsonb`, after `jsonb`, reason?, ip, at | index `audit_log_entity_idx (tenant_id, entity_type, entity_id, at)`, `audit_log_tenant_at_idx (tenant_id, at DESC)` (0038). Trường sức khỏe ghi `"[redacted]"`; audit hồ sơ khách chỉ ghi cờ có/không và tên trường đã đổi, không ghi tên / SĐT / ngày sinh (0047, ADR-0019 D13). Giữ hết, không có hạn (EM Q-DB4) |
+| `audit_log` *(append-only)* | tenant_id?, actor_user_id, actor_kind (`user`/`platform_admin`/`system`), action, entity_type, entity_id, before `jsonb`, after `jsonb`, reason?, ip, at | index `audit_log_entity_idx (tenant_id, entity_type, entity_id, at)`, `audit_log_tenant_at_id_idx (tenant_id, at DESC, id DESC)` (0051, thay `audit_log_tenant_at_idx` của 0038), `audit_log_tenant_actor_at_idx (tenant_id, actor_user_id, at DESC, id DESC) WHERE actor_user_id IS NOT NULL` (0051, lọc người của "Nhật ký thao tác"). Trường sức khỏe ghi `"[redacted]"`; audit hồ sơ khách ghi cờ có/không và tên trường đã đổi, không ghi ngày sinh (0047, ADR-0019 D13); từ ADR-0021 `customer.update` giữ tên + SĐT cũ → mới khi đổi. `at` = đồng hồ của transaction (`TenantTx::clock`: `now` của use case `*_as_of`, hoặc giờ DB). Giữ hết, không có hạn (EM Q-DB4) |
 | `maintenance_run` (0035) | job (PK), last_run_at | Không grant, RLS không policy; chỉ hàm `app.claim_maintenance(job, every)` chạm tới (một instance chạy mỗi job mỗi khoảng) |
 
 ## Migrations (forward-only, `sqlx migrate`)

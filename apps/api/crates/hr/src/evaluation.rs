@@ -15,7 +15,7 @@ use crate::repo::{self, EvaluationRow, EvaluationWrite};
 use crate::review;
 use crate::scope::RecordScope;
 use chrono::{DateTime, NaiveDate, Utc};
-use kernel::audit::{self, AuditEntry};
+use kernel::audit::{self, Action, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use org::profile::Profile;
 use serde::{Deserialize, Serialize};
@@ -576,7 +576,7 @@ pub async fn record(
         &mut tx,
         actor,
         AuditEntry {
-            action: "evaluation.record",
+            action: Action::EvaluationRecord,
             entity_type: "staff",
             entity_id: input.staff_id,
             before: before.as_ref().map(summary),

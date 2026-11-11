@@ -9,7 +9,7 @@ use crate::repo::{self, AttendanceRow, Cell};
 use crate::rules;
 use crate::scope::RecordScope;
 use chrono::{NaiveDate, NaiveTime, Timelike};
-use kernel::audit::{self, AuditEntry};
+use kernel::audit::{self, Action, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use org::http::EmploymentPeriodDto;
 use org::profile::Profile;
@@ -415,7 +415,7 @@ pub async fn record(
             &mut tx,
             actor,
             AuditEntry {
-                action: "attendance.record",
+                action: Action::AttendanceRecord,
                 entity_type: "staff",
                 entity_id: e.staff_id,
                 before: audit_value(before.as_ref()),

@@ -58,7 +58,7 @@ deciders: lead (EM ủy quyền: "cứ đúng nhất mà làm")
 - **D12.** Siết CHECK SĐT trong DB cho khớp code: chỉ đầu số di động. Trước khi chạy migration, lead kiểm dữ liệu staging; dùng NOT VALID rồi VALIDATE.
 
 ### Dữ liệu cá nhân
-- **D13. Audit khách không lưu PII rõ nữa.**
+- **D13. Audit khách không lưu PII rõ nữa.** *(Sửa một phần bởi [ADR-0021](ADR-0021-activity-log-for-the-owner.md), EM 2026-11-11: `customer.update` giữ tên + SĐT cũ → mới khi đổi; tạo khách và ngày sinh vẫn như D13.)*
   - Thay tên, SĐT và ngày sinh bằng cờ (`has_phone`, `has_birth_date`) cùng danh sách trường đã đổi.
   - Migration xóa PII khỏi các dòng audit cũ.
   - Ai đổi gì, lúc nào vẫn được giữ.

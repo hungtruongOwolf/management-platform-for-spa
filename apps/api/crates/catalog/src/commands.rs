@@ -5,7 +5,7 @@ use crate::domain::{PricingError, ServicePrices};
 use crate::repo::{
     self, CategoryRow, PlanFields, PlanItemRow, PlanRow, ServiceFields, ServiceRow, Versioned,
 };
-use kernel::audit::{self, AuditEntry};
+use kernel::audit::{self, Action, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx};
 use serde_json::json;
 use sqlx::PgPool;
@@ -54,7 +54,7 @@ pub async fn create_category(
         &mut tx,
         actor,
         AuditEntry {
-            action: "catalog.category_create",
+            action: Action::CatalogCategoryCreate,
             entity_type: "service_category",
             entity_id: row.id,
             before: None,
@@ -89,7 +89,7 @@ pub async fn update_category(
         &mut tx,
         actor,
         AuditEntry {
-            action: "catalog.category_update",
+            action: Action::CatalogCategoryUpdate,
             entity_type: "service_category",
             entity_id: row.id,
             before: None,
@@ -181,7 +181,7 @@ pub async fn create_service(
         &mut tx,
         actor,
         AuditEntry {
-            action: "catalog.service_create",
+            action: Action::CatalogServiceCreate,
             entity_type: "service",
             entity_id: id,
             before: None,
@@ -237,7 +237,7 @@ pub async fn update_service(
         &mut tx,
         actor,
         AuditEntry {
-            action: "catalog.service_update",
+            action: Action::CatalogServiceUpdate,
             entity_type: "service",
             entity_id: id,
             before: Some(service_snapshot(&before)),
@@ -370,7 +370,7 @@ pub async fn create_plan(
         &mut tx,
         actor,
         AuditEntry {
-            action: "catalog.plan_create",
+            action: Action::CatalogPlanCreate,
             entity_type: "package_plan",
             entity_id: id,
             before: None,
@@ -418,7 +418,7 @@ pub async fn update_plan(
         &mut tx,
         actor,
         AuditEntry {
-            action: "catalog.plan_update",
+            action: Action::CatalogPlanUpdate,
             entity_type: "package_plan",
             entity_id: id,
             before: Some(plan_snapshot(&before)),

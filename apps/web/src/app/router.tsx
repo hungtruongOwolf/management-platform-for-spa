@@ -31,6 +31,7 @@ const inactivePage = () => import("../features/reports/InactiveCustomersPage");
 const staffPage = () => import("../features/staff/StaffPage");
 const myWorkPage = () => import("../features/staff/MyWorkPage");
 const notesPage = () => import("../features/notes/NotesPage");
+const activityPage = () => import("../features/activity/ActivityPage");
 
 /** Shown while a lazy screen's chunk loads (after the router's pending delay): no spinner. */
 function PageSkeleton() {
@@ -243,6 +244,17 @@ const notesRoute = createRoute({
   component: lazyRouteComponent(notesPage, "NotesPage"),
 });
 
+/**
+ * "Nhật ký thao tác" (ADR-0021): audit.read (owner only) opens it; GET /audit-log refuses everyone
+ * else. Its URL state is parsed in the lazy chunk (features/activity/search.ts), like the notes.
+ */
+const activityRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/nhat-ky-thao-tac",
+  beforeLoad: only(mayOpen.activity),
+  component: lazyRouteComponent(activityPage, "ActivityPage"),
+});
+
 const inactiveRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/khach-lau-khong-quay-lai",
@@ -355,6 +367,7 @@ const routeTree = rootRoute.addChildren([
     packagesRoute,
     inactiveRoute,
     notesRoute,
+    activityRoute,
     staffRoute,
     myPayRoute,
     myWorkRoute,

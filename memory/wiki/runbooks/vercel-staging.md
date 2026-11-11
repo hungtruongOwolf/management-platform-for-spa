@@ -1,6 +1,6 @@
 ---
 title: Runbook — staging trên Vercel + Supabase
-updated: 2026-11-10
+updated: 2026-11-11
 sources: [vercel.json, apps/api/crates/app/src/config.rs, apps/api/crates/app/src/main.rs, apps/api/crates/app/src/demo/reset.rs, decisions/ADR-0005-compute-hosting.md, raw/2026-11-09-em-request-staging-full-scenario-data.md]
 ---
 
@@ -108,7 +108,11 @@ SQLX_OFFLINE=true DATABASE_URL="$STAGING_OWNER_URL" APP_DATABASE_URL="<app_rw UR
 
 Số "hôm nay" phụ thuộc giờ chạy (chạy trước 9:00 thì không có lịch quá giờ / đã đến). Lệnh in đúng bảng đếm này (đọc thẳng từ bảng) khi xong; hai dòng `payment_reversals_today` và `net_takings_today_vnd` (= "Thực thu hôm nay" của báo cáo ngày) để kiểm nhanh hôm nay sau khi seed: `net_takings_today_vnd` phải dương.
 
-**Chưa có trong demo:** nửa ngày công (quy tắc chấm công chỉ có 4 trạng thái Đi làm / P / ĐX / K, không có nửa ngày); công nợ / trả một phần (R1 thu đủ ngay); bán sản phẩm (chưa có tính năng). Lượt và hóa đơn của các ngày trước có `business_date` và giờ vào đúng ngày đó, nhưng `created_at` / `paid_at` / thời điểm audit là lúc chạy lệnh: đó là sự thật về lúc dữ liệu được ghi. Cũng vậy với bút toán đảo và dòng hoàn tiền của ngày cũ: `business_date` là ngày sửa sai / hoàn tiền trong kịch bản, `created_at` và audit là lúc seed.
+**Chưa có trong demo:** nửa ngày công (quy tắc chấm công chỉ có 4 trạng thái Đi làm / P / ĐX / K, không có nửa ngày); công nợ / trả một phần (R1 thu đủ ngay); bán sản phẩm (chưa có tính năng). Lượt và hóa đơn của các ngày trước có `business_date` và giờ vào đúng ngày đó, nhưng `created_at` / `paid_at` là lúc chạy lệnh: đó là sự thật về lúc dữ liệu được ghi. Cũng vậy với bút toán đảo và dòng hoàn tiền của ngày cũ: `business_date` là ngày sửa sai / hoàn tiền trong kịch bản, `created_at` là lúc seed. **Thời điểm audit thì theo kịch bản** (ADR-0021, để "Nhật ký thao tác" trông như một năm thật):
+  - use case `*_as_of` (lượt, hủy / sửa lượt, bán gói, hủy gói, lịch hẹn) đóng dấu audit bằng chính đồng hồ của nó;
+  - các use case khác chạy với actor mang giờ kịch bản (`Actor::at_clock`): tạo khách (sáng ngày lượt đầu), chấm công (18:05 / 18:25 mỗi ngày), khen / phàn nàn (18:40), thưởng / phạt (17:00 ngày xảy ra), đánh giá (sáng ngày đầu tháng sau), chốt lương (ngày 3 tháng sau), chăm sóc lại (chiều ngày gọi), hồ sơ / lương nhân viên (ngày vào làm hoặc ngày đầu kịch bản), nghỉ việc (ngày làm cuối);
+  - không giờ nào sau lúc chạy lệnh. Vẫn theo giờ thật: "Sửa lượt" đổi KTV, nhập sổ giấy, gia hạn, hủy hóa đơn hôm nay, đặt lịch tương lai, đặt nhóm, khách đến hôm nay.
+  - Chấm công và khen / phàn nàn ghi mỗi ngày một transaction cho từng người ghi (trước là một batch một tháng), nên phase "staff books" có nhiều câu lệnh hơn.
 
 **Tốc độ:** local (Postgres trên máy, build debug) **14–14,5 s** cho 12 tháng, khoảng 53.100 câu SQL, **21,7 câu mỗi lượt** (kể cả hóa đơn, hủy, sửa của lượt đó); lệnh in thời gian và số câu SQL từng phase. Qua Supabase session pooler ~150 ms mỗi round trip: chạy tuần tự sẽ là 52.600 × 0,15 s ≈ 2,2 giờ. Seed chạy 8 use case song song (`--workers`, mặc định 8; mỗi khách một chuỗi theo thời gian, các ngày của lịch hẹn và các tháng chấm công song song; lỗi kết nối tạm thời được thử lại với cùng idempotency key), ước tính **≈ 18 phút**: khách 1.744 × 0,15 / 8 ≈ 33 s; sổ giấy 91 × 0,15 ≈ 14 s (tuần tự); quầy 41.222 × 0,15 / 8 ≈ 13 phút (chuỗi dài nhất ngắn hơn nhiều); lịch hẹn 5.095 × 0,15 / 8 ≈ 1,6 phút; sổ nhân sự + 11 lần chốt lương tuần tự ≈ 2,5 phút; setup < 30 s. Pool `app_rw` của lệnh = `workers + 2` kết nối: nếu pooler báo hết kết nối thì chạy `--workers 6` (≈ 24 phút).
 

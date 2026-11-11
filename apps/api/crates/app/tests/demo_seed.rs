@@ -322,6 +322,65 @@ async fn a_full_scenario_covers_every_category_through_the_use_cases(pool: PgPoo
         "former staff only read their own past"
     );
 
+    // ADR-0021: the audit trail reads as the scenario's year, not one burst at the run time.
+    // Every month of the window has entries, the run day holds a small share, nothing is dated
+    // after the run, and a back-filled visit is audited on its own business day.
+    let audit_months = count(
+        &h.owner,
+        "SELECT count(DISTINCT date_trunc('month', at AT TIME ZONE 'Asia/Ho_Chi_Minh'))
+         FROM app.audit_log",
+    )
+    .await?;
+    assert_eq!(
+        audit_months, 5,
+        "audit entries in every month of the window"
+    );
+    let (total, on_run_day): (i64, i64) = sqlx::query_as(
+        "SELECT count(*), count(*) FILTER (WHERE (at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date = $1)
+         FROM app.audit_log",
+    )
+    .bind(today)
+    .fetch_one(&h.owner)
+    .await?;
+    assert!(
+        on_run_day * 5 < total,
+        "{on_run_day} of {total} audit entries on the run day"
+    );
+    assert_eq!(
+        count(
+            &h.owner,
+            "SELECT count(*) FROM app.audit_log WHERE at > now()"
+        )
+        .await?,
+        0
+    );
+    assert_eq!(
+        count(
+            &h.owner,
+            "SELECT count(*) FROM app.audit_log a
+             JOIN app.visit v ON v.tenant_id = a.tenant_id AND v.id = a.entity_id
+             WHERE a.action = 'visit.create'
+               AND (a.at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <> v.business_date"
+        )
+        .await?,
+        0,
+        "a visit audited on another day than its own"
+    );
+    let back = today - chrono::Duration::days(60);
+    let page = call(
+        &h.app,
+        "GET",
+        &format!("/audit-log?from={back}&to={back}&limit=100"),
+        Some(&owner),
+        None,
+    )
+    .await;
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    assert!(
+        !list(&page.body["items"]).is_empty(),
+        "nothing in the activity log on {back}"
+    );
+
     // A second run changes nothing.
     let visits = s.get("visits");
     let again = seed(&h.owner, &app, &h.cipher, &options("vpyd", 5)).await;

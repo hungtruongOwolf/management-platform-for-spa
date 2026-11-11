@@ -10,7 +10,7 @@ use crate::period;
 use crate::repo::{self, AdjustmentInsert, AdjustmentRow};
 use crate::scope::RecordScope;
 use chrono::{DateTime, NaiveDate, Utc};
-use kernel::audit::{self, AuditEntry};
+use kernel::audit::{self, Action, AuditEntry};
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use serde::{Deserialize, Serialize};
@@ -239,7 +239,7 @@ async fn insert_checked(
         tx,
         actor,
         AuditEntry {
-            action: "staff.adjustment",
+            action: Action::StaffAdjustment,
             entity_type: "staff",
             entity_id: input.staff_id,
             before: None,
@@ -285,7 +285,7 @@ async fn void_checked(
         tx,
         actor,
         AuditEntry {
-            action: "staff.adjustment_void",
+            action: Action::StaffAdjustmentVoid,
             entity_type: "staff",
             entity_id: entry.staff_id,
             before: Some(json!({"adjustment_id": id, "occurred_on": entry.work_date})),

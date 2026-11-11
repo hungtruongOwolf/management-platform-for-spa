@@ -22,7 +22,7 @@ use crate::dto::{
 use crate::repo::{self, LineInsert, LineRow, VisitInsert, VisitRow};
 use catalog::{PriceLookupError, PriceVariant};
 use chrono::{DateTime, NaiveDate, Utc};
-use kernel::audit::{self, AuditEntry, REDACTED};
+use kernel::audit::{self, Action, AuditEntry, REDACTED};
 use kernel::crypto::FieldCipher;
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx};
@@ -444,7 +444,7 @@ pub async fn record_as_of(
     actor.require(Permission::VisitRecord)?;
     let order = parse(actor, input)?;
 
-    let mut tx = TenantTx::for_actor(pool, actor).await?;
+    let mut tx = TenantTx::for_actor_at(pool, actor, now).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -927,9 +927,9 @@ async fn checkout(
         actor,
         AuditEntry {
             action: if existing.is_some() {
-                "visit.addition"
+                Action::VisitAddition
             } else {
-                "visit.create"
+                Action::VisitCreate
             },
             entity_type: "visit",
             entity_id: visit_id,
@@ -955,7 +955,7 @@ async fn checkout(
             tx,
             actor,
             AuditEntry {
-                action: "customer_package.use_expired_override",
+                action: Action::CustomerPackageUseExpiredOverride,
                 entity_type: "customer_package",
                 entity_id: package_id,
                 before: None,
@@ -1359,7 +1359,7 @@ pub async fn update(
         &mut tx,
         actor,
         AuditEntry {
-            action: "visit.update",
+            action: Action::VisitUpdate,
             entity_type: "visit",
             entity_id: id,
             before: Some(json!({
@@ -1434,7 +1434,7 @@ pub async fn void_as_of(
         Err(invalid) => return Err(authorized_then_as_of(pool, actor, id, invalid, now).await),
     };
 
-    let mut tx = TenantTx::for_actor(pool, actor).await?;
+    let mut tx = TenantTx::for_actor_at(pool, actor, now).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -1505,7 +1505,7 @@ async fn void_locked(
         tx,
         actor,
         AuditEntry {
-            action: "visit.void",
+            action: Action::VisitVoid,
             entity_type: "visit",
             entity_id: id,
             before: Some(json!({"status": "completed", "business_date": visit.business_date})),
@@ -1602,7 +1602,7 @@ pub async fn correct_as_of(
         Err(refused) => return Err(authorized_then_as_of(pool, actor, id, refused, now).await),
     };
 
-    let mut tx = TenantTx::for_actor(pool, actor).await?;
+    let mut tx = TenantTx::for_actor_at(pool, actor, now).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -1737,7 +1737,7 @@ pub(crate) async fn finish_correction(
         tx,
         actor,
         AuditEntry {
-            action: "visit.correct",
+            action: Action::VisitCorrect,
             entity_type: "visit",
             entity_id: id,
             before: Some(json!({
@@ -2032,7 +2032,7 @@ pub async fn convert(
         &mut tx,
         actor,
         AuditEntry {
-            action: "visit.convert_to_package",
+            action: Action::VisitConvertToPackage,
             entity_type: "visit",
             entity_id: id,
             before: Some(json!({"visit_id": id, "total": old.total})),

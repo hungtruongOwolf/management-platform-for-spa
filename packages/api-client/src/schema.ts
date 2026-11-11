@@ -679,6 +679,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/audit-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_activity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -1866,6 +1882,119 @@ export interface components {
             /** @description `active` | `disabled` (locked by an operator). */
             status: string;
         };
+        ActivityActor: {
+            kind: components["schemas"]["ActorKind"];
+            /** @description The login's full name (`user` only). */
+            name?: string | null;
+            /** Format: uuid */
+            user_id?: string | null;
+        };
+        /**
+         * @description One field an action changed. `old` / `new` are absent when the trail does not keep the value
+         *     (a customer's address, a staff member's phone) or the side did not exist.
+         */
+        ActivityChange: {
+            field: string;
+            format: components["schemas"]["ChangeFormat"];
+            new?: string | null;
+            old?: string | null;
+        };
+        ActivityEntry: {
+            /** @description The action key (see `AuditAction`; a legacy row may hold another). */
+            action: string;
+            actor: components["schemas"]["ActivityActor"];
+            /**
+             * Format: int64
+             * @description The money it moved, in đồng: a visit's or sale's total, a refund, a reversal, a
+             *     correction's difference (signed), a bonus / penalty, a closed month's net pay.
+             */
+            amount?: number | null;
+            /** Format: date-time */
+            at: string;
+            changes: components["schemas"]["ActivityChange"][];
+            /**
+             * Format: date
+             * @description The day `at` falls on in the spa's time zone (the screen groups by it).
+             */
+            day: string;
+            /**
+             * @description Extra context by action: `staff.adjustment` → `bonus` | `penalty`; `payroll.close`,
+             *     `evaluation.record` → the month (`YYYY-MM`); `feature.changed` → the feature key;
+             *     `customer.follow_up` → the outcome; `staff.login_create` → the role;
+             *     `visit.create` → `backdated` when recorded for a past day.
+             */
+            detail?: string | null;
+            /**
+             * Format: int64
+             * @description A discount given on a visit or a sale.
+             */
+            discount?: number | null;
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["ActivityKind"];
+            /**
+             * @description What the person typed as the reason (void, cancel, discount, override, extension; the
+             *     platform team's reason).
+             */
+            reason?: string | null;
+            subject?: components["schemas"]["ActivitySubject"] | null;
+        };
+        /**
+         * @description The filter groups of the screen. Every [`Action`] belongs to exactly one
+         *     (`crate::activity::kind_of`, an exhaustive `match`); a stored key no code writes any more is
+         *     `other`.
+         * @enum {string}
+         */
+        ActivityKind: "front_desk" | "packages" | "appointments" | "customers" | "staff" | "payroll" | "settings" | "accounts" | "other";
+        ActivityPage: {
+            /** Format: date */
+            from: string;
+            items: components["schemas"]["ActivityEntry"][];
+            next_cursor?: string | null;
+            /** @description For the person filter (with "Đội vận hành" and "Hệ thống", which the web adds). */
+            people: components["schemas"]["ActivityPerson"][];
+            /** Format: date */
+            to: string;
+        };
+        /** @description A member the person filter offers (the owner, staff with a login, staff who left). */
+        ActivityPerson: {
+            /** @description Their staff profile has no open employment period, or the membership is disabled. */
+            left: boolean;
+            name: string;
+            /** Format: uuid */
+            user_id: string;
+        };
+        /** @description The record an entry is about, resolved when read (a rename shows the current name). */
+        ActivitySubject: {
+            /** @description The customer's recorded gender (`female` | `male`), for "chị" / "anh". */
+            gender?: string | null;
+            /**
+             * Format: uuid
+             * @description A customer's or a staff member's id, where the web has a page for it. Never for an
+             *     anonymised customer.
+             */
+            id?: string | null;
+            kind: components["schemas"]["SubjectKind"];
+            /**
+             * @description The customer's name ("Khách vãng lai" for a nameless profile, a booking guest's name), the
+             *     staff member's, the service's, the plan's, the login's, or the role key (`owner` …).
+             *     Absent when the record is gone or the customer was anonymised: the web says so neutrally.
+             */
+            name?: string | null;
+            /**
+             * Format: date
+             * @description The business day the record belongs to: a visit's, a sale's, a booking's, an attendance
+             *     or review day, the day a bonus / penalty happened.
+             */
+            on?: string | null;
+            /** @description A customer package's name. */
+            package?: string | null;
+        };
+        /**
+         * @description Who did it.
+         * @enum {string}
+         */
+        ActorKind: "user" | "platform" | "system";
         Adjustment: {
             /**
              * Format: int64
@@ -2217,6 +2346,8 @@ export interface components {
             /** @description 1–100 cells. */
             entries: components["schemas"]["AttendanceEntryWrite"][];
         };
+        /** @enum {string} */
+        AuditAction: "visit.create" | "visit.addition" | "visit.update" | "visit.correct" | "visit.void" | "visit.convert_to_package" | "sale.create" | "sale.void" | "sale.note_update" | "customer_package.create" | "customer_package.extend" | "customer_package.cancel" | "customer_package.use_expired_override" | "opening_balance.import" | "sale.paper_book" | "appointment.create" | "appointment.update" | "appointment.arrive" | "appointment.undo_arrival" | "appointment.complete" | "appointment.no_show" | "appointment.cancel" | "appointment.settings" | "customer.create" | "customer.update" | "customer.health_note_set" | "customer.follow_up" | "attendance.record" | "evaluation.daily_review" | "evaluation.record" | "staff.adjustment" | "staff.adjustment_void" | "staff.create" | "staff.update" | "staff.end" | "staff.rehire" | "staff.pay_update" | "staff.account_link" | "payroll.rules_update" | "payroll.close" | "catalog.category_create" | "catalog.category_update" | "catalog.service_create" | "catalog.service_update" | "catalog.plan_create" | "catalog.plan_update" | "staff.login_create" | "staff.login_password_reset" | "staff.login_role" | "account.password_change" | "account.password_reset_requested" | "account.password_reset_dismissed" | "account.locked_by_platform" | "account.unlocked_by_platform" | "account.mfa_reset_by_platform" | "account.sessions_revoked_by_platform" | "account.password_reset_by_platform" | "role.permissions_changed" | "role.permissions_reset" | "feature.changed" | "tenant.created" | "tenant.suspended" | "tenant.unsuspended" | "tenant.owner_mfa_changed";
         /** @description `GET /appointments`: the spa's grid and its appointments over `from..=to`. */
         CalendarDto: {
             /** @description Every status, earliest first. */
@@ -2301,6 +2432,11 @@ export interface components {
             /** Format: int32 */
             sort_order: number;
         };
+        /**
+         * @description How the web shows a changed value.
+         * @enum {string}
+         */
+        ChangeFormat: "text" | "money" | "number" | "date" | "time" | "instant" | "flag" | "percent_bp" | "phone" | "code";
         /** @description One package of `POST /sales/checkout`: the same fields as a package sold in a visit. */
         CheckoutPackageCreate: {
             /**
@@ -5023,6 +5159,11 @@ export interface components {
             revoked_sessions: number;
             tenant: components["schemas"]["TenantRow"];
         };
+        /**
+         * @description What an entry is about.
+         * @enum {string}
+         */
+        SubjectKind: "customer" | "staff" | "service" | "service_category" | "package_plan" | "account" | "role" | "spa";
         /**
          * @description The next date the rules would store for a contact made today, per outcome (`null` = none).
          *     The form pre-fills `next_follow_up_on` with it; whatever the user leaves there is sent.
@@ -7851,6 +7992,58 @@ export interface operations {
                 };
                 content?: never;
             };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_activity: {
+        parameters: {
+            query?: {
+                /** @description First day (spa time zone, inclusive). Default: 6 days before `to`. */
+                from?: string;
+                /** @description Last day (inclusive). Default: today. At most 366 days after `from`. */
+                to?: string;
+                /** @description Who did it: a member's user id, `platform` (the platform team) or `system`. */
+                actor?: string;
+                /** @description Only this group of actions. */
+                kind?: components["schemas"]["ActivityKind"];
+                cursor?: string;
+                /** @description 1–100, default 20. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The spa's audit trail, newest first: structured entries (who, what, about whom, changed values, money, reason); never a note's text */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityPage"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: no audit.read (owner only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description validation_failed: actor invalid, from after_to, to range_too_long (> 366 days), cursor invalid, limit out_of_range */
             422: {
                 headers: {
                     [name: string]: unknown;

@@ -114,6 +114,12 @@ export function navFor(me: Me | null): NavGroup[] {
           label: "Nhật ký ghi chú",
           icon: "history",
         },
+        // Who did what, when (ADR-0021): the owner's read of the audit trail.
+        mayOpen.activity(me) && {
+          to: "/nhat-ky-thao-tac",
+          label: "Nhật ký thao tác",
+          icon: "clock",
+        },
       ],
     ],
     ["Nhân viên", [staffItem(me), myPayItem(me), myWorkItem(me)]],

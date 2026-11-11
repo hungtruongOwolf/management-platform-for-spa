@@ -7,7 +7,7 @@ use crate::period;
 use crate::repo::{self, Cell, ReviewRow};
 use crate::scope::RecordScope;
 use chrono::NaiveDate;
-use kernel::audit::{self, AuditEntry};
+use kernel::audit::{self, Action, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use org::profile::Profile;
 use serde::Serialize;
@@ -258,7 +258,7 @@ pub async fn record(
             &mut tx,
             actor,
             AuditEntry {
-                action: "evaluation.daily_review",
+                action: Action::EvaluationDailyReview,
                 entity_type: "staff",
                 entity_id: e.staff_id,
                 before: before

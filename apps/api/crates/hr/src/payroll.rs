@@ -11,7 +11,7 @@ use crate::period::{self, PeriodInfo};
 use crate::repo;
 use crate::rules::{self, PayrollRules};
 use chrono::{DateTime, NaiveDate, Utc};
-use kernel::audit::{self, AuditEntry};
+use kernel::audit::{self, Action, AuditEntry};
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, Permission, TenantTx};
 use org::Employment;
@@ -471,7 +471,7 @@ pub async fn close(
         &mut tx,
         actor,
         AuditEntry {
-            action: "payroll.close",
+            action: Action::PayrollClose,
             entity_type: "tenant",
             entity_id: actor.tenant_id.as_uuid(),
             before: None,

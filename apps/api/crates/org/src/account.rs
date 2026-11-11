@@ -8,7 +8,7 @@
 use crate::profile::{self, Profile, ProfileView};
 use crate::repo;
 use identity::account::{self as login, LoginRole, TemporaryPassword};
-use kernel::audit::{self, AuditEntry};
+use kernel::audit::{self, Action, AuditEntry};
 use kernel::{Actor, AppError, Permission, TenantTx, UserId};
 use serde_json::json;
 use sqlx::PgPool;
@@ -79,7 +79,7 @@ pub async fn create(
         &mut tx,
         actor,
         AuditEntry {
-            action: "staff.login_create",
+            action: Action::StaffLoginCreate,
             entity_type: "staff",
             entity_id: id,
             before: Some(json!({"user_id": null})),
@@ -127,7 +127,7 @@ pub async fn reset_password(
         &mut tx,
         actor,
         AuditEntry {
-            action: "staff.login_password_reset",
+            action: Action::StaffLoginPasswordReset,
             entity_type: "staff",
             entity_id: id,
             before: None,
@@ -164,7 +164,7 @@ pub async fn set_role(
             &mut tx,
             actor,
             AuditEntry {
-                action: "staff.login_role",
+                action: Action::StaffLoginRole,
                 entity_type: "staff",
                 entity_id: id,
                 before: Some(json!({"role": before.map(|r| r.system().key())})),
@@ -226,7 +226,7 @@ pub async fn dismiss_request(pool: &PgPool, actor: &Actor, id: Uuid) -> Result<(
         &mut tx,
         actor,
         AuditEntry {
-            action: "account.password_reset_dismissed",
+            action: Action::AccountPasswordResetDismissed,
             entity_type: "user",
             entity_id: user.as_uuid(),
             before: None,

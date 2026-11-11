@@ -1,6 +1,6 @@
 ---
 title: Backend design (R1-1)
-updated: 2026-11-10
+updated: 2026-11-11
 sources: [product/specs/front-desk-and-packages.md, product/specs/management-views.md, architecture/system.md, architecture/data.md, security/authz-matrix.md]
 ---
 
@@ -127,6 +127,7 @@ Chỉ đọc, `GET`, `Cache-Control: no-store`, rate class `read`. Query param n
 | `GET /customers/inactive` | thêm `kind`, `follow_up`, `sort=due\|absent`, `q`; `scope` mặc định `all`; item thêm `gender`, `kind`, `last_follow_up {on, channel, outcome, by}`, `next_follow_up_on`, `due_on` (ngày hẹn, hoặc `not_interested` + 90); "lần gần nhất" = max(lượt, hóa đơn chưa hủy, ngày bắt đầu gói); cursor 3 phần (khóa hạn, last_seen, id) | như cũ |
 | `GET /customers/{id}/history` | thêm `q`, `kind`, `from`, `to` (lọc trong SQL qua `app.search_fold`) | như cũ |
 | `GET /notes?from=&to=&kind=&staff_id=&customer_id=&q=&cursor=&limit=` (2026-11-07, management-views §10) | `NotesPage {from, to, items[]{kind, at, business_date, text, customer_id?, customer_name?, staff_id?, staff_name?, author_name?, visit_id?, detail?}, kinds[], next_cursor, scan_capped}`; 16 loại (`reporting::notes_dto::NoteKind`, lúc đầu 9, thêm ở 0028–0030), mỗi loại quyền riêng; mặc định 30 ngày, ≤ 366; tìm ghi chú mã hóa quét ≤ 500/request | `report.read` + quyền từng loại |
+| `GET /audit-log?from=&to=&actor=&kind=&cursor=&limit=` (2026-11-11, management-views §11, ADR-0021) | `ActivityPage {from, to, items[]{id, at, day, actor{kind user\|platform\|system, user_id?, name?}, kind, action, subject?{kind, id?, name?, gender?, on?, package?}, changes[]{field, format, old?, new?}, amount?, discount?, detail?, reason?}, next_cursor, people[]{user_id, name, left}}`; keyset `(at, id)` giảm dần; mặc định 7 ngày, tối đa 366; `actor` = user id \| `platform` \| `system`; chủ thể resolve bằng `LEFT JOIN LATERAL` theo `entity_type`; trường đổi theo allowlist từng action (`reporting::activity::fields`) | `audit.read` (chỉ chủ spa); `no-store` |
 | `GET /packages` | `q` khớp cả tên gói; row thêm `customer_gender` | như cũ |
 | `GET /reports/range` | `preset` (`last_7_days`, `last_30_days`, `this_month`, `last_month`, `this_year`, `last_12_months`, `last_2_years`; chủ spa thêm `last_3_years`, `last_5_years`), `granularity=year`, giới hạn 366 ngày (day/week) / 732 ngày (month/year) / 1830 ngày với `report.long_range` (0015); bucket thêm `net_revenue`; report thêm `preset`, `technicians[]`; đọc sổ bằng `BETWEEN` (không gửi mảng ngày) | như cũ |
 | `GET /reports/ledger` | row thêm `customer_gender` | như cũ |

@@ -1,7 +1,7 @@
 //! Integration tests against real Postgres, connected as the runtime role `app_rw`.
 //! Run with DATABASE_URL pointing at the dev/CI server (schema owner); each test gets a fresh database.
 
-use kernel::audit::{self, AuditEntry};
+use kernel::audit::{self, Action, AuditEntry};
 use kernel::idempotency::{self, Claim};
 use kernel::testing::{app_pool, seed_tenant};
 use kernel::{Actor, AppError, Permission, TenantId, TenantTx, UserId};
@@ -111,8 +111,8 @@ async fn audit_log_is_append_only(owner: PgPool) -> TestResult {
 
     let mut tx = TenantTx::begin(&pool, a).await?;
     let entry = AuditEntry {
-        action: "branch.create",
-        entity_type: "branch",
+        action: Action::CatalogCategoryCreate,
+        entity_type: "service_category",
         entity_id: Uuid::now_v7(),
         before: None,
         after: Some(serde_json::json!({"name": "Đông Hà"})),

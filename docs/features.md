@@ -28,6 +28,7 @@ Vai trò là **tập permission lưu trong DB** (`role_permission`), không ph�
 | Gói liệu trình | Gói liệu trình của khách (`/goi-lieu-trinh`) | ✓ | ✓ | |
 | Báo cáo | Báo cáo kinh doanh (`/bao-cao`, tab Tổng quan · Sổ doanh thu) | ✓ | ✓ | |
 | Báo cáo | Nhật ký ghi chú (`/nhat-ky-ghi-chu`) | ✓ | ✓ | |
+| Báo cáo | Nhật ký thao tác (`/nhat-ky-thao-tac`) | ✓ | | |
 | Nhân viên | Quản lý nhân sự (`/nhan-vien`) | ✓ | ✓ (không tab Bảng lương) | |
 | Nhân viên | Công và lương của tôi (`/nhan-vien/cua-toi`; KTV mở ở `/nhan-vien`) | | ✓ | ✓ |
 | Nhân viên | Khách của tôi (`/khach-cua-toi`) | | ✓ | ✓ |
@@ -84,6 +85,7 @@ Spec: [management-views](../memory/wiki/product/specs/management-views.md).
 - Tab **Sổ doanh thu**: sổ thu như sổ giấy (mỗi hóa đơn một dòng, dòng âm cho hủy và hoàn).
 - Số tiền chỉ có trong response khi người xem có `report.revenue.read`; chỉ có `report.read` thì thấy số đếm.
 - **Nhật ký ghi chú** (`/nhat-ky-ghi-chu`): mọi ghi chú viết trong app (16 loại: ghi chú lượt, hồ sơ khách, chấm công, khen/phàn nàn, thưởng/phạt, gọi lại, lý do hủy, lịch hẹn, đánh giá tháng, ghi chú nhân sự, gia hạn, giảm giá, lý do hủy lịch / không đến, ghi chú gói…), mới nhất trước, gom theo ngày, link về nguồn; mỗi loại giữ quyền đọc của màn gốc.
+- **Nhật ký thao tác** (`/nhat-ky-thao-tac`, chỉ chủ spa, [ADR-0021](../memory/wiki/decisions/ADR-0021-activity-log-for-the-owner.md)): ai làm gì, lúc nào, đọc từ `audit_log`. Mỗi dòng một câu ("Quản lý Hà hủy lượt của chị Mai · 15:10 · lý do: khách đổi ý") kèm tiền, giá trị cũ → mới (tên / SĐT khách, giá dịch vụ, trạng thái chấm công…). Lọc theo người (kể cả "Đội vận hành", "Hệ thống"), 8 nhóm việc, khoảng ngày (mặc định 7 ngày). Không bao giờ hiện ghi chú sức khỏe hay ghi chú buổi. Các màn khác không hiện "ai làm" (EM 2026-11-11).
 - Chưa có: sổ thu chi / phiếu chi / chốt quỹ (để sau).
 
 ### 2.7 Nhân viên
