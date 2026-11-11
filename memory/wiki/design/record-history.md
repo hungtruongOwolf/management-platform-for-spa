@@ -16,7 +16,7 @@ Khởi động đang **124,70 / 125 KiB** (số đo của reviewer 2026-11-11: i
 - `features/record-history/query.ts` (rất nhỏ, **không** import UI / `sentence.ts`): `recordHistoryQuery(ref)` (key `["record-history", type, id]`, `staleTime: 0`) — import từ các màn để bắt đầu fetch song song với lúc tải chunk UI.
 - Chunk lazy `record-history`: `RecordTrace`, `HISTORY`, `LedgerSaleSheet`; dùng `sentence.ts`.
 - Kiểm `can(me, "record.history.read")` **ngoài** ranh giới lazy (không có quyền → không tải chunk). Có quyền → prefetch chunk bằng `useAfterFirstPaint` (`FrontDeskPage.tsx`), như `TodayVisits`.
-- Không module nào của lịch sử được import từ module khởi động; `pnpm --filter web budget` mỗi PR.
+- Ngân sách: khởi động **≤ 125 KiB**, mã lịch sử lazy. Module khởi động chỉ đổi vài dòng: `lib/queryClient.ts` (`onSuccess`), `features/auth/session.ts` (`hasFeature` `defaultOff`), `app/access.ts` (`mayOpen.activity`), `components/ResponsiveTable.tsx` (`[data-row-inert]`); không import gì từ `features/record-history/*` ngoài `query.ts` (không ở module khởi động). `pnpm --filter web budget` mỗi PR.
 
 ### 1.2 `RecordTrace`
 Props: `record` (`{type, id}` | `{type: "attendance" | "daily_review", staffId, date}` | `{type: "payroll_rules" | "appointment_settings"}`), `noun` (để đặt tên nút: "lượt 12/11 10:05", "gói Liệu trình gội 10 buổi"…), `mode: "line" | "external"` (§1.3), `defaultOpen?`.
@@ -46,18 +46,29 @@ Chế độ `line` (một bản ghi đang mở):
 
 ### 1.3 Màn nhiều bản ghi: nút mở là phần tử có sẵn (chế độ `external`)
 Không thêm hàng "Xem ai ghi, ai sửa" vào mỗi thẻ (rối; 40 lượt ≈ 1.700 px thêm). Nút mở là:
-- **Lịch sử khách:** giờ của thẻ (`CustomerHistory` dòng giờ) thành `btn-ghost` (cao 44 px), tên "Ai ghi, ai sửa lượt 12/11 10:05"; bấm → tải, rồi danh sách hiện cuối thẻ, mở sẵn, dòng đầu danh sách là meta "Ghi bởi Hà · 10:07 · đã sửa 1 lần".
-- **Gói của khách:** nút nhỏ `btn-ghost` "Lịch sử" ở `row-head` cạnh chip trạng thái, tên "Ai ghi, ai sửa gói {tên gói}".
-- **"Bán gói hôm nay"** (`DaySales`): mục ⋯ (`RowMenu`) "Xem ai ghi, ai sửa" → hiện `RecordTrace` (mở sẵn) trong ô mở rộng sẵn có của hàng, không modal.
+- **Lịch sử khách:** giờ của thẻ (`CustomerHistory` dòng giờ) thành `btn-ghost` (cao 44 px), là **nút bật / tắt** (`aria-expanded`, `aria-controls` trỏ tới danh sách), tên bắt đầu bằng chữ hiển thị: "12/11 10:05, ai ghi, ai sửa"; bấm → tải, danh sách hiện cuối thẻ, dòng đầu là meta "Ghi bởi Hà · 10:07 · đã sửa 1 lần"; bấm lại thì đóng. Theo loại thẻ (`HistoryKind`, `CustomerHistory.tsx`):
+
+  | Loại thẻ | Nút? | `record` |
+  |---|---|---|
+  | `visit` "Lượt khách" | có | `{type: "visit", id: visit.id}` |
+  | `visit_voided` "Lượt đã hủy" | có | `{type: "visit", id: visit.id}` (cùng chuỗi) |
+  | `purchase` "Mua gói liệu trình" | có | `{type: "sale", id: sale_id}` → server trả lịch sử gói |
+  | `purchase_voided` "Hóa đơn đã hủy" | có | `{type: "sale", id: sale_id}` |
+  | `package_cancelled` "Hủy gói" | có | `{type: "customer_package", id}` |
+  | `package_extended` "Gia hạn gói" | có | `{type: "customer_package", id}` |
+
+  Id lấy từ trường có sẵn của `HistoryEvent` (kiểm tên trường khi build; thiếu id nào thì thêm vào DTO ở đợt 1a).
+- **Gói của khách:** nút nhỏ `btn-ghost` "Lịch sử" ở `row-head` cạnh chip trạng thái, tên truy cập **bắt đầu bằng chữ hiển thị**: "Lịch sử gói {tên gói}" (WCAG 2.5.3).
+- **"Bán gói không kèm lượt"** (`DaySales`): mục ⋯ (`RowMenu`) "Xem ai ghi, ai sửa" → hiện `RecordTrace` (mở sẵn) trong ô mở rộng sẵn có của hàng, không modal.
 - **Sổ thưởng/phạt:** mục ⋯ "Xem ai ghi, ai sửa" (đợt 2), cùng cách.
 
 ### 1.4 Chip ở danh sách (D9)
-Một chip mỗi hàng, ưu tiên **Đã hủy > Đã thay > Đã sửa**, đặt **trong cùng `span` với chip sẵn có** (`TodayVisits` cạnh tên khách; thẻ điện thoại cùng chỗ; số tiền vẫn ở slot `aside`, không đụng):
+Một chip mỗi hàng; ba điều kiện **loại trừ nhau** (code hiện kiểm `corrected_by_visit_id` trước: `TodayVisits.tsx`, `CustomerHistory.tsx`), đặt **trong cùng `span` với chip sẵn có** (`TodayVisits` cạnh tên khách; thẻ điện thoại cùng chỗ; số tiền vẫn ở slot `aside`, không đụng):
 | Chip | Khi | Ai thấy |
 |---|---|---|
-| `badge-danger` "Đã hủy" | đã hủy (sẵn có) | mọi người đọc được danh sách |
+| `badge-danger` "Đã hủy" | `status = voided` **và không** `corrected_by_visit_id` (sẵn có) | mọi người đọc được danh sách |
 | `badge-muted` "Đã thay" | bản lượt bị Sửa lượt thay (`corrected_by_visit_id`); **đổi từ "Đã sửa"** ở `TodayVisits`, `CustomerHistory` (`visit_voided`), chữ chi tiết "Đã thay bằng lượt mới." | mọi người |
-| `badge-muted` "Đã sửa" | `edited === true` | chỉ người có `record.history.read` |
+| `badge-muted` "Đã sửa" | `edited === true` **và** `status !== "voided"` | chỉ người có `record.history.read` |
 `CustomerHistory` chip "Lượt sửa lại" (`badge-info`, bản mới của Sửa lượt, mọi vai trò) giữ nguyên; khi có quyền và `edited` thì **thay** bằng "Đã sửa" (một chip). Tên người không bao giờ ở danh sách.
 
 ### 1.5 Chữ (mọi chuỗi tiếng Việt)
@@ -65,6 +76,9 @@ Một chip mỗi hàng, ưu tiên **Đã hủy > Đã thay > Đã sửa**, đặ
 |---|---|
 | Meta | "Ghi bởi {Tên} · {giờ}[ {dd/mm}][ · đã sửa {n} lần][ · đã hủy]" |
 | Meta, khách | "Tạo bởi {Tên} · {dd/mm/yyyy}[ · đã sửa {n} lần]" |
+| Meta, gói | "Ghi bởi {Tên} · {dd/mm/yyyy}[ · đã hủy]" (không "đã sửa": vòng đời gói, D9) |
+| Ghi chú buổi (`visit.update` `session_note`) | "Ghi chú buổi: Có" / "Ghi chú buổi: Không" (web `FIELD.session_note` = "Ghi chú buổi"; `FIELD.note` vẫn "Ghi chú hồ sơ") |
+| KTV đổi (`visit.update`) | "KTV: {tên cũ} → {tên mới}", một dòng cho mỗi dịch vụ đổi KTV |
 | Meta, danh mục / quy tắc lương / cài đặt | "Sửa lần cuối bởi {Tên} · {dd/mm/yyyy}" |
 | Meta, sổ giấy | "Nhập từ sổ giấy · {dd/mm/yyyy}" |
 | Meta, không có dòng tạo | "Chưa rõ ai ghi" |
@@ -114,7 +128,7 @@ Desktop, hàng mở rộng:
 - Bản bị thay: chip "Đã thay", chữ "Đã thay bằng lượt mới.", cùng `RecordTrace` (cùng câu chuyện).
 - `?sua=` (CorrectionPanel): không có `RecordTrace`.
 
-### 2.2 "Bán gói hôm nay" (`DaySales`) — đợt 1b
+### 2.2 "Bán gói không kèm lượt" (`DaySales`) — đợt 1b
 Không chip "Đã sửa" (gói, D9). ⋯ → "Xem ai ghi, ai sửa" → `RecordTrace` `{type: "sale", id}` (server trả lịch sử gói) trong ô mở rộng sẵn có.
 
 ### 2.3 Lịch sử khách (`reports/CustomerHistory`) — đợt 1b
@@ -132,13 +146,14 @@ Không chip "Đã sửa" (gói, D9). ⋯ → "Xem ai ghi, ai sửa" → `RecordT
 Thẻ hóa đơn bán gói: nút giờ mở lịch sử gói. Không quyền: giờ là chữ thường như hiện nay.
 
 ### 2.4 Sổ doanh thu (`reports/LedgerTab`) — đợt 1b
-- Chip "Đã sửa" chỉ ở hàng dịch vụ lẻ (theo lượt); hàng gói / hoàn tiền không.
-- Có quyền: desktop, ô "Giờ" (cột 64 px) chứa `<button>` chữ giờ, tên đầy đủ "10:07, xem hóa đơn của chị Lê Thị Mai" (WCAG 2.5.3: tên chứa chữ hiển thị); điện thoại, `LedgerCards` bấm cả thẻ bằng `onClick` có guard `closest("a, button")` (Link tên khách vẫn mở hồ sơ), **không** bọc thẻ trong `<button>`.
+- Chip "Đã sửa" chỉ khi `entry === "sale"` && `!voided` && `kind === "one_off"` && `edited` (hàng `void` có id = id hóa đơn, `revenue_book`; hóa đơn đã hủy của bản B bị thay không bao giờ "Đã sửa"). Hàng gói / hoàn tiền / hủy: không chip mới.
+- Có quyền: desktop, ô "Giờ" (cột 64 px) chứa `<button>` chữ giờ, tên đầy đủ "10:07, xem hóa đơn của chị Lê Thị Mai" (WCAG 2.5.3: tên chứa chữ hiển thị); điện thoại, giờ trong `rt-card-sub` của `LedgerCards` thành **`<button>` thật** (bàn phím dùng được, cùng tên), thẻ còn bấm được bằng `onClick` có guard `closest("a, button")` (Link tên khách vẫn mở hồ sơ), **không** bọc thẻ trong `<button>`.
+- Chỉ hiện nút khi có `record.history.read` **và** quyền của loại neo cuối: hàng dịch vụ lẻ cần `visit.read`; hàng gói / hủy hóa đơn gói / hoàn tiền cần `customer.read` (+ `sale.read`, vốn có vì đang xem sổ). Sheet nhận `403` → đóng sheet, focus về nút giờ, `invalidate(["me"])`.
 - Bấm → `LedgerSaleSheet` (`BottomSheet`):
 ```
 ┌──────────────────────────────────────────┐
 │ Hóa đơn dịch vụ · chị Lê Thị Mai         │  title theo LedgerRow.kind / entry:
-│ 12/11/2026                               │  "Hóa đơn dịch vụ" / "Hóa đơn bán gói" / "Hoàn tiền gói"
+│ 12/11/2026                               │  "Hóa đơn dịch vụ" / "Hóa đơn bán gói" / "Hủy hóa đơn" / "Hoàn tiền gói"
 ├──────────────────────────────────────────┤
 │ Gội đầu dưỡng sinh             300.000 ₫ │  tóm tắt hàng (dữ liệu LedgerRow)
 │ Tiền mặt 300.000 ₫                       │
@@ -151,7 +166,7 @@ Thẻ hóa đơn bán gói: nút giờ mở lịch sử gói. Không quyền: gi
 ```
 - **Mở sẵn có lý do:** sheet chỉ tồn tại để xem lịch sử (mọi thông tin khác đã có trên hàng), nên mở sheet = đã yêu cầu lịch sử; bắt bấm thêm lần nữa là thừa.
 - Bỏ nút "Mở hồ sơ khách" (tên khách trên hàng đã là link).
-- Hàng hoàn tiền: `{type: "refund", id}`, title "Hoàn tiền gói · chị …".
+- Hàng hoàn tiền: `{type: "refund", id}`, title "Hoàn tiền gói · chị …". Hàng hủy (`entry = void`): `{type: "sale", id}` (id = id hóa đơn), title "Hủy hóa đơn · chị …".
 
 ### 2.5 Gói của khách (`sales/CustomerPackages` `PackageRow`) — đợt 1b
 ```
@@ -219,7 +234,7 @@ Phần tử cuối của form sửa / `RulesSheet` / sheet số khách tối đa
 └──────────────────────────────────────────────────────────────────────┘
 ```
 - Badge "Đang hiện" (`badge-ok`) / "Đang ẩn" (`badge-muted`) — chọn có chủ ý: công tắc nói về **hiển thị**, khác "Đang bật / Đang tắt" của tính năng.
-- Nút `btn-secondary` chữ đầy đủ, `aria-label` như `FeaturesPanel` ("Hiện lịch sử trên từng bản ghi cho Quản lý").
+- Nút `btn-secondary` chữ "Hiện cho Quản lý" / "Ẩn với Chủ spa"; `aria-label` **bắt đầu bằng chữ hiển thị** (WCAG 2.5.3): "Hiện cho Quản lý: lịch sử trên từng bản ghi".
 - `ReasonSheet` có sẵn: title "Hiện lịch sử cho Quản lý?" / "Ẩn lịch sử với Chủ spa?"; description hiện → "Từ thao tác kế tiếp, Quản lý thấy ai ghi, ai sửa trên những bản ghi họ mở được. Số điện thoại cũ của khách không hiện." / ẩn → "Từ thao tác kế tiếp, {vai trò} không thấy ai ghi, ai sửa nữa. Dữ liệu giữ nguyên."; "Lý do" bắt buộc; `useStepUp`.
 - `409 role.record_history_unchanged` → tải lại, "Trạng thái đã đổi ở nơi khác, đã tải lại."
 - 360 px: mỗi vai trò một hàng, nút xuống dòng dưới badge.

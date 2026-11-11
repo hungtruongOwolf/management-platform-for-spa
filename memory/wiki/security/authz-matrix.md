@@ -264,6 +264,8 @@ Principal riêng: **operator** (`platform_operator`, cookie `__Host-op-session`)
   | `reports` | Báo cáo kinh doanh | `report.long_range` | `/reports/range`, `/reports/ledger` |
   | `activity_log` (**thiết kế, ADR-0022; mặc định TẮT**, cờ đầu tiên mặc định tắt: registry có `default_enabled`) | Nhật ký thao tác | — (không rút `audit.read`) | `/audit-log` |
 
+  *(Thiết kế ADR-0022)* cờ `appointments` thêm prefix `/record-history/appointment`, `/record-history/settings/appointment-settings`; cờ `payroll` thêm `/record-history/settings/payroll-rules`.
+
   `staff.manage`, `staff.read`, `staff.read_basic`, `audit.read`, `staff.read_own_past` không bao giờ thuộc tính năng nào (test `administration_is_never_a_switchable_feature`).
 - **Vai trò do operator sửa**: owner luôn giữ `staff.manage`, `staff.read`, `staff.read_basic`, `audit.read`; `staff.manage` chỉ ở owner; `record.history.read` không bao giờ ở technician (`422 role.not_for_technician`, ADR-0022, thiết kế); `platform.*` / `staff.read_own_past` không cấp được (`422 role.*`). Bất biến cứng không đổi: ADR-0014 (người đã nghỉ), `staff.link_required`, quyết định C, role owner luôn `requires_mfa` (spa có áp dụng hay không do công tắc riêng, [ADR-0020](../decisions/ADR-0020-owner-mfa-per-spa.md)).
 - **Spa ngưng**: đăng nhập mật khẩu đúng → `403 auth.spa_suspended`; session cũ bị thu hồi khi ngưng.
