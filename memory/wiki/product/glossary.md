@@ -69,7 +69,7 @@ EM: "đặt lại các tên cho đúng đừng ghi là gói bán hay theo dõi g
 | `/goi-lieu-trinh` | Gói liệu trình | Gói liệu trình của khách | — | nav "Theo dõi gói", h1 "Theo dõi gói của khách" |
 | `/bao-cao` | Báo cáo | Báo cáo kinh doanh (tab "Tổng quan" / "Sổ doanh thu"; h1 theo tab) | Báo cáo | nav "Kinh doanh" |
 | `/nhat-ky-ghi-chu` | Báo cáo | Nhật ký ghi chú (khi bật feature `notes_journal`) | — | — |
-| `/nhat-ky-thao-tac` | Báo cáo | Nhật ký thao tác (chỉ chủ spa, `audit.read`; đọc `audit_log`: ai làm gì, lúc nào; một thao tác = một dòng, các dòng audit cùng transaction như lượt + hóa đơn được gộp khi đọc; ADR-0021) | — | — |
+| `/nhat-ky-thao-tac` | Báo cáo | Nhật ký thao tác (**ẩn mặc định** sau cờ `activity_log`, operator bật lại theo spa, ADR-0022; chỉ chủ spa, `audit.read`; đọc `audit_log`: ai làm gì, lúc nào; một thao tác = một dòng, các dòng audit cùng transaction như lượt + hóa đơn được gộp khi đọc; ADR-0021) | — | — |
 | `/bang-gia` | Danh mục | Bảng giá dịch vụ | — | nav "Dịch vụ" |
 | `/bang-gia/goi` | Danh mục | Mẫu gói liệu trình | — | nav "Gói bán", h1 "Gói liệu trình" |
 | `/cai-dat` | Cài đặt | Giao diện & tài khoản | — | — |

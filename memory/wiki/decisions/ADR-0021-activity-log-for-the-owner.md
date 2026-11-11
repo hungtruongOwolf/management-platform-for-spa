@@ -7,6 +7,8 @@ deciders: EM, agent
 
 # ADR-0021: "Nhật ký thao tác" cho chủ spa, audit giữ tên / SĐT cũ → mới của khách
 
+> **Sửa một phần bởi [ADR-0022](ADR-0022-inline-record-history.md) (2026-11-11 chiều, thiết kế):** D1 "Không cờ tính năng" → route `/audit-log` thuộc cờ `activity_log` **mặc định tắt** (`audit.read` giữ nguyên, owner-only + owner floor); bối cảnh "không hiện ai làm trên các màn hiện có" bị EM đảo: "ai ghi, ai sửa" hiện trên từng bản ghi, dùng lại read model + luật gộp D9 của ADR này.
+
 ## Context
 - Mọi thao tác ghi đều đã vào `app.audit_log` (ai, lúc nào, before/after, lý do; migration 0001), nhưng màn hình chỉ hiện "ai làm" ở vài chỗ.
 - EM 2026-11-11 ([raw 1](../../raw/2026-11-11-em-actor-trace-data-only.md), [raw 2](../../raw/2026-11-11-em-decision-activity-log-and-customer-old-values.md)):

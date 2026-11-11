@@ -1,8 +1,8 @@
 ---
 title: Spec — Admin nền tảng (platform admin console)
 status: draft (lead's design, EM to review)
-updated: 2026-11-09
-sources: [raw/2026-11-09-em-request-docs-and-platform-admin.md, raw/2026-11-09-em-request-owner-mfa-toggle.md, decisions/ADR-0020-owner-mfa-per-spa.md, decisions/ADR-0003-multi-tenancy.md, decisions/ADR-0004-authentication.md, decisions/ADR-0014-former-staff-login.md, decisions/ADR-0016-accounts-and-passwords.md, decisions/ADR-0018-platform-admin-console.md]
+updated: 2026-11-11
+sources: [raw/2026-11-11-em-decision-inline-record-history.md, raw/2026-11-09-em-request-docs-and-platform-admin.md, raw/2026-11-09-em-request-owner-mfa-toggle.md, decisions/ADR-0020-owner-mfa-per-spa.md, decisions/ADR-0003-multi-tenancy.md, decisions/ADR-0004-authentication.md, decisions/ADR-0014-former-staff-login.md, decisions/ADR-0016-accounts-and-passwords.md, decisions/ADR-0018-platform-admin-console.md]
 ---
 
 # Spec: Admin nền tảng
@@ -56,7 +56,7 @@ As an operator, I want to suspend a spa that stopped paying or is under investig
 
 ### US5 — Cờ tính năng theo spa
 As an operator, I want to turn a feature off for a spa, so that a spa on a smaller plan (or with a broken flow) does not see it.
-- **AC5.1** Registry trong code (`kernel::feature`), 6 tính năng thật, mặc định **bật** cho mọi spa (không dòng = bật; migration không ghi gì → không đổi hành vi):
+- **AC5.1** Registry trong code (`kernel::feature`), 6 tính năng thật, mặc định **bật** cho mọi spa (không dòng = bật; migration không ghi gì → không đổi hành vi). *Thiết kế 2026-11-11 ([ADR-0022](../../decisions/ADR-0022-inline-record-history.md), chưa build): registry thêm `default_enabled`; cờ thứ 7 `activity_log` "Nhật ký thao tác" mặc định **tắt** (không dòng = tắt), chỉ sở hữu route `/audit-log`, không rút `audit.read`; `GET /admin/features` + `…/{id}/features` trả `default_enabled`; console ghi "Mặc định · bật / tắt".*
 
   | key | Tên | Khi tắt: permission bị rút | Khi tắt: route trả `403 feature.disabled` |
   |---|---|---|---|
@@ -86,6 +86,7 @@ As an operator, I want to change what a manager may do for all spas (or for one 
   - permission lạ → `422` lỗi field `permissions unknown_permission`; `platform.*`, `staff.read_own_past` → `role.not_grantable`;
   - owner phải giữ `staff.manage`, `staff.read`, `staff.read_basic`, `audit.read` → `role.owner_floor` (`details.missing`);
   - `staff.manage` chỉ ở owner → `role.owner_only_permission` (giữ quyết định C, ADR-0015/0016 "owner_protected" dựa trên `staff.manage`);
+  - *(thiết kế, ADR-0022)* `record.history.read` không bao giờ ở `technician` → `role.not_for_technician`;
   - chỉ role hệ thống (`owner`, `manager`, `technician`) → key khác `404`.
 - **AC7.5** Bất biến cứng không đổi: người đã nghỉ chỉ `staff.read_own_past` (ADR-0014), `staff.link_required`, quyết định C, role `owner` luôn `requires_mfa` (CHECK DB; sửa vai trò không tắt được MFA — chỉ công tắc theo spa ở US10 quyết spa đó có áp dụng không), tính năng tắt rút permission bất kể role.
 - **AC7.6** Audit nền tảng `platform.role_template.set` / `platform.role.set` / `platform.role.reset` + audit spa `role.permissions_changed` (before/after list).
@@ -108,6 +109,14 @@ As an operator, I want to switch off the owner's second factor for one spa (and 
 - **AC10.5** Nghiêm nhất thắng: chủ ở hai spa, một spa bật → vẫn MFA. Spa đang tạm ngưng vẫn tính (M3).
 - **AC10.6** Audit nền tảng `platform.tenant.owner_mfa` (`before`, `after`, `revoked_sessions`, lý do) + audit spa `tenant.owner_mfa_changed` (`platform_admin`, before/after, lý do).
 - **AC10.7** UI: panel "Bảo mật đăng nhập" ở `/admin/spa/$id` (chip Đang bật / Đang tắt, Tắt / Bật → lý do → step-up); khi tắt có cảnh báo chủ spa chỉ dùng mật khẩu; danh sách `/admin` có chip "Không MFA".
+
+### US11 — Lịch sử trên từng bản ghi: bật / tắt theo vai trò (thiết kế 2026-11-11, chưa build)
+As an operator, I want to show or hide "ai ghi, ai sửa" on records for a spa's owner and manager, so that each spa gets what the EM decided. ([raw](../../../raw/2026-11-11-em-decision-inline-record-history.md), [ADR-0022](../../decisions/ADR-0022-inline-record-history.md), [spec record-history](record-history.md))
+- **AC11.1** Mặc định: chủ spa **hiện** (mẫu owner có `record.history.read`), quản lý **ẩn**, KTV không bao giờ.
+- **AC11.2** `PUT /admin/tenants/{id}/record-history/{role} {visible, reason}` (step-up; lý do 3–500): `owner` / `manager` → `200` vai trò sau khi đổi (`follows_template = false`); `technician` → `422 role.not_for_technician`; role lạ / spa lạ → `404`; đã đúng giá trị → `409 role.record_history_unchanged`.
+- **AC11.3** Hiệu lực ở request kế tiếp của thành viên spa; không có công tắc nào trong app của spa.
+- **AC11.4** Audit nền tảng `platform.record_history.set` + audit spa `role.permissions_changed` (`platform_admin`, before/after, lý do).
+- **AC11.5** UI: panel "Lịch sử trên từng bản ghi" ở `/admin/spa/<id>` (hai hàng Chủ spa / Quản lý, badge Đang hiện / Đang ẩn, `ReasonSheet` + step-up); [design](../../design/record-history.md) §3.
 
 ### US9 — Nhật ký
 As an operator, I want an audit of everything operators did, and read-only access to a spa's audit trail when supporting them, so that every support action is accountable.
