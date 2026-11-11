@@ -373,7 +373,10 @@ fn customer_changes(before: Option<&Value>, after: Option<&Value>) -> Vec<Activi
 /// writer stores every line it was sent, unchanged ones included), and the session note as a
 /// presence flag `session_note` (the writer stores `"[redacted]"` when set, `"cleared"` when
 /// removed, null when untouched; never the text).
-fn visit_update_changes(after: Option<&Value>, moves: &[(Option<String>, Option<String>)]) -> Vec<ActivityChange> {
+fn visit_update_changes(
+    after: Option<&Value>,
+    moves: &[(Option<String>, Option<String>)],
+) -> Vec<ActivityChange> {
     let mut changes: Vec<ActivityChange> = moves
         .iter()
         .map(|(from, to)| ActivityChange {
@@ -1159,7 +1162,10 @@ mod tests {
         // S3: the session note is `session_note`, set or not, never its text.
         let after = json!({"staff": [{"line_id": "l1", "from": "a", "to": "a"}],
                            "check_in_at": null, "companions": null, "note": "[redacted]"});
-        let moves = [(Some("Thu".to_owned()), Some("Hoa".to_owned())), (None, Some("Lan".to_owned()))];
+        let moves = [
+            (Some("Thu".to_owned()), Some("Hoa".to_owned())),
+            (None, Some("Lan".to_owned())),
+        ];
         let changes = visit_update_changes(Some(&after), &moves);
         let got: Vec<(&str, Option<&str>, Option<&str>)> = changes
             .iter()
@@ -1183,7 +1189,10 @@ mod tests {
             Some(&json!({"check_in_at": null, "companions": 2, "staff": [], "note": "[redacted]"})),
         );
         assert_eq!(
-            changes.iter().map(|c| (c.field.as_str(), c.new.as_deref())).collect::<Vec<_>>(),
+            changes
+                .iter()
+                .map(|c| (c.field.as_str(), c.new.as_deref()))
+                .collect::<Vec<_>>(),
             [("companions", Some("2"))]
         );
     }

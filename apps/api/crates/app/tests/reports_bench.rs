@@ -419,8 +419,10 @@ async fn record_history_reads_within_budget(pool: PgPool) -> TestResult {
             "POST",
             &format!("/visits/{visit}/correct"),
             Some(&owner),
-            Some(json!({"reason": "ghi nhầm", "customer_id": customer, "lines": [line],
-                        "payments": [{"method": "cash", "amount": 150_000}]})),
+            Some(
+                json!({"reason": "ghi nhầm", "customer_id": customer, "lines": [line],
+                        "payments": [{"method": "cash", "amount": 150_000}]}),
+            ),
             &[
                 ("idempotency-key", &uuid::Uuid::now_v7().to_string()),
                 ("If-Match", "\"1\""),
@@ -428,7 +430,10 @@ async fn record_history_reads_within_budget(pool: PgPool) -> TestResult {
         )
         .await;
         assert_eq!(corrected.status, StatusCode::CREATED, "{}", corrected.body);
-        visit = corrected.body["visit"]["id"].as_str().unwrap_or_default().to_owned();
+        visit = corrected.body["visit"]["id"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
     }
 
     let mut n = 0_u32;
@@ -441,7 +446,9 @@ async fn record_history_reads_within_budget(pool: PgPool) -> TestResult {
         let (p50, p95) = timed(&h, &owner, &path, &mut n).await;
         println!("p50 {p50:>4} ms  p95 {p95:>4} ms  {path}");
         if p95 > HISTORY_BUDGET_MS {
-            over.push(format!("{path}: p95 {p95} ms (budget {HISTORY_BUDGET_MS} ms)"));
+            over.push(format!(
+                "{path}: p95 {p95} ms (budget {HISTORY_BUDGET_MS} ms)"
+            ));
         }
     }
     let audit = "/audit-log?limit=50";

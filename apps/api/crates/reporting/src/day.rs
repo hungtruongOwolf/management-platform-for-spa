@@ -710,9 +710,9 @@ pub async fn ledger(
                 note: r.note,
                 voided: r.voided,
                 edited: edited.as_ref().and_then(|set| {
-                    let visit = r.visit_id.filter(|_| {
-                        r.entry == "sale" && r.sale_kind != "package" && !r.voided
-                    })?;
+                    let visit = r
+                        .visit_id
+                        .filter(|_| r.entry == "sale" && r.sale_kind != "package" && !r.voided)?;
                     Some(set.contains(&visit))
                 }),
                 visit_id: r.visit_id,

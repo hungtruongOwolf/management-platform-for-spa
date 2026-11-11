@@ -259,7 +259,10 @@ mod tests {
         );
         // Both, and an unknown key ignored on either side.
         assert_eq!(
-            disabled(&keys(&["activity_log", "gone"]), &keys(&["payroll", "gone"])),
+            disabled(
+                &keys(&["activity_log", "gone"]),
+                &keys(&["payroll", "gone"])
+            ),
             set(&[Feature::Payroll])
         );
     }

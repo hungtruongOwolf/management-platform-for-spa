@@ -2007,8 +2007,14 @@ async fn the_record_history_switch_shows_and_hides_per_role(owner: PgPool) -> Te
     let manager = session_for(&h, MANAGER_PHONE).await;
 
     // Defaults: the owner sees it, the manager does not.
-    assert!(grants(&spa_role(&h, &op, tenant, "owner").await, "record.history.read"));
-    assert!(!grants(&spa_role(&h, &op, tenant, "manager").await, "record.history.read"));
+    assert!(grants(
+        &spa_role(&h, &op, tenant, "owner").await,
+        "record.history.read"
+    ));
+    assert!(!grants(
+        &spa_role(&h, &op, tenant, "manager").await,
+        "record.history.read"
+    ));
     let me = call(&h.app, "GET", "/me", Some(&manager), None).await;
     assert!(!me_has(&me.body, "record.history.read"));
 
@@ -2031,7 +2037,11 @@ async fn the_record_history_switch_shows_and_hides_per_role(owner: PgPool) -> Te
     expected.sort();
     let mut got: Vec<String> = after["permissions"]
         .as_array()
-        .map(|p| p.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect())
+        .map(|p| {
+            p.iter()
+                .filter_map(|x| x.as_str().map(str::to_owned))
+                .collect()
+        })
         .unwrap_or_default();
     got.sort();
     assert_eq!(got, expected);
@@ -2046,7 +2056,10 @@ async fn the_record_history_switch_shows_and_hides_per_role(owner: PgPool) -> Te
     let tech = set_history(&h, &op, tenant, "technician", true).await;
     assert_eq!(
         (tech.status, tech.body["code"].as_str()),
-        (StatusCode::UNPROCESSABLE_ENTITY, Some("role.not_for_technician"))
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("role.not_for_technician")
+        )
     );
     assert_eq!(
         set_history(&h, &op, tenant, "cashier", true).await.status,
@@ -2109,7 +2122,12 @@ async fn the_record_history_switch_shows_and_hides_per_role(owner: PgPool) -> Te
         None,
     )
     .await;
-    assert_eq!(shown_to_manager.status, StatusCode::OK, "{}", shown_to_manager.body);
+    assert_eq!(
+        shown_to_manager.status,
+        StatusCode::OK,
+        "{}",
+        shown_to_manager.body
+    );
 
     // Both trails: one spa row (with the role's permissions before / after) and one platform row
     // per switch that changed something.
@@ -2204,8 +2222,14 @@ async fn the_record_history_switch_is_the_spas_own(owner: PgPool) -> TestResult 
     )
     .await;
     assert_eq!(edited.status, StatusCode::OK, "{}", edited.body);
-    assert_eq!(edited.body["updated_spas"], 0, "nothing else differs: no write");
-    assert!(!grants(&spa_role(&h, &op, tenant, "manager").await, "record.history.read"));
+    assert_eq!(
+        edited.body["updated_spas"], 0,
+        "nothing else differs: no write"
+    );
+    assert!(!grants(
+        &spa_role(&h, &op, tenant, "manager").await,
+        "record.history.read"
+    ));
     // A spa created now starts from the template.
     let created = admin_call(
         &h.app,
@@ -2217,7 +2241,10 @@ async fn the_record_history_switch_is_the_spas_own(owner: PgPool) -> TestResult 
     .await;
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
     let new_tenant = tenant_id(&h, "hoa-sen").await?;
-    assert!(grants(&spa_role(&h, &op, new_tenant, "manager").await, "record.history.read"));
+    assert!(grants(
+        &spa_role(&h, &op, new_tenant, "manager").await,
+        "record.history.read"
+    ));
 
     // The spa's own grants ignore it either way: sent with it, it stays hidden here...
     let own = admin_call(
@@ -2280,7 +2307,10 @@ async fn the_record_history_switch_is_the_spas_own(owner: PgPool) -> TestResult 
         .await;
         assert_eq!(
             (refused.status, refused.body["code"].as_str()),
-            (StatusCode::UNPROCESSABLE_ENTITY, Some("role.not_for_technician")),
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Some("role.not_for_technician")
+            ),
             "{path}"
         );
     }
@@ -2289,9 +2319,16 @@ async fn the_record_history_switch_is_the_spas_own(owner: PgPool) -> TestResult 
     let info = catalogue
         .body
         .as_array()
-        .and_then(|c| c.iter().find(|p| p["key"] == "record.history.read").cloned())
+        .and_then(|c| {
+            c.iter()
+                .find(|p| p["key"] == "record.history.read")
+                .cloned()
+        })
         .unwrap_or_default();
-    assert_eq!((&info["spa_local"], &info["not_for_technician"]), (&json!(true), &json!(true)));
+    assert_eq!(
+        (&info["spa_local"], &info["not_for_technician"]),
+        (&json!(true), &json!(true))
+    );
     Ok(())
 }
 
@@ -2417,7 +2454,10 @@ async fn the_activity_screen_is_off_until_an_operator_switches_it_on(owner: PgPo
                 .collect()
         })
         .unwrap_or_default();
-    assert!(defaults.contains(&("activity_log".to_owned(), false)), "{defaults:?}");
+    assert!(
+        defaults.contains(&("activity_log".to_owned(), false)),
+        "{defaults:?}"
+    );
     assert!(defaults.contains(&("payroll".to_owned(), true)));
     let features = admin_call(
         &h.app,
@@ -2441,13 +2481,18 @@ async fn the_activity_screen_is_off_until_an_operator_switches_it_on(owner: PgPo
     )
     .await;
     assert_eq!(on.status, StatusCode::OK, "{}", on.body);
-    assert_eq!((&on.body["enabled"], &on.body["default_enabled"]), (&json!(true), &json!(false)));
+    assert_eq!(
+        (&on.body["enabled"], &on.body["default_enabled"]),
+        (&json!(true), &json!(false))
+    );
     let page = call(&h.app, "GET", "/audit-log", Some(&spa_owner), None).await;
     assert_eq!(page.status, StatusCode::OK, "{}", page.body);
     let me = call(&h.app, "GET", "/me", Some(&spa_owner), None).await;
-    assert!(me.body["features"]
-        .as_array()
-        .is_some_and(|f| f.contains(&json!("activity_log"))));
+    assert!(
+        me.body["features"]
+            .as_array()
+            .is_some_and(|f| f.contains(&json!("activity_log")))
+    );
     let manager_page = call(&h.app, "GET", "/audit-log", Some(&manager), None).await;
     assert_eq!(
         (manager_page.status, manager_page.body["code"].as_str()),

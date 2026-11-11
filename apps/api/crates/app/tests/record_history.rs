@@ -208,9 +208,15 @@ impl Spa {
     }
 
     async fn visit(&self, who: &str, id: &str) -> Value {
-        call(&self.h.app, "GET", &format!("/visits/{id}"), Some(who), None)
-            .await
-            .body
+        call(
+            &self.h.app,
+            "GET",
+            &format!("/visits/{id}"),
+            Some(who),
+            None,
+        )
+        .await
+        .body
     }
 
     async fn exec(&self, sql: &str) -> Result<(), sqlx::Error> {
@@ -264,14 +270,20 @@ async fn who_may_read_a_records_history(pool: PgPool) -> TestResult {
     let owner = s.history(&s.owner, "visit", &id).await;
     assert_eq!(owner.status, StatusCode::OK, "{}", owner.body);
     assert_eq!(
-        owner.headers.get("cache-control").and_then(|v| v.to_str().ok()),
+        owner
+            .headers
+            .get("cache-control")
+            .and_then(|v| v.to_str().ok()),
         Some("no-store")
     );
     let summary = &owner.body["summary"];
     assert_eq!(summary["created"]["actor"]["name"], "Quản lý Ngọc");
     assert_eq!(summary["created"]["source"], "audit");
     assert!(summary["created"]["at"].is_string());
-    assert_eq!((&summary["edits"], &summary["state"]), (&json!(0), &json!("active")));
+    assert_eq!(
+        (&summary["edits"], &summary["state"]),
+        (&json!(0), &json!("active"))
+    );
     assert!(summary.get("last").is_none(), "{summary}");
     assert_eq!(owner.body["record"], json!({"type": "visit", "id": id}));
     assert_eq!(actions(&owner.body), ["visit.create"]);
@@ -279,7 +291,10 @@ async fn who_may_read_a_records_history(pool: PgPool) -> TestResult {
 
     for who in [&s.manager, &s.technician] {
         let refused = s.history(who, "visit", &id).await;
-        assert_eq!(code(&refused), (StatusCode::FORBIDDEN, Some("auth.forbidden")));
+        assert_eq!(
+            code(&refused),
+            (StatusCode::FORBIDDEN, Some("auth.forbidden"))
+        );
         assert!(refused.body.get("items").is_none());
         // No oracle: a malformed or unknown id is refused the same way.
         for junk in ["not-a-uuid", &Uuid::now_v7().to_string()] {
@@ -288,13 +303,22 @@ async fn who_may_read_a_records_history(pool: PgPool) -> TestResult {
         }
     }
     assert_eq!(
-        call(&s.h.app, "GET", &format!("/record-history/visit/{id}"), None, None)
-            .await
-            .status,
+        call(
+            &s.h.app,
+            "GET",
+            &format!("/record-history/visit/{id}"),
+            None,
+            None
+        )
+        .await
+        .status,
         StatusCode::UNAUTHORIZED
     );
     // With the rights: malformed → 400, unknown → 404.
-    assert_eq!(s.history(&s.owner, "visit", "not-a-uuid").await.status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        s.history(&s.owner, "visit", "not-a-uuid").await.status,
+        StatusCode::BAD_REQUEST
+    );
     let unknown = Uuid::now_v7().to_string();
     for kind in ["visit", "sale", "refund", "customer-package", "customer"] {
         assert_eq!(
@@ -304,27 +328,54 @@ async fn who_may_read_a_records_history(pool: PgPool) -> TestResult {
         );
     }
     // A kind that has no route yet is the router's 404.
-    assert_eq!(s.history(&s.owner, "staff", &id).await.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        s.history(&s.owner, "staff", &id).await.status,
+        StatusCode::NOT_FOUND
+    );
 
     // The lists: no `edited` key without the right, a boolean with it.
     let day = spa_today();
-    let list = call(&s.h.app, "GET", &format!("/visits?date={day}"), Some(&s.manager), None).await;
+    let list = call(
+        &s.h.app,
+        "GET",
+        &format!("/visits?date={day}"),
+        Some(&s.manager),
+        None,
+    )
+    .await;
     assert_eq!(list.status, StatusCode::OK, "{}", list.body);
     assert!(list.body.to_string().contains(&id));
-    assert!(!list.body.to_string().contains("\"edited\""), "{}", list.body);
+    assert!(
+        !list.body.to_string().contains("\"edited\""),
+        "{}",
+        list.body
+    );
     let mine = s.visit(&s.owner, &id).await;
     assert_eq!(mine["edited"], false);
 
     // The operator shows it to the manager: next request; hidden again: refused again.
     s.grant_manager("record.history.read", true).await?;
-    assert_eq!(s.history(&s.manager, "visit", &id).await.status, StatusCode::OK);
+    assert_eq!(
+        s.history(&s.manager, "visit", &id).await.status,
+        StatusCode::OK
+    );
     assert_eq!(s.visit(&s.manager, &id).await["edited"], false);
     s.grant_manager("record.history.read", false).await?;
-    assert_eq!(s.history(&s.manager, "visit", &id).await.status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        s.history(&s.manager, "visit", &id).await.status,
+        StatusCode::FORBIDDEN
+    );
 
     // Another spa's owner: not found, whatever the kind.
     create_tenant(&s.h.owner, "khac", "Spa Khác", "Huế").await?;
-    add_member(&s.h.owner, "khac", OTHER_OWNER_PHONE, "Chủ Khác", SystemRole::Owner).await?;
+    add_member(
+        &s.h.owner,
+        "khac",
+        OTHER_OWNER_PHONE,
+        "Chủ Khác",
+        SystemRole::Owner,
+    )
+    .await?;
     let other = session_for(&s.h, OTHER_OWNER_PHONE).await;
     for (kind, record) in [
         ("visit", id.clone()),
@@ -361,7 +412,10 @@ async fn a_sale_is_read_as_its_visit_or_its_package(pool: PgPool) -> TestResult 
     let owner = s.owner_history("sale", &one_off).await;
     assert_eq!(owner["record"], json!({"type": "visit", "id": visit}));
     let owner = s.owner_history("sale", &package_sale).await;
-    assert_eq!(owner["record"], json!({"type": "customer_package", "id": package}));
+    assert_eq!(
+        owner["record"],
+        json!({"type": "customer_package", "id": package})
+    );
     // The purchase line is the package sale itself, never the visit's line.
     assert_eq!(actions(&owner), ["sale.create"]);
     assert_eq!(owner["items"][0]["packages"], json!([PLAN_NAME]));
@@ -372,8 +426,14 @@ async fn a_sale_is_read_as_its_visit_or_its_package(pool: PgPool) -> TestResult 
     s.grant_manager("record.history.read", true).await?;
     s.grant_manager("visit.read", false).await?;
     let refused = s.history(&s.manager, "sale", &one_off).await;
-    assert_eq!(code(&refused), (StatusCode::FORBIDDEN, Some("auth.forbidden")));
-    assert_eq!(s.history(&s.manager, "visit", &visit).await.status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        code(&refused),
+        (StatusCode::FORBIDDEN, Some("auth.forbidden"))
+    );
+    assert_eq!(
+        s.history(&s.manager, "visit", &visit).await.status,
+        StatusCode::FORBIDDEN
+    );
     let allowed = s.history(&s.manager, "sale", &package_sale).await;
     assert_eq!(allowed.status, StatusCode::OK, "{}", allowed.body);
     assert_eq!(actions(&allowed.body), ["sale.create"]);
@@ -393,19 +453,26 @@ async fn a_sale_is_read_as_its_visit_or_its_package(pool: PgPool) -> TestResult 
         )
         .await;
     assert_eq!(cancelled.status, StatusCode::OK, "{}", cancelled.body);
-    let refund: Uuid = sqlx::query_scalar("SELECT id FROM app.refund WHERE customer_package_id = $1::uuid")
-        .bind(&package)
-        .fetch_one(&s.h.owner)
-        .await?;
+    let refund: Uuid =
+        sqlx::query_scalar("SELECT id FROM app.refund WHERE customer_package_id = $1::uuid")
+            .bind(&package)
+            .fetch_one(&s.h.owner)
+            .await?;
     let refund = refund.to_string();
     let by_refund = s.owner_history("refund", &refund).await;
-    assert_eq!(by_refund["record"], json!({"type": "customer_package", "id": package}));
+    assert_eq!(
+        by_refund["record"],
+        json!({"type": "customer_package", "id": package})
+    );
     assert_eq!(by_refund["summary"]["state"], "cancelled");
     assert!(actions(&by_refund).contains(&"customer_package.cancel".to_owned()));
     let manager = s.history(&s.manager, "refund", &refund).await;
     assert_eq!(manager.status, StatusCode::OK, "{}", manager.body);
     s.grant_manager("sale.read", false).await?;
-    assert_eq!(s.history(&s.manager, "refund", &refund).await.status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        s.history(&s.manager, "refund", &refund).await.status,
+        StatusCode::FORBIDDEN
+    );
     Ok(())
 }
 
@@ -423,7 +490,14 @@ async fn a_visit_keeps_only_its_own_story(pool: PgPool) -> TestResult {
         .await;
     let visit = str_of(&v.body["id"]);
     let package = str_of(&v.body["package_sales"][0]["customer_package_ids"][0]);
-    let package_row = call(&s.h.app, "GET", &format!("/customer-packages/{package}"), Some(&s.owner), None).await;
+    let package_row = call(
+        &s.h.app,
+        "GET",
+        &format!("/customer-packages/{package}"),
+        Some(&s.owner),
+        None,
+    )
+    .await;
     let version = package_row.body["version"].as_i64().unwrap_or(1);
     let extended = s
         .post(
@@ -447,7 +521,10 @@ async fn a_visit_keeps_only_its_own_story(pool: PgPool) -> TestResult {
     let history = s.owner_history("visit", &visit).await;
     assert_eq!(actions(&history), ["visit.create"], "{history}");
     let line = &history["items"][0];
-    assert_eq!(line["amount"], 1_549_000, "Thu = every sale of the checkout");
+    assert_eq!(
+        line["amount"], 1_549_000,
+        "Thu = every sale of the checkout"
+    );
     assert_eq!(line["packages"], json!([PLAN_NAME]));
     let stored: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM app.audit_log WHERE tenant_id = $1 AND action IN ('visit.create', 'sale.create')
@@ -464,11 +541,21 @@ async fn a_visit_keeps_only_its_own_story(pool: PgPool) -> TestResult {
     let package_history = s.owner_history("customer-package", &package).await;
     assert_eq!(
         actions(&package_history),
-        ["sale.create", "customer_package.extend", "customer_package.cancel"]
+        [
+            "sale.create",
+            "customer_package.extend",
+            "customer_package.cancel"
+        ]
     );
     assert_eq!(package_history["summary"]["created"]["source"], "audit");
-    assert_eq!(package_history["summary"]["edits"], 0, "a package's life is not an edit");
-    assert_eq!(package_history["summary"]["last"]["actor"]["name"], "Chủ Spa");
+    assert_eq!(
+        package_history["summary"]["edits"], 0,
+        "a package's life is not an edit"
+    );
+    assert_eq!(
+        package_history["summary"]["last"]["actor"]["name"],
+        "Chủ Spa"
+    );
     Ok(())
 }
 
@@ -509,14 +596,21 @@ async fn a_correction_chain_reads_as_one_story(pool: PgPool) -> TestResult {
         s.owner_history("visit", &c_id).await,
     ];
     for story in &stories {
-        assert_eq!(actions(story), ["visit.create", "visit.correct", "visit.correct"], "{story}");
+        assert_eq!(
+            actions(story),
+            ["visit.create", "visit.correct", "visit.correct"],
+            "{story}"
+        );
         assert_eq!(story["items"], stories[0]["items"]);
         assert_eq!(story["summary"]["edits"], 2);
         assert_eq!(story["summary"]["created"]["actor"]["name"], "Quản lý Ngọc");
         assert_eq!(story["summary"]["last"]["actor"]["name"], "Chủ Spa");
     }
     let states: Vec<&Value> = stories.iter().map(|s| &s["summary"]["state"]).collect();
-    assert_eq!(states, [&json!("replaced"), &json!("replaced"), &json!("active")]);
+    assert_eq!(
+        states,
+        [&json!("replaced"), &json!("replaced"), &json!("active")]
+    );
     for id in [&a_id, &b_id, &c_id] {
         assert_eq!(s.visit(&s.owner, id).await["edited"], true, "{id}");
     }
@@ -534,10 +628,16 @@ async fn a_correction_chain_reads_as_one_story(pool: PgPool) -> TestResult {
     .await;
     assert_eq!(ledger.status, StatusCode::OK, "{}", ledger.body);
     let rows = ledger.body["rows"].as_array().cloned().unwrap_or_default();
-    let c_rows: Vec<&Value> = rows.iter().filter(|r| r["visit_id"] == json!(c_id)).collect();
+    let c_rows: Vec<&Value> = rows
+        .iter()
+        .filter(|r| r["visit_id"] == json!(c_id))
+        .collect();
     assert!(c_rows.iter().all(|r| r["edited"] == true), "{c_rows:?}");
     assert!(!c_rows.is_empty());
-    for r in rows.iter().filter(|r| r["entry"] == "void" || r["voided"] == true || r["kind"] == "package") {
+    for r in rows
+        .iter()
+        .filter(|r| r["entry"] == "void" || r["voided"] == true || r["kind"] == "package")
+    {
         assert!(r.get("edited").is_none(), "{r}");
     }
     // Without the right, no key at all.
@@ -552,15 +652,28 @@ async fn a_correction_chain_reads_as_one_story(pool: PgPool) -> TestResult {
     .await;
     assert!(!manager_ledger.body.to_string().contains("\"edited\""));
     // The customer's history marks the visit events the same way.
-    let timeline = call(&s.h.app, "GET", &format!("/customers/{}/history", s.ha), Some(&s.owner), None).await;
+    let timeline = call(
+        &s.h.app,
+        "GET",
+        &format!("/customers/{}/history", s.ha),
+        Some(&s.owner),
+        None,
+    )
+    .await;
     let visits: Vec<&Value> = timeline.body["events"]
         .as_array()
         .map(|e| e.iter().filter(|x| x["visit"].is_object()).collect())
         .unwrap_or_default();
     assert!(visits.len() >= 3, "{}", timeline.body);
     assert!(visits.iter().all(|e| e["edited"] == true), "{visits:?}");
-    let manager_timeline =
-        call(&s.h.app, "GET", &format!("/customers/{}/history", s.ha), Some(&s.manager), None).await;
+    let manager_timeline = call(
+        &s.h.app,
+        "GET",
+        &format!("/customers/{}/history", s.ha),
+        Some(&s.manager),
+        None,
+    )
+    .await;
     assert!(!manager_timeline.body.to_string().contains("\"edited\""));
     Ok(())
 }
@@ -588,17 +701,31 @@ async fn what_counts_as_an_edit_and_the_lists_agree(pool: PgPool) -> TestResult 
     let resent_id = str_of(&resent.body["id"]);
     let line = str_of(&resent.body["lines"][0]["id"]);
     let same = s
-        .patch(&s.manager, &resent_id, 1, json!({"lines": [{"id": line, "staff_id": s.lan}]}))
+        .patch(
+            &s.manager,
+            &resent_id,
+            1,
+            json!({"lines": [{"id": line, "staff_id": s.lan}]}),
+        )
         .await;
     assert_eq!(same.status, StatusCode::OK, "{}", same.body);
     let moved = s.simple_visit().await;
     let moved_id = str_of(&moved.body["id"]);
     let moved_line = str_of(&moved.body["lines"][0]["id"]);
     let changed = s
-        .patch(&s.manager, &moved_id, 1, json!({"lines": [{"id": moved_line, "staff_id": s.mai}]}))
+        .patch(
+            &s.manager,
+            &moved_id,
+            1,
+            json!({"lines": [{"id": moved_line, "staff_id": s.mai}]}),
+        )
         .await;
     assert_eq!(changed.status, StatusCode::OK, "{}", changed.body);
-    assert_eq!(changed.body["edited"], json!(null), "the manager has no right: no key");
+    assert_eq!(
+        changed.body["edited"],
+        json!(null),
+        "the manager has no right: no key"
+    );
     // Only the session note.
     let noted = s.simple_visit().await;
     let noted_id = str_of(&noted.body["id"]);
@@ -618,7 +745,12 @@ async fn what_counts_as_an_edit_and_the_lists_agree(pool: PgPool) -> TestResult 
             Some(1),
         )
         .await;
-    assert_eq!(conversion.status, StatusCode::CREATED, "{}", conversion.body);
+    assert_eq!(
+        conversion.status,
+        StatusCode::CREATED,
+        "{}",
+        conversion.body
+    );
     let replacement = str_of(&conversion.body["visit"]["id"]);
 
     let upsell = s.owner_history("visit", &upsold_id).await;
@@ -637,7 +769,10 @@ async fn what_counts_as_an_edit_and_the_lists_agree(pool: PgPool) -> TestResult 
     );
     assert!(!session_note.to_string().contains("Đau vai gáy"));
     let conversion_story = s.owner_history("visit", &converted_id).await;
-    assert_eq!(actions(&conversion_story), ["visit.create", "visit.convert_to_package"]);
+    assert_eq!(
+        actions(&conversion_story),
+        ["visit.create", "visit.convert_to_package"]
+    );
     assert_eq!(conversion_story["items"][1]["packages"], json!([PLAN_NAME]));
 
     let expected = [
@@ -652,14 +787,29 @@ async fn what_counts_as_an_edit_and_the_lists_agree(pool: PgPool) -> TestResult 
         let story = s.owner_history("visit", id).await;
         assert_eq!(story["summary"]["edits"], edits, "{id}: {story}");
         let edited = s.visit(&s.owner, id).await["edited"].clone();
-        assert_eq!(edited, json!(edits >= 1), "edited agrees with edits for {id}");
+        assert_eq!(
+            edited,
+            json!(edits >= 1),
+            "edited agrees with edits for {id}"
+        );
     }
     // The day list says the same.
     let day = spa_today();
-    let list = call(&s.h.app, "GET", &format!("/visits?date={day}"), Some(&s.owner), None).await;
+    let list = call(
+        &s.h.app,
+        "GET",
+        &format!("/visits?date={day}"),
+        Some(&s.owner),
+        None,
+    )
+    .await;
     for row in list.body.as_array().cloned().unwrap_or_default() {
         let story = s.owner_history("visit", &str_of(&row["id"])).await;
-        assert_eq!(row["edited"], json!(story["summary"]["edits"].as_i64() >= Some(1)), "{row}");
+        assert_eq!(
+            row["edited"],
+            json!(story["summary"]["edits"].as_i64() >= Some(1)),
+            "{row}"
+        );
     }
 
     // Without the health-notes right the note-only edit is not there at all; a profile note is.
@@ -671,7 +821,11 @@ async fn what_counts_as_an_edit_and_the_lists_agree(pool: PgPool) -> TestResult 
     s.grant_manager("sale.read", false).await?;
     let no_money = s.history(&s.manager, "visit", &upsold_id).await;
     assert_eq!(no_money.status, StatusCode::OK, "{}", no_money.body);
-    assert!(!no_money.body.to_string().contains("\"amount\""), "{}", no_money.body);
+    assert!(
+        !no_money.body.to_string().contains("\"amount\""),
+        "{}",
+        no_money.body
+    );
     assert!(!no_money.body.to_string().contains("\"discount\""));
     Ok(())
 }
@@ -728,8 +882,10 @@ async fn a_customer_profiles_history_keeps_phones_to_the_owner(pool: PgPool) -> 
         "PUT",
         &format!("/customers/{}", s.ha),
         Some(&s.manager),
-        Some(json!({"full_name": "Nguyễn Thị Thu Hà", "phone": "0912333444", "gender": "female",
-                    "note": "Thích phòng yên tĩnh"})),
+        Some(
+            json!({"full_name": "Nguyễn Thị Thu Hà", "phone": "0912333444", "gender": "female",
+                    "note": "Thích phòng yên tĩnh"}),
+        ),
         &[("If-Match", "\"1\"")],
     )
     .await;
@@ -740,9 +896,19 @@ async fn a_customer_profiles_history_keeps_phones_to_the_owner(pool: PgPool) -> 
     assert_eq!(actions(&owner), ["customer.create", "customer.update"]);
     assert_eq!(owner["summary"]["edits"], 1);
     assert_eq!(owner["summary"]["created"]["actor"]["name"], "Quản lý Ngọc");
-    let changes = owner["items"][1]["changes"].as_array().cloned().unwrap_or_default();
-    let phone = changes.iter().find(|c| c["field"] == "phone").cloned().unwrap_or_default();
-    assert_eq!((&phone["old"], &phone["new"]), (&json!("+84905111222"), &json!("+84912333444")));
+    let changes = owner["items"][1]["changes"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let phone = changes
+        .iter()
+        .find(|c| c["field"] == "phone")
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(
+        (&phone["old"], &phone["new"]),
+        (&json!("+84905111222"), &json!("+84912333444"))
+    );
 
     s.grant_manager("record.history.read", true).await?;
     let manager = s.history(&s.manager, "customer", &s.ha).await;
@@ -751,10 +917,21 @@ async fn a_customer_profiles_history_keeps_phones_to_the_owner(pool: PgPool) -> 
     for digits in ["905111222", "912333444", "0905", "0912"] {
         assert!(!text.contains(digits), "{digits} in {text}");
     }
-    let changes = manager.body["items"][1]["changes"].as_array().cloned().unwrap_or_default();
-    let phone = changes.iter().find(|c| c["field"] == "phone").cloned().unwrap_or_default();
+    let changes = manager.body["items"][1]["changes"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let phone = changes
+        .iter()
+        .find(|c| c["field"] == "phone")
+        .cloned()
+        .unwrap_or_default();
     assert_eq!(phone, json!({"field": "phone", "format": "phone"}));
-    let name = changes.iter().find(|c| c["field"] == "full_name").cloned().unwrap_or_default();
+    let name = changes
+        .iter()
+        .find(|c| c["field"] == "full_name")
+        .cloned()
+        .unwrap_or_default();
     assert_eq!(name["new"], "Nguyễn Thị Thu Hà");
     // A health-note change: only with the right; the profile note change stays without it.
     let health = call(
@@ -781,7 +958,10 @@ async fn a_customer_profiles_history_keeps_phones_to_the_owner(pool: PgPool) -> 
     .await?;
     let gone = s.owner_history("customer", &s.ha).await;
     let text = gone.to_string();
-    assert!(!text.contains("Nguyễn Thị") && !text.contains("+84"), "{text}");
+    assert!(
+        !text.contains("Nguyễn Thị") && !text.contains("+84"),
+        "{text}"
+    );
     Ok(())
 }
 
@@ -808,7 +988,10 @@ async fn ghi_boi_comes_from_the_creating_action(pool: PgPool) -> TestResult {
     // Moved apart from its sale's row, the sale is its own line (it no longer folds).
     assert_eq!(actions(&story), ["visit.create", "sale.create"], "{story}");
     // No creating row: the visit's own columns (its sale's row stays a line of the visit).
-    s.exec(&format!("DELETE FROM app.audit_log WHERE entity_id = '{visit}'")).await?;
+    s.exec(&format!(
+        "DELETE FROM app.audit_log WHERE entity_id = '{visit}'"
+    ))
+    .await?;
     let story = s.owner_history("visit", &visit).await;
     assert_eq!(story["summary"]["created"]["source"], "record");
     assert_eq!(story["summary"]["created"]["actor"]["name"], "Quản lý Ngọc");
@@ -844,7 +1027,9 @@ async fn ghi_boi_comes_from_the_creating_action(pool: PgPool) -> TestResult {
     assert_eq!(imported.status, StatusCode::CREATED, "{}", imported.body);
     let customer = str_of(&imported.body["customer_id"]);
     let paper = str_of(&imported.body["customer_packages"][0]["id"]);
-    let version = imported.body["customer_packages"][0]["version"].as_i64().unwrap_or(1);
+    let version = imported.body["customer_packages"][0]["version"]
+        .as_i64()
+        .unwrap_or(1);
     let extended = s
         .post(
             &s.owner,
@@ -879,7 +1064,10 @@ async fn ghi_boi_comes_from_the_creating_action(pool: PgPool) -> TestResult {
     assert_eq!(updated.status, StatusCode::OK, "{}", updated.body);
     let customer_story = s.owner_history("customer", &customer).await;
     assert_eq!(customer_story["summary"]["created"]["source"], "paper_book");
-    assert_eq!(customer_story["summary"]["created"]["actor"]["name"], "Chủ Spa");
+    assert_eq!(
+        customer_story["summary"]["created"]["actor"]["name"],
+        "Chủ Spa"
+    );
     assert_eq!(customer_story["summary"]["edits"], 1);
     Ok(())
 }

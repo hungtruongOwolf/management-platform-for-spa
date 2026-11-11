@@ -453,7 +453,13 @@ pub async fn read(
     let anchor = resolve(&mut tx, route, id).await?;
     require_anchor(actor, anchor)?;
     let (selected, record) = match anchor {
-        Anchor::Visit(v) => (visit(&mut tx, v).await?, RecordRef { kind: RecordKind::Visit, id: v }),
+        Anchor::Visit(v) => (
+            visit(&mut tx, v).await?,
+            RecordRef {
+                kind: RecordKind::Visit,
+                id: v,
+            },
+        ),
         Anchor::Package(p) => (
             package(&mut tx, p).await?,
             RecordRef {
@@ -697,13 +703,27 @@ mod tests {
         assert!(!counts_as_edit(K::Visit, &only_companions));
         assert!(!counts_as_edit(K::Visit, &nothing));
         assert!(counts_as_edit(K::Visit, &entry(Action::VisitCorrect, &[])));
-        assert!(counts_as_edit(K::Visit, &entry(Action::VisitConvertToPackage, &[])));
+        assert!(counts_as_edit(
+            K::Visit,
+            &entry(Action::VisitConvertToPackage, &[])
+        ));
         // Life, not edits (D9): an upsell, a void, a payment.
-        for a in [Action::VisitAddition, Action::VisitVoid, Action::VisitCreate, Action::SaleCreate] {
+        for a in [
+            Action::VisitAddition,
+            Action::VisitVoid,
+            Action::VisitCreate,
+            Action::SaleCreate,
+        ] {
             assert!(!counts_as_edit(K::Visit, &entry(a, &[])), "{a:?}");
         }
-        assert!(counts_as_edit(K::Customer, &entry(Action::CustomerUpdate, &[])));
-        assert!(!counts_as_edit(K::Customer, &entry(Action::CustomerHealthNoteSet, &[])));
+        assert!(counts_as_edit(
+            K::Customer,
+            &entry(Action::CustomerUpdate, &[])
+        ));
+        assert!(!counts_as_edit(
+            K::Customer,
+            &entry(Action::CustomerHealthNoteSet, &[])
+        ));
         for a in [
             Action::CustomerPackageExtend,
             Action::CustomerPackageCancel,
@@ -725,12 +745,18 @@ mod tests {
         assert!(entitled(note, true, true, true).is_some());
         let both = entry(
             Action::VisitUpdate,
-            &[("staff", Some("Thu"), Some("Hoa")), ("session_note", None, Some("false"))],
+            &[
+                ("staff", Some("Thu"), Some("Hoa")),
+                ("session_note", None, Some("false")),
+            ],
         );
         let kept = entitled(both, true, false, true).map(|e| e.changes.len());
         assert_eq!(kept, Some(1));
         for a in [Action::CustomerHealthNoteSet, Action::SaleNoteUpdate] {
-            assert!(entitled(entry(a, &[]), true, false, true).is_none(), "{a:?}");
+            assert!(
+                entitled(entry(a, &[]), true, false, true).is_none(),
+                "{a:?}"
+            );
             assert!(entitled(entry(a, &[]), true, true, true).is_some(), "{a:?}");
         }
         // The profile note ("Ghi chú hồ sơ") is not a health note.
@@ -739,11 +765,20 @@ mod tests {
         // A phone change keeps its name and loses both values without audit.read (D8).
         let phone = entry(
             Action::CustomerUpdate,
-            &[("phone", Some("+84905111222"), Some("+84912333444")), ("full_name", Some("A"), Some("B"))],
+            &[
+                ("phone", Some("+84905111222"), Some("+84912333444")),
+                ("full_name", Some("A"), Some("B")),
+            ],
         );
         let seen = entitled(phone.clone(), true, true, false).unwrap_or_else(|| unreachable!());
         assert_eq!(seen.changes[0].field, "phone");
-        assert_eq!((seen.changes[0].old.as_deref(), seen.changes[0].new.as_deref()), (None, None));
+        assert_eq!(
+            (
+                seen.changes[0].old.as_deref(),
+                seen.changes[0].new.as_deref()
+            ),
+            (None, None)
+        );
         assert_eq!(seen.changes[1].new.as_deref(), Some("B"));
         let owner = entitled(phone, true, true, true).unwrap_or_else(|| unreachable!());
         assert_eq!(owner.changes[0].new.as_deref(), Some("+84912333444"));

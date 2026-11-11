@@ -540,10 +540,18 @@ mod tests {
         let catalogue = catalogue();
         let history = catalogue.iter().find(|p| p.key == "record.history.read");
         assert_eq!(
-            history.map(|p| (p.spa_local, p.not_for_technician, p.owner_only, p.owner_floor)),
+            history.map(|p| (
+                p.spa_local,
+                p.not_for_technician,
+                p.owner_only,
+                p.owner_floor
+            )),
             Some((true, true, false, false))
         );
-        assert_eq!(catalogue.iter().filter(|p| p.spa_local).count(), SPA_LOCAL.len());
+        assert_eq!(
+            catalogue.iter().filter(|p| p.spa_local).count(),
+            SPA_LOCAL.len()
+        );
     }
 
     #[test]

@@ -50,7 +50,10 @@ where
             "/record-history/customer-package/{id}",
             get(customer_package_history),
         )
-        .route("/record-history/customer/{id}", get(customer_record_history))
+        .route(
+            "/record-history/customer/{id}",
+            get(customer_record_history),
+        )
 }
 
 /// Every `/record-history/*` route: the rights first (a caller without them gets `403` whatever
