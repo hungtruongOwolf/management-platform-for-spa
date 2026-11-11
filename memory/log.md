@@ -810,3 +810,9 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - `customer.update` giữ `full_name` / `phone` cũ → mới khi đổi (không backfill); `customer.anonymize` sau này phải xóa chúng khỏi audit.
 - Seed: `TenantTx::for_actor_at` ở mọi `*_as_of`, `Actor::at_clock` cho các use case còn lại; chấm công / khen-phàn nàn ghi theo ngày. Runbook § Dữ liệu demo cập nhật. Web `/nhat-ky-thao-tac` (`features/activity/`), e2e `activity.spec.ts` (không chạy local).
 - Tiếp theo: lead chạy 0051 trên staging, `reset-demo` + `seed-demo` lại để có lịch sử audit theo ngày, deploy (agent không đụng staging).
+
+## [2026-11-11] record | Staging migrate 0051 + reset/seed 12 tháng + deploy 7e67e43 (Nhật ký thao tác)
+- EM: "chưa ai test đâu, seed lại luôn đi". Backup `pg_dump` (scratchpad, ngoài git) → `pnpm db:migrate` lên 51 → `reset-demo` + `seed-demo` (757 s; phase lương 182 s, chậm hơn ~90 s vì chấm công ghi theo ngày) → deploy.
+- Kiểm: audit 6.787 dòng trải đủ 12 tháng (12/2025–11/2026, ~550–660/tháng), 0 dòng ở tương lai, 123 dòng hôm nay; index `audit_log_tenant_at_id_idx` + `audit_log_tenant_actor_at_idx` có trên staging.
+- Deploy: lần `vercel deploy --prod --yes` đầu thoát 0 mà không tạo deployment (lặp lại lỗi 2026-11-09); chạy lại thì có deployment mới, `Aliased`. `/api/v1/health` 200, `/me` 401, `/admin/me` 401, `/api/v1/audit-log` 401 (route mới, bản cũ là 404), `/nhat-ky-thao-tac` 200, CSP + HSTS có.
+- Hướng dẫn nghiệm thu (artifact) thêm bước 13 "Nhật ký thao tác", ngày dữ liệu mẫu đổi sang 11/11/2026.
