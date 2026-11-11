@@ -355,7 +355,7 @@ async fn a_sale_is_read_as_its_visit_or_its_package(pool: PgPool) -> TestResult 
     let visit = str_of(&v.body["id"]);
     let one_off = str_of(&v.body["sale_id"]);
     let package_sale = str_of(&v.body["package_sales"][0]["sale_id"]);
-    let package = str_of(&v.body["package_sales"][0]["customer_package_id"]);
+    let package = str_of(&v.body["package_sales"][0]["customer_package_ids"][0]);
     assert!(!package.is_empty(), "{}", v.body);
 
     let owner = s.owner_history("sale", &one_off).await;
@@ -422,7 +422,7 @@ async fn a_visit_keeps_only_its_own_story(pool: PgPool) -> TestResult {
                        "payments": [{"method": "cash", "amount": 1_549_000}]}))
         .await;
     let visit = str_of(&v.body["id"]);
-    let package = str_of(&v.body["package_sales"][0]["customer_package_id"]);
+    let package = str_of(&v.body["package_sales"][0]["customer_package_ids"][0]);
     let package_row = call(&s.h.app, "GET", &format!("/customer-packages/{package}"), Some(&s.owner), None).await;
     let version = package_row.body["version"].as_i64().unwrap_or(1);
     let extended = s
@@ -805,12 +805,14 @@ async fn ghi_boi_comes_from_the_creating_action(pool: PgPool) -> TestResult {
     let story = s.owner_history("visit", &visit).await;
     assert_eq!(story["summary"]["created"]["at"], earlier);
     assert_eq!(story["summary"]["created"]["day"], "2026-01-05");
-    // No creating row: the visit's own columns.
+    // Moved apart from its sale's row, the sale is its own line (it no longer folds).
+    assert_eq!(actions(&story), ["visit.create", "sale.create"], "{story}");
+    // No creating row: the visit's own columns (its sale's row stays a line of the visit).
     s.exec(&format!("DELETE FROM app.audit_log WHERE entity_id = '{visit}'")).await?;
     let story = s.owner_history("visit", &visit).await;
     assert_eq!(story["summary"]["created"]["source"], "record");
     assert_eq!(story["summary"]["created"]["actor"]["name"], "Quản lý Ngọc");
-    assert_eq!(actions(&story), Vec::<String>::new());
+    assert_eq!(actions(&story), ["sale.create"]);
     // The manager leaves: their lines read "(đã nghỉ)".
     s.exec(&format!(
         "UPDATE app.membership SET status = 'disabled' WHERE tenant_id = '{}'
