@@ -307,12 +307,43 @@ pub async fn forget_used_step(h: &Harness, phone: &str) -> Result<(), Box<dyn st
 pub const OPERATOR: &str = "ops";
 pub const OPERATOR_PASSWORD: &str = "mat-khau-cua-operator";
 
-/// The CLI path (`app add-operator`): the only way an operator exists.
+/// The CLI path (`app add-operator`): the only way an operator exists. Once per harness: a second
+/// call returns the same operator (a setup may already have made it, e.g. [`enable_feature`]).
 pub async fn add_operator(h: &Harness) -> Result<uuid::Uuid, Box<dyn std::error::Error>> {
+    let existing: Option<uuid::Uuid> =
+        sqlx::query_scalar("SELECT id FROM app.platform_operator WHERE username = $1")
+            .bind(OPERATOR)
+            .fetch_optional(&h.owner)
+            .await?;
+    if let Some(id) = existing {
+        return Ok(id);
+    }
     Ok(
         platform::operator::add_operator(&h.owner, OPERATOR, "Người vận hành", OPERATOR_PASSWORD)
             .await?,
     )
+}
+
+/// Switches a feature ON for one spa, as an operator's switch leaves it (a `tenant_feature` row
+/// naming the harness operator, created on first use): for the screens that are off by default
+/// (ADR-0022: "Nhật ký thao tác").
+pub async fn enable_feature(
+    h: &Harness,
+    tenant: uuid::Uuid,
+    feature: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let operator = add_operator(h).await?;
+    sqlx::query(
+        "INSERT INTO app.tenant_feature (tenant_id, feature, enabled, updated_by)
+         VALUES ($1, $2, true, $3)
+         ON CONFLICT (tenant_id, feature) DO UPDATE SET enabled = true",
+    )
+    .bind(tenant)
+    .bind(feature)
+    .bind(operator)
+    .execute(&h.owner)
+    .await?;
+    Ok(())
 }
 
 impl Reply {

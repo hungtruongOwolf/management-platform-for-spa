@@ -367,6 +367,8 @@ async fn a_full_scenario_covers_every_category_through_the_use_cases(pool: PgPoo
         "a visit audited on another day than its own"
     );
     let back = today - chrono::Duration::days(60);
+    // The screen is off by default (ADR-0022 D5); `reset-demo` drops the operator's switch too.
+    common::enable_feature(&h, tenant_id(&h.owner, "vpyd").await?, "activity_log").await?;
     let page = call(
         &h.app,
         "GET",

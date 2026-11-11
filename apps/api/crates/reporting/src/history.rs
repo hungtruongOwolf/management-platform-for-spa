@@ -484,21 +484,27 @@ pub async fn read(
     };
     tx.commit().await?;
 
-    // A paper-book package also has the `customer_package.create` its import wrote: the import is
-    // the one line saying so ("Nhập từ sổ giấy").
+    // A paper-book import also wrote the `customer_package.create` of each package it made and,
+    // when it made the customer, the `customer.create`: the import is the one line saying so
+    // ("Nhập từ sổ giấy") and the creation (D12). Only imports that made this record are selected.
     let imported = rows
         .iter()
         .any(|r| Action::parse(&r.action) == Some(Action::OpeningBalanceImport));
     let rows: Vec<Row> = rows
         .into_iter()
         .filter(|r| {
-            !(imported
-                && Action::parse(&r.action) == Some(Action::CustomerPackageCreate)
-                && r.after
-                    .as_ref()
-                    .and_then(|a| a.get("origin"))
-                    .and_then(serde_json::Value::as_str)
-                    == Some("opening_balance"))
+            let written_by_import = match Action::parse(&r.action) {
+                Some(Action::CustomerPackageCreate) => {
+                    r.after
+                        .as_ref()
+                        .and_then(|a| a.get("origin"))
+                        .and_then(serde_json::Value::as_str)
+                        == Some("opening_balance")
+                }
+                Some(Action::CustomerCreate) => true,
+                _ => false,
+            };
+            !(imported && written_by_import)
         })
         .collect();
     let creation_row = rows
