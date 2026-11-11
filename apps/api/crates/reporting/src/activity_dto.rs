@@ -87,6 +87,8 @@ pub struct ActivityQuery {
     /// Who did it: a member's user id, `platform` (the platform team) or `system`.
     pub actor: Option<String>,
     /// Only this group of actions.
+    // A line matches when its own action or any row folded into it belongs to the group (a
+    // checkout that sold a package is also `packages`).
     pub kind: Option<ActivityKind>,
     pub cursor: Option<String>,
     /// 1–100, default 20.
@@ -203,11 +205,12 @@ pub struct ActivityEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subject: Option<ActivitySubject>,
     pub changes: Vec<ActivityChange>,
-    /// The money it moved, in đồng: a visit's or sale's total, a refund, a reversal, a
+    /// The money it moved, in đồng: what a visit's checkout collected (every sale it made:
+    /// one-off services and packages sold in it), a sale's total, a refund, a reversal, a
     /// correction's difference (signed), a bonus / penalty, a closed month's net pay.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub amount: Option<i64>,
-    /// A discount given on a visit or a sale.
+    /// A discount given on a visit (all its sales) or a sale.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub discount: Option<i64>,
     /// Extra context by action: `staff.adjustment` → `bonus` | `penalty`; `payroll.close`,
@@ -220,6 +223,14 @@ pub struct ActivityEntry {
     /// platform team's reason).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// The packages sold or cancelled by the same action, by name: in a visit's checkout, by a
+    /// package sale, by the void of one.
+    pub packages: Vec<String>,
+    /// One line per action (EM 2026-11-11): the keys of the other audit rows the same action
+    /// wrote, folded into this line instead of shown on their own — a visit's or a void's
+    /// `sale.*`, the `customer_package.*` of a package sale, the void and new visit of a
+    /// correction. The rows themselves stay in the trail.
+    pub folded: Vec<String>,
 }
 
 /// A member the person filter offers (the owner, staff with a login, staff who left).

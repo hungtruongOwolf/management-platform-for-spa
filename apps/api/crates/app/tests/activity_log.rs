@@ -269,6 +269,465 @@ async fn plant(
     Ok(id)
 }
 
+/// Plants a row of `actor`'s with an `after` (the shape the writers store).
+async fn plant_after(
+    s: &Spa,
+    action: &str,
+    entity_type: &str,
+    entity: Uuid,
+    at: DateTime<Utc>,
+    after: Value,
+) -> Setup<Uuid> {
+    let id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO app.audit_log (id, tenant_id, actor_user_id, actor_kind, action, entity_type, entity_id, at, after)
+         VALUES ($1, $2, $3, 'user', $4, $5, $6, $7, $8)",
+    )
+    .bind(id)
+    .bind(s.tenant)
+    .bind(s.manager_user)
+    .bind(action)
+    .bind(entity_type)
+    .bind(entity)
+    .bind(at)
+    .bind(after)
+    .execute(&s.h.owner)
+    .await?;
+    Ok(id)
+}
+
+fn actions_of(list: &[Value]) -> Vec<String> {
+    list.iter()
+        .filter_map(|e| e["action"].as_str().map(str::to_owned))
+        .collect()
+}
+
+/// The rows the trail holds for an action, whatever the screen shows.
+async fn stored(s: &Spa, action: &str) -> Setup<i64> {
+    Ok(sqlx::query_scalar(
+        "SELECT count(*) FROM app.audit_log WHERE tenant_id = $1 AND action = $2",
+    )
+    .bind(s.tenant)
+    .bind(action)
+    .fetch_one(&s.h.owner)
+    .await?)
+}
+
+/// A package plan of the fixture's service, for the checkout and package-sale tests.
+async fn plan(s: &Spa) -> Setup<Uuid> {
+    let plan = call(
+        &s.h.app,
+        "POST",
+        "/package-plans",
+        Some(&s.owner),
+        Some(json!({
+            "name": PLAN_NAME, "price": PLAN_PRICE, "validity_months": 6, "gift_note": null,
+            "active": true, "items": [{"service_id": s.service, "sessions": 10, "bonus_sessions": 0}],
+        })),
+    )
+    .await;
+    assert_eq!(plan.status, StatusCode::CREATED, "{}", plan.body);
+    Ok(id(&plan))
+}
+
+const PLAN_NAME: &str = "Gội đầu 10 buổi";
+const PLAN_PRICE: i64 = 1_500_000;
+
+/// EM 2026-11-11 ("một dòng thôi vì khi ghi là thu tiền luôn rồi"): recording a paid visit is one
+/// line that carries its money and reason, voiding it is one line with the reversal; the
+/// `sale.create` / `sale.void` rows stay in the trail.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_visit_and_its_sale_read_as_one_line(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    for kind in ["", "&kind=front_desk"] {
+        let page = log(&s, &s.owner, &format!("?limit=100{kind}")).await;
+        assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+        let list = items(&page);
+        let actions = actions_of(&list);
+        assert!(
+            !actions.iter().any(|a| a.starts_with("sale.")),
+            "a visit's sale shown on its own: {actions:?}"
+        );
+        let visit = find(&list, "visit.create");
+        assert_eq!(visit["folded"], json!(["sale.create"]));
+        assert_eq!(
+            (
+                visit["amount"].clone(),
+                visit["discount"].clone(),
+                visit["reason"].clone()
+            ),
+            (
+                json!(NEW_PRICE - DISCOUNT),
+                json!(DISCOUNT),
+                json!("Khách quen")
+            )
+        );
+        assert_eq!(visit["packages"], json!([]));
+        let void = find(&list, "visit.void");
+        assert_eq!(void["folded"], json!(["sale.void"]));
+        assert_eq!(void["amount"], json!(NEW_PRICE - DISCOUNT));
+        assert_eq!(void["reason"], VOID_REASON);
+        assert_eq!(
+            actions.iter().filter(|a| a.starts_with("visit.")).count(),
+            2
+        );
+    }
+    // Traceability: both rows of each action are still stored.
+    assert_eq!(stored(&s, "sale.create").await?, 1);
+    assert_eq!(stored(&s, "sale.void").await?, 1);
+    Ok(())
+}
+
+/// A package sold in a visit's checkout folds into the visit's line (named, its price in the
+/// money collected, found by the "Gói liệu trình" group too). A package sale on its own and its
+/// void are one line each; a package cancelled with a refund stays its own line.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn packages_fold_into_the_action_that_sold_or_cancelled_them(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let plan = plan(&s).await?;
+    let checkout = post(
+        &s.h,
+        &s.manager,
+        "/visits",
+        json!({
+            "customer_id": s.customer,
+            "lines": [
+                {"service_id": s.service, "source": "package", "package_ref": "p1", "staff_id": s.lan},
+                {"service_id": s.service, "source": "one_off", "staff_id": s.lan},
+            ],
+            "package_sales": [{"ref": "p1", "package_plan_id": plan, "closer_staff_id": s.lan}],
+            "payments": [{"method": "cash", "amount": PLAN_PRICE + NEW_PRICE}],
+        }),
+    )
+    .await;
+    assert_eq!(checkout.status, StatusCode::CREATED, "{}", checkout.body);
+    let in_visit = checkout.body["package_sales"][0]["customer_package_ids"][0].clone();
+    let sold = post(
+        &s.h,
+        &s.manager,
+        "/sales",
+        json!({
+            "customer_id": s.customer, "closer_staff_id": s.lan,
+            "lines": [{"package_plan_id": plan}],
+            "payments": [{"method": "bank_transfer", "amount": PLAN_PRICE}],
+        }),
+    )
+    .await;
+    assert_eq!(sold.status, StatusCode::CREATED, "{}", sold.body);
+    let voided = post(
+        &s.h,
+        &s.manager,
+        &format!("/sales/{}/void", id(&sold)),
+        json!({"reason": "Bán nhầm gói"}),
+    )
+    .await;
+    assert_eq!(voided.status, StatusCode::OK, "{}", voided.body);
+    let package = in_visit.as_str().map(str::to_owned).unwrap_or_default();
+    let refunded = post(
+        &s.h,
+        &s.owner,
+        &format!("/customer-packages/{package}/cancel"),
+        json!({"reason": "Khách chuyển nhà", "refund_amount": 300_000, "refund_method": "cash"}),
+    )
+    .await;
+    assert_eq!(refunded.status, StatusCode::OK, "{}", refunded.body);
+
+    let page = log(&s, &s.owner, "?limit=100").await;
+    let list = items(&page);
+    let actions = actions_of(&list);
+    let count = |a: &str| actions.iter().filter(|x| *x == a).count();
+    assert_eq!(count("customer_package.create"), 0, "{actions:?}");
+    assert_eq!(count("visit.create"), 2, "{actions:?}");
+    assert_eq!((count("sale.create"), count("sale.void")), (1, 1));
+    assert_eq!(count("customer_package.cancel"), 1, "{actions:?}");
+
+    // The checkout: one line, every sale's money, the package named.
+    let visit = list
+        .iter()
+        .find(|e| e["action"] == "visit.create" && e["packages"] == json!([PLAN_NAME]))
+        .unwrap_or_else(|| panic!("no checkout line in {list:?}"));
+    assert_eq!(visit["amount"], json!(PLAN_PRICE + NEW_PRICE));
+    let mut folded: Vec<String> = visit["folded"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.as_str().map(str::to_owned))
+        .collect();
+    folded.sort();
+    assert_eq!(
+        folded,
+        ["customer_package.create", "sale.create", "sale.create"]
+    );
+    // The package sale on its own: one line naming the package; its void likewise.
+    let sale = find(&list, "sale.create");
+    assert_eq!(
+        (
+            sale["packages"].clone(),
+            sale["folded"].clone(),
+            sale["amount"].clone()
+        ),
+        (
+            json!([PLAN_NAME]),
+            json!(["customer_package.create"]),
+            json!(PLAN_PRICE)
+        )
+    );
+    let void = find(&list, "sale.void");
+    assert_eq!(
+        (
+            void["packages"].clone(),
+            void["folded"].clone(),
+            void["amount"].clone(),
+            void["reason"].clone()
+        ),
+        (
+            json!([PLAN_NAME]),
+            json!(["customer_package.cancel"]),
+            json!(PLAN_PRICE),
+            json!("Bán nhầm gói")
+        )
+    );
+    // A cancellation with a refund is its own action.
+    let cancel = find(&list, "customer_package.cancel");
+    assert_eq!(
+        (cancel["amount"].clone(), cancel["folded"].clone()),
+        (json!(300_000), json!([]))
+    );
+
+    // "Gói liệu trình" finds every line that sold or cancelled a package.
+    let packages = log(&s, &s.owner, "?limit=100&kind=packages").await;
+    let mut found = actions_of(&items(&packages));
+    found.sort();
+    assert_eq!(
+        found,
+        [
+            "customer_package.cancel",
+            "sale.create",
+            "sale.void",
+            "visit.create"
+        ]
+    );
+    assert_eq!(stored(&s, "customer_package.create").await?, 2);
+    assert_eq!(stored(&s, "customer_package.cancel").await?, 2);
+    Ok(())
+}
+
+/// "Sửa lượt" and "chuyển sang gói" are one line each: the void of the old visit, the new visit
+/// and their sales fold into the correction, which carries the difference and the reason.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_correction_or_conversion_reads_as_one_line(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let plan = plan(&s).await?;
+    let one_off = |customer: Uuid| {
+        json!({
+            "customer_id": customer,
+            "lines": [{"service_id": s.service, "source": "one_off", "staff_id": s.lan}],
+            "payments": [{"method": "cash", "amount": NEW_PRICE}],
+        })
+    };
+    let first = post(&s.h, &s.manager, "/visits", one_off(s.customer)).await;
+    assert_eq!(first.status, StatusCode::CREATED, "{}", first.body);
+    let corrected = call_with_headers(
+        &s.h.app,
+        "POST",
+        &format!("/visits/{}/correct", id(&first)),
+        Some(&s.manager),
+        Some(json!({
+            "reason": "thêm giảm giá", "customer_id": s.customer,
+            "lines": [{"service_id": s.service, "source": "one_off", "staff_id": s.lan}],
+            "discount": {"amount": DISCOUNT, "reason": "Khách quen"},
+            "payments": [{"method": "cash", "amount": NEW_PRICE - DISCOUNT}],
+        })),
+        &[
+            ("Idempotency-Key", &Uuid::now_v7().to_string()),
+            ("If-Match", "\"1\""),
+        ],
+    )
+    .await;
+    assert_eq!(corrected.status, StatusCode::CREATED, "{}", corrected.body);
+    let second = post(&s.h, &s.manager, "/visits", one_off(s.customer)).await;
+    assert_eq!(second.status, StatusCode::CREATED, "{}", second.body);
+    let converted = call_with_headers(
+        &s.h.app,
+        "POST",
+        &format!("/visits/{}/convert-to-package", id(&second)),
+        Some(&s.owner),
+        Some(json!({
+            "package_sale": {"package_plan_id": plan, "closer_staff_id": s.lan},
+            "payments": [{"method": "bank_transfer", "amount": PLAN_PRICE - NEW_PRICE}],
+        })),
+        &[
+            ("Idempotency-Key", &Uuid::now_v7().to_string()),
+            ("If-Match", "\"1\""),
+        ],
+    )
+    .await;
+    assert_eq!(converted.status, StatusCode::CREATED, "{}", converted.body);
+
+    let page = log(&s, &s.owner, "?limit=100&kind=front_desk").await;
+    let list = items(&page);
+    let sorted = |v: &Value| -> Vec<String> {
+        let mut keys: Vec<String> = v
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|k| k.as_str().map(str::to_owned))
+            .collect();
+        keys.sort();
+        keys
+    };
+    let correct = find(&list, "visit.correct");
+    assert_eq!(
+        sorted(&correct["folded"]),
+        ["sale.create", "sale.void", "visit.create", "visit.void"]
+    );
+    assert_eq!(correct["amount"], json!(-DISCOUNT));
+    assert_eq!(correct["reason"], "Sửa lượt: thêm giảm giá");
+    let convert = find(&list, "visit.convert_to_package");
+    assert_eq!(
+        sorted(&convert["folded"]),
+        [
+            "customer_package.create",
+            "sale.create",
+            "sale.void",
+            "visit.correct",
+            "visit.create",
+            "visit.void"
+        ]
+    );
+    assert_eq!(convert["packages"], json!([PLAN_NAME]));
+    // Today's lines: the fixture's visit + void, the two visits recorded, one correction, one
+    // conversion — nothing else from the desk.
+    let mut actions = actions_of(&list);
+    actions.sort();
+    assert_eq!(
+        actions,
+        [
+            "visit.convert_to_package",
+            "visit.correct",
+            "visit.create",
+            "visit.create",
+            "visit.create",
+            "visit.void"
+        ]
+    );
+    // The package it sold makes the conversion a "Gói liệu trình" line as well.
+    let packages = actions_of(&items(&log(&s, &s.owner, "?limit=100&kind=packages").await));
+    assert_eq!(packages, ["visit.convert_to_package"]);
+    Ok(())
+}
+
+/// Many pairs written at one instant by one person page through without ever splitting a pair
+/// or showing a sale on its own; a sale of another instant or another person is not folded.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn pages_never_split_an_action(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let instant = Utc::now() - Duration::hours(2);
+    let mut visits = BTreeSet::new();
+    for i in 0..9 {
+        let (visit, sale) = (Uuid::now_v7(), Uuid::now_v7());
+        let sale_row = || {
+            plant_after(
+                &s,
+                "sale.create",
+                "sale",
+                sale,
+                instant,
+                json!({"visit_id": visit, "total": 100_000, "discount_amount": 0}),
+            )
+        };
+        // Either write order: the sale's row sorts before or after its visit's.
+        if i % 2 == 0 {
+            sale_row().await?;
+        }
+        visits.insert(
+            plant_after(
+                &s,
+                "visit.create",
+                "visit",
+                visit,
+                instant,
+                json!({"sale_id": sale, "total": 100_000, "package_sale_ids": []}),
+            )
+            .await?,
+        );
+        if i % 2 == 1 {
+            sale_row().await?;
+        }
+    }
+    // Not the same action: a second earlier, or the same instant written by someone else.
+    let (visit, sale) = (Uuid::now_v7(), Uuid::now_v7());
+    plant_after(
+        &s,
+        "visit.create",
+        "visit",
+        visit,
+        instant,
+        json!({"sale_id": sale, "total": 1}),
+    )
+    .await?;
+    let alone = plant_after(
+        &s,
+        "sale.create",
+        "sale",
+        sale,
+        instant - Duration::seconds(1),
+        json!({"visit_id": visit, "total": 1}),
+    )
+    .await?;
+    let other_person = plant(
+        &s.h.owner,
+        s.tenant,
+        "system",
+        None,
+        "sale.create",
+        "sale",
+        sale,
+        instant,
+    )
+    .await?;
+
+    let all = log(&s, &s.owner, "?limit=100").await;
+    let expected: Vec<Value> = items(&all).iter().map(|e| e["id"].clone()).collect();
+    let mut seen = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let query = cursor
+            .as_ref()
+            .map_or("?limit=4".to_owned(), |c| format!("?limit=4&cursor={c}"));
+        let page = log(&s, &s.owner, &query).await;
+        assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+        let list = items(&page);
+        assert!(list.len() <= 4);
+        for e in &list {
+            let id = e["id"].as_str().and_then(|i| Uuid::parse_str(i).ok());
+            if id.is_some_and(|i| visits.contains(&i)) {
+                assert_eq!(e["folded"], json!(["sale.create"]), "{e}");
+                assert_eq!(e["amount"], json!(100_000));
+            }
+        }
+        seen.extend(list.iter().map(|e| e["id"].clone()));
+        match page.body["next_cursor"].as_str() {
+            Some(next) => cursor = Some(next.to_owned()),
+            None => break,
+        }
+    }
+    assert_eq!(seen, expected, "same lines, same order, none twice");
+    let shown: BTreeSet<Uuid> = seen
+        .iter()
+        .filter_map(|v| v.as_str().and_then(|i| Uuid::parse_str(i).ok()))
+        .collect();
+    assert!(visits.is_subset(&shown));
+    assert!(shown.contains(&alone) && shown.contains(&other_person));
+    // The nine planted sales folded, the two that are not part of a visit's action did not.
+    let sales = items(&all)
+        .iter()
+        .filter(|e| e["action"] == "sale.create")
+        .count();
+    assert_eq!(sales, 2);
+    Ok(())
+}
+
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn only_the_owner_reads_the_activity_log(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
