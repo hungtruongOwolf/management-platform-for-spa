@@ -1571,12 +1571,11 @@ async fn fixture(
     if !cancelled.status.is_success() {
         return Err(format!("fixture cancel → {} {}", cancelled.status, cancelled.body).into());
     }
-    f.refund = sqlx::query_scalar(
-        "SELECT id::text FROM app.refund WHERE customer_package_id = $1::uuid",
-    )
-    .bind(&second)
-    .fetch_one(db)
-    .await?;
+    f.refund =
+        sqlx::query_scalar("SELECT id::text FROM app.refund WHERE customer_package_id = $1::uuid")
+            .bind(&second)
+            .fetch_one(db)
+            .await?;
     Ok(f)
 }
 

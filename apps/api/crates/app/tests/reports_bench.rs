@@ -498,8 +498,16 @@ async fn record_history_reads_within_budget(pool: PgPool) -> TestResult {
             .await;
             let ms = t.elapsed().as_millis();
             assert_eq!(reply.status, StatusCode::OK, "{path}: {}", reply.body);
-            assert_eq!(reply.body.to_string().contains("\"edited\""), shown, "{path}");
-            if shown { with.push(ms) } else { without.push(ms) }
+            assert_eq!(
+                reply.body.to_string().contains("\"edited\""),
+                shown,
+                "{path}"
+            );
+            if shown {
+                with.push(ms)
+            } else {
+                without.push(ms)
+            }
         }
         let (with_p50, with_p95) = (p(&mut with, 0.5), p(&mut with, 0.95));
         let (p50, p95) = (p(&mut without, 0.5), p(&mut without, 0.95));

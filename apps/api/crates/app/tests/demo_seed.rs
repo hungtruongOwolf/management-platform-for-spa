@@ -325,16 +325,21 @@ async fn a_full_scenario_covers_every_category_through_the_use_cases(pool: PgPoo
     // ADR-0021: the audit trail reads as the scenario's year, not one burst at the run time.
     // Every month of the window has entries, the run day holds a small share, nothing is dated
     // after the run, and a back-filled visit is audited on its own business day.
-    let audit_months = count(
-        &h.owner,
-        "SELECT count(DISTINCT date_trunc('month', at AT TIME ZONE 'Asia/Ho_Chi_Minh'))
-         FROM app.audit_log",
+    // A five-month window touches five or six calendar months, depending on the run's day.
+    let (audit_months, spanned): (i64, i64) = sqlx::query_as(
+        "SELECT count(DISTINCT m),
+                ((extract(year FROM max(m)) - extract(year FROM min(m))) * 12
+                 + extract(month FROM max(m)) - extract(month FROM min(m)) + 1)::bigint
+         FROM (SELECT date_trunc('month', at AT TIME ZONE 'Asia/Ho_Chi_Minh') AS m
+               FROM app.audit_log) a",
     )
+    .fetch_one(&h.owner)
     .await?;
     assert_eq!(
-        audit_months, 5,
+        audit_months, spanned,
         "audit entries in every month of the window"
     );
+    assert!((5..=6).contains(&audit_months), "{audit_months} months");
     let (total, on_run_day): (i64, i64) = sqlx::query_as(
         "SELECT count(*), count(*) FILTER (WHERE (at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date = $1)
          FROM app.audit_log",

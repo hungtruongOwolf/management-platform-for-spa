@@ -786,7 +786,10 @@ async fn what_counts_as_an_edit_and_the_lists_agree(pool: PgPool) -> TestResult 
         actions(&conversion_story),
         ["visit.convert_to_package", "visit.create"]
     );
-    assert_eq!(item(&conversion_story, "visit.convert_to_package")["packages"], json!([PLAN_NAME]));
+    assert_eq!(
+        item(&conversion_story, "visit.convert_to_package")["packages"],
+        json!([PLAN_NAME])
+    );
 
     let expected = [
         (&upsold_id, 0),
