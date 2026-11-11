@@ -871,3 +871,23 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Test: cờ `activity_log` mặc định tắt làm đỏ `activity_log.rs`, `authz_matrix.rs`, `demo_seed.rs`, e2e `activity.spec.ts`. Cách sửa: helper `common::enable_feature`, e2e bật cờ qua API admin, đếm số cờ mặc định bật.
 - UX: chip loại trừ nhau; bảng theo loại thẻ Lịch sử khách; tên truy cập bắt đầu bằng chữ hiển thị; AC-H6 giữ trang "Không có quyền".
 - Tiếp theo: build đợt 1a.
+
+## [2026-11-11] record | Lịch sử trên từng bản ghi: build đợt 1a (PR #187)
+- Phạm vi: đúng plan đợt 1a. **Chưa deploy staging** (chờ 1b; 1a ẩn màn Nhật ký thao tác).
+- Migration `0052_record_history.sql`:
+  - `record.history.read` vào mẫu owner + vai trò owner mọi spa;
+  - `app.spa_local_permissions()`; `platform_apply_role_template` / `platform_set_tenant_role` giữ quyền spa-local (audit áp mẫu ghi tập mới của spa);
+  - hàm công tắc `platform_set_record_history`;
+  - `session_actor` thêm `enabled_features` (REVOKE / GRANT lại); `platform_set_feature` trả null khi chưa có dòng;
+  - index `audit_log_edit_idx`, `audit_log_staff_day_idx`.
+- API:
+  - cờ `activity_log` mặc định tắt (`default_enabled`, `kernel::feature::disabled`);
+  - `PUT /admin/tenants/{id}/record-history/{role}`;
+  - 5 route `GET /record-history/{visit,sale,refund,customer-package,customer}/{id}` (`reporting::history`);
+  - `edited` ở `VisitDto`, `HistoryEvent`, `LedgerRow`;
+  - `activity::list` dùng `rows_by_ids` chung; `visit.update` có KTV theo tên, `session_note`, `companions`.
+- Web 1a: `hasFeature(…, { defaultOff })`, `mayOpen.activity`, panel console "Lịch sử trên từng bản ghi", "Mặc định · bật / tắt", trình sửa vai trò khóa ô spa-local / KTV, nhãn nhật ký nền tảng.
+- Test: `record_history.rs` (8), `platform.rs` +5, unit (feature, roles, history, activity), matrix +6 dòng, bench `record_history_reads_within_budget`, Vitest admin / nav / activity; test cũ bị cờ mặc định tắt làm đỏ đã sửa (`common::enable_feature`, e2e `switchFeatureOn`).
+- Quyết định khi build K1–K11: [spec](wiki/product/specs/record-history.md) cuối Review log. Sửa docs theo cổng cuối: ADR-0022 Decision 4 (chip loại trừ nhau), spec §10 + plan 1b (≤ 125 KiB, 4 module khởi động, mã lịch sử lazy), architecture §4.1 (loại hóa đơn theo `sale_line.line_type`).
+- Ghi nhận khi test: giờ audit lấy từ đồng hồ API ở vài use case và đồng hồ DB ở use case khác → hai thao tác cách nhau vài ms ở hai request có thể đảo thứ tự trong lịch sử (máy dev Docker). Không đổi trong đợt này.
+- Tiếp theo: đợt 1b (các màn); deploy 1a + 1b cùng nhau theo runbook vercel-staging.
