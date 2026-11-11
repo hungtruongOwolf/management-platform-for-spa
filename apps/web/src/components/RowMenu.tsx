@@ -33,9 +33,12 @@ const POPOVER =
 export function RowMenu({
   label,
   items,
+  id,
 }: {
   label: string;
   items: readonly RowMenuItem[];
+  /** The button's id, for a row that sends focus back to it. */
+  id?: string;
 }) {
   const [at, setAt] = useState<{
     top: number;
@@ -124,6 +127,7 @@ export function RowMenu({
     <>
       <button
         ref={button}
+        id={id}
         type="button"
         className="row-menu-button"
         aria-label={label}

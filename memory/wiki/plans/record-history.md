@@ -7,7 +7,7 @@ related: [../product/specs/record-history.md, ../architecture/record-history.md,
 
 # Plan: lịch sử trên từng bản ghi
 
-Mỗi PR qua `build` → `qa` → `pr-review` → `secure` (quyền + PII) → `scripts/merge-when-green.sh`. Bản sửa sau review độc lập 2026-11-11 (LEAD: gộp đợt 2 cũ vào đợt 1; ẩn màn nhật ký ngay đợt 1). **Đợt 1a đã build** (2026-11-11, PR #187; quyết định khi build K1–K11 ở [spec](../product/specs/record-history.md) Review log); **chưa deploy staging** (chờ 1b). Tiếp theo: 1b.
+Mỗi PR qua `build` → `qa` → `pr-review` → `secure` (quyền + PII) → `scripts/merge-when-green.sh`. Bản sửa sau review độc lập 2026-11-11 (LEAD: gộp đợt 2 cũ vào đợt 1; ẩn màn nhật ký ngay đợt 1). **Đợt 1a đã build** (2026-11-11, PR #187; quyết định khi build K1–K11 ở [spec](../product/specs/record-history.md) Review log). **Đợt 1b đã build** (2026-11-11, PR #188; K12–K20). **Chưa deploy staging**: 1a + 1b lên cùng nhau (migrate 0052 rồi deploy binary + web ngay). Tiếp theo: deploy đợt 1, rồi đợt 2.
 
 ## Đợt 1 = 1a + 1b — **lên staging cùng nhau**
 1a merge trước nhưng **không deploy staging** cho tới khi 1b merge (1a ẩn màn nhật ký; 1b mới hiện lịch sử tại chỗ). Deploy: migrate 0052 rồi deploy binary ngay; operator không ghi ở console trong khoảng hở ([architecture §8](../architecture/record-history.md)).
@@ -46,7 +46,8 @@ Mỗi PR qua `build` → `qa` → `pr-review` → `secure` (quyền + PII) → `
 - Bench `reports_bench.rs`: seed audit ~60.000 / năm × 3; `record-history/visit` (chuỗi 3) + `customer-package` + `customer` p95 ≤ 100 ms; `/visits` ngày, ledger 92 ngày có `edited` ≤ +10 ms; nhật ký sau refactor không chậm hơn bench AC11 hiện có.
 - Web: Vitest `hasFeature` `defaultOff`, nav ẩn "Nhật ký thao tác", panel admin (bật / tắt, `409`).
 
-### 1b — các màn (PR web)
+### 1b — các màn (PR web) — ✅ đã build
+**Kết quả:** module `features/record-history/` (`query.ts`, `chip.ts`, `lazy.tsx` ngoài chunk; chunk lazy `chunk.ts` = `RecordTrace` + `LedgerSaleSheet` + `text.ts`); `HISTORY` + "Trả lại" ở `sentence.ts`. Test: Vitest `RecordTrace.test.tsx` (35 ca gồm `metaText`, `HISTORY` 64 = 37 + 27, `visitChip`, `data-row-inert` trên thẻ điện thoại), `RecordTrace.screens.test.tsx` (Sổ doanh thu, Lịch sử khách, hồ sơ, gói; có / không quyền; `403` sheet), `front-desk/RecordTrace.quay.test.tsx` (chip, phần tử cuối, nhập bù, quản lý không có gì, ⋯ của DaySales); e2e `record-history.spec.ts`; sửa `voids.spec.ts`, `quay-upsell.spec.ts` ("Đã thay"), `Activity.test.tsx` ("Trả lại"). Ngân sách khởi động 124,88 / 125 KiB (K20).
 - `features/record-history/query.ts` + chunk lazy `RecordTrace` / `HISTORY` / `LedgerSaleSheet`; prefetch `useAfterFirstPaint` khi có quyền; `MutationCache.onSuccess`.
 - `ResponsiveTable` `[data-row-inert]`.
 - Chip: "Đã thay" thay "Đã sửa" cũ (`TodayVisits`, `CustomerHistory`, chữ "Đã thay bằng lượt mới."), "Đã sửa" theo `edited`, một chip.

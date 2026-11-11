@@ -22,7 +22,7 @@ export const KIND_LABEL: Record<ActivityKind, string> = {
 };
 
 /** Who did it: a login's name, the platform team, or nobody signed in. */
-export function actorName(e: ActivityEntry): string {
+export function actorName(e: Pick<ActivityEntry, "actor">): string {
   if (e.actor.kind === "platform") return "Đội vận hành";
   if (e.actor.kind === "system") return "Hệ thống";
   const name = e.actor.name ?? "Một tài khoản đã xóa";
@@ -69,6 +69,8 @@ const pkg = (e: ActivityEntry) => (e.subject?.package ? ` ${e.subject.package}` 
 const sold = (e: ActivityEntry) => (e.packages.length > 0 ? ` ${e.packages.join(", ")}` : "");
 /** A checkout that also sold packages: "… kèm bán gói A". */
 const withPackages = (e: ActivityEntry) => (e.packages.length > 0 ? `kèm bán gói${sold(e)}` : undefined);
+/** The same, glued to a history verb: "ghi lượt kèm bán gói A"; "" without packages. */
+const withSold = (e: ActivityEntry) => (e.packages.length > 0 ? ` kèm bán gói${sold(e)}` : "");
 const month = (e: ActivityEntry) => (e.detail ? ` tháng ${e.detail.slice(5, 7)}/${e.detail.slice(0, 4)}` : "");
 const flagTo = (e: ActivityEntry, field: string) => e.changes.find((c) => c.field === field)?.new;
 
@@ -157,6 +159,93 @@ const PHRASES: Record<AuditAction, Words> = {
   }),
 };
 
+/**
+ * The verb of a line in one record's own history (ADR-0022, design record-history §1.5): the record
+ * is already on screen, so a line says who and what ("Hà ghi lượt") and never names the subject
+ * again. `null` = the action has no history on a record (spec record-history §4.2), so the server
+ * never sends it there. A `Record<AuditAction, …>` like `PHRASES`: an action the API adds fails
+ * the typecheck until it is placed here.
+ */
+export const HISTORY: Record<AuditAction, ((e: ActivityEntry) => string) | null> = {
+  // Quầy: a visit's line carries the sales and packages of its checkout (ADR-0021 D9).
+  "visit.create": (e) => `${e.detail === "backdated" ? "nhập bù lượt" : "ghi lượt"}${withSold(e)}`,
+  "visit.addition": (e) => `thêm vào lượt${withSold(e)}`,
+  "visit.update": () => "sửa lượt",
+  "visit.correct": (e) => `sửa lượt (tính lại tiền)${withSold(e)}`,
+  "visit.convert_to_package": (e) => `chuyển lượt sang gói${sold(e) || pkg(e)}`,
+  "visit.void": () => "hủy lượt",
+  "sale.create": (e) => (e.packages.length > 0 ? `bán gói${sold(e)}` : "thu tiền"),
+  "sale.void": () => "hủy hóa đơn",
+  "sale.note_update": () => "sửa ghi chú gói",
+  // Gói liệu trình
+  "customer_package.create": (e) => `bán gói${sold(e) || pkg(e)}`,
+  "customer_package.extend": () => "gia hạn gói",
+  "customer_package.cancel": () => "hủy gói",
+  "customer_package.use_expired_override": () => "cho dùng gói đã hết hạn",
+  "opening_balance.import": () => "nhập từ sổ giấy",
+  "sale.paper_book": () => "nhập từ sổ giấy",
+  // Khách hàng
+  "customer.create": () => "thêm khách",
+  "customer.update": () => "sửa hồ sơ",
+  "customer.health_note_set": () => "sửa lưu ý sức khỏe",
+  // Lịch hẹn (wave 2)
+  "appointment.create": () => "đặt lịch",
+  "appointment.update": () => "đổi lịch",
+  "appointment.arrive": () => "đánh dấu khách đến",
+  "appointment.undo_arrival": () => "bỏ đánh dấu khách đến",
+  "appointment.complete": () => "hoàn tất lịch hẹn",
+  "appointment.no_show": () => "đánh dấu không đến",
+  "appointment.cancel": () => "hủy lịch",
+  "appointment.settings": () => "sửa số khách tối đa",
+  // Nhân sự (wave 2)
+  "attendance.record": (e) => (e.detail === "cleared" ? "xóa chấm công" : "chấm công"),
+  "evaluation.daily_review": () => "ghi khen / phàn nàn",
+  "staff.adjustment": (e) => (e.detail === "penalty" ? "ghi phạt" : "ghi thưởng"),
+  "staff.adjustment_void": () => "xóa khoản thưởng / phạt",
+  // Danh mục, quy tắc lương (wave 3)
+  "catalog.service_create": () => "thêm dịch vụ",
+  "catalog.service_update": () => "sửa dịch vụ",
+  "catalog.plan_create": () => "thêm mẫu gói",
+  "catalog.plan_update": () => "sửa mẫu gói",
+  "catalog.category_create": () => "thêm nhóm dịch vụ",
+  "catalog.category_update": () => "sửa nhóm dịch vụ",
+  "payroll.rules_update": () => "sửa quy tắc lương",
+  // Shown another way already (spec D11) or not about a record the spa opens (spec §4.2).
+  "customer.follow_up": null,
+  "evaluation.record": null,
+  "staff.create": null,
+  "staff.update": null,
+  "staff.end": null,
+  "staff.rehire": null,
+  "staff.pay_update": null,
+  "staff.account_link": null,
+  "payroll.close": null,
+  "staff.login_create": null,
+  "staff.login_password_reset": null,
+  "staff.login_role": null,
+  "account.password_change": null,
+  "account.password_reset_requested": null,
+  "account.password_reset_dismissed": null,
+  "account.locked_by_platform": null,
+  "account.unlocked_by_platform": null,
+  "account.mfa_reset_by_platform": null,
+  "account.sessions_revoked_by_platform": null,
+  "account.password_reset_by_platform": null,
+  "role.permissions_changed": null,
+  "role.permissions_reset": null,
+  "feature.changed": null,
+  "tenant.created": null,
+  "tenant.suspended": null,
+  "tenant.unsuspended": null,
+  "tenant.owner_mfa_changed": null,
+};
+
+/** The verb of a history line; a key without words there (a legacy row) reads generically, never as a crash. */
+export function historyVerb(e: ActivityEntry): string {
+  const words = (HISTORY as Partial<Record<string, ((e: ActivityEntry) => string) | null>>)[e.action];
+  return words ? words(e) : "làm một thao tác khác";
+}
+
 /** The words of an entry; a key the contract does not list reads generically, never as a crash. */
 export function phraseOf(e: ActivityEntry): Phrase {
   const words = (PHRASES as Partial<Record<string, Words>>)[e.action];
@@ -180,8 +269,9 @@ const AMOUNT_LABEL: Partial<Record<AuditAction, string>> = {
   "visit.create": "Thu",
   "visit.addition": "Thu",
   "sale.create": "Thu",
-  "visit.void": "Đảo",
-  "sale.void": "Đảo",
+  // What a cancel gave back (ADR-0022: "Trả lại", not the bookkeeping word "Đảo").
+  "visit.void": "Trả lại",
+  "sale.void": "Trả lại",
   "visit.correct": "Chênh lệch",
   "visit.convert_to_package": "Chênh lệch",
   "customer_package.create": "Giá",

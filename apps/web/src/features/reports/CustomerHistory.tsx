@@ -11,6 +11,9 @@ import { useSearchState } from "../../lib/searchState";
 import { authQuery, can, type Me } from "../auth/session";
 import { mayCorrectVisit, mayEditSaleNote } from "../corrections/api";
 import { customerQuery } from "../customers/api";
+import { visitChip } from "../record-history/chip";
+import { LazyRecordTrace, usePreloadRecordHistory } from "../record-history/lazy";
+import { canTrace, type RecordRef, type TraceAnchor } from "../record-history/query";
 import { CHANNEL_LABEL, OUTCOME_LABEL, followUpsQuery } from "../customers/followUps";
 import { FollowUpForm } from "../customers/FollowUpForm";
 import { HISTORY_KINDS, historySearch } from "../customers/search";
@@ -38,15 +41,23 @@ const KIND: Record<HistoryKind, string> = {
 
 const KIND_OPTIONS: readonly (readonly [HistoryKind | "", string])[] = [["", "Mọi loại"], ...HISTORY_KINDS.map((k) => [k, KIND[k]] as const)];
 
-/** Title and the one state chip of a timeline row (design-system.md "Quy tắc" 7). */
+/**
+ * Title and the one state chip of a timeline row (design-system.md "Quy tắc" 7). A visit's chip
+ * follows spec record-history D9 ("Đã thay" / "Đã hủy" / "Đã sửa", exclusive); "Lượt sửa lại"
+ * stays for the new visit of a "Sửa lượt" when no "Đã sửa" says more.
+ */
 function eventHead(e: HistoryEvent): { title: string; chip?: [string, string] } {
   switch (e.kind) {
     case "visit":
+    case "visit_voided": {
+      const chip = visitChip({
+        corrected_by_visit_id: e.visit?.corrected_by_visit_id,
+        voided: e.kind === "visit_voided",
+        edited: e.edited,
+      });
+      if (chip) return { title: "Lượt khách", chip: [chip.label, chip.badge] };
       return e.visit?.corrects_visit_id ? { title: "Lượt khách", chip: ["Lượt sửa lại", "badge-info"] } : { title: "Lượt khách" };
-    case "visit_voided":
-      return e.visit?.corrected_by_visit_id
-        ? { title: "Lượt khách", chip: ["Đã sửa", "badge-muted"] }
-        : { title: "Lượt khách", chip: ["Đã hủy", "badge-danger"] };
+    }
     case "purchase":
       return { title: "Mua gói liệu trình" };
     case "purchase_voided":
@@ -67,6 +78,26 @@ const DOT: Record<HistoryKind, [IconName, string]> = {
   package_cancelled: ["alert", "bg-danger"],
   package_extended: ["calendar", "bg-accent"],
 };
+
+/**
+ * The record behind a timeline card, whose history its time opens (design record-history §1.3):
+ * a visit (kept or voided, one story with its "Sửa lượt" chain), a package sale (the package's
+ * history), a cancelled or extended package.
+ */
+function traceOf(e: HistoryEvent): { ref: RecordRef; anchor: TraceAnchor; through?: "sale" } | null {
+  switch (e.kind) {
+    case "visit":
+    case "visit_voided":
+      return e.visit ? { ref: { type: "visit", id: e.visit.id }, anchor: "visit" } : null;
+    case "purchase":
+    case "purchase_voided":
+      return e.purchase ? { ref: { type: "sale", id: e.purchase.sale_id }, anchor: "package", through: "sale" } : null;
+    case "package_cancelled":
+      return e.cancellation ? { ref: { type: "customer_package", id: e.cancellation.customer_package_id }, anchor: "package" } : null;
+    case "package_extended":
+      return e.extension ? { ref: { type: "customer_package", id: e.extension.customer_package_id }, anchor: "package" } : null;
+  }
+}
 
 function Fact({ label, value, hint }: { label: string; value: string; hint?: string | undefined }) {
   return (
@@ -128,7 +159,7 @@ function EventBody({ e }: { e: HistoryEvent }) {
           </li>
         ))}
         {v.corrected_by_visit_id ? (
-          <li className="text-text-muted">Đã sửa thành lượt mới · {v.void_reason}</li>
+          <li className="text-text-muted">Đã thay bằng lượt mới. {v.void_reason}</li>
         ) : (
           v.void_reason && <li className="text-text-muted">Lý do hủy: {v.void_reason}</li>
         )}
@@ -279,10 +310,14 @@ export function prefetchCustomerPage(queryClient: QueryClient, customerId: strin
   void queryClient.infiniteQuery(customerHistoryQuery(customerId, historyFilterOf(historySearch.parse(rawSearch)))).catch(() => undefined);
 }
 
-function Timeline({ customerId, permissions }: { customerId: string; permissions: readonly string[] }) {
+function Timeline({ customerId, me }: { customerId: string; me: Me | null }) {
+  const permissions = me?.permissions ?? [];
   const [s] = useSearchState(historySearch);
   /** The package sale whose note is open for editing under its purchase. */
   const [noting, setNoting] = useState<string | null>(null);
+  /** The card whose "ai ghi, ai sửa" is open at its foot (its time is the button). */
+  const [tracing, setTracing] = useState<string | null>(null);
+  usePreloadRecordHistory(canTrace(me, "visit") || canTrace(me, "package"));
   const today = spaToday();
   const filtered = Boolean(s.hq || s.hkind || s.hfrom || s.hto);
   const history = useInfiniteQuery(customerHistoryQuery(customerId, historyFilterOf(s)));
@@ -314,6 +349,12 @@ function Timeline({ customerId, permissions }: { customerId: string; permissions
           const purchase = e.kind === "purchase" ? e.purchase : undefined;
           const notable =
             !!purchase && mayEditSaleNote(permissions, { business_date: e.business_date, voided: purchase.voided }, today);
+          const when = `${relativeDay(e.business_date)} · ${spaTime(e.at)}`;
+          const trace = traceOf(e);
+          const traced = trace !== null && canTrace(me, trace.anchor, trace.through);
+          // Two extensions of one package are two cards: the time tells them apart.
+          const key = trace ? `${e.kind}-${trace.ref.id}-${String(Date.parse(e.at))}` : `${e.at}-${String(i)}`;
+          const tracingThis = traced && tracing === key;
           return (
             <li key={`${e.at}-${String(i)}`} className="relative">
               {heading && <p className="timeline-month">{heading}</p>}
@@ -325,13 +366,31 @@ function Timeline({ customerId, permissions }: { customerId: string; permissions
                     (EM polish round 2: it was a bare link under the lines). */}
                 <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                   <span className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold">{title}</span>
+                    {/* Focus lands here when the card's history is taken away (403). */}
+                    <span id={traced ? `title-${key}` : undefined} tabIndex={traced ? -1 : undefined} className="font-semibold">
+                      {title}
+                    </span>
                     {chip && <span className={`badge ${chip[1]}`}>{chip[0]}</span>}
                   </span>
                   <span className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
-                    <span className="text-xs text-text-muted tabular">
-                      {relativeDay(e.business_date)} · {spaTime(e.at)}
-                    </span>
+                    {/* With the history right the card's time opens "ai ghi, ai sửa" (design §1.3):
+                        no extra row per card; the name starts with the visible words (WCAG 2.5.3). */}
+                    {traced ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost px-2 text-xs tabular"
+                        aria-label={`${when}, ai ghi, ai sửa`}
+                        aria-expanded={tracingThis}
+                        aria-controls={tracingThis ? `trace-${key}` : undefined}
+                        onClick={() => {
+                          setTracing((open) => (open === key ? null : key));
+                        }}
+                      >
+                        {when}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-text-muted tabular">{when}</span>
+                    )}
                     {e.visit && correctable && (
                       <Link to="/quay" search={{ sua: e.visit.id }} className="btn btn-secondary">
                         Sửa lượt
@@ -367,6 +426,18 @@ function Timeline({ customerId, permissions }: { customerId: string; permissions
                       }}
                     />
                   </Suspense>
+                )}
+                {trace && tracingThis && (
+                  <div className="mt-2 border-t border-border pt-1">
+                    <LazyRecordTrace
+                      mode="external"
+                      id={`trace-${key}`}
+                      record={trace.ref}
+                      noun={`${title.toLowerCase()} ${when}`}
+                      day={e.business_date}
+                      focusOnHide={() => document.getElementById(`title-${key}`)}
+                    />
+                  </div>
                 )}
               </div>
             </li>
@@ -482,7 +553,7 @@ export function CustomerHistory({ customerId, customerName = "", me }: { custome
         </h2>
         <Summary customerId={customerId} />
         <HistoryFilters />
-        <Timeline customerId={customerId} permissions={me?.permissions ?? []} />
+        <Timeline customerId={customerId} me={me} />
       </section>
     </div>
   );

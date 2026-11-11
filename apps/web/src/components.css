@@ -965,6 +965,22 @@ textarea::-webkit-resizer {
   color: var(--primary);
   text-decoration-color: currentColor;
 }
+/* A record's time that opens its history (ADR-0022: "Sổ doanh thu"), underlined as a link is. It
+ * sits right under the customer's name on a phone card: its focus ring is drawn inside, like
+ * `.row-toggle` (styles.css), so it never covers that name. */
+.time-button {
+  min-height: 24px;
+  padding-inline: 4px;
+  margin-inline: -4px;
+  border-radius: var(--radius-control);
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.time-button:hover {
+  color: var(--primary-hover);
+}
 /* ONE error box (rulebook 9: what broke + how to fix + "Thử lại"), ONE warning callout, ONE quiet
  * note. Were: .alert, .form-error, .cal-error, LoginPage utilities / .inline-form, .appt-callout,
  * .appt-warn, .field-notice / .cal-note. */
@@ -1021,7 +1037,8 @@ textarea::-webkit-resizer {
 .disclosure > summary::-webkit-details-marker {
   display: none;
 }
-.disclosure > summary::before {
+.disclosure > summary::before,
+.disclosure-arrow {
   width: 7px;
   height: 7px;
   margin-inline: 4px 2px;
@@ -1031,11 +1048,66 @@ textarea::-webkit-resizer {
   transform: rotate(-45deg);
   transition: transform var(--dur-fast) var(--ease-out);
 }
-.disclosure[open] > summary::before {
+/* The same chevron on a disclosure button (`aria-expanded`), e.g. "Ghi bởi … ▸" (ADR-0022). */
+.disclosure-arrow {
+  display: inline-block;
+  flex: none;
+}
+.disclosure[open] > summary::before,
+[aria-expanded="true"] > .disclosure-arrow {
   transform: rotate(45deg);
 }
 .disclosure > summary:hover {
   color: var(--text);
+}
+/* "Ai ghi, ai sửa" on a record (ADR-0022, design record-history §1.2): the last element of a
+ * record's details, 13px muted; a disclosure button, or the line the screen's own control opens. */
+.record-trace {
+  display: grid;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.record-trace-toggle,
+.record-trace-meta {
+  display: flex;
+  min-height: var(--size-control);
+  align-items: center;
+  gap: 8px;
+  justify-self: start;
+  text-align: start;
+}
+.record-trace-toggle {
+  padding: 0 4px;
+  border-radius: var(--radius-control);
+  margin-inline: -4px;
+  color: inherit;
+  cursor: pointer;
+}
+.record-trace-toggle:hover {
+  color: var(--text);
+}
+.record-trace-list {
+  display: grid;
+  gap: 8px;
+  padding-block: 2px 4px;
+}
+.record-trace-list > li {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 12px;
+}
+.record-trace-list time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.record-trace-line {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.record-trace-change {
+  grid-column: 2;
+  overflow-wrap: anywhere;
 }
 /* Toast: top centre (never over a sticky save bar), flat, chrome colours; errors in danger. */
 .toast {

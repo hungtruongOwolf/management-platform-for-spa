@@ -1,7 +1,10 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
-import { Fragment } from "react";
+import { useInfiniteQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { Fragment, useRef, useState, type MouseEvent } from "react";
 import { usePhone } from "../../components/useMediaQuery";
 import { dayLabel, spaTime } from "../../lib/format";
+import { meQuery, type Me } from "../auth/session";
+import { LazyLedgerSaleSheet, usePreloadRecordHistory } from "../record-history/lazy";
+import { canTrace } from "../record-history/query";
 import { ledgerQuery } from "./api";
 import type { LedgerDay, LedgerRow } from "./contract";
 import { CustomerCell } from "./PackagesOverviewPage";
@@ -15,6 +18,48 @@ export const LEDGER_MAX_DAYS = 92;
 const ENTRY_LABEL: Record<LedgerRow["entry"], string> = { sale: "", void: "Hủy hóa đơn", refund: "Hoàn tiền" };
 
 /**
+ * Whether the row's time opens its history (design record-history §2.4): the history right, and
+ * the read right of what it re-anchors to. A one-off sale is its visit's (`visit.read`); a package
+ * sale, its void, a refund are the package's (`customer.read`); always through a sale (`sale.read`).
+ */
+function traceable(me: Me | null, r: LedgerRow): boolean {
+  if (r.entry === "refund") return canTrace(me, "package", "refund");
+  if (r.kind === "package") return canTrace(me, "package", "sale");
+  // A one-off sale outside any visit (a paper-book entry) has no history to open.
+  return Boolean(r.visit_id) && canTrace(me, "visit", "sale");
+}
+
+/**
+ * "Đã sửa" on the book (spec D9, AC-H8): only a standing sale of one-off services whose visit was
+ * edited. Never a void row or the voided sale of a replaced visit; a package's lifecycle is no edit.
+ */
+const editedSale = (r: LedgerRow) => r.entry === "sale" && !r.voided && r.kind === "one_off" && r.edited === true;
+
+/** "10:07, xem hóa đơn của chị Lê Thị Mai": the name starts with the visible time (WCAG 2.5.3). */
+function timeLabel(r: LedgerRow): string {
+  const what = r.entry === "refund" ? "hoàn tiền" : r.entry === "void" ? "hủy hóa đơn" : "hóa đơn";
+  const title = r.customer_gender === "female" ? "chị " : r.customer_gender === "male" ? "anh " : "";
+  return `${spaTime(r.at)}, xem ${what} của ${title}${r.customer_name}`;
+}
+
+/** The time of a row: a button to its history sheet when it has one. */
+function TimeCell({ r, onOpen }: { r: LedgerRow; onOpen?: ((r: LedgerRow, from: HTMLElement) => void) | undefined }) {
+  if (!onOpen) return <>{spaTime(r.at)}</>;
+  return (
+    <button
+      type="button"
+      className="time-button"
+      aria-label={timeLabel(r)}
+      onClick={(e) => {
+        onOpen(r, e.currentTarget);
+      }}
+    >
+      {spaTime(r.at)}
+    </button>
+  );
+}
+
+/**
  * "Sổ doanh thu" (spec R1-2 US3): the paper revenue book's columns, one row per sale, void or
  * refund, grouped by day with the day's totals (`days[]` covers every day of the range, not only
  * the loaded page). Void and refund rows are negative and red; an original that was voided later
@@ -22,8 +67,22 @@ const ENTRY_LABEL: Record<LedgerRow["entry"], string> = { sale: "", void: "Hủy
  */
 export function LedgerTab({ period }: { period: Period }) {
   const phone = usePhone();
+  const { data: me } = useSuspenseQuery(meQuery);
   const tooLong = daysBetween(period.from, period.to) > LEDGER_MAX_DAYS;
   const page = useInfiniteQuery({ ...ledgerQuery(period.from, period.to), enabled: !tooLong });
+  /** The row whose history sheet is open (kept while it closes, so the dialog closes cleanly). */
+  const [sheet, setSheet] = useState<{ row: LedgerRow; open: boolean } | null>(null);
+  /** The row the sheet was opened from: its customer link takes focus if the history is refused. */
+  const openedFrom = useRef<HTMLElement | null>(null);
+  usePreloadRecordHistory(canTrace(me, "visit") || canTrace(me, "package"));
+  const open = (row: LedgerRow, from: HTMLElement) => {
+    openedFrom.current = from.closest("tr, article");
+    setSheet({ row, open: true });
+  };
+  const onOpen = (r: LedgerRow) => (traceable(me, r) ? open : undefined);
+  const close = () => {
+    setSheet((s) => s && { ...s, open: false });
+  };
   if (tooLong) {
     return (
       <p role="status" className="card p-4 text-text-muted">
@@ -56,7 +115,7 @@ export function LedgerTab({ period }: { period: Period }) {
             Hóa đơn, khoản hủy và hoàn tiền trong kỳ sẽ hiện ở đây. Chọn kỳ dài hơn, hoặc ghi lượt ở “Ghi lượt khách”.
           </EmptyState>
         ) : phone ? (
-          <LedgerCards rows={rows} dayOf={dayOf} />
+          <LedgerCards rows={rows} dayOf={dayOf} onOpen={onOpen} />
         ) : (
           <div className="table-wrap" tabIndex={0} role="region" aria-label="Sổ doanh thu (cuộn ngang để xem đủ cột)">
             <table className="data-table data-table-fixed ledger-table">
@@ -98,10 +157,13 @@ export function LedgerTab({ period }: { period: Period }) {
                     <Fragment key={`${r.entry}-${r.id}`}>
                       {startsDay && <DayRow date={r.business_date} day={day} />}
                       <tr className={r.entry === "sale" ? (r.voided ? "ledger-voided" : "") : "ledger-negative"}>
-                        <td className="tabular">{spaTime(r.at)}</td>
+                        <td className="tabular">
+                          <TimeCell r={r} onOpen={onOpen(r)} />
+                        </td>
                         <td>
                           <CustomerCell id={r.customer_id} name={r.customer_name} gender={r.customer_gender ?? null} />
                           {r.entry !== "sale" && <span className="badge badge-danger mt-1">{ENTRY_LABEL[r.entry]}</span>}
+                          {editedSale(r) && <span className="badge badge-muted mt-1">Đã sửa</span>}
                           {r.voided && <span className="sr-only"> (đã hủy sau đó)</span>}
                         </td>
                         <td>{r.one_off ?? ""}</td>
@@ -132,6 +194,21 @@ export function LedgerTab({ period }: { period: Period }) {
           </button>
         </div>
       )}
+      {sheet && (
+        <LazyLedgerSaleSheet
+          row={sheet.row}
+          open={sheet.open}
+          onClose={close}
+          onForbidden={() => {
+            close();
+            // The time button goes once `/me` drops the right: the row's customer link stays.
+            const row = openedFrom.current;
+            requestAnimationFrame(() => {
+              row?.querySelector<HTMLElement>("a")?.focus();
+            });
+          }}
+        />
+      )}
     </>
   );
 }
@@ -155,7 +232,15 @@ function DayRow({ date, day }: { date: string; day: LedgerDay | undefined }) {
  * Phones: the same book as day groups of cards (customer, time, amount; services and the split
  * below), never a sideways-scrolling 8-column table (design-system § Mobile patterns).
  */
-function LedgerCards({ rows, dayOf }: { rows: LedgerRow[]; dayOf: Map<string, LedgerDay> }) {
+function LedgerCards({
+  rows,
+  dayOf,
+  onOpen,
+}: {
+  rows: LedgerRow[];
+  dayOf: Map<string, LedgerDay>;
+  onOpen: (r: LedgerRow) => ((r: LedgerRow, from: HTMLElement) => void) | undefined;
+}) {
   return (
     <div className="rt-cards-wrap">
       {rows.map((r, i) => {
@@ -163,6 +248,14 @@ function LedgerCards({ rows, dayOf }: { rows: LedgerRow[]; dayOf: Map<string, Le
         const day = dayOf.get(r.business_date);
         const amount = r.cash + r.bank_transfer;
         const tone = r.entry === "sale" ? (r.voided ? "ledger-voided" : "") : "ledger-negative";
+        const opens = onOpen(r);
+        // A tap anywhere on the card opens the sheet too; the customer's link and the time button
+        // keep their own (the time button is the keyboard path, the card is never a <button>).
+        const onCard = opens
+          ? (e: MouseEvent<HTMLElement>) => {
+              if (!(e.target as Element).closest("a, button") && !window.getSelection()?.toString()) opens(r, e.currentTarget);
+            }
+          : undefined;
         return (
           <Fragment key={`${r.entry}-${r.id}`}>
             {startsDay && (
@@ -175,12 +268,15 @@ function LedgerCards({ rows, dayOf }: { rows: LedgerRow[]; dayOf: Map<string, Le
                 )}
               </h3>
             )}
-            <article className={`rt-card ${tone}`}>
+            <article className={`rt-card ${tone} ${opens ? "rt-clickable" : ""}`} onClick={onCard}>
               <div className="rt-card-head">
                 <div className="rt-card-title">
-                  <CustomerCell id={r.customer_id} name={r.customer_name} gender={r.customer_gender ?? null} />
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <CustomerCell id={r.customer_id} name={r.customer_name} gender={r.customer_gender ?? null} />
+                    {editedSale(r) && <span className="badge badge-muted">Đã sửa</span>}
+                  </span>
                   <span className="rt-card-sub tabular">
-                    {spaTime(r.at)}
+                    <TimeCell r={r} onOpen={opens} />
                     {r.entry !== "sale" && ` · ${ENTRY_LABEL[r.entry]}`}
                     {r.voided && " · đã hủy sau đó"}
                   </span>

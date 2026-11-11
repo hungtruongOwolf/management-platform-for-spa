@@ -7,6 +7,8 @@ import { BottomSheet } from "../../components/BottomSheet";
 import { can, meQuery } from "../auth/session";
 import { spaToday } from "../../lib/format";
 import { useToast } from "../customers/Toast";
+import { LazyRecordTrace, usePreloadRecordHistory } from "../record-history/lazy";
+import { canTrace } from "../record-history/query";
 import { ErrorState } from "../reports/ui";
 import { customerPackagesQuery, formatDate } from "./api";
 import { PACKAGE_STATE, daysBetween, isClosedPackage, packageState } from "./packageState";
@@ -26,15 +28,51 @@ const PackageActions = lazy(() =>
   })),
 );
 
-function PackageRow({ p, today, canAct, onDone }: { p: CustomerPackage; today: string; canAct: boolean; onDone: (m: string) => void }) {
+function PackageRow({
+  p,
+  today,
+  canAct,
+  traced,
+  onDone,
+}: {
+  p: CustomerPackage;
+  today: string;
+  canAct: boolean;
+  /** "Lịch sử" (ADR-0022) for those who may see who recorded and changed the package. */
+  traced: boolean;
+  onDone: (m: string) => void;
+}) {
   const state = packageState(p, today);
   const { label, badge } = PACKAGE_STATE[state];
   const days = p.expires_on ? daysBetween(today, p.expires_on) : null;
+  const [tracing, setTracing] = useState(false);
+  const traceId = `pkg-trace-${p.id}`;
   return (
     <li className="pkg-item">
       <div className="row-head">
-        <span className="row-title">{p.name}</span>
-        <span className={`badge ${badge}`}>{label}</span>
+        {/* Focus lands on the name when the package's history is taken away (403). */}
+        <span id={`pkg-title-${p.id}`} tabIndex={traced ? -1 : undefined} className="row-title">
+          {p.name}
+        </span>
+        <span className="flex flex-wrap items-center justify-end gap-2">
+          <span className={`badge ${badge}`}>{label}</span>
+          {/* Next to the state chip (design record-history §1.3): its name starts with the visible word. */}
+          {traced && (
+            <button
+              type="button"
+              className="btn btn-ghost px-2"
+              aria-label={`Lịch sử gói ${p.name}`}
+              aria-expanded={tracing}
+              aria-controls={tracing ? traceId : undefined}
+              onClick={() => {
+                setTracing((o) => !o);
+              }}
+            >
+              Lịch sử
+              <span className="disclosure-arrow" aria-hidden="true" />
+            </button>
+          )}
+        </span>
       </div>
       <p className="row-meta">
         <strong>
@@ -63,6 +101,15 @@ function PackageRow({ p, today, canAct, onDone }: { p: CustomerPackage; today: s
           <PackageActions pkg={p} onDone={onDone} />
         </Suspense>
       )}
+      {traced && tracing && (
+        <LazyRecordTrace
+          mode="external"
+          id={traceId}
+          record={{ type: "customer_package", id: p.id }}
+          noun={`gói ${p.name}`}
+          focusOnHide={() => document.getElementById(`pkg-title-${p.id}`)}
+        />
+      )}
     </li>
   );
 }
@@ -80,6 +127,8 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
   const today = spaToday();
   const canSell = can(me, "package.sell");
   const canAct = can(me, "package.extend_expiry") || can(me, "package.cancel_refund") || can(me, "record.void_same_day");
+  const traced = canTrace(me, "package");
+  usePreloadRecordHistory(traced);
   const open = packages.data?.filter((p) => !isClosedPackage(p)) ?? [];
   const closed = packages.data?.filter(isClosedPackage) ?? [];
 
@@ -139,7 +188,7 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
       {open.length > 0 && (
         <ul aria-label="Gói liệu trình của khách" className="row-list">
           {open.map((p) => (
-            <PackageRow key={p.id} p={p} today={today} canAct={canAct} onDone={notify} />
+            <PackageRow key={p.id} p={p} today={today} canAct={canAct} traced={traced} onDone={notify} />
           ))}
         </ul>
       )}
@@ -150,7 +199,7 @@ export function CustomerPackages({ customerId }: { customerId: string }) {
           </summary>
           <ul aria-label="Gói đã hết hoặc đã hủy" className="row-list">
             {closed.map((p) => (
-              <PackageRow key={p.id} p={p} today={today} canAct={false} onDone={notify} />
+              <PackageRow key={p.id} p={p} today={today} canAct={false} traced={traced} onDone={notify} />
             ))}
           </ul>
         </details>

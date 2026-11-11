@@ -128,11 +128,14 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     ).toBeVisible();
     const rows = today.getByRole("row").filter({ hasText: "Lý Thị Sửa" });
     await expect(rows).toHaveCount(2);
-    await expect(rows.filter({ hasText: "Đã sửa" })).toHaveCount(1);
+    // One chip a row (ADR-0022 D9): the replaced visit "Đã thay" for everyone; the new one
+    // "Đã sửa" because the owner sees what was edited.
+    await expect(rows.filter({ hasText: "Đã thay" })).toHaveCount(1);
+    await expect(rows.filter({ hasNotText: "Đã thay" }).filter({ hasText: "Đã sửa" })).toHaveCount(1);
     expect(await remaining(page, customerId)).toBe(12);
     // The corrected visit is the one offered for further edits; the old one is not.
     await rows
-      .filter({ hasText: "Đã sửa" })
+      .filter({ hasText: "Đã thay" })
       .getByRole("button", { name: /^Thao tác lượt/ })
       .click();
     await expect(page.getByRole("menuitem", { name: "Sửa lượt" })).toHaveCount(0);
@@ -238,6 +241,13 @@ test.describe("hủy / sửa sai & vòng đời liệu trình (US6, US7)", () =>
     await expect(row).toContainText("Đã hủy");
     await expect(row).toContainText("Đã hủy: Khách chuyển nhà");
     await expect(row).toContainText("Còn 0/12 buổi");
-    await expect(row.getByRole("button")).toHaveCount(0);
+    // No lifecycle action is left on a closed package; only its history (ADR-0022, the owner's).
+    await expect(row.getByRole("button")).toHaveCount(1);
+    const history = row.getByRole("button", { name: /^Lịch sử gói / });
+    await history.click();
+    await expect(history).toHaveAttribute("aria-expanded", "true");
+    await expect(row.getByText(/^Ghi bởi .+ · \d{2}\/\d{2}\/\d{4} · đã hủy$/)).toBeVisible();
+    await expect(row.getByText(/hủy gói · Hoàn 300\.000đ · lý do: Khách chuyển nhà$/)).toBeVisible();
+    await expectAccessible(page, "package-history");
   });
 });

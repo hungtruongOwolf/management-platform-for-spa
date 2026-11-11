@@ -7,7 +7,7 @@ related: [../product/specs/record-history.md, ../decisions/ADR-0022-inline-recor
 
 # Backend: lịch sử trên từng bản ghi
 
-Spec: [record-history](../product/specs/record-history.md) (D1–D12, review log 4 lượt). Quyết định: [ADR-0022](../decisions/ADR-0022-inline-record-history.md). **Đợt 1a đã build** (0052, `reporting::history`, 5 route đợt 1, công tắc, cờ; quyết định khi build K1–K11 ở spec Review log). Bản sửa sau review độc lập 2026-11-11.
+Spec: [record-history](../product/specs/record-history.md) (D1–D12, review log 4 lượt). Quyết định: [ADR-0022](../decisions/ADR-0022-inline-record-history.md). **Đợt 1a đã build** (0052, `reporting::history`, 5 route đợt 1, công tắc, cờ; quyết định khi build K1–K11 ở spec Review log). **Đợt 1b (web) đã build**: `features/record-history/` (`query.ts` + `chip.ts` + `lazy.tsx` ngoài chunk, chunk lazy `chunk.ts`), `MutationCache.onSuccess`, `[data-row-inert]`; quyết định K12–K20. Bản sửa sau review độc lập 2026-11-11.
 
 ## 1. Tổng quan
 ```

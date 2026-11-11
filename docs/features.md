@@ -28,7 +28,7 @@ Vai trò là **tập permission lưu trong DB** (`role_permission`), không ph�
 | Gói liệu trình | Gói liệu trình của khách (`/goi-lieu-trinh`) | ✓ | ✓ | |
 | Báo cáo | Báo cáo kinh doanh (`/bao-cao`, tab Tổng quan · Sổ doanh thu) | ✓ | ✓ | |
 | Báo cáo | Nhật ký ghi chú (`/nhat-ky-ghi-chu`) | ✓ | ✓ | |
-| Báo cáo | Nhật ký thao tác (`/nhat-ky-thao-tac`) | ✓ | | |
+| Báo cáo | Nhật ký thao tác (`/nhat-ky-thao-tac`) | ✓ (chỉ khi operator bật cờ `activity_log`, mặc định tắt) | | |
 | Nhân viên | Quản lý nhân sự (`/nhan-vien`) | ✓ | ✓ (không tab Bảng lương) | |
 | Nhân viên | Công và lương của tôi (`/nhan-vien/cua-toi`; KTV mở ở `/nhan-vien`) | | ✓ | ✓ |
 | Nhân viên | Khách của tôi (`/khach-cua-toi`) | | ✓ | ✓ |
@@ -59,6 +59,7 @@ Spec: [front-desk-and-packages](../memory/wiki/product/specs/front-desk-and-pack
   - **Lượt hôm nay**: danh sách mở inline; **Sửa lượt** (đổi KTV / giờ / ghi chú trực tiếp; đụng tiền hoặc buổi thì hủy + ghi lại, hiện chênh lệch "Thu thêm" / "Hoàn"), **Hủy lượt** (buổi cộng lại, tiền ghi bút toán đảo), **Thêm dịch vụ** vào lượt đã lưu, **Chuyển sang gói liệu trình** (lượt lẻ đã trả được thay bằng lượt trừ buổi của gói vừa mua, khách đưa thêm phần chênh).
   - Hóa đơn bán gói không kèm lượt của ngày cũng hiện ở Quầy, hủy được trong ngày.
   - **Ghi chú buổi** và **ghi chú gói** là dữ liệu sức khỏe: mã hóa, chỉ người có quyền ghi chú sức khỏe mới đọc/ghi.
+  - Mỗi lượt một chip: **Đã thay** (bị Sửa lượt thay), **Đã hủy**, hoặc **Đã sửa** (giờ / KTV / Sửa lượt / chuyển sang gói; chỉ người xem được "ai ghi, ai sửa"). Mở lượt thì dòng cuối là "Ghi bởi … · đã sửa n lần" (mục 2.9); "Bán gói không kèm lượt" có mục ⋯ "Xem ai ghi, ai sửa".
 
 ### 2.3 Lịch hẹn
 Spec: [appointments](../memory/wiki/product/specs/appointments.md).
@@ -71,7 +72,7 @@ Spec: [appointments](../memory/wiki/product/specs/appointments.md).
 ### 2.4 Khách hàng
 Spec: [management-views](../memory/wiki/product/specs/management-views.md), [front-desk-and-packages](../memory/wiki/product/specs/front-desk-and-packages.md).
 - **Danh sách khách hàng** (`/khach-hang`): gần đây + tìm không dấu / theo SĐT, kiểm trùng SĐT khi tạo.
-- **Hồ sơ khách** (`/khach-hang/$id`): thông tin (SĐT và tên tùy chọn, ngày sinh, giới tính), ghi chú, **ghi chú sức khỏe** (mã hóa), gói liệu trình của khách, lịch sử (lượt, hóa đơn, gia hạn, hủy… lọc theo loại và ngày), tóm tắt.
+- **Hồ sơ khách** (`/khach-hang/$id`): thông tin (SĐT và tên tùy chọn, ngày sinh, giới tính), ghi chú, **ghi chú sức khỏe** (mã hóa), gói liệu trình của khách, lịch sử (lượt, hóa đơn, gia hạn, hủy… lọc theo loại và ngày), tóm tắt. Với người xem được "ai ghi, ai sửa" (mục 2.9): "Tạo bởi … · đã sửa n lần" dưới thông tin khách, nút "Lịch sử" ở mỗi gói, và giờ của mỗi thẻ trong lịch sử sử dụng là nút mở lịch sử của bản ghi đó.
 - **Khách lâu chưa quay lại** (`/khach-lau-khong-quay-lai`): khách vắng theo số ngày, ghi lần liên lạc (kênh, kết quả, ngày hẹn gọi lại) — chỉ thêm, không sửa.
 
 ### 2.5 Gói liệu trình
@@ -82,10 +83,10 @@ Spec: [management-views](../memory/wiki/product/specs/management-views.md), [fro
 ### 2.6 Báo cáo
 Spec: [management-views](../memory/wiki/product/specs/management-views.md).
 - **Báo cáo kinh doanh** (`/bao-cao`), tab **Tổng quan**: chọn kỳ (preset hoặc tự chọn, nằm trên URL), số chính so với kỳ trước cùng độ dài, biểu đồ xu hướng, chia theo ngày / tuần / tháng, theo KTV, dịch vụ / gói bán chạy; tiền mặt / chuyển khoản, bán gói / dịch vụ lẻ. Tối đa 2 năm; chủ spa xem tới 5 năm.
-- Tab **Sổ doanh thu**: sổ thu như sổ giấy (mỗi hóa đơn một dòng, dòng âm cho hủy và hoàn).
+- Tab **Sổ doanh thu**: sổ thu như sổ giấy (mỗi hóa đơn một dòng, dòng âm cho hủy và hoàn). Người xem được "ai ghi, ai sửa" bấm giờ của một dòng (trên điện thoại: giờ hoặc cả thẻ) để mở sheet lịch sử của hóa đơn / hủy / hoàn tiền; chip "Đã sửa" chỉ ở hóa đơn dịch vụ lẻ chưa hủy.
 - Số tiền chỉ có trong response khi người xem có `report.revenue.read`; chỉ có `report.read` thì thấy số đếm.
 - **Nhật ký ghi chú** (`/nhat-ky-ghi-chu`): mọi ghi chú viết trong app (16 loại: ghi chú lượt, hồ sơ khách, chấm công, khen/phàn nàn, thưởng/phạt, gọi lại, lý do hủy, lịch hẹn, đánh giá tháng, ghi chú nhân sự, gia hạn, giảm giá, lý do hủy lịch / không đến, ghi chú gói…), mới nhất trước, gom theo ngày, link về nguồn; mỗi loại giữ quyền đọc của màn gốc.
-- **Nhật ký thao tác** (`/nhat-ky-thao-tac`, chỉ chủ spa, [ADR-0021](../memory/wiki/decisions/ADR-0021-activity-log-for-the-owner.md)): ai làm gì, lúc nào, đọc từ `audit_log`. Mỗi thao tác một dòng, một câu ("Quản lý Hà hủy lượt của chị Mai · 15:10 · lý do: khách đổi ý"; ghi lượt có thu tiền, bán gói trong giỏ, hủy hay sửa lượt đều chỉ một dòng, EM 2026-11-11) kèm tiền, giá trị cũ → mới (tên / SĐT khách, giá dịch vụ, trạng thái chấm công…). Lọc theo người (kể cả "Đội vận hành", "Hệ thống"), 8 nhóm việc, khoảng ngày (mặc định 7 ngày). Không bao giờ hiện ghi chú sức khỏe hay ghi chú buổi. Các màn khác không hiện "ai làm" (EM 2026-11-11).
+- **Nhật ký thao tác** (`/nhat-ky-thao-tac`, chỉ chủ spa, [ADR-0021](../memory/wiki/decisions/ADR-0021-activity-log-for-the-owner.md)): **ẩn mặc định** sau cờ `activity_log` từ ADR-0022 (operator bật lại theo spa; vào thẳng URL khi tắt → "Không có quyền"). Ai làm gì, lúc nào, đọc từ `audit_log`. Mỗi thao tác một dòng, một câu ("Quản lý Hà hủy lượt của chị Mai · Trả lại 140.000đ · lý do: khách đổi ý"; ghi lượt có thu tiền, bán gói trong giỏ, hủy hay sửa lượt đều chỉ một dòng, EM 2026-11-11) kèm tiền, giá trị cũ → mới (tên / SĐT khách, giá dịch vụ, trạng thái chấm công…). Lọc theo người (kể cả "Đội vận hành", "Hệ thống"), 8 nhóm việc, khoảng ngày (mặc định 7 ngày). Không bao giờ hiện ghi chú sức khỏe hay ghi chú buổi. "Ai làm" trên từng bản ghi: mục 2.9.
 - Chưa có: sổ thu chi / phiếu chi / chốt quỹ (để sau).
 
 ### 2.7 Nhân viên
@@ -103,9 +104,16 @@ Spec: [staff-management](../memory/wiki/product/specs/staff-management.md), quy 
 - **Bảng giá dịch vụ** (`/bang-gia`): dịch vụ theo nhóm, giá chung hoặc Nữ / Nam, thời lượng, dịch vụ gợi ý; menu thật của spa có 35 dịch vụ trong 10 nhóm ([service-catalog](../memory/wiki/product/service-catalog.md)).
 - **Mẫu gói liệu trình** (`/bang-gia/goi`): dịch vụ + số buổi + buổi tặng theo từng dịch vụ, giá, quà tặng, hạn dùng.
 
+### 2.9 Ai ghi, ai sửa trên từng bản ghi
+Spec: [record-history](../memory/wiki/product/specs/record-history.md), [ADR-0022](../memory/wiki/decisions/ADR-0022-inline-record-history.md). Đợt 1 (lượt, hóa đơn, gói, hồ sơ khách); lịch hẹn, chấm công, khen / phàn nàn, thưởng / phạt ở đợt 2, danh mục và quy tắc lương ở đợt 3.
+- **Ai thấy**: permission `record.history.read`, riêng từng spa: chủ spa mặc định thấy, quản lý chỉ khi operator bật ở `/admin`, KTV và người đã nghỉ không bao giờ. Trong đó vẫn giữ quyền đọc của màn gốc (tiền chỉ khi có `sale.read`; dòng chỉ đổi ghi chú buổi / ghi chú gói / lưu ý sức khỏe chỉ khi có quyền ghi chú sức khỏe, và không bao giờ có nội dung; SĐT cũ → mới của khách chỉ cho chủ spa, người khác thấy "SĐT (đã đổi)").
+- **Dòng "Ghi bởi"**: phần tử cuối của chi tiết một bản ghi đang mở, chữ nhỏ màu nhạt: "Ghi bởi Hà · 10:07 · đã sửa 1 lần" (lượt nhập bù kèm ngày ghi), "Ghi bởi Hà · 12/11/2026 · đã hủy" (gói), "Tạo bởi Hà · 03/02/2025" (hồ sơ khách), "Nhập từ sổ giấy · …". Bấm thì mở danh sách thay đổi cũ → mới ngay dưới (giờ, ai, việc, tiền, giá trị cũ → mới, lý do); mặc định đóng. Ở đâu: lượt mở ở Quầy, hồ sơ khách; ở màn nhiều bản ghi nút mở là phần tử có sẵn: giờ của thẻ trong Lịch sử sử dụng, nút "Lịch sử" ở mỗi gói, giờ ở Sổ doanh thu (mở sheet), mục ⋯ của "Bán gói không kèm lượt".
+- **Danh sách chỉ có chip**, một chip mỗi hàng: "Đã thay" / "Đã hủy" cho mọi người, "Đã sửa" chỉ cho người thấy lịch sử; tên người không bao giờ ở danh sách. "Sửa" là đổi điều đã ghi (giờ, KTV, Sửa lượt, chuyển sang gói); thêm dịch vụ, gia hạn, dùng gói hết hạn, ghi chú là vòng đời, chỉ ở lịch sử.
+- Mã lịch sử nằm trong chunk lazy, chỉ tải cho người có quyền (ngân sách JS khởi động ≤ 125 KiB).
+
 ## 3. Cờ tính năng theo spa
 
-Operator bật / tắt từng tính năng cho từng spa ở console. Không có dòng nào trong `tenant_feature` = bật. Khi tắt, server rút các permission của tính năng khỏi mọi thành viên spa và các route của nó trả `403 feature.disabled`; nav tự ẩn mục tương ứng. Registry nằm ở [`kernel/src/feature.rs`](../apps/api/crates/kernel/src/feature.rs).
+Operator bật / tắt từng tính năng cho từng spa ở console. Không có dòng nào trong `tenant_feature` = **mặc định của cờ** (`default_enabled`: `activity_log` tắt, 6 cờ còn lại bật, ADR-0022). Khi tắt, server rút các permission của tính năng khỏi mọi thành viên spa và các route của nó trả `403 feature.disabled`; nav tự ẩn mục tương ứng. Registry nằm ở [`kernel/src/feature.rs`](../apps/api/crates/kernel/src/feature.rs). `app reset-demo` xóa `tenant_feature`, nên cờ operator đã bật cho spa demo phải bật lại sau mỗi lần reset.
 
 | Key | Tên trong console | Khi tắt |
 |---|---|---|
@@ -115,6 +123,7 @@ Operator bật / tắt từng tính năng cho từng spa ở console. Không có
 | `follow_ups` | Gọi lại khách vắng | Mất việc ghi lần liên lạc với khách vắng |
 | `notes_journal` | Nhật ký ghi chú | Mất màn Nhật ký ghi chú |
 | `reports` | Báo cáo kinh doanh | Mất báo cáo theo kỳ, sổ doanh thu, báo cáo dài hạn |
+| `activity_log` | Nhật ký thao tác (**mặc định tắt**) | Mất màn Nhật ký thao tác (`/api/v1/audit-log`); `audit.read` vẫn giữ. Bật thì chủ spa thấy lại màn; quản lý và KTV vẫn không |
 
 ## 4. Console nền tảng (`/admin`)
 
@@ -124,7 +133,7 @@ Spec: [platform-admin](../memory/wiki/product/specs/platform-admin.md), thiết 
 |---|---|---|
 | Đăng nhập | `/admin/dang-nhap` | Username + mật khẩu → MFA (lần đầu enroll, nhận mã khôi phục một lần) |
 | Spa | `/admin` | Danh sách spa: trạng thái (chip "Không MFA" khi spa tắt xác thực 2 bước của chủ spa), ngày tạo, số nhân viên, số khách, lượt 30 ngày, hoạt động gần nhất (chỉ số đếm). **Tạo spa** + chủ spa đầu tiên (mật khẩu tạm hiện một lần) |
-| Một spa | `/admin/spa/$id` | Panel **Thông tin** + Tạm ngưng spa / Mở lại spa (tạm ngưng thu hồi mọi phiên của spa); **Bảo mật đăng nhập**: "Bắt buộc xác thực 2 bước cho chủ spa" (mặc định bật; tắt thì chủ spa đăng nhập chỉ bằng mật khẩu, authenticator được giữ; bật lại đăng xuất chủ spa và hỏi mã ở lần sau, [ADR-0020](../memory/wiki/decisions/ADR-0020-owner-mfa-per-spa.md)); **Tính năng** (công tắc + lý do); **Vai trò của spa** (Theo mẫu / Riêng spa này / Về mẫu); **Nhật ký của spa** (chỉ metadata: lúc, hành động, loại, ai) |
+| Một spa | `/admin/spa/$id` | Panel **Thông tin** + Tạm ngưng spa / Mở lại spa (tạm ngưng thu hồi mọi phiên của spa); **Bảo mật đăng nhập**: "Bắt buộc xác thực 2 bước cho chủ spa" (mặc định bật; tắt thì chủ spa đăng nhập chỉ bằng mật khẩu, authenticator được giữ; bật lại đăng xuất chủ spa và hỏi mã ở lần sau, [ADR-0020](../memory/wiki/decisions/ADR-0020-owner-mfa-per-spa.md)); **Lịch sử trên từng bản ghi**: Chủ spa / Quản lý "Đang hiện / Đang ẩn" + nút đổi (công tắc riêng của spa, sửa mẫu vai trò không đổi nó; KTV không bao giờ, mục 2.9); **Tính năng** (công tắc + lý do, "Mặc định · bật / tắt"); **Vai trò của spa** (Theo mẫu / Riêng spa này / Về mẫu); **Nhật ký của spa** (chỉ metadata: lúc, hành động, loại, ai) |
 | Mẫu vai trò | `/admin/vai-tro` | Sửa quyền mặc định của Chủ spa / Quản lý / KTV; áp ngay cho mọi spa đang theo mẫu. Rào chắn: chỉ owner có `staff.manage`, owner luôn giữ các quyền tối thiểu, không cấp được quyền nền tảng hay quyền suy ra |
 | Tài khoản | `/admin/tai-khoan` | Tìm theo SĐT / tên (≥ 3 ký tự, ≤ 50 kết quả), xem spa của từng người; Khóa / Mở khóa (không khóa chủ spa cuối cùng của spa đang hoạt động), Đặt lại mật khẩu, Đặt lại xác thực hai bước, Đăng xuất mọi thiết bị |
 | Nhật ký | `/admin/nhat-ky` | Nhật ký nền tảng: mọi thao tác của operator |

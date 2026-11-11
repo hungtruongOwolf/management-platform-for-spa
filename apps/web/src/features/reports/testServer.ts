@@ -1,7 +1,11 @@
 import type {
+  CustomerPackage,
   FollowUp,
   FollowUpCreate,
+  HistoryPage,
   InactiveCustomer,
+  LedgerPage,
+  RecordHistory,
 } from "@vpyd/api-client";
 import { vi } from "vitest";
 import { spaToday } from "../../lib/format";
@@ -29,6 +33,39 @@ export interface FakeOptions {
   takenPhones?: Record<string, { id: string; name: string }>;
   /** `/me.features`: the features the spa has on (absent: every feature on). */
   features?: string[];
+  /** Reshape the ledger / customer history replies (a test adds the rows it needs). */
+  ledger?: (page: LedgerPage) => LedgerPage;
+  history?: (page: HistoryPage) => HistoryPage;
+  /** `GET /customers/{id}/packages` (default: none). */
+  packages?: CustomerPackage[];
+  /**
+   * `GET /record-history/{route}/{id}` (ADR-0022): default a one-line history for
+   * `record.history.read`, `403` without it, as the server answers.
+   */
+  recordHistory?: (route: string, id: string) => { status: number; json: unknown };
+}
+
+/** The default answer of a record's history: who recorded it, one line. */
+export function oneLineHistory(type: RecordHistory["record"]["type"], id: string): RecordHistory {
+  const actor = { kind: "user" as const, user_id: "u2", name: "Hà" };
+  return {
+    record: { type, id },
+    summary: { created: { actor, at: "2026-11-05T03:07:00Z", day: "2026-11-05", source: "audit" }, edits: 0, state: "active" },
+    items: [
+      {
+        id: `audit-${id}`,
+        action: type === "customer" ? "customer.create" : type === "customer_package" ? "customer_package.create" : "visit.create",
+        kind: "front_desk",
+        at: "2026-11-05T03:07:00Z",
+        day: "2026-11-05",
+        actor,
+        changes: [],
+        packages: [],
+        folded: [],
+      },
+    ],
+    omitted: 0,
+  };
 }
 
 export const ME = (permissions: string[]) => ({
@@ -73,12 +110,24 @@ function route(
     searchHits = [],
     takenPhones = {},
     features,
+    ledger = (page) => page,
+    history = (page) => page,
   } = options;
   const ok = (json: unknown) => ({ status: 200, json });
   const q = url.searchParams;
   const p = url.pathname.replace(/^\/api\/v1/, "");
   const today = spaToday();
   if (p === "/me") return ok({ ...ME(permissions), ...(features ? { features } : {}) });
+  const trace = /^\/record-history\/([a-z-]+)\/([^/]+)$/.exec(p);
+  if (trace) {
+    const [, kind = "", id = ""] = trace;
+    if (options.recordHistory) return options.recordHistory(kind, id);
+    if (!permissions.includes("record.history.read"))
+      return { status: 403, json: { status: 403, code: "auth.forbidden" } };
+    const type = kind === "visit" ? "visit" : kind === "customer" ? "customer" : "customer_package";
+    return ok(oneLineHistory(type, id));
+  }
+  if (/^\/customers\/[^/]+\/packages$/.test(p)) return ok(options.packages ?? []);
   if (p === "/customers" && q.has("q")) return ok(searchHits);
   if (p === "/customers/phone-check") {
     const digits = (q.get("phone") ?? "")
@@ -128,7 +177,7 @@ function route(
           code: "auth.forbidden",
         },
       };
-    return ok(mockLedger(q.get("from") ?? today, q.get("to") ?? today));
+    return ok(ledger(mockLedger(q.get("from") ?? today, q.get("to") ?? today)));
   }
   if (p === "/customers/inactive") {
     const page = mockInactive(
@@ -209,7 +258,7 @@ function route(
   if (profile) {
     const id = profile[1] ?? "c1";
     if (profile[2] === "/history") {
-      const page = mockHistory(id, today);
+      const page = history(mockHistory(id, today));
       const term = (q.get("q") ?? "").toLowerCase();
       const kind = q.get("kind");
       const events = page.events

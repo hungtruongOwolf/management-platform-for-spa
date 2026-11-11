@@ -2,8 +2,11 @@ import type { Customer } from "@vpyd/api-client";
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { BottomSheet } from "../../components/BottomSheet";
+import { useAfterFirstPaint } from "../../lib/afterFirstPaint";
 import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
+import { LazyRecordTrace, TracePlaceholder } from "../record-history/lazy";
+import { canTrace } from "../record-history/query";
 import { formatDate } from "../sales/api";
 import { phoneText, setHealthNote } from "./api";
 import { CustomerPackages } from "../sales/CustomerPackages";
@@ -138,12 +141,16 @@ export function CustomerProfile({ customer, onChanged }: { customer: Customer; o
   const { data: me } = useSuspenseQuery(meQuery);
   const [editing, setEditing] = useState(false);
   const canWrite = can(me, "customer.write");
+  const traced = canTrace(me, "customer");
+  // The profile's own requests go first; "ai ghi, ai sửa" is read once it has painted.
+  const painted = useAfterFirstPaint();
 
   return (
     <div className="khach-stack">
       <article aria-labelledby="customer-info-title" className="panel">
         <div className="panel-head">
-          <h2 id="customer-info-title" className="panel-title">
+          {/* Focus lands here when the profile's history is taken away (403). */}
+          <h2 id="customer-info-title" tabIndex={traced ? -1 : undefined} className="panel-title">
             Thông tin khách
           </h2>
           {canWrite && (
@@ -168,6 +175,17 @@ export function CustomerProfile({ customer, onChanged }: { customer: Customer; o
           <Detail label="Địa chỉ">{customer.address}</Detail>
           <Detail label="Ghi chú">{customer.note}</Detail>
         </dl>
+        {/* "Tạo bởi … · đã sửa … lần" (ADR-0022): the last element of the contact details. */}
+        {traced &&
+          (painted ? (
+            <LazyRecordTrace
+              record={{ type: "customer", id: customer.id }}
+              noun={`hồ sơ ${customer.full_name}`}
+              focusOnHide={() => document.getElementById("customer-info-title")}
+            />
+          ) : (
+            <TracePlaceholder />
+          ))}
         <HealthSection customer={customer} canEdit={can(me, "customer.health_notes.write")} onChanged={onChanged} />
       </article>
       <CustomerPackages customerId={customer.id} />
