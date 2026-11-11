@@ -23,6 +23,8 @@ pub struct FeatureInfo {
     /// Permissions a spa loses while it is off.
     #[schema(value_type = Vec<String>)]
     pub permissions: Vec<&'static str>,
+    /// The state of a spa no operator switched it for.
+    pub default_enabled: bool,
 }
 
 pub fn registry() -> Vec<FeatureInfo> {
@@ -32,6 +34,7 @@ pub fn registry() -> Vec<FeatureInfo> {
             key: f.key(),
             name: f.name(),
             permissions: f.permissions().iter().map(|p| p.as_str()).collect(),
+            default_enabled: f.default_enabled(),
         })
         .collect()
 }
@@ -42,11 +45,14 @@ pub struct TenantFeature {
     pub key: &'static str,
     pub name: &'static str,
     pub enabled: bool,
-    /// When an operator last switched it (`null` = never: on by default).
+    /// The state without an operator's switch (`updated_at` null).
+    pub default_enabled: bool,
+    /// When an operator last switched it (`null` = never: the default applies).
     pub updated_at: Option<DateTime<Utc>>,
 }
 
-/// `GET /admin/tenants/{id}/features`: every registry feature, on unless a row says otherwise.
+/// `GET /admin/tenants/{id}/features`: every registry feature, its default unless a row says
+/// otherwise.
 pub async fn of_tenant(
     pool: &PgPool,
     op: &OperatorSession,
@@ -69,7 +75,8 @@ pub async fn of_tenant(
             TenantFeature {
                 key: f.key(),
                 name: f.name(),
-                enabled: row.is_none_or(|r| r.enabled),
+                enabled: row.map_or(f.default_enabled(), |r| r.enabled),
+                default_enabled: f.default_enabled(),
                 updated_at: row.map(|r| r.updated_at),
             }
         })
@@ -99,8 +106,9 @@ pub async fn set(
     };
     let reason = reason.checked()?;
     let mut tx = TenantTx::begin(pool, TenantId::from_uuid(tenant)).await?;
+    // `previous` is null when the spa had no row: the feature's default was in force.
     let Some(previous) = sqlx::query_scalar!(
-        r#"SELECT previous AS "previous!" FROM app.platform_set_feature($1, $2, $3, $4)"#,
+        r#"SELECT previous FROM app.platform_set_feature($1, $2, $3, $4)"#,
         &op.token_hash[..],
         tenant,
         feature.key(),
@@ -112,6 +120,7 @@ pub async fn set(
     else {
         return Err(AppError::NotFound);
     };
+    let previous = previous.unwrap_or(feature.default_enabled());
     record_platform(
         &mut tx,
         op.operator_id,
@@ -147,6 +156,7 @@ pub async fn set(
         key: feature.key(),
         name: feature.name(),
         enabled: input.enabled,
+        default_enabled: feature.default_enabled(),
         updated_at: Some(Utc::now()),
     })
 }

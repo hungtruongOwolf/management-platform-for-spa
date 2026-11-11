@@ -11,7 +11,7 @@ use crate::auth::{
     OperatorSummary, PendingOperatorSession,
 };
 use crate::features::{self, FeatureInfo, FeatureSwitch, TenantFeature};
-use crate::roles::{self, PermissionInfo, RoleEdit, RoleGrants};
+use crate::roles::{self, PermissionInfo, RecordHistorySwitch, RoleEdit, RoleGrants};
 use crate::tenants::{
     self, CreatedTenant, NewTenant, OwnerMfaChanged, OwnerMfaSwitch, Reason, StatusChanged,
     TenantRow, TenantStatus,
@@ -66,6 +66,10 @@ where
         .route(
             "/admin/tenants/{id}/roles/{key}/reset",
             post(reset_tenant_role),
+        )
+        .route(
+            "/admin/tenants/{id}/record-history/{role}",
+            put(set_record_history),
         )
         .route("/admin/tenants/{id}/audit", get(tenant_audit))
         .route("/admin/permissions", get(list_permissions))
@@ -396,6 +400,25 @@ pub async fn reset_tenant_role(
     Json(body): Json<Reason>,
 ) -> Result<Json<RoleGrants>, AppError> {
     roles::set_for_tenant(&pool, &op, id, &key, None, &body)
+        .await
+        .map(Json)
+}
+
+#[utoipa::path(put, path = "/api/v1/admin/tenants/{id}/record-history/{role}", tag = "admin",
+    params(("id" = Uuid, Path), ("role" = String, Path, description = "owner | manager")),
+    request_body = RecordHistorySwitch,
+    responses((status = 200, body = RoleGrants, description = "The role after the switch (`record.history.read` added or removed); next request"),
+        (status = 401), (status = 403, description = "platform.step_up_required"),
+        (status = 404, description = "unknown spa or role"),
+        (status = 409, description = "role.record_history_unchanged"),
+        (status = 422, description = "role.not_for_technician | reason")))]
+pub async fn set_record_history(
+    State(pool): State<PgPool>,
+    Operator(op): Operator,
+    Path((id, role)): Path<(Uuid, String)>,
+    Json(body): Json<RecordHistorySwitch>,
+) -> Result<Json<RoleGrants>, AppError> {
+    roles::set_record_history(&pool, &op, id, &role, &body)
         .await
         .map(Json)
 }

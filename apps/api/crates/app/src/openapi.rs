@@ -132,6 +132,7 @@ use utoipa::OpenApi;
         platform::http::tenant_roles,
         platform::http::set_tenant_role,
         platform::http::reset_tenant_role,
+        platform::http::set_record_history,
         platform::http::tenant_audit,
         platform::http::list_permissions,
         platform::http::list_role_templates,

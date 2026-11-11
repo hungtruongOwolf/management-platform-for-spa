@@ -183,7 +183,8 @@ pub async fn session_actor(
                   mfa_enrolled AS "mfa_enrolled!", must_change_password AS "must_change_password!",
                   member AS "member!", permissions AS "permissions!", former_staff AS "former_staff!",
                   timezone, manager_discount_max_pct, branch_id,
-                  disabled_features AS "disabled_features!"
+                  disabled_features AS "disabled_features!",
+                  enabled_features AS "enabled_features!"
            FROM app.session_actor($1)"#,
         &token_hash[..]
     )
@@ -199,7 +200,7 @@ pub async fn session_actor(
                 known_permissions(&r.permissions),
                 r.former_staff,
             ),
-            kernel::feature::parse_keys(&r.disabled_features),
+            kernel::feature::disabled(&r.enabled_features, &r.disabled_features),
             r.timezone.as_deref().and_then(|tz| {
                 TenantFacts::from_row(
                     tenant,
@@ -446,7 +447,8 @@ pub struct MemberAccess {
     /// Effective permissions: the roles', after the former-staff rule, without those of the
     /// spa's switched-off features (ADR-0018 D4).
     pub permissions: Vec<Permission>,
-    /// Features the spa has switched off.
+    /// Features off in the spa: switched off, or off by default and never switched on
+    /// (`kernel::feature::disabled`, ADR-0022).
     pub disabled_features: Vec<Feature>,
     pub facts: Option<TenantFacts>,
 }
@@ -454,13 +456,12 @@ pub struct MemberAccess {
 impl MemberAccess {
     fn new(
         permissions: Vec<Permission>,
-        disabled_features: Vec<Feature>,
+        off: std::collections::BTreeSet<Feature>,
         facts: Option<TenantFacts>,
     ) -> Self {
-        let off: std::collections::BTreeSet<Feature> = disabled_features.iter().copied().collect();
         Self {
             permissions: kernel::feature::strip(permissions, &off),
-            disabled_features,
+            disabled_features: off.into_iter().collect(),
             facts,
         }
     }
@@ -496,7 +497,9 @@ pub async fn member_access(
                   (SELECT b.id FROM app.branch b WHERE b.tenant_id = t.id AND b.active
                    ORDER BY b.created_at, b.id LIMIT 1) AS branch_id,
                   COALESCE((SELECT array_agg(f.feature) FROM app.tenant_feature f
-                            WHERE f.tenant_id = t.id AND NOT f.enabled), '{}') AS "disabled_features!"
+                            WHERE f.tenant_id = t.id AND NOT f.enabled), '{}') AS "disabled_features!",
+                  COALESCE((SELECT array_agg(f.feature) FROM app.tenant_feature f
+                            WHERE f.tenant_id = t.id AND f.enabled), '{}') AS "enabled_features!"
            FROM app.membership m
            JOIN app.tenant t ON t.id = m.tenant_id
            LEFT JOIN app.membership_role mr ON mr.tenant_id = m.tenant_id AND mr.membership_id = m.id
@@ -525,7 +528,7 @@ pub async fn member_access(
             known_permissions(&member.permissions),
             member.former_staff,
         ),
-        kernel::feature::parse_keys(&member.disabled_features),
+        kernel::feature::disabled(&member.enabled_features, &member.disabled_features),
         facts,
     )))
 }
