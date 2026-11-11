@@ -70,6 +70,13 @@ export type ActivityChange = Schemas["ActivityChange"];
 export type ActivitySubject = Schemas["ActivitySubject"];
 export type ActivityPerson = Schemas["ActivityPerson"];
 export type AuditAction = Schemas["AuditAction"];
+export type ActivityActor = Schemas["ActivityActor"];
+// "Ai ghi, ai sửa" on each record (ADR-0022): `GET /record-history/...`.
+export type RecordHistory = Schemas["RecordHistory"];
+export type RecordSummary = Schemas["RecordSummary"];
+export type RecordCreated = Schemas["RecordCreated"];
+export type RecordKind = Schemas["RecordKind"];
+export type RecordState = Schemas["RecordState"];
 export type FollowUpChannel = Schemas["FollowUpChannelDto"];
 export type FollowUpOutcome = Schemas["FollowUpOutcomeDto"];
 export type FollowUpCreate = Schemas["FollowUpCreate"];

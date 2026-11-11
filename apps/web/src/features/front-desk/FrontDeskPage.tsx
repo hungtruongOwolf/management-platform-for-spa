@@ -84,6 +84,9 @@ const AppointmentsCalendar = lazy(() =>
 // Below the fold / after a line is added: own chunks, fetched right after the first paint so they
 // are ready when needed (startup JS ≤ 125 KB gzip, frontend.md "Perf budget").
 const loadTodayVisits = () => import("./TodayVisits");
+// "Ai ghi, ai sửa" of an opened visit (ADR-0022), for those who may see it: the lazy chunk of
+// features/record-history/lazy.tsx (same specifier, same chunk).
+const loadRecordHistory = () => import("../record-history/chunk");
 // The picked customer's card (packages, Trừ 1 buổi) shows only after a search: its own chunk,
 // prefetched after the first paint like the cart's (startup JS budget, 2026-11-08).
 const loadCustomerCard = () => import("./CustomerCard");
@@ -208,13 +211,15 @@ export function FrontDeskPage() {
     ...todayVisitsQuery,
     enabled: painted && !showsCalendar,
   });
+  const traces = can(me, "record.history.read");
   useEffect(() => {
     if (!painted) return;
     void loadCustomerCard();
     void loadTodayVisits();
     void loadCartOptions();
     void loadCartPackages();
-  }, [painted]);
+    if (traces) void loadRecordHistory();
+  }, [painted, traces]);
   const todayIso = spaToday();
 
   const [customer, setCustomer] = useState<CustomerSummary | null>(null);

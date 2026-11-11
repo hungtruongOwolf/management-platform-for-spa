@@ -29,6 +29,9 @@ import { can, meQuery } from "../auth/session";
 import { mayCorrectVisit, mayEditSaleNote } from "../corrections/api";
 import { customerQuery } from "../customers/api";
 import { HealthNote } from "../customers/HealthNote";
+import { visitChip } from "../record-history/chip";
+import { LazyRecordTrace } from "../record-history/lazy";
+import { canTrace } from "../record-history/query";
 import { DaySales, methodText } from "./DaySales";
 import {
   VISITS_PAGE,
@@ -166,11 +169,11 @@ export function phoneLine(
  * under "Số tiền"): its lines with technician and referrer, the discount, the packages sold in it,
  * what was collected, companions, and the status note. Actions live in the row's ⋯ menu.
  */
-function VisitDetails({ v }: { v: Visit }) {
+function VisitDetails({ v, traced }: { v: Visit; traced: boolean }) {
   const customer = useQuery(customerQuery(v.customer_id));
   const packages = v.package_sales;
   const note = v.corrected_by_visit_id
-    ? `Đã sửa, thay bằng lượt mới. ${v.void_reason ?? ""}`
+    ? `Đã thay bằng lượt mới. ${v.void_reason ?? ""}`
     : v.status === "voided"
       ? `Lý do hủy: ${v.void_reason ?? "không ghi"}`
       : v.corrects_visit_id
@@ -297,7 +300,8 @@ function VisitDetails({ v }: { v: Visit }) {
       {v.companions.length > 0 && (
         <DetailRow main="Người đi cùng" meta={v.companions.join(", ")} />
       )}
-      {backdated && (
+      {/* The history's meta line says it already ("Ghi bởi Hà · 15:10 12/11" + "nhập bù lượt"). */}
+      {backdated && !traced && (
         <DetailRow
           main="Nhập bù"
           meta={`Ghi lúc ${spaDateTime(v.created_at)}`}
@@ -308,8 +312,28 @@ function VisitDetails({ v }: { v: Visit }) {
           <HealthNote customer={customer.data} />
         </div>
       )}
+      {/* "Ai ghi, ai sửa" (ADR-0022): always the last element of the details. */}
+      {traced && (
+        <div className="vd-row vd-wide">
+          <LazyRecordTrace
+            record={{ type: "visit", id: v.id }}
+            noun={`lượt ${timeOf(v.check_in_at)} của ${v.customer_name}`}
+            day={v.business_date}
+            focusOnHide={() => document.getElementById(visitToggleId(v.id))}
+          />
+        </div>
+      )}
     </div>
   );
+}
+
+/** The row's own button (the customer's name): where focus goes when its history hides. */
+const visitToggleId = (id: string) => `visit-toggle-${id}`;
+
+/** The one state chip by the name (spec record-history D9): "Đã thay", "Đã hủy" or "Đã sửa". */
+function VisitChipBadge({ v }: { v: Visit }) {
+  const chip = visitChip({ corrected_by_visit_id: v.corrected_by_visit_id, voided: v.status === "voided", edited: v.edited });
+  return chip && <span className={`badge ${chip.badge}`}>{chip.label}</span>;
 }
 
 /**
@@ -345,6 +369,7 @@ function visitColumns({
           {/* The keyboard path of the row click: Enter/Space opens the details. */}
           <button
             type="button"
+            id={visitToggleId(v.id)}
             className="row-toggle"
             aria-expanded={expanded === v.id}
             onClick={() => {
@@ -353,13 +378,7 @@ function visitColumns({
           >
             <CustomerName name={v.customer_name} gender={v.customer_gender} />
           </button>
-          {v.corrected_by_visit_id ? (
-            <span className="badge badge-muted">Đã sửa</span>
-          ) : (
-            v.status === "voided" && (
-              <span className="badge badge-danger">Đã hủy</span>
-            )
-          )}
+          <VisitChipBadge v={v} />
         </span>
       ),
     },
@@ -491,6 +510,8 @@ export function TodayVisits({
   // money is asked only when the addition costs something (ADR-0019 D20: a 0đ service needs no
   // payment.collect, the server asks for it only when payments are sent).
   const pastOk = isToday || can(me, "record.void_closed_day");
+  // "Ai ghi, ai sửa" in the opened visit (UX only: the server answers 403 on its own).
+  const traced = canTrace(me, "visit");
   const mayAdd = (v: Visit) =>
     v.status === "completed" && pastOk && can(me, "visit.record");
   const mayConvert = (v: Visit) =>
@@ -737,7 +758,7 @@ export function TodayVisits({
                     ))}
                 </Suspense>
               ) : expanded === v.id ? (
-                <VisitDetails v={v} />
+                <VisitDetails v={v} traced={traced} />
               ) : null
             }
           />
@@ -776,6 +797,7 @@ export function TodayVisits({
             { business_date: day, voided: false },
             todayIso,
           )}
+          traced={canTrace(me, "package", "sale")}
           onNotice={setNotice}
         />
       )}

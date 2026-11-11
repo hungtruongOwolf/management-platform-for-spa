@@ -17,6 +17,7 @@ import { spaTime } from "../../lib/format";
 import { invalidateManagementViews } from "../../lib/invalidate";
 import { voidSale } from "../corrections/api";
 import { VoidForm } from "../corrections/VoidForm";
+import { LazyRecordTrace } from "../record-history/lazy";
 import { SaleNoteForm } from "../sales/SaleNoteForm";
 
 /**
@@ -56,11 +57,15 @@ function saleMeta(s: DaySale): string {
 
 const voided = (s: DaySale) => s.sale.status === "voided";
 
+/** The row's ⋯ button: where focus goes when the row's history hides. */
+const saleMenuId = (saleId: string) => `sale-menu-${saleId}`;
+
 export function DaySales({
   day,
   isToday,
   mayVoid,
   mayEditNote,
+  traced = false,
   onNotice,
 }: {
   day: string;
@@ -72,6 +77,8 @@ export function DaySales({
    * server decides.
    */
   mayEditNote: boolean;
+  /** "Xem ai ghi, ai sửa" in the ⋯ menu (ADR-0022; UX only, the server answers 403 on its own). */
+  traced?: boolean;
   onNotice: (text: string) => void;
 }) {
   const queryClient = useQueryClient();
@@ -79,6 +86,8 @@ export function DaySales({
   const sales = useQuery(daySalesQuery(isToday ? undefined : day));
   const [voiding, setVoiding] = useState<string | null>(null);
   const [noting, setNoting] = useState<string | null>(null);
+  /** The sale whose history is open under its row. */
+  const [tracing, setTracing] = useState<string | null>(null);
   const rows = sales.data ?? [];
   if (sales.isError)
     return (
@@ -158,6 +167,7 @@ export function DaySales({
       className: "text-right",
       cell: (s) => (
         <RowMenu
+          id={saleMenuId(s.sale.id)}
           label={`Thao tác hóa đơn ${spaTime(s.sale.created_at)} của ${s.customer_name}`}
           items={[
             {
@@ -166,12 +176,25 @@ export function DaySales({
                 void navigate({ to: "/khach-hang/$customerId", params: { customerId: s.sale.customer_id } });
               },
             },
+            ...(traced
+              ? [
+                  {
+                    label: tracing === s.sale.id ? "Ẩn ai ghi, ai sửa" : "Xem ai ghi, ai sửa",
+                    onSelect: () => {
+                      setVoiding(null);
+                      setNoting(null);
+                      setTracing((open) => (open === s.sale.id ? null : s.sale.id));
+                    },
+                  },
+                ]
+              : []),
             ...(mayEditNote && !voided(s)
               ? [
                   {
                     label: s.sale.note ? "Sửa ghi chú gói" : "Thêm ghi chú gói",
                     onSelect: () => {
                       setVoiding(null);
+                      setTracing(null);
                       setNoting(s.sale.id);
                     },
                   },
@@ -184,6 +207,7 @@ export function DaySales({
                     danger: true,
                     onSelect: () => {
                       setNoting(null);
+                      setTracing(null);
                       setVoiding(s.sale.id);
                     },
                   },
@@ -245,6 +269,18 @@ export function DaySales({
                   onNotice(`Đã lưu ghi chú gói của ${s.customer_name}.`);
                 }}
               />
+            ) : tracing === s.sale.id ? (
+              // A package's lifecycle is no edit (D9): no chip here, its history only when asked.
+              <div className="visit-inline-form">
+                <LazyRecordTrace
+                  record={{ type: "sale", id: s.sale.id }}
+                  noun={`hóa đơn bán gói ${spaTime(s.sale.created_at)} của ${s.customer_name}`}
+                  day={s.sale.business_date}
+                  defaultOpen
+                  autoFocus
+                  focusOnHide={() => document.getElementById(saleMenuId(s.sale.id))}
+                />
+              </div>
             ) : null
           }
         />

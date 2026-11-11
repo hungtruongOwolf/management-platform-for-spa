@@ -82,8 +82,9 @@ export function ResponsiveTable<T>({
   const cards = useMediaQuery(`(max-width: ${String(cardsBelow - 0.02)}px)`);
   const clickRow = onRowClick
     ? (row: T) => (e: MouseEvent) => {
-        // A control in the row does its own thing; a drag that selected text is not a click.
-        const onControl = (e.target as Element).closest("a, button, input, select, textarea, label, [role=menu]");
+        // A control in the row does its own thing; a drag that selected text is not a click. A
+        // `[data-row-inert]` block (a record's history) is read, not a place to fold the row.
+        const onControl = (e.target as Element).closest("a, button, input, select, textarea, label, [role=menu], [data-row-inert]");
         if (!onControl && !window.getSelection()?.toString()) onRowClick(row);
       }
     : undefined;

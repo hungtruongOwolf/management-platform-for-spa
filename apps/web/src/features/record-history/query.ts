@@ -1,0 +1,61 @@
+// "Ai ghi, ai sửa" on each record (ADR-0022), the part every screen imports: the request and who
+// may ask for it. Deliberately tiny and free of UI and words (design record-history §1.1): the
+// screens import it to start the request while the lazy chunk with the component is still loading.
+import type { RecordHistory } from "@vpyd/api-client";
+import { queryOptions } from "@tanstack/react-query";
+import { api } from "../../lib/api";
+import { can, type Me } from "../auth/session";
+
+/**
+ * A record whose history a screen opens, by the route it is asked through. A sale or a refund is
+ * re-anchored by the server (a one-off sale's history is its visit's, a package sale's and a
+ * refund's is the package's), so the reply's `record` may be another kind.
+ */
+export interface RecordRef {
+  type: "visit" | "sale" | "refund" | "customer_package" | "customer";
+  id: string;
+}
+
+const ROUTE: Record<RecordRef["type"], string> = {
+  visit: "visit",
+  sale: "sale",
+  refund: "refund",
+  customer_package: "customer-package",
+  customer: "customer",
+};
+
+/**
+ * One record's history. Never served from cache (`staleTime: 0`): it is read when a record is
+ * opened, and every write in this browser invalidates `["record-history"]` (lib/queryClient.ts).
+ */
+export function recordHistoryQuery(ref: RecordRef) {
+  return queryOptions({
+    queryKey: ["record-history", ref.type, ref.id],
+    queryFn: async () => (await api(`/record-history/${ROUTE[ref.type]}/${encodeURIComponent(ref.id)}`)) as RecordHistory,
+    staleTime: 0,
+  });
+}
+
+/**
+ * What the record's history ends up being about, for the read right of that kind (spec D7, AC-H4):
+ * `visit` = a visit or a one-off sale made in one; `package` = a package, a package sale, a refund.
+ */
+export type TraceAnchor = "visit" | "package" | "customer";
+
+/**
+ * Whether to offer the history at all (UX only: the server checks the same and answers 403). The
+ * history right, the right of the route (`sale.read` when asked through a sale or a refund), then
+ * the read right of the kind the record re-anchors to: the chunk is never loaded and no request is
+ * sent only to be refused.
+ */
+export function canTrace(me: Me | null | undefined, anchor: TraceAnchor, through?: "sale" | "refund"): boolean {
+  if (!can(me, "record.history.read")) return false;
+  if (through && !can(me, "sale.read")) return false;
+  switch (anchor) {
+    case "visit":
+      return can(me, "visit.read");
+    case "package":
+    case "customer":
+      return can(me, "customer.read");
+  }
+}
