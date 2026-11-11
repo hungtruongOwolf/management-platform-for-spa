@@ -775,23 +775,21 @@ mod tests {
     #[test]
     fn money_comes_from_the_action_shape() {
         let sale_void = json!({"reversals": [{"amount": 300_000}, {"amount": 200_000}]});
-        assert_eq!(
-            amount(Action::SaleVoid, Some(&sale_void)),
-            Some(500_000)
-        );
+        assert_eq!(amount(Action::SaleVoid, Some(&sale_void)), Some(500_000));
         let cancel = json!({"refund": {"amount": 450_000, "method": "cash"}});
         assert_eq!(
             amount(Action::CustomerPackageCancel, Some(&cancel)),
             Some(450_000)
         );
         assert_eq!(
-            amount(Action::CustomerPackageCancel, Some(&json!({"refund": null}))
+            amount(
+                Action::CustomerPackageCancel,
+                Some(&json!({"refund": null}))
             ),
             None
         );
         assert_eq!(
-            amount(Action::VisitCorrect, Some(&json!({"difference": -50_000}))
-            ),
+            amount(Action::VisitCorrect, Some(&json!({"difference": -50_000}))),
             Some(-50_000)
         );
         assert_eq!(

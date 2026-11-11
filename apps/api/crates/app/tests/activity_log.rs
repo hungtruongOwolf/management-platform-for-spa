@@ -127,10 +127,18 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
     let service = id(&created);
     // Settings: the price goes up.
-    let repriced = call_with_headers(&h.app, "PUT", &format!("/services/{service}"), Some(&owner), Some(json!({
-        "category_id": id(&category), "name": "Gội đầu dưỡng sinh", "description": null,
-        "duration_min": 60, "recommended": false, "active": true, "prices": {"all": NEW_PRICE}
-    })), &[("If-Match", "\"1\"")]).await;
+    let repriced = call_with_headers(
+        &h.app,
+        "PUT",
+        &format!("/services/{service}"),
+        Some(&owner),
+        Some(json!({
+            "category_id": id(&category), "name": "Gội đầu dưỡng sinh", "description": null,
+            "duration_min": 60, "recommended": false, "active": true, "prices": {"all": NEW_PRICE}
+        })),
+        &[("If-Match", "\"1\"")],
+    )
+    .await;
     assert_eq!(repriced.status, StatusCode::OK, "{}", repriced.body);
 
     // Customers: the manager creates one, then corrects the name and the phone.

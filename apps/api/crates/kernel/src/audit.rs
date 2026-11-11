@@ -103,7 +103,7 @@ actions! {
     AccountMfaResetByPlatform => "account.mfa_reset_by_platform",
     AccountSessionsRevokedByPlatform => "account.sessions_revoked_by_platform",
     AccountPasswordResetByPlatform => "account.password_reset_by_platform",
-    /// Also written in SQL by `app.platform_apply_role_template` (migration 0040).
+    /// Also written in SQL, by the role-template function of migration 0040.
     RolePermissionsChanged => "role.permissions_changed",
     RolePermissionsReset => "role.permissions_reset",
     FeatureChanged => "feature.changed",

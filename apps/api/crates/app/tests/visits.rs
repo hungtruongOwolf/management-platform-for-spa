@@ -1003,7 +1003,8 @@ async fn session_note_is_encrypted_and_shown_only_to_health_readers(pool: PgPool
         },
     )
     .await?;
-    let visit = page.events.first().and_then(|e| e.visit.as_ref());
+    // Found by kind, not position: same-day order mixes the API and database clocks (backend §3b).
+    let visit = page.events.iter().find_map(|e| e.visit.as_ref());
     assert!(visit.is_some(), "the visit is on the timeline");
     assert_eq!(visit.and_then(|v| v.note.clone()), None);
     Ok(())
