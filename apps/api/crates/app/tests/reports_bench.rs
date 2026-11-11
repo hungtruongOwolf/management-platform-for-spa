@@ -107,6 +107,11 @@ fn p(samples: &mut [u128], q: f64) -> u128 {
 /// one visit in twenty, eight people's attendance and daily reviews, and 25 bookings a day with
 /// their arrival and completion.
 const AUDIT_SEED: &str = r#"
+-- Each one-off sale was made in its visit (the revenue book's `visit_id`, what `edited` looks up).
+-- The link is set once at insert by the writers; the bulk seed sets it after the visits exist.
+SET session_replication_role = replica;
+UPDATE app.sale s SET visit_id = v.visit FROM b_v v WHERE s.id = v.sale;
+SET session_replication_role = DEFAULT;
 INSERT INTO app.audit_log (id, tenant_id, actor_user_id, actor_kind, action, entity_type, entity_id, at, after)
 SELECT gen_random_uuid(), x.tenant, x.usr, 'user', 'visit.create', 'visit', v.visit, v.at,
        jsonb_build_object('sale_id', v.sale, 'total', 150000, 'discount_amount', 0)
@@ -367,6 +372,7 @@ async fn three_years_of_books_read_within_budget(pool: PgPool) -> TestResult {
 async fn record_history_reads_within_budget(pool: PgPool) -> TestResult {
     const HISTORY_BUDGET_MS: u128 = 100;
     const EDITED_BUDGET_MS: u128 = 10;
+    const EDITED_ROUNDS: usize = 60;
     let (h, owner) = books(pool).await?;
     let tenant: uuid::Uuid = sqlx::query_scalar("SELECT id FROM app.tenant WHERE slug = 'vpyd'")
         .fetch_one(&h.owner)
@@ -458,24 +464,45 @@ async fn record_history_reads_within_budget(pool: PgPool) -> TestResult {
         over.push(format!("{audit}: p95 {p95} ms (budget {BUDGET_MS} ms)"));
     }
 
-    // `edited` costs: the same lists with the right (the owner's default) and without it.
+    // `edited` costs: the same lists with the right (the owner's default) and without it, in
+    // alternating rounds so a busy machine slows both sides alike.
     let lists = [
         "/visits".to_owned(),
         "/reports/ledger?from=2026-08-06&to=2026-11-05&limit=100".to_owned(),
         format!("/customers/{customer}/history?limit=50"),
     ];
-    let mut with = Vec::new();
     for path in &lists {
-        with.push(timed(&h, &owner, path, &mut n).await);
-    }
-    sqlx::query(
-        "DELETE FROM app.role_permission WHERE tenant_id = $1 AND permission = 'record.history.read'",
-    )
-    .bind(tenant)
-    .execute(&h.owner)
-    .await?;
-    for (path, (with_p50, with_p95)) in lists.iter().zip(with) {
-        let (p50, p95) = timed(&h, &owner, path, &mut n).await;
+        let (mut with, mut without) = (Vec::new(), Vec::new());
+        for round in 0..(EDITED_ROUNDS * 2) {
+            let shown = round % 2 == 0;
+            let sql = if shown {
+                "INSERT INTO app.role_permission (tenant_id, role_id, permission)
+                 SELECT r.tenant_id, r.id, 'record.history.read' FROM app.role r
+                 WHERE r.tenant_id = $1 AND r.key = 'owner' ON CONFLICT DO NOTHING"
+            } else {
+                "DELETE FROM app.role_permission
+                 WHERE tenant_id = $1 AND permission = 'record.history.read'"
+            };
+            sqlx::query(sql).bind(tenant).execute(&h.owner).await?;
+            n += 1;
+            let ip = format!("10.7.{}.{}", n / 250, n % 250);
+            let t = Instant::now();
+            let reply = call_with_headers(
+                &h.app,
+                "GET",
+                path,
+                Some(&owner),
+                None,
+                &[("X-Forwarded-For", &ip)],
+            )
+            .await;
+            let ms = t.elapsed().as_millis();
+            assert_eq!(reply.status, StatusCode::OK, "{path}: {}", reply.body);
+            assert_eq!(reply.body.to_string().contains("\"edited\""), shown, "{path}");
+            if shown { with.push(ms) } else { without.push(ms) }
+        }
+        let (with_p50, with_p95) = (p(&mut with, 0.5), p(&mut with, 0.95));
+        let (p50, p95) = (p(&mut without, 0.5), p(&mut without, 0.95));
         println!(
             "edited: p50 {with_p50:>4} / {p50:>4} ms  p95 {with_p95:>4} / {p95:>4} ms  {path}"
         );

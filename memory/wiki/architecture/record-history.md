@@ -171,6 +171,7 @@ Các endpoint danh sách mang `edited` gửi `Cache-Control: no-store` (nội du
 - Có sẵn: `audit_log_entity_idx (tenant_id, entity_type, entity_id, at)` (0001) cho bước 2; `audit_log_tenant_at_id_idx` (0051) cho bước 3.
 - Tạo index trên bảng audit có dữ liệu: `CREATE INDEX` thường trong transaction migration (staging ~7.000 dòng; production chưa có). Khi bảng lớn: `CONCURRENTLY` ở migration riêng (quy ước 0036/0037).
 - Ngân sách: `GET /record-history/*` p95 ≤ 100 ms; `/visits` ngày, ledger 92 ngày, `/appointments?marks=true` 14 ngày: p95 tăng ≤ 10 ms. **Bench `reports_bench.rs` seed audit thật**: ~60.000 dòng / năm × 3 (ước tính: ~14.700 lượt / năm × ~2,5 dòng + chấm công / khen 8 người × 365 × 2 + lịch hẹn + danh mục); số 6.787 dòng / năm của staging (log 2026-11-11) là dữ liệu seed nhỏ (1.990 lượt / năm), không dùng làm ngân sách.
+- **Đo khi build đợt 1a (2026-11-11, máy dev, `reports_bench.rs` `record_history_reads_within_budget`, 44.040 lượt + 179.466 dòng audit / 3 năm):** p95 lịch sử lượt (chuỗi 3 bản, khách bận nhất) 40 ms, gói 10 ms, khách 6 ms; `/audit-log?limit=50` sau refactor `rows_by_ids` 19 ms; `edited` (đo xen kẽ có / không quyền, 60 vòng): `/visits` 17 / 17 ms, sổ doanh thu 92 ngày 83 / 87 ms, lịch sử khách 29 / 26 ms → thêm ≤ 3 ms. Dò `edited` đi qua `audit_log_edit_idx` (EXPLAIN trong bench).
 - Web: `staleTime: 0`, key `["record-history", type, id]`, `MutationCache.onSuccess` invalidate tiền tố (design §5).
 
 ## 7. Impact analysis
