@@ -6130,7 +6130,9 @@
           "actor",
           "kind",
           "action",
-          "changes"
+          "changes",
+          "packages",
+          "folded"
         ],
         "properties": {
           "action": {
@@ -6146,7 +6148,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "The money it moved, in đồng: a visit's or sale's total, a refund, a reversal, a\ncorrection's difference (signed), a bonus / penalty, a closed month's net pay."
+            "description": "The money it moved, in đồng: what a visit's checkout collected (every sale it made:\none-off services and packages sold in it), a sale's total, a refund, a reversal, a\ncorrection's difference (signed), a bonus / penalty, a closed month's net pay."
           },
           "at": {
             "type": "string",
@@ -6176,7 +6178,14 @@
               "null"
             ],
             "format": "int64",
-            "description": "A discount given on a visit or a sale."
+            "description": "A discount given on a visit (all its sales) or a sale."
+          },
+          "folded": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "One line per action (EM 2026-11-11): the keys of the other audit rows the same action\nwrote, folded into this line instead of shown on their own — a visit's or a void's\n`sale.*`, the `customer_package.*` of a package sale, the void and new visit of a\ncorrection. The rows themselves stay in the trail."
           },
           "id": {
             "type": "string",
@@ -6184,6 +6193,13 @@
           },
           "kind": {
             "$ref": "#/components/schemas/ActivityKind"
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The packages sold or cancelled by the same action, by name: in a visit's checkout, by a\npackage sale, by the void of one."
           },
           "reason": {
             "type": [

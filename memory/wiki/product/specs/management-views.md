@@ -286,6 +286,23 @@ EM: "cái vụ ai làm đó tôi không cần show đâu… chủ spa có thể 
 - Người làm: tên tài khoản; đội vận hành nền tảng → "Đội vận hành" (không bao giờ tên operator); yêu cầu "Quên mật khẩu?" từ màn đăng nhập → "Hệ thống".
 - Gom theo ngày (giờ spa), mới nhất trước; 50 dòng một trang, "Xem thêm".
 
+**11.3b Một thao tác = một dòng** (EM 2026-11-11, [raw 3](../../../raw/2026-11-11-em-decision-activity-log-one-line-per-action.md): "một dòng thôi vì khi ghi là thu tiền luôn rồi"). Một thao tác ở quầy ghi nhiều dòng audit trong cùng transaction; `audit_log` **giữ nguyên mọi dòng** (truy vết), màn đọc gộp chúng thành một dòng ở server (`reporting::activity::fold_rule`):
+
+| Thao tác | Dòng audit ghi cùng lúc | Màn hiện |
+|---|---|---|
+| Ghi lượt / thêm vào lượt (kể cả bán gói trong giỏ) | `customer_package.create` mỗi gói, `sale.create` mỗi hóa đơn, `visit.create` / `visit.addition` | "Hà ghi lượt cho chị Mai kèm bán gói X" · **Thu = mọi hóa đơn của lượt** (dịch vụ lẻ + gói), giảm giá cộng các hóa đơn, lý do giảm giá |
+| Hủy lượt | `sale.void` mỗi hóa đơn dịch vụ lẻ, `visit.void` | "Hà hủy lượt của chị Mai" · Đảo … · lý do |
+| Sửa lượt | hủy lượt cũ (như trên) + ghi lượt mới (như trên) + `visit.correct` | "Hà sửa lượt (tính lại tiền) của chị Mai" · Chênh lệch … · lý do "Sửa lượt: …" |
+| Tính buổi hôm nay vào gói | như Sửa lượt + `visit.convert_to_package` | "Hà chuyển lượt sang gói X cho chị Mai" · Chênh lệch … |
+| Bán gói riêng (`POST /sales`) | `customer_package.create` mỗi gói + `sale.create` | "Hà bán gói X cho chị Mai" · Thu … |
+| Hủy hóa đơn bán gói | `customer_package.cancel` mỗi gói + `sale.void` | "Hà hủy hóa đơn bán gói X của chị Mai" · Đảo … · lý do |
+
+- **Điều kiện gộp:** cùng thời điểm (`at`, cùng transaction), cùng người làm, và liên kết bằng id ghi trong chính dòng audit (hóa đơn của lượt: `sale_id` / `sale_ids` / `package_sale_ids`; gói của hóa đơn: `sale_id`; lượt mới của lần sửa: `corrects_visit_id` / `visit_id`). Hai lượt khác nhau ghi cùng giây (dữ liệu seed) không bao giờ bị gộp nhầm.
+- **Vẫn là dòng riêng:** hủy gói có / không hoàn tiền (`POST /customer-packages/{id}/cancel`), gia hạn gói, dùng gói đã hết hạn (`customer_package.use_expired_override`, có lý do riêng), tự điền giới tính khách khi ghi lượt (`customer.update`), sửa giờ / KTV của lượt (`visit.update`), sửa ghi chú gói, nhập sổ giấy; dòng `sale.*` cũ không thuộc thao tác lượt nào (câu "thu tiền của …").
+- **Phân trang:** gộp ở server trước khi cắt trang (keyset `(at, id)` của dòng hiển thị), nên một trang không bao giờ tách đôi một thao tác hay có dòng "thu tiền" lẻ.
+- **Lọc:** "Người làm", "Ngày" áp lên dòng hiển thị (mọi dòng gộp cùng người, cùng lúc). "Loại việc" khớp nếu **bất kỳ** dòng audit nào trong thao tác thuộc nhóm đó: lượt có bán gói hiện ở cả "Quầy" và "Gói liệu trình"; tiền nằm trong nhóm "Quầy" như trước (không có nhóm "Tiền" riêng). Nhãn nhóm của dòng là nhóm của thao tác chính.
+- API: mỗi mục có `packages` (tên gói bán / hủy cùng thao tác) và `folded` (key các dòng audit đã gộp vào).
+
 **11.4 Nhóm "Loại việc"** (mọi action đều thuộc đúng một nhóm, `reporting::activity::kind_of`):
 
 | Nhóm (`kind`) | Action |
@@ -314,5 +331,6 @@ EM: "cái vụ ai làm đó tôi không cần show đâu… chủ spa có thể 
 - AC11.5: phân trang 3 dòng đi hết danh sách một lần, không lặp, kể cả 7 dòng cùng một thời điểm.
 - AC11.6: action mới chưa có nhóm → không compile; chưa có câu ở web → typecheck đỏ; key cũ → nhóm "Khác", câu chung.
 - AC11.7: sau `seed-demo`, mọi tháng của khoảng seed có dòng audit, ngày chạy seed chỉ chiếm phần nhỏ, không dòng nào sau giờ chạy, lượt lịch sử được audit đúng ngày của lượt.
+- AC11.9 (§11.3b): ghi lượt có hóa đơn và hủy lượt mỗi thứ một dòng mang tiền + lý do, `audit_log` vẫn đủ hai dòng; gói bán trong giỏ gộp vào lượt (tên gói, Thu = mọi hóa đơn) và lọc "Gói liệu trình" thấy lượt đó; Sửa lượt / chuyển sang gói một dòng; bán gói riêng và hủy hóa đơn gói một dòng; hủy gói hoàn tiền dòng riêng; phân trang 4 dòng qua 9 cặp cùng thời điểm không tách cặp, không lặp; hóa đơn khác giây hoặc khác người không bị gộp.
 - AC11.8: màn chạy ở 390 px không cuộn ngang, sáng và tối, axe không lỗi serious / critical.
-- Test: `app/tests/activity_log.rs` (6), `authz_matrix.rs` (1 dòng), `customers.rs::customer_audit_keeps_who_what_field_and_old_new_name_and_phone_only`, `demo_seed.rs` (AC11.7), unit test `reporting::activity`, `kernel::audit`, `platform::roles`; Vitest `features/activity/Activity.test.tsx`; e2e `e2e/specs/activity.spec.ts`.
+- Test: `app/tests/activity_log.rs` (10), `authz_matrix.rs` (1 dòng), `customers.rs::customer_audit_keeps_who_what_field_and_old_new_name_and_phone_only`, `demo_seed.rs` (AC11.7), unit test `reporting::activity`, `kernel::audit`, `platform::roles`; Vitest `features/activity/Activity.test.tsx`; e2e `e2e/specs/activity.spec.ts`.

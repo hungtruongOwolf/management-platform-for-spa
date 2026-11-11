@@ -9,6 +9,11 @@
 //!
 //! Grouping and wording are exhaustive over [`Action`]: adding an action to the kernel does not
 //! compile until it has a group here and a sentence in the web (`AuditAction` in the contract).
+//!
+//! One line per action (EM 2026-11-11: "một dòng thôi vì khi ghi là thu tiền luôn rồi"): the rows
+//! one action writes together (a visit and the sales of its checkout, a void and the reversal of
+//! its sale, a correction and the void + new visit it made) stay separate in `audit_log` and are
+//! folded into one line when read ([`fold_rule`]), server-side, so a page never splits them.
 
 use crate::activity_dto::{
     ActivityActor, ActivityChange, ActivityEntry, ActivityKind, ActivityPage, ActivityPerson,
@@ -98,6 +103,105 @@ pub const fn kind_of(action: Action) -> ActivityKind {
         | A::TenantUnsuspended
         | A::TenantOwnerMfaChanged => K::Accounts,
     }
+}
+
+/// Where a row finds the visits and sales it is about (its fold keys), in the row itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Link {
+    /// The row's own `entity_id`.
+    Entity,
+    /// A uuid at this key of `after`.
+    Field(&'static str),
+    /// A list of uuids at this key of `after`.
+    List(&'static str),
+}
+
+impl Link {
+    const fn sql(self) -> (&'static str, &'static str) {
+        match self {
+            Link::Entity => ("entity", ""),
+            Link::Field(key) => ("field", key),
+            Link::List(key) => ("list", key),
+        }
+    }
+}
+
+/// How the rows of one action fold into one line: `(rank, links)`. A row is folded into a row
+/// written by the same action (same instant, same person) with a higher rank that shares one of
+/// its keys; a row nothing covers is a line. Rank 0 never folds and never takes a row in: every
+/// action not named here is a line of its own (a package extended, a session past expiry, a
+/// paper-book entry, a profile edit); so is a `customer_package.cancel` with a refund, which names
+/// no sale.
+///
+/// What the writers store (`operations::service`, `sales`, `packages`): a checkout writes
+/// `customer_package.create` per package, `sale.create` per sale, then `visit.create` /
+/// `visit.addition` naming its `sale_id` and `package_sale_ids`; a void writes `sale.void` per
+/// one-off sale, then `visit.void` naming its `sale_ids`; "Sửa lượt" writes that void, the new
+/// visit's checkout (`corrects_visit_id` = the old visit), then `visit.correct` (`visit_id` = the
+/// new one); "chuyển sang gói" all of it, then `visit.convert_to_package`; a package sale's void
+/// writes `customer_package.cancel` per package (its `sale_id`), then `sale.void`.
+const fn fold_rule(action: Action) -> (i32, &'static [Link]) {
+    use Action as A;
+    use Link as L;
+    match action {
+        A::VisitConvertToPackage => (5, &[L::Entity, L::Field("visit_id")]),
+        A::VisitCorrect => (4, &[L::Entity, L::Field("visit_id")]),
+        A::VisitCreate | A::VisitAddition => (
+            3,
+            &[
+                L::Entity,
+                L::Field("corrects_visit_id"),
+                L::Field("sale_id"),
+                L::List("package_sale_ids"),
+            ],
+        ),
+        A::VisitVoid => (3, &[L::Entity, L::Field("sale_id"), L::List("sale_ids")]),
+        A::SaleCreate | A::SaleVoid => (2, &[L::Entity]),
+        A::CustomerPackageCreate | A::CustomerPackageCancel => (1, &[L::Field("sale_id")]),
+        _ => (0, &[]),
+    }
+}
+
+/// [`fold_rule`] as the query's table: one (action, rank, link, key) per link.
+struct FoldTable {
+    actions: Vec<String>,
+    ranks: Vec<i32>,
+    links: Vec<String>,
+    keys: Vec<String>,
+}
+
+fn fold_table() -> FoldTable {
+    let mut t = FoldTable {
+        actions: Vec::new(),
+        ranks: Vec::new(),
+        links: Vec::new(),
+        keys: Vec::new(),
+    };
+    for action in Action::ALL.iter().copied() {
+        let (rank, links) = fold_rule(action);
+        for link in links {
+            let (kind, key) = link.sql();
+            t.actions.push(action.as_str().to_owned());
+            t.ranks.push(rank);
+            t.links.push(kind.to_owned());
+            t.keys.push(key.to_owned());
+        }
+    }
+    t
+}
+
+/// For the group filter: a line whose own action is not in the group still matches through a row
+/// folded into it, which has a lower rank; so only lines ranked above the lowest folding action of
+/// the group need looking at (`i32::MAX`: no action of the group ever folds — "Khách hàng", …).
+fn companion_floor(include: Option<&[String]>) -> i32 {
+    include
+        .into_iter()
+        .flatten()
+        .filter_map(|key| Action::parse(key))
+        .map(|a| fold_rule(a).0)
+        .filter(|rank| *rank > 0)
+        .min()
+        .unwrap_or(i32::MAX)
 }
 
 /// The fields an action shows as changed: (JSON pointer in `before` / `after`, field name,
@@ -415,6 +519,86 @@ struct Row {
     package: Option<String>,
     staff_before: Option<String>,
     staff_after: Option<String>,
+    /// A line of the page; otherwise a row of the same instant that may fold into one.
+    root: bool,
+    fold_rank: i32,
+    fold_keys: Vec<String>,
+}
+
+impl Row {
+    fn same_moment(&self, other: &Row) -> bool {
+        self.at == other.at
+            && self.actor_kind == other.actor_kind
+            && self.actor_user_id == other.actor_user_id
+    }
+
+    /// `self` folds into `over`: same action, lower rank, a shared visit or sale.
+    fn folds_into(&self, over: &Row) -> bool {
+        self.fold_rank > 0
+            && self.fold_rank < over.fold_rank
+            && self.same_moment(over)
+            && self.fold_keys.iter().any(|k| over.fold_keys.contains(k))
+    }
+}
+
+/// The page's lines, in order, each with the rows folded into it (in the order they were
+/// written). A row that folds into no line of this page belongs to a line of the next one.
+fn fold(rows: Vec<Row>, lines: usize) -> Vec<(Row, Vec<Row>)> {
+    let (roots, mut rest): (Vec<Row>, Vec<Row>) = rows.into_iter().partition(|r| r.root);
+    rest.sort_by_key(|r| r.id);
+    roots
+        .into_iter()
+        .take(lines)
+        .map(|root| {
+            let mut group: Vec<Row> = Vec::new();
+            // Down the chain: a correction takes its void and its new visit, which take their
+            // sales, which take their packages.
+            while let Some(i) = rest
+                .iter()
+                .position(|c| c.folds_into(&root) || group.iter().any(|g| c.folds_into(g)))
+            {
+                group.push(rest.remove(i));
+            }
+            group.sort_by_key(|r| r.id);
+            (root, group)
+        })
+        .collect()
+}
+
+/// One line: the entry of the row that is the line, with what the rows folded into it add —
+/// a checkout's money is every sale it made (one-off services and packages), the packages sold or
+/// cancelled are named, a discount reason on a package sale shows when the visit has none.
+fn line(root: Row, folded: &[Row]) -> ActivityEntry {
+    let action = Action::parse(&root.action);
+    let mut e = entry(root);
+    let sales: Vec<&Value> = folded
+        .iter()
+        .filter(|r| Action::parse(&r.action) == Some(Action::SaleCreate))
+        .filter_map(|r| r.after.as_ref())
+        .collect();
+    if matches!(action, Some(Action::VisitCreate | Action::VisitAddition)) && !sales.is_empty() {
+        let sum = |key: &str| -> i64 { sales.iter().filter_map(|s| int(s.get(key))).sum() };
+        e.amount = Some(sum("total"));
+        e.discount = Some(sum("discount_amount")).filter(|d| *d > 0);
+    }
+    if e.reason.is_none() {
+        e.reason = folded
+            .iter()
+            .filter(|r| r.entity_type == "sale")
+            .filter_map(|r| r.reason.as_deref())
+            .find(|s| !s.trim().is_empty())
+            .map(str::to_owned);
+    }
+    for r in folded {
+        if r.entity_type == "customer_package"
+            && let Some(name) = &r.package
+            && !e.packages.contains(name)
+        {
+            e.packages.push(name.clone());
+        }
+    }
+    e.folded = folded.iter().map(|r| r.action.clone()).collect();
+    e
 }
 
 fn entry(r: Row) -> ActivityEntry {
@@ -516,6 +700,8 @@ fn entry(r: Row) -> ActivityEntry {
             .reason
             .filter(|_| action != Some(Action::CustomerUpdate))
             .filter(|s| !s.trim().is_empty()),
+        packages: Vec::new(),
+        folded: Vec::new(),
     }
 }
 
@@ -542,16 +728,104 @@ pub async fn list(
     let (from, to) = range(query.from, query.to, profile.business_date.as_naive())?;
     let tz = profile.timezone.name();
     let tenant = tx.tenant().as_uuid();
+    let fold_by = fold_table();
+    // `k`: every row of the spa with its fold rank and keys ([`fold_rule`]); inlined, so each use
+    // reads only the instant it asks for through the (tenant, at, id) index.
+    // `page`: the lines — rows nothing of the same action covers — matching the filters, a group
+    // matching a line by any row folded into it (a package sold in a visit's checkout; a chain is
+    // at most two folds deep; `hits`, the instants holding a row of the group, keeps a rare group
+    // over a long range from probing every row). `lines`: the page plus the rows of the same
+    // instants that may fold into it; `fold` attaches them.
     let rows = sqlx::query_as!(
         Row,
-        r#"SELECT a.id AS "id!", a.at AS "at!", (a.at AT TIME ZONE $2)::date AS "day!",
+        r#"WITH fold AS (
+             SELECT f.action, f.rank, f.link, f.key
+             FROM unnest($12::text[], $13::int4[], $14::text[], $15::text[]) AS f(action, rank, link, key)
+           ),
+           k AS NOT MATERIALIZED (
+             SELECT a.id, a.at, a.actor_kind, a.actor_user_id, a.action,
+                    coalesce((SELECT max(f.rank) FROM fold f WHERE f.action = a.action), 0) AS rank,
+                    ARRAY(
+                      SELECT l.v FROM fold f
+                      CROSS JOIN LATERAL (
+                        SELECT a.entity_id::text WHERE f.link = 'entity'
+                        UNION ALL
+                        SELECT a.after ->> f.key WHERE f.link = 'field'
+                        UNION ALL
+                        SELECT e FROM jsonb_array_elements_text(
+                          CASE WHEN f.link = 'list' AND jsonb_typeof(a.after -> f.key) = 'array'
+                               THEN a.after -> f.key ELSE '[]'::jsonb END) e
+                      ) l(v)
+                      WHERE f.action = a.action AND l.v IS NOT NULL
+                    ) AS keys
+             FROM app.audit_log a
+             WHERE a.tenant_id = $1
+           ),
+           hits AS MATERIALIZED (
+             SELECT DISTINCT h.at, h.actor_kind,
+                    coalesce(h.actor_user_id, '00000000-0000-0000-0000-000000000000'::uuid) AS actor
+             FROM app.audit_log h
+             WHERE h.tenant_id = $1 AND h.action = ANY($9)
+               AND h.at >= ($3::date::timestamp AT TIME ZONE $2)
+               AND h.at < (($4::date + 1)::timestamp AT TIME ZONE $2)
+           ),
+           page AS (
+             SELECT a.id, a.at, a.actor_kind, a.actor_user_id, a.rank, a.keys
+             FROM k a
+             WHERE a.at >= ($3::date::timestamp AT TIME ZONE $2)
+               AND a.at < (($4::date + 1)::timestamp AT TIME ZONE $2)
+               AND ($5::timestamptz IS NULL OR (a.at, a.id) < ($5, $6::uuid))
+               AND ($7::text IS NULL OR a.actor_kind = $7)
+               AND ($8::uuid IS NULL OR a.actor_user_id = $8)
+               AND ($10::text[] IS NULL OR NOT (a.action = ANY($10)))
+               -- CASE fixes the order: the group first (cheap), then whether the row is a line.
+               AND CASE
+                 WHEN NOT ($9::text[] IS NULL OR a.action = ANY($9) OR (
+                   a.rank > $16::int4
+                   AND (a.at, a.actor_kind,
+                        coalesce(a.actor_user_id, '00000000-0000-0000-0000-000000000000'::uuid))
+                     IN (SELECT h.at, h.actor_kind, h.actor FROM hits h)
+                   AND EXISTS (
+                     SELECT 1 FROM k c
+                     WHERE c.at = a.at AND c.actor_kind = a.actor_kind
+                       AND c.actor_user_id IS NOT DISTINCT FROM a.actor_user_id
+                       AND c.rank > 0 AND c.rank < a.rank AND c.action = ANY($9)
+                       AND (c.keys && a.keys OR EXISTS (
+                         SELECT 1 FROM k m
+                         WHERE m.at = a.at AND m.actor_kind = a.actor_kind
+                           AND m.actor_user_id IS NOT DISTINCT FROM a.actor_user_id
+                           AND m.rank > c.rank AND m.rank < a.rank
+                           AND m.keys && a.keys AND m.keys && c.keys)))))
+                 THEN false
+                 ELSE a.rank = 0 OR NOT EXISTS (
+                   SELECT 1 FROM k p
+                   WHERE p.at = a.at AND p.actor_kind = a.actor_kind
+                     AND p.actor_user_id IS NOT DISTINCT FROM a.actor_user_id
+                     AND p.rank > a.rank AND p.keys && a.keys)
+               END
+             ORDER BY a.at DESC, a.id DESC
+             LIMIT $11
+           ),
+           lines AS (
+             SELECT p.id, true AS root, p.rank, p.keys FROM page p
+             UNION
+             SELECT c.id, false, c.rank, c.keys
+             FROM page p
+             JOIN k c ON c.at = p.at AND c.actor_kind = p.actor_kind
+               AND c.actor_user_id IS NOT DISTINCT FROM p.actor_user_id
+               AND c.rank > 0 AND c.rank < p.rank
+             WHERE c.id NOT IN (SELECT id FROM page)
+           )
+           SELECT a.id AS "id!", a.at AS "at!", (a.at AT TIME ZONE $2)::date AS "day!",
                   a.actor_kind AS "actor_kind!", a.actor_user_id, u.full_name AS "actor_name?",
                   a.action AS "action!", a.entity_type AS "entity_type!", a.entity_id AS "entity_id!", a.before, a.after, a.reason,
                   s.customer_id AS "customer_id?", s.customer_name AS "customer_name?",
                   s.customer_gender AS "customer_gender?", s.customer_gone AS "customer_gone?",
                   s.name AS "target_name?", s.on_date AS "on_date?", s.package AS "package?",
-                  sb.full_name AS "staff_before?", sa.full_name AS "staff_after?"
-           FROM app.audit_log a
+                  sb.full_name AS "staff_before?", sa.full_name AS "staff_after?",
+                  l.root AS "root!", l.rank AS "fold_rank!", l.keys AS "fold_keys!"
+           FROM lines l
+           JOIN app.audit_log a ON a.tenant_id = $1 AND a.id = l.id
            LEFT JOIN app.user_account u ON a.actor_kind = 'user' AND u.id = a.actor_user_id
            LEFT JOIN LATERAL (
              SELECT c.id AS customer_id, c.full_name AS customer_name, c.gender AS customer_gender,
@@ -604,16 +878,7 @@ pub async fn list(
              AND sb.id = CASE WHEN a.entity_type = 'appointment' THEN (a.before ->> 'staff_id')::uuid END
            LEFT JOIN app.staff sa ON sa.tenant_id = a.tenant_id
              AND sa.id = CASE WHEN a.entity_type = 'appointment' THEN (a.after ->> 'staff_id')::uuid END
-           WHERE a.tenant_id = $1
-             AND a.at >= ($3::date::timestamp AT TIME ZONE $2)
-             AND a.at < (($4::date + 1)::timestamp AT TIME ZONE $2)
-             AND ($5::timestamptz IS NULL OR (a.at, a.id) < ($5, $6::uuid))
-             AND ($7::text IS NULL OR a.actor_kind = $7)
-             AND ($8::uuid IS NULL OR a.actor_user_id = $8)
-             AND ($9::text[] IS NULL OR a.action = ANY($9))
-             AND ($10::text[] IS NULL OR NOT (a.action = ANY($10)))
-           ORDER BY a.at DESC, a.id DESC
-           LIMIT $11"#,
+           ORDER BY a.at DESC, a.id DESC"#,
         tenant,
         tz,
         from,
@@ -625,6 +890,11 @@ pub async fn list(
         include.as_deref(),
         exclude.as_deref(),
         limit + 1,
+        &fold_by.actions,
+        &fold_by.ranks,
+        &fold_by.links,
+        &fold_by.keys,
+        companion_floor(include.as_deref()),
     )
     .fetch_all(tx.conn())
     .await?;
@@ -632,8 +902,11 @@ pub async fn list(
     tx.commit().await?;
 
     let page = usize::try_from(limit).unwrap_or(usize::MAX);
-    let more = rows.len() > page;
-    let items: Vec<ActivityEntry> = rows.into_iter().take(page).map(entry).collect();
+    let more = rows.iter().filter(|r| r.root).count() > page;
+    let items: Vec<ActivityEntry> = fold(rows, page)
+        .into_iter()
+        .map(|(root, folded)| line(root, &folded))
+        .collect();
     let next_cursor = more
         .then(|| items.last())
         .flatten()
@@ -770,6 +1043,175 @@ mod tests {
                 ("address", None, None),
             ]
         );
+    }
+
+    /// A row of one instant and person, as the query returns it.
+    fn row(action: Action, root: bool, keys: &[&str], after: Option<Value>) -> Row {
+        Row {
+            id: Uuid::now_v7(),
+            at: DateTime::<Utc>::UNIX_EPOCH,
+            day: NaiveDate::default(),
+            actor_kind: "user".to_owned(),
+            actor_user_id: Some(Uuid::nil()),
+            actor_name: None,
+            action: action.as_str().to_owned(),
+            entity_type: action
+                .as_str()
+                .split('.')
+                .next()
+                .unwrap_or_default()
+                .to_owned(),
+            entity_id: Uuid::nil(),
+            before: None,
+            after,
+            reason: None,
+            customer_id: None,
+            customer_name: None,
+            customer_gender: None,
+            customer_gone: None,
+            target_name: None,
+            on_date: None,
+            package: None,
+            staff_before: None,
+            staff_after: None,
+            root,
+            fold_rank: fold_rule(action).0,
+            fold_keys: keys.iter().map(|k| (*k).to_owned()).collect(),
+        }
+    }
+
+    fn actions(rows: &[Row]) -> Vec<&str> {
+        rows.iter().map(|r| r.action.as_str()).collect()
+    }
+
+    #[test]
+    fn a_correction_takes_its_void_its_new_visit_and_their_sales() {
+        let rows = vec![
+            row(Action::SaleVoid, false, &["s1"], None),
+            row(Action::VisitVoid, false, &["v1", "s1"], None),
+            row(Action::CustomerPackageCreate, false, &["p2"], None),
+            row(Action::SaleCreate, false, &["p2"], None),
+            row(Action::SaleCreate, false, &["s2"], None),
+            row(Action::VisitCreate, false, &["v2", "v1", "s2", "p2"], None),
+            row(Action::VisitCorrect, true, &["v1", "v2"], None),
+            // Another visit recorded at the same instant by the same person: its own line.
+            row(Action::SaleCreate, false, &["s3"], None),
+            row(Action::VisitCreate, true, &["v3", "s3"], None),
+            // A sale of the same instant no line of this page covers (its line is on the next).
+            row(Action::SaleCreate, false, &["s9"], None),
+        ];
+        let lines = fold(rows, 10);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].0.action, "visit.correct");
+        assert_eq!(
+            actions(&lines[0].1),
+            [
+                "sale.void",
+                "visit.void",
+                "customer_package.create",
+                "sale.create",
+                "sale.create",
+                "visit.create"
+            ]
+        );
+        assert_eq!(actions(&lines[1].1), ["sale.create"]);
+    }
+
+    #[test]
+    fn rows_of_another_instant_or_person_never_fold() {
+        let mut later = row(Action::SaleCreate, false, &["s1"], None);
+        later.at += Duration::seconds(1);
+        let mut by_other = row(Action::SaleCreate, false, &["s1"], None);
+        by_other.actor_user_id = Some(Uuid::now_v7());
+        let lines = fold(
+            vec![
+                row(Action::VisitCreate, true, &["v1", "s1"], None),
+                later,
+                by_other,
+            ],
+            10,
+        );
+        assert!(lines[0].1.is_empty());
+        // A rank-0 action takes nothing in, even with a shared key.
+        let lines = fold(
+            vec![
+                row(Action::VisitUpdate, true, &["v1"], None),
+                row(Action::SaleCreate, false, &["v1"], None),
+            ],
+            10,
+        );
+        assert!(lines[0].1.is_empty());
+    }
+
+    #[test]
+    fn a_checkout_line_carries_every_sale_and_names_its_packages() {
+        let mut package = row(Action::CustomerPackageCreate, false, &["p1"], None);
+        package.package = Some("Gội đầu 10 buổi".to_owned());
+        let mut package_sale = row(
+            Action::SaleCreate,
+            false,
+            &["p1"],
+            Some(json!({"total": 1_400_000, "discount_amount": 100_000})),
+        );
+        package_sale.reason = Some("Khách quen".to_owned());
+        let services = row(
+            Action::SaleCreate,
+            false,
+            &["s1"],
+            Some(json!({"total": 150_000, "discount_amount": 0})),
+        );
+        let visit = row(
+            Action::VisitCreate,
+            true,
+            &["v1", "s1", "p1"],
+            Some(json!({"total": 150_000, "discount_amount": 0})),
+        );
+        let lines = fold(vec![package, package_sale, services, visit], 10);
+        let (root, folded) = lines.into_iter().next().unwrap_or_else(|| unreachable!());
+        let e = line(root, &folded);
+        assert_eq!(e.amount, Some(1_550_000));
+        assert_eq!(e.discount, Some(100_000));
+        assert_eq!(e.reason.as_deref(), Some("Khách quen"));
+        assert_eq!(e.packages, ["Gội đầu 10 buổi"]);
+        assert_eq!(
+            e.folded,
+            ["customer_package.create", "sale.create", "sale.create"]
+        );
+    }
+
+    #[test]
+    fn the_fold_table_lists_every_link_of_every_folding_action() {
+        let t = fold_table();
+        assert_eq!(t.actions.len(), t.ranks.len());
+        assert_eq!(t.actions.len(), t.links.len());
+        assert_eq!(t.actions.len(), t.keys.len());
+        let rank = |a: Action| fold_rule(a).0;
+        // A correction above its visits, visits above their sales, sales above their packages.
+        assert!(rank(Action::VisitConvertToPackage) > rank(Action::VisitCorrect));
+        assert!(rank(Action::VisitCorrect) > rank(Action::VisitCreate));
+        assert_eq!(rank(Action::VisitCreate), rank(Action::VisitVoid));
+        assert!(rank(Action::VisitVoid) > rank(Action::SaleVoid));
+        assert!(rank(Action::SaleCreate) > rank(Action::CustomerPackageCreate));
+        // Standalone actions stay lines of their own.
+        for a in [
+            Action::VisitUpdate,
+            Action::SaleNoteUpdate,
+            Action::SalePaperBook,
+            Action::CustomerPackageUseExpiredOverride,
+            Action::CustomerUpdate,
+        ] {
+            assert_eq!(fold_rule(a), (0, &[][..]), "{a:?}");
+            assert!(!t.actions.contains(&a.as_str().to_owned()));
+        }
+    }
+
+    #[test]
+    fn only_groups_with_folding_actions_look_inside_a_line() {
+        let floor = |k: ActivityKind| companion_floor(kind_filter(Some(k)).0.as_deref());
+        assert_eq!(floor(ActivityKind::Packages), 1);
+        assert_eq!(floor(ActivityKind::FrontDesk), 2);
+        assert_eq!(floor(ActivityKind::Customers), i32::MAX);
+        assert_eq!(companion_floor(None), i32::MAX);
     }
 
     #[test]

@@ -1,0 +1,264 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH fold AS (\n             SELECT f.action, f.rank, f.link, f.key\n             FROM unnest($12::text[], $13::int4[], $14::text[], $15::text[]) AS f(action, rank, link, key)\n           ),\n           k AS NOT MATERIALIZED (\n             SELECT a.id, a.at, a.actor_kind, a.actor_user_id, a.action,\n                    coalesce((SELECT max(f.rank) FROM fold f WHERE f.action = a.action), 0) AS rank,\n                    ARRAY(\n                      SELECT l.v FROM fold f\n                      CROSS JOIN LATERAL (\n                        SELECT a.entity_id::text WHERE f.link = 'entity'\n                        UNION ALL\n                        SELECT a.after ->> f.key WHERE f.link = 'field'\n                        UNION ALL\n                        SELECT e FROM jsonb_array_elements_text(\n                          CASE WHEN f.link = 'list' AND jsonb_typeof(a.after -> f.key) = 'array'\n                               THEN a.after -> f.key ELSE '[]'::jsonb END) e\n                      ) l(v)\n                      WHERE f.action = a.action AND l.v IS NOT NULL\n                    ) AS keys\n             FROM app.audit_log a\n             WHERE a.tenant_id = $1\n           ),\n           hits AS MATERIALIZED (\n             SELECT DISTINCT h.at, h.actor_kind,\n                    coalesce(h.actor_user_id, '00000000-0000-0000-0000-000000000000'::uuid) AS actor\n             FROM app.audit_log h\n             WHERE h.tenant_id = $1 AND h.action = ANY($9)\n               AND h.at >= ($3::date::timestamp AT TIME ZONE $2)\n               AND h.at < (($4::date + 1)::timestamp AT TIME ZONE $2)\n           ),\n           page AS (\n             SELECT a.id, a.at, a.actor_kind, a.actor_user_id, a.rank, a.keys\n             FROM k a\n             WHERE a.at >= ($3::date::timestamp AT TIME ZONE $2)\n               AND a.at < (($4::date + 1)::timestamp AT TIME ZONE $2)\n               AND ($5::timestamptz IS NULL OR (a.at, a.id) < ($5, $6::uuid))\n               AND ($7::text IS NULL OR a.actor_kind = $7)\n               AND ($8::uuid IS NULL OR a.actor_user_id = $8)\n               AND ($10::text[] IS NULL OR NOT (a.action = ANY($10)))\n               -- CASE fixes the order: the group first (cheap), then whether the row is a line.\n               AND CASE\n                 WHEN NOT ($9::text[] IS NULL OR a.action = ANY($9) OR (\n                   a.rank > $16::int4\n                   AND (a.at, a.actor_kind,\n                        coalesce(a.actor_user_id, '00000000-0000-0000-0000-000000000000'::uuid))\n                     IN (SELECT h.at, h.actor_kind, h.actor FROM hits h)\n                   AND EXISTS (\n                     SELECT 1 FROM k c\n                     WHERE c.at = a.at AND c.actor_kind = a.actor_kind\n                       AND c.actor_user_id IS NOT DISTINCT FROM a.actor_user_id\n                       AND c.rank > 0 AND c.rank < a.rank AND c.action = ANY($9)\n                       AND (c.keys && a.keys OR EXISTS (\n                         SELECT 1 FROM k m\n                         WHERE m.at = a.at AND m.actor_kind = a.actor_kind\n                           AND m.actor_user_id IS NOT DISTINCT FROM a.actor_user_id\n                           AND m.rank > c.rank AND m.rank < a.rank\n                           AND m.keys && a.keys AND m.keys && c.keys)))))\n                 THEN false\n                 ELSE a.rank = 0 OR NOT EXISTS (\n                   SELECT 1 FROM k p\n                   WHERE p.at = a.at AND p.actor_kind = a.actor_kind\n                     AND p.actor_user_id IS NOT DISTINCT FROM a.actor_user_id\n                     AND p.rank > a.rank AND p.keys && a.keys)\n               END\n             ORDER BY a.at DESC, a.id DESC\n             LIMIT $11\n           ),\n           lines AS (\n             SELECT p.id, true AS root, p.rank, p.keys FROM page p\n             UNION\n             SELECT c.id, false, c.rank, c.keys\n             FROM page p\n             JOIN k c ON c.at = p.at AND c.actor_kind = p.actor_kind\n               AND c.actor_user_id IS NOT DISTINCT FROM p.actor_user_id\n               AND c.rank > 0 AND c.rank < p.rank\n             WHERE c.id NOT IN (SELECT id FROM page)\n           )\n           SELECT a.id AS \"id!\", a.at AS \"at!\", (a.at AT TIME ZONE $2)::date AS \"day!\",\n                  a.actor_kind AS \"actor_kind!\", a.actor_user_id, u.full_name AS \"actor_name?\",\n                  a.action AS \"action!\", a.entity_type AS \"entity_type!\", a.entity_id AS \"entity_id!\", a.before, a.after, a.reason,\n                  s.customer_id AS \"customer_id?\", s.customer_name AS \"customer_name?\",\n                  s.customer_gender AS \"customer_gender?\", s.customer_gone AS \"customer_gone?\",\n                  s.name AS \"target_name?\", s.on_date AS \"on_date?\", s.package AS \"package?\",\n                  sb.full_name AS \"staff_before?\", sa.full_name AS \"staff_after?\",\n                  l.root AS \"root!\", l.rank AS \"fold_rank!\", l.keys AS \"fold_keys!\"\n           FROM lines l\n           JOIN app.audit_log a ON a.tenant_id = $1 AND a.id = l.id\n           LEFT JOIN app.user_account u ON a.actor_kind = 'user' AND u.id = a.actor_user_id\n           LEFT JOIN LATERAL (\n             SELECT c.id AS customer_id, c.full_name AS customer_name, c.gender AS customer_gender,\n                    c.anonymized_at IS NOT NULL AS customer_gone, NULL::text AS name,\n                    NULL::date AS on_date, NULL::text AS package\n             FROM app.customer c\n             WHERE a.entity_type = 'customer' AND c.tenant_id = a.tenant_id AND c.id = a.entity_id\n             UNION ALL\n             SELECT c.id, c.full_name, c.gender, c.anonymized_at IS NOT NULL, NULL, v.business_date, NULL\n             FROM app.visit v\n             LEFT JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id\n             WHERE a.entity_type = 'visit' AND v.tenant_id = a.tenant_id AND v.id = a.entity_id\n             UNION ALL\n             SELECT c.id, c.full_name, c.gender, c.anonymized_at IS NOT NULL, NULL, sl.business_date, NULL\n             FROM app.sale sl\n             LEFT JOIN app.customer c ON c.tenant_id = sl.tenant_id AND c.id = sl.customer_id\n             WHERE a.entity_type = 'sale' AND sl.tenant_id = a.tenant_id AND sl.id = a.entity_id\n             UNION ALL\n             SELECT c.id, c.full_name, c.gender, c.anonymized_at IS NOT NULL, NULL, NULL, cp.name_snapshot\n             FROM app.customer_package cp\n             LEFT JOIN app.customer c ON c.tenant_id = cp.tenant_id AND c.id = cp.customer_id\n             WHERE a.entity_type = 'customer_package' AND cp.tenant_id = a.tenant_id AND cp.id = a.entity_id\n             UNION ALL\n             SELECT c.id, coalesce(c.full_name, ap.guest_name), c.gender, c.anonymized_at IS NOT NULL,\n                    NULL, ap.business_date, NULL\n             FROM app.appointment ap\n             LEFT JOIN app.customer c ON c.tenant_id = ap.tenant_id AND c.id = ap.customer_id\n             WHERE a.entity_type = 'appointment' AND ap.tenant_id = a.tenant_id AND ap.id = a.entity_id\n             UNION ALL\n             SELECT NULL, NULL, NULL, NULL, st.full_name, NULL, NULL FROM app.staff st\n             WHERE a.entity_type = 'staff' AND st.tenant_id = a.tenant_id AND st.id = a.entity_id\n             UNION ALL\n             SELECT NULL, NULL, NULL, NULL, sv.name, NULL, NULL FROM app.service sv\n             WHERE a.entity_type = 'service' AND sv.tenant_id = a.tenant_id AND sv.id = a.entity_id\n             UNION ALL\n             SELECT NULL, NULL, NULL, NULL, pp.name, NULL, NULL FROM app.package_plan pp\n             WHERE a.entity_type = 'package_plan' AND pp.tenant_id = a.tenant_id AND pp.id = a.entity_id\n             UNION ALL\n             SELECT NULL, NULL, NULL, NULL, sc.name, NULL, NULL FROM app.service_category sc\n             WHERE a.entity_type = 'service_category' AND sc.tenant_id = a.tenant_id AND sc.id = a.entity_id\n             UNION ALL\n             SELECT NULL, NULL, NULL, NULL, ua.full_name, NULL, NULL FROM app.user_account ua\n             WHERE a.entity_type = 'user' AND ua.id = a.entity_id\n             UNION ALL\n             SELECT NULL, NULL, NULL, NULL, r.key, NULL, NULL FROM app.role r\n             WHERE a.entity_type = 'role' AND r.tenant_id = a.tenant_id AND r.id = a.entity_id\n           ) s ON true\n           -- A booking's technician before / after (ids written by the appointments crate).\n           LEFT JOIN app.staff sb ON sb.tenant_id = a.tenant_id\n             AND sb.id = CASE WHEN a.entity_type = 'appointment' THEN (a.before ->> 'staff_id')::uuid END\n           LEFT JOIN app.staff sa ON sa.tenant_id = a.tenant_id\n             AND sa.id = CASE WHEN a.entity_type = 'appointment' THEN (a.after ->> 'staff_id')::uuid END\n           ORDER BY a.at DESC, a.id DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.audit_log",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.audit_log",
+            "name": "at"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "day!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "actor_kind!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.audit_log",
+            "name": "actor_kind"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "actor_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.audit_log",
+            "name": "actor_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "actor_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.user_account",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "action!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.audit_log",
+            "name": "action"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "entity_type!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.audit_log",
+            "name": "entity_type"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "entity_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.audit_log",
+            "name": "entity_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "before",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "app.audit_log",
+            "name": "before"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "after",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "app.audit_log",
+            "name": "after"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.audit_log",
+            "name": "reason"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "customer_id?",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "customer_name?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 14,
+        "name": "customer_gender?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 15,
+        "name": "customer_gone?",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 16,
+        "name": "target_name?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 17,
+        "name": "on_date?",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 18,
+        "name": "package?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 19,
+        "name": "staff_before?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.staff",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "staff_after?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.staff",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "root!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 22,
+        "name": "fold_rank!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 23,
+        "name": "fold_keys!",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Date",
+        "Date",
+        "Timestamptz",
+        "Uuid",
+        "Text",
+        "Uuid",
+        "TextArray",
+        "TextArray",
+        "Int8",
+        "TextArray",
+        "Int4Array",
+        "TextArray",
+        "TextArray",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      true,
+      true,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "23eea562de14a26902ae7c49ec3b9dbe0fcbb6b7ec1766b449bcab4c46c50272"
+}

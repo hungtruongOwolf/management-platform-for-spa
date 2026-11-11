@@ -25,15 +25,31 @@ const entry = (e: Partial<ActivityEntry> & Pick<ActivityEntry, "action" | "kind"
   day: today,
   actor: by("Quản lý Hà"),
   changes: [],
+  packages: [],
+  folded: [],
   ...e,
 });
 
+const MAI = { kind: "customer", id: CUSTOMER, name: "Lê Thị Mai", gender: "female", on: today } as const;
+/** A void as the server folds it: the visit's line, its sale's reversal inside. */
 const VOID = entry({
   action: "visit.void",
   kind: "front_desk",
-  subject: { kind: "customer", id: CUSTOMER, name: "Lê Thị Mai", gender: "female", on: today },
+  subject: MAI,
   amount: 140_000,
   reason: "khách đổi ý",
+  folded: ["sale.void"],
+});
+/** A checkout that sold a package: one line, all the money collected. */
+const CHECKOUT = entry({
+  action: "visit.create",
+  kind: "front_desk",
+  subject: MAI,
+  amount: 1_640_000,
+  discount: 10_000,
+  reason: "Khách quen",
+  packages: ["Gội đầu 10 buổi"],
+  folded: ["customer_package.create", "sale.create", "sale.create"],
 });
 const RENAMED = entry({
   action: "customer.update",
@@ -83,7 +99,7 @@ function serve(permissions: string[], page: Partial<ActivityPage> = {}) {
     if (p === "/audit-log") {
       if (!permissions.includes("audit.read")) return json({ status: 403, code: "auth.forbidden" }, 403);
       return json({
-        from: "2026-10-27", to: today, items: [VOID, RENAMED, ATTENDANCE, PRICE, LOCKED], next_cursor: null,
+        from: "2026-10-27", to: today, items: [CHECKOUT, VOID, RENAMED, ATTENDANCE, PRICE, LOCKED], next_cursor: null,
         people: [
           { user_id: HA, name: "Quản lý Hà", left: false },
           { user_id: LAN, name: "KTV Lan", left: true },
@@ -124,6 +140,22 @@ describe("activity sentences", () => {
     expect(sentence(entry({ action: "staff.adjustment", kind: "staff", detail: "penalty", subject: { kind: "staff", name: "KTV Lan" } }))).toBe("Quản lý Hà ghi phạt cho KTV Lan");
   });
 
+  it("reads one action as one line: a visit carries its sales, a package sale names its packages", () => {
+    expect(sentence(CHECKOUT)).toBe("Quản lý Hà ghi lượt cho chị Lê Thị Mai kèm bán gói Gội đầu 10 buổi");
+    expect(moneyOf(CHECKOUT)).toMatch(/^Thu 1\.640\.000/);
+    expect(sentence(entry({ ...CHECKOUT, packages: [], folded: ["sale.create"] }))).toBe("Quản lý Hà ghi lượt cho chị Lê Thị Mai");
+    const sale = entry({ action: "sale.create", kind: "front_desk", subject: MAI, amount: 1_500_000, packages: ["Gội đầu 10 buổi", "Xông hơi 5 buổi"], folded: ["customer_package.create", "customer_package.create"] });
+    expect(sentence(sale)).toBe("Quản lý Hà bán gói Gội đầu 10 buổi, Xông hơi 5 buổi cho chị Lê Thị Mai");
+    expect(sentence(entry({ action: "sale.void", kind: "front_desk", subject: MAI, packages: ["Gội đầu 10 buổi"] }))).toBe(
+      "Quản lý Hà hủy hóa đơn bán gói Gội đầu 10 buổi của chị Lê Thị Mai",
+    );
+    // A sale no visit action wrote (a legacy row) still reads on its own.
+    expect(sentence(entry({ action: "sale.create", kind: "front_desk", subject: MAI }))).toBe("Quản lý Hà thu tiền của chị Lê Thị Mai");
+    expect(sentence(entry({ action: "visit.convert_to_package", kind: "front_desk", subject: MAI, packages: ["Gội đầu 10 buổi"] }))).toBe(
+      "Quản lý Hà chuyển lượt sang gói Gội đầu 10 buổi cho chị Lê Thị Mai",
+    );
+  });
+
   it("never crashes on a legacy action or a gone subject", () => {
     const legacy = entry({ action: "visit.something_old", kind: "other", subject: { kind: "customer" } });
     expect(phraseOf(legacy).lead).toBe("làm một thao tác khác với");
@@ -156,10 +188,13 @@ describe("/nhat-ky-thao-tac", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Nhật ký thao tác" })).toBeInTheDocument();
     const day = await screen.findByRole("region", { name: new RegExp(today.split("-").reverse().join("/")) });
     const rows = within(day).getAllByRole("listitem").filter((li) => li.classList.contains("activity-row"));
-    expect(rows).toHaveLength(2);
-    const [voided, renamed] = rows;
-    if (!voided || !renamed) throw new Error("rows");
+    expect(rows).toHaveLength(3);
+    const [checkout, voided, renamed] = rows;
+    if (!checkout || !voided || !renamed) throw new Error("rows");
     const said = (row: HTMLElement) => row.querySelector(".activity-sentence")?.textContent;
+    // One line for the checkout (its sales folded in by the server), with all the money taken.
+    expect(said(checkout)).toBe("Quản lý Hà ghi lượt cho chị Lê Thị Mai kèm bán gói Gội đầu 10 buổi");
+    expect(checkout.querySelector(".activity-meta")?.textContent).toMatch(/Thu 1\.640\.000.*giảm 10\.000.*lý do: Khách quen/);
     expect(said(voided)).toBe("Quản lý Hà hủy lượt của chị Lê Thị Mai");
     expect(within(voided).getByRole("link", { name: "chị Lê Thị Mai" })).toHaveAttribute("href", `/khach-hang/${CUSTOMER}`);
     expect(within(voided).getByText("Quầy")).toBeInTheDocument();

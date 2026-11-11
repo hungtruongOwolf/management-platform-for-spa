@@ -57,25 +57,33 @@ export function subjectName(s: ActivitySubject | null | undefined): string {
 export interface Phrase {
   lead: string;
   about?: boolean;
-  tail?: string;
+  tail?: string | undefined;
 }
 
 type Words = (e: ActivityEntry) => Phrase;
 
 const pkg = (e: ActivityEntry) => (e.subject?.package ? ` ${e.subject.package}` : "");
+/** The packages the same action sold or cancelled (folded into its line by the server): " A, B". */
+const sold = (e: ActivityEntry) => (e.packages.length > 0 ? ` ${e.packages.join(", ")}` : "");
+/** A checkout that also sold packages: "… kèm bán gói A". */
+const withPackages = (e: ActivityEntry) => (e.packages.length > 0 ? `kèm bán gói${sold(e)}` : undefined);
 const month = (e: ActivityEntry) => (e.detail ? ` tháng ${e.detail.slice(5, 7)}/${e.detail.slice(0, 4)}` : "");
 const flagTo = (e: ActivityEntry, field: string) => e.changes.find((c) => c.field === field)?.new;
 
 const PHRASES: Record<AuditAction, Words> = {
-  // Quầy
-  "visit.create": (e) => ({ lead: e.detail === "backdated" ? "nhập bù lượt cho" : "ghi lượt cho" }),
-  "visit.addition": () => ({ lead: "thêm vào lượt của" }),
+  // Quầy. A visit's line carries its sales and the packages its checkout sold (one line per
+  // action, EM 2026-11-11); a sale reads on its own only when no visit action wrote it.
+  "visit.create": (e) => ({
+    lead: e.detail === "backdated" ? "nhập bù lượt cho" : "ghi lượt cho",
+    tail: withPackages(e),
+  }),
+  "visit.addition": (e) => ({ lead: "thêm vào lượt của", tail: withPackages(e) }),
   "visit.update": () => ({ lead: "sửa lượt của" }),
-  "visit.correct": () => ({ lead: "sửa lượt (tính lại tiền) của" }),
+  "visit.correct": (e) => ({ lead: "sửa lượt (tính lại tiền) của", tail: withPackages(e) }),
   "visit.void": () => ({ lead: "hủy lượt của" }),
-  "visit.convert_to_package": () => ({ lead: "chuyển lượt sang gói cho" }),
-  "sale.create": () => ({ lead: "thu tiền của" }),
-  "sale.void": () => ({ lead: "hủy hóa đơn của" }),
+  "visit.convert_to_package": (e) => ({ lead: `chuyển lượt sang gói${sold(e)} cho` }),
+  "sale.create": (e) => ({ lead: e.packages.length > 0 ? `bán gói${sold(e)} cho` : "thu tiền của" }),
+  "sale.void": (e) => ({ lead: e.packages.length > 0 ? `hủy hóa đơn bán gói${sold(e)} của` : "hủy hóa đơn của" }),
   "sale.note_update": () => ({ lead: "sửa ghi chú gói của" }),
   // Gói liệu trình
   "customer_package.create": (e) => ({ lead: `bán gói${pkg(e)} cho` }),

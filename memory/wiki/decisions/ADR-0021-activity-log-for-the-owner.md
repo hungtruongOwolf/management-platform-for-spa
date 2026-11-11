@@ -52,6 +52,12 @@ Chọn **B + E**.
    - Actor của session không bao giờ có clock; không input nào của request chạm tới nó.
    - Chỉ giờ audit đổi: `created_at` của bảng nghiệp vụ vẫn là giờ thật.
 
+9. **Một thao tác = một dòng** (bổ sung cùng ngày, EM: "một dòng thôi vì khi ghi là thu tiền luôn rồi", [raw 3](../../raw/2026-11-11-em-decision-activity-log-one-line-per-action.md)).
+   - `audit_log` không đổi: một thao tác vẫn ghi nhiều dòng (lượt + hóa đơn + gói, hủy + đảo, sửa lượt = hủy + ghi lại + `visit.correct`).
+   - Màn đọc gộp ở server: dòng có hạng thấp hơn, cùng `at` + cùng người làm, có chung một id lượt / hóa đơn (lấy từ chính dòng audit: `sale_id`, `sale_ids`, `package_sale_ids`, `corrects_visit_id`, `visit_id`) thì gộp vào dòng hạng cao hơn. Hạng: chuyển sang gói > sửa lượt > lượt (ghi / thêm / hủy) > hóa đơn > gói. Bảng ở `reporting::activity::fold_rule`; hành động không có trong bảng không bao giờ gộp (mặc định từ chối).
+   - Dòng gộp mang tiền của cả thao tác (lượt: tổng mọi hóa đơn kể cả gói), tên gói (`packages`), key các dòng đã gộp (`folded`). Lọc nhóm khớp theo bất kỳ dòng nào trong thao tác. Bảng chi tiết ở [spec §11.3b](../product/specs/management-views.md).
+   - Không migration: khóa gộp đọc từ cột + JSON của `audit_log`, dùng index `(tenant_id, at, id)` của 0051 cho mỗi lần dò cùng thời điểm.
+
 ## Consequences
 - Positive:
   - Chủ spa tra được "ai làm gì, lúc nào" ở một màn, các màn khác giữ nguyên (đúng ý EM).
