@@ -115,6 +115,9 @@ pub struct ActivityActor {
     /// The login's full name (`user` only).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// `true` when the person no longer works here ("Hà (đã nghỉ)"); absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left: Option<bool>,
 }
 
 /// What an entry is about.

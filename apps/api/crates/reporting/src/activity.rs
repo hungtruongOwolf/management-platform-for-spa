@@ -277,9 +277,11 @@ fn fields(action: Action) -> &'static [(&'static str, &'static str, ChangeFormat
         A::StaffLoginRole => &[("/role", "role", F::Code)],
         A::CustomerPackageExtend => &[("/expires_on", "expires_on", F::Date)],
         A::AppointmentUpdate => &[("/starts_at", "starts_at", F::Instant)],
+        // The technicians (`staff`, by name) and the session note (`session_note`, set or not)
+        // are worded by [`visit_update_changes`].
         A::VisitUpdate => &[
             ("/check_in_at", "check_in_at", F::Instant),
-            ("/staff", "staff", F::Text),
+            ("/companions", "companions", F::Number),
         ],
         A::TenantOwnerMfaChanged => &[("/owner_mfa_required", "owner_mfa_required", F::Flag)],
         A::FeatureChanged => &[("/enabled", "enabled", F::Flag)],
@@ -364,6 +366,36 @@ fn customer_changes(before: Option<&Value>, after: Option<&Value>) -> Vec<Activi
             }
         })
         .collect()
+}
+
+/// `visit.update` beyond [`fields`] (spec record-history S2, S3): one `staff` change per line whose
+/// technician changed, by name (`moves`: the resolved `(from, to)` of exactly those lines; the
+/// writer stores every line it was sent, unchanged ones included), and the session note as a
+/// presence flag `session_note` (the writer stores `"[redacted]"` when set, `"cleared"` when
+/// removed, null when untouched; never the text).
+fn visit_update_changes(after: Option<&Value>, moves: &[(Option<String>, Option<String>)]) -> Vec<ActivityChange> {
+    let mut changes: Vec<ActivityChange> = moves
+        .iter()
+        .map(|(from, to)| ActivityChange {
+            field: "staff".to_owned(),
+            format: ChangeFormat::Text,
+            old: from.clone(),
+            new: to.clone(),
+        })
+        .collect();
+    let note = after
+        .and_then(|a| a.get("note"))
+        .and_then(Value::as_str)
+        .map(|n| n != "cleared");
+    if let Some(set) = note {
+        changes.push(ActivityChange {
+            field: "session_note".to_owned(),
+            format: ChangeFormat::Flag,
+            old: None,
+            new: Some(set.to_string()),
+        });
+    }
+    changes
 }
 
 fn int(v: Option<&Value>) -> Option<i64> {
@@ -497,18 +529,22 @@ fn range(
     Ok((from, to))
 }
 
-struct Row {
-    id: Uuid,
-    at: DateTime<Utc>,
+/// One audit row as [`rows_by_ids`] reads it: the row, the names it is about, and its fold rank
+/// and keys ([`fold_rule`]).
+pub(crate) struct Row {
+    pub(crate) id: Uuid,
+    pub(crate) at: DateTime<Utc>,
     day: NaiveDate,
     actor_kind: String,
     actor_user_id: Option<Uuid>,
     actor_name: Option<String>,
-    action: String,
-    entity_type: String,
-    entity_id: Uuid,
+    /// The person no longer works here (same rule as the person filter, [`people`]).
+    actor_left: bool,
+    pub(crate) action: String,
+    pub(crate) entity_type: String,
+    pub(crate) entity_id: Uuid,
     before: Option<Value>,
-    after: Option<Value>,
+    pub(crate) after: Option<Value>,
     reason: Option<String>,
     customer_id: Option<Uuid>,
     customer_name: Option<String>,
@@ -519,9 +555,12 @@ struct Row {
     package: Option<String>,
     staff_before: Option<String>,
     staff_after: Option<String>,
+    /// `visit.update`: the technicians of the lines that changed, by name (`""` = none), in order.
+    staff_from: Vec<String>,
+    staff_to: Vec<String>,
     /// A line of the page; otherwise a row of the same instant that may fold into one.
-    root: bool,
-    fold_rank: i32,
+    pub(crate) root: bool,
+    pub(crate) fold_rank: i32,
     fold_keys: Vec<String>,
 }
 
@@ -533,7 +572,7 @@ impl Row {
     }
 
     /// `self` folds into `over`: same action, lower rank, a shared visit or sale.
-    fn folds_into(&self, over: &Row) -> bool {
+    pub(crate) fn folds_into(&self, over: &Row) -> bool {
         self.fold_rank > 0
             && self.fold_rank < over.fold_rank
             && self.same_moment(over)
@@ -543,7 +582,7 @@ impl Row {
 
 /// The page's lines, in order, each with the rows folded into it (in the order they were
 /// written). A row that folds into no line of this page belongs to a line of the next one.
-fn fold(rows: Vec<Row>, lines: usize) -> Vec<(Row, Vec<Row>)> {
+pub(crate) fn fold(rows: Vec<Row>, lines: usize) -> Vec<(Row, Vec<Row>)> {
     let (roots, mut rest): (Vec<Row>, Vec<Row>) = rows.into_iter().partition(|r| r.root);
     rest.sort_by_key(|r| r.id);
     roots
@@ -568,7 +607,7 @@ fn fold(rows: Vec<Row>, lines: usize) -> Vec<(Row, Vec<Row>)> {
 /// One line: the entry of the row that is the line, with what the rows folded into it add —
 /// a checkout's money is every sale it made (one-off services and packages), the packages sold or
 /// cancelled are named, a discount reason on a package sale shows when the visit has none.
-fn line(root: Row, folded: &[Row]) -> ActivityEntry {
+pub(crate) fn line(root: Row, folded: &[Row]) -> ActivityEntry {
     let action = Action::parse(&root.action);
     let mut e = entry(root);
     let sales: Vec<&Value> = folded
@@ -613,6 +652,7 @@ fn entry(r: Row) -> ActivityEntry {
         // An operator's id is not a spa login: never sent.
         user_id: r.actor_user_id.filter(|_| r.actor_kind == "user"),
         name: r.actor_name.filter(|_| r.actor_kind == "user"),
+        left: (r.actor_kind == "user" && r.actor_left).then_some(true),
     };
     let subject = subject_kind(&r.entity_type).map(|kind| {
         let gone = r.customer_gone.unwrap_or(false);
@@ -660,6 +700,18 @@ fn entry(r: Row) -> ActivityEntry {
                 .collect()
         }
         Some(Action::CustomerUpdate) => customer_changes(before, after),
+        Some(Action::VisitUpdate) => {
+            let name = |n: &String| Some(n.clone()).filter(|n| !n.is_empty());
+            let moves: Vec<(Option<String>, Option<String>)> = r
+                .staff_from
+                .iter()
+                .zip(&r.staff_to)
+                .map(|(from, to)| (name(from), name(to)))
+                .collect();
+            let mut changes = diff(Action::VisitUpdate, before, after);
+            changes.extend(visit_update_changes(after, &moves));
+            changes
+        }
         Some(a) => diff(a, before, after),
         None => Vec::new(),
     };
@@ -736,8 +788,7 @@ pub async fn list(
     // at most two folds deep; `hits`, the instants holding a row of the group, keeps a rare group
     // over a long range from probing every row). `lines`: the page plus the rows of the same
     // instants that may fold into it; `fold` attaches them.
-    let rows = sqlx::query_as!(
-        Row,
+    let lines = sqlx::query!(
         r#"WITH fold AS (
              SELECT f.action, f.rank, f.link, f.key
              FROM unnest($12::text[], $13::int4[], $14::text[], $15::text[]) AS f(action, rank, link, key)
@@ -816,16 +867,122 @@ pub async fn list(
                AND c.rank > 0 AND c.rank < p.rank
              WHERE c.id NOT IN (SELECT id FROM page)
            )
+           SELECT l.id AS "id!", l.root AS "root!" FROM lines l"#,
+        tenant,
+        tz,
+        from,
+        to,
+        after.map(|(t, _)| t),
+        after.map(|(_, id)| id),
+        actor_kind,
+        actor_user,
+        include.as_deref(),
+        exclude.as_deref(),
+        limit + 1,
+        &fold_by.actions,
+        &fold_by.ranks,
+        &fold_by.links,
+        &fold_by.keys,
+        companion_floor(include.as_deref()),
+    )
+    .fetch_all(tx.conn())
+    .await?;
+    let ids: Vec<Uuid> = lines.iter().map(|l| l.id).collect();
+    let mut rows = rows_by_ids(&mut tx, tz, &ids).await?;
+    for row in &mut rows {
+        row.root = lines.iter().any(|l| l.id == row.id && l.root);
+    }
+    let people = people(&mut tx).await?;
+    tx.commit().await?;
+
+    let page = usize::try_from(limit).unwrap_or(usize::MAX);
+    let more = rows.iter().filter(|r| r.root).count() > page;
+    let items: Vec<ActivityEntry> = fold(rows, page)
+        .into_iter()
+        .map(|(root, folded)| line(root, &folded))
+        .collect();
+    let next_cursor = more
+        .then(|| items.last())
+        .flatten()
+        .map(|e| cursor::encode(&[cursor::instant_part(e.at), e.id.to_string()]));
+    Ok(ActivityPage {
+        from,
+        to,
+        items,
+        next_cursor,
+        people,
+    })
+}
+
+/// The audit rows `ids` of the transaction's spa, newest first, with the names they are about
+/// (resolved now: a renamed record shows its current name, an anonymised customer none) and their
+/// fold rank and keys; `root` is false (the caller decides). Shared by the trail
+/// ([`list`]) and each record's history (`crate::history`), so both read a row the same way.
+pub(crate) async fn rows_by_ids(
+    tx: &mut TenantTx,
+    tz: &str,
+    ids: &[Uuid],
+) -> Result<Vec<Row>, AppError> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let tenant = tx.tenant().as_uuid();
+    let fold_by = fold_table();
+    let rows = sqlx::query_as!(
+        Row,
+        r#"WITH fold AS (
+             SELECT f.action, f.rank, f.link, f.key
+             FROM unnest($4::text[], $5::int4[], $6::text[], $7::text[]) AS f(action, rank, link, key)
+           )
            SELECT a.id AS "id!", a.at AS "at!", (a.at AT TIME ZONE $2)::date AS "day!",
                   a.actor_kind AS "actor_kind!", a.actor_user_id, u.full_name AS "actor_name?",
+                  (a.actor_kind = 'user' AND (
+                     EXISTS (SELECT 1 FROM app.membership m
+                             WHERE m.tenant_id = a.tenant_id AND m.user_id = a.actor_user_id
+                               AND m.status <> 'active')
+                     OR EXISTS (SELECT 1 FROM app.staff st
+                                WHERE st.tenant_id = a.tenant_id AND st.user_id = a.actor_user_id
+                                  AND NOT EXISTS (
+                                    SELECT 1 FROM app.staff_employment e
+                                    WHERE e.tenant_id = st.tenant_id AND e.staff_id = st.id
+                                      AND e.ended_on IS NULL)))) AS "actor_left!",
                   a.action AS "action!", a.entity_type AS "entity_type!", a.entity_id AS "entity_id!", a.before, a.after, a.reason,
                   s.customer_id AS "customer_id?", s.customer_name AS "customer_name?",
                   s.customer_gender AS "customer_gender?", s.customer_gone AS "customer_gone?",
                   s.name AS "target_name?", s.on_date AS "on_date?", s.package AS "package?",
                   sb.full_name AS "staff_before?", sa.full_name AS "staff_after?",
-                  l.root AS "root!", l.rank AS "fold_rank!", l.keys AS "fold_keys!"
-           FROM lines l
-           JOIN app.audit_log a ON a.tenant_id = $1 AND a.id = l.id
+                  ARRAY(SELECT coalesce(sf.full_name, '')
+                        FROM jsonb_array_elements(
+                          CASE WHEN a.action = 'visit.update' AND jsonb_typeof(a.after -> 'staff') = 'array'
+                               THEN a.after -> 'staff' ELSE '[]'::jsonb END) WITH ORDINALITY e(v, n)
+                        LEFT JOIN app.staff sf ON sf.tenant_id = a.tenant_id
+                          AND sf.id = (e.v ->> 'from')::uuid
+                        WHERE (e.v ->> 'from') IS DISTINCT FROM (e.v ->> 'to')
+                        ORDER BY e.n) AS "staff_from!",
+                  ARRAY(SELECT coalesce(sf.full_name, '')
+                        FROM jsonb_array_elements(
+                          CASE WHEN a.action = 'visit.update' AND jsonb_typeof(a.after -> 'staff') = 'array'
+                               THEN a.after -> 'staff' ELSE '[]'::jsonb END) WITH ORDINALITY e(v, n)
+                        LEFT JOIN app.staff sf ON sf.tenant_id = a.tenant_id
+                          AND sf.id = (e.v ->> 'to')::uuid
+                        WHERE (e.v ->> 'from') IS DISTINCT FROM (e.v ->> 'to')
+                        ORDER BY e.n) AS "staff_to!",
+                  false AS "root!",
+                  coalesce((SELECT max(f.rank) FROM fold f WHERE f.action = a.action), 0) AS "fold_rank!",
+                  ARRAY(
+                    SELECT l.v FROM fold f
+                    CROSS JOIN LATERAL (
+                      SELECT a.entity_id::text WHERE f.link = 'entity'
+                      UNION ALL
+                      SELECT a.after ->> f.key WHERE f.link = 'field'
+                      UNION ALL
+                      SELECT e FROM jsonb_array_elements_text(
+                        CASE WHEN f.link = 'list' AND jsonb_typeof(a.after -> f.key) = 'array'
+                             THEN a.after -> f.key ELSE '[]'::jsonb END) e
+                    ) l(v)
+                    WHERE f.action = a.action AND l.v IS NOT NULL
+                  ) AS "fold_keys!"
+           FROM app.audit_log a
            LEFT JOIN app.user_account u ON a.actor_kind = 'user' AND u.id = a.actor_user_id
            LEFT JOIN LATERAL (
              SELECT c.id AS customer_id, c.full_name AS customer_name, c.gender AS customer_gender,
@@ -878,46 +1035,19 @@ pub async fn list(
              AND sb.id = CASE WHEN a.entity_type = 'appointment' THEN (a.before ->> 'staff_id')::uuid END
            LEFT JOIN app.staff sa ON sa.tenant_id = a.tenant_id
              AND sa.id = CASE WHEN a.entity_type = 'appointment' THEN (a.after ->> 'staff_id')::uuid END
+           WHERE a.tenant_id = $1 AND a.id = ANY($3)
            ORDER BY a.at DESC, a.id DESC"#,
         tenant,
         tz,
-        from,
-        to,
-        after.map(|(t, _)| t),
-        after.map(|(_, id)| id),
-        actor_kind,
-        actor_user,
-        include.as_deref(),
-        exclude.as_deref(),
-        limit + 1,
+        ids,
         &fold_by.actions,
         &fold_by.ranks,
         &fold_by.links,
         &fold_by.keys,
-        companion_floor(include.as_deref()),
     )
     .fetch_all(tx.conn())
     .await?;
-    let people = people(&mut tx).await?;
-    tx.commit().await?;
-
-    let page = usize::try_from(limit).unwrap_or(usize::MAX);
-    let more = rows.iter().filter(|r| r.root).count() > page;
-    let items: Vec<ActivityEntry> = fold(rows, page)
-        .into_iter()
-        .map(|(root, folded)| line(root, &folded))
-        .collect();
-    let next_cursor = more
-        .then(|| items.last())
-        .flatten()
-        .map(|e| cursor::encode(&[cursor::instant_part(e.at), e.id.to_string()]));
-    Ok(ActivityPage {
-        from,
-        to,
-        items,
-        next_cursor,
-        people,
-    })
+    Ok(rows)
 }
 
 /// Every login of the spa (the owner, staff with a login, staff who left), for the person filter.
@@ -1024,6 +1154,41 @@ mod tests {
     }
 
     #[test]
+    fn a_visit_update_names_technicians_and_flags_the_session_note() {
+        // S2: one change per line whose technician changed (the query resolved those names);
+        // S3: the session note is `session_note`, set or not, never its text.
+        let after = json!({"staff": [{"line_id": "l1", "from": "a", "to": "a"}],
+                           "check_in_at": null, "companions": null, "note": "[redacted]"});
+        let moves = [(Some("Thu".to_owned()), Some("Hoa".to_owned())), (None, Some("Lan".to_owned()))];
+        let changes = visit_update_changes(Some(&after), &moves);
+        let got: Vec<(&str, Option<&str>, Option<&str>)> = changes
+            .iter()
+            .map(|c| (c.field.as_str(), c.old.as_deref(), c.new.as_deref()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("staff", Some("Thu"), Some("Hoa")),
+                ("staff", None, Some("Lan")),
+                ("session_note", None, Some("true")),
+            ]
+        );
+        let cleared = visit_update_changes(Some(&json!({"note": "cleared"})), &[]);
+        assert_eq!(cleared[0].new.as_deref(), Some("false"));
+        assert!(visit_update_changes(Some(&json!({"note": null})), &[]).is_empty());
+        // Unchanged companions / time stay out; a new companion count shows.
+        let changes = diff(
+            Action::VisitUpdate,
+            Some(&json!({"check_in_at": null})),
+            Some(&json!({"check_in_at": null, "companions": 2, "staff": [], "note": "[redacted]"})),
+        );
+        assert_eq!(
+            changes.iter().map(|c| (c.field.as_str(), c.new.as_deref())).collect::<Vec<_>>(),
+            [("companions", Some("2"))]
+        );
+    }
+
+    #[test]
     fn a_customer_update_keeps_old_and_new_only_for_name_phone_and_gender() {
         let before =
             json!({"full_name": "Lê Mai", "phone": "+84905111222", "has_birth_date": false});
@@ -1054,6 +1219,7 @@ mod tests {
             actor_kind: "user".to_owned(),
             actor_user_id: Some(Uuid::nil()),
             actor_name: None,
+            actor_left: false,
             action: action.as_str().to_owned(),
             entity_type: action
                 .as_str()
@@ -1074,6 +1240,8 @@ mod tests {
             package: None,
             staff_before: None,
             staff_after: None,
+            staff_from: Vec::new(),
+            staff_to: Vec::new(),
             root,
             fold_rank: fold_rule(action).0,
             fold_keys: keys.iter().map(|k| (*k).to_owned()).collect(),
