@@ -115,7 +115,7 @@ body::after {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
-:is(.nav-item, .sidebar-toggle, .tab, .segmented > button, .menu-item, .palette-option, [role="option"], .row-toggle, .sticky-actions-buttons > button, .sticky-actions-buttons > a):focus-visible {
+:is(.nav-item, .sidebar-toggle, .tab, .segmented > button, .menu-item, .palette-option, [role="option"], .row-toggle, .sticky-actions-buttons > button, .sticky-actions-buttons > a, .time-button, .record-trace-toggle):focus-visible {
   outline-offset: -3px;
 }
 /* Text links inside a line (a customer's name above their phone): a slimmer, closer ring. */

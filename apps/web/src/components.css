@@ -966,8 +966,8 @@ textarea::-webkit-resizer {
   text-decoration-color: currentColor;
 }
 /* A record's time that opens its history (ADR-0022: "Sổ doanh thu"), underlined as a link is. It
- * sits right under the customer's name on a phone card: the focus ring is drawn inside (like
- * `.row-toggle`) so it never covers that name. */
+ * sits right under the customer's name on a phone card: its focus ring is drawn inside, like
+ * `.row-toggle` (styles.css), so it never covers that name. */
 .time-button {
   min-height: 24px;
   padding-inline: 4px;
@@ -980,9 +980,6 @@ textarea::-webkit-resizer {
 }
 .time-button:hover {
   color: var(--primary-hover);
-}
-.time-button:focus-visible {
-  outline-offset: -3px;
 }
 /* ONE error box (rulebook 9: what broke + how to fix + "Thử lại"), ONE warning callout, ONE quiet
  * note. Were: .alert, .form-error, .cal-error, LoginPage utilities / .inline-form, .appt-callout,
