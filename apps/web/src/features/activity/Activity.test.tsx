@@ -130,7 +130,8 @@ const calls = (spy: ReturnType<typeof serve>) =>
 describe("activity sentences", () => {
   it("words each group as one plain sentence", () => {
     expect(sentence(VOID)).toBe("Quản lý Hà hủy lượt của chị Lê Thị Mai");
-    expect(moneyOf(VOID)).toMatch(/^Đảo 140\.000/);
+    // What a cancel gave back (ADR-0022): "Trả lại", not the bookkeeping word "Đảo".
+    expect(moneyOf(VOID)).toMatch(/^Trả lại 140\.000/);
     expect(sentence(RENAMED)).toBe("Quản lý Hà sửa hồ sơ của chị Lê Thị Mai");
     expect(RENAMED.changes.map(changeText)).toEqual(["Tên: Lê Mai → Lê Thị Mai", "SĐT: 0905 111 222 → 0912 333 444", "Địa chỉ (đã đổi)"]);
     expect(sentence(ATTENDANCE)).toBe("Chủ Spa chấm công cho KTV Lan ngày 01/11/2026");
