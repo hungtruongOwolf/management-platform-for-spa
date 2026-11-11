@@ -4,6 +4,7 @@ import { BottomSheet } from "../components/BottomSheet";
 import { adminApi, adminDateTime, adminKeys, markAuditStale, REASON_MAX, type TenantRow } from "./api";
 import { FeaturesPanel } from "./FeaturesPanel";
 import { OwnerMfaPanel } from "./OwnerMfaPanel";
+import { RecordHistoryPanel } from "./RecordHistoryPanel";
 import { SpaAuditPanel, SpaRolesPanel } from "./SpaPanels";
 import { adminFieldError, adminMessage } from "./messages";
 import { AdminLink } from "./nav";
@@ -85,6 +86,7 @@ export function TenantPage({ id }: { id: string }) {
         </p>
       </section>
       <OwnerMfaPanel tenant={t} />
+      <RecordHistoryPanel tenantId={t.id} />
       <FeaturesPanel tenantId={t.id} />
       <SpaRolesPanel tenantId={t.id} />
       <SpaAuditPanel tenantId={t.id} />

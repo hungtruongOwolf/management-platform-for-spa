@@ -16,6 +16,7 @@ const ACTIONS: Record<string, string> = {
   "platform.role_template.set": "Sửa mẫu vai trò",
   "platform.role.set": "Sửa quyền vai trò của spa",
   "platform.role.reset": "Đưa vai trò của spa về mẫu",
+  "platform.record_history.set": "Đổi hiển thị lịch sử bản ghi",
   "platform.account.lock": "Khóa tài khoản",
   "platform.account.unlock": "Mở khóa tài khoản",
   "platform.account.reset_password": "Đặt lại mật khẩu",
@@ -41,6 +42,13 @@ function actionText(item: { action: string; detail?: unknown }): string {
     const after = (detail as { after?: unknown }).after;
     if (typeof after !== "boolean") return label;
     return `${after ? "Bật" : "Tắt"} xác thực 2 bước cho chủ spa`;
+  }
+  if (item.action === "platform.record_history.set") {
+    const { role, visible } = detail as { role?: unknown; visible?: unknown };
+    if (typeof visible !== "boolean") return label;
+    const who = role === "manager" ? "Quản lý" : role === "owner" ? "Chủ spa" : null;
+    if (!who) return label;
+    return visible ? `Hiện lịch sử bản ghi cho ${who}` : `Ẩn lịch sử bản ghi với ${who}`;
   }
   if (item.action !== "platform.account.search") return label;
   const q = (detail as { q?: unknown }).q;

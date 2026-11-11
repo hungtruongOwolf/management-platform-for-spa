@@ -22,7 +22,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 
 ## Design
 - [design-system](wiki/design/design-system.md) — design system "Trà thất Đông y": rulebook, token màu / chữ / control (`--fs-*`, `--size-control`, `--radius-control`), app shell + nav + tab bar, mobile patterns + API (`ResponsiveTable`, `BottomSheet`, `DateField`, `TimeField`, `TimeGrid`), class dùng chung, định dạng ngày/giờ
-- [record-history (design)](wiki/design/record-history.md) — UI lịch sử trên từng bản ghi: chia module theo ngân sách JS, `RecordTrace` (phần tử cuối, `data-row-inert`), nút mở có sẵn ở màn nhiều bản ghi, chip Đã hủy > Đã thay > Đã sửa, wireframe desktop + 360 px từng màn, mọi chữ tiếng Việt, panel admin + cờ "Nhật ký thao tác"
+- [record-history (design)](wiki/design/record-history.md) — UI lịch sử trên từng bản ghi: chia module theo ngân sách JS, `RecordTrace` (phần tử cuối, `data-row-inert`), nút mở có sẵn ở màn nhiều bản ghi, chip Đã thay / Đã hủy / Đã sửa loại trừ nhau, wireframe desktop + 360 px từng màn, mọi chữ tiếng Việt, panel admin + cờ "Nhật ký thao tác"
 - [front-desk-flows](wiki/design/front-desk-flows.md) — luồng màn Quầy `/quay` theo từng đợt EM review: đường nhanh ghi lượt, giỏ (gập món, bán gói, giỏ nháp), Sửa / Hủy lượt, tab Lịch hẹn + sheet; phần đã thay được đánh dấu tại chỗ
 
 ## Architecture

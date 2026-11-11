@@ -203,7 +203,7 @@ Chi tiết ở [design/record-history](../../design/record-history.md). Tóm t�
 - Lưu giữ: theo audit (giữ mãi, EM Q-DB4); `customer.anonymize` (chưa build) phải xóa tên / SĐT trong audit (ADR-0021).
 
 ## 10. Non-functional
-- **Perf:** `GET /record-history/*` p95 ≤ 100 ms ở bench có **audit thật cỡ ~60.000 dòng / năm × 3 năm**; danh sách có `edited` p95 tăng ≤ 10 ms khi bật, 0 khi tắt. Web: JS khởi động không tăng (đo 124,70 / 125 KiB theo reviewer; không module lịch sử nào được import từ chunk khởi động).
+- **Perf:** `GET /record-history/*` p95 ≤ 100 ms ở bench có **audit thật cỡ ~60.000 dòng / năm × 3 năm**; danh sách có `edited` p95 tăng ≤ 10 ms khi bật, 0 khi tắt. Web: JS khởi động **≤ 125 KiB** (số đo của reviewer 124,70 KiB), 4 module khởi động có đổi vài dòng (`lib/queryClient.ts`, `features/auth/session.ts`, `app/access.ts`, `components/ResponsiveTable.tsx`), mã lịch sử còn lại ở chunk lazy ([architecture §7](../../architecture/record-history.md), [design §1.1](../../design/record-history.md)).
 - **Bảo mật:** non-negotiable #1–#4; [threat-model](../../security/threat-model.md) § Lịch sử trên từng bản ghi.
 - **A11y:** WCAG 2.2 AA, vùng chạm ≥ 44 px trên điện thoại, focus không mất khi mở / đóng / bị ẩn do `403`.
 - **i18n:** tiếng Việt; tên người làm như Nhật ký thao tác (`actorName`).
@@ -272,7 +272,7 @@ Hai lượt tự rà soát sau bản nháp (EM yêu cầu "review đi review l�
 | S7 | Test đợt 3 sai: quản lý đọc được ô của quản lý khác / chủ spa | `RecordScope::lists` chỉ ẩn hồ sơ của chính mình (`hr/src/scope.rs`); `attendance.rs` lọc thêm `employed_in` | Đúng (tên kiểu cũng sai: `RecordScope`, không phải `Scope`). Sửa edge case 13 và test: ô của mình `404`, ô của quản lý khác `200`. |
 | S9 | Hai bản phần làm giàu (list và `rows_by_ids`) | — | Làm ngay ở đợt 1a: `activity::list` = chọn id → `rows_by_ids` dùng chung. Bỏ test đối chiếu tạm. |
 | Nits BE | `member_access`; cửa sổ deploy / rollback; REVOKE/GRANT sau DROP/CREATE; `AuditPage.tsx` ACTIONS; `no-store` cho danh sách có `edited` | `identity/src/repo.rs` có `member_access`, gọi từ `service::tenant_access` | Đúng hết. Đã ghi vào architecture §3, §8 và plan. |
-| UX B1 | "Đã sửa" đang mang nghĩa "bản cũ bị thay" | `TodayVisits.tsx` (chip khi có `corrected_by_visit_id`), `CustomerHistory.tsx` `visit_voided` | Đúng. Đổi chip của bản bị thay thành "Đã thay" cho mọi vai trò. Một chip, thứ tự Đã hủy > Đã thay > Đã sửa (D9). |
+| UX B1 | "Đã sửa" đang mang nghĩa "bản cũ bị thay" | `TodayVisits.tsx` (chip khi có `corrected_by_visit_id`), `CustomerHistory.tsx` `visit_voided` | Đúng. Đổi chip của bản bị thay thành "Đã thay" cho mọi vai trò. Một chip, điều kiện loại trừ nhau (D9, sửa ở lượt 4 S4). |
 | UX S1 | Ngân sách JS; `TodayVisits` đã lazy | `FrontDeskPage.tsx`: `lazy(() => loadTodayVisits()…)` | Đúng: bản trước viết "Quầy nằm trong chunk khởi động" là sai. Không đo lại được trên máy này (thiếu RAM), nên dùng số của reviewer 124,70 / 125 KiB. Module options query nhỏ đặt ngoài chunk UI; prefetch bằng `useAfterFirstPaint`. |
 | UX S2 | Bấm vào vùng lịch sử thì gập thẻ | Guard `closest("a, button, input, select, textarea, label, [role=menu]")` ở `ResponsiveTable.tsx` | Đúng. Thêm `[data-row-inert]` + Vitest. |
 | UX S3 | Thêm hàng "Xem ai ghi, ai sửa" cho mỗi thẻ thì rối | — | Dùng giờ của thẻ làm nút mở; thẻ gói đặt nút cạnh chip. |
@@ -317,3 +317,18 @@ Không bác phát hiện nào. Riêng S5 chỉ bác phần "con số không có 
 | N7 | Sheet Sổ doanh thu gặp 403 | — | Đóng sheet, đưa focus về nút giờ. Nút chỉ hiện khi có cả quyền của loại neo. |
 | N8 | `reset-demo` xóa cờ operator đã bật | `demo/reset.rs` liệt kê `tenant_feature` | Ghi cạnh cách giảm thiểu trong plan. |
 | N9 | Gốc của phần gộp tính thế nào trong lịch sử | — | Tính trong Rust: gốc = dòng không `folds_into` dòng nào khác trong tập (architecture §4.3 bước 5). |
+
+**Quyết định khi build (đợt 1a, 2026-11-11)** — EM không muốn được hỏi; mỗi điểm chọn phương án khớp nhất với D1–D12, ghi lại ở đây.
+
+| # | Chỗ thiết kế chưa rõ / lệch code | Quyết định |
+|---|---|---|
+| K1 | "Id sai dạng: `Path<Uuid>` trả `400` trước handler" mâu thuẫn với test plan "người không quyền gửi id rác vẫn `403`" | Handler nhận `Result<Path<Uuid>, PathRejection>`: `401` → quyền (`record.history.read` + quyền của route) → id sai dạng `400` → đổi neo `404` → quyền loại neo `403`. Người không quyền không phân biệt được id rác / id thật. |
+| K2 | Nhập sổ giấy ghi **cả** `customer_package.create` (origin `opening_balance`) và, khi tạo khách, `customer.create` cùng lúc với `opening_balance.import` → lịch sử có hai dòng tạo | Khi bản ghi có dòng `opening_balance.import` thuộc nó, bỏ hai dòng do chính lần nhập ghi; dòng nhập là dòng tạo (D12): `source = paper_book`, người nhập là actor, không `at`; gói lấy `day = starts_on`, khách lấy ngày nhập. |
+| K3 | "Test so `SPA_LOCAL` Rust với hằng trong SQL" | Hằng SQL là hàm `app.spa_local_permissions()` (IMMUTABLE, không cấp cho PUBLIC); hai hàm vai trò dùng nó; test `spa_local_permissions_agree_between_rust_and_sql` gọi hàm. |
+| K4 | `edited` "trong cùng câu SQL" vs "EXISTS ở câu ngoài, sau LIMIT" | `VisitDto`: `CASE WHEN $can` trong câu `repo::visits`. Sổ doanh thu và Lịch sử khách: câu thứ hai `reporting::history::edited_visits(id của trang)` chỉ khi có quyền (sau LIMIT, một lần dò mỗi lượt). Cả ba lặp nguyên văn danh sách action của `audit_log_edit_idx`. |
+| K5 | `HistoryEvent.edited` cho thẻ lượt nào | Có ở cả `visit` và `visit_voided` khi có quyền; web áp quy tắc chip D9 (đã hủy thì không "Đã sửa"). |
+| K6 | `ActivityActor.left` chỉ cho lịch sử? | `rows_by_ids` tính cho cả màn nhật ký (cùng luật bộ lọc người); web `actorName` thêm " (đã nghỉ)" ở cả hai. |
+| K7 | Dòng phụ của lượt (§4.3 bước 3) lọc "cùng `at`" bằng SQL | Chọn mọi `sale.create` / `customer_package.create` của hóa đơn bán gói có `sale.visit_id` ∈ chuỗi, rồi chỉ giữ dòng gộp được vào một dòng thành viên (gộp đòi cùng thời điểm + cùng người); dòng không gộp được bị bỏ, không bao giờ thành dòng riêng. |
+| K8 | Hóa đơn bán nhiều gói / không gói không lượt | Neo gói đầu tiên theo id (hiện mỗi hóa đơn bán gói một gói); hóa đơn không dòng gói và không lượt → `404`. |
+| K9 | Response công tắc `RoleGrants.follows_template` | Đọc lại từ dòng role trong cùng transaction (công tắc không đụng nó). Hàm DB từ chối cả `p_role` null (`22023`). |
+| K10 | Màn nhật ký nhận trường mới của `visit.update` ngay từ 1a | `sentence.ts` thêm nhãn `session_note` "Ghi chú buổi", `companions` "Người đi cùng"; KTV hiện tên cũ → mới. Phần còn lại của `sentence.ts` (`HISTORY`, "Trả lại") để 1b. |

@@ -29,7 +29,7 @@ export function FeaturesPanel({ tenantId }: { tenantId: string }) {
               <span className="min-w-48 font-medium">{f.name}</span>
               {f.enabled ? <span className="badge badge-ok">Đang bật</span> : <span className="badge badge-muted">Đang tắt</span>}
               <span className="text-xs text-text-muted">
-                {f.updated_at ? `Đổi lúc ${adminDateTime(f.updated_at)}` : "Mặc định"}
+                {f.updated_at ? `Đổi lúc ${adminDateTime(f.updated_at)}` : `Mặc định · ${f.default_enabled ? "bật" : "tắt"}`}
               </span>
               <button
                 type="button"
@@ -102,7 +102,9 @@ function SwitchSheet({
       description={
         turningOff
           ? "Mọi người của spa không thấy và không dùng được tính năng này từ thao tác kế tiếp. Dữ liệu giữ nguyên."
-          : "Tính năng hiện lại cho mọi người của spa từ thao tác kế tiếp."
+          : feature?.key === "activity_log"
+            ? "Chủ spa thấy lại màn Nhật ký thao tác ở mục Báo cáo từ thao tác kế tiếp. Quản lý và kỹ thuật viên vẫn không thấy."
+            : "Tính năng hiện lại cho mọi người của spa từ thao tác kế tiếp."
       }
       footer={
         <div className="button-row">

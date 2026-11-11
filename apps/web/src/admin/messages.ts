@@ -17,6 +17,8 @@ addMessages(
     "role.owner_floor": "Chủ spa phải giữ các quyền quản trị (quản lý nhân sự, xem nhân sự, xem nhật ký).",
     "role.owner_only_permission": "Quyền này chỉ dành cho chủ spa (quản lý nhân sự, nhật ký thao tác).",
     "role.not_grantable": "Có quyền không được cấp cho vai trò.",
+    "role.not_for_technician": "Kỹ thuật viên không được xem ai ghi, ai sửa trên bản ghi.",
+    "role.record_history_unchanged": "Trạng thái đã đổi ở nơi khác, đã tải lại.",
   },
 );
 
