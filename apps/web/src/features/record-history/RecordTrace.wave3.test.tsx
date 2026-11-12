@@ -142,6 +142,12 @@ function serve(permissions: string[], { forbidden = false, neverSaved = false }:
       if (p === "/record-history/service/s1") return ok(story({ type: "service", id: "s1" }, "catalog.service_create", "catalog.service_update", 2));
       if (p === "/record-history/service/s2") return ok(nothing({ type: "service", id: "s2" }));
       if (p === "/record-history/package-plan/p1") return ok(story({ type: "package_plan", id: "p1" }, "catalog.plan_create", null, 0));
+      if (p === "/record-history/service-category/c1") {
+        const renamed = story({ type: "service_category", id: "c1" }, "catalog.category_create", "catalog.category_update", 1);
+        const edit = renamed.items[1];
+        if (edit) edit.changes = [{ field: "name", format: "text", old: "Gội đầu", new: "Gội đầu dưỡng sinh" }];
+        return ok(renamed);
+      }
       if (p === "/record-history/settings/payroll-rules")
         return ok(neverSaved ? nothing({ type: "payroll_rules" }) : story({ type: "payroll_rules" }, "payroll.rules_update", "payroll.rules_update", 1));
       if (p === "/record-history/settings/appointment-settings") return ok(story({ type: "appointment_settings" }, "appointment.settings", null, 0));
@@ -152,8 +158,8 @@ function serve(permissions: string[], { forbidden = false, neverSaved = false }:
 }
 
 const urls = (spy: ReturnType<typeof serve>) => spy.mock.calls.map(([input]) => (typeof input === "string" ? input : input instanceof URL ? input.href : input.url));
-/** The histories asked for, once each (the prefetch and the mounted query may both ask: `staleTime: 0`). */
-const traces = (spy: ReturnType<typeof serve>) => [...new Set(urls(spy).filter((u) => u.includes("/record-history/")))];
+/** The histories asked for, every request: one per open (the prefetch's reply is not asked again on mount). */
+const traces = (spy: ReturnType<typeof serve>) => urls(spy).filter((u) => u.includes("/record-history/"));
 const at = (path: string) => render(<App history={createMemoryHistory({ initialEntries: [path] })} />);
 const lastEdit = `Sửa lần cuối bởi Lan · ${fullDay(today)}`;
 
@@ -197,6 +203,48 @@ describe("Bảng giá dịch vụ", () => {
     expect(within(form).getByText("Chưa có lịch sử thay đổi.")).toBeInTheDocument();
   });
 
+  it("a group's rename form ('Sửa nhóm', K39) ends with who renamed it last, above its buttons; opened, Tên old → new", async () => {
+    const spy = serve([...CATALOG, HISTORY]);
+    const user = userEvent.setup();
+    at("/bang-gia");
+    await user.click(await screen.findByRole("button", { name: "Sửa nhóm Gội đầu dưỡng sinh" }));
+    const form = screen.getByRole("form", { name: "Sửa nhóm: Gội đầu dưỡng sinh" });
+    const trace = await within(form).findByRole("button", { name: `${lastEdit} · đã sửa 1 lần` });
+    expect(trace).toHaveAttribute("type", "button");
+    expect(trace.closest(".span-2")?.nextElementSibling).toBe(within(form).getByRole("button", { name: "Lưu nhóm dịch vụ" }).closest(".button-row"));
+    // One open, one request.
+    expect(traces(spy)).toEqual(["/api/v1/record-history/service-category/c1"]);
+
+    await user.click(trace);
+    const list = within(form).getByRole("list", { name: "Lịch sử nhóm dịch vụ Gội đầu dưỡng sinh" });
+    expect(within(list).getByText("Hà thêm nhóm dịch vụ")).toBeInTheDocument();
+    expect(within(list).getByText("Lan sửa nhóm dịch vụ")).toBeInTheDocument();
+    expect(within(list).getByText("Tên: Gội đầu → Gội đầu dưỡng sinh")).toBeInTheDocument();
+    expect(spy.mock.calls.some(([, init]) => (init?.method ?? "GET") !== "GET")).toBe(false);
+
+    // Closed and opened again: asked again, once.
+    await user.click(within(form).getByRole("button", { name: "Hủy" }));
+    await user.click(screen.getByRole("button", { name: "Sửa nhóm Gội đầu dưỡng sinh" }));
+    expect(await screen.findByRole("button", { name: `${lastEdit} · đã sửa 1 lần` })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(traces(spy)).toHaveLength(2);
+    });
+  });
+
+  it("a group's rename form, switched off mid-session (403): the history hides, the form and its focus stay", async () => {
+    const spy = serve([...CATALOG, HISTORY], { forbidden: true });
+    const user = userEvent.setup();
+    at("/bang-gia");
+    await user.click(await screen.findByRole("button", { name: "Sửa nhóm Gội đầu dưỡng sinh" }));
+    const form = screen.getByRole("form", { name: "Sửa nhóm: Gội đầu dưỡng sinh" });
+    await waitFor(() => {
+      expect(urls(spy).filter((u) => u === "/api/v1/me").length).toBeGreaterThan(1);
+    });
+    expect(within(form).queryByRole("button", { name: /^Sửa lần cuối|^Đang tải ai ghi/ })).toBeNull();
+    expect(within(form).getByLabelText("Tên nhóm dịch vụ")).toHaveFocus();
+    expect(within(form).getByRole("button", { name: "Lưu nhóm dịch vụ" })).toBeInTheDocument();
+  });
+
   it("never on a create form: 'Thêm dịch vụ', 'Thêm nhóm dịch vụ'", async () => {
     const spy = serve([...CATALOG, HISTORY]);
     const user = userEvent.setup();
@@ -234,6 +282,14 @@ describe("Bảng giá dịch vụ", () => {
         expect(screen.getByRole("form", { name: "Sửa: Thư Giãn" })).toBeInTheDocument();
       }
       expect(screen.queryByRole("button", { name: /^Sửa lần cuối|^Đang tải ai ghi/ })).toBeNull();
+      // "Sửa nhóm" only with catalog.manage; renaming without the switch shows no history either.
+      const group = screen.queryByRole("button", { name: "Sửa nhóm Gội đầu dưỡng sinh" });
+      expect(group !== null).toBe(permissions.includes("catalog.manage"));
+      if (group) {
+        await user.click(group);
+        expect(screen.getByRole("form", { name: "Sửa nhóm: Gội đầu dưỡng sinh" })).toBeInTheDocument();
+      }
+      expect(screen.queryByRole("button", { name: /^Sửa lần cuối|^Ghi bởi|^Chưa rõ ai ghi|^Đang tải ai ghi/ })).toBeNull();
       expect(traces(spy)).toEqual([]);
       view.unmount();
       vi.restoreAllMocks();

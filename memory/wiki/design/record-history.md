@@ -7,13 +7,14 @@ related: [../product/specs/record-history.md, ../architecture/record-history.md,
 
 # UI: lịch sử trên từng bản ghi
 
-Spec: [record-history](../product/specs/record-history.md). Backend: [architecture/record-history](../architecture/record-history.md). Theo rulebook + token của [design-system](design-system.md) (chip trạng thái: quy tắc 7, một bộ `.badge`, luôn có chữ). Bản sửa sau review độc lập 2026-11-11 (spec, Review lượt 3). **Đợt 1a (§3–4) và 1b (§1, §2.1–2.6) đã build**; chỗ build chọn khi design chưa nói: spec Review log K12–K20 (focus khi `403`, prefetch chunk, tên nút giờ hàng hủy / hoàn, bố cục một dòng, CSS ở `components.css`). **Đợt 2 (§2.7–2.9) đã build** (2026-11-12): K21 (một dòng "sửa khoản thưởng"), K23 ("Chưa có ai ghi"), K27 (meta theo §1.2), K30 (ô chỉ xem qua sheet ghi được), K31 (⋯ riêng ở Sổ thưởng, phạt, `403` → focus về tiêu đề sổ; trong sheet → nút "Đóng"). **Đợt 3 (§2.10) đã build** (2026-11-12): K37 (meta "Sửa lần cuối bởi" theo lần lưu mới nhất + "· đã sửa N lần"; chỉ mới thêm → "Ghi bởi"), K38 ("Chưa có ai sửa" cho cài đặt chưa ai lưu), K39 (nhóm dịch vụ chưa có form sửa trên web), K42 (nhãn trường theo chữ của form), K44 (giờ của dòng: hôm nay chỉ giờ, ngày khác kèm ngày), K45 (focus khi `403`).
+Spec: [record-history](../product/specs/record-history.md). Backend: [architecture/record-history](../architecture/record-history.md). Theo rulebook + token của [design-system](design-system.md) (chip trạng thái: quy tắc 7, một bộ `.badge`, luôn có chữ). Bản sửa sau review độc lập 2026-11-11 (spec, Review lượt 3). **Đợt 1a (§3–4) và 1b (§1, §2.1–2.6) đã build**; chỗ build chọn khi design chưa nói: spec Review log K12–K20 (focus khi `403`, prefetch chunk, tên nút giờ hàng hủy / hoàn, bố cục một dòng, CSS ở `components.css`). **Đợt 2 (§2.7–2.9) đã build** (2026-11-12): K21 (một dòng "sửa khoản thưởng"), K23 ("Chưa có ai ghi"), K27 (meta theo §1.2), K30 (ô chỉ xem qua sheet ghi được), K31 (⋯ riêng ở Sổ thưởng, phạt, `403` → focus về tiêu đề sổ; trong sheet → nút "Đóng"). **Đợt 3 (§2.10) đã build** (2026-11-12): K37 (meta "Sửa lần cuối bởi" theo lần lưu mới nhất + "· đã sửa N lần"; chỉ mới thêm → "Ghi bởi"), K38 ("Chưa có ai sửa" cho cài đặt chưa ai lưu), K39 (nhóm dịch vụ chưa có form sửa trên web; thay bởi K48), K42 (nhãn trường theo chữ của form), K44 (giờ của dòng: hôm nay chỉ giờ, ngày khác kèm ngày), K45 (focus khi `403`). **Việc còn lại sau 3 đợt** (2026-11-12, K48–K55): form "Sửa nhóm" (§2.10), sheet ô ngày chỉ xem (§2.8), một request mỗi lần mở (§1.1), chữ giá trị rỗng có nghĩa (§1.5).
 
 ## 1. Thành phần dùng chung
 
 ### 1.1 Chia module (ngân sách JS khởi động)
 Khởi động đang **124,70 / 125 KiB** (số đo của reviewer 2026-11-11: index 124,28 + runtime 0,42). `TodayVisits` đã là chunk lazy (`FrontDeskPage.tsx` `loadTodayVisits`, prefetch sau lần vẽ đầu); `DaySales` chỉ được import từ `TodayVisits`.
 - `features/record-history/query.ts` (rất nhỏ, **không** import UI / `sentence.ts`): `recordHistoryQuery(ref)` (key `["record-history", type, id]`, `staleTime: 0`) — import từ các màn để bắt đầu fetch song song với lúc tải chunk UI.
+- **Một request mỗi lần mở** (K51): `LazyRecordTrace` prefetch và ghi `openedAt`; `RecordTrace` chỉ hỏi lại khi mount nếu bản trong cache cũ hơn lần mở này hoặc đã bị một lần ghi invalidate (`refetchOnMount`). Mở lại sau đó: hiện bản cũ, hỏi lại một lần.
 - Chunk lazy `record-history`: `RecordTrace`, `HISTORY`, `LedgerSaleSheet`; dùng `sentence.ts`.
 - Kiểm `can(me, "record.history.read")` **ngoài** ranh giới lazy (không có quyền → không tải chunk). Có quyền → prefetch chunk bằng `useAfterFirstPaint` (`FrontDeskPage.tsx`), như `TodayVisits`.
 - Ngân sách: khởi động **≤ 125 KiB**, mã lịch sử lazy. Module khởi động chỉ đổi vài dòng: `lib/queryClient.ts` (`onSuccess`), `features/auth/session.ts` (`hasFeature` `defaultOff`), `app/access.ts` (`mayOpen.activity`), `components/ResponsiveTable.tsx` (`[data-row-inert]`); không import gì từ `features/record-history/*` ngoài `query.ts` (không ở module khởi động). `pnpm --filter web budget` mỗi PR.
@@ -87,6 +88,7 @@ Một chip mỗi hàng; ba điều kiện **loại trừ nhau** (code hiện ki�
 | Tiền đảo khi hủy | "Trả lại …" (đổi `AMOUNT_LABEL` "Đảo" → "Trả lại" ở cả màn nhật ký) |
 | Tải / lỗi / 404 / trống / cắt | "Đang tải ai ghi, ai sửa…" / "Không tải được lịch sử." + "Thử lại" / "Không xem được lịch sử của mục này." / "Chưa có lịch sử thay đổi." / "Còn {n} thay đổi cũ hơn." |
 | SĐT với người không có `audit.read` | "SĐT (đã đổi)" |
+| Giá trị rỗng có nghĩa (K50) | "Số khách tối đa mỗi khung giờ: 6 → không giới hạn" / "không giới hạn → 6"; "Thời lượng (phút): … theo tư vấn", "Hạn dùng (tháng): … không thời hạn", "KTV: … chưa gán KTV", "Giờ vào ca: … theo giờ chung của spa"; trường khác xóa trắng vẫn "{nhãn}: bỏ {giá trị cũ}" |
 | Chip | "Đã sửa", "Đã thay", "Đã hủy" |
 
 `HISTORY: Record<AuditAction, ((e: ActivityEntry) => string) | null>` (cùng file `sentence.ts`; `null` = không hiện tại chỗ, khớp spec §4.2), theo ngữ cảnh:
@@ -212,7 +214,26 @@ Sheet là một form có các `fieldset`: `RecordTrace` (`type="button"`, không
   Khen 1 · Phàn nàn 0 …
   Ghi bởi Hà · 18:10 ▾
 ```
-Khả năng tìm thấy: ở `DailyBook`, sheet mở qua nút "Giờ & ghi chú" (`BookCard`); ở Bảng công tháng, bấm một ô (chỉ ô người gọi ghi được, tháng mở; K30). Ô lưới tháng: không chip. Ô chưa ai ghi: "Chưa có ai ghi" (K23); chỉ đổi chữ ghi chú: "Ghi chú (đã đổi)" (K25).
+Khả năng tìm thấy: ở `DailyBook`, sheet mở qua nút "Giờ & ghi chú" (`BookCard`); ở Bảng công tháng, bấm một ô. Ô lưới tháng: không chip. Ô chưa ai ghi: "Chưa có ai ghi" (K23); chỉ đổi chữ ghi chú: "Ghi chú (đã đổi)" (K25).
+
+**Sheet chỉ xem (`PersonDayView`, K49 — thay K30):** ô người gọi không ghi được mở cùng sheet nhưng không có ô nhập. Mở khi tháng đã chốt (mọi người đọc được sổ), hoặc tháng mở mà người đó "Chủ spa chấm" và người gọi xem được lịch sử của sổ mình giữ; không bao giờ cho ngày chưa tới / ngoài đợt làm việc; ô của chính mình không có trong sổ (server bỏ ra), nên không có gì để mở.
+```
+Sổ hằng ngày (thẻ khóa)                 Sheet
+┌ Lê Thị Lan ─────────────────┐        ┌ Lê Thị Lan                         ✕ ┐
+│ [Đi làm] (ô trạng thái tắt)  │        │ T4, 12/11/2026 · vào ca 09:00 · chỉ xem│
+│ 🔒 Chỉ chủ spa chấm công…    │        │ Chấm công                              │
+│ Khen 1 · Phàn nàn 0 (tắt)    │  ───▶  │  Trạng thái  ✓ Đi làm [Muộn 12 phút]   │
+│ [🕒 Xem giờ & ghi chú]        │        │  Giờ         đến 09:12                 │
+└──────────────────────────────┘        │  Ghi chú     Kẹt xe                    │
+                                        │  Ghi bởi Hà · 08:15 · đã sửa 2 lần ▾   │
+                                        │ Khen, phàn nàn                          │
+                                        │  1 lời khen · 0 phàn nàn               │
+                                        │  Ghi bởi Hà · 08:15 ▾                   │
+                                        │                                [Đóng]  │
+                                        └────────────────────────────────────────┘
+```
+- Phần theo `MyDaySheet` (`my-day-block`, `detail-grid`); mỗi phần chỉ khi người gọi giữ sổ đó; `RecordTrace` là phần tử cuối của từng phần, chỉ khi `canTrace`; `403` → focus nút đóng.
+- Bảng công tháng: hàng "Chủ spa chấm" thành nút khi được xem; gợi ý dưới lưới "Bấm một ô để sửa." / "… để xem." / "… để sửa hoặc xem.", không ô nào bấm được thì không có gợi ý (K52).
 
 ### 2.9 Sổ thưởng / phạt (`AdjustmentsTab`) — đợt 2
 ⋯ "Xem ai ghi, ai sửa" → `RecordTrace` mở sẵn dưới hàng: "Ghi bởi Hà · 03/11 · đã sửa 1 lần" + "Lan sửa: Số tiền 200.000 ₫ → 300.000 ₫" (thay bản) / "Lan xóa khoản thưởng". Đã build: dòng sửa đọc "Lan sửa khoản thưởng" + dòng phụ "Số tiền: 200.000đ → 300.000đ" (chuyển người: "Nhân viên: KTV Lan → KTV Mai", K21); meta theo §1.2: "Ghi bởi Hà · 10:05[ 03/11]" (K27); ⋯ là cột riêng, "Sửa" / "Xóa" giữ trên hàng (K31).
@@ -220,7 +241,19 @@ Khả năng tìm thấy: ở `DailyBook`, sheet mở qua nút "Giờ & ghi chú"
 ### 2.10 Bảng giá, mẫu gói, nhóm dịch vụ, quy tắc lương, cài đặt lịch hẹn — đợt 3
 Phần tử cuối của form sửa / `RulesSheet` / sheet số khách tối đa (trên footer nút): "Sửa lần cuối bởi Lan · 12/11/2026 ▾" → "Lan sửa dịch vụ · Giá Nữ: 150.000 ₫ → 170.000 ₫". Danh sách không chip.
 
-Đã build (2026-11-12): `ServiceForm` / `PlanForm` khi **sửa** (khối `span-2` ngay trước lỗi + hàng nút; form thêm mới không có), `RulesForm` (ngay trước lỗi + "Lưu quy tắc"), `SlotLimitSheet` (sau form trong thân sheet, trên footer "Thôi" / "Lưu số khách tối đa"). Meta theo K37: "Sửa lần cuối bởi Lan · 12/11/2026 · đã sửa 2 lần"; dịch vụ / mẫu gói chỉ mới thêm: "Ghi bởi Hà · 03/02/2026"; có sẵn từ lúc tạo spa: "Chưa rõ ai ghi" + "Chưa có lịch sử thay đổi."; cài đặt chưa ai lưu: "Chưa có ai sửa" (K38). Nhóm dịch vụ: web chưa có form sửa nhóm (chỉ "Thêm nhóm dịch vụ"), nên chưa có chỗ hiện (K39).
+Đã build (2026-11-12): `ServiceForm` / `PlanForm` khi **sửa** (khối `span-2` ngay trước lỗi + hàng nút; form thêm mới không có), `RulesForm` (ngay trước lỗi + "Lưu quy tắc"), `SlotLimitSheet` (sau form trong thân sheet, trên footer "Thôi" / "Lưu số khách tối đa"). Meta theo K37: "Sửa lần cuối bởi Lan · 12/11/2026 · đã sửa 2 lần"; dịch vụ / mẫu gói chỉ mới thêm: "Ghi bởi Hà · 03/02/2026"; có sẵn từ lúc tạo spa: "Chưa rõ ai ghi" + "Chưa có lịch sử thay đổi."; cài đặt chưa ai lưu: "Chưa có ai sửa" (K38). Nhóm dịch vụ: ~~web chưa có form sửa nhóm (K39)~~ form "Sửa nhóm" (K48, K53, 2026-11-12):
+```
+┌ Gội đầu dưỡng sinh ──────────────── [Sửa nhóm] [+ Thêm dịch vụ] ┐   ← chỉ khi catalog.manage
+│ ─────────────────────────────────────────────────────────────── │
+│ Sửa nhóm: Gội đầu dưỡng sinh                                     │
+│ Tên nhóm dịch vụ  [Gội đầu dưỡng sinh            ]               │
+│ Chỉ đổi tên; nhóm giữ nguyên vị trí trong bảng giá.              │
+│ Sửa lần cuối bởi Lan · 12/11/2026 · đã sửa 1 lần ▾               │   ← phần tử cuối, trên hàng nút
+│ [Lưu nhóm dịch vụ] [Hủy]                                         │
+│ (các dịch vụ của nhóm…)                                          │
+└──────────────────────────────────────────────────────────────────┘
+```
+Chỉ tên, không thứ tự (K48); 360 px: hai nút xuống dòng dưới tên nhóm (`flex-wrap`). Mở ra: "Lan sửa nhóm dịch vụ · Tên: Gội đầu → Gội đầu dưỡng sinh".
 
 ## 3. Console admin `/admin/spa/<id>` — đợt 1a
 

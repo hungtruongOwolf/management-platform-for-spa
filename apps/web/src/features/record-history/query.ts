@@ -16,7 +16,17 @@ export type RecordRef = RecordIdRef | StaffDayRef | SettingsRef;
 
 /** A record named by its id: every kind but a staff-book cell and the settings. */
 export interface RecordIdRef {
-  type: "visit" | "sale" | "refund" | "customer_package" | "customer" | "appointment" | "adjustment" | "service" | "package_plan";
+  type:
+    | "visit"
+    | "sale"
+    | "refund"
+    | "customer_package"
+    | "customer"
+    | "appointment"
+    | "adjustment"
+    | "service"
+    | "package_plan"
+    | "service_category";
   id: string;
 }
 
@@ -35,9 +45,10 @@ export interface SettingsRef {
 const isStaffDay = (ref: RecordRef): ref is StaffDayRef => ref.type === "attendance" || ref.type === "daily_review";
 
 /**
- * One record's history. Never served from cache (`staleTime: 0`): it is read when a record is
- * opened, and every write in this browser invalidates `["record-history"]` (lib/queryClient.ts).
- * The route is the type with a dash (`customer_package` → `customer-package`).
+ * One record's history. Never served from cache alone (`staleTime: 0`): it is asked **once** per
+ * open (`LazyRecordTrace` prefetches it, `RecordTrace` does not ask again for a reply of the same
+ * open, its `openedAt`), and every write in this browser invalidates `["record-history"]`
+ * (lib/queryClient.ts). The route is the type with a dash (`customer_package` → `customer-package`).
  */
 export function recordHistoryQuery(ref: RecordRef) {
   const route = ref.type.replace("_", "-");

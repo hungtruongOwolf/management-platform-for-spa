@@ -2,7 +2,7 @@
 // lazy chunk, loaded only for those who may see them (`canTrace` first, outside this boundary).
 // The request starts at once, alongside the chunk, not after it.
 import { usePrefetchQuery } from "@tanstack/react-query";
-import { Suspense, lazy, useEffect } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import type { LedgerSaleSheetProps } from "./LedgerSaleSheet";
 import { recordHistoryQuery } from "./query";
 import type { RecordTraceProps } from "./RecordTrace";
@@ -25,11 +25,17 @@ export function TracePlaceholder() {
   );
 }
 
+/**
+ * One open of a record's history = one request: the prefetch here when nothing is cached yet,
+ * else the component's mount. A reply that came in after `openedAt` is this open's own, so the
+ * component does not ask again once the chunk has loaded (`RecordTrace` `openedAt`).
+ */
 export function LazyRecordTrace(props: RecordTraceProps) {
+  const [openedAt] = useState(Date.now);
   usePrefetchQuery(recordHistoryQuery(props.record));
   return (
     <Suspense fallback={<TracePlaceholder />}>
-      <RecordTrace {...props} />
+      <RecordTrace {...props} openedAt={openedAt} />
     </Suspense>
   );
 }

@@ -438,12 +438,32 @@ function valueText(c: ActivityChange, raw: string): string {
   }
 }
 
-/** One changed field: "SĐT: 0905 111 222 → 0912 333 444", "Trạng thái: Nghỉ đột xuất (ĐX)", "Địa chỉ (đã đổi)". */
+/**
+ * Fields whose empty value is a setting of its own, in the words of the form that sets it ("Để
+ * trống = …"): a change to or from it names it ("6 → không giới hạn") instead of "bỏ 6". Any other
+ * field cleared reads "bỏ …". Not the gender prices: their blank is "không áp dụng" only within
+ * "Theo giới tính", and a switch from one price to two clears `price` while filling them.
+ */
+const NULL_MEANS: Record<string, string> = {
+  max_per_slot: "không giới hạn",
+  duration_min: "theo tư vấn",
+  validity_months: "không thời hạn",
+  shift_start: "theo giờ chung của spa",
+  // A booking without a technician (AppointmentSheet "Chưa gán KTV").
+  staff: "chưa gán KTV",
+};
+
+/**
+ * One changed field: "SĐT: 0905 111 222 → 0912 333 444", "Trạng thái: Nghỉ đột xuất (ĐX)",
+ * "Số khách tối đa mỗi khung giờ: 6 → không giới hạn", "Địa chỉ (đã đổi)".
+ */
 export function changeText(c: ActivityChange): string {
   const label = FIELD[c.field] ?? c.field;
   const old = c.old === undefined || c.old === null ? null : valueText(c, c.old);
   const now = c.new === undefined || c.new === null ? null : valueText(c, c.new);
+  const empty = NULL_MEANS[c.field];
   if (old !== null && now !== null) return `${label}: ${old} → ${now}`;
+  if (empty !== undefined && (old !== null || now !== null)) return `${label}: ${old ?? empty} → ${now ?? empty}`;
   if (now !== null) return `${label}: ${now}`;
   if (old !== null) return `${label}: bỏ ${old}`;
   return `${label} (đã đổi)`;
